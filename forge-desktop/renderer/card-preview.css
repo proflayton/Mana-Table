@@ -1,0 +1,79 @@
+.card-preview {
+  position: fixed;
+  z-index: 60;
+  pointer-events: none;
+  display: grid;
+  grid-template-columns: minmax(0, .95fr) minmax(0, 1fr);
+  gap: 20px;
+  padding: 16px;
+  max-height: calc(100vh - 24px);
+  border: 1px solid #8b805d;
+  border-radius: 14px;
+  background: linear-gradient(135deg, #29382f, #17221e 65%);
+  box-shadow: 0 16px 65px #000a, 0 0 0 1px #d6be8b15 inset;
+  color: var(--text);
+}
+.preview-visual { min-width: 0; }
+.card-preview.has-other-face { pointer-events: auto; }
+.preview-flip { width: 100%; display: flex; justify-content: center; align-items: center; gap: 12px; margin-top: 12px; padding: 10px; border: 1px solid #afad7e; border-radius: 6px; background: #3c5039; color: #f1e5c7; font-size: 12px; }
+.preview-flip:hover, .preview-flip:focus-visible { background: #536649; outline: 2px solid #e6ce92; }
+.preview-flip kbd { padding: 1px 5px; border: 1px solid #acb498; border-radius: 3px; font: 10px 'Segoe UI', sans-serif; }
+.preview-face-note { display: block; margin-top: 8px; color: #c1cdb4; font-size: 10px; text-align: center; }
+.preview-type small { display: block; margin-top: 8px; color: #e3cd95; font-size: 11px; line-height: 1.4; }
+.preview-visual .card-art { border-color: #95845e; }
+.preview-visual small { display: block; margin-top: 10px; color: var(--muted); font-size: 9px; text-align: center; }
+.preview-card-back { display: grid; place-items: center; background: radial-gradient(ellipse, #3a4d3d, #14251f); }
+.preview-card-back span { font: 90px Georgia; color: var(--accent); opacity: .5; }
+.preview-details { display: flex; flex-direction: column; min-width: 0; min-height: 0; max-height: calc(100vh - 58px); }
+.preview-details .eyebrow { font-size: 9px; margin: 3px 0 10px; }
+.preview-details h2 { font: 24px/1.15 Georgia, serif; margin: 0 0 12px; overflow-wrap: anywhere; }
+.preview-cost { display: flex; flex-wrap: wrap; gap: 3px; margin-bottom: 12px; }
+.preview-cost .mana { width: 22px; height: 22px; font-size: 11px; margin: 0; }
+.preview-type { font-size: 12px; line-height: 1.5; color: #b9c6b7; padding-bottom: 12px; border-bottom: 1px solid #465247; }
+.preview-rules { font: 14px/1.6 'Segoe UI', sans-serif; color: #e0e5d9; white-space: pre-wrap; overflow-wrap: anywhere; overflow: auto; min-height: 40px; margin: 14px 0; overscroll-behavior: contain; }
+.preview-scroll-hint { color: var(--accent); font-size: 10px; margin-bottom: 10px; }
+.preview-stats { display: flex; align-items: center; justify-content: space-between; gap: 10px; border-top: 1px solid #465247; padding-top: 12px; margin-top: auto; }
+.preview-stats span { font-size: 8px; letter-spacing: 1px; color: var(--muted); }
+.preview-stats strong { font: 24px Georgia; color: var(--accent); white-space: nowrap; }
+.preview-status { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 12px; }
+.preview-status span { background: #d6be8b18; color: #e1cfa5; padding: 4px 7px; border-radius: 4px; font-size: 10px; }
+.preview-footer { display: flex; justify-content: space-between; gap: 10px; color: #91a48f; font-size: 9px; padding-top: 16px; margin-top: auto; }
+.preview-footer span { color: #b5c3ad; }
+.preview-details > :not(.preview-rules) { flex-shrink: 0; }
+.table-card-zoom { position: fixed; z-index: 60; pointer-events: none; filter: drop-shadow(0 15px 18px #000b); animation: card-inspect .14s ease-out; }
+.table-card-zoom .card-art { width: 100%; aspect-ratio: 488 / 680; border: 2px solid #26251e; border-radius: 11px; box-shadow: 0 0 0 1px #b3a27177; }
+.table-card-zoom .card-art img { object-fit: contain; }
+.zoom-face-hint { position: absolute; left: 12px; right: 12px; bottom: 12px; padding: 5px; border-radius: 5px; color: #ffedc6; background: #16242bee; text-align: center; font-size: 11px; }
+.zoom-stats { position: absolute; right: 9px; bottom: 9px; min-width: 44px; padding: 3px 8px; border: 1px solid #c4bda5; border-radius: 7px 2px; background: #f0e7ce; color: #212820; font: 700 21px Georgia; box-shadow: 0 2px 5px #0009; }
+.table-card-zoom:has(.zoom-face-hint) .zoom-stats { bottom: 43px; }
+.table-card-details { order: 1; min-width: 0; padding: 12px; border-left: 2px solid #bbaa7d; background: #15232ceb; border-radius: 4px; }
+.table-card-details header { display: flex; align-items: center; justify-content: space-between; }
+.table-card-details .eyebrow { font-size: 8px; }
+.details-close { border: 0; padding: 0 3px; background: transparent; font-size: 20px; color: #aabbb5; }
+.table-card-details h2 { font: 18px/1.2 Georgia; color: #f3e9cb; margin: 5px 0 8px; }
+.table-card-details .preview-type { margin: 6px 0; font-size: 11px; }
+.table-card-details .preview-rules { max-height: 145px; overflow: auto; font-size: 12px; line-height: 1.5; white-space: pre-line; }
+.table-card-details .preview-stats { margin-top: 8px; }
+.table-card-details .preview-stats strong { font-size: 22px; }
+.table-card-details .preview-flip { margin-top: 9px; }
+.table-card-details .preview-face-note { display: block; margin-top: 5px; color: #b9c9bd; font-size: 10px; }
+/* Inspection takes the place of secondary rail information, keeping the
+   decision controls in reach instead of pushing them below the window. */
+.match-rail-info:has(.table-card-details:not([hidden])) > .match-recent,
+.match-rail-info:has(.table-card-details:not([hidden])) > .match-turn-guide,
+.match-rail-info:has(.table-card-details:not([hidden])) > .match-notices { display: none; }
+.table-card-details .preview-cost { margin-bottom: 0; }
+.table-card-details .preview-type { padding-bottom: 5px; }
+.table-card-details .preview-rules { min-height: 0; margin: 7px 0; max-height: 110px; }
+.table-card-details .preview-stats { padding-top: 6px; }
+.table-card-details .preview-status { margin-top: 6px; }
+.table-card-details .preview-status span { padding: 2px 5px; }
+@media (max-height: 800px) {
+  .match-rail:has(.table-card-details:not([hidden])) .match-step-context { display: none; }
+  .table-card-details .preview-rules { max-height: 95px; }
+}
+#match-card-details { font-size: 10px; color: #b3c5bd; }
+#match-card-details[aria-pressed="true"] { color: #f4d897; }
+@keyframes card-inspect { from { opacity: .4; scale: .9; } to { opacity: 1; scale: 1; } }
+@media (prefers-reduced-motion: reduce) { .table-card-zoom { animation: none; } }
+body:has(#match-view[data-motion="off"]) .table-card-zoom { animation: none; }

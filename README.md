@@ -1,104 +1,74 @@
-# ⚔️  Forge: The Magic: The Gathering Rules Engine
+# Mana Table
 
-Join the **Forge community** on [Discord](https://discord.gg/HcPJNyD66a)!
+Mana Table is a desktop card workshop and playable Magic: The Gathering table,
+built with a web UI on the Forge rules engine. It is an independent community
+fork, with active development on **`feature/desktop-beta`**.
 
-[![Test build](https://github.com/Card-Forge/forge/actions/workflows/test-build.yaml/badge.svg)](https://github.com/Card-Forge/forge/actions/workflows/test-build.yaml)
+The beta includes the full bundled card catalog, deck imports and exports,
+autosave and undo, Commander presets, opening-hand practice, two-player
+Constructed, and Commander with **2–6 players** (one local human and AI opponents).
+The engine handles spells, mana, targets, phases, and combat. The UI presents a
+tabletop battlefield, a persistent card fan, card inspection, and combat assignments.
 
----
+## Start here
 
-## ✨ Introduction
-**Forge** is a dynamic and open-source **Rules Engine** tailored for **Magic: The Gathering** enthusiasts. Developed by a community of passionate programmers, Forge allows players to explore the rich universe of MTG through a flexible, engaging platform. 
+| I want to… | Guide |
+| --- | --- |
+| Play the current beta | [Player guide](forge-desktop/BETA.md) |
+| Build and run from source | [Desktop development](forge-desktop/README.md) |
+| Make a contribution | [Contributing](CONTRIBUTING.md) |
+| Understand the components | [Architecture](docs/Development/Mana-Table-Architecture.md) |
+| Run checks or diagnose a regression | [Testing](docs/Development/Mana-Table-Testing.md) |
+| Run an encounter or host a UX playtest | [Encounter guide](docs/Development/Mana-Table-Encounters.md) |
+| Build a distributable | [Packaging and releases](docs/Development/Mana-Table-Releases.md) |
+| Extend the engine adapter | [Engine API contract](forge-api/README.md) |
 
-**Note:** Forge operates independently and is not affiliated with Wizards of the Coast.
+## Run from source
 
----
+Install **JDK 17+**, **Maven 3.8.1+**, and **Node.js 22.12+**. JDK 17 and Node 24
+are the contributor CI baseline. Set `JAVA_HOME` to your JDK directory and put
+Maven on `PATH`.
 
-## 🌟 Key Features
-- **🌐 Cross-Platform Support:** Play on **Windows, Mac, Linux,** and **Android**.
-- **🔧 Extensible Architecture:** Built in **Java**, Forge encourages developers to contribute by adding features and cards.
-- **🎮 Versatile Gameplay:** Dive into single-player modes or challenge opponents online!
+```sh
+git clone --branch feature/desktop-beta https://github.com/proflayton/Mana-Table.git
+cd Mana-Table
+mvn -pl forge-api -am verify
+cd forge-desktop
+npm ci
+npm run doctor
+npm start
+```
 
----
+The focused Maven command builds the engine adapter and its dependencies; the
+Android/iOS toolchains are not needed for Mana Table. The first startup scans the
+card scripts and can take a moment. See the development guide for PowerShell and
+Java configuration details.
 
-## 🛠️ Installation Steps
+**Windows x64 is the tested desktop/package target.** Java discovery supports
+other development platforms, but their Electron UI and packaging need validation.
+After a local package has been built, [Launch Mana Table.cmd](Launch%20Mana%20Table.cmd)
+opens the build recorded in `dist/latest-beta.json`. `Launch Workshop.cmd` is a
+compatibility alias. These launchers do not build the app on a fresh clone.
 
-### 📥 Desktop
-1. **Latest Releases:** Download the latest version [here](https://github.com/Card-Forge/forge/releases/latest).
-2. **Snapshot Build:** For the latest development version, grab the `forge-gui-desktop` tarball from our [Snapshot Build](https://github.com/Card-Forge/forge/releases/tag/daily-snapshots).
-   - **Tip:** Extract to a new folder to prevent version conflicts.
-3. **User Data Management:** Previous players’ data is preserved during upgrades.
-4. **Java Requirement:** Ensure you have **Java 17 or later** installed.
+## Beta scope
 
-### 📱 Android
-- _(Note: **Android 11** is the minimum requirement with at least **6GB RAM** to run smoothly. You need to enable **"Install unknown apps"** for Forge to initialize and update itself)_
-- Download the **APK** from the [Snapshot Build](https://github.com/Card-Forge/forge/releases/tag/daily-snapshots). On the first launch, Forge will automatically download all necessary assets.
+Matches run locally against AI. Online human play, durable match saves, and
+complete format legality checks are not implemented. Closing the app ends the
+current game; saved decks persist. Deck validation checks structure, not rotating
+set legality or ban lists. Unusual card interactions still need broader testing.
 
-### 📱 iOS (early stage)
-- Build the **IPA** according to Wiki
-- No jailbreak needed, only developer mode and iOS 16-26
-- Connect your device to a PC to self-sign and upload the app file, multiple tools exist e.g. [Sideloadly](https://sideloadly.io)
+Four Commander precons are bundled for offline use. Moxfield discovery opens in
+your browser; arbitrary deck imports use exported text lists. Card art is fetched
+from Scryfall when available and cached locally. See the player guide for details.
 
----
+## Forge and licensing
 
-## 🎮 Modes of Play
-Forge offers various exciting gameplay options:
+Mana Table reuses [Card-Forge/forge](https://github.com/Card-Forge/forge), including
+its rules, AI, card scripts, and shared human controller. Existing `forge-*`
+module names are retained for compatibility and upstream maintenance.
 
-### 🌍 Adventure Mode
-Embark on a thrilling single-player journey where you can:
-- Explore an overworld map.
-- Challenge diverse AI opponents.
-- Collect cards and items to boost your abilities.
-
-<img width="1282" height="752" alt="Shandalar World" src="https://github.com/user-attachments/assets/9af31471-d688-442f-9418-9807d8635b72" />
-
-### 🔍 Quest Mode
-Engage in focused gameplay without the overworld exploration—perfect for quick sessions!
-
-<img width="1282" height="752" alt="Quest Duels" src="https://github.com/user-attachments/assets/b9613b1c-e8c3-4320-8044-6922c519aad4" />
-
-### 🤖 AI Formats
-Test your skills against AI in multiple formats:
-- **Sealed**
-- **Draft**
-- **Commander**
-- **Cube**
-
-For comprehensive gameplay instructions, visit our [User Guide](https://github.com/Card-Forge/forge/wiki/User-Guide).
-
-<img width="1282" height="752" alt="Sealed" src="https://github.com/user-attachments/assets/ae603dbd-4421-4753-a333-87cb0a28d772" />
-
----
-
-## 💬 Support & Community
-Need help? Join our vibrant Discord community! 
-- 📜 Read the **#rules** and explore the **FAQ**.
-- ❓ Ask your questions in the **#help** channel for assistance.
-
----
-
-## 🤝 Contributing to Forge
-We love community contributions! Interested in helping? Check out our [Contributing Guidelines](CONTRIBUTING.md) for details on how to get started.
-
----
-
-## ℹ️ About Forge
-Forge aims to deliver an immersive and customizable Magic: The Gathering experience for fans around the world. 
-
-### 📊 Repository Statistics
-
-| Metric         | Count                                                       |
-|----------------|-------------------------------------------------------------|
-| **⭐ Stars:**   | [![GitHub stars](https://img.shields.io/github/stars/Card-Forge/forge?style=flat-square)](https://github.com/Card-Forge/forge/stargazers) |
-| **🍴 Forks:**   | [![GitHub forks](https://img.shields.io/github/forks/Card-Forge/forge?style=flat-square)](https://github.com/Card-Forge/forge/network) |
-| **👥 Contributors:** | [![GitHub contributors](https://img.shields.io/github/contributors/Card-Forge/forge?style=flat-square)](https://github.com/Card-Forge/forge/graphs/contributors) |
-
----
-
-**📄 License:** [GPL-3.0](LICENSE)
-<div align="center" style="display: flex; align-items: center; justify-content: center;">
-    <div style="margin-left: auto;">
-        <a href="#top">
-            <img src="https://img.shields.io/badge/Back%20to%20Top-000000?style=for-the-badge&logo=github&logoColor=white" alt="Back to Top">
-        </a>
-    </div>
-</div>
+The repository is [GPL-3.0-or-later](LICENSE). Preserve Forge attribution and
+runtime notices when distributing builds. Magic: The Gathering and card artwork
+belong to their respective owners; this project is not affiliated with Wizards
+of the Coast. The [upstream overview](docs/upstream/README.md) and
+[upstream contribution notes](docs/upstream/CONTRIBUTING.md) are retained separately.
