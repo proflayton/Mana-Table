@@ -20,7 +20,8 @@ protocol.registerSchemesAsPrivileged([{ scheme: 'workshop', privileges: { standa
 
 let window;
 let engine;
-const methods = new Set(['search', 'deckInsights', 'list', 'new', 'open', 'snapshot', 'edit', 'rename', 'undo', 'redo', 'format', 'save', 'importPreview', 'import', 'deckPresets', 'presetImport', 'export', 'practice', 'matchOpponents', 'matchSetup', 'matchStart', 'matchState', 'matchAction', 'matchConcede']);
+let quitting = false;
+const methods = new Set(['search', 'deckInsights', 'list', 'new', 'open', 'snapshot', 'edit', 'rename', 'undo', 'redo', 'format', 'save', 'importPreview', 'import', 'deckPresets', 'presetImport', 'export', 'practice', 'multiplayerHost', 'multiplayerJoin', 'multiplayerSelectDeck', 'multiplayerReady', 'multiplayerStart', 'multiplayerState', 'multiplayerClose', 'matchOpponents', 'matchSetup', 'matchStart', 'matchState', 'matchAction', 'matchConcede']);
 function verify(event) {
   if (!window || event.sender !== window.webContents || event.senderFrame !== window.webContents.mainFrame
     || !event.senderFrame.url.startsWith('workshop://app/')) throw new Error('Unknown desktop client');
@@ -65,7 +66,7 @@ function art(name, face = 'front') {
   return promise;
 }
 
-if (app.requestSingleInstanceLock()) {
+if (process.env.MANA_ALLOW_MULTI_INSTANCE === '1' || app.requestSingleInstanceLock()) {
 app.on('second-instance', () => {
   if (window) { if (window.isMinimized()) window.restore(); window.show(); window.focus(); }
 });
@@ -155,5 +156,12 @@ app.whenReady().then(async () => {
   await window.loadURL('workshop://app/index.html');
 });
 app.on('window-all-closed', () => app.quit());
-app.on('before-quit', () => engine?.close());
+app.on('before-quit', event => {
+  if (quitting) return;
+  quitting = true;
+  event.preventDefault();
+  const finish = () => { engine?.close(); app.quit(); };
+  if (!engine) { finish(); return; }
+  engine.request('multiplayerClose').catch(() => null).finally(finish);
+});
 } else { app.quit(); }

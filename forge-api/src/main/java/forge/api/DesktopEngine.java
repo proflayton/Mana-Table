@@ -39,6 +39,7 @@ public final class DesktopEngine {
     private int draws;
     private Path resources;
     private MatchSession match;
+    private MultiplayerSession multiplayer;
 
     public DesktopEngine(CardCatalog catalog, Path directory) throws Exception {
         this.catalog = catalog;
@@ -142,6 +143,13 @@ public final class DesktopEngine {
             }
             case "export" -> export(string(p, "kind", "text"));
             case "practice" -> practice(string(p, "action", "shuffle"), number(p, "index", -1));
+            case "multiplayerHost" -> multiplayer().host();
+            case "multiplayerJoin" -> multiplayer().join(string(p, "address", ""));
+            case "multiplayerSelectDeck" -> multiplayer().selectDeck(loadStoredDeck(string(p, "deckId", "")).editor().toDeck());
+            case "multiplayerReady" -> multiplayer().ready(p.has("ready") && p.get("ready").getAsBoolean());
+            case "multiplayerStart" -> multiplayer().start();
+            case "multiplayerState" -> multiplayer().state();
+            case "multiplayerClose" -> multiplayer().close();
             case "matchOpponents" -> MatchSession.opponents(format);
             case "matchSetup" -> {
                 requireDeck();
@@ -194,13 +202,9 @@ public final class DesktopEngine {
 
     private Object open(String id) throws Exception {
         ensureSaved();
-        var stored = JSON.fromJson(Files.readString(file(id)), StoredDeck.class);
-        if (stored.version() != 1) { throw new IllegalArgumentException("Unsupported deck file version"); }
-        var deck = new Deck(checkedName(stored.name()));
-        var loaded = new DeckEditor(catalog, deck);
-        loaded.apply(0, stored.cards());
-        String loadedFormat = checkedFormat(stored.format());
-        editor = new DeckEditor(catalog, loaded.toDeck());
+        var loaded = loadStoredDeck(id);
+        String loadedFormat = checkedFormat(loaded.format());
+        editor = new DeckEditor(catalog, loaded.editor().toDeck());
         deckId = id;
         format = loadedFormat;
         saveError = null;
@@ -209,6 +213,16 @@ public final class DesktopEngine {
     }
 
     private record StoredDeck(int version, String name, String format, List<DeckEditor.Edit> cards, long updated) { }
+    private record LoadedDeck(DeckEditor editor, String format) { }
+
+    private LoadedDeck loadStoredDeck(String id) throws Exception {
+        var stored = JSON.fromJson(Files.readString(file(id)), StoredDeck.class);
+        if (stored.version() != 1) { throw new IllegalArgumentException("Unsupported deck file version"); }
+        var deck = new Deck(checkedName(stored.name()));
+        var loaded = new DeckEditor(catalog, deck);
+        loaded.apply(0, stored.cards());
+        return new LoadedDeck(loaded, stored.format());
+    }
 
     private Object list() throws Exception {
         var decks = new ArrayList<Map<String, Object>>();
@@ -309,6 +323,13 @@ public final class DesktopEngine {
         return Map.of("hand", List.copyOf(hand), "remaining", library.size(), "mulligans", mulligans, "draws", draws);
     }
 
+    private MultiplayerSession multiplayer() {
+        if (multiplayer == null) {
+            if (resources == null) { throw new IllegalStateException("Engine resources are still loading"); }
+            multiplayer = new MultiplayerSession(resources, directory.getParent());
+        }
+        return multiplayer;
+    }
     private void clearPractice() { library.clear(); hand.clear(); mulligans = 0; draws = 0; }
     private void requireDeck() { if (editor == null) { throw new IllegalStateException("Open or create a deck first"); } }
     private void ensureSaved() {

@@ -14,6 +14,8 @@ let mutationQueue = Promise.resolve();
 let previewGeneration = 0;
 let toastTimer;
 let searchTimer;
+let multiplayerState;
+let multiplayerDecks = [];
 const extraSections = { Avatar: 'Vanguard', Planes: 'Planes', Schemes: 'Schemes', Conspiracy: 'Conspiracies', Dungeon: 'Dungeons', Attractions: 'Attractions', Contraptions: 'Contraptions' };
 const cards = new Map();
 const art = new Map();
@@ -190,16 +192,95 @@ function changeQuantity(card, delta, { byName = false } = {}) {
     return api.request('edit', { revision: state.deck.revision, edits: [{ section: targetSection, cardId: entry?.card.id || card.id, quantity: Math.max(0, (entry?.quantity || 0) + delta) }] });
   });
 }
+let multiplayerRefreshTimer;
+function stopMultiplayerRefresh() {
+  if (multiplayerRefreshTimer) {
+    clearInterval(multiplayerRefreshTimer);
+    multiplayerRefreshTimer = null;
+  }
+}
+window.stopMultiplayerRefresh = stopMultiplayerRefresh;
+function startMultiplayerRefresh() {
+  stopMultiplayerRefresh();
+  multiplayerRefreshTimer = setInterval(() => {
+    if (!$('multiplayer-view').hidden) run(refreshMultiplayer);
+  }, 1500);
+}
+async function refreshMultiplayerDecks() {
+  const result = await api.request('list');
+  multiplayerDecks = result.decks;
+  $('multiplayer-deck').innerHTML = multiplayerDecks.length
+    ? multiplayerDecks.map(deck => `<option value="${esc(deck.id)}">${esc(deck.name)} · ${deck.count} main · ${esc(deck.format)}</option>`).join('')
+    : '<option value="">No saved decks</option>';
+  $('multiplayer-select-deck').disabled = multiplayerDecks.length === 0;
+  if (state?.id && multiplayerDecks.some(deck => deck.id === state.id)) {
+    $('multiplayer-deck').value = state.id;
+  }
+}
 function showWorkshop() {
+  stopMultiplayerRefresh();
   document.body.classList.remove('in-match');
   $('match-view').hidden = true;
   $('match-tab').classList.remove('active');
   $('workshop-view').hidden = false;
   $('practice-view').hidden = true;
+  $('multiplayer-view').hidden = true;
   $('workshop-tab').classList.add('active');
   $('practice-tab').classList.remove('active');
+  $('multiplayer-tab').classList.remove('active');
+}
+function showMultiplayer() {
+  document.body.classList.remove('in-match');
+  $('match-view').hidden = true;
+  $('workshop-view').hidden = true;
+  $('practice-view').hidden = true;
+  $('multiplayer-view').hidden = false;
+  $('workshop-tab').classList.remove('active');
+  $('match-tab').classList.remove('active');
+  $('practice-tab').classList.remove('active');
+  $('multiplayer-tab').classList.add('active');
+  startMultiplayerRefresh();
+}
+function renderMultiplayer(result) {
+  if (!result) return;
+  multiplayerState = result;
+  const addresses = result.addresses?.length ? `<div class="multiplayer-block"><strong>Share address</strong>${result.addresses.map(address => `<button class="text-button" data-copy-address="${esc(address.url)}">${esc(address.label)} · ${esc(address.url)}${address.preferred ? ' · preferred' : ''}</button>`).join('')}</div>` : '';
+  const slots = result.slots?.length ? `<div class="multiplayer-block"><strong>Seats</strong><ol>${result.slots.map(slot => `<li class="${slot.local ? 'local' : ''}"><span>${esc(slot.type)}</span><b>${esc(slot.name || 'Open seat')}${slot.local ? ' · you' : ''}</b><small>${slot.ready ? 'Ready' : 'Not ready'}${slot.deck ? ` · ${esc(slot.deck)}` : ''}</small></li>`).join('')}</ol></div>` : '';
+  const messages = result.messages?.length ? `<div class="multiplayer-block"><strong>Messages</strong>${result.messages.slice(-6).map(message => `<p><span>${esc(message.timestamp || '')}</span> ${esc(message.source || 'Server')}: ${esc(message.message || '')}</p>`).join('')}</div>` : '';
+  $('multiplayer-status').innerHTML = `<b>${esc(result.status || 'Not connected.')}</b>${result.error ? `<span class="warning">${esc(result.error)}</span>` : ''}${addresses}${slots}${messages}`;
+  const localSlot = result.slots?.find(slot => slot.local);
+  $('multiplayer-ready').textContent = localSlot?.ready ? 'Not ready' : 'Ready';
+  $('multiplayer-ready').setAttribute('aria-pressed', String(Boolean(localSlot?.ready)));
+  $('multiplayer-ready').disabled = !localSlot;
+  $('multiplayer-start').hidden = !result.hosting;
+}
+async function refreshMultiplayer() {
+  try { renderMultiplayer(await api.request('multiplayerState')); } catch { /* the engine may still be loading */ }
+}
+async function hostMultiplayer() {
+  $('multiplayer-status').textContent = 'Starting server...';
+  renderMultiplayer(await api.request('multiplayerHost'));
+}
+async function joinMultiplayer() {
+  const address = $('multiplayer-address').value.trim();
+  if (!address) { $('multiplayer-status').textContent = 'Enter a host address first.'; return; }
+  $('multiplayer-status').textContent = `Connecting to ${address}...`;
+  renderMultiplayer(await api.request('multiplayerJoin', { address }));
+}
+async function selectMultiplayerDeck() {
+  const deckId = $('multiplayer-deck').value;
+  if (!deckId) { $('multiplayer-status').textContent = 'Choose a saved deck first.'; return; }
+  renderMultiplayer(await api.request('multiplayerSelectDeck', { deckId }));
+}
+async function readyMultiplayer() {
+  const localSlot = multiplayerState?.slots?.find(slot => slot.local);
+  renderMultiplayer(await api.request('multiplayerReady', { ready: !localSlot?.ready }));
+}
+async function startMultiplayerGame() {
+  renderMultiplayer(await api.request('multiplayerStart'));
 }
 async function practice(action = 'shuffle', index = -1) {
+  stopMultiplayerRefresh();
   await mutationQueue;
   const result = await api.request('practice', { action, index });
   document.body.classList.remove('in-match');
@@ -207,8 +288,10 @@ async function practice(action = 'shuffle', index = -1) {
   $('match-tab').classList.remove('active');
   $('workshop-view').hidden = true;
   $('practice-view').hidden = false;
+  $('multiplayer-view').hidden = true;
   $('practice-tab').classList.add('active');
   $('workshop-tab').classList.remove('active');
+  $('multiplayer-tab').classList.remove('active');
   $('practice-name').textContent = state.deck.name;
   $('practice-hand').innerHTML = result.hand.map((card, index) => `<div class="hand-card" tabindex="0" data-card="${esc(remember(card).id)}" aria-label="Inspect ${esc(card.name)}">${cardArt(card)}<button class="text-button" data-bottom="${index}">↓ Bottom</button></div>`).join('');
   $('practice-stats').textContent = `${result.remaining} in library · ${result.draws} drawn · ${result.mulligans} mulligan${result.mulligans === 1 ? '' : 's'}`;
@@ -317,7 +400,14 @@ $('copy-export').onclick = () => run(async () => { await api.copyDeck(); toast('
 $('save-text').onclick = () => run(async () => { if (await api.exportFile('text')) toast('Deck list exported.'); });
 $('save-forge').onclick = () => run(async () => { if (await api.exportFile('forge')) toast('Forge deck exported.'); });
 for (const id of ['practice-button', 'practice-tab']) $(id).onclick = () => run(() => practice());
-for (const id of ['workshop-tab', 'back-workshop']) $(id).onclick = showWorkshop;
+for (const id of ['workshop-tab', 'back-workshop', 'multiplayer-back']) $(id).onclick = showWorkshop;
+$('multiplayer-tab').onclick = () => { showMultiplayer(); run(async () => { await refreshMultiplayerDecks(); await refreshMultiplayer(); }); };
+$('multiplayer-host').onclick = () => run(hostMultiplayer);
+$('multiplayer-join').onclick = () => run(joinMultiplayer);
+$('multiplayer-select-deck').onclick = () => run(selectMultiplayerDeck);
+$('multiplayer-ready').onclick = () => run(readyMultiplayer);
+$('multiplayer-start').onclick = () => run(startMultiplayerGame);
+$('multiplayer-status').onclick = event => { const button = event.target.closest('[data-copy-address]'); if (button) navigator.clipboard?.writeText(button.dataset.copyAddress); };
 $('shuffle-hand').onclick = () => run(() => practice('shuffle'));
 $('mulligan').onclick = () => run(() => practice('mulligan'));
 $('draw-card').onclick = () => run(() => practice('draw'));

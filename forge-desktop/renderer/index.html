@@ -40,7 +40,7 @@
 <body>
   <header class="topbar">
     <div class="brand"><span class="brand-mark">M</span><span>MANA<span class="brand-sub">TABLE</span></span></div>
-    <nav class="topnav" aria-label="Workspace"><button id="workshop-tab" class="active">Deck workshop</button><button id="match-tab">Play <span class="nav-dot"></span></button><button id="practice-tab">Opening hands</button></nav>
+    <nav class="topnav" aria-label="Workspace"><button id="workshop-tab" class="active">Deck workshop</button><button id="match-tab">Play <span class="nav-dot"></span></button><button id="practice-tab">Opening hands</button><button id="multiplayer-tab">Multiplayer</button></nav>
     <div class="top-meta"><span class="beta">BETA 30</span><span id="engine-indicator" class="engine-indicator">Connecting</span></div>
   </header>
   <div class="app-layout">
@@ -85,6 +85,22 @@
       <section id="practice-view" hidden>
         <div class="page-heading"><div><div class="eyebrow">A FEEL FOR YOUR NEXT GAME</div><h1>The opening hand<span>.</span></h1><p>Shuffle, draw, and get to know your deck.</p></div><button id="back-workshop" class="button secondary">← Back to workshop</button></div>
         <div class="practice-surface"><div class="table-heading"><div><span class="eyebrow">PRACTICE TABLE</span><h2 id="practice-name"></h2></div><span class="practice-badge">Opening-hand practice</span></div><div class="table-emblem">M</div><div id="practice-hand" class="practice-hand"></div><div class="practice-controls"><div><button id="shuffle-hand" class="button primary">↻ New hand</button><button id="mulligan" class="button secondary">Mulligan</button><button id="draw-card" class="button secondary">Draw a card</button></div><span id="practice-stats"></span></div><p class="practice-note">Use “Bottom” to put cards back after a mulligan. For a complete game against an AI opponent, choose Play.</p></div>
+      </section>
+      <section id="multiplayer-view" hidden>
+        <div class="page-heading"><div><div class="eyebrow">CONNECT A TABLE</div><h1>Multiplayer<span>.</span></h1><p>Quick test surface for Forge network lobby work.</p></div><button id="multiplayer-back" class="button secondary">← Back to workshop</button></div>
+        <div class="multiplayer-surface panel">
+          <section class="multiplayer-card">
+            <div class="eyebrow">LOBBY</div>
+            <h2>Host or join a game.</h2>
+            <p>This screen is a temporary place to wire Forge multiplayer into Mana Table.</p>
+            <div class="multiplayer-actions"><button id="multiplayer-host" class="button primary" type="button">Host lobby</button><label>Join address<input id="multiplayer-address" placeholder="127.0.0.1:36743" autocomplete="off"></label><button id="multiplayer-join" class="button secondary" type="button">Join lobby</button></div>
+            <div class="multiplayer-actions multiplayer-loadout"><label>Deck<select id="multiplayer-deck"></select></label><button id="multiplayer-select-deck" class="button secondary" type="button">Set deck</button><button id="multiplayer-ready" class="button secondary" type="button" aria-pressed="false">Ready</button><button id="multiplayer-start" class="button primary" type="button">Start game</button></div>
+          </section>
+          <section class="multiplayer-status">
+            <div class="eyebrow">STATUS</div>
+            <p id="multiplayer-status">Not connected.</p>
+          </section>
+        </div>
       </section>
       <section id="match-view" hidden>
         <div class="match-heading"><div><span class="eyebrow">MANA TABLE · SINGLE GAME</span><h1 id="match-title">Your seat at the table.</h1></div><div class="match-heading-actions"><span id="match-turn"></span><button id="match-motion" class="text-button" aria-pressed="true">Animations on</button><button id="match-concede" class="text-button">Concede</button><button id="match-back" class="button secondary">Deck workshop ↗</button></div></div>

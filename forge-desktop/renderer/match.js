@@ -40,6 +40,7 @@
   cardPreview.bind(libraryPicker, '[data-library-preview]', element => libraryGroups[Number(element.dataset.libraryPreview)]?.card);
 
   function show() {
+    window.stopMultiplayerRefresh?.();
     if ($('match-view').hidden) {
       clearTimeout(toastTimer);
       $('toast').hidden = true;
@@ -47,9 +48,11 @@
     document.body.classList.add('in-match');
     $('workshop-view').hidden = true;
     $('practice-view').hidden = true;
+    $('multiplayer-view').hidden = true;
     $('match-view').hidden = false;
     $('workshop-tab').classList.remove('active');
     $('practice-tab').classList.remove('active');
+    $('multiplayer-tab').classList.remove('active');
     $('match-tab').classList.add('active');
     responseSkip.render(match);
   }
