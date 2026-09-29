@@ -321,6 +321,14 @@ public class RemoteClientGuiGame extends NetworkGuiGame implements IHasForgeLog 
     }
 
     @Override
+    public void setInputState(final PlayerView owner, final String inputType, final long sequence, final boolean active) {
+        // InputPassPriority eligibility depends on the host's freshly computed
+        // HasAvailableActions value. Flush that trackable delta before the prompt
+        // so remote Auto cannot act on an older availability scan.
+        syncAndSend(ProtocolMethod.setInputState, owner, inputType, sequence, active);
+    }
+
+    @Override
     public void applyYieldUpdate(final YieldUpdate update) {
         send(ProtocolMethod.applyYieldUpdate, update);
     }

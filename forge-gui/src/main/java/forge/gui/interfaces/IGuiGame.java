@@ -302,6 +302,9 @@ public interface IGuiGame {
 
     void setCurrentPlayer(PlayerView player);
 
+    /** Announces the authoritative input before its message, buttons, and selectables are rendered. */
+    default void setInputState(PlayerView owner, String inputType, long sequence, boolean active) { }
+
     boolean isUiSetToSkipPhase(PlayerView playerTurn, PhaseType phase);
 
     /** Repaint marker chevron / stack-yield UI for the given player. */

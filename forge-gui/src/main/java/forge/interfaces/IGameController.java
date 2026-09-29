@@ -29,6 +29,8 @@ public interface IGameController {
 
     void selectButtonOk();
 
+    void passPriority();
+
     void selectButtonCancel();
 
     void selectPlayer(PlayerView playerView, ITriggerEvent triggerEvent);

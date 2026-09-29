@@ -52,6 +52,25 @@ class EngineClient extends EventEmitter {
       });
     });
   }
-  close() { this.child.stdin.end(); setTimeout(() => this.child.kill(), 1500).unref(); }
+  close() {
+    if (!this.child || this.child.exitCode !== null) return Promise.resolve();
+    return new Promise(resolve => {
+      let settled = false;
+      let forceKill;
+      const finish = () => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(forceKill);
+        resolve();
+      };
+      this.child.once('exit', finish);
+      this.child.stdin.end();
+      forceKill = setTimeout(() => {
+        if (this.child.exitCode === null) this.child.kill();
+        setTimeout(finish, 500).unref();
+      }, 1500);
+      forceKill.unref();
+    });
+  }
 }
 module.exports = { EngineClient };

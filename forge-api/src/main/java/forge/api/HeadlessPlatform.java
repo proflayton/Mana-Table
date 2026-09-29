@@ -2,6 +2,7 @@ package forge.api;
 
 import forge.StaticData;
 import forge.ai.AiProfileUtil;
+import forge.gamemodes.match.HostedMatch;
 import forge.gui.GuiBase;
 import forge.gui.interfaces.IGuiBase;
 import forge.localinstance.properties.ForgePreferences.FPref;
@@ -21,7 +22,7 @@ final class HeadlessPlatform {
         return thread;
     });
     private static volatile Thread uiThread;
-    private static volatile MatchSession active;
+    private static volatile ManaTableSession active;
     private static boolean initialized;
 
     static synchronized void initialize(Path resources, Path profile) {
@@ -45,14 +46,15 @@ final class HeadlessPlatform {
                 case "invokeInEdtNow", "invokeInEdtAndWait" -> { andWait((Runnable) args[0]); yield null; }
                 case "runBackgroundTask" -> { CompletableFuture.runAsync((Runnable) args[1]); yield null; }
                 case "getNewGuiGame" -> active == null ? null : active.gui();
-                case "showBugReportDialog" -> { if (active != null) active.fail(String.valueOf(args[1])); yield null; }
+                case "hostMatch" -> new HostedMatch();
+                case "showBugReportDialog" -> { if (active != null) active.fail(new IllegalStateException(String.valueOf(args[1]))); yield null; }
                 case "showOptionDialog", "showInputDialog", "getChoices", "order", "chooseCard" -> {
                     if (active == null) throw new IllegalStateException("No active match");
                     yield active.platformDialog(method.getName(), args);
                 }
                 case "getSkinIcon", "getUnskinnedIcon", "getCardArt", "createLayeredImage", "getImageFetcher",
                      "createAudioClip", "createAudioMusic", "getUpnpPlatformService" -> null;
-                case "clearImageCache", "preventSystemSleep", "copyToClipboard", "startAltSoundSystem" -> null;
+                case "showImageDialog", "clearImageCache", "preventSystemSleep", "copyToClipboard", "startAltSoundSystem" -> null;
                 case "toString" -> "Mana Table platform";
                 case "hashCode" -> System.identityHashCode(proxy);
                 case "equals" -> proxy == args[0];
@@ -76,14 +78,14 @@ final class HeadlessPlatform {
         initialized = true;
     }
 
-    static void activate(MatchSession session) { active = session; }
+    static void activate(ManaTableSession session) { active = session; }
 
     static void later(Runnable task) {
-        MatchSession owner = active;
+        ManaTableSession owner = active;
         UI.execute(() -> run(task, owner));
     }
 
-    private static void run(Runnable task, MatchSession owner) {
+    private static void run(Runnable task, ManaTableSession owner) {
         uiThread = Thread.currentThread();
         try {
             task.run();
@@ -96,7 +98,7 @@ final class HeadlessPlatform {
 
     private static void andWait(Runnable task) throws Exception {
         if (Thread.currentThread() == uiThread) { task.run(); return; }
-        MatchSession owner = active;
+        ManaTableSession owner = active;
         UI.submit(() -> run(task, owner)).get();
     }
 }

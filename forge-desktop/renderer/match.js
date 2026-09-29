@@ -16,6 +16,7 @@
   let pointerChoice;
   let pollTimer;
   let refreshRequested = false;
+  let lobbyReturnTimer;
   let boardSignature;
   const handFaces = new WeakMap();
   let libraryMode = 'eligible';
@@ -264,6 +265,13 @@
     castView.render(next, before);
     revealView.render(next);
     tableScene.render(next);
+    if (next.format === 'Multiplayer' && next.status === 'finished' && !lobbyReturnTimer) {
+      clearTimeout(pollTimer);
+      lobbyReturnTimer = setTimeout(() => {
+        lobbyReturnTimer = null;
+        window.returnToMultiplayerLobby?.();
+      }, 1200);
+    }
     if (!document.querySelector('.scene-active') && next.playerCount > 2 && previous?.activePlayerId !== next.activePlayerId) focusPlayer(next.activePlayerId);
     const busy = !next.prompt && !['finished', 'error'].includes(next.status);
     $('match-view').dataset.playerInput = String(Boolean(next.prompt?.playerChoices?.length || next.prompt?.inputType?.includes('Target') || next.prompt?.inputType === 'InputAttack'));
@@ -326,7 +334,8 @@
     $('match-prompt').dataset.promptId = prompt?.id || '';
     if (!prompt) {
       const terminal = ['finished', 'error'].includes(match?.status);
-      setPrompt(terminal ? `<div class="eyebrow">${match.status === 'error' ? 'MATCH INTERRUPTED' : 'GAME COMPLETE'}</div><h2>${esc(match.result || 'This game stopped.')}</h2><p>${esc(match.error || 'Your deck is saved. Take another seat whenever you’re ready.')}</p><button id="match-again" class="button primary">New game →</button>` : `<div class="eyebrow">${esc(status.owner.toUpperCase())}</div><h2>${esc(status.phase)} in progress…</h2><p>No action needed right now. Any choices will appear here.</p>${context}<div class="match-thinking"><span></span></div>`);
+      const multiplayerFinished = terminal && match.format === 'Multiplayer' && match.status === 'finished';
+      setPrompt(terminal ? `<div class="eyebrow">${match.status === 'error' ? 'MATCH INTERRUPTED' : 'GAME COMPLETE'}</div><h2>${esc(match.result || 'This game stopped.')}</h2><p>${esc(multiplayerFinished ? 'Returning everyone to the lobby…' : match.error || 'Your deck is saved. Take another seat whenever you’re ready.')}</p>${multiplayerFinished ? '' : '<button id="match-again" class="button primary">New game →</button>'}` : `<div class="eyebrow">${esc(status.owner.toUpperCase())}</div><h2>${esc(status.phase)} in progress…</h2><p>No action needed right now. Any choices will appear here.</p>${context}<div class="match-thinking"><span></span></div>`);
       if ($('match-again')) $('match-again').onclick = () => run(setup);
       return;
     }
@@ -590,6 +599,11 @@
       schedulePoll(delay);
     }
   }
+  window.openMatchState = next => {
+    render(next);
+    show();
+    schedulePoll(0);
+  };
   let restored = false;
   function restoreMatch(status) {
     if (status.state !== 'ready' || restored) return;

@@ -25,7 +25,7 @@ import java.util.Map;
 import java.util.UUID;
 
 /** Local desktop protocol over private child-process pipes. No network listener. */
-public final class DesktopEngine {
+public final class DesktopEngine implements AutoCloseable {
     private static final Gson JSON = new GsonBuilder().serializeNulls().create();
     private final CardCatalog catalog;
     private final Path directory;
@@ -56,7 +56,7 @@ public final class DesktopEngine {
         var engine = new DesktopEngine(CardCatalog.fromDatabases(data.getAvailableDatabases().values()), Path.of(args[1]));
         engine.resources = Path.of(args[0]);
         protocol.println(JSON.toJson(Map.of("event", "ready", "printings", engine.catalog.size())));
-        try (var input = new BufferedReader(new InputStreamReader(System.in, StandardCharsets.UTF_8))) {
+        try (engine; var input = new BufferedReader(new InputStreamReader(System.in, StandardCharsets.UTF_8))) {
             String line;
             while ((line = input.readLine()) != null) {
                 JsonObject request = null;
@@ -75,6 +75,13 @@ public final class DesktopEngine {
                     protocol.println(JSON.toJson(reply));
                 }
             }
+        }
+    }
+
+    @Override
+    public void close() {
+        if (multiplayer != null) {
+            multiplayer.close();
         }
     }
 
@@ -143,12 +150,17 @@ public final class DesktopEngine {
             }
             case "export" -> export(string(p, "kind", "text"));
             case "practice" -> practice(string(p, "action", "shuffle"), number(p, "index", -1));
-            case "multiplayerHost" -> multiplayer().host();
+            case "multiplayerHost" -> multiplayer().host(string(p, "format", "Constructed"), number(p, "playerCount", 2));
             case "multiplayerJoin" -> multiplayer().join(string(p, "address", ""));
-            case "multiplayerSelectDeck" -> multiplayer().selectDeck(loadStoredDeck(string(p, "deckId", "")).editor().toDeck());
+            case "multiplayerConfigure" -> multiplayer().configure(string(p, "format", "Constructed"), number(p, "playerCount", 2));
+            case "multiplayerSelectDeck" -> {
+                var loaded = loadStoredDeck(string(p, "deckId", ""));
+                yield multiplayer().selectDeck(loaded.editor().toDeck(), checkedFormat(loaded.format()));
+            }
             case "multiplayerReady" -> multiplayer().ready(p.has("ready") && p.get("ready").getAsBoolean());
             case "multiplayerStart" -> multiplayer().start();
             case "multiplayerState" -> multiplayer().state();
+            case "multiplayerReturn" -> multiplayer().returnToLobby();
             case "multiplayerClose" -> multiplayer().close();
             case "matchOpponents" -> MatchSession.opponents(format);
             case "matchSetup" -> {
@@ -182,9 +194,26 @@ public final class DesktopEngine {
                 match = new MatchSession(prepared.deck(), format, opponents, resources, directory.getParent());
                 yield match.state();
             }
-            case "matchState" -> match == null ? null : match.state();
-            case "matchAction" -> { if (match == null) throw new IllegalStateException("No active match"); yield match.action(p); }
-            case "matchConcede" -> { if (match == null) throw new IllegalStateException("No active match"); yield match.concede(p); }
+            case "matchState" -> {
+                if (multiplayer != null && multiplayer.hasMatch()) {
+                    yield multiplayer.match().state();
+                }
+                yield match == null ? null : match.state();
+            }
+            case "matchAction" -> {
+                if (multiplayer != null && multiplayer.hasMatch()) {
+                    yield multiplayer.match().action(p);
+                }
+                if (match == null) throw new IllegalStateException("No active match");
+                yield match.action(p);
+            }
+            case "matchConcede" -> {
+                if (multiplayer != null && multiplayer.hasMatch()) {
+                    yield multiplayer.match().concede(p);
+                }
+                if (match == null) throw new IllegalStateException("No active match");
+                yield match.concede(p);
+            }
             default -> throw new IllegalArgumentException("Unknown engine command");
         };
     }

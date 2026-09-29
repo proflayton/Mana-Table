@@ -32,7 +32,7 @@ import java.util.*;
 import java.util.concurrent.*;
 
 /** One local human with one or more AI opponents. Mutable engine objects never leave this adapter. */
-public final class MatchSession {
+public final class MatchSession implements ManaTableSession {
     private static final forge.util.ITriggerEvent CARD_CLICK = new forge.util.ITriggerEvent() {
         public int getButton() { return 1; }
         public int getX() { return 0; }
@@ -128,7 +128,8 @@ public final class MatchSession {
         });
     }
 
-    IGuiGame gui() { return gui; }
+    @Override
+    public IGuiGame gui() { return gui; }
     public Map<String, Object> state() {
         synchronized (gate) {
             // During AI work, publish only event-time copies. Never read a live board from IPC.
@@ -196,7 +197,8 @@ public final class MatchSession {
     }
 
     /** Called only after an input-display runnable completes, while the game awaits that input. */
-    void publishInput() {
+    @Override
+    public void publishInput() {
         synchronized (gate) {
             if (closed || error != null || pending != null && !pending.kind.equals("input")) return;
             Input current = human.getInputQueue().getInput();
@@ -498,7 +500,8 @@ public final class MatchSession {
                 "artName", artName, "artFace", back ? "front" : "back"));
     }
 
-    void fail(Throwable failure) { failure.printStackTrace(System.err); fail(failure.getMessage() == null ? failure.getClass().getSimpleName() : failure.getMessage()); }
+    @Override
+    public void fail(Throwable failure) { failure.printStackTrace(System.err); fail(failure.getMessage() == null ? failure.getClass().getSimpleName() : failure.getMessage()); }
     void fail(String failure) {
         synchronized (gate) {
             if (closed) return;
@@ -584,7 +587,8 @@ public final class MatchSession {
         };
     }
 
-    Object platformDialog(String name, Object[] a) {
+    @Override
+    public Object platformDialog(String name, Object[] a) {
         if (name.equals("getChoices")) return choose((String)a[0], (int)a[1], (int)a[2], new ArrayList<>((Collection<?>)a[3]), false, (FSerializableFunction<Object, String>)a[5]);
         if (name.equals("chooseCard")) return first(choose(a[0] + "\n" + a[1], 1, 1, (List<?>)a[2], false, null));
         if (name.equals("order")) {

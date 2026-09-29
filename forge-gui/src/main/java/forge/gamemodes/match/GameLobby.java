@@ -66,6 +66,7 @@ public abstract class GameLobby implements IHasGameType {
     }
     public void setData(final GameLobbyData data) {
         this.data = data;
+        currentGameType = data.getGameType();
         updateView(true);
     }
 
@@ -74,6 +75,7 @@ public abstract class GameLobby implements IHasGameType {
     }
     public void setGameType(final GameType type) {
         currentGameType = type;
+        data.setGameType(type);
     }
 
     public boolean hasAnyVariant() {
@@ -314,15 +316,15 @@ public abstract class GameLobby implements IHasGameType {
 
         if (variant == currentGameType) {
             if (hasVariant(GameType.Commander)) {
-                currentGameType = GameType.Commander;
+                setGameType(GameType.Commander);
             } else if (hasVariant(GameType.Oathbreaker)) {
-                currentGameType = GameType.Oathbreaker;
+                setGameType(GameType.Oathbreaker);
             } else if (hasVariant(GameType.TinyLeaders)) {
-                currentGameType = GameType.TinyLeaders;
+                setGameType(GameType.TinyLeaders);
             } else if (hasVariant(GameType.Brawl)) {
-                currentGameType = GameType.Brawl;
+                setGameType(GameType.Brawl);
             } else {
-                currentGameType = GameType.Constructed;
+                setGameType(GameType.Constructed);
             }
         }
         updateView(true);
@@ -576,6 +578,7 @@ public abstract class GameLobby implements IHasGameType {
 
         private final Set<GameType> appliedVariants = EnumSet.noneOf(GameType.class);
         private final List<LobbySlot> slots = Lists.newArrayList();
+        private GameType gameType = GameType.Constructed;
         private NetworkEventView eventView;
         private boolean limitedMode;
         private String activeEventId;
@@ -583,6 +586,13 @@ public abstract class GameLobby implements IHasGameType {
         private int maximumCommanderBracket = 5; // mirrors DECKGEN_MAXIMUM_COMMANDER_BRACKET default (off)
 
         public GameLobbyData() {
+        }
+
+        public GameType getGameType() {
+            return gameType == null ? GameType.Constructed : gameType;
+        }
+        public void setGameType(final GameType type) {
+            gameType = type;
         }
 
         public NetworkEventView getEventView() {

@@ -2734,6 +2734,13 @@ public class PlayerControllerHuman extends PlayerController implements IGameCont
     }
 
     @Override
+    public void passPriority() {
+        if (inputQueue.getInput() instanceof InputPassPriority input) {
+            input.passPriority();
+        }
+    }
+
+    @Override
     public void selectButtonCancel() {
         if (macros().isReplaying()) {
             macros().cancelPlayback();

@@ -45,6 +45,7 @@ public class InputProxy implements Observer {
     /** The input. */
     private AtomicReference<Input> input = new AtomicReference<>();
     private final PlayerControllerHuman controller;
+    private long inputSequence;
 
 //    private static final boolean DEBUG_INPUT = true; // false;
 
@@ -60,7 +61,16 @@ public class InputProxy implements Observer {
                     FThreads.debugGetStackTraceItem(6, true), nextInput == null ? "null" : nextInput.getClass().getSimpleName(), 
                             game.getPhaseHandler().debugPrintState(), Singletons.getControl().getInputQueue().printInputStack());
 */
-        input.set(nextInput);
+        final Input previousInput = input.getAndSet(nextInput);
+        if (previousInput != nextInput) {
+            inputSequence++;
+        }
+        Class<?> inputClass = nextInput.getClass();
+        while (inputClass.getSimpleName().isEmpty()) {
+            inputClass = inputClass.getSuperclass();
+        }
+        controller.getGui().setInputState(nextInput.getOwner(), inputClass.getSimpleName(), inputSequence,
+                !(nextInput instanceof InputLockUI));
         if (!(nextInput instanceof InputLockUI)) {
             controller.getGui().setCurrentPlayer(nextInput.getOwner());
         }

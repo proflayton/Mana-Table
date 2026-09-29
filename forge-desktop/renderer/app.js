@@ -16,6 +16,9 @@ let toastTimer;
 let searchTimer;
 let multiplayerState;
 let multiplayerDecks = [];
+let multiplayerOpenedMatch = false;
+let multiplayerReturning = false;
+let multiplayerSettingsPending = false;
 const extraSections = { Avatar: 'Vanguard', Planes: 'Planes', Schemes: 'Schemes', Conspiracy: 'Conspiracies', Dungeon: 'Dungeons', Attractions: 'Attractions', Contraptions: 'Contraptions' };
 const cards = new Map();
 const art = new Map();
@@ -206,16 +209,47 @@ function startMultiplayerRefresh() {
     if (!$('multiplayer-view').hidden) run(refreshMultiplayer);
   }, 1500);
 }
+async function openMultiplayerMatch() {
+  if (multiplayerOpenedMatch || typeof window.openMatchState !== 'function') return;
+  const next = await api.request('matchState');
+  if (!next) return;
+  multiplayerOpenedMatch = true;
+  stopMultiplayerRefresh();
+  window.openMatchState(next);
+}
+async function waitForMultiplayerMatch() {
+  for (let attempt = 0; attempt < 20; attempt++) {
+    const result = await api.request('multiplayerState');
+    renderMultiplayer(result);
+    if (result.matchActive) {
+      await openMultiplayerMatch();
+      return;
+    }
+    if (result.error) return;
+    await new Promise(resolve => setTimeout(resolve, 500));
+  }
+}
 async function refreshMultiplayerDecks() {
   const result = await api.request('list');
   multiplayerDecks = result.decks;
-  $('multiplayer-deck').innerHTML = multiplayerDecks.length
-    ? multiplayerDecks.map(deck => `<option value="${esc(deck.id)}">${esc(deck.name)} · ${deck.count} main · ${esc(deck.format)}</option>`).join('')
-    : '<option value="">No saved decks</option>';
-  $('multiplayer-select-deck').disabled = multiplayerDecks.length === 0;
-  if (state?.id && multiplayerDecks.some(deck => deck.id === state.id)) {
+  renderMultiplayerDecks(multiplayerState?.format || $('multiplayer-format').value);
+}
+function renderMultiplayerDecks(format) {
+  const selected = $('multiplayer-deck').value;
+  const compatible = multiplayerDecks.filter(deck => deck.format === format);
+  $('multiplayer-deck').innerHTML = compatible.length
+    ? compatible.map(deck => `<option value="${esc(deck.id)}">${esc(deck.name)} · ${deck.count} main · ${esc(deck.format)}</option>`).join('')
+    : `<option value="">No saved ${format === 'Commander' ? 'Commander' : 'Standard'} decks</option>`;
+  $('multiplayer-select-deck').disabled = compatible.length === 0;
+  if (compatible.some(deck => deck.id === selected)) $('multiplayer-deck').value = selected;
+  else if (state?.id && compatible.some(deck => deck.id === state.id)) {
     $('multiplayer-deck').value = state.id;
   }
+}
+function updateMultiplayerSettings() {
+  const commander = $('multiplayer-format').value === 'Commander';
+  $('multiplayer-player-count-label').hidden = !commander;
+  renderMultiplayerDecks($('multiplayer-format').value);
 }
 function showWorkshop() {
   stopMultiplayerRefresh();
@@ -249,17 +283,73 @@ function renderMultiplayer(result) {
   const messages = result.messages?.length ? `<div class="multiplayer-block"><strong>Messages</strong>${result.messages.slice(-6).map(message => `<p><span>${esc(message.timestamp || '')}</span> ${esc(message.source || 'Server')}: ${esc(message.message || '')}</p>`).join('')}</div>` : '';
   $('multiplayer-status').innerHTML = `<b>${esc(result.status || 'Not connected.')}</b>${result.error ? `<span class="warning">${esc(result.error)}</span>` : ''}${addresses}${slots}${messages}`;
   const localSlot = result.slots?.find(slot => slot.local);
+  const hosting = Boolean(result.hosting);
+  const joined = !hosting && result.mode === 'joined';
+  const connected = hosting || joined;
   $('multiplayer-ready').textContent = localSlot?.ready ? 'Not ready' : 'Ready';
   $('multiplayer-ready').setAttribute('aria-pressed', String(Boolean(localSlot?.ready)));
   $('multiplayer-ready').disabled = !localSlot;
-  $('multiplayer-start').hidden = !result.hosting;
+  $('multiplayer-start').hidden = !hosting;
+  $('multiplayer-loadout').hidden = !connected;
+  $('multiplayer-leave').textContent = hosting ? 'Close lobby' : 'Leave lobby';
+  $('multiplayer-configure').hidden = !hosting;
+  $('multiplayer-settings').hidden = joined;
+  $('multiplayer-host').hidden = connected;
+  $('multiplayer-address-label').hidden = connected;
+  $('multiplayer-join').hidden = connected;
+  $('multiplayer-rules').hidden = !joined;
+  $('multiplayer-rules').textContent = `${result.format === 'Commander' ? 'Commander' : 'Standard'} · ${result.playerCount || 2} players`;
+  $('multiplayer-format').disabled = joined;
+  $('multiplayer-player-count').disabled = joined;
+  if (localSlot && !multiplayerSettingsPending) {
+    $('multiplayer-format').value = result.format || 'Constructed';
+    $('multiplayer-player-count').value = String(result.playerCount || 2);
+    updateMultiplayerSettings();
+  }
+  if (result.matchActive) run(openMultiplayerMatch);
+}
+async function returnToMultiplayerLobby() {
+  if (multiplayerReturning) return;
+  multiplayerReturning = true;
+  try {
+    const result = await api.request('multiplayerReturn');
+    multiplayerOpenedMatch = false;
+    showMultiplayer();
+    renderMultiplayer(result);
+  } finally {
+    multiplayerReturning = false;
+  }
+}
+window.returnToMultiplayerLobby = returnToMultiplayerLobby;
+async function leaveMultiplayer() {
+  const result = await api.request('multiplayerClose');
+  multiplayerOpenedMatch = false;
+  renderMultiplayer(result);
 }
 async function refreshMultiplayer() {
   try { renderMultiplayer(await api.request('multiplayerState')); } catch { /* the engine may still be loading */ }
 }
 async function hostMultiplayer() {
   $('multiplayer-status').textContent = 'Starting server...';
-  renderMultiplayer(await api.request('multiplayerHost'));
+  renderMultiplayer(await api.request('multiplayerHost', {
+    format: $('multiplayer-format').value,
+    playerCount: Number($('multiplayer-player-count').value)
+  }));
+}
+async function configureMultiplayer() {
+  multiplayerSettingsPending = true;
+  try {
+    renderMultiplayer(await api.request('multiplayerConfigure', {
+      format: $('multiplayer-format').value,
+      playerCount: Number($('multiplayer-player-count').value)
+    }));
+  } finally {
+    multiplayerSettingsPending = false;
+  }
+}
+function changeMultiplayerSettings() {
+  updateMultiplayerSettings();
+  if (multiplayerState?.hosting) run(configureMultiplayer);
 }
 async function joinMultiplayer() {
   const address = $('multiplayer-address').value.trim();
@@ -277,7 +367,10 @@ async function readyMultiplayer() {
   renderMultiplayer(await api.request('multiplayerReady', { ready: !localSlot?.ready }));
 }
 async function startMultiplayerGame() {
-  renderMultiplayer(await api.request('multiplayerStart'));
+  const result = await api.request('multiplayerStart');
+  renderMultiplayer(result);
+  if (result.matchActive) await openMultiplayerMatch();
+  else await waitForMultiplayerMatch();
 }
 async function practice(action = 'shuffle', index = -1) {
   stopMultiplayerRefresh();
@@ -404,9 +497,13 @@ for (const id of ['workshop-tab', 'back-workshop', 'multiplayer-back']) $(id).on
 $('multiplayer-tab').onclick = () => { showMultiplayer(); run(async () => { await refreshMultiplayerDecks(); await refreshMultiplayer(); }); };
 $('multiplayer-host').onclick = () => run(hostMultiplayer);
 $('multiplayer-join').onclick = () => run(joinMultiplayer);
+$('multiplayer-configure').onclick = () => run(configureMultiplayer);
+$('multiplayer-format').onchange = changeMultiplayerSettings;
+$('multiplayer-player-count').onchange = changeMultiplayerSettings;
 $('multiplayer-select-deck').onclick = () => run(selectMultiplayerDeck);
 $('multiplayer-ready').onclick = () => run(readyMultiplayer);
 $('multiplayer-start').onclick = () => run(startMultiplayerGame);
+$('multiplayer-leave').onclick = () => run(leaveMultiplayer);
 $('multiplayer-status').onclick = event => { const button = event.target.closest('[data-copy-address]'); if (button) navigator.clipboard?.writeText(button.dataset.copyAddress); };
 $('shuffle-hand').onclick = () => run(() => practice('shuffle'));
 $('mulligan').onclick = () => run(() => practice('mulligan'));

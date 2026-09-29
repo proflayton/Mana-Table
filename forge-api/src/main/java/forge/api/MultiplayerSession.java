@@ -4,12 +4,15 @@ import forge.gamemodes.match.GameLobby;
 import forge.gamemodes.match.LobbySlot;
 import forge.gamemodes.match.LobbySlotType;
 import forge.deck.Deck;
+import forge.deck.DeckFormat;
+import forge.game.GameType;
 import forge.gamemodes.net.ChatMessage;
 import forge.gamemodes.net.IOnlineChatInterface;
 import forge.gamemodes.net.IOnlineLobby;
 import forge.gamemodes.net.IRemote;
 import forge.gamemodes.net.NetConnectUtil;
 import forge.gamemodes.net.client.FGameClient;
+import forge.gamemodes.net.client.ClientGameLobby;
 import forge.gamemodes.net.event.UpdateLobbyPlayerEvent;
 import forge.gamemodes.net.server.FServerManager;
 import forge.gui.interfaces.ILobbyView;
@@ -19,6 +22,10 @@ import forge.localinstance.properties.ForgeNetPreferences;
 import forge.model.FModel;
 
 import java.nio.file.Path;
+import java.nio.file.Files;
+import java.io.IOException;
+import java.net.InetSocketAddress;
+import java.net.ServerSocket;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -32,6 +39,7 @@ final class MultiplayerSession {
     private final ChatAdapter chat = new ChatAdapter();
     private GameLobby lobby;
     private FGameClient client;
+    private NetworkMatchSession match;
     private String mode = "idle";
     private String status = "Not connected.";
     private String error;
@@ -43,16 +51,20 @@ final class MultiplayerSession {
         this.profile = profile;
     }
 
-    synchronized Object host() {
+    synchronized Object host(String format, int playerCount) {
         initializePlatform();
         closeExistingConnection();
         mode = "hosting";
         status = "Starting server...";
         error = null;
         try {
+            ForgeNetPreferences preferences = FModel.getNetPreferences();
+            preferences.setPref(ForgeNetPreferences.FNetPref.NET_PORT, String.valueOf(availablePort()));
+            preferences.save();
             ChatMessage result = NetConnectUtil.host(onlineLobby, chat);
             addMessage(result);
             status = result.getMessage();
+            applyConfiguration(format, playerCount);
         } catch (Exception ex) {
             mode = "error";
             error = ex.getMessage() == null ? ex.getClass().getSimpleName() : ex.getMessage();
@@ -65,6 +77,8 @@ final class MultiplayerSession {
     synchronized Object join(String address) {
         initializePlatform();
         closeExistingConnection();
+        match = new NetworkMatchSession();
+        HeadlessPlatform.activate(match);
         mode = "joining";
         status = "Connecting to " + address + "...";
         error = null;
@@ -85,8 +99,29 @@ final class MultiplayerSession {
         return state();
     }
 
-    synchronized Object selectDeck(Deck deck) {
+    synchronized Object configure(String format, int playerCount) {
         requireLobby();
+        if (!FServerManager.getInstance().isHosting()) {
+            throw new IllegalStateException("Only the host can change lobby settings.");
+        }
+        applyConfiguration(format, playerCount);
+        status = lobbyFormat() + " lobby configured for " + lobby.getNumberOfSlots() + " players.";
+        return state();
+    }
+
+    synchronized Object selectDeck(Deck deck, String deckFormat) {
+        requireLobby();
+        String required = lobbyFormat();
+        if (!required.equals(deckFormat)) {
+            throw new IllegalArgumentException(required.equals("Commander")
+                    ? "Choose a saved Commander deck for this lobby."
+                    : "Choose a saved Constructed deck for this lobby.");
+        }
+        String problem = (required.equals("Commander") ? DeckFormat.Commander : DeckFormat.Constructed)
+                .getDeckConformanceProblem(deck);
+        if (problem != null) {
+            throw new IllegalArgumentException(deck.getName() + " is not legal for " + required + ": " + problem);
+        }
         sendLocalUpdate(UpdateLobbyPlayerEvent.deckUpdate(deck));
         sendLocalUpdate(UpdateLobbyPlayerEvent.setDeckSchemePlaneVanguard(deck.getName(), null, null, null));
         status = "Selected " + deck.getName() + ".";
@@ -105,11 +140,18 @@ final class MultiplayerSession {
         if (!FServerManager.getInstance().isHosting()) {
             throw new IllegalStateException("Only the host can start the game.");
         }
+        for (int i = 0; i < lobby.getNumberOfSlots(); i++) {
+            if (lobby.getSlot(i).getType() == LobbySlotType.OPEN) {
+                throw new IllegalStateException("Waiting for all " + lobby.getNumberOfSlots() + " players to join.");
+            }
+        }
         LobbySlot unready = lobby.findFirstUnreadySlot();
         if (unready != null) {
             throw new IllegalStateException((unready.getName() == null ? "A player" : unready.getName()) + " is not ready.");
         }
         try {
+            match = new NetworkMatchSession();
+            HeadlessPlatform.activate(match);
             Runnable start = lobby.startGame();
             if (start == null) {
                 throw new IllegalStateException("Forge did not start the game. Check that every player chose a deck.");
@@ -119,7 +161,7 @@ final class MultiplayerSession {
             status = "Starting game...";
         } catch (Throwable ex) {
             mode = "error";
-            error = "Mana Table needs a network match adapter before hosted games can render.";
+            error = ex.getMessage() == null ? ex.getClass().getSimpleName() : ex.getMessage();
             status = error;
         }
         return state();
@@ -131,6 +173,10 @@ final class MultiplayerSession {
         result.put("status", status);
         result.put("error", error);
         result.put("hosting", initialized && FServerManager.getInstance().isHosting());
+        result.put("matchActive", match != null && match.opened());
+        result.put("format", lobbyFormat());
+        result.put("playerCount", lobby == null ? 2 : lobby.getNumberOfSlots());
+        result.put("maxPlayers", lobbyFormat().equals("Commander") ? 6 : 2);
         result.put("addresses", addresses());
         result.put("slots", slots());
         result.put("messages", List.copyOf(chat.messages));
@@ -139,7 +185,9 @@ final class MultiplayerSession {
 
     synchronized Object close() {
         closeExistingConnection();
+        HeadlessPlatform.activate(null);
         lobby = null;
+        match = null;
         mode = "idle";
         status = "Not connected.";
         error = null;
@@ -147,17 +195,67 @@ final class MultiplayerSession {
         return state();
     }
 
+    synchronized Object returnToLobby() {
+        requireLobby();
+        if (match == null || !match.finished()) {
+            throw new IllegalStateException("The network match is still active.");
+        }
+        boolean hosting = FServerManager.getInstance().isHosting();
+        match.resetForLobby();
+        if (hosting) {
+            for (int i = 0; i < lobby.getNumberOfSlots(); i++) {
+                LobbySlot slot = lobby.getSlot(i);
+                if (slot.getType() != LobbySlotType.OPEN) slot.setIsReady(false);
+            }
+            FServerManager.getInstance().updateLobbyState();
+            mode = "hosting";
+            status = "Game finished. Choose decks and ready up for another game.";
+        } else {
+            sendLocalUpdate(UpdateLobbyPlayerEvent.isReadyUpdate(false));
+            mode = "joined";
+            status = "Back in the lobby. Ready up when you want to play again.";
+        }
+        HeadlessPlatform.activate(null);
+        if (hosting) match = null;
+        error = null;
+        return state();
+    }
+
+    NetworkMatchSession match() {
+        return match;
+    }
+
+    boolean hasMatch() {
+        return match != null && match.opened();
+    }
+
     private void initializePlatform() {
+        try {
+            Files.createDirectories(profile.resolve("engine-profile").resolve("preferences"));
+        } catch (IOException ex) {
+            throw new IllegalStateException("Could not create Forge network preferences directory", ex);
+        }
         HeadlessPlatform.initialize(resources, profile);
         FModel.getNetPreferences().setPref(ForgeNetPreferences.FNetPref.UPnP, "NEVER");
         FModel.getNetPreferences().save();
         initialized = true;
     }
 
+    private static int availablePort() throws IOException {
+        try (ServerSocket socket = new ServerSocket()) {
+            socket.setReuseAddress(false);
+            socket.bind(new InetSocketAddress(0));
+            return socket.getLocalPort();
+        }
+    }
+
     private void closeExistingConnection() {
         if (client != null) {
             client.close();
             client = null;
+        }
+        if (!initialized) {
+            return;
         }
         FServerManager server = FServerManager.getInstance();
         if (server.isHosting()) {
@@ -181,6 +279,7 @@ final class MultiplayerSession {
         if (lobby == null) {
             return List.of();
         }
+        int currentLocalSlot = localSlot();
         List<Map<String, Object>> result = new ArrayList<>();
         for (int i = 0; i < lobby.getNumberOfSlots(); i++) {
             LobbySlot slot = lobby.getSlot(i);
@@ -189,7 +288,7 @@ final class MultiplayerSession {
             row.put("type", slot.getType().name());
             row.put("name", slot.getName());
             row.put("ready", slot.isReady());
-            row.put("local", i == localSlot);
+            row.put("local", i == currentLocalSlot);
             row.put("team", slot.getTeam());
             row.put("deck", slot.getDeckName() != null ? slot.getDeckName() : slot.getDeck() == null ? null : slot.getDeck().getName());
             result.add(row);
@@ -201,6 +300,46 @@ final class MultiplayerSession {
         if (lobby == null) {
             throw new IllegalStateException("Join or host a lobby first.");
         }
+    }
+
+    private void applyConfiguration(String format, int playerCount) {
+        requireLobby();
+        if (!List.of("Constructed", "Commander").contains(format)) {
+            throw new IllegalArgumentException("Multiplayer supports Standard and Commander.");
+        }
+        int target = format.equals("Commander") ? playerCount : 2;
+        if (target < 2 || target > 6) {
+            throw new IllegalArgumentException("Commander lobbies support 2 to 6 players.");
+        }
+        boolean formatChanged = !format.equals(lobbyFormat());
+        while (lobby.getNumberOfSlots() > target) {
+            int index = lobby.getNumberOfSlots() - 1;
+            if (lobby.getSlot(index).getType() != LobbySlotType.OPEN) {
+                throw new IllegalStateException("A connected player occupies a seat you are trying to remove.");
+            }
+            lobby.removeSlot(index);
+        }
+        while (lobby.getNumberOfSlots() < target) lobby.addSlot();
+        if (format.equals("Commander")) {
+            lobby.applyVariant(GameType.Commander);
+        } else {
+            lobby.removeVariant(GameType.Commander);
+            lobby.setGameType(GameType.Constructed);
+        }
+        for (int i = 0; i < lobby.getNumberOfSlots(); i++) {
+            LobbySlot slot = lobby.getSlot(i);
+            if (slot.getType() != LobbySlotType.OPEN) slot.setIsReady(false);
+            if (formatChanged) {
+                slot.setDeck(null);
+                slot.setDeckName(null);
+            }
+        }
+        FServerManager.getInstance().updateLobbyState();
+    }
+
+    private String lobbyFormat() {
+        return lobby != null && (lobby.getGameType() == GameType.Commander || lobby.hasVariant(GameType.Commander))
+                ? "Commander" : "Constructed";
     }
 
     private void sendLocalUpdate(UpdateLobbyPlayerEvent event) {
@@ -220,6 +359,10 @@ final class MultiplayerSession {
         }
         if (FServerManager.getInstance().isHosting()) {
             localSlot = 0;
+            return localSlot;
+        }
+        if (lobby instanceof ClientGameLobby clientLobby && clientLobby.getLocalPlayer() >= 0) {
+            localSlot = clientLobby.getLocalPlayer();
             return localSlot;
         }
         if (localSlot >= 0 && localSlot < lobby.getNumberOfSlots()) {

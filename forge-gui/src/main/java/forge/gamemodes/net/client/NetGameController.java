@@ -76,6 +76,11 @@ public class NetGameController implements IGameController {
     }
 
     @Override
+    public void passPriority() {
+        send(ProtocolMethod.passPriority);
+    }
+
+    @Override
     public void selectButtonCancel() {
         send(ProtocolMethod.selectButtonCancel);
     }

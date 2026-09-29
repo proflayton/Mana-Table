@@ -20,7 +20,7 @@ function createResponseSkip(anchor, { current, busy, visible, answer, preference
   });
   const hold = panel.querySelector('.response-hold');
   const status = panel.querySelector('[role="status"]');
-  let turn, timer, attempted, held = false;
+  let turn, timer, scheduled, attempted, held = false;
   const turnKey = state => state?.turn > 0 && !['finished', 'error'].includes(state.status)
     ? `${state.id}:${state.turn}:${state.activePlayerId}` : null;
   const stopped = state => Boolean(state && state.activePlayerId != null && state.activePlayerId === state.players?.find(player => player.human)?.id)
@@ -32,24 +32,26 @@ function createResponseSkip(anchor, { current, busy, visible, answer, preference
     return prefs.ready && prefs.responseMode === 'auto' && !held && !stopped(state)
       && state?.prompt?.inputType === 'InputPassPriority' && state.prompt.canAutoPass === true;
   }
-  function cancelPending() { clearTimeout(timer); timer = null; }
+  function cancelPending() { clearTimeout(timer); timer = null; scheduled = null; }
   function schedule(state) {
     const scope = { sessionId: state.id, promptId: state.prompt.id };
     const key = `${scope.sessionId}:${scope.promptId}`;
-    if (attempted === key) return;
+    if (attempted === key || timer && scheduled === key) return;
+    cancelPending();
+    scheduled = key;
     timer = setTimeout(function pass() {
       timer = null;
       const latest = current();
       if (!visible() || turnKey(latest) !== turn || latest?.id !== scope.sessionId
-        || latest?.prompt?.id !== scope.promptId || !allowed(latest)) return;
+        || latest?.prompt?.id !== scope.promptId || !allowed(latest)) { scheduled = null; return; }
       if (busy()) { timer = setTimeout(pass, 100); return; }
       attempted = key;
+      scheduled = null;
       answer({ action: 'passIfNoResponse' }, scope);
     // Let the last play settle on the table before leaving a main phase.
     }, ownEmptyMain(state) ? 1000 : 550);
   }
   function render(state) {
-    cancelPending();
     const nextTurn = turnKey(state);
     if (nextTurn !== turn) { held = false; attempted = null; }
     turn = nextTurn;
@@ -68,6 +70,7 @@ function createResponseSkip(anchor, { current, busy, visible, answer, preference
         : allowed(state) ? ownEmptyMain(state) ? 'No more plays available. Continuing…' : 'No response available. Continuing…'
           : state?.prompt ? 'Paused for your action.' : 'Auto · remembered';
     if (allowed(state) && visible()) schedule(state);
+    else cancelPending();
   }
   panel.querySelectorAll('[data-response-mode]').forEach(button => {
     button.onclick = () => { cancelPending(); preferences.set({ responseMode: button.dataset.responseMode }); };
