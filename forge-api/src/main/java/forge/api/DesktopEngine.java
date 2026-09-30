@@ -69,6 +69,9 @@ public final class DesktopEngine implements AutoCloseable {
                     reply.add("result", JSON.toJsonTree(result));
                     protocol.println(JSON.toJson(reply));
                 } catch (Exception error) {
+                    // Validation errors are returned to the caller; unexpected
+                    // request failures also need a stack trace in engine.log.
+                    if (!(error instanceof IllegalArgumentException)) error.printStackTrace(System.err);
                     var reply = new JsonObject();
                     if (request != null) { reply.add("id", request.get("id")); }
                     reply.addProperty("error", error.getMessage() == null ? error.getClass().getSimpleName() : error.getMessage());

@@ -15,6 +15,7 @@ import forge.game.player.IHasIcon;
 import forge.game.player.PlayerView;
 import forge.game.spellability.SpellAbilityView;
 import forge.game.zone.ZoneType;
+import forge.gamemodes.net.DeltaPacket;
 import forge.gamemodes.net.NetworkGuiGame;
 import forge.gui.control.PlaybackSpeed;
 import forge.gui.interfaces.IGuiGame;
@@ -352,8 +353,22 @@ final class NetworkMatchSession extends NetworkGuiGame implements ManaTableSessi
 
     @Override
     public void setGameView(GameView gameView) {
-        super.setGameView(gameView);
-        publish();
+        // Full-state synchronization clears and refills tracked collections.
+        // A renderer poll must never traverse those collections halfway through.
+        synchronized (gate) {
+            super.setGameView(gameView);
+            publish();
+        }
+    }
+
+    @Override
+    public void applyDelta(DeltaPacket packet) {
+        // Delta updates and full views share the snapshot lock. Controller
+        // dispatch still runs outside it so nested payment dialogs can answer.
+        synchronized (gate) {
+            super.applyDelta(packet);
+            publishInput();
+        }
     }
 
     @Override
