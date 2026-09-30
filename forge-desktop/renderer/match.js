@@ -18,6 +18,7 @@
   let refreshRequested = false;
   let lobbyReturnTimer;
   let boardSignature;
+  let promptSignature;
   const handFaces = new WeakMap();
   let libraryMode = 'eligible';
   let libraryGroups = [];
@@ -322,6 +323,13 @@
   function renderPrompt() {
     const prompt = match?.prompt;
     const status = matchFeedback.describe(match);
+    // Network snapshots advance revision on every poll. Preserve the controls
+    // (and keyboard focus/typed answers) until the actual decision changes.
+    const { human, active, ...promptStatus } = status;
+    const signature = JSON.stringify([match.id, match.status, match.error, match.result, match.format, prompt, promptStatus,
+      match.combat?.blockProblem]);
+    if (signature === promptSignature) return;
+    promptSignature = signature;
     const librarySearch = prompt?.context === 'librarySearch';
     libraryPicker.hidden = !librarySearch;
     if (!librarySearch && libraryPicker.dataset.promptId) {

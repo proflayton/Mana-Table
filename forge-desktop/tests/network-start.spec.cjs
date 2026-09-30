@@ -1,7 +1,7 @@
 const { test, expect } = require('@playwright/test');
 const { launchDesktop } = require('./support/desktop.cjs');
 
-test('two desktop clients ready their selected decks, start a Commander match, then reopen cleanly', async () => {
+test('two desktop clients ready their decks, mulligan into turn one, then reopen cleanly', async () => {
   const clients = [];
   try {
     for (const seat of ['host', 'guest']) {
@@ -48,6 +48,60 @@ test('two desktop clients ready their selected decks, start a Commander match, t
       await expect(page.locator('#match-view')).toBeVisible({ timeout: 30000 });
       await expect.poll(async () => (await page.evaluate(() => window.forge.request('matchState')))?.players?.length).toBe(2);
     }
+    let mulliganed = false, selectedBottomCard = false, started = false;
+    const previous = new Map();
+    const checkedStablePrompt = new Set();
+    const deadline = Date.now() + 30000;
+    while (Date.now() < deadline && !started) {
+      for (const page of [host, guest]) {
+        const state = await page.evaluate(() => window.forge.request('matchState'));
+        expect(state.status, state.error).not.toBe('error');
+        if (state.turn > 0) { started = true; break; }
+        const prompt = state.prompt;
+        if (!prompt || previous.get(page) === prompt.id
+          || await page.locator('#match-prompt').getAttribute('data-prompt-id') !== prompt.id) continue;
+        if (prompt.okEnabled && !checkedStablePrompt.has(page)) {
+          await expect(page.locator('#match-ok')).toBeEnabled();
+          await expect(page.locator('#match-ok')).toHaveText(prompt.ok);
+          await page.locator('#match-ok').focus();
+          const button = await page.locator('#match-ok').elementHandle();
+          // More than two multiplayer polls must leave the same control focused.
+          await page.waitForTimeout(800);
+          expect(await button.evaluate(element => ({ connected: element.isConnected,
+            focused: document.activeElement === element, label: element.textContent,
+            currentLabel: document.getElementById('match-ok')?.textContent }))).toEqual({
+            connected: true, focused: true, label: prompt.ok, currentLabel: prompt.ok });
+          await button.dispose();
+          checkedStablePrompt.add(page);
+        }
+        if (prompt.inputType === 'InputConfirmMulligan' && prompt.okEnabled && prompt.cancelEnabled) {
+          if (page === guest && !mulliganed) {
+            await page.locator('#match-cancel').click();
+            mulliganed = true;
+          } else await page.locator('#match-ok').click();
+        } else if (prompt.inputType === 'InputLondonMulligan' && prompt.cancelEnabled) {
+          const hand = state.players.find(player => player.id === state.viewerId).zones.find(zone => zone.name === 'Hand').cards;
+          expect(hand).toHaveLength(7);
+          await expect(page.locator('#match-hand .actionable')).toHaveCount(7);
+          await expect(page.locator('#match-ok')).toBeDisabled();
+          const card = page.locator(`#match-hand [data-match-card="${hand[0].key}"]`);
+          await card.focus();
+          await card.click();
+          await expect(card).toHaveClass(/chosen/);
+          await expect(page.locator('#match-ok')).toBeEnabled();
+          await page.locator('#match-ok').click();
+          selectedBottomCard = true;
+        } else if (prompt.kind === 'choice' && prompt.min === 1 && prompt.max === 1) {
+          await page.locator('[data-choice="0"]').click();
+        } else if (prompt.okEnabled) await page.locator('#match-ok').click();
+        else continue;
+        previous.set(page, prompt.id);
+      }
+      await host.waitForTimeout(75);
+    }
+    expect(mulliganed).toBe(true);
+    expect(selectedBottomCard).toBe(true);
+    expect(started, 'The table must advance after the remote player finishes their mulligan').toBe(true);
     const dataPath = clients[0].dataPath;
     for (const client of [...clients].reverse()) await client.application.close();
     clients.length = 0;

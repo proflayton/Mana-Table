@@ -205,7 +205,9 @@ final class NetworkMatchSession extends NetworkGuiGame implements ManaTableSessi
 
     Map<String, Object> state() {
         synchronized (gate) {
-            publish();
+            // The host controller can update buttons/messages synchronously, outside
+            // HeadlessPlatform's queued UI tasks. Refresh the input as well as the board.
+            publishInput();
             return latest;
         }
     }
@@ -289,6 +291,7 @@ final class NetworkMatchSession extends NetworkGuiGame implements ManaTableSessi
                     controller.selectCard(chosenCard, null, null);
                 }
             }
+            publishInput();
             return latest;
         }
     }

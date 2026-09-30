@@ -106,9 +106,13 @@ precedence when both variables are set. Neither mode uses the player's profile.
 For `npm run package:release`, read `dist/latest-release.json` and set
 `MANA_TEST_EXECUTABLE` to its `directory` plus `executable`; leave
 `MANA_TEST_PACKAGED` unset. The release workflow does this automatically.
+`network-mulligan.test.cjs` exercises host and guest mulligans at two- and
+three-player tables, including the free multiplayer redraw, repeated mulligans,
+bottom-card selection/undo, hidden opponent hands, and progression into turn one.
 `network-start.spec.cjs` uses two actual desktop clients to submit selected decks
-with Ready, verify start blockers, enter a Commander match, close both clients,
-and reopen the host's saved profile. Routine tests leave router forwarding off.
+with Ready, verify start blockers, keep prompt controls stable across polls,
+mulligan and choose a bottom card through real clicks, enter turn one, close both
+clients, and reopen the host's saved profile. Routine tests leave router forwarding off.
 Visual-review screenshots are captured in source runs; packaged tests skip those
 captures because the hidden-window compositor can stall, while retaining layout
 and interaction assertions.
