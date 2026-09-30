@@ -926,7 +926,7 @@ final class NetworkMatchSession extends NetworkGuiGame implements ManaTableSessi
                     Map<String, Object> topCard = null;
                     if (cards != null) {
                         for (CardView card : cards) {
-                            if (card.canBeShownTo(localViewer)) {
+                            if (isVisibleInZone(card, zone, localViewer)) {
                                 var state = cardState(card, localViewer, pending);
                                 visible.add(state);
                                 if (zone == ZoneType.Library && card.equals(cards.get(0))) topCard = state;
@@ -1036,6 +1036,13 @@ final class NetworkMatchSession extends NetworkGuiGame implements ManaTableSessi
         return map("attackingPlayerId", view.getPlayerTurn() == null ? null : view.getPlayerTurn().getId(),
                 "attackers", attacks, "defenders", List.copyOf(defenders.values()), "selectedDefender", selected,
                 "attackerCandidates", candidates, "attackOptions", options, "blockerCandidates", blockers, "blockProblem", problem);
+    }
+
+    static boolean isVisibleInZone(CardView card, ZoneType zone, PlayerView viewer) {
+        // Zone membership and the card's tracked zone can update separately.
+        // Do not render a now-public card in an old hidden-zone collection, or
+        // expose an incomplete view whose null zone would otherwise be public.
+        return card.getZone() == zone && card.canBeShownTo(viewer);
     }
 
     private Map<String, Object> combatTarget(CombatInputState.Target target, GameView view, PlayerView localViewer) {
