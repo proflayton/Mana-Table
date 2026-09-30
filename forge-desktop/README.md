@@ -104,6 +104,7 @@ Run these in `forge-desktop`:
 | `npm run test:encounters` | Reusable encounter regressions and UX handoff checks |
 | `npm run encounter -- --help` | Automated or guided human playtests with review artifacts |
 | `npm run package` | Build a new Windows x64 package with Java and card resources |
+| `npm run package:release` | Build a clean shareable Windows ZIP and SHA-256 checksum, without local player data |
 
 See [testing](../docs/Development/Mana-Table-Testing.md) for subsets, packaged
 tests, and failure artifacts; see [releases](../docs/Development/Mana-Table-Releases.md)

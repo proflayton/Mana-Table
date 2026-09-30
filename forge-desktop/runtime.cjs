@@ -21,6 +21,15 @@ function engineOptions({ project, userData, resourcesPath, env = process.env, pl
   };
 }
 
+function resolveUserData({ env = process.env, packaged, executable, appData, sourceDirectory }) {
+  if (env.MANA_USER_DATA_DIR || env.FORGE_USER_DATA) return env.MANA_USER_DATA_DIR || env.FORGE_USER_DATA;
+  if (!packaged) return path.join(sourceDirectory, '.data');
+  // Preserve older portable builds. Clean releases share a stable profile, so
+  // extracting a newer release to a different directory keeps decks/settings.
+  const portable = path.join(path.dirname(executable), 'UserData');
+  return fs.existsSync(portable) ? portable : path.join(appData, 'Mana Table');
+}
+
 // Java loads classes lazily. Maven can replace target/forge-engine.jar while a
 // development game is running, so each engine needs its own immutable copy.
 // Versioned packaged builds already have a separate JAR and do not need this.
@@ -33,4 +42,4 @@ function snapshotEngineJar(source) {
   return { jar, dispose };
 }
 
-module.exports = { resolveJava, engineOptions, snapshotEngineJar };
+module.exports = { resolveJava, engineOptions, snapshotEngineJar, resolveUserData };

@@ -1,8 +1,21 @@
-# Mana Table — beta 0.1.0-beta.31
+# Mana Table — beta 0.1.0-beta.32
 
 Double-click **Mana Table.exe**. Keep the executable with its accompanying
 folders. Java and the Forge card library are bundled; no separate installation
 or account is needed. The first launch scans the card library and can take a moment.
+
+Beta 32 improves **getting a multiplayer game started and sharing the app**:
+
+- Choose a deck and press **Ready**; the selected deck is submitted and checked
+  automatically. The host sees who still needs a deck or readiness, and whether
+  more players are needed for the chosen number of seats.
+- Windows release ZIPs include the app, Java, and the card library. Download and
+  extract the entire ZIP, then open **Mana Table.exe**. No Git, npm, or build is needed.
+- Clean release downloads keep decks and settings in **%APPDATA%\Mana Table**,
+  so replacing the application folder preserves them. Older portable builds
+  with an adjacent **UserData** folder continue using that folder.
+- Startup and engine-command errors are recorded in **desktop.log** beside your
+  saved profile, alongside **engine.log**, to help diagnose launch failures.
 
 Beta 31 adds **multiplayer tables and invites for friends**:
 

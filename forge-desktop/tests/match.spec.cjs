@@ -100,6 +100,11 @@ test('match table plays cards through engine prompts and resumes after deck brow
     await expect(page.locator('#match-motion')).toHaveText('Animations off');
     expect(await page.locator('#match-view').evaluate(element => element.getAnimations({ subtree: true }).length)).toBe(0);
     await expect(page.locator('#match-human .match-card')).not.toHaveCount(0);
+    // These bounds belong to the flat fallback. The 3D scene deliberately hides
+    // those DOM rows; its canvas/card bindings were checked above.
+    await page.locator('#match-renderer').click();
+    await expect(page.locator('#match-renderer')).toHaveText('2D table');
+    await expect(page.locator('.match-arena')).not.toHaveClass(/scene-active/);
     for (const size of [[1540, 980], [1120, 740], [1000, 740]]) {
       await application.evaluate(({ BrowserWindow }, size) => BrowserWindow.getAllWindows()[0].setSize(...size), size);
       const layout = await page.locator('#match-human').evaluate(element => {
@@ -123,6 +128,8 @@ test('match table plays cards through engine prompts and resumes after deck brow
     await page.locator('#match-human .match-zone summary').last().click();
     await expect(page.locator('.match-zone[open]')).toHaveCount(1);
     await page.locator('#match-human .match-zone summary').last().click();
+    await page.locator('#match-renderer').click();
+    await expect(page.locator('.match-arena')).toHaveClass(/scene-active/);
     if (!executable) await page.screenshot({ path: path.join(appPath, 'test-results/match-table.png'), fullPage: true });
     await page.locator('#match-back').click();
     await expect(page.locator('#deck-name')).toHaveValue('Feedback check');

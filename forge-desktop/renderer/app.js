@@ -197,6 +197,8 @@ function changeQuantity(card, delta, { byName = false } = {}) {
 }
 let multiplayerRefreshTimer;
 let multiplayerStatusMarkup = '';
+let multiplayerStarting = false;
+let multiplayerReadying = false;
 function stopMultiplayerRefresh() {
   if (multiplayerRefreshTimer) {
     clearInterval(multiplayerRefreshTimer);
@@ -302,8 +304,12 @@ function renderMultiplayer(result) {
   const connected = hosting || joined;
   $('multiplayer-ready').textContent = localSlot?.ready ? 'Not ready' : 'Ready';
   $('multiplayer-ready').setAttribute('aria-pressed', String(Boolean(localSlot?.ready)));
-  $('multiplayer-ready').disabled = !localSlot;
+  $('multiplayer-ready').disabled = !localSlot || multiplayerReadying;
   $('multiplayer-start').hidden = !hosting;
+  $('multiplayer-start').disabled = multiplayerStarting || result.canStart !== true;
+  $('multiplayer-start-help').hidden = !hosting;
+  $('multiplayer-start-help').textContent = multiplayerStarting ? 'Starting the game…'
+    : result.startProblem || 'Everyone is ready. Start when your table is ready to play.';
   $('multiplayer-loadout').hidden = !connected;
   $('multiplayer-leave').textContent = hosting ? 'Close lobby' : 'Leave lobby';
   $('multiplayer-configure').hidden = !hosting;
@@ -384,14 +390,29 @@ async function selectMultiplayerDeck() {
   renderMultiplayer(await api.request('multiplayerSelectDeck', { deckId }));
 }
 async function readyMultiplayer() {
+  if (multiplayerReadying) return;
   const localSlot = multiplayerState?.slots?.find(slot => slot.local);
-  renderMultiplayer(await api.request('multiplayerReady', { ready: !localSlot?.ready }));
+  multiplayerReadying = true;
+  renderMultiplayer(multiplayerState);
+  try {
+    if (!localSlot?.ready) {
+      const deckId = $('multiplayer-deck').value;
+      if (!deckId) throw new Error('Choose a saved deck before readying up.');
+      await api.request('multiplayerSelectDeck', { deckId });
+    }
+    renderMultiplayer(await api.request('multiplayerReady', { ready: !localSlot?.ready }));
+  } finally { multiplayerReadying = false; renderMultiplayer(multiplayerState); }
 }
 async function startMultiplayerGame() {
-  const result = await api.request('multiplayerStart');
-  renderMultiplayer(result);
-  if (result.matchActive) await openMultiplayerMatch();
-  else await waitForMultiplayerMatch();
+  if (multiplayerStarting) return;
+  multiplayerStarting = true;
+  renderMultiplayer(multiplayerState);
+  try {
+    const result = await api.request('multiplayerStart');
+    renderMultiplayer(result);
+    if (result.matchActive) await openMultiplayerMatch();
+    else await waitForMultiplayerMatch();
+  } finally { multiplayerStarting = false; renderMultiplayer(multiplayerState); }
 }
 async function practice(action = 'shuffle', index = -1) {
   stopMultiplayerRefresh();

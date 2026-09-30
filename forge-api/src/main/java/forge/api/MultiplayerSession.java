@@ -149,15 +149,9 @@ final class MultiplayerSession {
         if (!FServerManager.getInstance().isHosting()) {
             throw new IllegalStateException("Only the host can start the game.");
         }
-        for (int i = 0; i < lobby.getNumberOfSlots(); i++) {
-            if (lobby.getSlot(i).getType() == LobbySlotType.OPEN) {
-                throw new IllegalStateException("Waiting for all " + lobby.getNumberOfSlots() + " players to join.");
-            }
-        }
-        LobbySlot unready = lobby.findFirstUnreadySlot();
-        if (unready != null) {
-            throw new IllegalStateException((unready.getName() == null ? "A player" : unready.getName()) + " is not ready.");
-        }
+        String problem = startProblem();
+        if (problem != null) throw new IllegalStateException(problem);
+        error = null;
         try {
             match = new NetworkMatchSession();
             HeadlessPlatform.activate(match);
@@ -169,11 +163,29 @@ final class MultiplayerSession {
             mode = "starting";
             status = "Starting game...";
         } catch (Throwable ex) {
+            ex.printStackTrace(System.err);
             mode = "error";
             error = ex.getMessage() == null ? ex.getClass().getSimpleName() : ex.getMessage();
             status = error;
         }
         return state();
+    }
+
+    private String startProblem() {
+        if (lobby == null || !FServerManager.getInstance().isHosting()) return "Only the host can start the game.";
+        if (match != null && match.opened() && !match.finished()) return "A game is already running.";
+        int joined = 0;
+        for (int i = 0; i < lobby.getNumberOfSlots(); i++) {
+            if (lobby.getSlot(i).getType() != LobbySlotType.OPEN) joined++;
+        }
+        if (joined < lobby.getNumberOfSlots()) return "Waiting for players (" + joined + "/" + lobby.getNumberOfSlots()
+                + "). Invite more friends or change the number of seats.";
+        for (int i = 0; i < lobby.getNumberOfSlots(); i++) {
+            LobbySlot slot = lobby.getSlot(i);
+            if (slot.getDeck() == null) return (slot.getName() == null ? "A player" : slot.getName()) + " needs to choose a deck and ready up.";
+        }
+        LobbySlot unready = lobby.findFirstUnreadySlot();
+        return unready == null ? null : (unready.getName() == null ? "A player" : unready.getName()) + " is not ready.";
     }
 
     synchronized Object state() {
@@ -182,6 +194,9 @@ final class MultiplayerSession {
         result.put("status", status);
         result.put("error", error);
         result.put("hosting", initialized && FServerManager.getInstance().isHosting());
+        String startProblem = initialized ? startProblem() : "Host a table first.";
+        result.put("canStart", startProblem == null);
+        result.put("startProblem", startProblem);
         result.put("matchActive", match != null && match.opened());
         result.put("format", lobbyFormat());
         result.put("playerCount", lobby == null ? 2 : lobby.getNumberOfSlots());

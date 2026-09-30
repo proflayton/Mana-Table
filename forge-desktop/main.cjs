@@ -4,15 +4,21 @@ const fs = require('node:fs');
 const { pathToFileURL } = require('node:url');
 const { createHash } = require('node:crypto');
 const { EngineClient } = require('./engine-client.cjs');
-const { engineOptions } = require('./runtime.cjs');
-const { productName } = require('./package.json');
+const { engineOptions, resolveUserData } = require('./runtime.cjs');
+const { productName, version } = require('./package.json');
 const { commanderBrowse, publicDeckUrl } = require('./deck-sources.cjs');
 const { createPreferences } = require('./preferences.cjs');
 
 const project = path.resolve(__dirname, '..');
-const userData = process.env.MANA_USER_DATA_DIR || process.env.FORGE_USER_DATA || (app.isPackaged
-  ? path.join(path.dirname(process.execPath), 'UserData') : path.join(__dirname, '.data'));
+const userData = resolveUserData({ packaged: app.isPackaged, executable: process.execPath,
+  appData: app.getPath('appData'), sourceDirectory: __dirname });
 fs.mkdirSync(userData, { recursive: true });
+const desktopLog = path.join(userData, 'desktop.log');
+function diagnostic(message) {
+  try { fs.appendFileSync(desktopLog, `${new Date().toISOString()} ${message}\n`); } catch { /* Retain Electron's original error handling. */ }
+}
+diagnostic(`Starting ${productName} ${version}; packaged=${app.isPackaged}`);
+process.on('uncaughtExceptionMonitor', error => diagnostic(error.stack || String(error)));
 const preferences = createPreferences(userData);
 app.setPath('userData', userData);
 app.setName(productName);
@@ -102,6 +108,7 @@ app.whenReady().then(async () => {
   });
   window.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
   window.webContents.on('will-navigate', event => event.preventDefault());
+  window.webContents.on('render-process-gone', (_event, details) => diagnostic(`Renderer exited: ${JSON.stringify(details)}`));
   engine = new EngineClient(engineOptions({ project, userData,
     resourcesPath: app.isPackaged ? process.resourcesPath : undefined }));
   engine.on('status', status => { if (!window.isDestroyed()) window.webContents.send('engine-status', status); });
@@ -118,6 +125,7 @@ app.whenReady().then(async () => {
       if (shouldDebug) console.log(`[mana-table] <- ${method}: ${summarizeDebug(method, result)}`);
       return result;
     } catch (error) {
+      diagnostic(`Engine command ${method} failed: ${error.stack || error}`);
       if (shouldDebug) console.log(`[mana-table] !! ${method}: ${error.message}`);
       throw error;
     }
@@ -178,6 +186,10 @@ app.whenReady().then(async () => {
     return true;
   });
   await window.loadURL('workshop://app/index.html');
+}).catch(error => {
+  diagnostic(`Startup failed: ${error.stack || error}`);
+  dialog.showErrorBox('Mana Table could not start', `${error.message}\n\nDetails: ${desktopLog}`);
+  app.quit();
 });
 app.on('window-all-closed', () => app.quit());
 app.on('before-quit', event => {
