@@ -4,6 +4,7 @@ const { submitMatchAction } = require('./engine.cjs');
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 // Partner commanders make the encounter deterministic without injecting game state.
 const deck = 'Deck\n98 Forest\nCommander\n1 Anara, Wolvid Familiar\n1 Gilanra, Caller of Wirewood';
+const commanderCosts = new Map([['Anara, Wolvid Familiar', 4], ['Gilanra, Caller of Wirewood', 3]]);
 const card = (state, id) => state.players.flatMap(player => player.zones.flatMap(zone => zone.cards)).find(card => card.combatId === id || card.visualId === id);
 async function submit(client, state, answer) {
   try {
@@ -119,7 +120,12 @@ async function playCombat(clients, attackingSeat, interact = async ({ client, st
         if (!prompt.okEnabled) continue;
         const ownMain = state.activePlayerId === state.viewerId && state.phaseKey === 'MAIN1' && !state.stack.length;
         const land = ownMain && hand.find(card => card.type.includes('Land') && card.selectable);
-        const creature = ownMain && zone(state, 'Command').cards.find(card => card.type.includes('Creature') && card.selectable);
+        // Forge can let a selectable card enter payment even when it is not
+        // affordable. This all-Forest fixture must build enough mana first;
+        // neither partner has a tax before this encounter's first combat.
+        const mana = field.filter(card => card.name === 'Forest' && !card.tapped).length
+          + (state.players.find(player => player.id === state.viewerId).mana?.G || 0);
+        const creature = ownMain && zone(state, 'Command').cards.find(card => card.selectable && mana >= commanderCosts.get(card.name));
         answer = land || creature ? { action: 'card', key: (land || creature).key } : { action: 'ok' };
       } else if (prompt.kind === 'choice') answer = { choices: Array.from({ length: Math.max(prompt.min, Math.min(1, prompt.max)) }, (_, i) => i) };
       else if (prompt.kind === 'reveal') answer = { action: 'ack' };
