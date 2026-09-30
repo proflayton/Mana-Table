@@ -49,7 +49,7 @@ for (const playerCount of [2, 3]) test(`network mulligans let players select the
           assert.deepEqual(player.zones.find(zone => zone.name === 'Hand').cards, [], 'Other opening hands must stay private');
         }
         if (state.turn > 0) { started = true; break; }
-        if (!prompt) continue;
+        if (!prompt || prompt.id === seat.answered) continue;
         assert.equal(prompt.canAutoPass ?? false, false, 'Auto must never answer an opening-hand decision');
         let answer;
         if (prompt.inputType === 'InputConfirmMulligan' && prompt.okEnabled && prompt.cancelEnabled) {
@@ -62,15 +62,23 @@ for (const playerCount of [2, 3]) test(`network mulligans let players select the
           assert.ok(cards.every(card => card.selectable), `Seat ${i} cannot select cards to put on the bottom: ${JSON.stringify(prompt)}`);
           const card = cards[0];
           const scope = { sessionId: state.id, promptId: prompt.id };
-          await engine.request('matchAction', { ...scope, action: 'card', key: card.key });
-          await waitFor(async () => hand(await engine.request('matchState')).some(item => item.visualId === card.visualId && item.highlighted), 'Bottom-card selection was not highlighted');
+          async function selectBottomCard(card, highlighted) {
+            await engine.request('matchAction', { ...scope, action: 'card', key: card.key });
+            // An accepted action returns before controller dispatch finishes.
+            // Highlights may be published while that dispatch is still busy.
+            await waitFor(async () => {
+              const current = await engine.request('matchState');
+              return current.prompt?.id === scope.promptId
+                && hand(current).some(item => item.visualId === card.visualId && item.highlighted === highlighted);
+            }, `Bottom-card selection did not become ${highlighted ? 'selected' : 'unselected'} and ready`);
+          }
+          await selectBottomCard(card, true);
           // Selecting again must undo the choice; the player can change their mind.
-          await engine.request('matchAction', { ...scope, action: 'card', key: card.key });
-          await waitFor(async () => !hand(await engine.request('matchState')).some(item => item.highlighted), 'Bottom-card selection did not toggle off');
-          await engine.request('matchAction', { ...scope, action: 'card', key: card.key });
+          await selectBottomCard(card, false);
+          await selectBottomCard(card, true);
           const toReturn = seat.mulligans - (playerCount > 2 ? 1 : 0);
           for (const extra of cards.slice(1, toReturn)) {
-            await engine.request('matchAction', { ...scope, action: 'card', key: extra.key });
+            await selectBottomCard(extra, true);
           }
           await waitFor(async () => (await engine.request('matchState')).prompt?.okEnabled, 'Keep was not enabled after choosing a bottom card');
           seat.tucked = true;
@@ -80,6 +88,7 @@ for (const playerCount of [2, 3]) test(`network mulligans let players select the
         else if (prompt.okEnabled) answer = { action: 'ok' };
         if (!answer) continue;
         await engine.request('matchAction', { sessionId: state.id, promptId: prompt.id, ...answer });
+        seat.answered = prompt.id;
         await waitFor(async () => (await engine.request('matchState')).prompt?.id !== prompt.id, 'Opening-hand input did not finish');
       }
       await sleep(30);
