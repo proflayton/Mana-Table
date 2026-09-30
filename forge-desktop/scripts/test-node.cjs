@@ -3,7 +3,7 @@ const path = require('node:path');
 const { spawnSync } = require('node:child_process');
 const root = path.resolve(__dirname, '..');
 const suite = process.argv[2];
-const engine = new Set(['engine', 'engine-rebuild', 'match', 'commander', 'multiplayer', 'network-auto', 'network-mulligan', 'presets', 'response-skip', 'import-printings']);
+const engine = new Set(['engine', 'engine-rebuild', 'match', 'commander', 'multiplayer', 'network-auto', 'network-mulligan', 'top-library', 'presets', 'response-skip', 'import-printings']);
 if (!['unit', 'engine'].includes(suite)) throw new Error('Choose unit or engine.');
 const files = fs.readdirSync(path.join(root, 'tests')).filter(file => file.endsWith('.test.cjs')
   && engine.has(file.replace('.test.cjs', '')) === (suite === 'engine')).sort();

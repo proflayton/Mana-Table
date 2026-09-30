@@ -348,6 +348,7 @@ public final class MatchSession implements ManaTableSession {
 
     private void publish(Pending prompt) {
         var view = game.getView();
+        activity.refreshVisibility();
         var players = new ArrayList<Object>();
         var allPlayers = game.getRegisteredPlayers().stream().map(Player::getView).toList();
         for (PlayerView player : allPlayers) {
@@ -355,8 +356,16 @@ public final class MatchSession implements ManaTableSession {
             for (ZoneType zone : List.of(ZoneType.Battlefield, ZoneType.Hand, ZoneType.Library, ZoneType.Graveyard, ZoneType.Exile, ZoneType.Command)) {
                 var visible = new ArrayList<Object>();
                 var cards = player.getCards(zone);
-                if (cards != null) for (CardView card : cards) if (card.canBeShownTo(viewer)) visible.add(cardState(card, prompt));
-                zones.add(map("name", zone.name(), "count", player.getZoneSize(zone), "cards", visible));
+                Map<String, Object> topCard = null;
+                if (cards != null) for (CardView card : cards) if (card.canBeShownTo(viewer)) {
+                    var state = cardState(card, prompt);
+                    visible.add(state);
+                    if (zone == ZoneType.Library && card.equals(cards.get(0))) topCard = state;
+                }
+                var zoneState = map("name", zone.name(), "count", player.getZoneSize(zone), "cards", visible);
+                // A visible card elsewhere in the library is not necessarily its top card.
+                if (zone == ZoneType.Library) zoneState.put("topCard", topCard);
+                zones.add(zoneState);
             }
             var mana = new LinkedHashMap<String, Integer>();
             byte[] colors = {MagicColor.WHITE, MagicColor.BLUE, MagicColor.BLACK, MagicColor.RED, MagicColor.GREEN, MagicColor.COLORLESS};

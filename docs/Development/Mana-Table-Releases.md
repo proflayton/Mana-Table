@@ -47,8 +47,8 @@ tags named `mana-table-v<version>` and can be rerun manually for an existing tag
 The tag must exactly match `forge-desktop/package.json`. From the reviewed commit:
 
 ```sh
-git tag mana-table-v0.1.0-beta.34
-git push origin mana-table-v0.1.0-beta.34
+git tag mana-table-v0.1.0-beta.35
+git push origin mana-table-v0.1.0-beta.35
 ```
 
 The Windows job builds and verifies Java, runs the desktop unit and engine suites,

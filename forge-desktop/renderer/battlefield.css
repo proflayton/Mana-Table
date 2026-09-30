@@ -112,6 +112,10 @@
 .match-command-zone > div + div { display: flex; justify-content: center; gap: 8px; }
 .match-command-zone .match-card { width: 54px; flex-basis: 54px; }
 .match-library { position: relative; min-width: 0; display: flex; flex-direction: column; align-items: center; gap: 6px; color: #c6d0bd; font-size: 9px; }
+.match-library .library-top-card { width: var(--pile-width); flex: none; margin: 0; padding: 0; aspect-ratio: 488 / 680; box-shadow: 2px 2px 0 #17272f, 3px 3px 0 #92967a, 4px 5px 7px #0008; }
+.library-top-card .match-card-face { display: block; width: 100%; height: 100%; }
+.library-top-card .match-card-name, .library-top-card .match-stats { display: none; }
+.library-top-label { position: absolute; bottom: calc(100% + 4px); left: 50%; transform: translateX(-50%); white-space: nowrap; color: #f2e5b6; font-size: 9px; pointer-events: none; text-shadow: 0 1px 3px #000; }
 .library-back, .empty-pile { display: grid; place-items: center; width: var(--pile-width); aspect-ratio: 488 / 680; border: 1px solid #b6b28980; border-radius: 4px; font: 22px Georgia; color: #c8ba88; }
 .library-back { background: repeating-linear-gradient(45deg, #ffffff05 0 1px, transparent 1px 6px), linear-gradient(135deg, #49605b, #162d32); box-shadow: 2px 2px 0 #17272f, 3px 3px 0 #92967a, 4px 5px 7px #0008; }
 .empty-pile { border-style: dashed; background: #111e1a25; color: #a5b19088; }

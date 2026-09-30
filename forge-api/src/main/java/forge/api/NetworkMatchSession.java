@@ -881,14 +881,19 @@ final class NetworkMatchSession extends NetworkGuiGame implements ManaTableSessi
                 for (ZoneType zone : List.of(ZoneType.Battlefield, ZoneType.Hand, ZoneType.Library, ZoneType.Graveyard, ZoneType.Exile, ZoneType.Command)) {
                     var visible = new ArrayList<Object>();
                     var cards = player.getCards(zone);
+                    Map<String, Object> topCard = null;
                     if (cards != null) {
                         for (CardView card : cards) {
                             if (card.canBeShownTo(localViewer)) {
-                                visible.add(cardState(card, localViewer, pending));
+                                var state = cardState(card, localViewer, pending);
+                                visible.add(state);
+                                if (zone == ZoneType.Library && card.equals(cards.get(0))) topCard = state;
                             }
                         }
                     }
-                    zones.add(map("name", zone.name(), "count", player.getZoneSize(zone), "cards", visible));
+                    var zoneState = map("name", zone.name(), "count", player.getZoneSize(zone), "cards", visible);
+                    if (zone == ZoneType.Library) zoneState.put("topCard", topCard);
+                    zones.add(zoneState);
                 }
                 var mana = new LinkedHashMap<String, Integer>();
                 byte[] colors = {MagicColor.WHITE, MagicColor.BLUE, MagicColor.BLACK, MagicColor.RED, MagicColor.GREEN, MagicColor.COLORLESS};

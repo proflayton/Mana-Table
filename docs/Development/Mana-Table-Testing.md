@@ -44,16 +44,23 @@ node --test tests/commander.test.cjs
 | Commander/multiplayer | `commander.*`, `multiplayer.*` |
 | Hand and 2D fallback layout | `hand-gestures.spec.cjs`, `hand-readability.spec.cjs`, `battlefield-fit.spec.cjs`, `multiplayer.spec.cjs` |
 | Combat | `combat.spec.cjs` (real click, drag and removal); `table-combat-input.spec.cjs` (multiplayer legality, keyboard, stale selection); `match.test.cjs`, `multiplayer.test.cjs` |
-| Card visibility/inspection | `card-preview.spec.cjs`, `card-faces.spec.cjs`, `library-search.spec.cjs` |
+| Card visibility/inspection | `card-preview.spec.cjs`, `card-faces.spec.cjs`, `library-search.spec.cjs`, `top-library.test.cjs`, `top-library.spec.cjs` |
 | Animation/event correlation | `animation-feedback.spec.cjs` |
 | 3D continuity, idle rendering and graphics fallback | `table-scene.spec.cjs` (real WebGL and engine); animation-feedback retains the 2D fallback check |
 | World-space seats, camera focus and crowded ranks | `table-world.spec.cjs` (two, four and six seats, projected hit targets, no engine action from camera/paging) |
-| Anchored controls and independent panel scrolling | `rail-layout.spec.cjs` |
+| Anchored controls and independent panel scrolling | `rail-layout.spec.cjs`, `match-scroll.spec.cjs` |
 | Lifted-card pixels, retained hand nodes, phase layout stability and turn cues | `table-stability.spec.cjs` (real WebGL plus a copied turn-cue presentation fixture) |
 | Casting, cancelling, the stack and revealed hand portraits | `casting-reveal.spec.cjs` |
 | Source-aware artifact mana choices | `mana-choice.spec.cjs` |
 
 ## Profiles and artifacts
+
+`top-library.test.cjs` plays Elven Chorus at both host and guest seats. It checks
+private top-card access, legal creature casting, drawing a new top card, cleanup
+discards, and losing access after Naturalize removes Chorus. The desktop encounter
+checks inspection in both 3D and 2D, and that clicking an unplayable top land does
+not advance the game. `match-scroll.spec.cjs` uses inert display snapshots to
+check scroll retention during polls, decision updates, and unrelated board changes.
 
 Shared helpers live in `tests/support/engine.cjs` and `tests/support/desktop.cjs`.
 They create unique profiles under ignored `test-results/`, respect configured

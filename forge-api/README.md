@@ -297,6 +297,16 @@ No card-catalog search is needed. A read-only library reveal uses `kind: reveal`
 with no selectable indices. Temporary visibility follows the shared controller;
 these details do not grant later access to hidden library cards.
 
+Each `Library` zone also includes `topCard`: the actual first card's snapshot
+when the viewer has engine permission to see it, otherwise `null`. This is the
+same card object represented in the zone's filtered `cards` array, with the same
+prompt-scoped action key. Never infer the top from the first *visible* card:
+effects can reveal other cards in a library. Looking at a top card does not grant
+permission to play it; use its current `selectable` state and the engine's normal
+card action. Visibility is recomputed for local and network viewers, including
+after draws and when the granting permanent leaves. Opaque local visual handles
+are forgotten after visibility revocation, hidden-zone moves, and shuffles.
+
 Input prompts may include `sourceCard` and `sourceZone` for the card associated
 with a target, payment, or other engine instruction. A `playAbility` choice also
 supplies its visible source. These are presentation snapshots with an empty

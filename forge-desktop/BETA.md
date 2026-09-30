@@ -1,8 +1,19 @@
-# Mana Table — beta 0.1.0-beta.34
+# Mana Table — beta 0.1.0-beta.35
 
 Double-click **Mana Table.exe**. Keep the executable with its accompanying
 folders. Java and the Forge card library are bundled; no separate installation
 or account is needed. The first launch scans the card library and can take a moment.
+
+Beta 35 adds **visible library tops and stable match scrolling**:
+
+- Elven Chorus and other engine-granted look permissions show the actual top
+  card on the library pile. Hover or focus to enlarge it; highlighted creatures
+  can be played through the normal casting interaction. Opponents do not receive
+  private card information, and removing the permission hides the card again.
+- Updates within the same decision preserve your scroll position. Open graveyard
+  and exile drawers retain their position when the battlefield changes.
+- Targets and required card selections, including multiplayer cleanup discards,
+  publish their eligible cards after the new input becomes active.
 
 Beta 34 fixes **multiplayer opening-hand decisions**:
 

@@ -19,6 +19,7 @@
   let lobbyReturnTimer;
   let boardSignature;
   let promptSignature;
+  let promptScope;
   const handFaces = new WeakMap();
   let libraryMode = 'eligible';
   let libraryGroups = [];
@@ -141,6 +142,7 @@
   function cardTile(card, presentation) {
     const inHand = presentation === 'hand';
     const onBattlefield = presentation === 'battlefield';
+    const onLibrary = presentation === 'library';
     const stats = !card.faceDown && card.type.includes('Creature') ? `${card.power}/${card.toughness}` : '';
     const statsBadge = stats ? `<span class="match-stats" aria-label="Power ${esc(card.power)}, toughness ${esc(card.toughness)}">${esc(stats)}</span>` : '';
     const marks = [card.sick ? 'New' : '', card.attacking ? `Attacking${card.defender ? ' → ' + card.defender : ''}` : '', card.blocking ? 'Blocking' : '', card.damage ? `${card.damage} damage` : '', ...Object.entries(card.counters).map(([name, count]) => `${count} ${name}`)].filter(Boolean);
@@ -154,7 +156,7 @@
     const description = ` aria-description="${esc([inHand ? costLabel : '', card.faceDown ? '' : card.type, stats ? `Power ${card.power}, toughness ${card.toughness}` : '', ...marks].filter(Boolean).join('. '))}"`;
     const fieldStatus = onBattlefield ? `<span class="battlefield-status">${card.tapped ? '<span class="field-tapped">Tapped</span>' : ''}${card.sick ? '<span class="field-new">New</span>' : ''}${card.damage ? `<span class="field-damage">${card.damage} damage</span>` : ''}</span>` : '';
     const counters = onBattlefield ? Object.entries(card.counters).map(([name, count]) => `<span title="${esc(name)} counters" aria-label="${count} ${esc(name)} counters">${count} ${esc(name)}</span>`).join('') : '';
-    return `<button class="match-card ${inHand ? 'match-hand-card' : onBattlefield ? 'battlefield-card' : ''} ${card.tapped ? 'tapped' : ''} ${card.selectable ? 'actionable' : ''} ${card.highlighted ? 'chosen' : ''} ${card.attacking || card.blocking ? 'in-combat' : ''}" ${scopeAttributes()} data-match-card="${esc(card.key)}" data-visual-card="${esc(card.visualId || '')}" data-table-combat="${esc(card.combatId || card.visualId || '')}" data-preview-card="${previewCards.push(card) - 1}" aria-label="${esc(card.name)}${card.tapped ? ', tapped' : ''}"${description} ${card.attacking && card.defender ? `title="Attacking ${esc(card.defender)}"` : ''}>${handCost}${onBattlefield ? `<span class="permanent-surface"><span class="match-card-face">${art}</span><span class="match-card-name">${esc(card.name)}</span></span>${statsBadge}` : `<span class="match-card-face">${art}${inHand ? '' : statsBadge}</span><span class="match-card-name">${esc(card.name)}</span>`}${inHand ? `<span class="match-hand-details">${handType}${statsBadge}</span>` : ''}${fieldStatus}${counters ? `<span class="battlefield-counters">${counters}</span>` : ''}${marks.length ? `<span class="match-card-marks">${esc(marks.join(' · '))}</span>` : ''}</button>`;
+    return `<button class="match-card ${inHand ? 'match-hand-card' : onBattlefield ? 'battlefield-card' : onLibrary ? 'library-top-card' : ''} ${card.tapped ? 'tapped' : ''} ${card.selectable ? 'actionable' : ''} ${card.highlighted ? 'chosen' : ''} ${card.attacking || card.blocking ? 'in-combat' : ''}" ${scopeAttributes()} data-match-card="${esc(card.key)}" data-visual-card="${esc(card.visualId || '')}" data-table-combat="${esc(card.combatId || card.visualId || '')}" data-preview-card="${previewCards.push(card) - 1}" aria-label="${onLibrary ? 'Top of library: ' : ''}${esc(card.name)}${card.tapped ? ', tapped' : ''}"${description} ${card.attacking && card.defender ? `title="Attacking ${esc(card.defender)}"` : ''}>${handCost}${onBattlefield ? `<span class="permanent-surface"><span class="match-card-face">${art}</span><span class="match-card-name">${esc(card.name)}</span></span>${statsBadge}` : `<span class="match-card-face">${art}${inHand ? '' : statsBadge}</span><span class="match-card-name">${esc(card.name)}</span>`}${inHand ? `<span class="match-hand-details">${handType}${statsBadge}</span>` : ''}${fieldStatus}${counters ? `<span class="battlefield-counters">${counters}</span>` : ''}${marks.length ? `<span class="match-card-marks">${esc(marks.join(' · '))}</span>` : ''}</button>`;
   }
 
   function playerLane(player) {
@@ -179,7 +181,8 @@
     const row = (name, cards, label) => `<div class="battlefield-rank"><div class="battlefield-row ${name}-row" data-field-row="${player.id}-${name}" aria-label="${esc(player.name)}: ${label}">${cards.map(card => cardTile(card, 'battlefield')).join('') || `<span class="field-empty">${label}</span>`}</div></div>`;
     const hiddenHand = !player.human ? `<div class="opponent-hand" aria-label="${hand.count} cards in opponent's hand"><div aria-hidden="true">${Array.from({ length: Math.min(hand.count, 9) }, (_, index) => `<i style="--back-angle:${(index - (Math.min(hand.count, 9) - 1) / 2) * 4}deg"></i>`).join('')}</div><span>${hand.count} in hand</span></div>` : '';
     const portrait = `<div class="match-player ${turn ? 'has-turn' : ''} ${player.priority ? 'has-priority' : ''}" data-player-portrait="${player.id}">${hiddenHand}<button class="match-life" data-match-player="${player.id}" ${player.eliminated ? 'disabled' : ''} aria-label="Target ${esc(player.name)}" title="${esc(player.name)} · ${player.life} life"><span>${esc(player.human ? 'You' : player.name.slice(0, 1))}</span><b>${player.life}</b></button><div class="match-player-info"><strong>${esc(player.name)}</strong><button class="world-seat-focus" data-world-focus="${player.id}" aria-label="View ${esc(player.name)} battlefield" title="Look closer at this battlefield">${esc(player.name)}</button><small>${player.eliminated ? 'Eliminated' : turn ? player.human ? 'Your turn' : 'Their turn' : 'Waiting'}${player.priority ? ' · Priority' : ''}</small><div class="match-mana-pool" aria-label="Available mana">${mana}</div></div>${damage ? `<details class="match-commander-damage"><summary>Commander damage</summary><div>${damage}</div></details>` : ''}</div>`;
-    const side = `<aside class="match-side-zones">${commandZone}<div class="match-library" aria-label="${library.count} cards in ${esc(player.name)}'s library"><span class="library-back" aria-hidden="true">M</span><span>Library <b>${library.count}</b></span></div><div class="match-other-zones">${other}</div></aside>`;
+    const libraryFace = library.topCard ? cardTile(library.topCard, 'library') + '<small class="library-top-label">Top card</small>' : '<span class="library-back" aria-hidden="true">M</span>';
+    const side = `<aside class="match-side-zones">${commandZone}<div class="match-library" aria-label="${library.count} cards in ${esc(player.name)}'s library">${libraryFace}<span>Library <b>${library.count}</b></span></div><div class="match-other-zones">${other}</div></aside>`;
     const fieldRows = player.human ? row('permanents', permanents, 'Battlefield') + row('lands', lands, 'Lands') : row('lands', lands, 'Lands') + row('permanents', permanents, 'Battlefield');
     const battlefield = `<div class="match-zones-row"><div class="match-battlefield">${fieldRows}</div>${side}</div>`;
     return player.human ? battlefield + portrait : portrait + battlefield;
@@ -205,6 +208,7 @@
     $('match-concede').hidden = ['finished', 'error'].includes(next.status);
     if (next.players && boardChanged) {
       const opened = new Set([...document.querySelectorAll('.match-zone[open]')].map(element => element.dataset.zone));
+      const drawerScrolls = new Map([...document.querySelectorAll('.match-zone[open]')].map(element => [element.dataset.zone, element.lastElementChild.scrollTop]));
       const scrolls = new Map([...document.querySelectorAll('[data-field-row]')].map(element => [element.dataset.fieldRow, element.scrollLeft]));
       const handScroll = $('match-hand').scrollLeft;
       const human = next.players.find(player => player.human);
@@ -233,7 +237,13 @@
       for (const element of [...hand.children]) if (!wanted.includes(element)) element.remove();
       wanted.forEach((element, index) => { if (hand.children[index] !== element) hand.insertBefore(element, hand.children[index] || null); });
       $('match-hand').scrollLeft = handScroll;
-      document.querySelectorAll('.match-zone').forEach(element => { element.open = opened.has(element.dataset.zone); });
+      document.querySelectorAll('.match-zone').forEach(element => {
+        element.open = opened.has(element.dataset.zone);
+        if (element.open) {
+          positionDrawer(element);
+          element.lastElementChild.scrollTop = drawerScrolls.get(element.dataset.zone) || 0;
+        }
+      });
       document.querySelectorAll('[data-field-row]').forEach(element => { element.scrollLeft = scrolls.get(element.dataset.fieldRow) || 0; });
       loadArt($('match-view'));
     }
@@ -330,6 +340,20 @@
       match.combat?.blockProblem]);
     if (signature === promptSignature) return;
     promptSignature = signature;
+    const scope = `${match.id}:${prompt?.id || ''}`;
+    const scrolls = promptScope === scope
+      ? ['.match-prompt-body', '.match-prompt-text', '#match-choices', '#match-selected'].map(selector => [selector, $('match-prompt').querySelector(selector)?.scrollTop || 0]) : [];
+    promptScope = scope;
+    drawPrompt(prompt, status);
+    // Message/button updates within one decision must not restart the player's
+    // reading position. A new decision still starts at its instructions.
+    for (const [selector, scroll] of scrolls) {
+      const element = $('match-prompt').querySelector(selector);
+      if (element) element.scrollTop = scroll;
+    }
+  }
+
+  function drawPrompt(prompt, status) {
     const librarySearch = prompt?.context === 'librarySearch';
     libraryPicker.hidden = !librarySearch;
     if (!librarySearch && libraryPicker.dataset.promptId) {
@@ -384,7 +408,10 @@
     } else if (prompt.kind === 'choice' || prompt.kind === 'reveal') {
       const range = prompt.kind === 'reveal' ? 'Revealed to you by the engine' : prompt.min === prompt.max ? `Choose ${prompt.min}` : `Choose ${prompt.min}–${prompt.max}`;
       setPrompt(header + `<div class="choice-range">${range}${prompt.ordered ? ' · selection order matters' : ''}</div>${prompt.choices.length > 12 ? '<input id="match-choice-search" type="search" placeholder="Find a choice…" aria-label="Filter choices">' : ''}<div id="match-choices" class="match-choices"></div><div id="match-selected" class="match-selected"></div><button id="match-submit" class="button primary">${prompt.kind === 'reveal' ? 'Continue' : 'Confirm choice'}</button>`);
-      if ($('match-choice-search')) $('match-choice-search').oninput = event => { choiceFilter = event.target.value.toLowerCase(); renderChoices(); };
+      if ($('match-choice-search')) {
+        $('match-choice-search').value = choiceFilter;
+        $('match-choice-search').oninput = event => { choiceFilter = event.target.value.toLowerCase(); renderChoices(); };
+      }
       renderChoices();
       $('match-submit').onclick = () => answer({ choices: selection });
     } else if (prompt.kind === 'number' || prompt.kind === 'text') {
@@ -547,6 +574,9 @@
     if (card) {
       const pressed = pointerChoice;
       pointerChoice = null;
+      // Looking at an authorized top card is always available; playing it still
+      // requires an engine-authorized action for the current decision.
+      if (card.classList.contains('library-top-card') && !card.classList.contains('actionable')) return;
       // Keyboard activation has no pointerdown. Pointer clicks must finish on the
       // same card and prompt on which they began, even if the hand reflows.
       if (event.detail > 0 && (!pressed || pressed.element !== card || pressed.key !== card.dataset.matchCard)) return;
