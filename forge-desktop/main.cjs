@@ -140,6 +140,12 @@ app.whenReady().then(async () => {
     clipboard.writeText(await engine.request('export', { kind: 'text' }));
     return true;
   });
+  ipcMain.handle('copy-invite', (event, value) => {
+    verify(event);
+    if (typeof value !== 'string' || value.length > 200 || /[\r\n\0]/.test(value)) throw new Error('Invalid invite');
+    clipboard.writeText(value);
+    return true;
+  });
   ipcMain.handle('import-file', async event => {
     verify(event);
     const result = await dialog.showOpenDialog(window, { properties: ['openFile'], filters: [{ name: 'Deck lists', extensions: ['txt', 'dec', 'dck'] }] });
@@ -182,7 +188,8 @@ app.on('before-quit', event => {
   if (!engine) { finish(); return; }
   Promise.race([
     engine.request('multiplayerClose').catch(() => null),
-    new Promise(resolve => setTimeout(resolve, 1000))
+    // Allow the router mapping to be withdrawn before terminating Java.
+    new Promise(resolve => setTimeout(resolve, 10000))
   ]).finally(finish);
 });
 } else { app.quit(); }

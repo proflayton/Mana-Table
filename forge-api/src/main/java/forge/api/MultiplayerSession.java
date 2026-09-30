@@ -31,6 +31,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.concurrent.CompletableFuture;
 
 final class MultiplayerSession {
     private final Path resources;
@@ -45,13 +46,15 @@ final class MultiplayerSession {
     private String error;
     private boolean initialized;
     private int localSlot = 0;
+    private CompletableFuture<String> externalAddress = CompletableFuture.completedFuture(null);
+    private int hostPort;
 
     MultiplayerSession(Path resources, Path profile) {
         this.resources = resources;
         this.profile = profile;
     }
 
-    synchronized Object host(String format, int playerCount) {
+    synchronized Object host(String format, int playerCount, boolean autoPortForward) {
         initializePlatform();
         closeExistingConnection();
         mode = "hosting";
@@ -59,9 +62,14 @@ final class MultiplayerSession {
         error = null;
         try {
             ForgeNetPreferences preferences = FModel.getNetPreferences();
-            preferences.setPref(ForgeNetPreferences.FNetPref.NET_PORT, String.valueOf(availablePort()));
+            hostPort = availablePort();
+            preferences.setPref(ForgeNetPreferences.FNetPref.NET_PORT, String.valueOf(hostPort));
             preferences.save();
-            ChatMessage result = NetConnectUtil.host(onlineLobby, chat);
+            ChatMessage result = NetConnectUtil.host(onlineLobby, chat, autoPortForward);
+            // Resolve once per lobby, off the engine command thread. State polls
+            // must never repeat or wait for a public-IP HTTP request.
+            externalAddress = CompletableFuture.supplyAsync(FServerManager::getExternalAddress)
+                    .exceptionally(ignored -> null);
             addMessage(result);
             status = result.getMessage();
             applyConfiguration(format, playerCount);
@@ -75,6 +83,7 @@ final class MultiplayerSession {
     }
 
     synchronized Object join(String address) {
+        address = NetworkInvite.address(address);
         initializePlatform();
         closeExistingConnection();
         match = new NetworkMatchSession();
@@ -178,6 +187,10 @@ final class MultiplayerSession {
         result.put("playerCount", lobby == null ? 2 : lobby.getNumberOfSlots());
         result.put("maxPlayers", lobbyFormat().equals("Commander") ? 6 : 2);
         result.put("addresses", addresses());
+        boolean hosting = initialized && FServerManager.getInstance().isHosting();
+        result.put("portMapping", hosting ? FServerManager.getInstance().getPortMappingStatus() : "disabled");
+        result.put("internetInvite", hosting ? NetworkInvite.encode(externalAddress.getNow(null), hostPort) : null);
+        result.put("addressLookupPending", hosting && !externalAddress.isDone());
         result.put("slots", slots());
         result.put("messages", List.copyOf(chat.messages));
         return result;
@@ -236,8 +249,6 @@ final class MultiplayerSession {
             throw new IllegalStateException("Could not create Forge network preferences directory", ex);
         }
         HeadlessPlatform.initialize(resources, profile);
-        FModel.getNetPreferences().setPref(ForgeNetPreferences.FNetPref.UPnP, "NEVER");
-        FModel.getNetPreferences().save();
         initialized = true;
     }
 
@@ -250,6 +261,7 @@ final class MultiplayerSession {
     }
 
     private void closeExistingConnection() {
+        externalAddress = CompletableFuture.completedFuture(null);
         if (client != null) {
             client.close();
             client = null;
@@ -267,10 +279,16 @@ final class MultiplayerSession {
         if (!initialized || !FServerManager.getInstance().isHosting()) {
             return List.of();
         }
-        NetConnectUtil.ServerAddressList list = NetConnectUtil.collectHostedServerAddresses();
         List<Map<String, Object>> result = new ArrayList<>();
-        for (int i = 0; i < list.urls.size(); i++) {
-            result.add(Map.of("label", list.labels.get(i), "url", list.urls.get(i), "preferred", i == list.starIndex));
+        String external = externalAddress.getNow(null);
+        if (NetworkInvite.encode(external, hostPort) != null) {
+            result.add(Map.of("label", "Internet", "url", external.trim() + ":" + hostPort, "preferred", true));
+        }
+        for (Map.Entry<String, String> entry : FServerManager.getAllLocalAddresses().entrySet()) {
+            String address = entry.getValue();
+            String invite = NetworkInvite.encode(address, hostPort);
+            result.add(Map.of("label", entry.getKey(), "url", address + ":" + hostPort, "preferred", false,
+                    "invite", invite == null ? "" : invite));
         }
         return result;
     }

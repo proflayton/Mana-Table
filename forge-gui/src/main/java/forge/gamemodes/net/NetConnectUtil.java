@@ -54,13 +54,18 @@ public class NetConnectUtil {
     }
 
     public static ChatMessage host(final IOnlineLobby onlineLobby, final IOnlineChatInterface chatInterface) {
+        return host(onlineLobby, chatInterface, null);
+    }
+
+    public static ChatMessage host(final IOnlineLobby onlineLobby, final IOnlineChatInterface chatInterface, final Boolean autoPortForward) {
         final int port = FModel.getNetPreferences().getPrefInt(ForgeNetPreferences.FNetPref.NET_PORT);
         final FServerManager server = FServerManager.getInstance();
         final ServerGameLobby lobby = new ServerGameLobby();
         final ILobbyView view = onlineLobby.setLobby(lobby);
 
         NetworkLogConfig.activateNetworkLogging();
-        server.startServer(port);
+        if (autoPortForward == null) server.startServer(port);
+        else server.startServer(port, autoPortForward);
         server.setLobby(lobby);
 
         lobby.setListener(new IUpdateable() {

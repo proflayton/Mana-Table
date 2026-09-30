@@ -24,7 +24,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
-/** Local desktop protocol over private child-process pipes. No network listener. */
+/** Desktop commands use private child-process pipes; multiplayer uses Forge's TCP transport. */
 public final class DesktopEngine implements AutoCloseable {
     private static final Gson JSON = new GsonBuilder().serializeNulls().create();
     private final CardCatalog catalog;
@@ -150,7 +150,8 @@ public final class DesktopEngine implements AutoCloseable {
             }
             case "export" -> export(string(p, "kind", "text"));
             case "practice" -> practice(string(p, "action", "shuffle"), number(p, "index", -1));
-            case "multiplayerHost" -> multiplayer().host(string(p, "format", "Constructed"), number(p, "playerCount", 2));
+            case "multiplayerHost" -> multiplayer().host(string(p, "format", "Constructed"), number(p, "playerCount", 2),
+                    p.has("autoPortForward") && p.get("autoPortForward").getAsBoolean());
             case "multiplayerJoin" -> multiplayer().join(string(p, "address", ""));
             case "multiplayerConfigure" -> multiplayer().configure(string(p, "format", "Constructed"), number(p, "playerCount", 2));
             case "multiplayerSelectDeck" -> {

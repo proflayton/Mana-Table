@@ -14,7 +14,7 @@ import java.lang.reflect.Proxy;
 import java.nio.file.Path;
 import java.util.concurrent.*;
 
-/** Portable GUI services for the shared human controller; no Swing windows or network services. */
+/** Portable GUI services for the shared human controller, without Swing windows. */
 final class HeadlessPlatform {
     private static final ExecutorService UI = Executors.newSingleThreadExecutor(task -> {
         Thread thread = new Thread(task, "Mana Table input");
@@ -47,13 +47,14 @@ final class HeadlessPlatform {
                 case "runBackgroundTask" -> { CompletableFuture.runAsync((Runnable) args[1]); yield null; }
                 case "getNewGuiGame" -> active == null ? null : active.gui();
                 case "hostMatch" -> new HostedMatch();
+                case "getUpnpPlatformService" -> new org.jupnp.DefaultUpnpServiceConfiguration();
                 case "showBugReportDialog" -> { if (active != null) active.fail(new IllegalStateException(String.valueOf(args[1]))); yield null; }
                 case "showOptionDialog", "showInputDialog", "getChoices", "order", "chooseCard" -> {
                     if (active == null) throw new IllegalStateException("No active match");
                     yield active.platformDialog(method.getName(), args);
                 }
                 case "getSkinIcon", "getUnskinnedIcon", "getCardArt", "createLayeredImage", "getImageFetcher",
-                     "createAudioClip", "createAudioMusic", "getUpnpPlatformService" -> null;
+                     "createAudioClip", "createAudioMusic" -> null;
                 case "showImageDialog", "clearImageCache", "preventSystemSleep", "copyToClipboard", "startAltSoundSystem" -> null;
                 case "toString" -> "Mana Table platform";
                 case "hashCode" -> System.identityHashCode(proxy);

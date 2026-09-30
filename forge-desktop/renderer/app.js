@@ -196,6 +196,7 @@ function changeQuantity(card, delta, { byName = false } = {}) {
   });
 }
 let multiplayerRefreshTimer;
+let multiplayerStatusMarkup = '';
 function stopMultiplayerRefresh() {
   if (multiplayerRefreshTimer) {
     clearInterval(multiplayerRefreshTimer);
@@ -278,10 +279,23 @@ function showMultiplayer() {
 function renderMultiplayer(result) {
   if (!result) return;
   multiplayerState = result;
-  const addresses = result.addresses?.length ? `<div class="multiplayer-block"><strong>Share address</strong>${result.addresses.map(address => `<button class="text-button" data-copy-address="${esc(address.url)}">${esc(address.label)} · ${esc(address.url)}${address.preferred ? ' · preferred' : ''}</button>`).join('')}</div>` : '';
+  const detailsOpen = $('multiplayer-status').querySelector('details')?.open;
+  const addresses = result.addresses?.length ? `<details class="multiplayer-block" ${detailsOpen ? 'open' : ''}><summary>Direct connection / same network</summary>${result.addresses.map(address => `<button class="text-button" data-copy-address="${esc(address.url)}">${esc(address.label)} · ${esc(address.url)}</button>${address.invite ? `<button class="text-button" data-copy-invite="${esc(address.invite)}">Copy local invite · ${esc(address.label)}</button>` : ''}`).join('')}<p>For friends on the same Wi-Fi, share a local invite. Manual router rules must forward TCP to the local address and port above.</p></details>` : '';
+  const mapping = {
+    searching: ['Setting up your connection…', 'Asking your router for a temporary port forwarding rule.'],
+    mapped: ['Router accepted port forwarding', 'Copy the invite for your friends. If they cannot join, allow Java through your firewall. Some internet providers still block incoming connections.'],
+    failed: ['Automatic port forwarding unavailable', 'Your router did not confirm a rule. Try enabling UPnP on your router, or let another friend host. Same-network play still works. Manual forwarding details are below.'],
+    disabled: ['Direct connections only', 'Automatic port forwarding is off. Same-network play works; internet guests need an existing forwarding rule.']
+  }[result.portMapping] || ['Rebuild the engine to enable invites', 'This engine does not report automatic port forwarding.'];
+  const invite = result.hosting ? `<section class="multiplayer-invite"><strong>${mapping[0]}</strong><p>${mapping[1]}</p>${result.internetInvite ? `<label>Internet invite<input aria-label="Internet invite" readonly value="${esc(result.internetInvite)}"></label><button class="button primary" type="button" data-copy-invite="${esc(result.internetInvite)}">Copy invite</button><p>Share with your friends. This invite contains your connection address and changes when you host a new table.</p>` : `<p>${result.addressLookupPending ? 'Finding your internet address…' : 'Could not find your internet address. Local addresses are available below.'}</p>`}</section>` : '';
   const slots = result.slots?.length ? `<div class="multiplayer-block"><strong>Seats</strong><ol>${result.slots.map(slot => `<li class="${slot.local ? 'local' : ''}"><span>${esc(slot.type)}</span><b>${esc(slot.name || 'Open seat')}${slot.local ? ' · you' : ''}</b><small>${slot.ready ? 'Ready' : 'Not ready'}${slot.deck ? ` · ${esc(slot.deck)}` : ''}</small></li>`).join('')}</ol></div>` : '';
   const messages = result.messages?.length ? `<div class="multiplayer-block"><strong>Messages</strong>${result.messages.slice(-6).map(message => `<p><span>${esc(message.timestamp || '')}</span> ${esc(message.source || 'Server')}: ${esc(message.message || '')}</p>`).join('')}</div>` : '';
-  $('multiplayer-status').innerHTML = `<b>${esc(result.status || 'Not connected.')}</b>${result.error ? `<span class="warning">${esc(result.error)}</span>` : ''}${addresses}${slots}${messages}`;
+  const statusMarkup = `<b>${result.hosting ? 'Your table is open.' : esc(result.status || 'Not connected.')}</b>${result.error ? `<span class="warning">${esc(result.error)}</span>` : ''}${invite}${slots}${addresses}${messages}`;
+  // Polling must not replace an unchanged copy button or selected invite text.
+  if (statusMarkup !== multiplayerStatusMarkup) {
+    $('multiplayer-status').innerHTML = statusMarkup;
+    multiplayerStatusMarkup = statusMarkup;
+  }
   const localSlot = result.slots?.find(slot => slot.local);
   const hosting = Boolean(result.hosting);
   const joined = !hosting && result.mode === 'joined';
@@ -295,6 +309,7 @@ function renderMultiplayer(result) {
   $('multiplayer-configure').hidden = !hosting;
   $('multiplayer-settings').hidden = joined;
   $('multiplayer-host').hidden = connected;
+  $('multiplayer-forward-label').hidden = connected;
   $('multiplayer-address-label').hidden = connected;
   $('multiplayer-join').hidden = connected;
   $('multiplayer-rules').hidden = !joined;
@@ -330,11 +345,15 @@ async function refreshMultiplayer() {
   try { renderMultiplayer(await api.request('multiplayerState')); } catch { /* the engine may still be loading */ }
 }
 async function hostMultiplayer() {
-  $('multiplayer-status').textContent = 'Starting server...';
-  renderMultiplayer(await api.request('multiplayerHost', {
-    format: $('multiplayer-format').value,
-    playerCount: Number($('multiplayer-player-count').value)
-  }));
+  $('multiplayer-host').disabled = $('multiplayer-join').disabled = true;
+  $('multiplayer-status').textContent = 'Opening your table…';
+  try {
+    renderMultiplayer(await api.request('multiplayerHost', {
+      format: $('multiplayer-format').value,
+      playerCount: Number($('multiplayer-player-count').value),
+      autoPortForward: $('multiplayer-forward').checked
+    }));
+  } finally { $('multiplayer-host').disabled = $('multiplayer-join').disabled = false; }
 }
 async function configureMultiplayer() {
   multiplayerSettingsPending = true;
@@ -353,9 +372,11 @@ function changeMultiplayerSettings() {
 }
 async function joinMultiplayer() {
   const address = $('multiplayer-address').value.trim();
-  if (!address) { $('multiplayer-status').textContent = 'Enter a host address first.'; return; }
-  $('multiplayer-status').textContent = `Connecting to ${address}...`;
-  renderMultiplayer(await api.request('multiplayerJoin', { address }));
+  if (!address) { $('multiplayer-status').textContent = 'Paste your friend’s invite first.'; return; }
+  $('multiplayer-host').disabled = $('multiplayer-join').disabled = true;
+  $('multiplayer-status').textContent = 'Connecting to your friend’s table…';
+  try { renderMultiplayer(await api.request('multiplayerJoin', { address })); }
+  finally { $('multiplayer-host').disabled = $('multiplayer-join').disabled = false; }
 }
 async function selectMultiplayerDeck() {
   const deckId = $('multiplayer-deck').value;
@@ -504,7 +525,13 @@ $('multiplayer-select-deck').onclick = () => run(selectMultiplayerDeck);
 $('multiplayer-ready').onclick = () => run(readyMultiplayer);
 $('multiplayer-start').onclick = () => run(startMultiplayerGame);
 $('multiplayer-leave').onclick = () => run(leaveMultiplayer);
-$('multiplayer-status').onclick = event => { const button = event.target.closest('[data-copy-address]'); if (button) navigator.clipboard?.writeText(button.dataset.copyAddress); };
+$('multiplayer-status').onclick = event => {
+  const button = event.target.closest('[data-copy-address], [data-copy-invite]');
+  if (button) run(async () => {
+    await api.copyInvite(button.dataset.copyInvite || button.dataset.copyAddress);
+    toast(button.dataset.copyInvite ? 'Invite copied. Send it to your friends.' : 'Address copied.');
+  });
+};
 $('shuffle-hand').onclick = () => run(() => practice('shuffle'));
 $('mulligan').onclick = () => run(() => practice('mulligan'));
 $('draw-card').onclick = () => run(() => practice('draw'));

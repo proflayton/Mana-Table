@@ -57,6 +57,36 @@ prerequisites. To opt into a repository-local Maven cache, pass
 `npm run doctor` reports the resolved Java command, Node requirement, engine JAR,
 resources, and installed desktop dependencies. It exits nonzero for missing items.
 
+## Play with friends
+
+Open **Multiplayer**, choose the game mode and seats, leave **Automatic port
+forwarding** checked, and choose **Host table**. Mana Table asks the router for a
+UPnP TCP mapping for this lobby. Once the public address is known, **Copy invite**
+gives you an `MT1-…` invite for friends to paste into **Friend's invite → Join table**.
+All players should run the same build. Select saved decks, ready up, then start.
+
+The invite encodes the host's IPv4 address and port with a typo checksum. It is
+not a password, account, or hosted room. Share it with trusted friends; generate
+a fresh invite whenever you host again. The host must keep the app running.
+The mapping is requested only when hosting with that checkbox enabled; the UPnP
+service removes its mappings when the lobby closes or the engine shuts down
+normally. A crash may leave a rule on the router until it expires or is removed.
+
+**Router accepted port forwarding** confirms a router response, not a successful
+internet connection. Windows must also allow the app's Java runtime through its
+firewall. UPnP must be enabled on the router. Double NAT or carrier-grade NAT can
+still block guests; try another host or configure your network manually. This
+branch does not provide a relay. For the same Wi-Fi or a VPN, expand **Direct
+connection / same network** and copy the appropriate local invite or address.
+
+Public address lookup uses `https://checkip.amazonaws.com`, once per lobby in the
+background with bounded timeouts. Normal game-state polling does not wait for it.
+Invites currently encode IPv4; manual direct addresses remain available.
+
+To test without opening router ports, uncheck automatic forwarding. CI uses this
+mode for the real network and lobby tests. Verify internet reachability with a
+friend on another network; a successful test on the host's Wi-Fi is insufficient.
+
 ## Common commands
 
 Run these in `forge-desktop`:

@@ -31,7 +31,8 @@ local deck persistence, opening-hand practice, and human-versus-AI matches. Buil
 | `MatchActivity` | Immutable, viewer-filtered recent actions and event-time turn/phase metadata |
 
 The records contain values rather than live engine objects. The desktop serializes
-them through its private transport; this module does not start a network listener.
+them through its private transport. Explicit multiplayer hosting starts Forge's
+TCP game listener; the desktop command API remains on private stdin/stdout pipes.
 Printing IDs are opaque, case-sensitive identifiers; clients must round-trip them.
 Catalog construction eagerly indexes the supplied printings. Initialize it once
 on a worker thread; search results include alternate printings rather than grouping
@@ -82,6 +83,26 @@ editor needs schemes, planes, and other supplemental cards. Use
 File locations and persistence are the host application's responsibility.
 
 ## Desktop transport and deck commands
+
+### Multiplayer hosting and invites
+
+`multiplayerHost {format, playerCount, autoPortForward?}` starts a native network
+lobby. `autoPortForward` defaults to false for API callers; the desktop's visible
+checkbox supplies the choice explicitly. It uses Forge's UPnP mapping lifecycle
+without changing the user's persistent UPnP preference. Host results and
+`multiplayerState` include `portMapping` (`disabled`, `searching`, `mapped`, or
+`failed`), `addressLookupPending`, `internetInvite` (nullable), and `addresses`.
+Local address entries also carry `invite` when IPv4 encoding is available.
+
+`multiplayerJoin {address}` accepts either the complete `MT1-…` invite or the
+existing direct host/port syntax. Invites contain the endpoint and a CRC32 typo
+checksum, with no authentication or directory service. Invalid invites are
+rejected before closing the current connection. `multiplayerClose` stops the
+listener and its UPnP service. Mapping callbacks from an older hosting attempt
+cannot update a newer lobby's status. Router acknowledgement does not prove
+external reachability; the UI must not label it as a successful internet test.
+
+### Deck commands
 
 `DesktopEngine` reads newline-delimited UTF-8 JSON from its private stdin:
 `{id, method, params}`. Replies are `{id, result}` or `{id, error}`. Startup emits
