@@ -27,6 +27,7 @@ protocol.registerSchemesAsPrivileged([{ scheme: 'workshop', privileges: { standa
 let window;
 let engine;
 let quitting = false;
+let relaunchQueued = false;
 const methods = new Set(['search', 'deckInsights', 'list', 'new', 'open', 'snapshot', 'edit', 'rename', 'undo', 'redo', 'format', 'save', 'importPreview', 'import', 'deckPresets', 'presetImport', 'export', 'practice', 'multiplayerHost', 'multiplayerJoin', 'multiplayerConfigure', 'multiplayerSelectDeck', 'multiplayerReady', 'multiplayerStart', 'multiplayerState', 'multiplayerReturn', 'multiplayerClose', 'matchOpponents', 'matchSetup', 'matchStart', 'matchState', 'matchAction', 'matchConcede']);
 function verify(event) {
   if (!window || event.sender !== window.webContents || event.senderFrame !== window.webContents.mainFrame
@@ -83,6 +84,12 @@ function art(name, face = 'front') {
 
 if (process.env.MANA_ALLOW_MULTI_INSTANCE === '1' || app.requestSingleInstanceLock()) {
 app.on('second-instance', () => {
+  if (quitting || window?.isDestroyed()) {
+    // The window can be gone while multiplayer shutdown still owns the process
+    // and its single-instance lock. Honor the new launch after cleanup finishes.
+    if (!relaunchQueued) { relaunchQueued = true; app.relaunch(); }
+    return;
+  }
   if (window) { if (window.isMinimized()) window.restore(); window.show(); window.focus(); }
 });
 app.whenReady().then(async () => {

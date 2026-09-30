@@ -6,6 +6,8 @@ or account is needed. The first launch scans the card library and can take a mom
 
 Beta 32 improves **getting a multiplayer game started and sharing the app**:
 
+- Reopening immediately after closing a hosted game waits for shutdown and
+  relaunches safely instead of trying to focus a window that has been destroyed.
 - Choose a deck and press **Ready**; the selected deck is submitted and checked
   automatically. The host sees who still needs a deck or readiness, and whether
   more players are needed for the chosen number of seats.
