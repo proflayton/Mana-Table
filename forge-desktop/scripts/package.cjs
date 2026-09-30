@@ -9,7 +9,7 @@ const release = process.argv.includes('--release');
 if (process.argv.slice(2).some(arg => arg !== '--release')) throw new Error('Only --release is supported.');
 const manifestPath = path.join(root, 'dist', release ? 'latest-release.json' : 'latest-beta.json');
 const previousBeta = !release && fs.existsSync(manifestPath) ? JSON.parse(fs.readFileSync(manifestPath, 'utf8').replace(/^\uFEFF/, '')) : null;
-const stamp = new Date().toISOString().replace(/[-:TZ.]/g, '').slice(0, 14);
+const stamp = `${new Date().toISOString().replace(/[-:TZ.]/g, '').slice(0, 14)}-${process.pid}`;
 const build = path.join(tools, `desktop-beta-${stamp}`);
 const stage = path.join(build, 'app');
 const resources = path.join(build, 'forge-res');
@@ -50,6 +50,8 @@ if (result.status !== 0) throw new Error('Could not build the Java runtime.');
   const executable = `${metadata.productName}.exe`;
   const packages = await packager({
     dir: stage, name: metadata.productName, platform: 'win32', arch: 'x64', out: output, overwrite: false,
+    // Packager clears its temporary base; do not share it with another build.
+    tmpdir: path.join(build, 'electron-packager'),
     asar: true, prune: false, electronVersion: require('electron/package.json').version,
     extraResource: [jar, resources, runtime],
     win32metadata: { CompanyName: 'proflayton', FileDescription: `${metadata.productName} desktop beta`, ProductName: metadata.productName }
