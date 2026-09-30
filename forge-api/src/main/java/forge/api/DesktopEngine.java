@@ -133,7 +133,7 @@ public final class DesktopEngine implements AutoCloseable {
                 var preview = DeckImport.preview(string(p, "text", ""));
                 String suggested = preview.problems().isEmpty() && !preview.entries().isEmpty()
                         ? MatchSetup.suggestedFormat(preview.open("Import preview", catalog).toDeck()) : "Constructed";
-                yield Map.of("entries", preview.entries(), "problems", preview.problems(), "suggestedFormat", suggested);
+                yield Map.of("entries", preview.entries(), "problems", preview.problems(), "warnings", preview.warnings(), "suggestedFormat", suggested);
             }
             case "import" -> {
                 var preview = DeckImport.preview(string(p, "text", ""));

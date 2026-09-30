@@ -14,13 +14,18 @@ import java.util.regex.Pattern;
 /** Paste/import preview using Forge's existing multi-format deck recognizer. */
 public final class DeckImport {
     private static final Pattern NATIVE_LINE = Pattern.compile("^(\\d+)\\s+(.+\\|.+)$");
+    private static final Pattern EXPORTED_PRINTING = Pattern.compile(
+            "^(?<card>.+?)\\s+\\((?<set>[A-Za-z0-9]{2,12})\\)"
+                    + "(?:\\s+[0-9A-Za-z★☆-]+)?(?:\\s+(?<foil>\\*[FE]\\*|\\(F\\)))?$",
+            Pattern.CASE_INSENSITIVE);
     private DeckImport() { }
 
     public record Problem(int line, String kind, String text) { }
-    public record Preview(List<DeckEditor.Entry> entries, List<Problem> problems) {
+    public record Preview(List<DeckEditor.Entry> entries, List<Problem> problems, List<Problem> warnings) {
         public Preview {
             entries = List.copyOf(entries);
             problems = List.copyOf(problems);
+            warnings = List.copyOf(warnings);
         }
 
         /** Unknown or unsupported lines must be resolved before creating a deck. */
@@ -51,6 +56,7 @@ public final class DeckImport {
         var recognizer = new DeckRecognizer();
         List<DeckEditor.Entry> entries = new ArrayList<>();
         List<Problem> problems = new ArrayList<>();
+        List<Problem> warnings = new ArrayList<>();
         DeckSection section = DeckSection.Main;
         String[] lines = text.split("\\R", -1);
         for (int index = 0; index < lines.length; index++) {
@@ -76,8 +82,25 @@ public final class DeckImport {
                 }
                 continue;
             }
-            var token = recognizer.recognizeLine(lines[index], section);
+            String line = lines[index].replace('\u00a0', ' ').strip();
+            var token = recognizer.recognizeLine(line, section);
             if (token == null) { continue; }
+            // Moxfield/Arena lists may name a printing from an edition Forge
+            // does not bundle (e.g. SUM). Retry only that exact card request,
+            // preserving quantities, sections and foil markers. Native Forge
+            // rows and errors for known editions retain their strict behavior.
+            var printing = EXPORTED_PRINTING.matcher(line);
+            if (token.getType() == DeckRecognizer.TokenType.UNKNOWN_CARD && printing.matches()
+                    && StaticData.instance().getEditions().get(printing.group("set")) == null) {
+                String foil = printing.group("foil");
+                var alternative = recognizer.recognizeLine(printing.group("card") + (foil == null ? "" : " " + foil), section);
+                if (alternative != null && alternative.getType() == DeckRecognizer.TokenType.LEGAL_CARD) {
+                    token = alternative;
+                    warnings.add(new Problem(index + 1, "PRINTING_SUBSTITUTED", token.getCard().getName()
+                            + ": " + printing.group("set") + " is not in the library; using "
+                            + token.getCard().getEdition() + " #" + token.getCard().getCollectorNumber() + "."));
+                }
+            }
             switch (token.getType()) {
                 case DECK_SECTION_NAME -> section = DeckSection.valueOf(token.getText());
                 case LEGAL_CARD -> {
@@ -92,6 +115,6 @@ public final class DeckImport {
                 default -> problems.add(new Problem(index + 1, token.getType().name(), lines[index]));
             }
         }
-        return new Preview(entries, problems);
+        return new Preview(entries, problems, warnings);
     }
 }

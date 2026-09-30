@@ -19,6 +19,10 @@ Beta 31 adds **multiplayer tables and invites for friends**:
   with trusted friends and send a new one whenever you host again.
 - Multiplayer Auto uses the host's verified action availability and rechecks
   each automatic pass. It stops for available plays and required decisions.
+- Deck imports accept known cards from unbundled sets such as SUM, using an
+  available printing and showing the substitution in the import preview.
+- Development games keep a private engine copy, so a Maven rebuild during play
+  no longer replaces the JAR used by an active match.
 
 Beta 30 makes **combat direct and the table steadier**:
 

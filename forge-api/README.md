@@ -121,7 +121,7 @@ correlates request IDs and records diagnostics in the active profile's log.
 | `rename`, `format` | `{revision, name}` or `{revision, format}` |
 | `undo`, `redo` | `{revision}`; deck-editor history |
 | `save` | Retry saving the current deck |
-| `importPreview`, `import` | Preview `{text}`; import `{text, name, format?}` as a new deck |
+| `importPreview`, `import` | Preview `{text}`; import `{text, name, format?}` as a new deck; preview `warnings` reports supported-printing substitutions for unbundled sets in Moxfield/Arena rows |
 | `export` | `{kind: "text"}` or `{kind: "forge"}`; deck-list text |
 | `deckPresets`, `presetImport` | List attributed presets; import one by `{id}` |
 | `practice` | `{action: "shuffle" / "mulligan" / "draw" / "bottom", index?}`; opening-hand sandbox |

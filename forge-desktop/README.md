@@ -33,6 +33,9 @@ npm start
 This produces `forge-api/target/forge-engine.jar` and builds only its required
 Maven modules. Rebuild the JAR after Java changes. Restart Electron after changes
 to `main.cjs`, the preload, or renderer code. No frontend bundle step is required.
+Development launches copy the engine JAR to a temporary file for that process,
+so rebuilding Maven cannot replace classes underneath a running match. Restart
+the app to use a rebuilt engine; its temporary copy is removed when Java exits.
 Three.js is pinned and installed by `npm ci`; its modules are served locally.
 The match defaults to a 3D table with world-space seats, playmats, cards, and piles.
 Click a player's name to focus their battlefield; **Whole table** restores the

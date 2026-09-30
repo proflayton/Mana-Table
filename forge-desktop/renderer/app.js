@@ -430,6 +430,9 @@ async function previewImport() {
     $('import-preview').innerHTML = `<div class="import-result">✓ ${count} cards · ${esc(format)}. Ready to bring into the workshop.</div>`;
     $('confirm-import').disabled = false;
   }
+  if (result.warnings?.length) {
+    $('import-preview').insertAdjacentHTML('beforeend', `<div class="import-printings"><strong>Using available printings</strong>${result.warnings.map(warning => `<p>Line ${warning.line}: ${esc(warning.text)}</p>`).join('')}</div>`);
+  }
 }
 
 $('search').addEventListener('input', () => { clearTimeout(searchTimer); searchGeneration++; searchTimer = setTimeout(() => { offset = 0; run(search); }, 180); });

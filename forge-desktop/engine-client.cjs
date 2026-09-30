@@ -3,17 +3,24 @@ const { createInterface } = require('node:readline');
 const { EventEmitter } = require('node:events');
 const fs = require('node:fs');
 const path = require('node:path');
+const { snapshotEngineJar } = require('./runtime.cjs');
 
 class EngineClient extends EventEmitter {
-  constructor({ java, jar, resources, data, log }) {
+  constructor({ java, jar, resources, data, log, isolateJar = false }) {
     super();
     this.pending = new Map();
     this.sequence = 0;
     this.status = { state: 'loading', message: 'Waking up the card library…' };
     fs.mkdirSync(path.dirname(log), { recursive: true });
+    const snapshot = isolateJar ? snapshotEngineJar(jar) : null;
     this.log = fs.createWriteStream(log, { flags: 'a' });
-    this.child = spawn(java, ['-Xmx2g', '-Dfile.encoding=UTF-8', '-Djava.awt.headless=true', '-jar', jar, resources, data],
+    this.child = spawn(java, ['-Xmx2g', '-Dfile.encoding=UTF-8', '-Djava.awt.headless=true', '-jar', snapshot?.jar || jar, resources, data],
       { windowsHide: true, stdio: ['pipe', 'pipe', 'pipe'] });
+    this.child.once('close', () => {
+      try { snapshot?.dispose(); }
+      catch (error) { this.log.write(`Could not remove temporary engine: ${error.message}\n`); }
+      this.log.end();
+    });
     this.child.stderr.pipe(this.log);
     createInterface({ input: this.child.stdout }).on('line', line => {
       let message;
