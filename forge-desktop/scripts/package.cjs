@@ -14,6 +14,9 @@ const resources = path.join(build, 'forge-res');
 const runtime = path.join(build, 'runtime');
 const jar = path.join(root, 'forge-api/target/forge-engine.jar');
 const javaHome = process.env.JAVA_HOME;
+const revision = spawnSync('git', ['rev-parse', 'HEAD'], { cwd: root, encoding: 'utf8', windowsHide: true });
+if (revision.status !== 0) throw new Error('Could not determine the source revision for this package.');
+const sourceRevision = revision.stdout.trim();
 if (process.platform !== 'win32' || process.arch !== 'x64') throw new Error('The package script currently supports Windows x64 only.');
 if (!javaHome || !fs.existsSync(path.join(javaHome, 'bin', 'jlink.exe'))) throw new Error('Set JAVA_HOME to a JDK 17+ installation containing bin/jlink.exe.');
 if (!fs.existsSync(jar)) throw new Error('Build forge-api with Maven before packaging.');
@@ -52,7 +55,7 @@ if (result.status !== 0) throw new Error('Could not build the Java runtime.');
   for (const packaged of packages) {
     fs.copyFileSync(path.join(root, 'LICENSE'), path.join(packaged, 'FORGE-LICENSE.txt'));
     fs.copyFileSync(path.join(appSource, 'BETA.md'), path.join(packaged, 'START-HERE.md'));
-    fs.writeFileSync(path.join(packaged, 'SOURCE.txt'), 'Source: https://github.com/proflayton/Mana-Table/tree/feature/desktop-beta\nForge upstream: https://github.com/Card-Forge/forge\nForge is GPL-3.0-or-later.\nElectron and Java notices accompany their bundled runtimes.\n');
+    fs.writeFileSync(path.join(packaged, 'SOURCE.txt'), `Source: https://github.com/proflayton/Mana-Table/tree/${sourceRevision}\nVersion: ${metadata.version}\nEngine SHA-256: ${createHash('sha256').update(fs.readFileSync(jar)).digest('hex')}\nForge upstream: https://github.com/Card-Forge/forge\nForge is GPL-3.0-or-later.\nElectron and Java notices accompany their bundled runtimes.\n`);
     if (previousBeta) {
       const previousPreferences = path.join(previousBeta.directory, 'UserData', 'preferences.json');
       if (fs.existsSync(previousPreferences)) {
@@ -78,5 +81,5 @@ if (result.status !== 0) throw new Error('Could not build the Java runtime.');
     }
     console.log(`BETA_READY=${path.join(packaged, executable)}`);
   }
-  fs.writeFileSync(manifestPath, JSON.stringify({ version: metadata.version, directory: packages[0], executable }, null, 2));
+  fs.writeFileSync(manifestPath, JSON.stringify({ version: metadata.version, directory: packages[0], executable, sourceRevision }, null, 2));
 })().catch(error => { console.error(error); process.exitCode = 1; });

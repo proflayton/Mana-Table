@@ -3,7 +3,7 @@ const { launchDesktop } = require('./support/desktop.cjs');
 const { testProfile, startEngine, ready } = require('./support/engine.cjs');
 
 test('host shares a local invite, a guest joins by invite, and closing resets forwarding status', async ({}, testInfo) => {
-  const { application } = await launchDesktop('invite-host');
+  const { application, executable } = await launchDesktop('invite-host');
   const guest = startEngine(testProfile('invite-guest'));
   const previousClipboard = await application.evaluate(({ clipboard }) => clipboard.readText());
   try {
@@ -28,9 +28,10 @@ test('host shares a local invite, a guest joins by invite, and closing resets fo
     expect(joined.error).toBeNull();
     await expect(page.locator('#multiplayer-status li span').filter({ hasText: 'REMOTE' })).toHaveCount(1);
     const mask = [page.locator('.multiplayer-invite input'), page.locator('[data-copy-address]')];
-    await page.screenshot({ path: testInfo.outputPath('lobby-wide.png'), fullPage: true, mask });
+    // Hidden packaged windows can stall Chromium's screenshot compositor.
+    if (!executable) await page.screenshot({ path: testInfo.outputPath('lobby-wide.png'), fullPage: true, mask });
     await page.setViewportSize({ width: 1000, height: 740 });
-    await page.screenshot({ path: testInfo.outputPath('lobby-compact.png'), fullPage: true, mask });
+    if (!executable) await page.screenshot({ path: testInfo.outputPath('lobby-compact.png'), fullPage: true, mask });
     // Reject typo before disconnecting the valid guest.
     await expect(guest.request('multiplayerJoin', { address: 'MT1-BROKEN' })).rejects.toThrow(/incomplete or mistyped/);
     expect((await guest.request('multiplayerState')).mode).toBe('joined');

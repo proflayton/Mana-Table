@@ -1,8 +1,24 @@
-# Mana Table — beta 0.1.0-beta.30
+# Mana Table — beta 0.1.0-beta.31
 
 Double-click **Mana Table.exe**. Keep the executable with its accompanying
 folders. Java and the Forge card library are bundled; no separate installation
 or account is needed. The first launch scans the card library and can take a moment.
+
+Beta 31 adds **multiplayer tables and invites for friends**:
+
+- Open **Multiplayer**, choose Standard or Commander and the number of seats,
+  leave **Automatic port forwarding** checked, and choose **Host table**.
+- When the internet invite appears, choose **Copy invite**. Friends using this
+  build paste it into **Friend's invite → Join table**. Everyone selects a saved
+  deck and marks Ready; the host starts the game. Commander supports 2–6 players.
+- The router status reports whether UPnP accepted the forwarding rule. Java must
+  also be allowed through the firewall. If your router or provider blocks incoming
+  connections, another friend may need to host. There is no hosted relay yet.
+- For the same Wi-Fi or a VPN, use **Direct connection / same network** and copy
+  the appropriate local invite. Invites contain connection details; share them
+  with trusted friends and send a new one whenever you host again.
+- Multiplayer Auto uses the host's verified action availability and rechecks
+  each automatic pass. It stops for available plays and required decisions.
 
 Beta 30 makes **combat direct and the table steadier**:
 
