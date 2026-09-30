@@ -70,10 +70,12 @@ jobs:
         run: npm run check
       - name: Run unit tests
         run: npm run test:unit
+      - name: Run multiplayer combat UI
+        run: npx playwright test tests/network-combat.spec.cjs --reporter=line --output=test-results/combat-ui
       - name: Run real-engine tests
         run: npm run test:engine
       - name: Run desktop smoke tests
-        run: npm run test:smoke -- --reporter=line
+        run: npm run test:smoke -- --reporter=line --grep-invert "a three-player table declares split attacks and blocks directly on the battlefield" --output=test-results/desktop-smoke
       - name: Run reusable encounters
         run: npm run test:encounters -- --reporter=line --output=test-results/encounter-suite
       - name: Save failure diagnostics
