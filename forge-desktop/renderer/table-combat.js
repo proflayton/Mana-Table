@@ -123,6 +123,7 @@ function createTableCombat(arena, send) {
   document.addEventListener('keydown', event => { if (event.key === 'Escape') { selected = null; pressed = null; controlPress = null; paint(); } });
   window.addEventListener('blur', () => { selected = null; pressed = null; controlPress = null; paint(); });
   function paint() {
+    if (!state) return;
     const attacks = available() ? state?.combat?.attackers || [] : [];
     arena.querySelectorAll('.combat-target-ready').forEach(element => element.classList.remove('combat-target-ready'));
     for (const element of arena.querySelectorAll('.battlefield-card')) {

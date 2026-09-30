@@ -76,6 +76,13 @@ jobs:
         run: npm run test:smoke -- --reporter=line
       - name: Run reusable encounters
         run: npm run test:encounters -- --reporter=line --output=test-results/encounter-suite
+      - name: Save failure diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: desktop-test-failure
+          path: forge-desktop/test-results/
+          retention-days: 7
       - name: Save encounter evidence
         if: ${{ !cancelled() }}
         uses: actions/upload-artifact@v7

@@ -92,8 +92,8 @@ final class HeadlessPlatform {
             task.run();
             if (owner != null) owner.publishInput();
         } catch (Throwable error) {
+            error.printStackTrace(System.err);
             if (owner != null) owner.fail(error);
-            else error.printStackTrace(System.err);
         }
     }
 
