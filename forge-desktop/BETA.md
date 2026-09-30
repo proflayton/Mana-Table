@@ -1,8 +1,11 @@
-# Mana Table — beta 0.1.0-beta.32
+# Mana Table — beta 0.1.0-beta.33
 
 Double-click **Mana Table.exe**. Keep the executable with its accompanying
 folders. Java and the Forge card library are bundled; no separate installation
 or account is needed. The first launch scans the card library and can take a moment.
+
+Beta 33 packages the multiplayer startup fixes below as a complete Windows
+download for testers.
 
 Beta 32 improves **getting a multiplayer game started and sharing the app**:
 

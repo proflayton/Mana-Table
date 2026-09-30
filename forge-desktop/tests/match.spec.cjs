@@ -65,7 +65,10 @@ test('match table plays cards through engine prompts and resumes after deck brow
         // of repeatedly trying to pay for another spell with spent mana.
         const card = field.some(card => card.type.includes('Creature')) ? null
           : hand.find(card => card.selectable && card.type.includes('Land')) || hand.find(card => card.selectable && card.type.includes('Creature'));
-        if (card) { await page.locator(`[data-match-card="${card.key}"]`).click(); played = true; }
+        if (card) {
+          const button = page.locator(`[data-match-card="${card.key}"]`);
+          await button.focus(); await button.click(); played = true;
+        }
         else await page.locator('#match-ok').click();
       } else if (p.okEnabled) {
         if (p.inputType.startsWith('InputPayMana')) paid = true;
@@ -73,7 +76,8 @@ test('match table plays cards through engine prompts and resumes after deck brow
       } else {
         const card = human.zones.flatMap(zone => zone.cards).find(card => card.selectable && !card.highlighted);
         expect(card, JSON.stringify(p)).toBeTruthy();
-        await page.locator(`[data-match-card="${card.key}"]`).click();
+        const button = page.locator(`[data-match-card="${card.key}"]`);
+        await button.focus(); await button.click();
       }
     }
     const diagnostics = await page.evaluate(async () => {
