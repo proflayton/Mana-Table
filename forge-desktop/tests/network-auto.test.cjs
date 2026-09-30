@@ -51,6 +51,10 @@ for (const playerCount of [2, 3]) test(`network Auto preserves land plays and af
         const scope = { sessionId: state.id, promptId: prompt.id };
         let answer;
         if (prompt.inputType === 'InputPassPriority') {
+          // Input identity arrives before showMessageInitial/updateButtons.
+          // Keep polling this same sequence until Continue is actually enabled;
+          // canAutoPass=false is not permission to send an ordinary OK instead.
+          if (!prompt.okEnabled) continue;
           if (!seat.verified && state.activePlayerId === state.viewerId && state.phaseKey === 'MAIN1' && !state.stack.length) {
             const player = state.players.find(player => player.id === state.viewerId);
             assert.equal(prompt.canAutoPass, false, `${i ? 'Guest' : 'Host'} must keep priority with ${seat.playedLand ? 'an affordable commander' : 'a land play'}`);
@@ -73,8 +77,12 @@ for (const playerCount of [2, 3]) test(`network Auto preserves land plays and af
         }
         else if (prompt.okEnabled) answer = { action: 'ok' };
         else continue;
+        try {
+          await engine.request('matchAction', { ...scope, ...answer });
+        } catch (error) {
+          throw new Error(`Seat ${i}, ${JSON.stringify({ turn: state.turn, phase: state.phaseKey, prompt, answer })}: ${error.message}`, { cause: error });
+        }
         seat.previous = prompt.id;
-        await engine.request('matchAction', { ...scope, ...answer });
         if (answer.action === 'passIfNoResponse') seat.automaticPasses++;
       }
       await sleep(30);
