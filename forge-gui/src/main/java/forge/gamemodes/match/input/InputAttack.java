@@ -68,7 +68,7 @@ public class InputAttack extends InputSyncronizedBase {
 
     @Override
     public final void showMessage() {
-        setCurrentDefender(defenders.getFirst());
+        setCurrentDefender(defenders.getFirst(), false);
 
         if (currentDefender == null) {
             System.err.println("InputAttack has no potential defenders!");
@@ -104,7 +104,7 @@ public class InputAttack extends InputSyncronizedBase {
     @Override
     protected final void onOk() {
         // Propaganda costs could have been paid here.
-        setCurrentDefender(null); // remove highlights
+        setCurrentDefender(null, false); // remove highlights without reopening a completed choice
         activateBand(null);
         stop();
     }
@@ -287,6 +287,15 @@ public class InputAttack extends InputSyncronizedBase {
         card.getGame().getMatch().fireEvent(new UiEventAttackerDeclared(CardView.get(card), GameEntityView.get(currentDefender)));
     }
 
+    boolean assign(Card attacker, GameEntity defender) {
+        if (attacker == null || defender == null || attacker.getController() != playerAttacks
+                || !defenders.contains(defender) || !combat.isAttacking(attacker, defender) && !CombatUtil.canAttack(attacker, defender)) return false;
+        // Publish only the completed assignment, not a temporary destination-only
+        // prompt that a remote player could act on while this click is running.
+        setCurrentDefender(defender, false);
+        return onCardSelected(attacker, null, null);
+    }
+
     private boolean undeclareAttacker(final Card card) {
         combat.removeFromCombat(card);
         getController().getGui().setHighlighted(List.of(CardView.get(card)), false);
@@ -298,6 +307,10 @@ public class InputAttack extends InputSyncronizedBase {
     }
 
     private void setCurrentDefender(final GameEntity def) {
+        setCurrentDefender(def, true);
+    }
+
+    private void setCurrentDefender(final GameEntity def, boolean publish) {
         currentDefender = def;
         // Partition into off/on and emit false-batch first so the to-be-highlighted defender isn't briefly cleared.
         final List<GameEntityView> off = new ArrayList<>(defenders.size());
@@ -311,7 +324,7 @@ public class InputAttack extends InputSyncronizedBase {
             potentialBanding = isBandingPossible();
         }
 
-        updateMessage();
+        if (publish) updateMessage();
     }
 
     private void activateBand(final AttackingBand band) {
@@ -359,5 +372,7 @@ public class InputAttack extends InputSyncronizedBase {
             getController().getGame().fireEvent(GameEventCombatUpdate.fromCards(combat.getAttackers(), combat.getAllBlockers()));
 
         getController().getGui().showCombat(); // redraw sword icons
+        getController().getInputProxy().publishCombatChoices(this,
+                forge.game.combat.CombatInputState.attackers(combat, playerAttacks, currentDefender));
     }
 }

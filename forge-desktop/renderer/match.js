@@ -383,7 +383,8 @@
     const detailMessage = combatInput ? match.combat?.blockProblem : prompt.message;
     const engineDetail = status.instruction && prompt.inputType !== 'InputPassPriority' && detailMessage
       ? `<p class="match-engine-instruction">${esc(detailMessage)}</p>` : '';
-    const header = `<div class="eyebrow">${status.decision}</div><h2>${esc(prompt.title || status.title || (prompt.kind === 'input' ? inputTitle(prompt) : prompt.kind === 'reveal' ? 'Take a look.' : 'Make your choice.'))}</h2><p class="match-prompt-text">${esc(status.instruction || prompt.message)}</p>${engineDetail}${context}`;
+    const instruction = combatInput ? 'Choose your creatures and their destinations on the battlefield. Confirm when your assignments are ready.' : status.instruction || prompt.message;
+    const header = `<div class="eyebrow">${status.decision}</div><h2>${esc(prompt.title || status.title || (prompt.kind === 'input' ? inputTitle(prompt) : prompt.kind === 'reveal' ? 'Take a look.' : 'Make your choice.'))}</h2><p class="match-prompt-text">${esc(instruction)}</p>${engineDetail}${context}`;
     if (librarySearch) {
       setPrompt(header + '<p>Use the library panel to inspect these cards and confirm your choice. This spell or ability is still resolving.</p>');
       renderLibraryPicker();
@@ -401,10 +402,9 @@
       const endTurn = prompt.inputType === 'InputPassPriority' && prompt.cancel === 'End Turn';
       const response = status.responseText ? `<div class="match-response-detail"><span>WAITING TO RESOLVE</span><p>${esc(status.responseText)}</p></div>` : '';
       const passHint = status.passHint ? `<small class="match-pass-hint">${esc(status.passHint)}</small>` : '';
-      setPrompt(header + response + (prompt.canAttackAll ? '<button id="match-attack-all" class="button secondary">Attack with all</button>' : '') + `<div class="match-input-buttons"><button id="match-ok" class="button primary" ${prompt.okEnabled ? '' : 'disabled'}>${esc(okLabel || 'Continue')}</button>${passHint}${endTurn || !prompt.cancelEnabled ? '' : `<button id="match-cancel" class="button secondary">${esc(prompt.cancel || 'Cancel')}</button>`}</div>`);
+      setPrompt(header + response + `<div class="match-input-buttons"><button id="match-ok" class="button primary" ${prompt.okEnabled ? '' : 'disabled'}>${esc(okLabel || 'Continue')}</button>${passHint}${combatInput || endTurn || !prompt.cancelEnabled ? '' : `<button id="match-cancel" class="button secondary">${esc(prompt.cancel || 'Cancel')}</button>`}</div>`);
       $('match-ok').onclick = () => answer({ action: 'ok' });
       if ($('match-cancel')) $('match-cancel').onclick = () => answer({ action: 'cancel' });
-      if ($('match-attack-all')) $('match-attack-all').onclick = () => answer({ action: 'attackAll' });
     } else if (prompt.kind === 'choice' || prompt.kind === 'reveal') {
       const range = prompt.kind === 'reveal' ? 'Revealed to you by the engine' : prompt.min === prompt.max ? `Choose ${prompt.min}` : `Choose ${prompt.min}–${prompt.max}`;
       setPrompt(header + `<div class="choice-range">${range}${prompt.ordered ? ' · selection order matters' : ''}</div>${prompt.choices.length > 12 ? '<input id="match-choice-search" type="search" placeholder="Find a choice…" aria-label="Filter choices">' : ''}<div id="match-choices" class="match-choices"></div><div id="match-selected" class="match-selected"></div><button id="match-submit" class="button primary">${prompt.kind === 'reveal' ? 'Continue' : 'Confirm choice'}</button>`);

@@ -90,7 +90,20 @@ To test without opening router ports, uncheck automatic forwarding. CI uses this
 mode for the real network and lobby tests. Verify internet reachability with a
 friend on another network; a successful test on the host's Wi-Fi is insufficient.
 
-## Common commands
+## Combat on the table
+
+During **Choose attackers**, click one of your glowing creatures, then the
+opponent's life marker or legal defending permanent. Repeat for other creatures;
+different creatures can attack different opponents. During **Choose blockers**,
+click your creature, then a glowing attacker. Dragging between the same endpoints
+also works. Orange arrows show attacks and blue connections show blocks.
+
+Assignments remain editable until you confirm with the button on the battlefield.
+Select an assigned creature to **Recall attacker** or **Remove block**, or repeat
+the same pair. **Escape** cancels a selection without changing assignments.
+The optional **Combat details** inspector shows the same engine state.
+
+## Development commands
 
 Run these in `forge-desktop`:
 

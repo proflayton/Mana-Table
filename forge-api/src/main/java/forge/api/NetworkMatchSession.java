@@ -9,6 +9,7 @@ import forge.game.GameEntityView;
 import forge.game.GameState;
 import forge.game.GameView;
 import forge.game.card.CardView;
+import forge.game.combat.CombatInputState;
 import forge.game.keyword.Keyword;
 import forge.game.player.IHasIcon;
 import forge.game.player.PlayerView;
@@ -68,11 +69,15 @@ final class NetworkMatchSession extends NetworkGuiGame implements ManaTableSessi
     private String authoritativeInputType = "InputLockUI";
     private boolean inputActive;
     private boolean inputCanAutoPass;
+    private CombatInputState combatChoices;
+    private long combatRevision;
 
     private static final class Pending {
         final String id;
         final String kind;
         final Map<String, CardView> cards = new LinkedHashMap<>();
+        final Set<String> attackPairs = new HashSet<>();
+        final Set<String> blockPairs = new HashSet<>();
         final CompletableFuture<JsonObject> response = new CompletableFuture<>();
         Map<String, Object> prompt;
         int size;
@@ -124,6 +129,7 @@ final class NetworkMatchSession extends NetworkGuiGame implements ManaTableSessi
         synchronized (gate) {
             boolean owned = viewer != null && inputOwnerId == viewer.getId();
             if (error != null || dispatching != null || pending != null && !pending.kind.equals("input") || !inputActive || !owned
+                    || isCombatInput() && combatChoices == null
                     || viewer == null || getGameController(viewer) == null) {
                 if (pending != null && pending.kind.equals("input") && (!inputActive || !owned)) {
                     pending = null;
@@ -132,7 +138,7 @@ final class NetworkMatchSession extends NetworkGuiGame implements ManaTableSessi
                 return;
             }
             Pending next = pending;
-            String promptId = "network-input-" + inputSequence;
+            String promptId = "network-input-" + inputSequence + (isCombatInput() ? "-combat-" + combatRevision : "");
             if (next == null || !next.id.equals(promptId)) {
                 next = new Pending("input", promptId);
                 pending = next;
@@ -152,6 +158,23 @@ final class NetworkMatchSession extends NetworkGuiGame implements ManaTableSessi
 
     private static boolean acceptsPlayerChoice(String inputType) {
         return inputType.contains("Target") || inputType.equals("InputSelectEntitiesFromList");
+    }
+
+    private boolean isCombatInput() {
+        return "InputAttack".equals(authoritativeInputType) || "InputBlock".equals(authoritativeInputType);
+    }
+
+    @Override
+    public void setCombatChoices(PlayerView owner, long sequence, CombatInputState choices) {
+        synchronized (gate) {
+            if (sequence != inputSequence || !inputActive || owner == null || owner.getId() != inputOwnerId
+                    || viewer == null || owner.getId() != viewer.getId() || !isCombatInput()
+                    || choices.attacking() != "InputAttack".equals(authoritativeInputType)) return;
+            combatChoices = choices;
+            combatRevision++;
+            if (pending != null && pending.kind.equals("input")) pending = null;
+        }
+        publishInput();
     }
 
     private boolean canAutoPass() {
@@ -188,6 +211,7 @@ final class NetworkMatchSession extends NetworkGuiGame implements ManaTableSessi
             viewer = null;
             pending = null;
             dispatching = null;
+            combatChoices = null;
             inputSequence = -1;
             inputOwnerId = -1;
             authoritativeInputType = "InputLockUI";
@@ -246,22 +270,29 @@ final class NetworkMatchSession extends NetworkGuiGame implements ManaTableSessi
                 case "cancel" -> {
                     if (!cancelEnabled) throw new IllegalArgumentException("Cancel is not available");
                 }
-                case "attackAll" -> { }
+                case "attackAll" -> {
+                    if (!"InputAttack".equals(authoritativeInputType)) throw new IllegalArgumentException("Not declaring attackers");
+                }
                 case "card" -> {
                     card = next.cards.get(string(request, "key"));
                     if (card == null) throw new IllegalArgumentException("Card is not visible in this prompt");
                 }
                 case "player" -> player = player(request, "playerId");
                 case "attack" -> {
+                    if (!"InputAttack".equals(authoritativeInputType)) throw new IllegalArgumentException("Not declaring attackers");
                     attacker = next.cards.get(string(request, "attackerKey"));
-                    if (request.has("defenderPlayerId")) player = player(request, "defenderPlayerId");
+                    if (request.has("defenderPlayerId") && !request.has("defenderKey")) player = player(request, "defenderPlayerId");
                     else card = next.cards.get(string(request, "defenderKey"));
                     if (attacker == null || card == null && player == null) throw new IllegalArgumentException("Invalid attack choice");
+                    String defenderKey = player != null ? "player:" + player.getId() : "card:" + card.getId();
+                    if (!next.attackPairs.contains(attacker.getId() + ":" + defenderKey)) throw new IllegalArgumentException("That creature cannot attack this defender");
                 }
                 case "block" -> {
+                    if (!"InputBlock".equals(authoritativeInputType)) throw new IllegalArgumentException("Not declaring blockers");
                     attacker = next.cards.get(string(request, "attackerKey"));
                     card = next.cards.get(string(request, "blockerKey"));
                     if (attacker == null || card == null) throw new IllegalArgumentException("Invalid block choice");
+                    if (!next.blockPairs.contains(attacker.getId() + ":" + card.getId())) throw new IllegalArgumentException("That creature cannot block this attacker");
                 }
                 default -> throw new IllegalArgumentException("Unknown match action");
             }
@@ -290,15 +321,8 @@ final class NetworkMatchSession extends NetworkGuiGame implements ManaTableSessi
                         case "attackAll" -> controller.alphaStrike();
                         case "card" -> controller.selectCard(chosenCard, null, null);
                         case "player" -> controller.selectPlayer(chosenPlayer, null);
-                        case "attack" -> {
-                            if (chosenPlayer != null) controller.selectPlayer(chosenPlayer, null);
-                            else controller.selectCard(chosenCard, null, null);
-                            controller.selectCard(chosenAttacker, null, null);
-                        }
-                        case "block" -> {
-                            controller.selectCard(chosenAttacker, null, null);
-                            controller.selectCard(chosenCard, null, null);
-                        }
+                        case "attack" -> controller.assignAttack(sequence, chosenAttacker, chosenPlayer != null ? chosenPlayer : chosenCard);
+                        case "block" -> controller.assignBlock(sequence, chosenAttacker, chosenCard);
                     }
                 } finally {
                     synchronized (gate) {
@@ -356,6 +380,7 @@ final class NetworkMatchSession extends NetworkGuiGame implements ManaTableSessi
             inputActive = active;
             inputCanAutoPass = canAutoPass;
             if (changed) {
+                combatChoices = null;
                 message = active ? "Waiting for Forge's prompt..." : "Waiting for the next action...";
                 ok = "";
                 cancel = "";
@@ -952,9 +977,98 @@ final class NetworkMatchSession extends NetworkGuiGame implements ManaTableSessi
                     "turn", view.getTurn(), "phase", view.getPhase() == null ? "Pregame" : view.getPhase().nameForUi,
                     "phaseKey", view.getPhase() == null ? "PREGAME" : view.getPhase().name(),
                     "activePlayerId", view.getPlayerTurn() == null ? null : view.getPlayerTurn().getId(),
-                    "players", players, "stack", stack, "combat", null, "prompt", pending == null ? null : pending.prompt, "result", result,
+                    "players", players, "stack", stack, "combat", combatState(view, localViewer), "prompt", pending == null ? null : pending.prompt, "result", result,
                     "notices", List.copyOf(notices), "activity", List.of());
         }
+    }
+
+    private Map<String, Object> combatState(GameView view, PlayerView localViewer) {
+        if (view.isGameOver() || view.getPhase() == null || !view.getPhase().name().startsWith("COMBAT_")) return null;
+        var combat = view.getCombat();
+        var defenders = new LinkedHashMap<String, Object>();
+        var options = new ArrayList<Object>();
+        var candidates = new ArrayList<String>();
+        var blockers = new ArrayList<String>();
+        var attacks = new ArrayList<Object>();
+        boolean choosing = pending != null && pending.kind.equals("input") && isCombatInput() && combatChoices != null;
+        if (pending != null) { pending.attackPairs.clear(); pending.blockPairs.clear(); }
+        Map<String, Object> selected = null;
+        String problem = null;
+        if (choosing) {
+            for (var target : combatChoices.defenders()) {
+                var defender = combatTarget(target, view, localViewer);
+                if (defender != null) defenders.put((target.player() ? "player:" : "card:") + target.id(), defender);
+            }
+            selected = combatTarget(combatChoices.selectedDefender(), view, localViewer);
+            for (var option : combatChoices.attackOptions().entrySet()) {
+                var targets = new ArrayList<Object>();
+                for (var target : option.getValue()) {
+                    var defender = combatTarget(target, view, localViewer);
+                    if (defender == null) continue;
+                    targets.add(defender);
+                    pending.attackPairs.add(option.getKey() + ":" + (target.player() ? "player:" : "card:") + target.id());
+                }
+                if (!targets.isEmpty()) options.add(map("cardId", String.valueOf(option.getKey()), "defenders", targets));
+                if (combatChoices.selectedDefender() != null && option.getValue().contains(combatChoices.selectedDefender())) candidates.add(String.valueOf(option.getKey()));
+            }
+            combatChoices.blockerCandidates().forEach(id -> blockers.add(String.valueOf(id)));
+            problem = combatChoices.blockProblem();
+        }
+        if (combat != null) for (CardView attacker : combat.getAttackers()) {
+            if (!attacker.canBeShownTo(localViewer)) continue;
+            GameEntityView target = combat.getDefender(attacker);
+            var defender = combatDefender(target, localViewer);
+            if (defender != null) defenders.put((target instanceof PlayerView ? "player:" : "card:") + target.getId(), defender);
+            var assigned = new LinkedHashSet<String>();
+            var committed = combat.getBlockers(attacker);
+            var planned = combat.getPlannedBlockers(attacker);
+            if (committed != null) for (CardView card : committed) if (card.canBeShownTo(localViewer)) assigned.add(String.valueOf(card.getId()));
+            if (planned != null) for (CardView card : planned) if (card.canBeShownTo(localViewer)) assigned.add(String.valueOf(card.getId()));
+            var eligible = new ArrayList<String>();
+            if (choosing) for (Integer id : combatChoices.blockOptions().getOrDefault(attacker.getId(), List.of())) {
+                eligible.add(String.valueOf(id));
+                pending.blockPairs.add(attacker.getId() + ":" + id);
+            }
+            attacks.add(map("cardId", String.valueOf(attacker.getId()), "defender", defender,
+                    "defendingPlayerId", defender == null ? null : defender.get("playerId"),
+                    "blockerIds", List.copyOf(assigned), "blocked", combat.isBlocked(attacker), "eligibleBlockerIds", eligible));
+        }
+        return map("attackingPlayerId", view.getPlayerTurn() == null ? null : view.getPlayerTurn().getId(),
+                "attackers", attacks, "defenders", List.copyOf(defenders.values()), "selectedDefender", selected,
+                "attackerCandidates", candidates, "attackOptions", options, "blockerCandidates", blockers, "blockProblem", problem);
+    }
+
+    private Map<String, Object> combatTarget(CombatInputState.Target target, GameView view, PlayerView localViewer) {
+        if (target == null) return null;
+        for (PlayerView player : view.getPlayers()) {
+            if (target.player() && player.getId() == target.id()) return combatDefender(player, localViewer);
+            if (!target.player() && player.getCards(ZoneType.Battlefield) != null) for (CardView card : player.getCards(ZoneType.Battlefield)) {
+                if (card.getId() == target.id()) return combatDefender(card, localViewer);
+            }
+        }
+        return null;
+    }
+
+    private Map<String, Object> combatDefender(GameEntityView target, PlayerView localViewer) {
+        if (target instanceof PlayerView player) return map("kind", "player", "id", player.getId(), "playerId", player.getId(),
+                "name", player.equals(localViewer) ? "You" : player.getName());
+        if (target instanceof CardView card) {
+            PlayerView player = card.getProtectingPlayer() != null ? card.getProtectingPlayer() : card.getController();
+            return map("kind", "card", "id", String.valueOf(card.getId()), "playerId", player == null ? null : player.getId(),
+                    "name", card.canBeShownTo(localViewer) && !card.isFaceDown() ? card.getCurrentState().getName() : "Face-down permanent");
+        }
+        return null;
+    }
+
+    private Integer combatDefenderId(CardView card) {
+        var combat = getGameView().getCombat();
+        return combat != null && combat.getDefender(card) instanceof PlayerView player ? player.getId() : null;
+    }
+
+    private String combatDefenderName(CardView card) {
+        var combat = getGameView().getCombat();
+        var defender = combat == null ? null : combatDefender(combat.getDefender(card), viewer);
+        return defender == null ? null : (String) defender.get("name");
     }
 
     private Map<String, Object> cardState(CardView card, PlayerView localViewer, Pending prompt) {
@@ -975,7 +1089,7 @@ final class NetworkMatchSession extends NetworkGuiGame implements ManaTableSessi
                 "power", hidden ? null : face.getPower(), "toughness", hidden ? null : face.getToughness(),
                 "text", hidden ? "" : card.getText(), "tapped", card.isTapped(), "sick", card.isSick(),
                 "damage", card.getDamage(), "attacking", card.isAttacking(), "blocking", card.isBlocking(),
-                "counters", counters, "defenderId", null, "defender", null,
+                "counters", counters, "defenderId", combatDefenderId(card), "defender", combatDefenderName(card),
                 "selectable", selectable.contains(card) || actionable.contains(card),
                 "highlighted", highlighted.contains(card), "faceDown", hidden,
                 "combatKeywords", hidden ? List.of() : List.of(Keyword.FLYING, Keyword.REACH, Keyword.TRAMPLE,

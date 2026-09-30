@@ -145,7 +145,8 @@ export function createWorldLayout(arena, scene, texture, request) {
         cards.forEach((element, index) => {
           const shown = index >= page.first && index < page.first + capacity;
           if (element.dataset.worldVisible !== String(shown)) element.dataset.worldVisible = String(shown);
-          if (shown) card(element, seat, (index - page.first - (count - 1) / 2) * stride - (seat.human || seats.length <= 2 ? 120 : 0), y, seat.cardHeight, 'field');
+          const advance = element.classList.contains('table-attacker') ? 52 : element.classList.contains('table-blocker') ? 28 : 0;
+          if (shown) card(element, seat, (index - page.first - (count - 1) / 2) * stride - (seat.human || seats.length <= 2 ? 120 : 0), y + advance * (seat.human ? 1 : -1), seat.cardHeight, 'field');
         });
         for (const button of row.parentElement.querySelectorAll('.rank-page')) {
           const previous = button.dataset.rankDirection === 'previous';

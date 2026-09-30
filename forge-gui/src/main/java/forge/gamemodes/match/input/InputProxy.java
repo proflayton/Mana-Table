@@ -18,6 +18,9 @@
 package forge.gamemodes.match.input;
 
 import forge.game.card.Card;
+import forge.game.GameEntity;
+import forge.game.GameEntityView;
+import forge.game.combat.CombatInputState;
 import forge.game.card.CardView;
 import forge.game.player.Player;
 import forge.game.player.PlayerView;
@@ -52,6 +55,33 @@ public class InputProxy implements Observer {
 
     public InputProxy(final PlayerControllerHuman controller0) {
         controller = controller0;
+    }
+
+    public void publishCombatChoices(Input expected, CombatInputState choices) {
+        synchronized (input) {
+            if (input.get() == expected) controller.getGui().setCombatChoices(expected.getOwner(), inputSequence, choices);
+        }
+    }
+
+    public boolean assignAttack(long sequence, CardView attackerView, GameEntityView defenderView) {
+        synchronized (input) {
+            Input current = input.get();
+            if (sequence != inputSequence || current != controller.getInputQueue().getInput()
+                    || !(current instanceof InputAttack attack) || attack.isFinished()) return false;
+            Card attacker = getCard(attackerView);
+            GameEntity defender = defenderView instanceof PlayerView player ? controller.getGame().getPlayer(player)
+                    : defenderView instanceof CardView card ? getCard(card) : null;
+            return attack.assign(attacker, defender);
+        }
+    }
+
+    public boolean assignBlock(long sequence, CardView attackerView, CardView blockerView) {
+        synchronized (input) {
+            Input current = input.get();
+            if (sequence != inputSequence || current != controller.getInputQueue().getInput()
+                    || !(current instanceof InputBlock block) || block.isFinished()) return false;
+            return block.assign(getCard(attackerView), getCard(blockerView));
+        }
     }
 
     @Override

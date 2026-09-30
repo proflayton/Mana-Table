@@ -32,6 +32,11 @@ public interface IGameController {
     /** Pass only this priority input, and only if the host finds no available actions. */
     boolean passPriorityIfNoResponse(long inputSequence);
 
+    /** One scoped operation, so a network card click cannot race its defender selection. */
+    default boolean assignAttack(long inputSequence, CardView attacker, forge.game.GameEntityView defender) { return false; }
+
+    default boolean assignBlock(long inputSequence, CardView attacker, CardView blocker) { return false; }
+
     void selectButtonCancel();
 
     void selectPlayer(PlayerView playerView, ITriggerEvent triggerEvent);

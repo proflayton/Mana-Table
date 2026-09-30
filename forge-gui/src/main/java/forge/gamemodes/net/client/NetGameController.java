@@ -81,6 +81,16 @@ public class NetGameController implements IGameController {
     }
 
     @Override
+    public boolean assignAttack(long sequence, CardView attacker, forge.game.GameEntityView defender) {
+        return Boolean.TRUE.equals(sendAndWait(ProtocolMethod.assignAttack, sequence, attacker, defender));
+    }
+
+    @Override
+    public boolean assignBlock(long sequence, CardView attacker, CardView blocker) {
+        return Boolean.TRUE.equals(sendAndWait(ProtocolMethod.assignBlock, sequence, attacker, blocker));
+    }
+
+    @Override
     public void selectButtonCancel() {
         send(ProtocolMethod.selectButtonCancel);
     }

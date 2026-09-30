@@ -4,6 +4,7 @@ import com.google.common.eventbus.Subscribe;
 import forge.game.card.CardView;
 import forge.game.event.GameEvent;
 import forge.game.event.GameEventCardChangeZone;
+import forge.game.event.GameEventCombatUpdate;
 import forge.gui.interfaces.IGuiGame;
 
 import java.util.ArrayList;
@@ -22,6 +23,7 @@ import java.util.stream.Collectors;
  *   <li>Input queue change: registered as {@link Observer} on player InputQueues,
  *       ensuring events are delivered before the game thread blocks for input</li>
  *   <li>Sync points: explicit {@link #flush()} from {@code flushPendingEvents()}</li>
+ *   <li>Combat assignments: publish immediately while players keep the same input</li>
  * </ul>
  *
  * <p>No daemon thread — all delta collection runs on the game thread to avoid race issues.
@@ -43,7 +45,9 @@ public class GameEventForwarder implements Observer {
         pendingEvents.add(ev);
         boolean sizeThreshold = pendingEvents.size() >= FLUSH_SIZE_THRESHOLD;
         boolean timeThreshold = (System.nanoTime() - lastFlushTime) >= FLUSH_INTERVAL_NS;
-        if (timeThreshold || sizeThreshold) {
+        // There may be no next event while a player reviews an assignment.
+        // Every seat must see that attack/block without waiting for confirmation.
+        if (ev instanceof GameEventCombatUpdate || timeThreshold || sizeThreshold) {
             flush();
         }
     }

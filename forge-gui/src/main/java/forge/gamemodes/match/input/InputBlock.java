@@ -88,6 +88,15 @@ public class InputBlock extends InputSyncronizedBase {
             getController().getGame().fireEvent(GameEventCombatUpdate.fromCards(combat.getAttackers(), combat.getAllBlockers()));
 
         getController().getGui().showCombat();
+        getController().getInputProxy().publishCombatChoices(this,
+                forge.game.combat.CombatInputState.blockers(combat, defender));
+    }
+
+    boolean assign(Card attacker, Card blocker) {
+        if (attacker == null || blocker == null || blocker.getController() != defender || !combat.isAttacking(attacker)
+                || !combat.isBlocking(blocker, attacker) && !CombatUtil.canBlock(attacker, blocker, combat)) return false;
+        setCurrentAttacker(attacker);
+        return onCardSelected(blocker, null, null);
     }
 
     @Override

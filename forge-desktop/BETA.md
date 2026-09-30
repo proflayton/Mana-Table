@@ -1,8 +1,23 @@
-# Mana Table — beta 0.1.0-beta.36
+# Mana Table — beta 0.1.0-beta.37
 
 Double-click **Mana Table.exe**. Keep the executable with its accompanying
 folders. Java and the Forge card library are bundled; no separate installation
 or account is needed. The first launch scans the card library and can take a moment.
+
+Beta 37 makes **multiplayer combat playable on the battlefield**:
+
+- Click your creature, then the glowing opponent or permanent it should attack.
+  Split attacks across opponents; orange arrows show each destination.
+- To block, click your creature, then a glowing attacker. Blue connections show
+  the assignments. Only legal destinations are offered by the host engine.
+- The battlefield has its own combat instructions and confirmation button.
+  Select an assigned creature to recall it or remove its block; Escape cancels
+  a selection. Dragging and the optional detailed inspector still work.
+- Attackers and blockers move forward and gain colored borders. Player markers
+  show incoming attacks. Every seat sees assignments before confirmation.
+- Multiplayer combat snapshots and atomic assignments fix the missing targeting
+  controls and prevent destination/card messages from arriving out of order.
+  Everyone at the table needs this build.
 
 Beta 36 fixes **manual mana payments freezing multiplayer**:
 

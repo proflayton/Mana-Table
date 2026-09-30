@@ -401,6 +401,15 @@ The adapter validates the published pair before invoking the normal controller;
 illegal defenders and stale handles fail without changing assignments. Confirming
 attackers still uses `action: "ok"` and the engine's full combat validation.
 
+Network sessions expose the same combat contract. The host publishes legal pairs
+through `setCombatChoices(owner, inputSequence, CombatInputState)`. The adapter
+waits for a matching owner/sequence before enabling combat input. Each completed
+assignment updates the prompt ID; repeated state polls preserve it. Attack/block
+answers use atomic controller operations with both endpoints and the input
+sequence, revalidated on the host. Public assignments reach all seats immediately
+through combat events, including planned blocks before confirmation. Legal
+choices are never inferred from highlighted cards or from another player's view.
+
 ## Upstream maintenance
 
 Keep `upstream` pointed at Card-Forge/forge and the integration repository at

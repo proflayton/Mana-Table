@@ -2742,6 +2742,16 @@ public class PlayerControllerHuman extends PlayerController implements IGameCont
     }
 
     @Override
+    public boolean assignAttack(long sequence, CardView attacker, GameEntityView defender) {
+        return inputProxy.assignAttack(sequence, attacker, defender);
+    }
+
+    @Override
+    public boolean assignBlock(long sequence, CardView attacker, CardView blocker) {
+        return inputProxy.assignBlock(sequence, attacker, blocker);
+    }
+
+    @Override
     public void selectButtonCancel() {
         if (macros().isReplaying()) {
             macros().cancelPlayback();

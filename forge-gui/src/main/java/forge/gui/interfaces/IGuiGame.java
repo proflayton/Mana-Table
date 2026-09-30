@@ -73,6 +73,8 @@ public interface IGuiGame {
 
     void showCombat();
 
+    default void setCombatChoices(PlayerView owner, long sequence, forge.game.combat.CombatInputState choices) { }
+
     default void showPromptMessage(PlayerView playerView, String message) {
         showPromptMessage(playerView, message, null);
     }

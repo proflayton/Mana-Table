@@ -193,6 +193,18 @@ your creature locally, then submits one scoped assignment on a legal destination
 retain that selection only within the same prompt. Escape, a new prompt, and
 mode changes clear it. The engine supplies all attack and block eligibility.
 Combat arrows follow the projected targets as the camera moves.
+The battlefield combat dock provides instructions, assignment counts, undo and
+confirmation. Attacking and blocking meshes advance within their playmats;
+projected hit regions follow them. Opponent life markers show incoming attacks.
+
+Network sessions receive `CombatInputState` from the host's active `InputAttack`
+or `InputBlock`, scoped to the input owner and sequence. Only that snapshot
+authorizes legal pairs; highlights do not. `assignAttack` and `assignBlock` send
+one controller operation containing both endpoints. The host rechecks the input
+sequence and legality before changing combat. Assignment updates refresh the
+prompt ID; unchanged polls preserve it. Combat events flush immediately so
+observers see assignments while the acting player reviews them.
+
 Life numbers, stats, menus, the detailed
 combat inspector and reveal/search galleries remain HTML controls. Projection
 writes and combat SVG updates are excluded from the scene's mutation observer

@@ -225,9 +225,10 @@ export function createTableWorld(arena, onFailure) {
     entry.face.position.z = .012 * entry.body.scale.z + .001;
     entry.face.material.opacity = kind === 'pile' && !entry.count ? .23 : 1;
     entry.body.visible = kind !== 'pile' || entry.count > 0;
-    const color = element.classList.contains('table-attacking') || element.classList.contains('in-combat') ? 0xec9470
-      : element.classList.contains('chosen') || element.classList.contains('table-combat-selected') || kind === 'cast' ? 0xf1d58b : 0x79d4ee;
-    entry.rim.visible = kind !== 'back' && (hovering || held || control.matches('.actionable, .chosen, .in-combat, .table-combat-selected, .combat-target-ready') || kind === 'cast');
+    const color = element.classList.contains('table-combat-selected') || element.classList.contains('chosen') || kind === 'cast' ? 0xf1d58b
+      : element.classList.contains('table-blocker') || element.classList.contains('combat-target-ready') ? 0x82dce4
+      : element.classList.contains('table-attacker') || element.classList.contains('in-combat') ? 0xec9470 : 0x79d4ee;
+    entry.rim.visible = kind !== 'back' && (hovering || held || control.matches('.actionable, .chosen, .in-combat, .table-combat-ready, .table-combat-selected, .combat-target-ready, .table-attacker, .table-blocker') || kind === 'cast');
     entry.rim.material.color.setHex(color);
     entry.shadow.position.copy(group.position);
     if (onTable) {
