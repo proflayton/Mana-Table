@@ -281,6 +281,14 @@ return false without advancing the game. Host and guests must run the same
 updated engine: this changes the experimental Forge network protocol, while the
 desktop `matchAction` JSON stays unchanged.
 
+Network controller actions run on the input executor, outside the snapshot lock
+and JSON request loop. An in-flight action hides the input until dispatch ends,
+while nested ability/color dialogs remain visible and accept replies directly.
+This permits manual mana payments without blocking the request that supplies the
+answer. Canceling a nested dialog republishes the still-active payment input.
+Queued actions recheck their input sequence before dispatch; a host-declined
+Auto pass simply refreshes the current decision without advancing it.
+
 Regression coverage: `NetworkAutoPassTest` recreates a detached opening player,
 `AutomaticPriorityShould` checks host guards, and
 `node --test tests/network-auto.test.cjs` from `forge-desktop` exercises real host

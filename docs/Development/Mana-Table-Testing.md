@@ -51,7 +51,7 @@ node --test tests/commander.test.cjs
 | Anchored controls and independent panel scrolling | `rail-layout.spec.cjs`, `match-scroll.spec.cjs` |
 | Lifted-card pixels, retained hand nodes, phase layout stability and turn cues | `table-stability.spec.cjs` (real WebGL plus a copied turn-cue presentation fixture) |
 | Casting, cancelling, the stack and revealed hand portraits | `casting-reveal.spec.cjs` |
-| Source-aware artifact mana choices | `mana-choice.spec.cjs` |
+| Source-aware artifact and manual land mana choices | `mana-choice.spec.cjs`, `network-mana-choice.test.cjs` |
 
 ## Profiles and artifacts
 
@@ -61,6 +61,12 @@ discards, and losing access after Naturalize removes Chorus. The desktop encount
 checks inspection in both 3D and 2D, and that clicking an unplayable top land does
 not advance the game. `match-scroll.spec.cjs` uses inert display snapshots to
 check scroll retention during polls, decision updates, and unrelated board changes.
+
+`network-mana-choice.test.cjs` manually pays for spells with Yavimaya Coast at
+both host and guest seats. It checks that polling and actions remain responsive
+during the ability dialog, cancellation returns to payment without tapping the
+land, stale payment actions are rejected, and colored/colorless abilities finish
+casting with the correct life change.
 
 Shared helpers live in `tests/support/engine.cjs` and `tests/support/desktop.cjs`.
 They create unique profiles under ignored `test-results/`, respect configured

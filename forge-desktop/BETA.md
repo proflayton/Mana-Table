@@ -1,8 +1,18 @@
-# Mana Table — beta 0.1.0-beta.35
+# Mana Table — beta 0.1.0-beta.36
 
 Double-click **Mana Table.exe**. Keep the executable with its accompanying
 folders. Java and the Forge card library are bundled; no separate installation
 or account is needed. The first launch scans the card library and can take a moment.
+
+Beta 36 fixes **manual mana payments freezing multiplayer**:
+
+- Activating lands with multiple abilities, such as Yavimaya Coast, keeps the
+  app responsive while you choose an ability. Canceling returns to payment;
+  selecting an ability allows the spell and game to continue.
+- Controller actions run outside the engine request loop and match lock, with
+  input-sequence checks and duplicate submission protection while dispatching.
+- Host and guest encounter tests cover cancellation, stale actions, colored
+  and colorless payment, spell resolution, and the correct life change.
 
 Beta 35 adds **visible library tops and stable match scrolling**:
 

@@ -62,6 +62,7 @@ final class NetworkMatchSession extends NetworkGuiGame implements ManaTableSessi
     private boolean cancelEnabled;
     private CardView promptSource;
     private Pending pending;
+    private Pending dispatching;
     private long inputSequence = -1;
     private int inputOwnerId = -1;
     private String authoritativeInputType = "InputLockUI";
@@ -122,7 +123,7 @@ final class NetworkMatchSession extends NetworkGuiGame implements ManaTableSessi
     public void publishInput() {
         synchronized (gate) {
             boolean owned = viewer != null && inputOwnerId == viewer.getId();
-            if (error != null || pending != null && !pending.kind.equals("input") || !inputActive || !owned
+            if (error != null || dispatching != null || pending != null && !pending.kind.equals("input") || !inputActive || !owned
                     || viewer == null || getGameController(viewer) == null) {
                 if (pending != null && pending.kind.equals("input") && (!inputActive || !owned)) {
                     pending = null;
@@ -186,6 +187,7 @@ final class NetworkMatchSession extends NetworkGuiGame implements ManaTableSessi
             opened = false;
             viewer = null;
             pending = null;
+            dispatching = null;
             inputSequence = -1;
             inputOwnerId = -1;
             authoritativeInputType = "InputLockUI";
@@ -266,32 +268,47 @@ final class NetworkMatchSession extends NetworkGuiGame implements ManaTableSessi
             CardView chosenCard = card;
             CardView chosenAttacker = attacker;
             PlayerView chosenPlayer = player;
-            // Forge owns the input lifecycle. In particular, Cancel can reset a combat
-            // assignment while leaving the same InputAttack active, so keep the prompt
-            // until setInputState reports that it ended or moved to a new sequence.
-            publish();
-            switch (action) {
-                case "ok" -> controller.selectButtonOk();
-                case "passIfNoResponse" -> {
-                    if (!controller.passPriorityIfNoResponse(inputSequence)) {
-                        throw new IllegalArgumentException("That response window changed or needs your decision");
+            long sequence = inputSequence;
+            pending = null;
+            dispatching = next;
+            markBusy();
+            // Controller calls can synchronously ask for another choice (e.g. which
+            // mana ability to activate during payment). Keep both the JSON request
+            // loop and gate free to publish that choice and receive its answer.
+            HeadlessPlatform.later(() -> {
+                try {
+                    synchronized (gate) {
+                        if (dispatching != next || inputSequence != sequence || !inputActive
+                                || viewer == null || inputOwnerId != viewer.getId() || error != null) return;
                     }
+                    switch (action) {
+                        case "ok" -> controller.selectButtonOk();
+                        // The host still authorizes the exact sequence. A declined
+                        // Auto request is a no-op; refresh the current decision.
+                        case "passIfNoResponse" -> controller.passPriorityIfNoResponse(sequence);
+                        case "cancel" -> controller.selectButtonCancel();
+                        case "attackAll" -> controller.alphaStrike();
+                        case "card" -> controller.selectCard(chosenCard, null, null);
+                        case "player" -> controller.selectPlayer(chosenPlayer, null);
+                        case "attack" -> {
+                            if (chosenPlayer != null) controller.selectPlayer(chosenPlayer, null);
+                            else controller.selectCard(chosenCard, null, null);
+                            controller.selectCard(chosenAttacker, null, null);
+                        }
+                        case "block" -> {
+                            controller.selectCard(chosenAttacker, null, null);
+                            controller.selectCard(chosenCard, null, null);
+                        }
+                    }
+                } finally {
+                    synchronized (gate) {
+                        if (dispatching == next) dispatching = null;
+                    }
+                    // Cancel and card selection can leave the same input active.
+                    // Republish it only after dispatch, never during a nested dialog.
+                    publishInput();
                 }
-                case "cancel" -> controller.selectButtonCancel();
-                case "attackAll" -> controller.alphaStrike();
-                case "card" -> controller.selectCard(chosenCard, null, null);
-                case "player" -> controller.selectPlayer(chosenPlayer, null);
-                case "attack" -> {
-                    if (chosenPlayer != null) controller.selectPlayer(chosenPlayer, null);
-                    else controller.selectCard(chosenCard, null, null);
-                    controller.selectCard(chosenAttacker, null, null);
-                }
-                case "block" -> {
-                    controller.selectCard(chosenAttacker, null, null);
-                    controller.selectCard(chosenCard, null, null);
-                }
-            }
-            publishInput();
+            });
             return latest;
         }
     }
