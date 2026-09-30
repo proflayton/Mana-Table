@@ -21,6 +21,7 @@ import forge.interfaces.IGameController;
 import forge.item.PaperCard;
 import forge.localinstance.skin.FSkinProp;
 import forge.trackable.TrackableCollection;
+import forge.trackable.TrackableTypes;
 import forge.util.FSerializableFunction;
 import forge.util.ITriggerEvent;
 
@@ -65,6 +66,7 @@ final class NetworkMatchSession extends NetworkGuiGame implements ManaTableSessi
     private int inputOwnerId = -1;
     private String authoritativeInputType = "InputLockUI";
     private boolean inputActive;
+    private boolean inputCanAutoPass;
 
     private static final class Pending {
         final String id;
@@ -153,7 +155,8 @@ final class NetworkMatchSession extends NetworkGuiGame implements ManaTableSessi
 
     private boolean canAutoPass() {
         GameView view = getGameView();
-        return "InputPassPriority".equals(authoritativeInputType) && okEnabled && view != null
+        return inputActive && inputCanAutoPass && viewer != null && inputOwnerId == viewer.getId()
+                && "InputPassPriority".equals(authoritativeInputType) && okEnabled && view != null
                 && view.getTurn() > 0 && !viewer.hasAvailableActions();
     }
 
@@ -187,6 +190,7 @@ final class NetworkMatchSession extends NetworkGuiGame implements ManaTableSessi
             inputOwnerId = -1;
             authoritativeInputType = "InputLockUI";
             inputActive = false;
+            inputCanAutoPass = false;
             message = "Waiting for the game...";
             ok = "Continue";
             cancel = "Cancel";
@@ -225,7 +229,7 @@ final class NetworkMatchSession extends NetworkGuiGame implements ManaTableSessi
                 throw new IllegalStateException("The network player controller is not ready.");
             }
             String action = string(request, "action");
-            if (action.equals("passIfNoResponse") && !Boolean.TRUE.equals(next.prompt.get("canAutoPass"))) {
+            if (action.equals("passIfNoResponse") && (!Boolean.TRUE.equals(next.prompt.get("canAutoPass")) || !canAutoPass())) {
                 throw new IllegalArgumentException("This response window needs your decision");
             }
             CardView card = null;
@@ -266,7 +270,11 @@ final class NetworkMatchSession extends NetworkGuiGame implements ManaTableSessi
             publish();
             switch (action) {
                 case "ok" -> controller.selectButtonOk();
-                case "passIfNoResponse" -> controller.passPriority();
+                case "passIfNoResponse" -> {
+                    if (!controller.passPriorityIfNoResponse(inputSequence)) {
+                        throw new IllegalArgumentException("That response window changed or needs your decision");
+                    }
+                }
                 case "cancel" -> controller.selectButtonCancel();
                 case "attackAll" -> controller.alphaStrike();
                 case "card" -> controller.selectCard(chosenCard, null, null);
@@ -309,14 +317,16 @@ final class NetworkMatchSession extends NetworkGuiGame implements ManaTableSessi
         HeadlessPlatform.activate(this);
         setNetGame();
         if (myPlayers != null && !myPlayers.isEmpty()) {
-            viewer = myPlayers.iterator().next();
+            // openView carries full serialized players. Keep the tracker-owned
+            // instance updated by applyDelta, rather than that opening snapshot.
+            viewer = TrackableTypes.PlayerViewType.lookup(myPlayers.iterator().next());
         }
         opened = true;
         publish();
     }
 
     @Override
-    public void setInputState(PlayerView owner, String inputType, long sequence, boolean active) {
+    public void setInputState(PlayerView owner, String inputType, long sequence, boolean active, boolean canAutoPass) {
         synchronized (gate) {
             if (sequence < inputSequence) return;
             boolean changed = sequence != inputSequence;
@@ -324,6 +334,7 @@ final class NetworkMatchSession extends NetworkGuiGame implements ManaTableSessi
             inputOwnerId = owner == null ? -1 : owner.getId();
             authoritativeInputType = inputType == null || inputType.isBlank() ? "InputLockUI" : inputType;
             inputActive = active;
+            inputCanAutoPass = canAutoPass;
             if (changed) {
                 message = active ? "Waiting for Forge's prompt..." : "Waiting for the next action...";
                 ok = "";

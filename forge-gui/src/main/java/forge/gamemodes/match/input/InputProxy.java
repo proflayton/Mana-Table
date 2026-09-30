@@ -46,6 +46,7 @@ public class InputProxy implements Observer {
     private AtomicReference<Input> input = new AtomicReference<>();
     private final PlayerControllerHuman controller;
     private long inputSequence;
+    private long autoPassedSequence = -1;
 
 //    private static final boolean DEBUG_INPUT = true; // false;
 
@@ -61,16 +62,20 @@ public class InputProxy implements Observer {
                     FThreads.debugGetStackTraceItem(6, true), nextInput == null ? "null" : nextInput.getClass().getSimpleName(), 
                             game.getPhaseHandler().debugPrintState(), Singletons.getControl().getInputQueue().printInputStack());
 */
-        final Input previousInput = input.getAndSet(nextInput);
-        if (previousInput != nextInput) {
-            inputSequence++;
+        final long sequence;
+        synchronized (input) {
+            final Input previousInput = input.getAndSet(nextInput);
+            if (previousInput != nextInput) {
+                inputSequence++;
+            }
+            sequence = inputSequence;
         }
         Class<?> inputClass = nextInput.getClass();
         while (inputClass.getSimpleName().isEmpty()) {
             inputClass = inputClass.getSuperclass();
         }
-        controller.getGui().setInputState(nextInput.getOwner(), inputClass.getSimpleName(), inputSequence,
-                !(nextInput instanceof InputLockUI));
+        controller.getGui().setInputState(nextInput.getOwner(), inputClass.getSimpleName(), sequence,
+                !(nextInput instanceof InputLockUI), nextInput instanceof InputPassPriority priority && priority.canAutoPass());
         if (!(nextInput instanceof InputLockUI)) {
             controller.getGui().setCurrentPlayer(nextInput.getOwner());
         }
@@ -81,6 +86,26 @@ public class InputProxy implements Observer {
             current.showMessageInitial();
         };
         FThreads.invokeInEdtLater(showMessage);
+    }
+
+    /** The client snapshot is advisory; the host validates and consumes the exact input. */
+    public boolean passPriorityIfNoResponse(final long expectedSequence) {
+        synchronized (input) {
+            final Input current = input.get();
+            final Player player = controller.getPlayer();
+            if (inputSequence != expectedSequence || autoPassedSequence == expectedSequence
+                    || !(current instanceof InputPassPriority priority) || priority.isFinished()
+                    || !priority.canAutoPass()
+                    || current != controller.getInputQueue().getInput()
+                    || player == null || !player.getView().equals(current.getOwner())
+                    || player.getView().hasAvailableActions()) {
+                return false;
+            }
+            // Consume before dispatch: mana-loss confirmation can delay completion.
+            autoPassedSequence = expectedSequence;
+            priority.passPriority();
+            return true;
+        }
     }
     /**
      * <p>

@@ -29,7 +29,8 @@ public interface IGameController {
 
     void selectButtonOk();
 
-    void passPriority();
+    /** Pass only this priority input, and only if the host finds no available actions. */
+    boolean passPriorityIfNoResponse(long inputSequence);
 
     void selectButtonCancel();
 

@@ -76,8 +76,8 @@ public class NetGameController implements IGameController {
     }
 
     @Override
-    public void passPriority() {
-        send(ProtocolMethod.passPriority);
+    public boolean passPriorityIfNoResponse(final long inputSequence) {
+        return Boolean.TRUE.equals(sendAndWait(ProtocolMethod.passPriorityIfNoResponse, inputSequence));
     }
 
     @Override

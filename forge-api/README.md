@@ -246,6 +246,26 @@ eligible pass but never authorize one the engine has rejected.
 This is an additive protocol change: existing manual actions remain valid, and
 clients must treat a missing `canAutoPass` field as false.
 
+Network Auto uses explicit host permission attached to the input sequence in
+`setInputState`. An input that has not had an availability scan never grants
+permission, even if its player view defaults to `HasAvailableActions = false`.
+The network adapter resolves the opening player snapshot through the tracker so
+subsequent availability deltas update the player it reads. Highlighted cards are
+not the source of permission.
+
+`passPriorityIfNoResponse(sequence)` returns a host acknowledgement. The host
+checks the exact active input, its owner, verified availability, and whether the
+request has already been consumed. Stale, repeated, and ineligible requests
+return false without advancing the game. Host and guests must run the same
+updated engine: this changes the experimental Forge network protocol, while the
+desktop `matchAction` JSON stays unchanged.
+
+Regression coverage: `NetworkAutoPassTest` recreates a detached opening player,
+`AutomaticPriorityShould` checks host guards, and
+`node --test tests/network-auto.test.cjs` from `forge-desktop` exercises real host
+and guest engines with playable lands and affordable commanders. The existing
+`response-skip.test.cjs` covers local stack responses and main-phase availability.
+
 Library choices carry `context: librarySearch` and combine the delayed reveal
 with the actual selection in one prompt. `choices` retains the engine's eligible
 indices and min/max constraints. `libraryCards` contains only the cards supplied

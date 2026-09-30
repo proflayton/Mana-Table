@@ -1657,6 +1657,7 @@ public class PlayerControllerHuman extends PlayerController implements IGameCont
         // shouldAutoYield, not isYieldActive: it clears yields that have run their course, so an expiring one no longer skips the scan
         // Compute the actionable set when APINA / suggestions / highlights need it.
         boolean highlightsEnabled = yieldController.getBoolPref(FPref.UI_SHOW_ACTIONABLE_HIGHLIGHTS);
+        boolean availabilityVerified = false;
         if (!yieldController.shouldAutoYield() && (needsAvailableActions() || highlightsEnabled)) {
             long timeoutMs = computeAvailableActionsBudgetMs(getPlayer());
             if (highlightsEnabled) {
@@ -1669,6 +1670,7 @@ public class PlayerControllerHuman extends PlayerController implements IGameCont
                 cachedActionableCards = null;
                 getPlayer().getView().setHasAvailableActions(AvailableActions.compute(getPlayer(), timeoutMs));
             }
+            availabilityVerified = true;
         } else {
             cachedActionableCards = null;
         }
@@ -1713,6 +1715,7 @@ public class PlayerControllerHuman extends PlayerController implements IGameCont
 
         netLog.trace("Creating InputPassPriority for player {}", player.getName());
         final InputPassPriority defaultInput = new InputPassPriority(this);
+        defaultInput.setAvailabilityVerified(availabilityVerified);
         defaultInput.showAndWait();
         netLog.trace("InputPassPriority returned for player {}, chosenSa={}", player.getName(), defaultInput.getChosenSa());
         return defaultInput.getChosenSa();
@@ -2734,10 +2737,8 @@ public class PlayerControllerHuman extends PlayerController implements IGameCont
     }
 
     @Override
-    public void passPriority() {
-        if (inputQueue.getInput() instanceof InputPassPriority input) {
-            input.passPriority();
-        }
+    public boolean passPriorityIfNoResponse(final long inputSequence) {
+        return inputProxy.passPriorityIfNoResponse(inputSequence);
     }
 
     @Override
@@ -3933,9 +3934,10 @@ public class PlayerControllerHuman extends PlayerController implements IGameCont
      *  Otherwise the value computed when the prompt was built still stands. */
     private void refreshAvailableActionsForPrompt() {
         if (yieldController.isYieldActive() || !needsAvailableActions()) return;
-        if (!(inputProxy.getInput() instanceof InputPassPriority)) return;
+        if (!(inputProxy.getInput() instanceof InputPassPriority priority)) return;
         long timeoutMs = computeAvailableActionsBudgetMs(getPlayer());
         getPlayer().getView().setHasAvailableActions(AvailableActions.compute(getPlayer(), timeoutMs));
+        priority.setAvailabilityVerified(true);
     }
 
     /** True if yield consumer needs the synced wire field. */

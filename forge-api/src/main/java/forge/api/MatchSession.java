@@ -231,8 +231,8 @@ public final class MatchSession implements ManaTableSession {
         // Land plays and castable commanders count as actions too. A main phase
         // with no remaining play is eligible; the client applies saved phase stops.
         // Never infer this permission from card highlighting in the renderer.
-        return input instanceof InputPassPriority && okEnabled && view.getTurn() > 0
-                && !viewer.hasAvailableActions();
+        return input instanceof InputPassPriority priority && okEnabled && view.getTurn() > 0
+                && priority.canAutoPass();
     }
 
     public Map<String, Object> action(JsonObject request) {
