@@ -32,7 +32,7 @@ import java.util.*;
 import java.util.concurrent.*;
 
 /** One local human with one or more AI opponents. Mutable engine objects never leave this adapter. */
-public final class MatchSession {
+public final class MatchSession implements ManaTableSession {
     private static final forge.util.ITriggerEvent CARD_CLICK = new forge.util.ITriggerEvent() {
         public int getButton() { return 1; }
         public int getX() { return 0; }
@@ -128,7 +128,8 @@ public final class MatchSession {
         });
     }
 
-    IGuiGame gui() { return gui; }
+    @Override
+    public IGuiGame gui() { return gui; }
     public Map<String, Object> state() {
         synchronized (gate) {
             // During AI work, publish only event-time copies. Never read a live board from IPC.
@@ -196,7 +197,8 @@ public final class MatchSession {
     }
 
     /** Called only after an input-display runnable completes, while the game awaits that input. */
-    void publishInput() {
+    @Override
+    public void publishInput() {
         synchronized (gate) {
             if (closed || error != null || pending != null && !pending.kind.equals("input")) return;
             Input current = human.getInputQueue().getInput();
@@ -229,8 +231,8 @@ public final class MatchSession {
         // Land plays and castable commanders count as actions too. A main phase
         // with no remaining play is eligible; the client applies saved phase stops.
         // Never infer this permission from card highlighting in the renderer.
-        return input instanceof InputPassPriority && okEnabled && view.getTurn() > 0
-                && !viewer.hasAvailableActions();
+        return input instanceof InputPassPriority priority && okEnabled && view.getTurn() > 0
+                && priority.canAutoPass();
     }
 
     public Map<String, Object> action(JsonObject request) {
@@ -346,6 +348,7 @@ public final class MatchSession {
 
     private void publish(Pending prompt) {
         var view = game.getView();
+        activity.refreshVisibility();
         var players = new ArrayList<Object>();
         var allPlayers = game.getRegisteredPlayers().stream().map(Player::getView).toList();
         for (PlayerView player : allPlayers) {
@@ -353,8 +356,16 @@ public final class MatchSession {
             for (ZoneType zone : List.of(ZoneType.Battlefield, ZoneType.Hand, ZoneType.Library, ZoneType.Graveyard, ZoneType.Exile, ZoneType.Command)) {
                 var visible = new ArrayList<Object>();
                 var cards = player.getCards(zone);
-                if (cards != null) for (CardView card : cards) if (card.canBeShownTo(viewer)) visible.add(cardState(card, prompt));
-                zones.add(map("name", zone.name(), "count", player.getZoneSize(zone), "cards", visible));
+                Map<String, Object> topCard = null;
+                if (cards != null) for (CardView card : cards) if (card.canBeShownTo(viewer)) {
+                    var state = cardState(card, prompt);
+                    visible.add(state);
+                    if (zone == ZoneType.Library && card.equals(cards.get(0))) topCard = state;
+                }
+                var zoneState = map("name", zone.name(), "count", player.getZoneSize(zone), "cards", visible);
+                // A visible card elsewhere in the library is not necessarily its top card.
+                if (zone == ZoneType.Library) zoneState.put("topCard", topCard);
+                zones.add(zoneState);
             }
             var mana = new LinkedHashMap<String, Integer>();
             byte[] colors = {MagicColor.WHITE, MagicColor.BLUE, MagicColor.BLACK, MagicColor.RED, MagicColor.GREEN, MagicColor.COLORLESS};
@@ -498,7 +509,8 @@ public final class MatchSession {
                 "artName", artName, "artFace", back ? "front" : "back"));
     }
 
-    void fail(Throwable failure) { failure.printStackTrace(System.err); fail(failure.getMessage() == null ? failure.getClass().getSimpleName() : failure.getMessage()); }
+    @Override
+    public void fail(Throwable failure) { failure.printStackTrace(System.err); fail(failure.getMessage() == null ? failure.getClass().getSimpleName() : failure.getMessage()); }
     void fail(String failure) {
         synchronized (gate) {
             if (closed) return;
@@ -584,7 +596,8 @@ public final class MatchSession {
         };
     }
 
-    Object platformDialog(String name, Object[] a) {
+    @Override
+    public Object platformDialog(String name, Object[] a) {
         if (name.equals("getChoices")) return choose((String)a[0], (int)a[1], (int)a[2], new ArrayList<>((Collection<?>)a[3]), false, (FSerializableFunction<Object, String>)a[5]);
         if (name.equals("chooseCard")) return first(choose(a[0] + "\n" + a[1], 1, 1, (List<?>)a[2], false, null));
         if (name.equals("order")) {

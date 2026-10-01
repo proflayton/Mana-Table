@@ -101,6 +101,7 @@ public class FGameClient implements IToServer, IHasForgeLog {
             final Bootstrap b = new Bootstrap()
              .group(group)
              .channel(NioSocketChannel.class)
+             .option(ChannelOption.CONNECT_TIMEOUT_MILLIS, 8000)
              .handler(new ChannelInitializer<SocketChannel>() {
                 @Override
                 public void initChannel(final SocketChannel ch) throws Exception {

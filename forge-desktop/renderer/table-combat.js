@@ -4,7 +4,12 @@ function createTableCombat(arena, send) {
   const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
   svg.classList.add('table-combat-lines'); svg.setAttribute('aria-hidden', 'true'); arena.append(svg);
   const hint = document.createElement('div');
-  hint.className = 'table-combat-hint'; hint.hidden = true; hint.setAttribute('role', 'status'); arena.append(hint);
+  hint.className = 'table-combat-hint'; hint.id = 'table-combat-instruction'; hint.setAttribute('role', 'status');
+  const controls = document.createElement('section'); controls.className = 'table-combat-controls'; controls.hidden = true;
+  controls.setAttribute('aria-label', 'Battlefield combat');
+  controls.innerHTML = '<div class="table-combat-heading"><strong></strong><span></span></div><div class="table-combat-buttons"><button type="button" class="button secondary" data-table-combat-clear>Cancel selection</button><button type="button" class="button secondary" data-table-combat-undo>Remove assignment</button><button type="button" class="button primary" id="table-combat-confirm"></button></div>';
+  controls.insertBefore(hint, controls.lastElementChild); arena.append(controls);
+  const confirm = controls.querySelector('#table-combat-confirm'), clear = controls.querySelector('[data-table-combat-clear]'), undo = controls.querySelector('[data-table-combat-undo]');
   let state, cards = new Map(), selected, pressed, frame;
   const cardId = element => element?.dataset.tableCombat;
   const tile = id => [...arena.querySelectorAll('.battlefield-card[data-table-combat]')].find(element => cardId(element) === id);
@@ -28,6 +33,27 @@ function createTableCombat(arena, send) {
     if (g.mode === 'InputBlock') send({ action: 'block', attackerKey: g.keys.get(target.cardId), blockerKey: g.key }, g.scope);
     else send({ action: 'attack', attackerKey: g.key, ...(target.kind === 'player' ? { defenderPlayerId: target.id } : { defenderKey: g.keys.get(target.id) }) }, g.scope);
   }
+  function assignedTarget(g) {
+    if (!g) return null;
+    const attacks = state.combat?.attackers || [];
+    return g.mode === 'InputAttack' ? attacks.find(attack => attack.cardId === g.id)?.defender
+      : attacks.find(attack => attack.blockerIds.includes(g.id));
+  }
+  let controlPress;
+  controls.addEventListener('pointerdown', event => { controlPress = { target: event.target.closest('button'), scope: scope(), selected }; });
+  controls.addEventListener('click', event => {
+    const button = event.target.closest('button');
+    if (!button || button.disabled) return;
+    event.stopPropagation();
+    const captured = event.detail ? controlPress : { target: button, scope: scope(), selected };
+    controlPress = null;
+    if (!captured || captured.target !== button || !current(captured.scope)) return;
+    if (button === clear) { selected = null; paint(); }
+    else if (button === undo && captured.selected && current(captured.selected.scope)) {
+      const target = assignedTarget(captured.selected);
+      if (target) assign(captured.selected, target);
+    } else if (button === confirm) { selected = null; send({ action: 'ok' }, captured.scope); }
+  });
   function targetAt(g, element) {
     if (g.mode === 'InputBlock') {
       const id = cardId(element?.closest('.battlefield-card'));
@@ -94,9 +120,10 @@ function createTableCombat(arena, send) {
       selected = selected?.id === id ? null : selection(id); paint();
     }
   });
-  document.addEventListener('keydown', event => { if (event.key === 'Escape') { selected = null; pressed = null; paint(); } });
-  window.addEventListener('blur', () => { selected = null; pressed = null; paint(); });
+  document.addEventListener('keydown', event => { if (event.key === 'Escape') { selected = null; pressed = null; controlPress = null; paint(); } });
+  window.addEventListener('blur', () => { selected = null; pressed = null; controlPress = null; paint(); });
   function paint() {
+    if (!state) return;
     const attacks = available() ? state?.combat?.attackers || [] : [];
     arena.querySelectorAll('.combat-target-ready').forEach(element => element.classList.remove('combat-target-ready'));
     for (const element of arena.querySelectorAll('.battlefield-card')) {
@@ -120,10 +147,33 @@ function createTableCombat(arena, send) {
       if (mode() === 'InputAttack') selected.defenders.forEach(defender => defenderElement(defender)?.classList.add('combat-target-ready'));
       else attacks.filter(attack => attack.eligibleBlockerIds.includes(selected.id)).forEach(attack => tile(attack.cardId)?.classList.add('combat-target-ready'));
     }
-    hint.hidden = !['InputAttack', 'InputBlock'].includes(mode());
-    const message = selected ? `${name(selected.id)} → ${mode() === 'InputAttack' ? 'Click a highlighted defender' : 'Click a highlighted attacker'} · Esc to cancel`
-      : mode() === 'InputAttack' ? 'Attack: click your creature, then a defender' : 'Block: click your creature, then an attacker';
+    for (const portrait of arena.querySelectorAll('.match-life[data-match-player]')) {
+      const count = attacks.filter(attack => attack.defender?.playerId === Number(portrait.dataset.matchPlayer)).length;
+      const target = portrait.classList.contains('combat-target-ready');
+      portrait.classList.toggle('combat-under-attack', count > 0);
+      let label = portrait.querySelector('.combat-player-intent');
+      if (!count && !target) { label?.remove(); continue; }
+      if (!label) { label = document.createElement('span'); label.className = 'combat-player-intent'; portrait.append(label); }
+      label.textContent = target ? 'Attack here' : `${count} incoming`;
+    }
+    const choosing = ['InputAttack', 'InputBlock'].includes(mode());
+    controls.hidden = !available() || !choosing && !attacks.length;
+    controls.dataset.mode = mode() === 'InputAttack' ? 'attack' : mode() === 'InputBlock' ? 'block' : 'view';
+    const blockCount = attacks.reduce((total, attack) => total + attack.blockerIds.length, 0);
+    controls.querySelector('.table-combat-heading strong').textContent = mode() === 'InputAttack' ? 'Choose attackers' : mode() === 'InputBlock' ? 'Choose blockers' : 'Combat';
+    controls.querySelector('.table-combat-heading span').textContent = `${attacks.length} attacking · ${blockCount} blocking`;
+    const message = selected ? `${name(selected.id)} → ${mode() === 'InputAttack' ? 'Choose a glowing player or defender.' : 'Choose a glowing attacker.'}`
+      : mode() === 'InputAttack' ? state.combat?.attackOptions?.length ? 'Click a creature, then the player it should attack.' : 'No creatures can attack this combat.'
+      : mode() === 'InputBlock' ? state.combat?.blockProblem || 'Click your creature, then the attacker it should block.'
+      : 'Orange arrows show attacks. Blue lines show blocks.';
     if (hint.textContent !== message) hint.textContent = message;
+    clear.hidden = !selected;
+    undo.hidden = !assignedTarget(selected);
+    undo.textContent = mode() === 'InputAttack' ? 'Recall attacker' : 'Remove block';
+    confirm.hidden = !choosing;
+    confirm.disabled = !state.prompt?.okEnabled || !state.combat || mode() === 'InputBlock' && Boolean(state.combat.blockProblem);
+    confirm.textContent = mode() === 'InputAttack' ? attacks.length ? `Attack with ${attacks.length}` : 'No attacks'
+      : blockCount ? 'Confirm blocks' : 'No blocks';
     scheduleLines();
   }
   function lines() {

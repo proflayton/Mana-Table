@@ -31,7 +31,8 @@ local deck persistence, opening-hand practice, and human-versus-AI matches. Buil
 | `MatchActivity` | Immutable, viewer-filtered recent actions and event-time turn/phase metadata |
 
 The records contain values rather than live engine objects. The desktop serializes
-them through its private transport; this module does not start a network listener.
+them through its private transport. Explicit multiplayer hosting starts Forge's
+TCP game listener; the desktop command API remains on private stdin/stdout pipes.
 Printing IDs are opaque, case-sensitive identifiers; clients must round-trip them.
 Catalog construction eagerly indexes the supplied printings. Initialize it once
 on a worker thread; search results include alternate printings rather than grouping
@@ -83,6 +84,26 @@ File locations and persistence are the host application's responsibility.
 
 ## Desktop transport and deck commands
 
+### Multiplayer hosting and invites
+
+`multiplayerHost {format, playerCount, autoPortForward?}` starts a native network
+lobby. `autoPortForward` defaults to false for API callers; the desktop's visible
+checkbox supplies the choice explicitly. It uses Forge's UPnP mapping lifecycle
+without changing the user's persistent UPnP preference. Host results and
+`multiplayerState` include `portMapping` (`disabled`, `searching`, `mapped`, or
+`failed`), `addressLookupPending`, `internetInvite` (nullable), and `addresses`.
+Local address entries also carry `invite` when IPv4 encoding is available.
+
+`multiplayerJoin {address}` accepts either the complete `MT1-…` invite or the
+existing direct host/port syntax. Invites contain the endpoint and a CRC32 typo
+checksum, with no authentication or directory service. Invalid invites are
+rejected before closing the current connection. `multiplayerClose` stops the
+listener and its UPnP service. Mapping callbacks from an older hosting attempt
+cannot update a newer lobby's status. Router acknowledgement does not prove
+external reachability; the UI must not label it as a successful internet test.
+
+### Deck commands
+
 `DesktopEngine` reads newline-delimited UTF-8 JSON from its private stdin:
 `{id, method, params}`. Replies are `{id, result}` or `{id, error}`. Startup emits
 `{event: "loading", message}` and `{event: "ready", printings}`. Diagnostics go to
@@ -100,7 +121,7 @@ correlates request IDs and records diagnostics in the active profile's log.
 | `rename`, `format` | `{revision, name}` or `{revision, format}` |
 | `undo`, `redo` | `{revision}`; deck-editor history |
 | `save` | Retry saving the current deck |
-| `importPreview`, `import` | Preview `{text}`; import `{text, name, format?}` as a new deck |
+| `importPreview`, `import` | Preview `{text}`; import `{text, name, format?}` as a new deck; preview `warnings` reports supported-printing substitutions for unbundled sets in Moxfield/Arena rows |
 | `export` | `{kind: "text"}` or `{kind: "forge"}`; deck-list text |
 | `deckPresets`, `presetImport` | List attributed presets; import one by `{id}` |
 | `practice` | `{action: "shuffle" / "mulligan" / "draw" / "bottom", index?}`; opening-hand sandbox |
@@ -246,6 +267,34 @@ eligible pass but never authorize one the engine has rejected.
 This is an additive protocol change: existing manual actions remain valid, and
 clients must treat a missing `canAutoPass` field as false.
 
+Network Auto uses explicit host permission attached to the input sequence in
+`setInputState`. An input that has not had an availability scan never grants
+permission, even if its player view defaults to `HasAvailableActions = false`.
+The network adapter resolves the opening player snapshot through the tracker so
+subsequent availability deltas update the player it reads. Highlighted cards are
+not the source of permission.
+
+`passPriorityIfNoResponse(sequence)` returns a host acknowledgement. The host
+checks the exact active input, its owner, verified availability, and whether the
+request has already been consumed. Stale, repeated, and ineligible requests
+return false without advancing the game. Host and guests must run the same
+updated engine: this changes the experimental Forge network protocol, while the
+desktop `matchAction` JSON stays unchanged.
+
+Network controller actions run on the input executor, outside the snapshot lock
+and JSON request loop. An in-flight action hides the input until dispatch ends,
+while nested ability/color dialogs remain visible and accept replies directly.
+This permits manual mana payments without blocking the request that supplies the
+answer. Canceling a nested dialog republishes the still-active payment input.
+Queued actions recheck their input sequence before dispatch; a host-declined
+Auto pass simply refreshes the current decision without advancing it.
+
+Regression coverage: `NetworkAutoPassTest` recreates a detached opening player,
+`AutomaticPriorityShould` checks host guards, and
+`node --test tests/network-auto.test.cjs` from `forge-desktop` exercises real host
+and guest engines with playable lands and affordable commanders. The existing
+`response-skip.test.cjs` covers local stack responses and main-phase availability.
+
 Library choices carry `context: librarySearch` and combine the delayed reveal
 with the actual selection in one prompt. `choices` retains the engine's eligible
 indices and min/max constraints. `libraryCards` contains only the cards supplied
@@ -255,6 +304,16 @@ Clients may group identical copies but must return distinct original indices.
 No card-catalog search is needed. A read-only library reveal uses `kind: reveal`
 with no selectable indices. Temporary visibility follows the shared controller;
 these details do not grant later access to hidden library cards.
+
+Each `Library` zone also includes `topCard`: the actual first card's snapshot
+when the viewer has engine permission to see it, otherwise `null`. This is the
+same card object represented in the zone's filtered `cards` array, with the same
+prompt-scoped action key. Never infer the top from the first *visible* card:
+effects can reveal other cards in a library. Looking at a top card does not grant
+permission to play it; use its current `selectable` state and the engine's normal
+card action. Visibility is recomputed for local and network viewers, including
+after draws and when the granting permanent leaves. Opaque local visual handles
+are forgotten after visibility revocation, hidden-zone moves, and shuffles.
 
 Input prompts may include `sourceCard` and `sourceZone` for the card associated
 with a target, payment, or other engine instruction. A `playAbility` choice also
@@ -341,6 +400,15 @@ For a planeswalker or battle, supply `defenderKey` instead of `defenderPlayerId`
 The adapter validates the published pair before invoking the normal controller;
 illegal defenders and stale handles fail without changing assignments. Confirming
 attackers still uses `action: "ok"` and the engine's full combat validation.
+
+Network sessions expose the same combat contract. The host publishes legal pairs
+through `setCombatChoices(owner, inputSequence, CombatInputState)`. The adapter
+waits for a matching owner/sequence before enabling combat input. Each completed
+assignment updates the prompt ID; repeated state polls preserve it. Attack/block
+answers use atomic controller operations with both endpoints and the input
+sequence, revalidated on the host. Public assignments reach all seats immediately
+through combat events, including planned blocks before confirmation. Legal
+choices are never inferred from highlighted cards or from another player's view.
 
 ## Upstream maintenance
 

@@ -145,7 +145,8 @@ export function createWorldLayout(arena, scene, texture, request) {
         cards.forEach((element, index) => {
           const shown = index >= page.first && index < page.first + capacity;
           if (element.dataset.worldVisible !== String(shown)) element.dataset.worldVisible = String(shown);
-          if (shown) card(element, seat, (index - page.first - (count - 1) / 2) * stride - (seat.human || seats.length <= 2 ? 120 : 0), y, seat.cardHeight, 'field');
+          const advance = element.classList.contains('table-attacker') ? 52 : element.classList.contains('table-blocker') ? 28 : 0;
+          if (shown) card(element, seat, (index - page.first - (count - 1) / 2) * stride - (seat.human || seats.length <= 2 ? 120 : 0), y + advance * (seat.human ? 1 : -1), seat.cardHeight, 'field');
         });
         for (const button of row.parentElement.querySelectorAll('.rank-page')) {
           const previous = button.dataset.rankDirection === 'previous';
@@ -161,9 +162,10 @@ export function createWorldLayout(arena, scene, texture, request) {
       const zones = [library, ...lane.querySelectorAll('.match-zone > summary')];
       zones.forEach((element, index) => {
         const zone = index === 0 ? 'Library' : index === 1 ? 'Graveyard' : 'Exile';
-        const count = seat.player.zones.find(item => item.name === zone)?.count || 0;
+        const zoneState = seat.player.zones.find(item => item.name === zone);
+        const count = zoneState?.count || 0;
         card(element, seat, pileStart + index * (wide ? 100 : 85), pileY, pileHeight, 'pile',
-          { key: `pile:${seat.id}:${zone}`, zone, count, hiddenFace: index === 0 });
+          { key: `pile:${seat.id}:${zone}`, zone, count, hiddenFace: index === 0 && !zoneState?.topCard });
       });
       const commanders = [...lane.querySelectorAll('.match-command-zone .match-card')];
       commanders.forEach((element, index) => card(element, seat, wide ? seat.width / 2 - 160 + index * 100 : 125 + index * 75,

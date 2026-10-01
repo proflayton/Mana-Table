@@ -60,18 +60,19 @@ public final class InputSelectTargets extends InputSyncronizedBase {
             lastTarget = card;
         }
 
-        final int initialMin = numTargets != null ? numTargets : sa.getMinTargets();
-        final int initialMax = numTargets != null ? numTargets : sa.getMaxTargets();
-        controller.getGui().setSelectables(CardView.getCollection(choices), initialMin, initialMax);
-        final List<GameEntityView> views = new ArrayList<>();
-        for (final GameEntity c : targets) {
-            if (c instanceof Card) views.add(GameEntityView.get(c));
-        }
-        controller.getGui().setHighlighted(views, true);
     }
 
     @Override
     public void showMessage() {
+        // Publish after the input transition clears the previous input's targets.
+        final int initialMin = numTargets != null ? numTargets : sa.getMinTargets();
+        final int initialMax = numTargets != null ? numTargets : sa.getMaxTargets();
+        getController().getGui().setSelectables(CardView.getCollection(choices), initialMin, initialMax);
+        final List<GameEntityView> views = new ArrayList<>();
+        for (final GameEntity c : targets) {
+            if (c instanceof Card) views.add(GameEntityView.get(c));
+        }
+        getController().getGui().setHighlighted(views, true);
         // Display targeting card in cardDetailPane in case it's not obviously visible.
         getController().getGui().setCard(CardView.get(sa.getHostCard()));
         final StringBuilder sb = new StringBuilder();

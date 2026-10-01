@@ -1,0 +1,106 @@
+name: Mana Table release
+
+on:
+  push:
+    tags: ['mana-table-v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing mana-table-v<package version> tag to build
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+concurrency:
+  group: mana-table-release-${{ inputs.tag || github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  windows:
+    if: github.repository == 'proflayton/Mana-Table'
+    runs-on: windows-latest
+    timeout-minutes: 45
+    env:
+      RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+          persist-credentials: false
+      - name: Verify tag matches the desktop version
+        shell: pwsh
+        run: |
+          $version = (Get-Content forge-desktop/package.json -Raw | ConvertFrom-Json).version
+          if ($env:RELEASE_TAG -cne "mana-table-v$version") { throw 'Tag must match forge-desktop/package.json.' }
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: maven
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: forge-desktop/package-lock.json
+      - name: Build and verify the engine
+        run: mvn -B -ntp -pl forge-api -am verify
+      - name: Install desktop dependencies
+        working-directory: forge-desktop
+        run: npm ci --no-audit --no-fund
+      - name: Check JavaScript
+        working-directory: forge-desktop
+        run: npm run check
+      - name: Unit regressions
+        working-directory: forge-desktop
+        run: npm run test:unit
+      - name: Engine regressions
+        working-directory: forge-desktop
+        run: npm run test:engine
+      - name: Build a clean Windows release ZIP
+        working-directory: forge-desktop
+        run: npm run package:release
+      - name: Test the packaged app
+        working-directory: forge-desktop
+        shell: pwsh
+        run: |
+          $release = Get-Content ../dist/latest-release.json -Raw | ConvertFrom-Json
+          $env:MANA_TEST_EXECUTABLE = Join-Path $release.directory $release.executable
+          Remove-Item Env:FORGE_JAVA -ErrorAction SilentlyContinue
+          npm run test:smoke -- --reporter=line
+      - name: Save verification artifacts
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: release-test-evidence
+          path: forge-desktop/test-results/
+          retention-days: 7
+      - name: Save Windows downloads
+        uses: actions/upload-artifact@v7
+        with:
+          name: mana-table-windows-x64
+          path: |
+            dist/**/*-windows-x64.zip
+            dist/**/*-windows-x64.zip.sha256
+          if-no-files-found: error
+          retention-days: 30
+      - name: Create a draft release with the tested downloads
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          $release = Get-Content dist/latest-release.json -Raw | ConvertFrom-Json
+          $notes = @"
+          Download the Windows x64 ZIP below, extract the entire folder, and open Mana Table.exe. Java and the card library are included; no checkout or build is needed.
+
+          Everyone in a multiplayer table should use this release. Close the app before updating. Clean release builds keep decks and settings in %APPDATA%\Mana Table, so extracting the next release to a new folder preserves them.
+
+          Source: $env:GITHUB_SERVER_URL/$env:GITHUB_REPOSITORY/tree/$($release.sourceRevision)
+          "@
+          $notes | Set-Content -Encoding utf8 release-notes.txt
+          $releaseArgs = @('release', 'create', $env:RELEASE_TAG, $release.archive, $release.checksum,
+            '--verify-tag', '--draft', '--title', "Mana Table $($release.version)", '--notes-file', 'release-notes.txt')
+          if ($release.version.Contains('-')) { $releaseArgs += '--prerelease' }
+          gh @releaseArgs

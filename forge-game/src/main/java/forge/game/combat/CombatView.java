@@ -23,6 +23,10 @@ public class CombatView extends TrackableObject {
     // Negative IDs avoid tracker registration (only id >= 0 is registered).
     private static int nextId = -2;
 
+    // CombatView is replaced as a whole in GameView. Preserve the engine's
+    // blocked flag even when its last blocker has left combat.
+    private final HashSet<Integer> blockedAttackers = new HashSet<>();
+
     public CombatView(final Tracker tracker) {
         super(nextId--, tracker);
         set(TrackableProperty.AttackersWithDefenders, new ConcurrentHashMap<CardView, GameEntityView>());
@@ -57,6 +61,10 @@ public class CombatView extends TrackableObject {
 
     public boolean isAttacking(final CardView card) {
         return getAttackersWithDefenders().containsKey(card);
+    }
+
+    public boolean isBlocked(final CardView card) {
+        return blockedAttackers != null && blockedAttackers.contains(card.getId());
     }
 
     public Iterable<CardView> getAttackers() {
@@ -180,6 +188,7 @@ public class CombatView extends TrackableObject {
         }
 
         for (final CardView attacker : attackingBandCopy) {
+            if (blockers != null) blockedAttackers.add(attacker.getId());
             this.getAttackersWithDefenders().put(attacker, defender);
             this.getAttackersWithBlockers().put(attacker, blockersCopy);
             this.getAttackersWithPlannedBlockers().put(attacker, plannedBlockersCopy);

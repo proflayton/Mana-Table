@@ -16,7 +16,10 @@
   let pointerChoice;
   let pollTimer;
   let refreshRequested = false;
+  let lobbyReturnTimer;
   let boardSignature;
+  let promptSignature;
+  let promptScope;
   const handFaces = new WeakMap();
   let libraryMode = 'eligible';
   let libraryGroups = [];
@@ -40,6 +43,7 @@
   cardPreview.bind(libraryPicker, '[data-library-preview]', element => libraryGroups[Number(element.dataset.libraryPreview)]?.card);
 
   function show() {
+    window.stopMultiplayerRefresh?.();
     if ($('match-view').hidden) {
       clearTimeout(toastTimer);
       $('toast').hidden = true;
@@ -47,9 +51,11 @@
     document.body.classList.add('in-match');
     $('workshop-view').hidden = true;
     $('practice-view').hidden = true;
+    $('multiplayer-view').hidden = true;
     $('match-view').hidden = false;
     $('workshop-tab').classList.remove('active');
     $('practice-tab').classList.remove('active');
+    $('multiplayer-tab').classList.remove('active');
     $('match-tab').classList.add('active');
     responseSkip.render(match);
   }
@@ -136,6 +142,7 @@
   function cardTile(card, presentation) {
     const inHand = presentation === 'hand';
     const onBattlefield = presentation === 'battlefield';
+    const onLibrary = presentation === 'library';
     const stats = !card.faceDown && card.type.includes('Creature') ? `${card.power}/${card.toughness}` : '';
     const statsBadge = stats ? `<span class="match-stats" aria-label="Power ${esc(card.power)}, toughness ${esc(card.toughness)}">${esc(stats)}</span>` : '';
     const marks = [card.sick ? 'New' : '', card.attacking ? `Attacking${card.defender ? ' → ' + card.defender : ''}` : '', card.blocking ? 'Blocking' : '', card.damage ? `${card.damage} damage` : '', ...Object.entries(card.counters).map(([name, count]) => `${count} ${name}`)].filter(Boolean);
@@ -149,7 +156,7 @@
     const description = ` aria-description="${esc([inHand ? costLabel : '', card.faceDown ? '' : card.type, stats ? `Power ${card.power}, toughness ${card.toughness}` : '', ...marks].filter(Boolean).join('. '))}"`;
     const fieldStatus = onBattlefield ? `<span class="battlefield-status">${card.tapped ? '<span class="field-tapped">Tapped</span>' : ''}${card.sick ? '<span class="field-new">New</span>' : ''}${card.damage ? `<span class="field-damage">${card.damage} damage</span>` : ''}</span>` : '';
     const counters = onBattlefield ? Object.entries(card.counters).map(([name, count]) => `<span title="${esc(name)} counters" aria-label="${count} ${esc(name)} counters">${count} ${esc(name)}</span>`).join('') : '';
-    return `<button class="match-card ${inHand ? 'match-hand-card' : onBattlefield ? 'battlefield-card' : ''} ${card.tapped ? 'tapped' : ''} ${card.selectable ? 'actionable' : ''} ${card.highlighted ? 'chosen' : ''} ${card.attacking || card.blocking ? 'in-combat' : ''}" ${scopeAttributes()} data-match-card="${esc(card.key)}" data-visual-card="${esc(card.visualId || '')}" data-table-combat="${esc(card.combatId || card.visualId || '')}" data-preview-card="${previewCards.push(card) - 1}" aria-label="${esc(card.name)}${card.tapped ? ', tapped' : ''}"${description} ${card.attacking && card.defender ? `title="Attacking ${esc(card.defender)}"` : ''}>${handCost}${onBattlefield ? `<span class="permanent-surface"><span class="match-card-face">${art}</span><span class="match-card-name">${esc(card.name)}</span></span>${statsBadge}` : `<span class="match-card-face">${art}${inHand ? '' : statsBadge}</span><span class="match-card-name">${esc(card.name)}</span>`}${inHand ? `<span class="match-hand-details">${handType}${statsBadge}</span>` : ''}${fieldStatus}${counters ? `<span class="battlefield-counters">${counters}</span>` : ''}${marks.length ? `<span class="match-card-marks">${esc(marks.join(' · '))}</span>` : ''}</button>`;
+    return `<button class="match-card ${inHand ? 'match-hand-card' : onBattlefield ? 'battlefield-card' : onLibrary ? 'library-top-card' : ''} ${card.tapped ? 'tapped' : ''} ${card.selectable ? 'actionable' : ''} ${card.highlighted ? 'chosen' : ''} ${card.attacking || card.blocking ? 'in-combat' : ''}" ${scopeAttributes()} data-match-card="${esc(card.key)}" data-visual-card="${esc(card.visualId || '')}" data-table-combat="${esc(card.combatId || card.visualId || '')}" data-preview-card="${previewCards.push(card) - 1}" aria-label="${onLibrary ? 'Top of library: ' : ''}${esc(card.name)}${card.tapped ? ', tapped' : ''}"${description} ${card.attacking && card.defender ? `title="Attacking ${esc(card.defender)}"` : ''}>${handCost}${onBattlefield ? `<span class="permanent-surface"><span class="match-card-face">${art}</span><span class="match-card-name">${esc(card.name)}</span></span>${statsBadge}` : `<span class="match-card-face">${art}${inHand ? '' : statsBadge}</span><span class="match-card-name">${esc(card.name)}</span>`}${inHand ? `<span class="match-hand-details">${handType}${statsBadge}</span>` : ''}${fieldStatus}${counters ? `<span class="battlefield-counters">${counters}</span>` : ''}${marks.length ? `<span class="match-card-marks">${esc(marks.join(' · '))}</span>` : ''}</button>`;
   }
 
   function playerLane(player) {
@@ -174,7 +181,8 @@
     const row = (name, cards, label) => `<div class="battlefield-rank"><div class="battlefield-row ${name}-row" data-field-row="${player.id}-${name}" aria-label="${esc(player.name)}: ${label}">${cards.map(card => cardTile(card, 'battlefield')).join('') || `<span class="field-empty">${label}</span>`}</div></div>`;
     const hiddenHand = !player.human ? `<div class="opponent-hand" aria-label="${hand.count} cards in opponent's hand"><div aria-hidden="true">${Array.from({ length: Math.min(hand.count, 9) }, (_, index) => `<i style="--back-angle:${(index - (Math.min(hand.count, 9) - 1) / 2) * 4}deg"></i>`).join('')}</div><span>${hand.count} in hand</span></div>` : '';
     const portrait = `<div class="match-player ${turn ? 'has-turn' : ''} ${player.priority ? 'has-priority' : ''}" data-player-portrait="${player.id}">${hiddenHand}<button class="match-life" data-match-player="${player.id}" ${player.eliminated ? 'disabled' : ''} aria-label="Target ${esc(player.name)}" title="${esc(player.name)} · ${player.life} life"><span>${esc(player.human ? 'You' : player.name.slice(0, 1))}</span><b>${player.life}</b></button><div class="match-player-info"><strong>${esc(player.name)}</strong><button class="world-seat-focus" data-world-focus="${player.id}" aria-label="View ${esc(player.name)} battlefield" title="Look closer at this battlefield">${esc(player.name)}</button><small>${player.eliminated ? 'Eliminated' : turn ? player.human ? 'Your turn' : 'Their turn' : 'Waiting'}${player.priority ? ' · Priority' : ''}</small><div class="match-mana-pool" aria-label="Available mana">${mana}</div></div>${damage ? `<details class="match-commander-damage"><summary>Commander damage</summary><div>${damage}</div></details>` : ''}</div>`;
-    const side = `<aside class="match-side-zones">${commandZone}<div class="match-library" aria-label="${library.count} cards in ${esc(player.name)}'s library"><span class="library-back" aria-hidden="true">M</span><span>Library <b>${library.count}</b></span></div><div class="match-other-zones">${other}</div></aside>`;
+    const libraryFace = library.topCard ? cardTile(library.topCard, 'library') + '<small class="library-top-label">Top card</small>' : '<span class="library-back" aria-hidden="true">M</span>';
+    const side = `<aside class="match-side-zones">${commandZone}<div class="match-library" aria-label="${library.count} cards in ${esc(player.name)}'s library">${libraryFace}<span>Library <b>${library.count}</b></span></div><div class="match-other-zones">${other}</div></aside>`;
     const fieldRows = player.human ? row('permanents', permanents, 'Battlefield') + row('lands', lands, 'Lands') : row('lands', lands, 'Lands') + row('permanents', permanents, 'Battlefield');
     const battlefield = `<div class="match-zones-row"><div class="match-battlefield">${fieldRows}</div>${side}</div>`;
     return player.human ? battlefield + portrait : portrait + battlefield;
@@ -200,6 +208,7 @@
     $('match-concede').hidden = ['finished', 'error'].includes(next.status);
     if (next.players && boardChanged) {
       const opened = new Set([...document.querySelectorAll('.match-zone[open]')].map(element => element.dataset.zone));
+      const drawerScrolls = new Map([...document.querySelectorAll('.match-zone[open]')].map(element => [element.dataset.zone, element.lastElementChild.scrollTop]));
       const scrolls = new Map([...document.querySelectorAll('[data-field-row]')].map(element => [element.dataset.fieldRow, element.scrollLeft]));
       const handScroll = $('match-hand').scrollLeft;
       const human = next.players.find(player => player.human);
@@ -228,7 +237,13 @@
       for (const element of [...hand.children]) if (!wanted.includes(element)) element.remove();
       wanted.forEach((element, index) => { if (hand.children[index] !== element) hand.insertBefore(element, hand.children[index] || null); });
       $('match-hand').scrollLeft = handScroll;
-      document.querySelectorAll('.match-zone').forEach(element => { element.open = opened.has(element.dataset.zone); });
+      document.querySelectorAll('.match-zone').forEach(element => {
+        element.open = opened.has(element.dataset.zone);
+        if (element.open) {
+          positionDrawer(element);
+          element.lastElementChild.scrollTop = drawerScrolls.get(element.dataset.zone) || 0;
+        }
+      });
       document.querySelectorAll('[data-field-row]').forEach(element => { element.scrollLeft = scrolls.get(element.dataset.fieldRow) || 0; });
       loadArt($('match-view'));
     }
@@ -261,6 +276,13 @@
     castView.render(next, before);
     revealView.render(next);
     tableScene.render(next);
+    if (next.format === 'Multiplayer' && next.status === 'finished' && !lobbyReturnTimer) {
+      clearTimeout(pollTimer);
+      lobbyReturnTimer = setTimeout(() => {
+        lobbyReturnTimer = null;
+        window.returnToMultiplayerLobby?.();
+      }, 1200);
+    }
     if (!document.querySelector('.scene-active') && next.playerCount > 2 && previous?.activePlayerId !== next.activePlayerId) focusPlayer(next.activePlayerId);
     const busy = !next.prompt && !['finished', 'error'].includes(next.status);
     $('match-view').dataset.playerInput = String(Boolean(next.prompt?.playerChoices?.length || next.prompt?.inputType?.includes('Target') || next.prompt?.inputType === 'InputAttack'));
@@ -311,6 +333,27 @@
   function renderPrompt() {
     const prompt = match?.prompt;
     const status = matchFeedback.describe(match);
+    // Network snapshots advance revision on every poll. Preserve the controls
+    // (and keyboard focus/typed answers) until the actual decision changes.
+    const { human, active, ...promptStatus } = status;
+    const signature = JSON.stringify([match.id, match.status, match.error, match.result, match.format, prompt, promptStatus,
+      match.combat?.blockProblem]);
+    if (signature === promptSignature) return;
+    promptSignature = signature;
+    const scope = `${match.id}:${prompt?.id || ''}`;
+    const scrolls = promptScope === scope
+      ? ['.match-prompt-body', '.match-prompt-text', '#match-choices', '#match-selected'].map(selector => [selector, $('match-prompt').querySelector(selector)?.scrollTop || 0]) : [];
+    promptScope = scope;
+    drawPrompt(prompt, status);
+    // Message/button updates within one decision must not restart the player's
+    // reading position. A new decision still starts at its instructions.
+    for (const [selector, scroll] of scrolls) {
+      const element = $('match-prompt').querySelector(selector);
+      if (element) element.scrollTop = scroll;
+    }
+  }
+
+  function drawPrompt(prompt, status) {
     const librarySearch = prompt?.context === 'librarySearch';
     libraryPicker.hidden = !librarySearch;
     if (!librarySearch && libraryPicker.dataset.promptId) {
@@ -323,7 +366,8 @@
     $('match-prompt').dataset.promptId = prompt?.id || '';
     if (!prompt) {
       const terminal = ['finished', 'error'].includes(match?.status);
-      setPrompt(terminal ? `<div class="eyebrow">${match.status === 'error' ? 'MATCH INTERRUPTED' : 'GAME COMPLETE'}</div><h2>${esc(match.result || 'This game stopped.')}</h2><p>${esc(match.error || 'Your deck is saved. Take another seat whenever you’re ready.')}</p><button id="match-again" class="button primary">New game →</button>` : `<div class="eyebrow">${esc(status.owner.toUpperCase())}</div><h2>${esc(status.phase)} in progress…</h2><p>No action needed right now. Any choices will appear here.</p>${context}<div class="match-thinking"><span></span></div>`);
+      const multiplayerFinished = terminal && match.format === 'Multiplayer' && match.status === 'finished';
+      setPrompt(terminal ? `<div class="eyebrow">${match.status === 'error' ? 'MATCH INTERRUPTED' : 'GAME COMPLETE'}</div><h2>${esc(match.result || 'This game stopped.')}</h2><p>${esc(multiplayerFinished ? 'Returning everyone to the lobby…' : match.error || 'Your deck is saved. Take another seat whenever you’re ready.')}</p>${multiplayerFinished ? '' : '<button id="match-again" class="button primary">New game →</button>'}` : `<div class="eyebrow">${esc(status.owner.toUpperCase())}</div><h2>${esc(status.phase)} in progress…</h2><p>No action needed right now. Any choices will appear here.</p>${context}<div class="match-thinking"><span></span></div>`);
       if ($('match-again')) $('match-again').onclick = () => run(setup);
       return;
     }
@@ -339,7 +383,8 @@
     const detailMessage = combatInput ? match.combat?.blockProblem : prompt.message;
     const engineDetail = status.instruction && prompt.inputType !== 'InputPassPriority' && detailMessage
       ? `<p class="match-engine-instruction">${esc(detailMessage)}</p>` : '';
-    const header = `<div class="eyebrow">${status.decision}</div><h2>${esc(prompt.title || status.title || (prompt.kind === 'input' ? inputTitle(prompt) : prompt.kind === 'reveal' ? 'Take a look.' : 'Make your choice.'))}</h2><p class="match-prompt-text">${esc(status.instruction || prompt.message)}</p>${engineDetail}${context}`;
+    const instruction = combatInput ? 'Choose your creatures and their destinations on the battlefield. Confirm when your assignments are ready.' : status.instruction || prompt.message;
+    const header = `<div class="eyebrow">${status.decision}</div><h2>${esc(prompt.title || status.title || (prompt.kind === 'input' ? inputTitle(prompt) : prompt.kind === 'reveal' ? 'Take a look.' : 'Make your choice.'))}</h2><p class="match-prompt-text">${esc(instruction)}</p>${engineDetail}${context}`;
     if (librarySearch) {
       setPrompt(header + '<p>Use the library panel to inspect these cards and confirm your choice. This spell or ability is still resolving.</p>');
       renderLibraryPicker();
@@ -357,14 +402,16 @@
       const endTurn = prompt.inputType === 'InputPassPriority' && prompt.cancel === 'End Turn';
       const response = status.responseText ? `<div class="match-response-detail"><span>WAITING TO RESOLVE</span><p>${esc(status.responseText)}</p></div>` : '';
       const passHint = status.passHint ? `<small class="match-pass-hint">${esc(status.passHint)}</small>` : '';
-      setPrompt(header + response + (prompt.canAttackAll ? '<button id="match-attack-all" class="button secondary">Attack with all</button>' : '') + `<div class="match-input-buttons"><button id="match-ok" class="button primary" ${prompt.okEnabled ? '' : 'disabled'}>${esc(okLabel || 'Continue')}</button>${passHint}${endTurn || !prompt.cancelEnabled ? '' : `<button id="match-cancel" class="button secondary">${esc(prompt.cancel || 'Cancel')}</button>`}</div>`);
+      setPrompt(header + response + `<div class="match-input-buttons"><button id="match-ok" class="button primary" ${prompt.okEnabled ? '' : 'disabled'}>${esc(okLabel || 'Continue')}</button>${passHint}${combatInput || endTurn || !prompt.cancelEnabled ? '' : `<button id="match-cancel" class="button secondary">${esc(prompt.cancel || 'Cancel')}</button>`}</div>`);
       $('match-ok').onclick = () => answer({ action: 'ok' });
       if ($('match-cancel')) $('match-cancel').onclick = () => answer({ action: 'cancel' });
-      if ($('match-attack-all')) $('match-attack-all').onclick = () => answer({ action: 'attackAll' });
     } else if (prompt.kind === 'choice' || prompt.kind === 'reveal') {
       const range = prompt.kind === 'reveal' ? 'Revealed to you by the engine' : prompt.min === prompt.max ? `Choose ${prompt.min}` : `Choose ${prompt.min}–${prompt.max}`;
       setPrompt(header + `<div class="choice-range">${range}${prompt.ordered ? ' · selection order matters' : ''}</div>${prompt.choices.length > 12 ? '<input id="match-choice-search" type="search" placeholder="Find a choice…" aria-label="Filter choices">' : ''}<div id="match-choices" class="match-choices"></div><div id="match-selected" class="match-selected"></div><button id="match-submit" class="button primary">${prompt.kind === 'reveal' ? 'Continue' : 'Confirm choice'}</button>`);
-      if ($('match-choice-search')) $('match-choice-search').oninput = event => { choiceFilter = event.target.value.toLowerCase(); renderChoices(); };
+      if ($('match-choice-search')) {
+        $('match-choice-search').value = choiceFilter;
+        $('match-choice-search').oninput = event => { choiceFilter = event.target.value.toLowerCase(); renderChoices(); };
+      }
       renderChoices();
       $('match-submit').onclick = () => answer({ choices: selection });
     } else if (prompt.kind === 'number' || prompt.kind === 'text') {
@@ -527,6 +574,9 @@
     if (card) {
       const pressed = pointerChoice;
       pointerChoice = null;
+      // Looking at an authorized top card is always available; playing it still
+      // requires an engine-authorized action for the current decision.
+      if (card.classList.contains('library-top-card') && !card.classList.contains('actionable')) return;
       // Keyboard activation has no pointerdown. Pointer clicks must finish on the
       // same card and prompt on which they began, even if the hand reflows.
       if (event.detail > 0 && (!pressed || pressed.element !== card || pressed.key !== card.dataset.matchCard)) return;
@@ -587,6 +637,11 @@
       schedulePoll(delay);
     }
   }
+  window.openMatchState = next => {
+    render(next);
+    show();
+    schedulePoll(0);
+  };
   let restored = false;
   function restoreMatch(status) {
     if (status.state !== 'ready' || restored) return;

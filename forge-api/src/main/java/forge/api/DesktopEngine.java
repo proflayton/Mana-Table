@@ -24,8 +24,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
-/** Local desktop protocol over private child-process pipes. No network listener. */
-public final class DesktopEngine {
+/** Desktop commands use private child-process pipes; multiplayer uses Forge's TCP transport. */
+public final class DesktopEngine implements AutoCloseable {
     private static final Gson JSON = new GsonBuilder().serializeNulls().create();
     private final CardCatalog catalog;
     private final Path directory;
@@ -39,6 +39,7 @@ public final class DesktopEngine {
     private int draws;
     private Path resources;
     private MatchSession match;
+    private MultiplayerSession multiplayer;
 
     public DesktopEngine(CardCatalog catalog, Path directory) throws Exception {
         this.catalog = catalog;
@@ -55,7 +56,7 @@ public final class DesktopEngine {
         var engine = new DesktopEngine(CardCatalog.fromDatabases(data.getAvailableDatabases().values()), Path.of(args[1]));
         engine.resources = Path.of(args[0]);
         protocol.println(JSON.toJson(Map.of("event", "ready", "printings", engine.catalog.size())));
-        try (var input = new BufferedReader(new InputStreamReader(System.in, StandardCharsets.UTF_8))) {
+        try (engine; var input = new BufferedReader(new InputStreamReader(System.in, StandardCharsets.UTF_8))) {
             String line;
             while ((line = input.readLine()) != null) {
                 JsonObject request = null;
@@ -68,12 +69,22 @@ public final class DesktopEngine {
                     reply.add("result", JSON.toJsonTree(result));
                     protocol.println(JSON.toJson(reply));
                 } catch (Exception error) {
+                    // Validation errors are returned to the caller; unexpected
+                    // request failures also need a stack trace in engine.log.
+                    if (!(error instanceof IllegalArgumentException)) error.printStackTrace(System.err);
                     var reply = new JsonObject();
                     if (request != null) { reply.add("id", request.get("id")); }
                     reply.addProperty("error", error.getMessage() == null ? error.getClass().getSimpleName() : error.getMessage());
                     protocol.println(JSON.toJson(reply));
                 }
             }
+        }
+    }
+
+    @Override
+    public void close() {
+        if (multiplayer != null) {
+            multiplayer.close();
         }
     }
 
@@ -125,7 +136,7 @@ public final class DesktopEngine {
                 var preview = DeckImport.preview(string(p, "text", ""));
                 String suggested = preview.problems().isEmpty() && !preview.entries().isEmpty()
                         ? MatchSetup.suggestedFormat(preview.open("Import preview", catalog).toDeck()) : "Constructed";
-                yield Map.of("entries", preview.entries(), "problems", preview.problems(), "suggestedFormat", suggested);
+                yield Map.of("entries", preview.entries(), "problems", preview.problems(), "warnings", preview.warnings(), "suggestedFormat", suggested);
             }
             case "import" -> {
                 var preview = DeckImport.preview(string(p, "text", ""));
@@ -142,6 +153,19 @@ public final class DesktopEngine {
             }
             case "export" -> export(string(p, "kind", "text"));
             case "practice" -> practice(string(p, "action", "shuffle"), number(p, "index", -1));
+            case "multiplayerHost" -> multiplayer().host(string(p, "format", "Constructed"), number(p, "playerCount", 2),
+                    p.has("autoPortForward") && p.get("autoPortForward").getAsBoolean());
+            case "multiplayerJoin" -> multiplayer().join(string(p, "address", ""));
+            case "multiplayerConfigure" -> multiplayer().configure(string(p, "format", "Constructed"), number(p, "playerCount", 2));
+            case "multiplayerSelectDeck" -> {
+                var loaded = loadStoredDeck(string(p, "deckId", ""));
+                yield multiplayer().selectDeck(loaded.editor().toDeck(), checkedFormat(loaded.format()));
+            }
+            case "multiplayerReady" -> multiplayer().ready(p.has("ready") && p.get("ready").getAsBoolean());
+            case "multiplayerStart" -> multiplayer().start();
+            case "multiplayerState" -> multiplayer().state();
+            case "multiplayerReturn" -> multiplayer().returnToLobby();
+            case "multiplayerClose" -> multiplayer().close();
             case "matchOpponents" -> MatchSession.opponents(format);
             case "matchSetup" -> {
                 requireDeck();
@@ -174,9 +198,26 @@ public final class DesktopEngine {
                 match = new MatchSession(prepared.deck(), format, opponents, resources, directory.getParent());
                 yield match.state();
             }
-            case "matchState" -> match == null ? null : match.state();
-            case "matchAction" -> { if (match == null) throw new IllegalStateException("No active match"); yield match.action(p); }
-            case "matchConcede" -> { if (match == null) throw new IllegalStateException("No active match"); yield match.concede(p); }
+            case "matchState" -> {
+                if (multiplayer != null && multiplayer.hasMatch()) {
+                    yield multiplayer.match().state();
+                }
+                yield match == null ? null : match.state();
+            }
+            case "matchAction" -> {
+                if (multiplayer != null && multiplayer.hasMatch()) {
+                    yield multiplayer.match().action(p);
+                }
+                if (match == null) throw new IllegalStateException("No active match");
+                yield match.action(p);
+            }
+            case "matchConcede" -> {
+                if (multiplayer != null && multiplayer.hasMatch()) {
+                    yield multiplayer.match().concede(p);
+                }
+                if (match == null) throw new IllegalStateException("No active match");
+                yield match.concede(p);
+            }
             default -> throw new IllegalArgumentException("Unknown engine command");
         };
     }
@@ -194,13 +235,9 @@ public final class DesktopEngine {
 
     private Object open(String id) throws Exception {
         ensureSaved();
-        var stored = JSON.fromJson(Files.readString(file(id)), StoredDeck.class);
-        if (stored.version() != 1) { throw new IllegalArgumentException("Unsupported deck file version"); }
-        var deck = new Deck(checkedName(stored.name()));
-        var loaded = new DeckEditor(catalog, deck);
-        loaded.apply(0, stored.cards());
-        String loadedFormat = checkedFormat(stored.format());
-        editor = new DeckEditor(catalog, loaded.toDeck());
+        var loaded = loadStoredDeck(id);
+        String loadedFormat = checkedFormat(loaded.format());
+        editor = new DeckEditor(catalog, loaded.editor().toDeck());
         deckId = id;
         format = loadedFormat;
         saveError = null;
@@ -209,6 +246,16 @@ public final class DesktopEngine {
     }
 
     private record StoredDeck(int version, String name, String format, List<DeckEditor.Edit> cards, long updated) { }
+    private record LoadedDeck(DeckEditor editor, String format) { }
+
+    private LoadedDeck loadStoredDeck(String id) throws Exception {
+        var stored = JSON.fromJson(Files.readString(file(id)), StoredDeck.class);
+        if (stored.version() != 1) { throw new IllegalArgumentException("Unsupported deck file version"); }
+        var deck = new Deck(checkedName(stored.name()));
+        var loaded = new DeckEditor(catalog, deck);
+        loaded.apply(0, stored.cards());
+        return new LoadedDeck(loaded, stored.format());
+    }
 
     private Object list() throws Exception {
         var decks = new ArrayList<Map<String, Object>>();
@@ -309,6 +356,13 @@ public final class DesktopEngine {
         return Map.of("hand", List.copyOf(hand), "remaining", library.size(), "mulligans", mulligans, "draws", draws);
     }
 
+    private MultiplayerSession multiplayer() {
+        if (multiplayer == null) {
+            if (resources == null) { throw new IllegalStateException("Engine resources are still loading"); }
+            multiplayer = new MultiplayerSession(resources, directory.getParent());
+        }
+        return multiplayer;
+    }
     private void clearPractice() { library.clear(); hand.clear(); mulligans = 0; draws = 0; }
     private void requireDeck() { if (editor == null) { throw new IllegalStateException("Open or create a deck first"); } }
     private void ensureSaved() {

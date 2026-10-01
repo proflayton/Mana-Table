@@ -73,6 +73,8 @@ public interface IGuiGame {
 
     void showCombat();
 
+    default void setCombatChoices(PlayerView owner, long sequence, forge.game.combat.CombatInputState choices) { }
+
     default void showPromptMessage(PlayerView playerView, String message) {
         showPromptMessage(playerView, message, null);
     }
@@ -301,6 +303,9 @@ public interface IGuiGame {
     void updateAutoPassPrompt();
 
     void setCurrentPlayer(PlayerView player);
+
+    /** Announces the authoritative input before its message, buttons, and selectables are rendered. */
+    default void setInputState(PlayerView owner, String inputType, long sequence, boolean active, boolean canAutoPass) { }
 
     boolean isUiSetToSkipPhase(PlayerView playerTurn, PhaseType phase);
 

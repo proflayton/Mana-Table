@@ -4,6 +4,22 @@ The current package script builds **Windows x64** on Windows x64. It bundles
 Electron, a Java runtime, `forge-engine.jar`, and the required Forge resources.
 Other platform packaging is not implemented.
 
+## Downloads for testers
+
+Published builds live on [Mana Table Releases](https://github.com/proflayton/Mana-Table/releases).
+Download the **ManaTable-<version>-windows-x64.zip** asset, extract the whole folder,
+and open **Mana Table.exe**. GitHub's automatically generated source archives are
+for contributors, not playable builds. Java and the card library are bundled.
+Everyone joining a multiplayer game should use the same release.
+
+Close Mana Table before updating, then extract the new ZIP into a new folder.
+Clean release builds keep decks, artwork, preferences, and diagnostics in
+`%APPDATA%\Mana Table`, independently of the application folder. Existing local
+packages with a neighboring `UserData` directory continue using that portable
+profile. To move from one of those packages, close both apps and copy its
+`UserData` into `%APPDATA%\Mana Table` before the first release launch; retain the
+original as a backup and do not overwrite an existing profile without reviewing it.
+
 ## Prepare a build
 
 1. Work from a reviewed commit. For a new beta number, update `forge-desktop/package.json`,
@@ -16,6 +32,37 @@ Other platform packaging is not implemented.
    full UI suite for a release candidate.
 4. Set `JAVA_HOME` to the JDK containing `bin/jlink.exe`, then run `npm run package`.
    `FORGE_JAVA` selects an engine executable, not the JDK used by `jlink`.
+
+For a **shareable download**, use `npm run package:release` instead. This never
+reads the personal `latest-beta.json` manifest and never copies player data.
+It creates a Windows ZIP, a `.zip.sha256` checksum, and `dist/latest-release.json`
+containing their paths, the unpacked directory, and source revision. It leaves the
+personal launcher manifest untouched. The archive step rejects profiles, test
+output, diagnostics, and filesystem links inside the package.
+
+## GitHub release workflow
+
+The [release workflow](../../.github/workflows/mana-table-release.yml) runs on
+tags named `mana-table-v<version>` and can be rerun manually for an existing tag.
+The tag must exactly match `forge-desktop/package.json`. From the reviewed commit:
+
+```sh
+git tag mana-table-v0.1.0-beta.37
+git push origin mana-table-v0.1.0-beta.37
+```
+
+The Windows job builds and verifies Java, runs the desktop unit and engine suites,
+builds a clean ZIP, and runs the smoke suite against the packaged executable and
+bundled Java. Only after those gates pass does it attach the ZIP and checksum to
+a **draft** GitHub release. Beta versions are marked prereleases. Review its notes
+and assets, then publish it from GitHub Releases for testers to download. Failed
+tests prevent release creation; failure evidence is kept as a workflow artifact.
+
+No signing certificate, hosted game service, or automatic update installer is
+configured. Downloads are portable unsigned Windows packages. The workflow uses
+GitHub's repository token; no personal access token is required. It refuses to
+silently replace an existing release. See the [GitHub CLI release documentation](https://cli.github.com/manual/gh_release_create)
+for draft publication and manual recovery after a failed upload.
 
 The script stages files under ignored `.tools/desktop-beta-<timestamp>` and writes
 a new `dist/ManaTable-<version>-<timestamp>/Mana Table-win32-x64` directory.
@@ -48,7 +95,7 @@ package is built.
 
 Distribute the **entire package directory**, including runtime/resource folders,
 `START-HERE.md`, `SOURCE.txt`, and license notices. A local package may contain the
-previous player's copied `UserData`; use a clean build workspace for distributable
+previous player's copied `UserData`; use `npm run package:release` for distributable
 artifacts, and retain personal packages separately. Never upload player profiles,
 test profiles, or cached artwork as a release artifact.
 

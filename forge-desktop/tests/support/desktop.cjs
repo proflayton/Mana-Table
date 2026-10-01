@@ -3,14 +3,15 @@ const path = require('node:path');
 const { _electron: electron } = require('@playwright/test');
 const appPath = path.resolve(__dirname, '../..');
 
-async function launchDesktop(prefix, { offline = true, videoDir, preferences = { responseMode: 'manual' } } = {}) {
+async function launchDesktop(prefix, { offline = true, videoDir, dataPath: existingDataPath, preferences = { responseMode: 'manual' } } = {}) {
   const output = path.join(appPath, 'test-results');
   fs.mkdirSync(output, { recursive: true });
-  const dataPath = fs.mkdtempSync(path.join(output, `${prefix}-`));
+  const dataPath = existingDataPath || fs.mkdtempSync(path.join(output, `${prefix}-`));
   // Encounters pause at each response window unless the scenario tests Auto.
   if (preferences) fs.writeFileSync(path.join(dataPath, 'preferences.json'), JSON.stringify(preferences));
   const env = { ...process.env, FORGE_TEST: '1', FORGE_OFFLINE: offline ? '1' : '0', FORGE_USER_DATA: dataPath };
   delete env.ELECTRON_RUN_AS_NODE;
+  delete env.MANA_USER_DATA_DIR;
   const packaged = process.env.MANA_TEST_PACKAGED === '1'
     ? JSON.parse(fs.readFileSync(path.join(appPath, '../dist/latest-beta.json'), 'utf8').replace(/^\uFEFF/, '')) : null;
   const executable = packaged ? path.join(packaged.directory, packaged.executable) : process.env.MANA_TEST_EXECUTABLE;

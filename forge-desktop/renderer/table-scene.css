@@ -63,6 +63,8 @@ body:has(.scene-active) > .table-return-ghost[data-scene-card] { opacity: 0; }
 .scene-active .match-commander-damage[data-world-box], .scene-active #match-self .match-commander-damage[data-world-box] { position: absolute; left: var(--world-x); top: var(--world-y); right: auto; bottom: auto; font-size: 8px; z-index: 8; }
 .scene-active .opponent-hand > span { text-align: center; color: #9fb4bb; font-size: 9px; white-space: nowrap; pointer-events: none; }
 .scene-active .match-library { display: block; padding: 0; }
+.scene-active .match-library .library-top-card { position: absolute; inset: 0; width: 100%; height: 100%; aspect-ratio: auto; background: transparent; border: 0; box-shadow: none; transform: none; }
+.scene-active .library-top-card .match-card-face { opacity: 0; pointer-events: none; }
 .scene-active .match-library .library-back, .scene-active .match-zone summary > .card-art, .scene-active .match-zone summary > .empty-pile { opacity: 0; pointer-events: none; }
 .scene-active .match-zone > summary { display: block; padding: 0; z-index: 3; }
 .scene-active .match-library > span:last-child, .scene-active .match-zone summary > span:last-child { position: absolute; top: calc(100% + 3px); left: -24px; right: -24px; display: flex; justify-content: center; align-items: center; gap: 3px; font-size: 9px; line-height: 13px; text-shadow: 0 1px 3px #000; white-space: nowrap; }

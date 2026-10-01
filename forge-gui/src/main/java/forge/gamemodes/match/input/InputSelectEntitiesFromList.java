@@ -43,8 +43,13 @@ public class InputSelectEntitiesFromList<T extends GameEntity> extends InputSele
         if (min > validChoices.size()) { // pfps does this really do anything useful??
             System.out.printf("Trying to choose at least %d things from a list with only %d things!%n", min, validChoices.size());
         }
+    }
+
+    private void publishSelectables() {
+        // Input transitions clear the previous selections. Publish this input's
+        // legal cards after that transition, not while constructing the input.
         ArrayList<CardView> vCards = new ArrayList<>();
-        for (T v : validChoices0) {
+        for (T v : validChoices) {
             if (v instanceof Card c) {
                 vCards.add(c.getView());
             }
@@ -165,6 +170,7 @@ public class InputSelectEntitiesFromList<T extends GameEntity> extends InputSele
      */
     @Override
     public void showMessage() {
+        publishSelectables();
         super.showMessage();
         // Use mass select mode for proliferate. If you wanted to add it to a different effect
         // the effect must allow you to select any number of targets between "none" and "all valid targets"
