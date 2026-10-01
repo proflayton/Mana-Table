@@ -1,4 +1,5 @@
 const assert = require('node:assert/strict');
+const { submitMatchAction } = require('./engine.cjs');
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 const zone = (state, name, playerId = state.viewerId) => state.players.find(player => player.id === playerId).zones.find(item => item.name === name);
 const creatures = ['Llanowar Elves', 'Elvish Mystic', 'Fyndhorn Elves', 'Arbor Elf', 'Young Wolf', 'Glistener Elf'];
@@ -13,6 +14,25 @@ async function waitFor(check, message, timeout = 20000) {
     await sleep(30);
   }
   throw new Error(message);
+}
+
+async function startChorusTable(clients, cardSeat, { deck = networkDeck } = {}) {
+  const [host, guest] = clients, ids = [];
+  for (let i = 0; i < clients.length; i++) {
+    await clients[i].request('import', { name: 'Library visibility', format: 'Constructed', text: i === cardSeat ? deck : 'Deck\n60 Forest' });
+    ids.push((await clients[i].request('save')).id);
+  }
+  const lobby = await host.request('multiplayerHost', { format: 'Constructed', playerCount: 2, autoPortForward: false });
+  assert.equal(lobby.error, null);
+  const port = new URL(`http://${lobby.addresses[0].url.replace(/^https?:\/\//, '')}`).port;
+  await guest.request('multiplayerJoin', { address: `127.0.0.1:${port}` });
+  await waitFor(async () => (await guest.request('multiplayerState')).slots?.filter(slot => slot.type !== 'OPEN').length === 2, 'Guest did not join');
+  for (let i = 0; i < clients.length; i++) {
+    await clients[i].request('multiplayerSelectDeck', { deckId: ids[i] });
+    await clients[i].request('multiplayerReady', { ready: true });
+  }
+  await waitFor(async () => (await host.request('multiplayerState')).slots.every(slot => slot.ready && slot.deck), 'Players not ready');
+  await host.request('multiplayerStart');
 }
 
 // Drive actual engine decisions. No fixture injects hidden cards or permissions.
@@ -58,7 +78,7 @@ async function playChorus(clients, { requireCreature = false, inspect = async ()
       const prompt = state.prompt;
       if (!prompt || answered.get(client) === prompt.id) continue;
       if (prompt.inputType === 'InputPassPriority' && !prompt.okEnabled) continue;
-      let answer;
+      let answer, progress;
       if (index === 0 && prompt.inputType === 'InputPassPriority' && state.activePlayerId === state.viewerId && state.phaseKey === 'MAIN1' && !state.stack.length) {
         const land = hand.find(card => card.type.includes('Land') && card.selectable);
         const enchantment = hand.find(card => card.name === 'Elven Chorus');
@@ -69,9 +89,9 @@ async function playChorus(clients, { requireCreature = false, inspect = async ()
         else if (requireCreature && !castCreature && library.topCard?.type.includes('Creature') && library.topCard.selectable && mana >= 1) {
           assert.equal(prompt.canAutoPass, false, 'A playable creature on top must hold Auto');
           answer = { action: 'card', key: library.topCard.key };
-          castingCreatureId = library.topCard.visualId;
+          progress = () => { castingCreatureId = library.topCard.visualId; };
         } else if (chorus && sawLand && drewTop && (!requireCreature || castCreature) && removal && mana >= 2) {
-          answer = { action: 'card', key: removal.key }; removing = true;
+          answer = { action: 'card', key: removal.key }; progress = () => { removing = true; };
         } else answer = { action: 'ok' };
       } else if (index === 0 && removing && prompt.inputType === 'InputSelectTargets') {
         if (chorus?.selectable) answer = { action: 'card', key: chorus.key };
@@ -94,13 +114,10 @@ async function playChorus(clients, { requireCreature = false, inspect = async ()
       }
       waiting.delete(client);
       try {
-        await client.request('matchAction', { sessionId: state.id, promptId: prompt.id, ...answer });
-        answered.set(client, prompt.id);
+        if (await submitMatchAction(client, state, answer)) { answered.set(client, prompt.id); progress?.(); }
       } catch (error) {
-        if (error.message !== 'That choice has changed. Use the current prompt.') {
-          error.message += ` (${JSON.stringify({ prompt, answer })})`;
-          throw error;
-        }
+        error.message += ` (${JSON.stringify({ prompt, answer })})`;
+        throw error;
       }
       await sleep(15);
     }
@@ -109,4 +126,4 @@ async function playChorus(clients, { requireCreature = false, inspect = async ()
   assert.ok(sawTop && sawLand && drewTop && removed && (!requireCreature || castCreature), JSON.stringify({ sawTop, sawLand, drewTop, castCreature, removed, lastState }));
 }
 
-module.exports = { zone, localDeck, networkDeck, playChorus, waitFor };
+module.exports = { zone, localDeck, networkDeck, startChorusTable, playChorus, waitFor };
