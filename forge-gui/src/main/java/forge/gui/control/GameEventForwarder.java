@@ -16,7 +16,7 @@ import java.util.stream.Collectors;
 /**
  * Buffers game events and flushes them to the GUI in batches.
  *
- * <p>Flush triggers (all on the game thread):
+ * <p>Flush triggers:
  * <ul>
  *   <li>Size threshold: 50+ buffered events in {@link #receiveGameEvent}</li>
  *   <li>Time threshold: 500ms+ since last flush in {@link #receiveGameEvent}</li>
@@ -26,7 +26,9 @@ import java.util.stream.Collectors;
  *   <li>Combat assignments: publish immediately while players keep the same input</li>
  * </ul>
  *
- * <p>No daemon thread — all delta collection runs on the game thread to avoid race issues.
+ * <p>No daemon thread. Game events and input callbacks can access this buffer
+ * from different threads. Queue operations are atomic; GUI dispatch happens
+ * outside the queue lock so callbacks can query or enqueue further events.
  */
 public class GameEventForwarder implements Observer {
     private static final long FLUSH_INTERVAL_NS = 500_000_000L;
@@ -42,31 +44,41 @@ public class GameEventForwarder implements Observer {
 
     @Subscribe
     public void receiveGameEvent(GameEvent ev) {
-        pendingEvents.add(ev);
-        boolean sizeThreshold = pendingEvents.size() >= FLUSH_SIZE_THRESHOLD;
-        boolean timeThreshold = (System.nanoTime() - lastFlushTime) >= FLUSH_INTERVAL_NS;
+        boolean shouldFlush;
+        synchronized (pendingEvents) {
+            pendingEvents.add(ev);
+            shouldFlush = ev instanceof GameEventCombatUpdate
+                    || pendingEvents.size() >= FLUSH_SIZE_THRESHOLD
+                    || (System.nanoTime() - lastFlushTime) >= FLUSH_INTERVAL_NS;
+        }
         // There may be no next event while a player reviews an assignment.
         // Every seat must see that attack/block without waiting for confirmation.
-        if (ev instanceof GameEventCombatUpdate || timeThreshold || sizeThreshold) {
+        if (shouldFlush) {
             flush();
         }
     }
 
     public void flush() {
-        if (pendingEvents.isEmpty()) {
-            return;
+        final List<GameEvent> batch;
+        synchronized (pendingEvents) {
+            if (pendingEvents.isEmpty()) return;
+            batch = new ArrayList<>(pendingEvents);
+            pendingEvents.clear();
+            lastFlushTime = System.nanoTime();
         }
-        List<GameEvent> batch = new ArrayList<>(pendingEvents);
-        pendingEvents.clear();
-        lastFlushTime = System.nanoTime();
         gui.handleGameEvents(batch);
     }
 
     public boolean hasPendingEvents() {
-        return !pendingEvents.isEmpty();
+        synchronized (pendingEvents) {
+            return !pendingEvents.isEmpty();
+        }
     }
     public boolean hasPendingZoneChange(Object... args) {
-        List<Integer> zoneChangers = pendingEvents.stream().filter(GameEventCardChangeZone.class::isInstance).map(ev -> ((GameEventCardChangeZone) ev).card().getId()).collect(Collectors.toList());
+        final List<Integer> zoneChangers;
+        synchronized (pendingEvents) {
+            zoneChangers = pendingEvents.stream().filter(GameEventCardChangeZone.class::isInstance).map(ev -> ((GameEventCardChangeZone) ev).card().getId()).collect(Collectors.toList());
+        }
         if (zoneChangers.isEmpty()) {
             return false;
         }

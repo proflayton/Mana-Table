@@ -84,7 +84,7 @@ test('two desktop clients ready their decks, mulligan into turn one, then reopen
           expect(hand).toHaveLength(7);
           await expect(page.locator('#match-hand .actionable')).toHaveCount(7);
           await expect(page.locator('#match-ok')).toBeDisabled();
-          const card = page.locator(`#match-hand [data-match-card="${hand[0].key}"]`);
+          const card = page.locator(`#match-hand [data-visual-card="${hand[0].visualId}"]`);
           await card.focus();
           await card.click();
           await expect(card).toHaveClass(/chosen/);

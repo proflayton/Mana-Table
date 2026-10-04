@@ -12,7 +12,7 @@ function testProfile(prefix) {
 }
 
 function startEngine(userData) {
-  return new EngineClient(engineOptions({ project, userData }));
+  return new EngineClient({ ...engineOptions({ project, userData }), testMode: true });
 }
 
 async function ready(engine) {

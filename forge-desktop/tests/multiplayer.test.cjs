@@ -46,7 +46,7 @@ test('four and six player Commander: private hands, distinct opponents, attacks,
       assert.equal(zone(player, 'Library').count + zone(player, 'Hand').count, 99);
       assert.equal(zone(player, 'Library').cards.length, 0);
       if (!player.human) assert.equal(zone(player, 'Hand').cards.length, 0);
-      assert.equal(new Set(player.commanderDamage.map(card => card.ownerId)).size, 3);
+      assert.equal(new Set(player.commanderDamage.map(card => card.ownerId)).size, 4, 'Damage includes a player’s own commander when another player controls it');
     }
     const target = state.players.filter(player => !player.human)[2];
     let choseDefender = false, attacked = false;

@@ -1,0 +1,14 @@
+Mana Table uses the Forge rules engine and card scripts, GPL-3.0-or-later.
+The repository's complete license is included as FORGE-LICENSE.txt.
+Native application source in this package uses the repository license.
+
+MonoGame 3.8.5.1: https://github.com/MonoGame/MonoGame
+MonoGame uses the Microsoft Public License and contains components under other
+licenses. Runtime package license files are retained in the bundled distribution.
+SDL and OpenAL are supplied by the MonoGame runtime packages.
+.NET: https://github.com/dotnet/runtime (MIT); runtime license and notices included.
+Java: the engine/runtime directory retains the Java runtime's legal notices.
+
+Magic: The Gathering and card artwork belong to their respective owners.
+Card images are requested from Scryfall and cached per user. This community
+project is not affiliated with Wizards of the Coast or Scryfall.

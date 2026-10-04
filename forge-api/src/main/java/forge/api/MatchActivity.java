@@ -11,9 +11,11 @@ import java.util.*;
 /** Copies an allowlist of events at emission time; never exports raw engine logs or views. */
 public final class MatchActivity {
     public record Entry(long id, int turn, String phaseKey, String kind, Integer playerId,
-                        String message, String cardId, String cardName) { }
+                        String message, String cardId, String cardName, String detail) { }
     public record Frame(long revision, int turn, String phaseKey, String phase, Integer activePlayerId, List<Entry> entries) { }
     private final PlayerView viewer;
+    private final MatchIdentities identities;
+    private boolean ownsIdentities;
     private final Deque<Entry> entries = new ArrayDeque<>();
     private final Map<CardView, String> visibleIds = new HashMap<>();
     private long sequence;
@@ -23,17 +25,20 @@ public final class MatchActivity {
     private Integer activePlayerId;
     private long revision;
 
-    MatchActivity(PlayerView viewer) { this.viewer = Objects.requireNonNull(viewer); }
+    MatchActivity(PlayerView viewer) { this(viewer, new MatchIdentities()); ownsIdentities = true; }
+    MatchActivity(PlayerView viewer, MatchIdentities identities) { this.viewer = Objects.requireNonNull(viewer); this.identities = identities; }
 
     public synchronized List<Entry> snapshot() { return List.copyOf(entries); }
     public synchronized Frame frame() { return new Frame(revision, turn, phase, phaseName, activePlayerId, snapshot()); }
 
     synchronized String visualId(CardView card) {
-        if (!visible(card)) { if (card != null) visibleIds.remove(card); return null; }
-        return visibleIds.computeIfAbsent(card, ignored -> UUID.randomUUID().toString());
+        if (!visible(card)) { if (card != null && visibleIds.remove(card) != null) identities.forget(card); return null; }
+        String id = identities.id(card);
+        visibleIds.put(card, id);
+        return id;
     }
 
-    synchronized void refreshVisibility() { visibleIds.keySet().removeIf(card -> !visible(card)); }
+    synchronized void refreshVisibility() { visibleIds.keySet().removeIf(card -> { if (visible(card)) return false; identities.forget(card); return true; }); }
 
     private boolean visible(CardView card) {
         return card != null && card.getZone() != null
@@ -46,14 +51,21 @@ public final class MatchActivity {
     private String possessive(PlayerView player) { return player != null && player.equals(viewer) ? "Your" : playerName(player) + "'s"; }
 
     private void add(String kind, PlayerView player, String message, CardView card) {
+        add(kind, player, message, card, "");
+    }
+    private void add(String kind, PlayerView player, String message, CardView card, String detail) {
         revision++;
         entries.addLast(new Entry(++sequence, turn, phase, kind, player == null ? null : player.getId(),
-                message, visualId(card), visible(card) ? card.getCurrentState().getName() : null));
+                message, visualId(card), visible(card) ? card.getCurrentState().getName() : null, detail));
         while (entries.size() > 120) entries.removeFirst();
     }
 
     @Subscribe
     public synchronized void onGameEvent(GameEvent event) {
+        if (ownsIdentities) {
+            if (event instanceof GameEventCardChangeZone moved) identities.moved(moved);
+            if (event instanceof GameEventShuffle shuffled) identities.shuffled(shuffled);
+        }
         if (event instanceof GameEventTurnBegan e) {
             turn = e.turnNumber();
             phase = "UNTAP";
@@ -74,14 +86,17 @@ public final class MatchActivity {
             add(e.sa().isSpell() ? "cast" : "ability", player, playerName(player) + action + cardName(card) + ".", card);
         } else if (event instanceof GameEventSpellResolved e) {
             var card = e.spell().getHostCard();
+            String detail = visible(card) ? Objects.requireNonNullElse(e.stackDescription(), "") : "";
+            if (visible(card) && e.spell().isSpell()) detail += "\n" + card.getCurrentState().getOracleText();
             add("resolved", card == null ? null : card.getController(), cardName(card) + (e.spell().isSpell() ? "" : "'s ability")
-                    + (e.hasFizzled() ? " did not resolve." : " resolved."), card);
+                    + (e.hasFizzled() ? " did not resolve." : " resolved."), card,
+                    detail);
         } else if (event instanceof GameEventCardChangeZone e) {
             ZoneType from = e.from() == null ? null : e.from().zoneType();
             ZoneType to = e.to() == null ? null : e.to().zoneType();
             boolean hiddenDestination = to == ZoneType.Library || to == ZoneType.Hand && !viewer.equals(e.to().player());
             // Forget correlation handles whenever a card enters a hidden zone, even between polls.
-            if (hiddenDestination || e.card().isFaceDown()) {
+            if (to == ZoneType.Library || to == ZoneType.Hand || e.card().isFaceDown()) {
                 visibleIds.remove(e.card());
             }
             if (turn == 0 || from == to || to == null) return;
@@ -91,7 +106,8 @@ public final class MatchActivity {
             } else if (to == ZoneType.Battlefield) {
                 // Ordinary land plays have their own event.
                 if (from != ZoneType.Hand || !e.card().getCurrentState().getType().isLand() || !visible(e.card()))
-                    add("arrived", e.card().getController(), cardName(e.card()) + " entered the battlefield.", e.card());
+                    add("arrived", e.card().getController(), cardName(e.card()) + (visible(e.card()) && e.card().isToken() && !cardName(e.card()).toLowerCase(Locale.ROOT).endsWith("token") ? " token" : "")
+                            + " entered the battlefield under " + (viewer.equals(e.card().getController()) ? "your" : playerName(e.card().getController()) + "'s") + " control.", e.card());
             } else if (to == ZoneType.Graveyard || to == ZoneType.Exile || from == ZoneType.Battlefield) {
                 // The view may still be frozen in its previous zone during this event.
                 var publicCard = hiddenDestination ? null : e.card();

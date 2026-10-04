@@ -13,6 +13,42 @@ import java.util.List;
 import static org.testng.Assert.*;
 
 public class CombatForwardingTest {
+    @Test(timeOut = 15000) public void concurrentInputFlushesAndZoneQueriesNeverLoseEvents() throws Exception {
+        forge.util.Localizer.getInstance().initialize("en-US", "../forge-gui/res/languages");
+        forge.util.Lang.createInstance("en-US");
+        var delivered = new java.util.concurrent.atomic.AtomicInteger();
+        var gui = (IGuiGame) Proxy.newProxyInstance(IGuiGame.class.getClassLoader(), new Class<?>[]{IGuiGame.class}, (proxy, method, args) -> {
+            if (method.getName().equals("handleGameEvents")) delivered.addAndGet(((List<?>) args[0]).size());
+            return null;
+        });
+        var forwarder = new GameEventForwarder(gui);
+        var start = new java.util.concurrent.CountDownLatch(1);
+        var workers = java.util.concurrent.Executors.newFixedThreadPool(3);
+        final int count = 100000;
+        try {
+            var writer = workers.submit(() -> {
+                start.await();
+                for (int i = 0; i < count; i++) forwarder.receiveGameEvent(new forge.game.event.GameEventCombatChanged());
+                return null;
+            });
+            var query = workers.submit(() -> {
+                start.await();
+                for (int i = 0; i < count; i++) forwarder.hasPendingZoneChange();
+                return null;
+            });
+            var flush = workers.submit(() -> {
+                start.await();
+                for (int i = 0; i < count; i++) forwarder.flush();
+                return null;
+            });
+            start.countDown();
+            for (var worker : List.of(writer, query, flush)) worker.get(10, java.util.concurrent.TimeUnit.SECONDS);
+            forwarder.flush();
+            assertEquals(delivered.get(), count, "Every queued event must be delivered exactly once");
+            assertFalse(forwarder.hasPendingEvents());
+        } finally { workers.shutdownNow(); }
+    }
+
     @Test public void keepsBlockedStatusAfterTheLastBlockerLeaves() throws Exception {
         var attacker = new forge.game.card.CardView(1, null);
         var unblocked = new forge.game.card.CardView(2, null);

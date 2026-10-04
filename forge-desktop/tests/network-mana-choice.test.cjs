@@ -80,7 +80,7 @@ for (const cardSeat of [0, 1]) test(`network ${cardSeat ? 'guest' : 'host'} can 
           }
           answer = { action: 'card', key: coast.key };
           attempt.paymentPrompt = prompt.id;
-        } else if (seat === cardSeat && attempt && prompt.kind === 'choice' && /Choose an ability of Yavimaya Coast/.test(prompt.message)) {
+        } else if (seat === cardSeat && attempt && prompt.kind === 'choice' && prompt.context === 'playAbility' && prompt.sourceCard?.name === 'Yavimaya Coast') {
           // The modal must remain readable across polls; the original payment action
           // cannot be replayed while Forge waits for this answer.
           assert.equal((await responsive(client.request('matchState'), 'Reading the ability chooser')).prompt.id, prompt.id);

@@ -321,29 +321,35 @@ public final class InputSelectTargets extends InputSyncronizedBase {
         return null;
     }
 
+    private String playerTargetProblem(final Player player) {
+        if (player.hasLost()) {
+            return "Cannot target this player - already lost.";
+        }
+
+        //TODO return the correct reason to display
+        if (sa.isSpell() && sa.getHostCard().isAura() && !player.canBeAttached(sa.getHostCard(), sa)) {
+            return "Cannot enchant this player (Hexproof? Protection? Restrictions?).";
+        }
+        if (!sa.canTarget(player) || mustTargetFiltered || filter != null && !filter.test(player)) {
+            return "Cannot target this player (Hexproof? Protection? Restrictions?).";
+        }
+        return null;
+    }
+
+    /** The same choices accepted by a player click, including deselecting a target. */
+    public boolean canSelectPlayer(final Player player) {
+        return targets.contains(player) || playerTargetProblem(player) == null;
+    }
+
     @Override
     protected void onPlayerSelected(final Player player, final ITriggerEvent triggerEvent) {
         if (targets.contains(player)) {
             removeTarget(player);
             return;
         }
-
-        if (player.hasLost()) {
-            showMessage(sa.getHostCard() + " - Cannot target this player - already lost.");
-            return;
-        }
-
-        //TODO return the correct reason to display
-        if (sa.isSpell() && sa.getHostCard().isAura() && !player.canBeAttached(sa.getHostCard(), sa)) {
-            showMessage(sa.getHostCard() + " - Cannot enchant this player (Hexproof? Protection? Restrictions?).");
-            return;
-        }
-        if (!sa.canTarget(player) || mustTargetFiltered) {
-            showMessage(sa.getHostCard() + " - Cannot target this player (Hexproof? Protection? Restrictions?).");
-            return;
-        }
-        if (filter != null && !filter.test(player)) {
-            showMessage(sa.getHostCard() + " - Cannot target this player (Hexproof? Protection? Restrictions?).");
+        String problem = playerTargetProblem(player);
+        if (problem != null) {
+            showMessage(sa.getHostCard() + " - " + problem);
             return;
         }
 

@@ -52,6 +52,30 @@ compatibility alias. These launchers do not build the app on a fresh clone.
 
 ## Beta scope
 
+The new Windows MonoGame client lives in `mana-native`. Its typed
+`ICardEngine` interface isolates the renderer from the Forge process adapter.
+It supports a local four-player Commander table with three selectable Forge AI
+opponents, as well as hosting or joining a table with friends. Solo play requires
+no account or AI service. Use the **Play solo** setup after choosing your deck.
+The shared `Mana.Renderer` project provides card poses, motion, hit testing,
+typography and replaceable artist assets. Four seats surround one perspective
+table, with cards oriented toward each seat, physical deck piles, commander
+portrait medallions and a shared central stack. Cards lift and settle across
+zones; hit tests and combat arrows follow their projected faces. The native
+table has a fanned hand, drag-to-play and combat assignments, paged land and
+creature ranks, battlefield galleries and saved priority controls.
+Combat review includes attacker recall, paged blocker inspection/removal and
+engine-reported block validation. Damage, tapping and zone changes have brief
+feedback, with reduced motion available; finished games have a result screen.
+Its default table is a neutral placeholder; final illustration and audio remain
+artist work. Asset specifications are in `mana-native/Mana.Table/Assets`.
+Build it with `dotnet build mana-native/Mana.Table/Mana.Table.csproj -c Release`.
+After building Forge, `mana-native/package.ps1 -EngineResources <resources>`
+creates a self-contained package using an existing Mana Table package's resource
+directory (card data and Java runtime). Player instructions are in
+`mana-native/START-HERE.txt`. The replacement rules engine is not implemented yet.
+Four-player Commander is the acceptance benchmark for that migration.
+
 Matches support local AI and direct multiplayer invites. Durable match saves and
 complete format legality checks are not implemented. Closing the app ends the
 current game; saved decks persist. Deck validation checks structure, not rotating

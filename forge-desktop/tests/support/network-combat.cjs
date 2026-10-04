@@ -3,7 +3,8 @@ const { zone, waitFor } = require('./top-library.cjs');
 const { submitMatchAction } = require('./engine.cjs');
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 // Partner commanders make the encounter deterministic without injecting game state.
-const deck = 'Deck\n98 Forest\nCommander\n1 Anara, Wolvid Familiar\n1 Gilanra, Caller of Wirewood';
+const scenario = require('../../../scenarios/commander-four-player.json');
+const deck = scenario.deck;
 const card = (state, id) => state.players.flatMap(player => player.zones.flatMap(zone => zone.cards)).find(card => card.combatId === id || card.visualId === id);
 async function submit(client, state, answer) {
   try {
@@ -15,13 +16,13 @@ async function submit(client, state, answer) {
   }
 }
 
-async function startTable(clients) {
+async function startTable(clients, transport = 'mixed') {
   const ids = [];
   for (let seat = 0; seat < clients.length; seat++) {
     await clients[seat].request('import', { name: `Combat seat ${seat + 1}`, format: 'Commander', text: deck });
     ids.push((await clients[seat].request('save')).id);
   }
-  const lobby = await clients[0].request('multiplayerHost', { format: 'Commander', playerCount: clients.length, autoPortForward: false });
+  const lobby = await clients[0].request('multiplayerHost', { format: scenario.format, playerCount: clients.length, autoPortForward: false, transport });
   assert.equal(lobby.error, null);
   const port = new URL(`http://${lobby.addresses[0].url.replace(/^https?:\/\//, '')}`).port;
   for (const guest of clients.slice(1)) await guest.request('multiplayerJoin', { address: `127.0.0.1:${port}` });
@@ -34,7 +35,7 @@ async function startTable(clients) {
   await clients[0].request('multiplayerStart');
 }
 
-async function playCombat(clients, attackingSeat, interact = async ({ client, state, answer }) => submit(client, state, answer)) {
+async function playCombat(clients, attackingSeat, interact = async ({ client, state, answer }) => submit(client, state, answer), checkpoint = async () => {}) {
   const previous = new Map(), blockSeats = new Set();
   let declared = false, completed = false, attackTurn, lastState;
   const deadline = Date.now() + 150000;
@@ -61,6 +62,7 @@ async function playCombat(clients, attackingSeat, interact = async ({ client, st
         if (options.length < 2) continue;
         assert.equal(prompt.canAutoPass, false);
         const ids = options.map(option => option.cardId);
+        await checkpoint('commanders-ready');
         const fresh = () => waitFor(async () => {
           const current = await client.request('matchState');
           return current.prompt?.inputType === 'InputAttack' && current.prompt.okEnabled && current;
@@ -86,8 +88,9 @@ async function playCombat(clients, attackingSeat, interact = async ({ client, st
         assert.equal(state.combat.attackers.length, 0);
         await assign(ids[0], opponents[0].id);
         await assign(ids[1], opponents[1].id);
-        assert.deepEqual(new Set(state.combat.attackers.map(attack => attack.defender.id)), new Set(opponents.map(player => player.id)));
+        assert.deepEqual(new Set(state.combat.attackers.map(attack => attack.defender.id)), new Set(opponents.slice(0, 2).map(player => player.id)));
         for (const observer of clients) await waitFor(async () => (await observer.request('matchState')).combat?.attackers.length === 2, 'An observer cannot see declared attackers');
+        await checkpoint('attackers-assigned');
         await interact({ stage: 'confirmAttack', client, seat, state, answer: { action: 'ok' } });
         declared = true; attackTurn = state.turn; previous.set(client, state.prompt.id); continue;
       } else if (declared && prompt.inputType === 'InputBlock') {
@@ -110,6 +113,7 @@ async function playCombat(clients, attackingSeat, interact = async ({ client, st
           }, 'Block assignment did not update');
         }
         for (const observer of clients) await waitFor(async () => (await observer.request('matchState')).combat?.attackers.find(other => other.cardId === attack.cardId)?.blockerIds.includes(blocker), 'Observer cannot see the block');
+        await checkpoint(`blocker-assigned-seat-${seat}`);
         await interact({ stage: 'confirmBlock', client, seat, state, answer: { action: 'ok' } });
         blockSeats.add(seat); previous.set(client, state.prompt.id); continue;
       } else if (prompt.inputType === 'InputPassPriority') {
@@ -134,6 +138,7 @@ async function playCombat(clients, attackingSeat, interact = async ({ client, st
     await sleep(25);
   }
   assert.ok(declared && completed && blockSeats.size === 2, JSON.stringify({ declared, completed, blockSeats: [...blockSeats], lastState }));
+  await checkpoint('combat-complete');
 }
 
 module.exports = { startTable, playCombat, submit };
