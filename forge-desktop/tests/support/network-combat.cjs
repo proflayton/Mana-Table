@@ -5,6 +5,7 @@ const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 // Partner commanders make the encounter deterministic without injecting game state.
 const scenario = require('../../../scenarios/commander-four-player.json');
 const deck = scenario.deck;
+const commanderCosts = new Map([['Anara, Wolvid Familiar', 4], ['Gilanra, Caller of Wirewood', 3]]);
 const card = (state, id) => state.players.flatMap(player => player.zones.flatMap(zone => zone.cards)).find(card => card.combatId === id || card.visualId === id);
 async function submit(client, state, answer) {
   try {
@@ -36,7 +37,7 @@ async function startTable(clients, transport = 'mixed') {
 }
 
 async function playCombat(clients, attackingSeat, interact = async ({ client, state, answer }) => submit(client, state, answer), checkpoint = async () => {}) {
-  const previous = new Map(), blockSeats = new Set();
+  const previous = new Map(), blockSeats = new Set(), lastStates = [];
   let declared = false, completed = false, attackTurn, lastState;
   const deadline = Date.now() + 150000;
   for (; Date.now() < deadline && !completed;) {
@@ -50,6 +51,9 @@ async function playCombat(clients, attackingSeat, interact = async ({ client, st
       if (declared && state.turn === attackTurn && state.phaseKey === 'MAIN2') { completed = true; break; }
       const prompt = state.prompt;
       lastState = { seat, turn: state.turn, phase: state.phaseKey, prompt, combat: state.combat };
+      lastStates[seat] = { ...lastState, previous: previous.get(client),
+        field: zone(state, 'Battlefield').cards.map(card => ({ name: card.name, tapped: card.tapped, selectable: card.selectable })),
+        hand: zone(state, 'Hand').cards.map(card => ({ name: card.name, selectable: card.selectable })) };
       if (!prompt || previous.get(client) === prompt.id) continue;
       if (['InputAttack', 'InputBlock'].includes(prompt.inputType)) assert.ok(state.combat, 'Combat input must include battlefield assignments and legal pairs');
       if (prompt.kind === 'input' && !prompt.okEnabled && !prompt.cancelEnabled && !prompt.playerChoices?.length) continue;
@@ -120,7 +124,12 @@ async function playCombat(clients, attackingSeat, interact = async ({ client, st
         if (!prompt.okEnabled) continue;
         const ownMain = state.activePlayerId === state.viewerId && state.phaseKey === 'MAIN1' && !state.stack.length;
         const land = ownMain && hand.find(card => card.type.includes('Land') && card.selectable);
-        const creature = ownMain && zone(state, 'Command').cards.find(card => card.type.includes('Creature') && card.selectable);
+        // Forge can let a selectable card enter payment even when it is not
+        // affordable. This all-Forest fixture must build enough mana first;
+        // neither partner has a tax before this encounter's first combat.
+        const mana = field.filter(card => card.name === 'Forest' && !card.tapped).length
+          + (state.players.find(player => player.id === state.viewerId).mana?.G || 0);
+        const creature = ownMain && zone(state, 'Command').cards.find(card => card.selectable && mana >= commanderCosts.get(card.name));
         answer = land || creature ? { action: 'card', key: (land || creature).key } : { action: 'ok' };
       } else if (prompt.kind === 'choice') answer = { choices: Array.from({ length: Math.max(prompt.min, Math.min(1, prompt.max)) }, (_, i) => i) };
       else if (prompt.kind === 'reveal') answer = { action: 'ack' };
@@ -137,7 +146,7 @@ async function playCombat(clients, attackingSeat, interact = async ({ client, st
     }
     await sleep(25);
   }
-  assert.ok(declared && completed && blockSeats.size === 2, JSON.stringify({ declared, completed, blockSeats: [...blockSeats], lastState }));
+  assert.ok(declared && completed && blockSeats.size === 2, JSON.stringify({ declared, completed, blockSeats: [...blockSeats], lastStates }));
   await checkpoint('combat-complete');
 }
 

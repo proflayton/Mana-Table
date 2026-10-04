@@ -13,7 +13,6 @@ test('a three-player table declares split attacks and blocks directly on the bat
     for (const name of ['attacker', 'blocker']) {
       const desktop = await launchDesktop(`network-combat-${name}`);
       desktops.push(desktop);
-      await desktop.application.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].webContents.beginFrameSubscription(() => {}));
       const page = await desktop.application.firstWindow();
       await expect(page.locator('#loading')).toBeHidden({ timeout: 60000 });
       await page.locator('#multiplayer-tab').click();
@@ -22,10 +21,23 @@ test('a three-player table declares split attacks and blocks directly on the bat
     observer = startEngine(testProfile('combat-observer'));
     await ready(observer); clients.push(observer);
     await startTable(clients);
+    // Build the encounter through the real engine while the workshop is open.
+    // Rendering two animated 3D tables throughout thirteen setup turns wastes
+    // software-rendered runner time before the combat interactions under test.
+    for (const client of clients.filter(client => client.page)) {
+      await expect(client.page.locator('#match-view')).toBeVisible();
+      await client.page.locator('#match-back').click();
+    }
     await playCombat(clients, 0, async interaction => {
       const { client, state, stage, answer, attackerId, blockerId, defenderId } = interaction;
       if (!client.page) return submit(client, state, answer);
       const { page, desktop } = client;
+      // Native window occlusion can suspend animation frames even when Chromium
+      // background throttling is disabled. Interact with the foreground table.
+      await desktop.application.evaluate(({ BrowserWindow }) => {
+        const mainWindow = BrowserWindow.getAllWindows()[0]; mainWindow.show(); mainWindow.focus();
+      });
+      if (await page.locator('#match-view').isHidden()) await page.locator('#match-tab').click();
       await expect(page.locator('#match-view')).toBeVisible();
       await expect(page.locator('#match-prompt')).toHaveAttribute('data-prompt-id', state.prompt.id);
       await expect(page.locator('#combat-view')).toBeHidden();
@@ -42,6 +54,8 @@ test('a three-player table declares split attacks and blocks directly on the bat
         expect((await client.request('matchState')).prompt.id).toBe(state.prompt.id);
         if (!captures.has(stage)) {
           await expect(controls).toContainText(stage === 'attack' ? 'Choose a glowing player' : 'Choose a glowing attacker');
+          // Capture evidence on demand. Continuous frame subscriptions copy
+          // both full windows on every paint and overwhelm software-rendered CI.
           const png = await desktop.application.evaluate(async ({ BrowserWindow }) =>
             (await BrowserWindow.getAllWindows()[0].webContents.capturePage()).toPNG().toString('base64'));
           fs.writeFileSync(test.info().outputPath(`battlefield-${stage}.png`), Buffer.from(png, 'base64'));

@@ -22,6 +22,10 @@ test('deck discovery, printing-aware edits, organization and explained suggestio
     const errors = [];
     page.on('pageerror', error => errors.push(error.message));
     await expect(page.locator('#loading')).toBeHidden({ timeout: 60000 });
+    // Combat listeners exist before any match state. Escape and focus changes
+    // in deck building must remain safe during that initial state.
+    await page.keyboard.press('Escape');
+    await page.evaluate(() => window.dispatchEvent(new Event('blur')));
     await page.locator('#import-button').click();
     await page.locator('#import-name').fill('A growing idea');
     await page.locator('#import-format').selectOption('Commander');
