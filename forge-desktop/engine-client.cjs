@@ -6,7 +6,7 @@ const path = require('node:path');
 const { snapshotEngineJar } = require('./runtime.cjs');
 
 class EngineClient extends EventEmitter {
-  constructor({ java, jar, resources, data, log, isolateJar = false }) {
+  constructor({ java, jar, resources, data, log, isolateJar = false, testMode = false }) {
     super();
     this.pending = new Map();
     this.sequence = 0;
@@ -14,7 +14,7 @@ class EngineClient extends EventEmitter {
     fs.mkdirSync(path.dirname(log), { recursive: true });
     const snapshot = isolateJar ? snapshotEngineJar(jar) : null;
     this.log = fs.createWriteStream(log, { flags: 'a' });
-    this.child = spawn(java, ['-Xmx2g', '-Dfile.encoding=UTF-8', '-Djava.awt.headless=true', '-jar', snapshot?.jar || jar, resources, data],
+    this.child = spawn(java, ['-Xmx2g', '-Dfile.encoding=UTF-8', '-Djava.awt.headless=true', ...(testMode ? ['-Dmana.test=true'] : []), '-jar', snapshot?.jar || jar, resources, data],
       { windowsHide: true, stdio: ['pipe', 'pipe', 'pipe'] });
     this.child.once('close', () => {
       try { snapshot?.dispose(); }

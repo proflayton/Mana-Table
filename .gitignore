@@ -41,6 +41,8 @@ nbactions.xml
 target
 test-output
 bin
+obj
+/.native-packages/
 gen
 *.log
 

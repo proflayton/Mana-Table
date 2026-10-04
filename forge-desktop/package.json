@@ -19,6 +19,7 @@
     "test": "playwright test",
     "test:unit": "node scripts/test-node.cjs unit",
     "test:engine": "node scripts/test-node.cjs engine",
+    "test:benchmark": "node --test tests/commander-benchmark.test.cjs",
     "test:ui": "playwright test",
     "test:encounters": "playwright test tests/land-play.spec.cjs tests/encounter-ux.spec.cjs",
     "encounter": "node scripts/encounter.cjs",

@@ -1,0 +1,9 @@
+{
+  "version": 1,
+  "id": "commander-four-player-combat-v1",
+  "format": "Commander",
+  "players": 4,
+  "deck": "Deck\n98 Forest\nCommander\n1 Anara, Wolvid Familiar\n1 Gilanra, Caller of Wirewood",
+  "attackingSeat": 1,
+  "checkpoints": ["commanders-ready", "attackers-assigned", "blocker-assigned-seat-0", "blocker-assigned-seat-2", "combat-complete"]
+}

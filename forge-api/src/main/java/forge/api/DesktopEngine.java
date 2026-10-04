@@ -24,7 +24,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
-/** Desktop commands use private child-process pipes; multiplayer uses Forge's TCP transport. */
+/** Desktop commands use private child-process pipes; multiplayer uses versioned JSON synchronization. */
 public final class DesktopEngine implements AutoCloseable {
     private static final Gson JSON = new GsonBuilder().serializeNulls().create();
     private final CardCatalog catalog;
@@ -38,8 +38,9 @@ public final class DesktopEngine implements AutoCloseable {
     private int mulligans;
     private int draws;
     private Path resources;
-    private MatchSession match;
-    private MultiplayerSession multiplayer;
+    private SeatConnection match;
+    private SyncLobby multiplayer;
+    private final Map<String, SyncLobby> localSeats = new LinkedHashMap<>();
 
     public DesktopEngine(CardCatalog catalog, Path directory) throws Exception {
         this.catalog = catalog;
@@ -55,7 +56,7 @@ public final class DesktopEngine implements AutoCloseable {
         var data = EngineResources.load(Path.of(args[0]));
         var engine = new DesktopEngine(CardCatalog.fromDatabases(data.getAvailableDatabases().values()), Path.of(args[1]));
         engine.resources = Path.of(args[0]);
-        protocol.println(JSON.toJson(Map.of("event", "ready", "printings", engine.catalog.size())));
+        protocol.println(JSON.toJson(Map.of("event", "ready", "printings", engine.catalog.size(), "protocolVersion", 2, "capabilities", List.of("seat-sync", "snapshots", "command-receipts", "resume", "table-social"))));
         try (engine; var input = new BufferedReader(new InputStreamReader(System.in, StandardCharsets.UTF_8))) {
             String line;
             while ((line = input.readLine()) != null) {
@@ -83,6 +84,9 @@ public final class DesktopEngine implements AutoCloseable {
 
     @Override
     public void close() {
+        for (var seat : localSeats.values()) seat.close();
+        localSeats.clear();
+        if (match != null) match.close();
         if (multiplayer != null) {
             multiplayer.close();
         }
@@ -90,7 +94,34 @@ public final class DesktopEngine implements AutoCloseable {
 
     public Object dispatch(String method, JsonObject arguments) throws Exception {
         JsonObject p = arguments == null ? new JsonObject() : arguments;
+        if (p.has("connectionId")) {
+            var seat = localSeats.get(p.get("connectionId").getAsString());
+            if (seat == null) throw new IllegalArgumentException("Unknown local seat connection");
+            return switch (method) {
+                case "multiplayerState" -> seat.state();
+                case "tableSocial" -> seat.social(p);
+                case "tableChat" -> seat.chat(p);
+                case "tableName" -> seat.rename(p);
+                case "multiplayerSelectDeck" -> { var loaded = loadStoredDeck(string(p, "deckId", "")); yield seat.selectDeck(loaded.editor().toDeck(), loaded.format()); }
+                case "multiplayerReady" -> seat.ready(p.get("ready").getAsBoolean());
+                case "multiplayerReturn" -> seat.returnToLobby();
+                case "multiplayerClose" -> seat.close();
+                case "matchState" -> seat.match().state();
+                case "matchAction" -> seat.match().action(p);
+                case "matchConcede" -> seat.match().concede(p);
+                default -> throw new IllegalArgumentException("Command is not available on a seat connection");
+            };
+        }
+        // Older workshop callers omit deckId; native edits also bind the active
+        // document, so a delayed action cannot edit a different opened deck.
+        if (p.has("deckId") && List.of("edit", "rename", "undo", "redo", "save", "export", "duplicate").contains(method)) {
+            requireDeck();
+            if (!deckId.equals(string(p, "deckId", "")) || !p.has("revision") || p.get("revision").getAsLong() != editor.snapshot().revision())
+                throw new IllegalArgumentException("The deck changed. Reopen it before editing.");
+        }
         return switch (method) {
+            case "testMatchViews" -> multiplayer().testViews();
+            case "multiplayerLocalJoin" -> { var id = UUID.randomUUID().toString(); localSeats.put(id, multiplayer().localGuest()); yield Map.of("connectionId", id); }
             case "search" -> catalog.browse(new CardCatalog.Query(string(p, "text", ""),
                     integer(p, "colors"), integer(p, "maxManaValue"), number(p, "offset", 0), number(p, "limit", 48)),
                     string(p, "type", ""), string(p, "sort", "name"), !p.has("unique") || p.get("unique").getAsBoolean(),
@@ -99,7 +130,24 @@ public final class DesktopEngine implements AutoCloseable {
             case "list" -> list();
             case "new" -> create(string(p, "name", "Untitled deck"), string(p, "format", "Constructed"));
             case "open" -> open(string(p, "id", ""));
+            case "duplicate" -> {
+                requireDeck();
+                var copy = new Deck(editor.toDeck(), checkedName(string(p, "name", "")));
+                ensureSaved();
+                editor = new DeckEditor(catalog, copy);
+                deckId = UUID.randomUUID().toString();
+                clearPractice();
+                yield save();
+            }
             case "snapshot" -> state();
+            case "setCommanders" -> {
+                requireDeck();
+                if (!deckId.equals(string(p, "deckId", ""))) throw new IllegalArgumentException("The selected deck changed. Reopen the deck before editing.");
+                var ids = JSON.fromJson(p.get("cardIds"), String[].class);
+                DeckCommanders.set(editor, p.get("revision").getAsLong(), List.of(ids));
+                format = "Commander";
+                yield save();
+            }
             case "edit" -> {
                 requireDeck();
                 var edits = JSON.fromJson(p.get("edits"), DeckEditor.Edit[].class);
@@ -154,7 +202,7 @@ public final class DesktopEngine implements AutoCloseable {
             case "export" -> export(string(p, "kind", "text"));
             case "practice" -> practice(string(p, "action", "shuffle"), number(p, "index", -1));
             case "multiplayerHost" -> multiplayer().host(string(p, "format", "Constructed"), number(p, "playerCount", 2),
-                    p.has("autoPortForward") && p.get("autoPortForward").getAsBoolean());
+                    p.has("autoPortForward") && p.get("autoPortForward").getAsBoolean(), string(p, "transport", "mixed"));
             case "multiplayerJoin" -> multiplayer().join(string(p, "address", ""));
             case "multiplayerConfigure" -> multiplayer().configure(string(p, "format", "Constructed"), number(p, "playerCount", 2));
             case "multiplayerSelectDeck" -> {
@@ -164,6 +212,10 @@ public final class DesktopEngine implements AutoCloseable {
             case "multiplayerReady" -> multiplayer().ready(p.has("ready") && p.get("ready").getAsBoolean());
             case "multiplayerStart" -> multiplayer().start();
             case "multiplayerState" -> multiplayer().state();
+            case "tableSocial" -> multiplayer().social(p);
+            case "tableChat" -> multiplayer().chat(p);
+            case "tableName" -> multiplayer().rename(p);
+            case "multiplayerReconnect" -> multiplayer().reconnect();
             case "multiplayerReturn" -> multiplayer().returnToLobby();
             case "multiplayerClose" -> multiplayer().close();
             case "matchOpponents" -> MatchSession.opponents(format);
@@ -195,24 +247,26 @@ public final class DesktopEngine implements AutoCloseable {
                         opponents.add(opponent.getAsString());
                     }
                 } else opponents.add(string(p, "opponent", "green"));
-                match = new MatchSession(prepared.deck(), format, opponents, resources, directory.getParent());
+                if (multiplayer != null && multiplayer.connected()) throw new IllegalStateException("Leave the current table first");
+                if (match != null) match.close();
+                match = SeatConnection.local(MatchSession.solo(prepared.deck(), format, opponents, resources, directory.getParent()));
                 yield match.state();
             }
             case "matchState" -> {
-                if (multiplayer != null && multiplayer.hasMatch()) {
+                if (multiplayer != null && multiplayer.connected()) {
                     yield multiplayer.match().state();
                 }
                 yield match == null ? null : match.state();
             }
             case "matchAction" -> {
-                if (multiplayer != null && multiplayer.hasMatch()) {
+                if (multiplayer != null && multiplayer.connected()) {
                     yield multiplayer.match().action(p);
                 }
                 if (match == null) throw new IllegalStateException("No active match");
                 yield match.action(p);
             }
             case "matchConcede" -> {
-                if (multiplayer != null && multiplayer.hasMatch()) {
+                if (multiplayer != null && multiplayer.connected()) {
                     yield multiplayer.match().concede(p);
                 }
                 if (match == null) throw new IllegalStateException("No active match");
@@ -300,6 +354,7 @@ public final class DesktopEngine implements AutoCloseable {
         result.put("format", format);
         result.put("deck", editor.snapshot());
         result.put("validation", editor.validate(DeckFormat.valueOf(format)));
+        result.put("commanderChoices", DeckCommanders.choices(editor.toDeck()));
         result.put("saveError", saveError);
         return result;
     }
@@ -356,10 +411,10 @@ public final class DesktopEngine implements AutoCloseable {
         return Map.of("hand", List.copyOf(hand), "remaining", library.size(), "mulligans", mulligans, "draws", draws);
     }
 
-    private MultiplayerSession multiplayer() {
+    private SyncLobby multiplayer() {
         if (multiplayer == null) {
             if (resources == null) { throw new IllegalStateException("Engine resources are still loading"); }
-            multiplayer = new MultiplayerSession(resources, directory.getParent());
+            multiplayer = new SyncLobby(resources, directory.getParent());
         }
         return multiplayer;
     }

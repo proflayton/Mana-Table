@@ -1,17 +1,232 @@
 # Mana Table architecture
 
-Mana Table adds two modules to the Forge repository: a Java adapter (`forge-api`)
-and an Electron application (`forge-desktop`). Forge remains the rules authority.
+Mana Table has a Java rules adapter (`forge-api`), an Electron reference client
+(`forge-desktop`), and a MonoGame client (`mana-native`). Forge remains the installed
+rules engine. Switching a seat between local and remote must not change game logic,
+decisions, visibility, or presentation.
+
+## Shared match and synchronization
+
+`MatchTable` owns one Forge game and one `MatchSession` per human controller.
+Solo and network matches use that same session, including activity, commander
+damage, legal combat choices and private information filtering. Forge's AI remains
+inside the authoritative game. The old `NetworkMatchSession` and its separate
+network GUI projection have been removed.
+
+`SeatConnection` carries observe/reply/concede operations through `SyncTransport`.
+Solo uses a local connection. A lobby can mix local and TCP connections; all receive
+complete seat-filtered snapshots from the authority. Networking contains no card,
+combat or decision interpretation. `SyncLobby` manages deck selection, readiness
+and seat ownership. `PortForwarding` is an independent reachability service.
+
+Sync protocol 3 negotiates its version before joining. Ordered sequence numbers
+and cached command receipts prevent replay after a lost response. A resume token
+restores the existing seat, followed by a complete snapshot; leaving revokes the
+token. Resume covers an interrupted connection while the host process remains
+alive, not saved games or host migration. All friends need the same protocol build.
+
+The IPC ready message publishes protocol version and capabilities. `Mana.Forge`
+checks both. Snapshots retain publication and board revisions; prompt handles
+remain scoped capabilities, separate from opaque card presentation identities.
+
+## Native client boundaries
+
+| Project | Responsibility |
+| --- | --- |
+| `Mana.Contracts` | Catalog, setup and match-connection interfaces; typed Commander snapshots and commands; visibility enumeration and art-source contract |
+| `Mana.Client` | Generic versioned replica, command scheduling, stale-poll protection, main-thread completion delivery and local artist asset loading |
+| `Mana.Magic` | Phase language, legal-target interpretation, click/drag command construction, Auto priority, Magic card classification and Magic art provider |
+| `Mana.Forge` | Process lifetime, protocol negotiation and Forge-to-contract mapping |
+| `Mana.Renderer` | Canvas, projection, immutable table layout, card poses, hit geometry, motion and effects |
+| `Mana.Table` | Application composition, controls, overlays and rendering of the shared session |
+| `Mana.Conformance` | Test-only semantic scenarios, canonical full checkpoints and first-divergence reporting for two engine adapters |
+| `Mana.Client.Tests`, `Mana.Table.Tests` | Headless behavior checks and separate native test/automation executable |
+
+`TableScene` describes visible ranks, command cards, piles and hand placement.
+Painting and input use the same displayed pose. Card names never identify an
+occurrence. Client inspection, effects and interactions enumerate the same allowed
+views, so revoked information is removed consistently. Artist image loading is
+separate from GPU texture creation; the default Magic provider is replaceable.
+
+The native setup's **Deck builder** opens after file or clipboard import and is
+available for saved decks and new drafts. Its library, deck list and large face
+preview share one workspace. `IEngineCatalog` exposes paged name/rules/type search,
+color-identity and mana-value filters, deck CRUD, undo/redo, text export, and
+authoritative commander candidates/partner compatibility. Search is debounced
+and runs independently of deck edits; generation checks discard stale results.
+The contract preserves exact printing IDs, alternate faces, mana values and
+color identities. The view provides quantity edits, Main/Sideboard moves, deck
+filtering, commander roles, nonland mana curves, validation review and save retry.
+
+`TableGame.Decks` routes every mutation through the same readiness, persistence
+and refresh path. Each native edit carries both the deck ID and revision; the
+adapter rejects commands for a different active document or an older revision.
+Opening the builder refreshes its document after match setup has reopened it.
+Forge's `DeckCommanders` moves existing occurrences between Main, Sideboard and
+Commander in one `DeckEditor` batch; replacing a commander returns the old card
+to Main. Duplicating creates a separate persisted deck with identical printings.
+The same saved list feeds solo and network setup. Validation remains authoritative
+in Forge, and invalid or unsaved decks cannot enter setup.
+
+`TableGame.LobbyFlow` separates selecting, confirming, readying and starting.
+The deck chooser and the builder return to a shared review of commander faces,
+counts, validation and save status. Confirm prepares the solo setup or submits
+the saved deck through `SelectDeckAsync`; multiplayer readiness is a separate
+explicit operation. A confirmation belongs to the selected saved document and
+current setup mode. Opening a different deck, any edit, entering the builder,
+switching modes, or leaving a table invalidates it. Selection and builder entry
+await the ordinary `SetReadyAsync(false)` before opening or changing a document.
+Browsing the chooser alone preserves readiness. These are client workflow states;
+rules and the synchronized seat roster remain authoritative in the existing engine.
+
+`TableGame.LobbyView` renders the four-seat roster, commander preview, saved/precon
+chooser, review, native invite entry, and connection details. Its hit scopes include
+the active modal, selected deck, confirmation, mode, readiness and start permission.
+Modal input cannot reach controls behind it. Start requires current confirmation
+plus the engine's readiness/start state. Builder edits preserve the selected AI
+opponent IDs when the updated deck is reconfirmed. Returning from a network game
+refreshes the lobby before showing its controls; readiness must be declared again.
+
+`TableGame.LobbyDecks` shares the searchable chooser between saved/precon lists
+and engine-owned AI opponent choices. Its read-only deck review browses the loaded
+document by section, name, type and rules text, with exact-printing previews.
+Browsing or reselecting the current deck makes no engine mutation and preserves
+readiness. Entering the builder from a reviewed card first withdraws readiness,
+refreshes the editor revision, and selects that printing in its original section.
+`TableGame.DeckPresentation` shares the main-deck curve and alternate-face rendering
+between building and review. Search and page state participate in hit scoping.
+
+Table social features use the optional `ITableSocial` contract independently of
+`IMatchConnection`. `sync.TableConversation` owns a bounded 200-entry transcript,
+stable participant IDs, display names and a monotonic social revision. The same
+`SyncTransport` dispatch supplies the authoritative sender seat for local and TCP
+connections; a client cannot nominate a different sender. Every social command
+is scoped to its table ID, and ordered transport receipts prevent duplicate sends.
+Names, text, message kinds, fixed emotes and rate limits are checked at the host.
+Ready/deck/join/leave/start/return events share that transcript without changing
+rules or game decisions. Names enter the existing RegisteredPlayer setup.
+
+`ConversationReplica` rejects old/table-mismatched snapshots and calculates
+unread state and local mutes using participant identity rather than reusable seat
+numbers. Social polls and sends use their own asynchronous state, never the
+game-command epoch or Busy flag. The native drawer uses a separate input scope,
+consumes its own pointer area, and isolates text entry from gameplay shortcuts.
+The rest of the table remains interactive. Full messages can be expanded, and
+older pages retain an anchor while new messages arrive. Chat exists only while
+connected to a human table; solo AI does not simulate human conversation.
+
+Native hand, battlefield, stack and visible pile cards grow to 410x574 after a
+180 ms hover. The original scene occurrence animates upright and is painted once
+above its rank, then settles back on pointer exit. Its displayed pose supplies
+its hit region; original hand slots remain available for browsing the fan.
+The local portrait and life total sit at the center above the hand, using the
+same seat anchor as incoming combat lines, commander entrances and life effects.
+The fan sits behind the portrait, with local battlefield ranks shifted forward
+to leave room. Enlarged faces and state panels keep the local target area clear;
+the portrait is painted after the hand so travelling cards cannot obscure it.
+Revealed and selectable gallery faces use this same pose, focus and deferred
+painting path. Anonymous faces have presentation identities scoped to the
+decision and original item slot; names never identify an occurrence. Read-only
+faces participate in hover hit testing without gaining a selection action.
+The gallery makes space for the growing face and keeps its label strip available
+for browsing adjacent cards. Paging, search and Continue/Confirm stay below the
+enlarged face. Changing the
+decision, page or granted visibility removes the old readable occurrence.
+Hover focus uses an amber rim, soft edge glow, dark separation and ivory corner
+marks. It appears before enlargement and follows the card's displayed pose.
+Engine-authorized actions use a persistent 7-pixel ice-blue rim with a pale inner
+edge, dark separation and a broad glow, visible before hovering. Only its glow
+gently varies during priority; reduced motion keeps it steady. Hover focus and
+combat cues retain their separate meaning.
+Combat connections and pointer aiming share a straight, filled arrow in the
+renderer: a tapered shaft, broad directional head and dark separation from card
+art. Attacks are red and blocks blue. Endpoints use the displayed card edges or
+portrait rim; short connections scale the head down, and aiming inside the source
+card hides the arrow. The renderer contains no combat legality or input logic.
+Battlefield counters are separate labeled stacks with an explicit count. Two
+types fit on a resting card, with an overflow count; enlargement shows named
+counters and current state beside the face, and the inspector paginates the
+complete details. Power/toughness always comes from the engine and is never
+recomputed by adding the displayed counters.
+Current combat keywords drive distinct markers for flying, reach, trample,
+first/double strike, deathtouch, lifelink, menace, vigilance and indestructible.
+Summoning sickness has an hourglass marker. Flying raises the same card pose
+used for hit testing and combat arrows, with separated shadow and air trails;
+reduced motion keeps its height while stopping idle movement. Losing an ability
+or removing counters updates the existing occurrence, without interpreting
+printed rules text or retaining markers after the projection revokes them.
+Reduced motion uses the same poses without tweening. Hand plays and casts from Command/zone browsers
+require a double-click on the same scoped card within 500 ms, or a legal hand
+drag. Other clicks, a drag, Escape, or a changed decision clear the first click.
+Required selections and battlefield abilities retain single-click behavior.
+Card choices may include an optional `cardId` linking a currently visible
+battlefield, command-zone or own-hand occurrence. `TableChoices` validates those
+links against the current snapshot. When every choice is on the table, clicking
+the original cards stages their engine indices, marks them selected, and uses
+the normal action button (or Space) to confirm. Ordered choices use click order;
+minimum/maximum counts still come from the engine. Gallery faces remain anonymous,
+and library searches, private reveals and non-card choices retain their chooser.
+
+Auto uses `Mana.Client.DecisionAdvance` through the same seat connection locally
+and over TCP. It drains engine-authorized empty priority windows, publishing only
+the next actionable decision, visible checkpoint, or bounded wait (350 ms / 32
+passes). Engine rules and every command receipt still run in order. Duplicate
+prompts are not resubmitted; stale revisions and retired-session results are rejected.
+Hold, Full control, changed stops, typing, inspection and pointer gestures cancel
+further passes; an already submitted command is reconciled. Required decisions,
+including blocks, payment and cleanup, are never consumed by Auto.
+
+`PresentationPacing` pauses for visible events, not empty phase changes. Board
+changes get 1.1 seconds, ordinary stack changes 1.25, targeted spells or retargets
+2.5, resolution 2.6, combat/damage 1.6, and turn changes 1.2. Repeated polls and
+new decision handles do not extend a beat. Real choices remain immediately
+available during animation. The dock has one stable following state for automatic
+empty windows and waits; Auto, Hold and phase stops use a match-scoped input
+identity so prompt churn cannot cancel those clicks.
+
+`CardActions` labels engine-authorized battlefield actions as Activate, with hover
+guidance and an inspector button. It never infers playability from rules text.
+Stack projections include viewer-safe card/player targets (including subabilities).
+The renderer draws direct target arrows, marks the exact occurrence and shows a
+spell/ability callout. `MatchActivity` retains public resolution descriptions and
+spell rules, plus token arrival names; `ActionFeedback` exposes a timed summary
+and reviewable details. Recent changes are reported without inferring causality.
+New public battlefield occurrences receive arrival cues. Departures to public
+graveyard/exile retain a brief ghost at the former position; hidden transitions
+immediately revoke it. No extra game rules or multiplayer-specific path is added.
+`TextureFiltering` builds GPU mipmaps once per loaded image; anisotropic card
+sampling handles angled minification, and table surfaces request 4x MSAA.
+Full-resolution artwork and rendered rules text remain available for inspection.
+
+`TablePresence` turns public hand/library counts and life changes into seat cues.
+Opponent draw cues contain no card identities; the local hand animates only its
+authorized visible cards. `SceneMotion.Hold` keeps direct manipulation attached
+to the pointer, then continues from the held pose when a new snapshot arrives.
+Spells rise into the central response area before settling onto the battlefield.
+These effects never submit input, postpone snapshots, or hold game priority.
+Reduced motion skips travel, entrance delays, anonymous draws and impact rings.
+
+`ICardEngine` composes narrower catalog, setup and match connection interfaces.
+This supports selecting another backend without adding a renderer or multiplayer
+implementation. It does not imply live engine migration. A native rules engine is
+not installed yet. The conformance runner requires canonical occurrence aliases,
+controlled random outcomes and complete rules/seat checkpoints from each adapter;
+the current Forge transport benchmark proves synchronization, not cross-engine
+rules equivalence. A complete Forge rules-state oracle remains separate work from
+the existing test-only seat-view audit.
 
 ```mermaid
 flowchart LR
-    Renderer[HTML / CSS / JavaScript renderer] -->|allowlisted IPC via preload| Desktop[Electron main process]
-    Desktop <-->|private JSON lines over stdio| Host[DesktopEngine / forge-api]
-    Host --> Decks[Catalog, deck editor, persistence]
-    Host --> Match[MatchSession / projected snapshots]
-    Match --> Controller[Shared human controller / forge-gui]
-    Match --> AI[forge-ai]
-    Controller --> Rules[forge-game / forge-core]
+    Native[MonoGame table] --> Client[Mana.Client and Mana.Magic]
+    Client --> Adapter[Mana.Forge adapter]
+    Electron[Electron table] --> Desktop[Electron main process]
+    Adapter <-->|private IPC| Host[DesktopEngine]
+    Desktop <-->|private IPC| Host
+    Host --> Connection[SeatConnection]
+    Connection <-->|local or TCP synchronization| Table[MatchTable]
+    Table --> Seats[MatchSession per human seat]
+    Table --> AI[Forge AI]
+    Seats --> Rules[Forge rules]
     AI --> Rules
 ```
 

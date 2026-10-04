@@ -14,14 +14,16 @@ import java.util.concurrent.ConcurrentHashMap;
 final class CombatCardIds {
     private final PlayerView viewer;
     private final MatchActivity activity;
+    private final MatchIdentities identities;
     private final Map<Integer, String> concealed = new ConcurrentHashMap<>();
 
-    CombatCardIds(PlayerView viewer, MatchActivity activity) { this.viewer = viewer; this.activity = activity; }
+    CombatCardIds(PlayerView viewer, MatchActivity activity) { this(viewer, activity, null); }
+    CombatCardIds(PlayerView viewer, MatchActivity activity, MatchIdentities identities) { this.viewer = viewer; this.activity = activity; this.identities = identities; }
 
     String id(CardView card) {
         if (card == null) return null;
         if (card.isFaceDown() && card.getZone() == ZoneType.Battlefield && card.canBeShownTo(viewer))
-            return concealed.computeIfAbsent(card.getId(), ignored -> UUID.randomUUID().toString());
+            return identities == null ? concealed.computeIfAbsent(card.getId(), ignored -> UUID.randomUUID().toString()) : identities.concealed(card);
         concealed.remove(card.getId());
         return activity.visualId(card);
     }
