@@ -15,12 +15,12 @@ import forge.game.combat.CombatUtil;
 import forge.game.keyword.Keyword;
 import forge.game.player.*;
 import forge.game.spellability.SpellAbilityView;
+import forge.game.spellability.StackItemView;
 import forge.game.zone.ZoneType;
 import forge.gamemodes.match.input.*;
 import forge.gui.control.PlaybackSpeed;
 import forge.gui.interfaces.IGuiGame;
 import forge.item.PaperCard;
-import forge.player.LobbyPlayerHuman;
 import forge.player.PlayerControllerHuman;
 import forge.player.PlayerZoneUpdates;
 import forge.util.FSerializableFunction;
@@ -31,14 +31,15 @@ import java.nio.file.Path;
 import java.util.*;
 import java.util.concurrent.*;
 
-/** One local human with one or more AI opponents. Mutable engine objects never leave this adapter. */
-public final class MatchSession implements ManaTableSession {
+/** One seat in an authoritative match, independent of its connection. Mutable engine objects never leave this adapter. */
+public final class MatchSession implements ManaTableSession, MatchEndpoint {
     private static final forge.util.ITriggerEvent CARD_CLICK = new forge.util.ITriggerEvent() {
         public int getButton() { return 1; }
         public int getX() { return 0; }
         public int getY() { return 0; }
     };
-    private final String id = UUID.randomUUID().toString();
+    private final String id;
+    private final MatchTable table;
     private final Game game;
     private final String format;
     private final PlayerControllerHuman human;
@@ -46,7 +47,7 @@ public final class MatchSession implements ManaTableSession {
     private final MatchActivity activity;
     private final CombatCardIds combatIds;
     private final IGuiGame gui;
-    private final Object gate = new Object();
+    private final Object gate;
     private final Set<CardView> selectable = new HashSet<>();
     private final Set<CardView> actionable = new HashSet<>();
     private final Set<GameEntityView> highlighted = new HashSet<>();
@@ -67,6 +68,7 @@ public final class MatchSession implements ManaTableSession {
         final String kind;
         final Input input;
         final Map<String, CardView> cards = new LinkedHashMap<>();
+        final Set<Integer> players = new HashSet<>();
         final Set<String> blockPairs = new HashSet<>();
         final Set<String> attackPairs = new HashSet<>();
         final CompletableFuture<JsonObject> response = new CompletableFuture<>();
@@ -81,18 +83,11 @@ public final class MatchSession implements ManaTableSession {
         Pending(String kind, Input input) { this.kind = kind; this.input = input; }
     }
 
-    public MatchSession(Deck deck, String format, List<String> opponents, Path resources, Path profile) {
+    static MatchSession solo(Deck deck, String format, List<String> opponents, Path resources, Path profile) {
         validateOpponents(format, opponents);
-        HeadlessPlatform.initialize(resources, profile);
-        this.format = format;
         boolean commander = format.equals("Commander");
-        var rules = new GameRules(GameType.Constructed);
-        if (commander) rules.addAppliedVariant(GameType.Commander);
-        rules.setGamesPerMatch(1);
-        rules.setWarnAboutAICards(false); // Opponent lists are supplied by the host, not chosen by the player.
-        var humanPlayer = (commander ? RegisteredPlayer.forCommander(new Deck(deck)) : new RegisteredPlayer(new Deck(deck))).setPlayer(new LobbyPlayerHuman("You"));
         var seats = new ArrayList<RegisteredPlayer>();
-        seats.add(humanPlayer);
+        seats.add(MatchTable.human(deck, format, "You"));
         for (String opponent : opponents) {
             var preset = commander && opponent.startsWith("preset:") ? DeckPresets.find(opponent.substring(7)) : null;
             String name = preset != null ? preset.name() : opponent.equals("red") ? "Cinder" : "Verdant";
@@ -101,32 +96,45 @@ public final class MatchSession implements ManaTableSession {
             var aiDeck = preset != null ? DeckPresets.create(preset.id()) : commander ? CommanderOpponents.create(opponent) : opponentDeck(opponent);
             seats.add((commander ? RegisteredPlayer.forCommander(aiDeck) : new RegisteredPlayer(aiDeck)).setPlayer(ai));
         }
-        var match = new Match(rules, seats, "Mana Table");
-        game = match.createGame();
-        human = (PlayerControllerHuman) game.getPlayers().get(0).getController();
+        var table = new MatchTable(format, seats, resources, profile);
+        table.start();
+        return table.seat(0);
+    }
+
+    MatchSession(MatchTable table, PlayerControllerHuman human) {
+        this.table = table; this.id = table.id; this.gate = table.gate;
+        this.game = table.game; this.format = table.format; this.human = human;
         viewer = human.getPlayer().getView();
-        activity = new MatchActivity(viewer);
-        combatIds = new CombatCardIds(viewer, activity);
+        activity = new MatchActivity(viewer, table.identities);
+        combatIds = new CombatCardIds(viewer, activity, table.identities);
         game.subscribeToEvents(activity);
         game.subscribeToEvents(combatIds);
         game.subscribeToEvents(this);
         gui = (IGuiGame) Proxy.newProxyInstance(IGuiGame.class.getClassLoader(), new Class<?>[]{IGuiGame.class}, (proxy, method, args) -> {
+            table.enter(this);
             if (method.getName().equals("chooseColor")) return chooseColor((String) args[0], (CardView) args[1], (List<MagicColor.Color>) args[2]);
             if (method.isDefault()) return InvocationHandler.invokeDefault(proxy, method, args);
             return invokeGui(method.getName(), args == null ? new Object[0] : args);
         });
         human.setGui(gui);
         for (var player : game.getPlayers()) player.updateOpponentsForView();
-        latest = Map.of("id", id, "revision", 0L, "status", "starting", "message", message, "format", format);
-        HeadlessPlatform.activate(this);
-        game.getAction().invoke(() -> {
-            try {
-                match.startGame(game);
-                synchronized (gate) { pending = null; publish(null); }
-            } catch (Throwable failure) { if (!closed) fail(failure); }
-            finally { game.unsubscribeFromEvents(activity); game.unsubscribeFromEvents(combatIds); game.unsubscribeFromEvents(this); }
-        });
+        latest = Collections.unmodifiableMap(map("id", id, "revision", 0L, "boardRevision", 0L,
+                "status", "starting", "message", message, "format", format, "viewerId", viewer.getId(),
+                "playerCount", game.getPlayers().size(), "players", List.of(), "stack", List.of(),
+                "turn", 0, "phase", "Pregame", "phaseKey", "PREGAME", "activePlayerId", null,
+                "prompt", null, "combat", null, "result", null, "error", null, "activity", List.of(), "notices", List.of()));
     }
+
+    void detach() { game.unsubscribeFromEvents(activity); game.unsubscribeFromEvents(combatIds); game.unsubscribeFromEvents(this); }
+    void clearDecision() { pending = null; }
+    void cancelDecision() {
+        closed = true;
+        if (pending != null) pending.response.completeExceptionally(new CancellationException("Match closed"));
+        pending = null;
+    }
+    void releaseInput() { human.getInputQueue().onGameOver(true); }
+    boolean eliminated() { return viewer.getHasLost(); }
+    void closeTable() { table.close(); }
 
     @Override
     public IGuiGame gui() { return gui; }
@@ -159,12 +167,7 @@ public final class MatchSession implements ManaTableSession {
 
     @Subscribe
     public void onPhase(GameEventTurnPhase event) {
-        // A local table ends when its only human is eliminated. Do not leave an
-        // invisible AI-only game running after the player starts another table.
-        if (viewer.getHasLost() && !game.isGameOver()) {
-            game.setGameOver(GameEndReason.AllHumansLost);
-            human.getInputQueue().onGameOver(true);
-        }
+        table.stopIfNoHumans();
     }
 
     public static List<Map<String, String>> opponents(String format) {
@@ -209,7 +212,10 @@ public final class MatchSession implements ManaTableSession {
             Class<?> inputClass = current.getClass();
             while (inputClass.getSimpleName().isEmpty()) inputClass = inputClass.getSuperclass();
             var playerChoices = current instanceof InputSelectEntitiesFromList<?> selection
-                    ? selection.getValidChoices().stream().filter(Player.class::isInstance).map(entity -> ((Player) entity).getId()).toList() : List.of();
+                    ? selection.getValidChoices().stream().filter(Player.class::isInstance).map(entity -> ((Player) entity).getId()).toList()
+                    : current instanceof InputSelectTargets targeting
+                    ? game.getPlayers().stream().filter(targeting::canSelectPlayer).map(Player::getId).toList() : List.<Integer>of();
+            next.players.addAll(playerChoices);
             next.prompt = map("id", next.id, "kind", "input", "inputType", inputClass.getSimpleName(),
                     "message", message, "ok", ok, "cancel", cancel, "okEnabled", okEnabled, "cancelEnabled", cancelEnabled,
                     "canAttackAll", current instanceof InputAttack, "playerChoices", playerChoices,
@@ -282,6 +288,8 @@ public final class MatchSession implements ManaTableSession {
                 }
                 case "player" -> {
                     int playerId = exactInt(string(request, "playerId"));
+                    if ((next.input instanceof InputSelectTargets || next.input instanceof InputSelectEntitiesFromList<?>) && !next.players.contains(playerId))
+                        throw new IllegalArgumentException("That player is not selectable in this decision");
                     target = game.getView().getPlayers().stream().filter(p -> p.getId() == playerId).findFirst().orElseThrow();
                 }
                 default -> throw new IllegalArgumentException("Unknown match action");
@@ -323,12 +331,11 @@ public final class MatchSession implements ManaTableSession {
         synchronized (gate) {
             requireSession(request);
             if (game.isGameOver()) return latest;
-            closed = true;
             Pending old = pending;
             pending = null;
             if (old != null) old.response.completeExceptionally(new CancellationException("Match conceded"));
             human.concede();
-            if (!game.isGameOver()) game.setGameOver(GameEndReason.AllHumansLost);
+            table.stopIfNoHumans();
             human.getInputQueue().onGameOver(true);
             publish(null);
             return latest;
@@ -346,7 +353,11 @@ public final class MatchSession implements ManaTableSession {
         latest = Collections.unmodifiableMap(next);
     }
 
-    private void publish(Pending prompt) {
+    private void publish(Pending prompt) { pending = prompt; table.publish(); }
+
+    void publishView(long boardRevision) {
+        Pending prompt = pending;
+        if (prompt != null) { prompt.cards.clear(); prompt.attackPairs.clear(); prompt.blockPairs.clear(); }
         var view = game.getView();
         activity.refreshVisibility();
         var players = new ArrayList<Object>();
@@ -357,7 +368,7 @@ public final class MatchSession implements ManaTableSession {
                 var visible = new ArrayList<Object>();
                 var cards = player.getCards(zone);
                 Map<String, Object> topCard = null;
-                if (cards != null) for (CardView card : cards) if (card.canBeShownTo(viewer)) {
+                if (cards != null) for (CardView card : cards) if (isVisibleInZone(card, zone, viewer)) {
                     var state = cardState(card, prompt);
                     visible.add(state);
                     if (zone == ZoneType.Library && card.equals(cards.get(0))) topCard = state;
@@ -373,13 +384,14 @@ public final class MatchSession implements ManaTableSession {
             for (int i = 0; i < colors.length; i++) mana.put(labels[i], player.getMana(colors[i]));
             var commanderDamage = new ArrayList<Object>();
             if (format.equals("Commander")) for (PlayerView owner : allPlayers) {
-                if (owner.equals(player) || owner.getCommanders() == null) continue;
+                if (owner.getCommanders() == null) continue;
                 for (CardView commander : owner.getCommanders()) commanderDamage.add(map("name", commander.isFaceDown() ? "Face-down commander" : commander.getCurrentState().getName(),
                         "ownerId", owner.getId(), "owner", owner.getName(), "damage", player.getCommanderDamage(commander)));
             }
             players.add(map("id", player.getId(), "name", player.equals(viewer) ? "You" : player.getName(), "human", player.equals(viewer),
                     "seat", allPlayers.indexOf(player) + 1, "eliminated", player.getHasLost(),
-                    "life", player.getLife(), "priority", player.getHasPriority(), "mana", mana, "zones", zones, "commanderDamage", commanderDamage));
+                    "life", player.getLife(), "maxHandSize", player.hasUnlimitedHandSize() ? null : player.getMaxHandSize(),
+                    "priority", player.getHasPriority(), "mana", mana, "zones", zones, "commanderDamage", commanderDamage));
         }
         var stack = new ArrayList<Object>();
         for (var item : view.getStack()) {
@@ -388,6 +400,7 @@ public final class MatchSession implements ManaTableSession {
             stack.add(map("id", item.getId(), "name", visible ? source.getCurrentState().getName() : "Face-down spell", "text", visible ? item.getText() : "",
                     "card", source != null && source.canBeShownTo(viewer) ? cardState(source, null) : null,
                     "ability", item.isAbility(),
+                    "targets", visible ? stackTargets(item) : List.of(),
                     "controller", item.getActivatingPlayer() == null ? "" : item.getActivatingPlayer().getName()));
         }
         String result = null;
@@ -397,11 +410,27 @@ public final class MatchSession implements ManaTableSession {
         }
         var activityFrame = activity.frame();
         activityRevision = activityFrame.revision();
-        latest = Collections.unmodifiableMap(map("id", id, "revision", ++revision, "boardRevision", revision, "format", format, "status", error != null ? "error" : game.isGameOver() ? "finished" : "playing",
+        latest = Collections.unmodifiableMap(map("id", id, "revision", ++revision, "boardRevision", boardRevision, "format", format, "status", error != null ? "error" : game.isGameOver() ? "finished" : "playing",
                 "error", error, "playerCount", allPlayers.size(), "viewerId", viewer.getId(), "turn", view.getTurn(), "phase", view.getPhase() == null ? "Pregame" : view.getPhase().nameForUi,
                 "phaseKey", view.getPhase() == null ? "PREGAME" : view.getPhase().name(),
                 "activePlayerId", view.getPlayerTurn() == null ? null : view.getPlayerTurn().getId(), "players", players,
                 "stack", stack, "combat", combatState(prompt), "prompt", prompt == null ? null : prompt.prompt, "result", result, "notices", List.copyOf(notices), "activity", activityFrame.entries()));
+    }
+
+    private List<Map<String, Object>> stackTargets(StackItemView root) {
+        var targets = new LinkedHashMap<String, Map<String, Object>>();
+        for (var item = root; item != null; item = item.getSubInstance()) {
+            if (item.getTargetCards() != null) for (var card : item.getTargetCards()) {
+                String visibleId = activity.visualId(card);
+                if (visibleId == null) continue;
+                targets.put("card:" + visibleId, map("kind", "card", "id", visibleId, "name", card.getCurrentState().getName(),
+                        "playerId", card.getController() == null ? null : card.getController().getId()));
+            }
+            if (item.getTargetPlayers() != null) for (var player : item.getTargetPlayers())
+                targets.put("player:" + player.getId(), map("kind", "player", "id", String.valueOf(player.getId()),
+                        "name", player.equals(viewer) ? "You" : player.getName(), "playerId", player.getId()));
+        }
+        return List.copyOf(targets.values());
     }
 
     /** Copy combat only at a safe publish boundary, never from an IPC state read. */
@@ -464,6 +493,10 @@ public final class MatchSession implements ManaTableSession {
                     "playerId", card.isBattle() && card.getProtectingPlayer() != null ? card.getProtectingPlayer().getId() : card.getController().getId());
         }
         return null;
+    }
+
+    static boolean isVisibleInZone(CardView card, ZoneType zone, PlayerView viewer) {
+        return card.getZone() == zone && card.canBeShownTo(viewer);
     }
 
     private Map<String, Object> cardState(CardView card, Pending prompt) {
@@ -671,10 +704,11 @@ public final class MatchSession implements ManaTableSession {
         if (abilities.isEmpty()) return null;
         boolean visible = host != null && host.canBeShownTo(viewer) && !host.isFaceDown();
         String name = visible ? host.getCurrentState().getName() : "this card";
-        var next = choicePrompt("choice", "Choose how to play " + name + ". Mana payment and any targets come next.",
+        boolean activating = host != null && host.getZone() == ZoneType.Battlefield;
+        var next = choicePrompt("choice", (activating ? "Choose an ability of " : "Choose how to play ") + name + ". Costs and any targets come next.",
                 abilities, 0, 1, false, ability -> visible ? String.valueOf(ability) : "Card ability");
         next.prompt.put("context", "playAbility");
-        next.prompt.put("title", "Play " + name);
+        next.prompt.put("title", (activating ? "Activate " : "Play ") + name);
         if (host != null && host.canBeShownTo(viewer)) {
             next.prompt.put("sourceCard", cardState(host, null));
             next.prompt.put("sourceZone", host.getZone() == null ? "" : host.getZone().name());
@@ -735,11 +769,22 @@ public final class MatchSession implements ManaTableSession {
             Object choice = choices.get(i);
             String label = display == null ? label(choice) : display.apply(choice);
             var item = map("index", i, "label", label);
-            if (choice instanceof CardView card) item.put("card", choiceCard(card, viewer));
+            if (choice instanceof CardView card) {
+                item.put("card", choiceCard(card, viewer));
+                // Link only occurrences already on this seat's table. A revealed
+                // library/opponent-hand face must never gain a persistent handle.
+                if (isTableChoice(card, viewer)) item.put("cardId", activity.visualId(card));
+            }
             items.add(item);
         }
         next.prompt = map("id", next.id, "kind", kind, "message", title, "choices", items, "min", min, "max", max, "ordered", ordered);
         return next;
+    }
+
+    static boolean isTableChoice(CardView card, PlayerView viewer) {
+        return !card.isFaceDown() && card.canBeShownTo(viewer)
+                && (card.getZone() == ZoneType.Battlefield || card.getZone() == ZoneType.Command
+                    || card.getZone() == ZoneType.Hand && viewer.equals(card.getController()));
     }
 
     private List<?> reorderCards(Object[] args) {

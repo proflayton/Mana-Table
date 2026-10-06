@@ -23,17 +23,33 @@ local deck persistence, opening-hand practice, and human-versus-AI matches. Buil
 | `DeckEditor.undo/redo(revision)` | Bounded history, monotonically increasing revisions |
 | `DeckEditor.validate(format)` | Forge's structural deck validation; not Standard/Modern set or ban-list legality |
 | `DeckEditor.toDeck()` | Detached Forge deck for existing persistence and match setup |
+| `DeckCommanders.choices/set(...)` | Rules-authorized commander/partner choices and atomic, persistent section moves; `setCommanders` requires deck ID and revision |
 | `DeckInsights.analyze(...)` | Read-only role estimates and explained suggestions from a small offline candidate pool |
 | `GameStateMapper.snapshot(view, viewer)` | Immutable records containing turn, phase, players, life, priority, zone counts, visible cards |
 | `GameObservation` | Pollable event revision with explicit unsubscribe/close; raw events never cross the API |
 | `MatchSetup` | Validated match copy with a selectable commander when an imported list has no Commander section |
-| `MatchSession` | One human with AI opponents in Constructed or 2–6 player Commander, cached state, scoped prompts, controller input, and concession |
+| `MatchTable` | One authoritative game with human and AI seats, shared occurrence identities and publication boundaries |
+| `MatchSession` | One human seat's filtered state, scoped prompts, controller input and concession, independent of transport |
+| `SyncTransport` | Local/TCP ordered requests, cached receipts and seat resume; no game rules or projections |
 | `MatchActivity` | Immutable, viewer-filtered recent actions and event-time turn/phase metadata |
 
 The records contain values rather than live engine objects. The desktop serializes
-them through its private transport. Explicit multiplayer hosting starts Forge's
-TCP game listener; the desktop command API remains on private stdin/stdout pipes.
+them through its private transport. Explicit multiplayer hosting starts the seat
+synchronization listener; the desktop command API remains on private stdin/stdout pipes.
+The ready message advertises `protocolVersion: 2` and the `seat-sync`, `snapshots`,
+`command-receipts`, `resume`, and `table-social` capabilities. All connected players
+need this build; the seat synchronization handshake now uses version 3.
 Printing IDs are opaque, case-sensitive identifiers; clients must round-trip them.
+`multiplayerState` includes `tableId`. Pass that ID to `tableSocial` to read the
+table conversation, `tableChat` with `kind` (`chat` or `emote`) and `text` to send,
+or `tableName` with `name` to change your display name between games. Sender
+identity comes from the seat connection, never supplied message metadata. Names
+are limited to 24 characters and chat to 300 single-line characters. The fixed
+emotes are Hello!, Good luck!, Nice play!, Thinking…, Thanks!, and Good game!.
+The table retains 200 ordered entries, including system activity, across games.
+These commands return `{tableId, revision, localSeat, members, messages}`; social
+revisions are independent of game decisions. Chat sends have a 750 ms per-person
+cooldown and use the existing duplicate-safe receipt transport.
 Catalog construction eagerly indexes the supplied printings. Initialize it once
 on a worker thread; search results include alternate printings rather than grouping
 them into a single card. Color masks are W=1, U=2, B=4, R=8, G=16; zero finds colorless
@@ -119,6 +135,7 @@ correlates request IDs and records diagnostics in the active profile's log.
 | `snapshot` | Current deck, revision, validation, format and save state |
 | `edit` | `{revision, edits}`; absolute quantities using `DeckEditor.Edit` entries |
 | `rename`, `format` | `{revision, name}` or `{revision, format}` |
+| `duplicate` | `{deckId, revision, name}`; save and open an independent copy preserving exact printings and sections |
 | `undo`, `redo` | `{revision}`; deck-editor history |
 | `save` | Retry saving the current deck |
 | `importPreview`, `import` | Preview `{text}`; import `{text, name, format?}` as a new deck; preview `warnings` reports supported-printing substitutions for unbundled sets in Moxfield/Arena rows |
@@ -131,6 +148,11 @@ opaque UUID filenames, schema version 1, printing IDs, quantities, and explicit
 sections. Writes use temporary files and atomic replacement where supported.
 Save failures remain visible and block switching decks until saved. Practice
 hands are separate from a playable match and are not persisted.
+
+Native callers scope `edit`, `rename`, `undo`, `redo`, `save`, `export` and
+`duplicate` with `deckId` plus `revision`. When supplied, both must match the
+active document before the command runs. Existing Electron calls that omit
+`deckId` retain their revision behavior. `setCommanders` always requires both.
 
 `search.colorIdentity` is an additional allowed-color-identity mask (0..31),
 including symbols in rules text and alternate faces. It is independent of the
@@ -209,7 +231,8 @@ The private desktop transport exposes:
 | `matchStart` | `{opponents: [...], commanderId?, deckId?, revision?}`; validates a detached match deck and rejects stale setup; legacy `opponent` accepts one deck ID |
 | `matchState` | Cached snapshot with session `id`, `revision`, `boardRevision`, `status`, `players`, `stack`, `prompt`, `activity`, and `result` |
 | `matchAction` | `{sessionId, promptId, ...answer}`; replies once to the current prompt |
-| `matchConcede` | `{sessionId}`; ends the game without editing the deck |
+| `matchConcede` | `{sessionId}`; concedes this seat without editing the deck; other human seats continue |
+| `multiplayerReconnect` | Resumes an interrupted TCP connection to its existing seat while the host remains alive |
 
 Input answers use `action: ok/cancel/attackAll/card/player`, with `key` for a
 visible card or `playerId` for a player. Dialog answers use `choices` (indices in
@@ -267,33 +290,18 @@ eligible pass but never authorize one the engine has rejected.
 This is an additive protocol change: existing manual actions remain valid, and
 clients must treat a missing `canAutoPass` field as false.
 
-Network Auto uses explicit host permission attached to the input sequence in
-`setInputState`. An input that has not had an availability scan never grants
-permission, even if its player view defaults to `HasAvailableActions = false`.
-The network adapter resolves the opening player snapshot through the tracker so
-subsequent availability deltas update the player it reads. Highlighted cards are
-not the source of permission.
+Local and remote seats use this same permission, prompt and action path. Controller
+actions run on the input executor, outside the snapshot lock and request loop.
+An in-flight action hides its consumed prompt, while nested ability/color dialogs
+remain available. Canceling a nested dialog republishes the payment input with
+fresh handles. Synchronization retries return a cached command receipt rather
+than executing the input twice.
 
-`passPriorityIfNoResponse(sequence)` returns a host acknowledgement. The host
-checks the exact active input, its owner, verified availability, and whether the
-request has already been consumed. Stale, repeated, and ineligible requests
-return false without advancing the game. Host and guests must run the same
-updated engine: this changes the experimental Forge network protocol, while the
-desktop `matchAction` JSON stays unchanged.
-
-Network controller actions run on the input executor, outside the snapshot lock
-and JSON request loop. An in-flight action hides the input until dispatch ends,
-while nested ability/color dialogs remain visible and accept replies directly.
-This permits manual mana payments without blocking the request that supplies the
-answer. Canceling a nested dialog republishes the still-active payment input.
-Queued actions recheck their input sequence before dispatch; a host-declined
-Auto pass simply refreshes the current decision without advancing it.
-
-Regression coverage: `NetworkAutoPassTest` recreates a detached opening player,
-`AutomaticPriorityShould` checks host guards, and
-`node --test tests/network-auto.test.cjs` from `forge-desktop` exercises real host
-and guest engines with playable lands and affordable commanders. The existing
-`response-skip.test.cjs` covers local stack responses and main-phase availability.
+`SyncTransportTest` checks ordering, retry receipts, revocation and resume.
+`network-auto.test.cjs` exercises host and guest seats with playable lands and
+commanders; `response-skip.test.cjs` covers local stack responses and availability.
+`commander-benchmark.test.cjs` runs the same four-player encounter through local,
+network and mixed connections, auditing every seat's complete filtered snapshot.
 
 Library choices carry `context: librarySearch` and combine the delayed reveal
 with the actual selection in one prompt. `choices` retains the engine's eligible
@@ -367,7 +375,8 @@ can be supplied from the main deck for that game without changing the saved list
 Existing commanders, including legal partner pairs, remain intact. Color identity
 and deck conformance are checked before launching.
 
-There are no network peers, sideboarding, Limited matches, or durable match saves. Complex card-specific
+Network human seats use the same table and controller path as solo play. There is
+no sideboarding, Limited match setup, or durable match save. Complex card-specific
 interactions need broader coverage. Unsupported adapter calls surface an error
 and terminate that session so another game can be started safely.
 
@@ -401,14 +410,11 @@ The adapter validates the published pair before invoking the normal controller;
 illegal defenders and stale handles fail without changing assignments. Confirming
 attackers still uses `action: "ok"` and the engine's full combat validation.
 
-Network sessions expose the same combat contract. The host publishes legal pairs
-through `setCombatChoices(owner, inputSequence, CombatInputState)`. The adapter
-waits for a matching owner/sequence before enabling combat input. Each completed
-assignment updates the prompt ID; repeated state polls preserve it. Attack/block
-answers use atomic controller operations with both endpoints and the input
-sequence, revalidated on the host. Public assignments reach all seats immediately
-through combat events, including planned blocks before confirmation. Legal
-choices are never inferred from highlighted cards or from another player's view.
+Every seat exposes this same combat contract. Each completed assignment issues
+fresh prompt handles and publishes all seat views. Attack/block answers use
+atomic controller operations with both endpoints, revalidated by the authority.
+Public assignments reach all seats, including planned blocks before confirmation.
+Legal choices are never inferred from highlighted cards or another player's view.
 
 ## Upstream maintenance
 

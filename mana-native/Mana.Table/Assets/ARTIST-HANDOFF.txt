@@ -1,0 +1,42 @@
+MANA TABLE - NATIVE TABLE ASSETS
+
+This build contains no generated arena illustration. Its default surface, card
+backs, rings, highlights, and arrows are neutral primitives rendered in code.
+Existing Magic card portraits remain separate from the table asset system.
+
+Artist-authored files can be placed beside this document. Restart the client to
+load them. A file can be omitted while its replacement is being worked on.
+
+arena.png        Flat, top-down play surface, ideally 3328 x 1944, opaque RGB.
+                 It is mapped onto the oval table inside the physical rim;
+                 corners outside the oval are clipped. Do not bake perspective
+                 or screen lighting into the image. The camera supplies that.
+                 Keep the center and card ranks low contrast. Do not paint
+                 labels, cards, slots, player borders, or UI into the surface.
+card-back.png    Anonymous card back, 672 x 936 or another portrait 5:7 ratio.
+                 Do not include any card identity. Used for hidden hands/decks.
+
+Optional PCM WAV cues (short, normalized conservatively; missing files are silent):
+card-play.wav, your-priority.wav, combat.wav, life-loss.wav, game-end.wav.
+Players can mute cues and disable movement in Settings.
+
+The logical battlefield is 1600 x 900, scaled uniformly with the window:
+  One perspective table has left, far, right, and near seats. Opponent cards
+  rotate with their seats. Separate creature and land rows lie on the same plane.
+  The local battlefield occupies the near side. The rim and piles have thickness.
+  The local hand fans across the bottom; player controls sit at lower left.
+  The stack floats above the shared center; the primary decision is lower right.
+  Life counters use circular crops of existing commander illustrations. Those
+  are cosmetic public identities; no hidden hand faces are used for portraits.
+  Cards, portraits, and modal choices must remain legible over the background.
+
+Assets are copied to the native publish/package by the project automatically.
+Keep original editable artwork and its license/attribution alongside the assets
+when adding finished work. The renderer never derives game rules from artwork.
+
+For an entirely local card-art collection, launch with --art-manifest <file.json>.
+The JSON object maps card names to image paths relative to that manifest, for example:
+  { "Forest": "cards/forest.png", "Llanowar Elves": "cards/llanowar-elves.png" }
+Back faces use the key "Card Name\u0000back". This provider loads only your local
+files; missing entries retain the readable text fallback. Image paths must stay
+inside the manifest directory. The default Magic provider uses the existing art cache.

@@ -41,7 +41,7 @@ for (const playerCount of [2, 3]) test(`network mulligans let players select the
       for (let i = 0; i < engines.length; i++) {
         const engine = engines[i], seat = progress[i];
         const state = await engine.request('matchState');
-        if (!state) continue;
+        if (!state?.players?.length) continue;
         assert.notEqual(state.status, 'error', state.error);
         const prompt = state.prompt;
         seat.observed = { turn: state.turn, phase: state.phaseKey, prompt };
@@ -51,7 +51,7 @@ for (const playerCount of [2, 3]) test(`network mulligans let players select the
         if (state.turn > 0) { started = true; break; }
         if (!prompt || prompt.id === seat.answered) continue;
         assert.equal(prompt.canAutoPass ?? false, false, 'Auto must never answer an opening-hand decision');
-        let answer;
+        let answer, responseState = state;
         if (prompt.inputType === 'InputConfirmMulligan' && prompt.okEnabled && prompt.cancelEnabled) {
           assert.equal(hand(state).length, 7 - Math.max(0, seat.mulligans - (playerCount > 2 ? 1 : 0)));
           if (seat.mulligans < seat.target) { answer = { action: 'cancel' }; seat.mulligans++; }
@@ -61,15 +61,17 @@ for (const playerCount of [2, 3]) test(`network mulligans let players select the
           assert.equal(cards.length, 7);
           assert.ok(cards.every(card => card.selectable), `Seat ${i} cannot select cards to put on the bottom: ${JSON.stringify(prompt)}`);
           const card = cards[0];
-          const scope = { sessionId: state.id, promptId: prompt.id };
           async function selectBottomCard(card, highlighted) {
-            await engine.request('matchAction', { ...scope, action: 'card', key: card.key });
-            // An accepted action returns before controller dispatch finishes.
-            // Highlights may be published while that dispatch is still busy.
-            await waitFor(async () => {
+            const before = await engine.request('matchState');
+            const currentCard = hand(before).find(item => item.visualId === card.visualId);
+            assert.ok(currentCard, 'The same visible hand occurrence must still exist');
+            await engine.request('matchAction', { sessionId: before.id, promptId: before.prompt.id, action: 'card', key: currentCard.key });
+            // The common session issues fresh capabilities after each input gesture.
+            // Reacquire by occurrence ID, never reuse a previous decision's card key.
+            responseState = await waitFor(async () => {
               const current = await engine.request('matchState');
-              return current.prompt?.id === scope.promptId
-                && hand(current).some(item => item.visualId === card.visualId && item.highlighted === highlighted);
+              return current.prompt?.inputType === 'InputLondonMulligan' && current.prompt.id !== before.prompt.id
+                && hand(current).some(item => item.visualId === card.visualId && item.highlighted === highlighted) && current;
             }, `Bottom-card selection did not become ${highlighted ? 'selected' : 'unselected'} and ready`);
           }
           await selectBottomCard(card, true);
@@ -87,8 +89,8 @@ for (const playerCount of [2, 3]) test(`network mulligans let players select the
         else if (prompt.playerChoices?.length) answer = { action: 'player', playerId: prompt.playerChoices[0] };
         else if (prompt.okEnabled) answer = { action: 'ok' };
         if (!answer) continue;
-        await engine.request('matchAction', { sessionId: state.id, promptId: prompt.id, ...answer });
-        seat.answered = prompt.id;
+        await engine.request('matchAction', { sessionId: responseState.id, promptId: responseState.prompt.id, ...answer });
+        seat.answered = responseState.prompt.id;
         await waitFor(async () => (await engine.request('matchState')).prompt?.id !== prompt.id, 'Opening-hand input did not finish');
       }
       await sleep(30);

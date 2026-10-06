@@ -1,0 +1,161 @@
+MANA TABLE NATIVE - FOUR-PLAYER COMMANDER
+
+Extract the entire ZIP, then open ManaTable.exe. Windows x64 only for this build.
+The .NET and Java runtimes are bundled. First startup loads the card catalog.
+Keep the engine folder next to the executable. Do not run directly inside the ZIP.
+
+PLAY SOLO AGAINST AI
+1. Under Play with AI, select Choose a deck (or Change deck). Pick a saved list,
+   try a precon, import a list, or build a new deck. Imported lists open the builder.
+   Select your commander and compatible partners/Backgrounds there. Changes save.
+2. Review your commander, card counts and deck checks, then select Confirm deck.
+3. Use the arrows to choose a deck for each of your three AI opponents.
+   There are four precons plus green ramp and red damage starter decks.
+4. Select Start Commander. Forge controls the other three seats.
+   You make all decisions for your own cards. Auto can pass when you have no play.
+5. After the game, select Return to setup to play again or switch to friends.
+No network setup, account, API key or paid AI service is needed for solo play.
+
+PLAY WITH FRIENDS
+1. Every player uses this same build. Change deck opens saved lists, precons,
+   Import deck file and Paste deck list. Deck builder edits your selected list.
+2. Select Play with friends. One player selects Host table.
+   Allow the bundled Java runtime
+   through Windows Firewall when Windows asks, for the network you are using.
+3. The host opens Invite friends and copies the internet invite, or an address
+   for the local/VPN network. Friends select Join with invite and paste it.
+4. Everyone reviews their deck and selects Confirm deck, then Ready up.
+   Confirming selects the saved list for the table; it does not make you ready.
+   The four-seat roster shows who has joined, chosen a deck, and readied up.
+5. Start Commander becomes available to the host when all four seats are ready.
+   Not ready withdraws your readiness. After the game everyone readies again.
+
+BUILD AND EDIT DECKS
+Open Deck builder for the selected deck, or choose + New deck.
+Search the library by name, rules text or creature type. Narrow it by card type,
+maximum mana value or color identity; Leader colors follows your commander(s).
+Click a card to read its large face. Use its + button to add a copy to Main.
+Select an entry in Your deck to add/remove copies, click its count to enter a
+quantity, or move it between Main and Side. The Leaders tab finds commander
+candidates already in your list. Set a commander, replace it, or add a compatible
+partner/Background; returning a commander to Main keeps the card in your deck.
+Other face flips double-faced cards in the preview without adding another card.
+Changes save automatically. Undo/Redo restores edits, Duplicate makes a separate
+deck, and Copy list exports text with commander and sideboard sections.
+Card counts, a nonland mana curve and Review deck help identify needed changes.
+Finish a valid 100-card deck including its commander(s), then select Review for
+table. Confirm the saved list to return to the lobby. AI opponent choices persist.
+Opening the builder or choosing another deck clears confirmation and Ready;
+review, confirm, and ready again. Merely browsing or canceling the deck chooser
+leaves your current confirmed deck and readiness intact.
+The deck chooser searches saved deck names and precon names/descriptions. In a
+deck review, Full deck list lets you search names, types and rules, switch between
+Main, Commander and Sideboard, and select cards for a large preview. Other face
+shows the back of double-faced cards. Edit this card in builder opens that exact
+printing for editing. Inspecting cards or reselecting your current deck preserves
+your ready status. In an AI lobby, each opponent's Choose deck opens the same
+searchable picker; changing one opponent leaves the other seats alone.
+
+TABLE CHAT AND EMOTES
+Choose Your display name at the top of the lobby to save the name your friends
+will see. In a friends' table, Table chat opens the conversation in the lobby,
+deck builder, or game. Enter opens chat; while its input is focused, Enter sends
+and Esc closes. Typing does not play cards or pass priority; Auto waits while
+the chat input is focused. Click elsewhere to return control to the table.
+Use the six quick emotes to greet, thank, or acknowledge a play. Closed chat
+shows an unread badge, and unmuted emotes briefly appear at the table.
+Click a message to read its full text. Older/Newer and Latest browse history.
+Players & mute hides one person's chat/emotes locally, or mutes the whole table.
+The whole-table mute setting and display name are saved between launches.
+The host retains the last 200 messages/activity entries while the table exists;
+the same conversation continues through games and rematches. Chat is available
+at connected human tables; AI opponents do not produce fake replies.
+All friends need this social build: it uses seat synchronization protocol 3.
+
+INTERNET CONNECTIONS
+Connection options lets the host request automatic router port forwarding before
+creating a table. Connection shows the resulting status and addresses. A mapped status is the
+router's acknowledgement, not a successful external connection test.
+If your router cannot forward ports (including carrier-grade NAT), use an
+existing shared private VPN with your friends, or configure forwarding yourself.
+The lobby lists local interface addresses and the port. For a private VPN,
+share the host's VPN IPv4 address followed by :port instead of the internet invite.
+Do not share invites publicly. This is direct hosting, without a relay service.
+
+CONTROLS
+You sit at the near edge of one shared table; the other players sit to your left,
+across from you, and to your right. Their cards face their seats. Spells and
+abilities on the stack appear in the middle. Decks are physical piles near each
+seat. Life medallions use existing commander artwork, with a lit rim on the
+active seat. Hover or right-click to read cards upright from any seat.
+Double-click a highlighted card in your hand to play it, or drag it onto the table.
+One click on a hand card is safe for reading. Required choices and battlefield
+abilities still use a single click. Commanders also require a double-click to cast.
+Double-click your commander to cast it. Zone piles open browsers
+containing only the cards your player can see. Hidden hands show anonymous backs.
+Hover to lift and enlarge the card itself without clicking; right-click to inspect
+its complete rules and alternate face. Card pictures download when available;
+text works offline. Choice galleries include a name filter and selection counts.
+Cards deal from their library piles. Opponents draw anonymous card backs into
+their hands; visible spells rise into the center while you decide how to respond.
+Turn callouts and life-counter impacts mark changes without blocking controls.
+Reduced motion skips these animations and immediately shows the current state.
+Click the current decision's instructions to read the full message.
+For attacks, select your creature then the defending player (or defending card).
+For blocks, select your blocker then the attacker. Repeat a pair to undo it.
+You can also drag attackers to a legal defending player or card, and blockers
+to a legal attacker. Arrows show assignments; blue highlights show legal targets.
+Confirm your assignments using the decision panel.
+Press C or select Combat to review attackers, their defenders, and blockers.
+Your creatures lists eligible creatures, including ones on other battlefield
+pages. Selecting one brings it into view. Select an assigned creature and use
+Remove to undo its assignment; the review panel can also recall attackers.
+Review blockers opens a paged gallery for each attack, with individual removal
+controls while you are assigning blocks.
+An invalid blocking arrangement keeps confirmation disabled and explains why.
+Damage, tapping and zone changes have brief visual feedback; Reduced motion
+disables the added effects. Combat arrows end at card and life-counter edges.
+Choice lists are paged. For ordered choices, clear and select in the desired order.
+Number, text, color and damage-allocation decisions open inside the table.
+Use View battlefield to collapse a required choice, then the decision button to
+return to it. History opens the game log. Click an opponent's name to open all
+of their visible permanents in an upright battlefield gallery.
+Crowded ranks have page arrows; the mouse wheel also browses ranks and long hands.
+Click a player's life header to inspect commander damage when it is not a target.
+Space confirms an enabled input decision. Escape closes a panel or cancels a drag.
+F switches Auto/full control, Ctrl holds priority for this turn, F11 is fullscreen.
+Auto starts enabled and only passes priority when the engine says there is no
+playable response. Settings include saved own-turn phase stops and reduced motion.
+Empty priority windows pass quietly until your next action or a visible game event.
+The bottom-right dock stays steady while the table advances. Hold remains clickable.
+Battlefield cards with available actions show ACTIVATE. Hover for guidance, click
+to use an ability, or right-click and select Activate ability in the inspector.
+Triggered abilities happen automatically; answer any choices the game presents.
+Spells show their targets with arrows and a source/effect callout. After resolution,
+the callout shows recent changes; Details keeps the explanation available to read.
+New permanents and tokens show ENTERED; exiled or graveyard-bound cards leave a
+brief labelled outline. Match history retains the public events.
+Inspecting a card, opening a panel or dragging suspends Auto. Use Full control to
+inspect every priority window. Settings persist between sessions.
+The result screen lets you inspect the final battlefield, review history, or
+return to setup. Stack inspection stays on the same spell when new items appear.
+
+ARTWORK
+The table currently uses neutral shapes and gradients, ready for artist-authored
+assets. No generated arena illustration is included. Assets/ARTIST-HANDOFF.txt
+lists the replaceable background, card back and optional sound cues.
+
+LIMITS
+This native preview uses Forge's rules; the replacement engine is not yet
+implemented. No durable match saves: keep the host and clients open during play.
+All four players should use the same package. Deck files persist in
+%LOCALAPPDATA%\ManaTableNative. That directory also holds logs and the image cache.
+Broad card interactions still need playtesting. Preserve client.log and engine.log
+if you hit a blocked decision. Closing the host ends the network game.
+
+DEVELOPMENT
+Native client and interface source is in source/mana-native in this package.
+The Forge base revision is recorded in build.json; the adapter patch is under source.
+Forge source: https://github.com/proflayton/Mana-Table
+Original Forge: https://github.com/Card-Forge/forge
+See FORGE-LICENSE.txt and THIRD-PARTY.txt for attribution.

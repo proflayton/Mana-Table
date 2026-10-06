@@ -14,6 +14,36 @@ import org.testng.annotations.Test;
 import static org.testng.Assert.*;
 
 public class MatchActivityTest {
+    @Test public void authorizedTopCardKeepsItsIdentityThroughDrawingAndCasting() {
+        var viewer = new PlayerView(1, null); var opponent = new PlayerView(2, null);
+        var card = new CardView(102, null, "Known top card");
+        card.set(TrackableProperty.Controller, viewer); card.set(TrackableProperty.Zone, ZoneType.Library);
+        card.set(TrackableProperty.PlayerMayLook, new forge.trackable.TrackableCollection<>(viewer));
+        var identities = new MatchIdentities(); var own = new MatchActivity(viewer, identities); var other = new MatchActivity(opponent, identities);
+        String top = own.visualId(card); assertNull(other.visualId(card));
+        identities.moved(new GameEventCardChangeZone(card, new ZoneView(viewer, ZoneType.Library), new ZoneView(viewer, ZoneType.Hand)));
+        card.set(TrackableProperty.Zone, ZoneType.Hand);
+        assertEquals(own.visualId(card), top); assertNull(other.visualId(card));
+        identities.moved(new GameEventCardChangeZone(card, new ZoneView(viewer, ZoneType.Hand), new ZoneView(viewer, ZoneType.Stack)));
+        card.set(TrackableProperty.Zone, ZoneType.Stack);
+        assertEquals(own.visualId(card), top); assertEquals(other.visualId(card), top);
+    }
+    @Test public void faceDownPublicObjectsShareOpaqueIdentitiesAcrossSeatsWithoutRevealingPrintedIdentity() {
+        var firstViewer = new PlayerView(1, null); var secondViewer = new PlayerView(2, null);
+        var card = new CardView(101, null, "Concealed card");
+        card.set(TrackableProperty.Controller, firstViewer); card.set(TrackableProperty.Zone, ZoneType.Battlefield);
+        var identities = new MatchIdentities();
+        var firstActivity = new MatchActivity(firstViewer, identities); var secondActivity = new MatchActivity(secondViewer, identities);
+        var first = new CombatCardIds(firstViewer, firstActivity, identities); var second = new CombatCardIds(secondViewer, secondActivity, identities);
+        String printed = firstActivity.visualId(card);
+        assertEquals(secondActivity.visualId(card), printed);
+        card.set(TrackableProperty.Facedown, true);
+        String concealed = first.id(card);
+        assertEquals(second.id(card), concealed); assertNotEquals(concealed, printed);
+        assertNull(firstActivity.visualId(card)); assertNull(secondActivity.visualId(card));
+        identities.moved(new GameEventCardChangeZone(card, new ZoneView(firstViewer, ZoneType.Battlefield), new ZoneView(firstViewer, ZoneType.Library)));
+        assertNotEquals(first.id(card), concealed, "Hidden transitions revoke the public concealed occurrence");
+    }
     @Test public void visibleLibraryHandlesSurvivePollsButNotRevocationOrShuffle() {
         var viewer = new PlayerView(1, null);
         var opponent = new PlayerView(2, null);
