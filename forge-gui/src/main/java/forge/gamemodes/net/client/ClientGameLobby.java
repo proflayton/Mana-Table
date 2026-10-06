@@ -10,6 +10,10 @@ public final class ClientGameLobby extends GameLobby {
         this.localPlayer = index;
     }
 
+    public int getLocalPlayer() {
+        return localPlayer;
+    }
+
     @Override public boolean hasControl() {
         return false;
     }

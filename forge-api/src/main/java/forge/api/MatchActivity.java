@@ -15,7 +15,7 @@ public final class MatchActivity {
     public record Frame(long revision, int turn, String phaseKey, String phase, Integer activePlayerId, List<Entry> entries) { }
     private final PlayerView viewer;
     private final Deque<Entry> entries = new ArrayDeque<>();
-    private final Map<Integer, String> visibleIds = new HashMap<>();
+    private final Map<CardView, String> visibleIds = new HashMap<>();
     private long sequence;
     private int turn;
     private String phase = "PREGAME";
@@ -29,12 +29,14 @@ public final class MatchActivity {
     public synchronized Frame frame() { return new Frame(revision, turn, phase, phaseName, activePlayerId, snapshot()); }
 
     synchronized String visualId(CardView card) {
-        if (!visible(card)) { if (card != null) visibleIds.remove(card.getId()); return null; }
-        return visibleIds.computeIfAbsent(card.getId(), ignored -> UUID.randomUUID().toString());
+        if (!visible(card)) { if (card != null) visibleIds.remove(card); return null; }
+        return visibleIds.computeIfAbsent(card, ignored -> UUID.randomUUID().toString());
     }
 
+    synchronized void refreshVisibility() { visibleIds.keySet().removeIf(card -> !visible(card)); }
+
     private boolean visible(CardView card) {
-        return card != null && card.getZone() != null && card.getZone() != ZoneType.Library
+        return card != null && card.getZone() != null
                 && (card.getZone() != ZoneType.Hand || viewer.equals(card.getController()))
                 && !card.isFaceDown() && card.canBeShownTo(viewer);
     }
@@ -80,7 +82,7 @@ public final class MatchActivity {
             boolean hiddenDestination = to == ZoneType.Library || to == ZoneType.Hand && !viewer.equals(e.to().player());
             // Forget correlation handles whenever a card enters a hidden zone, even between polls.
             if (hiddenDestination || e.card().isFaceDown()) {
-                visibleIds.remove(e.card().getId());
+                visibleIds.remove(e.card());
             }
             if (turn == 0 || from == to || to == null) return;
             var player = e.to().player();
@@ -117,6 +119,9 @@ public final class MatchActivity {
             add("combat", e.defendingPlayer(), blocks.isEmpty() ? playerName(e.defendingPlayer()) + " declared no blockers." : String.join("; ", blocks) + ".", null);
         } else if (event instanceof GameEventCardCounters e && visible(e.card()) && e.oldValue() != e.newValue()) {
             add("counters", e.card().getController(), cardName(e.card()) + ": " + e.type().getName() + " counters " + e.oldValue() + " → " + e.newValue() + ".", e.card());
+        } else if (event instanceof GameEventShuffle e) {
+            // A shuffle breaks identity correlation even when the new top is visible.
+            visibleIds.keySet().removeIf(card -> card.getZone() == ZoneType.Library && e.player().equals(card.getController()));
         } else if (event instanceof GameEventMulligan e) {
             add("mulligan", e.player(), playerName(e.player()) + " took a mulligan.", null);
         }

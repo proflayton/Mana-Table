@@ -33,6 +33,9 @@ npm start
 This produces `forge-api/target/forge-engine.jar` and builds only its required
 Maven modules. Rebuild the JAR after Java changes. Restart Electron after changes
 to `main.cjs`, the preload, or renderer code. No frontend bundle step is required.
+Development launches copy the engine JAR to a temporary file for that process,
+so rebuilding Maven cannot replace classes underneath a running match. Restart
+the app to use a rebuilt engine; its temporary copy is removed when Java exits.
 Three.js is pinned and installed by `npm ci`; its modules are served locally.
 The match defaults to a 3D table with world-space seats, playmats, cards, and piles.
 Click a player's name to focus their battlefield; **Whole table** restores the
@@ -57,7 +60,50 @@ prerequisites. To opt into a repository-local Maven cache, pass
 `npm run doctor` reports the resolved Java command, Node requirement, engine JAR,
 resources, and installed desktop dependencies. It exits nonzero for missing items.
 
-## Common commands
+## Play with friends
+
+Open **Multiplayer**, choose the game mode and seats, leave **Automatic port
+forwarding** checked, and choose **Host table**. Mana Table asks the router for a
+UPnP TCP mapping for this lobby. Once the public address is known, **Copy invite**
+gives you an `MT1-…` invite for friends to paste into **Friend's invite → Join table**.
+All players should run the same build. Select saved decks, ready up, then start.
+
+The invite encodes the host's IPv4 address and port with a typo checksum. It is
+not a password, account, or hosted room. Share it with trusted friends; generate
+a fresh invite whenever you host again. The host must keep the app running.
+The mapping is requested only when hosting with that checkbox enabled; the UPnP
+service removes its mappings when the lobby closes or the engine shuts down
+normally. A crash may leave a rule on the router until it expires or is removed.
+
+**Router accepted port forwarding** confirms a router response, not a successful
+internet connection. Windows must also allow the app's Java runtime through its
+firewall. UPnP must be enabled on the router. Double NAT or carrier-grade NAT can
+still block guests; try another host or configure your network manually. This
+branch does not provide a relay. For the same Wi-Fi or a VPN, expand **Direct
+connection / same network** and copy the appropriate local invite or address.
+
+Public address lookup uses `https://checkip.amazonaws.com`, once per lobby in the
+background with bounded timeouts. Normal game-state polling does not wait for it.
+Invites currently encode IPv4; manual direct addresses remain available.
+
+To test without opening router ports, uncheck automatic forwarding. CI uses this
+mode for the real network and lobby tests. Verify internet reachability with a
+friend on another network; a successful test on the host's Wi-Fi is insufficient.
+
+## Combat on the table
+
+During **Choose attackers**, click one of your glowing creatures, then the
+opponent's life marker or legal defending permanent. Repeat for other creatures;
+different creatures can attack different opponents. During **Choose blockers**,
+click your creature, then a glowing attacker. Dragging between the same endpoints
+also works. Orange arrows show attacks and blue connections show blocks.
+
+Assignments remain editable until you confirm with the button on the battlefield.
+Select an assigned creature to **Recall attacker** or **Remove block**, or repeat
+the same pair. **Escape** cancels a selection without changing assignments.
+The optional **Combat details** inspector shows the same engine state.
+
+## Development commands
 
 Run these in `forge-desktop`:
 
@@ -71,6 +117,7 @@ Run these in `forge-desktop`:
 | `npm run test:encounters` | Reusable encounter regressions and UX handoff checks |
 | `npm run encounter -- --help` | Automated or guided human playtests with review artifacts |
 | `npm run package` | Build a new Windows x64 package with Java and card resources |
+| `npm run package:release` | Build a clean shareable Windows ZIP and SHA-256 checksum, without local player data |
 
 See [testing](../docs/Development/Mana-Table-Testing.md) for subsets, packaged
 tests, and failure artifacts; see [releases](../docs/Development/Mana-Table-Releases.md)

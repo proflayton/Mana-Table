@@ -47,7 +47,11 @@ test('Forest clicks cannot become Nantuko casts after a refresh; casting choices
       await expect(page.locator('#match-again')).toBeVisible();
     }
     expect(forest, 'Find a shuffled hand containing Nantuko followed by Forest').toBeTruthy();
-    await page.locator(`#match-hand [data-visual-card="${forest.visualId}"]`).click();
+    // Bring the chosen card above its overlapping neighbors through the hand's
+    // normal keyboard focus behavior, then exercise the real pointer click.
+    const forestButton = page.locator(`#match-hand [data-visual-card="${forest.visualId}"]`);
+    await forestButton.focus();
+    await forestButton.click();
     await expect(page.locator('#match-human .lands-row [aria-label="Forest"]')).toHaveCount(1);
     await expect.poll(async () => (await page.evaluate(() => window.forge.request('matchState'))).prompt?.inputType).toBe('InputPassPriority');
     const after = await page.evaluate(() => window.forge.request('matchState'));
@@ -71,6 +75,7 @@ test('Forest clicks cannot become Nantuko casts after a refresh; casting choices
     await expect(page.locator('#toast')).toHaveText('The table updated. Select your card again.');
     expect((await page.evaluate(() => window.forge.request('matchState'))).prompt.id).toBe(after.prompt.id);
 
+    await nantukoCard.focus();
     await nantukoCard.click();
     await expect(page.locator('#match-prompt h2')).toHaveText('Play Springheart Nantuko');
     await expect(page.locator('[data-ability-choice]')).toHaveCount(2);
@@ -90,6 +95,7 @@ test('Forest clicks cannot become Nantuko casts after a refresh; casting choices
     expect(canceled.phaseKey).toBe('MAIN1');
     expect(canceled.turn).toBe(before.turn);
     expect(canceled.activity.filter(entry => entry.kind === 'cast' && entry.cardName === 'Springheart Nantuko')).toEqual([]);
+    await nantukoCard.focus();
     await nantukoCard.click();
     await page.locator('[data-ability-choice="0"]').click();
     await expect.poll(async () => (await page.evaluate(() => window.forge.request('matchState'))).prompt?.inputType).toMatch(/^InputPayMana/);

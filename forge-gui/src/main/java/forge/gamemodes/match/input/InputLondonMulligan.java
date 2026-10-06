@@ -22,6 +22,7 @@ import forge.game.GameEntityView;
 import forge.game.card.Card;
 import forge.game.card.CardCollection;
 import forge.game.card.CardCollectionView;
+import forge.game.card.CardView;
 import forge.game.player.Player;
 import forge.game.zone.ZoneType;
 import forge.player.PlayerControllerHuman;
@@ -59,6 +60,11 @@ public class InputLondonMulligan extends InputSyncronizedBase {
         final Game game = player.getGame();
         game.getView().updateIsMulligan(true);
         int cardsLeft = toReturn - selected.size();
+
+        // Network frontends need the same legal selections as the local card display.
+        // Keep selected cards eligible so the player can undo a bottom-card choice.
+        getController().getGui().setSelectables(
+                CardView.getCollection(player.getCardsIn(ZoneType.Hand)), toReturn, toReturn);
 
         StringBuilder sb = new StringBuilder();
 
@@ -102,6 +108,7 @@ public class InputLondonMulligan extends InputSyncronizedBase {
 
     private void done() {
         resetCardHighlights();
+        getController().getGui().clearSelectables();
         getController().getGame().getView().updateIsMulligan(false);
         stop();
     }
@@ -144,4 +151,3 @@ public class InputLondonMulligan extends InputSyncronizedBase {
         getController().getGui().setHighlighted(views, false);
     }
 }
-

@@ -4,15 +4,21 @@ const fs = require('node:fs');
 const { pathToFileURL } = require('node:url');
 const { createHash } = require('node:crypto');
 const { EngineClient } = require('./engine-client.cjs');
-const { engineOptions } = require('./runtime.cjs');
-const { productName } = require('./package.json');
+const { engineOptions, resolveUserData } = require('./runtime.cjs');
+const { productName, version } = require('./package.json');
 const { commanderBrowse, publicDeckUrl } = require('./deck-sources.cjs');
 const { createPreferences } = require('./preferences.cjs');
 
 const project = path.resolve(__dirname, '..');
-const userData = process.env.FORGE_USER_DATA || (app.isPackaged
-  ? path.join(path.dirname(process.execPath), 'UserData') : path.join(__dirname, '.data'));
+const userData = resolveUserData({ packaged: app.isPackaged, executable: process.execPath,
+  appData: app.getPath('appData'), sourceDirectory: __dirname });
 fs.mkdirSync(userData, { recursive: true });
+const desktopLog = path.join(userData, 'desktop.log');
+function diagnostic(message) {
+  try { fs.appendFileSync(desktopLog, `${new Date().toISOString()} ${message}\n`); } catch { /* Retain Electron's original error handling. */ }
+}
+diagnostic(`Starting ${productName} ${version}; packaged=${app.isPackaged}`);
+process.on('uncaughtExceptionMonitor', error => diagnostic(error.stack || String(error)));
 const preferences = createPreferences(userData);
 app.setPath('userData', userData);
 app.setName(productName);
@@ -20,7 +26,9 @@ protocol.registerSchemesAsPrivileged([{ scheme: 'workshop', privileges: { standa
 
 let window;
 let engine;
-const methods = new Set(['search', 'deckInsights', 'list', 'new', 'open', 'snapshot', 'edit', 'rename', 'undo', 'redo', 'format', 'save', 'importPreview', 'import', 'deckPresets', 'presetImport', 'export', 'practice', 'matchOpponents', 'matchSetup', 'matchStart', 'matchState', 'matchAction', 'matchConcede']);
+let quitting = false;
+let relaunchQueued = false;
+const methods = new Set(['search', 'deckInsights', 'list', 'new', 'open', 'snapshot', 'edit', 'rename', 'undo', 'redo', 'format', 'save', 'importPreview', 'import', 'deckPresets', 'presetImport', 'export', 'practice', 'multiplayerHost', 'multiplayerJoin', 'multiplayerConfigure', 'multiplayerSelectDeck', 'multiplayerReady', 'multiplayerStart', 'multiplayerState', 'multiplayerReturn', 'multiplayerClose', 'matchOpponents', 'matchSetup', 'matchStart', 'matchState', 'matchAction', 'matchConcede']);
 function verify(event) {
   if (!window || event.sender !== window.webContents || event.senderFrame !== window.webContents.mainFrame
     || !event.senderFrame.url.startsWith('workshop://app/')) throw new Error('Unknown desktop client');
@@ -29,6 +37,15 @@ function verify(event) {
 const artCache = new Map();
 let artQueue = Promise.resolve();
 let lastArtRequest = 0;
+const debugMethods = new Set(['multiplayerStart', 'multiplayerState', 'matchState']);
+function summarizeDebug(method, result) {
+  if (method === 'matchState') {
+    if (!result) return 'null';
+    return `status=${result.status || 'unknown'} players=${result.playerCount ?? 0} viewer=${result.viewerId ?? 'none'} turn=${result.turn ?? 'none'} phase=${result.phase || 'none'} error=${result.error || 'none'}`;
+  }
+  if (!result || typeof result !== 'object') return String(result);
+  return `mode=${result.mode || 'none'} status=${result.status || 'none'} hosting=${Boolean(result.hosting)} matchActive=${Boolean(result.matchActive)} slots=${result.slots?.length ?? 0} error=${result.error || 'none'}`;
+}
 function art(name, face = 'front') {
   if (process.env.FORGE_OFFLINE === '1') return null;
   if (typeof name !== 'string' || name.length > 200) return null;
@@ -65,8 +82,14 @@ function art(name, face = 'front') {
   return promise;
 }
 
-if (app.requestSingleInstanceLock()) {
+if (process.env.MANA_ALLOW_MULTI_INSTANCE === '1' || app.requestSingleInstanceLock()) {
 app.on('second-instance', () => {
+  if (quitting || window?.isDestroyed()) {
+    // The window can be gone while multiplayer shutdown still owns the process
+    // and its single-instance lock. Honor the new launch after cleanup finishes.
+    if (!relaunchQueued) { relaunchQueued = true; app.relaunch(); }
+    return;
+  }
   if (window) { if (window.isMinimized()) window.restore(); window.show(); window.focus(); }
 });
 app.whenReady().then(async () => {
@@ -92,16 +115,27 @@ app.whenReady().then(async () => {
   });
   window.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
   window.webContents.on('will-navigate', event => event.preventDefault());
+  window.webContents.on('render-process-gone', (_event, details) => diagnostic(`Renderer exited: ${JSON.stringify(details)}`));
   engine = new EngineClient(engineOptions({ project, userData,
     resourcesPath: app.isPackaged ? process.resourcesPath : undefined }));
   engine.on('status', status => { if (!window.isDestroyed()) window.webContents.send('engine-status', status); });
   ipcMain.handle('status', event => { verify(event); return engine.status; });
   ipcMain.handle('preferences', (event, patch) => { verify(event); return patch === undefined ? preferences.get() : preferences.set(patch); });
-  ipcMain.handle('engine', (event, method, params) => {
+  ipcMain.handle('engine', async (event, method, params) => {
     verify(event);
     if (!methods.has(method)) throw new Error('Unknown command');
     if (JSON.stringify(params).length > 1_500_000) throw new Error('Request too large');
-    return engine.request(method, params);
+    const shouldDebug = debugMethods.has(method);
+    if (shouldDebug) console.log(`[mana-table] -> ${method}`);
+    try {
+      const result = await engine.request(method, params);
+      if (shouldDebug) console.log(`[mana-table] <- ${method}: ${summarizeDebug(method, result)}`);
+      return result;
+    } catch (error) {
+      diagnostic(`Engine command ${method} failed: ${error.stack || error}`);
+      if (shouldDebug) console.log(`[mana-table] !! ${method}: ${error.message}`);
+      throw error;
+    }
   });
   ipcMain.handle('art', (event, name, face) => { verify(event); return art(name, face); });
   ipcMain.handle('browse-decks', async (event, destination) => {
@@ -119,6 +153,12 @@ app.whenReady().then(async () => {
   ipcMain.handle('copy-deck', async event => {
     verify(event);
     clipboard.writeText(await engine.request('export', { kind: 'text' }));
+    return true;
+  });
+  ipcMain.handle('copy-invite', (event, value) => {
+    verify(event);
+    if (typeof value !== 'string' || value.length > 200 || /[\r\n\0]/.test(value)) throw new Error('Invalid invite');
+    clipboard.writeText(value);
     return true;
   });
   ipcMain.handle('import-file', async event => {
@@ -153,7 +193,22 @@ app.whenReady().then(async () => {
     return true;
   });
   await window.loadURL('workshop://app/index.html');
+}).catch(error => {
+  diagnostic(`Startup failed: ${error.stack || error}`);
+  dialog.showErrorBox('Mana Table could not start', `${error.message}\n\nDetails: ${desktopLog}`);
+  app.quit();
 });
 app.on('window-all-closed', () => app.quit());
-app.on('before-quit', () => engine?.close());
+app.on('before-quit', event => {
+  if (quitting) return;
+  quitting = true;
+  event.preventDefault();
+  const finish = async () => { await engine?.close(); app.quit(); };
+  if (!engine) { finish(); return; }
+  Promise.race([
+    engine.request('multiplayerClose').catch(() => null),
+    // Allow the router mapping to be withdrawn before terminating Java.
+    new Promise(resolve => setTimeout(resolve, 10000))
+  ]).finally(finish);
+});
 } else { app.quit(); }

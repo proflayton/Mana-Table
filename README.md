@@ -2,11 +2,11 @@
 
 Mana Table is a desktop card workshop and playable Magic: The Gathering table,
 built with a web UI on the Forge rules engine. It is an independent community
-fork, with active development on **`feature/desktop-beta`**.
+fork, currently in beta.
 
 The beta includes the full bundled card catalog, deck imports and exports,
 autosave and undo, Commander presets, opening-hand practice, two-player
-Constructed, and Commander with **2–6 players** (one local human and AI opponents).
+Constructed, and Commander with **2–6 players**, against AI or friends in a network lobby.
 The engine handles spells, mana, targets, phases, and combat. The UI presents a
 tabletop battlefield, a persistent card fan, card inspection, and combat assignments.
 
@@ -14,7 +14,7 @@ tabletop battlefield, a persistent card fan, card inspection, and combat assignm
 
 | I want to… | Guide |
 | --- | --- |
-| Play the current beta | [Player guide](forge-desktop/BETA.md) |
+| Download the Windows beta | [Releases](https://github.com/proflayton/Mana-Table/releases) · [Player guide](forge-desktop/BETA.md) |
 | Build and run from source | [Desktop development](forge-desktop/README.md) |
 | Make a contribution | [Contributing](CONTRIBUTING.md) |
 | Understand the components | [Architecture](docs/Development/Mana-Table-Architecture.md) |
@@ -30,7 +30,7 @@ are the contributor CI baseline. Set `JAVA_HOME` to your JDK directory and put
 Maven on `PATH`.
 
 ```sh
-git clone --branch feature/desktop-beta https://github.com/proflayton/Mana-Table.git
+git clone https://github.com/proflayton/Mana-Table.git
 cd Mana-Table
 mvn -pl forge-api -am verify
 cd forge-desktop
@@ -52,7 +52,7 @@ compatibility alias. These launchers do not build the app on a fresh clone.
 
 ## Beta scope
 
-Matches run locally against AI. Online human play, durable match saves, and
+Matches support local AI and direct multiplayer invites. Durable match saves and
 complete format legality checks are not implemented. Closing the app ends the
 current game; saved decks persist. Deck validation checks structure, not rotating
 set legality or ban lists. Unusual card interactions still need broader testing.

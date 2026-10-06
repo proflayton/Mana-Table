@@ -1,5 +1,5 @@
 .table-combat-lines { position: absolute; inset: 0; width: 100%; height: 100%; z-index: 9; pointer-events: none; overflow: hidden; filter: drop-shadow(0 1px 2px #000); }
-.table-combat-lines > path { fill: none; stroke-width: 2.5; opacity: .82; }
+.table-combat-lines > path { fill: none; stroke-width: 3.5; opacity: .92; }
 .table-combat-lines .attack-line { stroke: #efa17f; }
 .table-combat-lines .block-line { stroke: #82dce4; }
 .table-combat-lines marker .attack-line { fill: #efa17f; }
@@ -15,5 +15,18 @@
 .battlefield-card.combat-drop-ready { outline-offset: -3px; }
 .combat-target-ready { outline: 3px solid #82dce4 !important; outline-offset: 2px; cursor: pointer !important; }
 .battlefield-card.combat-target-ready { outline-offset: -3px; }
-.table-combat-hint { position: absolute; left: 12px; top: 10px; max-width: calc(100% - 170px); z-index: 10; padding: 7px 12px; border-radius: 6px; background: #14232bef; color: #f3e1b8; font: 12px/1.4 'Segoe UI', sans-serif; pointer-events: none; }
-.match-arena:has(#combat-view:not([hidden])) .table-combat-hint { visibility: hidden; }
+.table-combat-controls { position: absolute; left: 12px; top: 12px; z-index: 12; width: min(360px, calc(100% - 180px)); padding: 10px 13px; border: 1px solid #d8ac75a8; border-radius: 10px; background: linear-gradient(120deg, #32291af0, #14232af2); box-shadow: 0 5px 18px #0007; }
+.table-combat-controls[hidden] { display: none; }
+.table-combat-controls[data-mode="block"] { border-color: #82dce4a8; background: linear-gradient(120deg, #173b40f2, #14232af2); }
+.table-combat-heading { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; color: #ffe4b5; }
+.table-combat-heading strong { font: 18px/1.2 Georgia; }
+.table-combat-heading span { font-size: 10px; color: #c7ceca; }
+.table-combat-hint { margin: 6px 0 0; color: #e9e7d8; font: 12px/1.4 'Segoe UI', sans-serif; pointer-events: none; }
+.table-combat-buttons { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; margin-top: 9px; }
+.table-combat-buttons:has(button:not([hidden])) .button { min-height: 32px; padding: 6px 10px; font-size: 11px; }
+.table-combat-buttons:not(:has(button:not([hidden]))) { display: none; }
+.match-arena:has(#combat-view:not([hidden])) .table-combat-controls { visibility: hidden; }
+.combat-player-intent { position: absolute; top: calc(100% + 4px); left: 50%; transform: translateX(-50%); width: max-content; padding: 3px 7px; border-radius: 12px; background: #713b24ed; color: #fff0da; font: bold 10px/1.3 'Segoe UI', sans-serif; pointer-events: none; }
+.combat-target-ready .combat-player-intent { background: #143d47f5; color: #bcfaff; }
+.match-life.combat-under-attack { box-shadow: 0 0 0 2px #e88e66, 0 0 18px #e8785555; }
+@media (max-width: 1100px) { .table-combat-controls { width: min(310px, calc(100% - 150px)); padding: 8px 10px; } .table-combat-heading strong { font-size: 16px; } }

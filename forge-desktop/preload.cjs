@@ -8,6 +8,7 @@ contextBridge.exposeInMainWorld('forge', {
   importFile: () => ipcRenderer.invoke('import-file'),
   exportFile: kind => ipcRenderer.invoke('export-file', kind),
   copyDeck: () => ipcRenderer.invoke('copy-deck'),
+  copyInvite: value => ipcRenderer.invoke('copy-invite', value),
   onStatus: callback => {
     const listener = (_event, status) => callback(status);
     ipcRenderer.on('engine-status', listener);

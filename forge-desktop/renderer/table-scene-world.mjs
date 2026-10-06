@@ -183,13 +183,14 @@ export function createTableWorld(arena, onFailure) {
   }
   function place(entry, dt) {
     const { element, kind, group } = entry;
+    const control = element.querySelector('.library-top-card') || element;
     const isHand = kind === 'hand', isField = kind === 'field';
     const surface = entry.world ? element : isHand ? element : element.querySelector('.cast-portrait');
     let rect = surface.getBoundingClientRect();
     const style = getComputedStyle(element);
     const matrix = new DOMMatrix(style.transform === 'none' ? undefined : style.transform);
     let angle = entry.world ? entry.world.angle + (entry.fan || 0) + (element.classList.contains('tapped') ? -Math.PI / 2 : 0) : -Math.atan2(matrix.b, matrix.a);
-    const held = isHand ? element.classList.contains('hand-raised') : element.matches(':focus-visible');
+    const held = isHand ? element.classList.contains('hand-raised') : control.matches(':focus-visible');
     const hovering = element.matches(':hover');
     let lift = entry.world ? (hovering || held ? 16 : 9) : kind === 'cast' ? 50 : held ? 90 : 50;
     if (dragged === entry.key && pointer) {
@@ -224,9 +225,10 @@ export function createTableWorld(arena, onFailure) {
     entry.face.position.z = .012 * entry.body.scale.z + .001;
     entry.face.material.opacity = kind === 'pile' && !entry.count ? .23 : 1;
     entry.body.visible = kind !== 'pile' || entry.count > 0;
-    const color = element.classList.contains('table-attacking') || element.classList.contains('in-combat') ? 0xec9470
-      : element.classList.contains('chosen') || element.classList.contains('table-combat-selected') || kind === 'cast' ? 0xf1d58b : 0x79d4ee;
-    entry.rim.visible = kind !== 'back' && (hovering || held || element.matches('.actionable, .chosen, .in-combat, .table-combat-selected, .combat-target-ready') || kind === 'cast');
+    const color = element.classList.contains('table-combat-selected') || element.classList.contains('chosen') || kind === 'cast' ? 0xf1d58b
+      : element.classList.contains('table-blocker') || element.classList.contains('combat-target-ready') ? 0x82dce4
+      : element.classList.contains('table-attacker') || element.classList.contains('in-combat') ? 0xec9470 : 0x79d4ee;
+    entry.rim.visible = kind !== 'back' && (hovering || held || control.matches('.actionable, .chosen, .in-combat, .table-combat-ready, .table-combat-selected, .combat-target-ready, .table-attacker, .table-blocker') || kind === 'cast');
     entry.rim.material.color.setHex(color);
     entry.shadow.position.copy(group.position);
     if (onTable) {

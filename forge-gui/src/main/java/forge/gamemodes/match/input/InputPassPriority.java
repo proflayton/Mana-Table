@@ -57,6 +57,16 @@ public class InputPassPriority extends InputSyncronizedBase {
     private static final long serialVersionUID = -581477682214137181L;
 
     private List<SpellAbility> chosenSa;
+    private boolean availabilityVerified;
+
+    /** Set only after the engine has scanned actions for this priority window. */
+    public void setAvailabilityVerified(final boolean verified) {
+        availabilityVerified = verified;
+    }
+
+    public boolean canAutoPass() {
+        return availabilityVerified && !isFinished() && !getOwner().hasAvailableActions();
+    }
 
     private SuggestionType pendingSuggestion = null;
     private String pendingSuggestionMessage = null;

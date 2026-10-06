@@ -1,6 +1,6 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
-const { testProfile, startEngine, ready } = require('./support/engine.cjs');
+const { testProfile, startEngine, ready, submitMatchAction } = require('./support/engine.cjs');
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 const hasteCreatures = new Set(['Monastery Swiftspear', 'Raging Goblin', 'Reckless Lackey', 'Torch Courier']);
 
@@ -28,10 +28,9 @@ async function prepareOpening(engine) {
         await engine.request('matchConcede', { sessionId: state.id });
         break;
       }
-      previousPrompt = p.id;
       assert.equal(p.inputType, 'InputConfirm', 'Unexpected setup prompt: ' + JSON.stringify(p));
       assert.equal(p.ok, 'Play');
-      await engine.request('matchAction', { sessionId: state.id, promptId: p.id, action: 'ok' });
+      if (await submitMatchAction(engine, state, { action: 'ok' })) previousPrompt = p.id;
     }
     assert.ok(state.prompt?.inputType?.includes('Mulligan'), 'Setup did not reach the opening hand');
   }
@@ -94,6 +93,7 @@ test('real human-controller match: casting, targeting, combat, hidden informatio
         else assert.match(card.visualId, /^[a-f0-9-]{36}$/, 'Visual identities must be opaque');
       }
       const answer = { sessionId, promptId: p.id };
+      let playedCard = false, choseTarget = false, declaredAttack = false, paid = false, choseBlock = false;
       if (!firstAction && p.kind === 'input') {
         await assert.rejects(engine.request('matchAction', { ...answer, action: 'card', key: 'not-a-visible-card' }), /not visible/);
         const visual = visible.find(card => card.visualId);
@@ -106,30 +106,32 @@ test('real human-controller match: casting, targeting, combat, hidden informatio
       else if (p.kind === 'text') answer.value = p.numeric ? '1' : p.initial || 'Mountain';
       else if (p.kind === 'allocate') answer.values = p.choices.map((_, index) => index ? (p.atLeastOne ? 1 : 0) : p.amount - (p.atLeastOne ? p.choices.length - 1 : 0));
       else if (p.inputType === 'InputSelectTargets' && !p.message.includes('Targeted:')) {
-        answer.action = 'player'; answer.playerId = opponent.id; targetCount++;
+        answer.action = 'player'; answer.playerId = opponent.id; choseTarget = true;
       } else if (p.inputType === 'InputAttack' && !zone(human, 'Battlefield').some(card => card.attacking)) {
-        answer.action = 'attackAll'; combatCount++;
+        answer.action = 'attackAll'; declaredAttack = true;
       } else if (p.inputType === 'InputPassPriority') {
         const playable = zone(human, 'Hand').filter(card => card.selectable);
         const card = playable.find(card => card.type.includes('Land')) || playable.find(card => hasteCreatures.has(card.name))
           || playable.find(card => card.type.includes('Creature')) || playable[0];
-        if (card) { answer.action = 'card'; answer.key = card.key; cardCount++; }
+        if (card) { answer.action = 'card'; answer.key = card.key; playedCard = true; }
         else answer.action = 'ok';
       } else if (p.inputType === 'InputBlock' && zone(human, 'Battlefield').some(card => card.selectable && !card.blocking && card.type.includes('Creature'))) {
         const blocker = zone(human, 'Battlefield').find(card => card.selectable && !card.blocking && card.type.includes('Creature'));
-        answer.action = 'card'; answer.key = blocker.key; blockCount++;
+        answer.action = 'card'; answer.key = blocker.key; choseBlock = true;
       } else if (p.okEnabled) {
         answer.action = 'ok';
-        if (p.inputType.startsWith('InputPayMana')) paidCount++;
+        if (p.inputType.startsWith('InputPayMana')) paid = true;
       } else {
         const card = zone(human, 'Hand').find(card => card.selectable && !card.highlighted) || zone(human, 'Battlefield').find(card => card.selectable && !card.highlighted);
         if (card) { answer.action = 'card'; answer.key = card.key; }
         else if (p.cancelEnabled) answer.action = 'cancel';
         else throw new Error('Unhandled prompt: ' + JSON.stringify(p));
       }
+      if (!await submitMatchAction(engine, state, answer)) { await sleep(15); continue; }
       oldPrompt = p.id;
       firstAction ||= answer;
-      await engine.request('matchAction', answer);
+      cardCount += playedCard; targetCount += choseTarget; combatCount += declaredAttack;
+      paidCount += paid; blockCount += choseBlock;
       steps++;
       await sleep(15);
     }

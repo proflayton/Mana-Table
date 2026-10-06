@@ -1,8 +1,91 @@
-# Mana Table — beta 0.1.0-beta.30
+# Mana Table — beta 0.1.0-beta.37
 
 Double-click **Mana Table.exe**. Keep the executable with its accompanying
 folders. Java and the Forge card library are bundled; no separate installation
 or account is needed. The first launch scans the card library and can take a moment.
+
+Beta 37 makes **multiplayer combat playable on the battlefield**:
+
+- Click your creature, then the glowing opponent or permanent it should attack.
+  Split attacks across opponents; orange arrows show each destination.
+- To block, click your creature, then a glowing attacker. Blue connections show
+  the assignments. Only legal destinations are offered by the host engine.
+- The battlefield has its own combat instructions and confirmation button.
+  Select an assigned creature to recall it or remove its block; Escape cancels
+  a selection. Dragging and the optional detailed inspector still work.
+- Attackers and blockers move forward and gain colored borders. Player markers
+  show incoming attacks. Every seat sees assignments before confirmation.
+- Multiplayer combat snapshots and atomic assignments fix the missing targeting
+  controls and prevent destination/card messages from arriving out of order.
+  Everyone at the table needs this build.
+
+Beta 36 fixes **manual mana payments freezing multiplayer**:
+
+- Activating lands with multiple abilities, such as Yavimaya Coast, keeps the
+  app responsive while you choose an ability. Canceling returns to payment;
+  selecting an ability allows the spell and game to continue.
+- Controller actions run outside the engine request loop and match lock, with
+  input-sequence checks and duplicate submission protection while dispatching.
+- Host and guest encounter tests cover cancellation, stale actions, colored
+  and colorless payment, spell resolution, and the correct life change.
+
+Beta 35 adds **visible library tops and stable match scrolling**:
+
+- Elven Chorus and other engine-granted look permissions show the actual top
+  card on the library pile. Hover or focus to enlarge it; highlighted creatures
+  can be played through the normal casting interaction. Opponents do not receive
+  private card information, and removing the permission hides the card again.
+- Updates within the same decision preserve your scroll position. Open graveyard
+  and exile drawers retain their position when the battlefield changes.
+- Targets and required card selections, including multiplayer cleanup discards,
+  publish their eligible cards after the new input becomes active.
+
+Beta 34 fixes **multiplayer opening-hand decisions**:
+
+- Mulligan cards are highlighted for selection, including changing which cards
+  go on the bottom. The host's Continue button updates as selections change.
+- Unchanged network polls preserve decision buttons, keyboard focus, and typed
+  answers instead of rebuilding the controls while you try to use them.
+- Automated encounters now play through host and guest mulligans, repeated
+  redraws, and the first turn at two- and three-player tables.
+
+Beta 33 packaged the multiplayer startup fixes below as a complete Windows
+download for testers.
+
+Beta 32 improves **getting a multiplayer game started and sharing the app**:
+
+- Reopening immediately after closing a hosted game waits for shutdown and
+  relaunches safely instead of trying to focus a window that has been destroyed.
+- Choose a deck and press **Ready**; the selected deck is submitted and checked
+  automatically. The host sees who still needs a deck or readiness, and whether
+  more players are needed for the chosen number of seats.
+- Windows release ZIPs include the app, Java, and the card library. Download and
+  extract the entire ZIP, then open **Mana Table.exe**. No Git, npm, or build is needed.
+- Clean release downloads keep decks and settings in **%APPDATA%\Mana Table**,
+  so replacing the application folder preserves them. Older portable builds
+  with an adjacent **UserData** folder continue using that folder.
+- Startup and engine-command errors are recorded in **desktop.log** beside your
+  saved profile, alongside **engine.log**, to help diagnose launch failures.
+
+Beta 31 adds **multiplayer tables and invites for friends**:
+
+- Open **Multiplayer**, choose Standard or Commander and the number of seats,
+  leave **Automatic port forwarding** checked, and choose **Host table**.
+- When the internet invite appears, choose **Copy invite**. Friends using this
+  build paste it into **Friend's invite → Join table**. Everyone selects a saved
+  deck and marks Ready; the host starts the game. Commander supports 2–6 players.
+- The router status reports whether UPnP accepted the forwarding rule. Java must
+  also be allowed through the firewall. If your router or provider blocks incoming
+  connections, another friend may need to host. There is no hosted relay yet.
+- For the same Wi-Fi or a VPN, use **Direct connection / same network** and copy
+  the appropriate local invite. Invites contain connection details; share them
+  with trusted friends and send a new one whenever you host again.
+- Multiplayer Auto uses the host's verified action availability and rechecks
+  each automatic pass. It stops for available plays and required decisions.
+- Deck imports accept known cards from unbundled sets such as SUM, using an
+  available printing and showing the substitution in the import preview.
+- Development games keep a private engine copy, so a Maven rebuild during play
+  no longer replaces the JAR used by an active match.
 
 Beta 30 makes **combat direct and the table steadier**:
 

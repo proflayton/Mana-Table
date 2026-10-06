@@ -155,7 +155,7 @@ public final class FServerManager implements IHasForgeLog {
     private ServerGameLobby localLobby;
     private ILobbyListener lobbyListener;
     private IDraftEventHandler draftHandler;
-    private boolean UPnPMapped = false;
+    private final PortMappingState portMappingState = new PortMappingState();
     private int port;
     private static final Localizer localizer = Localizer.getInstance();
     private final Thread shutdownHook = new Thread(() -> {
@@ -234,6 +234,13 @@ public final class FServerManager implements IHasForgeLog {
         } else {
             startUPnP = UPnPOption.equalsIgnoreCase("ALWAYS");
         }
+        startServer(port, startUPnP);
+    }
+
+    /** Explicit per-session choice for clients without a native UPnP dialog. */
+    public void startServer(final int port, final boolean startUPnP) {
+        this.port = port;
+        portMappingState.reset();
         netLog.info("Starting Multiplayer Server");
         try {
             final ServerBootstrap b = new ServerBootstrap()
@@ -312,6 +319,7 @@ public final class FServerManager implements IHasForgeLog {
         if (!isHosting) {
             return;
         }
+        portMappingState.reset();
         // Cancel all reconnect timers
         for (final Timer timer : reconnectTimers.values()) {
             timer.cancel();
@@ -321,12 +329,8 @@ public final class FServerManager implements IHasForgeLog {
         clients.clear();
         afkSlots.clear();
 
-        try {
-            bossGroup.shutdownGracefully().sync();
-            workerGroup.shutdownGracefully().sync();
-        } catch (final InterruptedException e) {
-            Thread.currentThread().interrupt();
-        }
+        // Withdraw the router rule before waiting for Netty's quiet period.
+        // Desktop shutdown has a bounded grace period for its engine process.
         if (upnpService != null) {
             try {
                 upnpService.shutdown();
@@ -336,11 +340,16 @@ public final class FServerManager implements IHasForgeLog {
             }
             upnpService = null;
         }
+        try {
+            bossGroup.shutdownGracefully().sync();
+            workerGroup.shutdownGracefully().sync();
+        } catch (final InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
         if (removeShutdownHook) {
             Runtime.getRuntime().removeShutdownHook(shutdownHook);
         }
         isHosting = false;
-        UPnPMapped = false;
         NetworkLogConfig.deactivateNetworkLogging();
         // create new EventLoopGroups for potential restart
         bossGroup = new NioEventLoopGroup(1);
@@ -352,8 +361,10 @@ public final class FServerManager implements IHasForgeLog {
     }
 
     public boolean isUPnPMapped() {
-        return UPnPMapped;
+        return portMappingState.status().equals("mapped");
     }
+
+    public String getPortMappingStatus() { return portMappingState.status(); }
 
     public int getTotalSendErrors() {
         int total = 0;
@@ -743,8 +754,10 @@ public final class FServerManager implements IHasForgeLog {
         BufferedReader in = null;
         try {
             URL whatismyip = new URL("https://checkip.amazonaws.com");
-            in = new BufferedReader(new InputStreamReader(
-                    whatismyip.openStream()));
+            var connection = whatismyip.openConnection();
+            connection.setConnectTimeout(3000);
+            connection.setReadTimeout(3000);
+            in = new BufferedReader(new InputStreamReader(connection.getInputStream()));
             return in.readLine();
         } catch (IOException e) {
             netLog.error(e, "Failed to get external address");
@@ -761,9 +774,10 @@ public final class FServerManager implements IHasForgeLog {
     }
 
     private void mapNatPort() {
+        final long attempt = portMappingState.begin();
         try {
             final String localAddress = getLocalAddress();
-            final PortMapping portMapping = new PortMapping(port, localAddress, PortMapping.Protocol.TCP, "Forge");
+            final PortMapping portMapping = new PortMapping(port, localAddress, PortMapping.Protocol.TCP, "Mana Table / Forge");
             // Shutdown existing UPnP service if already running
             if (upnpService != null) {
                 upnpService.shutdown();
@@ -776,7 +790,7 @@ public final class FServerManager implements IHasForgeLog {
             upnpService = new UpnpServiceImpl(GuiBase.getInterface().getUpnpPlatformService());
             upnpService.startup();
 
-            final ForgePortMappingListener listener = new ForgePortMappingListener(portMapping);
+            final ForgePortMappingListener listener = new ForgePortMappingListener(portMapping, attempt);
             upnpService.getRegistry().addListener(listener);
             // Trigger device discovery
             upnpService.getControlPoint().search();
@@ -788,7 +802,7 @@ public final class FServerManager implements IHasForgeLog {
                     if (!listener.isCompleted()) {
                         listener.setCompleted();
                         netLog.warn("UPnP: no gateway confirmed a mapping for port {} within 5 seconds", port);
-                        onUPnPResult(false);
+                        onUPnPResult(attempt, false);
                     }
                 }
             }, 5000);
@@ -800,10 +814,12 @@ public final class FServerManager implements IHasForgeLog {
             // is a LinkageError and degrades gracefully instead of killing hosting,
             // while fatal Errors (OutOfMemoryError etc.) still propagate.
             netLog.error(e, "UPnP mapping unavailable");
+            onUPnPResult(attempt, false);
         }
     }
 
-    private void onUPnPResult(boolean success) {
+    private void onUPnPResult(long attempt, boolean success) {
+        if (!portMappingState.complete(attempt, success)) return;
         String msg = success
             ? localizer.getMessage("lblUPnPSuccess", String.valueOf(port))
             : localizer.getMessage("lblUPnPFailed", String.valueOf(port));
@@ -819,18 +835,19 @@ public final class FServerManager implements IHasForgeLog {
      */
     private class ForgePortMappingListener extends PortMappingListener {
         private volatile boolean completed = false;
+        private final long attempt;
 
-        ForgePortMappingListener(PortMapping portMapping) {
+        ForgePortMappingListener(PortMapping portMapping, long attempt) {
             super(portMapping);
+            this.attempt = attempt;
         }
 
         @Override
         public synchronized void deviceAdded(Registry registry, Device device) {
             super.deviceAdded(registry, device);
-            if (!completed && !activePortMappings.isEmpty()) {
+            if (!activePortMappings.isEmpty()) {
                 completed = true;
-                UPnPMapped = true;
-                onUPnPResult(true);
+                onUPnPResult(attempt, true);
             }
         }
 
@@ -839,7 +856,7 @@ public final class FServerManager implements IHasForgeLog {
             super.handleFailureMessage(message);
             if (!completed) {
                 completed = true;
-                onUPnPResult(false);
+                onUPnPResult(attempt, false);
             }
         }
 

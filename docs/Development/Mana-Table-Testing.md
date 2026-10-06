@@ -43,19 +43,40 @@ node --test tests/commander.test.cjs
 | Prompts, turn guidance and stale actions | `match.*`, `priority.spec.cjs`, `card-selection.spec.cjs`, `land-play.spec.cjs` |
 | Commander/multiplayer | `commander.*`, `multiplayer.*` |
 | Hand and 2D fallback layout | `hand-gestures.spec.cjs`, `hand-readability.spec.cjs`, `battlefield-fit.spec.cjs`, `multiplayer.spec.cjs` |
-| Combat | `combat.spec.cjs` (real click, drag and removal); `table-combat-input.spec.cjs` (multiplayer legality, keyboard, stale selection); `match.test.cjs`, `multiplayer.test.cjs` |
-| Card visibility/inspection | `card-preview.spec.cjs`, `card-faces.spec.cjs`, `library-search.spec.cjs` |
+| Combat | `network-combat.test.cjs` (host/guest three-player split attacks and blocks); `network-combat.spec.cjs` (real desktop battlefield targeting and confirmation); `combat.spec.cjs` (AI click, drag and removal); `table-combat-input.spec.cjs` (legality, keyboard, stale selection) |
+| Card visibility/inspection | `card-preview.spec.cjs`, `card-faces.spec.cjs`, `library-search.spec.cjs`, `top-library.test.cjs`, `top-library.spec.cjs` |
 | Animation/event correlation | `animation-feedback.spec.cjs` |
 | 3D continuity, idle rendering and graphics fallback | `table-scene.spec.cjs` (real WebGL and engine); animation-feedback retains the 2D fallback check |
 | World-space seats, camera focus and crowded ranks | `table-world.spec.cjs` (two, four and six seats, projected hit targets, no engine action from camera/paging) |
-| Anchored controls and independent panel scrolling | `rail-layout.spec.cjs` |
+| Anchored controls and independent panel scrolling | `rail-layout.spec.cjs`, `match-scroll.spec.cjs` |
 | Lifted-card pixels, retained hand nodes, phase layout stability and turn cues | `table-stability.spec.cjs` (real WebGL plus a copied turn-cue presentation fixture) |
 | Casting, cancelling, the stack and revealed hand portraits | `casting-reveal.spec.cjs` |
-| Source-aware artifact mana choices | `mana-choice.spec.cjs` |
+| Source-aware artifact and manual land mana choices | `mana-choice.spec.cjs`, `network-mana-choice.test.cjs` |
 
 ## Profiles and artifacts
 
+`top-library.test.cjs` plays Elven Chorus at both host and guest seats. It checks
+private top-card access, legal creature casting, drawing a new top card, cleanup
+discards, and losing access after Naturalize removes Chorus. The desktop encounter
+checks inspection in both 3D and 2D, and that clicking an unplayable top land does
+not advance the game. `match-scroll.spec.cjs` uses inert display snapshots to
+check scroll retention during polls, decision updates, and unrelated board changes.
+
+`network-mana-choice.test.cjs` manually pays for spells with Yavimaya Coast at
+both host and guest seats. It checks that polling and actions remain responsive
+during the ability dialog, cancellation returns to payment without tapping the
+land, stale payment actions are rejected, and colored/colorless abilities finish
+casting with the correct life change.
+
 Shared helpers live in `tests/support/engine.cjs` and `tests/support/desktop.cjs`.
+`tests/support/network-combat.cjs` shares a real three-player Commander encounter
+between engine and desktop tests. It plays lands and two partner commanders,
+splits attacks across both opponents, retargets and recalls attackers, checks
+each defender's legal pairs, adds/removes blocks, verifies every seat receives
+assignments before confirmation, and reaches the next main phase. The desktop
+version uses pointer clicks and the battlefield confirmation controls at two
+window sizes. It is part of the packaged release smoke suite.
+
 They create unique profiles under ignored `test-results/`, respect configured
 Java, and never use your normal `.data` or packaged `UserData`. UI tests disable
 remote artwork by default and launch hidden Electron windows. The face-image
@@ -103,6 +124,16 @@ Remove-Item Env:MANA_TEST_PACKAGED
 All UI tests use the shared launcher and support packaged mode. Use
 `MANA_TEST_EXECUTABLE` for a particular executable instead; packaged mode takes
 precedence when both variables are set. Neither mode uses the player's profile.
+For `npm run package:release`, read `dist/latest-release.json` and set
+`MANA_TEST_EXECUTABLE` to its `directory` plus `executable`; leave
+`MANA_TEST_PACKAGED` unset. The release workflow does this automatically.
+`network-mulligan.test.cjs` exercises host and guest mulligans at two- and
+three-player tables, including the free multiplayer redraw, repeated mulligans,
+bottom-card selection/undo, hidden opponent hands, and progression into turn one.
+`network-start.spec.cjs` uses two actual desktop clients to submit selected decks
+with Ready, verify start blockers, keep prompt controls stable across polls,
+mulligan and choose a bottom card through real clicks, enter turn one, close both
+clients, and reopen the host's saved profile. Routine tests leave router forwarding off.
 Visual-review screenshots are captured in source runs; packaged tests skip those
 captures because the hidden-window compositor can stall, while retaining layout
 and interaction assertions.

@@ -14,6 +14,29 @@ import org.testng.annotations.Test;
 import static org.testng.Assert.*;
 
 public class MatchActivityTest {
+    @Test public void visibleLibraryHandlesSurvivePollsButNotRevocationOrShuffle() {
+        var viewer = new PlayerView(1, null);
+        var opponent = new PlayerView(2, null);
+        var card = new CardView(10, null, "Private top card");
+        card.set(TrackableProperty.Controller, viewer);
+        card.set(TrackableProperty.Zone, ZoneType.Library);
+        var activity = new MatchActivity(viewer);
+        assertNull(activity.visualId(card));
+        card.set(TrackableProperty.PlayerMayLook, new forge.trackable.TrackableCollection<>(viewer));
+        var visible = activity.visualId(card);
+        assertNotNull(visible);
+        assertNull(new MatchActivity(opponent).visualId(card));
+        activity.refreshVisibility();
+        assertEquals(activity.visualId(card), visible);
+        card.set(TrackableProperty.PlayerMayLook, null);
+        activity.refreshVisibility();
+        card.set(TrackableProperty.PlayerMayLook, new forge.trackable.TrackableCollection<>(viewer));
+        var revealedAgain = activity.visualId(card);
+        assertNotEquals(revealedAgain, visible);
+        activity.onGameEvent(new GameEventShuffle(viewer));
+        assertNotEquals(activity.visualId(card), revealedAgain);
+    }
+
     @Test public void faceDownCombatPositionsAreDistinctAndBreakAtHiddenZoneTransitions() {
         var viewer = new PlayerView(1, null);
         var owner = new PlayerView(2, null);
