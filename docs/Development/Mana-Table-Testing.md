@@ -128,6 +128,8 @@ The UI mode drives production pointer hit testing and search text handling:
 build a legal deck from an empty draft, adjust counts, move cards, undo/redo,
 filter by leader identity/type/mana, reject old search results, copy to clipboard,
 rename, duplicate, reopen, return from AI setup, and page through a full precon.
+Copy list stays disabled on empty drafts and after removing the last card;
+Undo restores copying, while populated copies retain their quantities and sections.
 Quantity/name dialog values enter the same production actions through the test
 port. It records `workshop-ui-results.json` and three UI captures with deck/catalog
 snapshots. Review at 1280x720 and 1200x900; cached art is optional. Run the commander

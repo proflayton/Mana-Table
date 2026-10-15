@@ -14,6 +14,8 @@ internal sealed class DeckWorkshopSmoke(TableGame.Probe view) : ITableAutomation
     private int stage, next, mousePhase;
     private Point mouse;
     private string originalId = "";
+    private string emptyDraftId = "";
+    private long firstCardRevision;
     private string[] firstPage = [];
     public string? ExpectedClick { get; private set; }
     public bool ClickAccepted { get; set; }
@@ -63,6 +65,8 @@ internal sealed class DeckWorkshopSmoke(TableGame.Probe view) : ITableAutomation
             case 0: Click("new-deck", 1); break;
             case 1:
                 Check(view.DeckEditor && Deck.Entries.Length == 0, "New deck opens a saved empty workspace");
+                Check(!view.Hits.Any(h => h.Id == "deck-export"), "Copy list has no active control for a fresh empty deck");
+                emptyDraftId = Deck.Id;
                 Click("deck-search-library", 2); break;
             case 2: Type("Rhys the Redeemed"); stage++; break;
             case 3:
@@ -71,6 +75,15 @@ internal sealed class DeckWorkshopSmoke(TableGame.Probe view) : ITableAutomation
             case 4: Click("deck-add", 5); break;
             case 5:
                 Check(Entry("Rhys the Redeemed").Quantity == 1, "Selecting a catalog face and pressing + adds the exact printing");
+                Check(view.Hits.Any(h => h.Id == "deck-export"), "Adding the first card makes Copy list available");
+                firstCardRevision = Deck.Revision;
+                Click("deck-remove", 501); break;
+            case 501:
+                Check(view.DeckEditor && Deck.Id == emptyDraftId && Deck.Entries.Length == 0 && Deck.Revision > firstCardRevision && Deck.SaveError.Length == 0, "Removing the last card preserves the saved deck and its editable workspace");
+                Check(!view.Hits.Any(h => h.Id == "deck-export"), "Removing the last card disables Copy list again");
+                Click("deck-undo", 502); break;
+            case 502:
+                Check(Deck.Id == emptyDraftId && Entry("Rhys the Redeemed").Quantity == 1 && view.Hits.Any(h => h.Id == "deck-export"), "Undo restores the first card and its Copy list control without replacing the deck");
                 Click("deck-set-commander", 6); break;
             case 6:
                 Check(Entry("Rhys the Redeemed").Section == "Commander", "A commander can be found in the full library and assigned from the same workspace");

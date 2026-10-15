@@ -15,7 +15,7 @@ internal sealed partial class TableGame
         canvas.Text(deck.Name, 48, 96, Ink, 1.3f, 700, 1, true);
         Button("deck-rename", "Rename", 764, 98, 108, () => { var name = Ask("Rename deck", "Deck name", deck.Name); if (name != null) RenameDeck(name); }, !busy, height: 36);
         Button("deck-duplicate", "Duplicate", 882, 98, 118, () => { var name = Ask("Copy deck", "Name this separate copy", deck.Name + " copy"); if (name != null) DuplicateDeck(name); }, !busy, height: 36);
-        Button("deck-export", "Copy list", 1010, 98, 125, ExportDeck, !busy, height: 36);
+        Button("deck-export", "Copy list", 1010, 98, 125, ExportDeck, !busy && DeckCanCopy, height: 36);
         Button("deck-new", "New deck", 1145, 98, 125, () => NewDeck(), !busy, height: 36);
         Button("deck-done", "Review for table", 1280, 98, 272, ReviewBuiltDeck, !busy, height: 36);
         int main = deck.Entries.Where(e => e.Section == "Main").Sum(e => e.Quantity), leaders = deck.Entries.Where(e => e.Section == "Commander").Sum(e => e.Quantity);

@@ -13,6 +13,7 @@ internal sealed partial class TableGame
     private string? deckBackId;
     private const int DeckRows = 12;
     private bool DeckReady => selectedDeckDetails is { Problem.Length: 0, SaveError.Length: 0 } && selectedDeckDetails.CommanderIds.Length > 0;
+    private bool DeckCanCopy => selectedDeckDetails?.Entries.Any(e => e.Quantity > 0) == true;
     private string DeckScope => $"setup:{selectedDeckDetails?.Id}:{selectedDeckDetails?.Revision}:{deckEditor}:{commanderCandidates}:{deckSection}:{deckFilter}:{deckCardsPage}:{deckCardId}:{deckCardSection}:{librarySelection?.Id}:{catalogGeneration}:{deckReview}:{deckMenu}";
     private int? CommanderIdentity => selectedDeckDetails?.Entries.Where(e => e.Section == "Commander").ToArray() is { Length: > 0 } leaders
         ? leaders.Aggregate(0, (mask, e) => mask | e.ColorIdentity) : null;
@@ -110,10 +111,20 @@ internal sealed partial class TableGame
     private void DuplicateDeck(string name) => EditDeck(d => engine.DuplicateDeckAsync(d.Id, d.Revision, name), "Copy saved as a separate deck.");
     private void ExportDeck()
     {
+        if (!DeckCanCopy) { message = "Add a card before copying your deck list."; return; }
         var d = selectedDeckDetails!;
         Work(async () => {
             string text = await engine.ExportDeckAsync(d.Id, d.Revision);
-            updates.Enqueue(() => { Clipboard.SetText(text); message = "Deck list copied, including commander and sideboard sections."; });
+            if (string.IsNullOrWhiteSpace(text)) throw new InvalidOperationException("There are no cards to copy. Add a card and try again.");
+            updates.Enqueue(() => {
+                try {
+                    Clipboard.SetText(text);
+                    message = "Deck list copied, including commander and sideboard sections.";
+                } catch (System.Runtime.InteropServices.ExternalException) {
+                    error = "The clipboard is unavailable. Try Copy list again.";
+                    FailActivity();
+                }
+            });
         }, "Copying your deck list", "Preparing the commander, main deck, and sideboard for the clipboard.");
     }
     private void CloseDeckEditor() { deckEditor = false; deckTextFocus = deckMenu = ""; textFocus = false; }
