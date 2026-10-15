@@ -1,0 +1,248 @@
+using System.Text.Json;
+using Mana.Contracts;
+using Microsoft.Xna.Framework.Graphics;
+using Microsoft.Xna.Framework.Input;
+using ButtonState = Microsoft.Xna.Framework.Input.ButtonState;
+using Point = Microsoft.Xna.Framework.Point;
+using Keys = Microsoft.Xna.Framework.Input.Keys;
+
+namespace Mana.Table;
+
+// Exercises real native input and disk persistence without loading Forge or
+// making a gameplay decision on behalf of a player.
+internal static class OnboardingSmoke
+{
+    internal static void Run(string profile, Point? size)
+    {
+        var checks = new List<string>();
+        string scenarios = Path.Combine(profile, "onboarding-scenarios", Guid.NewGuid().ToString("N"));
+        string Case(string name) { string path = Path.Combine(scenarios, name); Directory.CreateDirectory(path); return path; }
+        void Check(bool valid, string message)
+        {
+            if (!valid) throw new InvalidOperationException(message);
+            checks.Add(message);
+            File.AppendAllText(Path.Combine(profile, "onboarding-progress.log"), message + "\n");
+        }
+        void Scene(string path, ICardEngine engine, Action<Script, TableGame.Probe> arrange, GameSnapshot? state = null, string? fixture = null)
+        {
+            using var game = new TableGame(engine, path, null, fixture, size, initialState: state, artSource: new EmptyArt());
+            var script = new Script(game.TestPort);
+            arrange(script, game.TestPort); game.Automation = script; game.Run();
+        }
+        bool Seen(string path, string key)
+        {
+            using var json = JsonDocument.Parse(File.ReadAllText(Path.Combine(path, "experience.json")));
+            return json.RootElement.GetProperty(key).GetBoolean();
+        }
+
+        string fresh = Case("fresh-skip");
+        Directory.CreateDirectory(Path.Combine(fresh, "decks"));
+        var startup = new StartupEngine();
+        Scene(fresh, startup, (s, view) => {
+            s.Then(() => {
+                Check(view.WelcomeOpen && !view.TableGuideOpen, "Fresh profiles start with a welcome rather than an active table");
+                Check(view.Hits.Any(h => h.Id == "experience-ai") && !view.Hits.Any(h => h.Id is "host" or "change-deck" or "start-solo"), "Welcome exposes play paths and isolates underlying setup controls");
+                s.Capture("01-welcome");
+            });
+            s.Pulse(Keys.Space, Keys.F, Keys.C, Keys.LeftControl, Keys.Enter);
+            s.Then(() => Check(view.WelcomeOpen && view.SetupModal.Length == 0 && !view.ChatOpen, "Gameplay and chat shortcuts do not escape the welcome"));
+            s.Click("experience-skip");
+            s.Then(() => {
+                Check(!view.ExperienceOpen && view.Match == null, "Skipping welcome returns to setup without starting a match");
+                Check(Seen(fresh, "WelcomeSeen") && !Seen(fresh, "TableGuideSeen"), "Welcome dismissal persists independently of first-table controls");
+                Check(startup.Mutations.Count == 0, "Welcome and dismissal never import, connect, ready, or start through the engine");
+            });
+            s.Click("experience-home");
+            s.Then(() => Check(view.WelcomeOpen, "The setup screen can reopen the welcome after dismissal"));
+            s.Click("experience-guide");
+            s.Then(() => Check(view.TableGuideOpen && view.WelcomeOpen, "Table controls can be reviewed from the welcome before playing"));
+            s.Click("experience-guide-close");
+            s.Then(() => Check(!view.TableGuideOpen && view.WelcomeOpen, "Closing controls returns to the welcome that opened them"));
+            s.Click("experience-skip");
+            s.Click("experience-guide-open");
+            s.Then(() => { view.Accept(null); view.Accept(null); });
+            s.Then(() => Check(view.TableGuideOpen && !view.WelcomeOpen, "Repeated idle-lobby observations do not dismiss a manually opened controls guide"));
+            s.Click("experience-guide-close");
+        });
+        Scene(fresh, new StartupEngine(), (s, view) => s.Then(() => Check(!view.ExperienceOpen, "A dismissed welcome stays dismissed after reopening the application")));
+
+        string escape = Case("fresh-escape");
+        Scene(escape, new StartupEngine(), (s, view) => {
+            s.Pulse(Keys.Escape);
+            s.Then(() => Check(!view.WelcomeOpen && Seen(escape, "WelcomeSeen"), "Escape dismisses and remembers the welcome"));
+        });
+
+        foreach (string route in new[] { "ai", "friends", "decks" }) {
+            string path = Case("route-" + route); var engine = new StartupEngine();
+            Scene(path, engine, (s, view) => {
+                s.Click("experience-" + route);
+                s.Then(() => {
+                    Check(!view.WelcomeOpen && view.Match == null && !view.DeckConfirmed, $"The {route} welcome path leaves play and deck confirmation explicit");
+                    Check(route == "friends" ? !view.SoloTab && view.SetupModal.Length == 0 && view.Hits.Any(h => h.Id == "host") && view.Hits.Any(h => h.Id == "join")
+                        : view.SetupModal == "decks" && (route != "ai" || view.SoloTab), $"The {route} welcome path opens its intended setup view");
+                    Check(engine.Mutations.Count == 0, $"Choosing the {route} path sends no implicit engine writes");
+                    Check(Seen(path, "WelcomeSeen") && !Seen(path, "TableGuideSeen"), $"Choosing the {route} path preserves the first-table introduction");
+                    if (route == "friends") s.Capture("02-friends-path");
+                });
+            });
+        }
+
+        string tableProfile = Case("first-table");
+        File.WriteAllText(Path.Combine(tableProfile, "experience.json"), JsonSerializer.Serialize(new { WelcomeSeen = true, TableGuideSeen = false }));
+        var scenario = new InteractionScenarioEngine(); scenario.Present(PresentationSmoke.Example());
+        var initial = scenario.State;
+        Scene(tableProfile, scenario, (s, view) => {
+            s.Then(() => {
+                Check(view.TableGuideOpen && !view.WelcomeOpen, "A first playable table opens its controls introduction over the actual table");
+                Check(!view.Hits.Any(h => h.Card != null || h.Id is "confirm" or "auto" or "hold" or "concede"), "Table introduction removes game, card, and playback hit regions");
+                view.SetAutomatic(true); s.Capture("03-first-table-guide");
+            });
+            s.Wait(1.2);
+            s.Then(() => Check(scenario.Replies.Count == 0 && view.Match?.Decision?.Id == initial.Decision!.Id && view.Automatic, "Auto waits behind the introduction without consuming or replacing the current decision"));
+            s.Pulse(Keys.Space, Keys.F, Keys.C, Keys.LeftControl, Keys.Enter);
+            s.ClickAt(new(1450, 810));
+            s.ClickAt(new(800, 870), right: true);
+            s.Then(() => {
+                Check(view.TableGuideOpen && view.Automatic && !view.Held && view.Overlay.Length == 0 && !view.ChatOpen, "Guide consumes gameplay shortcuts and background pointer input without changing play settings");
+                Check(scenario.Replies.Count == 0 && view.Match?.Decision?.Id == initial.Decision!.Id, "Guide input never submits a gameplay command");
+                view.SetHeld(true);
+            });
+            s.Click("experience-guide-close");
+            s.Then(() => {
+                Check(!view.TableGuideOpen && view.Automatic && view.Held, "Completing the guide preserves Auto and the current-turn hold");
+                Check(Seen(tableProfile, "TableGuideSeen") && view.Match?.Decision?.Id == initial.Decision!.Id, "Guide completion persists without answering the waiting game choice");
+                view.SetAutomatic(false);
+            });
+            s.Click("settings");
+            s.Click("experience-guide-open");
+            s.Then(() => Check(view.TableGuideOpen && view.Overlay == "settings" && !view.Automatic && view.Held, "Settings replays controls while preserving Full control, an existing hold, and the underlying panel"));
+            s.Pulse(Keys.Escape);
+            s.Then(() => {
+                Check(!view.TableGuideOpen && view.Overlay == "settings" && !view.Automatic && view.Held && scenario.Replies.Count == 0, "Escape returns to Settings without changing play policy or making a choice");
+            });
+            s.Click("close-overlay");
+            s.Click("instructions");
+            s.Click("experience-guide-open");
+            s.Then(() => Check(view.TableGuideOpen && view.Overlay == "help", "The current-decision help can also replay table controls"));
+            s.Click("experience-guide-close");
+            s.Then(() => Check(view.Overlay == "help" && view.Match?.Decision?.Id == initial.Decision!.Id && scenario.Replies.Count == 0, "Closing replay returns to current-decision help with the same pending choice"));
+            s.Then(() => { scenario.Finish(); view.Accept(scenario.State); });
+            s.Then(view.OpenTableGuide);
+            s.Then(() => { view.Accept(scenario.State); view.Accept(scenario.State); });
+            s.Then(() => Check(view.TableGuideOpen && view.Overlay == "result", "Repeated finished-match observations do not dismiss a manually opened controls guide"));
+            s.Click("experience-guide-close");
+            s.Then(() => Check(view.Overlay == "result" && scenario.Replies.Count == 0, "Closing controls after a finished match preserves the result screen"));
+        }, initial);
+
+        var returningScenario = new InteractionScenarioEngine(); returningScenario.Present(PresentationSmoke.Example());
+        Scene(tableProfile, returningScenario, (s, view) => s.Then(() => Check(!view.TableGuideOpen && returningScenario.Replies.Count == 0, "Completed table controls stay dismissed on a later application launch")), returningScenario.State);
+
+        foreach (bool savedDeck in new[] { false, true }) {
+            string path = Case(savedDeck ? "legacy-deck" : "legacy-preferences");
+            if (savedDeck) { Directory.CreateDirectory(Path.Combine(path, "decks")); File.WriteAllText(Path.Combine(path, "decks", "existing.dck"), "Existing saved deck"); }
+            else new PlayPreferences { Automatic = false, PlayerName = "Returning player" }.Save(path);
+            Scene(path, new StartupEngine(), (s, view) => s.Then(() => Check(!view.ExperienceOpen && view.Hits.Any(h => h.Id == "change-deck"), $"A legacy profile with {(savedDeck ? "saved decks" : "play preferences")} opens directly at setup")));
+            var legacy = new InteractionScenarioEngine(); legacy.Present(PresentationSmoke.Example());
+            Scene(path, legacy, (s, view) => s.Then(() => {
+                Check(!view.ExperienceOpen && view.Hits.Any(h => h.Id == "settings"), $"A legacy profile with {(savedDeck ? "saved decks" : "play preferences")} gets no forced tour");
+                if (!savedDeck) Check(view.PlayerName == "Returning player" && !view.Automatic, "Onboarding migration preserves existing player name and play preferences");
+                Check(legacy.Replies.Count == 0, "Legacy profile migration consumes no game decisions");
+            }), legacy.State);
+        }
+
+        string visualProfile = Case("fixture"); var visual = new InteractionScenarioEngine();
+        Scene(visualProfile, visual, (s, view) => s.Then(() => Check(!view.ExperienceOpen, "Visual fixtures remain unobscured by first-run onboarding")), visual.State, "controlled-frames");
+        File.WriteAllText(Path.Combine(profile, "onboarding-results.json"), JsonSerializer.Serialize(checks, new JsonSerializerOptions { WriteIndented = true }));
+    }
+
+    private sealed class EmptyArt : ICardArtSource
+    {
+        public Task<byte[]?> LoadAsync(ArtRequest art, CancellationToken cancellationToken) => Task.FromResult<byte[]?>(null);
+        public void Dispose() { }
+    }
+
+    private sealed class Script(TableGame.Probe view) : ITableAutomation
+    {
+        private readonly Queue<Action> steps = [];
+        private MouseState mouse;
+        private KeyboardState keyboard;
+        private Point target;
+        private bool rightClick;
+        private int mousePhase;
+        private double until;
+        public string? ExpectedClick { get; private set; }
+        public bool ClickAccepted { get; set; }
+        public KeyboardState? ReadKeyboard() => keyboard;
+        public MouseState ReadMouse()
+        {
+            if (mousePhase is not (1 or 2)) return mouse;
+            bool down = mousePhase++ == 1;
+            var viewport = view.GraphicsDevice.Viewport;
+            float scale = Math.Min(viewport.Width / 1600f, viewport.Height / (float)view.DesignHeight);
+            mouse = new((int)((viewport.Width - 1600 * scale) / 2 + target.X * scale), (int)((viewport.Height - view.DesignHeight * scale) / 2 + target.Y * scale), 0,
+                down && !rightClick ? ButtonState.Pressed : ButtonState.Released, ButtonState.Released, down && rightClick ? ButtonState.Pressed : ButtonState.Released, ButtonState.Released, ButtonState.Released);
+            return mouse;
+        }
+        internal void Then(Action action) => steps.Enqueue(action);
+        internal void Wait(double seconds) => Then(() => until = view.Now + seconds);
+        internal void Pulse(params Keys[] keys) { Then(() => keyboard = new(keys)); Then(() => keyboard = new()); }
+        internal void Click(string id) => Then(() => {
+            var hit = view.Hits.LastOrDefault(h => h.Id == id) ?? throw new InvalidOperationException("Onboarding is missing the native control " + id);
+            target = hit.Bounds.Center; ExpectedClick = id; ClickAccepted = false; rightClick = false; mousePhase = 1;
+        });
+        internal void ClickAt(Point point, bool right = false) => Then(() => { target = point; ExpectedClick = null; rightClick = right; mousePhase = 1; });
+        internal void Capture(string name) { using var output = File.Create(Path.Combine(view.Profile, name + ".png")); view.Surface.SaveAsPng(output, view.Surface.Width, view.Surface.Height); }
+        public void Frame(Texture2D surface)
+        {
+            if (view.Error.Length > 0) { Capture("failure"); throw new InvalidOperationException(view.Error); }
+            if (view.Now > 30) { Capture("timeout"); throw new TimeoutException("Onboarding smoke did not finish"); }
+            if (mousePhase is 1 or 2) return;
+            if (mousePhase == 3) {
+                if (ExpectedClick != null && !ClickAccepted) { Capture("failure"); throw new InvalidOperationException("Onboarding rejected pointer input for " + ExpectedClick); }
+                mousePhase = 0; ExpectedClick = null;
+            }
+            if (!view.Loaded || view.Busy || view.Now < until) return;
+            if (steps.TryDequeue(out var step)) step(); else view.Exit();
+        }
+    }
+
+    // Startup only: every mutation fails and is recorded so a route can never
+    // quietly create a deck, claim a seat, or launch a match during this test.
+    private sealed class StartupEngine : ICardEngine
+    {
+        internal List<string> Mutations { get; } = [];
+        public string Name => "Onboarding startup scenario";
+        public Task InitializeAsync() => Task.CompletedTask;
+        public Task<IReadOnlyList<DeckSummary>> DecksAsync() => Task.FromResult<IReadOnlyList<DeckSummary>>([]);
+        public Task<IReadOnlyList<DeckPreset>> PresetsAsync() => Task.FromResult<IReadOnlyList<DeckPreset>>([new("starter", "Starter deck", "A deck-picker presentation fixture")]);
+        public Task<GameSnapshot?> ObserveAsync() => Task.FromResult<GameSnapshot?>(null);
+        public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+        private Task Reject(string operation) { Mutations.Add(operation); throw new InvalidOperationException("Onboarding unexpectedly wrote to the engine: " + operation); }
+        private Task<T> Reject<T>(string operation) { Mutations.Add(operation); throw new InvalidOperationException("Onboarding unexpectedly wrote to the engine: " + operation); }
+        public Task<DeckDetails> OpenDeckAsync(string id) => throw new InvalidOperationException("No saved decks exist in this startup fixture");
+        public Task<CatalogPage> SearchCardsAsync(CardQuery query) => Task.FromResult(new CatalogPage(0, 0, []));
+        public Task<DeckSummary> ImportAsync(string name, string text) => Reject<DeckSummary>("import");
+        public Task<DeckSummary> ImportPresetAsync(string id) => Reject<DeckSummary>("import-preset");
+        public Task<DeckDetails> CreateDeckAsync(string name) => Reject<DeckDetails>("create-deck");
+        public Task<DeckDetails> EditDeckAsync(string deckId, long revision, IReadOnlyList<DeckEdit> edits) => Reject<DeckDetails>("edit-deck");
+        public Task<DeckDetails> RenameDeckAsync(string deckId, long revision, string name) => Reject<DeckDetails>("rename-deck");
+        public Task<DeckDetails> DuplicateDeckAsync(string deckId, long revision, string name) => Reject<DeckDetails>("duplicate-deck");
+        public Task<DeckDetails> UndoDeckAsync(string deckId, long revision) => Reject<DeckDetails>("undo-deck");
+        public Task<DeckDetails> RedoDeckAsync(string deckId, long revision) => Reject<DeckDetails>("redo-deck");
+        public Task<DeckDetails> SaveDeckAsync(string deckId, long revision) => Reject<DeckDetails>("save-deck");
+        public Task<string> ExportDeckAsync(string deckId, long revision) => Reject<string>("export-deck");
+        public Task<DeckDetails> SetCommandersAsync(string deckId, long revision, IReadOnlyList<string> cardIds) => Reject<DeckDetails>("set-commanders");
+        public Task<SoloSetup> PrepareSoloAsync(string deckId) => Reject<SoloSetup>("prepare-solo");
+        public Task StartSoloAsync(string deckId, IReadOnlyList<string> opponentIds) => Reject("start-solo");
+        public Task<Lobby> HostAsync(int players, bool automaticPortForwarding) => Reject<Lobby>("host");
+        public Task<Lobby> JoinAsync(string address) => Reject<Lobby>("join");
+        public Task<Lobby> LobbyAsync() => throw new InvalidOperationException("Onboarding unexpectedly requested a connected lobby");
+        public Task SelectDeckAsync(string id) => Reject("select-deck");
+        public Task SetReadyAsync(bool ready) => Reject("ready");
+        public Task StartAsync() => Reject("start");
+        public Task ReturnToLobbyAsync() => Reject("return-to-lobby");
+        public Task LeaveAsync() => Reject("leave");
+        public Task ReplyAsync(DecisionReply reply) => Reject("reply");
+        public Task ConcedeAsync(string gameId) => Reject("concede");
+    }
+}

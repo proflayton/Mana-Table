@@ -4,6 +4,18 @@ The current package script builds **Windows x64** on Windows x64. It bundles
 Electron, a Java runtime, `forge-engine.jar`, and the required Forge resources.
 Other platform packaging is not implemented.
 
+## Native preview packages
+
+`mana-native/package.ps1 -EngineResources <existing-package>/engine` publishes the
+MonoGame client with bundled .NET and Java runtimes, card resources, notices and
+source. By default it uses `forge-api/target/forge-engine.jar`; pass
+`-EngineJar <verified-jar>` to reuse a tested adapter without replacing a local
+build artifact. `-SkipBuild` uses the existing `.tools/native-publish` output.
+Always choose a new `-OutputDirectory` and verify the client and engine hashes.
+Native profiles live in `%LOCALAPPDATA%\ManaTableNative`; use `--profile` with an
+isolated path to review the first-session welcome without changing saved decks
+or play preferences. The workflow below describes the Electron release package.
+
 ## Downloads for testers
 
 Published builds live on [Mana Table Releases](https://github.com/proflayton/Mana-Table/releases).

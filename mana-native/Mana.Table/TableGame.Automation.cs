@@ -62,6 +62,11 @@ internal sealed partial class TableGame
         internal bool LocalMatch => game.localMatch;
         internal bool Automatic => game.automatic;
         internal bool Held => game.held;
+        internal bool WelcomeOpen => game.welcomeOpen;
+        internal bool TableGuideOpen => game.tableGuideOpen;
+        internal bool ExperienceOpen => game.ExperienceOpen;
+        internal void OpenTableGuide() => game.OpenTableGuide();
+        internal void SetHeld(bool value) { game.held = value; game.priority.Reset(); }
         internal Mana.Renderer.ResolutionCue? LastResolution => game.actionFeedback.Last;
         internal void SetAutomatic(bool value) => game.SetAutomatic(value);
         internal List<int> Selections => game.selections;

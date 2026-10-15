@@ -76,9 +76,9 @@ internal sealed partial class TableGame : Game
     private int DesignHeight => match == null ? 1000 : TableLayout.Height;
     private bool TableChoice => match != null && TableChoices.IsDirect(match);
     private bool DecisionModal => !TableChoice && !collapsedDecision && match?.Decision?.Kind is "choice" or "reveal" or "number" or "text" or "allocate";
-    private bool OverlayOpen => overlay.Length > 0 || zoneName != null || DecisionModal;
+    private bool OverlayOpen => ExperienceOpen || overlay.Length > 0 || zoneName != null || DecisionModal;
     private string Scope => match == null ? deckEditor ? DeckScope : LobbyScope : session.Scope;
-    private string ControlScope(string id) => id.StartsWith("chat-") ? ChatScope
+    private string ControlScope(string id) => id.StartsWith("experience-") ? ExperienceScope : id.StartsWith("chat-") ? ChatScope
         : match != null && (id is "auto" or "hold" or "instructions" or "action-details" || id.StartsWith("phase-stop:")) ? match.Id + ":playback" : Scope;
     private bool CurrentHit(Hit hit) => hit.Scope == ControlScope(hit.Id);
     internal sealed record Hit(string Id, string Scope, Rectangle Bounds, Action Action, Card? Card = null, string? Zone = null, int? PlayerId = null, Func<Point, bool>? Shape = null)
@@ -96,6 +96,8 @@ internal sealed partial class TableGame : Game
         this.engine = engine; this.profile = profile; this.capture = capture; this.fixture = fixture; this.initialState = initialState;
         this.artSource = artSource ?? new MagicArtSource(profile);
         preferences = PlayPreferences.Load(profile); automatic = preferences.Automatic;
+        experience = ExperiencePreferences.Load(profile);
+        welcomeOpen = !experience.WelcomeSeen && initialState == null && fixture == null;
         graphics = new(this) { PreferredBackBufferWidth = size?.X ?? 1440, PreferredBackBufferHeight = size?.Y ?? 810, SynchronizeWithVerticalRetrace = true };
         Window.Title = "Mana Table — Commander"; Window.AllowUserResizing = true;
         IsMouseVisible = true; TargetElapsedTime = TimeSpan.FromSeconds(1.0 / 60);
@@ -109,6 +111,7 @@ internal sealed partial class TableGame : Game
     }
     private void ReceiveText(char character)
     {
+        if (ExperienceOpen) return;
         if (chatOpen && chatFocus) { ChatText(character); return; }
         if (match == null && deckEditor) { DeckText(character); return; }
         if (match == null) { SetupText(character); return; }
@@ -136,7 +139,11 @@ internal sealed partial class TableGame : Game
     private void Accept(GameSnapshot? state) => session.Accept(state);
     private void AcceptEffects(GameSnapshot? previous, GameSnapshot? state)
     {
-        if (state?.Id != previous?.Id) ResetTableView();
+        if (state?.Id != previous?.Id) { ResetTableView(); tableGuideOpen = false; }
+        if (state != null && state.Id != previous?.Id && state.Status != "finished" && fixture == null && !experience.TableGuideSeen) {
+            welcomeOpen = false; OpenTableGuide();
+        }
+        if (state?.Status == "finished" && previous?.Status != "finished") tableGuideOpen = false;
         if (state != null) { effects.Observe(previous, state, now); presence.Observe(previous, state, now); playback.Observe(previous, state, now); }
         if (state != null) ObserveActionFeedback(previous, state);
         if (state != null && previous != null && state.Id == previous.Id) {
@@ -177,15 +184,16 @@ internal sealed partial class TableGame : Game
         }
         if (dragSource?.Card is { } heldCard && !VisibleCards().Any(c => SameVisibleCard(c, heldCard))) { dragging = false; dragSource = null; pressed = null; }
         var mouse = Automation?.ReadMouse() ?? Mouse.GetState(); var keys = Automation?.ReadKeyboard() ?? Keyboard.GetState();
-        bool chatKeys = ChatKeys(keys);
+        bool experienceInput = ExperienceOpen;
+        bool chatKeys = experienceInput || ChatKeys(keys);
         if (!chatKeys) { DeckKeys(keys); SetupKeys(keys); }
         var view = GraphicsDevice.Viewport; float scale = Math.Min(view.Width / 1600f, view.Height / (float)DesignHeight);
         pointer = new((int)((mouse.X - (view.Width - 1600 * scale) / 2) / scale), (int)((mouse.Y - (view.Height - DesignHeight * scale) / 2) / scale));
-        if (mouse.RightButton == ButtonState.Pressed && previousMouse.RightButton == ButtonState.Released && hovered is { } card) { pendingPlay = null; Inspect(card); }
+        if (!experienceInput && mouse.RightButton == ButtonState.Pressed && previousMouse.RightButton == ButtonState.Released && hovered is { } card) { pendingPlay = null; Inspect(card); }
         if (mouse.LeftButton == ButtonState.Pressed && previousMouse.LeftButton == ButtonState.Released) {
             pressed = HitAt(pointer); pressPoint = pointer;
-            if (chatOpen && !ChatBounds.Contains(pointer)) chatFocus = false;
-            if (match == null && deckEditor && pressed?.Id is not ("deck-search-library" or "deck-search-deck" or "deck-clear-library" or "deck-clear-deck")) { deckTextFocus = ""; textFocus = false; }
+            if (!experienceInput && chatOpen && !ChatBounds.Contains(pointer)) chatFocus = false;
+            if (!experienceInput && match == null && deckEditor && pressed?.Id is not ("deck-search-library" or "deck-search-deck" or "deck-clear-library" or "deck-clear-deck")) { deckTextFocus = ""; textFocus = false; }
             if (pendingPlay is { } pending && (pressed?.Id != pending.Id || pressed.Scope != pending.Scope)) pendingPlay = null;
             dragSource = !OverlayOpen && pressed?.Card is { } source && IsCardActionable(source) ? pressed : null; dragging = false;
         }
@@ -195,6 +203,9 @@ internal sealed partial class TableGame : Game
             if (dragging) { bool accepted = DropCard(hit); if (Automation != null) Automation.ClickAccepted = accepted; }
             else if (hit != null && pressed?.Id == hit.Id && pressed.Scope == hit.Scope && CurrentHit(hit)) { ActivateHit(hit); if (Automation != null && hit.Id == Automation.ExpectedClick) Automation.ClickAccepted = true; }
             pressed = null; dragSource = null; dragging = false;
+        }
+        if (experienceInput && keys.IsKeyDown(Keys.Escape) && previousKeys.IsKeyUp(Keys.Escape)) {
+            if (tableGuideOpen) CloseTableGuide(); else DismissWelcome();
         }
         if (!chatKeys && keys.IsKeyDown(Keys.Escape) && previousKeys.IsKeyUp(Keys.Escape)) {
             dragging = false; dragSource = null; pressed = null; pendingPlay = null; selectedCombat = null; textFocus = false;
@@ -208,9 +219,10 @@ internal sealed partial class TableGame : Game
         if (!chatKeys && !textFocus && keys.IsKeyDown(Keys.C) && previousKeys.IsKeyUp(Keys.C) && HasCombat && (overlay.Length == 0 || overlay == "combat")) { if (overlay == "combat") overlay = ""; else OpenCombat(); }
         if (!chatKeys && !textFocus && keys.IsKeyDown(Keys.F) && previousKeys.IsKeyUp(Keys.F)) SetAutomatic(!automatic);
         if (!chatKeys && !textFocus && keys.IsKeyDown(Keys.LeftControl) && previousKeys.IsKeyUp(Keys.LeftControl)) { held = !held; priority.Reset(); }
+        if (!experienceInput && !chatKeys && !textFocus && keys.IsKeyDown(Keys.F1) && previousKeys.IsKeyUp(Keys.F1)) OpenTableGuide();
         if (keys.IsKeyDown(Keys.F11) && previousKeys.IsKeyUp(Keys.F11)) graphics.ToggleFullScreen();
         int wheel = mouse.ScrollWheelValue - previousMouse.ScrollWheelValue;
-        if (wheel != 0) Scroll(Math.Sign(wheel));
+        if (!experienceInput && wheel != 0) Scroll(Math.Sign(wheel));
         previousMouse = mouse; previousKeys = keys;
         // Give a ready pass precedence over starting another observation. Use this
         // update's pointer position so entering a card pauses Auto before Draw.
@@ -263,7 +275,8 @@ internal sealed partial class TableGame : Game
         if (match == null) {
             canvas.Gradient(new(0, 0, 1600, 1000), new(24, 31, 42), new(12, 17, 24));
             canvas.Text("MANA TABLE", 28, 19, Gold, 1.2f, bold: true); canvas.Text("COMMANDER", 218, 25, Muted, .75f);
-            canvas.Text(busy ? "Working…" : message, 435, 25, Ink, .82f, 740, 1); DrawLobby();
+            canvas.Text(busy ? "Working…" : message, 435, 25, Ink, .82f, 740, 1);
+            if (welcomeOpen) DrawWelcome(); else DrawLobby();
         } else {
             tableScene = TableScene.Build(match, pages, handPage, pointer, null, dragging ? dragSource?.Card is { } held ? CardViews.Identity(held) : null : null, false, CardPresentation.IsResource);
             DrawArena();
@@ -273,12 +286,13 @@ internal sealed partial class TableGame : Game
             canvas.Text(notice, 440, 76, Ink, .75f, 719, 2);
             hits.Add(new("notice", Scope, new(427, 64, 746, 60), () => { overlay = "history"; historyPage = 0; noticeUntil = 0; }));
         }
-        DrawSocial();
+        if (!ExperienceOpen) DrawSocial();
         if (!string.IsNullOrWhiteSpace(error)) {
             int y = match == null ? 942 : 59;
             canvas.Panel(new(270, y, 1060, 46), new(71, 37, 38), Red, 7); canvas.Text(error, 284, y + 9, Ink, .76f, 980, 1);
             Button("dismiss", "×", 1280, y + 3, 42, () => error = "", height: 40);
         }
+        if (tableGuideOpen) DrawTableGuide();
         motion.End(); canvas.End(); GraphicsDevice.SetRenderTarget(null); GraphicsDevice.Clear(Color.Black);
         Automation?.Frame(surface);
         var view = GraphicsDevice.Viewport; float scale = Math.Min(view.Width / 1600f, view.Height / (float)DesignHeight);

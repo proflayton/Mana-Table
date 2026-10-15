@@ -90,6 +90,7 @@ internal sealed partial class TableGame
         }
         Button("motion", preferences.ReducedMotion ? "Reduced motion: On" : "Reduced motion: Off", 805, 455, 553, () => { preferences = preferences with { ReducedMotion = !preferences.ReducedMotion }; SavePreferences(); }, accent: preferences.ReducedMotion, height: 45);
         Button("sound", preferences.Sounds ? "Sound cues: On" : "Sound cues: Off", 805, 512, 553, () => { preferences = preferences with { Sounds = !preferences.Sounds }; SavePreferences(); }, accent: preferences.Sounds, height: 45);
+        Button("experience-guide-open", "Table guide  /  F1", 202, 519, 526, OpenTableGuide, height: 42);
         canvas.Line(new(201, 607), new(1370, 607), Muted * .25f);
         canvas.Text("Space  Continue / confirm     F  Auto / full control     Ctrl  Hold this turn\nC  Review combat     Escape  Cancel a drag / close a panel     F11  Fullscreen\nRight-click  Inspect a card     Wheel  Browse crowded ranks or a long hand", 203, 632, Ink, .78f, 1150, 5);
     }
@@ -145,6 +146,7 @@ internal sealed partial class TableGame
         canvas.Text(text[inspectPage], 211, 200, Ink, .93f, 1155, 21);
         Button("help-prev", "Previous", 211, 736, 144, () => inspectPage--, inspectPage > 0);
         Button("help-next", "More", 368, 736, 144, () => inspectPage++, inspectPage + 1 < text.Length);
+        Button("experience-guide-open", "Table guide  /  F1", 1060, 736, 310, OpenTableGuide);
     }
     private void DrawZone()
     {

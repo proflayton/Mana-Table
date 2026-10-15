@@ -31,6 +31,15 @@ remain scoped capabilities, separate from opaque card presentation identities.
 
 ## Native client boundaries
 
+The native first session presents AI, friends and deck entry points before setup.
+These routes reuse the existing deck picker, review and readiness gates; choosing
+a route never imports a deck, hosts a table or readies a seat. `experience.json`
+stores welcome and table-guide dismissal independently of play preferences.
+Profiles with existing play preferences or saved decks skip the forced introduction.
+The guide is also available from setup, Settings, decision help and F1. It has
+its own hit scope and blocks gameplay input and Auto while observations continue.
+Opening or closing it preserves the underlying prompt, panel and priority policy.
+
 | Project | Responsibility |
 | --- | --- |
 | `Mana.Contracts` | Catalog, setup and match-connection interfaces; typed Commander snapshots and commands; visibility enumeration and art-source contract |

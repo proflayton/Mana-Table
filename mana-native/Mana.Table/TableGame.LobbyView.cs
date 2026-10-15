@@ -28,12 +28,14 @@ internal sealed partial class TableGame
         if (Connected) DrawFriendsLobby();
         else if (soloTab) DrawSoloLobby();
         else DrawFriendsWelcome();
-        string guide = !loaded ? "Loading your card library..." : selectedDeck == null ? "Choose a deck or build something new. Your collection is available from any table."
+        string guide = !loaded ? "Loading your card library..." : selectedDeck == null ? "Choose a saved deck, try a precon, or build something new."
             : !DeckReady ? "This deck needs attention. Open the builder to finish it, then return here to confirm."
             : !DeckConfirmed ? "Review your commander and deck before confirming. You can keep building from the review."
             : Connected ? LocalSeat?.Ready == true ? "You are ready. Opening the builder or choosing another deck makes you unready." : "Your deck is confirmed. Ready up when you are happy with your list."
             : soloTab ? "Your deck is confirmed. Choose the three decks you want to face, then start playing." : "Your deck is confirmed. Host a table or join your friends.";
-        canvas.Text(guide, 54, 925, Muted, .78f, 1490, 2);
+        canvas.Text(guide, 54, 925, Muted, .78f, 1015, 2);
+        if (!Connected) Button("experience-home", "Home", 1115, 920, 160, OpenWelcome, loaded && !busy, height: 38);
+        Button("experience-guide-open", "Table guide  /  F1", 1290, 920, 264, OpenTableGuide, height: 38);
         if (setupModal.Length > 0) DrawSetupModal();
     }
     private void DrawLobbyDeck()

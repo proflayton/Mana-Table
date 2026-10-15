@@ -1,7 +1,8 @@
 param(
     [Parameter(Mandatory = $true)][string]$EngineResources,
     [string]$OutputDirectory,
-    [switch]$SkipBuild
+    [switch]$SkipBuild,
+    [string]$EngineJar
 )
 $ErrorActionPreference = 'Stop'
 $repository = Split-Path -Parent $PSScriptRoot
@@ -11,7 +12,8 @@ if (Test-Path -LiteralPath $OutputDirectory) { throw 'Use a new output directory
 foreach ($required in @('forge-res', 'runtime/bin/java.exe', 'forge-engine.jar')) {
     if (-not (Test-Path -LiteralPath (Join-Path $EngineResources $required))) { throw "Missing engine resource: $required" }
 }
-$engineJar = Join-Path $repository 'forge-api/target/forge-engine.jar'
+if (-not $EngineJar) { $EngineJar = Join-Path $repository 'forge-api/target/forge-engine.jar' }
+$engineJar = [IO.Path]::GetFullPath($EngineJar)
 if (-not (Test-Path -LiteralPath $engineJar)) { throw 'Build the Forge adapter with mvn -pl forge-api -am verify first.' }
 New-Item -ItemType Directory -Path $OutputDirectory | Out-Null
 $published = Join-Path $repository '.tools/native-publish'

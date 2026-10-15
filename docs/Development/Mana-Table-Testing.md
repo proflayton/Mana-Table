@@ -27,6 +27,22 @@ keep real hit testing enabled instead of bypassing it with forced clicks.
 
 ## Run a focused regression
 
+### Native first session
+
+```powershell
+dotnet build mana-native/Mana.Table.Tests/Mana.Table.Tests.csproj -c Release
+mana-native/Mana.Table.Tests/bin/Release/net9.0-windows/Mana.Table.Tests.exe --smoke-onboarding --profile <fresh-test-profile> --size 1280x720
+```
+
+The first-session regression uses production input and hit testing with a
+deterministic engine. It checks welcome routing without implicit deck writes or
+network actions, independent welcome/guide persistence, existing-profile
+migration, first-table orientation, and Help replay. While the guide is open,
+gameplay clicks, shortcuts, text entry and Auto must leave the decision unchanged;
+closing the guide preserves Auto and Hold. Run at 1280x720 and 1200x900 and review
+the captures and `onboarding-results.json`. Other native UI scenarios seed the
+completed introduction so they continue to exercise their intended controls.
+
 ### Native lobby and deck confirmation
 
 ```powershell

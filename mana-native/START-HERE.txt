@@ -4,6 +4,17 @@ Extract the entire ZIP, then open ManaTable.exe. Windows x64 only for this build
 The .NET and Java runtimes are bundled. First startup loads the card catalog.
 Keep the engine folder next to the executable. Do not run directly inside the ZIP.
 
+YOUR FIRST SESSION
+New profiles start with Play with AI, Play with friends, and Your decks.
+Choose a path, then review and confirm your deck before starting a game.
+Continue to setup skips the welcome. Home in setup brings it back.
+Your first table opens a short, skippable guide to Mana Table's controls.
+Your Auto pauses while you read; other players can continue their turns.
+Reopen the guide from Table guide in setup, Settings or the decision help,
+or press F1. Closing it preserves your Auto/Full control and Hold choices.
+The welcome and guide remember dismissal separately. Existing profiles keep
+their familiar setup screen, with the guide available whenever they need it.
+
 PLAY SOLO AGAINST AI
 1. Under Play with AI, select Choose a deck (or Change deck). Pick a saved list,
    try a precon, import a list, or build a new deck. Imported lists open the builder.
