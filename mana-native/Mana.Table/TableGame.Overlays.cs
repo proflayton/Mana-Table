@@ -79,10 +79,10 @@ internal sealed partial class TableGame
     {
         ModalFrame("Play controls", () => { overlay = ""; textFocus = false; });
         canvas.Text("PRIORITY", 201, 196, Gold, .65f, 600, 1, true);
-        Button("settings-auto", "Auto", 202, 231, 256, () => SetAutomatic(true), accent: automatic, height: 48);
-        Button("settings-manual", "Full control", 472, 231, 256, () => SetAutomatic(false), accent: !automatic, height: 48);
+        Button("settings-auto", "Auto", 202, 231, 256, () => UseAutomaticControl(true), accent: automatic, height: 48);
+        Button("settings-manual", "Full control", 472, 231, 256, () => UseAutomaticControl(false), accent: !automatic, height: 48);
         canvas.Text("Auto lets each visible action play out before passing when you have no response. Lands, affordable commanders, required choices, attacks, and legal blocks still wait for you.", 202, 298, Muted, .81f, 544, 5);
-        Button("settings-hold", held ? "Held for this turn" : "Hold priority this turn", 202, 445, 526, () => { held = !held; priority.Reset(); }, accent: held, height: 45);
+        Button("settings-hold", held ? "Held for this turn" : "Hold priority this turn", 202, 445, 526, ToggleHoldControl, accent: held, height: 45);
         canvas.Text("Always stop at these steps on your turn", 805, 196, Gold, .76f, 551, 1, true);
         for (int i = 0; i < TurnGuide.Stops.Length; i++) {
             var stop = TurnGuide.Stops[i]; bool selected = preferences.Stops.Contains(stop.Key);
@@ -90,7 +90,7 @@ internal sealed partial class TableGame
         }
         Button("motion", preferences.ReducedMotion ? "Reduced motion: On" : "Reduced motion: Off", 805, 455, 553, () => { preferences = preferences with { ReducedMotion = !preferences.ReducedMotion }; SavePreferences(); }, accent: preferences.ReducedMotion, height: 45);
         Button("sound", preferences.Sounds ? "Sound cues: On" : "Sound cues: Off", 805, 512, 553, () => { preferences = preferences with { Sounds = !preferences.Sounds }; SavePreferences(); }, accent: preferences.Sounds, height: 45);
-        Button("experience-guide-open", "Table guide  /  F1", 202, 519, 526, OpenTableGuide, height: 42);
+        Button("guidance-reset", "Show control hints again", 202, 519, 526, ResetControlHints, height: 42);
         canvas.Line(new(201, 607), new(1370, 607), Muted * .25f);
         canvas.Text("Space  Continue / confirm     F  Auto / full control     Ctrl  Hold this turn\nC  Review combat     Escape  Cancel a drag / close a panel     F11  Fullscreen\nRight-click  Inspect a card     Wheel  Browse crowded ranks or a long hand", 203, 632, Ink, .78f, 1150, 5);
     }
@@ -146,7 +146,7 @@ internal sealed partial class TableGame
         canvas.Text(text[inspectPage], 211, 200, Ink, .93f, 1155, 21);
         Button("help-prev", "Previous", 211, 736, 144, () => inspectPage--, inspectPage > 0);
         Button("help-next", "More", 368, 736, 144, () => inspectPage++, inspectPage + 1 < text.Length);
-        Button("experience-guide-open", "Table guide  /  F1", 1060, 736, 310, OpenTableGuide);
+        Button("guidance-reset", "Show control hints again", 1060, 736, 310, ResetControlHints);
     }
     private void DrawZone()
     {

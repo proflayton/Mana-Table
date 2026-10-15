@@ -61,7 +61,11 @@ internal sealed partial class TableGame
     {
         bool opponent = pickerSeat >= 0;
         canvas.Text(opponent ? $"Choose AI opponent {pickerSeat + 1}'s deck" : "Find your next deck", 202, 179, Ink, 1.4f, 1060, 1, true);
-        canvas.Text(opponent ? "Build the matchup you want. Each AI seat has its own deck choice." : "Choose a list to review, or head into the builder to make it your own.", 204, 234, Muted, .82f, 1110, 1);
+        string pickerHint = opponent ? "Choose this opponent's deck. The other seats stay the same."
+            : decks.Count == 0 ? "New here? Try a precon for a complete Commander deck."
+            : pickerPresets ? "Choose a precon to review before confirming it for the table."
+            : "Choose a saved list, or try a precon for a ready-made deck.";
+        canvas.Text(pickerHint, 204, 234, Muted, .82f, 1110, 1);
         if (!opponent) {
             Button("picker-saved", $"Your decks ({decks.Count})", 204, 278, 255, () => { pickerPresets = false; deckPage = 0; }, !busy, !pickerPresets, 40);
             Button("picker-presets", "Try a precon", 471, 278, 220, () => { pickerPresets = true; deckPage = 0; }, !busy, pickerPresets, 40);
@@ -91,6 +95,9 @@ internal sealed partial class TableGame
             Button("import", "Import deck file", 204, 820, 247, ImportFile, !busy, height: 44);
             Button("paste", "Paste deck list", 463, 820, 247, ImportClipboard, !busy, height: 44);
             Button("picker-new", "+ Build a new deck", 1078, 820, 316, () => NewDeck(), !busy, true, 44);
+            canvas.Text("A deck file from your computer.", 209, 874, Muted, .59f, 240, 1);
+            canvas.Text("Use a copied deck list.", 468, 874, Muted, .59f, 240, 1);
+            canvas.Text("Start with an empty deck.", 1083, 874, Muted, .59f, 306, 1);
         }
     }
     private DeckEntry[] ReviewRows() => selectedDeckDetails?.Entries.Where(e => (reviewSection.Length == 0 || e.Section == reviewSection)

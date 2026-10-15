@@ -28,14 +28,7 @@ internal sealed partial class TableGame
         if (Connected) DrawFriendsLobby();
         else if (soloTab) DrawSoloLobby();
         else DrawFriendsWelcome();
-        string guide = !loaded ? "Loading your card library..." : selectedDeck == null ? "Choose a saved deck, try a precon, or build something new."
-            : !DeckReady ? "This deck needs attention. Open the builder to finish it, then return here to confirm."
-            : !DeckConfirmed ? "Review your commander and deck before confirming. You can keep building from the review."
-            : Connected ? LocalSeat?.Ready == true ? "You are ready. Opening the builder or choosing another deck makes you unready." : "Your deck is confirmed. Ready up when you are happy with your list."
-            : soloTab ? "Your deck is confirmed. Choose the three decks you want to face, then start playing." : "Your deck is confirmed. Host a table or join your friends.";
-        canvas.Text(guide, 54, 925, Muted, .78f, 1015, 2);
         if (!Connected) Button("experience-home", "Home", 1115, 920, 160, OpenWelcome, loaded && !busy, height: 38);
-        Button("experience-guide-open", "Table guide  /  F1", 1290, 920, 264, OpenTableGuide, height: 38);
         if (setupModal.Length > 0) DrawSetupModal();
     }
     private void DrawLobbyDeck()
@@ -48,7 +41,7 @@ internal sealed partial class TableGame
             canvas.Rounded(new(251, 414, 66, 94), new(35, 55, 68), 8);
             canvas.CenterText("+", new(251, 413, 66, 94), Blue, 2);
             canvas.Text("Make it your table.", 81, 585, Ink, 1.15f, 406, 1, true);
-            canvas.Text("Bring a saved list, try a precon, or build around your favorite commander.", 81, 628, Muted, .86f, 405, 4);
+            canvas.Text("Try a precon, import a list, or build your own.", 81, 707, Muted, .86f, 405, 2);
             Button("change-deck", "Choose a deck", 64, 780, 440, OpenDeckPicker, loaded && !busy, true, 54);
             return;
         }
@@ -72,7 +65,12 @@ internal sealed partial class TableGame
         Button("change-deck", "Change deck", 64, 739, 213, OpenDeckPicker, !busy, height: 40);
         Button("edit-deck", "Deck builder", 289, 739, 215, OpenDeckEditor, !busy, height: 40);
         Button("review-deck", DeckConfirmed ? "Review confirmed deck" : "Review & confirm", 64, 795, 440, ReviewDeck, !busy, !DeckConfirmed, 50);
-        canvas.Text(deck.SaveError.Length > 0 ? "Save failed — open builder to retry." : "Changes save automatically in the deck builder.", 67, 859, deck.SaveError.Length > 0 ? Red : Muted, .59f, 433, 1);
+        string deckHint = deck.SaveError.Length > 0 ? "Save failed. Open Deck builder to retry."
+            : !DeckReady ? "Finish this list in Deck builder, then review it."
+            : !DeckConfirmed ? "Review your list, then select Confirm deck."
+            : Connected ? "Editing or changing decks clears Ready."
+            : "Editing or changing decks means confirming again.";
+        canvas.Text(deckHint, 67, 856, deck.SaveError.Length > 0 ? Red : Muted, .68f, 433, 2);
     }
     private void DrawLobbySeat(int index, string name, string deckName, string detail, string status, bool ready, bool local, bool open = false)
     {
@@ -101,9 +99,13 @@ internal sealed partial class TableGame
             Button("ai-prev:" + i, "<", x + 343, y + 143, 43, () => soloChoices[seat] = (soloChoices[seat] + soloSetup!.Opponents.Length - 1) % soloSetup.Opponents.Length, !busy && opponent != null, height: 30);
             Button("ai-next:" + i, ">", x + 395, y + 143, 43, () => soloChoices[seat] = (soloChoices[seat] + 1) % soloSetup!.Opponents.Length, !busy && opponent != null, height: 30);
         }
-        canvas.Text(DeckConfirmed ? "All four seats are set." : "Confirm your deck to unlock the table.", 590, 790, DeckConfirmed ? ReadyColor : Muted, .85f, 420, 2);
+        canvas.Text(DeckConfirmed ? "Your table is ready." : "Waiting for your deck.", 590, 800, DeckConfirmed ? ReadyColor : Muted, .85f, 420, 2);
         Button("start-solo", "Start Commander", 1070, 790, 456, StartSolo, !busy && DeckConfirmed && soloSetup?.DeckId == selectedDeck?.Id, true, 54);
-        canvas.Text("No invite or connection needed. You can change AI decks before every game.", 590, 864, Muted, .65f, 930, 1);
+        string startHint = selectedDeck == null ? "Choose a deck on the left to get started."
+            : !DeckReady ? "Open Deck builder on the left to finish your list."
+            : !DeckConfirmed ? "Select Review & confirm under your deck first."
+            : "Start now. Changing the AI decks above is optional.";
+        canvas.Text(startHint, 1072, 855, Muted, .68f, 452, 2);
     }
     private void DrawFriendsWelcome()
     {
@@ -136,9 +138,17 @@ internal sealed partial class TableGame
         }
         bool localReady = LocalSeat?.Ready == true;
         Button(localReady ? "unready" : "ready", localReady ? "Not ready" : "Ready up", 586, 790, 250, () => SetLobbyReady(!localReady), !busy && (localReady || DeckConfirmed), !localReady, 54);
-        canvas.Text(!DeckConfirmed ? "Confirm your deck first." : localReady ? "Your seat is ready." : "Your deck is confirmed.", 853, 800, localReady ? ReadyColor : Muted, .76f, 200, 2);
         Button("start", state.Mode == "hosting" ? "Start Commander" : "Waiting for host", 1070, 790, 456, StartFriends, !busy && DeckConfirmed && localReady && state.CanStart, true, 54);
-        canvas.Text(state.CanStart ? "Everyone is ready. Your table can begin." : state.StartProblem ?? "Waiting for everyone to be ready.", 590, 861, state.CanStart ? ReadyColor : Muted, .67f, 930, 2);
+        string readyHint = !DeckConfirmed ? "Review & confirm your deck first, then Ready up."
+            : localReady ? "You're ready. Editing your deck makes you unready."
+            : "Your deck is confirmed. Ready up to join this game.";
+        canvas.Text(readyHint, 590, 855, localReady ? ReadyColor : Muted, .67f, 460, 2);
+        int missing = Math.Max(0, state.Seats.Length - joined);
+        string startHint = state.CanStart ? state.Mode == "hosting" ? "Everyone is ready. Start when you're set." : "Everyone is ready. Your host can start."
+            : !string.IsNullOrWhiteSpace(state.StartProblem) ? state.StartProblem
+            : missing > 0 ? $"Waiting for {missing} more player{(missing == 1 ? "" : "s")}."
+            : state.Mode == "hosting" ? "Waiting for all four seats to ready up." : "Your host starts once all four seats are ready.";
+        canvas.Text(startHint, 1072, 855, state.CanStart ? ReadyColor : Muted, .67f, 452, 2);
     }
     private void DrawSetupModal()
     {
@@ -160,7 +170,7 @@ internal sealed partial class TableGame
         canvas.Text(reviewList ? deck.Name : "Bring this deck to the table?", 202, 179, Ink, 1.4f, 1020, 1, true);
         Button("review-overview", "Deck overview", 204, 232, 184, () => { reviewList = false; textFocus = false; }, !busy, !reviewList, 36);
         Button("review-list", "Full deck list", 400, 232, 184, () => { reviewList = true; textFocus = false; }, !busy, reviewList, 36);
-        canvas.Text(DeckConfirmed ? "Confirmed · Browsing preserves your ready status." : "Review your list, then confirm your deck.", 628, 244, DeckConfirmed ? ReadyColor : Muted, .73f, 740, 1);
+        canvas.Text(DeckConfirmed ? "Confirmed. Browsing preserves your ready status." : "Confirm selects this saved list for the game.", 628, 244, DeckConfirmed ? ReadyColor : Muted, .73f, 740, 1);
         if (reviewList) DrawLobbyDeckList();
         else {
             var leaders = deck.Entries.Where(e => e.Section == "Commander").ToArray();
@@ -175,13 +185,18 @@ internal sealed partial class TableGame
             canvas.Text($"{main + commander} / 100 cards    ·    {main} main + {commander} commander    ·    {side} sideboard", 628, 473, Ink, .81f, 738, 2);
             LobbyPill(DeckReady ? "DECK CHECKS PASSED" : "NEEDS ATTENTION", 626, 538, 290, DeckReady ? ReadyColor : Gold);
             string problem = deck.SaveError.Length > 0 ? "Could not save this deck. Open the builder and retry saving.\n" + deck.SaveError : deck.Problem;
-            canvas.Text(DeckReady ? "Your saved list passes the engine's Commander checks.\nEditing or changing decks clears confirmation and readiness." : problem.Length > 0 ? problem : "Choose a commander in the deck builder.", 628, 587, DeckReady ? Muted : Gold, .8f, 739, 7);
+            canvas.Text(DeckReady ? "Your saved list passes Commander checks.\nReview again after editing or changing decks." : problem.Length > 0 ? problem : "Choose a commander in the deck builder.", 628, 587, DeckReady ? Muted : Gold, .8f, 739, 7);
             if (DeckReady) DrawDeckComposition(deck, 628, 679, 739);
         }
         canvas.Line(new(204, 808), new(1394, 808), LobbyTrim);
         Button("confirm-change", "Choose another deck", 204, 817, 280, OpenDeckPicker, !busy, height: 48);
         Button("confirm-edit", reviewList && reviewCard != null ? "Edit this card in builder" : "Open deck builder", 638, 817, 280, () => OpenDeckEditorAt(reviewList ? reviewCard : null), !busy, !DeckReady, 48);
         Button("confirm-deck", busy ? "Confirming..." : DeckConfirmed ? "Return to lobby" : "Confirm deck", 932, 817, 462, ConfirmDeck, !busy && DeckReady, DeckReady, 48);
+        string confirmHint = !DeckReady ? "Fix the issues above in Deck builder first."
+            : DeckConfirmed ? "Browsing this list keeps it confirmed."
+            : Connected ? "Confirm chooses your deck. Ready up next in the lobby."
+            : "Confirm this list to enable Start Commander.";
+        canvas.Text(confirmHint, 936, 873, Muted, .61f, 454, 1);
     }
     private void DrawJoinLobby()
     {

@@ -12,6 +12,8 @@ internal sealed class InteractionScenarioEngine : ICardEngine
     private int revision;
     public string Name => "Presentation scenario";
     public List<DecisionReply> Replies { get; } = [];
+    internal bool RejectNextReply { get; set; }
+    internal int RejectedReplies { get; private set; }
     public InteractionScenarioEngine()
     {
         Card Creature(string id, string name = "Llanowar Elves") => new() { VisualId = id, CombatId = id, Name = name, Type = "Creature", Power = 2, Toughness = 2 };
@@ -43,6 +45,7 @@ internal sealed class InteractionScenarioEngine : ICardEngine
     {
         if (reply.GameId != state.Id || reply.DecisionId != state.Decision?.Id)
             throw new InvalidOperationException($"Scenario received stale {reply.Action}: {reply.DecisionId}, current {state.Decision?.Id}");
+        if (RejectNextReply) { RejectNextReply = false; RejectedReplies++; throw new InvalidOperationException("Controlled rejected play"); }
         Card Find(string? key) => state.Players.SelectMany(p => p.Zones).SelectMany(z => z.Cards).Single(c => c.Key == key);
         if (reply.Action == ReplyAction.AssignAttack) {
             var card = Find(reply.Attacker);
@@ -69,9 +72,10 @@ internal sealed class InteractionScenarioEngine : ICardEngine
                     state = state with { Decision = new() { Kind = "choice", Title = "Activate " + card.Name, Context = "playAbility", SourceCard = card,
                         SourceZone = "Battlefield", Min = 0, Max = 1, Choices = [new(0, "Tap: Add one green mana", null)] } };
                 } else {
-                    if (!state.Viewer.Zone("Hand").Cards.Contains(card)) throw new InvalidOperationException("Unexpected scenario source " + card.VisualId);
+                    string source = state.Viewer.Zone("Hand").Cards.Contains(card) ? "Hand"
+                        : state.Viewer.Zone("Command").Cards.Contains(card) ? "Command" : throw new InvalidOperationException("Unexpected scenario source " + card.VisualId);
                     state = state with { Players = state.Players.Select(p => p.Id != state.ViewerId ? p : p with { Zones = p.Zones.Select(z =>
-                    z.Name == "Hand" ? z with { Count = z.Count - 1, Cards = z.Cards.Where(c => c != card).ToArray() }
+                    z.Name == source ? z with { Count = z.Count - 1, Cards = z.Cards.Where(c => c != card).ToArray() }
                     : z.Name == "Battlefield" ? z with { Count = z.Count + 1, Cards = [.. z.Cards, card] } : z).ToArray() }).ToArray() };
                 }
             }

@@ -13,13 +13,14 @@ Opening a deck, confirming it, or connecting to a table shows visible progress.
 Entering a game uses the same table imagery before revealing the battlefield.
 Deck edits show Saving/Changes saved beside the builder without covering it.
 Failed actions explain the problem and offer Back; startup failures offer Retry.
-Your first table opens a short, skippable guide to Mana Table's controls.
-Your Auto pauses while you read; other players can continue their turns.
-Reopen the guide from Table guide in setup, Settings or the decision help,
-or press F1. Closing it preserves your Auto/Full control and Hold choices.
-The menu remembers that you have visited; the controls guide remembers dismissal
-separately. Existing profiles keep their decks, name and play preferences, and
-skip the forced controls tour. The main menu appears on returning launches too.
+Short hints appear beside deck choices, Confirm, Ready and Start as needed.
+At the table, a playable card explains its gesture; choosing an attacker or
+blocker changes the hint to the next target. Hover Auto or Hold for its meaning.
+Hints do not intercept clicks or pause Auto. They retire after a successful use
+of that control, and remember it across launches. A failed action keeps its hint.
+Settings > Show control hints again restores reminders without changing play.
+F1 offers brief help for the current moment. Games open directly at your decision,
+without a controls tour. Existing decks, names and play preferences are retained.
 
 PLAY SOLO AGAINST AI
 1. Under Play with AI, select Choose a deck (or Change deck). Pick a saved list,

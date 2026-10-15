@@ -107,12 +107,6 @@ internal sealed partial class TableGame
             canvas.Panel(badge, new(15, 41, 54), ActionAccent, 4);
             canvas.CenterText("ACTIVATE", badge, ActionAccent, .46f, true);
         }
-        if (zone == "Battlefield" && focus && pose.Size.X >= 300) {
-            var hint = new Rectangle(Math.Clamp(pose.Bounds.X, 8, 1174), Math.Min(843, pose.Bounds.Bottom + 6), 418, 43);
-            canvas.Panel(hint, new(16, 25, 34), legal ? ActionAccent : Muted, 5);
-            canvas.CenterText(CardActions.Hint(match!, card), new(hint.X + 5, hint.Y + 2, 408, 21), legal ? ActionAccent : Ink, .64f, true);
-            canvas.CenterText("Right-click for rules and ability controls", new(hint.X + 5, hint.Y + 22, 408, 19), Muted, .53f);
-        }
         if (choice != null && selected) {
             var badge = new Rectangle((int)pose.Center.X - 39, pose.Bounds.Top + 8, 78, 24);
             canvas.Panel(badge, new(34, 48, 49), Gold, 4);
@@ -269,8 +263,8 @@ internal sealed partial class TableGame
             Button("cancel", d.Intent == DecisionIntent.Priority && d.Cancel == "End Turn" ? "Pass turn" : d.Cancel, 1459, 852, 103, () => Send(new(state.Id, d.Id, ReplyAction.Cancel)), d.CancelEnabled && !busy, height: 27);
         } else if (d != null) Button("open-decision", "Make a choice", 1266, 799, 296, () => collapsedDecision = false, !busy, true, 47);
         else { canvas.CenterText(state.Status == "starting" ? "Starting game…" : "Resolving…", new(1266, 797, 296, 45), Muted, .9f); }
-        Button("auto", automatic ? "Auto" : "Full control", 1266, 852, 111, () => SetAutomatic(!automatic), true, automatic, 27);
-        Button("hold", held ? "Held" : "Hold", 1383, 852, 70, () => { held = !held; priority.Reset(); }, true, held, 27);
+        Button("auto", automatic ? "Auto" : "Full control", 1266, 852, 111, () => UseAutomaticControl(!automatic), true, automatic, 27);
+        Button("hold", held ? "Held" : "Hold", 1383, 852, 70, ToggleHoldControl, true, held, 27);
         DrawPhaseStrip();
     }
     private void DrawPhaseStrip()

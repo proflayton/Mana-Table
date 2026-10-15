@@ -54,14 +54,12 @@ internal static class OnboardingSmoke
             });
             s.Click("experience-home");
             s.Then(() => Check(view.WelcomeOpen, "The setup screen can reopen the welcome after dismissal"));
-            s.Click("experience-guide");
-            s.Then(() => Check(view.TableGuideOpen && view.WelcomeOpen, "Table controls can be reviewed from the welcome before playing"));
-            s.Click("experience-guide-close");
-            s.Then(() => Check(!view.TableGuideOpen && view.WelcomeOpen, "Closing controls returns to the welcome that opened them"));
-            s.Click("experience-skip");
-            s.Click("experience-guide-open");
+            s.Then(() => Check(!view.Hits.Any(h => h.Id is "experience-guide" or "experience-guide-open"), "The main menu offers play paths without sending players through a controls panel"));
+            s.Click("experience-friends");
+            s.Then(() => Check(!view.ExperienceOpen && !view.SoloTab && view.Hits.Any(h => h.Id == "host") && view.Hits.Any(h => h.Id == "join"), "Choosing friends places the player at the relevant host and join controls"));
+            s.Pulse(Keys.F1);
             s.Then(() => { view.Accept(null); view.Accept(null); });
-            s.Then(() => Check(view.TableGuideOpen && !view.WelcomeOpen, "Repeated idle-lobby observations do not dismiss a manually opened controls guide"));
+            s.Then(() => Check(view.TableGuideOpen && !view.WelcomeOpen, "Repeated idle-lobby observations do not dismiss an optional F1 controls reference"));
             s.Click("experience-guide-close");
         });
         Scene(fresh, new StartupEngine(), (s, view) => s.Then(() => {
@@ -84,7 +82,7 @@ internal static class OnboardingSmoke
                     Check(route == "friends" ? !view.SoloTab && view.SetupModal.Length == 0 && view.Hits.Any(h => h.Id == "host") && view.Hits.Any(h => h.Id == "join")
                         : view.SetupModal == "decks" && (route != "ai" || view.SoloTab), $"The {route} welcome path opens its intended setup view");
                     Check(engine.Mutations.Count == 0, $"Choosing the {route} path sends no implicit engine writes");
-                    Check(Seen(path, "WelcomeSeen") && !Seen(path, "TableGuideSeen"), $"Choosing the {route} path preserves the first-table introduction");
+                    Check(Seen(path, "WelcomeSeen") && !Seen(path, "TableGuideSeen"), $"Choosing the {route} path does not mark optional controls as reviewed");
                     if (route == "friends") s.Capture("02-friends-path");
                 });
             });
@@ -96,17 +94,21 @@ internal static class OnboardingSmoke
         var initial = scenario.State;
         Scene(tableProfile, scenario, (s, view) => {
             s.Then(() => {
-                Check(view.TableGuideOpen && !view.WelcomeOpen, "A first playable table opens its controls introduction over the actual table");
-                Check(!view.Hits.Any(h => h.Card != null || h.Id is "confirm" or "auto" or "hold" or "concede"), "Table introduction removes game, card, and playback hit regions");
-                view.SetAutomatic(true); s.Capture("03-first-table-guide");
+                Check(!view.TableGuideOpen && !view.WelcomeOpen, "A first playable table opens directly without a forced controls panel");
+                Check(view.Hits.Any(h => h.Card != null) && view.Hits.Any(h => h.Id == "confirm") && view.Hits.Any(h => h.Id == "settings"), "A fresh player can use the actual cards and current game decision immediately");
+                Check(scenario.Replies.Count == 0 && view.Match?.Decision?.Id == initial.Decision!.Id, "Entering the table never answers the player's pending decision");
+                s.Capture("03-first-table-playable");
             });
+            s.Click("settings");
+            s.Pulse(Keys.F1);
+            s.Then(() => view.SetAutomatic(true));
             s.Wait(1.2);
-            s.Then(() => Check(scenario.Replies.Count == 0 && view.Match?.Decision?.Id == initial.Decision!.Id && view.Automatic, "Auto waits behind the introduction without consuming or replacing the current decision"));
+            s.Then(() => Check(scenario.Replies.Count == 0 && view.Match?.Decision?.Id == initial.Decision!.Id && view.Automatic, "Auto waits behind an explicitly opened reference without consuming the current decision"));
             s.Pulse(Keys.Space, Keys.F, Keys.C, Keys.LeftControl, Keys.Enter);
             s.ClickAt(new(1450, 810));
             s.ClickAt(new(800, 870), right: true);
             s.Then(() => {
-                Check(view.TableGuideOpen && view.Automatic && !view.Held && view.Overlay.Length == 0 && !view.ChatOpen, "Guide consumes gameplay shortcuts and background pointer input without changing play settings");
+                Check(view.TableGuideOpen && view.Automatic && !view.Held && view.Overlay == "settings" && !view.ChatOpen, "The optional reference consumes gameplay shortcuts without changing play settings or its source panel");
                 Check(scenario.Replies.Count == 0 && view.Match?.Decision?.Id == initial.Decision!.Id, "Guide input never submits a gameplay command");
                 view.SetHeld(true);
             });
@@ -116,8 +118,7 @@ internal static class OnboardingSmoke
                 Check(Seen(tableProfile, "TableGuideSeen") && view.Match?.Decision?.Id == initial.Decision!.Id, "Guide completion persists without answering the waiting game choice");
                 view.SetAutomatic(false);
             });
-            s.Click("settings");
-            s.Click("experience-guide-open");
+            s.Pulse(Keys.F1);
             s.Then(() => Check(view.TableGuideOpen && view.Overlay == "settings" && !view.Automatic && view.Held, "Settings replays controls while preserving Full control, an existing hold, and the underlying panel"));
             s.Pulse(Keys.Escape);
             s.Then(() => {
@@ -125,7 +126,7 @@ internal static class OnboardingSmoke
             });
             s.Click("close-overlay");
             s.Click("instructions");
-            s.Click("experience-guide-open");
+            s.Pulse(Keys.F1);
             s.Then(() => Check(view.TableGuideOpen && view.Overlay == "help", "The current-decision help can also replay table controls"));
             s.Click("experience-guide-close");
             s.Then(() => Check(view.Overlay == "help" && view.Match?.Decision?.Id == initial.Decision!.Id && scenario.Replies.Count == 0, "Closing replay returns to current-decision help with the same pending choice"));
@@ -138,7 +139,7 @@ internal static class OnboardingSmoke
         }, initial);
 
         var returningScenario = new InteractionScenarioEngine(); returningScenario.Present(PresentationSmoke.Example());
-        Scene(tableProfile, returningScenario, (s, view) => s.Then(() => Check(!view.TableGuideOpen && returningScenario.Replies.Count == 0, "Completed table controls stay dismissed on a later application launch")), returningScenario.State);
+        Scene(tableProfile, returningScenario, (s, view) => s.Then(() => Check(!view.TableGuideOpen && returningScenario.Replies.Count == 0, "Later matches stay directly playable without reopening optional controls")), returningScenario.State);
 
         foreach (bool savedDeck in new[] { false, true }) {
             string path = Case(savedDeck ? "legacy-deck" : "legacy-preferences");

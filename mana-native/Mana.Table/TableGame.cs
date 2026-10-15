@@ -78,7 +78,7 @@ internal sealed partial class TableGame : Game
     private bool DecisionModal => !TableChoice && !collapsedDecision && match?.Decision?.Kind is "choice" or "reveal" or "number" or "text" or "allocate";
     private bool OverlayOpen => ActivityOpen || ExperienceOpen || overlay.Length > 0 || zoneName != null || DecisionModal;
     private string Scope => match == null ? deckEditor ? DeckScope : LobbyScope : session.Scope;
-    private string ControlScope(string id) => id.StartsWith("activity-") ? ActivityScope : id.StartsWith("experience-") ? ExperienceScope : id.StartsWith("chat-") ? ChatScope
+    private string ControlScope(string id) => id.StartsWith("activity-") ? ActivityScope : id.StartsWith("experience-") || id == "guidance-reset" && ExperienceOpen ? ExperienceScope : id.StartsWith("chat-") ? ChatScope
         : match != null && (id is "auto" or "hold" or "instructions" or "action-details" || id.StartsWith("phase-stop:")) ? match.Id + ":playback" : Scope;
     private bool CurrentHit(Hit hit) => hit.Scope == ControlScope(hit.Id);
     internal sealed record Hit(string Id, string Scope, Rectangle Bounds, Action Action, Card? Card = null, string? Zone = null, int? PlayerId = null, Func<Point, bool>? Shape = null)
@@ -91,7 +91,7 @@ internal sealed partial class TableGame : Game
     {
         session = new(engine); updates = new(session);
         session.Changed += AcceptEffects;
-        session.Completed += () => { FinishActivity(); nextPoll = 0; if (error.Length == 0) priority.Reset(); };
+        session.Completed += () => { FinishActivity(); FinishGuidanceAttempt(); nextPoll = 0; if (error.Length == 0) priority.Reset(); };
         session.Failed += ex => { error = ex.Message; FailActivity(); try { File.AppendAllText(Path.Combine(profile, "client.log"), ex + "\n"); } catch (IOException) { } };
         this.engine = engine; this.profile = profile; this.capture = capture; this.fixture = fixture; this.initialState = initialState;
         this.artSource = artSource ?? new MagicArtSource(profile);
@@ -139,9 +139,7 @@ internal sealed partial class TableGame : Game
     private void AcceptEffects(GameSnapshot? previous, GameSnapshot? state)
     {
         if (state?.Id != previous?.Id) { ResetTableView(); tableGuideOpen = false; sceneRevealAt = now; }
-        if (state != null && state.Id != previous?.Id && state.Status != "finished" && fixture == null && !experience.TableGuideSeen) {
-            welcomeOpen = false; OpenTableGuide();
-        }
+        if (state != null) welcomeOpen = false;
         if (state?.Status == "finished" && previous?.Status != "finished") tableGuideOpen = false;
         if (state != null) { effects.Observe(previous, state, now); presence.Observe(previous, state, now); playback.Observe(previous, state, now); }
         if (state != null) ObserveActionFeedback(previous, state);
@@ -218,8 +216,8 @@ internal sealed partial class TableGame : Game
             else if (!TableChoice && CombatGuide.CanConfirm(match)) Send(new(match.Id, prompt!.Id, ReplyAction.Confirm));
         }
         if (!chatKeys && !textFocus && keys.IsKeyDown(Keys.C) && previousKeys.IsKeyUp(Keys.C) && HasCombat && (overlay.Length == 0 || overlay == "combat")) { if (overlay == "combat") overlay = ""; else OpenCombat(); }
-        if (!chatKeys && !textFocus && keys.IsKeyDown(Keys.F) && previousKeys.IsKeyUp(Keys.F)) SetAutomatic(!automatic);
-        if (!chatKeys && !textFocus && keys.IsKeyDown(Keys.LeftControl) && previousKeys.IsKeyUp(Keys.LeftControl)) { held = !held; priority.Reset(); }
+        if (!chatKeys && !textFocus && keys.IsKeyDown(Keys.F) && previousKeys.IsKeyUp(Keys.F)) UseAutomaticControl(!automatic);
+        if (!chatKeys && !textFocus && keys.IsKeyDown(Keys.LeftControl) && previousKeys.IsKeyUp(Keys.LeftControl)) ToggleHoldControl();
         if (!blockedInput && !chatKeys && !textFocus && keys.IsKeyDown(Keys.F1) && previousKeys.IsKeyUp(Keys.F1)) OpenTableGuide();
         if (keys.IsKeyDown(Keys.F11) && previousKeys.IsKeyUp(Keys.F11)) graphics.ToggleFullScreen();
         int wheel = mouse.ScrollWheelValue - previousMouse.ScrollWheelValue;
@@ -248,7 +246,10 @@ internal sealed partial class TableGame : Game
     private void Send(DecisionReply reply)
     {
         if (fixture != null || match?.Id != reply.GameId || match.Decision?.Id != reply.DecisionId) return;
-        error = ""; session.Submit(reply);
+        string? key = GuidanceForReply(reply);
+        var attempt = key == null ? null : new GuidanceAttempt(key, match.Id, match.Decision.Id, match.Revision);
+        error = "";
+        if (session.Submit(reply)) guidanceAttempt = attempt;
     }
     private void Button(string id, string label, int x, int y, int width, Action action, bool enabled = true, bool accent = false, int height = 40)
     {
@@ -290,6 +291,7 @@ internal sealed partial class TableGame : Game
             canvas.Text(notice, 440, 76, Ink, .75f, 719, 2);
             hits.Add(new("notice", Scope, new(427, 64, 746, 60), () => { overlay = "history"; historyPage = 0; noticeUntil = 0; }));
         }
+        DrawContextGuidance();
         if (!ExperienceOpen && !ActivityOpen) DrawSocial();
         if (!ActivityOpen && !string.IsNullOrWhiteSpace(error)) {
             int y = match == null ? 942 : 59;

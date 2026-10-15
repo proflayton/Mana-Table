@@ -36,12 +36,22 @@ mana-native/Mana.Table.Tests/bin/Release/net9.0-windows/Mana.Table.Tests.exe --s
 
 The first-session regression uses production input and hit testing with a
 deterministic engine. It checks welcome routing without implicit deck writes or
-network actions, remembered menu visits and guide dismissal, returning-profile
-main menus, first-table orientation, and Help replay. While the guide is open,
+network actions, remembered menu visits, returning-profile main menus, directly
+playable first tables, and optional F1 help. While the reference is open,
 gameplay clicks, shortcuts, text entry and Auto must leave the decision unchanged;
 closing the guide preserves Auto and Hold. Run at 1280x720 and 1200x900 and review
-the captures and `onboarding-results.json`. Other native UI scenarios seed the
-completed introduction so they continue to exercise their intended controls.
+the captures and `onboarding-results.json`. Other native setup scenarios bypass
+the menu so they continue to exercise their intended controls.
+
+`--smoke-context-guidance --profile <isolated-profile> --size 1280x720` drives
+real native gestures for hand/commander plays, abilities, targets, attacks,
+blocks and Hold. It verifies that hints do not intercept controls or pause Auto,
+retire only after successful use, persist on relaunch, and reset through Settings
+and F1. Rejected commands and invalid drags do not teach a control. Hidden,
+revoked and opponent cards cannot acquire a false play hint. Cue bounds must
+preserve authoritative selection instructions. Repeat at 1200x900 and review
+`context-guidance-results.json` plus the captures. Hand gestures approach the
+exposed original hand strip after entrance motion, using production hit testing.
 
 `--smoke-loading --profile <isolated-profile> --size 1280x720` gates each engine
 request to verify real startup stages, immediate deck acknowledgment, prevention
@@ -445,8 +455,10 @@ browsing, safe single clicks, deliberate double-clicks, interleaved
 cards, changed decisions, cancelled drags, one-click required selections,
 right-click inspection, and concealed cards. It also checks populated GPU mip
 levels and multisample targets, and captures art-backed and offline text previews.
-Run at 1280x720 and 1200x900 with a copy of the normal art cache in its isolated
-profile. Results are written to `reading-results.json`. The real Forge
+Its test-only encoded image fixture exercises decoding and GPU mipmaps offline;
+a deliberately missing image still checks the rules-text fallback. Run at
+1280x720 and 1200x900 in isolated profiles. Results are written to
+`reading-results.json`. The real Forge
 `--smoke-ui-ai` verifies both a double-clicked land and a dragged land.
 
 The native `--smoke-table-feel` switch on `Mana.Table.Tests.exe` runs a deterministic

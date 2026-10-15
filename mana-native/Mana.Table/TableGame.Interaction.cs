@@ -37,6 +37,7 @@ internal sealed partial class TableGame
         inspected = VisibleCards().FirstOrDefault(c => SameVisibleCard(c, card));
         if (inspected == null) return;
         inspectBack = false; inspectPage = 0; overlay = "inspect";
+        LearnControl("inspect-card");
     }
     private void OpenZone(int player, string zone) { zonePlayer = player; zoneName = zone; zonePage = 0; overlay = ""; }
     private bool IsPlayerTarget(int player) => match?.Decision?.PlayerChoices.Contains(player) == true

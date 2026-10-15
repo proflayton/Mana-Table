@@ -27,9 +27,7 @@ internal sealed partial class TableGame
         DrawWelcomePath("experience-decks", "Your decks", "Browse, import, or build around your commander.",
             660, false, () => ChooseWelcome("decks"));
 
-        canvas.Text("Choose a deck   /   Confirm your list   /   Take your seat", 93, 841, Muted, .8f, 1400, 1);
         canvas.Line(new(90, 889), new(1510, 889), LobbyTrim);
-        Button("experience-guide", "Table guide", 90, 920, 226, OpenTableGuide, loaded && !busy, height: 44);
         Button("experience-skip", "Continue to setup", 1202, 920, 308, DismissWelcome, loaded && !busy, height: 44);
     }
 
@@ -52,35 +50,17 @@ internal sealed partial class TableGame
     private void DrawTableGuide()
     {
         hits.Clear(); hovered = null; readingCards.Clear(); liftedCards.Clear();
-        int top = (DesignHeight - 720) / 2;
+        int top = (DesignHeight - 390) / 2;
         canvas.Fill(new(0, 0, 1600, DesignHeight), Color.Black * .82f);
-        canvas.Panel(new(166, top, 1268, 720), new(23, 32, 43), LobbyTrim, 18);
-        canvas.Text("A few controls. Then it's your game.", 204, top + 27, Ink, 1.32f, 1000, 1, true);
-        Button("experience-guide-close", "Close", 1284, top + 24, 112, CloseTableGuide, height: 36);
-        canvas.Text("Know Magic? Here's how to make your plays in Mana Table.", 206, top + 82, Muted, .86f, 1150, 2);
-        canvas.Line(new(204, top + 130), new(1396, top + 130), LobbyTrim);
-
-        DrawTableGuideBlock(1, "Read and play your cards",
-            "Hover to read. Right-click for the full card. Double-click highlighted cards, including your commander, to play them. " +
-            "You can also drag cards from your hand onto the table. Click highlighted battlefield cards to use abilities.", top + 151);
-        DrawTableGuideBlock(2, "Follow your next action",
-            "The lower-right prompt tells you what the table needs from you. Highlighted cards and players show your choices. " +
-            "Confirm there or press Space. Click the prompt for more detail.", top + 311);
-        DrawTableGuideBlock(3, "Set your own pace",
-            "Auto passes priority when you have no playable response. Your plays, required choices, attacks, and blocks still wait for you. " +
-            "Use Hold or Ctrl to keep priority this turn. F switches between Auto and Full control.", top + 458);
-
-        canvas.Line(new(204, top + 618), new(1396, top + 618), LobbyTrim);
-        canvas.Text("Your Auto pauses while this guide is open.", 208, top + 645, Blue, .77f, 810, 1);
-        canvas.Text("You can reopen this guide any time.", 208, top + 676, Muted, .69f, 810, 1);
-        Button("experience-guide-done", "Got it", 1110, top + 643, 286, CloseTableGuide, accent: true, height: 49);
-    }
-
-    private void DrawTableGuideBlock(int number, string title, string explanation, int y)
-    {
-        canvas.Circle(new(229, y + 18), 20, Teal * .5f);
-        canvas.CenterText(number.ToString(), new(209, y - 2, 40, 40), Blue, .8f, true);
-        canvas.Text(title, 275, y, Ink, 1.03f, 1085, 1, true);
-        canvas.Text(explanation, 276, y + 42, Muted, .86f, 1081, 4);
+        canvas.Panel(new(340, top, 920, 390), new(23, 32, 43), LobbyTrim, 18);
+        canvas.Text("Help for this moment", 375, top + 28, Gold, .86f, 660, 1, true);
+        Button("experience-guide-close", "Close", 1110, top + 22, 112, CloseTableGuide, height: 36);
+        var cue = match == null ? null : Mana.Magic.ControlGuidance.Decision(match, selectedCombat);
+        canvas.Text(cue?.Title ?? (match?.Status == "finished" ? "Your game has finished" : "Follow the next action"), 376, top + 99, Ink, 1.2f, 835, 2, true);
+        canvas.Text(cue?.Text ?? (match?.Status == "finished" ? "Inspect the final battlefield, or return to setup for another game."
+            : "Short reminders appear beside the cards and controls when you need them."), 377, top + 158, Ink, .91f, 830, 3);
+        canvas.Text("Reminders retire after successful actions. You can show them again in Settings.", 377, top + 247, Muted, .77f, 830, 2);
+        Button("guidance-reset", "Show hints again", 377, top + 314, 270, () => { ResetControlHints(); CloseTableGuide(); }, height: 43);
+        Button("experience-guide-done", "Back to it", 940, top + 314, 282, CloseTableGuide, accent: true, height: 43);
     }
 }
