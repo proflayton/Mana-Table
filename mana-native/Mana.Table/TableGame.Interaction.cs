@@ -105,6 +105,7 @@ internal sealed partial class TableGame
         if (overlay is "combat" or "blockers") { combatPage = Math.Max(0, combatPage - direction); return; }
         if (zoneName == "Stack") { OpenStack(Math.Clamp(zonePage - direction, 0, Math.Max(0, match!.Stack.Length - 1))); return; }
         if (overlay is "inspect" or "help" or "action") { inspectPage = Math.Max(0, inspectPage - direction); return; }
+        if (overlay == "ability-auto-pass") { priorityAbilityTextPage = Math.Max(0, priorityAbilityTextPage - direction); return; }
         if (overlay == "history") { historyPage = Math.Max(0, historyPage - direction); return; }
         if (zoneName != null) { zonePage = Math.Max(0, zonePage - direction); return; }
         if (DecisionModal) { choicePage = Math.Max(0, choicePage - direction); return; }

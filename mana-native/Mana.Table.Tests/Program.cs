@@ -10,7 +10,7 @@ internal static class Program
     {
         Application.SetHighDpiMode(HighDpiMode.PerMonitorV2);
         string? Arg(string name) { int index = Array.IndexOf(args, name); return index >= 0 && index + 1 < args.Length ? args[index + 1] : null; }
-        bool testRun = args.Any(a => a is "--smoke" or "--smoke-ai" or "--smoke-ui-ai" or "--smoke-presentation" or "--smoke-ui-interactions" or "--smoke-table-feel" or "--smoke-card-reading" or "--smoke-cleanup" or "--smoke-deck-building" or "--smoke-workshop" or "--smoke-workshop-adapter" or "--smoke-lobby" or "--smoke-social" or "--smoke-advance" or "--smoke-auto-dock" or "--smoke-action-feedback" or "--smoke-onboarding" or "--smoke-loading" or "--smoke-engine-startup" or "--smoke-context-guidance" or "--smoke-deck-import");
+        bool testRun = args.Any(a => a is "--smoke" or "--smoke-ai" or "--smoke-ui-ai" or "--smoke-presentation" or "--smoke-ui-interactions" or "--smoke-table-feel" or "--smoke-card-reading" or "--smoke-cleanup" or "--smoke-deck-building" or "--smoke-workshop" or "--smoke-workshop-adapter" or "--smoke-lobby" or "--smoke-social" or "--smoke-advance" or "--smoke-auto-dock" or "--smoke-action-feedback" or "--smoke-onboarding" or "--smoke-loading" or "--smoke-engine-startup" or "--smoke-context-guidance" or "--smoke-deck-import" or "--smoke-priority-abilities");
         var profile = Arg("--profile") ?? (testRun
             ? Path.Combine(Path.GetTempPath(), "ManaTableNative-tests", Guid.NewGuid().ToString())
             : Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "ManaTableNative"));
@@ -26,12 +26,18 @@ internal static class Program
             if (args.Contains("--smoke-context-guidance")) { ContextGuidanceSmoke.Run(profile, size); return 0; }
             // Existing UI regressions start directly at their subject. Onboarding
             // has its own fresh-profile and persistence coverage above.
-            if (args.Any(a => a is "--smoke-ui-ai" or "--smoke-ui-interactions" or "--smoke-table-feel" or "--smoke-card-reading" or "--smoke-deck-building" or "--smoke-workshop" or "--smoke-lobby" or "--smoke-auto-dock" or "--smoke-action-feedback"))
+            if (args.Any(a => a is "--smoke-ui-ai" or "--smoke-ui-interactions" or "--smoke-table-feel" or "--smoke-card-reading" or "--smoke-deck-building" or "--smoke-workshop" or "--smoke-lobby" or "--smoke-auto-dock" or "--smoke-action-feedback" or "--smoke-priority-abilities"))
                 File.WriteAllText(Path.Combine(profile, "experience.json"), JsonSerializer.Serialize(new { WelcomeSeen = true, TableGuideSeen = true }));
             if (args.Contains("--smoke-auto-dock")) {
                 var scenario = new InteractionScenarioEngine(); scenario.Present(PresentationSmoke.Example());
                 using var test = new TableGame(scenario, profile, null, "controlled-frames", size, initialState: scenario.State);
                 test.Automation = new AutoDockSmoke(test.TestPort, scenario);
+                test.Run(); return 0;
+            }
+            if (args.Contains("--smoke-priority-abilities")) {
+                var scenario = new InteractionScenarioEngine(); scenario.Present(PriorityAbilitySmoke.Example());
+                using var test = new TableGame(scenario, profile, null, null, size, initialState: scenario.State);
+                test.Automation = new PriorityAbilitySmoke(test.TestPort, scenario);
                 test.Run(); return 0;
             }
             if (args.Contains("--smoke-action-feedback")) {

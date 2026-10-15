@@ -130,6 +130,7 @@ public class PlayerControllerHuman extends PlayerController implements IGameCont
         super(game0, p, lp);
         inputProxy = new InputProxy(this);
         inputQueue = new InputQueue(game0.getView(), inputProxy);
+        game0.subscribeToEvents(priorityAbilityPass);
     }
 
     public PlayerControllerHuman(final Player p, final LobbyPlayer lp, final PlayerControllerHuman owner) {
@@ -137,6 +138,7 @@ public class PlayerControllerHuman extends PlayerController implements IGameCont
         gui = owner.gui;
         inputProxy = owner.inputProxy;
         inputQueue = owner.getInputQueue();
+        owner.getGame().subscribeToEvents(priorityAbilityPass);
     }
 
     public final IGuiGame getGui() {
@@ -1539,6 +1541,50 @@ public class PlayerControllerHuman extends PlayerController implements IGameCont
      *  {@link #chooseSpellAbilityToPlay} and reused by {@link #pushActionableCards}. */
     private Set<CardView> cachedActionableCards;
 
+    public record PriorityAbility(String id, int sourceCardId, String sourceName, String text,
+                                  boolean ignoredUntilNextTurn) { }
+
+    private final PriorityAbilityPass priorityAbilityPass = new PriorityAbilityPass();
+    private volatile InputPassPriority cachedPriorityInput;
+
+    /** Cached legal abilities for the exact current priority window; no graph scan. */
+    public List<PriorityAbility> getPriorityAbilities() {
+        return isCurrentPriorityInput() ? priorityAbilityPass.legal(player) : List.of();
+    }
+
+    /** Policies remain visible between priority windows so the user can undo them. */
+    public List<PriorityAbility> getIgnoredPriorityAbilities() {
+        return priorityAbilityPass.ignored(player);
+    }
+
+    /** A setting change never passes priority or invokes the ability. */
+    public boolean setPriorityAbilityIgnored(String id, boolean ignored) {
+        boolean currentPriority = isCurrentPriorityInput();
+        if (!priorityAbilityPass.setIgnored(id, ignored, player, currentPriority)) return false;
+        if (currentPriority) {
+            player.getView().setHasAvailableActions(priorityAbilityPass.hasNonIgnoredActions(player));
+        }
+        return true;
+    }
+
+    private boolean isCurrentPriorityInput() {
+        InputPassPriority priority = cachedPriorityInput;
+        return priority != null && priority.isPriorityActive() && inputProxy.getInput() == priority
+                && inputQueue.getInput() == priority
+                && player.getView().equals(priority.getOwner());
+    }
+
+    public void clearPriorityAbilities(InputPassPriority input) {
+        if (cachedPriorityInput == input) cachedPriorityInput = null;
+    }
+
+    private void scanPriorityActions() {
+        AvailableActions.ActionScan scan = AvailableActions.scan(player, computeAvailableActionsBudgetMs(player));
+        priorityAbilityPass.refresh(player, scan);
+        cachedActionableCards = scan.actionableCards();
+        player.getView().setHasAvailableActions(priorityAbilityPass.hasNonIgnoredActions(player));
+    }
+
     /** Push the actionable-card set to the GUI. Payment mode falls back to the
      *  "playable mana ability" predicate; non-payment reuses {@link #cachedActionableCards}. */
     public void pushActionableCards(boolean paymentMode) {
@@ -1659,20 +1705,13 @@ public class PlayerControllerHuman extends PlayerController implements IGameCont
         boolean highlightsEnabled = yieldController.getBoolPref(FPref.UI_SHOW_ACTIONABLE_HIGHLIGHTS);
         boolean availabilityVerified = false;
         if (!yieldController.shouldAutoYield() && (needsAvailableActions() || highlightsEnabled)) {
-            long timeoutMs = computeAvailableActionsBudgetMs(getPlayer());
-            if (highlightsEnabled) {
-                // Highlights need the full set; APINA derives its boolean from the same scan.
-                Set<CardView> actionable = AvailableActions.collectActionable(getPlayer(), timeoutMs);
-                cachedActionableCards = actionable;
-                getPlayer().getView().setHasAvailableActions(!actionable.isEmpty());
-            } else {
-                // APINA only — early-exit boolean scan is cheaper than a full walk.
-                cachedActionableCards = null;
-                getPlayer().getView().setHasAvailableActions(AvailableActions.compute(getPlayer(), timeoutMs));
-            }
+            // Keep highlighting all legal cards, while independently deciding which
+            // activated abilities the player currently wants Auto to stop for.
+            scanPriorityActions();
             availabilityVerified = true;
         } else {
             cachedActionableCards = null;
+            priorityAbilityPass.clearScan();
         }
 
         // yieldJustEndedFlag is read from the EDT (didYieldJustEnd); synchronized writer/reader pair handles visibility.
@@ -1716,6 +1755,7 @@ public class PlayerControllerHuman extends PlayerController implements IGameCont
         netLog.trace("Creating InputPassPriority for player {}", player.getName());
         final InputPassPriority defaultInput = new InputPassPriority(this);
         defaultInput.setAvailabilityVerified(availabilityVerified);
+        cachedPriorityInput = defaultInput;
         defaultInput.showAndWait();
         netLog.trace("InputPassPriority returned for player {}, chosenSa={}", player.getName(), defaultInput.getChosenSa());
         return defaultInput.getChosenSa();
@@ -3945,8 +3985,8 @@ public class PlayerControllerHuman extends PlayerController implements IGameCont
     private void refreshAvailableActionsForPrompt() {
         if (yieldController.isYieldActive() || !needsAvailableActions()) return;
         if (!(inputProxy.getInput() instanceof InputPassPriority priority)) return;
-        long timeoutMs = computeAvailableActionsBudgetMs(getPlayer());
-        getPlayer().getView().setHasAvailableActions(AvailableActions.compute(getPlayer(), timeoutMs));
+        scanPriorityActions();
+        cachedPriorityInput = priority;
         priority.setAvailabilityVerified(true);
     }
 

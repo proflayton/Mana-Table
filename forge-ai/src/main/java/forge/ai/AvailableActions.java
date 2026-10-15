@@ -9,10 +9,12 @@ import forge.game.zone.ZoneType;
 import org.tinylog.Logger;
 
 import java.util.HashSet;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Supplier;
+import java.util.function.Predicate;
 import java.util.stream.Collectors;
 
 // Heuristic: does the player have any playable action this priority window?
@@ -38,6 +40,64 @@ public final class AvailableActions {
     /** Set form: walks every card so highlight consumers can mark the actionable subset. */
     public static Set<CardView> collectActionable(Player player, long timeoutMs) {
         return withAiController(player, () -> walk(player, timeoutMs, false));
+    }
+
+    /** Full priority scan. Cards remain actionable even when a caller elects not to
+     *  stop for one of their activated abilities. A partial scan never permits Auto. */
+    public record ActionScan(Set<CardView> actionableCards, List<SpellAbility> activatedAbilities,
+                             boolean hasOtherActions, boolean complete) {
+        public ActionScan {
+            actionableCards = Set.copyOf(actionableCards);
+            activatedAbilities = List.copyOf(activatedAbilities);
+        }
+
+        public boolean hasNonIgnoredActions(Predicate<SpellAbility> ignored) {
+            return !complete || hasOtherActions
+                    || activatedAbilities.stream().anyMatch(ability -> !ignored.test(ability));
+        }
+    }
+
+    public static ActionScan scan(Player player, long timeoutMs) {
+        return withAiController(player, () -> scanAll(player, timeoutMs));
+    }
+
+    private static ActionScan scanAll(Player player, long timeoutMs) {
+        long deadlineNanos = System.nanoTime() + timeoutMs * 1_000_000L;
+        Set<CardView> actionable = new HashSet<>();
+        Set<CardView> visited = new HashSet<>();
+        List<SpellAbility> activated = new ArrayList<>();
+        boolean hasOtherActions = false;
+
+        for (ZoneScan scan : SCANS) {
+            Iterable<Card> cards = scan.sortByCmc()
+                    ? sortedCardsIn(player, scan.zone()) : player.getCardsIn(scan.zone());
+            for (Card card : cards) {
+                if (checkTimeout(deadlineNanos, timeoutMs)) {
+                    addUnvisited(actionable, visited, player);
+                    return new ActionScan(actionable, activated, hasOtherActions, false);
+                }
+                for (SpellAbility ability : card.getAllPossibleAbilities(player, true)) {
+                    if (checkTimeout(deadlineNanos, timeoutMs)) {
+                        addUnvisited(actionable, visited, player);
+                        return new ActionScan(actionable, activated, hasOtherActions, false);
+                    }
+                    if (ability.isManaAbility() || !canAfford(ability, player)
+                            || !ComputerUtilAbility.isFullyTargetable(ability)) continue;
+                    actionable.add(card.getView());
+                    if (ability.isActivatedAbility()) {
+                        activated.add(ability);
+                    } else {
+                        hasOtherActions = true;
+                    }
+                }
+                visited.add(card.getView());
+                if (checkTimeout(deadlineNanos, timeoutMs)) {
+                    addUnvisited(actionable, visited, player);
+                    return new ActionScan(actionable, activated, hasOtherActions, false);
+                }
+            }
+        }
+        return new ActionScan(actionable, activated, hasOtherActions, true);
     }
 
     /** Run the predictive sweep under an AI controller so cost-adjustment chooseX

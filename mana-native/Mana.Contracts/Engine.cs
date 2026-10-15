@@ -83,20 +83,22 @@ public sealed record Seat(int Index, string Name, string Type, string? Deck, boo
 public sealed record Lobby(string Mode, string Status, string? Error, bool CanStart, string? StartProblem,
     bool MatchActive, string PortMapping, string? InternetInvite, Address[] Addresses, Seat[] Seats, string TableId = "");
 public enum DecisionIntent { General, Priority, Attack, Block, Mana, Selection }
-public enum ReplyAction { Confirm, Cancel, SelectCard, SelectPlayer, AssignAttack, AssignBlock, AutoPass, Skip, Choose, Value, Allocate }
+public enum ReplyAction { Confirm, Cancel, SelectCard, SelectPlayer, AssignAttack, AssignBlock, AutoPass, Skip, Choose, Value, Allocate, SetAbilityAutoPass }
 public sealed record DecisionReply(string GameId, string DecisionId, ReplyAction Action,
     string? Card = null, int? Player = null, string? Attacker = null, string? Blocker = null,
-    string? DefenderCard = null, int[]? Choices = null, string? Value = null, int[]? Amounts = null)
+    string? DefenderCard = null, int[]? Choices = null, string? Value = null, int[]? Amounts = null,
+    string? AbilityId = null, bool? Ignore = null)
 {
     public void Validate()
     {
         bool Present(string? value) => !string.IsNullOrWhiteSpace(value);
-        bool valid = Present(GameId) && Present(DecisionId) && Action switch {
+        bool valid = Present(GameId) && (Present(DecisionId) || Action == ReplyAction.SetAbilityAutoPass && Ignore == false) && Action switch {
             ReplyAction.SelectCard => Present(Card), ReplyAction.SelectPlayer => Player != null,
             ReplyAction.AssignAttack => Present(Attacker) && ((Player != null) != Present(DefenderCard)),
             ReplyAction.AssignBlock => Present(Attacker) && Present(Blocker),
             ReplyAction.Choose => Choices != null && Choices.All(i => i >= 0) && Choices.Distinct().Count() == Choices.Length,
             ReplyAction.Value => Value != null, ReplyAction.Allocate => Amounts != null && Amounts.All(i => i >= 0),
+            ReplyAction.SetAbilityAutoPass => Present(AbilityId) && Ignore != null,
             ReplyAction.Confirm or ReplyAction.Cancel or ReplyAction.AutoPass or ReplyAction.Skip => true,
             _ => false
         };
@@ -148,6 +150,8 @@ public sealed record Choice(int Index, string Label, Card? Card)
     public string Mana { get; init; } = "";
 }
 public sealed record LibraryChoice(int? Index, string Label, Card Card);
+// Handles identify individual engine-owned abilities, never every ability on a card.
+public sealed record PriorityAbility(string Id, string SourceCardKey, string SourceName, string Text, bool IgnoredUntilNextTurn);
 public sealed record Decision
 {
     public string Id { get; init; } = "";
@@ -159,6 +163,7 @@ public sealed record Decision
     public bool OkEnabled { get; init; }
     public bool CancelEnabled { get; init; }
     public bool CanAutoPass { get; init; }
+    public PriorityAbility[] PriorityAbilities { get; init; } = [];
     public int[] PlayerChoices { get; init; } = [];
     public Choice[] Choices { get; init; } = [];
     public int Min { get; init; }
@@ -198,6 +203,7 @@ public sealed record GameSnapshot(string Id, string Status, string? Error, strin
     public long BoardRevision { get; init; }
     public ActivityEntry[] Activity { get; init; } = [];
     public string[] Notices { get; init; } = [];
+    public PriorityAbility[] IgnoredPriorityAbilities { get; init; } = [];
     public Player? Viewer => Players.FirstOrDefault(p => p.Id == ViewerId);
 }
 public sealed record ActivityEntry(long Id, int Turn, string PhaseKey, string Kind, int? PlayerId, string Message, string? CardId, string? CardName)

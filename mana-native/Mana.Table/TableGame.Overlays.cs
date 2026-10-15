@@ -30,6 +30,7 @@ internal sealed partial class TableGame
                 case "player": DrawPlayerDetails(); break;
                 case "concede": DrawConcede(); break;
                 case "help": DrawHelp(); break;
+                case "ability-auto-pass": DrawAbilityAutoPass(); break;
                 case "combat": DrawCombatReview(); break;
                 case "blockers": DrawBlockerReview(); break;
                 case "result": DrawResult(); break;
@@ -81,7 +82,7 @@ internal sealed partial class TableGame
         canvas.Text("PRIORITY", 201, 196, Gold, .65f, 600, 1, true);
         Button("settings-auto", "Auto", 202, 231, 256, () => UseAutomaticControl(true), accent: automatic, height: 48);
         Button("settings-manual", "Full control", 472, 231, 256, () => UseAutomaticControl(false), accent: !automatic, height: 48);
-        canvas.Text("Auto lets each visible action play out before passing when you have no response. Lands, affordable commanders, required choices, attacks, and legal blocks still wait for you.", 202, 298, Muted, .81f, 544, 5);
+        canvas.Text("Auto follows your pass settings after each visible action. Pass for individual abilities until your next turn beside the priority controls. Other available plays and required decisions still wait for you.", 202, 298, Muted, .81f, 544, 5);
         Button("settings-hold", held ? "Held for this turn" : "Hold priority this turn", 202, 445, 526, ToggleHoldControl, accent: held, height: 45);
         canvas.Text("Always stop at these steps on your turn", 805, 196, Gold, .76f, 551, 1, true);
         for (int i = 0; i < TurnGuide.Stops.Length; i++) {

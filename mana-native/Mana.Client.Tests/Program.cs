@@ -72,6 +72,7 @@ var noStops = new HashSet<string>();
 Check(pacing.Update(passState, true, false, noStops, false, false)?.Action == ReplyAction.AutoPass, "Eligible Auto priority dispatches on the first update without an artificial wait");
 Check(pacing.Update(passState, true, false, noStops, false, false) == null, "Auto dispatches a decision only once");
 var nextPass = passState with { ActivePlayerId = 1, Decision = passState.Decision! with { Id = "next-pass" } };
+Check(TurnGuide.Confirm(nextPass) == "Pass priority", "An opponent's main phase asks to pass priority rather than advance their phase");
 Check(pacing.Update(nextPass, true, false, noStops, false, true) == null, "An outstanding operation defers Auto without consuming the decision");
 Check(pacing.Update(nextPass, true, false, noStops, false, false)?.DecisionId == "next-pass", "The next player's eligible window advances as soon as the connection is available");
 Check(pacing.Update(nextPass with { Id = "other-game" }, true, false, noStops, false, false)?.GameId == "other-game", "Automatic passes remain scoped to their game");
@@ -86,6 +87,47 @@ Check(pacing.Update(passState with { Decision = passState.Decision! with { Inten
 Check(pacing.Update(tableChoice, true, false, noStops, false, false) == null, "Auto never submits a staged card choice");
 Check(pacing.Update(passState with { Status = "finished" }, true, false, noStops, false, false) == null, "Finished games never submit automatic passes");
 Check(pacing.Update(passState, true, false, noStops, false, false)?.Action == ReplyAction.AutoPass, "Leaving an inspection or Hold resumes an eligible pass immediately");
+
+var ignoredAbility = new PriorityAbility("fetch-ability", first.Key, "Arid Mesa", "Pay 1 life, sacrifice: Search.", true);
+var ignoredPriority = passState with { IgnoredPriorityAbilities = [ignoredAbility], Decision = passState.Decision! with { PriorityAbilities = [ignoredAbility] } };
+Check(TurnGuide.CanAutoPass(ignoredPriority, true, false, noStops, false), "An ignored ability uses the engine's explicit permission to pass");
+Check(!TurnGuide.CanAutoPass(ignoredPriority with { Decision = ignoredPriority.Decision! with { CanAutoPass = false } }, true, false, noStops, false), "Ignoring one ability cannot override another playable response");
+var undoAbility = new DecisionReply(passState.Id, "", ReplyAction.SetAbilityAutoPass, AbilityId: ignoredAbility.Id, Ignore: false);
+undoAbility.Validate(); Check(true, "Undo ability preferences are valid without a local decision");
+try { (undoAbility with { Ignore = true }).Validate(); throw new Exception("Unscoped ignore was accepted"); } catch (ArgumentException) { Check(true, "Ignoring an ability requires a current decision handle"); }
+try { (undoAbility with { AbilityId = "" }).Validate(); throw new Exception("Anonymous ability was accepted"); } catch (ArgumentException) { Check(true, "Ability preferences require the exact engine-owned ability handle"); }
+var settingConnection = new SettingConnection(ignoredPriority with { Decision = null });
+var settingClient = new ClientSession(settingConnection); settingClient.Accept(settingConnection.State);
+Check(!settingClient.SubmitSetting(undoAbility with { GameId = "other-game" }), "An ability preference cannot change another match");
+Check(settingClient.SubmitSetting(undoAbility), "Undo submits while another player has priority");
+var settingDeadline = DateTime.UtcNow.AddSeconds(5);
+while (settingClient.Busy && DateTime.UtcNow < settingDeadline) { settingClient.Pump(); await Task.Delay(5); }
+Check(!settingClient.Busy && settingClient.State!.IgnoredPriorityAbilities.Length == 0 && settingConnection.Replies.SequenceEqual([undoAbility]), "Undo reconciles a fresh snapshot without advancing a gameplay decision");
+var secondIgnoredAbility = ignoredAbility with { Id = "other-fetch-ability" };
+var advancingConnection = new SettingConnection(ignoredPriority with { IgnoredPriorityAbilities = [ignoredAbility, secondIgnoredAbility] }) { HoldFirstPass = true };
+var advancingClient = new ClientSession(advancingConnection); advancingClient.Accept(advancingConnection.State);
+Check(advancingClient.Advance(_ => true, (_, _) => false), "An eligible ignored-ability window can start automatic progression");
+await advancingConnection.PassStarted.Task.WaitAsync(TimeSpan.FromSeconds(5));
+Check(advancingClient.SubmitSetting(undoAbility) && !advancingClient.SubmitSetting(undoAbility), "Undo interrupts buffered Auto and queues only one setting behind the active command");
+var undoSecondAbility = undoAbility with { AbilityId = secondIgnoredAbility.Id };
+Check(advancingClient.SubmitSetting(undoSecondAbility) && !advancingClient.SubmitSetting(undoSecondAbility), "Undoing another ability queues independently without replacing the first preference");
+Check(advancingConnection.Replies.Count == 1 && advancingConnection.Replies[0].Action == ReplyAction.AutoPass, "The preference waits for the in-flight pass to reconcile");
+advancingConnection.ReleasePass.SetResult();
+settingDeadline = DateTime.UtcNow.AddSeconds(5);
+while (DateTime.UtcNow < settingDeadline) { advancingClient.Pump(); if (!advancingClient.Busy && advancingConnection.Replies.Count == 3) break; await Task.Delay(5); }
+Check(!advancingClient.Busy && advancingConnection.Replies.SequenceEqual([new(ignoredPriority.Id, ignoredPriority.Decision!.Id, ReplyAction.AutoPass), undoAbility, undoSecondAbility]), "Multiple Undos cancel further buffered passes and remain serialized in request order");
+Check(advancingClient.State!.IgnoredPriorityAbilities.Length == 0, "The interrupted Auto snapshot cannot restore an undone preference");
+var expiringConnection = new SettingConnection(ignoredPriority) { HoldFirstPass = true, ExpireOnPass = true };
+var expiringClient = new ClientSession(expiringConnection); expiringClient.Accept(expiringConnection.State);
+expiringClient.Advance(_ => true, (_, _) => false);
+await expiringConnection.PassStarted.Task.WaitAsync(TimeSpan.FromSeconds(5));
+Check(expiringClient.SubmitSetting(undoAbility), "Undo can queue before the in-flight pass reaches the viewer's next turn");
+expiringConnection.ReleasePass.SetResult();
+settingDeadline = DateTime.UtcNow.AddSeconds(5);
+while (DateTime.UtcNow < settingDeadline) { expiringClient.Pump(); if (!expiringClient.Busy) break; await Task.Delay(5); }
+Check(!expiringClient.Busy && expiringConnection.Replies is [{ Action: ReplyAction.AutoPass }] && expiringClient.State!.IgnoredPriorityAbilities.Length == 0,
+    "A queued Undo is dropped without an RPC when the reconciled pass has already expired its preference");
+Check(!expiringClient.SubmitSetting(undoAbility) && !expiringClient.Submit(undoAbility), "Already cleared ability preferences cannot submit stale Undo commands");
 
 var connection = new ControlledConnection(); var client = new ClientSession(connection);
 client.Accept(passState);
@@ -108,6 +150,29 @@ sealed class ControlledConnection : IMatchConnection
     public TaskCompletionSource<GameSnapshot?>[] Reads { get; } = [new(TaskCreationOptions.RunContinuationsAsynchronously), new(TaskCreationOptions.RunContinuationsAsynchronously)];
     public Task<GameSnapshot?> ObserveAsync() { int index = Interlocked.Increment(ref observed) - 1; if (index == 0) PollStarted.SetResult(); return Reads[index].Task; }
     public Task ReplyAsync(DecisionReply reply) { Interlocked.Increment(ref Replies); return Task.CompletedTask; }
+    public Task ConcedeAsync(string gameId) => Task.CompletedTask;
+}
+
+sealed class SettingConnection(GameSnapshot state) : IMatchConnection
+{
+    public GameSnapshot State { get; private set; } = state;
+    public bool HoldFirstPass { get; init; }
+    public bool ExpireOnPass { get; init; }
+    public List<DecisionReply> Replies { get; } = [];
+    public TaskCompletionSource PassStarted { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+    public TaskCompletionSource ReleasePass { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+    public Task<GameSnapshot?> ObserveAsync() => Task.FromResult<GameSnapshot?>(State);
+    public async Task ReplyAsync(DecisionReply reply)
+    {
+        Replies.Add(reply);
+        if (reply.Action == ReplyAction.AutoPass) {
+            PassStarted.SetResult(); if (HoldFirstPass) await ReleasePass.Task;
+            State = State with { Revision = State.Revision + 1, Decision = State.Decision! with { Id = "next-pass" } };
+            if (ExpireOnPass) State = State with { IgnoredPriorityAbilities = [], Turn = State.Turn + 1, ActivePlayerId = State.ViewerId };
+        } else if (reply is { Action: ReplyAction.SetAbilityAutoPass, Ignore: false }) {
+            State = State with { Revision = State.Revision + 1, IgnoredPriorityAbilities = State.IgnoredPriorityAbilities.Where(a => a.Id != reply.AbilityId).ToArray(), Decision = State.Decision == null ? null : State.Decision with { CanAutoPass = false } };
+        } else throw new InvalidOperationException("Unexpected preference-test command");
+    }
     public Task ConcedeAsync(string gameId) => Task.CompletedTask;
 }
 

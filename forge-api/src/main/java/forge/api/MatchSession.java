@@ -245,10 +245,11 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
     public Map<String, Object> action(JsonObject request) {
         synchronized (gate) {
             requireSession(request);
+            String action = string(request, "action");
+            if (action.equals("setAbilityAutoPass")) return setAbilityAutoPass(request);
             Pending next = pending;
             if (next == null || !next.id.equals(string(request, "promptId"))) throw new IllegalArgumentException("That choice has changed. Use the current prompt.");
-            String action = string(request, "action");
-            if (action.equals("passIfNoResponse") && !Boolean.TRUE.equals(next.prompt.get("canAutoPass")))
+            if (action.equals("passIfNoResponse") && (!Boolean.TRUE.equals(next.prompt.get("canAutoPass")) || !canAutoPass(next.input)))
                 throw new IllegalArgumentException("This response window needs your decision");
             if (!next.kind.equals("input")) {
                 validateDialog(next, request);
@@ -326,6 +327,50 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
             });
             return latest;
         }
+    }
+
+    /** Priority preferences never consume an input, activate an ability, or traverse a running board. */
+    private Map<String, Object> setAbilityAutoPass(JsonObject request) {
+        if (closed || viewer.getHasLost() || game.isGameOver()) throw new IllegalArgumentException("This match has ended");
+        var value = request.get("ignored");
+        if (value == null || !value.isJsonPrimitive() || !value.getAsJsonPrimitive().isBoolean())
+            throw new IllegalArgumentException("Choose whether to pass for this ability");
+        boolean ignored = value.getAsBoolean();
+        var requestedAbility = request.get("abilityId");
+        if (requestedAbility == null || !requestedAbility.isJsonPrimitive() || !requestedAbility.getAsJsonPrimitive().isString()
+                || requestedAbility.getAsString().isBlank()) throw new IllegalArgumentException("Choose an available ability");
+        String abilityId = requestedAbility.getAsString();
+        Pending current = pending;
+        if (ignored && (current == null || !current.id.equals(string(request, "promptId"))
+                || !(current.input instanceof InputPassPriority) || human.getInputQueue().getInput() != current.input))
+            throw new IllegalArgumentException("That choice has changed. Use the current prompt.");
+        if (!human.setPriorityAbilityIgnored(abilityId, ignored))
+            throw new IllegalArgumentException("That ability is no longer available");
+
+        // Preserve the published board and prompt-scoped card handles. Undo is also
+        // available during another player's priority or while the game is resolving.
+        var next = new LinkedHashMap<>(latest);
+        next.put("revision", ++revision);
+        next.put("ignoredPriorityAbilities", priorityAbilities(human.getIgnoredPriorityAbilities(), current));
+        if (current != null && current.input instanceof InputPassPriority) {
+            var prompt = new LinkedHashMap<>(current.prompt);
+            prompt.put("canAutoPass", canAutoPass(current.input));
+            prompt.put("priorityAbilities", priorityAbilities(human.getPriorityAbilities(), current));
+            current.prompt = prompt;
+            next.put("prompt", prompt);
+        }
+        latest = Collections.unmodifiableMap(next);
+        return latest;
+    }
+
+    private List<Map<String, Object>> priorityAbilities(List<PlayerControllerHuman.PriorityAbility> abilities, Pending prompt) {
+        return abilities.stream().<Map<String, Object>>map(ability -> {
+            String sourceKey = prompt == null ? "" : prompt.cards.entrySet().stream()
+                    .filter(entry -> entry.getValue().getId() == ability.sourceCardId())
+                    .map(Map.Entry::getKey).findFirst().orElse("");
+            return map("id", ability.id(), "sourceCardKey", sourceKey, "sourceName", ability.sourceName(),
+                    "text", ability.text(), "ignoredUntilNextTurn", ability.ignoredUntilNextTurn());
+        }).toList();
     }
 
     public Map<String, Object> concede(JsonObject request) {
@@ -418,11 +463,18 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
         }
         var activityFrame = activity.frame();
         activityRevision = activityFrame.revision();
+        if (prompt != null && prompt.input instanceof InputPassPriority) {
+            var projectedPrompt = new LinkedHashMap<>(prompt.prompt);
+            projectedPrompt.put("priorityAbilities", priorityAbilities(human.getPriorityAbilities(), prompt));
+            prompt.prompt = projectedPrompt;
+        }
         latest = Collections.unmodifiableMap(map("id", id, "revision", ++revision, "boardRevision", boardRevision, "format", format, "status", error != null ? "error" : game.isGameOver() ? "finished" : "playing",
                 "error", error, "playerCount", allPlayers.size(), "viewerId", viewer.getId(), "turn", view.getTurn(), "phase", view.getPhase() == null ? "Pregame" : view.getPhase().nameForUi,
                 "phaseKey", view.getPhase() == null ? "PREGAME" : view.getPhase().name(),
                 "activePlayerId", view.getPlayerTurn() == null ? null : view.getPlayerTurn().getId(), "players", players,
-                "stack", stack, "combat", combatState(prompt), "prompt", prompt == null ? null : prompt.prompt, "result", result, "notices", List.copyOf(notices), "activity", activityFrame.entries()));
+                "stack", stack, "combat", combatState(prompt), "prompt", prompt == null ? null : prompt.prompt,
+                "ignoredPriorityAbilities", priorityAbilities(human.getIgnoredPriorityAbilities(), prompt),
+                "result", result, "notices", List.copyOf(notices), "activity", activityFrame.entries()));
     }
 
     private List<Map<String, Object>> stackTargets(StackItemView root) {

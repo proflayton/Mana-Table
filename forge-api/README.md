@@ -301,7 +301,8 @@ User-initiated ability choices carry `context: playAbility`, a card-specific
 title, and optional option details. An empty choice list cancels that selection.
 
 Input prompts expose `canAutoPass`. It is true only for a priority window where
-the controller's current availability scan finds no playable non-mana action.
+the controller's current availability scan finds no playable non-mana action
+that the seat has chosen to stop for.
 The scan considers costs, targets, and playable zones, and conservatively stops
 on a scan timeout. An untapped mana source alone does not require a response.
 Main phases become eligible after the last playable action, including land
@@ -317,6 +318,24 @@ and phase stops persist across games. These client preferences can suppress an
 eligible pass but never authorize one the engine has rejected.
 This is an additive protocol change: existing manual actions remain valid, and
 clients must treat a missing `canAutoPass` field as false.
+
+Priority prompts also expose `priorityAbilities`, with opaque ability `id`,
+prompt-scoped `sourceCardKey`, `sourceName`, `text`, and `ignoredUntilNextTurn`.
+`matchAction {action: "setAbilityAutoPass", sessionId, promptId, abilityId,
+ignored: true}` tells Auto to disregard that exact activated ability until the
+start of the seat's next turn. It changes a preference without consuming priority
+or activating the card. Other abilities on the same card, another copy, playable
+spells and land plays still require a response. Incomplete scans never permit Auto.
+Policies expire when that seat starts its next turn, including extra turns, and
+are revoked when a subsequent scan finds that the source changed zones, instance,
+or controller. They are never saved across matches.
+
+Snapshots include `ignoredPriorityAbilities` between decisions. Undo uses the
+same action with `ignored: false` and may omit `promptId`, so a seat can restore
+an ability as a stop reason while another player has priority. Both setting and
+Undo publish a new snapshot revision while preserving the board revision and
+current decision. A setting never overrides Full control, Hold, phase stops,
+or a required choice. Missing ability arrays mean no available preference controls.
 
 Local and remote seats use this same permission, prompt and action path. Controller
 actions run on the input executor, outside the snapshot lock and request loop.

@@ -47,6 +47,23 @@ Rejected commands, first clicks, hover and elapsed time never retire reminders.
 Settings can reset the learned set. F1 remains a brief contextual reference with
 its own modal scope; opening it preserves the underlying decision and play policy.
 
+Native priority controls offer a per-ability pass preference until the player's
+next turn. `AvailableActions` produces a complete legal activation list alongside
+the normal actionable card set. `PriorityAbilityPass` owns opaque handles for an
+exact card timestamp, zone and ability; its controller expires preferences at the
+start of that player's next turn and revokes changed sources on the next scan.
+Ignoring an activation leaves its card usable and highlighted. The engine's
+`canAutoPass` permission considers every other available action and treats a
+partial scan as a reason to stop. Required decisions remain manual.
+
+`MatchSession` projects legal activations on the priority prompt and current
+preferences in each seat's snapshot. Setting a preference preserves its decision
+and board revision; Undo also works between prompts by updating the seat's copied
+snapshot without reading a running board. The native dock places the setting
+beside Pass, explains the selected ability, and keeps an Undo indicator visible.
+`ClientSession` serializes Undo behind any in-flight pass and cancels further
+buffered passes. Full control, Hold and saved phase stops retain precedence.
+
 `TableGame.Loading` tracks explicit operations separately from session polling and
 gameplay replies. Startup stages advance only after each awaited engine request.
 Setup commands acknowledge input immediately and own a scoped foreground surface;

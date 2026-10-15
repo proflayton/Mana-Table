@@ -79,7 +79,8 @@ internal sealed partial class TableGame : Game
     private bool OverlayOpen => ActivityOpen || ExperienceOpen || overlay.Length > 0 || zoneName != null || DecisionModal;
     private string Scope => match == null ? deckEditor ? DeckScope : LobbyScope : session.Scope;
     private string ControlScope(string id) => id.StartsWith("activity-") ? ActivityScope : id.StartsWith("experience-") || id == "guidance-reset" && ExperienceOpen ? ExperienceScope : id.StartsWith("chat-") ? ChatScope
-        : match != null && (id is "auto" or "hold" or "instructions" or "action-details" || id.StartsWith("phase-stop:")) ? match.Id + ":playback" : Scope;
+        : match != null && (id is "auto" or "hold" or "instructions" or "action-details" or "ability-auto-pass-open" or "ability-prev" or "ability-next" or "ability-text-prev" or "ability-text-next"
+            || id.StartsWith("phase-stop:") || id.StartsWith("ability-undo:")) ? match.Id + ":playback" : Scope;
     private bool CurrentHit(Hit hit) => hit.Scope == ControlScope(hit.Id);
     internal sealed record Hit(string Id, string Scope, Rectangle Bounds, Action Action, Card? Card = null, string? Zone = null, int? PlayerId = null, Func<Point, bool>? Shape = null)
     {

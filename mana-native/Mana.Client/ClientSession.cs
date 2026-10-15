@@ -11,6 +11,8 @@ public sealed class ClientSession(IMatchConnection connection, ITableSetup? setu
     private readonly SessionReplica<GameSnapshot> replica = new(s => s.Id, s => s.Revision);
     private readonly DecisionAdvance advance = new(connection);
     private CancellationTokenSource? advancing;
+    private readonly Queue<DecisionReply> pendingSettings = [];
+    private DecisionReply? activeSetting;
     public GameSnapshot? State => replica.Current;
     public string Scope => (State?.Id ?? "lobby") + ":" + (State?.Decision?.Id ?? "");
     public bool Busy { get; private set; }
@@ -20,9 +22,13 @@ public sealed class ClientSession(IMatchConnection connection, ITableSetup? setu
     public event Action? Completed;
     public event Action<GameSnapshot?, GameSnapshot?>? Changed;
     public void Post(Action action) => completions.Enqueue(action);
-    public void Pump() { while (completions.TryDequeue(out var action)) if (!Closed) action(); }
+    public void Pump()
+    {
+        while (completions.TryDequeue(out var action)) if (!Closed) action();
+        while (!Busy && pendingSettings.TryDequeue(out var setting)) Submit(setting);
+    }
     public bool Accept(GameSnapshot? state) => Accept(state, replica.Epoch);
-    public void Reset() { CancelAdvance(); replica.BeginCommand(); Accept(null); }
+    public void Reset() { CancelAdvance(); pendingSettings.Clear(); replica.BeginCommand(); Accept(null); }
     private bool Accept(GameSnapshot? state, long epoch)
     {
         var previous = State;
@@ -37,7 +43,7 @@ public sealed class ClientSession(IMatchConnection connection, ITableSetup? setu
         _ = Task.Run(async () => {
             try { await operation(epoch); }
             catch (Exception error) { Post(() => Failed?.Invoke(error)); }
-            finally { Post(() => { Busy = false; Completed?.Invoke(); }); }
+            finally { Post(() => { Busy = false; activeSetting = null; Completed?.Invoke(); }); }
         });
     }
     public void Poll(bool withLobby, Action<Lobby?> lobbyChanged)
@@ -55,10 +61,24 @@ public sealed class ClientSession(IMatchConnection connection, ITableSetup? setu
     }
     public bool Submit(DecisionReply reply)
     {
-        if (Busy || Closed || State?.Id != reply.GameId || State.Decision?.Id != reply.DecisionId) return false;
+        bool undoSetting = reply is { Action: ReplyAction.SetAbilityAutoPass, Ignore: false, DecisionId.Length: 0 };
+        if (Busy || Closed || State?.Id != reply.GameId || !undoSetting && State.Decision?.Id != reply.DecisionId) return false;
+        if (undoSetting && !State.IgnoredPriorityAbilities.Any(a => a.Id == reply.AbilityId)) return false;
         reply.Validate();
+        if (undoSetting) activeSetting = reply;
         Run(async epoch => { await connection.ReplyAsync(reply); var state = await connection.ObserveAsync(); Post(() => Accept(state, epoch)); });
         return true;
+    }
+    // Undo is a match preference, so it can be submitted while another player
+    // has priority. Finish any in-flight command before sending the setting.
+    public bool SubmitSetting(DecisionReply reply)
+    {
+        if (Closed || State?.Id != reply.GameId || reply is not { Action: ReplyAction.SetAbilityAutoPass, Ignore: false, DecisionId.Length: 0 }) return false;
+        if (!State.IgnoredPriorityAbilities.Any(a => a.Id == reply.AbilityId)) return false;
+        reply.Validate(); CancelAdvance();
+        if (activeSetting == reply || pendingSettings.Contains(reply)) return false;
+        if (!Busy) return Submit(reply);
+        pendingSettings.Enqueue(reply); return true;
     }
     public bool Advance(Func<GameSnapshot, bool> canPass, Func<GameSnapshot, GameSnapshot, bool> shouldPresent)
     {
@@ -75,5 +95,5 @@ public sealed class ClientSession(IMatchConnection connection, ITableSetup? setu
         return true;
     }
     public void CancelAdvance() => advancing?.Cancel();
-    public void Close() { CancelAdvance(); Closed = true; replica.BeginCommand(); }
+    public void Close() { CancelAdvance(); pendingSettings.Clear(); Closed = true; replica.BeginCommand(); }
 }

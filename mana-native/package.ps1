@@ -48,7 +48,7 @@ foreach ($file in Get-ChildItem -LiteralPath $PSScriptRoot -File -Recurse | Wher
     Copy-Item -LiteralPath $file.FullName -Destination $destination
 }
 $patchPath = Join-Path $OutputDirectory 'source/forge-adapter.patch'
-& git -C $repository diff "--output=$patchPath" -- forge-api/src/main/java forge-game/src/main/java forge-gui/src/main/java
+& git -C $repository diff "--output=$patchPath" -- forge-api/src/main/java forge-game/src/main/java forge-gui/src/main/java forge-ai/src/main/java forge-core/src/main/java
 if ($LASTEXITCODE -ne 0) { throw 'Could not export the Forge source patch.' }
 # Include new adapter files as source too; git diff alone omits untracked additions.
 $adapterSource = Join-Path $OutputDirectory 'source/forge-api'
@@ -56,10 +56,12 @@ New-Item -ItemType Directory -Path $adapterSource -Force | Out-Null
 Copy-Item -LiteralPath (Join-Path $repository 'forge-api/src') -Destination $adapterSource -Recurse
 Copy-Item -LiteralPath (Join-Path $repository 'forge-api/pom.xml') -Destination $adapterSource
 Copy-Item -LiteralPath (Join-Path $repository 'forge-api/README.md') -Destination $adapterSource
-$coreSource = Join-Path $OutputDirectory 'source/forge-core'
-New-Item -ItemType Directory -Path $coreSource -Force | Out-Null
-Copy-Item -LiteralPath (Join-Path $repository 'forge-core/src') -Destination $coreSource -Recurse
-Copy-Item -LiteralPath (Join-Path $repository 'forge-core/pom.xml') -Destination $coreSource
+foreach ($module in @('forge-core', 'forge-ai', 'forge-gui')) {
+    $moduleSource = Join-Path $OutputDirectory ('source/' + $module)
+    New-Item -ItemType Directory -Path $moduleSource -Force | Out-Null
+    Copy-Item -LiteralPath (Join-Path $repository ($module + '/src')) -Destination $moduleSource -Recurse
+    Copy-Item -LiteralPath (Join-Path $repository ($module + '/pom.xml')) -Destination $moduleSource
+}
 Copy-Item -LiteralPath (Join-Path $repository 'scenarios') -Destination (Join-Path $OutputDirectory 'source') -Recurse
 $documentation = Join-Path $OutputDirectory 'source/docs'
 New-Item -ItemType Directory -Path $documentation -Force | Out-Null

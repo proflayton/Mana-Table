@@ -246,8 +246,13 @@ internal sealed partial class TableGame
         string status = following ? "FOLLOWING THE TABLE" : d!.Intent == DecisionIntent.Block ? "CHOOSE YOUR BLOCKERS"
             : d.Intent == DecisionIntent.Priority ? "YOUR PRIORITY" : "YOUR DECISION";
         canvas.Text(status, 1266, 727, following ? Muted : Gold, .54f, 298, 1, true);
-        canvas.Text(following ? "Waiting for your next action. Use Hold to pause Auto." : TurnGuide.Instruction(state), 1266, 741, Ink, .66f, 295, 3);
-        hits.Add(new("instructions", ControlScope("instructions"), new(1262, 724, 304, 65), () => { overlay = "help"; inspectPage = 0; }));
+        var abilities = PriorityAbilityOptions();
+        string instruction = abilities.Length == 1 ? abilities[0].IgnoredUntilNextTurn
+            ? abilities[0].SourceName + (automatic ? ": passing this ability" : ": Auto may pass this ability") : abilities[0].SourceName + " can be activated."
+            : following ? "Waiting for your next action. Use Hold to pause Auto." : TurnGuide.Instruction(state);
+        canvas.Text(instruction, 1266, 741, Ink, .66f, 295, abilities.Length > 0 ? 1 : 3);
+        hits.Add(new("instructions", ControlScope("instructions"), new(1262, 724, 304, abilities.Length > 0 ? 45 : 65), () => { overlay = "help"; inspectPage = 0; }));
+        if (abilities.Length > 0) DrawPriorityAbilityControl(abilities);
         if (following) {
             canvas.Panel(new(1266, 799, 296, 47), new(22, 31, 39), new Color(66, 82, 94), 4);
             canvas.CenterText("Table in progress", new(1275, 800, 278, 45), Muted, .76f);

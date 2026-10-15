@@ -58,8 +58,11 @@ internal sealed partial class TableGame
         ControlCue? cue;
         if (hit?.Id is "auto" or "hold") {
             cue = new("priority-controls", held ? "Priority held this turn" : automatic ? "Auto is following the table" : "You have full control",
-                held ? "Click Hold again to resume. It resets next turn." : automatic ? "Auto passes empty priority. Hold keeps this turn open." : "You choose each pass. Auto skips empty priority.");
-            if (Unlearned(cue)) PaintGuidance(cue, new(1266, 724, 296, 66), true);
+                held ? "Click Hold again to resume. It resets next turn." : automatic ? "Auto follows your pass settings. Hold keeps priority this turn." : "You choose each pass. Auto follows your pass settings.");
+            if (Unlearned(cue)) {
+                if (PriorityAbilityOptions().Length > 0) PaintGuidanceHeader(cue);
+                else PaintGuidance(cue, new(1266, 724, 296, 66), true);
+            }
             return;
         }
         if (state.Decision?.Intent is DecisionIntent.Attack or DecisionIntent.Block or DecisionIntent.Selection || TableChoices.IsDirect(state)) {
@@ -95,7 +98,8 @@ internal sealed partial class TableGame
         var placement = anchor == null ? null : GuidancePlacement(anchor.Bounds, anchor.Zone);
         if (placement is { } beside) {
             PaintAnchoredGuidance(cue!, anchor!, beside);
-        } else PaintGuidance(cue!, new(1266, 724, 296, 66), true);
+        } else if (PriorityAbilityOptions().Length > 0) PaintGuidanceHeader(cue!);
+        else PaintGuidance(cue!, new(1266, 724, 296, 66), true);
     }
 
     private void PaintAnchoredGuidance(ControlCue cue, Hit anchor, Rectangle bounds)

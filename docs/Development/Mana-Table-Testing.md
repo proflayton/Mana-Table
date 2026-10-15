@@ -62,6 +62,26 @@ uninterrupted table polling, replies and Auto. Repeat at 1200x900 and review
 isolated invalid JAR, repairs the copy and retries the same adapter. It verifies
 healthy process reuse, retained undo history and idempotent disposal.
 
+### Native ability auto-pass
+
+`--smoke-priority-abilities --profile <isolated-profile> --size 1280x720` drives
+the contextual pass-until-my-next-turn control through native hit testing. It
+checks independent abilities on one card, visible Undo between priority windows,
+manual activation, Hold, and restoration after an engine expiry snapshot. Repeat
+at 1200x900 and review `priority-ability-results.json` and captures 01–05.
+`Mana.Client.Tests` checks serialized Undo during an in-flight pass and prevents
+stale snapshots from restoring a preference. `--smoke-auto-dock` retains the
+existing dock and Hold regression.
+
+The Java `AbilityAutoPassTest` uses real four-human-seat games with Arid Mesa.
+It verifies that a setting does not consume priority or activate the source,
+survives three opponents' turns, expires before the next own-turn priority,
+allows Undo without a local prompt, preserves land/spell and other ability stops,
+and permits manual activation of an ignored Mesa. `PriorityAbilityPassShould`
+covers exact instance and ability identity, conservative partial scans, extra
+turns, source/control changes and game cleanup. Run these with
+`AutomaticPriorityShould`, `EngineApiTest` and the normal rules regressions.
+
 ### Native lobby and deck confirmation
 
 ```powershell

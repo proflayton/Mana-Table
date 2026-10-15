@@ -14,6 +14,7 @@ internal sealed class InteractionScenarioEngine : ICardEngine
     public List<DecisionReply> Replies { get; } = [];
     internal bool RejectNextReply { get; set; }
     internal int RejectedReplies { get; private set; }
+    internal bool PriorityHasOtherResponse { get; set; }
     public InteractionScenarioEngine()
     {
         Card Creature(string id, string name = "Llanowar Elves") => new() { VisualId = id, CombatId = id, Name = name, Type = "Creature", Power = 2, Toughness = 2 };
@@ -43,11 +44,24 @@ internal sealed class InteractionScenarioEngine : ICardEngine
     }
     public Task ReplyAsync(DecisionReply reply)
     {
-        if (reply.GameId != state.Id || reply.DecisionId != state.Decision?.Id)
+        bool undoSetting = reply is { Action: ReplyAction.SetAbilityAutoPass, Ignore: false, DecisionId.Length: 0 };
+        if (reply.GameId != state.Id || !undoSetting && reply.DecisionId != state.Decision?.Id)
             throw new InvalidOperationException($"Scenario received stale {reply.Action}: {reply.DecisionId}, current {state.Decision?.Id}");
         if (RejectNextReply) { RejectNextReply = false; RejectedReplies++; throw new InvalidOperationException("Controlled rejected play"); }
         Card Find(string? key) => state.Players.SelectMany(p => p.Zones).SelectMany(z => z.Cards).Single(c => c.Key == key);
-        if (reply.Action == ReplyAction.AssignAttack) {
+        if (reply.Action == ReplyAction.SetAbilityAutoPass) {
+            if (reply.Ignore is not { } ignored || reply.AbilityId is not { } abilityId) throw new InvalidOperationException("Missing ability preference");
+            var available = state.Decision?.PriorityAbilities ?? [];
+            var ability = available.Concat(state.IgnoredPriorityAbilities).FirstOrDefault(a => a.Id == abilityId)
+                ?? throw new InvalidOperationException("Unprojected ability preference");
+            if (ignored && !available.Any(a => a.Id == abilityId)) throw new InvalidOperationException("Cannot ignore an unavailable ability");
+            var policies = state.IgnoredPriorityAbilities.Where(a => a.Id != abilityId).ToList();
+            if (ignored) policies.Add(ability with { IgnoredUntilNextTurn = true });
+            var abilities = available.Select(a => a.Id == abilityId ? a with { IgnoredUntilNextTurn = ignored } : a).ToArray();
+            state = state with { IgnoredPriorityAbilities = policies.ToArray(), Decision = state.Decision == null ? null : state.Decision with {
+                PriorityAbilities = abilities, CanAutoPass = !PriorityHasOtherResponse && abilities.All(a => a.IgnoredUntilNextTurn)
+            } };
+        } else if (reply.Action == ReplyAction.AssignAttack) {
             var card = Find(reply.Attacker);
             if (state.Decision?.Intent != DecisionIntent.Attack || reply.Player is not (1 or 2) || !new[] { "own-0", "own-9", "own-12" }.Contains(card.CombatId)) throw new InvalidOperationException("Illegal attack escaped the UI");
             int defender = reply.Player.Value;

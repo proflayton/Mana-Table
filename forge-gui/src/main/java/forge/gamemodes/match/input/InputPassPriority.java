@@ -68,6 +68,10 @@ public class InputPassPriority extends InputSyncronizedBase {
         return availabilityVerified && !isFinished() && !getOwner().hasAvailableActions();
     }
 
+    public boolean isPriorityActive() {
+        return !isFinished();
+    }
+
     private SuggestionType pendingSuggestion = null;
     private String pendingSuggestionMessage = null;
 
@@ -78,6 +82,7 @@ public class InputPassPriority extends InputSyncronizedBase {
     @Override
     protected void onStop() {
         getController().clearActionableCards();
+        getController().clearPriorityAbilities(this);
     }
 
     @Override
