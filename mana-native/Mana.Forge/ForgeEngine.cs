@@ -129,9 +129,12 @@ public sealed class ForgeEngine(ForgePaths paths) : ICardEngine, ITableSocial
             var card = MapCatalogCard(entry.GetProperty("card"));
             return new DeckEntry(Text(entry, "section"), card.Id, card.Card, entry.GetProperty("quantity").GetInt32(), card.ManaValue, card.ColorIdentity, card.Edition);
         }).ToArray();
+        var validation = data.GetProperty("validation");
         return new(Text(data, "id"), Text(deck, "name"), deck.GetProperty("revision").GetInt64(), entries,
-            Read<CommanderOption[]>(data.GetProperty("commanderChoices")), Text(data.GetProperty("validation"), "problem"), Text(data, "saveError"),
-            deck.GetProperty("canUndo").GetBoolean(), deck.GetProperty("canRedo").GetBoolean());
+            Read<CommanderOption[]>(data.GetProperty("commanderChoices")), Text(validation, "problem"), Text(data, "saveError"),
+            deck.GetProperty("canUndo").GetBoolean(), deck.GetProperty("canRedo").GetBoolean()) {
+                Issues = validation.TryGetProperty("issues", out var issues) ? Read<DeckIssue[]>(issues) : []
+            };
     }
     public async Task<DeckDetails> OpenDeckAsync(string id) => MapDeck(await Request("open", new { id }));
     public async Task<DeckDetails> SetCommandersAsync(string deckId, long revision, IReadOnlyList<string> cardIds) =>

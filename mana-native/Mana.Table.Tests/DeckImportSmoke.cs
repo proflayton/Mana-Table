@@ -57,8 +57,8 @@ internal static class DeckImportSmoke
                 deckId = deck.Id; contents = Contents(deck); savedFiles = Files(); s.Capture("01-imported-user-deck");
             });
             s.Click("deck-done");
-            s.Then(() => Check(view.SetupModal == "confirm" && view.SelectedDeck?.Id == deckId, "Leaving the imported builder reviews the same saved deck"));
-            s.Click("setup-close"); s.Click("change-deck"); s.Click(() => "deck:" + deckId);
+            s.Then(() => Check(view.SetupModal.Length == 0 && !view.DeckEditor && !view.DeckConfirmed && view.SelectedDeck?.Id == deckId, "Leaving the imported builder returns to setup with the same saved deck and no forced review"));
+            s.Click("change-deck"); s.Click(() => "deck:" + deckId);
             s.Then(() => Check(view.SetupModal == "confirm" && Contents(view.DeckDetails!) == contents, "The real deck picker reopens the imported list with its quantities and commander intact"));
             s.Click("confirm-edit"); s.Ready();
             s.Then(() => Check(view.DeckEditor && Contents(view.DeckDetails!) == contents, "Reopening the native builder refreshes the exact imported document"));

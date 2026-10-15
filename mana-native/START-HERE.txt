@@ -21,6 +21,9 @@ of that control, and remember it across launches. A failed action keeps its hint
 Settings > Show control hints again restores reminders without changing play.
 F1 offers brief help for the current moment. Games open directly at your decision,
 without a controls tour. Existing decks, names and play preferences are retained.
+The deck builder checks every saved edit. Problem cards are highlighted and
+their reasons appear beside the selected card; deck-wide checks stay visible.
+Back to setup returns to the lobby. Deck checks and saving update automatically.
 
 PLAY SOLO AGAINST AI
 1. Under Play with AI, select Choose a deck (or Change deck). Pick a saved list,

@@ -67,9 +67,11 @@ public sealed record CatalogCard(string Id, Card Card, int ManaValue, int ColorI
 public sealed record CardQuery(string Text = "", string Type = "", int? ColorIdentity = null, int? MaxManaValue = null, string Sort = "name", int Offset = 0, int Limit = 6);
 public sealed record CatalogPage(int Total, int Offset, CatalogCard[] Cards);
 public sealed record CommanderOption(string Id, string[] Partners);
+public sealed record DeckIssue(string Code, string Message, string? Section, string[] CardIds);
 public sealed record DeckDetails(string Id, string Name, long Revision, DeckEntry[] Entries,
     CommanderOption[] CommanderOptions, string Problem, string SaveError, bool CanUndo = false, bool CanRedo = false)
 {
+    public DeckIssue[] Issues { get; init; } = [];
     public string[] CommanderIds => Entries.Where(e => e.Section == "Commander").Select(e => e.Id).ToArray();
 }
 public sealed record DeckPreset(string Id, string Name, string Description);

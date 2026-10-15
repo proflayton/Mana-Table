@@ -170,8 +170,9 @@ internal sealed class LobbySmoke(TableGame.Probe view, ForgePaths paths) : ITabl
             case 9: otherDeckId = Deck.Id; view.DuplicateDeck("My merfolk table copy"); stage = 109; break;
             case 109: Click("deck-done", 10); break;
             case 10:
-                Check(view.SetupModal == "confirm" && Deck.Name == "My merfolk table copy" && !view.DeckConfirmed, "Returning from the builder reviews the saved changes before confirming again");
-                Click("confirm-deck", 11); break;
+                Check(view.SetupModal.Length == 0 && !view.DeckEditor && Deck.Name == "My merfolk table copy" && !view.DeckConfirmed, "Returning from the builder keeps the saved changes in setup without forcing confirmation");
+                Click("review-deck", 1010); break;
+            case 1010: Click("confirm-deck", 11); break;
             case 11:
                 Check(view.DeckConfirmed && Opponents().SequenceEqual(choices), "Reconfirming an edited deck preserves all three AI choices");
                 Click("friends-tab", 12); break;
@@ -250,7 +251,8 @@ internal sealed class LobbySmoke(TableGame.Probe view, ForgePaths paths) : ITabl
                 Check(view.DeckEditor && !view.DeckConfirmed && Local?.Ready == false, "Entering the builder clears synchronized readiness before any editing begins");
                 Check(view.DeckSelection?.Id == editCardId && view.Hits.Any(h => h.Id == "deck-card:Main:" + editCardId), "Opening the builder from review selects and reveals the exact card printing for editing");
                 Click("deck-done", 23); break;
-            case 23: Click("confirm-deck", 24); break;
+            case 23: Click("review-deck", 1023); break;
+            case 1023: Click("confirm-deck", 24); break;
             case 24: Click("ready", 25); break;
             case 25: background = JoinGuests(); stage++; break;
             case 26:
@@ -380,7 +382,8 @@ internal sealed class LobbySmoke(TableGame.Probe view, ForgePaths paths) : ITabl
             case 44:
                 Check(peerLobby!.Seats.Any(s => s.Type == "REMOTE" && !s.Ready && s.Deck == Deck.Name), "The host observes the guest becoming unready through ordinary synchronization");
                 Click("deck-done", 45); break;
-            case 45: Click("confirm-deck", 46); break;
+            case 45: Click("review-deck", 1045); break;
+            case 1045: Click("confirm-deck", 46); break;
             case 46:
                 Check(view.DeckConfirmed && Local?.Ready == false, "Reconfirmation does not silently ready the guest"); Click("ready", 47); break;
             case 47: Click("leave", 48); break;
@@ -390,7 +393,10 @@ internal sealed class LobbySmoke(TableGame.Probe view, ForgePaths paths) : ITabl
                 Click("new-deck", 49); break;
             case 49: Click("deck-done", 50); break;
             case 50:
-                Check(view.SetupModal == "confirm" && !view.Hits.Any(h => h.Id == "confirm-deck") && view.Hits.Any(h => h.Id == "confirm-edit"), "Incomplete drafts offer a return to the builder and cannot be confirmed");
+                Check(!view.DeckEditor && view.SetupModal.Length == 0 && !view.DeckConfirmed && !view.Hits.Any(h => h.Id == "start-solo") && view.Hits.Any(h => h.Id == "edit-deck"), "Incomplete drafts return to setup and remain editable without becoming playable");
+                Click("review-deck", 1050); break;
+            case 1050:
+                Check(view.SetupModal == "confirm" && !view.Hits.Any(h => h.Id == "confirm-deck") && view.Hits.Any(h => h.Id == "confirm-edit"), "Explicitly reviewing an incomplete draft still cannot confirm it for play");
                 Capture("07-incomplete-deck");
                 File.WriteAllText(Path.Combine(view.Profile, "lobby-results.json"), JsonSerializer.Serialize(checks, new JsonSerializerOptions { WriteIndented = true }));
                 view.Exit(); stage++; break;

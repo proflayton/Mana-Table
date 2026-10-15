@@ -20,7 +20,13 @@ public final class DeckEditor {
         public Snapshot { entries = List.copyOf(entries); }
     }
     /** Checks Forge's structural deck rules, not rotating set/ban-list legality. */
-    public record Validation(String format, boolean valid, String problem) { }
+    public record Issue(String code, String message, String section, List<String> cardIds) {
+        public Issue { cardIds = List.copyOf(cardIds); }
+    }
+    public record Validation(String format, boolean valid, String problem, List<Issue> issues) {
+        public Validation { issues = List.copyOf(issues); }
+        public Validation(String format, boolean valid, String problem) { this(format, valid, problem, List.of()); }
+    }
 
     private final CardCatalog catalog;
     private final Deque<Deck> undo = new ArrayDeque<>();
@@ -104,7 +110,7 @@ public final class DeckEditor {
 
     public synchronized Validation validate(DeckFormat format) {
         String problem = Objects.requireNonNull(format).getDeckConformanceProblem(deck);
-        return new Validation(format.name(), problem == null, problem);
+        return new Validation(format.name(), problem == null, problem, DeckValidation.issues(deck, format, problem));
     }
 
     /** A detached copy for Forge's match launcher or existing DeckSerializer. */

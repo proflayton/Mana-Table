@@ -41,6 +41,9 @@ internal sealed partial class TableGame
         internal DeckSummary? SelectedDeck => game.selectedDeck;
         internal DeckDetails? DeckDetails => game.selectedDeckDetails;
         internal bool DeckEditor => game.deckEditor;
+        internal Rectangle? DeckIssueBounds => game.deckIssueBounds;
+        internal IReadOnlySet<string> RenderedDeckIssueCodes => game.renderedDeckIssueCodes;
+        internal IReadOnlySet<string> RenderedDeckIssueCardIds => game.renderedDeckIssueCardIds;
         internal bool DeckConfirmed => game.DeckConfirmed;
         internal Mana.Contracts.TableConversation? Conversation => game.conversation.State;
         internal int ChatUnread => game.conversation.Unread;

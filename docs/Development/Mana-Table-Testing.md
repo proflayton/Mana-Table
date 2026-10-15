@@ -130,12 +130,21 @@ filter by leader identity/type/mana, reject old search results, copy to clipboar
 rename, duplicate, reopen, return from AI setup, and page through a full precon.
 Copy list stays disabled on empty drafts and after removing the last card;
 Undo restores copying, while populated copies retain their quantities and sections.
+Validation issues arrive with each edit: count problems, duplicate copies and
+off-color cards appear inline and clear after correction or undo. Assertions use
+engine-projected printing IDs and rendered warning observations; the removed
+review dialog is never needed to discover a problem. Back to setup returns to
+the lobby, and scenarios open confirmation explicitly when selecting a table deck.
 Quantity/name dialog values enter the same production actions through the test
-port. It records `workshop-ui-results.json` and three UI captures with deck/catalog
+port. It records `workshop-ui-results.json` and UI captures with deck/catalog
 snapshots. Review at 1280x720 and 1200x900; cached art is optional. Run the commander
 scenario below to cover readiness and actual match setup after workshop changes.
 
 ### Native deck import and commander selection
+
+`DeckValidationTest` covers structured issues alongside unchanged Forge validity
+and the legacy problem message, including copy limits across printings, commander
+identity and pairing, size rules, and exceptions granted by card rules.
 
 `DeckImportTest` loads the real card resources and covers common text export
 conventions, annotated rows, section boundaries, exact printing/foil requests,

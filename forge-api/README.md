@@ -21,7 +21,7 @@ local deck persistence, opening-hand practice, and human-versus-AI matches. Buil
 | `DeckImport.preview(text)` | Forge's existing deck recognizer with line-numbered problems; imports cannot silently discard unresolved rows |
 | `DeckEditor.apply(revision, edits)` | Atomic batches of absolute quantities across deck sections; stale writes fail |
 | `DeckEditor.undo/redo(revision)` | Bounded history, monotonically increasing revisions |
-| `DeckEditor.validate(format)` | Forge's structural deck validation; not Standard/Modern set or ban-list legality |
+| `DeckEditor.validate(format)` | Forge's structural deck validation plus current issues with codes, sections and affected printing IDs; not Standard/Modern set or ban-list legality |
 | `DeckEditor.toDeck()` | Detached Forge deck for existing persistence and match setup |
 | `DeckCommanders.choices/set(...)` | Rules-authorized commander/partner choices and atomic, persistent section moves; `setCommanders` requires deck ID and revision |
 | `DeckInsights.analyze(...)` | Read-only role estimates and explained suggestions from a small offline candidate pool |

@@ -22,6 +22,18 @@ internal sealed class DeckWorkshopSmoke(TableGame.Probe view) : ITableAutomation
     private DeckDetails Deck => view.DeckDetails!;
     private bool Valid => Deck.Problem.Length == 0 && Deck.SaveError.Length == 0;
     private DeckEntry Entry(string name) => Deck.Entries.First(e => e.Card.Name == name);
+    private bool HasIssue(string code) => Deck.Issues.Any(issue => issue.Code == code);
+    private bool MarkedIssue(string code, string name)
+    {
+        string id = Entry(name).Id;
+        return Deck.Issues.Any(issue => issue.Code == code && issue.CardIds.Contains(id)) && view.RenderedDeckIssueCardIds.Contains(id);
+    }
+    private bool ShowIssue(string code, int retryStage)
+    {
+        if (view.RenderedDeckIssueCodes.Contains(code)) return true;
+        if (view.Hits.Any(h => h.Id == "deck-issues-next")) { Click("deck-issues-next", retryStage); return false; }
+        throw new InvalidOperationException("Workshop did not render the current validation issue " + code);
+    }
     public MouseState ReadMouse()
     {
         bool down = mousePhase == 1;
@@ -66,6 +78,7 @@ internal sealed class DeckWorkshopSmoke(TableGame.Probe view) : ITableAutomation
             case 1:
                 Check(view.DeckEditor && Deck.Entries.Length == 0, "New deck opens a saved empty workspace");
                 Check(!view.Hits.Any(h => h.Id == "deck-export"), "Copy list has no active control for a fresh empty deck");
+                Check(!view.Hits.Any(h => h.Id == "deck-review") && view.DeckIssueBounds is { Width: > 0, Height: > 0 }, "Live validation is visible in the builder without a separate Review deck control");
                 emptyDraftId = Deck.Id;
                 Click("deck-search-library", 2); break;
             case 2: Type("Rhys the Redeemed"); stage++; break;
@@ -96,6 +109,7 @@ internal sealed class DeckWorkshopSmoke(TableGame.Probe view) : ITableAutomation
             case 10: view.DeckQuantity(99); stage++; break;
             case 11:
                 Check(Valid && Deck.Entries.Sum(e => e.Quantity) == 100, "Bulk quantity entry creates a legal deck without repeated clicking");
+                Check(Deck.Issues.Length == 0 && view.RenderedDeckIssueCodes.Count == 0, "Correcting the deck to 100 cards clears live validation warnings automatically");
                 Click("deck-search-library", 12); break;
             case 12: Type("Sol Ring"); stage++; break;
             case 13:
@@ -103,16 +117,30 @@ internal sealed class DeckWorkshopSmoke(TableGame.Probe view) : ITableAutomation
                 Click("catalog-add:" + ring.Id, 14); break;
             case 14:
                 Check(!Valid && Deck.Entries.Sum(e => e.Quantity) == 101, "Adding from a catalog tile updates the deck total and exposes the size problem");
+                Check(HasIssue("MAIN_COUNT") && view.RenderedDeckIssueCodes.Contains("MAIN_COUNT") && view.DeckIssueBounds != null, "Adding a card immediately renders the authoritative deck-size issue in place");
+                Check(Deck.SaveError.Length == 0 && view.InlineActivityVisible && HasIssue("MAIN_COUNT"), "Successful autosave feedback does not replace or clear deck validation");
                 Click("deck-all", 15); break;
             case 15: Row("Forest", 16); break;
             case 16: Click("deck-remove", 17); break;
             case 17:
-                Check(Valid && Entry("Forest").Quantity == 98, "Removing a copy restores a playable deck"); Row("Sol Ring", 18); break;
+                Check(Valid && Entry("Forest").Quantity == 98, "Removing a copy restores a playable deck");
+                Check(Deck.Issues.Length == 0 && view.RenderedDeckIssueCodes.Count == 0, "Removing the excess card clears its visible warning without opening review");
+                Row("Sol Ring", 1700); break;
+            case 1700: Click("deck-add", 1701); break;
+            case 1701:
+                if (!ShowIssue("CARD_COPY_LIMIT", 1701)) break;
+                Check(Entry("Sol Ring").Quantity == 2 && MarkedIssue("CARD_COPY_LIMIT", "Sol Ring"), "A duplicate nonbasic card is identified by the engine and marked on its actual deck row");
+                Capture("04-live-copy-limit"); Click("deck-remove", 1702); break;
+            case 1702:
+                Check(Valid && Deck.Issues.Length == 0 && !view.RenderedDeckIssueCardIds.Contains(Entry("Sol Ring").Id), "Removing a duplicate clears its row warning and restores validity immediately");
+                Click("deck-move", 19); break;
             case 18: Click("deck-move", 19); break;
             case 19:
                 Check(Entry("Sol Ring").Section == "Sideboard" && !Valid, "The move control transfers cards to sideboard and revalidates the main deck"); Click("deck-undo", 20); break;
             case 20:
-                Check(Entry("Sol Ring").Section == "Main" && Valid, "Undo restores the moved card and legality"); Click("deck-redo", 21); break;
+                Check(Entry("Sol Ring").Section == "Main" && Valid, "Undo restores the moved card and legality");
+                Check(Deck.Issues.Length == 0 && view.RenderedDeckIssueCodes.Count == 0, "Undo updates the live validation panel as well as the deck contents");
+                Click("deck-redo", 21); break;
             case 21:
                 Check(Entry("Sol Ring").Section == "Sideboard", "Redo restores the sideboard move"); Click("deck-undo", 22); break;
             case 22: Click("deck-search-library", 23); break;
@@ -122,8 +150,20 @@ internal sealed class DeckWorkshopSmoke(TableGame.Probe view) : ITableAutomation
                 if (view.CatalogBusy || view.Catalog == null) break;
                 Check(view.Catalog.Total == 0, "Leader-color filter hides off-color search results"); Click("catalog-identity", 25); break;
             case 25:
-                if (!Result("Lightning Bolt", out _)) break;
-                Check(true, "Turning off the color filter restores those results"); Click("deck-search-library", 26); break;
+                if (!Result("Lightning Bolt", out var bolt)) break;
+                Check(true, "Turning off the color filter restores those results");
+                Click("catalog-add:" + bolt.Id, 2500); break;
+            case 2500:
+                if (!ShowIssue("COLOR_IDENTITY", 2500)) break;
+                Check(MarkedIssue("COLOR_IDENTITY", "Lightning Bolt"), "An off-color card receives its authoritative color-identity issue and a visible row warning");
+                Capture("05-live-color-identity"); Click("deck-issues-filter", 2501); break;
+            case 2501:
+                Check(view.Hits.Count(h => h.Id.StartsWith("deck-card:")) == 1 && view.Hits.Any(h => h.Id == "deck-card:Main:" + Entry("Lightning Bolt").Id), "Problems filtering exposes the affected card without guessing from its printed text");
+                Click("deck-remove", 2502); break;
+            case 2502:
+                Check(Valid && Deck.Issues.Length == 0 && view.RenderedDeckIssueCardIds.Count == 0 && view.RenderedDeckIssueCodes.Count == 0, "Correcting an off-color addition clears live issues and card markers without a Review click");
+                Click("deck-issues-filter", 2503); break;
+            case 2503: Click("deck-search-library", 26); break;
             case 26: Type("Forest"); Type("Sol Ring"); stage++; break;
             case 27:
                 if (!Result("Sol Ring", out _) || view.CatalogBusy) break;
@@ -143,8 +183,9 @@ internal sealed class DeckWorkshopSmoke(TableGame.Probe view) : ITableAutomation
             case 34:
                 Check(Deck.Id != originalId && Valid, "Duplicate opens an independent saved copy");
                 Capture("01-workspace"); Click("deck-done", 35); break;
-            case 35: Click("setup-close", 135); break;
-            case 135: Click("change-deck", 136); break;
+            case 35:
+                Check(!view.DeckEditor && view.SetupModal.Length == 0 && !view.DeckConfirmed, "Back to setup leaves the live-validated deck without forcing review or confirmation");
+                Click("change-deck", 136); break;
             case 136: Click("deck:" + Deck.Id, 36); break;
             case 36:
                 Check(Valid && Entry("Forest").Quantity == 98, "Reopening the deck preserves the built list"); Click("confirm-deck", 37); break;

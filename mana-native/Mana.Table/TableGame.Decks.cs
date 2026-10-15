@@ -5,16 +5,23 @@ namespace Mana.Table;
 internal sealed partial class TableGame
 {
     private DeckDetails? selectedDeckDetails;
-    private bool deckEditor, commanderCandidates = true, deckReview;
-    private int deckCardsPage, deckReviewPage;
+    private bool deckEditor, commanderCandidates = true, deckIssuesOnly;
+    private int deckCardsPage, deckIssuePage, deckCardIssuePage;
     private string? deckCardId;
     private string deckSection = "", deckCardSection = "Main", deckFilter = "";
     private CatalogCard? librarySelection;
     private string? deckBackId;
-    private const int DeckRows = 12;
+    private const int DeckRows = 10;
     private bool DeckReady => selectedDeckDetails is { Problem.Length: 0, SaveError.Length: 0 } && selectedDeckDetails.CommanderIds.Length > 0;
     private bool DeckCanCopy => selectedDeckDetails?.Entries.Any(e => e.Quantity > 0) == true;
-    private string DeckScope => $"setup:{selectedDeckDetails?.Id}:{selectedDeckDetails?.Revision}:{deckEditor}:{commanderCandidates}:{deckSection}:{deckFilter}:{deckCardsPage}:{deckCardId}:{deckCardSection}:{librarySelection?.Id}:{catalogGeneration}:{deckReview}:{deckMenu}";
+    private string DeckScope => $"setup:{selectedDeckDetails?.Id}:{selectedDeckDetails?.Revision}:{deckEditor}:{commanderCandidates}:{deckSection}:{deckFilter}:{deckCardsPage}:{deckCardId}:{deckCardSection}:{librarySelection?.Id}:{catalogGeneration}:{deckIssuesOnly}:{deckIssuePage}:{deckCardIssuePage}:{deckMenu}";
+    private DeckIssue[] DeckIssues => selectedDeckDetails is not { } deck ? [] : deck.Issues.Length > 0 ? deck.Issues
+        : deck.Problem.Length > 0 ? [new("LEGACY", deck.Problem, null, [])] : [];
+    private DeckIssue[] CardIssues(string cardId, string section) => DeckIssues
+        .Where(issue => (issue.Section == null || issue.Section == section) && issue.CardIds.Contains(cardId)).ToArray();
+    private sealed record DeckIssueText(DeckIssue Issue, string Text);
+    private static DeckIssueText[] IssueTextPages(IEnumerable<DeckIssue> issues, int characters) => issues
+        .SelectMany(issue => TextPages(issue.Message, characters).Select(text => new DeckIssueText(issue, text))).ToArray();
     private int? CommanderIdentity => selectedDeckDetails?.Entries.Where(e => e.Section == "Commander").ToArray() is { Length: > 0 } leaders
         ? leaders.Aggregate(0, (mask, e) => mask | e.ColorIdentity) : null;
     private CatalogCard? DeckSelection {
@@ -30,9 +37,10 @@ internal sealed partial class TableGame
         bool changed = selectedDeckDetails?.Id != details.Id;
         int? identity = CommanderIdentity;
         selectedDeck = new(details.Id, details.Name); selectedDeckDetails = details; InvalidateDeckConfirmation();
+        deckIssuePage = deckCardIssuePage = 0;
         if (changed) {
             commanderCandidates = details.CommanderIds.Length == 0 && details.Entries.Length > 0;
-            deckSection = ""; deckFilter = ""; deckCardsPage = 0; deckReview = false;
+            deckSection = ""; deckFilter = ""; deckCardsPage = 0; deckIssuesOnly = false;
             var first = details.Entries.FirstOrDefault(e => e.Section == "Commander") ?? details.Entries.FirstOrDefault();
             deckCardId = first?.Id; deckCardSection = first?.Section ?? "Main"; librarySelection = null;
             ResetCatalog();
@@ -138,11 +146,26 @@ internal sealed partial class TableGame
             });
         }, "Opening the deck builder", "Getting your saved list ready to edit.");
     }
-    private void SelectDeckRow(DeckEntry entry) { deckCardId = entry.Id; deckCardSection = entry.Section; librarySelection = null; deckBackId = null; }
-    private void FilterDeck(string section, bool leaders = false) { deckSection = section; commanderCandidates = leaders; deckCardsPage = 0; }
+    private void SelectDeckRow(DeckEntry entry) { deckCardId = entry.Id; deckCardSection = entry.Section; librarySelection = null; deckBackId = null; deckCardIssuePage = 0; }
+    private void FilterDeck(string section, bool leaders = false) { deckSection = section; commanderCandidates = leaders; deckCardsPage = 0; deckIssuesOnly = false; }
+    private void ToggleDeckIssues()
+    {
+        deckIssuesOnly = !deckIssuesOnly; deckCardsPage = 0;
+        if (deckIssuesOnly) { deckSection = deckFilter = ""; commanderCandidates = false; }
+    }
+    private void ShowDeckIssue(DeckIssue issue)
+    {
+        var entry = selectedDeckDetails?.Entries.FirstOrDefault(e => (issue.Section == null || issue.Section == e.Section) && issue.CardIds.Contains(e.Id));
+        if (entry != null) {
+            deckIssuesOnly = true; deckSection = deckFilter = ""; commanderCandidates = false;
+            SelectDeckRow(entry);
+            deckCardsPage = Math.Max(0, Array.FindIndex(DeckRowsToShow(), e => e.Id == entry.Id && e.Section == entry.Section) / DeckRows);
+        } else if (issue.Code is "COMMANDER_COUNT" or "MISSING_COMMANDER") FilterDeck("", true);
+    }
     private DeckEntry[] DeckRowsToShow() => selectedDeckDetails?.Entries
         .Where(e => (deckSection.Length == 0 || e.Section == deckSection)
             && (!commanderCandidates || selectedDeckDetails.CommanderOptions.Any(c => c.Id == e.Id))
+            && (!deckIssuesOnly || CardIssues(e.Id, e.Section).Length > 0)
             && (deckFilter.Length == 0 || (e.Card.Name + " " + e.Card.Type + " " + e.Card.Text).Contains(deckFilter, StringComparison.OrdinalIgnoreCase)))
         .OrderBy(e => e.Card.Name).ThenBy(e => e.Section).ToArray() ?? [];
 }

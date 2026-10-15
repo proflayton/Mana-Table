@@ -56,6 +56,10 @@ New-Item -ItemType Directory -Path $adapterSource -Force | Out-Null
 Copy-Item -LiteralPath (Join-Path $repository 'forge-api/src') -Destination $adapterSource -Recurse
 Copy-Item -LiteralPath (Join-Path $repository 'forge-api/pom.xml') -Destination $adapterSource
 Copy-Item -LiteralPath (Join-Path $repository 'forge-api/README.md') -Destination $adapterSource
+$coreSource = Join-Path $OutputDirectory 'source/forge-core'
+New-Item -ItemType Directory -Path $coreSource -Force | Out-Null
+Copy-Item -LiteralPath (Join-Path $repository 'forge-core/src') -Destination $coreSource -Recurse
+Copy-Item -LiteralPath (Join-Path $repository 'forge-core/pom.xml') -Destination $coreSource
 Copy-Item -LiteralPath (Join-Path $repository 'scenarios') -Destination (Join-Path $OutputDirectory 'source') -Recurse
 $documentation = Join-Path $OutputDirectory 'source/docs'
 New-Item -ItemType Directory -Path $documentation -Force | Out-Null

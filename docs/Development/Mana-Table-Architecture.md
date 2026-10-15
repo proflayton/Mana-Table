@@ -82,7 +82,13 @@ authoritative commander candidates/partner compatibility. Search is debounced
 and runs independently of deck edits; generation checks discard stale results.
 The contract preserves exact printing IDs, alternate faces, mana values and
 color identities. The view provides quantity edits, Main/Sideboard moves, deck
-filtering, commander roles, nonland mana curves, validation review and save retry.
+filtering, commander roles, nonland mana curves, live validation and save retry.
+Each saved edit returns structured engine issues with codes, affected sections,
+and opaque printing IDs. The builder marks affected rows, explains the selected
+card's issues beside its controls, and keeps deck-wide checks visible while editing.
+Fixes, undo and redo refresh these annotations automatically. Save status remains
+separate from deck conformance; neither requires a review dialog. Back to setup
+returns directly to the lobby, where deck selection and readiness remain explicit.
 
 `TableGame.Decks` routes every mutation through the same readiness, persistence
 and refresh path. Each native edit carries both the deck ID and revision; the

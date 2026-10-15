@@ -8,19 +8,26 @@ namespace Mana.Table;
 
 internal sealed partial class TableGame
 {
+    private Rectangle? deckIssueBounds;
+    private readonly HashSet<string> renderedDeckIssueCodes = [];
+    private readonly HashSet<string> renderedDeckIssueCardIds = [];
+    private string shownDeckIssueCard = "";
     private void DrawDeckEditor()
     {
         var deck = selectedDeckDetails!;
+        deckIssueBounds = null; renderedDeckIssueCodes.Clear(); renderedDeckIssueCardIds.Clear();
         if (DeckSelection is { } selected) art.Get(selected.Card);
         canvas.Text(deck.Name, 48, 96, Ink, 1.3f, 700, 1, true);
         Button("deck-rename", "Rename", 764, 98, 108, () => { var name = Ask("Rename deck", "Deck name", deck.Name); if (name != null) RenameDeck(name); }, !busy, height: 36);
         Button("deck-duplicate", "Duplicate", 882, 98, 118, () => { var name = Ask("Copy deck", "Name this separate copy", deck.Name + " copy"); if (name != null) DuplicateDeck(name); }, !busy, height: 36);
         Button("deck-export", "Copy list", 1010, 98, 125, ExportDeck, !busy && DeckCanCopy, height: 36);
         Button("deck-new", "New deck", 1145, 98, 125, () => NewDeck(), !busy, height: 36);
-        Button("deck-done", "Review for table", 1280, 98, 272, ReviewBuiltDeck, !busy, height: 36);
+        Button("deck-done", "Back to setup", 1280, 98, 272, CloseDeckEditor, !busy, height: 36);
         int main = deck.Entries.Where(e => e.Section == "Main").Sum(e => e.Quantity), leaders = deck.Entries.Where(e => e.Section == "Commander").Sum(e => e.Quantity);
         int side = deck.Entries.Where(e => e.Section == "Sideboard").Sum(e => e.Quantity);
-        canvas.Text($"{main + leaders} / 100 cards   ·   {main} main   ·   {leaders} commander{(leaders == 1 ? "" : "s")}   ·   {side} sideboard", 50, 153, Ink, .85f, 1080, 1);
+        bool countIssue = DeckIssues.Any(issue => issue.Code is "MAIN_COUNT" or "COMMANDER_COUNT" or "MISSING_COMMANDER");
+        canvas.Text($"{main + leaders} / 100 cards", 50, 153, countIssue ? Gold : Ink, .85f, 230, 1, countIssue);
+        canvas.Text($"{main} main   ·   {leaders} commander{(leaders == 1 ? "" : "s")}   ·   {side} sideboard", 294, 153, Muted, .8f, 980, 1);
         Button("deck-undo", "Undo", 1320, 151, 110, () => EditDeck(d => engine.UndoDeckAsync(d.Id, d.Revision), "Edit undone."), !busy && deck.CanUndo, height: 32);
         Button("deck-redo", "Redo", 1440, 151, 110, () => EditDeck(d => engine.RedoDeckAsync(d.Id, d.Revision), "Edit restored."), !busy && deck.CanRedo, height: 32);
         var names = deck.Entries.Where(e => e.Section == "Commander").Select(e => e.Card.Name).ToArray();
@@ -29,13 +36,12 @@ internal sealed partial class TableGame
         canvas.Panel(new(586, 236, 528, 712), new(21, 29, 39), new(54, 67, 79), 8);
         canvas.Panel(new(1130, 236, 438, 712), new(18, 25, 34), new(54, 67, 79), 8);
         DrawCardLibrary(); DrawEditableDeck(); DrawDeckCardPreview();
-        string status = deck.SaveError.Length > 0 ? "Could not save: " + deck.SaveError : deck.Problem.Length > 0 ? "Deck needs changes: " + deck.Problem.Replace('\n', ' ') : "Ready to play · All changes saved";
+        string status = deck.SaveError.Length > 0 ? "Could not save: " + deck.SaveError
+            : DeckIssues.Length > 0 ? "Changes saved. Deck checks update as you edit." : "All changes saved.";
         if (InlineActivityVisible) DrawInlineActivity();
-        else canvas.Text(status, 46, 963, deck.Problem.Length > 0 || deck.SaveError.Length > 0 ? Gold : Ink, .68f, 1250, 1);
+        else canvas.Text(status, 46, 963, deck.SaveError.Length > 0 ? Red : Muted, .68f, 1250, 1);
         if (deck.SaveError.Length > 0) Button("deck-retry-save", "Retry save", 1340, 955, 214, () => EditDeck(d => engine.SaveDeckAsync(d.Id, d.Revision), "Deck saved."), !busy, height: 33);
-        else Button("deck-review", "Review deck", 1340, 955, 214, () => { deckReview = true; deckReviewPage = 0; }, height: 33);
         if (deckMenu.Length > 0) DrawDeckMenu();
-        if (deckReview) DrawDeckReview();
     }
     private void DeckSearchBox(string field, string value, string placeholder, Rectangle bounds)
     {
@@ -92,44 +98,51 @@ internal sealed partial class TableGame
     {
         var deck = selectedDeckDetails!;
         canvas.Text("YOUR DECK", 600, 252, Gold, .8f, 310, 1, true);
+        int affected = deck.Entries.Count(entry => CardIssues(entry.Id, entry.Section).Length > 0);
+        Button("deck-issues-filter", "Problems (" + affected + ")", 946, 247, 154, ToggleDeckIssues, affected > 0 || deckIssuesOnly, deckIssuesOnly, 29);
         DeckSearchBox("deck", deckFilter, "Find a card in this deck…", new(600, 283, 500, 38));
         var tabs = new[] { ("deck-all", "All", "", false), ("deck-main", "Main", "Main", false), ("deck-side", "Side", "Sideboard", false), ("deck-command", "Cmd", "Commander", false), ("deck-candidates", "Leaders", "", true) };
         for (int i = 0; i < tabs.Length; i++) {
             var tab = tabs[i];
-            Button(tab.Item1, tab.Item2, 600 + i * 102, 331, 92, () => FilterDeck(tab.Item3, tab.Item4), !busy, commanderCandidates == tab.Item4 && deckSection == tab.Item3, 32);
+            Button(tab.Item1, tab.Item2, 600 + i * 102, 331, 92, () => FilterDeck(tab.Item3, tab.Item4), true, !deckIssuesOnly && commanderCandidates == tab.Item4 && deckSection == tab.Item3, 32);
         }
         var rows = DeckRowsToShow();
         deckCardsPage = Math.Clamp(deckCardsPage, 0, Math.Max(0, (rows.Length - 1) / DeckRows));
         for (int i = 0; i < Math.Min(DeckRows, rows.Length - deckCardsPage * DeckRows); i++) {
-            var entry = rows[deckCardsPage * DeckRows + i]; int y = 378 + i * 35;
+            var entry = rows[deckCardsPage * DeckRows + i]; int y = 378 + i * 32;
             bool selected = librarySelection == null && deckCardId == entry.Id && deckCardSection == entry.Section;
-            canvas.Rounded(new(600, y, 500, 32), selected ? new(43, 65, 79) : new(29, 39, 50), 3);
-            if (entry.Section == "Commander") canvas.Fill(new(600, y, 3, 32), Gold);
-            canvas.Text(entry.Quantity + "×", 610, y + 8, Muted, .64f, 38, 1);
-            canvas.Text(entry.Card.Name, 651, y + 7, entry.Section == "Commander" ? Gold : Ink, .66f, 354, 1, selected);
+            bool problem = CardIssues(entry.Id, entry.Section).Length > 0;
+            Color fill = problem ? selected ? new(70, 53, 42) : new(48, 37, 34) : selected ? new(43, 65, 79) : new(29, 39, 50);
+            canvas.Rounded(new(600, y, 500, 30), fill, 3);
+            if (problem || entry.Section == "Commander") canvas.Fill(new(600, y, 3, 30), Gold);
+            canvas.Text(entry.Quantity + "×", 610, y + 7, problem ? Gold : Muted, .64f, 38, 1, problem);
+            canvas.Text(entry.Card.Name, 651, y + 6, problem || entry.Section == "Commander" ? Gold : Ink, .66f, 354, 1, selected);
+            if (problem) { canvas.Text("!", 1016, y + 6, Gold, .7f, 18, 1, true); renderedDeckIssueCardIds.Add(entry.Id); }
             canvas.Text(entry.Section == "Commander" ? "CMD" : entry.Section == "Sideboard" ? "SIDE" : entry.ManaValue.ToString(), 1040, y + 9, Muted, .53f, 54, 1);
-            if (!busy) hits.Add(new("deck-card:" + entry.Section + ":" + entry.Id, Scope, new(600, y, 500, 32), () => SelectDeckRow(entry)));
+            hits.Add(new("deck-card:" + entry.Section + ":" + entry.Id, Scope, new(600, y, 500, 30), () => SelectDeckRow(entry)));
         }
-        if (rows.Length == 0) canvas.Text(commanderCandidates ? "No leaders in this view. Find your commander in the library, add it, then set its role here." : "No cards in this view. Select a library card and use + to add it.", 620, 419, Muted, .82f, 450, 5);
-        Button("deck-cards-prev", "Previous", 600, 805, 105, () => deckCardsPage--, !busy && deckCardsPage > 0, height: 30);
-        Button("deck-cards-next", "Next", 715, 805, 90, () => deckCardsPage++, !busy && (deckCardsPage + 1) * DeckRows < rows.Length, height: 30);
-        canvas.Text($"{rows.Length} entries · {deckCardsPage + 1}/{Math.Max(1, (rows.Length + DeckRows - 1) / DeckRows)}", 822, 814, Muted, .6f, 278, 1);
-        DrawDeckComposition(deck, 600, 848, 500);
+        if (rows.Length == 0) canvas.Text(deckIssuesOnly ? "No cards need changes in this view. Turn off Problems to see your full list."
+            : commanderCandidates ? "No leaders in this view. Find your commander in the library, add it, then set its role here." : "No cards in this view. Select a library card and use + to add it.", 620, 419, Muted, .82f, 450, 5);
+        Button("deck-cards-prev", "Previous", 600, 710, 105, () => deckCardsPage--, deckCardsPage > 0, height: 30);
+        Button("deck-cards-next", "Next", 715, 710, 90, () => deckCardsPage++, (deckCardsPage + 1) * DeckRows < rows.Length, height: 30);
+        canvas.Text($"{rows.Length} entries · {deckCardsPage + 1}/{Math.Max(1, (rows.Length + DeckRows - 1) / DeckRows)}", 822, 719, Muted, .6f, 278, 1);
+        DrawDeckIssues();
     }
     private void DrawDeckCardPreview()
     {
         var deck = selectedDeckDetails!;
         if (DeckSelection is not { } card) { canvas.Text("Choose a card to read it, add copies, or set its role.", 1170, 422, Muted, 1, 358, 4); return; }
         var preview = DeckCardFace(card.Card, deckBackId == card.Id);
-        PaintCard(preview, new Pose(new(1349, 494), new(350, 490)), false, false);
+        PaintCard(preview, new Pose(new(1349, 450), new(286, 400)), false, false);
         int copies = deck.Entries.Where(e => e.Card.Name == card.Card.Name).Sum(e => e.Quantity);
-        canvas.Text(card.Edition + " · " + deckCardSection + " · " + copies + (copies == 1 ? " copy in list" : " copies in list"), 1150, 752, Muted, .63f, 398, 1);
+        canvas.Text(card.Edition + " · " + deckCardSection + " · " + copies + (copies == 1 ? " copy in list" : " copies in list"), 1150, 663, Muted, .63f, 398, 1);
+        DrawSelectedDeckIssues(card);
         int count = DeckQuantity(); bool editable = deckCardSection is "Main" or "Sideboard";
         Button("deck-remove", "−", 1150, 784, 46, () => DeckQuantity(count - 1), !busy && editable && count > 0, height: 36);
         Button("deck-quantity", count + (count == 1 ? " copy" : " copies"), 1204, 784, 122, () => {
             var value = Ask("Card quantity", card.Card.Name + " in " + deckCardSection + " (0 removes it)", count.ToString());
             if (value != null) { if (int.TryParse(value, out int quantity)) DeckQuantity(quantity); else error = "Enter a whole-number quantity."; }
-        }, !busy && editable, height: 36);
+        }, !busy && editable, CardIssues(card.Id, deckCardSection).Any(issue => issue.Code == "CARD_COPY_LIMIT"), 36);
         Button("deck-add", "+", 1334, 784, 46, () => DeckQuantity(count + 1), !busy && editable && count < 1000, true, 36);
         Button("deck-move", deckCardSection == "Sideboard" ? "To main" : "To side", 1388, 784, 160, MoveDeckCard, !busy && editable, height: 36);
         if (card.Card.OtherFace != null) Button("deck-flip", deckBackId == card.Id ? "Front face" : "Other face", 1364, 826, 184, () => deckBackId = deckBackId == card.Id ? null : card.Id, height: 26);
@@ -141,20 +154,58 @@ internal sealed partial class TableGame
         if (ids.Contains(card.Id)) Button("deck-remove-commander", "Return to main deck", 1150, 903, 398, () => SaveCommanders(ids.Where(id => id != card.Id).ToArray()), !busy, height: 34);
         else Button("deck-add-partner", "Add as partner / Background", 1150, 903, 398, () => SaveCommanders([.. ids, card.Id]), !busy && partner, height: 34);
     }
-    private void DrawDeckReview()
+    private void DrawDeckIssues()
     {
-        hits.Clear(); canvas.Fill(new(0, 64, 1600, 936), Color.Black * .8f);
-        canvas.Panel(new(180, 180, 1240, 645), new(23, 33, 45), Gold, 10);
-        canvas.Text("DECK REVIEW", 215, 207, Gold, 1.1f, 900, 1, true);
         var deck = selectedDeckDetails!;
-        string[] lines = (deck.SaveError.Length > 0 ? "Save failed: " + deck.SaveError : deck.Problem.Length > 0 ? deck.Problem : "This deck passes the engine's structural checks and is ready for a game.").Split('\n');
-        deckReviewPage = Math.Clamp(deckReviewPage, 0, Math.Max(0, (lines.Length - 1) / 14));
-        for (int i = 0; i < Math.Min(14, lines.Length - deckReviewPage * 14); i++) canvas.Text(lines[deckReviewPage * 14 + i], 215, 266 + i * 30, Ink, .82f, 1160, 1);
-        canvas.Text("Checks include card count, commander pairing, color identity and duplicate limits.", 215, 711, Muted, .7f, 1150, 2);
-        Button("deck-review-prev", "Previous", 215, 766, 135, () => deckReviewPage--, deckReviewPage > 0);
-        Button("deck-review-next", "Next", 362, 766, 135, () => deckReviewPage++, (deckReviewPage + 1) * 14 < lines.Length);
-        Button("deck-review-close", "Back to building", 1100, 766, 276, () => deckReview = false, true, true);
+        var issues = DeckIssues;
+        deckIssueBounds = new(600, 748, 500, 196);
+        canvas.Line(new(600, 754), new(1100, 754), LobbyTrim);
+        canvas.Text("DECK CHECKS", 600, 769, issues.Length > 0 ? Gold : ReadyColor, .7f, 292, 1, true);
+        canvas.Text(issues.Length == 0 ? "Checks passed" : issues.Length + (issues.Length == 1 ? " issue" : " issues"), 903, 771, issues.Length > 0 ? Gold : ReadyColor, .65f, 197, 1);
+        if (issues.Length == 0) { DrawDeckComposition(deck, 600, 840, 500); return; }
+        var parts = IssueTextPages(issues, 90);
+        deckIssuePage = Math.Clamp(deckIssuePage, 0, Math.Max(0, (parts.Length - 1) / 2));
+        for (int i = 0; i < Math.Min(2, parts.Length - deckIssuePage * 2); i++) {
+            int index = deckIssuePage * 2 + i, y = 798 + i * 56;
+            var part = parts[index];
+            renderedDeckIssueCodes.Add(part.Issue.Code);
+            canvas.Text("!", 600, y, Gold, .72f, 16, 1, true);
+            canvas.Text(part.Text, 619, y + 1, Ink, .64f, 456, 3);
+            bool actionable = part.Issue.CardIds.Length > 0 || part.Issue.Code is "COMMANDER_COUNT" or "MISSING_COMMANDER";
+            if (actionable) {
+                canvas.Text(">", 1085, y + 2, Gold, .67f, 15, 1, true);
+                hits.Add(new("deck-issue:" + index, Scope, new(600, y, 500, 54), () => ShowDeckIssue(part.Issue)));
+            }
+        }
+        Button("deck-issues-prev", "Previous", 600, 910, 103, () => deckIssuePage--, deckIssuePage > 0, height: 30);
+        Button("deck-issues-next", "Next", 713, 910, 88, () => deckIssuePage++, (deckIssuePage + 1) * 2 < parts.Length, height: 30);
+        canvas.Text($"Page {deckIssuePage + 1} / {Math.Max(1, (parts.Length + 1) / 2)}", 820, 919, Muted, .6f, 280, 1);
     }
+    private void DrawSelectedDeckIssues(CatalogCard card)
+    {
+        string selection = card.Id + ":" + deckCardSection;
+        if (shownDeckIssueCard != selection) { shownDeckIssueCard = selection; deckCardIssuePage = 0; }
+        var issues = CardIssues(card.Id, deckCardSection);
+        var bounds = new Rectangle(1144, 687, 410, 89);
+        if (issues.Length == 0) {
+            canvas.Text("Color identity: " + DeckColorIdentity(card.ColorIdentity), 1152, 699, Muted, .67f, 394, 1);
+            if (CommanderIdentity is { } colors) canvas.Text("Commander colors: " + DeckColorIdentity(colors), 1152, 732, Muted, .65f, 394, 1);
+            return;
+        }
+        canvas.Panel(bounds, new(45, 35, 31), Gold * .55f, 5);
+        var parts = IssueTextPages(issues, 72);
+        deckCardIssuePage = Math.Clamp(deckCardIssuePage, 0, parts.Length - 1);
+        var part = parts[deckCardIssuePage];
+        renderedDeckIssueCodes.Add(part.Issue.Code);
+        canvas.Text(part.Text, 1153, 693, Gold, .65f, 390, 3);
+        if (parts.Length > 1) {
+            canvas.Text($"Reason {deckCardIssuePage + 1} / {parts.Length}", 1154, 756, Muted, .53f, 263, 1);
+            Button("deck-card-issue-prev", "<", 1456, 751, 38, () => deckCardIssuePage--, deckCardIssuePage > 0, height: 22);
+            Button("deck-card-issue-next", ">", 1504, 751, 38, () => deckCardIssuePage++, deckCardIssuePage + 1 < parts.Length, height: 22);
+        } else if (part.Issue.Code == "COLOR_IDENTITY" && CommanderIdentity is { } colors)
+            canvas.Text("Card: " + DeckColorIdentity(card.ColorIdentity) + "   Commander: " + DeckColorIdentity(colors), 1153, 752, Muted, .57f, 390, 1);
+    }
+    private static string DeckColorIdentity(int colors) => colors == 0 ? "Colorless" : string.Join(" / ", new[] { (1, "W"), (2, "U"), (4, "B"), (8, "R"), (16, "G") }.Where(color => (colors & color.Item1) != 0).Select(color => color.Item2));
     private void DrawDeckMenu()
     {
         string kind = deckMenu;

@@ -208,7 +208,7 @@ internal sealed partial class TableGame : Game
         }
         if (!chatKeys && keys.IsKeyDown(Keys.Escape) && previousKeys.IsKeyUp(Keys.Escape)) {
             dragging = false; dragSource = null; pressed = null; pendingPlay = null; selectedCombat = null; textFocus = false;
-            if (match == null && !busy) { if (deckMenu.Length > 0) deckMenu = ""; else if (deckReview) deckReview = false; else if (deckEditor) CloseDeckEditor(); else CloseSetupModal(); }
+            if (match == null && !busy) { if (deckMenu.Length > 0) deckMenu = ""; else if (deckEditor) CloseDeckEditor(); else CloseSetupModal(); }
             if (overlay.Length > 0) overlay = ""; else if (zoneName != null) zoneName = null; else if (DecisionModal) collapsedDecision = true;
         }
         if (!chatKeys && !textFocus && keys.IsKeyDown(Keys.Space) && previousKeys.IsKeyUp(Keys.Space) && !OverlayOpen && !busy && match != null) {

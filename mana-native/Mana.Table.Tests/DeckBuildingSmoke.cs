@@ -70,8 +70,9 @@ internal sealed class DeckBuildingSmoke(TableGame.Probe view) : ITableAutomation
             case 3:
                 Check(Deck.CommanderIds.SequenceEqual([Entry("Rhys the Redeemed").Id]) && Deck.Entries.Where(e => e.Section == "Main").Sum(e => e.Quantity) == 99 && Deck.Problem.Length == 0, "Set commander moves exactly one card, producing a legal 99 + 1 deck");
                 Capture("02-commander-set"); Click("deck-done", 4); break;
-            case 4: Click("setup-close", 104); break;
-            case 104: Click("change-deck", 105); break;
+            case 4:
+                Check(!view.DeckEditor && view.SetupModal.Length == 0 && !view.DeckConfirmed, "Back to setup leaves the builder without opening or confirming a deck review");
+                Click("change-deck", 105); break;
             case 105: Click("deck:" + Deck.Id, 5); break;
             case 5:
                 Check(Deck.CommanderIds.SequenceEqual([Entry("Rhys the Redeemed").Id]) && Deck.SaveError.Length == 0, "Reopening the saved deck preserves its commander");
@@ -86,7 +87,8 @@ internal sealed class DeckBuildingSmoke(TableGame.Probe view) : ITableAutomation
                 Check(!view.Hits.Any(h => h.Id == "deck-set-commander"), "An ineligible card remains inspectable but cannot be set as commander");
                 Click("deck-done", 11); break;
             case 11:
-                Click("setup-close", 111); break;
+                Check(!view.DeckEditor && view.SetupModal.Length == 0, "Returning from commander editing opens setup directly");
+                stage = 111; break;
             case 111:
                 view.ImportDeck("Partner Commander regression", "Deck\n98 Mountain\n1 Rograkh, Son of Rohgahh\n1 Kediss, Emberclaw Familiar"); stage = 12; break;
             case 12: Card("Rograkh, Son of Rohgahh", 13); break;
@@ -96,8 +98,9 @@ internal sealed class DeckBuildingSmoke(TableGame.Probe view) : ITableAutomation
             case 16:
                 Check(Deck.CommanderIds.Length == 2 && Deck.Entries.Where(e => e.Section == "Main").Sum(e => e.Quantity) == 98 && Deck.Problem.Length == 0, "Add partner creates a legal 98 + 2 deck");
                 Capture("04-partner-commanders"); Click("deck-done", 17); break;
-            case 17: Click("setup-close", 117); break;
-            case 117: Click("change-deck", 118); break;
+            case 17:
+                Check(!view.DeckEditor && view.SetupModal.Length == 0, "Returning from a partner deck opens setup directly");
+                Click("change-deck", 118); break;
             case 118: Click("deck:" + Deck.Id, 18); break;
             case 18:
                 Check(Deck.CommanderIds.Length == 2 && Deck.SaveError.Length == 0, "Both partner commanders survive reopening from disk");
@@ -120,8 +123,9 @@ internal sealed class DeckBuildingSmoke(TableGame.Probe view) : ITableAutomation
                 Card("Kediss, Emberclaw Familiar", 25); break;
             case 25: Click("deck-add-partner", 26); break;
             case 26: Click("deck-done", 27); break;
-            case 27: Click("setup-close", 127); break;
-            case 127: Click("leave", 28); break;
+            case 27:
+                Check(!view.DeckEditor && view.SetupModal.Length == 0 && !view.DeckConfirmed, "Returning from a multiplayer deck edit leaves confirmation explicit");
+                Click("leave", 28); break;
             case 28: Click("solo-tab", 29); break;
             case 29: Click("review-deck", 129); break;
             case 129: Click("confirm-deck", 30); break;

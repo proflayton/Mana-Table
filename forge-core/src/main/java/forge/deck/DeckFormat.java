@@ -346,52 +346,13 @@ public enum DeckFormat {
                 }
             }
 
-            final List<PaperCard> erroneousCI = new ArrayList<>();
-
-            Set<String> basicLandNames = new HashSet<>();
-            for (final Entry<PaperCard, Integer> cp : deck.get(DeckSection.Main)) {
-                // If colourless commander allow one type of basic land
-                if (cmdCI == 0 && cp.getKey().getRules().getType().isBasicLand()){
-                    basicLandNames.add(cp.getKey().getName());
-                    if(basicLandNames.size() < 2){
-                        continue;
-                    }
-                }
-                if (allowsOffColorIdentity(commanderCIRules, cp.getKey().getRules())) {
-                    continue;
-                }
-                if (approvesAdditionalColor(commanderCIRules, cp.getKey().getRules(), cmdCI)) {
-                    continue;
-                }
-                ColorSet missingColors = cp.getKey().getRules().getColorIdentity().getMissingColors(cmdCI);
-                if (missingColors.countColors() > 0) {
-                    if (missingColors.countColors() <= wildColors) {
-                        wildColors -= missingColors.countColors();
-                        cmdCI |= missingColors.getColor();
-                    } else {
-                        erroneousCI.add(cp.getKey());
-                    }
-                }
-            }
-            if (deck.has(DeckSection.Sideboard)) {
-                for (final Entry<PaperCard, Integer> cp : deck.get(DeckSection.Sideboard)) {
-                    if (allowsOffColorIdentity(commanderCIRules, cp.getKey().getRules())) {
-                        continue;
-                    }
-                    if (approvesAdditionalColor(commanderCIRules, cp.getKey().getRules(), cmdCI)) {
-                        continue;
-                    }
-                    if (!cp.getKey().getRules().getColorIdentity().hasNoColorsExcept(cmdCI)) {
-                        erroneousCI.add(cp.getKey());
-                    }
-                }
-            }
+            final List<ColorIdentityViolation> erroneousCI = colorIdentityViolations(deck, cmdCI, wildColors, commanderCIRules);
 
             if (!erroneousCI.isEmpty()) {
                 StringBuilder sb = new StringBuilder("contains one or more cards that do not match the commanders color identity:");
 
-                for (PaperCard cp : erroneousCI) {
-                    sb.append("\n").append(cp.getName());
+                for (ColorIdentityViolation violation : erroneousCI) {
+                    sb.append("\n").append(violation.card().getName());
                 }
 
                 return sb.toString();
@@ -480,6 +441,63 @@ public enum DeckFormat {
         }
 
         return null;
+    }
+
+    public record ColorIdentityViolation(DeckSection section, PaperCard card) { }
+
+    /** Rows rejected by the existing identity rules; call after validating the commander setup. */
+    public List<ColorIdentityViolation> getColorIdentityViolations(final Deck deck) {
+        if (deck == null || !hasCommander()) { return List.of(); }
+        byte identity = 0;
+        int wildColors = 0;
+        final List<DeckRuleColorIdentity> rules = new ArrayList<>();
+        for (final PaperCard commander : deck.getCommanders()) {
+            for (final DeckRule rule : DeckRule.parseAll(commander)) {
+                if (rule instanceof DeckRuleColorIdentity && rule.isActiveFor(DeckSection.Commander)) {
+                    rules.add((DeckRuleColorIdentity) rule);
+                }
+            }
+            if (this != Oathbreaker) {
+                identity |= commander.getRules().getColorIdentity().getColor();
+                wildColors += commander.getRules().getAddsWildCardColor() ? 1 : 0;
+            }
+        }
+        if (this == Oathbreaker && deck.getOathbreaker() != null) {
+            identity = deck.getOathbreaker().getRules().getColorIdentity().getColor();
+        }
+        return List.copyOf(colorIdentityViolations(deck, identity, wildColors, rules));
+    }
+
+    private static List<ColorIdentityViolation> colorIdentityViolations(final Deck deck, byte cmdCI, int wildColors,
+                                                        final List<DeckRuleColorIdentity> commanderCIRules) {
+        final List<ColorIdentityViolation> erroneousCI = new ArrayList<>();
+        Set<String> basicLandNames = new HashSet<>();
+        for (final Entry<PaperCard, Integer> cp : deck.get(DeckSection.Main)) {
+            // If colourless commander allow one type of basic land
+            if (cmdCI == 0 && cp.getKey().getRules().getType().isBasicLand()) {
+                basicLandNames.add(cp.getKey().getName());
+                if (basicLandNames.size() < 2) { continue; }
+            }
+            if (allowsOffColorIdentity(commanderCIRules, cp.getKey().getRules())) { continue; }
+            if (approvesAdditionalColor(commanderCIRules, cp.getKey().getRules(), cmdCI)) { continue; }
+            ColorSet missingColors = cp.getKey().getRules().getColorIdentity().getMissingColors(cmdCI);
+            if (missingColors.countColors() > 0) {
+                if (missingColors.countColors() <= wildColors) {
+                    wildColors -= missingColors.countColors();
+                    cmdCI |= missingColors.getColor();
+                } else { erroneousCI.add(new ColorIdentityViolation(DeckSection.Main, cp.getKey())); }
+            }
+        }
+        if (deck.has(DeckSection.Sideboard)) {
+            for (final Entry<PaperCard, Integer> cp : deck.get(DeckSection.Sideboard)) {
+                if (allowsOffColorIdentity(commanderCIRules, cp.getKey().getRules())) { continue; }
+                if (approvesAdditionalColor(commanderCIRules, cp.getKey().getRules(), cmdCI)) { continue; }
+                if (!cp.getKey().getRules().getColorIdentity().hasNoColorsExcept(cmdCI)) {
+                    erroneousCI.add(new ColorIdentityViolation(DeckSection.Sideboard, cp.getKey()));
+                }
+            }
+        }
+        return erroneousCI;
     }
 
     /** True if any active commander DeckRule:ColorIdentity exempts this candidate card. */

@@ -23,7 +23,6 @@ internal sealed partial class TableGame
         reviewCard = selectedDeckDetails.Entries.FirstOrDefault(e => e.Section == "Commander") ?? selectedDeckDetails.Entries.FirstOrDefault();
         setupModal = "confirm"; textFocus = false;
     }
-    private void ReviewBuiltDeck() { CloseDeckEditor(); ReviewDeck(); }
     private void ChooseDeck(DeckSummary deck) {
         // Inspecting the document already at this table is read-only. Reopening it
         // in the engine would unnecessarily withdraw the player's ready seat.
