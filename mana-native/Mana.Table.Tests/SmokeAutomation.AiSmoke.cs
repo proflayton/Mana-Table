@@ -43,7 +43,7 @@ internal sealed partial class SmokeAutomation
         }
         if (DateTime.UtcNow > smokeDeadline) throw new TimeoutException($"UI smoke timed out at stage {smokeStage}; decision {view.Match?.Decision?.Message}");
         if (view.Error.Length > 0) throw new InvalidOperationException("UI smoke: " + view.Error);
-        if (!view.Loaded || view.Busy || view.Polling) return At(new(0, 0), ButtonState.Released);
+        if (!view.Loaded || view.Busy || view.ActivityOpen || view.Polling) return At(new(0, 0), ButtonState.Released);
         if (smokeDecision != view.Match?.Decision?.Id) {
             smokeDecision = view.Match?.Decision?.Id;
             File.WriteAllText(Path.Combine(view.Profile, "ui-latest.json"), JsonSerializer.Serialize(view.Match));

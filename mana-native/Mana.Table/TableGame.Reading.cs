@@ -21,6 +21,7 @@ internal sealed partial class TableGame
 
     private Hit? TableHitAt(Point point)
     {
+        if (ActivityOpen) return hits.LastOrDefault(h => h.Id.StartsWith("activity-") && h.Contains(point) && CurrentHit(h));
         if (ExperienceOpen) return hits.LastOrDefault(h => h.Id.StartsWith("experience-") && h.Contains(point) && CurrentHit(h));
         var top = hits.LastOrDefault(h => h.Contains(point));
         if (OverlayOpen && !ReadingGalleryOpen || dragging || top is { Card: null }) return top;

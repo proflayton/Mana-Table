@@ -31,14 +31,24 @@ remain scoped capabilities, separate from opaque card presentation identities.
 
 ## Native client boundaries
 
-The native first session presents AI, friends and deck entry points before setup.
+Every native launch moves from startup into a main menu with AI, friends and deck entry points.
 These routes reuse the existing deck picker, review and readiness gates; choosing
 a route never imports a deck, hosts a table or readies a seat. `experience.json`
-stores welcome and table-guide dismissal independently of play preferences.
-Profiles with existing play preferences or saved decks skip the forced introduction.
+stores the first menu visit and table-guide dismissal independently of play preferences.
+Profiles with existing play preferences or saved decks skip the forced controls tour.
 The guide is also available from setup, Settings, decision help and F1. It has
 its own hit scope and blocks gameplay input and Auto while observations continue.
 Opening or closing it preserves the underlying prompt, panel and priority policy.
+
+`TableGame.Loading` tracks explicit operations separately from session polling and
+gameplay replies. Startup stages advance only after each awaited engine request.
+Setup commands acknowledge input immediately and own a scoped foreground surface;
+game entry and host/join use the same full-screen table motif as startup. Routine
+deck saves use inline feedback. A short minimum presentation time prevents fast
+operations flashing or accepting clicks through the handoff; slow requests hand
+off as soon as they finish. Failure surfaces retain the destination and require an
+explicit Back or startup Retry. Retry reuses a healthy Forge process or drains a
+failed process and its reader tasks before creating a new process generation.
 
 | Project | Responsibility |
 | --- | --- |

@@ -14,7 +14,9 @@ build artifact. `-SkipBuild` uses the existing `.tools/native-publish` output.
 Always choose a new `-OutputDirectory` and verify the client and engine hashes.
 Native profiles live in `%LOCALAPPDATA%\ManaTableNative`; use `--profile` with an
 isolated path to review the first-session welcome without changing saved decks
-or play preferences. The workflow below describes the Electron release package.
+or play preferences. A completed native package updates `dist/latest-native.json`;
+the checkout launcher prefers that manifest and falls back to the Electron beta
+when no native package exists. The workflow below describes the Electron release package.
 
 ## Downloads for testers
 

@@ -22,7 +22,7 @@ internal sealed partial class TableGame
     private void ReturnFromMatch()
     {
         if (localMatch) { localMatch = false; session.Reset(); ResetTableView(); message = "Choose your next Commander game."; }
-        else Work(async () => { await engine.ReturnToLobbyAsync(); var state = await engine.LobbyAsync(); updates.Enqueue(() => { lobby = state; session.Reset(); ResetTableView(); }); });
+        else Work(async () => { await engine.ReturnToLobbyAsync(); var state = await engine.LobbyAsync(); updates.Enqueue(() => { lobby = state; session.Reset(); ResetTableView(); }); }, "Returning to your group", "Keeping the table together for the next game.", true);
     }
     private void ImportFile()
     {

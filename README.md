@@ -47,7 +47,8 @@ Java configuration details.
 **Windows x64 is the tested desktop/package target.** Java discovery supports
 other development platforms, but their Electron UI and packaging need validation.
 After a local package has been built, [Launch Mana Table.cmd](Launch%20Mana%20Table.cmd)
-opens the build recorded in `dist/latest-beta.json`. `Launch Workshop.cmd` is a
+opens the latest native build recorded in `dist/latest-native.json`, falling back
+to `dist/latest-beta.json` when no native package exists. `Launch Workshop.cmd` is a
 compatibility alias. These launchers do not build the app on a fresh clone.
 
 ## Beta scope

@@ -107,6 +107,6 @@ internal sealed partial class TableGame
                 var nextLobby = await engine.LobbyAsync(); updates.Enqueue(() => { lobby = nextLobby; AcceptConversation(state); });
             }
             updates.Enqueue(() => { preferences = preferences with { PlayerName = name }; SavePreferences(); setupModal = ""; textFocus = false; message = "Display name saved."; });
-        });
+        }, "Saving your display name", "Updating the name your table will see.");
     }
 }

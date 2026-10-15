@@ -119,7 +119,7 @@ internal sealed class LobbySmoke(TableGame.Probe view, ForgePaths paths) : ITabl
         }
         // Observation can run continuously between pregame/finished snapshots.
         // Normal input is allowed during polls; ClientSession discards stale results.
-        if (!view.Loaded || view.Busy) return;
+        if (!view.Loaded || view.Busy || view.ActivityOpen && stage != 36) return;
         switch (stage) {
             case 0:
                 Check(!view.DeckConfirmed && !view.Hits.Any(h => h.Id == "start-solo"), "An unconfirmed deck cannot start a solo table");
@@ -360,9 +360,11 @@ internal sealed class LobbySmoke(TableGame.Probe view, ForgePaths paths) : ITabl
             case 34: view.TypeSetupText(new string('\b', 220) + "MT1-invalid"); stage++; break;
             case 35: Click("join-confirm", 36); break;
             case 36:
-                Check(view.SetupModal == "join" && view.Error.Length > 0 && view.Lobby == null, "An invalid invite stays in the native join dialog without losing the selected deck");
-                Click("dismiss", 37); break;
-            case 37: view.TypeSetupText(new string('\b', 220) + joinTo); stage++; break;
+                Check(view.ActivityOpen && view.SetupModal == "join" && view.Error.Length > 0 && view.Lobby == null && Deck.Id == otherDeckId, "An invalid invite shows a readable action failure while preserving the join form and selected deck");
+                Click("activity-dismiss", 37); break;
+            case 37:
+                Check(!view.ActivityOpen && view.Error.Length == 0 && view.SetupModal == "join" && Deck.Id == otherDeckId, "Back clears the failed action and returns to the same join form without a duplicate error banner");
+                view.TypeSetupText(new string('\b', 220) + joinTo); stage++; break;
             case 38: Click("join-confirm", 39); break;
             case 39:
                 Check(view.SetupModal.Length == 0 && view.Lobby?.Mode == "joined" && !view.DeckConfirmed, "Native invite entry joins the remote host and asks for deck confirmation");

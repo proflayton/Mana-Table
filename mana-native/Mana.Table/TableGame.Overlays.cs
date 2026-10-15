@@ -136,7 +136,7 @@ internal sealed partial class TableGame
         canvas.Text("Your seat will lose this game. This cannot be undone.", 244, 263, Ink, 1.2f, 1090, 3);
         canvas.Text(localMatch ? "The solo game ends when you concede." : "The remaining players can continue playing.", 244, 353, Muted, .92f, 1090, 3);
         string id = match!.Id;
-        Button("confirm-concede", "Concede game", 1010, 690, 323, () => { overlay = ""; Work(async () => { await engine.ConcedeAsync(id); var next = await engine.ObserveAsync(); updates.Enqueue(() => Accept(next)); }); }, !busy, true, 57);
+        Button("confirm-concede", "Concede game", 1010, 690, 323, () => { overlay = ""; Work(async () => { await engine.ConcedeAsync(id); var next = await engine.ObserveAsync(); updates.Enqueue(() => Accept(next)); }, "Leaving this game", "Updating the result for your seat.", true); }, !busy, true, 57);
     }
     private void DrawHelp()
     {

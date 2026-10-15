@@ -49,7 +49,7 @@ internal sealed partial class TableGame
             message = details.CommanderIds.Length == 0 ? "Choose a commander for your deck." : "Deck selected.";
         });
     }
-    private void ImportDeck(Func<Task<DeckSummary>> import, bool edit)
+    private void ImportDeck(Func<Task<DeckSummary>> import, bool edit, string title = "Importing your deck", string detail = "Reading the list and finding its cards.")
     {
         Work(async () => {
             await UnreadyForDeckEdit();
@@ -57,7 +57,7 @@ internal sealed partial class TableGame
             updates.Enqueue(() => decks = saved);
             await ReadSelectedDeck(deck, edit);
             if (!edit) updates.Enqueue(ReviewDeck);
-        });
+        }, title, detail);
     }
     private async Task UnreadyForDeckEdit()
     {
@@ -70,7 +70,7 @@ internal sealed partial class TableGame
         await UnreadyForDeckEdit();
         var created = await engine.CreateDeckAsync(name); var saved = await engine.DecksAsync();
         updates.Enqueue(() => { decks = saved; setupModal = ""; ApplyDeck(created, true); message = "Search for your commander or start adding cards."; });
-    });
+    }, "Creating your deck", "Making a place for your next Commander list.");
     // Every mutation shares persistence, readiness invalidation and refresh.
     private void EditDeck(Func<DeckDetails, Task<DeckDetails>> edit, string success)
     {
@@ -81,8 +81,9 @@ internal sealed partial class TableGame
             updates.Enqueue(() => {
                 decks = saved; ApplyDeck(updated);
                 message = updated.SaveError.Length > 0 ? "Could not save the deck. Retry below." : success;
+                if (updated.SaveError.Length > 0) { error = updated.SaveError; activityFailed = true; }
             });
-        });
+        }, "Saving your deck", "Your changes save automatically.", false);
     }
     private void SaveCommanders(string[] ids) => EditDeck(d => engine.SetCommandersAsync(d.Id, d.Revision, ids), "Commander saved.");
     private void DeckQuantity(int count)
@@ -113,7 +114,7 @@ internal sealed partial class TableGame
         Work(async () => {
             string text = await engine.ExportDeckAsync(d.Id, d.Revision);
             updates.Enqueue(() => { Clipboard.SetText(text); message = "Deck list copied, including commander and sideboard sections."; });
-        });
+        }, "Copying your deck list", "Preparing the commander, main deck, and sideboard for the clipboard.");
     }
     private void CloseDeckEditor() { deckEditor = false; deckTextFocus = deckMenu = ""; textFocus = false; }
     private void OpenDeckEditor() => OpenDeckEditorAt(null);
@@ -124,7 +125,7 @@ internal sealed partial class TableGame
                 SelectDeckRow(entry); deckFilter = ""; FilterDeck(entry.Section);
                 deckCardsPage = Math.Max(0, Array.FindIndex(DeckRowsToShow(), e => e.Id == entry.Id) / DeckRows);
             });
-        });
+        }, "Opening the deck builder", "Getting your saved list ready to edit.");
     }
     private void SelectDeckRow(DeckEntry entry) { deckCardId = entry.Id; deckCardSection = entry.Section; librarySelection = null; deckBackId = null; }
     private void FilterDeck(string section, bool leaders = false) { deckSection = section; commanderCandidates = leaders; deckCardsPage = 0; }

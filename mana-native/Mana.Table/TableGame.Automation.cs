@@ -30,6 +30,13 @@ internal sealed partial class TableGame
         internal bool Loaded => game.loaded;
         internal bool Busy => game.busy;
         internal bool Polling => game.polling;
+        internal bool StartupVisible => game.StartupVisible;
+        internal bool ActivityOpen => game.ActivityOpen;
+        internal bool InlineActivityVisible => game.InlineActivityVisible;
+        internal string ActivityTitle => game.activityTitle;
+        internal string ActivityDetail => game.activityDetail;
+        internal string ActivityStage => game.activityStage.ToString() ?? "";
+        internal bool StartupFailed => game.startupFailed;
         internal IReadOnlyList<DeckPreset> Presets => game.presets;
         internal DeckSummary? SelectedDeck => game.selectedDeck;
         internal DeckDetails? DeckDetails => game.selectedDeckDetails;
@@ -65,6 +72,7 @@ internal sealed partial class TableGame
         internal bool WelcomeOpen => game.welcomeOpen;
         internal bool TableGuideOpen => game.tableGuideOpen;
         internal bool ExperienceOpen => game.ExperienceOpen;
+        internal void DismissWelcome() => game.DismissWelcome();
         internal void OpenTableGuide() => game.OpenTableGuide();
         internal void SetHeld(bool value) { game.held = value; game.priority.Reset(); }
         internal Mana.Renderer.ResolutionCue? LastResolution => game.actionFeedback.Last;

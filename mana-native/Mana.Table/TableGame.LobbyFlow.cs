@@ -28,9 +28,10 @@ internal sealed partial class TableGame
         // Inspecting the document already at this table is read-only. Reopening it
         // in the engine would unnecessarily withdraw the player's ready seat.
         if (selectedDeckDetails?.Id == deck.Id) { ReviewDeck(); return; }
-        Work(async () => { await UnreadyForDeckEdit(); await ReadSelectedDeck(deck); updates.Enqueue(ReviewDeck); });
+        Work(async () => { await UnreadyForDeckEdit(); await ReadSelectedDeck(deck); updates.Enqueue(ReviewDeck); }, "Opening " + deck.Name, "Getting your commander and deck ready to review.");
     }
-    private void ChoosePreset(string id) => ImportDeck(() => engine.ImportPresetAsync(id), false);
+    private void ChoosePreset(string id) => ImportDeck(() => engine.ImportPresetAsync(id), false,
+        "Preparing " + (presets.FirstOrDefault(p => p.Id == id)?.Name ?? "your precon"), "Making a saved copy for you to review and play.");
     private void ConfirmDeck()
     {
         if (!DeckReady || selectedDeck is not { } deck || busy) return;
@@ -53,7 +54,7 @@ internal sealed partial class TableGame
                 });
             }
             updates.Enqueue(() => { confirmedDeckId = deck.Id; setupModal = ""; message = Connected ? "Deck confirmed. Ready up when you are." : "Deck confirmed for this table."; });
-        });
+        }, "Confirming your deck", soloTab && !Connected ? "Preparing your list and three AI opponents." : "Setting this deck at your seat.");
     }
     private void SetLobbyReady(bool ready)
     {
@@ -61,7 +62,7 @@ internal sealed partial class TableGame
         Work(async () => {
             await engine.SetReadyAsync(ready); var state = await engine.LobbyAsync();
             updates.Enqueue(() => { lobby = state; message = ready ? "You are ready. Waiting for the table." : "You are no longer ready."; });
-        });
+        }, ready ? "Taking your seat" : "Updating your seat", ready ? "Letting the table know you are ready." : "Letting the table know you need a moment.");
     }
     private void StartSolo()
     {
@@ -70,12 +71,12 @@ internal sealed partial class TableGame
         Work(async () => {
             await engine.StartSoloAsync(setup.DeckId, opponents); var state = await engine.ObserveAsync();
             updates.Enqueue(() => { setupModal = ""; ResetTableView(); lobby = null; localMatch = true; Accept(state); message = "Starting your AI table..."; });
-        });
+        }, "Gathering your AI table", "Preparing your deck, three opponents, and the opening hand.", scene: true);
     }
     private void StartFriends()
     {
         if (!DeckConfirmed || LocalSeat?.Ready != true || lobby?.CanStart != true) return;
-        Work(async () => { await engine.StartAsync(); var state = await engine.ObserveAsync(); updates.Enqueue(() => { setupModal = ""; Accept(state); }); });
+        Work(async () => { await engine.StartAsync(); var state = await engine.ObserveAsync(); updates.Enqueue(() => { setupModal = ""; Accept(state); }); }, "Starting Commander", "Bringing all four players to the table.", scene: true);
     }
     private void ConnectLobby(bool hosting)
     {
@@ -95,11 +96,11 @@ internal sealed partial class TableGame
                 updates.Enqueue(() => { lobby = selected; confirmedDeckId = deckId; });
             }
             updates.Enqueue(() => message = hosting ? "Table open. Invite your friends." : "You joined the table. Confirm your deck and ready up.");
-        });
+        }, hosting ? "Opening your table" : "Joining your friends", hosting ? "Preparing four seats and your table connection." : "Connecting to the table from your invite.", scene: true);
     }
     private void LeaveLobby() => Work(async () => {
         await engine.LeaveAsync(); updates.Enqueue(() => { lobby = null; InvalidateDeckConfirmation(); setupModal = ""; message = "You left the table."; });
-    });
+    }, "Leaving the table", "Returning to your own setup.");
     private void OpenJoin()
     {
         var value = Clipboard.ContainsText() ? Clipboard.GetText().Trim() : "";

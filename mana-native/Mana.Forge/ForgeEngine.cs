@@ -13,29 +13,43 @@ public sealed class ForgeEngine(ForgePaths paths) : ICardEngine, ITableSocial
     private static readonly JsonSerializerOptions Json = new() { PropertyNameCaseInsensitive = true };
     private readonly ConcurrentDictionary<long, TaskCompletionSource<JsonElement>> pending = new();
     private readonly SemaphoreSlim write = new(1);
-    private readonly TaskCompletionSource ready = new(TaskCreationOptions.RunContinuationsAsynchronously);
-    private Process? process;
-    private Task? reader;
-    private Task? diagnostics;
+    // Readers retain their own process and ready signal across a failed startup.
+    private sealed class EngineProcess(Process process)
+    {
+        public Process Process { get; } = process;
+        public TaskCompletionSource Ready { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public Task? Reader { get; set; }
+        public Task? Diagnostics { get; set; }
+        public Task? Stopped { get; set; }
+        public volatile Exception? Failure;
+    }
+    private EngineProcess? current;
     private long sequence;
     private bool disposed;
     public string Name => "Forge";
     public async Task InitializeAsync()
     {
-        if (process != null) throw new InvalidOperationException("Engine already started");
+        ObjectDisposedException.ThrowIf(disposed, this);
+        if (current is { } previous) {
+            if (previous.Ready.Task.IsCompletedSuccessfully && previous.Failure == null && !previous.Process.HasExited) return;
+            Fail(previous, new IOException("The engine is not running"));
+            try { await StopAsync(previous); }
+            finally { if (current == previous) current = null; }
+        }
         Directory.CreateDirectory(paths.Profile);
         var start = new ProcessStartInfo(paths.Java) { UseShellExecute = false, CreateNoWindow = true,
             RedirectStandardInput = true, RedirectStandardOutput = true, RedirectStandardError = true,
             StandardInputEncoding = new System.Text.UTF8Encoding(false), StandardOutputEncoding = System.Text.Encoding.UTF8 };
         foreach (var arg in new[] { "-Xmx2g", "-Dfile.encoding=UTF-8", "-Djava.awt.headless=true", "-jar", paths.Jar, paths.Resources, Path.Combine(paths.Profile, "decks") }) start.ArgumentList.Add(arg);
-        process = Process.Start(start) ?? throw new IOException("Could not start Forge");
-        diagnostics = Task.Run(async () => {
+        var owner = new EngineProcess(Process.Start(start) ?? throw new IOException("Could not start Forge"));
+        current = owner;
+        owner.Diagnostics = Task.Run(async () => {
             await using var log = new StreamWriter(Path.Combine(paths.Profile, "engine.log"), true);
-            while (await process.StandardError.ReadLineAsync() is { } line) { await log.WriteLineAsync(line); await log.FlushAsync(); }
+            while (await owner.Process.StandardError.ReadLineAsync() is { } line) { await log.WriteLineAsync(line); await log.FlushAsync(); }
         });
-        reader = Task.Run(async () => {
+        owner.Reader = Task.Run(async () => {
             try {
-                while (await process.StandardOutput.ReadLineAsync() is { } line) {
+                while (await owner.Process.StandardOutput.ReadLineAsync() is { } line) {
                     using var document = JsonDocument.Parse(line);
                     var message = document.RootElement;
                     if (message.TryGetProperty("event", out var ev)) {
@@ -44,7 +58,7 @@ public sealed class ForgeEngine(ForgePaths paths) : ICardEngine, ITableSocial
                                 throw new IOException("The client and rules adapter use different protocol versions. Install the complete matching build.");
                             var capabilities = message.GetProperty("capabilities").EnumerateArray().Select(c => c.GetString()).ToHashSet();
                             if (EngineProtocol.RequiredCapabilities.Any(c => !capabilities.Contains(c))) throw new IOException("The rules adapter is missing required synchronization capabilities.");
-                            ready.TrySetResult();
+                            owner.Ready.TrySetResult();
                         }
                         else if (ev.GetString() == "error") throw new IOException(Text(message, "message"));
                     } else if (message.TryGetProperty("id", out var id) && pending.TryRemove(id.GetInt64(), out var reply)) {
@@ -53,22 +67,36 @@ public sealed class ForgeEngine(ForgePaths paths) : ICardEngine, ITableSocial
                     }
                 }
                 if (!disposed) throw new IOException("The rules engine closed. See engine.log in your profile.");
-            } catch (Exception ex) { Fail(ex); }
+            } catch (Exception ex) { Fail(owner, ex); }
         });
-        await ready.Task.WaitAsync(TimeSpan.FromSeconds(120));
+        try { await owner.Ready.Task.WaitAsync(TimeSpan.FromSeconds(120)); }
+        catch (Exception ex) {
+            Fail(owner, ex);
+            try { await StopAsync(owner); }
+            catch (Exception) { /* Preserve the startup failure reported to the player. */ }
+            finally { if (current == owner) current = null; }
+            throw;
+        }
     }
-    private void Fail(Exception ex) { ready.TrySetException(ex); foreach (var item in pending) if (pending.TryRemove(item.Key, out var reply)) reply.TrySetException(ex); }
+    private void Fail(EngineProcess owner, Exception ex)
+    {
+        owner.Failure = ex;
+        owner.Ready.TrySetException(ex);
+        if (current != owner) return;
+        foreach (var item in pending) if (pending.TryRemove(item.Key, out var reply)) reply.TrySetException(ex);
+    }
     private async Task<JsonElement> Request(string method, object? arguments = null)
     {
         ObjectDisposedException.ThrowIf(disposed, this);
-        await ready.Task;
-        if (process is null || process.HasExited) throw new IOException("The engine is not running");
+        var owner = current ?? throw new IOException("The engine is not running");
+        await owner.Ready.Task;
+        if (current != owner || owner.Failure != null || owner.Process.HasExited) throw new IOException("The engine is not running");
         long id = Interlocked.Increment(ref sequence);
         var reply = new TaskCompletionSource<JsonElement>(TaskCreationOptions.RunContinuationsAsynchronously);
         pending[id] = reply;
         try {
             await write.WaitAsync();
-            try { await process.StandardInput.WriteLineAsync(JsonSerializer.Serialize(new { id, method, @params = arguments ?? new { } })); await process.StandardInput.FlushAsync(); }
+            try { await owner.Process.StandardInput.WriteLineAsync(JsonSerializer.Serialize(new { id, method, @params = arguments ?? new { } })); await owner.Process.StandardInput.FlushAsync(); }
             finally { write.Release(); }
             return await reply.Task.WaitAsync(TimeSpan.FromSeconds(45));
         } finally { pending.TryRemove(id, out _); }
@@ -209,17 +237,31 @@ public sealed class ForgeEngine(ForgePaths paths) : ICardEngine, ITableSocial
     {
         if (disposed) return;
         disposed = true;
-        Fail(new ObjectDisposedException(nameof(ForgeEngine)));
-        if (process != null) {
-            try {
-                process.StandardInput.Close();
-                if (!process.HasExited) {
-                    try { await process.WaitForExitAsync().WaitAsync(TimeSpan.FromSeconds(3)); }
-                    catch (TimeoutException) { process.Kill(true); await process.WaitForExitAsync(); }
+        if (current is not { } owner) return;
+        Fail(owner, new ObjectDisposedException(nameof(ForgeEngine)));
+        try { await StopAsync(owner); }
+        finally { if (current == owner) current = null; }
+    }
+    private static Task StopAsync(EngineProcess owner)
+    {
+        lock (owner) return owner.Stopped ??= StopProcessAsync(owner);
+    }
+    private static async Task StopProcessAsync(EngineProcess owner)
+    {
+        var process = owner.Process;
+        try {
+            try { process.StandardInput.Close(); }
+            catch (Exception ex) when (ex is IOException or InvalidOperationException) { }
+            if (!process.HasExited) {
+                try { await process.WaitForExitAsync().WaitAsync(TimeSpan.FromSeconds(3)); }
+                catch (TimeoutException) {
+                    try { process.Kill(true); }
+                    catch (InvalidOperationException) when (process.HasExited) { }
+                    await process.WaitForExitAsync().WaitAsync(TimeSpan.FromSeconds(3));
                 }
-                if (reader != null) await reader;
-                if (diagnostics != null) await diagnostics;
-            } finally { process.Dispose(); }
-        }
+            }
+            if (owner.Reader != null) await owner.Reader;
+            if (owner.Diagnostics != null) await owner.Diagnostics;
+        } finally { process.Dispose(); }
     }
 }

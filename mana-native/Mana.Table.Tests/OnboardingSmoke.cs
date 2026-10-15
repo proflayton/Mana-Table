@@ -64,7 +64,10 @@ internal static class OnboardingSmoke
             s.Then(() => Check(view.TableGuideOpen && !view.WelcomeOpen, "Repeated idle-lobby observations do not dismiss a manually opened controls guide"));
             s.Click("experience-guide-close");
         });
-        Scene(fresh, new StartupEngine(), (s, view) => s.Then(() => Check(!view.ExperienceOpen, "A dismissed welcome stays dismissed after reopening the application")));
+        Scene(fresh, new StartupEngine(), (s, view) => s.Then(() => {
+            Check(view.WelcomeOpen && !view.TableGuideOpen && Seen(fresh, "WelcomeSeen") && view.Hits.Any(h => h.Id == "experience-ai"), "Every application launch returns to the main menu while remembering introductory guidance");
+            s.Capture("02-returning-main-menu");
+        }));
 
         string escape = Case("fresh-escape");
         Scene(escape, new StartupEngine(), (s, view) => {
@@ -141,7 +144,10 @@ internal static class OnboardingSmoke
             string path = Case(savedDeck ? "legacy-deck" : "legacy-preferences");
             if (savedDeck) { Directory.CreateDirectory(Path.Combine(path, "decks")); File.WriteAllText(Path.Combine(path, "decks", "existing.dck"), "Existing saved deck"); }
             else new PlayPreferences { Automatic = false, PlayerName = "Returning player" }.Save(path);
-            Scene(path, new StartupEngine(), (s, view) => s.Then(() => Check(!view.ExperienceOpen && view.Hits.Any(h => h.Id == "change-deck"), $"A legacy profile with {(savedDeck ? "saved decks" : "play preferences")} opens directly at setup")));
+            Scene(path, new StartupEngine(), (s, view) => s.Then(() => {
+                Check(view.WelcomeOpen && !view.TableGuideOpen && view.Hits.Any(h => h.Id == "experience-ai"), $"A returning profile with {(savedDeck ? "saved decks" : "play preferences")} opens the main menu without a forced controls tour");
+                if (!savedDeck) Check(view.PlayerName == "Returning player" && PlayPreferences.Load(path).PlayerName == "Returning player", "The main menu preserves an existing player's display name");
+            }));
             var legacy = new InteractionScenarioEngine(); legacy.Present(PresentationSmoke.Example());
             Scene(path, legacy, (s, view) => s.Then(() => {
                 Check(!view.ExperienceOpen && view.Hits.Any(h => h.Id == "settings"), $"A legacy profile with {(savedDeck ? "saved decks" : "play preferences")} gets no forced tour");
@@ -201,7 +207,7 @@ internal static class OnboardingSmoke
                 if (ExpectedClick != null && !ClickAccepted) { Capture("failure"); throw new InvalidOperationException("Onboarding rejected pointer input for " + ExpectedClick); }
                 mousePhase = 0; ExpectedClick = null;
             }
-            if (!view.Loaded || view.Busy || view.Now < until) return;
+            if (!view.Loaded || view.Busy || view.ActivityOpen || view.Now < until) return;
             if (steps.TryDequeue(out var step)) step(); else view.Exit();
         }
     }

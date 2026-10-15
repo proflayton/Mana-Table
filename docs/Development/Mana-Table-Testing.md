@@ -36,12 +36,21 @@ mana-native/Mana.Table.Tests/bin/Release/net9.0-windows/Mana.Table.Tests.exe --s
 
 The first-session regression uses production input and hit testing with a
 deterministic engine. It checks welcome routing without implicit deck writes or
-network actions, independent welcome/guide persistence, existing-profile
-migration, first-table orientation, and Help replay. While the guide is open,
+network actions, remembered menu visits and guide dismissal, returning-profile
+main menus, first-table orientation, and Help replay. While the guide is open,
 gameplay clicks, shortcuts, text entry and Auto must leave the decision unchanged;
 closing the guide preserves Auto and Hold. Run at 1280x720 and 1200x900 and review
 the captures and `onboarding-results.json`. Other native UI scenarios seed the
 completed introduction so they continue to exercise their intended controls.
+
+`--smoke-loading --profile <isolated-profile> --size 1280x720` gates each engine
+request to verify real startup stages, immediate deck acknowledgment, prevention
+of duplicate actions, contextual handoff, inline autosave, error/retry and
+uninterrupted table polling, replies and Auto. Repeat at 1200x900 and review
+`loading-results.json` plus the captures. `--smoke-engine-startup` with
+`--engine-resources <package>/engine` exercises real Java startup failure using an
+isolated invalid JAR, repairs the copy and retries the same adapter. It verifies
+healthy process reuse, retained undo history and idempotent disposal.
 
 ### Native lobby and deck confirmation
 

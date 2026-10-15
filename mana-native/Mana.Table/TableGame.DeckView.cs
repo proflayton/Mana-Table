@@ -30,7 +30,8 @@ internal sealed partial class TableGame
         canvas.Panel(new(1130, 236, 438, 712), new(18, 25, 34), new(54, 67, 79), 8);
         DrawCardLibrary(); DrawEditableDeck(); DrawDeckCardPreview();
         string status = deck.SaveError.Length > 0 ? "Could not save: " + deck.SaveError : deck.Problem.Length > 0 ? "Deck needs changes: " + deck.Problem.Replace('\n', ' ') : "Ready to play · All changes saved";
-        canvas.Text(status, 46, 963, deck.Problem.Length > 0 || deck.SaveError.Length > 0 ? Gold : Ink, .68f, 1250, 1);
+        if (InlineActivityVisible) DrawInlineActivity();
+        else canvas.Text(status, 46, 963, deck.Problem.Length > 0 || deck.SaveError.Length > 0 ? Gold : Ink, .68f, 1250, 1);
         if (deck.SaveError.Length > 0) Button("deck-retry-save", "Retry save", 1340, 955, 214, () => EditDeck(d => engine.SaveDeckAsync(d.Id, d.Revision), "Deck saved."), !busy, height: 33);
         else Button("deck-review", "Review deck", 1340, 955, 214, () => { deckReview = true; deckReviewPage = 0; }, height: 33);
         if (deckMenu.Length > 0) DrawDeckMenu();
@@ -80,7 +81,12 @@ internal sealed partial class TableGame
             Button("catalog-prev", "Previous", 46, 896, 112, () => { catalogOffset = Math.Max(0, catalogOffset - 6); ChangeCatalog(true); }, results.Offset > 0, height: 32);
             Button("catalog-next", "Next", 166, 896, 94, () => { catalogOffset += 6; ChangeCatalog(true); }, results.Offset + results.Cards.Length < results.Total, height: 32);
             canvas.Text($"{(results.Total == 0 ? 0 : results.Offset + 1)}–{results.Offset + results.Cards.Length} of {results.Total:N0}", 282, 906, Muted, .63f, 272, 1);
-        } else canvas.Text(catalogError.Length > 0 ? catalogError + " · Use Reset to retry." : "Searching the card library…", 69, 470, Muted, .85f, 465, 5);
+        } else if (catalogError.Length > 0) canvas.Text(catalogError + " · Use Reset to retry.", 69, 470, Red, .85f, 465, 5);
+        else {
+            DrawLoadingIndicator(new(300, 506), 22, true, Blue);
+            canvas.CenterText("Finding your cards", new(61, 553, 475, 42), Ink, .95f, true);
+            canvas.CenterText("Searching the library with your filters.", new(61, 598, 475, 36), Muted, .72f);
+        }
     }
     private void DrawEditableDeck()
     {

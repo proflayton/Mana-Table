@@ -58,7 +58,7 @@ internal sealed class DeckWorkshopSmoke(TableGame.Probe view) : ITableAutomation
             if (!ClickAccepted) { Capture("failure"); throw new InvalidOperationException("Rejected workshop click: " + ExpectedClick); }
             mousePhase = 0; ExpectedClick = null; stage = next;
         }
-        if (!view.Loaded || view.Busy || view.Polling) return;
+        if (!view.Loaded || view.Busy || view.ActivityOpen || view.Polling) return;
         switch (stage) {
             case 0: Click("new-deck", 1); break;
             case 1:

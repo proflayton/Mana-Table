@@ -69,4 +69,7 @@ Add-Type -AssemblyName System.IO.Compression.FileSystem
 $archive = $OutputDirectory + '-windows-x64.zip'
 [IO.Compression.ZipFile]::CreateFromDirectory($OutputDirectory, $archive, [IO.Compression.CompressionLevel]::Optimal, $true)
 (Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash | Set-Content -Encoding ASCII ($archive + '.sha256')
+@{ directory=$OutputDirectory; executable='ManaTable.exe'; sourceRevision=$revision; archive=$archive; checksum=($archive + '.sha256') } |
+    ConvertTo-Json | Set-Content -Encoding UTF8 (Join-Path $repository 'dist/latest-native.json.tmp')
+Move-Item -LiteralPath (Join-Path $repository 'dist/latest-native.json.tmp') -Destination (Join-Path $repository 'dist/latest-native.json') -Force
 Write-Output $archive

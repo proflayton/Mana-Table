@@ -10,7 +10,7 @@ internal static class Program
     {
         Application.SetHighDpiMode(HighDpiMode.PerMonitorV2);
         string? Arg(string name) { int index = Array.IndexOf(args, name); return index >= 0 && index + 1 < args.Length ? args[index + 1] : null; }
-        bool testRun = args.Any(a => a is "--smoke" or "--smoke-ai" or "--smoke-ui-ai" or "--smoke-presentation" or "--smoke-ui-interactions" or "--smoke-table-feel" or "--smoke-card-reading" or "--smoke-cleanup" or "--smoke-deck-building" or "--smoke-workshop" or "--smoke-workshop-adapter" or "--smoke-lobby" or "--smoke-social" or "--smoke-advance" or "--smoke-auto-dock" or "--smoke-action-feedback" or "--smoke-onboarding");
+        bool testRun = args.Any(a => a is "--smoke" or "--smoke-ai" or "--smoke-ui-ai" or "--smoke-presentation" or "--smoke-ui-interactions" or "--smoke-table-feel" or "--smoke-card-reading" or "--smoke-cleanup" or "--smoke-deck-building" or "--smoke-workshop" or "--smoke-workshop-adapter" or "--smoke-lobby" or "--smoke-social" or "--smoke-advance" or "--smoke-auto-dock" or "--smoke-action-feedback" or "--smoke-onboarding" or "--smoke-loading" or "--smoke-engine-startup");
         var profile = Arg("--profile") ?? (testRun
             ? Path.Combine(Path.GetTempPath(), "ManaTableNative-tests", Guid.NewGuid().ToString())
             : Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "ManaTableNative"));
@@ -22,6 +22,7 @@ internal static class Program
             Microsoft.Xna.Framework.Point? size = null;
             if (Arg("--size")?.Split('x') is { Length: 2 } dimensions && int.TryParse(dimensions[0], out int width) && int.TryParse(dimensions[1], out int height)) size = new(Math.Clamp(width, 800, 3840), Math.Clamp(height, 450, 2160));
             if (args.Contains("--smoke-onboarding")) { OnboardingSmoke.Run(profile, size); return 0; }
+            if (args.Contains("--smoke-loading")) { LoadingSmoke.Run(profile, size); return 0; }
             // Existing UI regressions start directly at their subject. Onboarding
             // has its own fresh-profile and persistence coverage above.
             if (args.Any(a => a is "--smoke-ui-ai" or "--smoke-ui-interactions" or "--smoke-table-feel" or "--smoke-card-reading" or "--smoke-deck-building" or "--smoke-workshop" or "--smoke-lobby" or "--smoke-auto-dock" or "--smoke-action-feedback"))
@@ -61,6 +62,7 @@ internal static class Program
             var backend = Arg("--engine") ?? "forge";
             if (backend != "forge") throw new NotSupportedException($"Engine '{backend}' is not installed. Available: forge.");
             var paths = new ForgePaths(Path.Combine(bundle, "runtime", "bin", "java.exe"), Arg("--engine-jar") ?? Path.Combine(bundle, "forge-engine.jar"), Path.Combine(bundle, "forge-res"), profile);
+            if (args.Contains("--smoke-engine-startup")) { EngineStartupRegression.RunAsync(paths).GetAwaiter().GetResult(); return 0; }
             if (args.Contains("--smoke")) { NativeSmoke.RunAsync(paths).GetAwaiter().GetResult(); return 0; }
             if (args.Contains("--smoke-ai")) { AiSmoke.RunAsync(paths).GetAwaiter().GetResult(); return 0; }
             if (args.Contains("--smoke-cleanup")) { CleanupSmoke.RunAsync(paths).GetAwaiter().GetResult(); return 0; }
@@ -73,6 +75,7 @@ internal static class Program
                 if (args.Contains("--smoke-ui-ai")) game.Automation = new SmokeAutomation(game.TestPort, false);
                 if (args.Contains("--smoke-deck-building")) game.Automation = new DeckBuildingSmoke(game.TestPort);
                 if (args.Contains("--smoke-workshop")) game.Automation = new DeckWorkshopSmoke(game.TestPort);
+                if (game.Automation != null) game.TestPort.DismissWelcome();
                 game.Run();
             } finally { engine.DisposeAsync().AsTask().GetAwaiter().GetResult(); }
             return 0;
