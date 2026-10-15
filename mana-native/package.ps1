@@ -45,8 +45,9 @@ foreach ($file in Get-ChildItem -LiteralPath $PSScriptRoot -File -Recurse | Wher
     New-Item -ItemType Directory -Path (Split-Path $destination -Parent) -Force | Out-Null
     Copy-Item -LiteralPath $file.FullName -Destination $destination
 }
-$patch = & git -C $repository diff -- forge-api/src/main/java forge-gui/src/main/java
-$patch | Set-Content -Encoding UTF8 (Join-Path $OutputDirectory 'source/forge-adapter.patch')
+$patchPath = Join-Path $OutputDirectory 'source/forge-adapter.patch'
+& git -C $repository diff "--output=$patchPath" -- forge-api/src/main/java forge-game/src/main/java forge-gui/src/main/java
+if ($LASTEXITCODE -ne 0) { throw 'Could not export the Forge source patch.' }
 # Include new adapter files as source too; git diff alone omits untracked additions.
 $adapterSource = Join-Path $OutputDirectory 'source/forge-api'
 New-Item -ItemType Directory -Path $adapterSource -Force | Out-Null

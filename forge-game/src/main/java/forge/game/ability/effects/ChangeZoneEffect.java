@@ -916,6 +916,7 @@ public class ChangeZoneEffect extends SpellAbilityEffect {
             }
         }
 
+        playerChoices:
         for (Player player : fetchers) {
             Player decider = chooser;
             if (decider == null) {
@@ -926,7 +927,8 @@ public class ChangeZoneEffect extends SpellAbilityEffect {
                 player = sa.getTargets().getFirstTargetedPlayer();
             }
 
-            if (!player.isInGame()) {
+            if (game.isGameOver()) { return; }
+            if (!player.isInGame() || !decider.isInGame()) {
                 continue;
             }
 
@@ -1209,6 +1211,15 @@ public class ChangeZoneEffect extends SpellAbilityEffect {
                             title += " (" + (i + 1) + " / " + changeNum + ")";
                         }
                         c = decider.getController().chooseSingleCardForZoneChange(destination, origin, sa, fetchList, shouldReveal ? delayedReveal : null, title, !mandatory, decider);
+                    }
+
+                    if (game.isGameOver()) { return; }
+                    if (!player.isInGame() || !decider.isInGame()) {
+                        // A concession releases the selection without choosing a
+                        // card. Do not ask that departed player to cancel a search
+                        // or reorder cards; continue with any remaining targets.
+                        if (controlTimestamp != null) { player.removeController(controlTimestamp); }
+                        continue playerChoices;
                     }
 
                     if (c == null) {

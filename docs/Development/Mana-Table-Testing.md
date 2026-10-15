@@ -60,12 +60,19 @@ snapshots, old-table replies, unread counts, mutes and reused-seat identity. Jav
 text/name validation, sender attribution and equal local/TCP transcripts across
 reconnects. `SyncTransportTest` covers exactly-once receipts and protocol rejection.
 
-The lifecycle check completes each seat's starting-player and keep-hand choices
-before conceding guests. A separate stress run that conceded three guests in
-succession during Pregame reached a Forge null-state error (`takesAction` was
-null while accessing `Player.getCardsIn`). That pregame concession issue remains
-unfixed; the lobby work does not change rules or concession handling. The normal
-post-opening return and subsequent join are covered by the passing regression.
+Opening decisions also permit concessions. `PregameConcessionTest` exercises
+departure of the starting-player chooser, the first player during mulligans, and
+players handling Leyline or Gemstone Caverns opening decisions, then checks that
+the remaining players reach their first main phase. It also covers a departed
+Chancellor reveal viewer and verifies that terminal opening-choice cancellation
+releases the game thread.
+`pregame-concession.test.cjs` repeats the lifecycle through local, TCP and mixed
+connections: one decision owner concedes, three guests concede in succession,
+a guest leaves its seat, results clear every prompt, and the same clients return
+and start a rematch with fresh readiness and decision scopes. Run it with
+`node --test tests/pregame-concession.test.cjs` from `forge-desktop`.
+The native AI smoke check separately covers a sole human conceding during opening
+decisions, which ends the game instead of continuing with only AI players.
 
 ### Native deck workshop
 

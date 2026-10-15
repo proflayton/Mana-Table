@@ -203,7 +203,8 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
     @Override
     public void publishInput() {
         synchronized (gate) {
-            if (closed || error != null || pending != null && !pending.kind.equals("input")) return;
+            if (closed || error != null || viewer.getHasLost() || game.isGameOver()
+                    || pending != null && !pending.kind.equals("input")) return;
             Input current = human.getInputQueue().getInput();
             if (current == null || current != displayedInput || current != human.getInputProxy().getInput() || game.isGameOver()) return;
             Pending next = new Pending("input", current);
@@ -333,8 +334,10 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
             if (game.isGameOver()) return latest;
             Pending old = pending;
             pending = null;
-            if (old != null) old.response.completeExceptionally(new CancellationException("Match conceded"));
             human.concede();
+            // Publish the loss before releasing a dialog's waiter: pregame
+            // orchestration must observe the departure when it handles cancellation.
+            if (old != null) old.response.completeExceptionally(new CancellationException("Match conceded"));
             table.stopIfNoHumans();
             human.getInputQueue().onGameOver(true);
             publish(null);
@@ -356,6 +359,11 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
     private void publish(Pending prompt) { pending = prompt; table.publish(); }
 
     void publishView(long boardRevision) {
+        if (viewer.getHasLost() || game.isGameOver()) {
+            Pending old = pending;
+            pending = null;
+            if (old != null) old.response.completeExceptionally(new CancellationException("Match ended"));
+        }
         Pending prompt = pending;
         if (prompt != null) { prompt.cards.clear(); prompt.attackPairs.clear(); prompt.blockPairs.clear(); }
         var view = game.getView();
@@ -642,10 +650,16 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
 
     private void revealDelayed(DelayedReveal reveal) { if (reveal != null) reveal(reveal.getMessagePrefix(), reveal.getCards()); }
     private void reveal(String title, List<?> choices) {
-        if (!libraryCards(choices)) { dialog("reveal", title, choices, 0, 0, false, null); return; }
-        var next = choicePrompt("reveal", title, List.of(), 0, 0, false, null);
-        libraryPrompt(next, List.of(), choices, ((CardView)choices.get(0)).getController(), false);
-        await(next);
+        try {
+            if (!libraryCards(choices)) { dialog("reveal", title, choices, 0, 0, false, null); return; }
+            var next = choicePrompt("reveal", title, List.of(), 0, 0, false, null);
+            libraryPrompt(next, List.of(), choices, ((CardView)choices.get(0)).getController(), false);
+            await(next);
+        } catch (CancellationException cancellation) {
+            // A departed observer cannot acknowledge a read-only reveal. Their
+            // departure does not cancel the ability another player is resolving.
+            if (!viewer.getHasLost() && !game.isGameOver()) { throw cancellation; }
+        }
     }
 
     private static boolean libraryCards(List<?> choices) {

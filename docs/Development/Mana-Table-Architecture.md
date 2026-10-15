@@ -443,7 +443,8 @@ camera focus, and crowded-rank paging while a real engine decision stays unchang
 `battlefield-fit.spec.cjs` and `multiplayer.spec.cjs` retain explicit 2D fallback
 coverage for scrollports, seat navigation, and drawers.
 
-This is a local, single-human application with one active match. There is no
-network API, multiplayer service, durable match resume, or full tournament-format
-legality service. The engine's own GUI modules and network features are separate
-from Mana Table's UI. Packaging is currently Windows x64 only.
+Each engine process owns one active match. Local and network seats share the
+authoritative Forge rules implementation, and interrupted TCP seats can reconnect
+while the host remains running. Durable match saves, host migration and full
+tournament-format legality checks are not implemented. Packaging is currently
+Windows x64 only.

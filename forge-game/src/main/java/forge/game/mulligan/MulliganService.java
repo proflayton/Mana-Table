@@ -70,11 +70,15 @@ public class MulliganService {
         do {
             allKept = true;
             for (AbstractMulligan mulligan : mulligans) {
-                if (mulligan.hasKept()) {
+                if (game.isGameOver()) { return; }
+                if (mulligan.hasKept() || mulligan.getPlayer().hasLost()) {
                     continue;
                 }
 
                 Player p = mulligan.getPlayer();
+                if (firstPlayer.hasLost()) {
+                    firstPlayer = game.getNextPlayerAfter(firstPlayer);
+                }
 
                 boolean keep = !mulligan.canMulligan() ||
                         p.getController().mulliganKeepHand(
@@ -86,6 +90,9 @@ public class MulliganService {
                     // conceded during mulligan prompt
                     return;
                 }
+                // A released keep-hand input defaults to mulligan. A player who
+                // conceded must not draw again or be prompted in the next round.
+                if (p.hasLost()) { continue; }
 
                 if (keep) {
                     mulligan.keep();
@@ -100,6 +107,8 @@ public class MulliganService {
 
     private void runPostMulligans() {
         for (AbstractMulligan mulligan : mulligans) {
+            if (game.isGameOver()) { return; }
+            if (mulligan.getPlayer().hasLost()) { continue; }
             mulligan.afterMulligan();
         }
     }

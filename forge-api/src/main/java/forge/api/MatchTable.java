@@ -8,6 +8,7 @@ import forge.player.LobbyPlayerHuman;
 import forge.player.PlayerControllerHuman;
 import java.nio.file.Path;
 import java.util.*;
+import java.util.concurrent.CancellationException;
 
 /** The sole owner of a Forge game. Seats, projections and decisions never depend on transport. */
 final class MatchTable implements ManaTableSession, AutoCloseable {
@@ -59,9 +60,11 @@ final class MatchTable implements ManaTableSession, AutoCloseable {
         game.getAction().invoke(() -> {
             try {
                 match.startGame(game);
-                synchronized (gate) { for (var seat : seats.values()) seat.clearDecision(); publish(); }
-            } catch (Throwable failure) { if (!closed) fail(failure); }
+            } catch (Throwable failure) {
+                if (!closed && !(failure instanceof CancellationException && game.isGameOver())) fail(failure);
+            }
             finally {
+                synchronized (gate) { for (var seat : seats.values()) seat.clearDecision(); publish(); }
                 game.unsubscribeFromEvents(identities);
                 for (var seat : seats.values()) seat.detach();
             }

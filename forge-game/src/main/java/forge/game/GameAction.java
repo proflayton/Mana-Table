@@ -66,6 +66,7 @@ import org.jgrapht.graph.DefaultDirectedGraph;
 import org.jgrapht.graph.DefaultEdge;
 
 import java.util.*;
+import java.util.concurrent.CancellationException;
 import java.util.function.Predicate;
 
 /**
@@ -2230,7 +2231,9 @@ public class GameAction {
         reveal(cards, zt, cardOwner, dontRevealToOwner, messagePrefix, true);
     }
     public void reveal(CardCollectionView cards, ZoneType zt, Player cardOwner, boolean dontRevealToOwner, String messagePrefix, boolean msgAddSuffix) {
-        for (Player p : game.getPlayers()) {
+        for (Player p : new PlayerCollection(game.getPlayers())) {
+            if (game.isGameOver()) { return; }
+            if (p.hasLost()) { continue; }
             if (dontRevealToOwner && cardOwner == p) {
                 continue;
             }
@@ -2325,15 +2328,20 @@ public class GameAction {
         GameType gameType = game.getRules().getGameType();
         do {
             if (game.isGameOver()) { break; } // conceded during "play or draw"
+            first = survivingStartingPlayer(first);
 
             // FControl should determine now if there are any human players.
             // Where there are none, it should bring up speed controls
             game.fireEvent(new GameEventGameStarted(gameType, first, game.getPlayers()));
 
             runPreOpeningHandActions(first);
+            if (game.isGameOver()) { break; }
+            first = survivingStartingPlayer(first);
 
             game.setAge(GameStage.Mulligan);
-            for (final Player p1 : game.getPlayers()) {
+            for (final Player p1 : new PlayerCollection(game.getPlayers())) {
+                if (game.isGameOver()) { break; }
+                if (p1.hasLost()) { continue; }
                 // Choose starting hand for each player with multiple hands
                 if (StaticData.instance().getFilteredHandsEnabled() ) {
                     drawStartingHand(p1);
@@ -2347,10 +2355,13 @@ public class GameAction {
                 }
             }
 
+            if (game.isGameOver()) { break; }
+            first = survivingStartingPlayer(first);
             if (game.getRules().getGameType() != GameType.Puzzle) {
                 new MulliganService(first).perform();
             }
             if (game.isGameOver()) { break; } // conceded during "mulligan" prompt
+            first = survivingStartingPlayer(first);
 
             game.setAge(GameStage.Play);
 
@@ -2363,7 +2374,10 @@ public class GameAction {
             }
 
             first = runOpeningHandActions(first);
+            if (game.isGameOver()) { break; }
+            first = survivingStartingPlayer(first);
             checkStateEffects(true); // why?
+            if (game.isGameOver()) { break; }
 
             // Run Trigger beginning of the game
             game.getTriggerHandler().runTrigger(TriggerType.NewGame, AbilityKey.newMap(), true);
@@ -2437,51 +2451,77 @@ public class GameAction {
                 p.getController().awaitNextInput(); //show "Waiting for opponent..." while first player chooses whether to go first or keep their hand
             }
         }
-        goesFirst = goesFirst.getController().chooseStartingPlayer(isFirstGame);
-        return goesFirst;
+        while (!game.isGameOver()) {
+            goesFirst = survivingStartingPlayer(goesFirst);
+            if (goesFirst == null) { return null; }
+            final PlayerController controller = goesFirst.getController();
+            if (controller == null && game.isGameOver()) { return null; }
+            final Player chosen = controller.chooseStartingPlayer(isFirstGame);
+            if (game.isGameOver()) { return null; }
+            if (chosen != null && !chosen.hasLost()) { return chosen; }
+            // Releasing a conceding player's input can return no selection.
+            // The next surviving player must still choose who starts the game.
+        }
+        return null;
+    }
+
+    private Player survivingStartingPlayer(final Player first) {
+        return first != null && !first.hasLost() ? first : game.getNextPlayerAfter(first);
     }
 
     private void runPreOpeningHandActions(final Player first) {
-        Player takesAction = first;
-        do {
-            List<Card> ploys = CardLists.filter(takesAction.getCardsIn(ZoneType.Command), input -> input.getName().equals("Emissary's Ploy"));
-            CardCollectionView all = CardLists.filterControlledBy(game.getCardsInGame(), takesAction);
-            List<Card> spires = CardLists.filter(all, input -> input.getName().equals("Cryptic Spires"));
-
-            int chosen = 1;
-            List<Integer> cmc = Lists.newArrayList(1, 2, 3);
-
-            for (Card c : ploys) {
-                if (!cmc.isEmpty()) {
-                    SpellAbility sa = new SpellAbility.EmptySa(ApiType.ChooseNumber, c, takesAction);
-                    chosen = takesAction.getController().chooseNumber(sa, "Emissary's Ploy", cmc, c.getOwner());
-                    cmc.remove((Object)chosen);
-                }
-
-                c.setChosenNumber(chosen);
+        // A concession may remove the original first player while an input waits.
+        // Visit this bounded turn-order snapshot rather than waiting to revisit them.
+        for (final Player takesAction : game.getPlayersInTurnOrder(first)) {
+            if (game.isGameOver()) { return; }
+            if (takesAction.hasLost()) { continue; }
+            try {
+                runPreOpeningHandActionsForPlayer(takesAction);
+            } catch (CancellationException cancellation) {
+                if (!takesAction.hasLost() && !game.isGameOver()) { throw cancellation; }
             }
-            for (Card c : spires) {
-                // TODO: only do this for the AI, for the player part, get the encoded color from the deck file and pass
-                //  it to either player or the papercard object so it feels like rule based for the player side..
-                if (!c.hasMarkedColor()) {
-                    if (takesAction.isAI()) {
-                        String prompt = c.getTranslatedName() + ": " +
-                                Localizer.getInstance().getMessage("lblChooseNColors", Lang.getNumeral(2));
-                        SpellAbility sa = new SpellAbility.EmptySa(ApiType.ChooseColor, c, takesAction);
-                        sa.putParam("AILogic", "MostProminentInComputerDeck");
-                        c.setMarkedColors(takesAction.getController().chooseColors(prompt, sa, 2, 2, ColorSet.WUBRG));
-                    }
+        }
+    }
+
+    private void runPreOpeningHandActionsForPlayer(final Player takesAction) {
+        List<Card> ploys = CardLists.filter(takesAction.getCardsIn(ZoneType.Command), input -> input.getName().equals("Emissary's Ploy"));
+        CardCollectionView all = CardLists.filterControlledBy(game.getCardsInGame(), takesAction);
+        List<Card> spires = CardLists.filter(all, input -> input.getName().equals("Cryptic Spires"));
+
+        int chosen = 1;
+        List<Integer> cmc = Lists.newArrayList(1, 2, 3);
+
+        for (Card c : ploys) {
+            if (!cmc.isEmpty()) {
+                SpellAbility sa = new SpellAbility.EmptySa(ApiType.ChooseNumber, c, takesAction);
+                chosen = takesAction.getController().chooseNumber(sa, "Emissary's Ploy", cmc, c.getOwner());
+                if (game.isGameOver() || takesAction.hasLost()) { return; }
+                cmc.remove((Object)chosen);
+            }
+
+            c.setChosenNumber(chosen);
+        }
+        for (Card c : spires) {
+            // TODO: only do this for the AI, for the player part, get the encoded color from the deck file and pass
+            //  it to either player or the papercard object so it feels like rule based for the player side..
+            if (!c.hasMarkedColor()) {
+                if (takesAction.isAI()) {
+                    String prompt = c.getTranslatedName() + ": " +
+                            Localizer.getInstance().getMessage("lblChooseNColors", Lang.getNumeral(2));
+                    SpellAbility sa = new SpellAbility.EmptySa(ApiType.ChooseColor, c, takesAction);
+                    sa.putParam("AILogic", "MostProminentInComputerDeck");
+                    c.setMarkedColors(takesAction.getController().chooseColors(prompt, sa, 2, 2, ColorSet.WUBRG));
                 }
             }
-            takesAction = game.getNextPlayerAfter(takesAction);
-        } while (takesAction != first);
+        }
     }
 
     // Returns the new player to go first
     private Player runOpeningHandActions(final Player first) {
-        Player takesAction = first;
         Player newFirst = first;
-        do {
+        for (final Player takesAction : game.getPlayersInTurnOrder(first)) {
+            if (game.isGameOver()) { break; }
+            if (takesAction.hasLost()) { continue; }
             List<SpellAbility> usableFromOpeningHand = Lists.newArrayList();
 
             // Select what can be activated from a given hand
@@ -2505,21 +2545,33 @@ public class GameAction {
 
             // Players are supposed to return the effects in an order they want those to be resolved (Rule 103.5)
             if (!usableFromOpeningHand.isEmpty()) {
-                usableFromOpeningHand = takesAction.getController().chooseSaToActivateFromOpeningHand(usableFromOpeningHand);
+                try {
+                    usableFromOpeningHand = takesAction.getController().chooseSaToActivateFromOpeningHand(usableFromOpeningHand);
+                } catch (CancellationException cancellation) {
+                    if (!takesAction.hasLost() && !game.isGameOver()) { throw cancellation; }
+                    continue;
+                }
             }
+            if (game.isGameOver()) { break; }
+            if (takesAction.hasLost()) { continue; }
 
             for (final SpellAbility sa : usableFromOpeningHand) {
+                if (game.isGameOver() || takesAction.hasLost()) { break; }
                 if (!takesAction.getZone(ZoneType.Hand).contains(sa.getHostCard())) {
                     continue;
                 }
 
-                takesAction.getController().playSpellAbilityNoStack(sa, true);
+                try {
+                    takesAction.getController().playSpellAbilityNoStack(sa, true);
+                } catch (CancellationException cancellation) {
+                    if (!takesAction.hasLost() && !game.isGameOver()) { throw cancellation; }
+                    break;
+                }
                 if (sa.hasParam("BecomeStartingPlayer")) {
                     newFirst = takesAction;
                 }
             }
-            takesAction = game.getNextPlayerAfter(takesAction);
-        } while (takesAction != first);
+        }
         // state effects are checked only when someone gets priority
         return newFirst;
     }
