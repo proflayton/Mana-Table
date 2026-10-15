@@ -135,6 +135,17 @@ scenario below to cover readiness and actual match setup after workshop changes.
 
 ### Native deck import and commander selection
 
+`DeckImportTest` loads the real card resources and covers common text export
+conventions, annotated rows, section boundaries, exact printing/foil requests,
+the full 100-card Toph export, and line diagnostics without partial saves.
+Run `mvn -pl forge-api -am -Dtest=DeckImportTest -Dsurefire.failIfNoSpecifiedTests=false test`.
+The native `--smoke-deck-import` uses the same import path as file and clipboard
+input, checks the complete list and automatic commander, opens the saved list
+through real controls, rejects a bad row without replacing it, and relaunches
+the adapter and client to check persistence. It writes `deck-import-results.json`
+and captures to its isolated profile. Pass `--engine-resources <package>/engine`
+and `--engine-jar <rebuilt-jar>` when testing a newly built adapter.
+
 `DeckCommandersTest` runs with Maven `verify` and covers atomic section moves,
 replacement, valid/invalid partnerships, Backgrounds, duplicates, sideboard cards,
 clearing, stale revisions and undo. The native `--smoke-deck-building` mode uses

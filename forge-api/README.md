@@ -138,10 +138,38 @@ correlates request IDs and records diagnostics in the active profile's log.
 | `duplicate` | `{deckId, revision, name}`; save and open an independent copy preserving exact printings and sections |
 | `undo`, `redo` | `{revision}`; deck-editor history |
 | `save` | Retry saving the current deck |
-| `importPreview`, `import` | Preview `{text}`; import `{text, name, format?}` as a new deck; preview `warnings` reports supported-printing substitutions for unbundled sets in Moxfield/Arena rows |
+| `importPreview`, `import` | Preview `{text}`; import `{text, name, format?}` as a new deck; line-numbered problems block import, and preview `warnings` reports supported-printing substitutions for unbundled sets |
 | `export` | `{kind: "text"}` or `{kind: "forge"}`; deck-list text |
 | `deckPresets`, `presetImport` | List attributed presets; import one by `{id}` |
 | `practice` | `{action: "shuffle" / "mulligan" / "draw" / "bottom", index?}`; opening-hand sandbox |
+
+Text imports use Forge's recognizer after normalizing exported annotations:
+
+| Text convention | Example |
+| --- | --- |
+| Plain / Arena / MTGO text | `4 Forest` |
+| Printing-aware Arena / ManaBox text | `1 Lightning Bolt (M11) 146` |
+| Archidekt rich text | `1x Force of Vigor (h1r) 21 *F* [Removal]` |
+| Explicit commander tag | `1x Toph, the First Metalbender (tla) 247 [Commander{top}]` |
+| Section headings / row prefixes | `Commander`, `Deck`, `Sideboard`, `SB: 2 Lightning Bolt` |
+| Deckstats | `4 [M11] Lightning Bolt`, `//Sideboard`, `#!Commander` |
+| Forge printing rows | Quantity followed by the exported opaque printing request |
+
+The supported conventions follow the publishers' own examples:
+[Arena](https://mtgarena-support.wizards.com/hc/en-us/articles/360049857771-Importing-a-Deck),
+[ManaBox](https://www.manabox.app/guides/decks/import-export/),
+[Archidekt](https://archidekt.com/forum/thread/6024990/1), and
+[Deckstats formatting help](https://deckstats.net/decks/30300/190225-tapped-out/en?is_copy=1&show_form=1).
+Moxfield's Arena/MTGO text exports use the same quantity/name conventions.
+MTGO's structured `.dek` files require a separate parser; use its text export
+([official guide](https://www.mtgo.com/getting-started/getting-started-deckbuilding)).
+
+Categories apply only to their own row and do not change the current deck section.
+Quantities, explicit sections, supported printings, foil markers and double-faced
+card names are preserved. Unknown cards or invalid requests block the whole import
+with the original line number and text; they cannot silently produce a partial deck.
+Companion, Maybeboard and excluded-board metadata currently produce an explicit
+unsupported-section problem. CSV, XML and deck URLs are not text card rows.
 
 The host owns one current deck editor. Successful edits autosave. Saved files use
 opaque UUID filenames, schema version 1, printing IDs, quantities, and explicit

@@ -188,8 +188,8 @@ public final class DesktopEngine implements AutoCloseable {
             }
             case "import" -> {
                 var preview = DeckImport.preview(string(p, "text", ""));
-                if (preview.entries().isEmpty()) { throw new IllegalArgumentException("Paste at least one card"); }
                 DeckEditor imported = preview.open(checkedName(string(p, "name", "Imported deck")), catalog);
+                if (preview.entries().isEmpty()) { throw new IllegalArgumentException("Paste at least one card"); }
                 String requestedFormat = string(p, "format", "Auto");
                 String importedFormat = requestedFormat.equals("Auto") ? MatchSetup.suggestedFormat(imported.toDeck()) : checkedFormat(requestedFormat);
                 ensureSaved();

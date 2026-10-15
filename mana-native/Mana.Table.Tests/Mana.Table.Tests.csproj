@@ -4,4 +4,7 @@
     <ImplicitUsings>enable</ImplicitUsings><Nullable>enable</Nullable><AssemblyName>Mana.Table.Tests</AssemblyName>
   </PropertyGroup>
   <ItemGroup><ProjectReference Include="../Mana.Table/Mana.Table.csproj" /></ItemGroup>
+  <ItemGroup>
+    <Content Include="../../forge-api/src/test/resources/forge/api/annotated-toph.txt" Link="Fixtures/annotated-toph.txt" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
 </Project>

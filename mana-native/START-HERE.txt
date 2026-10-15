@@ -34,6 +34,16 @@ PLAY SOLO AGAINST AI
 5. After the game, select Return to setup to play again or switch to friends.
 No network setup, account, API key or paid AI service is needed for solo play.
 
+IMPORT YOUR DECK
+Choose a deck > Import deck file or Paste deck list accepts text exports.
+Use quantity/name rows such as "4 Forest" or "4x Forest". Set codes, collector
+numbers, foil markers and Archidekt category tags can remain in the list.
+Explicit Commander tags or section headings select the commander automatically.
+Import errors identify the line that needs attention and preserve your saved deck.
+Use a text export for structured formats such as MTGO .dek XML or CSV files.
+Companion and Maybeboard sections currently need to be removed from the import;
+the importer reports them rather than adding those cards to the main deck.
+
 PLAY WITH FRIENDS
 1. Every player uses this same build. Change deck opens saved lists, precons,
    Import deck file and Paste deck list. Deck builder edits your selected list.
