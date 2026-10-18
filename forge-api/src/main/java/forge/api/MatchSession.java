@@ -54,6 +54,7 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
     private final List<String> notices = new ArrayList<>();
     private volatile Map<String, Object> latest;
     private volatile Pending pending;
+    private boolean inputActionQueued;
     private volatile boolean closed;
     private volatile String error;
     private long revision;
@@ -68,6 +69,8 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
         final String kind;
         final Input input;
         final Map<String, CardView> cards = new LinkedHashMap<>();
+        final Map<Integer, String> cardKeys = new HashMap<>();
+        int nextCardKey;
         final Set<Integer> players = new HashSet<>();
         final Set<String> blockPairs = new HashSet<>();
         final Set<String> attackPairs = new HashSet<>();
@@ -205,6 +208,7 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
         synchronized (gate) {
             if (closed || error != null) return;
             if (game.isGameOver()) { releaseInput(); return; }
+            if (inputActionQueued) return;
             if (pending != null && !pending.kind.equals("input")) return;
             Input current = human.getInputQueue().getInput();
             if (current == null || current != displayedInput || current != human.getInputProxy().getInput() || game.isGameOver()) return;
@@ -222,7 +226,9 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
                 else releaseInput();
                 return;
             }
-            Pending next = new Pending("input", current);
+            // Unrelated GUI callbacks may refresh every seat. An unanswered
+            // controller input keeps its scope and card handles through refreshes.
+            Pending next = pending != null && pending.input == current ? pending : new Pending("input", current);
             // Cleanup's discard input (among others) is an anonymous subclass.
             // Preserve its actual input kind instead of publishing an empty name.
             Class<?> inputClass = current.getClass();
@@ -231,6 +237,7 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
                     ? selection.getValidChoices().stream().filter(Player.class::isInstance).map(entity -> ((Player) entity).getId()).toList()
                     : current instanceof InputSelectTargets targeting
                     ? game.getPlayers().stream().filter(targeting::canSelectPlayer).map(Player::getId).toList() : List.<Integer>of();
+            next.players.clear();
             next.players.addAll(playerChoices);
             next.prompt = map("id", next.id, "kind", "input", "inputType", inputClass.getSimpleName(),
                     "message", message, "ok", ok, "cancel", cancel, "okEnabled", okEnabled, "cancelEnabled", cancelEnabled,
@@ -315,29 +322,34 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
             CardView chosenAttacker = attacker;
             PlayerView chosenPlayer = target;
             pending = null;
+            inputActionQueued = true;
             markBusy();
             HeadlessPlatform.later(() -> {
-                if (closed || human.getInputQueue().getInput() != next.input) return;
-                switch (action) {
-                    case "ok" -> human.selectButtonOk();
-                    case "passIfNoResponse" -> ((InputPassPriority) next.input).passPriority();
-                    case "cancel" -> human.selectButtonCancel();
-                    case "attackAll" -> human.alphaStrike();
-                    case "card" -> human.selectCard(chosenCard, null, CARD_CLICK);
-                    case "block" -> {
-                        // One scoped gesture: select the attacker and toggle this exact
-                        // block through the engine's normal input, then publish once.
-                        human.selectCard(chosenAttacker, null, CARD_CLICK);
-                        human.selectCard(chosenCard, null, CARD_CLICK);
+                try {
+                    if (closed || viewer.getHasLost() || game.isGameOver() || human.getInputQueue().getInput() != next.input) return;
+                    switch (action) {
+                        case "ok" -> human.selectButtonOk();
+                        case "passIfNoResponse" -> ((InputPassPriority) next.input).passPriority();
+                        case "cancel" -> human.selectButtonCancel();
+                        case "attackAll" -> human.alphaStrike();
+                        case "card" -> human.selectCard(chosenCard, null, CARD_CLICK);
+                        case "block" -> {
+                            // One scoped gesture: select the attacker and toggle this exact
+                            // block through the engine's normal input, then publish once.
+                            human.selectCard(chosenAttacker, null, CARD_CLICK);
+                            human.selectCard(chosenCard, null, CARD_CLICK);
+                        }
+                        case "attack" -> {
+                            // One scoped drag chooses a defender and toggles the
+                            // attacker through the normal engine input, atomically.
+                            if (chosenPlayer != null) human.selectPlayer(chosenPlayer, null);
+                            else human.selectCard(chosenCard, null, CARD_CLICK);
+                            human.selectCard(chosenAttacker, null, CARD_CLICK);
+                        }
+                        case "player" -> human.selectPlayer(chosenPlayer, null);
                     }
-                    case "attack" -> {
-                        // One scoped drag chooses a defender and toggles the
-                        // attacker through the normal engine input, atomically.
-                        if (chosenPlayer != null) human.selectPlayer(chosenPlayer, null);
-                        else human.selectCard(chosenCard, null, CARD_CLICK);
-                        human.selectCard(chosenAttacker, null, CARD_CLICK);
-                    }
-                    case "player" -> human.selectPlayer(chosenPlayer, null);
+                } finally {
+                    synchronized (gate) { inputActionQueued = false; }
                 }
             });
             return latest;
@@ -577,8 +589,10 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
     private Map<String, Object> cardState(CardView card, Pending prompt) {
         boolean hidden = card.isFaceDown();
         var face = card.getCurrentState();
-        // Never let an old card handle identify a different card in a later prompt.
-        String key = prompt == null ? "" : prompt.id + ":c" + prompt.cards.size();
+        // Refreshes can remove or reorder visible cards without consuming the
+        // input. Retain opaque identities separately from the current allowed
+        // cards, so a removed card's handle can never select another card.
+        String key = prompt == null ? "" : prompt.cardKeys.computeIfAbsent(card.getId(), ignored -> prompt.id + ":c" + prompt.nextCardKey++);
         if (prompt != null) prompt.cards.put(key, card);
         var counters = new LinkedHashMap<String, Integer>();
         if (card.getCounters() != null) for (var entry : card.getCounters().entrySet()) counters.put(entry.getElement().getName(), entry.getCount());
