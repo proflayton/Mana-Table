@@ -31,9 +31,16 @@ async function submitMatchAction(engine, state, answer) {
     await engine.request('matchAction', { sessionId: state.id, promptId: state.prompt.id, ...answer });
     return true;
   } catch (error) {
-    if (error.message !== 'That choice has changed. Use the current prompt.') throw error;
+    // Playwright adds its operation name around Electron's IPC error. Only
+    // unwrap those transport prefixes; unrelated errors must remain failures.
+    let message = error?.message;
+    if (typeof message !== 'string') throw error;
+    for (const prefix of ['page.evaluate: Error: ', "Error invoking remote method 'engine': Error: "]) {
+      if (message.startsWith(prefix)) message = message.slice(prefix.length);
+    }
+    if (message !== 'That choice has changed. Use the current prompt.') throw error;
     const current = await engine.request('matchState');
-    if (current.id !== state.id || current.prompt?.id === state.prompt.id) throw error;
+    if (current?.id !== state.id || current.prompt?.id === state.prompt.id) throw error;
     return false;
   }
 }
