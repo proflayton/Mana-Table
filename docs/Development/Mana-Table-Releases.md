@@ -1,8 +1,69 @@
 # Packaging and releases
 
-The current package script builds **Windows x64** on Windows x64. It bundles
-Electron, a Java runtime, `forge-engine.jar`, and the required Forge resources.
-Other platform packaging is not implemented.
+Mana Table's current release is the **Windows x64 MonoGame client**. Its installer
+bundles .NET, Java, the Forge engine and card data. Players download
+[ManaTable-Setup.exe](https://github.com/proflayton/Mana-Table/releases/latest/download/ManaTable-Setup.exe),
+open it, and the game installs and launches. No administrator account or separate
+runtime installation is needed. Start menu and desktop shortcuts launch it later.
+
+The [latest Releases page](https://github.com/proflayton/Mana-Table/releases/latest)
+also offers `ManaTable-Windows-x64.zip` for portable use and a complete matching
+`ManaTable-Source.zip`. Extract the whole portable ZIP before opening
+`ManaTable.exe`. Other operating systems are not packaged yet.
+
+## Automatic native releases
+
+[Mana Table native Windows release](../../.github/workflows/mana-table-native-release.yml)
+runs for native or engine changes pushed to `master`. Pull requests run the same
+verification without publishing. A manual Actions run can build a selected branch;
+only a successful run for the current `master` can publish a release.
+
+The Windows job verifies Forge, runs the native client and UI regressions against
+fresh bundled resources, builds the installer, then tests install, reinstall,
+startup and uninstall using a separate test identity and profile. CI uses a
+software graphics driver outside the package; players receive the normal client.
+Downloads are first uploaded to a draft, then published and marked Latest only
+if the tested revision is still the head of `master`. Failed checks prevent
+publication. Existing public release assets are never replaced by a rerun.
+
+Versions are `0.2.<workflow run number>` and tags are `mana-native-v<version>`.
+Each release contains setup, portable and complete-source downloads with SHA256
+checksums. `SOURCE.txt` and `build.json` identify the exact source and engine hash.
+The source ZIP is exported directly from the committed Git tree. Fresh releases
+never copy a prior installation, personal decks, image caches, or test profiles.
+
+Share this permanent link with friends:
+
+<https://github.com/proflayton/Mana-Table/releases/latest/download/ManaTable-Setup.exe>
+
+The installer updates the same per-user application directory. Close the game
+before updating. Decks, artwork and preferences live separately in
+`%LOCALAPPDATA%\ManaTableNative`; both updates and uninstall retain that directory.
+Players at a multiplayer table should use the same release. In-app automatic
+updating is not implemented. Builds are unsigned, so Windows can show an unknown
+publisher or reputation prompt until code signing is configured.
+
+## Build a native installer locally
+
+Use a clean committed checkout, JDK 17+, .NET 9 and Inno Setup 6. After verifying
+Forge with `mvn -pl forge-api -am verify`, run:
+
+```powershell
+./mana-native/package.ps1 -Release -Version 0.2.0 -OutputDirectory dist/ManaTable-Native-0.2.0
+./mana-native/build-installer.ps1 -InputPackageDirectory dist/ManaTable-Native-0.2.0 -Version 0.2.0 -OutputDirectory dist/installer
+```
+
+`JAVA_HOME` selects the JDK used to create a fresh bundled runtime. The clean
+package uses only tracked card-resource files and creates a new .NET publish
+directory. `-EngineJar <verified.jar>` can select an already verified Forge build.
+Installer compilation checks the package version, engine, portable ZIP, and source
+archive hashes. `-CompilerPath <ISCC.exe>` selects a portable Inno Setup compiler.
+
+`mana-native/installer/test-installer.ps1 -InputPackageDirectory <package> -Version
+<version> -CompilerPath <ISCC.exe> -TestDirectory <isolated-directory>` builds an
+installer with a separate smoke-test application identity. It tests installation,
+reinstallation, bundled Java, client startup and uninstall while retaining a saved
+profile sentinel. It never installs the production app or uses the normal profile.
 
 ## Native preview packages
 
@@ -19,6 +80,9 @@ the checkout launcher prefers that manifest and falls back to the Electron beta
 when no native package exists. The workflow below describes the Electron release package.
 
 ## Downloads for testers
+
+The remaining sections document the **legacy Electron client** and its separate
+`mana-table-v*` release workflow. Use the native downloads above for current play.
 
 Published builds live on [Mana Table Releases](https://github.com/proflayton/Mana-Table/releases).
 Download the **ManaTable-<version>-windows-x64.zip** asset, extract the whole folder,

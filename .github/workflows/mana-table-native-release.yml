@@ -1,0 +1,241 @@
+name: Mana Table native Windows release
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - 'mana-native/**'
+      - 'forge-api/**'
+      - 'forge-core/**'
+      - 'forge-game/**'
+      - 'forge-ai/**'
+      - 'forge-gui/**'
+      - 'scenarios/**'
+      - 'pom.xml'
+      - '.mvn/**'
+      - 'LICENSE'
+      - '.github/workflows/mana-table-native-release.yml'
+  pull_request:
+    paths:
+      - 'mana-native/**'
+      - 'forge-api/**'
+      - 'forge-core/**'
+      - 'forge-game/**'
+      - 'forge-ai/**'
+      - 'forge-gui/**'
+      - 'scenarios/**'
+      - 'pom.xml'
+      - '.mvn/**'
+      - 'LICENSE'
+      - '.github/workflows/mana-table-native-release.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# Serialize master releases, including manual reruns. Publication also checks
+# master again after the uploads, so an older build cannot become Latest.
+concurrency:
+  group: mana-native-${{ github.event_name == 'pull_request' && github.ref || 'master-release' }}
+  cancel-in-progress: false
+
+jobs:
+  windows:
+    name: Verify and package Windows x64
+    runs-on: windows-2025
+    timeout-minutes: 100
+    defaults:
+      run:
+        shell: pwsh
+    env:
+      MANA_RELEASE_VERSION: 0.2.${{ github.run_number }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: maven
+      - uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: '9.0.x'
+      - name: Create isolated regression profiles
+        run: |
+          $testRoot = Join-Path $env:RUNNER_TEMP 'mana-native-tests'
+          New-Item -ItemType Directory -Path $testRoot -Force | Out-Null
+          "MANA_TEST_ROOT=$testRoot" >> $env:GITHUB_ENV
+      - name: Build and verify Forge
+        run: |
+          mvn -B -ntp -pl forge-api -am verify
+          if ($LASTEXITCODE -ne 0) { throw 'Forge verification failed.' }
+      - name: Verify native client logic
+        run: |
+          dotnet run --project mana-native/Mana.Client.Tests/Mana.Client.Tests.csproj -c Release
+          if ($LASTEXITCODE -ne 0) { throw 'Native client logic checks failed.' }
+          dotnet build mana-native/Mana.Table.Tests/Mana.Table.Tests.csproj -c Release
+          if ($LASTEXITCODE -ne 0) { throw 'Native regression build failed.' }
+      - name: Build a clean self-contained native package
+        run: |
+          ./mana-native/package.ps1 -Release -Version $env:MANA_RELEASE_VERSION -OutputDirectory "dist/ManaTable-Native-$env:MANA_RELEASE_VERSION"
+          if ($LASTEXITCODE -ne 0) { throw 'Native packaging failed.' }
+      - name: Install pinned CI graphics and installer tools
+        run: |
+          $tools = Join-Path $env:RUNNER_TEMP 'mana-native-tools'
+          New-Item -ItemType Directory -Path $tools -Force | Out-Null
+          $inno = Join-Path $tools 'innosetup-6.7.3.exe'
+          Invoke-WebRequest 'https://github.com/jrsoftware/issrc/releases/download/is-6_7_3/innosetup-6.7.3.exe' -OutFile $inno
+          if ((Get-FileHash $inno -Algorithm SHA256).Hash -ne '9c73c3bae7ed48d44112a0f48e66742c00090bdb5bef71d9d3c056c66e97b732') { throw 'Inno Setup checksum mismatch.' }
+          $signature = Get-AuthenticodeSignature -LiteralPath $inno
+          if ($signature.Status -ne 'Valid' -or $signature.SignerCertificate.Subject -notmatch 'CN=Pyrsys B\.V\.') { throw 'Unexpected Inno Setup publisher.' }
+          $innoDirectory = Join-Path $tools 'inno'
+          $process = Start-Process -FilePath $inno -ArgumentList @('/PORTABLE=1', '/CURRENTUSER', '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', '/SP-', '/NOICONS', "/DIR=`"$innoDirectory`"") -WindowStyle Hidden -Wait -PassThru
+          if ($process.ExitCode -ne 0) { throw 'Inno Setup installation failed.' }
+          "MANA_ISCC=$innoDirectory/ISCC.exe" >> $env:GITHUB_ENV
+
+          # Hosted runners lack a hardware OpenGL driver. SDL loads this
+          # software driver only during CI; it is never copied into a download.
+          $mesa = Join-Path $tools 'mesa-llvmpipe-x64-26.2.5.7z'
+          Invoke-WebRequest 'https://github.com/mmozeiko/build-mesa/releases/download/26.2.5/mesa-llvmpipe-x64-26.2.5.7z' -OutFile $mesa
+          if ((Get-FileHash $mesa -Algorithm SHA256).Hash -ne 'd1b713ca2a7fba47a50c058099f13c435ddb76a16a422c334e4d787f9755a31d') { throw 'Mesa checksum mismatch.' }
+          $mesaDirectory = Join-Path $tools 'mesa'
+          & 7z x $mesa "-o$mesaDirectory" -y
+          if ($LASTEXITCODE -ne 0 -or -not (Test-Path "$mesaDirectory/opengl32.dll")) { throw 'Mesa extraction failed.' }
+          "SDL_OPENGL_LIBRARY=$mesaDirectory/opengl32.dll" >> $env:GITHUB_ENV
+          'GALLIUM_DRIVER=llvmpipe' >> $env:GITHUB_ENV
+      - name: Verify native UI and the packaged engine
+        timeout-minutes: 40
+        run: |
+          $test = (Resolve-Path 'mana-native/Mana.Table.Tests/bin/Release/net9.0-windows/Mana.Table.Tests.exe').Path
+          $release = Get-Content dist/latest-native.json -Raw | ConvertFrom-Json
+          $engine = Join-Path $release.directory 'engine'
+          $suites = @(
+            @{ Name='startup'; Mode='--smoke-engine-startup'; Result='engine-startup-regression.json' },
+            @{ Name='adapter'; Mode='--smoke-workshop-adapter'; Result='workshop-adapter-results.json' },
+            @{ Name='onboarding'; Mode='--smoke-onboarding'; Result='onboarding-results.json' },
+            @{ Name='loading'; Mode='--smoke-loading'; Result='loading-results.json' },
+            @{ Name='priority-1280'; Mode='--smoke-priority-abilities'; Result='priority-ability-results.json' },
+            @{ Name='priority-1200'; Mode='--smoke-priority-abilities'; Result='priority-ability-results.json'; Size='1200x900' },
+            @{ Name='workshop'; Mode='--smoke-workshop'; Result='workshop-ui-results.json' },
+            @{ Name='import'; Mode='--smoke-deck-import'; Result='deck-import-results.json' },
+            @{ Name='building'; Mode='--smoke-deck-building'; Result='deck-building-results.json' },
+            @{ Name='lobby'; Mode='--smoke-lobby'; Result='lobby-results.json' }
+          )
+          $summary = @()
+          foreach ($suite in $suites) {
+            $profile = Join-Path $env:MANA_TEST_ROOT $suite.Name
+            New-Item -ItemType Directory -Path $profile -Force | Out-Null
+            $size = if ($suite.Size) { $suite.Size } else { '1280x720' }
+            $arguments = @($suite.Mode, '--engine-resources', "`"$engine`"", '--profile', "`"$profile`"", '--size', $size)
+            $process = Start-Process -FilePath $test -ArgumentList $arguments -WindowStyle Hidden -PassThru
+            if (-not $process.WaitForExit(600000)) { $process.Kill($true); throw "Native suite timed out: $($suite.Name)" }
+            if ($process.ExitCode -ne 0) { throw "Native suite failed: $($suite.Name). See its native-error.log." }
+            $result = Join-Path $profile $suite.Result
+            if (-not (Test-Path $result)) { throw "Missing native suite result: $result" }
+            [object[]]$checks = Get-Content $result -Raw | ConvertFrom-Json
+            if ($checks.Count -eq 0) { throw "Native suite performed no checks: $($suite.Name)" }
+            $summary += @{ suite=$suite.Name; checks=$checks.Count }
+            Write-Output "$($suite.Name): $($checks.Count) checks passed"
+          }
+          $summary | ConvertTo-Json | Set-Content (Join-Path $env:MANA_TEST_ROOT 'suite-results.json')
+      - name: Build and test install, reinstall, startup and uninstall
+        timeout-minutes: 20
+        run: |
+          $release = Get-Content dist/latest-native.json -Raw | ConvertFrom-Json
+          ./mana-native/build-installer.ps1 -InputPackageDirectory $release.directory -Version $env:MANA_RELEASE_VERSION -OutputDirectory dist/installer -CompilerPath $env:MANA_ISCC
+          ./mana-native/installer/test-installer.ps1 -InputPackageDirectory $release.directory -Version $env:MANA_RELEASE_VERSION -CompilerPath $env:MANA_ISCC -TestDirectory (Join-Path $env:MANA_TEST_ROOT 'installer')
+      - name: Prepare friend-friendly download names
+        run: |
+          $release = Get-Content dist/latest-native.json -Raw | ConvertFrom-Json
+          $downloads = Join-Path $env:GITHUB_WORKSPACE 'dist/downloads'
+          New-Item -ItemType Directory -Path $downloads -Force | Out-Null
+          Copy-Item dist/installer/ManaTable-Setup.exe $downloads
+          Copy-Item $release.archive (Join-Path $downloads 'ManaTable-Windows-x64.zip')
+          Copy-Item $release.sourceArchive (Join-Path $downloads 'ManaTable-Source.zip')
+          foreach ($name in @('ManaTable-Setup.exe', 'ManaTable-Windows-x64.zip', 'ManaTable-Source.zip')) {
+            $hash = (Get-FileHash (Join-Path $downloads $name) -Algorithm SHA256).Hash.ToLowerInvariant()
+            "$hash  $name" | Set-Content -Encoding ascii (Join-Path $downloads ($name + '.sha256'))
+          }
+          Copy-Item (Join-Path $release.directory 'build.json') (Join-Path $downloads 'build.json')
+          Copy-Item dist/installer/installer-manifest.json $downloads
+      - name: Save test evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: mana-native-test-evidence-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/mana-native-tests/**/*-results.json
+            ${{ runner.temp }}/mana-native-tests/**/*-regression.json
+            ${{ runner.temp }}/mana-native-tests/**/*.png
+            ${{ runner.temp }}/mana-native-tests/**/*.log
+            forge-*/target/surefire-reports/*.xml
+          if-no-files-found: ignore
+          retention-days: 14
+      - name: Save tested Windows downloads
+        uses: actions/upload-artifact@v7
+        with:
+          name: mana-native-windows-x64-${{ github.run_attempt }}
+          path: dist/downloads/
+          compression-level: 0
+          if-no-files-found: error
+          retention-days: 30
+
+  publish:
+    name: Publish the tested Windows release
+    needs: windows
+    if: github.repository == 'proflayton/Mana-Table' && github.ref == 'refs/heads/master' && github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: proflayton/Mana-Table
+      RELEASE_VERSION: 0.2.${{ github.run_number }}
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          name: mana-native-windows-x64-${{ github.run_attempt }}
+          path: downloads
+      - name: Upload a draft, then publish only the current master
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $tag = "mana-native-v$env:RELEASE_VERSION"
+          $build = Get-Content downloads/build.json -Raw | ConvertFrom-Json
+          if ($build.sourceRevision -cne $env:GITHUB_SHA -or $build.version -cne $env:RELEASE_VERSION) { throw 'Download source or version does not match this run.' }
+          foreach ($name in @('ManaTable-Setup.exe', 'ManaTable-Windows-x64.zip', 'ManaTable-Source.zip')) {
+            $expected = (Get-Content "downloads/$name.sha256" -Raw).Split(' ')[0]
+            if ((Get-FileHash "downloads/$name" -Algorithm SHA256).Hash -ne $expected) { throw "Download checksum mismatch: $name" }
+          }
+          function MasterIsCurrent {
+            $head = gh api repos/proflayton/Mana-Table/git/ref/heads/master --jq '.object.sha'
+            if ($LASTEXITCODE -ne 0) { throw 'Could not verify current master.' }
+            return $head -ceq $env:GITHUB_SHA
+          }
+          if (-not (MasterIsCurrent)) { 'Master advanced; this verified build will remain an Actions artifact.' >> $env:GITHUB_STEP_SUMMARY; exit 0 }
+
+          $existingJson = gh release view $tag --repo $env:GH_REPO --json isDraft,targetCommitish 2>$null
+          if ($LASTEXITCODE -eq 0) {
+            $existing = $existingJson | ConvertFrom-Json
+            if ($existing.targetCommitish -cne $env:GITHUB_SHA) { throw 'An existing release points at a different commit.' }
+            if (-not $existing.isDraft) { "Release $tag is already published; its downloads remain unchanged." >> $env:GITHUB_STEP_SUMMARY; exit 0 }
+          } else {
+            $notes = @"
+          **Windows players:** download [ManaTable-Setup.exe](https://github.com/proflayton/Mana-Table/releases/download/$tag/ManaTable-Setup.exe), open it, and follow the installer. Java, .NET and the card library are included. Start Mana Table from the desktop or Start menu.
+
+          Everyone at a multiplayer table should use the same version. Close Mana Table before updating; your decks and settings are preserved. The portable ZIP is also available below: extract the whole folder and open ManaTable.exe.
+
+          Version $env:RELEASE_VERSION · [Source](https://github.com/proflayton/Mana-Table/commit/$env:GITHUB_SHA) · [Verified build](https://github.com/proflayton/Mana-Table/actions/runs/$env:GITHUB_RUN_ID)
+          "@
+            $notes | Set-Content -Encoding utf8 release-notes.md
+            gh release create $tag --repo $env:GH_REPO --target $env:GITHUB_SHA --draft --title "Mana Table $env:RELEASE_VERSION for Windows" --notes-file release-notes.md
+            if ($LASTEXITCODE -ne 0) { throw 'Could not create the draft release.' }
+          }
+          gh release upload $tag downloads/ManaTable-Setup.exe downloads/ManaTable-Setup.exe.sha256 downloads/ManaTable-Windows-x64.zip downloads/ManaTable-Windows-x64.zip.sha256 downloads/ManaTable-Source.zip downloads/ManaTable-Source.zip.sha256 --repo $env:GH_REPO --clobber
+          if ($LASTEXITCODE -ne 0) { throw 'Download upload failed; the release remains a draft.' }
+          if (-not (MasterIsCurrent)) { 'Master advanced during upload; the release remains a draft.' >> $env:GITHUB_STEP_SUMMARY; exit 0 }
+          gh release edit $tag --repo $env:GH_REPO --draft=false --latest
+          if ($LASTEXITCODE -ne 0) { throw 'Could not publish the tested release.' }
+          '[Download Mana Table for Windows](https://github.com/proflayton/Mana-Table/releases/latest/download/ManaTable-Setup.exe)' >> $env:GITHUB_STEP_SUMMARY

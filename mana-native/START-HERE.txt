@@ -1,8 +1,14 @@
 MANA TABLE NATIVE - FOUR-PLAYER COMMANDER
 
-Extract the entire ZIP, then open ManaTable.exe. Windows x64 only for this build.
-The .NET and Java runtimes are bundled. First startup loads the card catalog.
-Keep the engine folder next to the executable. Do not run directly inside the ZIP.
+Download ManaTable-Setup.exe from https://github.com/proflayton/Mana-Table/releases/latest
+and open it. Setup installs for your Windows account, adds shortcuts, and opens
+the game. Administrator access, Java and .NET installation are not required.
+Close the game before installing a newer version. Your decks and settings stay
+in %LOCALAPPDATA%\ManaTableNative and are retained during updates or uninstall.
+Windows x64 only. First startup loads the card catalog.
+
+The portable ZIP is an alternative: extract the entire folder and open
+ManaTable.exe. Keep the engine folder beside it; do not run inside the ZIP.
 
 STARTUP AND YOUR FIRST SESSION
 Every launch opens a loading screen, then the main menu: Play with AI,
@@ -73,7 +79,7 @@ partner/Background; returning a commander to Main keeps the card in your deck.
 Other face flips double-faced cards in the preview without adding another card.
 Changes save automatically. Undo/Redo restores edits, Duplicate makes a separate
 deck, and Copy list exports text with commander and sideboard sections.
-Card counts, a nonland mana curve and Review deck help identify needed changes.
+Card counts, a nonland mana curve and live deck checks identify needed changes.
 Finish a valid 100-card deck including its commander(s), then select Review for
 table. Confirm the saved list to return to the lobby. AI opponent choices persist.
 Opening the builder or choosing another deck clears confirmation and Ready;
@@ -189,8 +195,9 @@ Broad card interactions still need playtesting. Preserve client.log and engine.l
 if you hit a blocked decision. Closing the host ends the network game.
 
 DEVELOPMENT
-Native client and interface source is in source/mana-native in this package.
-The Forge base revision is recorded in build.json; the adapter patch is under source.
+SOURCE.txt links the exact source revision recorded in build.json.
+A complete matching source ZIP is available beside the installer on Releases.
+Local preview packages also include their native and adapter sources under source/.
 Forge source: https://github.com/proflayton/Mana-Table
 Original Forge: https://github.com/Card-Forge/forge
 See FORGE-LICENSE.txt and THIRD-PARTY.txt for attribution.

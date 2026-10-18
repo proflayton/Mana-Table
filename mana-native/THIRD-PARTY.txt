@@ -1,6 +1,7 @@
 Mana Table uses the Forge rules engine and card scripts, GPL-3.0-or-later.
 The repository's complete license is included as FORGE-LICENSE.txt.
-Native application source in this package uses the repository license.
+Native application source uses the repository license. SOURCE.txt links the exact
+source revision; a complete matching source ZIP accompanies published releases.
 
 MonoGame 3.8.5.1: https://github.com/MonoGame/MonoGame
 MonoGame uses the Microsoft Public License and contains components under other

@@ -14,7 +14,7 @@ tabletop battlefield, a persistent card fan, card inspection, and combat assignm
 
 | I want to… | Guide |
 | --- | --- |
-| Download the Windows beta | [Releases](https://github.com/proflayton/Mana-Table/releases) · [Player guide](forge-desktop/BETA.md) |
+| Download Mana Table for Windows | [Download setup](https://github.com/proflayton/Mana-Table/releases/latest/download/ManaTable-Setup.exe) · [Releases](https://github.com/proflayton/Mana-Table/releases/latest) · [Player guide](mana-native/START-HERE.txt) |
 | Build and run from source | [Desktop development](forge-desktop/README.md) |
 | Make a contribution | [Contributing](CONTRIBUTING.md) |
 | Understand the components | [Architecture](docs/Development/Mana-Table-Architecture.md) |
@@ -71,9 +71,13 @@ feedback, with reduced motion available; finished games have a result screen.
 Its default table is a neutral placeholder; final illustration and audio remain
 artist work. Asset specifications are in `mana-native/Mana.Table/Assets`.
 Build it with `dotnet build mana-native/Mana.Table/Mana.Table.csproj -c Release`.
-After building Forge, `mana-native/package.ps1 -EngineResources <resources>`
-creates a self-contained package using an existing Mana Table package's resource
-directory (card data and Java runtime). Player instructions are in
+Successful native release builds on `master` publish **ManaTable-Setup.exe** and
+a portable Windows ZIP to [Releases](https://github.com/proflayton/Mana-Table/releases/latest).
+The installer includes Java and .NET, installs for the current user, and preserves
+decks and settings when updated. For a clean local build, first build Forge, set
+`JAVA_HOME` to JDK 17+, then run `mana-native/package.ps1 -Release -Version 0.2.0`.
+Preview packages can reuse engine resources with `-EngineResources <resources>`.
+See [packaging and releases](docs/Development/Mana-Table-Releases.md). Player instructions are in
 `mana-native/START-HERE.txt`. The replacement rules engine is not implemented yet.
 Four-player Commander is the acceptance benchmark for that migration.
 
