@@ -147,7 +147,9 @@ internal static class LoadingSmoke
             });
             s.Click("close-overlay");
             s.Then(() => table.Observing.SetResult());
-            s.Until(() => !view.Polling);
+            // A new observation proves the first has drained even when slow
+            // software-rendered frames miss the brief interval between polls.
+            s.Until(() => table.Observations > 1);
             s.Wait(.35);
             s.ClickCard("seat-0-1");
             s.Until(() => table.Replies == 1 && view.Busy);
