@@ -35,7 +35,8 @@ function Wait-InstallerProcess($Process, [string]$Name, [int]$TimeoutSeconds = 2
         throw "$Name exceeded $TimeoutSeconds seconds."
     }
     $Process.Refresh()
-    Assert-Installer ($Process.ExitCode -eq 0) "$Name exits successfully"
+    $exitCode = $Process.ExitCode
+    Assert-Installer ($null -ne $exitCode -and $exitCode -eq 0) "$Name exits successfully (exit $exitCode)"
 }
 function Invoke-TestInstall([string]$LogName) {
     $arguments = @('/SP-', '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', '/NOICONS', '/TASKS=""', '/NORUN',
@@ -83,9 +84,25 @@ try {
         $actual = (Get-FileHash -LiteralPath (Join-Path $installDirectory $relative) -Algorithm SHA256).Hash
         Assert-Installer ($expected -eq $actual) ("installed bytes match: $relative")
     }
-    $java = Start-Process -FilePath (Join-Path $installDirectory 'engine/runtime/bin/java.exe') -ArgumentList '-version' -WindowStyle Hidden -PassThru `
-        -RedirectStandardError (Join-Path $TestDirectory 'java-version.log') -RedirectStandardOutput (Join-Path $TestDirectory 'java-output.log')
-    Wait-InstallerProcess $java 'bundled Java' 30
+    # Start-Process can lose the exit code of a very short redirected process in
+    # Windows PowerShell 5.1. Start the process directly and retain its handle.
+    $javaInfo = New-Object Diagnostics.ProcessStartInfo
+    $javaInfo.FileName = Join-Path $installDirectory 'engine/runtime/bin/java.exe'
+    $javaInfo.Arguments = '-version'
+    $javaInfo.UseShellExecute = $false
+    $javaInfo.CreateNoWindow = $true
+    $javaInfo.RedirectStandardOutput = $true
+    $javaInfo.RedirectStandardError = $true
+    $java = New-Object Diagnostics.Process
+    $java.StartInfo = $javaInfo
+    try {
+        $null = $java.Start()
+        $javaOutput = $java.StandardOutput.ReadToEndAsync()
+        $javaError = $java.StandardError.ReadToEndAsync()
+        Wait-InstallerProcess $java 'bundled Java' 30
+        [IO.File]::WriteAllText((Join-Path $TestDirectory 'java-output.log'), $javaOutput.GetAwaiter().GetResult())
+        [IO.File]::WriteAllText((Join-Path $TestDirectory 'java-version.log'), $javaError.GetAwaiter().GetResult())
+    } finally { $java.Dispose() }
     if (-not $SkipClientLaunch) {
         $capture = Join-Path $TestDirectory 'installed-main-menu.png'
         $client = Start-Process -FilePath (Join-Path $installDirectory 'ManaTable.exe') -ArgumentList @('--profile', ('"' + $profile + '"'), '--capture', ('"' + $capture + '"'), '--size', '1280x720') `
