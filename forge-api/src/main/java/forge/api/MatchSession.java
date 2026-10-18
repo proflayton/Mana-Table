@@ -203,10 +203,25 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
     @Override
     public void publishInput() {
         synchronized (gate) {
-            if (closed || error != null || viewer.getHasLost() || game.isGameOver()
-                    || pending != null && !pending.kind.equals("input")) return;
+            if (closed || error != null) return;
+            if (game.isGameOver()) { releaseInput(); return; }
+            if (pending != null && !pending.kind.equals("input")) return;
             Input current = human.getInputQueue().getInput();
             if (current == null || current != displayedInput || current != human.getInputProxy().getInput() || game.isGameOver()) return;
+            if (viewer.getHasLost()) {
+                // A loss while resolving a spell can leave priority pointing at
+                // the departed controller. Hiding that input strands its latch,
+                // so the phase loop never reaches its normal departure cleanup.
+                // The game is waiting at this exact input: copy the loss before
+                // releasing it, and let surviving human seats keep playing.
+                pending = null;
+                table.finishIfNoHumans();
+                table.publish();
+                if (game.isGameOver()) table.releaseInputs();
+                else if (current instanceof InputSynchronized departed) departed.stop();
+                else releaseInput();
+                return;
+            }
             Pending next = new Pending("input", current);
             // Cleanup's discard input (among others) is an anonymous subclass.
             // Preserve its actual input kind instead of publishing an empty name.

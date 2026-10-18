@@ -1,19 +1,32 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
 const { testProfile, startEngine, ready, submitMatchAction } = require('./support/engine.cjs');
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 const zone = (player, name) => player.zones.find(zone => zone.name === name);
 
 test('four and six player Commander: private hands, distinct opponents, attacks, concede and human elimination', { timeout: 200000 }, async () => {
-  const engine = startEngine(testProfile('multiplayer'));
+  const profile = testProfile('multiplayer');
+  const engine = startEngine(profile);
+  let stage = 'four-player combat';
+  const actions = [];
   async function readyState() {
+    let state;
     for (let i = 0; i < 800; i++) {
-      const state = await engine.request('matchState');
+      state = await engine.request('matchState');
       assert.notEqual(state.status, 'error', state.error);
       if (state.prompt || state.status === 'finished') return state;
       await sleep(15);
     }
-    throw new Error('The table did not reach a decision');
+    fs.writeFileSync(path.join(profile, 'multiplayer-timeout.json'), JSON.stringify({ stage, state, actions }, null, 2));
+    throw new Error(`The table did not reach a decision during ${stage} (turn ${state?.turn}, ${state?.phaseKey}, ${state?.status}). See ${path.join(profile, 'multiplayer-timeout.json')}`);
+  }
+  async function submit(state, answer) {
+    const accepted = await submitMatchAction(engine, state, answer);
+    actions.push({ stage, sessionId: state.id, turn: state.turn, phase: state.phaseKey, prompt: state.prompt, answer, accepted });
+    if (actions.length > 40) actions.shift();
+    return accepted;
   }
   function pass(state) {
     const p = state.prompt;
@@ -64,7 +77,7 @@ test('four and six player Commander: private hands, distinct opponents, attacks,
         const creature = zone(human, 'Battlefield').cards.find(card => card.name === 'Rhys the Redeemed' && card.selectable && !card.sick);
         if (creature && !choseDefender) answer = { action: 'player', playerId: target.id };
         else if (creature && choseDefender) {
-          if (!await submitMatchAction(engine, state, { action: 'card', key: creature.key })) { state = await readyState(); continue; }
+          if (!await submit(state, { action: 'card', key: creature.key })) { state = await readyState(); continue; }
           state = await readyState();
           const attacker = zone(state.players.find(player => player.human), 'Battlefield').cards.find(card => card.name === 'Rhys the Redeemed');
           assert.equal(attacker.attacking, true);
@@ -72,7 +85,7 @@ test('four and six player Commander: private hands, distinct opponents, attacks,
           attacked = true; break;
         }
       }
-      const accepted = await submitMatchAction(engine, state, answer);
+      const accepted = await submit(state, answer);
       if (accepted && p.inputType === 'InputAttack' && answer.action === 'player' && answer.playerId === target.id) choseDefender = true;
       state = await readyState();
     }
@@ -80,6 +93,7 @@ test('four and six player Commander: private hands, distinct opponents, attacks,
     assert.equal(turns.size, 4, 'All four players must receive a turn');
     const conceded = await engine.request('matchConcede', { sessionId: state.id });
     assert.equal(conceded.status, 'finished'); assert.equal(conceded.result, 'Defeat');
+    stage = 'six-player startup';
     await engine.request('matchStart', { opponents: Array(5).fill('green') });
     state = await readyState();
     assert.equal(state.players.length, 6); assert.equal(state.playerCount, 6);
@@ -91,6 +105,7 @@ test('four and six player Commander: private hands, distinct opponents, attacks,
     // opponents deciding to attack the human before a wall-clock deadline.
     const eliminationDeck = await engine.request('import', { name: 'Commander elimination regression', format: 'Commander',
       text: 'Deck\n99 Swamp\nCommander\n1 Phage the Untouchable' });
+    stage = 'Phage elimination';
     await engine.request('matchStart', { opponents: ['green', 'green', 'green'] });
     state = await readyState();
     const deadline = Date.now() + 80000;
@@ -102,7 +117,7 @@ test('four and six player Commander: private hands, distinct opponents, attacks,
         const commander = zone(human, 'Command').cards.find(card => card.selectable);
         if (land || commander) answer = { action: 'card', key: (land || commander).key };
       }
-      await submitMatchAction(engine, state, answer);
+      await submit(state, answer);
       state = await readyState();
     }
     assert.equal(state.status, 'finished', 'Human elimination must end the local table: ' + JSON.stringify({
@@ -110,5 +125,14 @@ test('four and six player Commander: private hands, distinct opponents, attacks,
     assert.equal(state.result, 'Defeat');
     assert.equal(state.players.find(player => player.human).eliminated, true);
     assert.deepEqual((await engine.request('snapshot')).deck, eliminationDeck.deck, 'Elimination must preserve the saved deck');
-  } finally { engine.close(); }
+    stage = 'rematch after elimination';
+    const endedSession = state.id;
+    await engine.request('matchStart', { opponents: ['green', 'green', 'green'] });
+    state = await readyState();
+    assert.notEqual(state.id, endedSession, 'A rematch must create a fresh session');
+    assert.ok(state.prompt, 'The same engine process must accept decisions after natural elimination');
+    assert.equal(zone(state.players.find(player => player.human), 'Command').cards[0].name, 'Phage the Untouchable');
+    await engine.request('matchConcede', { sessionId: state.id });
+    assert.deepEqual((await engine.request('snapshot')).deck, eliminationDeck.deck, 'A rematch must preserve the saved deck');
+  } finally { await engine.close(); }
 });

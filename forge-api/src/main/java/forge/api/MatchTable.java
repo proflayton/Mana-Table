@@ -81,11 +81,17 @@ final class MatchTable implements ManaTableSession, AutoCloseable {
 
     void enter(MatchSession seat) { dialogOwner.set(seat); }
     void stopIfNoHumans() {
+        if (finishIfNoHumans()) releaseInputs();
+    }
+    // A controller boundary publishes the terminal board before waking the game.
+    boolean finishIfNoHumans() {
         if (!game.isGameOver() && seats.values().stream().allMatch(MatchSession::eliminated)) {
             game.setGameOver(GameEndReason.AllHumansLost);
-            for (var seat : seats.values()) seat.releaseInput();
+            return true;
         }
+        return false;
     }
+    void releaseInputs() { for (var seat : seats.values()) seat.releaseInput(); }
     @Override public IGuiGame gui() { return owner().gui(); }
     private MatchSession owner() {
         var current = dialogOwner.get();
