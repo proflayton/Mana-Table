@@ -9,7 +9,7 @@ param(
 $ErrorActionPreference = 'Stop'
 $repository = Split-Path -Parent $PSScriptRoot
 foreach ($part in $Version.Split('.')) { if ([long]$part -gt 65535) { throw 'Version components must be between 0 and 65535.' } }
-$revisionOutput = & git -C $repository rev-parse HEAD
+$revisionOutput = & git -c core.excludesfile= -C $repository rev-parse HEAD
 if ($LASTEXITCODE -ne 0 -or -not $revisionOutput) { throw 'Could not determine the source revision.' }
 $revision = $revisionOutput.Trim()
 if ($revision -notmatch '^[a-f0-9]{40}$') { throw 'Could not determine the source revision.' }
@@ -46,7 +46,7 @@ if ($Release) {
     $resources = Join-Path $engineDirectory 'forge-res'
     $resourcePrefix = 'forge-gui/res/'
     $resourcePaths = @('cardsfolder', 'tokenscripts', 'editions', 'languages', 'blockdata', 'lists', 'setlookup', 'ai') | ForEach-Object { $resourcePrefix + $_ }
-    $trackedResources = & git -c core.quotepath=false -C $repository ls-files -- @resourcePaths
+    $trackedResources = & git -c core.excludesfile= -c core.quotepath=false -C $repository ls-files -- @resourcePaths
     if ($LASTEXITCODE -ne 0 -or -not $trackedResources) { throw 'Could not enumerate tracked engine resources.' }
     $directories = New-Object 'System.Collections.Generic.HashSet[string]' ([StringComparer]::OrdinalIgnoreCase)
     foreach ($relative in $trackedResources) {
@@ -86,7 +86,7 @@ foreach ($file in Get-ChildItem -LiteralPath $PSScriptRoot -File -Recurse | Wher
     Copy-Item -LiteralPath $file.FullName -Destination $destination
 }
 $patchPath = Join-Path $OutputDirectory 'source/forge-adapter.patch'
-& git -C $repository diff "--output=$patchPath" -- forge-api/src/main/java forge-game/src/main/java forge-gui/src/main/java forge-ai/src/main/java forge-core/src/main/java
+& git -c core.excludesfile= -C $repository diff "--output=$patchPath" -- forge-api/src/main/java forge-game/src/main/java forge-gui/src/main/java forge-ai/src/main/java forge-core/src/main/java
 if ($LASTEXITCODE -ne 0) { throw 'Could not export the Forge source patch.' }
 # Include new adapter files as source too; git diff alone omits untracked additions.
 $adapterSource = Join-Path $OutputDirectory 'source/forge-api'
@@ -119,7 +119,7 @@ $sourceChecksum = $null
 if ($Release) {
     $sourceArchive = $OutputDirectory + '-source.zip'
     if (Test-Path -LiteralPath $sourceArchive) { throw 'Use a new source archive path for each release.' }
-    & git -C $repository archive --format=zip "--output=$sourceArchive" $revision
+    & git -c core.excludesfile= -C $repository archive --format=zip "--output=$sourceArchive" $revision
     if ($LASTEXITCODE -ne 0) { throw 'Could not archive the complete committed source.' }
     $sourceHash = (Get-FileHash -LiteralPath $sourceArchive -Algorithm SHA256).Hash
     $sourceChecksum = $sourceArchive + '.sha256'
