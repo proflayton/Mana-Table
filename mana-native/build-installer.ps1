@@ -66,7 +66,10 @@ $archive = [IO.Compression.ZipFile]::OpenRead($PortableArchive)
 try {
     $prefixes = @('', ([IO.Path]::GetFileName($InputPackageDirectory) + '/'))
     foreach ($relative in @('build.json', 'ManaTable.exe', 'ManaTable.dll', 'engine/forge-engine.jar', 'engine/runtime/bin/java.exe')) {
-        $matches = @($archive.Entries | Where-Object { $prefixes[0] + $relative -eq $_.FullName -or $prefixes[1] + $relative -eq $_.FullName })
+        $matches = @($archive.Entries | Where-Object {
+            $entryName = $_.FullName.Replace('\', '/')
+            $prefixes[0] + $relative -eq $entryName -or $prefixes[1] + $relative -eq $entryName
+        })
         if ($matches.Count -ne 1) { throw "Portable archive must contain exactly one $relative." }
         $stream = $matches[0].Open()
         $hasher = [Security.Cryptography.SHA256]::Create()
