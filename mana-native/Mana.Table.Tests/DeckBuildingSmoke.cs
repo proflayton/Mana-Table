@@ -58,7 +58,9 @@ internal sealed class DeckBuildingSmoke(TableGame.Probe view) : ITableAutomation
             if (!ClickAccepted) throw new InvalidOperationException("Deck click was rejected: " + ExpectedClick);
             stage = nextStage; mousePhase = 0; ExpectedClick = null;
         }
-        if (!view.Loaded || view.Busy || view.ActivityOpen || view.Polling) return;
+        // Ordinary input remains available during background observation;
+        // slow rendered frames can miss the brief interval between polls.
+        if (!view.Loaded || view.Busy || view.ActivityOpen) return;
         switch (stage) {
             case 0:
                 view.ImportDeck("Imported Commander regression", "Deck\n98 Forest\n1 Rhys the Redeemed\n1 Selvala, Explorer Returned"); stage++; break;
