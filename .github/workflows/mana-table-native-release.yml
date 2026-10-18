@@ -10,6 +10,16 @@ on:
       - 'forge-game/**'
       - 'forge-ai/**'
       - 'forge-gui/**'
+      - 'forge-desktop/engine-client.cjs'
+      - 'forge-desktop/runtime.cjs'
+      - 'forge-desktop/deck-sources.cjs'
+      - 'forge-desktop/preferences.cjs'
+      - 'forge-desktop/renderer/turn-guide.js'
+      - 'forge-desktop/scripts/release-artifacts.cjs'
+      - 'forge-desktop/scripts/test-node.cjs'
+      - 'forge-desktop/tests/*.test.cjs'
+      - 'forge-desktop/tests/support/**'
+      - 'forge-desktop/tests/fixtures/**'
       - 'scenarios/**'
       - 'pom.xml'
       - '.mvn/**'
@@ -23,6 +33,16 @@ on:
       - 'forge-game/**'
       - 'forge-ai/**'
       - 'forge-gui/**'
+      - 'forge-desktop/engine-client.cjs'
+      - 'forge-desktop/runtime.cjs'
+      - 'forge-desktop/deck-sources.cjs'
+      - 'forge-desktop/preferences.cjs'
+      - 'forge-desktop/renderer/turn-guide.js'
+      - 'forge-desktop/scripts/release-artifacts.cjs'
+      - 'forge-desktop/scripts/test-node.cjs'
+      - 'forge-desktop/tests/*.test.cjs'
+      - 'forge-desktop/tests/support/**'
+      - 'forge-desktop/tests/fixtures/**'
       - 'scenarios/**'
       - 'pom.xml'
       - '.mvn/**'
@@ -61,6 +81,9 @@ jobs:
       - uses: actions/setup-dotnet@v6
         with:
           dotnet-version: '9.0.x'
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24'
       - name: Create isolated regression profiles
         run: |
           $testRoot = Join-Path $env:RUNNER_TEMP 'mana-native-tests'
@@ -70,6 +93,15 @@ jobs:
         run: |
           mvn -B -ntp -pl forge-api -am verify
           if ($LASTEXITCODE -ne 0) { throw 'Forge verification failed.' }
+      - name: Verify shared engine gameplay and multiplayer
+        timeout-minutes: 35
+        run: |
+          # This serial, graphics-free suite exercises the same Forge JAR that
+          # the native package will bundle. Electron installation is unnecessary.
+          node forge-desktop/scripts/test-node.cjs unit --test-reporter=tap 2>&1 | Tee-Object -FilePath (Join-Path $env:MANA_TEST_ROOT 'shared-unit.tap')
+          if ($LASTEXITCODE -ne 0) { throw 'Shared engine helper regressions failed; native publication is blocked.' }
+          node forge-desktop/scripts/test-node.cjs engine --test-reporter=tap 2>&1 | Tee-Object -FilePath (Join-Path $env:MANA_TEST_ROOT 'shared-engine.tap')
+          if ($LASTEXITCODE -ne 0) { throw 'Shared engine gameplay regressions failed; native publication is blocked.' }
       - name: Verify native client logic
         run: |
           dotnet run --project mana-native/Mana.Client.Tests/Mana.Client.Tests.csproj -c Release
@@ -169,7 +201,12 @@ jobs:
             ${{ runner.temp }}/mana-native-tests/**/*-regression.json
             ${{ runner.temp }}/mana-native-tests/**/*.png
             ${{ runner.temp }}/mana-native-tests/**/*.log
+            ${{ runner.temp }}/mana-native-tests/shared-engine.tap
+            ${{ runner.temp }}/mana-native-tests/shared-unit.tap
+            forge-desktop/test-results/**/*.log
+            forge-desktop/test-results/**/*.json
             forge-*/target/surefire-reports/*.xml
+            forge-api/target/rules-regressions/**/*.json
           if-no-files-found: ignore
           retention-days: 14
       - name: Save tested Windows downloads

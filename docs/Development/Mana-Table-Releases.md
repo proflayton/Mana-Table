@@ -14,11 +14,19 @@ also offers `ManaTable-Windows-x64.zip` for portable use and a complete matching
 ## Automatic native releases
 
 [Mana Table native Windows release](../../.github/workflows/mana-table-native-release.yml)
-runs for native or engine changes pushed to `master`. Pull requests run the same
-verification without publishing. A manual Actions run can build a selected branch;
-only a successful run for the current `master` can publish a release.
+runs for native, engine or shared engine regression changes pushed to `master`.
+Pull requests run the same verification without publishing. A manual Actions run
+can build a selected branch; only a successful run for the current `master` can
+publish a release.
 
-The Windows job verifies Forge, runs the native client and UI regressions against
+The Windows job verifies Forge, runs the Node unit checks, then the complete
+serial engine suite
+(`node forge-desktop/scripts/test-node.cjs engine`) against that same engine JAR.
+These graphics-free gameplay, Commander and multiplayer checks gate native
+publication independently of the Electron UI workflow; their TAP output and
+diagnostics are saved with the test evidence. Changes to the Node regression
+files, their support helpers, runner or engine connection also trigger this gate.
+The job then runs the native client and UI regressions against
 fresh bundled resources, builds the installer, then tests install, reinstall,
 startup and uninstall using a separate test identity and profile. CI uses a
 software graphics driver outside the package; players receive the normal client.
