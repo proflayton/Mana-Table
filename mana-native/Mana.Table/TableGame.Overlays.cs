@@ -94,7 +94,7 @@ internal sealed partial class TableGame
         Button("sound", preferences.Sounds ? "Sound cues: On" : "Sound cues: Off", 805, 512, 553, () => { preferences = preferences with { Sounds = !preferences.Sounds }; SavePreferences(); }, accent: preferences.Sounds, height: 45);
         Button("guidance-reset", "Show control hints again", 202, 519, 526, ResetControlHints, height: 42);
         canvas.Line(new(201, 607), new(1370, 607), Muted * .25f);
-        canvas.Text("Space  Continue / confirm     F  Auto / full control     Ctrl  Hold this turn\nC  Review combat     Escape  Cancel a drag / close a panel     F11  Fullscreen\nRight-click  Inspect a card     Wheel  Browse crowded ranks or a long hand", 203, 632, Ink, .78f, 1150, 5);
+        canvas.Text("Space  Continue / confirm     F  Auto / full control     Ctrl Hold this turn\nC  Review combat     Escape  Cancel a drag / close a panel     F11  Fullscreen\nRight-click  Inspect a card     Wheel  Browse a long hand or an open card gallery", 203, 632, Ink, .78f, 1150, 5);
         Button("updates-settings", "Updates", 202, 737, 260, OpenAppUpdates, height: 38);
         canvas.Text(CurrentAppVersion, 482, 748, Muted, .67f, 861, 1);
     }

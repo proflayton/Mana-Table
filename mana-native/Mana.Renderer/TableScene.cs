@@ -7,8 +7,11 @@ namespace Mana.Renderer;
 public sealed record SceneCard(string Id, Card Card, Pose Pose, string Zone, int Owner, Vector2? Entrance = null, float EntranceDelay = 0)
 {
     public bool Contains(Point point) => Pose.Contains(point);
+    public bool Compact { get; init; }
+    public bool GroupFront { get; init; } = true;
+    public int GroupCount { get; init; } = 1;
 }
-public sealed record RankPlan(string Key, int First, int Total, int Capacity, Vector2 Pager, SceneCard[] Cards);
+public sealed record RankPlan(string Key, int Total, SceneCard[] Cards);
 public sealed record PilePlan(string Zone, Pose Pose, bool Compact);
 public sealed record HandPlan(int Page, int Total, string? Raised, SceneCard[] Cards);
 
@@ -18,12 +21,14 @@ public sealed class TableScene
     private readonly Dictionary<(int Player, bool Resources), RankPlan> ranks = [];
     private readonly Dictionary<int, SceneCard[]> commanders = [];
     private readonly Dictionary<int, PilePlan[]> piles = [];
+    private readonly Dictionary<int, BattlefieldCluster[]> battlefield = [];
     public required HandPlan Hand { get; init; }
     public RankPlan Rank(int player, bool resources) => ranks[(player, resources)];
     public IReadOnlyList<SceneCard> Commanders(int player) => commanders[player];
     public IReadOnlyList<PilePlan> Piles(int player) => piles[player];
+    public IReadOnlyList<BattlefieldCluster> Battlefield(int player) => battlefield[player];
 
-    public static TableScene Build(GameSnapshot state, IReadOnlyDictionary<string, int> pages, int handPage,
+    public static TableScene Build(GameSnapshot state, int handPage,
         Point pointer, string? previouslyRaised, string? dragged, bool allowHover, Func<Card, bool> isResource)
     {
         var hand = state.Viewer?.Zone("Hand").Cards ?? [];
@@ -40,18 +45,14 @@ public sealed class TableScene
         foreach (var player in state.Players) {
             int seat = player.Id == state.ViewerId ? 3 : TableLayout.SeatIndex(state, player.Id);
             if (seat is < 0 or > 3) continue;
+            var clusters = BattlefieldLayout.Build(seat, player.Id, player.Zone("Battlefield").Cards, isResource);
+            scene.battlefield[player.Id] = clusters;
             foreach (bool resources in new[] { true, false }) {
-                var cards = player.Zone("Battlefield").Cards.Where(c => isResource(c) == resources).ToArray();
-                int capacity = seat == 3 ? (resources ? 11 : 8) : seat == 1 ? (resources ? 8 : 5) : (resources ? 6 : 5);
                 string key = player.Id + (resources ? ":lands" : ":permanents");
-                int first = Math.Clamp(pages.GetValueOrDefault(key), 0, Math.Max(0, cards.Length - capacity));
-                var entrance = TableLayout.SeatHand(seat);
-                var cardsInRank = cards.Skip(first).Take(capacity).Select((card, i) => Node(card,
-                    TableWorld.Rank(seat, resources, i, Math.Min(capacity, cards.Length), card.Tapped, card.Attacking || card.Blocking), "Battlefield", player.Id, first + i, entrance))
-                    .OrderBy(c => c.Pose.Center.Y).ToArray();
-                var pager = seat switch { 0 => new Vector2(resources ? 179 : 550, resources ? 208 : 344), 1 => new Vector2(1090, resources ? 110 : 65),
-                    2 => new Vector2(resources ? 1421 : 1050, resources ? 208 : 344), _ => new Vector2(330, resources ? 680 : 638) };
-                scene.ranks[(player.Id, resources)] = new(key, first, cards.Length, capacity, pager, cardsInRank);
+                var nodes = clusters.Where(c => (c.Kind == "Lands") == resources).SelectMany(c => c.Cards).ToArray();
+                // Compatibility view for callers locating a card's resting pose.
+                // Battlefield page offsets no longer control visibility.
+                scene.ranks[(player.Id, resources)] = new(key, nodes.Length, nodes);
             }
             bool own = seat == 3, side = seat is 0 or 2;
             var leaders = player.Zone("Command").Cards.Take(2).ToArray();

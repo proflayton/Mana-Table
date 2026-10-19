@@ -50,7 +50,7 @@ public static class TableWorld
     public static Pose Pile(int seat, int index)
     {
         var center = seat == 3 ? new Vector2(-594 + index * 82, 319)
-            : seat is 0 or 2 ? Unproject(new(seat == 0 ? 85 : 1515, 490 + index * 58))
+            : seat is 0 or 2 ? Unproject(new(seat == 0 ? 85 : 1515, 518 + index * 58))
             : SeatPoint(seat, 305 + index * 77, 405);
         return Card(center, new(49, 69), SeatAngle(seat));
     }

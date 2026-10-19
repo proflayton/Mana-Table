@@ -95,7 +95,10 @@ internal sealed partial class SmokeAutomation
                 CaptureInteraction("stack-inspector.png"); click = "close-overlay"; break;
             case 27:
                 // Simulate an authoritative decision arriving between press and release.
-                var oldHit = view.Hits.Single(h => h.Id == "confirm");
+                var oldHit = view.Hits.FirstOrDefault(h => h.Id == "confirm" && view.CurrentHit(h));
+                // A slow crowded-table Draw may follow several Updates after
+                // closing inspection. Capture the actual visible control.
+                if (oldHit == null) return idle;
                 view.Pressed = oldHit; view.PreviousMouse = At(new(0, 0), ButtonState.Pressed);
                 scenario.Stack("B"); view.Accept(scenario.State);
                 interactionStep++;

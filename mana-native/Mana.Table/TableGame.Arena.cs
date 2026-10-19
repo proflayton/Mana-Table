@@ -92,10 +92,10 @@ internal sealed partial class TableGame
             ? CardMotion.Airborne(node.Pose, now, preferences.ReducedMotion, node.Id) : node.Pose;
         var pose = DrawTableCard(node.Id, card, rest, node.Zone, node.Owner,
             "card:" + card.Key + ":" + card.VisualId, () => CardClick(card),
-            (displayed, focus) => PaintSceneCard(card, displayed, node.Zone, node.Owner, focus), node.Entrance, node.EntranceDelay);
+            (displayed, focus) => PaintSceneCard(card, displayed, node.Zone, node.Owner, focus, node.Compact, node.GroupFront, node.GroupCount), node.Entrance, node.EntranceDelay);
         if (!string.IsNullOrEmpty(card.CombatId)) cardPositions[card.CombatId] = pose;
     }
-    private void PaintSceneCard(Card card, Pose pose, string zone, int owner, bool focus)
+    private void PaintSceneCard(Card card, Pose pose, string zone, int owner, bool focus, bool compact = false, bool groupFront = true, int groupCount = 1)
     {
         int? choice = match == null ? null : TableChoices.Index(match, card);
         bool selected = choice is { } index ? selections.Contains(index) : card.Highlighted || card.CombatId.Length > 0 && selectedCombat == card.CombatId;
@@ -107,7 +107,7 @@ internal sealed partial class TableGame
             PaintCommanderTax(card, pose);
             if (focus && pose.Size.X >= 300) PaintCommanderTaxDetails(card, pose);
         }
-        if (zone == "Battlefield" && legal && CardActions.CanActivate(match!, card)) {
+        if (zone == "Battlefield" && (groupFront || focus) && legal && CardActions.CanActivate(match!, card)) {
             var badge = new Rectangle((int)pose.Center.X - 39, pose.Bounds.Top + 6, 78, 21);
             canvas.Panel(badge, new(15, 41, 54), ActionAccent, 4);
             canvas.CenterText("ACTIVATE", badge, ActionAccent, .46f, true);
@@ -119,7 +119,10 @@ internal sealed partial class TableGame
         }
         if (CombatTarget(card)) canvas.CardFrame(pose with { Size = pose.Size + new Vector2(10) }, Blue, 4);
         bool creature = CardPresentation.HasCombatStats(card);
-        if (zone == "Battlefield" && (card.PhasedOut || creature || card.Counters.Count > 0 || card.Damage > 0 || card.CombatKeywords.Length > 0)) {
+        if (zone == "Battlefield" && (groupFront || focus) && (card.PhasedOut || creature || card.Counters.Count > 0 || card.Damage > 0 || card.CombatKeywords.Length > 0)) {
+            if (compact && pose.Size.X < 300) {
+                PaintCompactState(card, pose, owner);
+            } else {
             int x = (int)pose.Center.X, y = pose.Bounds.Bottom - 14;
             int seat = owner == match!.ViewerId ? 3 : TableLayout.SeatIndex(match, owner);
             // Side seats read toward the center, keeping badges out of the next
@@ -130,8 +133,20 @@ internal sealed partial class TableGame
                 canvas.CenterText($"{card.Power}/{card.Toughness}", new(x - 29, y, 58, 25), Ink, .7f, true);
             }
             if (card.Damage > 0) { canvas.Circle(new(x + 39, y + 10), 14, Red); canvas.CenterText(card.Damage.ToString(), new(x + 25, y - 4, 28, 28), Color.Black, .61f, true); }
-            PaintStateMarkers(card, pose, x, y, seat, owner);
+            PaintStateMarkers(card, pose, x, y, seat, owner, compact);
+            }
             if (focus && pose.Size.X >= 300) PaintStateDetails(card, pose);
+        }
+        if (zone == "Battlefield" && groupFront && groupCount > 1 && pose.Size.X < 300) {
+            int seat = owner == match!.ViewerId ? 3 : TableLayout.SeatIndex(match, owner);
+            var r = pose.Bounds;
+            var point = seat switch {
+                0 => new Vector2(r.Right - 16, r.Center.Y + 25), 2 => new Vector2(r.Left + 16, r.Center.Y + 25),
+                1 => new Vector2(r.Center.X + 31, r.Bottom - 10), _ => new Vector2(r.Center.X + 31, r.Top + 10)
+            };
+            var badge = new Rectangle((int)point.X - 16, (int)point.Y - 9, 32, 18);
+            canvas.Panel(badge, new(25, 37, 42), Gold, 4);
+            canvas.CenterText("×" + groupCount, badge, Gold, .52f, true);
         }
     }
     private void PaintCard(Card card, Pose pose, bool selected, bool legal, bool focus = false, float opacity = 1)

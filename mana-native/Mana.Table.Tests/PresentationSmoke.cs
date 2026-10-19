@@ -14,10 +14,31 @@ internal static class PresentationSmoke
         Directory.CreateDirectory(profile); var results = new List<string>();
         void Check(bool condition, string message) { if (!condition) throw new InvalidOperationException(message); results.Add(message); }
         var state = Example();
-        var scenePages = new Dictionary<string, int> { ["1:permanents"] = 999 };
-        var scene = TableScene.Build(state, scenePages, 0, new(-100, -100), null, null, false, CardPresentation.IsResource);
-        Check(scene.Rank(1, false).First == 3 && scenePages["1:permanents"] == 999, "Scene construction clamps crowded ranks without mutating UI paging state");
-        Check(scene.Rank(1, false).Cards.Select(c => c.Id).Distinct().Count() == 5, "Duplicate card names produce distinct scene occurrences");
+        var scene = TableScene.Build(state, 0, new(-100, -100), null, null, false, CardPresentation.IsResource);
+        Check(state.Players.All(p => scene.Battlefield(p.Id).Sum(c => c.Cards.Length) == p.Zone("Battlefield").Cards.Length), "Every seat's complete public battlefield is represented without paging");
+        Check(scene.Rank(1, false).Cards.Select(c => c.Id).Distinct().Count() == 8, "Every crowded battlefield occurrence remains represented even with duplicate card names");
+        var stableBoard = state with { Players = state.Players.Select(p => p with { Zones = p.Zones.Select(z => z.Name != "Battlefield" ? z : z with {
+            Count = 5, Cards = Enumerable.Range(0, 5).Select(i => new Card { VisualId = $"stable-{p.Id}-{i}", Name = i < 3 ? "Llanowar Elves" : "Forest",
+                Type = i < 3 ? "Creature" : "Basic Land", Power = i < 3 ? 2 : null, Toughness = i < 3 ? 2 : null }).ToArray()
+        }).ToArray() }).ToArray() };
+        Dictionary<string, Pose> Poses(GameSnapshot value) => TableScene.Build(value, 0, new(-1, -1), null, null, false, CardPresentation.IsResource)
+            .Battlefield(value.ViewerId).SelectMany(c => c.Cards).ToDictionary(c => c.Id, c => c.Pose);
+        var resting = Poses(stableBoard);
+        GameSnapshot EditStable(Func<Card, Card> edit) => stableBoard with { Players = stableBoard.Players.Select(p => p with { Zones = p.Zones.Select(z =>
+            z.Name == "Battlefield" ? z with { Cards = z.Cards.Select(edit).ToArray() } : z).ToArray() }).ToArray() };
+        Check(Poses(EditStable(c => c with { Key = "new-decision:" + c.VisualId, Selectable = true, Highlighted = true })).All(c => resting[c.Key] == c.Value),
+            "Refreshing decision handles and action highlights leaves every battlefield placement unchanged");
+        var changedPoses = Poses(EditStable(c => c.VisualId == "stable-0-0" ? c with { Tapped = true, Damage = 1, Power = 3, Counters = new() { ["+1/+1"] = 1 } } : c));
+        Check(changedPoses.Count == resting.Count && changedPoses.Where(c => c.Key is "stable-0-3" or "stable-0-4").All(c => resting[c.Key] == c.Value),
+            "A copy's tap, damage and counter changes expand its family locally while unrelated land placements remain stable");
+        var appended = stableBoard with { Players = stableBoard.Players.Select(p => p with { Zones = p.Zones.Select(z => z.Name != "Battlefield" ? z : z with {
+            Count = 7, Cards = [.. z.Cards, new() { VisualId = "new-creature-" + p.Id, Name = "Llanowar Elves", Type = "Creature", Power = 2, Toughness = 2 },
+                new() { VisualId = "new-land-" + p.Id, Name = "Forest", Type = "Basic Land" }]
+        }).ToArray() }).ToArray() };
+        var appendedPoses = Poses(appended);
+        Check(resting.All(c => appendedPoses[c.Key] == c.Value), "Appending a creature and land without wrapping keeps existing cards in their original fan slots");
+        Check(!CardPresentation.IsResource(new() { Type = "Land Creature" }) && CardPresentation.HasCombatStats(new() { Type = "Land Creature" }),
+            "Animated lands retain public creature classification at the combat front");
         Check(scene.Hand.Cards.All(c => c.Contains(c.Pose.Center.ToPoint())), "The immutable scene supplies the same hand pose for drawing and hit testing");
         Check(state.Players.All(p => scene.Commanders(p.Id).Count == 1 && scene.Piles(p.Id).Count == 3), "Every seat has command cards and zone piles in its scene description");
         var secondView = state with { ViewerId = 2 };

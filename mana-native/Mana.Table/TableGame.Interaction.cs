@@ -110,11 +110,7 @@ internal sealed partial class TableGame
         if (zoneName != null) { zonePage = Math.Max(0, zonePage - direction); return; }
         if (DecisionModal) { choicePage = Math.Max(0, choicePage - direction); return; }
         var hit = HitAt(pointer);
-        if (hit?.Zone == "Battlefield" && hit.Card is { } card) {
-            string key = hit.PlayerId + (CardPresentation.IsResource(card) ? ":lands" : ":permanents");
-            pages[key] = Math.Max(0, pages.GetValueOrDefault(key) - direction * 3);
-            return;
-        }
+        if (hit?.Zone == "Battlefield") return;
         if (hit?.Zone == "Hand" || pointer.Y > 760) handPage = Math.Max(0, handPage - direction);
     }
 }

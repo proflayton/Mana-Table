@@ -386,6 +386,21 @@ first phase-out, all three opponents' turns and its return and untap on turn fiv
 The native release workflow requires both commander-tax and card-reading suites
 at 1000x740 and 1540x980 before publishing an installer.
 
+`Mana.Table.Tests.exe --smoke-full-battlefield --profile <isolated-profile> --size 1000x740`
+checks the complete battlefield through actual native pointer input and GPU
+captures. Repeat at 1540x980; both sizes are required by the native release gate.
+It checks ten creatures per seat, reading and inspecting an opponent's tenth
+creature, and a scoped action on the local tenth creature. Twenty mixed permanents
+per seat cover distinct public states, animated lands in the creature cluster,
+and anonymous face-down cards without inferred characteristics. Fifty identical
+tokens per seat must each be painted and expose a real physical pointer area,
+including after enabling reduced motion through Settings. A separate fifty-card
+fixture uses distinct names at every seat to catch overlap between many families.
+Battlefield paging is absent while normal hand paging remains available. Evidence is
+`full-battlefield-results.json`, captures `01`–`09`, and diagnostic captures/JSON
+on failure. The controlled engine validates commands; this is a presentation
+regression, with real Forge legality exercised by the shared engine suites.
+
 `Mana.Table.Tests.exe --smoke-ui-interactions --profile <new-test-directory>` exercises
 the actual MonoGame pointer path against a deterministic `ICardEngine` test double.
 It checks legal/illegal attack and block drops, fresh-handle assignment removal,

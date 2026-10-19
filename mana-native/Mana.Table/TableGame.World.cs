@@ -1,4 +1,5 @@
 using Mana.Contracts;
+using Mana.Magic;
 using Mana.Renderer;
 using Microsoft.Xna.Framework;
 using Color = Microsoft.Xna.Framework.Color;
@@ -54,28 +55,22 @@ internal sealed partial class TableGame
     }
     private void DrawOpponent(Player player, int seat)
     {
-        DrawWorldRank(player, seat, true); DrawWorldRank(player, seat, false);
+        DrawWorldBattlefield(player);
         DrawSeatObjects(player, seat);
     }
     private void DrawLocal(Player player)
     {
-        DrawWorldRank(player, 3, false); DrawWorldRank(player, 3, true);
+        DrawWorldBattlefield(player);
         DrawSeatObjects(player, 3);
         heroPositions[player.Id] = TableLayout.Hero(3);
         if (player.Mana.Values.Sum() > 0) {
             int x = 110; foreach (var mana in player.Mana.Where(p => p.Value > 0)) { ManaOrb(mana.Key, mana.Value, new(x, 801)); x += 43; }
         }
     }
-    private void DrawWorldRank(Player player, int seat, bool lands)
+    private void DrawWorldBattlefield(Player player)
     {
-        var rank = tableScene!.Rank(player.Id, lands);
-        foreach (var node in rank.Cards) DrawSceneCard(node);
-        if (rank.Total <= rank.Capacity) return;
-        string key = rank.Key; int first = rank.First, capacity = rank.Capacity;
-        int x = (int)rank.Pager.X, y = (int)rank.Pager.Y;
-        Button("rank-prev:" + key, "‹", x - 35, y, 30, () => pages[key] = Math.Max(0, first - capacity), first > 0, height: 26);
-        Button("rank-next:" + key, "›", x + 5, y, 30, () => pages[key] = Math.Min(rank.Total - capacity, first + capacity), first + capacity < rank.Total, height: 26);
-        canvas.CenterText($"{first + 1}–{Math.Min(first + capacity, rank.Total)} / {rank.Total}", new(x - 50, y + 27, 100, 18), Muted, .43f);
+        foreach (var cluster in tableScene!.Battlefield(player.Id))
+            foreach (var node in cluster.Cards) DrawSceneCard(node);
     }
     private void DrawSeatObjects(Player player, int seat)
     {
@@ -162,6 +157,16 @@ internal sealed partial class TableGame
         int incoming = match.Combat?.Attackers.Count(a => a.DefendingPlayerId == player.Id) ?? 0;
         string status = player.Eliminated ? "ELIMINATED" : incoming > 0 ? incoming + (own ? " ATTACKING YOU" : " INCOMING") : player.Priority ? "PRIORITY" : active ? "ACTIVE TURN" : "";
         canvas.CenterText(status, new(x, y + 23, 188, 19), incoming > 0 ? Red : Gold, .43f, true);
+        var permanents = player.Zone("Battlefield").Cards;
+        int creatures = permanents.Count(c => CardPresentation.HasCombatStats(c) && !c.PhasedOut);
+        int phased = permanents.Count(c => CardPresentation.HasCombatStats(c) && c.PhasedOut);
+        int unknown = permanents.Count(c => c.FaceDown && c.Type.Length == 0);
+        int countX = own ? x + 198 : x, countY = own ? y : y + 43;
+        canvas.CenterText($"{creatures} " + (creatures == 1 ? "CREATURE" : "CREATURES"), new(countX, countY, 188, 22), Ink, .72f, true);
+        string secondary = phased > 0 || unknown > 0
+            ? string.Join(" · ", new[] { phased > 0 ? $"{phased} phased out" : "", unknown > 0 ? $"{unknown} unknown" : "" }.Where(v => v.Length > 0))
+            : $"{permanents.Length} permanents";
+        canvas.CenterText(secondary, new(countX, countY + 22, 188, 18), Muted, .51f);
         if (!own) hits.Add(new("focus:" + player.Id, Scope, nameplate, () => OpenZone(player.Id, "Battlefield")));
     }
 }

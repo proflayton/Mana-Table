@@ -214,7 +214,7 @@ internal sealed class CardReadingSmoke : ITableAutomation
         Pose original = default;
         Step(0, () => { Move(new(10, 70)); Publish(PresentationSmoke.StateExample()); });
         Step(1, () => {
-            var scene = TableScene.Build(view.Match!, new Dictionary<string, int>(), 0, new(-1, -1), null, null, false, CardPresentation.IsResource);
+            var scene = TableScene.Build(view.Match!, 0, new(-1, -1), null, null, false, CardPresentation.IsResource);
             original = scene.Rank(0, false).Cards.Single(c => c.Id == "seat-0-1").Pose;
             var displayed = view.DisplayedPose("seat-0-1");
             Check(displayed is { Elevation: > 12 } && displayed.Value.Center.Y < original.Center.Y - 10, "A creature with projected flying rests above the battlefield");
@@ -235,14 +235,11 @@ internal sealed class CardReadingSmoke : ITableAutomation
                 "Counter and ability removals replace the displayed state without stale markers");
             Capture("08-states-removed");
         });
-        Pose isleRest = default;
         int repliesBeforePhasedClick = 0;
         bool IsleReadable() => view.Hovered is { VisualId: "seat-0-0", PhasedOut: true, CombatKeywords.Length: 0 }
             && view.HoverPreview is { Width: >= 400, Height: >= 560 }
             && view.DisplayedPose("seat-0-0") is { Size.X: >= 408, Size.Y: >= 570, Angle: >= -.02f and <= .02f, Tilt: >= .99f };
         Step(0, () => {
-            var scene = TableScene.Build(view.Match!, new Dictionary<string, int>(), 0, new(-1, -1), null, null, false, CardPresentation.IsResource);
-            isleRest = scene.Rank(0, true).Cards.Single(c => c.Id == "seat-0-0").Pose;
             foreach (int seat in new[] { 0, 1, 2, 3 })
                 Check(view.DisplayedPose($"seat-{seat}-0") is { Elevation: > 12 }, $"Seat {seat}'s phased-out land floats even without combat abilities");
             MoveCard("seat-0-0");
@@ -271,8 +268,11 @@ internal sealed class CardReadingSmoke : ITableAutomation
             }).ToArray() }).ToArray() });
         });
         Step(1, () => {
-            Check(view.DisplayedPose("seat-0-0") is { Elevation: < 1 } pose && Microsoft.Xna.Framework.Vector2.Distance(pose.Center, isleRest.Center) < 2,
-                "Phasing in removes the floating effect from the same land occurrence");
+            var scene = TableScene.Build(view.Match!, 0, new(-1, -1), null, null, false, CardPresentation.IsResource);
+            var isleRest = scene.Rank(0, true).Cards.Single(c => c.Id == "seat-0-0").Pose;
+            Check(view.DisplayedPose("seat-0-0") is { Elevation: < 1, Angle: >= -.02f and <= .02f } pose
+                && Microsoft.Xna.Framework.Vector2.Distance(pose.Center, isleRest.Center) < 2,
+                "Phasing in settles the same untapped land occurrence into its current battlefield cell without floating");
             Check(view.Match!.Viewer!.Zone("Battlefield").Cards.Single(c => c.VisualId == "seat-0-0") is { PhasedOut: false, Tapped: false },
                 "The returning land renders the engine's untapped state without stale phasing");
             Capture("10-phased-in-land");

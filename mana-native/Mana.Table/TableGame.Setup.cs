@@ -10,7 +10,7 @@ internal sealed partial class TableGame
 {
     private void ResetTableView()
     {
-        pages.Clear(); selections.Clear(); zoneName = null; selectedCombat = null;
+        selections.Clear(); zoneName = null; selectedCombat = null;
         effects.Clear(); presence.Clear(); playback.Reset(); combatPage = 0; combatCandidates = false; inspectedStack = null; reviewedAttacker = null;
         actionFeedback.Clear(); departures.Clear(); inspectedAction = null;
         handPage = zonePage = choicePage = 0; choiceFilter = decisionId = "";

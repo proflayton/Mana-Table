@@ -39,6 +39,13 @@ internal sealed partial class TableGame
             if (hand != null) return hits.LastOrDefault(h => h.Id == hand.Hit.Id);
         }
         var focused = readingCards.LastOrDefault(c => c.Id == readingId && c.Zone == readingZone);
+        if (focused?.Zone == "Battlefield") {
+            // A fan's exposed header strip remains a browsing target even while
+            // another occurrence is enlarged over it. Use the original geometry.
+            var strip = readingCards.LastOrDefault(c => c.Zone == "Battlefield" && c.Id != focused.Id &&
+                (c.Rest with { Center = c.Rest.Point(.5f, .08f), Size = new(c.Rest.Size.X, c.Rest.Size.Y * .16f) }).Contains(point));
+            if (strip != null) return hits.LastOrDefault(h => h.Id == strip.Hit.Id);
+        }
         if (focused != null && (focused.Rest.Contains(point) || focused.Display.Contains(point))) return hits.LastOrDefault(h => h.Id == focused.Hit.Id);
         return top;
     }

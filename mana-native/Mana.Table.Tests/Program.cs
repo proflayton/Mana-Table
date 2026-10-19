@@ -13,6 +13,7 @@ internal static class Program
         bool testRun = args.Any(a => a is "--smoke" or "--smoke-ai" or "--smoke-ui-ai" or "--smoke-presentation" or "--smoke-ui-interactions" or "--smoke-table-feel" or "--smoke-card-reading" or "--smoke-cleanup" or "--smoke-deck-building" or "--smoke-workshop" or "--smoke-analysis" or "--smoke-workshop-adapter" or "--smoke-analysis-adapter" or "--smoke-deck-tuning" or "--smoke-lobby" or "--smoke-social" or "--smoke-advance" or "--smoke-auto-dock" or "--smoke-action-feedback" or "--smoke-onboarding" or "--smoke-loading" or "--smoke-engine-startup" or "--smoke-context-guidance" or "--smoke-deck-import" or "--smoke-priority-abilities");
         testRun |= args.Contains("--smoke-updates");
         testRun |= args.Contains("--smoke-commander-tax");
+        testRun |= args.Contains("--smoke-full-battlefield");
         var profile = Arg("--profile") ?? (testRun
             ? Path.Combine(Path.GetTempPath(), "ManaTableNative-tests", Guid.NewGuid().ToString())
             : Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "ManaTableNative"));
@@ -27,6 +28,7 @@ internal static class Program
             if (args.Contains("--smoke-onboarding")) { OnboardingSmoke.Run(profile, size); return 0; }
             if (args.Contains("--smoke-loading")) { LoadingSmoke.Run(profile, size); return 0; }
             if (args.Contains("--smoke-context-guidance")) { ContextGuidanceSmoke.Run(profile, size); return 0; }
+            if (args.Contains("--smoke-full-battlefield")) { FullBattlefieldSmoke.Run(profile, size); return 0; }
             if (args.Contains("--smoke-commander-tax")) {
                 var scenario = new InteractionScenarioEngine(); scenario.Present(PresentationSmoke.CommanderTaxExample());
                 using var test = new TableGame(scenario, profile, null, null, size, initialState: scenario.State, artSource: new CardReadingArtFixture());
