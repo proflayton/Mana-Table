@@ -45,7 +45,7 @@ New-Item -ItemType Directory -Path $engineDirectory | Out-Null
 if ($Release) {
     $resources = Join-Path $engineDirectory 'forge-res'
     $resourcePrefix = 'forge-gui/res/'
-    $resourcePaths = @('cardsfolder', 'tokenscripts', 'editions', 'languages', 'blockdata', 'lists', 'setlookup', 'ai') | ForEach-Object { $resourcePrefix + $_ }
+    $resourcePaths = @('cardsfolder', 'tokenscripts', 'editions', 'languages', 'blockdata', 'lists', 'setlookup', 'ai', 'formats') | ForEach-Object { $resourcePrefix + $_ }
     $trackedResources = & git -c core.excludesfile= -c core.quotepath=false -C $repository ls-files -- @resourcePaths
     if ($LASTEXITCODE -ne 0 -or -not $trackedResources) { throw 'Could not enumerate tracked engine resources.' }
     $directories = New-Object 'System.Collections.Generic.HashSet[string]' ([StringComparer]::OrdinalIgnoreCase)

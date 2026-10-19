@@ -8,7 +8,7 @@ namespace Mana.Forge;
 
 public sealed record ForgePaths(string Java, string Jar, string Resources, string Profile);
 
-public sealed class ForgeEngine(ForgePaths paths) : ICardEngine, ITableSocial
+public sealed partial class ForgeEngine(ForgePaths paths) : ICardEngine, ITableSocial
 {
     private static readonly JsonSerializerOptions Json = new() { PropertyNameCaseInsensitive = true };
     private readonly ConcurrentDictionary<long, TaskCompletionSource<JsonElement>> pending = new();

@@ -16,6 +16,7 @@ internal sealed partial class TableGame
     {
         var deck = selectedDeckDetails!;
         deckIssueBounds = null; renderedDeckIssueCodes.Clear(); renderedDeckIssueCardIds.Clear();
+        if (analysisOpen) { DrawDeckAnalysis(); return; }
         if (DeckSelection is { } selected) art.Get(selected.Card);
         canvas.Text(deck.Name, 48, 96, Ink, 1.3f, 700, 1, true);
         Button("deck-rename", "Rename", 764, 98, 108, () => { var name = Ask("Rename deck", "Deck name", deck.Name); if (name != null) RenameDeck(name); }, !busy, height: 36);
@@ -32,6 +33,7 @@ internal sealed partial class TableGame
         Button("deck-redo", "Redo", 1440, 151, 110, () => EditDeck(d => engine.RedoDeckAsync(d.Id, d.Revision), "Edit restored."), !busy && deck.CanRedo, height: 32);
         var names = deck.Entries.Where(e => e.Section == "Commander").Select(e => e.Card.Name).ToArray();
         canvas.Text(names.Length == 0 ? "Choose your commander from the deck's Leaders tab, or find one in the library." : "COMMANDER  " + string.Join(" + ", names), 50, 194, names.Length == 0 ? Muted : Gold, .78f, 1480, 1);
+        if (engine is IDeckAnalysis) Button("deck-analysis", "Analyze deck", 1372, 188, 180, OpenDeckAnalysis, !busy, height: 32);
         canvas.Panel(new(32, 236, 538, 712), new(21, 29, 39), new(54, 67, 79), 8);
         canvas.Panel(new(586, 236, 528, 712), new(21, 29, 39), new(54, 67, 79), 8);
         canvas.Panel(new(1130, 236, 438, 712), new(18, 25, 34), new(54, 67, 79), 8);

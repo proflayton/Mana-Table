@@ -41,6 +41,8 @@ internal sealed partial class TableGame
         internal DeckSummary? SelectedDeck => game.selectedDeck;
         internal DeckDetails? DeckDetails => game.selectedDeckDetails;
         internal bool DeckEditor => game.deckEditor;
+        internal bool AnalysisOpen => game.analysisOpen;
+        internal DeckAnalysisState? Analysis => game.analysisState;
         internal Rectangle? DeckIssueBounds => game.deckIssueBounds;
         internal IReadOnlySet<string> RenderedDeckIssueCodes => game.renderedDeckIssueCodes;
         internal IReadOnlySet<string> RenderedDeckIssueCardIds => game.renderedDeckIssueCardIds;

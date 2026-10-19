@@ -14,7 +14,7 @@ internal sealed partial class TableGame
     private const int DeckRows = 10;
     private bool DeckReady => selectedDeckDetails is { Problem.Length: 0, SaveError.Length: 0 } && selectedDeckDetails.CommanderIds.Length > 0;
     private bool DeckCanCopy => selectedDeckDetails?.Entries.Any(e => e.Quantity > 0) == true;
-    private string DeckScope => $"setup:{selectedDeckDetails?.Id}:{selectedDeckDetails?.Revision}:{deckEditor}:{commanderCandidates}:{deckSection}:{deckFilter}:{deckCardsPage}:{deckCardId}:{deckCardSection}:{librarySelection?.Id}:{catalogGeneration}:{deckIssuesOnly}:{deckIssuePage}:{deckCardIssuePage}:{deckMenu}";
+    private string DeckScope => $"setup:{selectedDeckDetails?.Id}:{selectedDeckDetails?.Revision}:{deckEditor}:{commanderCandidates}:{deckSection}:{deckFilter}:{deckCardsPage}:{deckCardId}:{deckCardSection}:{librarySelection?.Id}:{catalogGeneration}:{deckIssuesOnly}:{deckIssuePage}:{deckCardIssuePage}:{deckMenu}:{analysisOpen}:{analysisTab}:{analysisPage}:{analysisState?.MetadataRevision}";
     private DeckIssue[] DeckIssues => selectedDeckDetails is not { } deck ? [] : deck.Issues.Length > 0 ? deck.Issues
         : deck.Problem.Length > 0 ? [new("LEGACY", deck.Problem, null, [])] : [];
     private DeckIssue[] CardIssues(string cardId, string section) => DeckIssues
@@ -39,6 +39,7 @@ internal sealed partial class TableGame
         selectedDeck = new(details.Id, details.Name); selectedDeckDetails = details; InvalidateDeckConfirmation();
         deckIssuePage = deckCardIssuePage = 0;
         if (changed) {
+            analysisOpen = false; analysisState = null;
             commanderCandidates = details.CommanderIds.Length == 0 && details.Entries.Length > 0;
             deckSection = ""; deckFilter = ""; deckCardsPage = 0; deckIssuesOnly = false;
             var first = details.Entries.FirstOrDefault(e => e.Section == "Commander") ?? details.Entries.FirstOrDefault();
@@ -135,7 +136,7 @@ internal sealed partial class TableGame
             });
         }, "Copying your deck list", "Preparing the commander, main deck, and sideboard for the clipboard.");
     }
-    private void CloseDeckEditor() { deckEditor = false; deckTextFocus = deckMenu = ""; textFocus = false; }
+    private void CloseDeckEditor() { analysisOpen = false; deckEditor = false; deckTextFocus = deckMenu = ""; textFocus = false; }
     private void OpenDeckEditor() => OpenDeckEditorAt(null);
     private void OpenDeckEditorAt(DeckEntry? entry) {
         if (selectedDeck is { } deck) Work(async () => {

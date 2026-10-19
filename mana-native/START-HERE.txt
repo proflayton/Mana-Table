@@ -201,3 +201,11 @@ Local preview packages also include their native and adapter sources under sourc
 Forge source: https://github.com/proflayton/Mana-Table
 Original Forge: https://github.com/Card-Forge/forge
 See FORGE-LICENSE.txt and THIRD-PARTY.txt for attribution.
+
+STRATEGY REVIEW
+In the builder, choose Analyze deck. Set a primary plan, pace, and cards to
+preserve. Review conditional card functions, engine dependencies, and proposed
+swaps with their tradeoffs. Consider, Keep current, and Dismiss save your reasons
+with the deck version. Test note records a manual playtest observation. These
+reviews do not change your cards or assign a power score. Back to deck restores
+the builder. Analysis definitions and format checks use the bundled snapshot.

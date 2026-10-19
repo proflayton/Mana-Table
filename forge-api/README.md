@@ -130,6 +130,9 @@ correlates request IDs and records diagnostics in the active profile's log.
 | --- | --- |
 | `search` | Optional `text`, `colors`, `colorIdentity`, `role`, `maxManaValue`, `type`, `sort`, `unique`, `offset`, `limit`; paginated catalog results |
 | `deckInsights` | Current deck ID/revision, color identity, estimated main-deck role counts, per-card roles and explained suggestions; no mutation |
+| `deckAnalysis` | `{deckId, revision}`; strategy profile, conditional card functions, metrics, engine dependencies, explained paired swaps, and versioned review history |
+| `analysisProfile` | `{deckId, revision, metadataRevision, profile}`; save goals separately from the playable list and recompute the review |
+| `analysisReview` | `{deckId, revision, metadataRevision, fingerprint, recommendationId, decision, note}`; record a recommendation decision or manual playtest observation |
 | `list`, `open` | List saved decks; open by `{id}` |
 | `new` | `{name, format}`; create a saved deck |
 | `snapshot` | Current deck, revision, validation, format and save state |
@@ -476,3 +479,63 @@ remain the source of truth for card definitions and rules.
 
 The [architecture guide](../docs/Development/Mana-Table-Architecture.md) maps the
 desktop modules and explains how to extend prompts, snapshots, and host commands.
+
+## Strategy analysis
+
+`DeckAnalysis` is a read-only shared analysis model. `DeckAnalysisStore` persists
+its profile and review events in `decks/analysis/<deck UUID>.json`, schema 1,
+using atomic replacement. Reading a review creates no files. A malformed or
+unsupported metadata file produces an error and is preserved. The existing
+playable deck schema, validation, and undo history are unchanged.
+
+Every analysis command requires the active `deckId` and editor `revision`.
+Profile and review writes also require `metadataRevision`; review events bind to
+a SHA-256 fingerprint of the format and sorted section/printing/quantity rows.
+Renaming does not create a new content fingerprint; changing cards or format
+does. Earlier observations remain explicitly associated with their old version.
+History retains the most recent 2,000 events. These are manual observations, not
+inferred game samples or win-rate statistics.
+
+A profile contains `rulesFormat`, `strategy`, `plan`, `backup`, `pace`,
+`targetTurn` (0 means automatic), `protectedCards`, and `pool` (available addition
+names for Limited). Strategies are unspecified, aggro, midrange, control, combo,
+landfall, and artifact-recursion. Paces are relaxed, balanced, and fast. Empty
+rules format uses the saved deck's format. Constructed analysis may select
+Standard, Pioneer, Modern, Legacy, Vintage, or Pauper. Commander and Limited
+retain their saved deck structure. Limited never recommends outside its supplied
+pool. Pool membership is name-based; inventory quantity is not modeled yet.
+
+The report separates functions and requirements from raw counts. Lands may also
+have draw functions; cast-triggered draw is distinct from entering or dying.
+Every finding and suggested swap carries evidence or a tradeoff and confidence.
+Player-preserved cards and pieces of complete recognized engines are excluded
+from cuts. Swap previews replace one main-deck copy, show mana-value and role
+deltas, respect copy limits across main/sideboard, and enforce Commander identity.
+They never edit the deck. Generic efficiency comparisons and the Toph case study
+are curated examples, not exhaustive ranking of the card catalog.
+
+The optional `DeckAnalysisFormats` adapter reads shipped Forge format definitions
+without FModel. It excludes ineligible additions and handles restricted-copy
+limits. Eligibility is explicitly unknown without that data, and the bundled
+snapshot is not a claim of live tournament legality. Generic Constructed has no
+specific tournament eligibility assertion. Missing prices, matchup statistics,
+alternate casting routes, and unsupported interactions are not invented.
+
+The land probability is an exact hypergeometric land-count calculation under
+shown assumptions: seven-card keep; on the play for two-player Constructed and
+Limited; first-turn draw for multiplayer Commander; no mulligans, ramp, color,
+tapped-land, or selection model. Incomplete lists receive no shortage diagnosis
+or probability. It is not a castability, win-rate, or bracket estimate.
+
+The initial engine registry checks self-renewing ETB earthbenders with Ashaya
+(or Toph plus Lattice), free sacrifice outlets, damage payoffs, and Bumi combat.
+It lists setup, missing pieces, outputs, and interaction windows. Optional damage payoffs are separate from the pieces required to sustain a loop. Piece presence
+is not a simulator proof. Add new curated lines with explicit prerequisites and
+regressions for their missing-piece and conflict cases; do not label pairwise
+keyword overlap an infinite loop.
+
+Native consumers use the optional `IDeckAnalysis` capability and its records in
+`Mana.Contracts/DeckAnalysis.cs`; `ForgeEngine.Analysis.cs` translates it to the
+same API. The native builder's Analyze deck screen and Electron's Strategy review
+dialog render these reports and save decisions without implementing analysis
+logic in either renderer. The original `deckInsights` API remains compatible.

@@ -28,6 +28,8 @@ import java.util.UUID;
 public final class DesktopEngine implements AutoCloseable {
     private static final Gson JSON = new GsonBuilder().serializeNulls().create();
     private final CardCatalog catalog;
+    private final DeckAnalysisStore analysis;
+    private final DeckAnalysisFormats analysisFormats;
     private final Path directory;
     private DeckEditor editor;
     private String deckId;
@@ -44,6 +46,8 @@ public final class DesktopEngine implements AutoCloseable {
 
     public DesktopEngine(CardCatalog catalog, Path directory) throws Exception {
         this.catalog = catalog;
+        this.analysis = new DeckAnalysisStore(directory.toAbsolutePath().normalize(), catalog);
+        this.analysisFormats = new DeckAnalysisFormats(catalog);
         this.directory = directory.toAbsolutePath().normalize();
         Files.createDirectories(this.directory);
     }
@@ -56,6 +60,7 @@ public final class DesktopEngine implements AutoCloseable {
         var data = EngineResources.load(Path.of(args[0]));
         var engine = new DesktopEngine(CardCatalog.fromDatabases(data.getAvailableDatabases().values()), Path.of(args[1]));
         engine.resources = Path.of(args[0]);
+        engine.analysisFormats.load(engine.resources);
         protocol.println(JSON.toJson(Map.of("event", "ready", "printings", engine.catalog.size(), "protocolVersion", 2, "capabilities", List.of("seat-sync", "snapshots", "command-receipts", "resume", "table-social"))));
         try (engine; var input = new BufferedReader(new InputStreamReader(System.in, StandardCharsets.UTF_8))) {
             String line;
@@ -120,6 +125,17 @@ public final class DesktopEngine implements AutoCloseable {
                 throw new IllegalArgumentException("The deck changed. Reopen it before editing.");
         }
         return switch (method) {
+            case "deckAnalysis", "analysisProfile", "analysisReview" -> {
+                requireDeck();
+                if (!deckId.equals(string(p, "deckId", "")) || !p.has("revision") || p.get("revision").getAsLong() != editor.snapshot().revision())
+                    throw new IllegalArgumentException("The deck changed. Refresh its analysis.");
+                if (method.equals("deckAnalysis")) yield analysis.view(deckId, editor.snapshot(), format, analysisFormats);
+                if (!p.has("metadataRevision")) throw new IllegalArgumentException("Missing analysis notes revision");
+                long metadataRevision = p.get("metadataRevision").getAsLong();
+                if (method.equals("analysisProfile")) yield analysis.profile(deckId, editor.snapshot(), format, metadataRevision, p.getAsJsonObject("profile"), analysisFormats);
+                yield analysis.review(deckId, editor.snapshot(), format, metadataRevision, string(p, "fingerprint", ""),
+                        string(p, "recommendationId", ""), string(p, "decision", ""), string(p, "note", ""), analysisFormats);
+            }
             case "testMatchViews" -> multiplayer().testViews();
             case "multiplayerLocalJoin" -> { var id = UUID.randomUUID().toString(); localSeats.put(id, multiplayer().localGuest()); yield Map.of("connectionId", id); }
             case "search" -> catalog.browse(new CardCatalog.Query(string(p, "text", ""),
