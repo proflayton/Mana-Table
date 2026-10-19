@@ -21,6 +21,10 @@ internal sealed class CardReadingSmoke : ITableAutomation
     private readonly List<object> observations = [];
     private MouseState mouse;
     private double lastStep;
+    // Diagnostic-only: retain all original actions, delays and frame boundaries.
+    private readonly List<object> timing = [];
+    private readonly System.Diagnostics.Stopwatch diagnosticClock = System.Diagnostics.Stopwatch.StartNew();
+    private int diagnosticFrames, diagnosticStartedSteps, diagnosticCompletedSteps;
     public string? ExpectedClick => null;
     public bool ClickAccepted { get; set; }
     public MouseState ReadMouse() => mouse;
@@ -28,6 +32,7 @@ internal sealed class CardReadingSmoke : ITableAutomation
     public CardReadingSmoke(TableGame.Probe view, InteractionScenarioEngine scenario)
     {
         this.view = view; this.scenario = scenario;
+        Step(0, () => Publish(FocusedSeed(scenario.State)));
         Step(1.5, () => MoveCard("hand-3"));
         StepWhen(() => view.Hovered?.VisualId == "hand-3" && view.HoverPreview is { Width: >= 400, Height: >= 560 }
             && view.DisplayedPose("hand-3") is { Size.X: >= 400 } && view.CardPaintCount("hand-3") == 1, 3, () => {
@@ -103,7 +108,7 @@ internal sealed class CardReadingSmoke : ITableAutomation
         Step(.6, () => MoveCard("hand-4"));
         Step(.4, () => Check(view.HoverPreview == null, "Concealed cards never gain a readable hover preview"));
         Step(0, () => {
-            var state = PresentationSmoke.Example();
+            var state = FocusedSeed(PresentationSmoke.Example());
             Publish(state with { Players = state.Players.Select(p => p.Id != 0 ? p : p with { Zones = p.Zones.Select(z => z.Name != "Hand" ? z : z with { Cards = z.Cards.Select(c => c.VisualId != "hand-3" ? c : c with {
                 Name = "No-art readability fixture", ArtName = "No-art readability fixture", Text = "Vigilance\nWhenever this creature attacks, draw a card.\nYou may play an additional land on each of your turns."
             }).ToArray() }).ToArray() }).ToArray() });
@@ -113,6 +118,13 @@ internal sealed class CardReadingSmoke : ITableAutomation
         StepWhen(() => ReadingReady("hand-3") && view.Art(view.Hovered!) == null, 3, () => {
             Check(ReadingReady("hand-3") && view.Art(view.Hovered!) == null, "The readable rules fallback works even without card art");
             Capture("02-rules-without-art");
+        });
+        Step(0, () => Move(new(10, 70)));
+        StepWhen(() => view.Hovered == null && view.HoverPreview == null
+            && view.DisplayedPose("hand-3") is { Size.X: < 140 } && view.CardPaintCount("hand-3") == 1, 3, () => {
+            if (!(view.Hovered == null && view.HoverPreview == null
+                && view.DisplayedPose("hand-3") is { Size.X: < 140 } && view.CardPaintCount("hand-3") == 1))
+                Check(false, "The previous hand reader must return before pointing to a covered opponent card");
         });
         Step(0, () => MoveCard("seat-2-1"));
         StepWhen(() => ReadingReady("seat-2-1"), 3, () => {
@@ -156,6 +168,7 @@ internal sealed class CardReadingSmoke : ITableAutomation
         Step(0, () => {
             File.WriteAllText(Path.Combine(view.Profile, "reading-observations.json"), JsonSerializer.Serialize(observations, new JsonSerializerOptions { WriteIndented = true, IncludeFields = true }));
             File.WriteAllText(Path.Combine(view.Profile, "reading-results.json"), JsonSerializer.Serialize(checks, new JsonSerializerOptions { WriteIndented = true }));
+            WriteReadingDiagnostic("complete");
             view.Exit();
         });
     }
@@ -221,7 +234,7 @@ internal sealed class CardReadingSmoke : ITableAutomation
     private void QueueStateChecks()
     {
         Pose original = default;
-        Step(0, () => { Move(new(10, 70)); Publish(PresentationSmoke.StateExample()); });
+        Step(0, () => { Move(new(10, 70)); Publish(FocusedSeed(PresentationSmoke.StateExample())); });
         Step(1, () => {
             var scene = TableScene.Build(view.Match!, new Dictionary<string, int>(), 0, new(-1, -1), null, null, false, CardPresentation.IsResource);
             original = scene.Rank(0, false).Cards.Single(c => c.Id == "seat-0-1").Pose;
@@ -287,6 +300,17 @@ internal sealed class CardReadingSmoke : ITableAutomation
             Capture("10-phased-in-land");
         });
     }
+    // Reading exercises specific cards; crowded-board exposure has its own suite.
+    // Apply only to fresh seeds so later played/selected cards are never trimmed.
+    private static GameSnapshot FocusedSeed(GameSnapshot state) => state with {
+        Players = state.Players.Select(player => player with {
+            Zones = player.Zones.Select(zone => {
+                if (zone.Name != "Battlefield") return zone;
+                var cards = zone.Cards.Take(8).ToArray();
+                return zone with { Count = cards.Length, Cards = cards };
+            }).ToArray()
+        }).ToArray()
+    };
     private bool ReadingReady(string id) => view.Hovered?.VisualId == id
         && view.HoverPreview is { Width: >= 400, Height: >= 560 }
         && view.DisplayedPose(id) is { Size.X: >= 400 } && view.CardPaintCount(id) == 1;
@@ -354,11 +378,54 @@ internal sealed class CardReadingSmoke : ITableAutomation
         }
         checks.Add(description);
     }
-    private void Capture(string name) { using var output = File.Create(Path.Combine(view.Profile, name + ".png")); view.Surface.SaveAsPng(output, view.Surface.Width, view.Surface.Height); }
+    private void Capture(string name)
+    {
+        var started = diagnosticClock.Elapsed.TotalSeconds;
+        var watch = System.Diagnostics.Stopwatch.StartNew();
+        using (var output = File.Create(Path.Combine(view.Profile, name + ".png")))
+            view.Surface.SaveAsPng(output, view.Surface.Width, view.Surface.Height);
+        timing.Add(new { kind = "capture", name, view.Now, wallStarted = started,
+            wallSeconds = watch.Elapsed.TotalSeconds, diagnosticFrames,
+            diagnosticStartedSteps, diagnosticCompletedSteps, checks = checks.Count });
+    }
+    private void WriteReadingDiagnostic(string reason)
+    {
+        object? pending = steps.TryPeek(out var next) ? new { next.Delay, readiness = next.Ready != null } : null;
+        var logical = SmokePointer.Table(view, new(mouse.X, mouse.Y));
+        var hit = view.HitAt(logical);
+        var record = new { reason, view.Now, wallSeconds = diagnosticClock.Elapsed.TotalSeconds,
+            diagnosticFrames, diagnosticStartedSteps, diagnosticCompletedSteps, queued = steps.Count,
+            pending, lastStep, sincePreviousStep = view.Now - lastStep, view.Scope,
+            view.Overlay, view.ZoneName, view.Error, checks, observations, timing,
+            physicalPointer = new { mouse.X, mouse.Y }, logicalPointer = logical,
+            hit = hit == null ? null : new { hit.Id, hit.Scope, current = view.CurrentHit(hit) },
+            left = mouse.LeftButton.ToString(), right = mouse.RightButton.ToString(),
+            hovered = view.Hovered?.VisualId, view.HoverPreview,
+            hoveredPose = view.Hovered == null ? null : view.DisplayedPose(view.Hovered.VisualId),
+            phasedLandPose = view.DisplayedPose("seat-0-0"),
+            replies = scenario.Replies.ToArray() };
+        File.WriteAllText(Path.Combine(view.Profile, "reading-timing-diagnostic.json"),
+            JsonSerializer.Serialize(record, new JsonSerializerOptions { WriteIndented = true, IncludeFields = true }));
+    }
     public void Frame(Texture2D surface)
     {
-        if (view.Now > 50) throw new TimeoutException("Reading smoke did not finish");
-        if (view.Error.Length > 0) Check(false, view.Error);
-        if (steps.TryPeek(out var next) && (next.Ready?.Invoke() == true || view.Now - lastStep >= next.Delay)) { steps.Dequeue(); next.Action(); lastStep = view.Now; }
+        diagnosticFrames++;
+        try {
+            if (view.Now > 50) throw new TimeoutException("Reading smoke did not finish");
+            if (view.Error.Length > 0) Check(false, view.Error);
+            if (steps.TryPeek(out var next) && (next.Ready?.Invoke() == true || view.Now - lastStep >= next.Delay)) {
+                steps.Dequeue();
+                int index = ++diagnosticStartedSteps;
+                double wait = view.Now - lastStep, wallStarted = diagnosticClock.Elapsed.TotalSeconds;
+                var watch = System.Diagnostics.Stopwatch.StartNew();
+                try { next.Action(); lastStep = view.Now; diagnosticCompletedSteps++; }
+                finally { timing.Add(new { kind = "step", index, view.Now, wallStarted,
+                    wallSeconds = watch.Elapsed.TotalSeconds, wait, next.Delay, readiness = next.Ready != null,
+                    diagnosticFrames, checks = checks.Count, queued = steps.Count,
+                    lastCheck = checks.LastOrDefault(), hovered = view.Hovered?.VisualId,
+                    left = mouse.LeftButton.ToString(), right = mouse.RightButton.ToString(),
+                    physicalPointer = new { mouse.X, mouse.Y }, view.Scope, view.Overlay }); }
+            }
+        } catch { WriteReadingDiagnostic("exception"); throw; }
     }
 }
