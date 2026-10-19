@@ -4,6 +4,17 @@ const { startEngine, testProfile, ready, submitMatchAction } = require('./suppor
 const fs = require('node:fs');
 const path = require('node:path');
 
+function selectionProfile(prefix) {
+  const profile = testProfile(prefix);
+  const preferencesFile = path.join(profile, 'engine-profile', 'preferences', 'forge.preferences');
+  fs.mkdirSync(path.dirname(preferencesFile), { recursive: true });
+  // The normal Forge preference removes presentation pauses during genuine
+  // End Turn passes; priority, choices, shuffle and all game rules stay active.
+  const contents = 'YIELD_SKIP_PHASE_DELAY=true\n';
+  fs.writeFileSync(preferencesFile, contents);
+  return { profile, preferencesFile, contents };
+}
+
 // Real, bounded setup: no shuffled-hand restart or injected cards. A passive
 // opponent permits genuine draws; Ranger can return the earlier turn's Forest
 // after Nantuko even when the four Nantukos were shuffled below every Forest.
@@ -50,8 +61,13 @@ async function prepareSelectionTable(host, guest, saved, observations, deadline)
       if (!state?.players?.length) continue;
       expect(state.status, state.error).not.toBe('error');
       expect(state.status, 'Passive setup must not end before the selection task').not.toBe('finished');
+      if (state.turn === 1) {
+        expect(state.activePlayerId).toBe(states[1].viewerId);
+        observations.firstActivePlayerId = state.activePlayerId;
+      }
       const self = state.players.find(player => player.id === state.viewerId);
       const zone = name => self.zones.find(item => item.name === name).cards;
+      const libraryCount = self.zones.find(item => item.name === 'Library').count;
       const hand = zone('Hand'), field = zone('Battlefield'), p = state.prompt;
       for (const other of state.players.filter(player => player.id !== state.viewerId)) {
         expect(other.zones.find(item => item.name === 'Hand').cards).toEqual([]);
@@ -70,14 +86,24 @@ async function prepareSelectionTable(host, guest, saved, observations, deadline)
           expect(observations.forestPlays).toHaveLength(1);
           expect(observations.forestPlays[0].turn).not.toBe(state.turn);
           if (self.landPlaysUsed !== undefined) expect(self.landPlaysUsed).toBe(0);
+          if (observations.stressTail) {
+            expect(libraryCount).toBe(0);
+            expect(ownTurns.size).toBe(53);
+          }
           observations.setup = { ownTurns: ownTurns.size, commands: actions, firstForestTurn,
+            libraryCount, stressTail: observations.stressTail,
             before: state, nantuko: describe(hand[pairIndex]), forest: describe(hand[pairIndex + 1]) };
           return { before: state, nantuko: hand[pairIndex], forest: hand[pairIndex + 1] };
         }
       }
       if (!p || answered.get(seat) === p.id) continue;
       let answer, progress;
-      if (p.playerChoices?.length) {
+      if (state.phaseKey === 'PREGAME' && p.inputType === 'InputConfirm' && p.ok === 'Play' && p.cancel === 'Draw') {
+        if (!p.okEnabled || !p.cancelEnabled) { waitForReady(seat, p); continue; }
+        // Two players choose Play/Draw instead of a player-list prompt.
+        answer = { action: seat === 1 ? 'ok' : 'cancel' };
+        progress = () => { observations.startingChoice = { seat, answer, guestId: states[1].viewerId }; };
+      } else if (p.playerChoices?.length) {
         // Let the guest start so the host draws on every own turn, including its first.
         const guestId = states[1].viewerId;
         expect(p.playerChoices).toContain(guestId);
@@ -109,7 +135,8 @@ async function prepareSelectionTable(host, guest, saved, observations, deadline)
             progress = () => { mode = 'casting-ranger'; };
           }
         } else if (ownMain && ownTurns.size >= 2 && state.turn !== firstForestTurn && forest && ranger
-            && hand.some(card => card.name === 'Springheart Nantuko') && mode !== 'returning-forest') {
+            && hand.some(card => card.name === 'Springheart Nantuko') && mode !== 'returning-forest'
+            && (!observations.stressTail || libraryCount === 0)) {
           if (ranger.selectable) {
             answer = { action: 'card', key: ranger.key };
             progress = () => { mode = 'returning-forest'; };
@@ -123,6 +150,7 @@ async function prepareSelectionTable(host, guest, saved, observations, deadline)
           // A spell/ability on the stack needs ordinary passes so the postresolution
           // main-phase task is reachable even if its cards were drawn last.
           answer = { action: !state.stack.length && !(seat === 0 && state.turn === firstForestTurn)
+            && (seat !== 0 || state.activePlayerId !== state.viewerId || ownTurns.has(state.turn))
             && p.cancelEnabled && p.cancel === 'End Turn' ? 'cancel' : 'ok' };
         }
       } else if (seat === 0 && mode === 'returning-forest' && p.inputType === 'InputSelectTargets') {
@@ -146,7 +174,7 @@ async function prepareSelectionTable(host, guest, saved, observations, deadline)
       }
       waiting.delete(seat);
       const event = { elapsedMs: Date.now() - observations.startedAt, seat, turn: state.turn, phase: state.phaseKey,
-        mode, sessionId: state.id, promptId: p.id, inputType: p.inputType, answer };
+        mode, libraryCount, sessionId: state.id, promptId: p.id, inputType: p.inputType, answer };
       observations.actions.push(event);
       fs.appendFileSync(observations.actionJournal, JSON.stringify({ phase: 'request', ...event }) + '\n');
       const applied = await submitMatchAction(clients[seat], state, answer);
@@ -161,12 +189,16 @@ async function prepareSelectionTable(host, guest, saved, observations, deadline)
 
 test('Forest clicks cannot become Nantuko casts after a refresh; casting choices name the card and cancel', async () => {
   const startedAt = Date.now();
-  const { application, executable, dataPath } = await launchDesktop('card-selection');
+  const hostProfile = selectionProfile('card-selection');
+  const { application, executable, dataPath } = await launchDesktop('card-selection', { dataPath: hostProfile.profile });
   const observations = { startedAt, stage: 'startup', forestPlays: [], actions: [],
-    actionJournal: path.join(dataPath, 'card-selection-actions.jsonl'), lastStates: null };
+    actionJournal: path.join(dataPath, 'card-selection-actions.jsonl'), lastStates: null,
+    enginePreferences: [hostProfile], stressTail: process.env.MANA_SELECTION_STRESS_TAIL === '1' };
   let page, opponent;
   try {
-    opponent = startEngine(testProfile('card-selection-opponent'));
+    const guestProfile = selectionProfile('card-selection-opponent');
+    observations.enginePreferences.push(guestProfile);
+    opponent = startEngine(guestProfile.profile);
     page = await application.firstWindow();
     const errors = [];
     page.on('pageerror', error => errors.push(error.message));
