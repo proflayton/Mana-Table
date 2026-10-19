@@ -213,6 +213,8 @@ jobs:
           path: |
             ${{ runner.temp }}/mana-native-tests/**/*-results.json
             ${{ runner.temp }}/mana-native-tests/**/*-regression.json
+            ${{ runner.temp }}/mana-native-tests/**/failure.json
+            ${{ runner.temp }}/mana-native-tests/**/*-failure.json
             ${{ runner.temp }}/mana-native-tests/**/*.png
             ${{ runner.temp }}/mana-native-tests/**/*.log
             ${{ runner.temp }}/mana-native-tests/shared-engine.tap
