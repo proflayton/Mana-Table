@@ -160,6 +160,16 @@ public sealed record Choice(int Index, string Label, Card? Card)
     public string CardId { get; init; } = "";
     public string Detail { get; init; } = "";
     public string Mana { get; init; } = "";
+    public string Id { get; init; } = "";
+    public int? PlayerId { get; init; }
+    public int? ControllerId { get; init; }
+    public int? OwnerId { get; init; }
+    public int? Minimum { get; init; }
+    public int? Maximum { get; init; }
+    // Required combat assignment before damage may be assigned to the defender.
+    // This is an engine threshold, not a prediction that the recipient dies.
+    public int? Lethal { get; init; }
+    public bool IsDefender { get; init; }
 }
 public sealed record LibraryChoice(int? Index, string Label, Card Card);
 // Handles identify individual engine-owned abilities, never every ability on a card.
@@ -190,6 +200,11 @@ public sealed record Decision
     public bool MaySkip { get; init; }
     public int Amount { get; init; }
     public int[] Limits { get; init; } = [];
+    public string AllocationKind { get; init; } = "";
+    public string AmountLabel { get; init; } = "";
+    public string SourceCardId { get; init; } = "";
+    public int? SourceControllerId { get; init; }
+    public bool OverrideOrder { get; init; }
     public string Initial { get; init; } = "";
     public Card? SourceCard { get; init; }
     public string SourceZone { get; init; } = "";

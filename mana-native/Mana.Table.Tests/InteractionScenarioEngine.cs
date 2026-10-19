@@ -118,6 +118,12 @@ internal sealed class InteractionScenarioEngine : ICardEngine
                     : z.Name == "Battlefield" ? z with { Count = z.Count + 1, Cards = [.. z.Cards, card] } : z).ToArray() }).ToArray() };
             }
             state = state with { Decision = null, Stack = decision.Context == "hand-placement" ? [] : state.Stack };
+        } else if (reply.Action == ReplyAction.Allocate && state.Decision is { Kind: "allocate" } allocation) {
+            if (reply.Amounts == null || AllocationGuide.Problem(allocation, reply.Amounts) != null)
+                throw new InvalidOperationException("Invalid allocation escaped the UI");
+            state = state with { Decision = null };
+        } else if (reply.Action == ReplyAction.Skip && state.Decision is { Kind: "allocate", MaySkip: true }) {
+            state = state with { Decision = null };
         } else throw new InvalidOperationException("Unexpected scenario action: " + reply.Action);
         Replies.Add(reply); Publish(); return Task.CompletedTask;
     }

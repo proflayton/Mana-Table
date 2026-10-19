@@ -216,7 +216,9 @@ internal sealed partial class TableGame : Game
         if (!chatKeys && keys.IsKeyDown(Keys.Escape) && previousKeys.IsKeyUp(Keys.Escape)) {
             dragging = false; dragSource = null; pressed = null; pendingPlay = null; selectedCombat = null; textFocus = false;
             if (match == null && !busy) { if (workshopDialog.Length > 0) workshopDialog = ""; else if (deckMenu.Length > 0) deckMenu = ""; else if (deckEditor) CloseDeckEditor(); else CloseSetupModal(); }
-            if (overlay.Length > 0) overlay = ""; else if (zoneName != null) zoneName = null; else if (DecisionModal) collapsedDecision = true;
+            if (overlay.Length > 0) overlay = ""; else if (zoneName != null) zoneName = null;
+            else if (DecisionModal && match?.Decision?.Kind == "allocate" && allocationDetail >= -1) CloseAllocationDetail();
+            else if (DecisionModal) collapsedDecision = true;
         }
         if (!chatKeys && !textFocus && keys.IsKeyDown(Keys.Space) && previousKeys.IsKeyUp(Keys.Space) && !OverlayOpen && !busy && match != null) {
             if (TableChoice && TableChoices.CanConfirm(match, selections)) Send(new(match.Id, prompt!.Id, ReplyAction.Choose, Choices: selections.ToArray()));

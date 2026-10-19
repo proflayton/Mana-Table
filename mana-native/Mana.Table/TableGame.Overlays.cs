@@ -224,10 +224,10 @@ internal sealed partial class TableGame
     private void DrawDecisionOverlay()
     {
         var state = match!; var d = state.Decision!;
+        if (d.Kind == "allocate") { DrawAllocation(state, d); return; }
         ModalFrame(d.Title.Length > 0 ? d.Title : d.Kind == "reveal" ? "Revealed cards" : d.Kind == "allocate" ? "Assign damage or counters" : "Make your choice", () => { collapsedDecision = true; textFocus = false; }, "View battlefield", d.Kind is "choice" or "reveal" ? 790 : 706);
         canvas.Text(d.Message, 204, 181, Ink, .77f, 1185, 3);
         if (d.Kind is "number" or "text") { DrawValueDecision(state, d); return; }
-        if (d.Kind == "allocate") { DrawAllocation(state, d); return; }
         DrawChoices(state, d);
     }
     private void ToggleChoice(Decision d, int index)
@@ -305,24 +305,5 @@ internal sealed partial class TableGame
         bool valid = !numeric || int.TryParse(inputText, out int number) && (d.Kind != "number" || number >= d.Min && number <= d.Max);
         if (!valid) canvas.Text("Enter a whole number within the permitted range.", 231, 559, Red, .78f, 1090, 2);
         Button("value", "Confirm", 1090, 718, 266, () => { textFocus = false; Send(new(state.Id, d.Id, ReplyAction.Value, Value: inputText)); }, valid && !busy, true, 54);
-    }
-    private void DrawAllocation(GameSnapshot state, Decision d)
-    {
-        long total = allocations.Sum(v => (long)v);
-        canvas.Text($"Assign {d.Amount} total. Assigned: {total}. Remaining: {d.Amount - total}.", 213, 265, Gold, .9f, 1135, 2, true);
-        int capacity = 5; choicePage = Math.Clamp(choicePage, 0, Math.Max(0, (d.Choices.Length - 1) / capacity));
-        int row = 0;
-        foreach (var choice in d.Choices.Skip(choicePage * capacity).Take(capacity)) {
-            int index = Array.IndexOf(d.Choices, choice), y = 328 + row++ * 68;
-            int min = d.AtLeastOne ? 1 : 0, max = d.Limits.Length > index ? d.Limits[index] : d.Amount;
-            canvas.Text(choice.Label, 220, y + 9, Ink, .78f, 780, 2);
-            Button("amount-less:" + index, "−", 1081, y, 56, () => allocations[index]--, allocations[index] > min, height: 44);
-            canvas.CenterText(allocations[index].ToString(), new(1146, y, 104, 44), Gold, 1.1f, true);
-            Button("amount-more:" + index, "+", 1260, y, 56, () => allocations[index]++, allocations[index] < max && total < d.Amount, height: 44);
-        }
-        Button("alloc-prev", "Previous", 218, 720, 145, () => choicePage--, choicePage > 0);
-        Button("alloc-next", "Next", 375, 720, 145, () => choicePage++, (choicePage + 1) * capacity < d.Choices.Length);
-        if (d.MaySkip) Button("skip", "Assign later", 537, 720, 179, () => Send(new(state.Id, d.Id, ReplyAction.Skip)), !busy);
-        Button("allocate", "Confirm assignment", 1082, 713, 291, () => Send(new(state.Id, d.Id, ReplyAction.Allocate, Amounts: allocations)), !busy && total == d.Amount, true, 52);
     }
 }

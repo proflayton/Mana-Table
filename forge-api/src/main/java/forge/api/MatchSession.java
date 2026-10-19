@@ -1027,6 +1027,8 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
         next.lethal = blockers.stream().map(card -> Math.max(0, deathtouch ? Math.min(1, card.getLethalDamage()) : card.getLethalDamage())).toList();
         next.maySkip = (boolean)a[5];
         next.prompt.put("maySkip", next.maySkip);
+        describeAllocation(next, choices, (CardView)a[0], "combat", "combat damage");
+        next.prompt.put("overrideOrder", a[4]);
         var response = await(next);
         if (string(response, "action").equals("skip")) return null;
         var amounts = response.getAsJsonArray("values");
@@ -1037,9 +1039,11 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
 
     private Map<Object, Integer> genericAmount(Object[] a) {
         var choices = new ArrayList<>(((Map<?, ?>)a[1]).keySet());
-        Pending next = allocation("Assign " + a[2] + " " + a[4], choices, (int)a[2], (boolean)a[3]);
+        String amountLabel = forge.util.Localizer.getInstance().getMessageorUseDefault(String.valueOf(a[4]), String.valueOf(a[4]));
+        Pending next = allocation("Assign " + a[2] + " " + amountLabel, choices, (int)a[2], (boolean)a[3]);
         next.limits = choices.stream().map(choice -> (Integer)((Map<?, ?>)a[1]).get(choice)).toList();
         next.prompt.put("limits", next.limits);
+        describeAllocation(next, choices, (CardView)a[0], "generic", amountLabel);
         var amounts = await(next).getAsJsonArray("values");
         var result = new LinkedHashMap<Object, Integer>();
         for (int i = 0; i < amounts.size(); i++) result.put(choices.get(i), amounts.get(i).getAsInt());
@@ -1053,6 +1057,82 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
         for (int i = 0; i < choices.size(); i++) items.add(map("index", i, "label", label(choices.get(i))));
         next.prompt = map("id", next.id, "kind", "allocate", "message", title, "choices", items, "amount", amount, "atLeastOne", atLeastOne);
         return next;
+    }
+
+    /** Allocation indices remain the engine's response ordering. Occurrence links
+     * identify public cards without granting an input action or revealing a face. */
+    private void describeAllocation(Pending next, List<?> choices, CardView source, String kind, String amountLabel) {
+        next.prompt.put("allocationKind", kind);
+        next.prompt.put("amountLabel", amountLabel);
+        if (source != null) {
+            next.prompt.put("sourceCard", allocationCard(source));
+            if (isAllocationOccurrence(source, viewer)) {
+                next.prompt.put("sourceCardId", combatIds.id(source));
+                if (source.getController() != null) next.prompt.put("sourceControllerId", source.getController().getId());
+            }
+        }
+        var items = new ArrayList<Object>();
+        for (int i = 0; i < choices.size(); i++) {
+            Object choice = choices.get(i);
+            var item = map("index", i, "id", next.id + ":allocation:" + i, "label", label(choice),
+                    "minimum", next.atLeastOne ? 1 : 0,
+                    "maximum", i < next.limits.size() ? Math.min(next.amount, next.limits.get(i)) : next.amount,
+                    "isDefender", i == next.defenderIndex);
+            if (i < next.lethal.size()) item.put("lethal", next.lethal.get(i));
+            if (choice instanceof CardView card) {
+                item.put("card", allocationCard(card));
+                if (isAllocationOccurrence(card, viewer)) {
+                    item.put("cardId", combatIds.id(card));
+                    if (card.getController() != null) item.put("controllerId", card.getController().getId());
+                    if (card.getOwner() != null) item.put("ownerId", card.getOwner().getId());
+                }
+            } else if (choice instanceof PlayerView player) item.put("playerId", player.getId());
+            items.add(item);
+        }
+        next.prompt.put("choices", items);
+    }
+
+    private Map<String, Object> allocationCard(CardView card) {
+        var details = allocationCardDetails(card, viewer);
+        if (isAllocationOccurrence(card, viewer)) {
+            details.put("visualId", activity.visualId(card));
+            details.put("combatId", combatIds.id(card));
+        }
+        return details;
+    }
+
+    static boolean isAllocationOccurrence(CardView card, PlayerView viewer) {
+        if (!card.canBeShownTo(viewer)) return false;
+        ZoneType zone = card.getZone();
+        if (card.isFaceDown()) return zone == ZoneType.Battlefield;
+        return zone == ZoneType.Hand ? viewer.equals(card.getController())
+                : zone == ZoneType.Battlefield || zone == ZoneType.Stack || zone == ZoneType.Graveyard
+                || zone == ZoneType.Exile || zone == ZoneType.Command;
+    }
+
+    /** Face-down permanents have public current characteristics, but their
+     * original identity, rules text, mana cost and alternate faces stay hidden. */
+    static Map<String, Object> allocationCardDetails(CardView card, PlayerView viewer) {
+        var details = choiceCard(card, viewer);
+        details.put("key", "");
+        boolean visible = card.canBeShownTo(viewer);
+        boolean publicFace = visible && (!card.isFaceDown() || card.getZone() == ZoneType.Battlefield);
+        if (!publicFace) return details;
+        var face = card.getCurrentState();
+        details.put("type", face.getType().toString());
+        details.put("power", face.getPower());
+        details.put("toughness", face.getToughness());
+        details.put("damage", card.getDamage());
+        details.put("tapped", card.isTapped());
+        details.put("phasedOut", card.isPhasedOut());
+        var counters = new LinkedHashMap<String, Integer>();
+        if (card.getCounters() != null) for (var entry : card.getCounters().entrySet()) counters.put(entry.getElement().getName(), entry.getCount());
+        details.put("counters", counters);
+        details.put("combatKeywords", face.getKeywords() == null ? List.of() : List.of(Keyword.FLYING, Keyword.REACH,
+                Keyword.TRAMPLE, Keyword.FIRST_STRIKE, Keyword.DOUBLE_STRIKE, Keyword.DEATHTOUCH, Keyword.LIFELINK,
+                Keyword.MENACE, Keyword.VIGILANCE, Keyword.INDESTRUCTIBLE, Keyword.INFECT, Keyword.WITHER, Keyword.PROTECTION)
+                .stream().filter(face::hasKeyword).map(keyword -> keyword.name().toLowerCase(Locale.ROOT).replace('_', ' ')).toList());
+        return details;
     }
 
     private static void validateDialog(Pending next, JsonObject request) {

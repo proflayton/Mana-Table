@@ -659,6 +659,19 @@ disable forced application closure and system restart during this handoff.
 
 ### Native hand placements and zone actions
 
+`--smoke-allocation --profile <isolated-profile> --size 1000x740` drives the
+card-based damage and numeric assignment screen through actual pointer input.
+The required release gates run at 1000x740 and 1540x980. Inspect
+`allocation-ui-results.json` and captures `01`–`06`: source/current stats,
+six visible recipients plus a seventh-page defender, distinct same-name cards,
+public anonymous creature characteristics, marked damage, required assignment
+before a defender, per-recipient remaining/max controls, typed amounts, draft
+preservation through inspection and battlefield view, generic counter allocation
+and planeswalker loyalty, and stale press/release rejection. Engine thresholds
+are displayed as assignment requirements; the UI does not predict deaths or
+derive damage from the source's power. Real-engine allocation projection and
+reply validation are verified separately by the Java/API tests.
+
 `--smoke-hand-placement --profile <isolated-profile> --size 1000x740` drives
 normal pointer input through engine-projected extra hand placements, then
 graveyard and exile actions. Repeat at `1540x980`; both sizes are required native

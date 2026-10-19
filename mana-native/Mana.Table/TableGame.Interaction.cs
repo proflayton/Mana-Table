@@ -33,6 +33,7 @@ internal sealed partial class TableGame
     private static bool SameVisibleCard(Card a, Card b) => CardViews.Same(a, b);
     private void Inspect(Card card)
     {
+        if (InspectAllocationAtPointer()) return;
         // A poll may have revoked visibility since the last rendered hit region.
         inspected = VisibleCards().FirstOrDefault(c => SameVisibleCard(c, card));
         if (inspected == null) return;
@@ -114,6 +115,7 @@ internal sealed partial class TableGame
         if (overlay == "ability-auto-pass") { priorityAbilityTextPage = Math.Max(0, priorityAbilityTextPage - direction); return; }
         if (overlay == "history") { historyPage = Math.Max(0, historyPage - direction); return; }
         if (zoneName != null) { zonePage = Math.Max(0, zonePage - direction); return; }
+        if (DecisionModal && match?.Decision?.Kind == "allocate" && allocationDetail >= -1) { allocationRulesPage = Math.Max(0, allocationRulesPage - direction); return; }
         if (DecisionModal) { choicePage = Math.Max(0, choicePage - direction); return; }
         var hit = HitAt(pointer);
         if (hit?.Zone == "Battlefield") return;
