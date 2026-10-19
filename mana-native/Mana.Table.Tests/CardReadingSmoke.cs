@@ -28,7 +28,8 @@ internal sealed class CardReadingSmoke : ITableAutomation
     {
         this.view = view; this.scenario = scenario;
         Step(1.5, () => MoveCard("hand-3"));
-        Step(.6, () => {
+        StepWhen(() => view.Hovered?.VisualId == "hand-3" && view.HoverPreview is { Width: >= 400, Height: >= 560 }
+            && view.DisplayedPose("hand-3") is { Size.X: >= 400 } && view.CardPaintCount("hand-3") == 1, 3, () => {
             Check(view.Hovered?.VisualId == "hand-3" && view.HoverPreview is { Width: >= 400, Height: >= 560 }, "The hand card itself grows to reading size without a click");
             Check(view.DisplayedPose("hand-3") is { Size.X: >= 400 } && view.CardPaintCount("hand-3") == 1, "The enlarged hand card is the original scene occurrence, painted exactly once");
             var preview = view.HoverPreview!.Value;
@@ -325,7 +326,7 @@ internal sealed class CardReadingSmoke : ITableAutomation
             Capture("failure");
             File.WriteAllText(Path.Combine(view.Profile, "failure.json"), JsonSerializer.Serialize(new { description, view.Now, view.Overlay, view.ZoneName,
                 hovered = view.Hovered?.VisualId, view.HoverPreview, hoveredPose = view.Hovered == null ? null : view.DisplayedPose(view.Hovered.VisualId),
-                handPose = view.DisplayedPose("hand-3"), point = new { mouse.X, mouse.Y }, replies = scenario.Replies.Count,
+                handPose = view.DisplayedPose("hand-3"), handPaintCount = view.CardPaintCount("hand-3"), point = new { mouse.X, mouse.Y }, replies = scenario.Replies.Count,
                 hits = view.Hits.Select(h => h.Id).ToArray() }, new JsonSerializerOptions { IncludeFields = true, WriteIndented = true }));
             throw new InvalidOperationException(description);
         }
