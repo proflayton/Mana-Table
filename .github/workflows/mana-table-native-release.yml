@@ -183,7 +183,10 @@ jobs:
           $release = Get-Content dist/latest-native.json -Raw | ConvertFrom-Json
           ./mana-native/build-installer.ps1 -InputPackageDirectory $release.directory -Version $env:MANA_RELEASE_VERSION -OutputDirectory dist/installer -CompilerPath $env:MANA_ISCC
           ./mana-native/installer/test-installer.ps1 -InputPackageDirectory $release.directory -Version $env:MANA_RELEASE_VERSION -CompilerPath $env:MANA_ISCC -TestDirectory (Join-Path $env:MANA_TEST_ROOT 'installer')
-          ./mana-native/installer/test-update-installer.ps1 -CompilerPath $env:MANA_ISCC -TestDirectory (Join-Path $env:MANA_TEST_ROOT 'update-installer')
+          # The benign executable fixture uses Windows PowerShell's .NET Framework
+          # compiler; PowerShell 7 cannot emit WindowsApplication with Add-Type.
+          powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File ./mana-native/installer/test-update-installer.ps1 -CompilerPath $env:MANA_ISCC -TestDirectory (Join-Path $env:MANA_TEST_ROOT 'update-installer')
+          if ($LASTEXITCODE -ne 0) { throw 'Update installer protocol regression failed.' }
       - name: Prepare friend-friendly download names
         run: |
           $release = Get-Content dist/latest-native.json -Raw | ConvertFrom-Json

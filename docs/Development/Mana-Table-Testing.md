@@ -607,9 +607,11 @@ startup-check preferences and guarded installation. The installer callback is a
 fixture; these UI tests do not install an app. Evidence is `update-ui-results.json`
 and native screenshots. Existing UI fixtures have no real updater client.
 
-`mana-native/installer/test-update-installer.ps1 -CompilerPath <ISCC.exe> -TestDirectory <fresh-test-directory>`
+`powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File mana-native/installer/test-update-installer.ps1 -CompilerPath <ISCC.exe> -TestDirectory <fresh-test-directory>`
 tests the actual installer handoff with a separate smoke identity and benign
-payload. It verifies waiting for the parent, the registered destination, a second
+payload. It uses Windows PowerShell 5.1 to compile that executable fixture;
+PowerShell 7 does not support `Add-Type -OutputType WindowsApplication`.
+It verifies waiting for the parent, the registered destination, a second
 window's mutex and restart with the same profile. A shared startup gate prevents
 another window from opening while Setup replaces files. The regular 22-check installer
 lifecycle test remains required. The native release workflow runs both installer
