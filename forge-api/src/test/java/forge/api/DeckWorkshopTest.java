@@ -364,4 +364,22 @@ public class DeckWorkshopTest {
                 "https://archidekt.com@evil.test/decks/123", "https://archidekt.com:123/decks/123", "https://archidekt.com/api/decks/123", "https://archidekt.com/decks/0"))
             assertThrows(IllegalArgumentException.class, () -> ArchidektSource.deckId(bad));
     }
+
+    @Test public void commanderVariantsCannotSilentlyImportWithRegularCommanderRules() throws Exception {
+        var f = fixture();
+        for (int code : List.of(11, 12)) {
+            var source = remote(f, 1, 1, 1, "A").original().deepCopy(); source.addProperty("deckFormat", code);
+            var parsed = ArchidektSource.parse("123", source, f.catalog());
+            assertEquals(parsed.format(), "Constructed", "Only Archidekt's regular Commander code 3 selects Commander rules");
+            assertTrue(parsed.problems().stream().anyMatch(problem -> problem.contains(code == 11 ? "1v1 Commander" : "Duel Commander") && problem.contains("not supported")));
+            assertEquals(parsed.cards().size(), 5, "Unsupported-format feedback must preserve the reviewed card list");
+            var preview = f.store().stage(parsed, null, null, null);
+            assertThrows(IllegalArgumentException.class, () -> f.store().apply(preview.token(), null, null, "Constructed", "remote"));
+            assertTrue(f.editor().snapshot().entries().isEmpty());
+        }
+        var commander = remote(f, 1, 1, 1, "A"); assertEquals(commander.format(), "Commander"); assertTrue(commander.problems().isEmpty());
+        var standard = commander.original().deepCopy(); standard.addProperty("deckFormat", 1);
+        var constructed = ArchidektSource.parse("123", standard, f.catalog());
+        assertEquals(constructed.format(), "Constructed"); assertTrue(constructed.problems().isEmpty());
+    }
 }

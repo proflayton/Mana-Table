@@ -174,6 +174,8 @@ is accepted. Independent quantity changes can merge; conflicting edits require a
 choice, and an unchanged source does not manufacture a gameplay version. Source
 checking requires no account credentials. Returning changes to Archidekt uses deck
 export and opening the source site; authenticated remote write-back is not provided.
+Archidekt's separate 1v1 Commander and Duel Commander formats block import with an
+explanation; they are not converted into regular 40-life Commander games.
 
 Text imports use Forge's recognizer after normalizing exported annotations:
 

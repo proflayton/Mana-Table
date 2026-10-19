@@ -137,7 +137,9 @@ final class ArchidektSource {
         }
         if (merged.isEmpty() && problems.isEmpty()) problems.add("The source contains no cards to import");
         int code = json.has("deckFormat") ? json.get("deckFormat").getAsInt() : 0;
-        String format = Set.of(3, 11, 12).contains(code) ? "Commander" : "Constructed";
+        String format = code == 3 ? "Commander" : "Constructed";
+        if (code == 11 || code == 12) problems.add((code == 11 ? "1v1 Commander" : "Duel Commander")
+                + " is not supported for game tests. Import a regular Commander source deck; Mana Table does not convert this variant's rules automatically.");
         if (!Set.of(0, 1, 2, 3, 4, 5, 8, 9, 10, 11, 12).contains(code)) warnings.add("This source format is imported as Constructed; verify its rules before playing.");
         return new Remote(id, "https://archidekt.com/decks/" + id, text(json, "name", "Archidekt deck " + id), format,
                 text(json, "updatedAt", ""), List.copyOf(merged.values()), List.copyOf(problems), List.copyOf(warnings), json.deepCopy());
