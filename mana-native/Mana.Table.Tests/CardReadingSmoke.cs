@@ -236,6 +236,10 @@ internal sealed class CardReadingSmoke : ITableAutomation
             Capture("08-states-removed");
         });
         Pose isleRest = default;
+        int repliesBeforePhasedClick = 0;
+        bool IsleReadable() => view.Hovered is { VisualId: "seat-0-0", PhasedOut: true, CombatKeywords.Length: 0 }
+            && view.HoverPreview is { Width: >= 400, Height: >= 560 }
+            && view.DisplayedPose("seat-0-0") is { Size.X: >= 408, Size.Y: >= 570, Angle: >= -.02f and <= .02f, Tilt: >= .99f };
         Step(0, () => {
             var scene = TableScene.Build(view.Match!, new Dictionary<string, int>(), 0, new(-1, -1), null, null, false, CardPresentation.IsResource);
             isleRest = scene.Rank(0, true).Cards.Single(c => c.Id == "seat-0-0").Pose;
@@ -243,9 +247,23 @@ internal sealed class CardReadingSmoke : ITableAutomation
                 Check(view.DisplayedPose($"seat-{seat}-0") is { Elevation: > 12 }, $"Seat {seat}'s phased-out land floats even without combat abilities");
             MoveCard("seat-0-0");
         });
-        StepWhen(() => view.Hovered?.VisualId == "seat-0-0" && view.DisplayedPose("seat-0-0") is { Size.X: >= 400 }, 2, () => {
-            Check(view.Hovered is { PhasedOut: true, CombatKeywords.Length: 0 }, "A phased-out land remains readable using its floating hit geometry");
+        StepWhen(IsleReadable, 2, () => {
+            Check(IsleReadable() && view.CardPaintCount("seat-0-0") == 1,
+                "A phased-out land settles upright at reading size using its floating hit geometry");
+            repliesBeforePhasedClick = scenario.Replies.Count;
             Capture("09-phased-out-land");
+        });
+        Click();
+        Step(.1, () => {
+            Check(view.Overlay == "inspect" && scenario.Replies.Count == repliesBeforePhasedClick,
+                "Clicking a phased-out land inspects it without submitting a game action");
+            Check(!view.Hits.Any(h => h.Id == "activate-ability"), "A phased-out land's inspector exposes no enabled ability action");
+            Capture("09b-phased-out-inspector");
+            MoveHit("close-overlay");
+        }); Click();
+        Step(.1, () => {
+            Check(view.Overlay.Length == 0 && scenario.Replies.Count == repliesBeforePhasedClick,
+                "Closing phased-out inspection returns to the table without a game action");
             Move(new(10, 70));
             var state = scenario.State;
             Publish(state with { Players = state.Players.Select(p => p with { Zones = p.Zones.Select(z => z with {
