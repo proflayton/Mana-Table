@@ -10,7 +10,7 @@ internal static class Program
     {
         Application.SetHighDpiMode(HighDpiMode.PerMonitorV2);
         string? Arg(string name) { int index = Array.IndexOf(args, name); return index >= 0 && index + 1 < args.Length ? args[index + 1] : null; }
-        bool testRun = args.Any(a => a is "--smoke" or "--smoke-ai" or "--smoke-ui-ai" or "--smoke-presentation" or "--smoke-ui-interactions" or "--smoke-table-feel" or "--smoke-card-reading" or "--smoke-compact-selection" or "--smoke-cleanup" or "--smoke-deck-building" or "--smoke-workshop" or "--smoke-analysis" or "--smoke-workshop-adapter" or "--smoke-analysis-adapter" or "--smoke-deck-tuning" or "--smoke-lobby" or "--smoke-social" or "--smoke-advance" or "--smoke-auto-dock" or "--smoke-action-feedback" or "--smoke-onboarding" or "--smoke-loading" or "--smoke-engine-startup" or "--smoke-context-guidance" or "--smoke-deck-import" or "--smoke-priority-abilities");
+        bool testRun = args.Any(a => a is "--smoke" or "--smoke-ai" or "--smoke-ui-ai" or "--smoke-presentation" or "--smoke-ui-interactions" or "--smoke-table-feel" or "--smoke-card-reading" or "--smoke-card-states" or "--smoke-compact-selection" or "--smoke-cleanup" or "--smoke-deck-building" or "--smoke-workshop" or "--smoke-analysis" or "--smoke-workshop-adapter" or "--smoke-analysis-adapter" or "--smoke-deck-tuning" or "--smoke-lobby" or "--smoke-social" or "--smoke-advance" or "--smoke-auto-dock" or "--smoke-action-feedback" or "--smoke-onboarding" or "--smoke-loading" or "--smoke-engine-startup" or "--smoke-context-guidance" or "--smoke-deck-import" or "--smoke-priority-abilities");
         testRun |= args.Contains("--smoke-updates");
         testRun |= args.Contains("--smoke-commander-tax");
         testRun |= args.Contains("--smoke-full-battlefield");
@@ -41,7 +41,7 @@ internal static class Program
             }
             // Existing UI regressions start directly at their subject. Onboarding
             // has its own fresh-profile and persistence coverage above.
-            if (args.Any(a => a is "--smoke-ui-ai" or "--smoke-ui-interactions" or "--smoke-table-feel" or "--smoke-card-reading" or "--smoke-compact-selection" or "--smoke-deck-building" or "--smoke-workshop" or "--smoke-analysis" or "--smoke-lobby" or "--smoke-auto-dock" or "--smoke-action-feedback" or "--smoke-priority-abilities"))
+            if (args.Any(a => a is "--smoke-ui-ai" or "--smoke-ui-interactions" or "--smoke-table-feel" or "--smoke-card-reading" or "--smoke-card-states" or "--smoke-compact-selection" or "--smoke-deck-building" or "--smoke-workshop" or "--smoke-analysis" or "--smoke-lobby" or "--smoke-auto-dock" or "--smoke-action-feedback" or "--smoke-priority-abilities"))
                 File.WriteAllText(Path.Combine(profile, "experience.json"), JsonSerializer.Serialize(new { WelcomeSeen = true, TableGuideSeen = true }));
             if (args.Contains("--smoke-auto-dock")) {
                 var scenario = new InteractionScenarioEngine(); scenario.Present(PresentationSmoke.Example());
@@ -73,10 +73,10 @@ internal static class Program
                 test.Automation = new TableFeelSmoke(test.TestPort, scenario);
                 test.Run(); return 0;
             }
-            if (args.Contains("--smoke-card-reading") || args.Contains("--smoke-compact-selection")) {
+            if (args.Contains("--smoke-card-reading") || args.Contains("--smoke-card-states") || args.Contains("--smoke-compact-selection")) {
                 var scenario = new InteractionScenarioEngine(); scenario.Present(PresentationSmoke.Example());
                 using var test = new TableGame(scenario, profile, null, null, size: size, initialState: scenario.State, artSource: new CardReadingArtFixture());
-                test.Automation = new CardReadingSmoke(test.TestPort, scenario, selectionOnly: args.Contains("--smoke-compact-selection"));
+                test.Automation = new CardReadingSmoke(test.TestPort, scenario, selectionOnly: args.Contains("--smoke-compact-selection"), statesOnly: args.Contains("--smoke-card-states"));
                 test.Run(); return 0;
             }
             var bundle = Arg("--engine-resources") ?? Path.Combine(AppContext.BaseDirectory, "engine");

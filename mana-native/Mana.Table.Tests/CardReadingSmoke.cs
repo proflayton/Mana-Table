@@ -16,7 +16,8 @@ internal sealed class CardReadingSmoke : ITableAutomation
 {
     private readonly TableGame.Probe view;
     private readonly InteractionScenarioEngine scenario;
-    private readonly bool selectionOnly;
+    private readonly bool selectionOnly, statesOnly;
+    private string ResultPrefix => statesOnly ? "card-states" : selectionOnly ? "compact-selection" : "reading";
     private int repliesBeforeReveal;
     private readonly Queue<(double Delay, Action Action, Func<bool>? Ready)> steps = [];
     private readonly List<string> checks = [];
@@ -31,9 +32,13 @@ internal sealed class CardReadingSmoke : ITableAutomation
     public bool ClickAccepted { get; set; }
     public MouseState ReadMouse() => mouse;
 
-    public CardReadingSmoke(TableGame.Probe view, InteractionScenarioEngine scenario, bool selectionOnly = false)
+    public CardReadingSmoke(TableGame.Probe view, InteractionScenarioEngine scenario, bool selectionOnly = false, bool statesOnly = false)
     {
-        this.view = view; this.scenario = scenario; this.selectionOnly = selectionOnly;
+        this.view = view; this.scenario = scenario; this.selectionOnly = selectionOnly; this.statesOnly = statesOnly;
+        if (statesOnly) {
+            QueueStateChecks();
+            return;
+        }
         if (selectionOnly) {
             QueueCompactSelectionChecks();
             QueueTableChoiceChecks();
@@ -172,14 +177,12 @@ internal sealed class CardReadingSmoke : ITableAutomation
             "Auto resumes after the visible action despite intervening snapshot refreshes"));
         QueueRevealChecks();
 
-        QueueStateChecks();
-
     }
     // Reporting needs no further input update or rendered frame after the last checked action.
     private void FinishReading()
     {
-        File.WriteAllText(Path.Combine(view.Profile, selectionOnly ? "compact-selection-observations.json" : "reading-observations.json"), JsonSerializer.Serialize(observations, new JsonSerializerOptions { WriteIndented = true, IncludeFields = true }));
-        File.WriteAllText(Path.Combine(view.Profile, selectionOnly ? "compact-selection-results.json" : "reading-results.json"), JsonSerializer.Serialize(checks, new JsonSerializerOptions { WriteIndented = true }));
+        File.WriteAllText(Path.Combine(view.Profile, ResultPrefix + "-observations.json"), JsonSerializer.Serialize(observations, new JsonSerializerOptions { WriteIndented = true, IncludeFields = true }));
+        File.WriteAllText(Path.Combine(view.Profile, ResultPrefix + "-results.json"), JsonSerializer.Serialize(checks, new JsonSerializerOptions { WriteIndented = true }));
         WriteReadingDiagnostic("complete");
         view.Exit();
     }
@@ -607,14 +610,14 @@ internal sealed class CardReadingSmoke : ITableAutomation
             hoveredPose = view.Hovered == null ? null : view.DisplayedPose(view.Hovered.VisualId),
             phasedLandPose = view.DisplayedPose("seat-0-0"),
             replies = scenario.Replies.ToArray() };
-        File.WriteAllText(Path.Combine(view.Profile, selectionOnly ? "compact-selection-timing-diagnostic.json" : "reading-timing-diagnostic.json"),
+        File.WriteAllText(Path.Combine(view.Profile, ResultPrefix + "-timing-diagnostic.json"),
             JsonSerializer.Serialize(record, new JsonSerializerOptions { WriteIndented = true, IncludeFields = true }));
     }
     public void Frame(Texture2D surface)
     {
         diagnosticFrames++;
         try {
-            if (view.Now > (selectionOnly ? 30 : 50)) throw new TimeoutException(selectionOnly ? "Compact selection smoke did not finish" : "Reading smoke did not finish");
+            if (view.Now > (statesOnly || selectionOnly ? 30 : 50)) throw new TimeoutException(statesOnly ? "Card states smoke did not finish" : selectionOnly ? "Compact selection smoke did not finish" : "Reading smoke did not finish");
             if (view.Error.Length > 0) Check(false, view.Error);
             if (steps.TryPeek(out var next) && (next.Ready?.Invoke() == true || view.Now - lastStep >= next.Delay)) {
                 steps.Dequeue();

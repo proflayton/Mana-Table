@@ -146,6 +146,8 @@ jobs:
             @{ Name='commander-tax-1540'; Mode='--smoke-commander-tax'; Result='commander-tax-results.json'; Size='1540x980' },
             @{ Name='card-reading-1000'; Mode='--smoke-card-reading'; Result='reading-results.json'; Size='1000x740' },
             @{ Name='card-reading-1540'; Mode='--smoke-card-reading'; Result='reading-results.json'; Size='1540x980' },
+            @{ Name='card-states-1000'; Mode='--smoke-card-states'; Result='card-states-results.json'; Size='1000x740' },
+            @{ Name='card-states-1540'; Mode='--smoke-card-states'; Result='card-states-results.json'; Size='1540x980' },
             @{ Name='compact-selection-1000'; Mode='--smoke-compact-selection'; Result='compact-selection-results.json'; Size='1000x740' },
             @{ Name='compact-selection-1540'; Mode='--smoke-compact-selection'; Result='compact-selection-results.json'; Size='1540x980' },
             @{ Name='full-battlefield-1000'; Mode='--smoke-full-battlefield'; Result='full-battlefield-results.json'; Size='1000x740' },
@@ -204,6 +206,7 @@ jobs:
             ${{ runner.temp }}/mana-native-tests/**/*-results.json
             ${{ runner.temp }}/mana-native-tests/**/*-regression.json
             ${{ runner.temp }}/mana-native-tests/**/*-observations.json
+            ${{ runner.temp }}/mana-native-tests/**/*-diagnostic.json
             ${{ runner.temp }}/mana-native-tests/**/*-events.json
             ${{ runner.temp }}/mana-native-tests/**/failure.json
             ${{ runner.temp }}/mana-native-tests/**/*-failure.json
