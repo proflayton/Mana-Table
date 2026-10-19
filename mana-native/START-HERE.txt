@@ -155,6 +155,9 @@ One click on a hand card is safe for reading. Required choices and battlefield
 abilities still use a single click. Commanders also require a double-click to cast.
 Double-click your commander to cast it. Zone piles open browsers
 containing only the cards your player can see. Hidden hands show anonymous backs.
+Gold TAX +2, TAX +4, etc. badges show the extra mana for a command-zone recast.
+Hover or inspect for details. Each commander tracks its own previous casts;
+dying does not add tax by itself.
 Hover to lift and enlarge the card itself without clicking; right-click to inspect
 its complete rules and alternate face. Card pictures download when available;
 text works offline. Choice galleries include a name filter and selection counts.

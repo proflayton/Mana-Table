@@ -362,6 +362,15 @@ and allocation fixtures. Render those with `--fixture` and `--capture`; add
 separate from the real-engine lifecycle tests. Optional artist assets live in
 `Mana.Table/Assets`; visual checks should also work when those files are absent.
 
+`--smoke-commander-tax --profile <isolated-profile> --size 1000x740` reviews
+independent partner taxes at all four seats, unavailable casts, hover/inspection,
+updated tax and a fresh game's cleared indicators. Repeat at 1540x980 and review
+`commander-tax-results.json` and captures 01–05. The `commander-tax` presentation
+fixture provides the same table. Java `CommanderTaxTest` casts a commander three
+times and destroys it twice through real four-seat decisions, checking taxes on
+the stack, battlefield and command zone for every viewer. `EngineApiTest` also
+covers partner counts, owner versus controller, and concealed cards.
+
 The `card-states` presentation fixture includes counter stacks and granted combat
 abilities at all four seats. The card-reading smoke also exercises anonymous
 revealed faces, identical revealed names, library faces with no choice index,
@@ -374,6 +383,8 @@ checks floating land hit geometry, readable phasing details and return to the
 table after phasing in, with captures `09-phased-out-land` and `10-phased-in-land`.
 `PhasingSnapshotTest` exercises real four-seat Forge snapshots through the Isle's
 first phase-out, all three opponents' turns and its return and untap on turn five.
+The native release workflow requires both commander-tax and card-reading suites
+at 1000x740 and 1540x980 before publishing an installer.
 
 `Mana.Table.Tests.exe --smoke-ui-interactions --profile <new-test-directory>` exercises
 the actual MonoGame pointer path against a deterministic `ICardEngine` test double.

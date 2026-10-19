@@ -156,6 +156,10 @@ jobs:
             @{ Name='analysis-1540'; Mode='--smoke-analysis'; Result='analysis-ui-results.json'; Size='1540x980' },
             @{ Name='updates-1000'; Mode='--smoke-updates'; Result='update-ui-results.json'; Size='1000x740' },
             @{ Name='updates-1540'; Mode='--smoke-updates'; Result='update-ui-results.json'; Size='1540x980' },
+            @{ Name='commander-tax-1000'; Mode='--smoke-commander-tax'; Result='commander-tax-results.json'; Size='1000x740' },
+            @{ Name='commander-tax-1540'; Mode='--smoke-commander-tax'; Result='commander-tax-results.json'; Size='1540x980' },
+            @{ Name='card-reading-1000'; Mode='--smoke-card-reading'; Result='reading-results.json'; Size='1000x740' },
+            @{ Name='card-reading-1540'; Mode='--smoke-card-reading'; Result='reading-results.json'; Size='1540x980' },
             @{ Name='import'; Mode='--smoke-deck-import'; Result='deck-import-results.json' },
             @{ Name='building'; Mode='--smoke-deck-building'; Result='deck-building-results.json' },
             @{ Name='lobby'; Mode='--smoke-lobby'; Result='lobby-results.json' }

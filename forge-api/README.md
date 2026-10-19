@@ -466,6 +466,13 @@ can be supplied from the main deck for that game without changing the saved list
 Existing commanders, including legal partner pairs, remain intact. Color identity
 and deck conformance are checked before launching.
 
+Visible card snapshots include `commanderTax`: the extra generic mana for that
+commander's next cast from the command zone, based on its owner's engine cast
+count. It is separate from the printed `manaCost` and is not a quote of the final
+cost after other modifiers. Non-commanders and concealed cards report zero;
+older adapters without the field can be read as zero. Partner commanders have
+independent taxes. Casting from another zone or dying does not increase it.
+
 Network human seats use the same table and controller path as solo play. There is
 no sideboarding, Limited match setup, or durable match save. Complex card-specific
 interactions need broader coverage. Unsupported adapter calls surface an error
