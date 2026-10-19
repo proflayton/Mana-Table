@@ -3,6 +3,8 @@ package forge.card;
 import java.lang.reflect.Field;
 import java.util.Collections;
 import java.util.Enumeration;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.ResourceBundle;
 
 import org.mockito.MockedStatic;
@@ -39,12 +41,12 @@ import forge.util.Localizer;
  * PowerMock's per-class classloader are handled deliberately:
  * </p>
  * <ul>
- * <li>Static state is no longer isolated per test class, so {@link #releaseMocks()} closes
- * every static mock and clears the {@link Localizer} singleton after each method.</li>
- * <li>{@link PaperCard} caches its {@code hasImage} answer, and the cards come from a
- * process-wide {@link StaticData}. A test class that needs a different answer, or a
- * differently loaded database, must build its own via
- * {@link CardDatabaseHelper#createStaticData(boolean)} rather than share the cached one.</li>
+ * <li>{@link #releaseMocks()} closes every static mock and restores the previous
+ * {@link Localizer}, {@link StaticData} singleton and preferred-art entries after each method.</li>
+ * <li>{@link PaperCard} caches its {@code hasImage} answer, so the default database is
+ * cached per concrete fixture class, separately from real-game helpers. A class with a
+ * different loading policy can override {@link #initializeStaticData()} and build its own
+ * database via {@link CardDatabaseHelper#createStaticData(String, boolean)}.</li>
  * </ul>
  */
 public class CardMockTestCase {
@@ -67,12 +69,19 @@ public class CardMockTestCase {
      * </p>
      */
     private static Localizer localizerBeforeMocking;
+    private StaticData staticDataBeforeMocking;
+    private Map<String, String> preferredArtBeforeMocking;
+    private boolean globalsCaptured;
 
     @BeforeMethod
     protected void initMocks() throws Exception {
         // BaseGameSimulationTest.runGame() calls this again part-way through a test, and
         // Mockito refuses to open a second static mock for a class that already has one.
         releaseMocks();
+        staticDataBeforeMocking = StaticData.instance();
+        preferredArtBeforeMocking = new HashMap<>(preferredArtEntries());
+        globalsCaptured = true;
+        preferredArtEntries().clear();
         initForgeSingletons();
         initCardImageMocks();
         initForgePreferences();
@@ -81,19 +90,58 @@ public class CardMockTestCase {
 
     @AfterMethod(alwaysRun = true)
     protected void releaseMocks() {
-        if (imageKeysMock != null) {
-            imageKeysMock.close();
-            imageKeysMock = null;
+        try {
+            if (imageKeysMock != null) {
+                imageKeysMock.close();
+                imageKeysMock = null;
+            }
+        } finally {
+            try {
+                if (fModelMock != null) {
+                    fModelMock.close();
+                    fModelMock = null;
+                }
+            } finally {
+                try {
+                    // Undo our own mock and nothing else. Leaving the mock in place, or clearing
+                    // the singleton outright, breaks AITest-based classes later in this JVM.
+                    Localizer current = getLocalizerInstance();
+                    if (current != null && Mockito.mockingDetails(current).isMock()) {
+                        setLocalizerInstance(localizerBeforeMocking);
+                    }
+                } finally {
+                    restoreGlobals();
+                }
+            }
         }
-        if (fModelMock != null) {
-            fModelMock.close();
-            fModelMock = null;
+    }
+
+    private void restoreGlobals() {
+        if (!globalsCaptured) {
+            return;
         }
-        // Undo our own mock and nothing else. Leaving the mock in place, or clearing the
-        // singleton outright, breaks every AITest-based class that runs later in this JVM.
-        Localizer current = getLocalizerInstance();
-        if (current != null && Mockito.mockingDetails(current).isMock()) {
-            setLocalizerInstance(localizerBeforeMocking);
+        globalsCaptured = false;
+        try {
+            // Real FModel.getMagicDb() consults this singleton too. In particular, do not
+            // leave a lazy or nonlegal-filtering mock database active for later game tests.
+            setStaticDataInstance(staticDataBeforeMocking);
+        } finally {
+            Map<String, String> art = preferredArtEntries();
+            art.clear();
+            art.putAll(preferredArtBeforeMocking);
+            preferredArtBeforeMocking = null;
+            staticDataBeforeMocking = null;
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    private static Map<String, String> preferredArtEntries() {
+        try {
+            Field entries = CardDb.class.getDeclaredField("artPrefs");
+            entries.setAccessible(true);
+            return (Map<String, String>) entries.get(null);
+        } catch (Exception e) {
+            throw new RuntimeException(e);
         }
     }
 
@@ -192,7 +240,9 @@ public class CardMockTestCase {
     }
 
     protected void initializeStaticData() {
-        useStaticData(CardDatabaseHelper.getStaticDataToPopulateOtherMocks());
+        // Real game helpers may already have cached missing images on their PaperCards.
+        // Keep this fixture's image policy independent, including inherited test classes.
+        useStaticData(CardDatabaseHelper.createStaticData(getClass().getName(), false));
     }
 
     /**
