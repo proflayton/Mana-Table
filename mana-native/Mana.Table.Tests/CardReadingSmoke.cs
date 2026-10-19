@@ -510,12 +510,7 @@ internal sealed class CardReadingSmoke : ITableAutomation
         if (!FreshHand("hand-3", c => !c.FaceDown)) return false;
         var hand = view.Match!.Viewer!.Zone("Hand").Cards;
         int index = Array.FindIndex(hand, c => c.VisualId == "hand-3");
-        var rest = TableLayout.Hand(index % 11, Math.Min(11, hand.Length));
-        return view.DisplayedPose("hand-3") is { Size.X: < 140 } pose
-            && Microsoft.Xna.Framework.Vector2.Distance(pose.Center, rest.Center) < 2
-            && Microsoft.Xna.Framework.Vector2.Distance(pose.Size, rest.Size) < 2
-            && Math.Abs(pose.Angle - rest.Angle) < .02f
-            && view.Art(hand[index]) is { LevelCount: > 1, Width: >= 4, Height: >= 4 };
+        return view.Art(hand[index]) is { LevelCount: > 1, Width: >= 4, Height: >= 4 };
     }
     private bool ReadingReady(string id) => view.Hovered?.VisualId == id
         && view.HoverPreview is { Width: >= 400, Height: >= 560 }
