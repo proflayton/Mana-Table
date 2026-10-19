@@ -15,6 +15,8 @@ internal static class Program
         var profile = Arg("--profile") ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "ManaTableNative");
         Directory.CreateDirectory(profile);
         try {
+            using var instance = WindowsUpdateInstaller.EnterInstance();
+            using var appUpdates = new GitHubAppUpdates(AppBuild.Load(AppContext.BaseDirectory));
             Microsoft.Xna.Framework.Point? size = null;
             if (Arg("--size")?.Split('x') is { Length: 2 } dimensions && int.TryParse(dimensions[0], out int width) && int.TryParse(dimensions[1], out int height)) size = new(Math.Clamp(width, 800, 3840), Math.Clamp(height, 450, 2160));
             var bundle = Arg("--engine-resources") ?? Path.Combine(AppContext.BaseDirectory, "engine");
@@ -30,7 +32,8 @@ internal static class Program
                     var entries = JsonSerializer.Deserialize<Dictionary<string, string>>(File.ReadAllText(manifest)) ?? throw new IOException("Invalid art manifest");
                     art = new LocalArtSource(Path.GetDirectoryName(manifest)!, entries);
                 }
-                using var game = new TableGame(engine, profile, Arg("--capture"), Arg("--fixture"), size, artSource: art);
+                using var game = new TableGame(engine, profile, Arg("--capture"), Arg("--fixture"), size, artSource: art,
+                    appUpdates: appUpdates, installUpdate: WindowsUpdateInstaller.TryCreate(AppContext.BaseDirectory, profile));
                 game.Run();
             } finally { engine.DisposeAsync().AsTask().GetAwaiter().GetResult(); }
             return 0;

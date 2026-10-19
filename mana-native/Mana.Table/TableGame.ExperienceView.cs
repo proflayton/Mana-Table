@@ -28,6 +28,7 @@ internal sealed partial class TableGame
             660, false, () => ChooseWelcome("decks"));
 
         canvas.Line(new(90, 889), new(1510, 889), LobbyTrim);
+        DrawUpdateFooter(true);
         Button("experience-skip", "Continue to setup", 1202, 920, 308, DismissWelcome, loaded && !busy, height: 44);
     }
 

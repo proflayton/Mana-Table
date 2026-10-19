@@ -154,6 +154,8 @@ jobs:
             @{ Name='analysis-adapter'; Mode='--smoke-analysis-adapter'; Result='analysis-adapter-results.json' },
             @{ Name='analysis-1000'; Mode='--smoke-analysis'; Result='analysis-ui-results.json'; Size='1000x740' },
             @{ Name='analysis-1540'; Mode='--smoke-analysis'; Result='analysis-ui-results.json'; Size='1540x980' },
+            @{ Name='updates-1000'; Mode='--smoke-updates'; Result='update-ui-results.json'; Size='1000x740' },
+            @{ Name='updates-1540'; Mode='--smoke-updates'; Result='update-ui-results.json'; Size='1540x980' },
             @{ Name='import'; Mode='--smoke-deck-import'; Result='deck-import-results.json' },
             @{ Name='building'; Mode='--smoke-deck-building'; Result='deck-building-results.json' },
             @{ Name='lobby'; Mode='--smoke-lobby'; Result='lobby-results.json' }
@@ -181,6 +183,7 @@ jobs:
           $release = Get-Content dist/latest-native.json -Raw | ConvertFrom-Json
           ./mana-native/build-installer.ps1 -InputPackageDirectory $release.directory -Version $env:MANA_RELEASE_VERSION -OutputDirectory dist/installer -CompilerPath $env:MANA_ISCC
           ./mana-native/installer/test-installer.ps1 -InputPackageDirectory $release.directory -Version $env:MANA_RELEASE_VERSION -CompilerPath $env:MANA_ISCC -TestDirectory (Join-Path $env:MANA_TEST_ROOT 'installer')
+          ./mana-native/installer/test-update-installer.ps1 -CompilerPath $env:MANA_ISCC -TestDirectory (Join-Path $env:MANA_TEST_ROOT 'update-installer')
       - name: Prepare friend-friendly download names
         run: |
           $release = Get-Content dist/latest-native.json -Raw | ConvertFrom-Json
@@ -245,7 +248,10 @@ jobs:
           $ErrorActionPreference = 'Stop'
           $tag = "mana-native-v$env:RELEASE_VERSION"
           $build = Get-Content downloads/build.json -Raw | ConvertFrom-Json
-          if ($build.sourceRevision -cne $env:GITHUB_SHA -or $build.version -cne $env:RELEASE_VERSION) { throw 'Download source or version does not match this run.' }
+          if ($build.sourceRevision -cne $env:GITHUB_SHA -or $build.version -cne $env:RELEASE_VERSION -or $build.release -ne $true) { throw 'Download source, version or production build flag does not match this run.' }
+          $update = Get-Content downloads/installer-manifest.json -Raw | ConvertFrom-Json
+          if ($update.installerProtocol -ne 1 -or $update.smokeOnly -ne $false -or $update.architecture -cne 'win-x64' -or $update.installer -cne 'ManaTable-Setup.exe' -or $update.version -cne $env:RELEASE_VERSION -or $update.sourceRevision -cne $env:GITHUB_SHA) { throw 'Update manifest does not match this production release.' }
+          if ($update.installerBytes -ne (Get-Item downloads/ManaTable-Setup.exe).Length -or $update.installerSha256 -ine (Get-FileHash downloads/ManaTable-Setup.exe -Algorithm SHA256).Hash) { throw 'Update manifest does not match the installer.' }
           foreach ($name in @('ManaTable-Setup.exe', 'ManaTable-Windows-x64.zip', 'ManaTable-Source.zip')) {
             $expected = (Get-Content "downloads/$name.sha256" -Raw).Split(' ')[0]
             if ((Get-FileHash "downloads/$name" -Algorithm SHA256).Hash -ne $expected) { throw "Download checksum mismatch: $name" }
@@ -274,7 +280,7 @@ jobs:
             gh release create $tag --repo $env:GH_REPO --target $env:GITHUB_SHA --draft --title "Mana Table $env:RELEASE_VERSION for Windows" --notes-file release-notes.md
             if ($LASTEXITCODE -ne 0) { throw 'Could not create the draft release.' }
           }
-          gh release upload $tag downloads/ManaTable-Setup.exe downloads/ManaTable-Setup.exe.sha256 downloads/ManaTable-Windows-x64.zip downloads/ManaTable-Windows-x64.zip.sha256 downloads/ManaTable-Source.zip downloads/ManaTable-Source.zip.sha256 --repo $env:GH_REPO --clobber
+          gh release upload $tag downloads/ManaTable-Setup.exe downloads/ManaTable-Setup.exe.sha256 downloads/ManaTable-Windows-x64.zip downloads/ManaTable-Windows-x64.zip.sha256 downloads/ManaTable-Source.zip downloads/ManaTable-Source.zip.sha256 downloads/installer-manifest.json --repo $env:GH_REPO --clobber
           if ($LASTEXITCODE -ne 0) { throw 'Download upload failed; the release remains a draft.' }
           if (-not (MasterIsCurrent)) { 'Master advanced during upload; the release remains a draft.' >> $env:GITHUB_STEP_SUMMARY; exit 0 }
           gh release edit $tag --repo $env:GH_REPO --draft=false --latest

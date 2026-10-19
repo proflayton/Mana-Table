@@ -3,12 +3,20 @@ MANA TABLE NATIVE - BUILD, TEST AND PLAY COMMANDER
 Download ManaTable-Setup.exe from https://github.com/proflayton/Mana-Table/releases/latest
 and open it. Setup installs for your Windows account, adds shortcuts, and opens
 the game. Administrator access, Java and .NET installation are not required.
-Close the game before installing a newer version. Your decks and settings stay
-in %LOCALAPPDATA%\ManaTableNative and are retained during updates or uninstall.
+Open Updates from Home, setup or Settings to check for a newer release. Startup
+checks can be turned off there. Download shows progress and can be canceled;
+you can continue playing while it downloads. After leaving your game and any
+friends' table, choose Install and restart. Setup waits for Mana Table to close,
+updates the installed app and reopens it with the same player profile.
+Your decks and settings stay in %LOCALAPPDATA%\ManaTableNative and are retained
+during updates or uninstall. Players on v0.2.7 and earlier need to download the
+first updater-enabled installer manually. Everyone at a table should update.
 Windows x64 only. First startup loads the card catalog.
 
 The portable ZIP is an alternative: extract the entire folder and open
 ManaTable.exe. Keep the engine folder beside it; do not run inside the ZIP.
+Portable copies can check and download updates; open the release page to install
+the app or extract the complete newer portable ZIP into a separate folder.
 
 STARTUP AND YOUR FIRST SESSION
 Every launch opens a loading screen, then the main menu: Play with AI,

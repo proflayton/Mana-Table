@@ -140,6 +140,7 @@ var deadline = DateTime.UtcNow.AddSeconds(5);
 while ((client.Busy || client.Polling) && DateTime.UtcNow < deadline) { client.Pump(); await Task.Delay(5); }
 Check(client.State?.Decision?.Id == "next" && client.State.Result == null && connection.Replies == 1, "A late pre-command poll cannot replace the command's authoritative result");
 Check(!client.Submit(command), "An old decision cannot be submitted after a new snapshot");
+checks += await AppUpdateRegression.RunAsync();
 Console.WriteLine($"Passed {checks} headless checks.");
 
 sealed class ControlledConnection : IMatchConnection

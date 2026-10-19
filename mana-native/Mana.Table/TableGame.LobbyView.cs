@@ -29,6 +29,7 @@ internal sealed partial class TableGame
         else if (soloTab) DrawSoloLobby();
         else DrawFriendsWelcome();
         if (!Connected) Button("experience-home", "Home", 1115, 920, 160, OpenWelcome, loaded && !busy, height: 38);
+        DrawUpdateFooter(false);
         if (setupModal.Length > 0) DrawSetupModal();
         DrawWorkshopDialog();
     }

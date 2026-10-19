@@ -76,9 +76,9 @@ internal sealed partial class TableGame : Game
     private int DesignHeight => match == null ? 1000 : TableLayout.Height;
     private bool TableChoice => match != null && TableChoices.IsDirect(match);
     private bool DecisionModal => !TableChoice && !collapsedDecision && match?.Decision?.Kind is "choice" or "reveal" or "number" or "text" or "allocate";
-    private bool OverlayOpen => ActivityOpen || ExperienceOpen || workshopDialog.Length > 0 || overlay.Length > 0 || zoneName != null || DecisionModal;
+    private bool OverlayOpen => updatesOpen || ActivityOpen || ExperienceOpen || workshopDialog.Length > 0 || overlay.Length > 0 || zoneName != null || DecisionModal;
     private string Scope => match == null ? deckEditor ? DeckScope : LobbyScope : session.Scope;
-    private string ControlScope(string id) => id.StartsWith("activity-") ? ActivityScope : id.StartsWith("experience-") || id == "guidance-reset" && ExperienceOpen ? ExperienceScope : id.StartsWith("chat-") ? ChatScope
+    private string ControlScope(string id) => id.StartsWith("updates-") ? UpdateScope : id.StartsWith("activity-") ? ActivityScope : id.StartsWith("experience-") || id == "guidance-reset" && ExperienceOpen ? ExperienceScope : id.StartsWith("chat-") ? ChatScope
         : match != null && (id is "auto" or "hold" or "instructions" or "action-details" or "ability-auto-pass-open" or "ability-prev" or "ability-next" or "ability-text-prev" or "ability-text-next"
             || id.StartsWith("phase-stop:") || id.StartsWith("ability-undo:")) ? match.Id + ":playback" : Scope;
     private bool CurrentHit(Hit hit) => hit.Scope == ControlScope(hit.Id);
@@ -88,7 +88,8 @@ internal sealed partial class TableGame : Game
     }
     private Hit? HitAt(Point at) => TableHitAt(at);
 
-    public TableGame(ICardEngine engine, string profile, string? capture, string? fixture, Point? size = null, GameSnapshot? initialState = null, ICardArtSource? artSource = null)
+    public TableGame(ICardEngine engine, string profile, string? capture, string? fixture, Point? size = null, GameSnapshot? initialState = null, ICardArtSource? artSource = null,
+        IAppUpdates? appUpdates = null, Action<PreparedUpdate>? installUpdate = null)
     {
         session = new(engine); updates = new(session);
         session.Changed += AcceptEffects;
@@ -96,6 +97,8 @@ internal sealed partial class TableGame : Game
         session.Failed += ex => { error = ex.Message; FailActivity(); try { File.AppendAllText(Path.Combine(profile, "client.log"), ex + "\n"); } catch (IOException) { } };
         this.engine = engine; this.profile = profile; this.capture = capture; this.fixture = fixture; this.initialState = initialState;
         this.artSource = artSource ?? new MagicArtSource(profile);
+        this.appUpdates = appUpdates; this.installUpdate = installUpdate;
+        LoadUpdatePreferences();
         preferences = PlayPreferences.Load(profile); automatic = preferences.Automatic;
         experience = ExperiencePreferences.Load(profile);
         welcomeOpen = initialState == null && fixture == null;
@@ -112,7 +115,7 @@ internal sealed partial class TableGame : Game
     }
     private void ReceiveText(char character)
     {
-        if (ActivityOpen || ExperienceOpen) return;
+        if (updatesOpen || ActivityOpen || ExperienceOpen) return;
         if (chatOpen && chatFocus) { ChatText(character); return; }
         if (match == null && deckEditor) { DeckText(character); return; }
         if (match == null) { SetupText(character); return; }
@@ -168,6 +171,7 @@ internal sealed partial class TableGame : Game
         UpdateDeckCatalog();
         UpdateWorkshopData();
         UpdateDeckAnalysis();
+        UpdateAppUpdates();
         art.Update(GraphicsDevice);
         var prompt = match?.Decision;
         if (decisionId != (prompt?.Id ?? "")) {
@@ -185,8 +189,8 @@ internal sealed partial class TableGame : Game
         }
         if (dragSource?.Card is { } heldCard && !VisibleCards().Any(c => SameVisibleCard(c, heldCard))) { dragging = false; dragSource = null; pressed = null; }
         var mouse = Automation?.ReadMouse() ?? Mouse.GetState(); var keys = Automation?.ReadKeyboard() ?? Keyboard.GetState();
-        bool experienceInput = ExperienceOpen && !ActivityOpen;
-        bool blockedInput = ActivityOpen || experienceInput;
+        bool experienceInput = ExperienceOpen && !ActivityOpen && !updatesOpen;
+        bool blockedInput = ActivityOpen || experienceInput || updatesOpen;
         bool chatKeys = blockedInput || ChatKeys(keys);
         if (!chatKeys) { DeckKeys(keys); SetupKeys(keys); }
         var view = GraphicsDevice.Viewport; float scale = Math.Min(view.Width / 1600f, view.Height / (float)DesignHeight);
@@ -209,6 +213,7 @@ internal sealed partial class TableGame : Game
         if (experienceInput && keys.IsKeyDown(Keys.Escape) && previousKeys.IsKeyUp(Keys.Escape)) {
             if (tableGuideOpen) CloseTableGuide(); else DismissWelcome();
         }
+        if (updatesOpen && !ActivityOpen && keys.IsKeyDown(Keys.Escape) && previousKeys.IsKeyUp(Keys.Escape)) CloseAppUpdates();
         if (!chatKeys && keys.IsKeyDown(Keys.Escape) && previousKeys.IsKeyUp(Keys.Escape)) {
             dragging = false; dragSource = null; pressed = null; pendingPlay = null; selectedCombat = null; textFocus = false;
             if (match == null && !busy) { if (workshopDialog.Length > 0) workshopDialog = ""; else if (deckMenu.Length > 0) deckMenu = ""; else if (deckEditor) CloseDeckEditor(); else CloseSetupModal(); }
@@ -295,7 +300,7 @@ internal sealed partial class TableGame : Game
             hits.Add(new("notice", Scope, new(427, 64, 746, 60), () => { overlay = "history"; historyPage = 0; noticeUntil = 0; }));
         }
         DrawContextGuidance();
-        if (!ExperienceOpen && !ActivityOpen) DrawSocial();
+        if (!updatesOpen && !ExperienceOpen && !ActivityOpen) DrawSocial();
         if (!ActivityOpen && !string.IsNullOrWhiteSpace(error)) {
             int y = match == null ? 942 : 59;
             canvas.Panel(new(270, y, 1060, 46), new(71, 37, 38), Red, 7); canvas.Text(error, 284, y + 9, Ink, .76f, 980, 1);
@@ -303,6 +308,7 @@ internal sealed partial class TableGame : Game
         }
         if (tableGuideOpen && !StartupVisible) DrawTableGuide();
         if (ActivityOpen && !StartupVisible) DrawActivity();
+        if (updatesOpen && !ActivityOpen && !StartupVisible) DrawAppUpdates();
         if (!ActivityOpen && !preferences.ReducedMotion && sceneRevealAt >= 0 && now - sceneRevealAt < .2)
             canvas.Fill(new(0, 0, 1600, DesignHeight), new Color(12, 18, 26) * (float)(.5 * (1 - (now - sceneRevealAt) / .2)));
         motion.End(); canvas.End(); GraphicsDevice.SetRenderTarget(null); GraphicsDevice.Clear(Color.Black);
@@ -315,7 +321,7 @@ internal sealed partial class TableGame : Game
     }
     protected override void OnExiting(object sender, ExitingEventArgs args)
     {
-        closing = true; session.Close(); engine.DisposeAsync().AsTask().GetAwaiter().GetResult();
+        closing = true; CloseUpdateRequests(); session.Close(); engine.DisposeAsync().AsTask().GetAwaiter().GetResult();
         art.Dispose(); assets.Dispose(); canvas.Dispose(); screen.Dispose(); tableSurface.Dispose(); setupSurface.Dispose();
         base.OnExiting(sender, args);
     }
