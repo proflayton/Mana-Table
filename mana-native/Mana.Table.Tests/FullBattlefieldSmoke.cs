@@ -39,7 +39,8 @@ internal sealed class FullBattlefieldSmoke : ITableAutomation
     private FullBattlefieldSmoke(TableGame.Probe view, InteractionScenarioEngine scenario)
     {
         this.view = view; this.scenario = scenario;
-        Step(1.7, () => {
+        Step(1.7, () => { });
+        Wait(() => BattlefieldReady(10), 3, () => {
             AssertExposed(10, "Ten creatures");
             Capture("01-ten-creatures");
             MoveCard("ten-1-9");
@@ -76,7 +77,8 @@ internal sealed class FullBattlefieldSmoke : ITableAutomation
             Capture("04-own-tenth-action");
             Publish(Example("mixed")); MoveAway();
         });
-        Step(1.3, () => {
+        Step(1.3, () => { });
+        Wait(() => BattlefieldReady(20), 3, () => {
             AssertExposed(20, "Twenty mixed permanents");
             var scene = Scene();
             foreach (var player in view.Match!.Players) {
@@ -105,7 +107,8 @@ internal sealed class FullBattlefieldSmoke : ITableAutomation
                 "A crowded unknown face-down occurrence remains reachable without revealing an enlarged face or sending a command");
             Publish(Example("fifty")); MoveAway();
         });
-        Step(1.3, () => {
+        Step(1.3, () => { });
+        Wait(() => BattlefieldReady(50), 3, () => {
             AssertExposed(50, "Fifty identical tokens");
             Check(view.Hits.Any(h => h.Id == "handnext"), "The separate twelve-card hand retains its normal hand paging control");
             Capture("06-fifty-copies");
@@ -149,6 +152,22 @@ internal sealed class FullBattlefieldSmoke : ITableAutomation
         });
     }
 
+    // Captures can consume wall time without advancing entrance motion. Observe
+    // the exact painted/hit-test state; keep AssertExposed at the bounded deadline.
+    private bool BattlefieldReady(int count)
+    {
+        if (view.Match is not { } state || view.HoverPreview != null || view.Overlay.Length != 0
+            || view.Hits.Any(h => h.Id.StartsWith("rank-prev:", StringComparison.Ordinal)
+                || h.Id.StartsWith("rank-next:", StringComparison.Ordinal))) return false;
+        return state.Players.All(player => {
+            var cards = player.Zone("Battlefield").Cards;
+            var hits = view.Hits.Where(h => h.Zone == "Battlefield" && h.PlayerId == player.Id && h.Card != null).ToArray();
+            return cards.Length == count && hits.Length == count
+                && hits.Select(h => CardViews.Identity(h.Card!)).Distinct().Count() == count
+                && cards.All(card => view.CardPaintCount(CardViews.Identity(card)) == 1
+                    && ExposedPixel(CardViews.Identity(card)) != null);
+        });
+    }
     private void AssertExposed(int count, string description)
     {
         Check(view.HoverPreview == null && view.Overlay.Length == 0, description + ": exposure is checked on the resting table");
