@@ -2,6 +2,7 @@ package forge.api;
 
 import com.google.common.eventbus.Subscribe;
 import com.google.gson.Gson;
+import com.google.gson.GsonBuilder;
 import com.google.gson.JsonObject;
 import forge.game.GameAction;
 import forge.game.card.CardCollectionView;
@@ -102,20 +103,62 @@ public class StateEffectsConcessionTest {
 
                 concede(scenario, 1, sessionId);
                 concede(scenario, 3, sessionId);
-                assertTrue(finished.await(5, TimeUnit.SECONDS), "The remaining game must finish and release its game thread");
+                long terminalDeadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
+                boolean announced = finished.await(Math.max(0, terminalDeadline - System.nanoTime()), TimeUnit.NANOSECONDS);
+                var terminalViews = terminalViews(scenario, terminalDeadline, announced, initialIds.get(0));
                 for (int seat = 0; seat < 4; seat++) {
-                    var snapshot = scenario.table.seat(seat).state();
+                    var snapshot = terminalViews.get(seat);
                     assertNull(snapshot.get("error"));
                     assertNull(snapshot.get("prompt"));
                     var state = new Gson().toJsonTree(snapshot).getAsJsonObject();
                     assertEquals(text(state, "status"), "finished");
                     assertEquals(text(state, "result"), seat == 0 ? "Victory" : "Defeat");
                     assertEquals(state.getAsJsonArray("players").asList().stream().map(player -> player.getAsJsonObject())
-                            .filter(player -> !player.get("eliminated").getAsBoolean()).count(), 1L);
+                            .filter(player -> !player.get("eliminated").getAsBoolean()).map(player -> player.get("id").getAsInt()).toList(),
+                            List.of(initialIds.get(0)), "Every terminal projection must name the exact sole surviving player");
+                    assertPrivateZones(state);
                 }
             } finally {
                 scenario.table.game.unsubscribeFromEvents(listener);
             }
+        }
+    }
+
+    private static List<Map<String, Object>> terminalViews(RulesScenario scenario, long deadline, boolean announced, int winnerId) throws Exception {
+        var json = new GsonBuilder().serializeNulls().create();
+        var observed = new ArrayList<Object>();
+        List<Map<String, Object>> latest = List.of();
+        String previous = "";
+        try {
+            while (true) {
+                // Match fires GameFinished before returning to MatchTable.start's
+                // finally/publish. The event is not a cached-projection barrier.
+                // testViews captures one passive cohort under the table gate.
+                latest = scenario.table.testViews();
+                String encoded = json.toJson(latest);
+                if (!encoded.equals(previous)) {
+                    if (observed.size() < 16) observed.add(Map.of("remainingNanos", deadline - System.nanoTime(), "views", latest));
+                    previous = encoded;
+                }
+                boolean ready = latest.size() == 4;
+                for (int seat = 0; seat < latest.size(); seat++) {
+                    var snapshot = latest.get(seat);
+                    assertNull(snapshot.get("error"), encoded);
+                    var state = json.toJsonTree(snapshot).getAsJsonObject();
+                    assertPrivateZones(state);
+                    var survivors = state.getAsJsonArray("players").asList().stream().map(player -> player.getAsJsonObject())
+                            .filter(player -> !player.get("eliminated").getAsBoolean()).map(player -> player.get("id").getAsInt()).toList();
+                    ready &= text(state, "status").equals("finished") && snapshot.get("prompt") == null
+                            && text(state, "result").equals(seat == 0 ? "Victory" : "Defeat") && survivors.equals(List.of(winnerId));
+                }
+                assertTrue(announced, "The engine must announce game completion within the terminal deadline");
+                assertTrue(System.nanoTime() < deadline, "The exact terminal projections must settle within the original five-second budget: " + encoded);
+                if (ready) return latest;
+                Thread.sleep(5);
+            }
+        } finally {
+            Files.writeString(scenario.evidence.resolve("terminal-projections.json"), json.toJson(Map.of(
+                    "announced", announced, "observed", observed, "lastViews", latest)));
         }
     }
 
