@@ -1175,7 +1175,8 @@ public class PhaseHandler implements java.io.Serializable, IHasForgeLog {
             allAffectedCards.clear();
             // Update flashback views after static abilities have been recalculated,
             // so play-from-zone abilities (e.g. Bolas's Citadel) are reflected
-            game.getPlayers().forEach(Player::updateFlashbackForView);
+            // Refresh events can remove a conceding player from the live collection.
+            game.getPlayers().threadSafeIterable().forEach(Player::updateFlashbackForView);
         }
         return false;
     }
