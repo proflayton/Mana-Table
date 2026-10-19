@@ -1167,7 +1167,7 @@ public class GameAction {
                 // dependent on or independent of one or more other effects that have not yet been applied.
             }
             staticAbilities.addAll(toAdd);
-            for (Player p : game.getPlayers()) {
+            for (Player p : game.getPlayers().threadSafeIterable()) {
                 p.afterStaticAbilityLayer(layer);
             }
         }
@@ -1201,7 +1201,7 @@ public class GameAction {
         // preList means that this is run by a pre Check with LKI objects
         // in that case Always trigger should not Run
         if (preList.isEmpty()) {
-            for (Player p : game.getPlayers()) {
+            for (Player p : game.getPlayers().threadSafeIterable()) {
                 for (Card c : p.getCardsIn(ZoneType.Battlefield).threadSafeIterable()) {
                     if (!c.getController().equals(p)) {
                         controllerChangeZoneCorrection(c);
@@ -1425,7 +1425,8 @@ public class GameAction {
             Map<AbilityKey, Object> mapParams = AbilityKey.newMap();
             AbilityKey.addCardZoneTableParams(mapParams, table);
 
-            for (final Player p : game.getPlayers()) {
+            // A concession can remove a participant while a state-based action is running.
+            for (final Player p : game.getPlayers().threadSafeIterable()) {
                 p.checkKeywordCard();
 
                 for (final ZoneType zt : ZoneType.values()) {
@@ -1529,7 +1530,7 @@ public class GameAction {
                 }
             }
 
-            for (Player p : game.getPlayers()) {
+            for (Player p : game.getPlayers().threadSafeIterable()) {
                 if (!spaceSculptors.isEmpty() && !spaceSculptors.contains(p)) {
                     checkAgain |= stateBasedAction704_5u(p);
                 }
@@ -1722,7 +1723,7 @@ public class GameAction {
             return false;
         }
 
-        for (Player p : game.getPlayers()) {
+        for (Player p : game.getPlayers().threadSafeIterable()) {
             CardCollection rolesByPlayer = CardLists.filterControlledBy(roles, p);
             if (rolesByPlayer.size() <= 1) {
                 continue;
@@ -1920,14 +1921,14 @@ public class GameAction {
         FCollectionView<Player> allPlayers = game.getPlayers();
 
         // Has anyone won by spelleffect?
-        for (Player p : allPlayers) {
+        for (Player p : allPlayers.threadSafeIterable()) {
             if (!p.hasWon()) {
                 continue;
             }
 
             // then the rest have lost!
             reason = GameEndReason.WinsGameSpellEffect;
-            for (Player pl : allPlayers) {
+            for (Player pl : allPlayers.threadSafeIterable()) {
                 if (pl.equals(p)) {
                     continue;
                 }
@@ -1945,7 +1946,7 @@ public class GameAction {
         }
 
         if (reason == null) {
-            for (Player p : allPlayers) {
+            for (Player p : allPlayers.threadSafeIterable()) {
                 if (p.checkLoseCondition()) { // this will set appropriate outcomes
                     if (losers == null) {
                         losers = Lists.newArrayListWithCapacity(3);
@@ -1964,7 +1965,7 @@ public class GameAction {
         if (reason == null) {
             List<Player> notLost = Lists.newArrayList();
             Set<Integer> teams = Sets.newHashSet();
-            for (Player p : allPlayers) {
+            for (Player p : allPlayers.threadSafeIterable()) {
                 if (p.getOutcome() == null || p.getOutcome().hasWon()) {
                     notLost.add(p);
                     teams.add(p.getTeam());
