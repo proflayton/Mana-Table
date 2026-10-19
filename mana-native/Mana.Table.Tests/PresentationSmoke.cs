@@ -13,6 +13,7 @@ internal static class PresentationSmoke
     {
         Directory.CreateDirectory(profile); var results = new List<string>();
         void Check(bool condition, string message) { if (!condition) throw new InvalidOperationException(message); results.Add(message); }
+        BitmapPixelSmoke.Run(Check);
         var state = Example();
         var scenePages = new Dictionary<string, int> { ["1:permanents"] = 999 };
         var scene = TableScene.Build(state, scenePages, 0, new(-100, -100), null, null, false, CardPresentation.IsResource);
