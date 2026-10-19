@@ -26,10 +26,10 @@ public class PlayerCollection extends FCollection<Player> {
         this.add(player);
     }
 
-    // card collection functions
+    // Snapshot participants for card queries: concession can change membership during a read.
     public final CardCollection getCardsIn(ZoneType zone) {
         CardCollection result = new CardCollection();
-        for (Player p : this) {
+        for (Player p : threadSafeIterable()) {
             result.addAll(p.getCardsIn(zone));
         }
         return result;
@@ -37,7 +37,7 @@ public class PlayerCollection extends FCollection<Player> {
 
     public final CardCollection getCardsIn(Iterable<ZoneType> zones) {
         CardCollection result = new CardCollection();
-        for (Player p : this) {
+        for (Player p : threadSafeIterable()) {
             result.addAll(p.getCardsIn(zones));
         }
         return result;
@@ -45,7 +45,7 @@ public class PlayerCollection extends FCollection<Player> {
     
     public final CardCollection getCreaturesInPlay() {
         CardCollection result = new CardCollection();
-        for (Player p : this) {
+        for (Player p : threadSafeIterable()) {
             result.addAll(p.getCreaturesInPlay());
         }
         return result;
