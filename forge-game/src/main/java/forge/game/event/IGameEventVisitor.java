@@ -8,6 +8,7 @@ public interface IGameEventVisitor<T> {
     T visit(GameEventCardDestroyed event);
     T visit(GameEventCardAttachment event);
     T visit(GameEventCardChangeZone event);
+    default T visit(GameEventCardDrawn event) { return null; }
     T visit(GameEventCardModeChosen event);
     T visit(GameEventCardRegenerated event);
     T visit(GameEventCardSacrificed event);

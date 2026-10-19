@@ -21,6 +21,7 @@ internal sealed partial class TableGame
     }
     private void ReturnFromMatch()
     {
+        if (IsWorkshopMatch) { ReturnToWorkshop(); return; }
         if (localMatch) { localMatch = false; session.Reset(); ResetTableView(); message = "Choose your next Commander game."; }
         else Work(async () => { await engine.ReturnToLobbyAsync(); var state = await engine.LobbyAsync(); updates.Enqueue(() => { lobby = state; session.Reset(); ResetTableView(); }); }, "Returning to your group", "Keeping the table together for the next game.", true);
     }
@@ -34,7 +35,9 @@ internal sealed partial class TableGame
     private void ImportClipboard()
     {
         if (!Clipboard.ContainsText()) { error = "Copy an exported deck list to the clipboard first."; return; }
-        var text = Clipboard.GetText(); var name = Ask("Deck name", "Name your Commander deck", "My Commander deck");
+        var text = Clipboard.GetText();
+        if (WorkshopEngine != null && text.Trim().Contains("archidekt.com", StringComparison.OrdinalIgnoreCase) && !text.Trim().Contains('\n')) { ImportArchidekt(text.Trim()); return; }
+        var name = Ask("Deck name", "Name your Commander deck", "My Commander deck");
         if (name != null) ImportDeck(() => engine.ImportAsync(name, text), true);
     }
     private static string? Ask(string title, string instruction, string initial)

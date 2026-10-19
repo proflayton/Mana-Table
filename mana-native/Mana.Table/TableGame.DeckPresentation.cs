@@ -25,6 +25,13 @@ internal sealed partial class TableGame
             canvas.Fill(new(left, y + 65 - height, step - 18, height), new(95, 160, 185));
             canvas.Text(curve[i].ToString(), left + (step - 36) / 2, y + 48 - height, Muted, .47f, 35, 1);
             canvas.Text(i == 6 ? "6+" : i.ToString(), left + (step - 30) / 2, y + 69, Muted, .51f, 36, 1);
+            if (deckEditor && WorkshopEngine != null && (workshopDialog.Length == 0 || workshopDialog == "insights")) {
+                int value = i;
+                hits.Add(new("workshop-curve:" + i, Scope, new(left - 3, y + 22, step - 4, 68), () => {
+                    workshopManaFilter = value; workshopRoleFilter = ""; workshopTab = "build"; workshopDialog = "";
+                    commanderCandidates = false; deckSection = "Main"; deckFilter = ""; deckCardsPage = 0; deckIssuesOnly = false;
+                }));
+            }
         }
     }
 }

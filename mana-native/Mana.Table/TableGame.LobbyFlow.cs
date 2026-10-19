@@ -66,11 +66,11 @@ internal sealed partial class TableGame
     private void StartSolo()
     {
         if (!DeckConfirmed || soloSetup is not { } setup || setup.DeckId != selectedDeck?.Id) return;
-        var opponents = soloChoices.Select(i => setup.Opponents[i].Id).ToArray();
+        var opponents = soloChoices.Take(Math.Min(3, setup.MaxPlayers - 1)).Select(i => setup.Opponents[i].Id).ToArray();
         Work(async () => {
             await engine.StartSoloAsync(setup.DeckId, opponents); var state = await engine.ObserveAsync();
             updates.Enqueue(() => { setupModal = ""; ResetTableView(); lobby = null; localMatch = true; Accept(state); message = "Starting your AI table..."; });
-        }, "Gathering your AI table", "Preparing your deck, three opponents, and the opening hand.", scene: true);
+        }, "Gathering your AI table", $"Preparing your deck, {opponents.Length} AI opponent{(opponents.Length == 1 ? "" : "s")}, and the opening hand.", scene: true);
     }
     private void StartFriends()
     {

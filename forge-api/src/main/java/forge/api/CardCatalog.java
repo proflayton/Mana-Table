@@ -58,6 +58,7 @@ public final class CardCatalog {
     private final List<IndexedCard> index;
     private final int uniqueCount;
     private final Map<String, CardInfo> byName;
+    private final Map<String, List<CardInfo>> byPrintingName;
 
     public CardCatalog(CardDb database) {
         this(database.getAllCards());
@@ -70,8 +71,10 @@ public final class CardCatalog {
                 .sorted(Comparator.comparing((IndexedCard card) -> card.info().name(), String.CASE_INSENSITIVE_ORDER)
                         .thenComparing(card -> card.info().id())).toList();
         uniqueCount = (int) index.stream().map(card -> card.info().name()).distinct().count();
-        byName = index.stream().map(IndexedCard::info).collect(Collectors.toUnmodifiableMap(
-                card -> normalize(card.name()), Function.identity(), (first, duplicate) -> first));
+        byPrintingName = index.stream().map(IndexedCard::info).collect(Collectors.groupingBy(
+                card -> normalize(card.name()), Collectors.toUnmodifiableList()));
+        byName = byPrintingName.entrySet().stream().collect(Collectors.toUnmodifiableMap(
+                Map.Entry::getKey, entry -> entry.getValue().get(0)));
     }
 
     private static String normalize(String text) {
@@ -130,6 +133,10 @@ public final class CardCatalog {
     public int size() { return cards.size(); }
 
     CardInfo named(String name) { return byName.get(normalize(name)); }
+
+    // Provider imports need an exact name lookup across every printing, rather
+    // than a paginated full-text search that can omit the requested edition.
+    List<CardInfo> printings(String name) { return byPrintingName.getOrDefault(normalize(name), List.of()); }
 
     public static CardCatalog fromDatabase(CardDb database) {
         return fromDatabases(List.of(database));

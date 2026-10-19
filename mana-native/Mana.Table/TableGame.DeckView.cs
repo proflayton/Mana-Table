@@ -26,12 +26,18 @@ internal sealed partial class TableGame
         int main = deck.Entries.Where(e => e.Section == "Main").Sum(e => e.Quantity), leaders = deck.Entries.Where(e => e.Section == "Commander").Sum(e => e.Quantity);
         int side = deck.Entries.Where(e => e.Section == "Sideboard").Sum(e => e.Quantity);
         bool countIssue = DeckIssues.Any(issue => issue.Code is "MAIN_COUNT" or "COMMANDER_COUNT" or "MISSING_COMMANDER");
-        canvas.Text($"{main + leaders} / 100 cards", 50, 153, countIssue ? Gold : Ink, .85f, 230, 1, countIssue);
+        canvas.Text(CommanderDeck ? $"{main + leaders} / 100 cards" : $"{main} cards · {deck.Format}", 50, 153, countIssue ? Gold : Ink, .85f, 230, 1, countIssue);
         canvas.Text($"{main} main   ·   {leaders} commander{(leaders == 1 ? "" : "s")}   ·   {side} sideboard", 294, 153, Muted, .8f, 980, 1);
         Button("deck-undo", "Undo", 1320, 151, 110, () => EditDeck(d => engine.UndoDeckAsync(d.Id, d.Revision), "Edit undone."), !busy && deck.CanUndo, height: 32);
         Button("deck-redo", "Redo", 1440, 151, 110, () => EditDeck(d => engine.RedoDeckAsync(d.Id, d.Revision), "Edit restored."), !busy && deck.CanRedo, height: 32);
         var names = deck.Entries.Where(e => e.Section == "Commander").Select(e => e.Card.Name).ToArray();
-        canvas.Text(names.Length == 0 ? "Choose your commander from the deck's Leaders tab, or find one in the library." : "COMMANDER  " + string.Join(" + ", names), 50, 194, names.Length == 0 ? Muted : Gold, .78f, 1480, 1);
+        if (WorkshopEngine != null) {
+            DrawWorkshopNavigation();
+            if (workshopTab != "build") {
+                if (workshopTab == "test") DrawWorkshopTest(); else DrawWorkshopResults();
+                DrawWorkshopStatus(); DrawWorkshopDialog(); return;
+            }
+        } else canvas.Text(names.Length == 0 ? "Choose your commander from the deck's Leaders tab, or find one in the library." : "COMMANDER  " + string.Join(" + ", names), 50, 194, names.Length == 0 ? Muted : Gold, .78f, 1480, 1);
         canvas.Panel(new(32, 236, 538, 712), new(21, 29, 39), new(54, 67, 79), 8);
         canvas.Panel(new(586, 236, 528, 712), new(21, 29, 39), new(54, 67, 79), 8);
         canvas.Panel(new(1130, 236, 438, 712), new(18, 25, 34), new(54, 67, 79), 8);
@@ -42,6 +48,7 @@ internal sealed partial class TableGame
         else canvas.Text(status, 46, 963, deck.SaveError.Length > 0 ? Red : Muted, .68f, 1250, 1);
         if (deck.SaveError.Length > 0) Button("deck-retry-save", "Retry save", 1340, 955, 214, () => EditDeck(d => engine.SaveDeckAsync(d.Id, d.Revision), "Deck saved."), !busy, height: 33);
         if (deckMenu.Length > 0) DrawDeckMenu();
+        DrawWorkshopStatus(); DrawWorkshopDialog();
     }
     private void DeckSearchBox(string field, string value, string placeholder, Rectangle bounds)
     {
@@ -98,13 +105,19 @@ internal sealed partial class TableGame
     {
         var deck = selectedDeckDetails!;
         canvas.Text("YOUR DECK", 600, 252, Gold, .8f, 310, 1, true);
+        if (workshopRoleFilter.Length > 0) Button("workshop-clear-role", workshopRoleFilter + " ×", 755, 248, 182, () => { workshopRoleFilter = ""; deckCardsPage = 0; }, !busy, true, 28);
+        else if (workshopManaFilter is { } manaFilter) Button("workshop-clear-mana", "MV " + (manaFilter == 6 ? "6+" : manaFilter) + " ×", 755, 248, 182, () => { workshopManaFilter = null; deckCardsPage = 0; }, !busy, true, 28);
         int affected = deck.Entries.Count(entry => CardIssues(entry.Id, entry.Section).Length > 0);
         Button("deck-issues-filter", "Problems (" + affected + ")", 946, 247, 154, ToggleDeckIssues, affected > 0 || deckIssuesOnly, deckIssuesOnly, 29);
         DeckSearchBox("deck", deckFilter, "Find a card in this deck…", new(600, 283, 500, 38));
-        var tabs = new[] { ("deck-all", "All", "", false), ("deck-main", "Main", "Main", false), ("deck-side", "Side", "Sideboard", false), ("deck-command", "Cmd", "Commander", false), ("deck-candidates", "Leaders", "", true) };
-        for (int i = 0; i < tabs.Length; i++) {
+        var tabs = new List<(string, string, string, bool)> { ("deck-all", "All", "", false), ("deck-main", "Main", "Main", false), ("deck-side", "Side", "Sideboard", false), ("deck-command", "Cmd", "Commander", false), ("deck-candidates", "Leaders", "", true) };
+        if (WorkshopEngine != null) tabs.Add(("deck-considering", "Options", "Considering", false));
+        int tabX = 600;
+        int[] tabWidths = tabs.Count == 6 ? [54, 70, 64, 64, 106, 122] : [92, 92, 92, 92, 92];
+        for (int i = 0; i < tabs.Count; i++) {
             var tab = tabs[i];
-            Button(tab.Item1, tab.Item2, 600 + i * 102, 331, 92, () => FilterDeck(tab.Item3, tab.Item4), true, !deckIssuesOnly && commanderCandidates == tab.Item4 && deckSection == tab.Item3, 32);
+            Button(tab.Item1, tab.Item2, tabX, 331, tabWidths[i], () => FilterDeck(tab.Item3, tab.Item4), true, !deckIssuesOnly && commanderCandidates == tab.Item4 && deckSection == tab.Item3, 32);
+            tabX += tabWidths[i] + (tabs.Count == 6 ? 4 : 10);
         }
         var rows = DeckRowsToShow();
         deckCardsPage = Math.Clamp(deckCardsPage, 0, Math.Max(0, (rows.Length - 1) / DeckRows));
@@ -118,14 +131,15 @@ internal sealed partial class TableGame
             canvas.Text(entry.Quantity + "×", 610, y + 7, problem ? Gold : Muted, .64f, 38, 1, problem);
             canvas.Text(entry.Card.Name, 651, y + 6, problem || entry.Section == "Commander" ? Gold : Ink, .66f, 354, 1, selected);
             if (problem) { canvas.Text("!", 1016, y + 6, Gold, .7f, 18, 1, true); renderedDeckIssueCardIds.Add(entry.Id); }
-            canvas.Text(entry.Section == "Commander" ? "CMD" : entry.Section == "Sideboard" ? "SIDE" : entry.ManaValue.ToString(), 1040, y + 9, Muted, .53f, 54, 1);
+            canvas.Text(entry.Section == "Commander" ? "CMD" : entry.Section == "Sideboard" ? "SIDE" : entry.Section == "Considering" ? "OPT" : entry.ManaValue.ToString(), 1040, y + 9, Muted, .53f, 54, 1);
             hits.Add(new("deck-card:" + entry.Section + ":" + entry.Id, Scope, new(600, y, 500, 30), () => SelectDeckRow(entry)));
         }
         if (rows.Length == 0) canvas.Text(deckIssuesOnly ? "No cards need changes in this view. Turn off Problems to see your full list."
             : commanderCandidates ? "No leaders in this view. Find your commander in the library, add it, then set its role here." : "No cards in this view. Select a library card and use + to add it.", 620, 419, Muted, .82f, 450, 5);
-        Button("deck-cards-prev", "Previous", 600, 710, 105, () => deckCardsPage--, deckCardsPage > 0, height: 30);
-        Button("deck-cards-next", "Next", 715, 710, 90, () => deckCardsPage++, (deckCardsPage + 1) * DeckRows < rows.Length, height: 30);
-        canvas.Text($"{rows.Length} entries · {deckCardsPage + 1}/{Math.Max(1, (rows.Length + DeckRows - 1) / DeckRows)}", 822, 719, Muted, .6f, 278, 1);
+        Button("deck-cards-prev", "Previous", 600, 674, 105, () => deckCardsPage--, deckCardsPage > 0, height: 30);
+        Button("deck-cards-next", "Next", 715, 674, 90, () => deckCardsPage++, (deckCardsPage + 1) * DeckRows < rows.Length, height: 30);
+        canvas.Text($"{rows.Length} entries · {deckCardsPage + 1}/{Math.Max(1, (rows.Length + DeckRows - 1) / DeckRows)}", 822, 683, Muted, .6f, 278, 1);
+        if (WorkshopEngine != null) DrawWorkshopRolePills();
         DrawDeckIssues();
     }
     private void DrawDeckCardPreview()
@@ -135,18 +149,23 @@ internal sealed partial class TableGame
         var preview = DeckCardFace(card.Card, deckBackId == card.Id);
         PaintCard(preview, new Pose(new(1349, 450), new(286, 400)), false, false);
         int copies = deck.Entries.Where(e => e.Card.Name == card.Card.Name).Sum(e => e.Quantity);
-        canvas.Text(card.Edition + " · " + deckCardSection + " · " + copies + (copies == 1 ? " copy in list" : " copies in list"), 1150, 663, Muted, .63f, 398, 1);
+        if (WorkshopEngine != null) {
+            var role = workshop?.Roles.FirstOrDefault(r => r.CardId == card.Id);
+            string label = (role?.Pinned == true ? "★ " : "") + (role?.Roles.Length > 0 ? string.Join(" · ", role.Roles) : "Set categories / keep / Considering") + "  >";
+            Button("workshop-card-tools", label, 1150, 660, 398, () => workshopDialog = "card", !busy && WorkshopCurrent, height: 28);
+        } else canvas.Text(card.Edition + " · " + deckCardSection + " · " + copies + (copies == 1 ? " copy in list" : " copies in list"), 1150, 663, Muted, .63f, 398, 1);
         DrawSelectedDeckIssues(card);
-        int count = DeckQuantity(); bool editable = deckCardSection is "Main" or "Sideboard";
+        int count = DeckQuantity(); bool editable = deckCardSection is "Main" or "Sideboard" or "Considering";
         Button("deck-remove", "−", 1150, 784, 46, () => DeckQuantity(count - 1), !busy && editable && count > 0, height: 36);
         Button("deck-quantity", count + (count == 1 ? " copy" : " copies"), 1204, 784, 122, () => {
             var value = Ask("Card quantity", card.Card.Name + " in " + deckCardSection + " (0 removes it)", count.ToString());
             if (value != null) { if (int.TryParse(value, out int quantity)) DeckQuantity(quantity); else error = "Enter a whole-number quantity."; }
         }, !busy && editable, CardIssues(card.Id, deckCardSection).Any(issue => issue.Code == "CARD_COPY_LIMIT"), 36);
         Button("deck-add", "+", 1334, 784, 46, () => DeckQuantity(count + 1), !busy && editable && count < 1000, true, 36);
-        Button("deck-move", deckCardSection == "Sideboard" ? "To main" : "To side", 1388, 784, 160, MoveDeckCard, !busy && editable, height: 36);
+        Button("deck-move", deckCardSection == "Considering" ? "To main" : deckCardSection == "Sideboard" ? "To main" : "To side", 1388, 784, 160, () => { if (deckCardSection == "Considering") MoveConsideringCard(); else MoveDeckCard(); }, !busy && editable, height: 36);
         if (card.Card.OtherFace != null) Button("deck-flip", deckBackId == card.Id ? "Front face" : "Other face", 1364, 826, 184, () => deckBackId = deckBackId == card.Id ? null : card.Id, height: 26);
         canvas.Text(card.Card.OtherFace != null ? "Click count to set quantity" : editable ? "+ adds one · Click the count to enter a quantity" : "Commanders count toward your 100-card deck.", 1150, 830, Muted, .59f, card.Card.OtherFace != null ? 204 : 408, 1);
+        if (!CommanderDeck) { canvas.Text("Commander controls apply to Commander decks.", 1150, 876, Muted, .66f, 398, 2); return; }
         var ids = deck.CommanderIds;
         bool eligible = deck.CommanderOptions.Any(c => c.Id == card.Id);
         bool partner = ids.Length == 1 && deck.CommanderOptions.FirstOrDefault(c => c.Id == ids[0])?.Partners.Contains(card.Id) == true;
@@ -164,22 +183,22 @@ internal sealed partial class TableGame
         canvas.Text(issues.Length == 0 ? "Checks passed" : issues.Length + (issues.Length == 1 ? " issue" : " issues"), 903, 771, issues.Length > 0 ? Gold : ReadyColor, .65f, 197, 1);
         if (issues.Length == 0) { DrawDeckComposition(deck, 600, 840, 500); return; }
         var parts = IssueTextPages(issues, 90);
-        deckIssuePage = Math.Clamp(deckIssuePage, 0, Math.Max(0, (parts.Length - 1) / 2));
-        for (int i = 0; i < Math.Min(2, parts.Length - deckIssuePage * 2); i++) {
-            int index = deckIssuePage * 2 + i, y = 798 + i * 56;
+        deckIssuePage = Math.Clamp(deckIssuePage, 0, Math.Max(0, parts.Length - 1));
+        for (int i = 0; i < Math.Min(1, parts.Length - deckIssuePage); i++) {
+            int index = deckIssuePage + i, y = 798;
             var part = parts[index];
             renderedDeckIssueCodes.Add(part.Issue.Code);
             canvas.Text("!", 600, y, Gold, .72f, 16, 1, true);
-            canvas.Text(part.Text, 619, y + 1, Ink, .64f, 456, 3);
+            canvas.Text(part.Text, 619, y + 1, Ink, .61f, 456, 3);
             bool actionable = part.Issue.CardIds.Length > 0 || part.Issue.Code is "COMMANDER_COUNT" or "MISSING_COMMANDER";
             if (actionable) {
                 canvas.Text(">", 1085, y + 2, Gold, .67f, 15, 1, true);
                 hits.Add(new("deck-issue:" + index, Scope, new(600, y, 500, 54), () => ShowDeckIssue(part.Issue)));
             }
         }
-        Button("deck-issues-prev", "Previous", 600, 910, 103, () => deckIssuePage--, deckIssuePage > 0, height: 30);
-        Button("deck-issues-next", "Next", 713, 910, 88, () => deckIssuePage++, (deckIssuePage + 1) * 2 < parts.Length, height: 30);
-        canvas.Text($"Page {deckIssuePage + 1} / {Math.Max(1, (parts.Length + 1) / 2)}", 820, 919, Muted, .6f, 280, 1);
+        Button("deck-issues-prev", "<", 1008, 764, 40, () => deckIssuePage--, deckIssuePage > 0, height: 26);
+        Button("deck-issues-next", ">", 1060, 764, 40, () => deckIssuePage++, deckIssuePage + 1 < parts.Length, height: 26);
+        DrawDeckComposition(deck, 600, 852, 500);
     }
     private void DrawSelectedDeckIssues(CatalogCard card)
     {

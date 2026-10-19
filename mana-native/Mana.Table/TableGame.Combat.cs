@@ -160,7 +160,7 @@ internal sealed partial class TableGame
         var state = match!;
         ModalFrame(state.Result ?? "Game finished", () => overlay = "", "Inspect table");
         canvas.CenterText(state.Result == "Victory" ? "VICTORY" : state.Result == "Defeat" ? "DEFEAT" : "GAME COMPLETE", new(300, 177, 1000, 89), state.Result == "Victory" ? Gold : Ink, 2.6f, true, true);
-        canvas.CenterText($"Commander · {state.Players.Length} players · Turn {state.Turn}", new(300, 276, 1000, 37), Muted, .85f);
+        canvas.CenterText($"{selectedDeckDetails?.Format ?? "Commander"} · {state.Players.Length} players · Turn {state.Turn}", new(300, 276, 1000, 37), Muted, .85f);
         for (int i = 0; i < state.Players.Length; i++) {
             var player = state.Players[i]; int y = 353 + i * 70;
             canvas.Text(player.Id == state.ViewerId ? "You" : player.Name, 263, y, Ink, 1, 702, 1, true);
@@ -169,6 +169,9 @@ internal sealed partial class TableGame
             canvas.Line(new(260, y + 47), new(1341, y + 47), Muted * .17f);
         }
         Button("result-history", "Match history", 260, 713, 253, () => { overlay = "history"; historyPage = 0; }, height: 52);
-        Button("return", localMatch ? "Return to setup" : "Return to lobby", 991, 711, 349, ReturnFromMatch, !busy, true, 56);
+        if (IsWorkshopMatch) {
+            Button("workshop-result-again", "Test again", 708, 711, 264, () => ReturnToWorkshop(true), !busy, height: 56);
+            Button("return", "Return to tune", 991, 711, 349, () => ReturnToWorkshop(), !busy, true, 56);
+        } else Button("return", localMatch ? "Return to setup" : "Return to lobby", 991, 711, 349, ReturnFromMatch, !busy, true, 56);
     }
 }

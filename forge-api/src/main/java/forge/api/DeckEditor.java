@@ -11,6 +11,7 @@ import java.util.ConcurrentModificationException;
 import java.util.Deque;
 import java.util.List;
 import java.util.Objects;
+import java.util.UUID;
 
 /** In-memory editor; each batch is atomic, revision checked, and undoable. */
 public final class DeckEditor {
@@ -29,10 +30,12 @@ public final class DeckEditor {
     }
 
     private final CardCatalog catalog;
-    private final Deque<Deck> undo = new ArrayDeque<>();
-    private final Deque<Deck> redo = new ArrayDeque<>();
+    private record Frame(Deck deck, String token) { }
+    private final Deque<Frame> undo = new ArrayDeque<>();
+    private final Deque<Frame> redo = new ArrayDeque<>();
     private Deck deck;
     private long revision;
+    private String historyToken = UUID.randomUUID().toString();
 
     public DeckEditor(CardCatalog catalog, Deck initial) {
         this.catalog = Objects.requireNonNull(catalog);
@@ -69,8 +72,9 @@ public final class DeckEditor {
             pool.remove(card, pool.count(card));
             pool.add(card, edit.quantity());
         }
-        remember(undo, deck);
+        remember(undo, deck, historyToken);
         deck = updated;
+        historyToken = UUID.randomUUID().toString();
         redo.clear();
         revision++;
         return snapshot();
@@ -79,8 +83,9 @@ public final class DeckEditor {
     public synchronized Snapshot undo(long expectedRevision) {
         checkRevision(expectedRevision);
         if (!undo.isEmpty()) {
-            remember(redo, deck);
-            deck = undo.pop();
+            remember(redo, deck, historyToken);
+            var frame = undo.pop();
+            deck = frame.deck(); historyToken = frame.token();
             revision++;
         }
         return snapshot();
@@ -91,8 +96,9 @@ public final class DeckEditor {
         if (name == null || name.isBlank() || name.length() > 100) {
             throw new IllegalArgumentException("Deck name must be 1..100 characters");
         }
-        remember(undo, deck);
+        remember(undo, deck, historyToken);
         deck = new Deck(deck, name.strip());
+        historyToken = UUID.randomUUID().toString();
         redo.clear();
         revision++;
         return snapshot();
@@ -101,8 +107,9 @@ public final class DeckEditor {
     public synchronized Snapshot redo(long expectedRevision) {
         checkRevision(expectedRevision);
         if (!redo.isEmpty()) {
-            remember(undo, deck);
-            deck = redo.pop();
+            remember(undo, deck, historyToken);
+            var frame = redo.pop();
+            deck = frame.deck(); historyToken = frame.token();
             revision++;
         }
         return snapshot();
@@ -116,14 +123,28 @@ public final class DeckEditor {
     /** A detached copy for Forge's match launcher or existing DeckSerializer. */
     public synchronized Deck toDeck() { return new Deck(deck); }
 
+    /** Opaque in-memory boundaries let host metadata follow the same undo step without guessing from contents. */
+    synchronized String historyToken() { return historyToken; }
+    synchronized String undoToken() { return undo.isEmpty() ? historyToken : undo.peek().token(); }
+    synchronized String redoToken() { return redo.isEmpty() ? historyToken : redo.peek().token(); }
+    synchronized Deck historyDeck(boolean backwards) {
+        var frames = backwards ? undo : redo;
+        return new Deck(frames.isEmpty() ? deck : frames.peek().deck());
+    }
+    synchronized void checkpoint(long expectedRevision) {
+        checkRevision(expectedRevision);
+        remember(undo, deck, historyToken); redo.clear();
+        historyToken = UUID.randomUUID().toString(); revision++;
+    }
+
     private void checkRevision(long expected) {
         if (expected != revision) {
             throw new ConcurrentModificationException("Expected revision " + expected + "; current is " + revision);
         }
     }
 
-    private static void remember(Deque<Deck> history, Deck previous) {
-        history.push(previous);
+    private static void remember(Deque<Frame> history, Deck previous, String token) {
+        history.push(new Frame(previous, token));
         if (history.size() > 100) { history.removeLast(); }
     }
 }

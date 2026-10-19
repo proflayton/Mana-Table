@@ -3,7 +3,7 @@ namespace Mana.Contracts;
 public static class EngineProtocol
 {
     public const int Version = 2;
-    public static readonly string[] RequiredCapabilities = ["seat-sync", "snapshots", "command-receipts", "resume", "table-social"];
+    public static readonly string[] RequiredCapabilities = ["seat-sync", "snapshots", "command-receipts", "resume", "table-social", "deck-workshop"];
 }
 
 // The aggregate is for application composition. Consumers can depend on the
@@ -72,12 +72,16 @@ public sealed record DeckDetails(string Id, string Name, long Revision, DeckEntr
     CommanderOption[] CommanderOptions, string Problem, string SaveError, bool CanUndo = false, bool CanRedo = false)
 {
     public DeckIssue[] Issues { get; init; } = [];
+    public string Format { get; init; } = "Commander";
     public string[] CommanderIds => Entries.Where(e => e.Section == "Commander").Select(e => e.Id).ToArray();
 }
 public sealed record DeckPreset(string Id, string Name, string Description);
 // Opponent IDs are opaque engine-owned handles, just like saved deck IDs.
 public sealed record AiOpponent(string Id, string Name, string Description);
-public sealed record SoloSetup(string DeckId, string DeckName, AiOpponent[] Opponents);
+public sealed record SoloSetup(string DeckId, string DeckName, AiOpponent[] Opponents)
+{
+    public int MaxPlayers { get; init; } = 6;
+}
 public sealed record Address(string Label, string Url, string Invite);
 public sealed record Seat(int Index, string Name, string Type, string? Deck, bool Ready, bool Local);
 public sealed record Lobby(string Mode, string Status, string? Error, bool CanStart, string? StartProblem,

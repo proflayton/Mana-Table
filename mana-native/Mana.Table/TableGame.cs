@@ -76,7 +76,7 @@ internal sealed partial class TableGame : Game
     private int DesignHeight => match == null ? 1000 : TableLayout.Height;
     private bool TableChoice => match != null && TableChoices.IsDirect(match);
     private bool DecisionModal => !TableChoice && !collapsedDecision && match?.Decision?.Kind is "choice" or "reveal" or "number" or "text" or "allocate";
-    private bool OverlayOpen => ActivityOpen || ExperienceOpen || overlay.Length > 0 || zoneName != null || DecisionModal;
+    private bool OverlayOpen => ActivityOpen || ExperienceOpen || workshopDialog.Length > 0 || overlay.Length > 0 || zoneName != null || DecisionModal;
     private string Scope => match == null ? deckEditor ? DeckScope : LobbyScope : session.Scope;
     private string ControlScope(string id) => id.StartsWith("activity-") ? ActivityScope : id.StartsWith("experience-") || id == "guidance-reset" && ExperienceOpen ? ExperienceScope : id.StartsWith("chat-") ? ChatScope
         : match != null && (id is "auto" or "hold" or "instructions" or "action-details" or "ability-auto-pass-open" or "ability-prev" or "ability-next" or "ability-text-prev" or "ability-text-next"
@@ -166,6 +166,7 @@ internal sealed partial class TableGame : Game
         UpdateActivity();
         UpdateSocial();
         UpdateDeckCatalog();
+        UpdateWorkshopData();
         art.Update(GraphicsDevice);
         var prompt = match?.Decision;
         if (decisionId != (prompt?.Id ?? "")) {
@@ -209,7 +210,7 @@ internal sealed partial class TableGame : Game
         }
         if (!chatKeys && keys.IsKeyDown(Keys.Escape) && previousKeys.IsKeyUp(Keys.Escape)) {
             dragging = false; dragSource = null; pressed = null; pendingPlay = null; selectedCombat = null; textFocus = false;
-            if (match == null && !busy) { if (deckMenu.Length > 0) deckMenu = ""; else if (deckEditor) CloseDeckEditor(); else CloseSetupModal(); }
+            if (match == null && !busy) { if (workshopDialog.Length > 0) workshopDialog = ""; else if (deckMenu.Length > 0) deckMenu = ""; else if (deckEditor) CloseDeckEditor(); else CloseSetupModal(); }
             if (overlay.Length > 0) overlay = ""; else if (zoneName != null) zoneName = null; else if (DecisionModal) collapsedDecision = true;
         }
         if (!chatKeys && !textFocus && keys.IsKeyDown(Keys.Space) && previousKeys.IsKeyUp(Keys.Space) && !OverlayOpen && !busy && match != null) {

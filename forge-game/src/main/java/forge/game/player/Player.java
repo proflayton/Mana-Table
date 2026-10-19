@@ -1239,6 +1239,10 @@ public class Player extends GameEntity implements Comparable<Player> {
                 }
                 view.updateNumDrawnThisTurn(this);
 
+                // A library-to-hand movement can also be a tutor. Emit the
+                // successful draw itself so consumers need not infer rules.
+                game.fireEvent(new GameEventCardDrawn(getView()));
+
                 final Map<AbilityKey, Object> runParams = AbilityKey.mapFromPlayer(this);
                 if (params != null) {
                     runParams.putAll(params);

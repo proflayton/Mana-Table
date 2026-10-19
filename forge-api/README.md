@@ -1,7 +1,8 @@
 # Mana Table engine API
 
-Mana Table is a desktop application with a web UI: a deck workshop and playable
-match table, backed by Forge's existing rules and AI.
+Mana Table includes a native desktop deck workshop and playable match table,
+backed by Forge's existing rules and AI. The older Electron client also consumes
+this API.
 `forge-api` supplies catalog, deck, and match hooks. It depends on the shared
 `forge-gui` module (including the human controller), `forge-ai`, `forge-game`, and
 `forge-core`. It creates no Swing or LibGDX UI; `HeadlessPlatform` supplies the
@@ -37,7 +38,7 @@ The records contain values rather than live engine objects. The desktop serializ
 them through its private transport. Explicit multiplayer hosting starts the seat
 synchronization listener; the desktop command API remains on private stdin/stdout pipes.
 The ready message advertises `protocolVersion: 2` and the `seat-sync`, `snapshots`,
-`command-receipts`, `resume`, and `table-social` capabilities. All connected players
+`command-receipts`, `resume`, `table-social`, and `deck-workshop` capabilities. All connected players
 need this build; the seat synchronization handshake now uses version 3.
 Printing IDs are opaque, case-sensitive identifiers; clients must round-trip them.
 `multiplayerState` includes `tableId`. Pass that ID to `tableSocial` to read the
@@ -142,6 +143,37 @@ correlates request IDs and records diagnostics in the active profile's log.
 | `export` | `{kind: "text"}` or `{kind: "forge"}`; deck-list text |
 | `deckPresets`, `presetImport` | List attributed presets; import one by `{id}` |
 | `practice` | `{action: "shuffle" / "mulligan" / "draw" / "bottom", index?}`; opening-hand sandbox |
+| `workshop` | `{deckId, revision}`; durable playable-content version, plan/question, roles, pins, Considering, source link, history and draft-safe estimates |
+| `workshopMetadata` | `{deckId, revision, metadataRevision?, plan?, question?, roles?, considering?}`; optimistic metadata edits; roles may overlap and Considering never enters a game |
+| `workshopRestore` | `{deckId, revision, versionId}`; restore immutable played contents while preserving current notes and source link |
+| `workshopMove` | `{deckId, revision, metadataRevision, cardId, to, cutCardId?}`; move Main/Considering or swap one candidate for one main-deck card as one durable transaction |
+| `workshopSourcePreview` | `{url}`; bounded public Archidekt fetch, mapping preview, categories and excluded rows; no deck mutation |
+| `workshopSourceRefresh` | `{deckId, revision}`; fetch linked source and compare accepted baseline, current local deck and remote contents |
+| `workshopSourceApply` | `{token, deckId?, revision?, choice}`; `remote`, `local`, conflict-free `merge`, or independent `copy`; stale previews and unresolved mappings fail |
+| `workshopPractice` | `{deckId, revision, action, index?, question?}`; `new`, `draw`, `mulligan` (redraw), `bottom`, `keep`; version-bound draw-only samples, not rules-aware London mulligans |
+| `workshopStartTest` | `{deckId, revision, opponents, question?}`; persist exact saved playable version before launching a real Forge solo match; Commander tests require explicit commander sections |
+| `workshopTests`, `workshopTestNote` | `{deckId}` or `{deckId, testId, note}`; durable observed facts and separate player notes, including interrupted tests |
+
+Workshop content IDs hash rules-card quantities, sections and format independently
+of the editor revision. Renaming, printing choices, tags and notes preserve test
+evidence. Metadata has its own revision guard. Existing version-1 deck files remain
+readable; workshop metadata/history and test records live in separate subdirectories.
+Source applications and Main/Considering swaps use a durable intent journal so both
+deck contents and their metadata recover together after an interrupted write.
+Undo/redo follows the same in-memory deck-history boundary for card moves and
+applies the corresponding Considering count delta, preserving unrelated notes and
+manual Considering edits. A conflicting manual removal fails before changing the
+deck. Durable versions remain available after restarting, when transient undo
+history is no longer present. Duplication copies the current workspace and source
+baseline into a fresh history without copying another deck's test records.
+
+Archidekt integration reads public decks only. Original source JSON preserves
+printing, finish, categories, notes and excluded cards; unmapped rows block import
+instead of disappearing. Refresh never overwrites the local deck before a preview
+is accepted. Independent quantity changes can merge; conflicting edits require a
+choice, and an unchanged source does not manufacture a gameplay version. Source
+checking requires no account credentials. Returning changes to Archidekt uses deck
+export and opening the source site; authenticated remote write-back is not provided.
 
 Text imports use Forge's recognizer after normalizing exported annotations:
 

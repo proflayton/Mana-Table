@@ -11,10 +11,11 @@ internal sealed partial class TableGame
     private string deckSection = "", deckCardSection = "Main", deckFilter = "";
     private CatalogCard? librarySelection;
     private string? deckBackId;
-    private const int DeckRows = 10;
-    private bool DeckReady => selectedDeckDetails is { Problem.Length: 0, SaveError.Length: 0 } && selectedDeckDetails.CommanderIds.Length > 0;
+    private const int DeckRows = 9;
+    private bool CommanderDeck => selectedDeckDetails?.Format is null or "Commander";
+    private bool DeckReady => selectedDeckDetails is { Problem.Length: 0, SaveError.Length: 0 } && (!CommanderDeck || selectedDeckDetails.CommanderIds.Length > 0);
     private bool DeckCanCopy => selectedDeckDetails?.Entries.Any(e => e.Quantity > 0) == true;
-    private string DeckScope => $"setup:{selectedDeckDetails?.Id}:{selectedDeckDetails?.Revision}:{deckEditor}:{commanderCandidates}:{deckSection}:{deckFilter}:{deckCardsPage}:{deckCardId}:{deckCardSection}:{librarySelection?.Id}:{catalogGeneration}:{deckIssuesOnly}:{deckIssuePage}:{deckCardIssuePage}:{deckMenu}";
+    private string DeckScope => $"setup:{selectedDeckDetails?.Id}:{selectedDeckDetails?.Revision}:{deckEditor}:{commanderCandidates}:{deckSection}:{deckFilter}:{deckCardsPage}:{deckCardId}:{deckCardSection}:{librarySelection?.Id}:{catalogGeneration}:{deckIssuesOnly}:{deckIssuePage}:{deckCardIssuePage}:{deckMenu}:{WorkshopScope}";
     private DeckIssue[] DeckIssues => selectedDeckDetails is not { } deck ? [] : deck.Issues.Length > 0 ? deck.Issues
         : deck.Problem.Length > 0 ? [new("LEGACY", deck.Problem, null, [])] : [];
     private DeckIssue[] CardIssues(string cardId, string section) => DeckIssues
@@ -27,6 +28,7 @@ internal sealed partial class TableGame
     private CatalogCard? DeckSelection {
         get {
             if (librarySelection != null) return librarySelection;
+            if (deckCardSection == "Considering" && workshop?.Considering.FirstOrDefault(c => c.CardId == deckCardId) is { } option) return option.Card;
             var entry = selectedDeckDetails?.Entries.FirstOrDefault(e => e.Id == deckCardId && e.Section == deckCardSection)
                 ?? selectedDeckDetails?.Entries.FirstOrDefault(e => e.Id == deckCardId);
             return entry == null ? null : new(entry.Id, entry.Card, entry.ManaValue, entry.ColorIdentity, entry.Section, entry.Edition);
@@ -35,8 +37,11 @@ internal sealed partial class TableGame
     private void ApplyDeck(DeckDetails details, bool open = false)
     {
         bool changed = selectedDeckDetails?.Id != details.Id;
+        string? previousFormat = selectedDeckDetails?.Format;
         int? identity = CommanderIdentity;
         selectedDeck = new(details.Id, details.Name); selectedDeckDetails = details; InvalidateDeckConfirmation();
+        if (previousFormat != details.Format) { workshopSetup = null; workshopPlayers = details.Format == "Commander" ? Math.Min(4, workshopPlayers) : 2; }
+        RequestWorkshopRefresh(changed);
         deckIssuePage = deckCardIssuePage = 0;
         if (changed) {
             commanderCandidates = details.CommanderIds.Length == 0 && details.Entries.Length > 0;
@@ -99,10 +104,12 @@ internal sealed partial class TableGame
     {
         if (DeckSelection is not { } card || deckCardSection == "Commander") return;
         if (count < 0 || count > 1000) { error = "Quantity must be between 0 and 1000."; return; }
+        if (deckCardSection == "Considering") { ConsideringQuantity(card, count); return; }
         string section = deckCardSection;
         EditDeck(d => engine.EditDeckAsync(d.Id, d.Revision, [new(section, card.Id, count)]), "Deck saved.");
     }
-    private int DeckQuantity() => DeckSelection is { } card ? selectedDeckDetails!.Entries.FirstOrDefault(e => e.Id == card.Id && e.Section == deckCardSection)?.Quantity ?? 0 : 0;
+    private int DeckQuantity() => DeckSelection is not { } card ? 0 : deckCardSection == "Considering" ? workshop?.Considering.FirstOrDefault(c => c.CardId == card.Id)?.Quantity ?? 0
+        : selectedDeckDetails!.Entries.FirstOrDefault(e => e.Id == card.Id && e.Section == deckCardSection)?.Quantity ?? 0;
     private void MoveDeckCard()
     {
         if (DeckSelection is not { } card || deckCardSection is not ("Main" or "Sideboard")) return;
@@ -135,7 +142,7 @@ internal sealed partial class TableGame
             });
         }, "Copying your deck list", "Preparing the commander, main deck, and sideboard for the clipboard.");
     }
-    private void CloseDeckEditor() { deckEditor = false; deckTextFocus = deckMenu = ""; textFocus = false; }
+    private void CloseDeckEditor() { deckEditor = false; deckTextFocus = deckMenu = workshopDialog = ""; textFocus = false; }
     private void OpenDeckEditor() => OpenDeckEditorAt(null);
     private void OpenDeckEditorAt(DeckEntry? entry) {
         if (selectedDeck is { } deck) Work(async () => {
@@ -147,10 +154,11 @@ internal sealed partial class TableGame
         }, "Opening the deck builder", "Getting your saved list ready to edit.");
     }
     private void SelectDeckRow(DeckEntry entry) { deckCardId = entry.Id; deckCardSection = entry.Section; librarySelection = null; deckBackId = null; deckCardIssuePage = 0; }
-    private void FilterDeck(string section, bool leaders = false) { deckSection = section; commanderCandidates = leaders; deckCardsPage = 0; deckIssuesOnly = false; }
+    private void FilterDeck(string section, bool leaders = false) { deckSection = section; commanderCandidates = leaders; deckCardsPage = 0; deckIssuesOnly = false; workshopRoleFilter = ""; workshopManaFilter = null; }
     private void ToggleDeckIssues()
     {
         deckIssuesOnly = !deckIssuesOnly; deckCardsPage = 0;
+        workshopRoleFilter = ""; workshopManaFilter = null;
         if (deckIssuesOnly) { deckSection = deckFilter = ""; commanderCandidates = false; }
     }
     private void ShowDeckIssue(DeckIssue issue)
@@ -162,10 +170,12 @@ internal sealed partial class TableGame
             deckCardsPage = Math.Max(0, Array.FindIndex(DeckRowsToShow(), e => e.Id == entry.Id && e.Section == entry.Section) / DeckRows);
         } else if (issue.Code is "COMMANDER_COUNT" or "MISSING_COMMANDER") FilterDeck("", true);
     }
-    private DeckEntry[] DeckRowsToShow() => selectedDeckDetails?.Entries
+    private DeckEntry[] DeckRowsToShow() => (deckSection == "Considering" ? workshop?.Considering.Select(c => new DeckEntry("Considering", c.CardId, c.Card.Card, c.Quantity, c.Card.ManaValue, c.Card.ColorIdentity, c.Card.Edition)) ?? [] : selectedDeckDetails?.Entries ?? [])
         .Where(e => (deckSection.Length == 0 || e.Section == deckSection)
-            && (!commanderCandidates || selectedDeckDetails.CommanderOptions.Any(c => c.Id == e.Id))
+            && (!commanderCandidates || selectedDeckDetails!.CommanderOptions.Any(c => c.Id == e.Id))
             && (!deckIssuesOnly || CardIssues(e.Id, e.Section).Length > 0)
+            && (workshopRoleFilter.Length == 0 || workshop?.Roles.Any(r => r.CardId == e.Id && r.Roles.Contains(workshopRoleFilter, StringComparer.OrdinalIgnoreCase)) == true)
+            && (workshopManaFilter == null || !e.Card.Type.Contains("Land") && Math.Min(6, e.ManaValue) == workshopManaFilter)
             && (deckFilter.Length == 0 || (e.Card.Name + " " + e.Card.Type + " " + e.Card.Text).Contains(deckFilter, StringComparison.OrdinalIgnoreCase)))
-        .OrderBy(e => e.Card.Name).ThenBy(e => e.Section).ToArray() ?? [];
+        .OrderBy(e => e.Card.Name).ThenBy(e => e.Section).ToArray();
 }

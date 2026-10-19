@@ -65,6 +65,7 @@ internal static class DeckWorkshopRegression
         Check(restored.Entries.Sum(e => e.Quantity) == 100 && restored.CommanderIds.Length == 1 && restored.Entries.Any(e => e.Section == "Sideboard" && e.Card.Name == "Sol Ring"), "Export/import round trip preserves section counts");
         deck = await engine.OpenDeckAsync(originalId);
         Check(deck.Name == "Renamed workshop regression" && Contents(deck) == valid && deck.Problem.Length == 0, "Editing the duplicate leaves the original saved deck intact");
+        checks.AddRange(await DeckTuningRegression.RunAsync(paths));
         await File.WriteAllTextAsync(Path.Combine(paths.Profile, "workshop-adapter-results.json"), JsonSerializer.Serialize(checks, new JsonSerializerOptions { WriteIndented = true }));
     }
 }

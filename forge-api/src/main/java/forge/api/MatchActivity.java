@@ -24,12 +24,19 @@ public final class MatchActivity {
     private String phaseName = "Pregame";
     private Integer activePlayerId;
     private long revision;
+    private int ownTurns, cardsDrawn, landsPlayed, spellsCast, mulligans, commanderCasts;
 
     MatchActivity(PlayerView viewer) { this(viewer, new MatchIdentities()); ownsIdentities = true; }
     MatchActivity(PlayerView viewer, MatchIdentities identities) { this.viewer = Objects.requireNonNull(viewer); this.identities = identities; }
 
     public synchronized List<Entry> snapshot() { return List.copyOf(entries); }
     public synchronized Frame frame() { return new Frame(revision, turn, phase, phaseName, activePlayerId, snapshot()); }
+
+    /** Exact event totals for this viewer, independent of the bounded feed. */
+    public synchronized Map<String, Integer> observations() {
+        return Map.of("ownTurns", ownTurns, "cardsDrawn", cardsDrawn, "landsPlayed", landsPlayed,
+                "spellsCast", spellsCast, "mulligans", mulligans, "commanderCasts", commanderCasts);
+    }
 
     synchronized String visualId(CardView card) {
         if (!visible(card)) { if (card != null && visibleIds.remove(card) != null) identities.forget(card); return null; }
@@ -67,6 +74,7 @@ public final class MatchActivity {
             if (event instanceof GameEventShuffle shuffled) identities.shuffled(shuffled);
         }
         if (event instanceof GameEventTurnBegan e) {
+            if (viewer.equals(e.turnOwner())) ownTurns++;
             turn = e.turnNumber();
             phase = "UNTAP";
             phaseName = "Untap";
@@ -78,10 +86,15 @@ public final class MatchActivity {
             activePlayerId = e.playerTurn().getId();
             revision++;
         } else if (event instanceof GameEventLandPlayed e) {
+            if (viewer.equals(e.player())) landsPlayed++;
             add("land", e.player(), playerName(e.player()) + " played " + cardName(e.land()) + ".", e.land());
         } else if (event instanceof GameEventSpellAbilityCast e) {
             var player = e.si().getActivatingPlayer();
             var card = e.sa().getHostCard();
+            if (viewer.equals(player) && e.sa().isSpell() && !e.copied()) {
+                spellsCast++;
+                if (card != null && card.isCommander()) commanderCasts++;
+            }
             String action = e.sa().isSpell() ? " cast " : e.si().isTrigger() ? " triggered an ability of " : " activated an ability of ";
             add(e.sa().isSpell() ? "cast" : "ability", player, playerName(player) + action + cardName(card) + ".", card);
         } else if (event instanceof GameEventSpellResolved e) {
@@ -139,7 +152,10 @@ public final class MatchActivity {
             // A shuffle breaks identity correlation even when the new top is visible.
             visibleIds.keySet().removeIf(card -> card.getZone() == ZoneType.Library && e.player().equals(card.getController()));
         } else if (event instanceof GameEventMulligan e) {
+            if (viewer.equals(e.player())) mulligans++;
             add("mulligan", e.player(), playerName(e.player()) + " took a mulligan.", null);
+        } else if (event instanceof GameEventCardDrawn e && viewer.equals(e.player())) {
+            cardsDrawn++;
         }
     }
 }

@@ -63,6 +63,35 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
     private boolean okEnabled, cancelEnabled;
     private Input displayedInput;
     private CardView promptSource;
+    private boolean conceded;
+    private final List<java.util.function.Consumer<PlaytestFrame>> playtestObservers = new ArrayList<>();
+
+    public record PlaytestFrame(String gameId, String status, String result, Map<String, Integer> observations) { }
+
+    void observePlaytest(java.util.function.Consumer<PlaytestFrame> observer) {
+        synchronized (gate) { playtestObservers.add(observer); observer.accept(playtestFrame()); }
+    }
+
+    private PlaytestFrame playtestFrame() {
+        String status = error != null ? "error" : conceded ? "conceded" : game.isGameOver() ? "completed" : closed ? "interrupted" : "running";
+        String result = error != null ? error : gameResult();
+        if (result == null && conceded) result = "Conceded";
+        return new PlaytestFrame(id, status, result, activity.observations());
+    }
+
+    private String gameResult() {
+        if (!game.isGameOver() || game.getOutcome() == null) return null;
+        var outcome = game.getOutcome();
+        return viewer.getHasLost() ? "Defeat" : outcome.isDraw() ? "Draw"
+                : outcome.getWinningLobbyPlayer() == human.getLobbyPlayer() ? "Victory" : "Defeat";
+    }
+
+    private void notifyPlaytest() {
+        if (!playtestObservers.isEmpty()) {
+            var frame = playtestFrame();
+            for (var observer : playtestObservers) observer.accept(frame);
+        }
+    }
 
     private static final class Pending {
         final String id = UUID.randomUUID().toString();
@@ -132,6 +161,7 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
     void clearDecision() { pending = null; }
     void cancelDecision() {
         closed = true;
+        notifyPlaytest();
         if (pending != null) pending.response.completeExceptionally(new CancellationException("Match closed"));
         pending = null;
     }
@@ -406,6 +436,7 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
             if (game.isGameOver()) return latest;
             Pending old = pending;
             pending = null;
+            conceded = true;
             human.concede();
             // Publish the loss before releasing a dialog's waiter: pregame
             // orchestration must observe the departure when it handles cancellation.
@@ -483,11 +514,7 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
                     "targets", visible ? stackTargets(item) : List.of(),
                     "controller", item.getActivatingPlayer() == null ? "" : item.getActivatingPlayer().getName()));
         }
-        String result = null;
-        if (game.isGameOver() && game.getOutcome() != null) {
-            var outcome = game.getOutcome();
-            result = viewer.getHasLost() ? "Defeat" : outcome.isDraw() ? "Draw" : outcome.getWinningLobbyPlayer() == human.getLobbyPlayer() ? "Victory" : "Defeat";
-        }
+        String result = gameResult();
         var activityFrame = activity.frame();
         activityRevision = activityFrame.revision();
         if (prompt != null && prompt.input instanceof InputPassPriority) {
@@ -502,6 +529,7 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
                 "stack", stack, "combat", combatState(prompt), "prompt", prompt == null ? null : prompt.prompt,
                 "ignoredPriorityAbilities", priorityAbilities(human.getIgnoredPriorityAbilities(), prompt),
                 "result", result, "notices", List.copyOf(notices), "activity", activityFrame.entries()));
+        notifyPlaytest();
     }
 
     private List<Map<String, Object>> stackTargets(StackItemView root) {
@@ -643,6 +671,7 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
             var next = new LinkedHashMap<>(latest);
             next.put("revision", ++revision); next.put("status", "error"); next.put("error", failure); next.put("prompt", null);
             latest = Collections.unmodifiableMap(next);
+            notifyPlaytest();
             human.concede();
             if (!game.isGameOver()) game.setGameOver(GameEndReason.AllHumansLost);
             human.getInputQueue().onGameOver(true);

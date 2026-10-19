@@ -29,6 +29,9 @@ public final class DesktopEngine implements AutoCloseable {
     private static final Gson JSON = new GsonBuilder().serializeNulls().create();
     private final CardCatalog catalog;
     private final Path directory;
+    private final DeckWorkshopStore workshop;
+    private final DeckPlaytests playtests;
+    private String handTestId;
     private DeckEditor editor;
     private String deckId;
     private String format = "Constructed";
@@ -46,6 +49,8 @@ public final class DesktopEngine implements AutoCloseable {
         this.catalog = catalog;
         this.directory = directory.toAbsolutePath().normalize();
         Files.createDirectories(this.directory);
+        workshop = new DeckWorkshopStore(this.directory, catalog);
+        playtests = new DeckPlaytests(this.directory);
     }
 
     public static void main(String[] args) throws Exception {
@@ -56,7 +61,7 @@ public final class DesktopEngine implements AutoCloseable {
         var data = EngineResources.load(Path.of(args[0]));
         var engine = new DesktopEngine(CardCatalog.fromDatabases(data.getAvailableDatabases().values()), Path.of(args[1]));
         engine.resources = Path.of(args[0]);
-        protocol.println(JSON.toJson(Map.of("event", "ready", "printings", engine.catalog.size(), "protocolVersion", 2, "capabilities", List.of("seat-sync", "snapshots", "command-receipts", "resume", "table-social"))));
+        protocol.println(JSON.toJson(Map.of("event", "ready", "printings", engine.catalog.size(), "protocolVersion", 2, "capabilities", List.of("seat-sync", "snapshots", "command-receipts", "resume", "table-social", "deck-workshop"))));
         try (engine; var input = new BufferedReader(new InputStreamReader(System.in, StandardCharsets.UTF_8))) {
             String line;
             while ((line = input.readLine()) != null) {
@@ -84,6 +89,8 @@ public final class DesktopEngine implements AutoCloseable {
 
     @Override
     public void close() {
+        try { playtests.interruptActive(); }
+        catch (RuntimeException error) { System.err.println("Could not finalize playtest history: " + error.getMessage()); }
         for (var seat : localSeats.values()) seat.close();
         localSeats.clear();
         if (match != null) match.close();
@@ -116,6 +123,7 @@ public final class DesktopEngine implements AutoCloseable {
         // document, so a delayed action cannot edit a different opened deck.
         if (p.has("deckId") && List.of("edit", "rename", "undo", "redo", "save", "export", "duplicate").contains(method)) {
             requireDeck();
+            workshop.assertWritable(deckId);
             if (!deckId.equals(string(p, "deckId", "")) || !p.has("revision") || p.get("revision").getAsLong() != editor.snapshot().revision())
                 throw new IllegalArgumentException("The deck changed. Reopen it before editing.");
         }
@@ -127,6 +135,55 @@ public final class DesktopEngine implements AutoCloseable {
                     string(p, "type", ""), string(p, "sort", "name"), !p.has("unique") || p.get("unique").getAsBoolean(),
                     integer(p, "colorIdentity"), string(p, "role", ""));
             case "deckInsights" -> { requireDeck(); yield DeckInsights.analyze(catalog, editor.snapshot(), format, deckId); }
+            case "workshop" -> { requireWorkshopDeck(p); yield workshop.view(deckId, editor.snapshot(), format); }
+            case "workshopMetadata" -> { requireWorkshopDeck(p); yield workshop.metadata(deckId, editor.snapshot(), format, p); }
+            case "workshopRestore" -> {
+                requireWorkshopDeck(p);
+                var applied = workshop.restore(deckId, editor, format, string(p, "versionId", ""));
+                format = applied.format(); clearPractice(); yield save();
+            }
+            case "workshopMove" -> {
+                requireWorkshopDeck(p);
+                workshop.move(deckId, editor, format, p.get("metadataRevision").getAsLong(), string(p, "cardId", ""),
+                        string(p, "to", ""), string(p, "cutCardId", ""));
+                clearPractice(); yield save();
+            }
+            case "workshopSourcePreview" -> workshop.importPreview(string(p, "url", ""));
+            case "workshopSourceRefresh" -> { requireWorkshopDeck(p); yield workshop.refresh(deckId, editor.snapshot(), format); }
+            case "workshopSourceApply" -> {
+                ensureSaved();
+                String targetId = string(p, "deckId", null);
+                if (targetId != null) requireWorkshopDeck(p);
+                var applied = workshop.apply(string(p, "token", ""), targetId, targetId == null ? null : editor, format, string(p, "choice", "remote"));
+                editor = applied.editor(); deckId = applied.deckId(); format = applied.format(); clearPractice(); yield save();
+            }
+            case "workshopTests" -> playtests.list(string(p, "deckId", ""));
+            case "workshopTestNote" -> playtests.note(string(p, "deckId", ""), string(p, "testId", ""), string(p, "note", ""));
+            case "workshopPractice" -> {
+                requireWorkshopDeck(p);
+                String action = string(p, "action", "new");
+                if (action.equals("new")) {
+                    var snapshot = editor.snapshot();
+                    var sample = playtests.newHand(deckId, workshop.ensureVersion(deckId, snapshot, format), snapshot.name(), format, snapshot.entries(), string(p, "question", ""));
+                    handTestId = sample.testId(); yield sample;
+                }
+                var active = playtests.activeHand(deckId);
+                if (active == null || handTestId == null || !handTestId.equals(active.testId())) throw new IllegalArgumentException("Start a new opening hand first");
+                yield playtests.practice(handTestId, action, integer(p, "index"));
+            }
+            case "workshopStartTest" -> {
+                requireWorkshopDeck(p); ensureSaved();
+                if (format.equals("Commander") && editor.snapshot().entries().stream().noneMatch(row -> row.section().equals("Commander") && row.quantity() > 0))
+                    throw new IllegalArgumentException("Set your commander in the deck before testing so the saved version matches the game.");
+                validateMatchStart(p);
+                var snapshot = editor.snapshot();
+                var opponents = opponentIds(p);
+                var record = playtests.begin(deckId, workshop.ensureVersion(deckId, snapshot, format), snapshot.name(), format,
+                        snapshot.entries(), "game", string(p, "question", ""), opponents);
+                try { startMatch(p, opponents, record.id()); }
+                catch (Exception error) { playtests.finish(record.id(), "error", error.getMessage()); throw error; }
+                yield playtests.get(deckId, record.id());
+            }
             case "list" -> list();
             case "new" -> create(string(p, "name", "Untitled deck"), string(p, "format", "Constructed"));
             case "open" -> open(string(p, "id", ""));
@@ -134,39 +191,47 @@ public final class DesktopEngine implements AutoCloseable {
                 requireDeck();
                 var copy = new Deck(editor.toDeck(), checkedName(string(p, "name", "")));
                 ensureSaved();
-                editor = new DeckEditor(catalog, copy);
-                deckId = UUID.randomUUID().toString();
+                var copiedEditor = new DeckEditor(catalog, copy);
+                String copiedId = UUID.randomUUID().toString();
+                workshop.duplicate(deckId, copiedId, copiedEditor.snapshot(), format);
+                editor = copiedEditor;
+                deckId = copiedId;
                 clearPractice();
                 yield save();
             }
             case "snapshot" -> state();
             case "setCommanders" -> {
                 requireDeck();
+                workshop.assertWritable(deckId);
                 if (!deckId.equals(string(p, "deckId", ""))) throw new IllegalArgumentException("The selected deck changed. Reopen the deck before editing.");
                 var ids = JSON.fromJson(p.get("cardIds"), String[].class);
+                String beforeToken = editor.historyToken();
                 DeckCommanders.set(editor, p.get("revision").getAsLong(), List.of(ids));
+                workshop.commanderFormatTransition(deckId, beforeToken, editor, format);
                 format = "Commander";
                 yield save();
             }
             case "edit" -> {
                 requireDeck();
+                workshop.assertWritable(deckId);
                 var edits = JSON.fromJson(p.get("edits"), DeckEditor.Edit[].class);
                 editor.apply(p.get("revision").getAsLong(), List.of(edits));
                 yield save();
             }
             case "rename" -> {
                 requireDeck();
+                workshop.assertWritable(deckId);
                 editor.rename(p.get("revision").getAsLong(), string(p, "name", ""));
                 yield save();
             }
-            case "undo" -> { requireDeck(); editor.undo(p.get("revision").getAsLong()); yield save(); }
-            case "redo" -> { requireDeck(); editor.redo(p.get("revision").getAsLong()); yield save(); }
+            case "undo" -> { requireDeck(); format = workshop.history(deckId, editor, format, "undo", p.get("revision").getAsLong()).format(); yield save(); }
+            case "redo" -> { requireDeck(); format = workshop.history(deckId, editor, format, "redo", p.get("revision").getAsLong()).format(); yield save(); }
             case "format" -> {
                 requireDeck();
                 if (p.get("revision").getAsLong() != editor.snapshot().revision()) {
                     throw new IllegalArgumentException("Deck changed; refresh before changing format");
                 }
-                format = checkedFormat(string(p, "format", "Constructed"));
+                format = workshop.format(deckId, editor, format, checkedFormat(string(p, "format", "Constructed"))).format();
                 yield save();
             }
             case "save" -> { requireDeck(); yield save(); }
@@ -233,23 +298,7 @@ public final class DesktopEngine implements AutoCloseable {
             case "matchStart" -> {
                 requireDeck();
                 ensureSaved();
-                if (match != null && !match.finished()) throw new IllegalStateException("Finish or concede the current match first");
-                if (p.has("deckId") && !deckId.equals(string(p, "deckId", "")) || p.has("revision") && p.get("revision").getAsLong() != editor.snapshot().revision()) {
-                    throw new IllegalArgumentException("The deck changed. Reopen match setup before starting.");
-                }
-                var prepared = MatchSetup.prepare(editor.toDeck(), format, string(p, "commanderId", ""));
-                if (prepared.preview().problem() != null) throw new IllegalArgumentException(prepared.preview().problem());
-                var opponents = new ArrayList<String>();
-                if (p.has("opponents")) {
-                    if (!p.get("opponents").isJsonArray()) throw new IllegalArgumentException("Opponents must be a list of deck IDs");
-                    for (var opponent : p.getAsJsonArray("opponents")) {
-                        if (!opponent.isJsonPrimitive() || !opponent.getAsJsonPrimitive().isString()) throw new IllegalArgumentException("Each opponent must be a deck ID");
-                        opponents.add(opponent.getAsString());
-                    }
-                } else opponents.add(string(p, "opponent", "green"));
-                if (multiplayer != null && multiplayer.connected()) throw new IllegalStateException("Leave the current table first");
-                if (match != null) match.close();
-                match = SeatConnection.local(MatchSession.solo(prepared.deck(), format, opponents, resources, directory.getParent()));
+                startMatch(p, opponentIds(p), null);
                 yield match.state();
             }
             case "matchState" -> {
@@ -296,6 +345,7 @@ public final class DesktopEngine implements AutoCloseable {
         format = loadedFormat;
         saveError = null;
         clearPractice();
+        workshop.ensureVersion(deckId, editor.snapshot(), format);
         return state();
     }
 
@@ -333,6 +383,7 @@ public final class DesktopEngine implements AutoCloseable {
 
     private Object save() {
         try {
+            workshop.assertWritable(deckId);
             var snapshot = editor.snapshot();
             var stored = new StoredDeck(1, snapshot.name(), format, snapshot.entries().stream()
                     .map(entry -> new DeckEditor.Edit(entry.section(), entry.card().id(), entry.quantity())).toList(),
@@ -342,6 +393,7 @@ public final class DesktopEngine implements AutoCloseable {
             Files.writeString(temporary, JSON.toJson(stored), StandardCharsets.UTF_8);
             try { Files.move(temporary, target, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE); }
             catch (AtomicMoveNotSupportedException error) { Files.move(temporary, target, StandardCopyOption.REPLACE_EXISTING); }
+            workshop.ensureVersion(deckId, snapshot, format);
             saveError = null;
         } catch (Exception error) { saveError = error.getMessage(); }
         return state();
@@ -418,9 +470,46 @@ public final class DesktopEngine implements AutoCloseable {
         }
         return multiplayer;
     }
-    private void clearPractice() { library.clear(); hand.clear(); mulligans = 0; draws = 0; }
+    private void clearPractice() { library.clear(); hand.clear(); mulligans = 0; draws = 0; handTestId = null; }
+    private void requireWorkshopDeck(JsonObject p) {
+        requireDeck();
+        workshop.assertWritable(deckId);
+        if (!deckId.equals(string(p, "deckId", "")) || !p.has("revision") || p.get("revision").getAsLong() != editor.snapshot().revision())
+            throw new IllegalArgumentException("The deck changed. Refresh the workshop before continuing.");
+    }
+    private static List<String> opponentIds(JsonObject p) {
+        var opponents = new ArrayList<String>();
+        if (p.has("opponents")) {
+            if (!p.get("opponents").isJsonArray()) throw new IllegalArgumentException("Opponents must be a list of deck IDs");
+            for (var opponent : p.getAsJsonArray("opponents")) {
+                if (!opponent.isJsonPrimitive() || !opponent.getAsJsonPrimitive().isString()) throw new IllegalArgumentException("Each opponent must be a deck ID");
+                opponents.add(opponent.getAsString());
+            }
+        } else opponents.add(string(p, "opponent", "green"));
+        return opponents;
+    }
+    private void startMatch(JsonObject p, List<String> opponents, String testId) throws Exception {
+        validateMatchStart(p);
+        var prepared = MatchSetup.prepare(editor.toDeck(), format, string(p, "commanderId", ""));
+        if (testId == null) playtests.interruptActive();
+        if (match != null) match.close();
+        var session = MatchSession.solo(prepared.deck(), format, opponents, resources, directory.getParent());
+        try {
+            if (testId != null) playtests.attach(testId, session);
+            match = SeatConnection.local(session);
+        } catch (RuntimeException error) { session.closeTable(); throw error; }
+    }
+    private void validateMatchStart(JsonObject p) {
+        if (match != null && !match.finished()) throw new IllegalStateException("Finish or concede the current match first");
+        if (p.has("deckId") && !deckId.equals(string(p, "deckId", "")) || p.has("revision") && p.get("revision").getAsLong() != editor.snapshot().revision())
+            throw new IllegalArgumentException("The deck changed. Reopen match setup before starting.");
+        var prepared = MatchSetup.prepare(editor.toDeck(), format, string(p, "commanderId", ""));
+        if (prepared.preview().problem() != null) throw new IllegalArgumentException(prepared.preview().problem());
+        if (multiplayer != null && multiplayer.connected()) throw new IllegalStateException("Leave the current table first");
+    }
     private void requireDeck() { if (editor == null) { throw new IllegalStateException("Open or create a deck first"); } }
     private void ensureSaved() {
+        if (deckId != null) workshop.assertWritable(deckId);
         if (saveError != null) { throw new IllegalStateException("Save the current deck before switching: " + saveError); }
     }
     private Path file(String id) {

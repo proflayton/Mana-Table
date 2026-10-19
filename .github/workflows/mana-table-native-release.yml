@@ -150,6 +150,7 @@ jobs:
             @{ Name='priority-1280'; Mode='--smoke-priority-abilities'; Result='priority-ability-results.json' },
             @{ Name='priority-1200'; Mode='--smoke-priority-abilities'; Result='priority-ability-results.json'; Size='1200x900' },
             @{ Name='workshop'; Mode='--smoke-workshop'; Result='workshop-ui-results.json' },
+            @{ Name='tuning'; Mode='--smoke-deck-tuning'; Result='deck-tuning-ui-results.json'; Size='1280x900' },
             @{ Name='import'; Mode='--smoke-deck-import'; Result='deck-import-results.json' },
             @{ Name='building'; Mode='--smoke-deck-building'; Result='deck-building-results.json' },
             @{ Name='lobby'; Mode='--smoke-lobby'; Result='lobby-results.json' }

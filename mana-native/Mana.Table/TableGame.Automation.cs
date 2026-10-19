@@ -65,6 +65,16 @@ internal sealed partial class TableGame
         internal void RenameDeck(string name) => game.RenameDeck(name);
         internal void DuplicateDeck(string name) => game.DuplicateDeck(name);
         internal void EditPreset(string id) => game.ImportDeck(() => game.engine.ImportPresetAsync(id), true);
+        internal WorkshopState? Workshop => game.workshop;
+        internal bool WorkshopCurrent => game.WorkshopCurrent;
+        internal HandPractice? WorkshopHand => game.workshopHand;
+        internal DeckTest[] WorkshopTests => game.workshopTests;
+        internal string WorkshopTab => game.workshopTab;
+        internal string WorkshopDialog => game.workshopDialog;
+        internal string WorkshopError => game.workshopError;
+        internal void SetWorkshopPlan(string plan, string question) => game.SaveWorkshopMetadata(new(Plan: plan, Question: question), "Test plan saved.");
+        internal void SaveWorkshopNote(string testId, string note) => game.SaveWorkshopTestNote(game.workshopTests.First(t => t.Id == testId), note);
+        internal void ConcedeWorkshop() => game.ReturnToWorkshop();
         internal Lobby? Lobby => game.lobby;
         internal void ImportDeck(string name, string text) => game.ImportDeck(() => game.engine.ImportAsync(name, text), true);
         internal SoloSetup? SoloSetup => game.soloSetup;

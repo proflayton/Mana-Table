@@ -6,10 +6,14 @@ import forge.game.spellability.SpellAbilityView;
 import forge.game.spellability.StackItemView;
 import forge.game.spellability.TargetChoices;
 
-public record GameEventSpellAbilityCast(SpellAbilityView sa, StackItemView si, int stackIndex, String targetDescription) implements GameEvent {
+public record GameEventSpellAbilityCast(SpellAbilityView sa, StackItemView si, int stackIndex, String targetDescription, boolean copied) implements GameEvent {
+
+    public GameEventSpellAbilityCast(SpellAbilityView sa, StackItemView si, int stackIndex, String targetDescription) {
+        this(sa, si, stackIndex, targetDescription, false);
+    }
 
     public GameEventSpellAbilityCast(SpellAbility sa, SpellAbilityStackInstance si, int stackIndex) {
-        this(SpellAbilityView.get(sa), StackItemView.get(si), stackIndex, computeTargetDescription(sa));
+        this(SpellAbilityView.get(sa), StackItemView.get(si), stackIndex, computeTargetDescription(sa), sa.isCopied());
     }
 
     private static String computeTargetDescription(SpellAbility sa) {

@@ -35,11 +35,19 @@ public class EliminationRegressionTest {
     public void losingTheOnlyHumanEndsTheGameAndAllowsAPlayableRematch() throws Exception {
         String previousId;
         try (var game = new EliminationGame("solo-phage-elimination", false)) {
+            var observations = new DeckPlaytests(Files.createTempDirectory("mana-natural-loss-test"));
+            var test = observations.begin("phage-deck", "phage-version", "Phage test", "Commander", List.of(),
+                    "game", "Can the commander survive its own trigger?", List.of("green", "red", "green"));
+            observations.attach(test.id(), game.table.seat(0));
             game.castPhage = true;
             var ended = game.until(states -> text(states.get(0), "status").equals("finished")).get(0);
             assertTrue(game.castAccepted, "The test must cast Phage through a real priority decision");
             assertTrue(viewer(ended).get("eliminated").getAsBoolean());
             assertEquals(text(ended, "result"), "Defeat");
+            var completed = observations.get("phage-deck", test.id());
+            assertEquals(completed.status(), "completed", "Natural elimination is a completed observation, not a concession");
+            assertEquals(completed.result(), "Defeat");
+            assertEquals(completed.observations().get("commanderCasts"), Integer.valueOf(1));
             assertTrue(ended.get("prompt").isJsonNull());
             assertTrue(ended.getAsJsonArray("activity").asList().stream().anyMatch(entry -> {
                 var event = entry.getAsJsonObject();

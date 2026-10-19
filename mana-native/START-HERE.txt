@@ -1,4 +1,4 @@
-MANA TABLE NATIVE - FOUR-PLAYER COMMANDER
+MANA TABLE NATIVE - BUILD, TEST AND PLAY COMMANDER
 
 Download ManaTable-Setup.exe from https://github.com/proflayton/Mana-Table/releases/latest
 and open it. Setup installs for your Windows account, adds shortcuts, and opens
@@ -52,6 +52,13 @@ Import errors identify the line that needs attention and preserve your saved dec
 Use a text export for structured formats such as MTGO .dek XML or CSV files.
 Companion and Maybeboard sections currently need to be removed from the import;
 the importer reports them rather than adding those cards to the main deck.
+For Archidekt, choose Link Archidekt or paste a public deck URL. Review the import
+before saving it. Linked imports preserve custom categories and put excluded
+cards in Considering. Check for changes previews the source against your local
+edits; choose a merge, keep local, use source, or save a separate source copy.
+Opening Archidekt and copying your playable list lets you bring card edits back
+there. This export includes commander, main and sideboard; categories and
+Considering stay in Mana Table. Changes are not published to Archidekt for you.
 
 PLAY WITH FRIENDS
 1. Every player uses this same build. Change deck opens saved lists, precons,
@@ -80,8 +87,18 @@ Other face flips double-faced cards in the preview without adding another card.
 Changes save automatically. Undo/Redo restores edits, Duplicate makes a separate
 deck, and Copy list exports text with commander and sideboard sections.
 Card counts, a nonland mana curve and live deck checks identify needed changes.
-Finish a valid 100-card deck including its commander(s), then select Review for
-table. Confirm the saved list to return to the lobby. AI opponent choices persist.
+Insights stay available while a draft has errors. Categories can overlap; select
+a role to see its cards, or select a card to edit its categories and mark favorites.
+Considering holds options outside your playable list. Swap a candidate for a main
+deck card in one saved change. Versions restores earlier playable lists.
+Use Test to set a question, sample opening hands, or play against AI with two
+or four Commander players. Hand sampling is draw-only practice; Redraw seven
+does not enforce London mulligan rules. Real games use Forge's full game rules.
+Results keeps observed counts and your notes with the version actually tested.
+Tune deck returns to building; Test again sets up another experiment. Changing
+the deck does not rewrite earlier results. Small AI samples are not a win rate.
+For a friends' table, finish a valid 100-card deck including its commander(s),
+return to setup and confirm the saved list. AI opponent choices persist.
 Opening the builder or choosing another deck clears confirmation and Ready;
 review, confirm, and ready again. Merely browsing or canceling the deck chooser
 leaves your current confirmed deck and readiness intact.

@@ -19,7 +19,7 @@ internal sealed partial class TableGame
         if (deckEditor && selectedDeckDetails != null) { DrawDeckEditor(); return; }
         canvas.Glow(new(310, 450), new(840, 810), Teal * .25f);
         canvas.Text("Gather your table.", 48, 106, Ink, 1.9f, 970, 1, true);
-        canvas.Text("COMMANDER   /   FOUR PLAYERS   /   40 LIFE", 51, 165, Muted, .73f, 970, 1);
+        canvas.Text(CommanderDeck ? "COMMANDER   /   FOUR PLAYERS   /   40 LIFE" : selectedDeckDetails!.Format.ToUpperInvariant() + "   /   TWO PLAYERS", 51, 165, Muted, .73f, 970, 1);
         Button("solo-tab", "Play with AI", 1122, 112, 200, () => SetupMode(true), !busy && !Connected, soloTab && !Connected, 44);
         Button("friends-tab", "Play with friends", 1334, 112, 220, () => SetupMode(false), !busy && !Connected, !soloTab || Connected, 44);
         canvas.Line(new(48, 205), new(1552, 205), LobbyTrim);
@@ -30,6 +30,7 @@ internal sealed partial class TableGame
         else DrawFriendsWelcome();
         if (!Connected) Button("experience-home", "Home", 1115, 920, 160, OpenWelcome, loaded && !busy, height: 38);
         if (setupModal.Length > 0) DrawSetupModal();
+        DrawWorkshopDialog();
     }
     private void DrawLobbyDeck()
     {
@@ -58,7 +59,7 @@ internal sealed partial class TableGame
         int main = deck.Entries.Where(e => e.Section == "Main").Sum(e => e.Quantity), commanders = leaders.Sum(e => e.Quantity);
         int side = deck.Entries.Where(e => e.Section == "Sideboard").Sum(e => e.Quantity);
         canvas.Text((main + commanders).ToString(), 319, 394, Ink, 2.5f, 174, 1, true);
-        canvas.Text("OF 100 CARDS", 322, 461, Muted, .58f, 170, 1);
+        canvas.Text(CommanderDeck ? "OF 100 CARDS" : "CARDS IN MAIN", 322, 461, Muted, .58f, 170, 1);
         canvas.Text($"{main} main\n{commanders} commander{(commanders == 1 ? "" : "s")}\n{side} sideboard", 320, 496, Muted, .73f, 177, 4);
         LobbyPill(DeckConfirmed ? "CONFIRMED" : DeckReady ? "READY TO REVIEW" : "NEEDS CHANGES", 305, 605, 194, DeckConfirmed ? ReadyColor : DeckReady ? Blue : Gold);
         canvas.Text(leaders.Length == 0 ? "No commander selected" : string.Join(" + ", leaders.Select(e => e.Card.Name)), 66, 665, leaders.Length == 0 ? Gold : Ink, .78f, 438, 2);
@@ -88,9 +89,10 @@ internal sealed partial class TableGame
     {
         canvas.Text("A table on your terms", 586, 257, Ink, 1.13f, 650, 1, true);
         LobbyPill("SOLO / AI", 1358, 254, 168, Blue);
-        canvas.Text("You make every decision for your deck. Three AI opponents take the other seats.", 587, 300, Muted, .73f, 920, 1);
+        int opponentCount = Math.Min(3, (soloSetup?.MaxPlayers ?? (CommanderDeck ? 6 : 2)) - 1);
+        canvas.Text(opponentCount == 1 ? "You make every decision for your deck. One AI opponent takes the other seat." : "You make every decision for your deck. Three AI opponents take the other seats.", 587, 300, Muted, .73f, 920, 1);
         DrawLobbySeat(0, "You", selectedDeck?.Name ?? "Choose your deck", DeckConfirmed ? "Deck confirmed. Your seat is reserved." : "Review and confirm your deck to play.", DeckConfirmed ? "CONFIRMED" : "CHOOSING", DeckConfirmed, true);
-        for (int i = 0; i < 3; i++) {
+        for (int i = 0; i < opponentCount; i++) {
             int seat = i;
             var opponent = soloSetup?.Opponents[soloChoices[i]];
             DrawLobbySeat(i + 1, "AI opponent " + (i + 1), opponent?.Name ?? "Waiting for your deck", opponent?.Description ?? "Confirm your deck to choose an opponent.", "AI", opponent != null, false);
@@ -100,7 +102,7 @@ internal sealed partial class TableGame
             Button("ai-next:" + i, ">", x + 395, y + 143, 43, () => soloChoices[seat] = (soloChoices[seat] + 1) % soloSetup!.Opponents.Length, !busy && opponent != null, height: 30);
         }
         canvas.Text(DeckConfirmed ? "Your table is ready." : "Waiting for your deck.", 590, 800, DeckConfirmed ? ReadyColor : Muted, .85f, 420, 2);
-        Button("start-solo", "Start Commander", 1070, 790, 456, StartSolo, !busy && DeckConfirmed && soloSetup?.DeckId == selectedDeck?.Id, true, 54);
+        Button("start-solo", CommanderDeck ? "Start Commander" : "Start game", 1070, 790, 456, StartSolo, !busy && DeckConfirmed && soloSetup?.DeckId == selectedDeck?.Id, true, 54);
         string startHint = selectedDeck == null ? "Choose a deck on the left to get started."
             : !DeckReady ? "Open Deck builder on the left to finish your list."
             : !DeckConfirmed ? "Select Review & confirm under your deck first."
@@ -182,7 +184,7 @@ internal sealed partial class TableGame
             canvas.Text(deck.Name, 625, 309, Ink, 1.4f, 738, 2, true);
             canvas.Text(string.Join(" + ", leaders.Select(e => e.Card.Name)), 628, 394, Gold, .9f, 738, 2);
             int main = deck.Entries.Where(e => e.Section == "Main").Sum(e => e.Quantity), commander = leaders.Sum(e => e.Quantity), side = deck.Entries.Where(e => e.Section == "Sideboard").Sum(e => e.Quantity);
-            canvas.Text($"{main + commander} / 100 cards    ·    {main} main + {commander} commander    ·    {side} sideboard", 628, 473, Ink, .81f, 738, 2);
+            canvas.Text(CommanderDeck ? $"{main + commander} / 100 cards    ·    {main} main + {commander} commander    ·    {side} sideboard" : $"{main} main · {side} sideboard · {deck.Format}", 628, 473, Ink, .81f, 738, 2);
             LobbyPill(DeckReady ? "DECK CHECKS PASSED" : "NEEDS ATTENTION", 626, 538, 290, DeckReady ? ReadyColor : Gold);
             string problem = deck.SaveError.Length > 0 ? "Could not save this deck. Open the builder and retry saving.\n" + deck.SaveError : deck.Problem;
             canvas.Text(DeckReady ? "Your saved list passes Commander checks.\nReview again after editing or changing decks." : problem.Length > 0 ? problem : "Choose a commander in the deck builder.", 628, 587, DeckReady ? Muted : Gold, .8f, 739, 7);

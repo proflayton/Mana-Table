@@ -55,12 +55,22 @@ test('precons import intact and all four AI decks start with 99 cards plus a com
     assert.equal(suggestion.commanderAvailable, true);
     assert.ok(suggestion.opponents.every(opponent => opponent.description.includes('60 cards')));
     await assert.rejects(engine.request('matchStart', { opponent: 'preset:' + presets[0].id }), /Unknown opponent/);
-    await engine.request('format', { revision: explicit.deck.revision, format: 'Commander' });
+    const changedFormat = await engine.request('format', { revision: explicit.deck.revision, format: 'Commander' });
+    assert.deepEqual(changedFormat.deck.entries, explicit.deck.entries, 'Changing format preserves every saved card and section');
+    assert.equal(changedFormat.deck.name, explicit.deck.name);
+    assert.ok(changedFormat.deck.revision > explicit.deck.revision, 'A format change invalidates previews of the previous revision');
+    assert.equal(changedFormat.deck.canUndo, true);
     const corrected = await engine.request('matchSetup');
     assert.equal(corrected.setup.startingLife, 40);
     assert.ok(corrected.opponents.every(opponent => opponent.description.includes('100 cards')));
     assert.equal(corrected.commanderAvailable, false);
-    assert.deepEqual((await engine.request('snapshot')).deck, explicit.deck);
+    assert.deepEqual((await engine.request('snapshot')).deck, changedFormat.deck);
+    const undoneFormat = await engine.request('undo', { revision: changedFormat.deck.revision });
+    assert.equal(undoneFormat.format, 'Constructed');
+    assert.deepEqual(undoneFormat.deck.entries, explicit.deck.entries);
+    const redoneFormat = await engine.request('redo', { revision: undoneFormat.deck.revision });
+    assert.equal(redoneFormat.format, 'Commander');
+    assert.deepEqual(redoneFormat.deck.entries, explicit.deck.entries);
     assert.equal((await engine.request('importPreview', { text: 'Deck\n100 Forest' })).suggestedFormat, 'Constructed', '100 cards alone do not imply Commander');
     assert.equal((await engine.request('importPreview', { text: 'Deck\n4 Lightning Bolt\n56 Mountain' })).suggestedFormat, 'Constructed');
   } finally { engine.close(); }

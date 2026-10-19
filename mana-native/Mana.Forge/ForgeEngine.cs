@@ -8,7 +8,7 @@ namespace Mana.Forge;
 
 public sealed record ForgePaths(string Java, string Jar, string Resources, string Profile);
 
-public sealed class ForgeEngine(ForgePaths paths) : ICardEngine, ITableSocial
+public sealed partial class ForgeEngine(ForgePaths paths) : ICardEngine, ITableSocial, IDeckWorkshop
 {
     private static readonly JsonSerializerOptions Json = new() { PropertyNameCaseInsensitive = true };
     private readonly ConcurrentDictionary<long, TaskCompletionSource<JsonElement>> pending = new();
@@ -26,6 +26,7 @@ public sealed class ForgeEngine(ForgePaths paths) : ICardEngine, ITableSocial
     private EngineProcess? current;
     private long sequence;
     private bool disposed;
+    private string? activeDeckId;
     public string Name => "Forge";
     public async Task InitializeAsync()
     {
@@ -37,6 +38,7 @@ public sealed class ForgeEngine(ForgePaths paths) : ICardEngine, ITableSocial
             finally { if (current == previous) current = null; }
         }
         Directory.CreateDirectory(paths.Profile);
+        activeDeckId = null;
         var start = new ProcessStartInfo(paths.Java) { UseShellExecute = false, CreateNoWindow = true,
             RedirectStandardInput = true, RedirectStandardOutput = true, RedirectStandardError = true,
             StandardInputEncoding = new System.Text.UTF8Encoding(false), StandardOutputEncoding = System.Text.Encoding.UTF8 };
@@ -103,7 +105,10 @@ public sealed class ForgeEngine(ForgePaths paths) : ICardEngine, ITableSocial
     }
     private static string Text(JsonElement value, string name) => value.TryGetProperty(name, out var v) && v.ValueKind != JsonValueKind.Null ? v.ToString() : "";
     private static T Read<T>(JsonElement value) => value.Deserialize<T>(Json) ?? throw new IOException("Missing engine response");
-    private static DeckSummary Deck(JsonElement data) => new(Text(data, "id"), data.TryGetProperty("deck", out var deck) ? Text(deck, "name") : Text(data, "name"));
+    private DeckSummary Deck(JsonElement data) {
+        activeDeckId = Text(data, "id");
+        return new(activeDeckId, data.TryGetProperty("deck", out var deck) ? Text(deck, "name") : Text(data, "name"));
+    }
     public async Task<IReadOnlyList<DeckSummary>> DecksAsync() => Read<DeckSummary[]>((await Request("list")).GetProperty("decks"));
     public async Task<IReadOnlyList<DeckPreset>> PresetsAsync() => Read<DeckPreset[]>(await Request("deckPresets"));
     public async Task<DeckSummary> ImportAsync(string name, string text) => Deck(await Request("import", new { name, text, format = "Commander" }));
@@ -122,8 +127,9 @@ public sealed class ForgeEngine(ForgePaths paths) : ICardEngine, ITableSocial
         Text(face, "artName"), Text(face, "artFace"));
     private static CatalogCard MapCatalogCard(JsonElement card) => new(Text(card, "id"), MapCatalogFace(card),
         card.GetProperty("manaValue").GetInt32(), card.GetProperty("colorIdentity").GetInt32(), Text(card, "deckSection"), Text(card, "edition"));
-    private static DeckDetails MapDeck(JsonElement data)
+    private DeckDetails MapDeck(JsonElement data)
     {
+        activeDeckId = Text(data, "id");
         var deck = data.GetProperty("deck");
         var entries = deck.GetProperty("entries").EnumerateArray().Select(entry => {
             var card = MapCatalogCard(entry.GetProperty("card"));
@@ -133,7 +139,8 @@ public sealed class ForgeEngine(ForgePaths paths) : ICardEngine, ITableSocial
         return new(Text(data, "id"), Text(deck, "name"), deck.GetProperty("revision").GetInt64(), entries,
             Read<CommanderOption[]>(data.GetProperty("commanderChoices")), Text(validation, "problem"), Text(data, "saveError"),
             deck.GetProperty("canUndo").GetBoolean(), deck.GetProperty("canRedo").GetBoolean()) {
-                Issues = validation.TryGetProperty("issues", out var issues) ? Read<DeckIssue[]>(issues) : []
+                Issues = validation.TryGetProperty("issues", out var issues) ? Read<DeckIssue[]>(issues) : [],
+                Format = Text(data, "format")
             };
     }
     public async Task<DeckDetails> OpenDeckAsync(string id) => MapDeck(await Request("open", new { id }));
@@ -157,8 +164,9 @@ public sealed class ForgeEngine(ForgePaths paths) : ICardEngine, ITableSocial
     public async Task<string> ExportDeckAsync(string deckId, long revision) => (await Request("export", new { deckId, revision, kind = "text" })).GetString() ?? "";
     private async Task<JsonElement> PrepareSolo(string deckId)
     {
-        var deck = await Request("open", new { id = deckId });
-        if (Text(deck, "format") != "Commander") throw new InvalidOperationException("Choose a Commander deck for this table.");
+        // Opening a deck replaces its editor and undo history. Preparing a test
+        // for the current document must retain its existing revision and edits.
+        if (activeDeckId != deckId) MapDeck(await Request("open", new { id = deckId }));
         var setup = await Request("matchSetup");
         var problem = Text(setup.GetProperty("setup"), "problem");
         if (problem.Length > 0) throw new InvalidOperationException(problem);
@@ -167,12 +175,15 @@ public sealed class ForgeEngine(ForgePaths paths) : ICardEngine, ITableSocial
     public async Task<SoloSetup> PrepareSoloAsync(string deckId)
     {
         var setup = await PrepareSolo(deckId);
-        return new(deckId, Text(setup, "name"), Read<AiOpponent[]>(setup.GetProperty("opponents")));
+        return new(deckId, Text(setup, "name"), Read<AiOpponent[]>(setup.GetProperty("opponents"))) {
+            MaxPlayers = setup.GetProperty("maxPlayers").GetInt32()
+        };
     }
     public async Task StartSoloAsync(string deckId, IReadOnlyList<string> opponentIds)
     {
-        if (opponentIds.Count != 3) throw new ArgumentException("This table needs exactly three AI opponents.", nameof(opponentIds));
+        if (opponentIds.Count is < 1 or > 5) throw new ArgumentException("Choose between one and five AI opponents.", nameof(opponentIds));
         var setup = await PrepareSolo(deckId);
+        if (opponentIds.Count >= setup.GetProperty("maxPlayers").GetInt32()) throw new ArgumentException("This format supports fewer players.", nameof(opponentIds));
         await Request("matchStart", new { deckId, revision = setup.GetProperty("revision").GetInt64(), opponents = opponentIds });
     }
     private static Lobby MapLobby(JsonElement data) => new(Text(data, "mode"), Text(data, "status"), Text(data, "error"),

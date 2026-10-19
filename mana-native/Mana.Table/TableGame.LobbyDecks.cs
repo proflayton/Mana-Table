@@ -39,7 +39,7 @@ internal sealed partial class TableGame
         IEnumerable<DeckChoice> choices = pickerSeat >= 0 && soloSetup is { } setup
             ? setup.Opponents.Select((p, i) => new DeckChoice(p.Id, p.Name, p.Description, soloChoices[pickerSeat] == i))
             : pickerPresets ? presets.Select(p => new DeckChoice(p.Id, p.Name, p.Description, false))
-            : decks.Select(d => new DeckChoice(d.Id, d.Name, selectedDeck?.Id == d.Id ? "Your current deck" : "Saved Commander deck", selectedDeck?.Id == d.Id));
+            : decks.Select(d => new DeckChoice(d.Id, d.Name, selectedDeck?.Id == d.Id ? "Your current deck" : "Saved deck", selectedDeck?.Id == d.Id));
         return choices.Where(d => (d.Name + " " + d.Description).Contains(pickerSearch.Trim(), StringComparison.OrdinalIgnoreCase)).ToArray();
     }
     private void OpenOpponentPicker(int seat)
@@ -94,9 +94,11 @@ internal sealed partial class TableGame
         else {
             Button("import", "Import deck file", 204, 820, 247, ImportFile, !busy, height: 44);
             Button("paste", "Paste deck list", 463, 820, 247, ImportClipboard, !busy, height: 44);
+            if (WorkshopEngine != null) Button("picker-archidekt", "Link Archidekt", 722, 820, 310, () => ImportArchidekt(), !busy, height: 44);
             Button("picker-new", "+ Build a new deck", 1078, 820, 316, () => NewDeck(), !busy, true, 44);
             canvas.Text("A deck file from your computer.", 209, 874, Muted, .59f, 240, 1);
             canvas.Text("Use a copied deck list.", 468, 874, Muted, .59f, 240, 1);
+            if (WorkshopEngine != null) canvas.Text("Import and safely refresh a public deck.", 727, 874, Muted, .59f, 300, 1);
             canvas.Text("Start with an empty deck.", 1083, 874, Muted, .59f, 306, 1);
         }
     }

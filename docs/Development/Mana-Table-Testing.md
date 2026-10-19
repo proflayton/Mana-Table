@@ -136,6 +136,7 @@ Build `Mana.Table.Tests` as below, then run each mode with its own fresh profile
 ```powershell
 mana-native/Mana.Table.Tests/bin/Release/net9.0-windows/Mana.Table.Tests.exe --smoke-workshop-adapter --engine-resources <package>/engine --engine-jar forge-api/target/forge-engine.jar --profile <adapter-test-profile>
 mana-native/Mana.Table.Tests/bin/Release/net9.0-windows/Mana.Table.Tests.exe --smoke-workshop --engine-resources <package>/engine --engine-jar forge-api/target/forge-engine.jar --profile <ui-test-profile> --size 1280x720
+mana-native/Mana.Table.Tests/bin/Release/net9.0-windows/Mana.Table.Tests.exe --smoke-deck-tuning --engine-resources <package>/engine --engine-jar forge-api/target/forge-engine.jar --profile <tuning-test-profile> --size 1280x900
 ```
 
 The adapter mode uses real catalog and persisted documents to cover combined
@@ -143,6 +144,21 @@ filters, pagination, alternate faces, create/edit, atomic rejection, stale
 revision/document guards, section moves, undo/redo, singleton and color-identity
 validation, exact-printing duplication, and export/import round trips.
 It writes `workshop-adapter-results.json`.
+
+The adapter also exercises durable playable versions, metadata concurrency,
+Considering exclusion, actual opening-hand sampling, a real two-player test and
+concession, notes, restore, and engine-restart persistence. Preparing opponents
+must retain the current editor revision and undo history. The tuning UI mode
+drives Build/Test/Results and returns from a real game to the same deck workspace;
+its evidence is `deck-tuning-ui-results.json` and native captures.
+
+`DeckWorkshopTest` uses offline Archidekt fixtures to check category and printing
+mapping, three-way merges and conflicts, stale previews, no-op checks, and journal
+recovery. `DeckPlaytestsTest` checks immutable records, interrupted games, frozen
+hand samples, and persistence failure. Observed game counters come from self-only
+event aggregates, independently of the capped activity feed; tests distinguish
+actual draws from tutors and actual casts from copied spells. Live provider
+availability is checked separately and is not a deterministic CI dependency.
 
 The UI mode drives production pointer hit testing and search text handling:
 build a legal deck from an empty draft, adjust counts, move cards, undo/redo,

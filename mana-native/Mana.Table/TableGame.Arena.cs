@@ -239,7 +239,7 @@ internal sealed partial class TableGame
         if (state.Status is "finished" or "error") {
             canvas.Text(state.Result ?? "Game stopped", 1267, 730, Gold, 1.17f, 295, 1, true);
             canvas.Text(state.Error ?? "You can still inspect the final battlefield.", 1267, 767, Muted, .63f, 294, 2);
-            if (localMatch || state.Status == "finished") Button("return", localMatch ? "Return to setup" : "Return to lobby", 1266, 828, 296, ReturnFromMatch, !busy, true, 47);
+            if (localMatch || state.Status == "finished") Button("return", IsWorkshopMatch ? "Return to tune" : localMatch ? "Return to setup" : "Return to lobby", 1266, 828, 296, ReturnFromMatch, !busy, true, 47);
             return;
         }
         bool following = busy || d == null || TurnGuide.CanAutoPass(state, automatic, held, preferences.Stops, false);
