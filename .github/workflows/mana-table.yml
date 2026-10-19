@@ -3,6 +3,10 @@ name: Mana Table
 on:
   push:
     paths:
+      - 'mana-native/**'
+      - 'scenarios/**'
+      - 'LICENSE'
+      - '.github/workflows/mana-table-native-release.yml'
       - 'forge-desktop/**'
       - 'forge-api/**'
       - 'forge-core/**'
@@ -16,19 +20,6 @@ on:
       - 'CONTRIBUTING.md'
       - 'docs/Development/Mana-Table-*.md'
   pull_request:
-    paths:
-      - 'forge-desktop/**'
-      - 'forge-api/**'
-      - 'forge-core/**'
-      - 'forge-game/**'
-      - 'forge-ai/**'
-      - 'forge-gui/**'
-      - 'pom.xml'
-      - '.mvn/**'
-      - '.github/workflows/mana-table.yml'
-      - 'README.md'
-      - 'CONTRIBUTING.md'
-      - 'docs/Development/Mana-Table-*.md'
   workflow_dispatch:
 
 permissions:
