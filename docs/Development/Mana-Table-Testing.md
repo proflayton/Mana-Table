@@ -369,6 +369,11 @@ selection versus acknowledgement, visibility revocation, airborne hover and
 removal of flying/counters. It captures `05-revealed-hover`, `06-card-states`,
 `07-current-state` and `08-states-removed`. These are synthetic visual states;
 the renderer consumes the same counters and combat keywords supplied by Forge.
+The fixture also includes a phased-out Teferi's Isle at each seat. The same smoke
+checks floating land hit geometry, readable phasing details and return to the
+table after phasing in, with captures `09-phased-out-land` and `10-phased-in-land`.
+`PhasingSnapshotTest` exercises real four-seat Forge snapshots through the Isle's
+first phase-out, all three opponents' turns and its return and untap on turn five.
 
 `Mana.Table.Tests.exe --smoke-ui-interactions --profile <new-test-directory>` exercises
 the actual MonoGame pointer path against a deterministic `ICardEngine` test double.

@@ -628,7 +628,7 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
         var defender = combat == null ? null : combat.getDefender(card);
         var result = map("key", key, "visualId", activity.visualId(card), "combatId", combatIds.id(card), "name", hidden ? "Face-down card" : face.getName(), "type", hidden ? "" : face.getType().toString(),
                 "manaCost", hidden ? "" : face.getManaCost().toString(), "power", hidden ? null : face.getPower(), "toughness", hidden ? null : face.getToughness(),
-                "text", hidden ? "" : card.getText(), "tapped", card.isTapped(), "sick", card.isSick(), "damage", card.getDamage(),
+                "text", hidden ? "" : card.getText(), "tapped", card.isTapped(), "phasedOut", card.isPhasedOut(), "sick", card.isSick(), "damage", card.getDamage(),
                 "attacking", card.isAttacking(), "blocking", card.isBlocking(), "counters", counters,
                 "defenderId", defender instanceof PlayerView ? defender.getId() : null,
                 "defender", defender == null ? null : defender instanceof CardView target && (!target.canBeShownTo(viewer) || target.isFaceDown()) ? "Face-down permanent" : defender.getName(),

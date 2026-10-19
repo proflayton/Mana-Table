@@ -128,6 +128,7 @@ public sealed record Card
     public int? Toughness { get; init; }
     public int Damage { get; init; }
     public bool Tapped { get; init; }
+    public bool PhasedOut { get; init; }
     public bool Sick { get; init; }
     public bool FaceDown { get; init; }
     public bool Selectable { get; init; }
