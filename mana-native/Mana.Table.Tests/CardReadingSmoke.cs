@@ -290,9 +290,11 @@ internal sealed class CardReadingSmoke : ITableAutomation
     private void Buttons(ButtonState left = ButtonState.Released, ButtonState right = ButtonState.Released) => mouse = new(mouse.X, mouse.Y, 0, left, ButtonState.Released, right, ButtonState.Released, ButtonState.Released);
     private void Move(Point point, ButtonState left = ButtonState.Released)
     {
-        var viewport = view.GraphicsDevice.Viewport;
-        float scale = Math.Min(viewport.Width / 1600f, viewport.Height / (float)view.DesignHeight);
-        mouse = new((int)((viewport.Width - 1600 * scale) / 2 + point.X * scale), (int)((viewport.Height - view.DesignHeight * scale) / 2 + point.Y * scale), 0,
+        MoveScreen(SmokePointer.Screen(view, point), left);
+    }
+    private void MoveScreen(Point point, ButtonState left = ButtonState.Released)
+    {
+        mouse = new(point.X, point.Y, 0,
             left, ButtonState.Released, ButtonState.Released, ButtonState.Released, ButtonState.Released);
     }
     private void MoveCard(string id)
@@ -306,7 +308,7 @@ internal sealed class CardReadingSmoke : ITableAutomation
             var rest = TableLayout.Hand(index % 11, Math.Min(11, hand.Length));
             for (int y = 890; y >= Math.Max(810, rest.Bounds.Top + 8); y -= 5)
                 for (int x = rest.Bounds.Left + 8; x < rest.Bounds.Right; x += 5)
-                    if (rest.Contains(new(x, y)) && view.HitAt(new(x, y))?.Id == hit.Id) { Move(new(x, y)); return; }
+                    if (rest.Contains(new(x, y)) && SmokePointer.TryPoint(view, hit, new(x, y), out var physical)) { MoveScreen(physical); return; }
             // After a cancelled drag, wait at the fan for the card to return;
             // chasing its in-flight center can click an unrelated permanent.
             Move(new((int)rest.Center.X, Math.Min(885, (int)rest.Center.Y))); return;
@@ -316,11 +318,7 @@ internal sealed class CardReadingSmoke : ITableAutomation
     private void MoveHit(string id)
     {
         var hit = view.Hits.Last(h => h.Id == id);
-        if (view.HitAt(hit.Bounds.Center)?.Id == id) { Move(hit.Bounds.Center); return; }
-        for (int y = hit.Bounds.Top + 8; y < Math.Min(895, hit.Bounds.Bottom); y += 6)
-            for (int x = hit.Bounds.Left + 8; x < hit.Bounds.Right; x += 6)
-                if (view.HitAt(new(x, y))?.Id == id) { Move(new(x, y)); return; }
-        throw new InvalidOperationException("No visible hit for " + id);
+        MoveScreen(SmokePointer.Hit(view, hit));
     }
     private void Publish(GameSnapshot state) { scenario.Present(state); view.Accept(scenario.State); }
     private void Check(bool condition, string description)
