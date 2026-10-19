@@ -16,12 +16,52 @@ internal sealed class HandPlacementSmoke : ITableAutomation
     private readonly Queue<(double Delay, Func<bool>? Ready, Action Action)> steps = [];
     private readonly List<string> checks = [];
     private MouseState mouse;
+    private MouseState consumedMouse;
+    private (string Id, string Scope)? pointerTarget;
+    private readonly List<object> gestures = [];
+    private bool validatePointer = true;
+    private int doubleClickPart, stepNumber, frameNumber;
+    private double? firstDoubleClickRelease;
+    private string stage = "Starting hand-placement journey";
     private double lastStep;
     private int before;
     private string expectedGame = "", expectedDecision = "", expectedCard = "", expectedAbility = "";
     public string? ExpectedClick => null;
     public bool ClickAccepted { get; set; }
-    public MouseState ReadMouse() => mouse;
+    public MouseState ReadMouse()
+    {
+        bool leftPress = mouse.LeftButton == ButtonState.Pressed && consumedMouse.LeftButton == ButtonState.Released;
+        bool leftRelease = mouse.LeftButton == ButtonState.Released && consumedMouse.LeftButton == ButtonState.Pressed;
+        bool rightPress = mouse.RightButton == ButtonState.Pressed && consumedMouse.RightButton == ButtonState.Released;
+        bool rightRelease = mouse.RightButton == ButtonState.Released && consumedMouse.RightButton == ButtonState.Pressed;
+        if (leftPress || leftRelease || rightPress || rightRelease) {
+            var physical = new Point(mouse.X, mouse.Y);
+            var logical = SmokePointer.Table(view, physical);
+            var actual = view.HitAt(logical);
+            double? doubleClickInterval = leftRelease && doubleClickPart == 2 && firstDoubleClickRelease is { } firstRelease
+                ? view.Now - firstRelease : null;
+            gestures.Add(new { time = view.Now, stepNumber, frameNumber, stage, physical, logical,
+                edge = leftPress ? "left-press" : leftRelease ? "left-release" : rightPress ? "right-press" : "right-release",
+                expected = pointerTarget?.Id, expectedScope = pointerTarget?.Scope, actual = actual?.Id, actualScope = actual?.Scope,
+                doubleClickPart, doubleClickInterval, validatePointer, replies = scenario.Replies.Count });
+            if (gestures.Count > 200) gestures.RemoveAt(0);
+            // Right-click acts on press and may open an inspector before release.
+            // Drag releases have a free table destination rather than a card target.
+            if (!rightRelease && validatePointer && pointerTarget is { } target
+                && (actual is null || actual.Id != target.Id || actual.Scope != target.Scope || !view.CurrentHit(actual)))
+                DriverFailure("The physical gesture no longer reaches its expected current hit: " + target.Id);
+            if (leftRelease && doubleClickPart > 0) {
+                if (doubleClickPart == 1) firstDoubleClickRelease = view.Now;
+                else {
+                    if (doubleClickInterval is null or > .5)
+                        DriverFailure("The driver did not deliver two real releases within the production 0.5-second double-click window; interval=" + doubleClickInterval);
+                    firstDoubleClickRelease = null;
+                }
+            }
+        }
+        consumedMouse = mouse;
+        return mouse;
+    }
 
     internal static void Run(string profile, Point? size)
     {
@@ -94,7 +134,8 @@ internal sealed class HandPlacementSmoke : ITableAutomation
         });
         Step(.03, () => Buttons(left: ButtonState.Pressed));
         Step(.06, () => Publish("revoked"));
-        Step(.06, () => Buttons());
+        // The deliberately stale release must reach production's rejection guard.
+        Step(.06, () => Buttons(validateTarget: false));
         Step(.25, () => {
             Check(view.Overlay.Length == 0 && scenario.Replies.Count == before,
                 "Revoking the placement between press and release closes the chooser and discards the stale action");
@@ -179,7 +220,8 @@ internal sealed class HandPlacementSmoke : ITableAutomation
         Step(.2, () => { before = scenario.Replies.Count; MoveHit("zone-use:own-exile"); });
         Step(.03, () => Buttons(left: ButtonState.Pressed));
         Step(.06, () => Publish("revoked"));
-        Step(.06, () => Buttons());
+        // The deliberately stale release must reach production's rejection guard.
+        Step(.06, () => Buttons(validateTarget: false));
         Step(.2, () => {
             Check(scenario.Replies.Count == before && !view.Hits.Any(h => h.Id == "zone-use:own-exile"),
                 "Revoking a zone action between press and release discards the stale use button");
@@ -188,6 +230,7 @@ internal sealed class HandPlacementSmoke : ITableAutomation
         Step(.7, () => {
             Check(!view.Hits.Any(h => h.Id.StartsWith("zone-actions:")), "Unavailable zones lose their action cues on the next authoritative snapshot");
             Check(view.Error.Length == 0, "The complete hand and zone action journey completes without client errors");
+            File.WriteAllText(Path.Combine(view.Profile, "gesture-events.json"), JsonSerializer.Serialize(gestures, new JsonSerializerOptions { WriteIndented = true, IncludeFields = true }));
             File.WriteAllText(Path.Combine(view.Profile, "hand-placement-results.json"), JsonSerializer.Serialize(checks, new JsonSerializerOptions { WriteIndented = true }));
             view.Exit();
         });
@@ -234,33 +277,64 @@ internal sealed class HandPlacementSmoke : ITableAutomation
     private void MoveCard(string id)
     {
         var hit = view.Hits.Last(h => h.Card?.VisualId == id);
-        if (view.HitAt(hit.Bounds.Center)?.Id == hit.Id) { Move(hit.Bounds.Center); return; }
-        for (int y = Math.Min(890, hit.Bounds.Bottom - 4); y >= Math.Max(70, hit.Bounds.Top); y -= 4)
-            for (int x = hit.Bounds.Left + 4; x < hit.Bounds.Right; x += 4)
-                if (view.HitAt(new(x, y))?.Id == hit.Id) { Move(new(x, y)); return; }
-        throw new InvalidOperationException("No reachable card " + id);
+        MoveToHit(hit);
     }
-    private void MoveHit(string id) => Move(view.Hits.Single(h => h.Id == id).Bounds.Center);
+    private void MoveHit(string id) => MoveToHit(view.Hits.Single(h => h.Id == id));
+    private void MoveToHit(TableGame.Hit hit)
+    {
+        var physical = SmokePointer.Hit(view, hit);
+        mouse = new(physical.X, physical.Y, 0, ButtonState.Released, ButtonState.Released,
+            ButtonState.Released, ButtonState.Released, ButtonState.Released);
+        pointerTarget = (hit.Id, hit.Scope); validatePointer = true;
+        stage = "Target " + hit.Id;
+    }
     private void MoveAway() => Move(new(1590, 890));
     private void Move(Point logical, ButtonState left = ButtonState.Released)
     {
-        var viewport = view.GraphicsDevice.Viewport; float scale = Math.Min(viewport.Width / 1600f, viewport.Height / (float)view.DesignHeight);
-        mouse = new((int)((viewport.Width - 1600 * scale) / 2 + logical.X * scale), (int)((viewport.Height - view.DesignHeight * scale) / 2 + logical.Y * scale),
+        var physical = SmokePointer.Screen(view, logical);
+        mouse = new(physical.X, physical.Y,
             0, left, ButtonState.Released, ButtonState.Released, ButtonState.Released, ButtonState.Released);
+        pointerTarget = null; validatePointer = true; stage = "Free move " + logical;
     }
-    private void Buttons(ButtonState left = ButtonState.Released, ButtonState right = ButtonState.Released) => mouse = new(mouse.X, mouse.Y, 0, left, ButtonState.Released, right, ButtonState.Released, ButtonState.Released);
-    private void Click() { Step(.03, () => Buttons(left: ButtonState.Pressed)); Step(.04, () => Buttons()); }
-    private void DoubleClick() { Click(); Step(.07, () => { }); Click(); }
+    private void Buttons(ButtonState left = ButtonState.Released, ButtonState right = ButtonState.Released, bool validateTarget = true, int doublePart = 0)
+    {
+        mouse = new(mouse.X, mouse.Y, 0, left, ButtonState.Released, right, ButtonState.Released, ButtonState.Released);
+        validatePointer = validateTarget; doubleClickPart = doublePart;
+    }
+    private void Click(int doublePart = 0) { Step(.03, () => Buttons(left: ButtonState.Pressed, doublePart: doublePart)); Step(.04, () => Buttons(doublePart: doublePart)); }
+    private void DoubleClick() { Click(1); Click(2); }
     private void RightClick() { Step(.03, () => Buttons(right: ButtonState.Pressed)); Step(.04, () => Buttons()); }
     private void Drag() { Step(.03, () => Buttons(left: ButtonState.Pressed)); Step(.08, () => Move(new(800, 580), ButtonState.Pressed)); Step(.18, () => Buttons()); }
     private void Step(double delay, Action action) => steps.Enqueue((delay, null, action));
     private void Wait(Func<bool> ready, double deadline, Action action) => steps.Enqueue((deadline, ready, action));
-    private void Check(bool value, string description) { if (!value) { Capture("failure"); throw new InvalidOperationException(description); } checks.Add(description); }
+    private void Check(bool value, string description) { if (!value) { WriteFailure(description); Capture("failure"); throw new InvalidOperationException(description); } checks.Add(description); }
+    private void DriverFailure(string description) { WriteFailure(description); throw new InvalidOperationException(description); }
+    private void WriteFailure(string description)
+    {
+        var physical = new Point(mouse.X, mouse.Y);
+        var logical = SmokePointer.Table(view, physical);
+        var hit = view.HitAt(logical);
+        File.WriteAllText(Path.Combine(view.Profile, "failure.json"), JsonSerializer.Serialize(new {
+            description, stage, stepNumber, frameNumber, time = view.Now, remainingSteps = steps.Count,
+            expectedGame, expectedDecision, expectedCard, expectedAbility, before,
+            expectedHit = pointerTarget?.Id, expectedScope = pointerTarget?.Scope, physical, logical,
+            actualHit = hit?.Id, actualScope = hit?.Scope, currentScope = view.Scope,
+            buttons = new { mouse.LeftButton, mouse.RightButton }, firstDoubleClickRelease, doubleClickPart,
+            hovered = view.Hovered?.VisualId, view.HoverPreview, view.Busy, view.Error, view.Overlay, view.ZoneName,
+            poses = new[] { "hand-forest", "hand-island" }.Select(id => new { id, pose = view.DisplayedPose(id), paints = view.CardPaintCount(id) }),
+            replies = scenario.Replies, match = view.Match, scenario = scenario.State, gestures
+        }, new JsonSerializerOptions { WriteIndented = true, IncludeFields = true }));
+    }
     private void Capture(string name) { using var output = File.Create(Path.Combine(view.Profile, name + ".png")); view.Surface.SaveAsPng(output, view.Surface.Width, view.Surface.Height); }
     public void Frame(Texture2D surface)
     {
-        if (view.Now > 90) throw new TimeoutException("Hand placement journey did not finish");
-        if (view.Error.Length > 0) Check(false, view.Error);
-        if (steps.TryPeek(out var next) && (next.Ready?.Invoke() == true || view.Now - lastStep >= next.Delay)) { steps.Dequeue(); next.Action(); lastStep = view.Now; }
+        frameNumber++;
+        try {
+            if (view.Now > 90) throw new TimeoutException("Hand placement journey did not finish");
+            if (view.Error.Length > 0) Check(false, view.Error);
+            if (steps.TryPeek(out var next) && (next.Ready?.Invoke() == true || view.Now - lastStep >= next.Delay)) {
+                steps.Dequeue(); stepNumber++; next.Action(); lastStep = view.Now;
+            }
+        } catch (Exception exception) { WriteFailure(exception.Message); throw; }
     }
 }
