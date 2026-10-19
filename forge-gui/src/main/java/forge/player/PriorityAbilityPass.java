@@ -24,9 +24,14 @@ final class PriorityAbilityPass {
         }
     }
 
-    private record Candidate(String id, AbilityKey key, Card source, String sourceName, String text) {
+    private record Candidate(String id, AbilityKey key, Card source, String sourceName, String text,
+                             List<Integer> eligibleHandCardIds) {
         PlayerControllerHuman.PriorityAbility view(boolean ignored) {
-            return new PlayerControllerHuman.PriorityAbility(id, key.cardId(), sourceName, text, ignored);
+            return new PlayerControllerHuman.PriorityAbility(id, key.cardId(), sourceName, text, ignored, eligibleHandCardIds);
+        }
+        PlayerControllerHuman.PriorityAbility policyView() {
+            // An undoable pass policy can outlive its legal activation window.
+            return new PlayerControllerHuman.PriorityAbility(id, key.cardId(), sourceName, text, true, List.of());
         }
     }
 
@@ -73,7 +78,8 @@ final class PriorityAbilityPass {
             AbilityKey key = AbilityKey.of(ability);
             String id = ids.computeIfAbsent(key, ignoredKey -> UUID.randomUUID().toString());
             Card source = ability.getHostCard();
-            candidates.put(id, new Candidate(id, key, source, source.getName(), ability.toUnsuppressedString()));
+            candidates.put(id, new Candidate(id, key, source, source.getName(), ability.toUnsuppressedString(),
+                    HandPlacements.eligibleCards(player, ability)));
         }
     }
 
@@ -96,7 +102,24 @@ final class PriorityAbilityPass {
 
     synchronized List<PlayerControllerHuman.PriorityAbility> ignored(Player player) {
         pruneTurns(player);
-        return ignored.values().stream().map(policy -> policy.candidate().view(true)).toList();
+        return ignored.values().stream().map(policy -> policy.candidate().policyView()).toList();
+    }
+
+    synchronized boolean hasHandPlacement(String id, int handCardId) {
+        Candidate candidate = candidates.get(id);
+        return scan != null && scan.complete() && candidate != null && candidate.eligibleHandCardIds().contains(handCardId);
+    }
+
+    synchronized SpellAbility resolveHandPlacement(Player player, String id, int handCardId) {
+        if (!hasHandPlacement(id, handCardId)) return null;
+        Candidate candidate = candidates.get(id);
+        Card current = player.getGame().getCardState(candidate.source(), null);
+        if (current == null || current.getGameTimestamp() != candidate.key().timestamp()
+                || !current.isInZone(ZoneType.Battlefield) || !player.equals(current.getController())) return null;
+        return current.getAllPossibleAbilities(player, true).stream()
+                .filter(ability -> ability.getId() == candidate.key().abilityId())
+                .filter(ability -> HandPlacements.eligibleCards(player, ability).contains(handCardId))
+                .findFirst().orElse(null);
     }
 
     synchronized boolean hasNonIgnoredActions(Player player) {

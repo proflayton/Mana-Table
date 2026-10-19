@@ -313,11 +313,27 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
             CardView card = null;
             CardView attacker = null;
             PlayerView target = null;
+            String placementAbility = null;
+            Integer placementHandId = null;
             switch (action) {
                 case "ok", "passIfNoResponse" -> { if (!okEnabled) throw new IllegalArgumentException("Continue is not available"); }
                 case "cancel" -> { if (!cancelEnabled) throw new IllegalArgumentException("Cancel is not available"); }
                 case "attackAll" -> { if (!(next.input instanceof InputAttack)) throw new IllegalArgumentException("Not declaring attackers"); }
                 case "card" -> { card = next.cards.get(string(request, "key")); if (card == null) throw new IllegalArgumentException("Card is not visible in this prompt"); }
+                case "useHandPlacement" -> {
+                    if (!(next.input instanceof InputPassPriority) || human.getInputQueue().getInput() != next.input
+                            || closed || viewer.getHasLost() || game.isGameOver())
+                        throw new IllegalArgumentException("Use a hand-placement option during your current priority");
+                    var abilityId = request.get("abilityId");
+                    if (abilityId == null || !abilityId.isJsonPrimitive() || !abilityId.getAsJsonPrimitive().isString()
+                            || abilityId.getAsString().isBlank()) throw new IllegalArgumentException("Choose an available hand-placement ability");
+                    var hand = next.cards.get(string(request, "handKey"));
+                    if (hand == null || hand.getZone() != ZoneType.Hand || !viewer.getCards(ZoneType.Hand).contains(hand)
+                            || !human.canUseHandPlacement(abilityId.getAsString(), hand.getId()))
+                        throw new IllegalArgumentException("That hand-placement option is no longer available");
+                    placementAbility = abilityId.getAsString();
+                    placementHandId = hand.getId();
+                }
                 case "attack" -> {
                     if (!(next.input instanceof InputAttack)) throw new IllegalArgumentException("Not declaring attackers");
                     attacker = next.cards.get(string(request, "attackerKey"));
@@ -351,10 +367,13 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
             CardView chosenCard = card;
             CardView chosenAttacker = attacker;
             PlayerView chosenPlayer = target;
+            String chosenPlacementAbility = placementAbility;
+            Integer chosenPlacementHandId = placementHandId;
             pending = null;
             inputActionQueued = true;
             markBusy();
             HeadlessPlatform.later(() -> {
+                boolean restorePriority = false;
                 try {
                     if (closed || viewer.getHasLost() || game.isGameOver() || human.getInputQueue().getInput() != next.input) return;
                     switch (action) {
@@ -363,6 +382,7 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
                         case "cancel" -> human.selectButtonCancel();
                         case "attackAll" -> human.alphaStrike();
                         case "card" -> human.selectCard(chosenCard, null, CARD_CLICK);
+                        case "useHandPlacement" -> restorePriority = !human.useHandPlacement(chosenPlacementAbility, chosenPlacementHandId);
                         case "block" -> {
                             // One scoped gesture: select the attacker and toggle this exact
                             // block through the engine's normal input, then publish once.
@@ -379,7 +399,18 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
                         case "player" -> human.selectPlayer(chosenPlayer, null);
                     }
                 } finally {
-                    synchronized (gate) { inputActionQueued = false; }
+                    synchronized (gate) {
+                        inputActionQueued = false;
+                        // A late engine recheck may revoke this exact option. Keep
+                        // the unanswered input usable; never choose a replacement.
+                        if (restorePriority && !closed && !viewer.getHasLost() && !game.isGameOver()
+                                && human.getInputQueue().getInput() == next.input) {
+                            pending = next;
+                            notices.add("That hand-placement option is no longer available. Use the current prompt.");
+                            while (notices.size() > 12) notices.remove(0);
+                        }
+                    }
+                    if (restorePriority) publishInput();
                 }
             });
             return latest;
@@ -425,8 +456,14 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
             String sourceKey = prompt == null ? "" : prompt.cards.entrySet().stream()
                     .filter(entry -> entry.getValue().getId() == ability.sourceCardId())
                     .map(Map.Entry::getKey).findFirst().orElse("");
+            var handKeys = prompt == null || !(prompt.input instanceof InputPassPriority) ? List.<String>of()
+                    : prompt.cards.entrySet().stream().filter(entry -> entry.getValue().getZone() == ZoneType.Hand
+                            && viewer.getCards(ZoneType.Hand).contains(entry.getValue())
+                            && ability.eligibleHandCardIds().contains(entry.getValue().getId()))
+                    .map(Map.Entry::getKey).toList();
             return map("id", ability.id(), "sourceCardKey", sourceKey, "sourceName", ability.sourceName(),
-                    "text", ability.text(), "ignoredUntilNextTurn", ability.ignoredUntilNextTurn());
+                    "text", ability.text(), "ignoredUntilNextTurn", ability.ignoredUntilNextTurn(),
+                    "eligibleHandKeys", handKeys, "handPlacementLimit", 1);
         }).toList();
     }
 
@@ -502,6 +539,7 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
             players.add(map("id", player.getId(), "name", player.equals(viewer) ? "You" : player.getName(), "human", player.equals(viewer),
                     "seat", allPlayers.indexOf(player) + 1, "eliminated", player.getHasLost(),
                     "life", player.getLife(), "maxHandSize", player.hasUnlimitedHandSize() ? null : player.getMaxHandSize(),
+                    "landPlaysUsed", player.getNumLandThisTurn(), "landPlayLimit", player.hasUnlimitedLandPlay() ? null : player.getMaxLandPlay(),
                     "priority", player.getHasPriority(), "mana", mana, "zones", zones, "commanderDamage", commanderDamage));
         }
         var stack = new ArrayList<Object>();

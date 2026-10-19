@@ -88,6 +88,12 @@ internal sealed partial class TableGame
         int cx = (int)commandLink.X, cy = (int)commandLink.Y;
         canvas.CenterText("Command " + player.Zone("Command").Count, new(cx - 52, cy, 104, 24), Gold * .85f, .48f);
         hits.Add(new("zone:" + player.Id + ":Command", Scope, new(cx - 56, cy - 3, 112, 30), () => OpenZone(player.Id, "Command")));
+        if (AvailableZoneCount(player, "Command") is > 0 and var available) {
+            var badge = new Rectangle(cx - 51, cy + 25, 102, 22);
+            canvas.Panel(badge, new(15, 41, 54), ActionAccent, 4);
+            canvas.CenterText(available + " available", badge, ActionAccent, .5f, true);
+            hits.Add(new("zone-actions:" + player.Id + ":Command", Scope, badge, () => OpenZone(player.Id, "Command")));
+        }
         foreach (var pile in tableScene.Piles(player.Id)) DrawWorldPile(player, pile.Zone, pile.Pose, pile.Compact);
     }
     private void DrawWorldPile(Player player, string zone, Pose pose, bool compact = false)
@@ -115,6 +121,7 @@ internal sealed partial class TableGame
         if (top != null) DrawTableCard("pile:" + player.Id + ":" + zone + ":" + CardIdentity(top), top, pose, zone, player.Id,
             "pile-card:" + player.Id + ":" + zone, () => OpenZone(player.Id, zone), (displayed, focus) => PaintCard(top, displayed, false, false, focus), opensZone: true);
         else PaintBack(pose, value.Count == 0 ? .3f : 1);
+        DrawZoneActionBadge(player, zone, pose);
     }
     private void DrawHero(Player player, Vector2 center, bool own, int index)
     {

@@ -31,6 +31,7 @@ internal sealed partial class TableGame
                 case "concede": DrawConcede(); break;
                 case "help": DrawHelp(); break;
                 case "ability-auto-pass": DrawAbilityAutoPass(); break;
+                case "hand-placement": DrawHandPlacement(); break;
                 case "combat": DrawCombatReview(); break;
                 case "blockers": DrawBlockerReview(); break;
                 case "result": DrawResult(); break;
@@ -67,8 +68,9 @@ internal sealed partial class TableGame
         if (CardPresentation.CommanderTaxDetails(card) is { Length: > 0 } taxDetails) stateText = taxDetails + (stateText.Length > 0 ? "\n" + stateText : "");
         if (CardPresentation.Counters(card) is { Length: > 0 } counters) stateText += "\nCounters: " + string.Join("; ", counters.Select(c => c.Key + " × " + c.Value));
         if (onBattlefield) canvas.Text(CardActions.Hint(match, original), 686, 335, CardActions.CanActivate(match, original) ? ActionAccent : Muted, .77f, 670, 2, true);
-        var paragraphs = TextPages((stateText.Length > 0 ? stateText + "\n\n" : "") + card.Text + (onBattlefield ? "\n\n" + CardActions.Help : ""), onBattlefield ? 750 : 1050); inspectPage = Math.Clamp(inspectPage, 0, paragraphs.Length - 1);
-        canvas.Text(paragraphs[inspectPage], 686, onBattlefield ? 394 : 378, Ink, .8f, 660, onBattlefield ? 12 : 17);
+        bool contextual = onBattlefield || HandPlacements.Options(match, original).Length > 0 || AvailableZone(original) != null;
+        var paragraphs = TextPages((stateText.Length > 0 ? stateText + "\n\n" : "") + card.Text + (onBattlefield ? "\n\n" + CardActions.Help : ""), contextual ? 750 : 1050); inspectPage = Math.Clamp(inspectPage, 0, paragraphs.Length - 1);
+        canvas.Text(paragraphs[inspectPage], 686, contextual ? 394 : 378, Ink, .8f, 660, contextual ? 12 : 17);
         if (paragraphs.Length > 1) {
             Button("inspect-prev", "Previous", 686, 727, 135, () => inspectPage--, inspectPage > 0);
             Button("inspect-next", "More rules", 831, 727, 145, () => inspectPage++, inspectPage + 1 < paragraphs.Length);
@@ -76,6 +78,7 @@ internal sealed partial class TableGame
         }
         if (original.OtherFace != null) Button("other-face", inspectBack ? "View current face" : "View other face", 274, 737, 347, () => { inspectBack = !inspectBack; inspectPage = 0; }, accent: true);
         if (onBattlefield) Button("activate-ability", "Activate ability", 1080, 727, 280, () => { overlay = ""; CardClick(original); }, !busy && CardActions.CanActivate(match, original), true);
+        else DrawInspectorPlacement(original);
     }
     private void DrawSettings()
     {
@@ -161,6 +164,8 @@ internal sealed partial class TableGame
         ModalFrame(zoneName + (zoneName == "Stack" ? "" : " · " + player?.Name), () => zoneName = null);
         int count = 7; zonePage = Math.Clamp(zonePage, 0, Math.Max(0, (cards.Length - 1) / count));
         canvas.Text(cards.Length + " visible" + (zoneName == "Stack" ? "" : " / " + (zone?.Count ?? 0) + " total"), 205, 183, Muted, .72f, 650, 1);
+        if (player != null && AvailableZoneCount(player, zoneName!) is > 0 and var available)
+            canvas.Text(available + " available · Use a card below to see its play and costs.", 205, 220, ActionAccent, .77f, 1170, 2, true);
         int index = 0;
         foreach (var card in cards.Skip(zonePage * count).Take(count)) {
             int x = 210 + index++ * 169;
@@ -171,6 +176,11 @@ internal sealed partial class TableGame
             canvas.Text(card.ManaCost == "no cost" ? "" : card.ManaCost, x, 600, Gold, .62f, 156, 2);
             if (pose.Contains(pointer)) hovered = card;
             hits.Add(new("card:" + card.Key + ":" + card.VisualId, Scope, new(x, 304, 148, 298), () => { if (IsCardActionable(card)) { zoneName = null; CardClick(card); } else Inspect(card); }, card, zoneName, zonePlayer));
+            if (AvailableZone(card) is { } availableZone && zonePlayer == match.ViewerId) {
+                string scope = Scope;
+                PriorityAbilityButton("zone-use:" + CardIdentity(card), ZoneUseLabel(availableZone), new(x - 3, 644, 160, 42),
+                    () => UseZoneCard(card, availableZone, scope), !busy, true);
+            }
         }
         if (cards.Length == 0) canvas.CenterText("No cards are visible in this zone.", new(230, 333, 1120, 100), Muted, 1.05f);
         Button("zoneprev", "Previous", 208, 734, 160, () => zonePage--, zonePage > 0);

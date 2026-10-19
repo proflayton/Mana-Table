@@ -641,3 +641,24 @@ protocol. Old installers without that protocol need a manual bootstrap upgrade.
 The installer uses [InitializeSetup](https://jrsoftware.org/ishelp/topic_scriptevents.htm)
 to wait before file replacement. [Inno command-line options](https://jrsoftware.org/ishelp/topic_setupcmdline.htm)
 disable forced application closure and system restart during this handoff.
+
+### Native hand placements and zone actions
+
+`--smoke-hand-placement --profile <isolated-profile> --size 1000x740` drives
+normal pointer input through engine-projected extra hand placements, then
+graveyard and exile actions. Repeat at `1540x980`; both sizes are required native
+release gates. Evidence is `hand-placement-results.json` and captures 01–08.
+
+The journey checks that a single hand click reads, deliberate double-click and
+drag use the exact available source, multiple sources require a choice, and a
+revoked or phased-out source cannot submit. A placement first enters the stack;
+the later optional engine decision selects the hand card on resolution. Ordinary
+land-play usage remains separate, and ordinary playable cards keep their normal
+route. The inspector exposes an explicit alternate source.
+
+Own graveyard, exile and command zones show available-card counts. Graveyard and
+exile cards expose explicit use buttons and inspector actions; opponents receive
+no action cues. The engine's chooser supplies Flashback or another actual play
+description. Printed rules and card names never create these permissions in the
+native client. This controlled UI fixture verifies presentation and commands;
+the real Java fixtures independently verify rules, costs and response windows.
