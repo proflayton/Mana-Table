@@ -584,7 +584,7 @@ public class Game {
         }
         age = GameStage.GameOver;
 
-        for (Player p : getPlayers()) {
+        for (Player p : getPlayers().threadSafeIterable()) {
             p.onGameOver();
         }
 
@@ -892,7 +892,7 @@ public class Game {
         if (isMultiplayer) {
             p.revealFaceDownCards();
         } else {
-            for (Player pl : getPlayers()) {
+            for (Player pl : getPlayers().threadSafeIterable()) {
                 pl.revealFaceDownCards();
             }
         }
@@ -1020,7 +1020,7 @@ public class Game {
         lostPlayers.add(p);
 
         // free any mindslaves
-        for (Player pl : getPlayers()) {
+        for (Player pl : getPlayers().threadSafeIterable()) {
             pl.removeController(p);
         }
 

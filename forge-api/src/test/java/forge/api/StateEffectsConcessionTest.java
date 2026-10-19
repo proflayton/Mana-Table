@@ -4,6 +4,7 @@ import com.google.common.eventbus.Subscribe;
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import com.google.gson.JsonObject;
+import forge.game.Game;
 import forge.game.GameAction;
 import forge.game.card.CardCollectionView;
 import forge.game.event.GameEventGameFinished;
@@ -122,6 +123,142 @@ public class StateEffectsConcessionTest {
                 scenario.table.game.unsubscribeFromEvents(listener);
             }
         }
+    }
+
+    @Test(timeOut = 90000)
+    public void anInflightRepeatedConcessionCannotInvalidateTheLossRevealTraversal() throws Exception {
+        try (var scenario = new RulesScenario("loss-cleanup-concession", Map.of(
+                0, List.of("Glorious Anthem", "Grizzly Bears"), 3, List.of("Runeclaw Bear")))) {
+            var main = scenario.until(input -> input.seat() == 0
+                    && text(input.state(), "phaseKey").equals("MAIN1")
+                    && text(input.prompt(), "inputType").equals("InputPassPriority"));
+            var participants = new ArrayList<>(scenario.table.game.getPlayers());
+            var originalIds = participants.stream().map(Player::getId).toList();
+            String sessionId = text(main.state(), "id");
+            var forest = zone(viewer(main.state()), "Hand").getAsJsonArray("cards").asList().stream()
+                    .map(card -> card.getAsJsonObject()).filter(card -> text(card, "name").equals("Forest")
+                            && card.get("selectable").getAsBoolean()).findFirst().orElseThrow();
+            assertTrue(scenario.answer(main, Map.of("action", "card", "key", text(forest, "key"))));
+            var afterLand = scenario.until(input -> input.seat() == 0
+                    && text(input.state(), "phaseKey").equals("MAIN1")
+                    && text(input.prompt(), "inputType").equals("InputPassPriority")
+                    && zone(viewer(input.state()), "Battlefield").getAsJsonArray("cards").asList().stream()
+                    .map(card -> card.getAsJsonObject()).anyMatch(card -> text(card, "name").equals("Forest")));
+
+            concede(scenario, 2, sessionId);
+            concede(scenario, 1, sessionId);
+            assertEquals(scenario.table.game.getPlayers().stream().map(Player::getId).toList(),
+                    List.of(originalIds.get(0), originalIds.get(3)));
+            assertTrue(scenario.answer(afterLand, Map.of("action", "ok")));
+            var remainingOpponent = scenario.until(input -> input.seat() == 3
+                    && text(input.state(), "phaseKey").equals("MAIN1")
+                    && text(input.prompt(), "inputType").equals("InputPassPriority"));
+            var survivor = remainingOpponent;
+            assertNotEquals(text(survivor.prompt(), "id"), text(afterLand.prompt(), "id"),
+                    "A normal scoped pass must hand fresh priority to the other remaining player");
+            assertEquals(survivor.state().get("turn").getAsInt(), 1);
+            assertEquals(survivor.state().get("activePlayerId").getAsInt(), originalIds.get(0).intValue());
+            var publicBoard = zone(player(survivor.state(), originalIds.get(0)), "Battlefield").getAsJsonArray("cards").asList().stream()
+                    .map(card -> card.getAsJsonObject()).toList();
+            assertTrue(publicBoard.stream().anyMatch(card -> text(card, "name").equals("Forest")));
+            var bears = publicBoard.stream().filter(card -> text(card, "name").equals("Grizzly Bears")).findFirst().orElseThrow();
+            assertEquals(bears.get("power").getAsInt(), 3);
+            assertEquals(bears.get("toughness").getAsInt(), 3);
+            assertTrue(scenario.state(1).get("prompt").isJsonNull());
+            assertTrue(scenario.state(2).get("prompt").isJsonNull());
+            for (int seat = 0; seat < 4; seat++) assertPrivateZones(scenario.state(seat));
+
+            var finished = new CountDownLatch(1);
+            var listener = new Object() {
+                @Subscribe public void gameFinished(GameEventGameFinished event) { finished.countDown(); }
+            };
+            scenario.table.game.subscribeToEvents(listener);
+            try (var hook = new LossRevealRead(participants.get(0), scenario.table.game, () -> {
+                assertTrue(Thread.holdsLock(scenario.table.gate), "The callback must occur during the real synchronous session concession");
+                assertFalse(scenario.table.game.isGameOver(), "The repeated request must arrive while the first cleanup is still in flight");
+                var request = new JsonObject();
+                request.addProperty("sessionId", sessionId);
+                var response = scenario.table.seat(3).concede(request);
+                assertNotNull(response, "The normal scoped-session repeated concession must be accepted");
+                assertNull(response.get("error"));
+            })) {
+                try {
+                    concede(scenario, 3, sessionId);
+                    assertTrue(hook.fired, "The production reveal cleanup must execute the restoring zone hook");
+                    assertEquals(hook.reads, 2, "Remove the departing player only after the outer iterator yielded its second participant");
+                    assertTrue(hook.exactRevealPath, "The query must come directly from Game.onPlayerLost to Player.revealFaceDownCards");
+                    assertEquals(hook.before, List.of(originalIds.get(0), originalIds.get(3)));
+                    assertEquals(hook.after, List.of(originalIds.get(0)), "The repeated real concession must remove the departing participant inside the paused traversal");
+                    long terminalDeadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
+                    boolean announced = finished.await(Math.max(0, terminalDeadline - System.nanoTime()), TimeUnit.NANOSECONDS);
+                    var finalViews = terminalViews(scenario, terminalDeadline, announced, originalIds.get(0));
+                    for (int seat = 0; seat < 4; seat++) {
+                        var snapshot = finalViews.get(seat);
+                        assertNull(snapshot.get("error"));
+                        assertNull(snapshot.get("prompt"));
+                        var state = new Gson().toJsonTree(snapshot).getAsJsonObject();
+                        assertEquals(text(state, "status"), "finished");
+                        assertEquals(text(state, "result"), seat == 0 ? "Victory" : "Defeat");
+                        assertEquals(state.getAsJsonArray("players").asList().stream().map(player -> player.getAsJsonObject())
+                                .filter(player -> !player.get("eliminated").getAsBoolean()).map(player -> player.get("id").getAsInt()).toList(),
+                                List.of(originalIds.get(0)));
+                        assertPrivateZones(state);
+                    }
+                } finally {
+                    Files.writeString(scenario.evidence.resolve("loss-reveal-traversal.json"), new GsonBuilder().serializeNulls().create().toJson(Map.of(
+                            "hookFired", hook.fired, "exactRevealPath", hook.exactRevealPath,
+                            "matchingReads", hook.reads, "before", hook.before, "after", hook.after, "stack", hook.stack)));
+                }
+            } finally {
+                scenario.table.game.unsubscribeFromEvents(listener);
+            }
+        }
+    }
+
+    private static final class LossRevealRead implements AutoCloseable {
+        private final Map<ZoneType, PlayerZone> zones;
+        private final PlayerZone original;
+        private boolean fired;
+        private int reads;
+        private boolean exactRevealPath;
+        private List<Integer> before = List.of();
+        private List<Integer> after = List.of();
+        private List<String> stack = List.of();
+
+        @SuppressWarnings("unchecked")
+        LossRevealRead(Player observer, Game game, Runnable repeatConcession) throws Exception {
+            Field field = Player.class.getDeclaredField("zones");
+            field.setAccessible(true);
+            zones = (Map<ZoneType, PlayerZone>) field.get(observer);
+            original = zones.get(ZoneType.Exile);
+            assertNotNull(original);
+            zones.put(ZoneType.Exile, new PlayerZone(ZoneType.Exile, observer) {
+                @Override public CardCollectionView getCards(boolean filter) {
+                    boolean matching = StackWalker.getInstance().walk(frames -> frames
+                            .dropWhile(frame -> !frame.getClassName().equals(Player.class.getName())
+                                    || !frame.getMethodName().equals("revealFaceDownCards"))
+                            .skip(1).findFirst().map(frame -> frame.getClassName().equals(Game.class.getName())
+                                    && frame.getMethodName().equals("onPlayerLost")).orElse(false));
+                    // Each outer participant's reveal queries observer0's Exile
+                    // once. Remove after the second participant was yielded:
+                    // the live iterator cursor2 must then see the smaller list.
+                    if (fired || !matching || ++reads != 2) return original.getCards(filter);
+                    fired = true;
+                    exactRevealPath = matching;
+                    stack = StackWalker.getInstance().walk(frames -> frames.limit(16).map(Object::toString).toList());
+                    // This is the ordinary reveal's inner owned-card query, not a
+                    // replacement for reveal rules or an observation of every outer player.
+                    // Restore the real zone before the genuine nested cleanup touches it.
+                    LossRevealRead.this.close();
+                    before = game.getPlayers().stream().map(Player::getId).toList();
+                    repeatConcession.run();
+                    after = game.getPlayers().stream().map(Player::getId).toList();
+                    return original.getCards(filter);
+                }
+            });
+        }
+
+        @Override public void close() { zones.put(ZoneType.Exile, original); }
     }
 
     private static List<Map<String, Object>> terminalViews(RulesScenario scenario, long deadline, boolean announced, int winnerId) throws Exception {
