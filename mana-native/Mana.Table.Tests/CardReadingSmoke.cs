@@ -16,19 +16,31 @@ internal sealed class CardReadingSmoke : ITableAutomation
 {
     private readonly TableGame.Probe view;
     private readonly InteractionScenarioEngine scenario;
+    private readonly bool selectionOnly;
+    private int repliesBeforeReveal;
     private readonly Queue<(double Delay, Action Action, Func<bool>? Ready)> steps = [];
     private readonly List<string> checks = [];
     private readonly List<object> observations = [];
     private MouseState mouse;
     private double lastStep;
+    // Record real rendered steps and captures without batching input boundaries.
+    private readonly List<object> timing = [];
+    private readonly System.Diagnostics.Stopwatch diagnosticClock = System.Diagnostics.Stopwatch.StartNew();
+    private int diagnosticFrames, diagnosticStartedSteps, diagnosticCompletedSteps;
     public string? ExpectedClick => null;
     public bool ClickAccepted { get; set; }
     public MouseState ReadMouse() => mouse;
 
-    public CardReadingSmoke(TableGame.Probe view, InteractionScenarioEngine scenario)
+    public CardReadingSmoke(TableGame.Probe view, InteractionScenarioEngine scenario, bool selectionOnly = false)
     {
-        this.view = view; this.scenario = scenario;
-        Step(1.5, () => MoveCard("hand-3"));
+        this.view = view; this.scenario = scenario; this.selectionOnly = selectionOnly;
+        if (selectionOnly) {
+            QueueCompactSelectionChecks();
+            QueueTableChoiceChecks();
+            return;
+        }
+        Step(0, () => Publish(FocusedSeed(scenario.State, readingOnly: true)));
+        Prepared(InitialHandReady, 1.5, () => MoveCard("hand-3"), "The fresh hand and artwork must be ready before the initial pointer gesture");
         StepWhen(() => view.Hovered?.VisualId == "hand-3" && view.HoverPreview is { Width: >= 400, Height: >= 560 }
             && view.DisplayedPose("hand-3") is { Size.X: >= 400 } && view.CardPaintCount("hand-3") == 1, 3, () => {
             Check(view.Hovered?.VisualId == "hand-3" && view.HoverPreview is { Width: >= 400, Height: >= 560 }, "The hand card itself grows to reading size without a click");
@@ -92,7 +104,7 @@ internal sealed class CardReadingSmoke : ITableAutomation
         Step(.05, () => MoveCard("hand-4")); Click();
         Step(.2, () => Check(scenario.Replies.Count == 1, "Cancelling a drag clears the pending play gesture"));
         Step(0, () => Publish(scenario.State with { Decision = new() { Kind = "input", Intent = DecisionIntent.Selection } }));
-        Step(.5, () => MoveCard("hand-4")); Click();
+        Prepared(() => view.Match?.Decision is { Kind: "input", Intent: DecisionIntent.Selection } && FreshHand("hand-4", c => !c.FaceDown && c.Selectable), .5, () => MoveCard("hand-4"), "The fresh required hand selection must be visible before its click"); Click();
         Step(.3, () => Check(scenario.Replies.Count == 2, "Required hand selections still submit with one click"));
         Step(0, () => {
             var state = scenario.State;
@@ -100,19 +112,26 @@ internal sealed class CardReadingSmoke : ITableAutomation
                 Cards = z.Cards.Select(c => c with { FaceDown = true, Selectable = false }).ToArray() }).ToArray() }).ToArray() });
             Move(new(0, 0));
         });
-        Step(.6, () => MoveCard("hand-4"));
+        Prepared(() => FreshHand("hand-4", c => c.FaceDown && !c.Selectable), .6, () => MoveCard("hand-4"), "The concealed hand occurrence must be visible before the privacy dwell");
         Step(.4, () => Check(view.HoverPreview == null, "Concealed cards never gain a readable hover preview"));
         Step(0, () => {
-            var state = PresentationSmoke.Example();
+            var state = FocusedSeed(PresentationSmoke.Example(), readingOnly: true);
             Publish(state with { Players = state.Players.Select(p => p.Id != 0 ? p : p with { Zones = p.Zones.Select(z => z.Name != "Hand" ? z : z with { Cards = z.Cards.Select(c => c.VisualId != "hand-3" ? c : c with {
                 Name = "No-art readability fixture", ArtName = "No-art readability fixture", Text = "Vigilance\nWhenever this creature attacks, draw a card.\nYou may play an additional land on each of your turns."
             }).ToArray() }).ToArray() }).ToArray() });
             Move(new(0, 0));
         });
-        Step(.6, () => MoveCard("hand-3"));
+        Prepared(() => FreshHand("hand-3", c => c.Name == "No-art readability fixture"), .6, () => MoveCard("hand-3"), "The fresh no-art hand fixture must be visible before pointing to it");
         StepWhen(() => ReadingReady("hand-3") && view.Art(view.Hovered!) == null, 3, () => {
             Check(ReadingReady("hand-3") && view.Art(view.Hovered!) == null, "The readable rules fallback works even without card art");
             Capture("02-rules-without-art");
+        });
+        Step(0, () => Move(new(10, 70)));
+        StepWhen(() => view.Hovered == null && view.HoverPreview == null
+            && view.DisplayedPose("hand-3") is { Size.X: < 140 } && view.CardPaintCount("hand-3") == 1, 3, () => {
+            if (!(view.Hovered == null && view.HoverPreview == null
+                && view.DisplayedPose("hand-3") is { Size.X: < 140 } && view.CardPaintCount("hand-3") == 1))
+                Check(false, "The previous hand reader must return before pointing to a covered opponent card");
         });
         Step(0, () => MoveCard("seat-2-1"));
         StepWhen(() => ReadingReady("seat-2-1"), 3, () => {
@@ -152,17 +171,21 @@ internal sealed class CardReadingSmoke : ITableAutomation
         Step(.9, () => Check(scenario.Replies.Count == 4 && scenario.Replies[^1].Action == ReplyAction.AutoPass,
             "Auto resumes after the visible action despite intervening snapshot refreshes"));
         QueueRevealChecks();
-        QueueTableChoiceChecks();
+
         QueueStateChecks();
-        Step(0, () => {
-            File.WriteAllText(Path.Combine(view.Profile, "reading-observations.json"), JsonSerializer.Serialize(observations, new JsonSerializerOptions { WriteIndented = true, IncludeFields = true }));
-            File.WriteAllText(Path.Combine(view.Profile, "reading-results.json"), JsonSerializer.Serialize(checks, new JsonSerializerOptions { WriteIndented = true }));
-            view.Exit();
-        });
+
+    }
+    // Reporting needs no further input update or rendered frame after the last checked action.
+    private void FinishReading()
+    {
+        File.WriteAllText(Path.Combine(view.Profile, selectionOnly ? "compact-selection-observations.json" : "reading-observations.json"), JsonSerializer.Serialize(observations, new JsonSerializerOptions { WriteIndented = true, IncludeFields = true }));
+        File.WriteAllText(Path.Combine(view.Profile, selectionOnly ? "compact-selection-results.json" : "reading-results.json"), JsonSerializer.Serialize(checks, new JsonSerializerOptions { WriteIndented = true }));
+        WriteReadingDiagnostic("complete");
+        view.Exit();
     }
     private void QueueRevealChecks()
     {
-        int repliesBeforeReveal = 0;
+
         // Forge's revealed faces have no persistent identity or actionable key.
         var card = new Card { Name = "Llanowar Elves", Type = "Creature — Elf Druid", ManaCost = "{G}", Text = "{T}: Add {G}.", Power = 1, Toughness = 1 };
         Step(0, () => {
@@ -216,16 +239,43 @@ internal sealed class CardReadingSmoke : ITableAutomation
             Publish(scenario.State with { Decision = new() { Kind = "choice", Min = 1, Max = 3,
                 Choices = [new(2, card.Name, card), new(5, card.Name, card with { }), new(9, card.Name, card with { })] } });
         });
+        QueueSelectedGallery(card, compact: false);
+    }
+    private void QueueCompactSelectionChecks()
+    {
+        var card = new Card { Name = "Llanowar Elves", Type = "Creature \u2014 Elf Druid", ManaCost = "{G}", Text = "{T}: Add {G}.", Power = 1, Toughness = 1 };
+        Step(0, () => {
+            repliesBeforeReveal = scenario.Replies.Count;
+            Move(new(10, 70));
+            Publish(FocusedSeed(scenario.State, readingOnly: true) with {
+                Decision = new() { Kind = "reveal", Title = "Revealed cards", Choices = [new(0, card.Name, card), new(1, card.Name, card with { })] }
+            });
+        });
+        Prepared(() => view.Match?.Decision?.Kind == "reveal" && view.Hits.Any(h => h.Id == "choicesdone" && view.CurrentHit(h)),
+            2, () => MoveHit("choicesdone"), "The real reveal acknowledgement must be visible before its click"); Click();
+        Prepared(() => scenario.Replies.Count == repliesBeforeReveal + 1 && scenario.Replies[^1].Action == ReplyAction.Choose
+            && view.Match?.Decision?.Kind != "reveal" && !view.Busy, 2, () => {
+                Move(new(10, 70));
+                Publish(scenario.State with { Decision = new() { Kind = "choice", Min = 1, Max = 3,
+                    Choices = [new(2, card.Name, card), new(5, card.Name, card with { }), new(9, card.Name, card with { })] } });
+            }, "Continue must submit its real scoped reveal acknowledgement before the selectable gallery");
+        QueueSelectedGallery(card, compact: true);
+    }
+    private void QueueSelectedGallery(Card card, bool compact)
+    {
         Step(.15, () => MoveHit("choice:2"));
         StepWhen(() => GalleryReadingReady(0), 2, () =>
             Check(GalleryReadingReady(0) && view.Selections.Count == 0, "Selectable anonymous gallery cards can be read before making a choice")); Click();
         Step(0, () => {
             Check(view.Selections.SequenceEqual([2]) && scenario.Replies.Count == repliesBeforeReveal + 1,
                 "Clicking an enlarged choice stages its authoritative index without submitting or playing it");
-            Check(ChoiceCompact(0) && HitReachable("choice:5"),
-                "Selecting a gallery face immediately restores its normal footprint and the adjacent face's real hit area");
-            Capture("05b-choice-selected");
+            if (compact) {
+                Check(ChoiceCompact(0) && HitReachable("choice:5"),
+                    "Selecting a gallery face immediately restores its normal footprint and the adjacent face's real hit area");
+                Capture("05b-choice-selected");
+            }
         });
+        if (!compact) return;
         Step(.65, () => {
             Check(ChoiceCompact(0) && view.HoverPreview == null, "A selected anonymous face stays compact under a stationary pointer beyond the hover delay");
             MoveHit("choice:5");
@@ -284,7 +334,7 @@ internal sealed class CardReadingSmoke : ITableAutomation
         const string battlefield = "seat-0-1", hand = "hand-0";
         Step(0, () => {
             Move(new(10, 70));
-            var state = PresentationSmoke.Example();
+            var state = FocusedSeed(PresentationSmoke.Example());
             var creature = state.Viewer!.Zone("Battlefield").Cards.Single(c => c.VisualId == battlefield);
             var handCard = state.Viewer.Zone("Hand").Cards.Single(c => c.VisualId == hand);
             Publish(state with { Decision = new() { Kind = "choice", Min = 1, Max = 2, Choices = [
@@ -333,9 +383,15 @@ internal sealed class CardReadingSmoke : ITableAutomation
     }
     private void QueueStateChecks()
     {
-        Pose original = default;
-        Step(0, () => { Move(new(10, 70)); Publish(PresentationSmoke.StateExample()); });
-        Step(1, () => {
+        Pose original = default, phaseInRest = default;
+        Step(0, () => {
+            Move(new(10, 70)); Publish(FocusedSeed(PresentationSmoke.StateExample()));
+            original = TableScene.Build(view.Match!, 0, new(-1, -1), null, null, false, CardPresentation.IsResource)
+                .Rank(0, false).Cards.Single(c => c.Id == "seat-0-1").Pose;
+        });
+        StepWhen(() => FreshOwnCard("seat-0-1", "Battlefield", c => c.CombatKeywords.Contains("flying"))
+            && view.DisplayedPose("seat-0-1") is { Elevation: > 12 } flying
+            && flying.Center.Y < original.Center.Y - 10, 1, () => {
             var scene = TableScene.Build(view.Match!, 0, new(-1, -1), null, null, false, CardPresentation.IsResource);
             original = scene.Rank(0, false).Cards.Single(c => c.Id == "seat-0-1").Pose;
             var displayed = view.DisplayedPose("seat-0-1");
@@ -350,7 +406,9 @@ internal sealed class CardReadingSmoke : ITableAutomation
             Publish(state with { Players = state.Players.Select(p => p with { Zones = p.Zones.Select(z => z with { Cards = z.Cards.Select(c => c.VisualId == "seat-0-1"
                 ? c with { CombatKeywords = [], Counters = [], Power = 1, Toughness = 1 } : c).ToArray() }).ToArray() }).ToArray() });
         });
-        Step(1, () => {
+        StepWhen(() => FreshOwnCard("seat-0-1", "Battlefield", c => c.CombatKeywords.Length == 0 && c.Counters.Count == 0 && c.Power == 1)
+            && view.DisplayedPose("seat-0-1") is { Elevation: < 1 } grounded
+            && Microsoft.Xna.Framework.Vector2.Distance(grounded.Center, original.Center) < 2, 1, () => {
             Check(view.DisplayedPose("seat-0-1") is { Elevation: < 1 } pose && Microsoft.Xna.Framework.Vector2.Distance(pose.Center, original.Center) < 2,
                 "Losing flying returns the same occurrence to the table");
             Check(view.Match!.Viewer!.Zone("Battlefield").Cards.Single(c => c.VisualId == "seat-0-1") is { Counters.Count: 0, CombatKeywords.Length: 0, Power: 1 },
@@ -388,8 +446,13 @@ internal sealed class CardReadingSmoke : ITableAutomation
             Publish(state with { Players = state.Players.Select(p => p with { Zones = p.Zones.Select(z => z with {
                 Cards = z.Cards.Select(c => c.PhasedOut ? c with { PhasedOut = false, Tapped = false } : c).ToArray()
             }).ToArray() }).ToArray() });
+            // Derive the target from the new untapped projection, never the old tapped cell.
+            phaseInRest = TableScene.Build(view.Match!, 0, new(-1, -1), null, null, false, CardPresentation.IsResource)
+                .Rank(0, true).Cards.Single(c => c.Id == "seat-0-0").Pose;
         });
-        Step(1, () => {
+        StepWhen(() => FreshOwnCard("seat-0-0", "Battlefield", c => !c.PhasedOut && !c.Tapped)
+            && view.DisplayedPose("seat-0-0") is { Elevation: < 1, Angle: >= -.02f and <= .02f } returned
+            && Microsoft.Xna.Framework.Vector2.Distance(returned.Center, phaseInRest.Center) < 2, 1, () => {
             var scene = TableScene.Build(view.Match!, 0, new(-1, -1), null, null, false, CardPresentation.IsResource);
             var isleRest = scene.Rank(0, true).Cards.Single(c => c.Id == "seat-0-0").Pose;
             Check(view.DisplayedPose("seat-0-0") is { Elevation: < 1, Angle: >= -.02f and <= .02f } pose
@@ -399,6 +462,57 @@ internal sealed class CardReadingSmoke : ITableAutomation
                 "The returning land renders the engine's untapped state without stale phasing");
             Capture("10-phased-in-land");
         });
+    }
+    // Reading exercises specific cards; crowded-board exposure has its own suite.
+    // Apply only to fresh seeds so later played/selected cards are never trimmed.
+    private static GameSnapshot FocusedSeed(GameSnapshot state, bool readingOnly = false) => state with {
+        Players = state.Players.Select(player => player with {
+            Zones = player.Zones.Select(zone => {
+                if (zone.Name != "Battlefield") return zone;
+                int keep = player.Id == state.ViewerId ? (readingOnly ? 2 : 8) : player.Id == 2 ? 2 : 1;
+                var cards = zone.Cards.Take(keep).ToArray();
+                return zone with { Count = cards.Length, Cards = cards };
+            }).ToArray()
+        }).ToArray()
+    };
+    // These positive setup waits retain their old maximums. The next gesture still
+    // crosses its own Update/Draw boundary; negative dwell and click timings do not change.
+    private void Prepared(Func<bool> ready, double maximum, Action action, string failure) => StepWhen(ready, maximum, () => {
+        if (!ready()) Check(false, failure);
+        action();
+    });
+    private bool FreshOwnCard(string id, string zone, Func<Card, bool> condition)
+    {
+        var card = view.Match?.Viewer?.Zone(zone).Cards.SingleOrDefault(c => c.VisualId == id);
+        var hit = view.Hits.LastOrDefault(h => h.Zone == zone && h.Card?.VisualId == id);
+        return card != null && condition(card) && hit?.Card is { } face && condition(face)
+            && hit.Scope == view.Scope && view.CurrentHit(hit) && face.Key == card.Key
+            && view.CardPaintCount(id) == 1;
+    }
+    private bool FreshHand(string id, Func<Card, bool> condition)
+    {
+        if (!FreshOwnCard(id, "Hand", condition)) return false;
+        var hand = view.Match!.Viewer!.Zone("Hand").Cards;
+        int index = Array.FindIndex(hand, c => c.VisualId == id);
+        if (index < 0) return false;
+        var hit = view.Hits.Last(h => h.Zone == "Hand" && h.Card?.VisualId == id);
+        var rest = TableLayout.Hand(index % 11, Math.Min(11, hand.Length));
+        for (int y = 890; y >= Math.Max(810, rest.Bounds.Top + 8); y -= 5)
+            for (int x = rest.Bounds.Left + 8; x < rest.Bounds.Right; x += 5)
+                if (rest.Contains(new(x, y)) && SmokePointer.TryPoint(view, hit, new(x, y), out _)) return true;
+        return false;
+    }
+    private bool InitialHandReady()
+    {
+        if (!FreshHand("hand-3", c => !c.FaceDown)) return false;
+        var hand = view.Match!.Viewer!.Zone("Hand").Cards;
+        int index = Array.FindIndex(hand, c => c.VisualId == "hand-3");
+        var rest = TableLayout.Hand(index % 11, Math.Min(11, hand.Length));
+        return view.DisplayedPose("hand-3") is { Size.X: < 140 } pose
+            && Microsoft.Xna.Framework.Vector2.Distance(pose.Center, rest.Center) < 2
+            && Microsoft.Xna.Framework.Vector2.Distance(pose.Size, rest.Size) < 2
+            && Math.Abs(pose.Angle - rest.Angle) < .02f
+            && view.Art(hand[index]) is { LevelCount: > 1, Width: >= 4, Height: >= 4 };
     }
     private bool ReadingReady(string id) => view.Hovered?.VisualId == id
         && view.HoverPreview is { Width: >= 400, Height: >= 560 }
@@ -467,11 +581,55 @@ internal sealed class CardReadingSmoke : ITableAutomation
         }
         checks.Add(description);
     }
-    private void Capture(string name) { using var output = File.Create(Path.Combine(view.Profile, name + ".png")); view.Surface.SaveAsPng(output, view.Surface.Width, view.Surface.Height); }
+    private void Capture(string name)
+    {
+        var started = diagnosticClock.Elapsed.TotalSeconds;
+        var watch = System.Diagnostics.Stopwatch.StartNew();
+        using (var output = File.Create(Path.Combine(view.Profile, name + ".png")))
+            view.Surface.SaveAsPng(output, view.Surface.Width, view.Surface.Height);
+        timing.Add(new { kind = "capture", name, view.Now, wallStarted = started,
+            wallSeconds = watch.Elapsed.TotalSeconds, diagnosticFrames,
+            diagnosticStartedSteps, diagnosticCompletedSteps, checks = checks.Count });
+    }
+    private void WriteReadingDiagnostic(string reason)
+    {
+        object? pending = steps.TryPeek(out var next) ? new { next.Delay, readiness = next.Ready != null } : null;
+        var logical = SmokePointer.Table(view, new(mouse.X, mouse.Y));
+        var hit = view.HitAt(logical);
+        var record = new { reason, view.Now, wallSeconds = diagnosticClock.Elapsed.TotalSeconds,
+            diagnosticFrames, diagnosticStartedSteps, diagnosticCompletedSteps, queued = steps.Count,
+            pending, lastStep, sincePreviousStep = view.Now - lastStep, view.Scope,
+            view.Overlay, view.ZoneName, view.Error, checks, observations, timing,
+            physicalPointer = new { mouse.X, mouse.Y }, logicalPointer = logical,
+            hit = hit == null ? null : new { hit.Id, hit.Scope, current = view.CurrentHit(hit) },
+            left = mouse.LeftButton.ToString(), right = mouse.RightButton.ToString(),
+            hovered = view.Hovered?.VisualId, view.HoverPreview,
+            hoveredPose = view.Hovered == null ? null : view.DisplayedPose(view.Hovered.VisualId),
+            phasedLandPose = view.DisplayedPose("seat-0-0"),
+            replies = scenario.Replies.ToArray() };
+        File.WriteAllText(Path.Combine(view.Profile, selectionOnly ? "compact-selection-timing-diagnostic.json" : "reading-timing-diagnostic.json"),
+            JsonSerializer.Serialize(record, new JsonSerializerOptions { WriteIndented = true, IncludeFields = true }));
+    }
     public void Frame(Texture2D surface)
     {
-        if (view.Now > 50) throw new TimeoutException("Reading smoke did not finish");
-        if (view.Error.Length > 0) Check(false, view.Error);
-        if (steps.TryPeek(out var next) && (next.Ready?.Invoke() == true || view.Now - lastStep >= next.Delay)) { steps.Dequeue(); next.Action(); lastStep = view.Now; }
+        diagnosticFrames++;
+        try {
+            if (view.Now > (selectionOnly ? 30 : 50)) throw new TimeoutException(selectionOnly ? "Compact selection smoke did not finish" : "Reading smoke did not finish");
+            if (view.Error.Length > 0) Check(false, view.Error);
+            if (steps.TryPeek(out var next) && (next.Ready?.Invoke() == true || view.Now - lastStep >= next.Delay)) {
+                steps.Dequeue();
+                int index = ++diagnosticStartedSteps;
+                double wait = view.Now - lastStep, wallStarted = diagnosticClock.Elapsed.TotalSeconds;
+                var watch = System.Diagnostics.Stopwatch.StartNew();
+                try { next.Action(); lastStep = view.Now; diagnosticCompletedSteps++; }
+                finally { timing.Add(new { kind = "step", index, view.Now, wallStarted,
+                    wallSeconds = watch.Elapsed.TotalSeconds, wait, next.Delay, readiness = next.Ready != null,
+                    diagnosticFrames, checks = checks.Count, queued = steps.Count,
+                    lastCheck = checks.LastOrDefault(), hovered = view.Hovered?.VisualId,
+                    left = mouse.LeftButton.ToString(), right = mouse.RightButton.ToString(),
+                    physicalPointer = new { mouse.X, mouse.Y }, view.Scope, view.Overlay }); }
+                if (steps.Count == 0) FinishReading();
+            }
+        } catch { WriteReadingDiagnostic("exception"); throw; }
     }
 }
