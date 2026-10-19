@@ -32,11 +32,11 @@ on:
 permissions:
   contents: read
 
-# Serialize master releases, including manual reruns. Publication also checks
-# master again after the uploads, so an older build cannot become Latest.
+# Serialize master releases, including manual reruns. A newer PR commit replaces
+# its superseded verification run. Publication checks master after the uploads.
 concurrency:
   group: mana-native-${{ github.event_name == 'pull_request' && github.ref || 'master-release' }}
-  cancel-in-progress: false
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   windows:
@@ -195,6 +195,8 @@ jobs:
           path: |
             ${{ runner.temp }}/mana-native-tests/**/*-results.json
             ${{ runner.temp }}/mana-native-tests/**/*-regression.json
+            ${{ runner.temp }}/mana-native-tests/**/*-observations.json
+            ${{ runner.temp }}/mana-native-tests/**/*-events.json
             ${{ runner.temp }}/mana-native-tests/**/failure.json
             ${{ runner.temp }}/mana-native-tests/**/*-failure.json
             ${{ runner.temp }}/mana-native-tests/**/*.png

@@ -18,6 +18,7 @@ internal sealed class CardReadingSmoke : ITableAutomation
     private readonly InteractionScenarioEngine scenario;
     private readonly Queue<(double Delay, Action Action, Func<bool>? Ready)> steps = [];
     private readonly List<string> checks = [];
+    private readonly List<object> observations = [];
     private MouseState mouse;
     private double lastStep;
     public string? ExpectedClick => null;
@@ -46,9 +47,12 @@ internal sealed class CardReadingSmoke : ITableAutomation
         Click();
         Step(.6, () => Check(scenario.Replies.Count == 0 && view.Overlay == "", "A single click on a playable hand card is safe for reading"));
         Step(0, () => MoveCard("hand-4"));
-        Step(.65, () => Check(view.Hovered?.VisualId == "hand-4" && view.DisplayedPose("hand-4") is { Size.X: >= 400 }, "The fan remains browsable when an enlarged card overlaps neighboring slots"));
+        StepWhen(() => ReadingReady("hand-4"), 3, () => {
+            Check(ReadingReady("hand-4"), "The fan remains browsable when an enlarged card overlaps neighboring slots");
+            Capture("01b-fan-neighbor");
+        });
         Step(0, () => MoveCard("hand-3"));
-        Step(.65, () => { });
+        AwaitReading("hand-3");
         Step(0, () => Move(new(10, 70)));
         Step(.07, () => {
             Check(view.DisplayedPose("hand-3") is { Size.X: > 150 and < 400 } && view.CardPaintCount("hand-3") == 1, "Leaving hover smoothly returns the same card to its hand slot");
@@ -59,7 +63,7 @@ internal sealed class CardReadingSmoke : ITableAutomation
             () => Check(view.DisplayedPose("hand-3") is { Size.X: < 140 } && view.CardPaintCount("hand-3") == 1
                 && view.Hovered == null && view.HoverPreview == null, "The card settles back to its normal hand size"));
         Step(0, () => MoveCard("hand-3"));
-        Step(.65, () => { });
+        AwaitReading("hand-3");
         Step(0, () => Buttons(right: ButtonState.Pressed));
         Step(.05, () => Buttons());
         Step(.1, () => Check(view.Overlay == "inspect" && scenario.Replies.Count == 0, "Right-click inspects a playable card without playing it"));
@@ -106,18 +110,18 @@ internal sealed class CardReadingSmoke : ITableAutomation
             Move(new(0, 0));
         });
         Step(.6, () => MoveCard("hand-3"));
-        Step(.6, () => {
-            Check(view.HoverPreview != null && view.Art(view.Hovered!) == null, "The readable rules fallback works even without card art");
+        StepWhen(() => ReadingReady("hand-3") && view.Art(view.Hovered!) == null, 3, () => {
+            Check(ReadingReady("hand-3") && view.Art(view.Hovered!) == null, "The readable rules fallback works even without card art");
             Capture("02-rules-without-art");
         });
         Step(0, () => MoveCard("seat-2-1"));
-        Step(.5, () => {
-            Check(view.Hovered?.VisualId == "seat-2-1" && view.HoverPreview is { Width: >= 400 }, "Opponent permanents also offer a large passive preview");
+        StepWhen(() => ReadingReady("seat-2-1"), 3, () => {
+            Check(ReadingReady("seat-2-1"), "Opponent permanents also offer a large passive preview");
             Capture("03-opponent-hover");
         });
         Step(0, () => MoveHit("pile-card:0:Graveyard"));
-        Step(.5, () => {
-            Check(view.Hovered?.VisualId == "grave-0" && view.HoverPreview != null, "Visible graveyard top cards can be read without opening the pile");
+        StepWhen(() => view.Hovered?.VisualId == "grave-0" && view.HoverPreview is { Width: >= 400, Height: >= 560 }, 3, () => {
+            Check(view.Hovered?.VisualId == "grave-0" && view.HoverPreview is { Width: >= 400, Height: >= 560 }, "Visible graveyard top cards can be read without opening the pile");
         }); Click();
         Step(.1, () => Check(view.ZoneName == "Graveyard" && scenario.Replies.Count == 2, "An enlarged pile card still opens its browser with a single click"));
         Step(0, () => MoveHit("close-overlay")); Click();
@@ -150,6 +154,7 @@ internal sealed class CardReadingSmoke : ITableAutomation
         QueueRevealChecks();
         QueueStateChecks();
         Step(0, () => {
+            File.WriteAllText(Path.Combine(view.Profile, "reading-observations.json"), JsonSerializer.Serialize(observations, new JsonSerializerOptions { WriteIndented = true, IncludeFields = true }));
             File.WriteAllText(Path.Combine(view.Profile, "reading-results.json"), JsonSerializer.Serialize(checks, new JsonSerializerOptions { WriteIndented = true }));
             view.Exit();
         });
@@ -164,8 +169,8 @@ internal sealed class CardReadingSmoke : ITableAutomation
             Publish(scenario.State with { Decision = new() { Kind = "reveal", Title = "Revealed cards", Choices = [new(0, card.Name, card), new(1, card.Name, card with { })] } });
         });
         Step(.15, () => MoveHit("choice:0"));
-        Step(.6, () => {
-            Check(view.HoverPreview is { Width: >= 400, Height: >= 560 } && view.CardPaintCount("choice-face:" + view.Scope + ":0") == 1,
+        StepWhen(() => GalleryReadingReady(0), 3, () => {
+            Check(GalleryReadingReady(0),
                 "An anonymous revealed face enlarges in place and is painted exactly once");
             Check(scenario.Replies.Count == repliesBeforeReveal && view.Selections.Count == 0, "Reading a revealed card does not select it or advance the decision");
             Capture("05-revealed-hover");
@@ -174,8 +179,8 @@ internal sealed class CardReadingSmoke : ITableAutomation
             Check(scenario.Replies.Count == repliesBeforeReveal && view.Match?.Decision?.Kind == "reveal", "Clicking a view-only revealed face does not continue the game");
             MoveHit("choice:1");
         });
-        Step(.6, () => {
-            Check(view.DisplayedPose("choice-face:" + view.Scope + ":1") is { Size.X: >= 400 }, "Identically named revealed cards remain independently browsable");
+        StepWhen(() => GalleryReadingReady(1), 3, () => {
+            Check(GalleryReadingReady(1), "Identically named revealed cards remain independently browsable");
             var done = view.Hits.Single(h => h.Id == "choicesdone");
             Check(view.HitAt(done.Bounds.Center)?.Id == done.Id, "Continue stays accessible while a revealed card is enlarged");
             MoveHit("choicesdone");
@@ -186,12 +191,12 @@ internal sealed class CardReadingSmoke : ITableAutomation
             Publish(scenario.State with { Decision = new() { Kind = "reveal", LibraryCards = Enumerable.Range(0, 8).Select(i => new LibraryChoice(null, card.Name, card with { })).ToArray() } });
         });
         Step(.15, () => MoveHit("reveal:0"));
-        Step(.6, () => {
-            Check(view.HoverPreview is { Width: >= 400 }, "Revealed library faces without choice indices also enlarge");
+        StepWhen(() => GalleryReadingReady(0), 3, () => {
+            Check(GalleryReadingReady(0), "Revealed library faces without choice indices also enlarge");
             MoveHit("reveal:6");
         });
-        Step(.6, () => {
-            Check(view.HoverPreview is { Width: >= 400 } && new[] { "choicesnext", "choicesfilter", "choicesdone" }.All(id => {
+        StepWhen(() => GalleryReadingReady(6), 3, () => {
+            Check(GalleryReadingReady(6) && new[] { "choicesnext", "choicesfilter", "choicesdone" }.All(id => {
                 var hit = view.Hits.Single(h => h.Id == id); return view.HitAt(hit.Bounds.Center)?.Id == id;
             }), "A full gallery keeps paging, search and Continue accessible beside an enlarged edge card");
             MoveHit("choicesnext");
@@ -201,8 +206,8 @@ internal sealed class CardReadingSmoke : ITableAutomation
                 "Paging a reveal removes the previous page's enlarged occurrence");
             MoveHit("reveal:7");
         });
-        Step(.6, () => {
-            Check(view.HoverPreview is { Width: >= 400 }, "Read-only faces on later gallery pages retain their own hover identity");
+        StepWhen(() => GalleryReadingReady(7), 3, () => {
+            Check(GalleryReadingReady(7), "Read-only faces on later gallery pages retain their own hover identity");
             Publish(scenario.State with { Decision = new() { Kind = "reveal", LibraryCards = [new(null, "Face-down card", card with { FaceDown = true, Text = "", Name = "Face-down card" })] } });
         });
         Step(.25, () => {
@@ -210,7 +215,7 @@ internal sealed class CardReadingSmoke : ITableAutomation
             Publish(scenario.State with { Decision = new() { Kind = "choice", Min = 1, Max = 1, Choices = [new(0, card.Name, card)] } });
         });
         Step(.15, () => MoveHit("choice:0"));
-        Step(.6, () => Check(view.HoverPreview is { Width: >= 400 } && view.Selections.Count == 0, "Selectable gallery cards can be read before making a choice")); Click();
+        StepWhen(() => GalleryReadingReady(0) && view.Selections.Count == 0, 3, () => Check(GalleryReadingReady(0) && view.Selections.Count == 0, "Selectable gallery cards can be read before making a choice")); Click();
         Step(.1, () => Check(view.Selections.SequenceEqual([0]) && scenario.Replies.Count == repliesBeforeReveal + 1, "Clicking an enlarged choice selects it without submitting or playing the card"));
     }
     private void QueueStateChecks()
@@ -282,6 +287,18 @@ internal sealed class CardReadingSmoke : ITableAutomation
             Capture("10-phased-in-land");
         });
     }
+    private bool ReadingReady(string id) => view.Hovered?.VisualId == id
+        && view.HoverPreview is { Width: >= 400, Height: >= 560 }
+        && view.DisplayedPose(id) is { Size.X: >= 400 } && view.CardPaintCount(id) == 1;
+    private bool GalleryReadingReady(int slot)
+    {
+        string id = "choice-face:" + view.Scope + ":" + slot;
+        return view.HoverPreview is { Width: >= 400, Height: >= 560 }
+            && view.DisplayedPose(id) is { Size.X: >= 400 } && view.CardPaintCount(id) == 1;
+    }
+    private void AwaitReading(string id) => StepWhen(() => ReadingReady(id), 3, () => {
+        if (!ReadingReady(id)) Check(false, "The card must finish enlarging before the next gesture: " + id);
+    });
     private void Step(double delay, Action action) => steps.Enqueue((delay, action, null));
     // Saving a GPU capture blocks Draw; allow subsequent motion to settle within a
     // bounded deadline rather than counting that capture time as animation frames.
@@ -323,6 +340,10 @@ internal sealed class CardReadingSmoke : ITableAutomation
     private void Publish(GameSnapshot state) { scenario.Present(state); view.Accept(scenario.State); }
     private void Check(bool condition, string description)
     {
+        observations.Add(new { description, condition, view.Now, hovered = view.Hovered?.VisualId,
+            view.HoverPreview, pose = view.Hovered == null ? null : view.DisplayedPose(view.Hovered.VisualId),
+            hand3 = view.DisplayedPose("hand-3"), hand4 = view.DisplayedPose("hand-4"),
+            replies = scenario.Replies.Count, point = new { mouse.X, mouse.Y } });
         if (!condition) {
             Capture("failure");
             File.WriteAllText(Path.Combine(view.Profile, "failure.json"), JsonSerializer.Serialize(new { description, view.Now, view.Overlay, view.ZoneName,
