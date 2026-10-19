@@ -54,7 +54,10 @@ internal sealed class CardReadingSmoke : ITableAutomation
             Check(view.DisplayedPose("hand-3") is { Size.X: > 150 and < 400 } && view.CardPaintCount("hand-3") == 1, "Leaving hover smoothly returns the same card to its hand slot");
             Capture("04-returning-to-hand");
         });
-        Step(.6, () => Check(view.DisplayedPose("hand-3") is { Size.X: < 140 }, "The card settles back to its normal hand size"));
+        StepWhen(() => view.DisplayedPose("hand-3") is { Size.X: < 140 }
+            && view.CardPaintCount("hand-3") == 1 && view.Hovered == null && view.HoverPreview == null, 3,
+            () => Check(view.DisplayedPose("hand-3") is { Size.X: < 140 } && view.CardPaintCount("hand-3") == 1
+                && view.Hovered == null && view.HoverPreview == null, "The card settles back to its normal hand size"));
         Step(0, () => MoveCard("hand-3"));
         Step(.65, () => { });
         Step(0, () => Buttons(right: ButtonState.Pressed));
