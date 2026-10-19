@@ -17,6 +17,7 @@ on:
       - 'forge-desktop/renderer/turn-guide.js'
       - 'forge-desktop/scripts/release-artifacts.cjs'
       - 'forge-desktop/scripts/test-node.cjs'
+      - 'forge-desktop/scripts/wait-release-ci.cjs'
       - 'forge-desktop/tests/*.test.cjs'
       - 'forge-desktop/tests/support/**'
       - 'forge-desktop/tests/fixtures/**'
@@ -26,28 +27,6 @@ on:
       - 'LICENSE'
       - '.github/workflows/mana-table-native-release.yml'
   pull_request:
-    paths:
-      - 'mana-native/**'
-      - 'forge-api/**'
-      - 'forge-core/**'
-      - 'forge-game/**'
-      - 'forge-ai/**'
-      - 'forge-gui/**'
-      - 'forge-desktop/engine-client.cjs'
-      - 'forge-desktop/runtime.cjs'
-      - 'forge-desktop/deck-sources.cjs'
-      - 'forge-desktop/preferences.cjs'
-      - 'forge-desktop/renderer/turn-guide.js'
-      - 'forge-desktop/scripts/release-artifacts.cjs'
-      - 'forge-desktop/scripts/test-node.cjs'
-      - 'forge-desktop/tests/*.test.cjs'
-      - 'forge-desktop/tests/support/**'
-      - 'forge-desktop/tests/fixtures/**'
-      - 'scenarios/**'
-      - 'pom.xml'
-      - '.mvn/**'
-      - 'LICENSE'
-      - '.github/workflows/mana-table-native-release.yml'
   workflow_dispatch:
 
 permissions:
@@ -84,6 +63,8 @@ jobs:
       - uses: actions/setup-node@v7
         with:
           node-version: '24'
+      - name: Verify release publication gate helper
+        run: node --test forge-desktop/tests/release-ci.test.cjs
       - name: Create isolated regression profiles
         run: |
           $testRoot = Join-Path $env:RUNNER_TEMP 'mana-native-tests'
@@ -145,6 +126,7 @@ jobs:
           $suites = @(
             @{ Name='startup'; Mode='--smoke-engine-startup'; Result='engine-startup-regression.json' },
             @{ Name='adapter'; Mode='--smoke-workshop-adapter'; Result='workshop-adapter-results.json' },
+            @{ Name='presentation'; Mode='--smoke-presentation'; Result='presentation-results.json' },
             @{ Name='onboarding'; Mode='--smoke-onboarding'; Result='onboarding-results.json' },
             @{ Name='loading'; Mode='--smoke-loading'; Result='loading-results.json' },
             @{ Name='priority-1280'; Mode='--smoke-priority-abilities'; Result='priority-ability-results.json' },
@@ -245,14 +227,24 @@ jobs:
     needs: windows
     if: github.repository == 'proflayton/Mana-Table' && github.ref == 'refs/heads/master' && github.event_name != 'pull_request'
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 90
     permissions:
       contents: write
+      actions: read
     env:
       GH_TOKEN: ${{ github.token }}
       GH_REPO: proflayton/Mana-Table
       RELEASE_VERSION: 0.2.${{ github.run_number }}
     steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+      - name: Wait for all required source CI before publication
+        run: node forge-desktop/scripts/wait-release-ci.cjs
       - uses: actions/download-artifact@v8
         with:
           name: mana-native-windows-x64-${{ github.run_attempt }}
@@ -298,6 +290,8 @@ jobs:
           gh release upload $tag downloads/ManaTable-Setup.exe downloads/ManaTable-Setup.exe.sha256 downloads/ManaTable-Windows-x64.zip downloads/ManaTable-Windows-x64.zip.sha256 downloads/ManaTable-Source.zip downloads/ManaTable-Source.zip.sha256 downloads/installer-manifest.json --repo $env:GH_REPO --clobber
           if ($LASTEXITCODE -ne 0) { throw 'Download upload failed; the release remains a draft.' }
           if (-not (MasterIsCurrent)) { 'Master advanced during upload; the release remains a draft.' >> $env:GITHUB_STEP_SUMMARY; exit 0 }
+          node forge-desktop/scripts/wait-release-ci.cjs
+          if ($LASTEXITCODE -ne 0) { throw 'Required source CI changed; the release remains a draft.' }
           gh release edit $tag --repo $env:GH_REPO --draft=false --latest
           if ($LASTEXITCODE -ne 0) { throw 'Could not publish the tested release.' }
           '[Download Mana Table for Windows](https://github.com/proflayton/Mana-Table/releases/latest/download/ManaTable-Setup.exe)' >> $env:GITHUB_STEP_SUMMARY
