@@ -1,10 +1,16 @@
 const { test, expect } = require('@playwright/test');
 const { launchDesktop } = require('./support/desktop.cjs');
 const path = require('node:path');
+const fs = require('node:fs');
 
 test('match table plays cards through engine prompts and resumes after deck browsing', async () => {
-  const { application, appPath, executable } = await launchDesktop('match');
+  const { application, appPath, executable, dataPath } = await launchDesktop('match');
   const errors = [];
+  const observations = { openingHands: [], retainedHand: null, priority: [], final: null };
+  const describe = card => ({ name: card.name, type: card.type, manaCost: card.manaCost,
+    visualId: card.visualId, selectable: card.selectable, highlighted: card.highlighted });
+  const land = card => card.type.includes('Land');
+  const oneDrop = card => card.type.includes('Creature') && String(card.manaCost).replace(/[{}\s]/g, '') === 'R';
   try {
     const page = await application.firstWindow();
     page.on('pageerror', error => errors.push(error.message));
@@ -25,19 +31,29 @@ test('match table plays cards through engine prompts and resumes after deck brow
     await page.locator('#match-motion').click();
     await expect(page.locator('#match-motion')).toHaveAttribute('aria-pressed', 'true');
     expect(await page.evaluate(() => localStorage.getItem('mana-table-motion'))).toBe('on');
-    let played = false, paid = false, mulligan = false, yourTurn = false, opponentTurn = false, oldPrompt;
+    let played = false, paid = false, mulligan = false, yourTurn = false, opponentTurn = false, oldPrompt, mulliganCount = 0;
+    const observedPriority = new Set();
     const deadline = Date.now() + 65000;
     while (Date.now() < deadline) {
       const state = await page.evaluate(() => window.forge.request('matchState'));
       expect(state.status, state.error).not.toBe('error');
       const p = state.prompt;
+      const human = state.players.find(player => player.human);
+      const hand = human?.zones.find(zone => zone.name === 'Hand').cards || [];
+      const field = human?.zones.find(zone => zone.name === 'Battlefield').cards || [];
+      const renderedPrompt = await page.locator('#match-prompt').getAttribute('data-prompt-id');
+      if (p?.inputType === 'InputPassPriority' && !observedPriority.has(p.id)) {
+        observedPriority.add(p.id);
+        observations.priority.push({ id: p.id, renderedPrompt, turn: state.turn, phase: state.phaseKey,
+          activePlayerId: state.activePlayerId, canAutoPass: p.canAutoPass, mana: human.mana,
+          hand: hand.map(describe), field: field.map(describe) });
+        if (observations.priority.length > 60) observations.priority.shift();
+      }
       // The engine can replace a transient prompt before the renderer's next poll.
       // Act only when both sides agree, rather than waiting for an obsolete ID.
-      if (!p || p.id === oldPrompt || await page.locator('#match-prompt').getAttribute('data-prompt-id') !== p.id) {
+      if (!p || p.id === oldPrompt || renderedPrompt !== p.id) {
         await page.waitForTimeout(100); continue;
       }
-      const human = state.players.find(player => player.human);
-      const field = human.zones.find(zone => zone.name === 'Battlefield').cards;
       if (state.turn > 0) {
         const active = state.players.find(player => player.id === state.activePlayerId);
         await expect(page.locator('#match-turn-owner')).toHaveText(active.human ? 'Your turn' : `${active.name}’s turn`);
@@ -56,11 +72,32 @@ test('match table plays cards through engine prompts and resumes after deck brow
         for (let i = 0; i < p.min; i++) await page.locator(`[data-choice="${i}"]`).click();
         if (p.min !== 1 || p.max !== 1) await page.locator('#match-submit').click();
       } else if (p.kind === 'reveal') await page.locator('#match-submit').click();
-      else if (p.inputType?.includes('Mulligan') && !mulligan && p.cancelEnabled) {
-        mulligan = true;
-        await page.locator('#match-cancel').click();
+      else if (p.inputType === 'InputConfirmMulligan') {
+        // Exercise a redraw, then keep a hand that can actually complete this
+        // cast/payment scenario. A shuffled zero-land hand is not a UI failure.
+        const playable = hand.some(land) && hand.some(oneDrop);
+        observations.openingHands.push({ id: p.id, mulliganCount, playable, hand: hand.map(describe) });
+        if (!mulligan || !playable) {
+          expect(mulliganCount, JSON.stringify(observations.openingHands)).toBeLessThan(3);
+          expect(p.cancelEnabled).toBe(true);
+          mulligan = true; mulliganCount++;
+          await page.locator('#match-cancel').click();
+        } else await page.locator('#match-ok').click();
+      } else if (p.inputType === 'InputLondonMulligan') {
+        const retained = hand.filter(card => !card.highlighted);
+        const keepLand = retained.find(land), keepCreature = retained.find(oneDrop);
+        expect(keepLand, JSON.stringify(retained.map(describe))).toBeTruthy();
+        expect(keepCreature, JSON.stringify(retained.map(describe))).toBeTruthy();
+        if (p.okEnabled) {
+          observations.retainedHand = retained.map(describe);
+          await page.locator('#match-ok').click();
+        } else {
+          const surplus = retained.find(card => card.selectable && card !== keepLand && card !== keepCreature);
+          expect(surplus, JSON.stringify(retained.map(describe))).toBeTruthy();
+          const button = page.locator(`[data-match-card="${surplus.key}"]`);
+          await button.focus(); await button.click();
+        }
       } else if (p.inputType === 'InputPassPriority') {
-        const hand = human.zones.find(zone => zone.name === 'Hand').cards;
         // Once a creature has resolved, pass to exercise an opponent turn instead
         // of repeatedly trying to pay for another spell with spent mana.
         const card = field.some(card => card.type.includes('Creature')) ? null
@@ -82,14 +119,20 @@ test('match table plays cards through engine prompts and resumes after deck brow
     }
     const diagnostics = await page.evaluate(async () => {
       const state = await window.forge.request('matchState');
-      return { status: state.status, turn: state.turn, phase: state.phaseKey, prompt: state.prompt, events: state.activity?.slice(-5), toast: document.getElementById('toast').textContent };
+      const human = state.players.find(player => player.human);
+      return { status: state.status, turn: state.turn, phase: state.phaseKey, prompt: state.prompt,
+        hand: human?.zones.find(zone => zone.name === 'Hand').cards, mana: human?.mana,
+        field: human?.zones.find(zone => zone.name === 'Battlefield').cards,
+        events: state.activity?.slice(-12), toast: document.getElementById('toast').textContent };
     });
+    observations.final = diagnostics;
+    const failure = JSON.stringify({ ...observations, played, paid, mulligan, yourTurn, opponentTurn });
     expect(errors).toEqual([]);
-    expect(played, JSON.stringify(diagnostics)).toBe(true);
-    expect(paid, JSON.stringify(diagnostics)).toBe(true);
+    expect(played, failure).toBe(true);
+    expect(paid, failure).toBe(true);
     expect(mulligan).toBe(true);
     expect(yourTurn).toBe(true);
-    expect(opponentTurn, JSON.stringify(diagnostics)).toBe(true);
+    expect(opponentTurn, failure).toBe(true);
     await expect(page.locator('.match-arena')).toHaveClass(/scene-active/);
     expect(Number(await page.locator('.table-scene-canvas').getAttribute('data-frames'))).toBeGreaterThan(0);
     await expect(page.locator('#match-human .battlefield-card[data-scene-card]')).not.toHaveCount(0);
@@ -149,5 +192,8 @@ test('match table plays cards through engine prompts and resumes after deck brow
     await page.locator('#match-again').click();
     await expect(page.locator('#match-setup')).toBeVisible();
     expect(errors).toEqual([]);
-  } finally { await application.close(); }
+  } finally {
+    fs.writeFileSync(path.join(dataPath, 'match-fixture.json'), JSON.stringify({ ...observations, errors }, null, 2));
+    await application.close();
+  }
 });
