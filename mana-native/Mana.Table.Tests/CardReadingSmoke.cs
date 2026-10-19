@@ -16,12 +16,13 @@ internal sealed class CardReadingSmoke : ITableAutomation
 {
     private readonly TableGame.Probe view;
     private readonly InteractionScenarioEngine scenario;
+    private readonly bool statesOnly;
+    private string ResultPrefix => statesOnly ? "card-states" : "reading";
     private readonly Queue<(double Delay, Action Action, Func<bool>? Ready)> steps = [];
     private readonly List<string> checks = [];
     private readonly List<object> observations = [];
     private MouseState mouse;
     private double lastStep;
-    // Diagnostic-only: retain all original actions, delays and frame boundaries.
     private readonly List<object> timing = [];
     private readonly System.Diagnostics.Stopwatch diagnosticClock = System.Diagnostics.Stopwatch.StartNew();
     private int diagnosticFrames, diagnosticStartedSteps, diagnosticCompletedSteps;
@@ -29,9 +30,14 @@ internal sealed class CardReadingSmoke : ITableAutomation
     public bool ClickAccepted { get; set; }
     public MouseState ReadMouse() => mouse;
 
-    public CardReadingSmoke(TableGame.Probe view, InteractionScenarioEngine scenario)
+    public CardReadingSmoke(TableGame.Probe view, InteractionScenarioEngine scenario, bool statesOnly = false)
     {
-        this.view = view; this.scenario = scenario;
+        this.view = view; this.scenario = scenario; this.statesOnly = statesOnly;
+        if (statesOnly) {
+            QueueStateChecks();
+            Step(0, FinishReading);
+            return;
+        }
         Step(0, () => Publish(FocusedSeed(scenario.State)));
         Step(1.5, () => MoveCard("hand-3"));
         StepWhen(() => view.Hovered?.VisualId == "hand-3" && view.HoverPreview is { Width: >= 400, Height: >= 560 }
@@ -164,13 +170,14 @@ internal sealed class CardReadingSmoke : ITableAutomation
         Step(.9, () => Check(scenario.Replies.Count == 4 && scenario.Replies[^1].Action == ReplyAction.AutoPass,
             "Auto resumes after the visible action despite intervening snapshot refreshes"));
         QueueRevealChecks();
-        QueueStateChecks();
-        Step(0, () => {
-            File.WriteAllText(Path.Combine(view.Profile, "reading-observations.json"), JsonSerializer.Serialize(observations, new JsonSerializerOptions { WriteIndented = true, IncludeFields = true }));
-            File.WriteAllText(Path.Combine(view.Profile, "reading-results.json"), JsonSerializer.Serialize(checks, new JsonSerializerOptions { WriteIndented = true }));
-            WriteReadingDiagnostic("complete");
-            view.Exit();
-        });
+        Step(0, FinishReading);
+    }
+    private void FinishReading()
+    {
+        File.WriteAllText(Path.Combine(view.Profile, ResultPrefix + "-observations.json"), JsonSerializer.Serialize(observations, new JsonSerializerOptions { WriteIndented = true, IncludeFields = true }));
+        File.WriteAllText(Path.Combine(view.Profile, ResultPrefix + "-results.json"), JsonSerializer.Serialize(checks, new JsonSerializerOptions { WriteIndented = true }));
+        WriteReadingDiagnostic("complete");
+        view.Exit();
     }
     private void QueueRevealChecks()
     {
@@ -404,14 +411,14 @@ internal sealed class CardReadingSmoke : ITableAutomation
             hoveredPose = view.Hovered == null ? null : view.DisplayedPose(view.Hovered.VisualId),
             phasedLandPose = view.DisplayedPose("seat-0-0"),
             replies = scenario.Replies.ToArray() };
-        File.WriteAllText(Path.Combine(view.Profile, "reading-timing-diagnostic.json"),
+        File.WriteAllText(Path.Combine(view.Profile, ResultPrefix + "-timing-diagnostic.json"),
             JsonSerializer.Serialize(record, new JsonSerializerOptions { WriteIndented = true, IncludeFields = true }));
     }
     public void Frame(Texture2D surface)
     {
         diagnosticFrames++;
         try {
-            if (view.Now > 50) throw new TimeoutException("Reading smoke did not finish");
+            if (view.Now > (statesOnly ? 30 : 50)) throw new TimeoutException(statesOnly ? "Card states smoke did not finish" : "Reading smoke did not finish");
             if (view.Error.Length > 0) Check(false, view.Error);
             if (steps.TryPeek(out var next) && (next.Ready?.Invoke() == true || view.Now - lastStep >= next.Delay)) {
                 steps.Dequeue();
