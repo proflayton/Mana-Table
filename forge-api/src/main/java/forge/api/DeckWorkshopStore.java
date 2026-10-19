@@ -38,6 +38,7 @@ final class DeckWorkshopStore {
     record Preview(String token, String url, String name, String format, List<ArchidektSource.Row> cards,
                    List<String> problems, List<String> warnings, List<Change> changes, boolean hasChanges) { }
     record Applied(DeckEditor editor, String format, String deckId) { }
+    record AnalysisContext(long metadataRevision, String plan, List<String> protectedCards, JsonObject analysis) { }
     private record Pending(Preview preview, ArchidektSource.Remote remote, String deckId, long revision,
                            long metadataRevision, String localSignature, long created) { }
     private record PoolDelta(String cardId, int quantity, List<String> beforeCategories, List<String> afterCategories) { }
@@ -52,6 +53,7 @@ final class DeckWorkshopStore {
         List<Version> versions = new ArrayList<>();
         Source source;
         ArchidektSource.Remote baseline;
+        com.google.gson.JsonElement analysis;
     }
     private final Path directory;
     private final Path decks;
@@ -125,6 +127,53 @@ final class DeckWorkshopStore {
         return view(deckId, snapshot, format);
     }
 
+    synchronized AnalysisContext analysisContext(String deckId) throws IOException {
+        var document = read(deckId);
+        var protectedCards = new java.util.TreeSet<String>(String.CASE_INSENSITIVE_ORDER);
+        for (var role : document.roles) if (role.pinned()) protectedCards.add(CardCatalog.describe(catalog.resolve(role.cardId())).name());
+        return new AnalysisContext(document.metadataRevision, document.plan, List.copyOf(protectedCards),
+                document.analysis == null || document.analysis.isJsonNull() ? null : document.analysis.getAsJsonObject().deepCopy());
+    }
+
+    /** Analysis goals, favorites and a considered card are one metadata transaction, outside playable contents. */
+    synchronized void analysisWrite(String deckId, DeckEditor.Snapshot snapshot, long metadataRevision, JsonObject analysis, String plan,
+                                    List<String> protectedCards, String consideredCardId) throws IOException {
+        var document = read(deckId);
+        if (document.metadataRevision != metadataRevision) throw new IllegalArgumentException("Deck preferences changed. Refresh the analysis before saving.");
+        String before = JSON.toJson(document);
+        document.analysis = analysis.deepCopy();
+        if (plan != null) document.plan = checkedText(plan, 2000, "Deck plan");
+        if (protectedCards != null) {
+            var names = new java.util.TreeSet<String>(String.CASE_INSENSITIVE_ORDER);
+            for (String name : protectedCards) names.add(catalog.named(name) == null ? name : catalog.named(name).name());
+            var roles = new LinkedHashMap<String, Role>();
+            var effective = new LinkedHashMap<String, Role>(); effectiveRoles(document, snapshot).forEach(role -> effective.put(role.cardId(), role));
+            for (var role : document.roles) {
+                String name = CardCatalog.describe(catalog.resolve(role.cardId())).name();
+                boolean pinned = names.contains(name);
+                boolean changed = pinned != role.pinned();
+                roles.put(role.cardId(), new Role(role.cardId(), changed ? effective.get(role.cardId()).roles() : role.roles(), pinned, changed ? "local" : role.origin()));
+            }
+            for (String name : names) {
+                var cards = new LinkedHashMap<String, CardCatalog.CardInfo>();
+                snapshot.entries().stream().map(DeckEditor.Entry::card).filter(card -> card.name().equalsIgnoreCase(name)).forEach(card -> cards.put(card.id(), card));
+                for (var row : document.considering) {
+                    var card = CardCatalog.describe(catalog.resolve(row.cardId()));
+                    if (card.name().equalsIgnoreCase(name)) cards.put(card.id(), card);
+                }
+                if (cards.isEmpty() && catalog.named(name) != null) cards.put(catalog.named(name).id(), catalog.named(name));
+                for (var card : cards.values()) if (!roles.containsKey(card.id())) roles.put(card.id(), new Role(card.id(), DeckInsights.roles(card), true, "local"));
+            }
+            document.roles = new ArrayList<>(roles.values());
+        }
+        if (consideredCardId != null) {
+            catalog.resolve(consideredCardId);
+            if (document.considering.stream().noneMatch(row -> row.cardId().equals(consideredCardId)))
+                document.considering.add(new ConsideringEdit(consideredCardId, 1, List.of()));
+        }
+        if (!before.equals(JSON.toJson(document))) { document.metadataRevision++; write(deckId, document); }
+    }
+
     synchronized Applied restore(String deckId, DeckEditor editor, String format, String versionId) throws IOException {
         var document = read(deckId);
         var version = document.versions.stream().filter(item -> item.id().equals(versionId)).findFirst()
@@ -190,6 +239,10 @@ final class DeckWorkshopStore {
         var document = read(originalId);
         document.versions = new ArrayList<>();
         document.metadataRevision = 0;
+        if (document.analysis != null && !document.analysis.isJsonNull()) {
+            document.analysis.getAsJsonObject().add("history", new com.google.gson.JsonArray());
+            document.analysis.getAsJsonObject().addProperty("revision", 0);
+        }
         addVersion(document, snapshot, format);
         commit(copyId, snapshot, format, document);
     }

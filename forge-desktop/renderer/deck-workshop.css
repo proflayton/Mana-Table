@@ -84,3 +84,22 @@
   .catalog-stepper { margin-left: auto; }
   .deck-row .mana-cost { max-width: 60px; }
 }
+.strategy-review { width: min(960px, calc(100vw - 40px)); max-height: calc(100vh - 48px); overflow: auto; padding: 24px; background: #152025; color: #e2ece6; border: 1px solid #52685d; border-radius: 12px; }
+.strategy-review::backdrop { background: #000b; }
+.strategy-header { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+.strategy-header h2 { margin: 0; font-size: 22px; }
+.strategy-review details { margin: 16px 0; border-top: 1px solid #34483f; padding-top: 12px; }
+.strategy-review summary { cursor: pointer; font-weight: 600; }
+.strategy-profile { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; padding-top: 16px; }
+.strategy-profile label, .strategy-note-label { display: flex; flex-direction: column; gap: 6px; font-size: 13px; }
+.strategy-profile .wide { grid-column: 1 / -1; }
+.strategy-review input, .strategy-review select, .strategy-review textarea { width: 100%; min-width: 0; padding: 9px; color: #e2ece6; background: #101b20; border: 1px solid #52685d; border-radius: 4px; font: inherit; }
+.strategy-review textarea { resize: vertical; min-height: 70px; height: auto; }
+.strategy-review button { padding: 8px 12px; background: #263c32; border: 1px solid #52685d; border-radius: 4px; color: #e2ece6; cursor: pointer; }
+.strategy-review button:disabled { opacity: .5; cursor: default; }
+.strategy-review article { margin: 12px 0; padding: 14px; background: #1b2b2c; border: 1px solid #34483f; border-radius: 6px; }
+.strategy-review p { font-size: 13px; line-height: 1.6; overflow-wrap: anywhere; }
+.strategy-review small, .strategy-muted { color: #afc3b7; }
+.strategy-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+.strategy-note-label { margin: 16px 0 8px; }
+@media (max-width: 600px) { .strategy-profile { grid-template-columns: 1fr; } }

@@ -167,6 +167,7 @@ internal sealed partial class TableGame : Game
         UpdateSocial();
         UpdateDeckCatalog();
         UpdateWorkshopData();
+        UpdateDeckAnalysis();
         art.Update(GraphicsDevice);
         var prompt = match?.Decision;
         if (decisionId != (prompt?.Id ?? "")) {

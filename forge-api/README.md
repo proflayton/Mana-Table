@@ -38,7 +38,7 @@ The records contain values rather than live engine objects. The desktop serializ
 them through its private transport. Explicit multiplayer hosting starts the seat
 synchronization listener; the desktop command API remains on private stdin/stdout pipes.
 The ready message advertises `protocolVersion: 2` and the `seat-sync`, `snapshots`,
-`command-receipts`, `resume`, `table-social`, and `deck-workshop` capabilities. All connected players
+`command-receipts`, `resume`, `table-social`, `deck-workshop`, and `deck-analysis` capabilities. All connected players
 need this build; the seat synchronization handshake now uses version 3.
 Printing IDs are opaque, case-sensitive identifiers; clients must round-trip them.
 `multiplayerState` includes `tableId`. Pass that ID to `tableSocial` to read the
@@ -131,6 +131,10 @@ correlates request IDs and records diagnostics in the active profile's log.
 | --- | --- |
 | `search` | Optional `text`, `colors`, `colorIdentity`, `role`, `maxManaValue`, `type`, `sort`, `unique`, `offset`, `limit`; paginated catalog results |
 | `deckInsights` | Current deck ID/revision, color identity, estimated main-deck role counts, per-card roles and explained suggestions; no mutation |
+| `deckAnalysis` | `{deckId, revision}`; strategy profile, conditional card functions, metrics, engine dependencies, explained paired swaps, and versioned review history |
+| `analysisProfile` | `{deckId, revision, metadataRevision, fingerprint, profile}`; save shared goals and favorites separately from the playable list and recompute the review |
+| `analysisReview` | `{deckId, revision, metadataRevision, fingerprint, recommendationId, decision, note}`; record a recommendation decision or manual playtest observation |
+| `analysisConsider` | Same version guards and recommendation fields as `analysisReview`; save the suggestion to Considering and return `{analysis, workshop}` together |
 | `list`, `open` | List saved decks; open by `{id}` |
 | `new` | `{name, format}`; create a saved deck |
 | `snapshot` | Current deck, revision, validation, format and save state |
@@ -510,3 +514,82 @@ remain the source of truth for card definitions and rules.
 
 The [architecture guide](../docs/Development/Mana-Table-Architecture.md) maps the
 desktop modules and explains how to extend prompts, snapshots, and host commands.
+
+## Strategy analysis
+
+`DeckAnalysis` produces a shared analysis report. `DeckAnalysisStore` keeps its
+profile and review events in the existing schema-1 workshop sidecar,
+`decks/workshop/<deck UUID>.json`. The builder and analysis share one primary
+plan, favorite cards, Considering list, and metadata revision. Metadata writes
+use atomic replacement. A malformed or unsupported metadata file produces an
+error and is preserved. Playable deck validation and undo history continue to
+use the existing deck model.
+
+The sidecar's `analysis` field holds its schema-1 profile and history. Existing
+`decks/analysis/<deck UUID>.json` files remain readable and migrate on the first
+analysis profile or review write; the original file is preserved. Reading a report creates
+no analysis files or playable versions. Duplicating a workspace copies its goals
+and starts a fresh analysis history.
+
+Every analysis command requires the active `deckId` and editor `revision`.
+Profile and review writes also require the shared `metadataRevision` and report
+`fingerprint`. The fingerprint uses the workshop's playable-content version:
+rules identity, quantities, sections and format. Renaming, printing choices,
+artwork, goals and notes preserve it. A changed playable list receives a different
+version, and undo can return to the earlier version. Earlier observations retain
+their original version. `report.versionId` is an alias for this fingerprint.
+History retains the most recent 2,000 decisions and manual notes. Actual hand
+samples and games remain in `workshopTests`, with their
+observed counters and player notes; review decisions are not game samples or
+win-rate statistics.
+
+The `consider` decision saves the proposed addition in shared Considering and
+records the reason in one metadata transaction. `analysisConsider` returns both
+updated views for clients that display them together. Other decisions record
+review notes. Suggested swaps are previews; changing the playable list uses the
+existing workshop move or paired-swap operation.
+
+A profile contains `rulesFormat`, `strategy`, `plan`, `backup`, `pace`,
+`targetTurn` (0 means automatic), `protectedCards`, and `pool` (available addition
+names for Limited). Strategies are unspecified, aggro, midrange, control, combo,
+landfall, and artifact-recursion. Paces are relaxed, balanced, and fast. Empty
+rules format uses the saved deck's format. Constructed analysis may select
+Standard, Pioneer, Modern, Legacy, Vintage, or Pauper. Commander and Limited
+retain their saved deck structure. Limited never recommends outside its supplied
+pool. Pool membership is name-based; inventory quantity is not modeled yet.
+
+The report separates functions and requirements from raw counts. Lands may also
+have draw functions; cast-triggered draw is distinct from entering or dying.
+Every finding and suggested swap carries evidence or a tradeoff and confidence.
+Player-preserved cards and pieces of complete recognized engines are excluded
+from cuts. Swap previews replace one main-deck copy, show mana-value and role
+deltas, respect copy limits across main/sideboard, and enforce Commander identity.
+They never edit the deck. Generic efficiency comparisons and the Toph case study
+are curated examples, not exhaustive ranking of the card catalog.
+
+The optional `DeckAnalysisFormats` adapter reads shipped Forge format definitions
+without FModel. It excludes ineligible additions and handles restricted-copy
+limits. Eligibility is explicitly unknown without that data, and the bundled
+snapshot is not a claim of live tournament legality. Generic Constructed has no
+specific tournament eligibility assertion. Missing prices, matchup statistics,
+alternate casting routes, and unsupported interactions are not invented.
+
+The land probability is an exact hypergeometric land-count calculation under
+shown assumptions: seven-card keep; on the play for two-player Constructed and
+Limited; first-turn draw for multiplayer Commander; no mulligans, ramp, color,
+tapped-land, or selection model. Incomplete lists receive no shortage diagnosis
+or probability. It is not a castability, win-rate, or bracket estimate.
+
+The initial engine registry checks self-renewing ETB earthbenders with Ashaya
+(or Toph plus Lattice), free sacrifice outlets, damage payoffs, and Bumi combat.
+It lists setup, missing pieces, outputs, and interaction windows. Optional damage payoffs are separate from the pieces required to sustain a loop. Piece presence
+is not a simulator proof. Add new curated lines with explicit prerequisites and
+regressions for their missing-piece and conflict cases; do not label pairwise
+keyword overlap an infinite loop.
+
+Native consumers use the `IDeckAnalysis` capability and its records in
+`Mana.Contracts/DeckAnalysis.cs`; `ForgeEngine.Analysis.cs` translates it to the
+same API. The native Analyze tab sits beside Build, Test and Results and uses
+their existing workspace. Electron's Strategy review dialog renders the same
+reports. Both save decisions through the engine instead of implementing analysis
+logic in a renderer. The original `deckInsights` API remains compatible.

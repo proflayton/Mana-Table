@@ -34,10 +34,14 @@ internal sealed partial class TableGame
         if (WorkshopEngine != null) {
             DrawWorkshopNavigation();
             if (workshopTab != "build") {
-                if (workshopTab == "test") DrawWorkshopTest(); else DrawWorkshopResults();
+                if (workshopTab == "test") DrawWorkshopTest(); else if (workshopTab == "analysis") DrawDeckAnalysis(); else DrawWorkshopResults();
                 DrawWorkshopStatus(); DrawWorkshopDialog(); return;
             }
         } else canvas.Text(names.Length == 0 ? "Choose your commander from the deck's Leaders tab, or find one in the library." : "COMMANDER  " + string.Join(" + ", names), 50, 194, names.Length == 0 ? Muted : Gold, .78f, 1480, 1);
+        if (WorkshopEngine == null && engine is IDeckAnalysis) {
+            Button("deck-analysis", "Analyze deck", 1372, 188, 180, OpenDeckAnalysis, !busy, height: 32);
+            if (analysisOpen) { DrawDeckAnalysis(); DrawWorkshopDialog(); return; }
+        }
         canvas.Panel(new(32, 236, 538, 712), new(21, 29, 39), new(54, 67, 79), 8);
         canvas.Panel(new(586, 236, 528, 712), new(21, 29, 39), new(54, 67, 79), 8);
         canvas.Panel(new(1130, 236, 438, 712), new(18, 25, 34), new(54, 67, 79), 8);
@@ -107,6 +111,7 @@ internal sealed partial class TableGame
         canvas.Text("YOUR DECK", 600, 252, Gold, .8f, 310, 1, true);
         if (workshopRoleFilter.Length > 0) Button("workshop-clear-role", workshopRoleFilter + " ×", 755, 248, 182, () => { workshopRoleFilter = ""; deckCardsPage = 0; }, !busy, true, 28);
         else if (workshopManaFilter is { } manaFilter) Button("workshop-clear-mana", "MV " + (manaFilter == 6 ? "6+" : manaFilter) + " ×", 755, 248, 182, () => { workshopManaFilter = null; deckCardsPage = 0; }, !busy, true, 28);
+        else if (analysisRelatedCards.Count > 0) Button("analysis-clear-cards", "Related cards ×", 755, 248, 182, () => { analysisRelatedCards.Clear(); deckCardsPage = 0; }, !busy, true, 28);
         int affected = deck.Entries.Count(entry => CardIssues(entry.Id, entry.Section).Length > 0);
         Button("deck-issues-filter", "Problems (" + affected + ")", 946, 247, 154, ToggleDeckIssues, affected > 0 || deckIssuesOnly, deckIssuesOnly, 29);
         DeckSearchBox("deck", deckFilter, "Find a card in this deck…", new(600, 283, 500, 38));

@@ -557,3 +557,37 @@ Forge game, verifies the exact target before resolution, then the actual exile,
 1/1 Bird token and retained spell explanation. Presentation tests cover new-token
 cues, no duplicate feedback, rematch reset and retargeting pauses. These tests
 use isolated profiles; existing card art is reused without generated artwork.
+
+### Strategy review
+
+The focused Java suite is `DeckAnalysisTest,DeckAnalysisStoreTest,DeckInsightsTest`;
+run with `-Dsurefire.failIfNoSpecifiedTests=false` when building the reactor.
+It covers self-renewing versus one-shot earthbend, missing components, Lattice
+conflicts, cast versus return conditions, player-preserved cards, format/pool/copy
+filters, exact land-count probabilities, durable versioned observations, corrupt
+metadata preservation, and active-deck/revision checks. `EngineApiTest`,
+`DeckValidationTest`, and `DeckImportTest` provide adjacent compatibility coverage.
+
+Electron: `npx playwright test tests/deck-strategy-review.spec.cjs tests/deck-workshop.spec.cjs`.
+The strategy test uses real card scripts, saves goals and review notes, preserves
+a card, reopens the review, and verifies the playable list is unchanged. Renaming
+retains the current version; changing a card and undoing it moves notes between
+earlier and current versions. It captures 1000x740 and 1540x980 layouts. Each launch
+uses a disposable profile. `npm run test:smoke` includes this suite in desktop CI.
+
+Native test assembly: `--smoke-analysis-adapter` checks the typed contract against
+a real Forge process, including profile serialization and persistence.
+`--smoke-analysis --size 1000x740` (and `1540x980`) exercises the Analyze tab,
+goal controls, analysis sections, and return to the builder. Supply the same
+`--engine-resources`, optional `--engine-jar`, and disposable `--profile` options
+as the other native smoke tests. Results are `analysis-adapter-results.json` and
+`analysis-ui-results.json`; UI captures are named `analysis-*.png`.
+The Windows release gate requires the analysis adapter and both UI sizes,
+alongside the existing workshop, deck-tuning, and gameplay checks.
+
+For curated interaction changes, check the actual card scripts and primary rules
+sources. The Toph and earthbend registry uses Wizards' [Avatar release notes](https://magic.wizards.com/en/news/feature/avatar-the-last-airbender-release-notes)
+for battlefield-only type changes and earthbend's return behavior. A repeating
+line must explain how the returned object receives its next earthbend effect;
+card presence alone is not a simulator proof. Add both a supported line and a
+missing-prerequisite regression when extending that registry.

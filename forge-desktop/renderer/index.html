@@ -19,6 +19,7 @@
   <link rel="stylesheet" href="presets.css">
   <link rel="stylesheet" href="deck-workshop.css">
   <script src="deck-workshop.js" defer></script>
+  <script src="deck-strategy-review.js" defer></script>
   <script src="app.js" defer></script>
   <script src="play-preferences.js" defer></script>
   <script src="presets.js" defer></script>
@@ -76,6 +77,7 @@
             <div class="deck-organize"><input id="deck-search" type="search" placeholder="Find in this deck…" aria-label="Search this deck"><select id="deck-group" aria-label="Group deck"><option value="type">By type</option><option value="mana">By mana</option><option value="name">Name A–Z</option></select></div><div id="deck-visible" class="deck-visible"></div>
             <div id="deck-list" class="deck-list" aria-label="Cards in deck" tabindex="0"></div>
             <details id="deck-analysis" class="deck-analysis"><summary><span id="deck-size"></span><span>Deck review</span></summary><div class="deck-size-row"><progress id="deck-progress" max="60" value="0" aria-label="Deck size"></progress></div><div class="analysis-top"><span>MANA CURVE</span><span id="average-mana">Average 0.0</span></div><div id="mana-curve" class="mana-curve" aria-label="Mana curve"></div><div id="deck-stats" class="deck-stats"></div><div id="deck-roles" class="deck-roles" aria-label="Estimated main-deck roles"></div><p class="role-note">Estimated roles · may overlap · click to browse</p></details>
+            <button id="strategy-review-open" class="button secondary">Strategy review</button>
             <div id="validation" class="validation"></div>
             <div class="deck-footer"><button id="export-button" class="button secondary">Export ↗</button><button id="practice-button" class="button secondary">Draw a hand</button><button id="play-match" class="button primary">Play vs AI →</button></div>
           </section>
@@ -126,6 +128,30 @@
       </div>
       <div class="preset-community"><p>Found another deck on Moxfield? Export its text list, then paste it here. The Commander format and command zone stay with your deck.</p><button id="preset-paste" class="button secondary">Import a Moxfield list</button></div>
     </div>
+  </dialog>
+  <dialog id="strategy-review" class="strategy-review" aria-labelledby="strategy-title">
+    <div class="strategy-header"><h2 id="strategy-title">Strategy review</h2><button type="button" data-close-review aria-label="Close strategy review">Close</button></div>
+    <p id="strategy-status" role="status"></p><button type="button" id="strategy-refresh">Refresh review</button>
+    <details id="strategy-goals" open><summary>Deck goals</summary><form id="strategy-profile" class="strategy-profile">
+      <label>Rules format<select id="strategy-format"></select></label>
+      <label>Strategy<select id="strategy-kind"><option value="unspecified">Choose a strategy</option><option value="aggro">Aggro</option><option value="midrange">Midrange</option><option value="control">Control</option><option value="combo">Combo</option><option value="landfall">Landfall</option><option value="artifact-recursion">Artifact recursion</option></select></label>
+      <label>Pace<select id="strategy-pace"><option value="relaxed">Relaxed</option><option value="balanced">Balanced</option><option value="fast">Fast</option></select></label>
+      <label>Land-drop target turn (0 = automatic)<input id="strategy-turn" type="number" min="0" max="30" value="0"></label>
+      <label class="wide">Primary plan<textarea id="strategy-plan" maxlength="2000" rows="2"></textarea></label>
+      <label class="wide">Backup plan<textarea id="strategy-backup" maxlength="1000" rows="2"></textarea></label>
+      <label>Preserve these cards (one name per line)<textarea id="strategy-protected" rows="3"></textarea></label>
+      <label id="strategy-pool-label">Available pool additions (one name per line)<textarea id="strategy-pool" rows="3"></textarea></label>
+      <button type="submit">Save goals</button>
+    </form></details>
+    <p id="strategy-metrics"></p><p id="strategy-probability" class="strategy-muted"></p>
+    <details open><summary>Needs attention</summary><div id="strategy-findings"></div></details>
+    <details><summary>Engine dependencies</summary><div id="strategy-engines"></div></details>
+    <details open><summary>Suggested swaps</summary><p class="strategy-muted">Save proposed cards in Considering, and record your decisions and reasons with this deck version.</p><div id="strategy-swaps"></div></details>
+    <label class="strategy-note-label">Review or playtest note<textarea id="strategy-note" maxlength="2000" rows="2" placeholder="What happened, or why would you accept or reject a swap?"></textarea></label>
+    <button type="button" id="strategy-observation">Save manual playtest note</button>
+    <details><summary>Card functions and requirements</summary><div id="strategy-cards"></div></details>
+    <details><summary>Review history</summary><div id="strategy-history"></div></details>
+    <p id="strategy-limitations" class="strategy-muted"></p>
   </dialog>
 </body>
 </html>

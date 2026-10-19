@@ -37,7 +37,7 @@ delete metadata.scripts;
 fs.writeFileSync(path.join(stage, 'package.json'), JSON.stringify(metadata, null, 2));
 fs.copyFileSync(path.join(root, 'LICENSE'), path.join(stage, 'LICENSE'));
 console.log('Collecting Forge card resources…');
-for (const folder of ['cardsfolder', 'tokenscripts', 'editions', 'languages', 'blockdata', 'lists', 'setlookup', 'ai']) {
+for (const folder of ['cardsfolder', 'tokenscripts', 'editions', 'languages', 'blockdata', 'lists', 'setlookup', 'ai', 'formats']) {
   fs.cpSync(path.join(root, 'forge-gui/res', folder), path.join(resources, folder), { recursive: true });
 }
 console.log('Building the bundled Java runtime…');

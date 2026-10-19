@@ -28,7 +28,7 @@ internal sealed partial class TableGame
             if (deckEditor && WorkshopEngine != null && (workshopDialog.Length == 0 || workshopDialog == "insights")) {
                 int value = i;
                 hits.Add(new("workshop-curve:" + i, Scope, new(left - 3, y + 22, step - 4, 68), () => {
-                    workshopManaFilter = value; workshopRoleFilter = ""; workshopTab = "build"; workshopDialog = "";
+                    workshopManaFilter = value; workshopRoleFilter = ""; analysisRelatedCards.Clear(); workshopTab = "build"; workshopDialog = "";
                     commanderCandidates = false; deckSection = "Main"; deckFilter = ""; deckCardsPage = 0; deckIssuesOnly = false;
                 }));
             }

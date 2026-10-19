@@ -41,7 +41,9 @@ concurrency:
 jobs:
   desktop:
     runs-on: windows-latest
-    timeout-minutes: 40
+    # The last verified run took 37m46s before the strategy review suite was added.
+    # Keep every check and allow room for the extra suite and hosted-runner variation.
+    timeout-minutes: 60
     defaults:
       run:
         working-directory: forge-desktop

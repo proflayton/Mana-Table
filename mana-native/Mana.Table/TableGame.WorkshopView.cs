@@ -13,21 +13,22 @@ internal sealed partial class TableGame
         for (int i = 0; i < roles.Length; i++) {
             string role = roles[i]; string count = workshop?.Insights.RoleCounts.GetValueOrDefault(role).ToString() ?? "...";
             Button("workshop-build-role:" + role, role + " " + count, positions[i], 714, widths[i], () => {
-                workshopRoleFilter = workshopRoleFilter == role ? "" : role; workshopManaFilter = null;
+                workshopRoleFilter = workshopRoleFilter == role ? "" : role; workshopManaFilter = null; analysisRelatedCards.Clear();
                 commanderCandidates = false; deckSection = "Main"; deckCardsPage = 0; deckIssuesOnly = false;
             }, !busy && WorkshopCurrent, workshopRoleFilter == role, 28);
         }
     }
     private void DrawWorkshopNavigation()
     {
-        Button("workshop-build", "Build", 48, 190, 124, () => ShowWorkshopTab("build"), !busy, workshopTab == "build", 32);
-        Button("workshop-test", "Test", 182, 190, 124, () => ShowWorkshopTab("test"), !busy, workshopTab == "test", 32);
-        Button("workshop-results", "Results", 316, 190, 124, () => ShowWorkshopTab("results"), !busy, workshopTab == "results", 32);
-        Button("workshop-insights", "Deck insights", 456, 190, 174, () => { workshopDialog = "insights"; workshopPage = 0; }, !busy && WorkshopCurrent, height: 32);
+        Button("workshop-build", "Build", 48, 190, 100, () => ShowWorkshopTab("build"), !busy, workshopTab == "build", 32);
+        Button("workshop-test", "Test", 158, 190, 100, () => ShowWorkshopTab("test"), !busy, workshopTab == "test", 32);
+        Button("workshop-results", "Results", 268, 190, 116, () => ShowWorkshopTab("results"), !busy, workshopTab == "results", 32);
+        if (engine is IDeckAnalysis) Button("deck-analysis", "Analyze", 394, 190, 134, OpenDeckAnalysis, !busy && WorkshopCurrent, analysisOpen, 32);
+        Button("workshop-insights", "Insights", 538, 190, 126, () => { workshopDialog = "insights"; workshopPage = 0; }, !busy && WorkshopCurrent, height: 32);
         string version = workshop?.Versions.FirstOrDefault(v => v.Id == workshop.VersionId)?.Label ?? "";
         string info = workshopError.Length > 0 ? "Deck tools unavailable" : !WorkshopCurrent ? "Loading deck tools..." : version + (workshop!.Plan.Length == 0 ? "  ·  Add your deck's plan" : "  ·  " + workshop.Plan);
-        if (WorkshopCurrent) Button("workshop-plan-summary", info + "  >", 650, 190, 505, () => EditWorkshopPlan(false), !busy, height: 32);
-        else canvas.Text(info, 650, 199, workshopError.Length > 0 ? Red : Muted, .62f, 505, 1);
+        if (WorkshopCurrent) Button("workshop-plan-summary", info + "  >", 676, 190, 478, () => EditWorkshopPlan(false), !busy, height: 32);
+        else canvas.Text(info, 676, 199, workshopError.Length > 0 ? Red : Muted, .62f, 478, 1);
         Button("workshop-source", workshop?.Source == null ? "Link Archidekt" : "Linked source", 1174, 190, 184, () => { if (workshop?.Source == null) ImportArchidekt(); else { workshopDialog = "source"; workshopPage = 0; } }, !busy && WorkshopCurrent, height: 32);
         Button("workshop-history", "Versions", 1368, 190, 184, () => { workshopDialog = "versions"; workshopPage = 0; }, !busy && WorkshopCurrent, height: 32);
     }
@@ -148,10 +149,11 @@ internal sealed partial class TableGame
         hits.Clear(); hovered = null;
         canvas.Fill(new(0, 64, 1600, 936), Color.Black * .82f);
         canvas.Panel(new(168, 142, 1264, 752), new(22, 32, 44), LobbyTrim, 16);
-        string title = workshopDialog switch { "insights" => "Understand your deck", "versions" => "Playable deck versions", "card" => "This card in your plan", "swap" => "Choose a card to swap out", "opponents" => "Choose AI opponent " + (workshopOpponentSeat + 1), "source" => "Your Archidekt connection", "source-details" => "Archidekt import details", "saved-hand" => "Your recorded sample hand", "saved-card" => "Inspect a recorded card", _ => "Review the Archidekt deck" };
+        string title = workshopDialog switch { "analysis-detail" => "Strategy review details", "insights" => "Understand your deck", "versions" => "Playable deck versions", "card" => "This card in your plan", "swap" => "Choose a card to swap out", "opponents" => "Choose AI opponent " + (workshopOpponentSeat + 1), "source" => "Your Archidekt connection", "source-details" => "Archidekt import details", "saved-hand" => "Your recorded sample hand", "saved-card" => "Inspect a recorded card", _ => "Review the Archidekt deck" };
         canvas.Text(title, 202, 179, Ink, 1.35f, 1020, 1, true);
         Button("workshop-dialog-close", "Back", 1292, 160, 112, () => { workshopDialog = workshopDialog switch { "saved-card" => "saved-hand", "source-details" => "source-preview", "swap" => "card", _ => "" }; workshopPage = 0; }, !busy, height: 36);
         switch (workshopDialog) {
+            case "analysis-detail": DrawAnalysisDetails(); break;
             case "insights": DrawWorkshopInsights(); break;
             case "versions": DrawWorkshopVersions(); break;
             case "card": DrawWorkshopCardRoles(); break;
@@ -175,7 +177,7 @@ internal sealed partial class TableGame
         for (int i = 0; i < Math.Min(12, roles.Length); i++) {
             string role = roles[i].Key;
             Button("workshop-role-filter:" + role, role + "  " + roles[i].Value, 208 + i % 4 * 294, 417 + i / 4 * 46, 278, () => {
-                workshopRoleFilter = role; workshopManaFilter = null; workshopTab = "build"; workshopDialog = ""; commanderCandidates = false; deckSection = "Main"; deckFilter = ""; deckCardsPage = 0; deckIssuesOnly = false;
+                workshopRoleFilter = role; workshopManaFilter = null; analysisRelatedCards.Clear(); workshopTab = "build"; workshopDialog = ""; commanderCandidates = false; deckSection = "Main"; deckFilter = ""; deckCardsPage = 0; deckIssuesOnly = false;
             }, !busy, height: 36);
         }
         canvas.Text("Roles can overlap. Estimates are a starting point; select a card to change its categories.", 208, 569, Muted, .68f, 1160, 2);

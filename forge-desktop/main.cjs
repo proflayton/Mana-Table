@@ -28,7 +28,7 @@ let window;
 let engine;
 let quitting = false;
 let relaunchQueued = false;
-const methods = new Set(['search', 'deckInsights', 'list', 'new', 'open', 'snapshot', 'edit', 'rename', 'undo', 'redo', 'format', 'save', 'importPreview', 'import', 'deckPresets', 'presetImport', 'export', 'practice', 'multiplayerHost', 'multiplayerJoin', 'multiplayerConfigure', 'multiplayerSelectDeck', 'multiplayerReady', 'multiplayerStart', 'multiplayerState', 'multiplayerReturn', 'multiplayerClose', 'matchOpponents', 'matchSetup', 'matchStart', 'matchState', 'matchAction', 'matchConcede']);
+const methods = new Set(['search', 'deckInsights', 'deckAnalysis', 'analysisProfile', 'analysisReview', 'list', 'new', 'open', 'snapshot', 'edit', 'rename', 'undo', 'redo', 'format', 'save', 'importPreview', 'import', 'deckPresets', 'presetImport', 'export', 'practice', 'multiplayerHost', 'multiplayerJoin', 'multiplayerConfigure', 'multiplayerSelectDeck', 'multiplayerReady', 'multiplayerStart', 'multiplayerState', 'multiplayerReturn', 'multiplayerClose', 'matchOpponents', 'matchSetup', 'matchStart', 'matchState', 'matchAction', 'matchConcede']);
 function verify(event) {
   if (!window || event.sender !== window.webContents || event.senderFrame !== window.webContents.mainFrame
     || !event.senderFrame.url.startsWith('workshop://app/')) throw new Error('Unknown desktop client');
@@ -101,7 +101,7 @@ app.whenReady().then(async () => {
       const directory = app.isPackaged ? path.join(__dirname, 'vendor', 'three') : path.join(__dirname, 'node_modules', 'three', 'build');
       return net.fetch(pathToFileURL(path.join(directory, file)).toString());
     }
-    const allowed = new Set(['/index.html', '/style.css', '/app.js', '/presets.js', '/presets.css', '/match.js', '/match.css', '/battlefield.css', '/card-preview.js', '/card-preview.css', '/turn-guide.js', '/match-feedback.js', '/match-feedback.css', '/combat-view.js', '/combat-view.css', '/table-combat.js', '/table-combat.css', '/cast-view.js', '/cast-view.css', '/reveal-view.js', '/reveal-view.css', '/table-gestures.js', '/hand-view.js', '/hand-view.css', '/response-skip.js', '/play-preferences.js', '/table-card-preview.js', '/battlefield-view.js', '/deck-workshop.js', '/deck-workshop.css']);
+    const allowed = new Set(['/index.html', '/style.css', '/app.js', '/presets.js', '/presets.css', '/match.js', '/match.css', '/battlefield.css', '/card-preview.js', '/card-preview.css', '/turn-guide.js', '/match-feedback.js', '/match-feedback.css', '/combat-view.js', '/combat-view.css', '/table-combat.js', '/table-combat.css', '/cast-view.js', '/cast-view.css', '/reveal-view.js', '/reveal-view.css', '/table-gestures.js', '/hand-view.js', '/hand-view.css', '/response-skip.js', '/play-preferences.js', '/table-card-preview.js', '/battlefield-view.js', '/deck-workshop.js', '/deck-strategy-review.js', '/deck-workshop.css']);
     if (!allowed.has(pathname) && !['/table-scene.js', '/table-scene-world.mjs', '/table-world-layout.mjs', '/table-scene.css'].includes(pathname)) return new Response('Not found', { status: 404 });
     return net.fetch(pathToFileURL(path.join(__dirname, 'renderer', pathname.slice(1))).toString());
   });

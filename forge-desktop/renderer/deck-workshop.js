@@ -69,6 +69,7 @@ const deckWorkshop = (() => {
     };
   }
   function renderReview() {
+    deckStrategyReview.onDeckChanged();
     const commander = state.format === 'Commander';
     const current = count('Main') + (commander ? count('Commander') : 0);
     const target = commander ? 100 : state.format === 'Limited' ? 40 : 60;

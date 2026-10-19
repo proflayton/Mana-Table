@@ -10,7 +10,7 @@ internal static class Program
     {
         Application.SetHighDpiMode(HighDpiMode.PerMonitorV2);
         string? Arg(string name) { int index = Array.IndexOf(args, name); return index >= 0 && index + 1 < args.Length ? args[index + 1] : null; }
-        bool testRun = args.Any(a => a is "--smoke" or "--smoke-ai" or "--smoke-ui-ai" or "--smoke-presentation" or "--smoke-ui-interactions" or "--smoke-table-feel" or "--smoke-card-reading" or "--smoke-cleanup" or "--smoke-deck-building" or "--smoke-workshop" or "--smoke-workshop-adapter" or "--smoke-deck-tuning" or "--smoke-lobby" or "--smoke-social" or "--smoke-advance" or "--smoke-auto-dock" or "--smoke-action-feedback" or "--smoke-onboarding" or "--smoke-loading" or "--smoke-engine-startup" or "--smoke-context-guidance" or "--smoke-deck-import" or "--smoke-priority-abilities");
+        bool testRun = args.Any(a => a is "--smoke" or "--smoke-ai" or "--smoke-ui-ai" or "--smoke-presentation" or "--smoke-ui-interactions" or "--smoke-table-feel" or "--smoke-card-reading" or "--smoke-cleanup" or "--smoke-deck-building" or "--smoke-workshop" or "--smoke-analysis" or "--smoke-workshop-adapter" or "--smoke-analysis-adapter" or "--smoke-deck-tuning" or "--smoke-lobby" or "--smoke-social" or "--smoke-advance" or "--smoke-auto-dock" or "--smoke-action-feedback" or "--smoke-onboarding" or "--smoke-loading" or "--smoke-engine-startup" or "--smoke-context-guidance" or "--smoke-deck-import" or "--smoke-priority-abilities");
         var profile = Arg("--profile") ?? (testRun
             ? Path.Combine(Path.GetTempPath(), "ManaTableNative-tests", Guid.NewGuid().ToString())
             : Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "ManaTableNative"));
@@ -26,7 +26,7 @@ internal static class Program
             if (args.Contains("--smoke-context-guidance")) { ContextGuidanceSmoke.Run(profile, size); return 0; }
             // Existing UI regressions start directly at their subject. Onboarding
             // has its own fresh-profile and persistence coverage above.
-            if (args.Any(a => a is "--smoke-ui-ai" or "--smoke-ui-interactions" or "--smoke-table-feel" or "--smoke-card-reading" or "--smoke-deck-building" or "--smoke-workshop" or "--smoke-lobby" or "--smoke-auto-dock" or "--smoke-action-feedback" or "--smoke-priority-abilities"))
+            if (args.Any(a => a is "--smoke-ui-ai" or "--smoke-ui-interactions" or "--smoke-table-feel" or "--smoke-card-reading" or "--smoke-deck-building" or "--smoke-workshop" or "--smoke-analysis" or "--smoke-lobby" or "--smoke-auto-dock" or "--smoke-action-feedback" or "--smoke-priority-abilities"))
                 File.WriteAllText(Path.Combine(profile, "experience.json"), JsonSerializer.Serialize(new { WelcomeSeen = true, TableGuideSeen = true }));
             if (args.Contains("--smoke-auto-dock")) {
                 var scenario = new InteractionScenarioEngine(); scenario.Present(PresentationSmoke.Example());
@@ -74,6 +74,7 @@ internal static class Program
             if (args.Contains("--smoke")) { NativeSmoke.RunAsync(paths).GetAwaiter().GetResult(); return 0; }
             if (args.Contains("--smoke-ai")) { AiSmoke.RunAsync(paths).GetAwaiter().GetResult(); return 0; }
             if (args.Contains("--smoke-cleanup")) { CleanupSmoke.RunAsync(paths).GetAwaiter().GetResult(); return 0; }
+            if (args.Contains("--smoke-analysis-adapter")) { AnalysisRegression.RunAsync(paths).GetAwaiter().GetResult(); return 0; }
             if (args.Contains("--smoke-workshop-adapter")) { DeckWorkshopRegression.RunAsync(paths).GetAwaiter().GetResult(); return 0; }
             var engine = new ForgeEngine(paths);
             try {
@@ -82,6 +83,7 @@ internal static class Program
                 if (lobbySmoke != null) game.Automation = lobbySmoke;
                 if (args.Contains("--smoke-ui-ai")) game.Automation = new SmokeAutomation(game.TestPort, false);
                 if (args.Contains("--smoke-deck-building")) game.Automation = new DeckBuildingSmoke(game.TestPort);
+                if (args.Contains("--smoke-analysis")) game.Automation = new AnalysisSmoke(game.TestPort);
                 if (args.Contains("--smoke-workshop")) game.Automation = new DeckWorkshopSmoke(game.TestPort);
                 if (args.Contains("--smoke-deck-tuning")) game.Automation = new DeckTuningSmoke(game.TestPort);
                 if (game.Automation != null) game.TestPort.DismissWelcome();

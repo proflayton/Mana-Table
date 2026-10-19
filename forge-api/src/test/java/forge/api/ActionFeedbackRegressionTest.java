@@ -28,7 +28,17 @@ public class ActionFeedbackRegressionTest {
                     var choice = input.prompt().getAsJsonArray("choices").asList().stream().map(c -> c.getAsJsonObject())
                             .filter(c -> !text(c, "label").toLowerCase(Locale.ROOT).contains("foretell")).findFirst().orElseThrow();
                     assertTrue(game.answer(input, Map.of("choices", List.of(choice.get("index").getAsInt()))));
-                } else assertTrue(game.answer(input, Map.of("action", "ok")));
+                } else {
+                    assertTrue(text(input.prompt(), "inputType").startsWith("InputPayMana"));
+                    if (!game.answer(input, Map.of("action", "ok"))) {
+                        // A prior Auto request may finish payment while this snapshot
+                        // is being inspected. Never replay it against the next input.
+                        var fresh = game.state(input.seat()).get("prompt");
+                        assertTrue(fresh == null || fresh.isJsonNull()
+                                || !text(fresh.getAsJsonObject(), "id").equals(text(input.prompt(), "id")),
+                                "A rejected payment must have a superseding prompt");
+                    }
+                }
             }
             assertNotNull(window, "The spell must publish before resolution");
             var stack = window.state().getAsJsonArray("stack").get(0).getAsJsonObject();

@@ -3,7 +3,7 @@ namespace Mana.Contracts;
 public static class EngineProtocol
 {
     public const int Version = 2;
-    public static readonly string[] RequiredCapabilities = ["seat-sync", "snapshots", "command-receipts", "resume", "table-social", "deck-workshop"];
+    public static readonly string[] RequiredCapabilities = ["seat-sync", "snapshots", "command-receipts", "resume", "table-social", "deck-workshop", "deck-analysis"];
 }
 
 // The aggregate is for application composition. Consumers can depend on the

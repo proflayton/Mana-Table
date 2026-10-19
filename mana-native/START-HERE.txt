@@ -218,3 +218,12 @@ Local preview packages also include their native and adapter sources under sourc
 Forge source: https://github.com/proflayton/Mana-Table
 Original Forge: https://github.com/Card-Forge/forge
 See FORGE-LICENSE.txt and THIRD-PARTY.txt for attribution.
+
+STRATEGY REVIEW
+Choose Analyze beside Build, Test and Results. Your plan and favorite cards are
+shared with the builder. Set a pace, then review Findings, Engines, Suggested
+swaps, Card functions and Decisions. Save to Considering keeps a proposed card
+outside the playable list; Keep current and Dismiss record your reasons with
+the deck version. Test deck opens the existing Test setup. Review actual tests
+and your notes in Results, then return to Build to tune the list. Analysis and
+format checks use the bundled snapshot and show their assumptions.
