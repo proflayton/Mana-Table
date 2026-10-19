@@ -235,6 +235,30 @@ internal sealed class CardReadingSmoke : ITableAutomation
                 "Counter and ability removals replace the displayed state without stale markers");
             Capture("08-states-removed");
         });
+        Pose isleRest = default;
+        Step(0, () => {
+            var scene = TableScene.Build(view.Match!, new Dictionary<string, int>(), 0, new(-1, -1), null, null, false, CardPresentation.IsResource);
+            isleRest = scene.Rank(0, true).Cards.Single(c => c.Id == "seat-0-0").Pose;
+            foreach (int seat in new[] { 0, 1, 2, 3 })
+                Check(view.DisplayedPose($"seat-{seat}-0") is { Elevation: > 12 }, $"Seat {seat}'s phased-out land floats even without combat abilities");
+            MoveCard("seat-0-0");
+        });
+        StepWhen(() => view.Hovered?.VisualId == "seat-0-0" && view.DisplayedPose("seat-0-0") is { Size.X: >= 400 }, 2, () => {
+            Check(view.Hovered is { PhasedOut: true, CombatKeywords.Length: 0 }, "A phased-out land remains readable using its floating hit geometry");
+            Capture("09-phased-out-land");
+            Move(new(10, 70));
+            var state = scenario.State;
+            Publish(state with { Players = state.Players.Select(p => p with { Zones = p.Zones.Select(z => z with {
+                Cards = z.Cards.Select(c => c.PhasedOut ? c with { PhasedOut = false, Tapped = false } : c).ToArray()
+            }).ToArray() }).ToArray() });
+        });
+        Step(1, () => {
+            Check(view.DisplayedPose("seat-0-0") is { Elevation: < 1 } pose && Microsoft.Xna.Framework.Vector2.Distance(pose.Center, isleRest.Center) < 2,
+                "Phasing in removes the floating effect from the same land occurrence");
+            Check(view.Match!.Viewer!.Zone("Battlefield").Cards.Single(c => c.VisualId == "seat-0-0") is { PhasedOut: false, Tapped: false },
+                "The returning land renders the engine's untapped state without stale phasing");
+            Capture("10-phased-in-land");
+        });
     }
     private void Step(double delay, Action action) => steps.Enqueue((delay, action, null));
     // Saving a GPU capture blocks Draw; allow subsequent motion to settle within a

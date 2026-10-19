@@ -28,6 +28,9 @@ internal static class PresentationSmoke
         var flier = new Card { Type = "Creature", CombatKeywords = ["flying", "vigilance"], Power = 4, Toughness = 4, Counters = new() { ["+1/+1"] = 3, ["Shield"] = 2, ["Time"] = 0 } };
         Check(CardPresentation.HasAbility(flier, "flying") && !CardPresentation.HasAbility(flier with { CombatKeywords = [], Text = "Flying" }, "flying"), "Effective ability markers use the engine projection, never printed rules text");
         Check(CardPresentation.Abilities(flier with { FaceDown = true }).Length == 0, "Concealed faces expose no ability markers");
+        var phased = new Card { Name = "Teferi's Isle", Type = "Legendary Land", Tapped = true, PhasedOut = true };
+        Check(CardPresentation.StateLabels(phased).Contains("Phased out") && !CardPresentation.StateLabels(phased with { PhasedOut = false }).Contains("Phased out"), "Phasing status follows the engine flag and clears when the same land phases in");
+        Check(CardPresentation.StateLabels(phased with { FaceDown = true }).Contains("Phased out") && CardPresentation.Abilities(phased).Length == 0, "Phasing is a public status, including on face-down cards, independent of combat abilities");
         Check(CardPresentation.Counters(flier).Select(c => c.Value).SequenceEqual([3, 2]) && flier.Power == 4, "Counter stacks retain explicit counts without modifying the engine's current power/toughness");
         var ground = new Pose(new(700, 500), new(90, 126));
         var raised = CardMotion.Airborne(ground, 1, false, "flier");
@@ -157,7 +160,8 @@ internal static class PresentationSmoke
         var state = Example();
         string[][] abilities = [["flying", "vigilance"], ["deathtouch", "lifelink"], ["indestructible", "reach"], ["double strike", "trample", "menace"]];
         return state with { Decision = state.Decision! with { CanAutoPass = false }, Players = state.Players.Select(p => p with { Zones = p.Zones.Select(z => z.Name != "Battlefield" ? z : z with {
-            Cards = z.Cards.Select((c, i) => !c.Type.Contains("Creature") ? c : c with {
+            Cards = z.Cards.Select((c, i) => i == 0 ? c with { Name = "Teferi's Isle", Type = "Legendary Land", Text = "Phasing\nTeferi's Isle enters tapped.\n{T}: Add {U}{U}.", PhasedOut = true, Selectable = false }
+                : !c.Type.Contains("Creature") ? c : c with {
                 CombatKeywords = abilities[(i / 2) % abilities.Length], Selectable = false,
                 Counters = i == 1 ? new() { ["+1/+1"] = 3, ["Shield"] = 2 } : i == 5 ? new() { ["-1/-1"] = 1 } : [],
                 Power = i == 1 ? 4 : i == 5 ? 0 : 1, Toughness = i == 1 ? 4 : i == 5 ? 1 : 1, Sick = i == 7

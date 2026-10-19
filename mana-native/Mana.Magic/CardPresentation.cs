@@ -15,6 +15,7 @@ public static class CardPresentation
     public static string[] StateLabels(Card card)
     {
         var labels = new List<string> { card.Tapped ? "Tapped" : "Untapped" };
+        if (card.PhasedOut) labels.Insert(0, "Phased out");
         if (card.Sick && HasCombatStats(card)) labels.Add("Summoning sick");
         if (card.Attacking) labels.Add("Attacking");
         if (card.Blocking) labels.Add("Blocking");

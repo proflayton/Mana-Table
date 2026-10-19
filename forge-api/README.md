@@ -284,6 +284,12 @@ stack, combat flags, counters, mana, and transient reveal choices. Card handles
 are scoped to a prompt; the renderer never receives hidden card IDs or raw logs.
 The original `GameStateMapper` remains a smaller projection for other consumers.
 
+Match card snapshots include the public boolean `phasedOut`, including on
+face-down permanents. The card keeps its battlefield position and visual identity
+while phased out. Clients display this state directly; they must not infer it
+from printed phasing text or count turns. Older snapshots without the field
+default to false in the native contract; older clients ignore the added field.
+
 The desktop host disables automatic passing when no actions are available.
 An action such as playing a land returns to a visible priority prompt before
 the game can advance. Explicit pass and end-turn inputs still use engine rules.
