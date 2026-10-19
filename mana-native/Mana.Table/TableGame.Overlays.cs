@@ -232,9 +232,9 @@ internal sealed partial class TableGame
     }
     private void ToggleChoice(Decision d, int index)
     {
-        if (selections.Remove(index)) return;
+        if (selections.Remove(index)) { CollapseCardReading(); return; }
         if (d.Max == 1) selections.Clear();
-        if (selections.Count < d.Max) selections.Add(index);
+        if (selections.Count < d.Max) { selections.Add(index); CollapseCardReading(); }
     }
     private void DrawChoices(GameSnapshot state, Decision d)
     {

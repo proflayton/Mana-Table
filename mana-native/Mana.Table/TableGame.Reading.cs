@@ -18,6 +18,8 @@ internal sealed partial class TableGame
     private readonly Dictionary<string, int> cardPaintCounts = [];
     private string? readingId, readingZone;
     private Rectangle? hoverPreview;
+    private (string Id, Point At)? dismissedReading;
+    private string? collapseReadingId, collapsePreviousReadingId;
 
     private Hit? TableHitAt(Point point)
     {
@@ -54,6 +56,12 @@ internal sealed partial class TableGame
         var hit = HitAt(pointer);
         var candidate = readingCards.LastOrDefault(c => c.Hit.Id == hit?.Id && !c.Card.FaceDown);
         if (dragging || selectedCombat != null || candidate != null && !CanReadCard(candidate)) candidate = null;
+        if (dismissedReading is { } dismissed) {
+            // Selection closes the reader. Returning geometry or an unchanged
+            // pointer must not immediately enlarge this card (or its neighbor).
+            if (pointer == dismissed.At || candidate?.Id == dismissed.Id) candidate = null;
+            else dismissedReading = null;
+        }
         string identity = candidate?.Id ?? "";
         if (lastHover != identity) { lastHover = identity; hoverSince = now; }
         if (candidate == null) { readingId = readingZone = null; }
@@ -90,7 +98,12 @@ internal sealed partial class TableGame
         bool readable = (choiceSlot >= 0 ? ReadingGalleryOpen : !OverlayOpen) && !dragging;
         bool focused = !card.FaceDown && readingId == id && readingZone == zone && readable;
         if (card.FaceDown) readingTransitions.Remove(id);
-        var pose = motion.Place(id, focused ? ReadingPose(rest, zone) : rest, entrance, entranceDelay);
+        // A completed selection returns immediately to its normal footprint so
+        // the old enlarged face cannot intercept the next adjacent click.
+        var pose = collapseReadingId == id || collapsePreviousReadingId == id ? motion.Hold(id, rest)
+            : motion.Place(id, focused ? ReadingPose(rest, zone) : rest, entrance, entranceDelay);
+        if (collapseReadingId == id) collapseReadingId = null;
+        if (collapsePreviousReadingId == id) collapsePreviousReadingId = null;
         if (!focused && Vector2.Distance(pose.Size, rest.Size) < 2 && Vector2.Distance(pose.Center, rest.Center) < 2) readingTransitions.Remove(id);
         // A pile face opens a browser; it is not a cast/play action.
         var hit = new Hit(hitId, Scope, activationBounds is { } bounds ? Rectangle.Union(pose.Bounds, bounds) : pose.Bounds,
@@ -121,5 +134,16 @@ internal sealed partial class TableGame
     {
         readingCards.Clear(); liftedCards.Clear(); readingTransitions.Clear(); cardPaintCounts.Clear();
         readingId = readingZone = null; hoverPreview = null; lastHover = ""; hoverSince = 0;
+        dismissedReading = null;
+        collapseReadingId = collapsePreviousReadingId = null;
+    }
+    private void CollapseCardReading()
+    {
+        var hit = HitAt(pointer);
+        string clickedId = readingCards.LastOrDefault(c => c.Hit.Id == hit?.Id)?.Id ?? readingId ?? lastHover;
+        dismissedReading = (clickedId, pointer);
+        collapseReadingId = dismissedReading.Value.Id;
+        collapsePreviousReadingId = readingId;
+        readingId = readingZone = null; hoverPreview = null; lastHover = ""; hoverSince = now;
     }
 }

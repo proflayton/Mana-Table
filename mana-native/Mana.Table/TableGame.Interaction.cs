@@ -56,7 +56,10 @@ internal sealed partial class TableGame
         if (match == null || busy) return;
         var result = interaction.CardClick(match, card);
         if (result.ChoiceIndex is { } index) ToggleChoice(match.Decision!, index);
-        else if (result.Reply != null) { zoneName = null; Send(result.Reply); }
+        else if (result.Reply != null) {
+            if (match.Decision?.Intent == DecisionIntent.Selection) CollapseCardReading();
+            zoneName = null; Send(result.Reply);
+        }
         else if (result.Effect == InteractionEffect.ChooseHandPlacement) OpenHandPlacement(card);
         else if (result.Effect == InteractionEffect.Inspect) Inspect(card);
     }

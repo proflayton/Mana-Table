@@ -145,6 +145,7 @@ internal sealed class CardReadingSmoke : ITableAutomation
         Step(.9, () => Check(scenario.Replies.Count == 4 && scenario.Replies[^1].Action == ReplyAction.AutoPass,
             "Auto resumes after the visible action despite intervening snapshot refreshes"));
         QueueRevealChecks();
+        QueueTableChoiceChecks();
         QueueStateChecks();
         Step(0, () => {
             File.WriteAllText(Path.Combine(view.Profile, "reading-results.json"), JsonSerializer.Serialize(checks, new JsonSerializerOptions { WriteIndented = true }));
@@ -168,7 +169,7 @@ internal sealed class CardReadingSmoke : ITableAutomation
             Capture("05-revealed-hover");
         }); Click();
         Step(.1, () => {
-            Check(scenario.Replies.Count == repliesBeforeReveal && view.Match?.Decision?.Kind == "reveal", "Clicking a view-only revealed face does not continue the game");
+            Check(scenario.Replies.Count == repliesBeforeReveal && view.Match?.Decision?.Kind == "reveal" && view.HoverPreview is { Width: >= 400 }, "Clicking a view-only revealed face neither selects nor dismisses its reader");
             MoveHit("choice:1");
         });
         Step(.6, () => {
@@ -204,11 +205,123 @@ internal sealed class CardReadingSmoke : ITableAutomation
         });
         Step(.25, () => {
             Check(view.HoverPreview == null, "Revoking a revealed face immediately removes its enlargement");
-            Publish(scenario.State with { Decision = new() { Kind = "choice", Min = 1, Max = 1, Choices = [new(0, card.Name, card)] } });
+            Publish(scenario.State with { Decision = new() { Kind = "choice", Min = 1, Max = 3,
+                Choices = [new(2, card.Name, card), new(5, card.Name, card with { }), new(9, card.Name, card with { })] } });
         });
-        Step(.15, () => MoveHit("choice:0"));
-        Step(.6, () => Check(view.HoverPreview is { Width: >= 400 } && view.Selections.Count == 0, "Selectable gallery cards can be read before making a choice")); Click();
-        Step(.1, () => Check(view.Selections.SequenceEqual([0]) && scenario.Replies.Count == repliesBeforeReveal + 1, "Clicking an enlarged choice selects it without submitting or playing the card"));
+        Step(.15, () => MoveHit("choice:2"));
+        StepWhen(() => view.HoverPreview is { Width: >= 400 }, 2, () =>
+            Check(view.HoverPreview is { Width: >= 400 } && view.Selections.Count == 0, "Selectable anonymous gallery cards can be read before making a choice")); Click();
+        Step(0, () => {
+            Check(view.Selections.SequenceEqual([2]) && scenario.Replies.Count == repliesBeforeReveal + 1,
+                "Clicking an enlarged choice stages its authoritative index without submitting or playing it");
+            Check(ChoiceCompact(0) && HitReachable("choice:5"),
+                "Selecting a gallery face immediately restores its normal footprint and the adjacent face's real hit area");
+            Capture("05b-choice-selected");
+        });
+        Step(.65, () => {
+            Check(ChoiceCompact(0) && view.HoverPreview == null, "A selected anonymous face stays compact under a stationary pointer beyond the hover delay");
+            MoveHit("choice:5");
+        }); Click();
+        Step(0, () => Check(view.Selections.SequenceEqual([2, 5]) && ChoiceCompact(1),
+            "An adjacent compact face can be selected immediately without reopening the previous reader"));
+        Step(.65, () => {
+            Check(view.Selections.SequenceEqual([2, 5]) && ChoiceCompact(1) && view.HoverPreview == null,
+                "A fast adjacent selection also stays compact when the pointer stops");
+            MoveHit("choice:9");
+        }); Click();
+        Step(0, () => {
+            Check(view.Selections.SequenceEqual([2, 5, 9]) && scenario.Replies.Count == repliesBeforeReveal + 1 && ChoiceCompact(2),
+                "All three identical faces preserve their separate authoritative indices without automatic confirmation");
+            Capture("05c-multichoice-selected"); Move(new(10, 70));
+        });
+        Step(.06, () => MoveHit("choice:2"));
+        StepWhen(() => view.DisplayedPose("choice-face:" + view.Scope + ":0") is { Size.X: >= 400 }, 2, () => {
+            Check(view.DisplayedPose("choice-face:" + view.Scope + ":0") is { Size.X: >= 400 } && view.Selections.SequenceEqual([2, 5, 9]),
+                "Leaving and returning lets a selected anonymous face be read again without changing its selection");
+            Capture("05d-selected-choice-reread");
+            MoveHit("choice:5");
+        }); Click();
+        Step(0, () => Check(view.Selections.SequenceEqual([2, 9]) && ChoiceCompact(0) && ChoiceCompact(1),
+            "Quickly deselecting a neighboring face collapses both the clicked face and the previous enlarged reader without changing other indices"));
+        Step(.65, () => {
+            Check(view.HoverPreview == null && ChoiceCompact(0) && ChoiceCompact(1) && scenario.Replies.Count == repliesBeforeReveal + 1,
+                "A deselected face stays compact without a game command while the pointer remains stationary");
+            Move(new(10, 70));
+            Publish(scenario.State with { Decision = new() { Kind = "choice", Min = 1, Max = 3,
+                LibraryCards = [new(10, card.Name, card), new(20, card.Name, card with { }), new(30, card.Name, card with { })] } });
+        });
+        Step(.15, () => MoveHit("choice:10"));
+        StepWhen(() => view.HoverPreview is { Width: >= 400 }, 2, () =>
+            Check(view.HoverPreview is { Width: >= 400 }, "Selectable library faces retain their normal preselection reader")); Click();
+        Step(0, () => Check(view.Selections.SequenceEqual([10]) && ChoiceCompact(0) && HitReachable("choice:20"),
+            "A library selection collapses by its scoped original slot and leaves the next library hit accessible"));
+        Step(.65, () => Check(view.HoverPreview == null && ChoiceCompact(0) && scenario.Replies.Count == repliesBeforeReveal + 1,
+            "Selecting from a library never restarts the reader or advances the game under a stationary pointer"));
+    }
+    private bool ChoiceCompact(int slot) => view.DisplayedPose("choice-face:" + view.Scope + ":" + slot) is { Size.X: <= 150 }
+        && view.CardPaintCount("choice-face:" + view.Scope + ":" + slot) == 1;
+    private bool HitReachable(string id)
+    {
+        var hit = view.Hits.Last(h => h.Id == id);
+        if (view.HitAt(hit.Bounds.Center)?.Id == id) return true;
+        for (int y = hit.Bounds.Top + 8; y < Math.Min(895, hit.Bounds.Bottom); y += 6)
+            for (int x = hit.Bounds.Left + 8; x < hit.Bounds.Right; x += 6)
+                if (view.HitAt(new(x, y))?.Id == id) return true;
+        return false;
+    }
+    private void QueueTableChoiceChecks()
+    {
+        int repliesBefore = 0;
+        string expectedGame = "", expectedDecision = "";
+        const string battlefield = "seat-0-1", hand = "hand-0";
+        Step(0, () => {
+            Move(new(10, 70));
+            var state = PresentationSmoke.Example();
+            var creature = state.Viewer!.Zone("Battlefield").Cards.Single(c => c.VisualId == battlefield);
+            var handCard = state.Viewer.Zone("Hand").Cards.Single(c => c.VisualId == hand);
+            Publish(state with { Decision = new() { Kind = "choice", Min = 1, Max = 2, Choices = [
+                new(4, creature.Name, creature) { CardId = battlefield }, new(9, handCard.Name, handCard) { CardId = hand }
+            ] } });
+            repliesBefore = scenario.Replies.Count;
+        });
+        Step(.5, () => MoveCard(battlefield));
+        StepWhen(() => view.DisplayedPose(battlefield) is { Size.X: >= 400 }, 2, () =>
+            Check(view.DisplayedPose(battlefield) is { Size.X: >= 400 }, "A direct battlefield choice can be read before selection")); Click();
+        Step(0, () => {
+            var adjacent = view.Hits.Last(h => h.Card?.VisualId == hand && h.Zone == "Hand");
+            Check(view.Selections.SequenceEqual([4]) && view.DisplayedPose(battlefield) is { Size.X: <= 150 }
+                && view.CardPaintCount(battlefield) == 1 && HitReachable(adjacent.Id),
+                "Direct battlefield selection immediately shrinks its reader and leaves the hand's real hit area available");
+            Capture("05e-direct-selected");
+        });
+        Step(.65, () => {
+            Check(view.HoverPreview == null && view.DisplayedPose(battlefield) is { Size.X: <= 150 },
+                "A selected battlefield occurrence stays compact while the pointer is stationary");
+            MoveCard(hand);
+        }); Click();
+        Step(0, () => Check(view.Selections.SequenceEqual([4, 9]) && view.DisplayedPose(hand) is { Size.X: <= 150 }
+            && scenario.Replies.Count == repliesBefore, "Direct hand and battlefield selections preserve exact indices without an automatic command"));
+        Step(.65, () => {
+            Check(view.HoverPreview == null && view.DisplayedPose(hand) is { Size.X: <= 150 },
+                "A fast direct hand selection also stays compact after the normal hover delay");
+            Move(new(10, 70));
+        });
+        Step(.06, () => MoveCard(hand));
+        StepWhen(() => view.DisplayedPose(hand) is { Size.X: >= 400 }, 2, () => {
+            Check(view.DisplayedPose(hand) is { Size.X: >= 400 } && view.Selections.SequenceEqual([4, 9]),
+                "A selected hand occurrence can be read again after leaving and returning");
+            Capture("05f-selected-hand-reread");
+        }); Click();
+        Step(0, () => Check(view.Selections.SequenceEqual([4]) && view.DisplayedPose(hand) is { Size.X: <= 150 },
+            "Deselecting the enlarged hand card collapses it without losing the battlefield selection"));
+        Step(.65, () => {
+            Check(view.HoverPreview == null && scenario.Replies.Count == repliesBefore, "Direct deselection stays compact and never submits a command");
+            expectedGame = view.Match!.Id; expectedDecision = view.Match.Decision!.Id; MoveHit("confirm");
+        }); Click();
+        StepWhen(() => scenario.Replies.Count == repliesBefore + 1, 2, () =>
+            Check(scenario.Replies.Count == repliesBefore + 1 && scenario.Replies[^1] is { Action: ReplyAction.Choose } reply
+                && reply.GameId == expectedGame && reply.DecisionId == expectedDecision && reply.Choices!.SequenceEqual([4]),
+                "Only explicit confirmation submits the remaining exact selection with its current game and decision scope"));
     }
     private void QueueStateChecks()
     {
