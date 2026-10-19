@@ -143,6 +143,7 @@ internal static class PresentationSmoke
         void Fixture(string name, GameSnapshot value) => File.WriteAllText(Path.Combine(profile, name + ".json"), JsonSerializer.Serialize(value, options));
         Fixture("battlefield", state);
         Fixture("card-states", StateExample());
+        Fixture("commander-tax", CommanderTaxExample());
         Fixture("combat", attack);
         Fixture("library-search", state with { Decision = new() { Id = "library-prompt", Kind = "choice", Context = "librarySearch", Title = "Search your library", Message = "Choose a basic land. Only the revealed selection is available.", Min = 1, Max = 1,
             Choices = [new(0, "Forest", Card("forest-search", "Forest", "Basic Land — Forest"))],
@@ -152,6 +153,16 @@ internal static class PresentationSmoke
         File.WriteAllText(Path.Combine(profile, "presentation-results.json"), JsonSerializer.Serialize(results, options));
     }
     private static Card Card(string id, string name, string type) => new() { Key = "p:" + id, VisualId = id, CombatId = id, Name = name, Type = type, Power = type.Contains("Creature") ? 1 : null, Toughness = type.Contains("Creature") ? 1 : null, Selectable = true };
+    internal static GameSnapshot CommanderTaxExample()
+    {
+        var state = Example();
+        return state with { Players = state.Players.Select(p => p with { Zones = p.Zones.Select(z => z.Name != "Command" ? z : z with {
+            Count = 2, Cards = [
+                z.Cards[0] with { CommanderTax = p.Id == 0 ? 2 : 4, ManaCost = "{3}{G}", Selectable = false },
+                z.Cards[0] with { Key = "p:partner-" + p.Id, VisualId = "partner-" + p.Id, CombatId = "partner-" + p.Id, Name = "Anara, Wolvid Familiar", CommanderTax = p.Id == 0 ? 4 : 0, ManaCost = "{3}{G}", Selectable = false }
+            ]
+        }).ToArray() }).ToArray() };
+    }
     internal static GameSnapshot StateExample()
     {
         var state = Example();

@@ -9,6 +9,23 @@ namespace Mana.Table;
 
 internal sealed partial class TableGame
 {
+    private void PaintCommanderTax(Card card, Pose pose)
+    {
+        int tax = CardPresentation.CommanderTax(card);
+        if (tax <= 0) return;
+        var badge = new Rectangle((int)pose.Center.X - 35, pose.Bounds.Top - 10, 70, 24);
+        canvas.Panel(badge, new(47, 35, 18), Gold, 5);
+        canvas.CenterText($"TAX +{tax}", badge, Gold, .52f, true);
+    }
+    private void PaintCommanderTaxDetails(Card card, Pose pose)
+    {
+        if (CardPresentation.CommanderTax(card) <= 0) return;
+        int x = pose.Bounds.Right + 17 + 265 <= 1580 ? pose.Bounds.Right + 17 : pose.Bounds.Left - 282;
+        int y = Math.Clamp(pose.Bounds.Top, 70, 740);
+        canvas.Panel(new(x, y, 265, 122), new(19, 28, 37), Gold, 9);
+        canvas.Text($"COMMANDER TAX  +{CardPresentation.CommanderTax(card)}", x + 15, y + 12, Gold, .65f, 235, 1, true);
+        canvas.Text("Extra generic mana to cast from the command zone. Each previous cast from there adds 2.", x + 15, y + 43, Ink, .7f, 235, 4);
+    }
     private static Color AbilityColor(string keyword) => keyword switch {
         "flying" or "reach" => new(174, 218, 235),
         "deathtouch" => new(164, 204, 125),
@@ -110,6 +127,7 @@ internal sealed partial class TableGame
         var values = new List<(string Label, string Value)>();
         if (CardPresentation.HasCombatStats(card)) values.Add(("Power / toughness", $"{card.Power}/{card.Toughness}"));
         if (card.Damage > 0) values.Add(("Damage marked", card.Damage.ToString()));
+        if (CardPresentation.CommanderTax(card) > 0) values.Add(("Command zone tax", "+" + CardPresentation.CommanderTax(card)));
         var rows = values.Concat(counters.Select(c => (Label: c.Key + " counter" + (c.Value == 1 ? "" : "s"), Value: "× " + c.Value)))
             .Concat(states.Select(s => (Label: s, Value: ""))).ToArray();
         int shown = Math.Min(16, rows.Length), height = 64 + shown * 28 + (shown < rows.Length ? 28 : 0);

@@ -102,6 +102,10 @@ internal sealed partial class TableGame
         bool legal = IsCardActionable(card);
         if (zone == "Battlefield") PaintAbilityEffects(card, pose);
         PaintCard(card, pose, selected, legal, focus);
+        if (zone == "Command") {
+            PaintCommanderTax(card, pose);
+            if (focus && pose.Size.X >= 300) PaintCommanderTaxDetails(card, pose);
+        }
         if (zone == "Battlefield" && legal && CardActions.CanActivate(match!, card)) {
             var badge = new Rectangle((int)pose.Center.X - 39, pose.Bounds.Top + 6, 78, 21);
             canvas.Panel(badge, new(15, 41, 54), ActionAccent, 4);

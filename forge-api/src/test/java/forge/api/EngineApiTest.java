@@ -38,6 +38,36 @@ public class EngineApiTest {
     }
 
     @Test
+    public void commanderTaxUsesEachOwnersCastCountAndRespectsVisibility() {
+        var owner = new PlayerView(1, null);
+        var controller = new PlayerView(2, null);
+        var commander = new CardView(101, null, "Commander");
+        var partner = new CardView(102, null, "Partner");
+        for (var card : List.of(commander, partner)) {
+            card.set(TrackableProperty.Owner, owner);
+            card.set(TrackableProperty.Controller, controller);
+            card.set(TrackableProperty.IsCommander, true);
+            card.set(TrackableProperty.Zone, ZoneType.Command);
+        }
+        owner.set(TrackableProperty.CommanderCast, java.util.Map.of(101, 2, 102, 1));
+        controller.set(TrackableProperty.CommanderCast, java.util.Map.of(101, 9));
+        assertEquals(MatchSession.choiceCard(commander, controller).get("commanderTax"), 4);
+        assertEquals(MatchSession.choiceCard(partner, controller).get("commanderTax"), 2);
+        for (var zone : List.of(ZoneType.Battlefield, ZoneType.Graveyard, ZoneType.Hand)) {
+            commander.set(TrackableProperty.Zone, zone);
+            assertEquals(MatchSession.choiceCard(commander, controller).get("commanderTax"), 4);
+        }
+        commander.set(TrackableProperty.Zone, ZoneType.Library);
+        assertEquals(MatchSession.choiceCard(commander, controller).get("commanderTax"), 0);
+        commander.set(TrackableProperty.Zone, ZoneType.Battlefield);
+        commander.set(TrackableProperty.Facedown, true);
+        assertEquals(MatchSession.choiceCard(commander, controller).get("commanderTax"), 0);
+        commander.set(TrackableProperty.Facedown, false);
+        commander.set(TrackableProperty.IsCommander, false);
+        assertEquals(MatchSession.choiceCard(commander, controller).get("commanderTax"), 0);
+    }
+
+    @Test
     public void catalogDescribesBothPhysicalFacesButDoesNotInventBacksForSplitCards() {
         for (String mode : List.of("DoubleFaced", "Modal", "Split")) {
             var rules = new CardRules.Reader().readCard(List.of("Name:Front", "ManaCost:U", "Types:Creature Human",

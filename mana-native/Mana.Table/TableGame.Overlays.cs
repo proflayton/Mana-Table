@@ -64,6 +64,7 @@ internal sealed partial class TableGame
         canvas.Text(values, 686, 287, Ink, .78f, 674, 3);
         bool onBattlefield = match!.Players.Any(p => p.Zone("Battlefield").Cards.Any(c => SameVisibleCard(c, original)));
         string stateText = onBattlefield ? string.Join(" · ", CardPresentation.StateLabels(card)) : "";
+        if (CardPresentation.CommanderTaxDetails(card) is { Length: > 0 } taxDetails) stateText = taxDetails + (stateText.Length > 0 ? "\n" + stateText : "");
         if (CardPresentation.Counters(card) is { Length: > 0 } counters) stateText += "\nCounters: " + string.Join("; ", counters.Select(c => c.Key + " × " + c.Value));
         if (onBattlefield) canvas.Text(CardActions.Hint(match, original), 686, 335, CardActions.CanActivate(match, original) ? ActionAccent : Muted, .77f, 670, 2, true);
         var paragraphs = TextPages((stateText.Length > 0 ? stateText + "\n\n" : "") + card.Text + (onBattlefield ? "\n\n" + CardActions.Help : ""), onBattlefield ? 750 : 1050); inspectPage = Math.Clamp(inspectPage, 0, paragraphs.Length - 1);
@@ -165,6 +166,7 @@ internal sealed partial class TableGame
             int x = 210 + index++ * 169;
             var pose = new Pose(new(x + 74, 409), new(148, 207));
             PaintCard(card, pose, card.Highlighted, IsCardActionable(card));
+            if (zoneName == "Command") PaintCommanderTax(card, pose);
             canvas.Text(card.Name, x, 533, Ink, .68f, 155, 3, true);
             canvas.Text(card.ManaCost == "no cost" ? "" : card.ManaCost, x, 600, Gold, .62f, 156, 2);
             if (pose.Contains(pointer)) hovered = card;
