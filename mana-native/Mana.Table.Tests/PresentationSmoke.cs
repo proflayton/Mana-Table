@@ -13,6 +13,7 @@ internal static class PresentationSmoke
     {
         Directory.CreateDirectory(profile); var results = new List<string>();
         void Check(bool condition, string message) { if (!condition) throw new InvalidOperationException(message); results.Add(message); }
+        BitmapPixelSmoke.Run(Check);
         var state = Example();
         var scene = TableScene.Build(state, 0, new(-100, -100), null, null, false, CardPresentation.IsResource);
         Check(state.Players.All(p => scene.Battlefield(p.Id).Sum(c => c.Cards.Length) == p.Zone("Battlefield").Cards.Length), "Every seat's complete public battlefield is represented without paging");

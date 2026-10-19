@@ -271,16 +271,15 @@ public sealed class Canvas : IDisposable
         var measured = measuring.MeasureString(key.Value, font, key.Width, format);
         int height = Math.Max(1, Math.Min((int)Math.Ceiling(measured.Height) + 4, (int)Math.Ceiling(font.GetHeight(measuring) * key.Lines) + 2));
         int width = Math.Max(1, Math.Min(key.Width, (int)Math.Ceiling(measured.Width) + 6));
-        using var bitmap = new Gdi.Bitmap(width, height);
+        using var bitmap = new Gdi.Bitmap(width, height, Gdi.Imaging.PixelFormat.Format32bppArgb);
         using (var graphics = Gdi.Graphics.FromImage(bitmap)) {
             graphics.Clear(Gdi.Color.Transparent); graphics.TextRenderingHint = Gdi.Text.TextRenderingHint.AntiAliasGridFit;
             graphics.DrawString(key.Value, font, Gdi.Brushes.White, new Gdi.RectangleF(0, 0, width, height), format);
         }
-        using var stream = new MemoryStream(); bitmap.Save(stream, Gdi.Imaging.ImageFormat.Png); stream.Position = 0;
-        var texture = Texture2D.FromStream(device, stream);
-        var data = new Color[width * height]; texture.GetData(data);
-        for (int i = 0; i < data.Length; i++) data[i] = Color.FromNonPremultiplied(data[i].R, data[i].G, data[i].B, data[i].A);
-        texture.SetData(data); return texture;
+        var data = BitmapPixels.ReadArgb32(bitmap);
+        var texture = new Texture2D(device, width, height, false, SurfaceFormat.Color);
+        try { texture.SetData(data); return texture; }
+        catch { texture.Dispose(); throw; }
     }
     public void Dispose() { foreach (var value in text.Values) value.Texture.Dispose(); surfaceEffect.Dispose(); batch.Dispose(); pixel.Dispose(); disk.Dispose(); halo.Dispose(); }
 }
