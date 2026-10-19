@@ -42,7 +42,8 @@ internal sealed partial class TableGame
                 var heldPose = motion.Hold(CardIdentity(heldCard), new(pointer.ToVector2(), new(154, 216), -.04f, Elevation: 46));
                 PaintCard(heldCard, heldPose, true, false);
             }
-            string hint = legal ? "Release to " + (state.Decision?.Intent == DecisionIntent.Attack ? "assign attacker" : state.Decision?.Intent == DecisionIntent.Block ? "assign blocker" : "play card") : "Choose a highlighted target · Escape to cancel";
+            string hint = legal ? "Release to " + (state.Decision?.Intent == DecisionIntent.Attack ? "assign attacker" : state.Decision?.Intent == DecisionIntent.Block ? "assign blocker"
+                : PlacementDropChoice() ? "choose a placement source" : !heldCard.Selectable && HandPlacements.Options(state, heldCard).Length > 0 ? "place card" : "play card") : "Choose a highlighted target · Escape to cancel";
             int hintX = Math.Clamp(pointer.X - 192, 20, 1190), hintY = Math.Clamp(pointer.Y + 31, 70, 846);
             canvas.Panel(new(hintX, hintY, 388, 32), new(16, 24, 33), legal ? Blue : Muted, 5);
             canvas.CenterText(hint, new(hintX + 6, hintY, 376, 32), Ink, .62f);
@@ -79,6 +80,15 @@ internal sealed partial class TableGame
         string limit = match!.Viewer?.MaxHandSize is { } maximum ? $"Limit {maximum} at cleanup" : "No hand limit";
         canvas.Panel(new(263, 864, 373, 31), new Color(12, 19, 27) * .95f, new Color(62, 78, 90), 4);
         canvas.Text($"{hand.Total} cards in hand · {limit}", 274, 873, Ink, .59f, 351, 1);
+        if (match.Viewer is { } viewer) {
+            int placements = HandPlacements.AllOptions(match).Sum(a => a.HandPlacementLimit);
+            string landState = string.Join(" · ", new[] { HandPlacements.LandPlayState(viewer), placements > 0
+                ? placements + (placements == 1 ? " placement available" : " placements available") : "" }.Where(s => s.Length > 0));
+            if (landState.Length > 0) {
+            canvas.Panel(new(650, 864, 480, 31), new Color(12, 19, 27) * .95f, new Color(62, 78, 90), 4);
+            canvas.Text(landState, 662, 873, Ink, .63f, 456, 1);
+            }
+        }
         if (hand.Total > 11) {
             Button("handprev", "‹", 254, 789, 34, () => handPage = hand.Page - 1, hand.Page > 0, height: 34);
             Button("handnext", "›", 1203, 789, 34, () => handPage = hand.Page + 1, (hand.Page + 1) * 11 < hand.Total, height: 34);
@@ -102,6 +112,7 @@ internal sealed partial class TableGame
         bool legal = IsCardActionable(card);
         if (zone == "Battlefield") PaintAbilityEffects(card, pose);
         PaintCard(card, pose, selected, legal, focus, zone == "Battlefield" && card.PhasedOut && !focus ? .42f : 1);
+        if (zone == "Hand" && owner == match!.ViewerId) PaintHandPlacement(card, pose);
         if (zone == "Battlefield" && card.PhasedOut) PaintPhasedOutline(pose);
         if (zone == "Command") {
             PaintCommanderTax(card, pose);
@@ -110,7 +121,8 @@ internal sealed partial class TableGame
         if (zone == "Battlefield" && (groupFront || focus) && legal && CardActions.CanActivate(match!, card)) {
             var badge = new Rectangle((int)pose.Center.X - 39, pose.Bounds.Top + 6, 78, 21);
             canvas.Panel(badge, new(15, 41, 54), ActionAccent, 4);
-            canvas.CenterText("ACTIVATE", badge, ActionAccent, .46f, true);
+            int placements = HandPlacements.AllOptions(match!).Where(a => a.SourceCardKey == card.Key).Sum(a => a.HandPlacementLimit);
+            canvas.CenterText(placements > 0 ? placements + " PLACEMENT" + (placements == 1 ? "" : "S") : "ACTIVATE", badge, ActionAccent, .46f, true);
         }
         if (choice != null && selected) {
             var badge = new Rectangle((int)pose.Center.X - 39, pose.Bounds.Top + 8, 78, 24);

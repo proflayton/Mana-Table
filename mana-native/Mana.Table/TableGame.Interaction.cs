@@ -49,7 +49,7 @@ internal sealed partial class TableGame
         if (state == null || d == null || busy) return false;
         if (TableChoices.IsDirect(state)) return TableChoices.Index(state, card) != null;
         if (d.Intent is DecisionIntent.Attack or DecisionIntent.Block) return CombatGuide.CanSelect(state, card) || CombatTarget(card);
-        return card.Selectable && !string.IsNullOrEmpty(card.Key);
+        return card.Selectable && !string.IsNullOrEmpty(card.Key) || HandPlacements.Options(state, card).Length > 0;
     }
     private void CardClick(Card card)
     {
@@ -57,6 +57,7 @@ internal sealed partial class TableGame
         var result = interaction.CardClick(match, card);
         if (result.ChoiceIndex is { } index) ToggleChoice(match.Decision!, index);
         else if (result.Reply != null) { zoneName = null; Send(result.Reply); }
+        else if (result.Effect == InteractionEffect.ChooseHandPlacement) OpenHandPlacement(card);
         else if (result.Effect == InteractionEffect.Inspect) Inspect(card);
     }
     private void PlayerClick(int player)
@@ -73,10 +74,12 @@ internal sealed partial class TableGame
             ? InteractionController.Assign(match, card.CombatId, target?.Card == null ? target?.PlayerId : null, target?.Card?.CombatId)
             : dragSource.Zone == "Hand" && TableWorld.CanPlayAt(pointer) ? InteractionController.Play(match, card) : null;
     }
-    private bool LegalDrop(Hit? target) => DropReply(target) != null;
+    private bool LegalDrop(Hit? target) => DropReply(target) != null || PlacementDropChoice();
     private bool DropCard(Hit? target)
     {
-        if (busy || DropReply(target) is not { } reply) return false;
+        if (busy) return false;
+        if (PlacementDropChoice()) { OpenHandPlacement(dragSource!.Card!); return true; }
+        if (DropReply(target) is not { } reply) return false;
         Send(reply); return true;
     }
     private void Scroll(int direction)

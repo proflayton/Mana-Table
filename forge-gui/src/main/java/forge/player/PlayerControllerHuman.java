@@ -1542,7 +1542,9 @@ public class PlayerControllerHuman extends PlayerController implements IGameCont
     private Set<CardView> cachedActionableCards;
 
     public record PriorityAbility(String id, int sourceCardId, String sourceName, String text,
-                                  boolean ignoredUntilNextTurn) { }
+                                  boolean ignoredUntilNextTurn, List<Integer> eligibleHandCardIds) {
+        public PriorityAbility { eligibleHandCardIds = List.copyOf(eligibleHandCardIds); }
+    }
 
     private final PriorityAbilityPass priorityAbilityPass = new PriorityAbilityPass();
     private volatile InputPassPriority cachedPriorityInput;
@@ -1550,6 +1552,19 @@ public class PlayerControllerHuman extends PlayerController implements IGameCont
     /** Cached legal abilities for the exact current priority window; no graph scan. */
     public List<PriorityAbility> getPriorityAbilities() {
         return isCurrentPriorityInput() ? priorityAbilityPass.legal(player) : List.of();
+    }
+
+    /** Cached validation only; safe for a scoped protocol command before queuing input. */
+    public boolean canUseHandPlacement(String abilityId, int handCardId) {
+        return isCurrentPriorityInput() && priorityAbilityPass.hasHandPlacement(abilityId, handCardId);
+    }
+
+    /** Runs on the input thread and rechecks the exact source instance and engine
+     * ability. Never substitutes another ability on the same permanent. */
+    public boolean useHandPlacement(String abilityId, int handCardId) {
+        if (!isCurrentPriorityInput()) return false;
+        SpellAbility ability = priorityAbilityPass.resolveHandPlacement(player, abilityId, handCardId);
+        return ability != null && isCurrentPriorityInput() && cachedPriorityInput.selectAbility(ability);
     }
 
     /** Policies remain visible between priority windows so the user can undo them. */

@@ -30,6 +30,12 @@ public static class ControlGuidance
                 return new("activate-ability", "Use an ability", state.Decision.Intent == DecisionIntent.Mana
                     ? "Click this card to use its available mana ability."
                     : "Click this card to use an available ability.");
+            if (zone == "Hand" && !current.Selectable && HandPlacements.Options(state, current) is { Length: > 0 } placements)
+                return new("hand-play", HandPlacements.Availability(state, current), placements.Length > 1
+                    ? "Double-click or drag to choose a placement source."
+                    : dragging ? "Release to place using " + placements[0].SourceName + "."
+                    : staged ? "Click again to place using " + placements[0].SourceName + "."
+                    : "Double-click or drag to place using " + placements[0].SourceName + ".");
             if (state.Decision.Intent == DecisionIntent.Priority && current.Selectable && current.Key.Length > 0 && OwnCard(state, current, zone)) {
                 if (zone == "Hand") return Hand(staged, dragging);
                 if (zone == "Command") return new("commander-play", "Play your commander", staged
@@ -68,7 +74,8 @@ public static class ControlGuidance
             return null;
         }
         if (decision.Intent != DecisionIntent.Priority) return null;
-        var hand = state.Viewer!.Zone("Hand").Cards.FirstOrDefault(c => !c.FaceDown && c.Selectable && c.Key.Length > 0);
+        var hand = state.Viewer!.Zone("Hand").Cards.FirstOrDefault(c => !c.FaceDown && c.Key.Length > 0
+            && (c.Selectable || HandPlacements.Options(state, c).Length > 0));
         if (hand != null) return Card(state, hand, "Hand");
         var commander = state.Viewer.Zone("Command").Cards.FirstOrDefault(c => !c.FaceDown && c.Selectable && c.Key.Length > 0);
         if (commander != null) return Card(state, commander, "Command");

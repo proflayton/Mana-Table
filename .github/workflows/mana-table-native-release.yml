@@ -149,6 +149,8 @@ jobs:
             @{ Name='loading'; Mode='--smoke-loading'; Result='loading-results.json' },
             @{ Name='priority-1280'; Mode='--smoke-priority-abilities'; Result='priority-ability-results.json' },
             @{ Name='priority-1200'; Mode='--smoke-priority-abilities'; Result='priority-ability-results.json'; Size='1200x900' },
+            @{ Name='hand-placement-1000'; Mode='--smoke-hand-placement'; Result='hand-placement-results.json'; Size='1000x740' },
+            @{ Name='hand-placement-1540'; Mode='--smoke-hand-placement'; Result='hand-placement-results.json'; Size='1540x980' },
             @{ Name='workshop'; Mode='--smoke-workshop'; Result='workshop-ui-results.json' },
             @{ Name='tuning'; Mode='--smoke-deck-tuning'; Result='deck-tuning-ui-results.json'; Size='1280x900' },
             @{ Name='analysis-adapter'; Mode='--smoke-analysis-adapter'; Result='analysis-adapter-results.json' },

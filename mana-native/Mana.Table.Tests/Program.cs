@@ -14,6 +14,7 @@ internal static class Program
         testRun |= args.Contains("--smoke-updates");
         testRun |= args.Contains("--smoke-commander-tax");
         testRun |= args.Contains("--smoke-full-battlefield");
+        testRun |= args.Contains("--smoke-hand-placement");
         var profile = Arg("--profile") ?? (testRun
             ? Path.Combine(Path.GetTempPath(), "ManaTableNative-tests", Guid.NewGuid().ToString())
             : Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "ManaTableNative"));
@@ -25,6 +26,7 @@ internal static class Program
             Microsoft.Xna.Framework.Point? size = null;
             if (Arg("--size")?.Split('x') is { Length: 2 } dimensions && int.TryParse(dimensions[0], out int width) && int.TryParse(dimensions[1], out int height)) size = new(Math.Clamp(width, 800, 3840), Math.Clamp(height, 450, 2160));
             if (args.Contains("--smoke-updates")) { UpdateSmoke.Run(profile, size); return 0; }
+            if (args.Contains("--smoke-hand-placement")) { HandPlacementSmoke.Run(profile, size); return 0; }
             if (args.Contains("--smoke-onboarding")) { OnboardingSmoke.Run(profile, size); return 0; }
             if (args.Contains("--smoke-loading")) { LoadingSmoke.Run(profile, size); return 0; }
             if (args.Contains("--smoke-context-guidance")) { ContextGuidanceSmoke.Run(profile, size); return 0; }

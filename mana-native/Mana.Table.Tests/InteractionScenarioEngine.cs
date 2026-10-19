@@ -78,6 +78,13 @@ internal sealed class InteractionScenarioEngine : ICardEngine
                 return a with { BlockerIds = blockers.ToArray(), Blocked = blockers.Count > 0 };
             }).ToArray();
             state = state with { Combat = state.Combat with { Attackers = attacks, BlockProblem = attacks[0].BlockerIds.Length == 1 ? "This attacker needs at least two blockers." : null } };
+        } else if (reply.Action == ReplyAction.UseHandPlacement) {
+            var card = Find(reply.Card);
+            if (reply.AbilityId == null || HandPlacements.Start(state, card, reply.AbilityId) == null) throw new InvalidOperationException("Unprojected hand placement escaped the UI");
+            var ability = state.Decision!.PriorityAbilities.Single(a => a.Id == reply.AbilityId);
+            var source = Find(ability.SourceCardKey);
+            state = state with { Stack = [new(ability.SourceName, ability.Text, true, source) { Id = "placement-on-stack" }],
+                Decision = state.Decision with { PriorityAbilities = [] } };
         } else if (reply.Action == ReplyAction.SelectCard) {
             var card = Find(reply.Card);
             if (!card.Selectable || state.Decision?.Intent is not (DecisionIntent.Priority or DecisionIntent.Selection)) throw new InvalidOperationException("Illegal card selection escaped the UI");
@@ -86,9 +93,11 @@ internal sealed class InteractionScenarioEngine : ICardEngine
                     state = state with { Decision = new() { Kind = "choice", Title = "Activate " + card.Name, Context = "playAbility", SourceCard = card,
                         SourceZone = "Battlefield", Min = 0, Max = 1, Choices = [new(0, "Tap: Add one green mana", null)] } };
                 } else {
-                    string source = state.Viewer.Zone("Hand").Cards.Contains(card) ? "Hand"
-                        : state.Viewer.Zone("Command").Cards.Contains(card) ? "Command" : throw new InvalidOperationException("Unexpected scenario source " + card.VisualId);
-                    state = state with { Players = state.Players.Select(p => p.Id != state.ViewerId ? p : p with { Zones = p.Zones.Select(z =>
+                    string source = new[] { "Hand", "Command", "Graveyard", "Exile" }.FirstOrDefault(zone => state.Viewer.Zone(zone).Cards.Contains(card))
+                        ?? throw new InvalidOperationException("Unexpected scenario source " + card.VisualId);
+                    if (source is "Graveyard" or "Exile") state = state with { Decision = new() { Kind = "choice", Context = "playAbility", SourceCard = card,
+                        SourceZone = source, Min = 0, Max = 1, Choices = [new(0, source == "Graveyard" ? "Flashback — pay the ability's cost" : "Play from exile — pay the cost", null)] } };
+                    else state = state with { Players = state.Players.Select(p => p.Id != state.ViewerId ? p : p with { Zones = p.Zones.Select(z =>
                     z.Name == source ? z with { Count = z.Count - 1, Cards = z.Cards.Where(c => c != card).ToArray() }
                     : z.Name == "Battlefield" ? z with { Count = z.Count + 1, Cards = [.. z.Cards, card] } : z).ToArray() }).ToArray() };
                 }
@@ -101,7 +110,14 @@ internal sealed class InteractionScenarioEngine : ICardEngine
         } else if (reply.Action == ReplyAction.Choose && state.Decision is { Kind: "choice" or "reveal" } decision) {
             if (reply.Choices == null || reply.Choices.Length < decision.Min || reply.Choices.Length > decision.Max)
                 throw new InvalidOperationException("Invalid gallery selection");
-            state = state with { Decision = null };
+            if (decision.Context == "hand-placement" && reply.Choices.Length == 1) {
+                var chosen = decision.Choices.Single(c => c.Index == reply.Choices[0]).Card!;
+                var card = state.Viewer!.Zone("Hand").Cards.Single(c => CardViews.Same(c, chosen));
+                state = state with { Players = state.Players.Select(p => p.Id != state.ViewerId ? p : p with { Zones = p.Zones.Select(z =>
+                    z.Name == "Hand" ? z with { Count = z.Count - 1, Cards = z.Cards.Where(c => c != card).ToArray() }
+                    : z.Name == "Battlefield" ? z with { Count = z.Count + 1, Cards = [.. z.Cards, card] } : z).ToArray() }).ToArray() };
+            }
+            state = state with { Decision = null, Stack = decision.Context == "hand-placement" ? [] : state.Stack };
         } else throw new InvalidOperationException("Unexpected scenario action: " + reply.Action);
         Replies.Add(reply); Publish(); return Task.CompletedTask;
     }
