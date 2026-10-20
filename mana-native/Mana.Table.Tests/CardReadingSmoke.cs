@@ -42,6 +42,7 @@ internal sealed class CardReadingSmoke : ITableAutomation
         if (selectionOnly) {
             QueueCompactSelectionChecks();
             QueueTableChoiceChecks();
+            QueueSlowGalleryHandoff();
             return;
         }
         Step(0, () => Publish(FocusedSeed(scenario.State, readingOnly: true)));
@@ -384,6 +385,56 @@ internal sealed class CardReadingSmoke : ITableAutomation
                 && reply.GameId == expectedGame && reply.DecisionId == expectedDecision && reply.Choices!.SequenceEqual([4]),
                 "Only explicit confirmation submits the remaining exact selection with its current game and decision scope"));
     }
+    private void QueueSlowGalleryHandoff()
+    {
+        int repliesBefore = 0;
+        string expectedScope = "";
+        Pose? Face(int slot) => view.DisplayedPose("choice-face:" + expectedScope + ":" + slot);
+        var card = new Card { Name = "Llanowar Elves", Type = "Creature — Elf Druid", Power = 1, Toughness = 1, Text = "{T}: Add {G}." };
+        Prepared(() => !view.Busy, 2, () => {
+            Move(new(10, 70));
+            Publish(scenario.State with { Decision = new() { Kind = "choice", Min = 1, Max = 3,
+                Choices = [new(2, card.Name, card), new(5, card.Name, card with { }), new(9, card.Name, card with { })] } });
+            expectedScope = view.Scope; repliesBefore = scenario.Replies.Count;
+        }, "The previous real selection reply must finish before the slow gallery handoff");
+        Step(.15, () => MoveHit("choice:2")); Click();
+        Step(0, () => MoveHit("choice:5")); Click();
+        Step(0, () => MoveHit("choice:9")); Click();
+        Step(0, () => {
+            Check(view.Scope == expectedScope && view.Selections.SequenceEqual([2, 5, 9]) && scenario.Replies.Count == repliesBefore,
+                "The slow handoff stages all three anonymous indices through real selection clicks");
+            Move(new(10, 70));
+        });
+        Step(.06, () => MoveHit("choice:2"));
+        StepWhen(() => GalleryReadingReady(0), 2, () => {
+            Check(GalleryReadingReady(0) && view.Scope == expectedScope && view.Selections.SequenceEqual([2, 5, 9]),
+                "The first selected face is enlarged before moving to its neighbor in the slow handoff");
+            MoveHit("choice:5");
+            // Reproduce coalesced software-renderer frames without changing any
+            // production clock, input threshold, or the original 30-second budget.
+            System.Threading.Thread.Sleep(250);
+        });
+        Step(0, () => {
+            Buttons(ButtonState.Pressed);
+            System.Threading.Thread.Sleep(250);
+        });
+        Step(0, () => {
+            Check(Face(0) is { Size.X: > 150 } && Face(1) is { Size.X: > 150 } neighbor
+                && view.HoverPreview == neighbor.Bounds
+                && view.Scope == expectedScope && view.Selections.SequenceEqual([2, 5, 9]) && scenario.Replies.Count == repliesBefore,
+                "The neighbor begins reading while the previous face is still returning before the real mouse release");
+            Buttons();
+        });
+        Step(0, () => {
+            Check(view.Scope == expectedScope && view.Selections.SequenceEqual([2, 9]) && ChoiceCompact(0) && ChoiceCompact(1)
+                && scenario.Replies.Count == repliesBefore,
+                "Selecting after the neighbor starts reading immediately collapses both readers and retains the other selections");
+            Capture("06-slow-gallery-handoff");
+        });
+        Step(.65, () => Check(view.Scope == expectedScope && view.Selections.SequenceEqual([2, 9])
+            && ChoiceCompact(0) && ChoiceCompact(1) && view.HoverPreview == null && scenario.Replies.Count == repliesBefore,
+            "Both readers stay compact under the stationary pointer after the slow handoff without a game command"));
+    }
     private void QueueStateChecks()
     {
         Pose original = default, phaseInRest = default;
@@ -573,6 +624,8 @@ internal sealed class CardReadingSmoke : ITableAutomation
             Capture("failure");
             File.WriteAllText(Path.Combine(view.Profile, "failure.json"), JsonSerializer.Serialize(new { description, view.Now, view.Overlay, view.ZoneName,
                 hovered = view.Hovered?.VisualId, view.HoverPreview, hoveredPose = view.Hovered == null ? null : view.DisplayedPose(view.Hovered.VisualId),
+                selections = view.Selections.ToArray(), choiceSlots = ChoiceSlotDiagnostics(),
+                stateCreaturePose = view.DisplayedPose("seat-0-1"), stateCreatureRest = StateCreatureRest(),
                 handPose = view.DisplayedPose("hand-3"), handPaintCount = view.CardPaintCount("hand-3"), point = new { mouse.X, mouse.Y }, replies = scenario.Replies.Count,
                 hits = view.Hits.Select(h => h.Id).ToArray() }, new JsonSerializerOptions { IncludeFields = true, WriteIndented = true }));
             throw new InvalidOperationException(description);
@@ -603,10 +656,27 @@ internal sealed class CardReadingSmoke : ITableAutomation
             left = mouse.LeftButton.ToString(), right = mouse.RightButton.ToString(),
             hovered = view.Hovered?.VisualId, view.HoverPreview,
             hoveredPose = view.Hovered == null ? null : view.DisplayedPose(view.Hovered.VisualId),
+            selections = view.Selections.ToArray(), choiceSlots = ChoiceSlotDiagnostics(),
+            stateCreaturePose = view.DisplayedPose("seat-0-1"), stateCreatureRest = StateCreatureRest(),
             phasedLandPose = view.DisplayedPose("seat-0-0"),
             replies = scenario.Replies.ToArray() };
         File.WriteAllText(Path.Combine(view.Profile, ResultPrefix + "-timing-diagnostic.json"),
             JsonSerializer.Serialize(record, new JsonSerializerOptions { WriteIndented = true, IncludeFields = true }));
+    }
+    private Pose? StateCreatureRest() => view.Match is { } state
+        ? TableScene.Build(state, 0, new(-1, -1), null, null, false, CardPresentation.IsResource)
+            .Rank(0, false).Cards.FirstOrDefault(c => c.Id == "seat-0-1")?.Pose : null;
+    private object[] ChoiceSlotDiagnostics()
+    {
+        var decision = view.Match?.Decision;
+        if (decision == null) return [];
+        int count = decision.LibraryCards.Length > 0 ? decision.LibraryCards.Length : decision.Choices.Length;
+        return Enumerable.Range(0, count).Select(slot => (object)new {
+            slot,
+            index = decision.LibraryCards.Length > 0 ? decision.LibraryCards[slot].Index : (int?)decision.Choices[slot].Index,
+            pose = view.DisplayedPose("choice-face:" + view.Scope + ":" + slot),
+            paintCount = view.CardPaintCount("choice-face:" + view.Scope + ":" + slot)
+        }).ToArray();
     }
     public void Frame(Texture2D surface)
     {

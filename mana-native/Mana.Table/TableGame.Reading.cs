@@ -19,7 +19,7 @@ internal sealed partial class TableGame
     private string? readingId, readingZone;
     private Rectangle? hoverPreview;
     private (string Id, Point At)? dismissedReading;
-    private string? collapseReadingId, collapsePreviousReadingId;
+    private readonly HashSet<string> pendingReadingCollapses = [];
 
     private Hit? TableHitAt(Point point)
     {
@@ -100,10 +100,8 @@ internal sealed partial class TableGame
         if (card.FaceDown) readingTransitions.Remove(id);
         // A completed selection returns immediately to its normal footprint so
         // the old enlarged face cannot intercept the next adjacent click.
-        var pose = collapseReadingId == id || collapsePreviousReadingId == id ? motion.Hold(id, rest)
+        var pose = pendingReadingCollapses.Remove(id) ? motion.Hold(id, rest)
             : motion.Place(id, focused ? ReadingPose(rest, zone) : rest, entrance, entranceDelay);
-        if (collapseReadingId == id) collapseReadingId = null;
-        if (collapsePreviousReadingId == id) collapsePreviousReadingId = null;
         if (!focused && Vector2.Distance(pose.Size, rest.Size) < 2 && Vector2.Distance(pose.Center, rest.Center) < 2) readingTransitions.Remove(id);
         // A pile face opens a browser; it is not a cast/play action.
         var hit = new Hit(hitId, Scope, activationBounds is { } bounds ? Rectangle.Union(pose.Bounds, bounds) : pose.Bounds,
@@ -135,15 +133,18 @@ internal sealed partial class TableGame
         readingCards.Clear(); liftedCards.Clear(); readingTransitions.Clear(); cardPaintCounts.Clear();
         readingId = readingZone = null; hoverPreview = null; lastHover = ""; hoverSince = 0;
         dismissedReading = null;
-        collapseReadingId = collapsePreviousReadingId = null;
+        pendingReadingCollapses.Clear();
     }
     private void CollapseCardReading()
     {
         var hit = HitAt(pointer);
         string clickedId = readingCards.LastOrDefault(c => c.Hit.Id == hit?.Id)?.Id ?? readingId ?? lastHover;
         dismissedReading = (clickedId, pointer);
-        collapseReadingId = dismissedReading.Value.Id;
-        collapsePreviousReadingId = readingId;
+        // Moving to a neighbor can start its reader while an older one is still
+        // returning. Selection restores every rendered reader to its new rest.
+        pendingReadingCollapses.UnionWith(readingCards.Where(c => readingTransitions.Contains(c.Id)).Select(c => c.Id));
+        pendingReadingCollapses.Add(clickedId);
+        if (readingId != null) pendingReadingCollapses.Add(readingId);
         readingId = readingZone = null; hoverPreview = null; lastHover = ""; hoverSince = now;
     }
 }

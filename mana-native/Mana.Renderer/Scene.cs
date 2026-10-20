@@ -59,11 +59,18 @@ public sealed class SceneMotion
     private sealed class Item(Pose pose) { public Pose Current = pose, Target = pose, Display = pose; public long Seen; public float Flight = 1, Height, Delay; }
     private readonly Dictionary<string, Item> items = [];
     private long frame;
-    private float elapsed;
+    private float elapsed, flightElapsed;
     private bool reduced;
     public int Count => items.Count;
     public bool TryGet(string id, out Pose pose) { if (items.TryGetValue(id, out var item) && item.Seen == frame) { pose = item.Display; return true; } pose = default; return false; }
-    public void Begin(float elapsedSeconds, bool reducedMotion) { frame++; elapsed = Math.Clamp(elapsedSeconds, 0, .1f); reduced = reducedMotion; }
+    public void Begin(float elapsedSeconds, bool reducedMotion)
+    {
+        frame++;
+        // Bounded arcs follow elapsed time while pose smoothing stays continuous after a hitch.
+        flightElapsed = float.IsFinite(elapsedSeconds) ? Math.Max(0, elapsedSeconds) : 0;
+        elapsed = Math.Min(flightElapsed, .1f);
+        reduced = reducedMotion;
+    }
     public Pose Hold(string id, Pose pose)
     {
         // Direct manipulation stays attached to the pointer. Subsequent layout
@@ -79,7 +86,7 @@ public sealed class SceneMotion
         if (item.Delay > 0) { item.Delay -= elapsed; return item.Display; }
         float travel = Vector2.Distance(item.Target.Center, target.Center);
         if (travel > 100) { item.Flight = 0; item.Height = Math.Clamp(travel * .12f, 18, 48); }
-        item.Flight = reduced ? 1 : Math.Min(1, item.Flight + elapsed / .42f);
+        item.Flight = reduced ? 1 : Math.Min(1, item.Flight + flightElapsed / .42f);
         item.Seen = frame; item.Target = target;
         float amount = reduced ? 1 : 1 - MathF.Exp(-14 * elapsed);
         float angle = item.Current.Angle + MathHelper.WrapAngle(target.Angle - item.Current.Angle) * amount;

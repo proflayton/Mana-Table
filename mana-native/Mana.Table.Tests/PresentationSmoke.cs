@@ -111,6 +111,7 @@ internal static class PresentationSmoke
         Check(heldPose.Center == new Vector2(280, 40) && motion.TryGet("dealt", out var heldDisplay) && heldDisplay == heldPose, "A dragged card stays attached to the pointer and retains its displayed occurrence");
         motion.Begin(.016f, false); var releasedPose = motion.Place("dealt", end, new(0, 800)); motion.End();
         Check(releasedPose.Center.X > heldPose.Center.X && releasedPose.Center.X < end.Center.X, "Release continues from the held position rather than a new library entrance");
+        CheckMotionTiming(Check);
         var presence = new TablePresence();
         var afterDraw = state with { Players = state.Players.Select(p => p.Id == 1 ? p with { Zones = p.Zones.Select(z => z.Name == "Hand" ? z with { Count = z.Count + 1 } : z.Name == "Library" ? z with { Count = z.Count - 1 } : z).ToArray() } : p.Id == 2 ? p with { Life = p.Life - 3 } : p).ToArray() };
         presence.Observe(state, afterDraw, 5);
@@ -176,6 +177,52 @@ internal static class PresentationSmoke
         Fixture("color-choice", state with { Decision = new() { Id = "color", Kind = "choice", Title = "Choose a color", Message = "Add one mana of the chosen color.", Min = 1, Max = 1, Choices = new[] { "W", "U", "B", "R", "G" }.Select((c, i) => new Choice(i, c, null) { Mana = "{" + c + "}" }).ToArray() } });
         Fixture("allocation", state with { Decision = new() { Id = "damage", Kind = "allocate", Message = "Assign seven damage among these targets.", Amount = 7, Limits = [7, 7, 7], Choices = [new(0, "Llanowar Elves", null), new(1, "Opponent 2", null), new(2, "Opponent 3", null)] } });
         File.WriteAllText(Path.Combine(profile, "presentation-results.json"), JsonSerializer.Serialize(results, options));
+    }
+    private static void CheckMotionTiming(Action<bool, string> Check)
+    {
+        // The R14 seat-0-1 rest/reader geometry isolates the elapsed-flight defect;
+        // it does not reconstruct the unrecorded internal pose from the CI failure.
+        var rest = TableWorld.Rank(3, false, 0, 4, false);
+        var reader = new Pose(new(rest.Center.X, 383), new(410, 574), Elevation: 22);
+        var flight = new SceneMotion();
+        flight.Begin(0, false); flight.Hold("hitch-occurrence", reader); flight.End();
+        Pose landed = reader;
+        foreach (float interval in new[] { .5f, .2f, .2f, .2f }) {
+            flight.Begin(interval, false); landed = flight.Place("hitch-occurrence", rest); flight.End();
+        }
+        Check(landed.Elevation < 1 && Vector2.Distance(landed.Center, rest.Center) < 2
+            && flight.TryGet("hitch-occurrence", out var retained) && retained == landed && flight.Count == 1,
+            "Sparse rendering completes a bounded flight and returns the same occurrence to the table");
+
+        var handRest = TableLayout.Hand(3, 7);
+        var handReader = new Pose(new(handRest.Center.X, 383), new(410, 574), Elevation: 22);
+        var hover = new SceneMotion();
+        hover.Begin(0, false); hover.Hold("returning-reader", handReader); hover.End();
+        hover.Begin(.07f, false); var intermediate = hover.Place("returning-reader", handRest); hover.End();
+        Check(intermediate.Size.X is > 150 and < 400
+            && hover.TryGet("returning-reader", out var sameReader) && sameReader == intermediate,
+            "The original short hover return remains an intermediate pose of the same occurrence");
+        hover.Begin(0, false); hover.Hold("returning-reader", handReader); hover.End();
+        hover.Begin(.6f, false); var afterHitch = hover.Place("returning-reader", handRest); hover.End();
+        Check(afterHitch.Size.X is > 150 and < 400 && afterHitch.Elevation < 6,
+            "A long frame finishes the flight arc while keeping hover-size easing continuous");
+
+        var entrance = new SceneMotion();
+        entrance.Begin(.5f, false); var firstDelay = entrance.Place("delayed-reader", rest, reader.Center, .2f); entrance.End();
+        entrance.Begin(.5f, false); var secondDelay = entrance.Place("delayed-reader", rest, reader.Center, .2f); entrance.End();
+        entrance.Begin(.016f, false); var entering = entrance.Place("delayed-reader", rest, reader.Center, .2f); entrance.End();
+        Check(firstDelay.Center == reader.Center && secondDelay.Center == reader.Center
+            && entering.Center.Y > reader.Center.Y && entering.Center.Y < rest.Center.Y,
+            "Hitches preserve the existing staggered entrance clock before normal travel resumes");
+
+        bool invalidTimeSafe = true;
+        var guarded = new SceneMotion();
+        foreach (float interval in new[] { -.1f, float.NaN, float.PositiveInfinity, float.NegativeInfinity }) {
+            guarded.Begin(0, false); guarded.Hold("guarded-reader", reader); guarded.End();
+            guarded.Begin(interval, false); var unchanged = guarded.Place("guarded-reader", rest); guarded.End();
+            invalidTimeSafe &= unchanged == reader && guarded.TryGet("guarded-reader", out var visible) && visible == reader;
+        }
+        Check(invalidTimeSafe, "Negative and nonfinite frame times cannot advance or corrupt a visible pose");
     }
     private static Card Card(string id, string name, string type) => new() { Key = "p:" + id, VisualId = id, CombatId = id, Name = name, Type = type, Power = type.Contains("Creature") ? 1 : null, Toughness = type.Contains("Creature") ? 1 : null, Selectable = true };
     internal static GameSnapshot CommanderTaxExample()
