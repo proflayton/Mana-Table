@@ -16,6 +16,7 @@ public sealed class Canvas : IDisposable
     private float scale = 1;
     private readonly Dictionary<TextKey, (Texture2D Texture, long Used)> text = [];
     private long frame;
+    public float TextScale { get; set; } = 1;
     private readonly record struct TextKey(string Value, int Size, int Width, int Lines, bool Bold, bool Serif);
     public Canvas(GraphicsDevice device)
     {
@@ -247,10 +248,21 @@ public sealed class Canvas : IDisposable
         var c = b + vertical * size.Y; var d = a + vertical * size.Y;
         Line(a, b, color, width); Line(b, c, color, width); Line(c, d, color, width); Line(d, a, color, width);
     }
+    public int TextWidth(string value, float size = 1, bool bold = false)
+    {
+        if (value.Length == 0) return 0;
+        float textScale = float.IsFinite(TextScale) ? Math.Clamp(TextScale, 1, 1.3f) : 1;
+        var key = new TextKey(value, Math.Max(9, (int)Math.Round(22 * size * textScale)), 2000, 1, bold, false);
+        if (!text.TryGetValue(key, out var cached)) cached = (RenderText(key), frame);
+        text[key] = (cached.Texture, frame);
+        return cached.Texture.Width;
+    }
     public void Text(string? value, int x, int y, Color color, float size = 1, int width = 2000, int maxLines = 100, bool bold = false, bool serif = false)
     {
         if (string.IsNullOrEmpty(value) || width <= 0 || maxLines <= 0) return;
-        var key = new TextKey(value.Replace("\r", ""), Math.Max(9, (int)Math.Round(22 * size)), Math.Min(2000, width), Math.Min(80, maxLines), bold, serif);
+        float textScale = float.IsFinite(TextScale) ? Math.Clamp(TextScale, 1, 1.3f) : 1;
+        var key = new TextKey(value.Replace("\r", ""), Math.Max(9, (int)Math.Round(22 * size * textScale)), Math.Min(2000, width),
+            Math.Max(1, (int)(Math.Min(80, maxLines) / textScale)), bold, serif);
         if (!text.TryGetValue(key, out var cached)) cached = (RenderText(key), frame);
         text[key] = (cached.Texture, frame);
         batch.Draw(cached.Texture, new Vector2(x, y), color);
@@ -258,7 +270,8 @@ public sealed class Canvas : IDisposable
     public void CenterText(string? value, Rectangle r, Color color, float size = 1, bool bold = false, bool serif = false)
     {
         if (string.IsNullOrEmpty(value)) return;
-        var key = new TextKey(value, Math.Max(9, (int)Math.Round(22 * size)), r.Width, 1, bold, serif);
+        float textScale = float.IsFinite(TextScale) ? Math.Clamp(TextScale, 1, 1.3f) : 1;
+        var key = new TextKey(value, Math.Max(9, Math.Min((int)Math.Round(22 * size * textScale), (int)(r.Height * .76f))), r.Width, 1, bold, serif);
         if (!text.TryGetValue(key, out var cached)) cached = (RenderText(key), frame);
         text[key] = (cached.Texture, frame);
         batch.Draw(cached.Texture, new Vector2(r.X + Math.Max(0, (r.Width - cached.Texture.Width) / 2), r.Y + Math.Max(0, (r.Height - cached.Texture.Height) / 2)), color);

@@ -116,6 +116,8 @@ public class InputConfirm extends InputSyncronizedBase {
             showMessage(sb.toString(), card);
         } else if (card != null) {
             showMessage(message, card);
+        } else if (sa != null) {
+            showMessage(message, sa.getCardView());
         } else {
             showMessage(message);
         }

@@ -185,8 +185,12 @@ internal sealed partial class TableGame
         deckIssueBounds = new(600, 748, 500, 196);
         canvas.Line(new(600, 754), new(1100, 754), LobbyTrim);
         canvas.Text("DECK CHECKS", 600, 769, issues.Length > 0 ? Gold : ReadyColor, .7f, 292, 1, true);
-        canvas.Text(issues.Length == 0 ? "Checks passed" : issues.Length + (issues.Length == 1 ? " issue" : " issues"), 903, 771, issues.Length > 0 ? Gold : ReadyColor, .65f, 197, 1);
-        if (issues.Length == 0) { DrawDeckComposition(deck, 600, 840, 500); return; }
+        canvas.Text(issues.Length == 0 ? "Structure checked" : issues.Length + (issues.Length == 1 ? " issue" : " issues"), 903, 771, issues.Length > 0 ? Gold : ReadyColor, .62f, 197, 1);
+        if (issues.Length == 0) {
+            canvas.Text(Mana.Magic.DeckExperience.EligibilityLabel(deck), 600, 808, deck.Eligibility == "bundled-rules" ? Muted : Gold, .65f, 500, 1);
+            canvas.Text("Offline snapshot; no current online ban-list check.", 600, 837, Muted, .52f, 500, 1);
+            DrawDeckComposition(deck, 600, 860, 500); return;
+        }
         var parts = IssueTextPages(issues, 90);
         deckIssuePage = Math.Clamp(deckIssuePage, 0, Math.Max(0, parts.Length - 1));
         for (int i = 0; i < Math.Min(1, parts.Length - deckIssuePage); i++) {

@@ -9,8 +9,10 @@ public static class CardPresentation
         ? $"Commander tax: +{tax} generic mana on the next cast from the command zone. Each previous cast from that zone adds 2 mana." : "";
     public static bool IsResource(Card card) => card.Type.Contains("Land", StringComparison.Ordinal) && !HasCombatStats(card);
     public static bool HasCombatStats(Card card) => card.Type.Contains("Creature", StringComparison.Ordinal);
-    public static bool HasAbility(Card card, string keyword) => !card.FaceDown && card.CombatKeywords.Contains(keyword, StringComparer.OrdinalIgnoreCase);
-    public static string[] Abilities(Card card) => card.FaceDown ? [] : card.CombatKeywords.Where(k => !string.IsNullOrWhiteSpace(k))
+    // A masked battlefield object can still have authoritative public characteristics.
+    // Hidden-zone faces have no projected type/keywords; this never reconstructs identity.
+    public static bool HasAbility(Card card, string keyword) => (!card.FaceDown || card.Type.Length > 0) && card.CombatKeywords.Contains(keyword, StringComparer.OrdinalIgnoreCase);
+    public static string[] Abilities(Card card) => card.FaceDown && card.Type.Length == 0 ? [] : card.CombatKeywords.Where(k => !string.IsNullOrWhiteSpace(k))
         .Select(k => k.ToLowerInvariant()).Distinct(StringComparer.Ordinal).ToArray();
     public static string AbilityName(string keyword) => System.Globalization.CultureInfo.InvariantCulture.TextInfo.ToTitleCase(keyword);
     public static KeyValuePair<string, int>[] Counters(Card card) => card.Counters.Where(c => c.Value > 0)

@@ -38,3 +38,12 @@ public sealed record DeckTest(string Id, string DeckId, string VersionId, string
     public CatalogCard[] Hand { get; init; } = [];
 }
 public sealed record HandPractice(string TestId, string VersionId, CatalogCard[] Hand, int LibraryCount, int Draws, int Redraws, string Status);
+
+public interface IDeckVersionHistory
+{
+    Task<DeckVersionView> InspectTestAsync(string deckId, long revision, string testId);
+    Task<DeckVersionView> InspectVersionAsync(string deckId, long revision, string versionId);
+}
+public sealed record DeckVersionDifference(string Section, string Card, int Saved, int Current);
+public sealed record DeckVersionView(string VersionId, string Name, string Format, string CurrentFormat,
+    DeckEntry[] Entries, DeckVersionDifference[] Differences);

@@ -102,9 +102,11 @@ internal sealed partial class TableGame
     }, "Leaving the table", "Returning to your own setup.");
     private void OpenJoin()
     {
-        var value = Clipboard.ContainsText() ? Clipboard.GetText().Trim() : "";
+        string value = "", clipboardError = "";
+        try { value = Clipboard.ContainsText() ? Clipboard.GetText().Trim() : ""; }
+        catch (System.Runtime.InteropServices.ExternalException) { clipboardError = "The clipboard is unavailable. Enter your invite manually or try Paste again."; }
         joinAddress = value.Length <= 220 && !value.Contains('\n') && (value.StartsWith("MT1-") || value.Contains(':')) ? value : "";
-        setupModal = "join"; textFocus = true; setupSelectAll = joinAddress.Length > 0; error = "";
+        setupModal = "join"; textFocus = true; setupSelectAll = joinAddress.Length > 0; error = clipboardError;
     }
     private void SetupText(char character)
     {
@@ -120,9 +122,13 @@ internal sealed partial class TableGame
         if (!SetupHasInput || !textFocus || busy || match != null || deckEditor) return;
         bool control = keys.IsKeyDown(Keys.LeftControl) || keys.IsKeyDown(Keys.RightControl);
         if (control && keys.IsKeyDown(Keys.A) && previousKeys.IsKeyUp(Keys.A)) setupSelectAll = true;
-        if (control && keys.IsKeyDown(Keys.V) && previousKeys.IsKeyUp(Keys.V) && Clipboard.ContainsText()) {
-            var value = (setupSelectAll ? "" : SetupInput) + Clipboard.GetText().Replace("\r", "").Replace("\n", "");
-            SetSetupInput(value); setupSelectAll = false;
+        if (control && keys.IsKeyDown(Keys.V) && previousKeys.IsKeyUp(Keys.V)) {
+            try {
+                if (Clipboard.ContainsText()) {
+                    var value = (setupSelectAll ? "" : SetupInput) + Clipboard.GetText().Replace("\r", "").Replace("\n", "");
+                    SetSetupInput(value); setupSelectAll = false;
+                }
+            } catch (System.Runtime.InteropServices.ExternalException) { error = "Could not read the clipboard. Try Paste again or enter the invite manually."; }
         }
         if (setupModal == "join" && keys.IsKeyDown(Keys.Enter) && previousKeys.IsKeyUp(Keys.Enter)) ConnectLobby(false);
         if (setupModal == "profile" && keys.IsKeyDown(Keys.Enter) && previousKeys.IsKeyUp(Keys.Enter)) SavePlayerName();

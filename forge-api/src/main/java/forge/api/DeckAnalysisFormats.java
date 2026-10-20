@@ -9,7 +9,8 @@ import java.util.Map;
 final class DeckAnalysisFormats implements DeckAnalysis.Eligibility {
     private final CardCatalog catalog;
     private Map<String, GameFormat> formats = Map.of();
-    DeckAnalysisFormats(CardCatalog catalog) { this.catalog = catalog; }
+    DeckAnalysisFormats(CardCatalog catalog) { this.catalog = catalog; catalog.bundledFormats = this; }
+    boolean available(String format) { return formats.containsKey(format); }
     void load(Path resources) {
         Path path = resources.resolve("formats");
         if (Files.isDirectory(path)) formats = new GameFormat.Reader(path.toFile(), null, false).readAll();

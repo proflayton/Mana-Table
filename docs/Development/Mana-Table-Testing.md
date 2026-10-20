@@ -27,6 +27,47 @@ keep real hit testing enabled instead of bypassing it with forced clicks.
 
 ## Run a focused regression
 
+### Experience clarity and recovery
+
+`Mana.Client.Tests` covers stale-state command blocking, uncertain acknowledgements,
+fresh observation recovery, separate public chooser/priority roles, anonymous public
+characteristics, and version-scoped recommendation decisions. Java
+`GameplayClarityProjectionTest` and `PartnerChoiceExperienceTest` check every seat's
+public projection and actual Toothy/Pir choices, accepted searches and declined searches.
+`DeckExperienceTest` covers bundled legality, immutable tested lists/comparisons and
+latest recommendation decisions without changing playable content.
+
+After building `Mana.Table.Tests`, run these modes with fresh profiles at
+`1000x740` and `1540x980`:
+
+- `--smoke-recovery`: unreadable file recovery, larger text persistence, reconnect,
+  eliminated-player watching and host/guest departure from an errored table.
+- `--smoke-state-clarity`: named legal recipients, scoped input revocation, public
+  counters and anonymous stats, chooser/controller attribution and actual outcomes.
+  It changes text size through Settings and pages nine public counter types at 130%.
+- `--smoke-deck-experience --engine-resources <bundle>/engine --engine-jar forge-api/target/forge-engine.jar`:
+  real persisted Keep/Reopen/Dismiss, saved test lists and read-only comparison after editing.
+  It also drives whole-list source confirmations at 130% using a controlled external
+  preview and proves that reviewing or canceling leaves the real saved deck untouched.
+  Source application and stale-token behavior have separate offline Java coverage;
+  this native journey performs no live Archidekt HTTP or source application.
+
+The new modes are part of the native Windows gate. Their result files are
+`recovery-results.json`, `state-clarity-results.json` and `deck-experience-results.json`.
+The existing deck-tuning regression separately checks a real AI game and an early
+concession. Free-form test questions require the player's observations; aggregate
+counts do not automatically answer turn-specific questions.
+
+Recovery, state clarity and full-battlefield captures ending in `-window.png`
+save the composited backbuffer at the actual viewport dimensions, including its
+scaling and letterboxing. Keep the existing design-surface captures as layout
+evidence. Inspect both when changing text or density. Full-battlefield coverage
+retains all fifty named occurrences and inspects Alloy Myr among them. Optional
+`--smoke-full-battlefield --real-art` preloads real card artwork through the normal
+art source before this journey; it requires network access and is separate from
+the deterministic CI fixture. Its current characteristics are controlled test
+data, not an assertion about the cards' printed rules.
+
 ### Native first session
 
 ```powershell

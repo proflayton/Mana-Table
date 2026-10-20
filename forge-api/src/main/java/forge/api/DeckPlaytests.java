@@ -128,6 +128,11 @@ public final class DeckPlaytests {
 
     public synchronized TestRecord get(String deckId, String testId) { return exported(requireDeck(deckId, testId)); }
 
+    public synchronized DeckVersionView inspect(String deckId, String testId, DeckEditor.Snapshot current, String currentFormat) {
+        var saved = requireDeck(deckId, testId);
+        return DeckVersionView.compare(saved.test().versionId(), saved.deckName(), saved.format(), saved.entries(), current, currentFormat);
+    }
+
     public synchronized TestRecord note(String deckId, String testId, String note) {
         var saved = requireDeck(deckId, testId);
         if (note == null || note.length() > 10000) throw new IllegalArgumentException("Test note must be at most 10000 characters");

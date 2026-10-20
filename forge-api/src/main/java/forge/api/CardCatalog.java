@@ -54,6 +54,8 @@ public final class CardCatalog {
     }
 
     private final Map<String, PaperCard> cards;
+    // Set once from the shipped format snapshot, shared by editing and analysis.
+    DeckAnalysisFormats bundledFormats;
     private record IndexedCard(CardInfo info, String searchText, String typeText) { }
     private final List<IndexedCard> index;
     private final int uniqueCount;

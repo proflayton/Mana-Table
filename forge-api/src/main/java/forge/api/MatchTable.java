@@ -76,6 +76,17 @@ final class MatchTable implements ManaTableSession, AutoCloseable {
         synchronized (gate) {
             long revision = ++boardRevision;
             for (var seat : seats.values()) seat.publishView(revision);
+            refreshDecisionState();
+        }
+    }
+
+    /** Public decision ownership only; a seat's options and prompt remain private. */
+    void refreshDecisionState() {
+        synchronized (gate) {
+            var decisions = seats.values().stream().map(MatchSession::publicDecision).filter(Objects::nonNull).toList();
+            Integer owner = decisions.size() == 1 ? decisions.get(0).ownerId() : null;
+            String actionClass = decisions.isEmpty() ? "resolving" : decisions.size() == 1 ? decisions.get(0).actionClass() : "simultaneous";
+            for (var seat : seats.values()) seat.updatePublicDecision(owner, actionClass);
         }
     }
 

@@ -47,7 +47,7 @@ internal sealed class InteractionScenarioEngine : ICardEngine
         bool undoSetting = reply is { Action: ReplyAction.SetAbilityAutoPass, Ignore: false, DecisionId.Length: 0 };
         if (reply.GameId != state.Id || !undoSetting && reply.DecisionId != state.Decision?.Id)
             throw new InvalidOperationException($"Scenario received stale {reply.Action}: {reply.DecisionId}, current {state.Decision?.Id}");
-        if (RejectNextReply) { RejectNextReply = false; RejectedReplies++; throw new InvalidOperationException("Controlled rejected play"); }
+        if (RejectNextReply) { RejectNextReply = false; RejectedReplies++; ObservationsAtRejection = Observations; throw new EngineCommandRejectedException("Controlled rejected play"); }
         Card Find(string? key) => state.Players.SelectMany(p => p.Zones).SelectMany(z => z.Cards).Single(c => c.Key == key);
         if (reply.Action == ReplyAction.SetAbilityAutoPass) {
             if (reply.Ignore is not { } ignored || reply.AbilityId is not { } abilityId) throw new InvalidOperationException("Missing ability preference");
@@ -156,7 +156,10 @@ internal sealed class InteractionScenarioEngine : ICardEngine
         Publish();
     }
     public Task InitializeAsync() => Task.CompletedTask;
-    public Task<GameSnapshot?> ObserveAsync() => Task.FromResult<GameSnapshot?>(state);
+    private int observations;
+    internal int Observations => Volatile.Read(ref observations);
+    internal int ObservationsAtRejection { get; private set; }
+    public Task<GameSnapshot?> ObserveAsync() { Interlocked.Increment(ref observations); return Task.FromResult<GameSnapshot?>(state); }
     public ValueTask DisposeAsync() => ValueTask.CompletedTask;
     public Task<IReadOnlyList<DeckSummary>> DecksAsync() => throw new NotSupportedException();
     public Task<DeckDetails> OpenDeckAsync(string id) => throw new NotSupportedException();

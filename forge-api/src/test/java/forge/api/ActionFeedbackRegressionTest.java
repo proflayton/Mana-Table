@@ -48,6 +48,7 @@ public class ActionFeedbackRegressionTest {
             }
             assertNotNull(window, "The spell must publish before resolution");
             var stack = window.state().getAsJsonArray("stack").get(0).getAsJsonObject();
+            assertEquals(stack.get("controllerId").getAsInt(), window.state().get("viewerId").getAsInt());
             var target = stack.getAsJsonArray("targets").get(0).getAsJsonObject();
             assertEquals(text(target, "id"), targetId);
             assertEquals(text(target, "name"), "Grizzly Bears");
@@ -62,6 +63,7 @@ public class ActionFeedbackRegressionTest {
             assertTrue(history.stream().anyMatch(e -> text(e, "kind").equals("arrived") && text(e, "message").toLowerCase(Locale.ROOT).contains("bird token entered")));
             assertTrue(history.stream().anyMatch(e -> text(e, "kind").equals("resolved") && text(e, "detail").contains("Grizzly Bears")), "Keep the actual resolved spell description for review");
             assertTrue(history.stream().anyMatch(e -> text(e, "kind").equals("resolved") && text(e, "detail").contains("1/1 blue Bird")), "The explanation includes the token creation clause");
+            assertTrue(history.stream().filter(e -> text(e, "kind").equals("resolved")).allMatch(e -> text(e, "outcome").equals("resolved")));
             var victim = player(resolved.state(), game.state(1).get("viewerId").getAsInt());
             assertEquals(count(victim, "Exile"), 1);
             var bird = zone(victim, "Battlefield").getAsJsonArray("cards").get(0).getAsJsonObject();

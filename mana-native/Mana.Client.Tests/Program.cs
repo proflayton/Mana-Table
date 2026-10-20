@@ -143,6 +143,9 @@ Check(!client.Submit(command), "An old decision cannot be submitted after a new 
 checks += await AppUpdateRegression.RunAsync();
 HandPlacementRegression.Run(Check);
 AllocationRegression.Run(Check);
+await RecoveryRegression.RunAsync(Check);
+GameplayClarityChecks.Run(Check);
+DeckExperienceChecks.Run(Check);
 Console.WriteLine($"Passed {checks} headless checks.");
 
 sealed class ControlledConnection : IMatchConnection
