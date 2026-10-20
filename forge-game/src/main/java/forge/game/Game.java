@@ -73,8 +73,23 @@ public class Game {
     private int id;
     private final GameRules rules;
     private final PlayerCollection allPlayers = new PlayerCollection();
-    private final PlayerCollection ingamePlayers = new PlayerCollection();
+    private final PlayerCollection ingamePlayers = new ActivePlayers();
     private final PlayerCollection lostPlayers = new PlayerCollection();
+
+    /** Guards only membership removal and copied traversals, not general collection access. */
+    private static final class ActivePlayers extends PlayerCollection {
+        private static final long serialVersionUID = 1L;
+
+        @Override
+        public synchronized boolean remove(final Object player) {
+            return super.remove(player);
+        }
+
+        @Override
+        public synchronized Iterable<Player> threadSafeIterable() {
+            return super.threadSafeIterable();
+        }
+    }
     private GameEntityViewMap<Player, PlayerView> playerCache = new GameEntityViewMap<Player, PlayerView>();
 
     private List<Card> activePlanes = null;
@@ -1016,8 +1031,13 @@ public class Game {
         // Remove leftover items from
         getStack().removeInstancesControlledBy(p);
 
-        ingamePlayers.remove(p);
-        lostPlayers.add(p);
+        // A concession and the phase loop can clean up the same loss concurrently.
+        // Keep membership changes and copied participant reads at one short boundary;
+        // all reveal, controller, and trigger callbacks remain outside this monitor.
+        synchronized (ingamePlayers) {
+            ingamePlayers.remove(p);
+            lostPlayers.add(p);
+        }
 
         // free any mindslaves
         for (Player pl : getPlayers().threadSafeIterable()) {
