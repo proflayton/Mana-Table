@@ -48,6 +48,8 @@ public class TriggerHandler {
     private final List<Trigger> delayedTriggers = new ArrayList<>();
     private final List<Trigger> thisTurnDelayedTriggers = new ArrayList<>();
     private final ListMultimap<Player, Trigger> playerDefinedDelayedTriggers = ArrayListMultimap.create();
+    // Concessions can drain from another thread. Lock only queue operations;
+    // callbacks run outside the monitor to avoid input-gate lock inversion.
     private final List<TriggerWaiting> waitingTriggers = new ArrayList<>();
     private final Game game;
 
@@ -172,7 +174,11 @@ public class TriggerHandler {
     }
 
     public void collectTriggerForWaiting() {
-        for (final TriggerWaiting wt : waitingTriggers) {
+        final List<TriggerWaiting> waiting;
+        synchronized (waitingTriggers) {
+            waiting = new ArrayList<>(waitingTriggers);
+        }
+        for (final TriggerWaiting wt : waiting) {
             if (wt.getTriggers() != null)
                 continue;
 
@@ -251,12 +257,17 @@ public class TriggerHandler {
         // we can just run further triggers directly, side effects are highly unlikely
         // (could also make this depend on Runtime.getRuntime().freeMemory()
         // - but probably overkill)
-        boolean canWait = waitingTriggers.size() < 9999;
         if (mode == TriggerType.Always) {
             runStateTrigger(runParams);
-        } else if (canWait && (game.getStack().isFrozen() || holdTrigger) && mode != TriggerType.TapsForMana && mode != TriggerType.ManaAdded) {
-            waitingTriggers.add(new TriggerWaiting(mode, runParams));
         } else {
+            if ((game.getStack().isFrozen() || holdTrigger) && mode != TriggerType.TapsForMana && mode != TriggerType.ManaAdded) {
+                synchronized (waitingTriggers) {
+                    if (waitingTriggers.size() < 9999) {
+                        waitingTriggers.add(new TriggerWaiting(mode, runParams));
+                        return;
+                    }
+                }
+            }
             runWaitingTrigger(new TriggerWaiting(mode, runParams));
         }
     }
@@ -270,11 +281,14 @@ public class TriggerHandler {
     }
 
     public final boolean runWaitingTriggers() {
-        if (waitingTriggers.isEmpty()) {
-            return false;
+        final List<TriggerWaiting> waiting;
+        synchronized (waitingTriggers) {
+            if (waitingTriggers.isEmpty()) {
+                return false;
+            }
+            waiting = new ArrayList<>(waitingTriggers);
+            waitingTriggers.clear();
         }
-        final List<TriggerWaiting> waiting = new ArrayList<>(waitingTriggers);
-        waitingTriggers.clear();
 
         boolean haveWaiting = false;
         for (final TriggerWaiting wt : waiting) {
@@ -349,7 +363,9 @@ public class TriggerHandler {
     }
 
     public void clearWaitingTriggers() {
-        waitingTriggers.clear();
+        synchronized (waitingTriggers) {
+            waitingTriggers.clear();
+        }
     }
 
     private boolean isTriggerActive(final Trigger regtrig) {

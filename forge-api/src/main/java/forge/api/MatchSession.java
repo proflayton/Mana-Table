@@ -627,8 +627,9 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
         var combat = game.getView().getCombat();
         var defender = combat == null ? null : combat.getDefender(card);
         var result = map("key", key, "visualId", activity.visualId(card), "combatId", combatIds.id(card), "name", hidden ? "Face-down card" : face.getName(), "type", hidden ? "" : face.getType().toString(),
-                "manaCost", hidden ? "" : face.getManaCost().toString(), "power", hidden ? null : face.getPower(), "toughness", hidden ? null : face.getToughness(),
-                "text", hidden ? "" : card.getText(), "tapped", card.isTapped(), "sick", card.isSick(), "damage", card.getDamage(),
+                "manaCost", hidden ? "" : face.getManaCost().toString(), "commanderTax", commanderTax(card, hidden),
+                "power", hidden ? null : face.getPower(), "toughness", hidden ? null : face.getToughness(),
+                "text", hidden ? "" : card.getText(), "tapped", card.isTapped(), "phasedOut", card.isPhasedOut(), "sick", card.isSick(), "damage", card.getDamage(),
                 "attacking", card.isAttacking(), "blocking", card.isBlocking(), "counters", counters,
                 "defenderId", defender instanceof PlayerView ? defender.getId() : null,
                 "defender", defender == null ? null : defender instanceof CardView target && (!target.canBeShownTo(viewer) || target.isFaceDown()) ? "Face-down permanent" : defender.getName(),
@@ -640,6 +641,10 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
                         .stream().filter(face::hasKeyword).map(keyword -> keyword.name().toLowerCase(Locale.ROOT).replace('_', ' ')).toList());
         addCardFaces(result, card, !hidden && card.canBeShownTo(viewer));
         return result;
+    }
+
+    private static int commanderTax(CardView card, boolean hidden) {
+        return hidden || !card.isCommander() || card.getOwner() == null ? 0 : 2 * card.getOwner().getCommanderCast(card);
     }
 
     /** Only add alternate identities after the same visibility check as the current face. */
@@ -813,6 +818,7 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
         var face = card.getCurrentState();
         var result = map("name", hidden ? "Face-down or hidden card" : face.getName(), "faceDown", hidden,
                 "type", hidden ? "" : face.getType().toString(), "manaCost", hidden ? "" : face.getManaCost().toString(),
+                "commanderTax", commanderTax(card, hidden),
                 "text", hidden ? "" : card.getText(), "power", hidden ? null : face.getPower(), "toughness", hidden ? null : face.getToughness());
         addCardFaces(result, card, !hidden);
         return result;

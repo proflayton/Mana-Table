@@ -284,6 +284,12 @@ stack, combat flags, counters, mana, and transient reveal choices. Card handles
 are scoped to a prompt; the renderer never receives hidden card IDs or raw logs.
 The original `GameStateMapper` remains a smaller projection for other consumers.
 
+Match card snapshots include the public boolean `phasedOut`, including on
+face-down permanents. The card keeps its battlefield position and visual identity
+while phased out. Clients display this state directly; they must not infer it
+from printed phasing text or count turns. Older snapshots without the field
+default to false in the native contract; older clients ignore the added field.
+
 The desktop host disables automatic passing when no actions are available.
 An action such as playing a land returns to a visible priority prompt before
 the game can advance. Explicit pass and end-turn inputs still use engine rules.
@@ -459,6 +465,13 @@ variant, 40 life, and 100-card singleton AI decks. Missing commander assignments
 can be supplied from the main deck for that game without changing the saved list.
 Existing commanders, including legal partner pairs, remain intact. Color identity
 and deck conformance are checked before launching.
+
+Visible card snapshots include `commanderTax`: the extra generic mana for that
+commander's next cast from the command zone, based on its owner's engine cast
+count. It is separate from the printed `manaCost` and is not a quote of the final
+cost after other modifiers. Non-commanders and concealed cards report zero;
+older adapters without the field can be read as zero. Partner commanders have
+independent taxes. Casting from another zone or dying does not increase it.
 
 Network human seats use the same table and controller path as solo play. There is
 no sideboarding, Limited match setup, or durable match save. Complex card-specific

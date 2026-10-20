@@ -17,6 +17,7 @@ on:
       - 'forge-desktop/renderer/turn-guide.js'
       - 'forge-desktop/scripts/release-artifacts.cjs'
       - 'forge-desktop/scripts/test-node.cjs'
+      - 'forge-desktop/scripts/wait-release-ci.cjs'
       - 'forge-desktop/tests/*.test.cjs'
       - 'forge-desktop/tests/support/**'
       - 'forge-desktop/tests/fixtures/**'
@@ -26,38 +27,16 @@ on:
       - 'LICENSE'
       - '.github/workflows/mana-table-native-release.yml'
   pull_request:
-    paths:
-      - 'mana-native/**'
-      - 'forge-api/**'
-      - 'forge-core/**'
-      - 'forge-game/**'
-      - 'forge-ai/**'
-      - 'forge-gui/**'
-      - 'forge-desktop/engine-client.cjs'
-      - 'forge-desktop/runtime.cjs'
-      - 'forge-desktop/deck-sources.cjs'
-      - 'forge-desktop/preferences.cjs'
-      - 'forge-desktop/renderer/turn-guide.js'
-      - 'forge-desktop/scripts/release-artifacts.cjs'
-      - 'forge-desktop/scripts/test-node.cjs'
-      - 'forge-desktop/tests/*.test.cjs'
-      - 'forge-desktop/tests/support/**'
-      - 'forge-desktop/tests/fixtures/**'
-      - 'scenarios/**'
-      - 'pom.xml'
-      - '.mvn/**'
-      - 'LICENSE'
-      - '.github/workflows/mana-table-native-release.yml'
   workflow_dispatch:
 
 permissions:
   contents: read
 
-# Serialize master releases, including manual reruns. Publication also checks
-# master again after the uploads, so an older build cannot become Latest.
+# Serialize master releases, including manual reruns. A newer PR commit replaces
+# its superseded verification run. Publication checks master after the uploads.
 concurrency:
   group: mana-native-${{ github.event_name == 'pull_request' && github.ref || 'master-release' }}
-  cancel-in-progress: false
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   windows:
@@ -84,6 +63,8 @@ jobs:
       - uses: actions/setup-node@v7
         with:
           node-version: '24'
+      - name: Verify release publication gate helper
+        run: node --test forge-desktop/tests/release-ci.test.cjs
       - name: Create isolated regression profiles
         run: |
           $testRoot = Join-Path $env:RUNNER_TEMP 'mana-native-tests'
@@ -145,6 +126,7 @@ jobs:
           $suites = @(
             @{ Name='startup'; Mode='--smoke-engine-startup'; Result='engine-startup-regression.json' },
             @{ Name='adapter'; Mode='--smoke-workshop-adapter'; Result='workshop-adapter-results.json' },
+            @{ Name='presentation'; Mode='--smoke-presentation'; Result='presentation-results.json' },
             @{ Name='onboarding'; Mode='--smoke-onboarding'; Result='onboarding-results.json' },
             @{ Name='loading'; Mode='--smoke-loading'; Result='loading-results.json' },
             @{ Name='priority-1280'; Mode='--smoke-priority-abilities'; Result='priority-ability-results.json' },
@@ -154,6 +136,14 @@ jobs:
             @{ Name='analysis-adapter'; Mode='--smoke-analysis-adapter'; Result='analysis-adapter-results.json' },
             @{ Name='analysis-1000'; Mode='--smoke-analysis'; Result='analysis-ui-results.json'; Size='1000x740' },
             @{ Name='analysis-1540'; Mode='--smoke-analysis'; Result='analysis-ui-results.json'; Size='1540x980' },
+            @{ Name='updates-1000'; Mode='--smoke-updates'; Result='update-ui-results.json'; Size='1000x740' },
+            @{ Name='updates-1540'; Mode='--smoke-updates'; Result='update-ui-results.json'; Size='1540x980' },
+            @{ Name='commander-tax-1000'; Mode='--smoke-commander-tax'; Result='commander-tax-results.json'; Size='1000x740' },
+            @{ Name='commander-tax-1540'; Mode='--smoke-commander-tax'; Result='commander-tax-results.json'; Size='1540x980' },
+            @{ Name='card-reading-1000'; Mode='--smoke-card-reading'; Result='reading-results.json'; Size='1000x740' },
+            @{ Name='card-reading-1540'; Mode='--smoke-card-reading'; Result='reading-results.json'; Size='1540x980' },
+            @{ Name='card-states-1000'; Mode='--smoke-card-states'; Result='card-states-results.json'; Size='1000x740' },
+            @{ Name='card-states-1540'; Mode='--smoke-card-states'; Result='card-states-results.json'; Size='1540x980' },
             @{ Name='import'; Mode='--smoke-deck-import'; Result='deck-import-results.json' },
             @{ Name='building'; Mode='--smoke-deck-building'; Result='deck-building-results.json' },
             @{ Name='lobby'; Mode='--smoke-lobby'; Result='lobby-results.json' }
@@ -181,6 +171,10 @@ jobs:
           $release = Get-Content dist/latest-native.json -Raw | ConvertFrom-Json
           ./mana-native/build-installer.ps1 -InputPackageDirectory $release.directory -Version $env:MANA_RELEASE_VERSION -OutputDirectory dist/installer -CompilerPath $env:MANA_ISCC
           ./mana-native/installer/test-installer.ps1 -InputPackageDirectory $release.directory -Version $env:MANA_RELEASE_VERSION -CompilerPath $env:MANA_ISCC -TestDirectory (Join-Path $env:MANA_TEST_ROOT 'installer')
+          # The benign executable fixture uses Windows PowerShell's .NET Framework
+          # compiler; PowerShell 7 cannot emit WindowsApplication with Add-Type.
+          powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File ./mana-native/installer/test-update-installer.ps1 -CompilerPath $env:MANA_ISCC -TestDirectory (Join-Path $env:MANA_TEST_ROOT 'update-installer')
+          if ($LASTEXITCODE -ne 0) { throw 'Update installer protocol regression failed.' }
       - name: Prepare friend-friendly download names
         run: |
           $release = Get-Content dist/latest-native.json -Raw | ConvertFrom-Json
@@ -203,6 +197,11 @@ jobs:
           path: |
             ${{ runner.temp }}/mana-native-tests/**/*-results.json
             ${{ runner.temp }}/mana-native-tests/**/*-regression.json
+            ${{ runner.temp }}/mana-native-tests/**/*-observations.json
+            ${{ runner.temp }}/mana-native-tests/**/*-diagnostic.json
+            ${{ runner.temp }}/mana-native-tests/**/*-events.json
+            ${{ runner.temp }}/mana-native-tests/**/failure.json
+            ${{ runner.temp }}/mana-native-tests/**/*-failure.json
             ${{ runner.temp }}/mana-native-tests/**/*.png
             ${{ runner.temp }}/mana-native-tests/**/*.log
             ${{ runner.temp }}/mana-native-tests/shared-engine.tap
@@ -227,14 +226,24 @@ jobs:
     needs: windows
     if: github.repository == 'proflayton/Mana-Table' && github.ref == 'refs/heads/master' && github.event_name != 'pull_request'
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 90
     permissions:
       contents: write
+      actions: read
     env:
       GH_TOKEN: ${{ github.token }}
       GH_REPO: proflayton/Mana-Table
       RELEASE_VERSION: 0.2.${{ github.run_number }}
     steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+      - name: Wait for all required source CI before publication
+        run: node forge-desktop/scripts/wait-release-ci.cjs
       - uses: actions/download-artifact@v8
         with:
           name: mana-native-windows-x64-${{ github.run_attempt }}
@@ -245,7 +254,10 @@ jobs:
           $ErrorActionPreference = 'Stop'
           $tag = "mana-native-v$env:RELEASE_VERSION"
           $build = Get-Content downloads/build.json -Raw | ConvertFrom-Json
-          if ($build.sourceRevision -cne $env:GITHUB_SHA -or $build.version -cne $env:RELEASE_VERSION) { throw 'Download source or version does not match this run.' }
+          if ($build.sourceRevision -cne $env:GITHUB_SHA -or $build.version -cne $env:RELEASE_VERSION -or $build.release -ne $true) { throw 'Download source, version or production build flag does not match this run.' }
+          $update = Get-Content downloads/installer-manifest.json -Raw | ConvertFrom-Json
+          if ($update.installerProtocol -ne 1 -or $update.smokeOnly -ne $false -or $update.architecture -cne 'win-x64' -or $update.installer -cne 'ManaTable-Setup.exe' -or $update.version -cne $env:RELEASE_VERSION -or $update.sourceRevision -cne $env:GITHUB_SHA) { throw 'Update manifest does not match this production release.' }
+          if ($update.installerBytes -ne (Get-Item downloads/ManaTable-Setup.exe).Length -or $update.installerSha256 -ine (Get-FileHash downloads/ManaTable-Setup.exe -Algorithm SHA256).Hash) { throw 'Update manifest does not match the installer.' }
           foreach ($name in @('ManaTable-Setup.exe', 'ManaTable-Windows-x64.zip', 'ManaTable-Source.zip')) {
             $expected = (Get-Content "downloads/$name.sha256" -Raw).Split(' ')[0]
             if ((Get-FileHash "downloads/$name" -Algorithm SHA256).Hash -ne $expected) { throw "Download checksum mismatch: $name" }
@@ -274,9 +286,11 @@ jobs:
             gh release create $tag --repo $env:GH_REPO --target $env:GITHUB_SHA --draft --title "Mana Table $env:RELEASE_VERSION for Windows" --notes-file release-notes.md
             if ($LASTEXITCODE -ne 0) { throw 'Could not create the draft release.' }
           }
-          gh release upload $tag downloads/ManaTable-Setup.exe downloads/ManaTable-Setup.exe.sha256 downloads/ManaTable-Windows-x64.zip downloads/ManaTable-Windows-x64.zip.sha256 downloads/ManaTable-Source.zip downloads/ManaTable-Source.zip.sha256 --repo $env:GH_REPO --clobber
+          gh release upload $tag downloads/ManaTable-Setup.exe downloads/ManaTable-Setup.exe.sha256 downloads/ManaTable-Windows-x64.zip downloads/ManaTable-Windows-x64.zip.sha256 downloads/ManaTable-Source.zip downloads/ManaTable-Source.zip.sha256 downloads/installer-manifest.json --repo $env:GH_REPO --clobber
           if ($LASTEXITCODE -ne 0) { throw 'Download upload failed; the release remains a draft.' }
           if (-not (MasterIsCurrent)) { 'Master advanced during upload; the release remains a draft.' >> $env:GITHUB_STEP_SUMMARY; exit 0 }
+          node forge-desktop/scripts/wait-release-ci.cjs
+          if ($LASTEXITCODE -ne 0) { throw 'Required source CI changed; the release remains a draft.' }
           gh release edit $tag --repo $env:GH_REPO --draft=false --latest
           if ($LASTEXITCODE -ne 0) { throw 'Could not publish the tested release.' }
           '[Download Mana Table for Windows](https://github.com/proflayton/Mana-Table/releases/latest/download/ManaTable-Setup.exe)' >> $env:GITHUB_STEP_SUMMARY

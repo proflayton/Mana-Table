@@ -88,7 +88,7 @@ internal sealed partial class TableGame
     private void DrawSceneCard(SceneCard node)
     {
         var card = node.Card;
-        var rest = node.Zone == "Battlefield" && CardPresentation.HasAbility(card, "flying")
+        var rest = node.Zone == "Battlefield" && (card.PhasedOut || CardPresentation.HasAbility(card, "flying"))
             ? CardMotion.Airborne(node.Pose, now, preferences.ReducedMotion, node.Id) : node.Pose;
         var pose = DrawTableCard(node.Id, card, rest, node.Zone, node.Owner,
             "card:" + card.Key + ":" + card.VisualId, () => CardClick(card),
@@ -101,7 +101,12 @@ internal sealed partial class TableGame
         bool selected = choice is { } index ? selections.Contains(index) : card.Highlighted || card.CombatId.Length > 0 && selectedCombat == card.CombatId;
         bool legal = IsCardActionable(card);
         if (zone == "Battlefield") PaintAbilityEffects(card, pose);
-        PaintCard(card, pose, selected, legal, focus);
+        PaintCard(card, pose, selected, legal, focus, zone == "Battlefield" && card.PhasedOut && !focus ? .42f : 1);
+        if (zone == "Battlefield" && card.PhasedOut) PaintPhasedOutline(pose);
+        if (zone == "Command") {
+            PaintCommanderTax(card, pose);
+            if (focus && pose.Size.X >= 300) PaintCommanderTaxDetails(card, pose);
+        }
         if (zone == "Battlefield" && legal && CardActions.CanActivate(match!, card)) {
             var badge = new Rectangle((int)pose.Center.X - 39, pose.Bounds.Top + 6, 78, 21);
             canvas.Panel(badge, new(15, 41, 54), ActionAccent, 4);
@@ -114,7 +119,7 @@ internal sealed partial class TableGame
         }
         if (CombatTarget(card)) canvas.CardFrame(pose with { Size = pose.Size + new Vector2(10) }, Blue, 4);
         bool creature = CardPresentation.HasCombatStats(card);
-        if (zone == "Battlefield" && (creature || card.Counters.Count > 0 || card.Damage > 0 || card.CombatKeywords.Length > 0)) {
+        if (zone == "Battlefield" && (card.PhasedOut || creature || card.Counters.Count > 0 || card.Damage > 0 || card.CombatKeywords.Length > 0)) {
             int x = (int)pose.Center.X, y = pose.Bounds.Bottom - 14;
             int seat = owner == match!.ViewerId ? 3 : TableLayout.SeatIndex(match, owner);
             // Side seats read toward the center, keeping badges out of the next
@@ -129,27 +134,28 @@ internal sealed partial class TableGame
             if (focus && pose.Size.X >= 300) PaintStateDetails(card, pose);
         }
     }
-    private void PaintCard(Card card, Pose pose, bool selected, bool legal, bool focus = false)
+    private void PaintCard(Card card, Pose pose, bool selected, bool legal, bool focus = false, float opacity = 1)
     {
         if (legal || selected) canvas.Glow(pose.Center, pose.Size * 1.6f, (selected ? Gold : ActionAccent) * .6f);
-        canvas.Surface(null, pose with { Center = pose.Center + new Vector2(4 + pose.Elevation * .18f, (pose.IsProjected ? 5 : 10) + pose.Elevation), Size = pose.Size + new Vector2(7) }, Color.Black * (pose.Elevation > 0 ? .27f : .4f));
-        canvas.Surface(null, pose with { Size = pose.Size + new Vector2(4) }, new Color(9, 13, 18));
-        if (card.FaceDown) PaintBack(pose);
-        else if (art.Get(card) is { } image) canvas.Surface(image, pose, Color.White);
+        canvas.Surface(null, pose with { Center = pose.Center + new Vector2(4 + pose.Elevation * .18f, (pose.IsProjected ? 5 : 10) + pose.Elevation), Size = pose.Size + new Vector2(7) }, Color.Black * ((pose.Elevation > 0 ? .27f : .4f) * opacity));
+        // The backing must fade too, otherwise the face only darkens against an opaque slab.
+        canvas.Surface(null, pose with { Size = pose.Size + new Vector2(4) }, new Color(9, 13, 18) * opacity);
+        if (card.FaceDown) PaintBack(pose, opacity);
+        else if (art.Get(card) is { } image) canvas.Surface(image, pose, Color.White * opacity);
         else {
-            canvas.Surface(null, pose, new Color(53, 63, 71));
-            canvas.CardFrame(pose with { Size = pose.Size - new Vector2(7) }, Muted * .25f);
+            canvas.Surface(null, pose, new Color(53, 63, 71) * opacity);
+            canvas.CardFrame(pose with { Size = pose.Size - new Vector2(7) }, Muted * (.25f * opacity));
             var r = pose.Bounds;
             if (pose.Size.X >= 300) {
-                canvas.Text(card.Name, r.X + 20, r.Y + 20, Ink, 1.05f, r.Width - 40, 2, true);
-                canvas.Text(card.ManaCost == "no cost" ? "" : card.ManaCost, r.X + 20, r.Y + 82, Gold, .8f, r.Width - 40, 1);
-                canvas.Text(card.Type, r.X + 20, r.Y + 121, Gold, .75f, r.Width - 40, 2);
-                canvas.Line(new(r.X + 20, r.Y + 176), new(r.Right - 20, r.Y + 176), Muted * .4f);
-                canvas.Text(card.Text, r.X + 20, r.Y + 195, Ink, .78f, r.Width - 40, Math.Max(1, (r.Height - 220) / 27));
+                canvas.Text(card.Name, r.X + 20, r.Y + 20, Ink * opacity, 1.05f, r.Width - 40, 2, true);
+                canvas.Text(card.ManaCost == "no cost" ? "" : card.ManaCost, r.X + 20, r.Y + 82, Gold * opacity, .8f, r.Width - 40, 1);
+                canvas.Text(card.Type, r.X + 20, r.Y + 121, Gold * opacity, .75f, r.Width - 40, 2);
+                canvas.Line(new(r.X + 20, r.Y + 176), new(r.Right - 20, r.Y + 176), Muted * (.4f * opacity));
+                canvas.Text(card.Text, r.X + 20, r.Y + 195, Ink * opacity, .78f, r.Width - 40, Math.Max(1, (r.Height - 220) / 27));
             } else {
-                canvas.Text(card.Name, r.X + 5, r.Y + 5, Ink, pose.Size.X > 100 ? .67f : .47f, r.Width - 10, pose.Size.X > 100 ? 3 : 2, true);
-                canvas.Text(card.ManaCost == "no cost" ? "" : card.ManaCost, r.X + 5, r.Bottom - 27, Gold, .54f, r.Width - 10, 1);
-                if (pose.Size.X > 130) canvas.Text(card.Type, r.X + 6, r.Y + (int)(r.Height * .62f), Muted, .5f, r.Width - 12, 2);
+                canvas.Text(card.Name, r.X + 5, r.Y + 5, Ink * opacity, pose.Size.X > 100 ? .67f : .47f, r.Width - 10, pose.Size.X > 100 ? 3 : 2, true);
+                canvas.Text(card.ManaCost == "no cost" ? "" : card.ManaCost, r.X + 5, r.Bottom - 27, Gold * opacity, .54f, r.Width - 10, 1);
+                if (pose.Size.X > 130) canvas.Text(card.Type, r.X + 6, r.Y + (int)(r.Height * .62f), Muted * opacity, .5f, r.Width - 12, 2);
             }
         }
         if (legal || selected) {
@@ -159,7 +165,7 @@ internal sealed partial class TableGame
         }
         if (card.Attacking || card.Blocking) canvas.CardFrame(pose with { Size = pose.Size + new Vector2(4) }, card.Attacking ? Red : Blue, 2);
         if (pose.Elevation > 4) {
-            float light = Math.Min(.4f, pose.Elevation / 100);
+            float light = Math.Min(.4f, pose.Elevation / 100) * opacity;
             canvas.Line(pose.Point(.03f, .01f), pose.Point(.97f, .01f), Ink * light, 1);
             canvas.Line(pose.Point(.99f, .03f), pose.Point(.99f, .5f), Ink * light * .5f, 1);
         }

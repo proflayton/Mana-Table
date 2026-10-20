@@ -123,6 +123,9 @@ public class CardDbCardMockTestCase extends CardMockTestCase {
     public void setup() {
         StaticData data = FModel.getMagicDb();
         this.cardDb = data.getCommonCards();
+        // Tests deliberately change this setting and may fail before their final reset.
+        // Every method, including inherited performance tests, starts from the same policy.
+        this.cardDb.setCardArtPreference(true, false);
         this.legacyCardDb = new LegacyCardDb(data.getCommonCards().getAllCards(), data.getEditions());
         this.latestArtShivanDragonEdition = latestPrintingEditionOf(cardNameShivanDragon);
         this.latestArtHymnToTourachEdition = latestPrintingEditionOf(cardNameHymnToTourach);

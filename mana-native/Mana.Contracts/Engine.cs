@@ -123,11 +123,14 @@ public sealed record Card
     public string? Defender { get; init; }
     public string Type { get; init; } = "";
     public string ManaCost { get; init; } = "";
+    // Extra generic mana for the next cast from the command zone, from the engine.
+    public int CommanderTax { get; init; }
     public string Text { get; init; } = "";
     public int? Power { get; init; }
     public int? Toughness { get; init; }
     public int Damage { get; init; }
     public bool Tapped { get; init; }
+    public bool PhasedOut { get; init; }
     public bool Sick { get; init; }
     public bool FaceDown { get; init; }
     public bool Selectable { get; init; }

@@ -4,6 +4,9 @@ namespace Mana.Magic;
 
 public static class CardPresentation
 {
+    public static int CommanderTax(Card card) => card.FaceDown ? 0 : Math.Max(0, card.CommanderTax);
+    public static string CommanderTaxDetails(Card card) => CommanderTax(card) is > 0 and var tax
+        ? $"Commander tax: +{tax} generic mana on the next cast from the command zone. Each previous cast from that zone adds 2 mana." : "";
     public static bool IsResource(Card card) => card.Type.Contains("Land", StringComparison.Ordinal);
     public static bool HasCombatStats(Card card) => card.Type.Contains("Creature", StringComparison.Ordinal);
     public static bool HasAbility(Card card, string keyword) => !card.FaceDown && card.CombatKeywords.Contains(keyword, StringComparer.OrdinalIgnoreCase);
@@ -15,6 +18,7 @@ public static class CardPresentation
     public static string[] StateLabels(Card card)
     {
         var labels = new List<string> { card.Tapped ? "Tapped" : "Untapped" };
+        if (card.PhasedOut) labels.Insert(0, "Phased out");
         if (card.Sick && HasCombatStats(card)) labels.Add("Summoning sick");
         if (card.Attacking) labels.Add("Attacking");
         if (card.Blocking) labels.Add("Blocking");

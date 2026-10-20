@@ -44,6 +44,28 @@ internal sealed partial class TableGame
         internal bool AnalysisOpen => game.analysisOpen;
         internal DeckAnalysisState? Analysis => game.analysisState;
         internal bool AnalysisCurrent => game.AnalysisCurrent;
+        internal bool UpdatesOpen => game.updatesOpen;
+        internal bool UpdateChecking => game.updateChecking;
+        internal bool UpdateDownloading => game.updateDownloading;
+        internal bool UpdateValidating => game.updateValidating;
+        internal bool UpdateInstallerLaunched => game.updateInstallerLaunched;
+        internal bool UpdateCheckOnStartup => game.updatePreferences.CheckOnStartup;
+        internal bool AutomaticUpdateCheckAllowed => game.AutomaticUpdateCheckAllowed;
+        internal string UpdateError => game.updateError;
+        internal string UpdateNotice => game.updateNotice;
+        internal string UpdateInstallBlocker => game.UpdateInstallBlocker();
+        internal long UpdateBytes => game.updateBytes;
+        internal Mana.Client.AppRelease? AvailableUpdate => game.availableUpdate;
+        internal Mana.Client.PreparedUpdate? PreparedUpdate => game.preparedUpdate;
+        internal void OpenAppUpdates() => game.OpenAppUpdates();
+        internal void CheckAppUpdates() => game.CheckAppUpdates();
+        internal void Post(Action action) => game.updates.Enqueue(action);
+        internal void SetAutomation(ITableAutomation? value) => game.Automation = value;
+        internal void SetUpdateGuardState(bool connected = false, string saveError = "", bool text = false) {
+            game.lobby = connected ? new("hosting", "Controlled table", null, false, null, false, "", null, [], []) : null;
+            game.selectedDeckDetails = new("update-test", "Update test", 0, [], [], "", saveError);
+            game.textFocus = text; game.nextPoll = double.MaxValue;
+        }
         internal string DeckFilter => game.deckFilter;
         internal void SetAnalysisProfile(AnalysisProfile profile) => game.SaveAnalysisProfile(profile);
         internal void SaveAnalysisDecision(string id, string decision, string note) => game.RecordAnalysis(id, decision, note);

@@ -1,6 +1,8 @@
 package forge.api;
 
+import com.google.gson.JsonObject;
 import java.util.*;
+import java.util.function.Supplier;
 import org.testng.annotations.Test;
 import static forge.api.RulesScenario.*;
 import static org.testng.Assert.*;
@@ -30,7 +32,11 @@ public class ActionFeedbackRegressionTest {
                     assertTrue(game.answer(input, Map.of("choices", List.of(choice.get("index").getAsInt()))));
                 } else {
                     assertTrue(text(input.prompt(), "inputType").startsWith("InputPayMana"));
-                    if (!game.answer(input, Map.of("action", "ok"))) {
+                    if (game.answer(input, Map.of("action", "ok"))) {
+                        // Auto queues game-thread payment. Its intermediate input
+                        // publications are observations, not another Auto decision.
+                        awaitAutoPayment(() -> game.state(input.seat()));
+                    } else {
                         // A prior Auto request may finish payment while this snapshot
                         // is being inspected. Never replay it against the next input.
                         var fresh = game.state(input.seat()).get("prompt");
@@ -63,4 +69,28 @@ public class ActionFeedbackRegressionTest {
             assertEquals(bird.get("power").getAsInt(), 1);
         }
     }
+
+    private static JsonObject awaitAutoPayment(Supplier<JsonObject> read) throws InterruptedException {
+        long deadline = System.nanoTime() + java.time.Duration.ofSeconds(5).toNanos();
+        var observations = new ArrayDeque<String>();
+        String previous = "";
+        JsonObject fresh;
+        do {
+            fresh = read.get();
+            var value = fresh.get("prompt");
+            var prompt = value == null || value.isJsonNull() ? null : value.getAsJsonObject();
+            String observation = "prompt=" + prompt + ", stack=" + fresh.getAsJsonArray("stack");
+            if (!observation.equals(previous)) {
+                if (observations.size() == 32) observations.removeFirst();
+                observations.addLast(observation);
+                previous = observation;
+            }
+            if (!fresh.getAsJsonArray("stack").isEmpty()
+                    || prompt != null && !text(prompt, "inputType").startsWith("InputPayMana")) return fresh;
+            Thread.sleep(5);
+        } while (System.nanoTime() < deadline);
+        throw new AssertionError("The accepted Auto must finish before another decision; publications="
+                + observations + "; last state=" + fresh);
+    }
+
 }

@@ -73,8 +73,23 @@ public class Game {
     private int id;
     private final GameRules rules;
     private final PlayerCollection allPlayers = new PlayerCollection();
-    private final PlayerCollection ingamePlayers = new PlayerCollection();
+    private final PlayerCollection ingamePlayers = new ActivePlayers();
     private final PlayerCollection lostPlayers = new PlayerCollection();
+
+    /** Guards only membership removal and copied traversals, not general collection access. */
+    private static final class ActivePlayers extends PlayerCollection {
+        private static final long serialVersionUID = 1L;
+
+        @Override
+        public synchronized boolean remove(final Object player) {
+            return super.remove(player);
+        }
+
+        @Override
+        public synchronized Iterable<Player> threadSafeIterable() {
+            return super.threadSafeIterable();
+        }
+    }
     private GameEntityViewMap<Player, PlayerView> playerCache = new GameEntityViewMap<Player, PlayerView>();
 
     private List<Card> activePlanes = null;
@@ -221,7 +236,7 @@ public class Game {
         lastStateBattlefield.clear();
         lastStateGraveyard.clear();
         Map<Integer, Card> cachedMap = Maps.newHashMap();
-        for (final Player p : getPlayers()) {
+        for (final Player p : getPlayers().threadSafeIterable()) {
             lastStateBattlefield.addAll(p.getZone(ZoneType.Battlefield).getLKICopy(cachedMap));
             lastStateGraveyard.addAll(p.getZone(ZoneType.Graveyard).getLKICopy(cachedMap));
         }
@@ -230,7 +245,7 @@ public class Game {
     public CardCollectionView copyLastState(ZoneType type) {
         CardCollection result = new CardCollection();
         Map<Integer, Card> cachedMap = Maps.newHashMap();
-        for (final Player p : getPlayers()) {
+        for (final Player p : getPlayers().threadSafeIterable()) {
             result.addAll(p.getZone(type).getLKICopy(cachedMap));
         }
         return result;
@@ -584,7 +599,7 @@ public class Game {
         }
         age = GameStage.GameOver;
 
-        for (Player p : getPlayers()) {
+        for (Player p : getPlayers().threadSafeIterable()) {
             p.onGameOver();
         }
 
@@ -616,12 +631,16 @@ public class Game {
     }
 
     public CardCollectionView getCardsIncludePhasingIn(final ZoneType zone) {
+        return getCardsIncludePhasingIn(zone, getPlayers().threadSafeIterable());
+    }
+
+    private CardCollectionView getCardsIncludePhasingIn(final ZoneType zone, final Iterable<Player> players) {
         if (zone == ZoneType.Stack) {
             return getStackZone().getCards();
         }
 
         CardCollection cards = new CardCollection();
-        for (final Player p : getPlayers()) {
+        for (final Player p : players) {
             cards.addAll(p.getCardsIn(zone, false));
         }
         return cards;
@@ -629,13 +648,16 @@ public class Game {
 
     public CardCollectionView getCardsIn(final Iterable<ZoneType> zones) {
         CardCollection cards = new CardCollection();
+        // Concession can remove a participant while a query is reading their zones.
+        // Keep the same participant traversal for every zone in this query.
+        final Iterable<Player> players = getPlayers().threadSafeIterable();
         for (final ZoneType z : zones) {
             if (z == ZoneType.Stack) {
                 cards.addAll(getStackZone().getCards());
                 continue;
             }
             // adding each player's zone to the result directly avoids building a collection per zone
-            for (final Player p : getPlayers()) {
+            for (final Player p : players) {
                 cards.addAll(p.getCardsIn(z));
             }
         }
@@ -644,8 +666,9 @@ public class Game {
 
     public CardCollectionView getCardsInOwnedBy(final Iterable<ZoneType> zones, Player p) {
         CardCollection cards = new CardCollection();
+        final Iterable<Player> players = getPlayers().threadSafeIterable();
         for (final ZoneType z : zones) {
-            cards.addAll(getCardsIncludePhasingIn(z));
+            cards.addAll(getCardsIncludePhasingIn(z, players));
         }
         return CardLists.filter(cards, CardPredicates.isOwner(p));
     }
@@ -664,7 +687,7 @@ public class Game {
 
     public CardCollectionView getColoredCardsInPlay(final byte color) {
         final CardCollection cards = new CardCollection();
-        for (Player p : getPlayers()) {
+        for (Player p : getPlayers().threadSafeIterable()) {
             cards.addAll(p.getColoredCardsInPlay(color));
         }
         return cards;
@@ -759,7 +782,7 @@ public class Game {
     }
     // Allows visiting cards in game without allocating a temporary list.
     public void forEachCardInGame(Visitor<Card> visitor, boolean withSideboard) {
-        for (final Player player : getPlayers()) {
+        for (final Player player : getPlayers().threadSafeIterable()) {
             if (!visitor.visitAll(player.getZone(ZoneType.Graveyard).getCards())) {
                 return;
             }
@@ -884,7 +907,7 @@ public class Game {
         if (isMultiplayer) {
             p.revealFaceDownCards();
         } else {
-            for (Player pl : getPlayers()) {
+            for (Player pl : getPlayers().threadSafeIterable()) {
                 pl.revealFaceDownCards();
             }
         }
@@ -1008,11 +1031,16 @@ public class Game {
         // Remove leftover items from
         getStack().removeInstancesControlledBy(p);
 
-        ingamePlayers.remove(p);
-        lostPlayers.add(p);
+        // A concession and the phase loop can clean up the same loss concurrently.
+        // Keep membership changes and copied participant reads at one short boundary;
+        // all reveal, controller, and trigger callbacks remain outside this monitor.
+        synchronized (ingamePlayers) {
+            ingamePlayers.remove(p);
+            lostPlayers.add(p);
+        }
 
         // free any mindslaves
-        for (Player pl : getPlayers()) {
+        for (Player pl : getPlayers().threadSafeIterable()) {
             pl.removeController(p);
         }
 

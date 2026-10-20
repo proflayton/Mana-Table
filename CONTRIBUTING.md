@@ -2,8 +2,7 @@
 
 Start with the [desktop setup guide](forge-desktop/README.md), then read the
 [architecture map](docs/Development/Mana-Table-Architecture.md). The working
-integration branch is **`feature/desktop-beta`**; base feature branches and pull
-requests on it until the repository adopts another integration branch.
+integration branch is **`master`**; base feature branches and pull requests on it.
 
 ## Pick the right layer
 
@@ -24,7 +23,7 @@ Do not add a framework or broad formatting migration as incidental cleanup.
 ## Work on a change
 
 ```sh
-git switch feature/desktop-beta
+git switch master
 git pull --ff-only
 git switch -c feature/describe-your-change
 ```
@@ -48,6 +47,14 @@ profile instead of experimenting on your saved decks.
 
 A PR should explain the concrete problem, resulting behavior, and checks run.
 Include screenshots for visible changes and mention remaining limitations.
+Keep PRs as drafts until the final commit has completed successful Windows native,
+desktop, Java 17, and Java 21 checks, plus any applicable iOS checks. Record that
+commit and links to the completed runs in the validation notes. A new commit
+requires checking its own results; passing local or earlier-commit checks does
+not establish PR readiness. Inspect failure artifacts and fix their cause before
+retrying. New regression tests must run in CI. Release publication also waits for
+the exact master commit's build checks.
+
 Update the relevant documentation when changing setup, IPC, environment variables,
 saved data, or packaging. Do not change persisted schemas or the action protocol
 without describing compatibility and migration behavior.

@@ -193,9 +193,8 @@ internal static class LoadingSmoke
         public MouseState ReadMouse()
         {
             if (mousePhase is not (1 or 2)) return mouse;
-            bool down = mousePhase++ == 1; var viewport = view.GraphicsDevice.Viewport;
-            float scale = Math.Min(viewport.Width / 1600f, viewport.Height / (float)view.DesignHeight);
-            mouse = new((int)((viewport.Width - 1600 * scale) / 2 + target.X * scale), (int)((viewport.Height - view.DesignHeight * scale) / 2 + target.Y * scale), 0,
+            bool down = mousePhase++ == 1;
+            mouse = new(target.X, target.Y, 0,
                 down ? ButtonState.Pressed : ButtonState.Released, ButtonState.Released, ButtonState.Released, ButtonState.Released, ButtonState.Released);
             return mouse;
         }
@@ -207,12 +206,12 @@ internal static class LoadingSmoke
         internal void ClickCard(string id) => Then(() => StartClick(view.Hits.Last(h => h.Card?.VisualId == id && h.Zone == "Battlefield")));
         private void StartClick(TableGame.Hit hit)
         {
-            target = hit.Bounds.Center; ExpectedClick = hit.Id; ClickAccepted = false; mousePhase = 1;
+            target = SmokePointer.Hit(view, hit); ExpectedClick = hit.Id; ClickAccepted = false; mousePhase = 1;
         }
-        internal void ClickAt(Point point) => Then(() => { target = point; ExpectedClick = null; mousePhase = 1; });
+        internal void ClickAt(Point point) => Then(() => { target = SmokePointer.Screen(view, point); ExpectedClick = null; mousePhase = 1; });
         internal void Move(Point point) => Then(() => {
-            var viewport = view.GraphicsDevice.Viewport; float scale = Math.Min(viewport.Width / 1600f, viewport.Height / (float)view.DesignHeight);
-            mouse = new((int)((viewport.Width - 1600 * scale) / 2 + point.X * scale), (int)((viewport.Height - view.DesignHeight * scale) / 2 + point.Y * scale), 0,
+            var physical = SmokePointer.Screen(view, point);
+            mouse = new(physical.X, physical.Y, 0,
                 ButtonState.Released, ButtonState.Released, ButtonState.Released, ButtonState.Released, ButtonState.Released);
         });
         internal void Capture(string name) { using var output = File.Create(Path.Combine(view.Profile, name + ".png")); view.Surface.SaveAsPng(output, view.Surface.Width, view.Surface.Height); }

@@ -362,6 +362,15 @@ and allocation fixtures. Render those with `--fixture` and `--capture`; add
 separate from the real-engine lifecycle tests. Optional artist assets live in
 `Mana.Table/Assets`; visual checks should also work when those files are absent.
 
+`--smoke-commander-tax --profile <isolated-profile> --size 1000x740` reviews
+independent partner taxes at all four seats, unavailable casts, hover/inspection,
+updated tax and a fresh game's cleared indicators. Repeat at 1540x980 and review
+`commander-tax-results.json` and captures 01–05. The `commander-tax` presentation
+fixture provides the same table. Java `CommanderTaxTest` casts a commander three
+times and destroys it twice through real four-seat decisions, checking taxes on
+the stack, battlefield and command zone for every viewer. `EngineApiTest` also
+covers partner counts, owner versus controller, and concealed cards.
+
 The `card-states` presentation fixture includes counter stacks and granted combat
 abilities at all four seats. The card-reading smoke also exercises anonymous
 revealed faces, identical revealed names, library faces with no choice index,
@@ -369,6 +378,13 @@ selection versus acknowledgement, visibility revocation, airborne hover and
 removal of flying/counters. It captures `05-revealed-hover`, `06-card-states`,
 `07-current-state` and `08-states-removed`. These are synthetic visual states;
 the renderer consumes the same counters and combat keywords supplied by Forge.
+The fixture also includes a phased-out Teferi's Isle at each seat. The same smoke
+checks floating land hit geometry, readable phasing details and return to the
+table after phasing in, with captures `09-phased-out-land` and `10-phased-in-land`.
+`PhasingSnapshotTest` exercises real four-seat Forge snapshots through the Isle's
+first phase-out, all three opponents' turns and its return and untap on turn five.
+The native release workflow requires both commander-tax and card-reading suites
+at 1000x740 and 1540x980 before publishing an installer.
 
 `Mana.Table.Tests.exe --smoke-ui-interactions --profile <new-test-directory>` exercises
 the actual MonoGame pointer path against a deterministic `ICardEngine` test double.
@@ -591,3 +607,37 @@ for battlefield-only type changes and earthbend's return behavior. A repeating
 line must explain how the returned object receives its next earthbend effect;
 card presence alone is not a simulator proof. Add both a supported line and a
 missing-prerequisite regression when extending that registry.
+
+### App updates
+
+The headless `Mana.Client.Tests` runner includes updater regressions with fake
+HTTP responses. They cover numeric version ordering, the native stable channel,
+the installer protocol manifest, constrained release URLs, exact byte counts and
+SHA256 verification, cancellation, partial downloads and cached-file revalidation.
+These tests make no network requests and execute no downloaded programs.
+
+`Mana.Table.Tests.exe --smoke-updates --profile <fresh-test-profile> --size 1000x740`
+uses controlled asynchronous updates and native input. Run it again at 1540x980.
+It covers quiet discovery, progress and cancellation, recoverable errors,
+startup-check preferences and guarded installation. The installer callback is a
+fixture; these UI tests do not install an app. Evidence is `update-ui-results.json`
+and native screenshots. Existing UI fixtures have no real updater client.
+
+`powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File mana-native/installer/test-update-installer.ps1 -CompilerPath <ISCC.exe> -TestDirectory <fresh-test-directory>`
+tests the actual installer handoff with a separate smoke identity and benign
+payload. It uses Windows PowerShell 5.1 to compile that executable fixture;
+PowerShell 7 does not support `Add-Type -OutputType WindowsApplication`.
+It verifies waiting for the parent, the registered destination, a second
+window's mutex and restart with the same profile. A shared startup gate prevents
+another window from opening while Setup replaces files. The regular 22-check installer
+lifecycle test remains required. The native release workflow runs both installer
+tests and both updater UI sizes before publication.
+
+Release publication includes `installer-manifest.json`. Its version, source,
+installer protocol, size and SHA256 must match the tested production installer.
+The client discovers public native releases with GitHub's [releases API](https://docs.github.com/en/rest/releases/releases),
+without an embedded token. It only offers releases with the supported installer
+protocol. Old installers without that protocol need a manual bootstrap upgrade.
+The installer uses [InitializeSetup](https://jrsoftware.org/ishelp/topic_scriptevents.htm)
+to wait before file replacement. [Inno command-line options](https://jrsoftware.org/ishelp/topic_setupcmdline.htm)
+disable forced application closure and system restart during this handoff.

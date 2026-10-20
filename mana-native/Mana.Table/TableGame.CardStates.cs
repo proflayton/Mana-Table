@@ -9,7 +9,25 @@ namespace Mana.Table;
 
 internal sealed partial class TableGame
 {
+    private void PaintCommanderTax(Card card, Pose pose)
+    {
+        int tax = CardPresentation.CommanderTax(card);
+        if (tax <= 0) return;
+        var badge = new Rectangle((int)pose.Center.X - 35, pose.Bounds.Top - 10, 70, 24);
+        canvas.Panel(badge, new(47, 35, 18), Gold, 5);
+        canvas.CenterText($"TAX +{tax}", badge, Gold, .52f, true);
+    }
+    private void PaintCommanderTaxDetails(Card card, Pose pose)
+    {
+        if (CardPresentation.CommanderTax(card) <= 0) return;
+        int x = pose.Bounds.Right + 17 + 265 <= 1580 ? pose.Bounds.Right + 17 : pose.Bounds.Left - 282;
+        int y = Math.Clamp(pose.Bounds.Top, 70, 740);
+        canvas.Panel(new(x, y, 265, 122), new(19, 28, 37), Gold, 9);
+        canvas.Text($"COMMANDER TAX  +{CardPresentation.CommanderTax(card)}", x + 15, y + 12, Gold, .65f, 235, 1, true);
+        canvas.Text("Extra generic mana to cast from the command zone. Each previous cast from there adds 2.", x + 15, y + 43, Ink, .7f, 235, 4);
+    }
     private static Color AbilityColor(string keyword) => keyword switch {
+        "phased out" => new(199, 180, 239),
         "flying" or "reach" => new(174, 218, 235),
         "deathtouch" => new(164, 204, 125),
         "lifelink" => new(238, 170, 189),
@@ -19,14 +37,26 @@ internal sealed partial class TableGame
     };
     private void PaintAbilityEffects(Card card, Pose pose)
     {
-        if (!CardPresentation.HasAbility(card, "flying") || pose.Size.X >= 300) return;
+        if ((!card.PhasedOut && !CardPresentation.HasAbility(card, "flying")) || pose.Size.X >= 300) return;
+        var color = AbilityColor(card.PhasedOut ? "phased out" : "flying");
         var center = new Vector2(pose.Center.X, pose.Bounds.Bottom + 8);
         // Quiet air trails below the lifted face; the shadow stays on the table.
         for (int i = 0; i < 3; i++) {
             float sway = preferences.ReducedMotion ? 0 : MathF.Sin((float)now * 1.5f + i) * 4;
             float width = Math.Min(62, pose.Bounds.Width * .6f) - i * 9;
             var start = center + new Vector2(-width / 2 + sway, i * 4);
-            canvas.Line(start, start + new Vector2(width, -2), AbilityColor("flying") * (.32f - i * .07f), 1.5f);
+            canvas.Line(start, start + new Vector2(width, -2), color * (.32f - i * .07f), 1.5f);
+        }
+    }
+    private void PaintPhasedOutline(Pose pose)
+    {
+        var corners = (pose with { Size = pose.Size + new Vector2(7) }).Corners;
+        var color = AbilityColor("phased out");
+        for (int i = 0; i < corners.Length; i++) {
+            var from = corners[i]; var to = corners[(i + 1) % corners.Length];
+            float length = Vector2.Distance(from, to);
+            for (float offset = 0; offset < length; offset += 13)
+                canvas.Line(Vector2.Lerp(from, to, offset / length), Vector2.Lerp(from, to, Math.Min(offset + 7, length) / length), color * .72f, 1.5f);
         }
     }
     private void PaintStateMarkers(Card card, Pose pose, int x, int y, int seat, int owner)
@@ -58,6 +88,7 @@ internal sealed partial class TableGame
         if (counters.Length > count) canvas.Text("+" + (counters.Length - count) + " types", counterX, counterY - 22, Ink, .56f, width, 1, true);
         var states = CardPresentation.Abilities(card).ToList();
         if (card.Sick && CardPresentation.HasCombatStats(card)) states.Insert(0, "summoning sick");
+        if (card.PhasedOut) states.Insert(0, "phased out");
         int visible = Math.Min(3, states.Count), total = visible + (states.Count > visible ? 1 : 0);
         int iconY = seat is 0 or 2 ? y + 37 : y - 15;
         for (int i = 0; i < visible; i++) PaintAbilityIcon(states[i], new(x + (i - (total - 1) / 2f) * 23, iconY));
@@ -75,6 +106,11 @@ internal sealed partial class TableGame
         canvas.Ring(center, 10, color * .8f, 1.3f);
         void Line(float x1, float y1, float x2, float y2) => canvas.Line(center + new Vector2(x1, y1), center + new Vector2(x2, y2), color, 1.8f);
         switch (keyword) {
+            case "phased out":
+                // A card dissolving through a broken edge, distinct from flying's wings.
+                Line(-6, -6, 0, -6); Line(-6, -6, -6, 6); Line(-6, 6, 0, 6);
+                Line(3, -6, 6, -6); Line(6, -6, 6, -3); Line(6, 0, 6, 3); Line(3, 6, 6, 6);
+                Line(-2, 0, 2, 0); break;
             case "flying":
                 foreach (int sign in new[] { -1, 1 }) { Line(0, 4, sign * 7, -5); Line(sign * 7, -5, sign * 6, 1); Line(sign * 6, 1, sign * 2, 4); Line(sign * 5, -1, sign * 2, 1); }
                 break;
@@ -110,6 +146,7 @@ internal sealed partial class TableGame
         var values = new List<(string Label, string Value)>();
         if (CardPresentation.HasCombatStats(card)) values.Add(("Power / toughness", $"{card.Power}/{card.Toughness}"));
         if (card.Damage > 0) values.Add(("Damage marked", card.Damage.ToString()));
+        if (CardPresentation.CommanderTax(card) > 0) values.Add(("Command zone tax", "+" + CardPresentation.CommanderTax(card)));
         var rows = values.Concat(counters.Select(c => (Label: c.Key + " counter" + (c.Value == 1 ? "" : "s"), Value: "× " + c.Value)))
             .Concat(states.Select(s => (Label: s, Value: ""))).ToArray();
         int shown = Math.Min(16, rows.Length), height = 64 + shown * 28 + (shown < rows.Length ? 28 : 0);
