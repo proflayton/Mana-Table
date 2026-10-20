@@ -7,7 +7,7 @@ public static class CardPresentation
     public static int CommanderTax(Card card) => card.FaceDown ? 0 : Math.Max(0, card.CommanderTax);
     public static string CommanderTaxDetails(Card card) => CommanderTax(card) is > 0 and var tax
         ? $"Commander tax: +{tax} generic mana on the next cast from the command zone. Each previous cast from that zone adds 2 mana." : "";
-    public static bool IsResource(Card card) => card.Type.Contains("Land", StringComparison.Ordinal);
+    public static bool IsResource(Card card) => card.Type.Contains("Land", StringComparison.Ordinal) && !HasCombatStats(card);
     public static bool HasCombatStats(Card card) => card.Type.Contains("Creature", StringComparison.Ordinal);
     public static bool HasAbility(Card card, string keyword) => !card.FaceDown && card.CombatKeywords.Contains(keyword, StringComparer.OrdinalIgnoreCase);
     public static string[] Abilities(Card card) => card.FaceDown ? [] : card.CombatKeywords.Where(k => !string.IsNullOrWhiteSpace(k))

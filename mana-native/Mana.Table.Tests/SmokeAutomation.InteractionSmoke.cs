@@ -12,6 +12,7 @@ internal sealed partial class SmokeAutomation
     private readonly Queue<MouseState> interactionInput = new();
     private int interactionStep, interactionFrame;
     private bool interactionWaiting, interactionRequireAcceptance;
+    private DateTime? blockerGalleryWait;
     private readonly List<string> interactionChecks = [];
     private void InteractionCheck(bool condition, string message)
     {
@@ -76,6 +77,18 @@ internal sealed partial class SmokeAutomation
                 CaptureInteraction("combat-blocks.png"); click = "combat-review"; break;
             case 18: click = "combat-blockers:enemy-a"; break;
             case 19:
+                // An accepted click changes overlay state in Update. A crowded
+                // Draw may not have published that overlay's hit regions yet.
+                // Wait for that first paint, then retain the full pair assertion.
+                if (view.Overlay == "blockers" && !view.Hits.Any(h => h.Id.StartsWith("blocker-", StringComparison.Ordinal))) {
+                    if (blockerGalleryWait == null) {
+                        blockerGalleryWait = DateTime.UtcNow;
+                        File.WriteAllText(Path.Combine(view.Profile, "blocker-gallery-before-draw.json"), JsonSerializer.Serialize(new {
+                            overlay = view.Overlay, step = interactionStep, hits = view.Hits.Select(h => h.Id).ToArray()
+                        }, new JsonSerializerOptions { WriteIndented = true }));
+                    }
+                    if (DateTime.UtcNow - blockerGalleryWait.Value < TimeSpan.FromSeconds(3)) return idle;
+                }
                 InteractionCheck(view.Hits.Any(h => h.Id == "blocker-remove:own-9") && view.Hits.Any(h => h.Id == "blocker-remove:own-12"), "Blocker gallery exposes each assigned pair for inspection and removal");
                 CaptureInteraction("blockers.png"); click = "blocker-remove:own-9"; break;
             case 20:
@@ -95,7 +108,10 @@ internal sealed partial class SmokeAutomation
                 CaptureInteraction("stack-inspector.png"); click = "close-overlay"; break;
             case 27:
                 // Simulate an authoritative decision arriving between press and release.
-                var oldHit = view.Hits.Single(h => h.Id == "confirm");
+                var oldHit = view.Hits.FirstOrDefault(h => h.Id == "confirm" && view.CurrentHit(h));
+                // A slow crowded-table Draw may follow several Updates after
+                // closing inspection. Capture the actual visible control.
+                if (oldHit == null) return idle;
                 view.Pressed = oldHit; view.PreviousMouse = At(new(0, 0), ButtonState.Pressed);
                 scenario.Stack("B"); view.Accept(scenario.State);
                 interactionStep++;

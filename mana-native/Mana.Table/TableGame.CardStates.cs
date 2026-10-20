@@ -9,6 +9,41 @@ namespace Mana.Table;
 
 internal sealed partial class TableGame
 {
+    private void PaintCompactState(Card card, Pose pose, int owner)
+    {
+        int seat = owner == match!.ViewerId ? 3 : TableLayout.SeatIndex(match, owner);
+        var r = pose.Bounds;
+        var center = seat switch {
+            0 => new Vector2(r.Right - 16, r.Center.Y), 2 => new Vector2(r.Left + 16, r.Center.Y),
+            1 => new Vector2(r.Center.X, r.Bottom - 10), _ => new Vector2(r.Center.X, r.Top + 10)
+        };
+        if (CardPresentation.HasCombatStats(card)) {
+            var stats = new Rectangle((int)center.X - 15, (int)center.Y - 9, 30, 18);
+            canvas.Panel(stats, card.Attacking ? new Color(98, 39, 40) : new Color(17, 27, 35), new(140, 155, 162), 3);
+            canvas.CenterText($"{card.Power}/{card.Toughness}", stats, Ink, .59f, true);
+        }
+        var counters = CardPresentation.Counters(card);
+        if (counters.Length > 0) {
+            var point = center + (seat is 0 or 2 ? new Vector2(0, 16) : new Vector2(-24, 0));
+            canvas.Circle(point, 9, new(168, 207, 200));
+            canvas.CenterText(counters.Sum(c => c.Value).ToString(), new((int)point.X - 9, (int)point.Y - 9, 18, 18), new(15, 30, 32), .53f, true);
+        }
+        if (card.Damage > 0) {
+            var point = center + (seat is 0 or 2 ? new Vector2(0, -16) : new Vector2(24, 0));
+            canvas.Circle(point, 9, Red);
+            canvas.CenterText(card.Damage.ToString(), new((int)point.X - 9, (int)point.Y - 9, 18, 18), Color.Black, .53f, true);
+        }
+        var states = CardPresentation.Abilities(card).ToList();
+        if (card.Sick && CardPresentation.HasCombatStats(card)) states.Insert(0, "summoning sick");
+        if (card.PhasedOut) states.Insert(0, "phased out");
+        if (states.Count > 0) {
+            var point = center + (seat is 0 or 2
+                ? card.Damage > 0 ? new Vector2(seat == 0 ? -23 : 23, 0) : new Vector2(0, -17)
+                : new Vector2(0, 20));
+            PaintAbilityIcon(states[0], point);
+            if (states.Count > 1) canvas.Text("+" + (states.Count - 1), (int)point.X + 9, (int)point.Y - 12, Ink, .48f, 27, 1, true);
+        }
+    }
     private void PaintCommanderTax(Card card, Pose pose)
     {
         int tax = CardPresentation.CommanderTax(card);
@@ -59,21 +94,14 @@ internal sealed partial class TableGame
                 canvas.Line(Vector2.Lerp(from, to, offset / length), Vector2.Lerp(from, to, Math.Min(offset + 7, length) / length), color * .72f, 1.5f);
         }
     }
-    private void PaintStateMarkers(Card card, Pose pose, int x, int y, int seat, int owner)
+    private void PaintStateMarkers(Card card, Pose pose, int x, int y, int seat, int owner, bool compact = false)
     {
         if (pose.Size.X >= 300) return;
         var counters = CardPresentation.Counters(card);
-        int count = Math.Min(2, counters.Length), width = seat is 0 or 2 ? 98 : Math.Clamp(pose.Bounds.Width, 80, 110);
+        int count = Math.Min(compact ? 1 : 2, counters.Length), width = compact ? 76 : seat is 0 or 2 ? 98 : Math.Clamp(pose.Bounds.Width, 80, 110);
         int counterX = seat == 0 ? x + 37 : seat == 2 ? x - 37 - width : x - width / 2;
         int counterY = seat is 0 or 2 ? y - 9 : pose.Bounds.Top - count * 27 - 8;
-        if (count > 0 && tableScene?.Rank(owner, CardPresentation.IsResource(card)) is { } rank && rank.Total > rank.Capacity) {
-            var reserved = new Rectangle((int)rank.Pager.X - 38, (int)rank.Pager.Y, 76, 46);
-            if (reserved.Intersects(new Rectangle(counterX, counterY - 4, width, count * 27 + 4))) {
-                if (seat == 0) counterX = reserved.Right + 8;
-                else if (seat == 2) counterX = reserved.Left - width - 8;
-                else counterY = reserved.Top - count * 27 - 8;
-            }
-        }
+        if (compact) { counterX = x - width / 2; counterY = pose.Bounds.Top + 24; }
         for (int i = 0; i < count; i++) {
             var counter = counters[i];
             var bounds = new Rectangle(counterX, counterY + i * 27, width, 24);
@@ -90,7 +118,7 @@ internal sealed partial class TableGame
         if (card.Sick && CardPresentation.HasCombatStats(card)) states.Insert(0, "summoning sick");
         if (card.PhasedOut) states.Insert(0, "phased out");
         int visible = Math.Min(3, states.Count), total = visible + (states.Count > visible ? 1 : 0);
-        int iconY = seat is 0 or 2 ? y + 37 : y - 15;
+        int iconY = compact ? y - 12 : seat is 0 or 2 ? y + 37 : y - 15;
         for (int i = 0; i < visible; i++) PaintAbilityIcon(states[i], new(x + (i - (total - 1) / 2f) * 23, iconY));
         if (total > visible) {
             var center = new Vector2(x + (visible - (total - 1) / 2f) * 23, iconY);

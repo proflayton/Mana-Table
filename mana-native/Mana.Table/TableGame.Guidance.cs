@@ -32,6 +32,7 @@ internal sealed partial class TableGame
         if (match == null) return null;
         if (reply.Action == ReplyAction.AssignAttack) return "attack";
         if (reply.Action == ReplyAction.AssignBlock) return "block";
+        if (reply.Action == ReplyAction.UseHandPlacement) return "hand-play";
         if (reply.Action == ReplyAction.SelectPlayer || reply.Action == ReplyAction.Choose && TableChoices.IsDirect(match)) return "choose-target";
         if (reply.Action != ReplyAction.SelectCard) return null;
         var located = CardViews.Located(match).FirstOrDefault(c => c.Card.Key == reply.Card);

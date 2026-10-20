@@ -386,6 +386,21 @@ first phase-out, all three opponents' turns and its return and untap on turn fiv
 The native release workflow requires both commander-tax and card-reading suites
 at 1000x740 and 1540x980 before publishing an installer.
 
+`Mana.Table.Tests.exe --smoke-full-battlefield --profile <isolated-profile> --size 1000x740`
+checks the complete battlefield through actual native pointer input and GPU
+captures. Repeat at 1540x980; both sizes are required by the native release gate.
+It checks ten creatures per seat, reading and inspecting an opponent's tenth
+creature, and a scoped action on the local tenth creature. Twenty mixed permanents
+per seat cover distinct public states, animated lands in the creature cluster,
+and anonymous face-down cards without inferred characteristics. Fifty identical
+tokens per seat must each be painted and expose a real physical pointer area,
+including after enabling reduced motion through Settings. A separate fifty-card
+fixture uses distinct names at every seat to catch overlap between many families.
+Battlefield paging is absent while normal hand paging remains available. Evidence is
+`full-battlefield-results.json`, captures `01`–`09`, and diagnostic captures/JSON
+on failure. The controlled engine validates commands; this is a presentation
+regression, with real Forge legality exercised by the shared engine suites.
+
 `Mana.Table.Tests.exe --smoke-ui-interactions --profile <new-test-directory>` exercises
 the actual MonoGame pointer path against a deterministic `ICardEngine` test double.
 It checks legal/illegal attack and block drops, fresh-handle assignment removal,
@@ -641,3 +656,37 @@ protocol. Old installers without that protocol need a manual bootstrap upgrade.
 The installer uses [InitializeSetup](https://jrsoftware.org/ishelp/topic_scriptevents.htm)
 to wait before file replacement. [Inno command-line options](https://jrsoftware.org/ishelp/topic_setupcmdline.htm)
 disable forced application closure and system restart during this handoff.
+
+### Native hand placements and zone actions
+
+`--smoke-allocation --profile <isolated-profile> --size 1000x740` drives the
+card-based damage and numeric assignment screen through actual pointer input.
+The required release gates run at 1000x740 and 1540x980. Inspect
+`allocation-ui-results.json` and captures `01`–`06`: source/current stats,
+six visible recipients plus a seventh-page defender, distinct same-name cards,
+public anonymous creature characteristics, marked damage, required assignment
+before a defender, per-recipient remaining/max controls, typed amounts, draft
+preservation through inspection and battlefield view, generic counter allocation
+and planeswalker loyalty, and stale press/release rejection. Engine thresholds
+are displayed as assignment requirements; the UI does not predict deaths or
+derive damage from the source's power. Real-engine allocation projection and
+reply validation are verified separately by the Java/API tests.
+
+`--smoke-hand-placement --profile <isolated-profile> --size 1000x740` drives
+normal pointer input through engine-projected extra hand placements, then
+graveyard and exile actions. Repeat at `1540x980`; both sizes are required native
+release gates. Evidence is `hand-placement-results.json` and captures 01–08.
+
+The journey checks that a single hand click reads, deliberate double-click and
+drag use the exact available source, multiple sources require a choice, and a
+revoked or phased-out source cannot submit. A placement first enters the stack;
+the later optional engine decision selects the hand card on resolution. Ordinary
+land-play usage remains separate, and ordinary playable cards keep their normal
+route. The inspector exposes an explicit alternate source.
+
+Own graveyard, exile and command zones show available-card counts. Graveyard and
+exile cards expose explicit use buttons and inspector actions; opponents receive
+no action cues. The engine's chooser supplies Flashback or another actual play
+description. Printed rules and card names never create these permissions in the
+native client. This controlled UI fixture verifies presentation and commands;
+the real Java fixtures independently verify rules, costs and response windows.

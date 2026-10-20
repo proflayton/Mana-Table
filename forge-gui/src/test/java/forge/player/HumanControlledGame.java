@@ -66,7 +66,9 @@ final class HumanControlledGame {
             @Override
             public Player createIngamePlayer(final Game game, final int id) {
                 final Player player = new Player(getName(), game, id);
-                player.setFirstController(new PlayerControllerHuman(game, player, this));
+                player.setFirstController(new PlayerControllerHuman(game, player, this) {
+                    @Override public boolean isOrderedZone() { return false; }
+                });
                 return player;
             }
         };

@@ -31,6 +31,7 @@ internal sealed partial class TableGame
                 case "concede": DrawConcede(); break;
                 case "help": DrawHelp(); break;
                 case "ability-auto-pass": DrawAbilityAutoPass(); break;
+                case "hand-placement": DrawHandPlacement(); break;
                 case "combat": DrawCombatReview(); break;
                 case "blockers": DrawBlockerReview(); break;
                 case "result": DrawResult(); break;
@@ -67,8 +68,9 @@ internal sealed partial class TableGame
         if (CardPresentation.CommanderTaxDetails(card) is { Length: > 0 } taxDetails) stateText = taxDetails + (stateText.Length > 0 ? "\n" + stateText : "");
         if (CardPresentation.Counters(card) is { Length: > 0 } counters) stateText += "\nCounters: " + string.Join("; ", counters.Select(c => c.Key + " × " + c.Value));
         if (onBattlefield) canvas.Text(CardActions.Hint(match, original), 686, 335, CardActions.CanActivate(match, original) ? ActionAccent : Muted, .77f, 670, 2, true);
-        var paragraphs = TextPages((stateText.Length > 0 ? stateText + "\n\n" : "") + card.Text + (onBattlefield ? "\n\n" + CardActions.Help : ""), onBattlefield ? 750 : 1050); inspectPage = Math.Clamp(inspectPage, 0, paragraphs.Length - 1);
-        canvas.Text(paragraphs[inspectPage], 686, onBattlefield ? 394 : 378, Ink, .8f, 660, onBattlefield ? 12 : 17);
+        bool contextual = onBattlefield || HandPlacements.Options(match, original).Length > 0 || AvailableZone(original) != null;
+        var paragraphs = TextPages((stateText.Length > 0 ? stateText + "\n\n" : "") + card.Text + (onBattlefield ? "\n\n" + CardActions.Help : ""), contextual ? 750 : 1050); inspectPage = Math.Clamp(inspectPage, 0, paragraphs.Length - 1);
+        canvas.Text(paragraphs[inspectPage], 686, contextual ? 394 : 378, Ink, .8f, 660, contextual ? 12 : 17);
         if (paragraphs.Length > 1) {
             Button("inspect-prev", "Previous", 686, 727, 135, () => inspectPage--, inspectPage > 0);
             Button("inspect-next", "More rules", 831, 727, 145, () => inspectPage++, inspectPage + 1 < paragraphs.Length);
@@ -76,6 +78,7 @@ internal sealed partial class TableGame
         }
         if (original.OtherFace != null) Button("other-face", inspectBack ? "View current face" : "View other face", 274, 737, 347, () => { inspectBack = !inspectBack; inspectPage = 0; }, accent: true);
         if (onBattlefield) Button("activate-ability", "Activate ability", 1080, 727, 280, () => { overlay = ""; CardClick(original); }, !busy && CardActions.CanActivate(match, original), true);
+        else DrawInspectorPlacement(original);
     }
     private void DrawSettings()
     {
@@ -94,7 +97,7 @@ internal sealed partial class TableGame
         Button("sound", preferences.Sounds ? "Sound cues: On" : "Sound cues: Off", 805, 512, 553, () => { preferences = preferences with { Sounds = !preferences.Sounds }; SavePreferences(); }, accent: preferences.Sounds, height: 45);
         Button("guidance-reset", "Show control hints again", 202, 519, 526, ResetControlHints, height: 42);
         canvas.Line(new(201, 607), new(1370, 607), Muted * .25f);
-        canvas.Text("Space  Continue / confirm     F  Auto / full control     Ctrl  Hold this turn\nC  Review combat     Escape  Cancel a drag / close a panel     F11  Fullscreen\nRight-click  Inspect a card     Wheel  Browse crowded ranks or a long hand", 203, 632, Ink, .78f, 1150, 5);
+        canvas.Text("Space  Continue / confirm     F  Auto / full control     Ctrl Hold this turn\nC  Review combat     Escape  Cancel a drag / close a panel     F11  Fullscreen\nRight-click  Inspect a card     Wheel  Browse a long hand or an open card gallery", 203, 632, Ink, .78f, 1150, 5);
         Button("updates-settings", "Updates", 202, 737, 260, OpenAppUpdates, height: 38);
         canvas.Text(CurrentAppVersion, 482, 748, Muted, .67f, 861, 1);
     }
@@ -161,6 +164,8 @@ internal sealed partial class TableGame
         ModalFrame(zoneName + (zoneName == "Stack" ? "" : " · " + player?.Name), () => zoneName = null);
         int count = 7; zonePage = Math.Clamp(zonePage, 0, Math.Max(0, (cards.Length - 1) / count));
         canvas.Text(cards.Length + " visible" + (zoneName == "Stack" ? "" : " / " + (zone?.Count ?? 0) + " total"), 205, 183, Muted, .72f, 650, 1);
+        if (player != null && AvailableZoneCount(player, zoneName!) is > 0 and var available)
+            canvas.Text(available + " available · Use a card below to see its play and costs.", 205, 220, ActionAccent, .77f, 1170, 2, true);
         int index = 0;
         foreach (var card in cards.Skip(zonePage * count).Take(count)) {
             int x = 210 + index++ * 169;
@@ -171,6 +176,11 @@ internal sealed partial class TableGame
             canvas.Text(card.ManaCost == "no cost" ? "" : card.ManaCost, x, 600, Gold, .62f, 156, 2);
             if (pose.Contains(pointer)) hovered = card;
             hits.Add(new("card:" + card.Key + ":" + card.VisualId, Scope, new(x, 304, 148, 298), () => { if (IsCardActionable(card)) { zoneName = null; CardClick(card); } else Inspect(card); }, card, zoneName, zonePlayer));
+            if (AvailableZone(card) is { } availableZone && zonePlayer == match.ViewerId) {
+                string scope = Scope;
+                PriorityAbilityButton("zone-use:" + CardIdentity(card), ZoneUseLabel(availableZone), new(x - 3, 644, 160, 42),
+                    () => UseZoneCard(card, availableZone, scope), !busy, true);
+            }
         }
         if (cards.Length == 0) canvas.CenterText("No cards are visible in this zone.", new(230, 333, 1120, 100), Muted, 1.05f);
         Button("zoneprev", "Previous", 208, 734, 160, () => zonePage--, zonePage > 0);
@@ -214,17 +224,17 @@ internal sealed partial class TableGame
     private void DrawDecisionOverlay()
     {
         var state = match!; var d = state.Decision!;
+        if (d.Kind == "allocate") { DrawAllocation(state, d); return; }
         ModalFrame(d.Title.Length > 0 ? d.Title : d.Kind == "reveal" ? "Revealed cards" : d.Kind == "allocate" ? "Assign damage or counters" : "Make your choice", () => { collapsedDecision = true; textFocus = false; }, "View battlefield", d.Kind is "choice" or "reveal" ? 790 : 706);
         canvas.Text(d.Message, 204, 181, Ink, .77f, 1185, 3);
         if (d.Kind is "number" or "text") { DrawValueDecision(state, d); return; }
-        if (d.Kind == "allocate") { DrawAllocation(state, d); return; }
         DrawChoices(state, d);
     }
     private void ToggleChoice(Decision d, int index)
     {
-        if (selections.Remove(index)) return;
+        if (selections.Remove(index)) { CollapseCardReading(); return; }
         if (d.Max == 1) selections.Clear();
-        if (selections.Count < d.Max) selections.Add(index);
+        if (selections.Count < d.Max) { selections.Add(index); CollapseCardReading(); }
     }
     private void DrawChoices(GameSnapshot state, Decision d)
     {
@@ -295,24 +305,5 @@ internal sealed partial class TableGame
         bool valid = !numeric || int.TryParse(inputText, out int number) && (d.Kind != "number" || number >= d.Min && number <= d.Max);
         if (!valid) canvas.Text("Enter a whole number within the permitted range.", 231, 559, Red, .78f, 1090, 2);
         Button("value", "Confirm", 1090, 718, 266, () => { textFocus = false; Send(new(state.Id, d.Id, ReplyAction.Value, Value: inputText)); }, valid && !busy, true, 54);
-    }
-    private void DrawAllocation(GameSnapshot state, Decision d)
-    {
-        long total = allocations.Sum(v => (long)v);
-        canvas.Text($"Assign {d.Amount} total. Assigned: {total}. Remaining: {d.Amount - total}.", 213, 265, Gold, .9f, 1135, 2, true);
-        int capacity = 5; choicePage = Math.Clamp(choicePage, 0, Math.Max(0, (d.Choices.Length - 1) / capacity));
-        int row = 0;
-        foreach (var choice in d.Choices.Skip(choicePage * capacity).Take(capacity)) {
-            int index = Array.IndexOf(d.Choices, choice), y = 328 + row++ * 68;
-            int min = d.AtLeastOne ? 1 : 0, max = d.Limits.Length > index ? d.Limits[index] : d.Amount;
-            canvas.Text(choice.Label, 220, y + 9, Ink, .78f, 780, 2);
-            Button("amount-less:" + index, "−", 1081, y, 56, () => allocations[index]--, allocations[index] > min, height: 44);
-            canvas.CenterText(allocations[index].ToString(), new(1146, y, 104, 44), Gold, 1.1f, true);
-            Button("amount-more:" + index, "+", 1260, y, 56, () => allocations[index]++, allocations[index] < max && total < d.Amount, height: 44);
-        }
-        Button("alloc-prev", "Previous", 218, 720, 145, () => choicePage--, choicePage > 0);
-        Button("alloc-next", "Next", 375, 720, 145, () => choicePage++, (choicePage + 1) * capacity < d.Choices.Length);
-        if (d.MaySkip) Button("skip", "Assign later", 537, 720, 179, () => Send(new(state.Id, d.Id, ReplyAction.Skip)), !busy);
-        Button("allocate", "Confirm assignment", 1082, 713, 291, () => Send(new(state.Id, d.Id, ReplyAction.Allocate, Amounts: allocations)), !busy && total == d.Amount, true, 52);
     }
 }

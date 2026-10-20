@@ -2,7 +2,7 @@ using Mana.Contracts;
 
 namespace Mana.Magic;
 
-public enum InteractionEffect { None, Select, Inspect, Submit, InspectPlayer, SelectChoice }
+public enum InteractionEffect { None, Select, Inspect, Submit, InspectPlayer, SelectChoice, ChooseHandPlacement }
 public sealed record InteractionResult(InteractionEffect Effect, DecisionReply? Reply = null, int? ChoiceIndex = null);
 
 /// <summary>Interprets gestures against engine-provided choices. It does not infer Magic legality.</summary>
@@ -18,7 +18,10 @@ public sealed class InteractionController
         if (state.Decision?.Intent is DecisionIntent.Attack or DecisionIntent.Block) {
             if (SelectedCombat != null && Assign(state, SelectedCombat, targetCard: card.CombatId) is { } reply) return new(InteractionEffect.Submit, reply);
             if (CombatGuide.CanSelect(state, card)) { SelectedCombat = SelectedCombat == card.CombatId ? null : card.CombatId; return new(InteractionEffect.Select); }
-        } else if (state.Decision is { } d && card.Selectable && !string.IsNullOrEmpty(card.Key))
+        } else if (state.Decision?.Intent == DecisionIntent.Priority && !card.Selectable && HandPlacements.Options(state, card) is { Length: > 0 } placements)
+            return placements.Length == 1 ? new(InteractionEffect.Submit, HandPlacements.Start(state, card, placements[0].Id))
+                : new(InteractionEffect.ChooseHandPlacement);
+        else if (state.Decision is { } d && card.Selectable && !string.IsNullOrEmpty(card.Key))
             return new(InteractionEffect.Submit, new(state.Id, d.Id, ReplyAction.SelectCard, Card: card.Key));
         return new(InteractionEffect.Inspect);
     }
@@ -42,6 +45,7 @@ public sealed class InteractionController
     {
         if (state.Decision is not { Intent: DecisionIntent.Priority } d) return null;
         var card = state.Viewer?.Zone("Hand").Cards.FirstOrDefault(c => CardViews.Same(c, clicked));
-        return card is { Selectable: true } && !string.IsNullOrEmpty(card.Key) ? new(state.Id, d.Id, ReplyAction.SelectCard, Card: card.Key) : null;
+        if (card is { Selectable: true } && !string.IsNullOrEmpty(card.Key)) return new(state.Id, d.Id, ReplyAction.SelectCard, Card: card.Key);
+        return card != null && HandPlacements.Options(state, card) is { Length: 1 } placements ? HandPlacements.Start(state, card, placements[0].Id) : null;
     }
 }

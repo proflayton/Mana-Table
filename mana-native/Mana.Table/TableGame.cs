@@ -31,7 +31,6 @@ internal sealed partial class TableGame : Game
     private readonly InteractionController interaction = new();
     private readonly List<Hit> hits = [];
     private readonly List<int> selections = [];
-    private readonly Dictionary<string, int> pages = [];
     private readonly SceneMotion motion = new();
     private readonly TablePresence presence = new();
     private readonly PresentationPacing playback = new();
@@ -217,7 +216,9 @@ internal sealed partial class TableGame : Game
         if (!chatKeys && keys.IsKeyDown(Keys.Escape) && previousKeys.IsKeyUp(Keys.Escape)) {
             dragging = false; dragSource = null; pressed = null; pendingPlay = null; selectedCombat = null; textFocus = false;
             if (match == null && !busy) { if (workshopDialog.Length > 0) workshopDialog = ""; else if (deckMenu.Length > 0) deckMenu = ""; else if (deckEditor) CloseDeckEditor(); else CloseSetupModal(); }
-            if (overlay.Length > 0) overlay = ""; else if (zoneName != null) zoneName = null; else if (DecisionModal) collapsedDecision = true;
+            if (overlay.Length > 0) overlay = ""; else if (zoneName != null) zoneName = null;
+            else if (DecisionModal && match?.Decision?.Kind == "allocate" && allocationDetail >= -1) CloseAllocationDetail();
+            else if (DecisionModal) collapsedDecision = true;
         }
         if (!chatKeys && !textFocus && keys.IsKeyDown(Keys.Space) && previousKeys.IsKeyUp(Keys.Space) && !OverlayOpen && !busy && match != null) {
             if (TableChoice && TableChoices.CanConfirm(match, selections)) Send(new(match.Id, prompt!.Id, ReplyAction.Choose, Choices: selections.ToArray()));
@@ -291,7 +292,7 @@ internal sealed partial class TableGame : Game
             canvas.Text(message, 435, 25, Ink, .82f, 740, 1);
             DrawLobby();
         } else {
-            tableScene = TableScene.Build(match, pages, handPage, pointer, null, dragging ? dragSource?.Card is { } held ? CardViews.Identity(held) : null : null, false, CardPresentation.IsResource);
+            tableScene = TableScene.Build(match, handPage, pointer, null, dragging ? dragSource?.Card is { } held ? CardViews.Identity(held) : null : null, false, CardPresentation.IsResource);
             DrawArena();
         }
         if (match != null && noticeUntil > now && !OverlayOpen) {

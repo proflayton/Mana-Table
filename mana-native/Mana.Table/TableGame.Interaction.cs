@@ -33,6 +33,7 @@ internal sealed partial class TableGame
     private static bool SameVisibleCard(Card a, Card b) => CardViews.Same(a, b);
     private void Inspect(Card card)
     {
+        if (InspectAllocationAtPointer()) return;
         // A poll may have revoked visibility since the last rendered hit region.
         inspected = VisibleCards().FirstOrDefault(c => SameVisibleCard(c, card));
         if (inspected == null) return;
@@ -49,14 +50,18 @@ internal sealed partial class TableGame
         if (state == null || d == null || busy) return false;
         if (TableChoices.IsDirect(state)) return TableChoices.Index(state, card) != null;
         if (d.Intent is DecisionIntent.Attack or DecisionIntent.Block) return CombatGuide.CanSelect(state, card) || CombatTarget(card);
-        return card.Selectable && !string.IsNullOrEmpty(card.Key);
+        return card.Selectable && !string.IsNullOrEmpty(card.Key) || HandPlacements.Options(state, card).Length > 0;
     }
     private void CardClick(Card card)
     {
         if (match == null || busy) return;
         var result = interaction.CardClick(match, card);
         if (result.ChoiceIndex is { } index) ToggleChoice(match.Decision!, index);
-        else if (result.Reply != null) { zoneName = null; Send(result.Reply); }
+        else if (result.Reply != null) {
+            if (match.Decision?.Intent == DecisionIntent.Selection) CollapseCardReading();
+            zoneName = null; Send(result.Reply);
+        }
+        else if (result.Effect == InteractionEffect.ChooseHandPlacement) OpenHandPlacement(card);
         else if (result.Effect == InteractionEffect.Inspect) Inspect(card);
     }
     private void PlayerClick(int player)
@@ -73,10 +78,12 @@ internal sealed partial class TableGame
             ? InteractionController.Assign(match, card.CombatId, target?.Card == null ? target?.PlayerId : null, target?.Card?.CombatId)
             : dragSource.Zone == "Hand" && TableWorld.CanPlayAt(pointer) ? InteractionController.Play(match, card) : null;
     }
-    private bool LegalDrop(Hit? target) => DropReply(target) != null;
+    private bool LegalDrop(Hit? target) => DropReply(target) != null || PlacementDropChoice();
     private bool DropCard(Hit? target)
     {
-        if (busy || DropReply(target) is not { } reply) return false;
+        if (busy) return false;
+        if (PlacementDropChoice()) { OpenHandPlacement(dragSource!.Card!); return true; }
+        if (DropReply(target) is not { } reply) return false;
         Send(reply); return true;
     }
     private void Scroll(int direction)
@@ -108,13 +115,10 @@ internal sealed partial class TableGame
         if (overlay == "ability-auto-pass") { priorityAbilityTextPage = Math.Max(0, priorityAbilityTextPage - direction); return; }
         if (overlay == "history") { historyPage = Math.Max(0, historyPage - direction); return; }
         if (zoneName != null) { zonePage = Math.Max(0, zonePage - direction); return; }
+        if (DecisionModal && match?.Decision?.Kind == "allocate" && allocationDetail >= -1) { allocationRulesPage = Math.Max(0, allocationRulesPage - direction); return; }
         if (DecisionModal) { choicePage = Math.Max(0, choicePage - direction); return; }
         var hit = HitAt(pointer);
-        if (hit?.Zone == "Battlefield" && hit.Card is { } card) {
-            string key = hit.PlayerId + (CardPresentation.IsResource(card) ? ":lands" : ":permanents");
-            pages[key] = Math.Max(0, pages.GetValueOrDefault(key) - direction * 3);
-            return;
-        }
+        if (hit?.Zone == "Battlefield") return;
         if (hit?.Zone == "Hand" || pointer.Y > 760) handPage = Math.Max(0, handPage - direction);
     }
 }

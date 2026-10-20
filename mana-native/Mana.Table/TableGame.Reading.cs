@@ -18,6 +18,8 @@ internal sealed partial class TableGame
     private readonly Dictionary<string, int> cardPaintCounts = [];
     private string? readingId, readingZone;
     private Rectangle? hoverPreview;
+    private (string Id, Point At)? dismissedReading;
+    private readonly HashSet<string> pendingReadingCollapses = [];
 
     private Hit? TableHitAt(Point point)
     {
@@ -39,6 +41,13 @@ internal sealed partial class TableGame
             if (hand != null) return hits.LastOrDefault(h => h.Id == hand.Hit.Id);
         }
         var focused = readingCards.LastOrDefault(c => c.Id == readingId && c.Zone == readingZone);
+        if (focused?.Zone == "Battlefield") {
+            // A fan's exposed header strip remains a browsing target even while
+            // another occurrence is enlarged over it. Use the original geometry.
+            var strip = readingCards.LastOrDefault(c => c.Zone == "Battlefield" && c.Id != focused.Id &&
+                (c.Rest with { Center = c.Rest.Point(.5f, .08f), Size = new(c.Rest.Size.X, c.Rest.Size.Y * .16f) }).Contains(point));
+            if (strip != null) return hits.LastOrDefault(h => h.Id == strip.Hit.Id);
+        }
         if (focused != null && (focused.Rest.Contains(point) || focused.Display.Contains(point))) return hits.LastOrDefault(h => h.Id == focused.Hit.Id);
         return top;
     }
@@ -47,6 +56,12 @@ internal sealed partial class TableGame
         var hit = HitAt(pointer);
         var candidate = readingCards.LastOrDefault(c => c.Hit.Id == hit?.Id && !c.Card.FaceDown);
         if (dragging || selectedCombat != null || candidate != null && !CanReadCard(candidate)) candidate = null;
+        if (dismissedReading is { } dismissed) {
+            // Selection closes the reader. Returning geometry or an unchanged
+            // pointer must not immediately enlarge this card (or its neighbor).
+            if (pointer == dismissed.At || candidate?.Id == dismissed.Id) candidate = null;
+            else dismissedReading = null;
+        }
         string identity = candidate?.Id ?? "";
         if (lastHover != identity) { lastHover = identity; hoverSince = now; }
         if (candidate == null) { readingId = readingZone = null; }
@@ -83,7 +98,10 @@ internal sealed partial class TableGame
         bool readable = (choiceSlot >= 0 ? ReadingGalleryOpen : !OverlayOpen) && !dragging;
         bool focused = !card.FaceDown && readingId == id && readingZone == zone && readable;
         if (card.FaceDown) readingTransitions.Remove(id);
-        var pose = motion.Place(id, focused ? ReadingPose(rest, zone) : rest, entrance, entranceDelay);
+        // A completed selection returns immediately to its normal footprint so
+        // the old enlarged face cannot intercept the next adjacent click.
+        var pose = pendingReadingCollapses.Remove(id) ? motion.Hold(id, rest)
+            : motion.Place(id, focused ? ReadingPose(rest, zone) : rest, entrance, entranceDelay);
         if (!focused && Vector2.Distance(pose.Size, rest.Size) < 2 && Vector2.Distance(pose.Center, rest.Center) < 2) readingTransitions.Remove(id);
         // A pile face opens a browser; it is not a cast/play action.
         var hit = new Hit(hitId, Scope, activationBounds is { } bounds ? Rectangle.Union(pose.Bounds, bounds) : pose.Bounds,
@@ -114,5 +132,19 @@ internal sealed partial class TableGame
     {
         readingCards.Clear(); liftedCards.Clear(); readingTransitions.Clear(); cardPaintCounts.Clear();
         readingId = readingZone = null; hoverPreview = null; lastHover = ""; hoverSince = 0;
+        dismissedReading = null;
+        pendingReadingCollapses.Clear();
+    }
+    private void CollapseCardReading()
+    {
+        var hit = HitAt(pointer);
+        string clickedId = readingCards.LastOrDefault(c => c.Hit.Id == hit?.Id)?.Id ?? readingId ?? lastHover;
+        dismissedReading = (clickedId, pointer);
+        // Moving to a neighbor can start its reader while an older one is still
+        // returning. Selection restores every rendered reader to its new rest.
+        pendingReadingCollapses.UnionWith(readingCards.Where(c => readingTransitions.Contains(c.Id)).Select(c => c.Id));
+        pendingReadingCollapses.Add(clickedId);
+        if (readingId != null) pendingReadingCollapses.Add(readingId);
+        readingId = readingZone = null; hoverPreview = null; lastHover = ""; hoverSince = now;
     }
 }

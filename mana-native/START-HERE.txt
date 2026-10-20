@@ -144,6 +144,14 @@ The lobby lists local interface addresses and the port. For a private VPN,
 share the host's VPN IPv4 address followed by :port instead of the internet invite.
 Do not share invites publicly. This is direct hosting, without a relay service.
 
+ASSIGN DAMAGE AND COUNTERS
+Assignments show the source and each recipient's current card, seat, stats,
+marked damage and counters. Use +/-, click an amount to type it, or choose
+Remaining to stage the available amount. Required fills an engine-supplied
+assignment threshold before damage can go to the defender. Inspect a card or
+View battlefield without losing your draft. Confirm assignment sends the
+completed distribution; Assign later appears only when the engine allows it.
+
 CONTROLS
 You sit at the near edge of one shared table; the other players sit to your left,
 across from you, and to your right. Their cards face their seats. Spells and

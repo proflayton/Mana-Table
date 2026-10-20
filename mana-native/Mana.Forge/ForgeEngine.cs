@@ -235,9 +235,10 @@ public sealed partial class ForgeEngine(ForgePaths paths) : ICardEngine, ITableS
         var args = new Dictionary<string, object?> { ["sessionId"] = reply.GameId, ["promptId"] = reply.DecisionId };
         var action = reply.Action switch { ReplyAction.Confirm => "ok", ReplyAction.Cancel => "cancel", ReplyAction.SelectCard => "card",
             ReplyAction.SelectPlayer => "player", ReplyAction.AssignAttack => "attack", ReplyAction.AssignBlock => "block",
-            ReplyAction.AutoPass => "passIfNoResponse", ReplyAction.Skip => "skip", ReplyAction.SetAbilityAutoPass => "setAbilityAutoPass", _ => null };
+            ReplyAction.AutoPass => "passIfNoResponse", ReplyAction.Skip => "skip", ReplyAction.SetAbilityAutoPass => "setAbilityAutoPass",
+            ReplyAction.UseHandPlacement => "useHandPlacement", _ => null };
         if (action != null) args["action"] = action;
-        if (reply.Card != null) args["key"] = reply.Card;
+        if (reply.Card != null) args[reply.Action == ReplyAction.UseHandPlacement ? "handKey" : "key"] = reply.Card;
         if (reply.Player != null) args[reply.Action == ReplyAction.AssignAttack ? "defenderPlayerId" : "playerId"] = reply.Player;
         if (reply.Attacker != null) args["attackerKey"] = reply.Attacker;
         if (reply.Blocker != null) args["blockerKey"] = reply.Blocker;

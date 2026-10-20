@@ -122,6 +122,9 @@ internal sealed partial class TableGame
         internal Mana.Renderer.ResolutionCue? LastResolution => game.actionFeedback.Last;
         internal void SetAutomatic(bool value) => game.SetAutomatic(value);
         internal List<int> Selections => game.selections;
+        internal IReadOnlyList<int> AllocationAmounts => game.allocations;
+        internal int AllocationDetail => game.allocationDetail;
+        internal string? AllocationProblem => game.match?.Decision is { Kind: "allocate" } decision ? Mana.Magic.AllocationGuide.Problem(decision, game.allocations) : null;
         internal string Overlay => game.overlay;
         internal string? ZoneName => game.zoneName;
         internal List<Hit> Hits => game.hits;

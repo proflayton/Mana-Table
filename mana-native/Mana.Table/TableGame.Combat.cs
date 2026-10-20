@@ -23,17 +23,6 @@ internal sealed partial class TableGame
         zoneName = "Stack"; zonePage = index; inspectPage = 0;
         inspectedStack = match?.Stack.ElementAtOrDefault(index)?.Id;
     }
-    private void RevealCard(Card card)
-    {
-        if (match == null) return;
-        var player = match.Players.FirstOrDefault(p => p.Zone("Battlefield").Cards.Any(c => c.CombatId == card.CombatId));
-        if (player == null) return;
-        bool land = card.Type.Contains("Land");
-        var rank = player.Zone("Battlefield").Cards.Where(c => c.Type.Contains("Land") == land).ToArray();
-        int index = Array.FindIndex(rank, c => c.CombatId == card.CombatId);
-        pages[player.Id + (land ? ":lands" : ":permanents")] = Math.Max(0, index - 2);
-
-    }
     private void RemoveAssignment(string source, string? attacker = null)
     {
         if (match != null && !busy && CombatGuide.Remove(match, source, attacker) is { } reply) Send(reply);
@@ -72,7 +61,7 @@ internal sealed partial class TableGame
                 canvas.Text(card.Name, x, 541, Ink, .74f, 176, 3, true);
                 canvas.Text($"{card.Power}/{card.Toughness}", x, 610, Gold, .84f, 176, 1, true);
                 if (pose.Contains(pointer)) hovered = card;
-                hits.Add(new("combat-source:" + card.CombatId, Scope, new(x, 304, 176, 345), () => { selectedCombat = card.CombatId; overlay = ""; RevealCard(card); }, card));
+                hits.Add(new("combat-source:" + card.CombatId, Scope, new(x, 304, 176, 345), () => { selectedCombat = card.CombatId; overlay = ""; }, card));
             }
             if (candidates.Length == 0) canvas.Text("No creatures can be assigned for this decision.", 230, 362, Muted, 1);
             CombatPages(candidates.Length, count);
@@ -102,7 +91,7 @@ internal sealed partial class TableGame
             } else if (state.Decision?.Intent == DecisionIntent.Attack && CombatGuide.Remove(state, attack.CardId) != null) {
                 Button("combat-recall:" + attack.CardId, "Recall attacker", 1180, y + 20, 196, () => RemoveAssignment(attack.CardId), !busy, height: 38);
             }
-            if (card != null) Button("combat-locate:" + card.CombatId, "Show on table", 1180, y + 71, 196, () => { overlay = ""; RevealCard(card); }, height: 34);
+            if (card != null) Button("combat-locate:" + card.CombatId, "Back to table", 1180, y + 71, 196, () => overlay = "", height: 34);
         }
         if (attacks.Length == 0) canvas.Text("No attacks have been assigned yet.", 230, 362, Muted, 1);
         CombatPages(attacks.Length, 3);

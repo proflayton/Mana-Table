@@ -87,7 +87,7 @@ public sealed record Seat(int Index, string Name, string Type, string? Deck, boo
 public sealed record Lobby(string Mode, string Status, string? Error, bool CanStart, string? StartProblem,
     bool MatchActive, string PortMapping, string? InternetInvite, Address[] Addresses, Seat[] Seats, string TableId = "");
 public enum DecisionIntent { General, Priority, Attack, Block, Mana, Selection }
-public enum ReplyAction { Confirm, Cancel, SelectCard, SelectPlayer, AssignAttack, AssignBlock, AutoPass, Skip, Choose, Value, Allocate, SetAbilityAutoPass }
+public enum ReplyAction { Confirm, Cancel, SelectCard, SelectPlayer, AssignAttack, AssignBlock, AutoPass, Skip, Choose, Value, Allocate, SetAbilityAutoPass, UseHandPlacement }
 public sealed record DecisionReply(string GameId, string DecisionId, ReplyAction Action,
     string? Card = null, int? Player = null, string? Attacker = null, string? Blocker = null,
     string? DefenderCard = null, int[]? Choices = null, string? Value = null, int[]? Amounts = null,
@@ -103,6 +103,7 @@ public sealed record DecisionReply(string GameId, string DecisionId, ReplyAction
             ReplyAction.Choose => Choices != null && Choices.All(i => i >= 0) && Choices.Distinct().Count() == Choices.Length,
             ReplyAction.Value => Value != null, ReplyAction.Allocate => Amounts != null && Amounts.All(i => i >= 0),
             ReplyAction.SetAbilityAutoPass => Present(AbilityId) && Ignore != null,
+            ReplyAction.UseHandPlacement => Present(AbilityId) && Present(Card),
             ReplyAction.Confirm or ReplyAction.Cancel or ReplyAction.AutoPass or ReplyAction.Skip => true,
             _ => false
         };
@@ -143,6 +144,10 @@ public sealed record CardFace(string Name, string Type, string ManaCost, string 
 public sealed record Zone(string Name, int Count, Card[] Cards, Card? TopCard);
 public sealed record Player(int Id, string Name, int Life, bool Priority, bool Eliminated, Dictionary<string, int> Mana, Zone[] Zones)
 {
+    // Missing used count means an older engine did not project this state.
+    // A null limit with a present used count means unlimited land plays.
+    public int? LandPlaysUsed { get; init; }
+    public int? LandPlayLimit { get; init; }
     // The rules engine's current limit; null means no maximum hand size.
     public int? MaxHandSize { get; init; } = 7;
     public CommanderDamage[] CommanderDamage { get; init; } = [];
@@ -155,10 +160,25 @@ public sealed record Choice(int Index, string Label, Card? Card)
     public string CardId { get; init; } = "";
     public string Detail { get; init; } = "";
     public string Mana { get; init; } = "";
+    public string Id { get; init; } = "";
+    public int? PlayerId { get; init; }
+    public int? ControllerId { get; init; }
+    public int? OwnerId { get; init; }
+    public int? Minimum { get; init; }
+    public int? Maximum { get; init; }
+    // Required combat assignment before damage may be assigned to the defender.
+    // This is an engine threshold, not a prediction that the recipient dies.
+    public int? Lethal { get; init; }
+    public bool IsDefender { get; init; }
 }
 public sealed record LibraryChoice(int? Index, string Label, Card Card);
 // Handles identify individual engine-owned abilities, never every ability on a card.
-public sealed record PriorityAbility(string Id, string SourceCardKey, string SourceName, string Text, bool IgnoredUntilNextTurn);
+public sealed record PriorityAbility(string Id, string SourceCardKey, string SourceName, string Text, bool IgnoredUntilNextTurn)
+{
+    // Exact current-prompt handles from the actor's hand, supplied by Forge.
+    public string[] EligibleHandKeys { get; init; } = [];
+    public int HandPlacementLimit { get; init; } = 1;
+}
 public sealed record Decision
 {
     public string Id { get; init; } = "";
@@ -180,6 +200,11 @@ public sealed record Decision
     public bool MaySkip { get; init; }
     public int Amount { get; init; }
     public int[] Limits { get; init; } = [];
+    public string AllocationKind { get; init; } = "";
+    public string AmountLabel { get; init; } = "";
+    public string SourceCardId { get; init; } = "";
+    public int? SourceControllerId { get; init; }
+    public bool OverrideOrder { get; init; }
     public string Initial { get; init; } = "";
     public Card? SourceCard { get; init; }
     public string SourceZone { get; init; } = "";
