@@ -1,5 +1,11 @@
 MANA TABLE NATIVE - BUILD, TEST AND PLAY COMMANDER
 
+This guide follows the current source. Installers through 0.2.37 predate the
+complete battlefield layout, compact selection readers, card-based assignments
+and additional hand-placement actions described as newer source-build features
+below. Check SOURCE.txt and build.json in your package for its exact revision;
+an unmerged pull request is not part of the downloadable release.
+
 Download ManaTable-Setup.exe from https://github.com/proflayton/Mana-Table/releases/latest
 and open it. Setup installs for your Windows account, adds shortcuts, and opens
 the game. Administrator access, Java and .NET installation are not required.
@@ -144,13 +150,16 @@ The lobby lists local interface addresses and the port. For a private VPN,
 share the host's VPN IPv4 address followed by :port instead of the internet invite.
 Do not share invites publicly. This is direct hosting, without a relay service.
 
-ASSIGN DAMAGE AND COUNTERS
+ASSIGN DAMAGE AND COUNTERS (NEWER SOURCE BUILDS)
 Assignments show the source and each recipient's current card, seat, stats,
 marked damage and counters. Use +/-, click an amount to type it, or choose
 Remaining to stage the available amount. Required fills an engine-supplied
 assignment threshold before damage can go to the defender. Inspect a card or
 View battlefield without losing your draft. Confirm assignment sends the
 completed distribution; Assign later appears only when the engine allows it.
+Current toughness and marked damage are separate values. A required assignment
+threshold is not a prediction that the recipient will die. The engine also uses
+this screen for counters and other numeric assignments; follow its amount label.
 
 CONTROLS
 You sit at the near edge of one shared table; the other players sit to your left,
@@ -161,14 +170,22 @@ active seat. Hover or right-click to read cards upright from any seat.
 Double-click a highlighted card in your hand to play it, or drag it onto the table.
 One click on a hand card is safe for reading. Required choices and battlefield
 abilities still use a single click. Commanders also require a double-click to cast.
-Double-click your commander to cast it. Zone piles open browsers
-containing only the cards your player can see. Hidden hands show anonymous backs.
+Zone piles open browsers containing only the cards your player can see. Your own
+graveyard, exile and command browsers can offer engine-authorized actions,
+including Flashback when available. Casts from these browsers also need a
+double-click. Hidden hands show anonymous backs.
 Gold TAX +2, TAX +4, etc. badges show the extra mana for a command-zone recast.
 Hover or inspect for details. Each commander tracks its own previous casts;
 dying does not add tax by itself.
 Hover to lift and enlarge the card itself without clicking; right-click to inspect
 its complete rules and alternate face. Card pictures download when available;
 text works offline. Choice galleries include a name filter and selection counts.
+In newer source builds, selecting a gallery card immediately returns its face
+to the compact row; hover or inspect it again to read without clearing your
+selection. When every choice is a visible table card, choose those original
+cards and confirm with the decision button. Other searches keep their gallery.
+Engine-authorized hand-placement actions also appear in newer source builds;
+use the offered action and any required source choice shown by the game.
 Cards deal from their library piles. Opponents draw anonymous card backs into
 their hands; visible spells rise into the center while you decide how to respond.
 Turn callouts and life-counter impacts mark changes without blocking controls.
@@ -180,8 +197,7 @@ You can also drag attackers to a legal defending player or card, and blockers
 to a legal attacker. Arrows show assignments; blue highlights show legal targets.
 Confirm your assignments using the decision panel.
 Press C or select Combat to review attackers, their defenders, and blockers.
-Your creatures lists eligible creatures, including ones on other battlefield
-pages. Selecting one brings it into view. Select an assigned creature and use
+Your creatures lists eligible creatures. Select an assigned creature and use
 Remove to undo its assignment; the review panel can also recall attackers.
 Review blockers opens a paged gallery for each attack, with individual removal
 controls while you are assigning blocks.
@@ -193,7 +209,10 @@ Number, text, color and damage-allocation decisions open inside the table.
 Use View battlefield to collapse a required choice, then the decision button to
 return to it. History opens the game log. Click an opponent's name to open all
 of their visible permanents in an upright battlefield gallery.
-Crowded ranks have page arrows; the mouse wheel also browses ranks and long hands.
+Newer source builds keep every battlefield occurrence on the table, including
+crowded groups; enlarge or inspect an individual card to read it. Battlefield
+ranks do not have pages. Long hands and choice galleries still have page controls.
+Installers through 0.2.37 use battlefield rank arrows and wheel browsing.
 Click a player's life header to inspect commander damage when it is not a target.
 Space confirms an enabled input decision. Escape closes a panel or cancels a drag.
 F switches Auto/full control, Ctrl holds priority for this turn, F11 is fullscreen.
@@ -223,7 +242,7 @@ assets. No generated arena illustration is included. Assets/ARTIST-HANDOFF.txt
 lists the replaceable background, card back and optional sound cues.
 
 LIMITS
-This native preview uses Forge's rules; the replacement engine is not yet
+This native client uses Forge's rules; the replacement engine is not yet
 implemented. No durable match saves: keep the host and clients open during play.
 All four players should use the same package. Deck files persist in
 %LOCALAPPDATA%\ManaTableNative. That directory also holds logs and the image cache.
@@ -231,6 +250,9 @@ Broad card interactions still need playtesting. Preserve client.log and engine.l
 if you hit a blocked decision. Closing the host ends the network game.
 
 DEVELOPMENT
+For native source prerequisites, isolated profiles and build/run commands, see
+mana-native/README.md in the repository. Building the executable alone does not
+provide its matching Java engine, runtime and card-resource bundle.
 SOURCE.txt links the exact source revision recorded in build.json.
 A complete matching source ZIP is available beside the installer on Releases.
 Local preview packages also include their native and adapter sources under source/.

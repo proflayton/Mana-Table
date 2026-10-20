@@ -30,9 +30,24 @@ The job then runs the native client and UI regressions against
 fresh bundled resources, builds the installer, then tests install, reinstall,
 startup and uninstall using a separate test identity and profile. CI uses a
 software graphics driver outside the package; players receive the normal client.
+Publication also waits for the **same master source SHA** to pass the full Java
+17/21 `Test build` matrix, the desktop workflow, and applicable iOS compatibility
+checks. The [read-only prerequisite helper](../../forge-desktop/scripts/wait-release-ci.cjs)
+waits up to 70 minutes and fails on failed or missing required evidence; it never
+merges, reruns or cancels CI. It excludes its own native workflow to avoid waiting
+on the publisher itself.
+
 Downloads are first uploaded to a draft, then published and marked Latest only
-if the tested revision is still the head of `master`. Failed checks prevent
-publication. Existing public release assets are never replaced by a rerun.
+if the tested revision is still the head of `master`. The prerequisite helper
+runs before downloading/uploading release assets and again immediately before
+making the draft public. A failed late gate leaves a draft; an advanced master
+leaves an Actions artifact or draft. Existing public release assets are never
+replaced by a rerun. A successful PR run never publishes a release.
+
+For manual dispatch, only current `master` may publish. Dispatch cannot recover
+the original push range, so it conservatively requires an exact-source iOS push
+run even when a native-only change would not have triggered one. A missing run
+blocks publication; do not bypass the gate or substitute a previous green SHA.
 
 Versions are `0.2.<workflow run number>` and tags are `mana-native-v<version>`.
 Each release contains setup, portable and complete-source downloads with SHA256
@@ -47,14 +62,28 @@ Share this permanent link with friends:
 The installer updates the same per-user application directory. Close the game
 before updating. Decks, artwork and preferences live separately in
 `%LOCALAPPDATA%\ManaTableNative`; both updates and uninstall retain that directory.
-Players at a multiplayer table should use the same release. In-app automatic
-updating is not implemented. Builds are unsigned, so Windows can show an unknown
-publisher or reputation prompt until code signing is configured.
+Players at a multiplayer table should use the same release. Packaged release
+builds offer an **Updates** panel and a saved **Check on startup** preference.
+Checking and downloading can run in the background; installation only starts
+after the player chooses **Install and restart** and leaves any active game or
+friends table. The app revalidates the download before starting Setup. Portable
+release builds without an installed-app handoff use the download-folder/manual
+install route; development builds link to releases. There is no unattended installation.
+
+The updater discovers public, stable `mana-native-v*` releases and requires a
+matching `installer-manifest.json` (supported installer protocol, source, version,
+Windows x64, exact bytes and SHA256). Old builds without the protocol need a
+manual bootstrap install. Native and legacy Electron release tags are separate;
+do not use the repository's generic Latest release as an updater channel.
+Builds are unsigned, so Windows can show an unknown publisher or reputation
+prompt until code signing is configured.
 
 ## Build a native installer locally
 
-Use a clean committed checkout, JDK 17+, .NET 9 and Inno Setup 6. After verifying
-Forge with `mvn -pl forge-api -am verify`, run:
+Use a clean committed Windows checkout, JDK 17, the .NET 9 SDK and Inno Setup 6.
+CI pins its JDK/SDK, Inno compiler and software graphics driver in the native
+workflow; consult that file when matching CI. From the repository root, first
+verify Forge with `mvn -pl forge-api -am verify`, then run:
 
 ```powershell
 ./mana-native/package.ps1 -Release -Version 0.2.0 -OutputDirectory dist/ManaTable-Native-0.2.0
@@ -63,9 +92,17 @@ Forge with `mvn -pl forge-api -am verify`, run:
 
 `JAVA_HOME` selects the JDK used to create a fresh bundled runtime. The clean
 package uses only tracked card-resource files and creates a new .NET publish
-directory. `-EngineJar <verified.jar>` can select an already verified Forge build.
+directory. Packaging consumes an existing JAR; it does not build Java or prove
+that the JAR matches the checkout. `-EngineJar <verified.jar>` selects another
+JAR, so retain its source SHA and SHA256 and require matching engine source before
+calling the result an exact-source release. `build.json` records the checkout SHA
+and JAR hash; that alone is not independent proof of the JAR's source.
 Installer compilation checks the package version, engine, portable ZIP, and source
 archive hashes. `-CompilerPath <ISCC.exe>` selects a portable Inno Setup compiler.
+These commands create local artifacts, not a public GitHub release and not a
+completed CI gate. Review the [required checks](Mana-Table-Testing.md#ci-and-review)
+and installer tests before a handoff. Use a new output directory/versioned path
+for each candidate and retain earlier packages.
 
 `mana-native/installer/test-installer.ps1 -InputPackageDirectory <package> -Version
 <version> -CompilerPath <ISCC.exe> -TestDirectory <isolated-directory>` builds an
@@ -79,13 +116,17 @@ profile sentinel. It never installs the production app or uses the normal profil
 MonoGame client with bundled .NET and Java runtimes, card resources, notices and
 source. By default it uses `forge-api/target/forge-engine.jar`; pass
 `-EngineJar <verified-jar>` to reuse a tested adapter without replacing a local
-build artifact. `-SkipBuild` uses the existing `.tools/native-publish` output.
+build artifact. Keep the JAR's actual source/hash with the preview evidence when
+it differs from the client checkout. `-SkipBuild` uses the existing
+`.tools/native-publish` output; it does not verify that output matches current source.
 Always choose a new `-OutputDirectory` and verify the client and engine hashes.
 Native profiles live in `%LOCALAPPDATA%\ManaTableNative`; use `--profile` with an
 isolated path to review the first-session welcome without changing saved decks
 or play preferences. A completed native package updates `dist/latest-native.json`;
 the checkout launcher prefers that manifest and falls back to the Electron beta
-when no native package exists. The workflow below describes the Electron release package.
+when no native package exists. The preview is marked `release: false`, is not
+offered through the stable updater, and is not an installer-publication gate.
+The workflow below describes the Electron release package.
 
 ## Downloads for testers
 
@@ -144,8 +185,9 @@ a **draft** GitHub release. Beta versions are marked prereleases. Review its not
 and assets, then publish it from GitHub Releases for testers to download. Failed
 tests prevent release creation; failure evidence is kept as a workflow artifact.
 
-No signing certificate, hosted game service, or automatic update installer is
-configured. Downloads are portable unsigned Windows packages. The workflow uses
+For this legacy Electron channel, no signing certificate, hosted game service or
+automatic update installer is configured. Downloads are portable unsigned Windows
+packages. This limitation does not describe the native updater above. The workflow uses
 GitHub's repository token; no personal access token is required. It refuses to
 silently replace an existing release. See the [GitHub CLI release documentation](https://cli.github.com/manual/gh_release_create)
 for draft publication and manual recovery after a failed upload.

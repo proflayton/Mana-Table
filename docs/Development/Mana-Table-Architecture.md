@@ -1,9 +1,15 @@
 # Mana Table architecture
 
-Mana Table has a Java rules adapter (`forge-api`), an Electron reference client
-(`forge-desktop`), and a MonoGame client (`mana-native`). Forge remains the installed
+Mana Table's released Windows client is MonoGame (`mana-native`). The repository
+also retains an Electron reference client (`forge-desktop`) and a Java rules
+adapter (`forge-api`). Forge remains the installed
 rules engine. Switching a seat between local and remote must not change game logic,
 decisions, visibility, or presentation.
+
+This map describes the current source, which can be ahead of the public installer.
+Use the package's `SOURCE.txt`/`build.json` and release notes to identify its behavior.
+The [native development guide](../../mana-native/README.md) is the build/run entry
+point for the Windows client; the Electron guide covers its separate client.
 
 ## Shared match and synchronization
 
@@ -30,6 +36,12 @@ checks both. Snapshots retain publication and board revisions; prompt handles
 remain scoped capabilities, separate from opaque card presentation identities.
 
 ## Native client boundaries
+
+The normal native Commander setup hosts four seats or starts one human with
+three Forge AI opponents. The builder's Test workspace offers two- or four-seat
+Commander experiments. Existing non-Commander decks use a two-seat AI setup.
+The API and Electron client expose broader format/seat configuration, including
+two through six Commander seats; that is not a native lobby size selector.
 
 Every native launch moves from startup into a main menu with AI, friends and deck entry points.
 These routes reuse the existing deck picker, review and readiness gates; choosing
@@ -76,7 +88,7 @@ failed process and its reader tasks before creating a new process generation.
 
 | Project | Responsibility |
 | --- | --- |
-| `Mana.Contracts` | Catalog, setup and match-connection interfaces; typed Commander snapshots and commands; visibility enumeration and art-source contract |
+| `Mana.Contracts` | Catalog, deck, setup and match-connection interfaces; typed seat snapshots and commands; visibility enumeration and art-source contract |
 | `Mana.Client` | Generic versioned replica, command scheduling, stale-poll protection, main-thread completion delivery and local artist asset loading |
 | `Mana.Magic` | Phase language, legal-target interpretation, click/drag command construction, Auto priority, Magic card classification and Magic art provider |
 | `Mana.Forge` | Process lifetime, protocol negotiation and Forge-to-contract mapping |
@@ -86,10 +98,25 @@ failed process and its reader tasks before creating a new process generation.
 | `Mana.Client.Tests`, `Mana.Table.Tests` | Headless behavior checks and separate native test/automation executable |
 
 `TableScene` describes visible ranks, command cards, piles and hand placement.
+Current native source uses `BattlefieldLayout` to include every projected
+battlefield occurrence, with ordered groups and exposed individual hit regions.
+Its compatibility rank views do not page the battlefield. Long hands and
+selection/inspection galleries still page. Installers through 0.2.37 have the
+older paged battlefield layout.
 Painting and input use the same displayed pose. Card names never identify an
 occurrence. Client inspection, effects and interactions enumerate the same allowed
 views, so revoked information is removed consistently. Artist image loading is
 separate from GPU texture creation; the default Magic provider is replaceable.
+
+The table renders to a 1600x900 design surface, while setup uses 1600x1000.
+`TableGame` scales and letterboxes that surface into the actual backbuffer and
+maps physical pointer coordinates through the inverse transform. A design-surface
+capture does not establish physical-window readability. Review the actual window
+at the supported small and large sizes as well as the underlying layout.
+`Canvas` uploads rendered text through `BitmapPixels.ReadArgb32`, preserving
+signed-stride row order and premultiplying alpha once, without an image-codec
+round trip. `SceneMotion` caps pose smoothing after a hitch but advances its
+bounded travel arc using the full finite elapsed interval.
 
 The native setup's **Deck builder** opens after file or clipboard import and is
 available for saved decks and new drafts. Its library, deck list and large face
@@ -215,6 +242,22 @@ the original cards stages their engine indices, marks them selected, and uses
 the normal action button (or Space) to confirm. Ordered choices use click order;
 minimum/maximum counts still come from the engine. Gallery faces remain anonymous,
 and library searches, private reveals and non-card choices retain their chooser.
+Selecting a gallery face collapses all currently rendered reading transitions
+back to their current rests. A one-shot hold removes stale enlarged geometry;
+stationary-pointer suppression prevents the new row beneath the pointer from
+reopening until a real pointer journey. Selection still uses the original
+prompt-scoped choice index, independently of face names and reflow.
+
+`TableGame.Allocation` presents numeric assignments using `AllocationGuide` and
+the engine's source, units, recipient occurrences, limits and optional required
+amounts. Each row keeps public art/name/seat, current stats, marked damage,
+counters and the proposed amount visible. Detail inspection preserves the draft.
+Confirmation copies a fresh scoped `values[]` reply in original recipient order.
+The UI never computes lethal damage or predicts death; an engine-provided
+threshold constrains assignment before the defender only where supplied.
+`HandPlacements` likewise consumes projected hand/source/target handles rather
+than recognizing printed card names. Its real gesture can lead to an engine
+source choice or later required input, which remains a separate scoped decision.
 
 Auto uses `Mana.Client.DecisionAdvance` through the same seat connection locally
 and over TCP. It drains engine-authorized empty priority windows, publishing only
@@ -246,6 +289,14 @@ immediately revoke it. No extra game rules or multiplayer-specific path is added
 `TextureFiltering` builds GPU mipmaps once per loaded image; anisotropic card
 sampling handles angled minification, and table surfaces request 4x MSAA.
 Full-resolution artwork and rendered rules text remain available for inspection.
+
+Native updates are separate from engine commands. `AppBuild` permits stable
+checks only for a versioned release package. `GitHubAppUpdates` validates the
+native release manifest, asset size and SHA256 before caching an installer;
+preview packages remain outside the stable update channel. The table can keep
+running during download. Installation revalidates the file and requires leaving
+the game and network table, completing current work and saving the deck before
+`WindowsUpdateInstaller` hands off to Setup. Profiles live outside the payload.
 
 `TablePresence` turns public hand/library counts and life changes into seat cues.
 Opponent draw cues contain no card identities; the local hand animates only its
@@ -280,6 +331,11 @@ flowchart LR
 ```
 
 ## Where to change things
+
+For native changes, start with the project boundaries above and the
+[native guide's layer map](../../mana-native/README.md#where-to-change-things).
+The entry points below describe the Electron reference client and shared Java
+adapter. DOM, CSS and Three.js details in the following sections apply to Electron.
 
 | Area | Entry points | Responsibility |
 | --- | --- | --- |

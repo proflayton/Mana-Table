@@ -8,10 +8,17 @@ this API.
 `forge-core`. It creates no Swing or LibGDX UI; `HeadlessPlatform` supplies the
 shared controller's platform services and preferences.
 
-The [Mana Table desktop beta](../forge-desktop/README.md) consumes this
-module through `DesktopEngine`, a private stdin/stdout JSON transport. It includes
-local deck persistence, opening-hand practice, and human-versus-AI matches. Build with
-`mvn -pl forge-api -am verify`; the executable engine is `target/forge-engine.jar`.
+The primary [Windows native client](../mana-native/README.md) and the
+[maintenance Electron client](../forge-desktop/README.md) consume `DesktopEngine`
+through private stdin/stdout JSON pipes. The host provides deck persistence,
+practice, AI games and multiplayer seats. Build with `mvn -pl forge-api -am verify`;
+the executable engine is `forge-api/target/forge-engine.jar` from the repository root.
+
+This page describes current `master`. [PR 7](https://github.com/proflayton/Mana-Table/pull/7)
+is still pending: public player counters and ordinary anonymous battlefield stats,
+explicit decision ownership and event outcomes, native recovery controls, full-list
+bundled eligibility, read-only tested-version comparison and recommendation reopening
+must not be assumed available in this baseline.
 
 ## Implemented
 
@@ -75,8 +82,19 @@ mvn -pl forge-api -am verify -Papi-example
 
 The optional `api-example` profile loads the real resource database, searches printings, imports a deck
 with a sideboard, and verifies unknown-card detection. It does not start a match.
-The initial resource scan can take time. The unit tests require the checked-in
-language files at `forge-gui/res/languages`; they do not load the entire card database.
+Tests include lightweight projections and real four-seat rules scenarios that load
+the checked-in card database. Keep the complete `forge-gui/res` directory available;
+the initial resource scan can take time. CI also tests Java 21 compatibility.
+
+To run the private command host directly, supply the resource directory and a
+separate writable **decks directory** (not its parent profile):
+
+```sh
+java -Xmx2g -Dfile.encoding=UTF-8 -Djava.awt.headless=true -jar forge-api/target/forge-engine.jar forge-gui/res /path/to/profile/decks
+```
+
+Send one JSON request per line to stdin; reserve stdout for replies and capture
+stderr for diagnostics. Applications normally manage this child process themselves.
 
 Set `JAVA_HOME` to your JDK installation and put Maven on `PATH`. No particular
 JDK vendor, local tool directory, or custom dependency cache is required. See
@@ -212,8 +230,9 @@ unsupported-section problem. CSV, XML and deck URLs are not text card rows.
 The host owns one current deck editor. Successful edits autosave. Saved files use
 opaque UUID filenames, schema version 1, printing IDs, quantities, and explicit
 sections. Writes use temporary files and atomic replacement where supported.
-Save failures remain visible and block switching decks until saved. Practice
-hands are separate from a playable match and are not persisted.
+Save failures remain visible and block switching decks until saved. The legacy
+`practice` sandbox is transient; version-bound `workshopPractice` samples are saved
+with their test records. Neither is a playable match.
 
 Native callers scope `edit`, `rename`, `undo`, `redo`, `save`, `export` and
 `duplicate` with `deckId` plus `revision`. When supplied, both must match the
@@ -240,8 +259,11 @@ includes the limitations and the reason for each suggestion.
 
 For exact request/response fields, see
 [`DesktopEngine.java`](src/main/java/forge/api/DesktopEngine.java) and the
-[real transport tests](../forge-desktop/tests/engine.test.cjs). New commands must
-also be added to the Electron host's allowlist.
+[real transport tests](../forge-desktop/tests/engine.test.cjs). Native integrations
+also update `Mana.Contracts` and the `Mana.Forge` adapter. Add a command to the
+Electron host's allowlist only when exposing it to that client; it does not expose
+every native workshop capability. Preserve scoped input and visibility tests when
+changing either boundary; see [contributing](../CONTRIBUTING.md) for validation gates.
 
 ## Game integration contract
 
@@ -252,11 +274,15 @@ game events can occur mid-transition; an observation revision is an invalidation
 signal, not a promise that a complete state is ready. Do not poll mutable views
 from a network/renderer thread. Cache and publish the immutable snapshot instead.
 
-Hidden zones publish counts and only cards Forge allows the viewer to see. Hidden
-cards publish no IDs or positional placeholders. Face-down cards are conservatively
-redacted, even for their controller; their IDs, type, mana cost and power/toughness
-are null. `MatchSession` issues scoped handles for selecting these objects instead
-of exposing their underlying card IDs. The original `GameStateMapper` excludes stack
+Hidden zones publish counts and only cards Forge allows the viewer to see. Unseen
+hand/library cards receive no persistent correlation IDs or positional placeholders.
+`GameStateMapper` redacts face-down identity, type, mana cost and power/toughness,
+even for the controller. Ordinary `MatchSession` cards likewise mask the printed
+face and current type/P/T in this baseline; anonymous battlefield occurrences can
+retain an opaque `combatId`. Allocation snapshots of anonymous battlefield cards
+include public current characteristics while masking name, text, mana and alternate identities.
+Scoped selection keys authorize input; presentation IDs do not. The original
+`GameStateMapper` excludes stack
 entries, combat assignments, attachments, counters, mana pools, temporary reveal
 prompts, face-down controller previews, and spectator sessions. Never serialize
 `Game`, `CardView`, alternate states, raw events, or logs directly to a client.
@@ -324,10 +350,14 @@ Replies complete that future directly; controller input runs on the dedicated
 UI executor. This avoids queuing replies behind the blocked game thread. Engine
 state is projected at input boundaries, never read live by the IPC request loop.
 
-`activity` retains the latest 120 public event summaries with increasing IDs,
-turn/phase, kind, actor or affected player, and a message. It copies an allowlist
-at event emission; raw engine logs and spell descriptions are never exported.
-Library-to-hand events omit the card identity. During `resolving`, polling may
+`activity` retains the latest 120 viewer-filtered event summaries with increasing
+IDs, turn/phase, kind, actor or affected player, and a message. Permitted resolution
+details copy the engine's stack description and visible spell text; raw event
+objects and logs are never exported. In this baseline, `kind: resolved` also covers
+non-resolution: retain its actual message instead of assuming success. The legacy
+`draw` kind means a library-to-hand move, which may be a tutor rather than a rules
+draw, and omits the card identity. There is no explicit public shuffle summary yet.
+During `resolving`, polling may
 advance `revision`, turn/phase metadata, and activity while keeping the last stable
 board. `boardRevision` changes only when a fresh board snapshot is published.
 Clients can update status and history without rebuilding cards during AI work.
@@ -381,6 +411,13 @@ Undo publish a new snapshot revision while preserving the board revision and
 current decision. A setting never overrides Full control, Hold, phase stops,
 or a required choice. Missing ability arrays mean no available preference controls.
 
+Some priority abilities also publish `eligibleHandKeys` and `handPlacementLimit`.
+Use `matchAction {action: "useHandPlacement", sessionId, promptId, abilityId, handKey}`
+for that exact available route. The host rechecks the ability and hand occurrence,
+then follows its normal activation, response window and later selection. This is
+not an extra ordinary land play or permission inferred from card text. See
+[`HandPlacements`](../forge-gui/src/main/java/forge/player/HandPlacements.java).
+
 Local and remote seats use this same permission, prompt and action path. Controller
 actions run on the input executor, outside the snapshot lock and request loop.
 An in-flight action hides its consumed prompt, while nested ability/color dialogs
@@ -413,6 +450,16 @@ permission to play it; use its current `selectable` state and the engine's norma
 card action. Visibility is recomputed for local and network viewers, including
 after draws and when the granting permanent leaves. Opaque local visual handles
 are forgotten after visibility revocation, hidden-zone moves, and shuffles.
+
+Allocation prompts describe `allocationKind` (`combat` or `generic`), a localized
+`amountLabel`, source and recipient snapshots, and optional public occurrence or
+player/controller links. Each choice retains its original `index`, prompt-scoped
+`id`, `minimum`, `maximum`, and any engine-supplied `lethal`/`isDefender` constraint.
+Combat may expose `overrideOrder` and `maySkip`. Return `values` in the original
+choice order; skip only when offered. Generic allocations also cover counters and
+other amounts. Do not guess lethal damage, reorder recipients, or turn presentation
+links into action keys. See `describeAllocation` and `validateDialog` in
+[`MatchSession`](src/main/java/forge/api/MatchSession.java).
 
 Input prompts may include `sourceCard` and `sourceZone` for the card associated
 with a target, payment, or other engine instruction. A `playAbility` choice also

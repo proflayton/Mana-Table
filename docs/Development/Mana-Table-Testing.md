@@ -1,11 +1,19 @@
 # Testing Mana Table
 
-Build the adapter first with `mvn -pl forge-api -am verify` from the repository
-root. Run npm commands below from `forge-desktop` after `npm ci`.
+The Windows x64 MonoGame client is the current player app. Run Maven and .NET
+commands from the repository root. Native development needs JDK 17, Maven and
+the .NET 9 SDK; CI also uses Node 24 for the shared engine tests. Electron is a
+separate client: run its npm commands from `forge-desktop` after `npm ci`.
+See the [native development guide](../../mana-native/README.md) for a working
+client/engine bundle and isolated source runs.
 
 | Check | Command | What it covers |
 | --- | --- | --- |
 | Java compilation, style, tests and engine JAR | `mvn -pl forge-api -am verify` (root) | Adapter and required upstream modules |
+| Full Java test reactor | `mvn -U -B clean test` (root, once with JDK 17 and once with JDK 21) | The separate `Test build` workflow; broader than the focused adapter reactor |
+| Native client logic | `dotnet run --project mana-native/Mana.Client.Tests/Mana.Client.Tests.csproj -c Release` | Graphics-free client, contract, persistence and updater regressions |
+| Native UI test build | `dotnet build mana-native/Mana.Table.Tests/Mana.Table.Tests.csproj -c Release` | Builds the separate Windows GPU/input test executable; does not run its journeys |
+| Maintained documentation | `node forge-desktop/scripts/check-docs.cjs` (root), or `npm run check:docs` in `forge-desktop` | Local links and heading fragments; does not verify that prose, commands or feature claims are correct |
 | JavaScript syntax | `npm run check` | Host, renderer, tooling and test sources |
 | Fast unit tests | `npm run test:unit` | Phase guidance, external deck URL rules, runtime resolution |
 | Real-engine integration | `npm run test:engine` | Persistence/revisions, matches, Commander, multiplayer, presets, response availability |
@@ -13,11 +21,36 @@ root. Run npm commands below from `forge-desktop` after `npm ci`.
 | Complete UI suite | `npm run test:ui` | All `tests/*.spec.cjs` interaction scenarios |
 | Reusable encounter suite | `npm run test:encounters` | Shared automated scenarios, participant handoff, notes and failure artifacts |
 
+The npm rows exercise Electron or shared JavaScript services, not the native UI.
 `npm test` retains its existing meaning: the Playwright UI suite. It does not
 include the Node engine or unit suites. `test:engine` runs files serially because
 each starts a Java process with up to 2 GB of heap. The UI suite also uses one
 worker. These are integration tests with real resource scans; allow minutes for
-the larger suites and keep their timeouts meaningful.
+the larger suites and keep their timeouts meaningful. Do not replace a JAR while
+another build or test uses it; use verified immutable copies for overlapping runs.
+
+Native journeys use `--profile <fresh-directory>`; `FORGE_USER_DATA` applies to
+Electron. Native real-engine journeys also need `--engine-resources <package>/engine`
+and may use `--engine-jar <verified-matching-source.jar>`. See
+[native packaging](Mana-Table-Releases.md#build-a-native-installer-locally) to build
+the bundled resources. Controlled presentation fixtures do not prove Forge rules.
+
+Native test binaries are Windows GUI programs. Replace quoted angle-bracket
+placeholders below with actual paths. The `.exe` examples describe the test
+arguments; in PowerShell, wait for the process and check its exit code.
+For example, after building the test project:
+
+```powershell
+$test = (Resolve-Path 'mana-native/Mana.Table.Tests/bin/Release/net9.0-windows/Mana.Table.Tests.exe').Path
+$nativeProfile = Join-Path $env:TEMP ('mana-onboarding-' + [guid]::NewGuid().ToString('N'))
+$run = Start-Process -FilePath $test -ArgumentList @('--smoke-onboarding', '--profile', "`"$nativeProfile`"", '--size', '1280x720') -WindowStyle Hidden -PassThru -Wait
+if ($run.ExitCode -ne 0) { throw "Native onboarding failed: $($run.ExitCode)" }
+if (-not (Test-Path (Join-Path $nativeProfile 'onboarding-results.json'))) { throw 'Missing onboarding results' }
+```
+
+Keep the profile, results, diagnostics and captures on failure. Use a new profile
+for the next journey; a successful process exit without its expected result file
+is not sufficient evidence.
 
 Match pointer tests should follow the visible interaction: approach the hand
 from the table's bottom edge and hover an exposed card strip; approach a covered
@@ -31,7 +64,7 @@ keep real hit testing enabled instead of bypassing it with forced clicks.
 
 ```powershell
 dotnet build mana-native/Mana.Table.Tests/Mana.Table.Tests.csproj -c Release
-mana-native/Mana.Table.Tests/bin/Release/net9.0-windows/Mana.Table.Tests.exe --smoke-onboarding --profile <fresh-test-profile> --size 1280x720
+mana-native/Mana.Table.Tests/bin/Release/net9.0-windows/Mana.Table.Tests.exe --smoke-onboarding --profile '<fresh-test-profile>' --size 1280x720
 ```
 
 The first-session regression uses production input and hit testing with a
@@ -86,7 +119,7 @@ turns, source/control changes and game cleanup. Run these with
 
 ```powershell
 dotnet build mana-native/Mana.Table.Tests/Mana.Table.Tests.csproj -c Release
-mana-native/Mana.Table.Tests/bin/Release/net9.0-windows/Mana.Table.Tests.exe --smoke-lobby --engine-resources <package>/engine --profile <fresh-test-profile> --size 1280x720
+mana-native/Mana.Table.Tests/bin/Release/net9.0-windows/Mana.Table.Tests.exe --smoke-lobby --engine-resources '<package>/engine' --profile '<fresh-test-profile>' --size 1280x720
 ```
 
 `LobbySmoke` uses production pointer hit testing, the real deck builder and four
@@ -134,9 +167,9 @@ decisions, which ends the game instead of continuing with only AI players.
 Build `Mana.Table.Tests` as below, then run each mode with its own fresh profile:
 
 ```powershell
-mana-native/Mana.Table.Tests/bin/Release/net9.0-windows/Mana.Table.Tests.exe --smoke-workshop-adapter --engine-resources <package>/engine --engine-jar forge-api/target/forge-engine.jar --profile <adapter-test-profile>
-mana-native/Mana.Table.Tests/bin/Release/net9.0-windows/Mana.Table.Tests.exe --smoke-workshop --engine-resources <package>/engine --engine-jar forge-api/target/forge-engine.jar --profile <ui-test-profile> --size 1280x720
-mana-native/Mana.Table.Tests/bin/Release/net9.0-windows/Mana.Table.Tests.exe --smoke-deck-tuning --engine-resources <package>/engine --engine-jar forge-api/target/forge-engine.jar --profile <tuning-test-profile> --size 1280x900
+mana-native/Mana.Table.Tests/bin/Release/net9.0-windows/Mana.Table.Tests.exe --smoke-workshop-adapter --engine-resources '<package>/engine' --engine-jar forge-api/target/forge-engine.jar --profile '<adapter-test-profile>'
+mana-native/Mana.Table.Tests/bin/Release/net9.0-windows/Mana.Table.Tests.exe --smoke-workshop --engine-resources '<package>/engine' --engine-jar forge-api/target/forge-engine.jar --profile '<ui-test-profile>' --size 1280x720
+mana-native/Mana.Table.Tests/bin/Release/net9.0-windows/Mana.Table.Tests.exe --smoke-deck-tuning --engine-resources '<package>/engine' --engine-jar forge-api/target/forge-engine.jar --profile '<tuning-test-profile>' --size 1280x900
 ```
 
 The adapter mode uses real catalog and persisted documents to cover combined
@@ -202,7 +235,7 @@ when editing, and start a four-player AI game with the exact command zone.
 
 ```powershell
 dotnet build mana-native/Mana.Table.Tests/Mana.Table.Tests.csproj -c Release
-mana-native/Mana.Table.Tests/bin/Release/net9.0-windows/Mana.Table.Tests.exe --smoke-deck-building --engine-resources <package>/engine --engine-jar forge-api/target/forge-engine.jar --profile <test-profile>
+mana-native/Mana.Table.Tests/bin/Release/net9.0-windows/Mana.Table.Tests.exe --smoke-deck-building --engine-resources '<package>/engine' --engine-jar forge-api/target/forge-engine.jar --profile '<test-profile>'
 ```
 
 The test uses an isolated profile, disables router forwarding, and writes
@@ -235,7 +268,7 @@ Run the native adapter's real-game cleanup check after building the test project
 
 ```powershell
 dotnet build mana-native/Mana.Table.Tests/Mana.Table.Tests.csproj -c Release
-mana-native/Mana.Table.Tests/bin/Release/net9.0-windows/Mana.Table.Tests.exe --smoke-cleanup --engine-resources <package>/engine --engine-jar forge-api/target/forge-engine.jar --profile <test-profile>
+mana-native/Mana.Table.Tests/bin/Release/net9.0-windows/Mana.Table.Tests.exe --smoke-cleanup --engine-resources '<package>/engine' --engine-jar forge-api/target/forge-engine.jar --profile '<test-profile>'
 ```
 
 It plays with three Forge AI opponents and verifies the typed selection intent,
@@ -371,20 +404,26 @@ times and destroys it twice through real four-seat decisions, checking taxes on
 the stack, battlefield and command zone for every viewer. `EngineApiTest` also
 covers partner counts, owner versus controller, and concealed cards.
 
-The `card-states` presentation fixture includes counter stacks and granted combat
-abilities at all four seats. The card-reading smoke also exercises anonymous
-revealed faces, identical revealed names, library faces with no choice index,
-selection versus acknowledgement, visibility revocation, airborne hover and
-removal of flying/counters. It captures `05-revealed-hover`, `06-card-states`,
-`07-current-state` and `08-states-removed`. These are synthetic visual states;
-the renderer consumes the same counters and combat keywords supplied by Forge.
-The fixture also includes a phased-out Teferi's Isle at each seat. The same smoke
-checks floating land hit geometry, readable phasing details and return to the
-table after phasing in, with captures `09-phased-out-land` and `10-phased-in-land`.
+The reading, current-state and compact-selection journeys are separate so that
+each has a meaningful bounded deadline. Run all three at both `1000x740` and
+`1540x980`:
+
+| Mode | Result file | Journey deadline | Coverage |
+| --- | --- | --- | --- |
+| `--smoke-card-reading` | `reading-results.json` | 50 seconds | Enlarged cards, original hand-strip access, real click/drag edges, anonymous and identical revealed faces, library faces without choice indices, acknowledgement and visibility revocation |
+| `--smoke-card-states` | `card-states-results.json` | 30 seconds | Current counters/keywords, airborne hover, losing flying, phasing out/in and the same displayed occurrence returning to its table pose |
+| `--smoke-compact-selection` | `compact-selection-results.json` | 30 seconds | Selection/deselection collapse, neighboring readers, stationary suppression and slow hover handoff through real input |
+
+The `card-states` fixture includes counter stacks, granted combat abilities and a
+phased-out Teferi's Isle at every seat. State captures include `06-card-states`,
+`07-current-state`, `08-states-removed`, `09-phased-out-land` and `10-phased-in-land`.
+These are controlled visual states; the renderer consumes the same fields supplied
+by Forge, but the fixture does not establish the cards' actual rules outcomes.
 `PhasingSnapshotTest` exercises real four-seat Forge snapshots through the Isle's
 first phase-out, all three opponents' turns and its return and untap on turn five.
-The native release workflow requires both commander-tax and card-reading suites
-at 1000x740 and 1540x980 before publishing an installer.
+The native release workflow requires commander-tax and all three journeys at both
+sizes before publishing an installer. Use the workflow's current suite list as
+the executable inventory rather than copying an old total check count.
 
 `Mana.Table.Tests.exe --smoke-full-battlefield --profile <isolated-profile> --size 1000x740`
 checks the complete battlefield through actual native pointer input and GPU
@@ -414,9 +453,10 @@ Perspective checks cover all four seats, tapped/untapped projected corners and
 pointer polygons, projection round trips, depth scaling, local-seat drop bounds,
 and airborne motion with effects following the displayed pose. Run pointer tests
 at both 1280x720 and a letterboxed size such as 1200x900 after camera/layout edits.
-The dense fixture should keep side-seat creature stats visible and row paging
-accessible. Inspect an opening-hand real-engine capture as well as this dense
-fixture: opponents must read as seats around the same surface even with few cards.
+The dense fixture should keep side-seat creature stats and every battlefield
+occurrence reachable without battlefield paging. Inspect an opening-hand
+real-engine capture as well as this dense fixture: opponents must read as seats
+around the same surface even with few cards.
 
 When running from a build output instead of a package, add
 `--engine-resources <package/engine>`; tests may also use `--engine-jar <new-adapter.jar>`. In PowerShell, use `Start-Process -Wait
@@ -499,6 +539,16 @@ npm run test:ui -- --output=test-results/my-change --reporter=line tests/match.s
 
 ## Packaged verification
 
+For native packages, the [Windows workflow](../../.github/workflows/mana-table-native-release.yml)
+runs `Mana.Client.Tests`, then `Mana.Table.Tests` against the newly packaged engine
+with isolated profiles. It also tests the packaged client through the real
+installer lifecycle and updater handoff. `--engine-resources` selects a native
+package's engine; the Electron `MANA_TEST_*` variables below do not select a native
+executable. Review `build.json`, engine hash, result files and installer evidence
+together. Building a package alone does not run these checks.
+
+The remaining commands in this section apply to Electron packages.
+
 The desktop test launcher seeds **Full control** in its isolated profile so
 encounters retain deterministic response pauses. Pass `preferences: null` to
 `launchDesktop` to exercise production defaults, or supply a preference object.
@@ -546,7 +596,8 @@ right-click inspection, and concealed cards. It also checks populated GPU mip
 levels and multisample targets, and captures art-backed and offline text previews.
 Its test-only encoded image fixture exercises decoding and GPU mipmaps offline;
 a deliberately missing image still checks the rules-text fallback. Run at
-1280x720 and 1200x900 in isolated profiles. Results are written to
+1000x740 and 1540x980 in isolated profiles, alongside the separate state and
+compact-selection journeys described above. Results are written to
 `reading-results.json`. The real Forge
 `--smoke-ui-ai` verifies both a double-clicked land and a dragged land.
 
@@ -559,11 +610,33 @@ count cues, rematch cleanup, repeated polls, draw geometry, pointer attachment,
 and reduced-motion entrance timing. Run interaction checks at both 1280x720 and
 1200x900 to keep animated cards and controls usable across aspect ratios.
 
-The `Mana Table` workflow builds the focused Java reactor on Windows, checks
-JavaScript, runs unit and real-engine tests, then the UI smoke and encounter suites.
-Encounter artifacts are retained for 14 days. The full UI suite is a local/release
-check. Inherited Forge workflows remain separate and may
-also run. A local successful command does not mean a hosted CI run has completed.
+Keep a PR in draft until its exact final head has successful applicable checks:
+
+| Workflow | Required evidence |
+| --- | --- |
+| [Mana Table native Windows release](../../.github/workflows/mana-table-native-release.yml), `Verify and package Windows x64` | Windows JDK 17 focused `verify`, serial shared Node unit/engine tests, .NET client logic, native UI journeys, clean package and installer/updater tests |
+| [Mana Table](../../.github/workflows/mana-table.yml), `desktop` | Windows JDK 17 focused `verify`, npm setup/syntax/unit/engine tests, combat UI, desktop smoke and encounters |
+| [Test build](../../.github/workflows/test-build.yaml), `Test with Java 17` and `Test with Java 21` | Full clean Java tests on Linux with both JDKs, using Xvfb for GUI-dependent tests |
+| [iOS compatibility gate](../../.github/workflows/ios-compat-gate.yml), `iOS/MobiVM link audit` | Java transform/link audit when Java, Maven POMs, iOS sources or its workflow change; this does not build or test an installed iOS app |
+
+Native and desktop PR workflows run without path filters; iOS is path-filtered.
+`Test build` runs on every push and PR. Native push verification/publication is
+filtered to relevant paths on `master`; desktop and iOS push runs also have path
+filters. Push applicability is separate and can differ from the PR's aggregate
+diff. A missing required run, a pending run, or an earlier commit's success is not a pass.
+Record the exact head, completed run links, commands and artifact/source identity.
+After merging, the release workflow checks the actual `master` source again before
+publication; PR results do not substitute for those master runs.
+The native publication job is intentionally skipped on PRs; its Windows
+verification job must still pass.
+
+The desktop workflow runs the named smoke subset, not every `tests/*.spec.cjs`.
+The full Electron UI suite is an additional local/release-candidate check.
+Native evidence and encounters are retained for 14 days; the desktop failure
+artifact is retained for 7 days. Download relevant failure artifacts promptly.
+Native evidence includes result/observation/diagnostic/event JSON, captures and
+logs; Java failures include Surefire XML and rules-decision traces. Preserve the
+first failure and inspect its source/trace before retrying or changing a bound.
 
 Add regression tests for changed behavior, especially hidden information,
 persistence, stale prompts, and click/drag boundaries. Reuse existing scenarios

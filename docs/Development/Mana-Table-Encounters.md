@@ -1,8 +1,15 @@
 # Reusable encounters and UX playtests
 
+This guide describes the **Electron encounter runner**, not the current native
+MonoGame client. It remains useful for shared rules and Electron interaction
+regressions; its DOM captures do not establish native layout or input behavior.
+For native GPU/input journeys and the required CI gates, use the
+[testing guide](Mana-Table-Testing.md#ci-and-review).
+
 An encounter defines a deck, a starting checkpoint, participant tasks, automated
 UI actions, and objective outcome checks. Automation and human sessions use the
-same setup and checks. All play goes through the real engine and desktop UI.
+same setup and checks. All encounter play goes through the real engine and
+Electron UI; controlled native fixtures are a separate kind of test.
 
 The first encounter, **`land-play`**, covers playing a Forest, keeping priority,
 seeing the board/hand update, and tapping that land through the overlapping hand.
@@ -36,7 +43,10 @@ playthrough. This makes required actions reachable without seeding the engine.
 To exercise a packaged beta, add `--packaged` to the CLI command (or set
 `MANA_TEST_PACKAGED=1` for the Playwright suite). This
 uses `dist/latest-beta.json` and the bundled Java. `MANA_TEST_EXECUTABLE` selects
-a particular binary. Each run gets a disposable profile; no player decks or
+a particular **Electron** binary when packaged mode is unset. It does not accept
+`ManaTable.exe` or read `dist/latest-native.json`. For a clean Electron release,
+read `dist/latest-release.json`, set `MANA_TEST_EXECUTABLE` to its executable and
+leave `MANA_TEST_PACKAGED` unset. Each run gets a disposable profile; no player decks or
 active player sessions are used. Profiles remain under `test-results/` for diagnosis.
 
 ## Guided human sessions
@@ -79,7 +89,9 @@ Every run saves a directory containing:
 - `trace.zip`: UI operations and DOM snapshots. Checkpoint PNGs and optional
   video capture visuals without recording a second frame stream during pauses.
 - `desktop.log`: Electron diagnostics, including rejected engine calls. The raw
-  Java log stays in the disposable profile and is not included in CI artifacts.
+  Java `engine.log` stays in the disposable profile named by `report.profile`;
+  it is not copied into the encounter folder. The broader desktop failure
+  artifact can include that profile and its logs.
 
 For a video, install Playwright's recording dependency once if it is missing:
 
@@ -102,8 +114,9 @@ prove outcome assertions; those results and failures are in `report.json`.
 packaged app. Packaged runs also record the app archive and engine JAR hashes.
 Review observations, local paths, and artwork before sharing artifacts.
 
-The Windows CI workflow runs the encounter suite and retains its artifact folder
-for 14 days. Local CLI runs print their unique output path under
+The [Mana Table Windows workflow](../../.github/workflows/mana-table.yml) runs the
+encounter suite and retains its artifact folder for 14 days. It is separate from
+the native GPU/installer workflow. Local CLI runs print their unique output path under
 `forge-desktop/test-results/encounters`.
 
 ## Add another encounter
