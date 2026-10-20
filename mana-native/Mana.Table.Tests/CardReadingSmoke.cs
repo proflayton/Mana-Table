@@ -379,6 +379,7 @@ internal sealed class CardReadingSmoke : ITableAutomation
             Capture("failure");
             File.WriteAllText(Path.Combine(view.Profile, "failure.json"), JsonSerializer.Serialize(new { description, view.Now, view.Overlay, view.ZoneName,
                 hovered = view.Hovered?.VisualId, view.HoverPreview, hoveredPose = view.Hovered == null ? null : view.DisplayedPose(view.Hovered.VisualId),
+                stateCreaturePose = view.DisplayedPose("seat-0-1"), stateCreatureRest = StateCreatureRest(),
                 handPose = view.DisplayedPose("hand-3"), handPaintCount = view.CardPaintCount("hand-3"), point = new { mouse.X, mouse.Y }, replies = scenario.Replies.Count,
                 hits = view.Hits.Select(h => h.Id).ToArray() }, new JsonSerializerOptions { IncludeFields = true, WriteIndented = true }));
             throw new InvalidOperationException(description);
@@ -409,11 +410,15 @@ internal sealed class CardReadingSmoke : ITableAutomation
             left = mouse.LeftButton.ToString(), right = mouse.RightButton.ToString(),
             hovered = view.Hovered?.VisualId, view.HoverPreview,
             hoveredPose = view.Hovered == null ? null : view.DisplayedPose(view.Hovered.VisualId),
+            stateCreaturePose = view.DisplayedPose("seat-0-1"), stateCreatureRest = StateCreatureRest(),
             phasedLandPose = view.DisplayedPose("seat-0-0"),
             replies = scenario.Replies.ToArray() };
         File.WriteAllText(Path.Combine(view.Profile, ResultPrefix + "-timing-diagnostic.json"),
             JsonSerializer.Serialize(record, new JsonSerializerOptions { WriteIndented = true, IncludeFields = true }));
     }
+    private Pose? StateCreatureRest() => view.Match is { } state
+        ? TableScene.Build(state, new Dictionary<string, int>(), 0, new(-1, -1), null, null, false, CardPresentation.IsResource)
+            .Rank(0, false).Cards.FirstOrDefault(c => c.Id == "seat-0-1")?.Pose : null;
     public void Frame(Texture2D surface)
     {
         diagnosticFrames++;
