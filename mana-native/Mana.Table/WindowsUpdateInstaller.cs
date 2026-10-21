@@ -15,12 +15,13 @@ internal static class WindowsUpdateInstaller
 
     internal static Mutex EnterInstance()
     {
-        using var gate = new Mutex(false, UpdateGateName);
+        string name = ManagedInstallation.PackageId is { } id ? @"Local\ManaTableManaged-" + id : MutexName;
+        using var gate = new Mutex(false, name + "-UpdateGate");
         bool acquired;
         try { acquired = gate.WaitOne(0); }
         catch (AbandonedMutexException) { acquired = true; }
         if (!acquired) throw new IOException("Mana Table is updating. Setup will reopen the game when it finishes.");
-        try { return new Mutex(false, MutexName); }
+        try { return new Mutex(false, name); }
         finally { gate.ReleaseMutex(); }
     }
 

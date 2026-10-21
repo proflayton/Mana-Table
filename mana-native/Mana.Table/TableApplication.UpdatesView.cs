@@ -6,9 +6,11 @@ namespace Mana.Table;
 internal sealed partial class TableApplication
 {
     private static string UpdateSize(long bytes) => bytes < 1_048_576 ? $"{bytes / 1024d:N0} KB" : $"{bytes / 1_048_576d:N1} MB";
-    private string UpdateStatus => updateDownloading ? "Downloading update" : preparedUpdate != null ? "Update ready"
+    private bool PreparingUpdate => updateDownloading && updateStage == Mana.Client.UpdatePreparationStage.Preparing;
+    private string UpdateStatus => PreparingUpdate ? "Preparing update" : updateDownloading ? "Downloading update" : preparedUpdate != null ? "Update ready"
         : availableUpdate != null ? "Update " + availableUpdate.Version + " available" : updateChecking ? "Checking updates..."
-        : updateError.Length > 0 ? "Update check needs attention" : updateChecked ? "Up to date" : "";
+        : updateError.Length > 0 ? "Update check needs attention" : updateNotice.StartsWith("Updated to ", StringComparison.Ordinal) ? updateNotice
+        : updateChecked ? "Up to date" : "";
     private void DrawUpdateFooter(bool home)
     {
         int x = home ? 90 : 48;
@@ -29,27 +31,32 @@ internal sealed partial class TableApplication
         canvas.Text("CURRENT VERSION", 228, top + 108, Gold, .68f, 700, 1, true);
         canvas.Text(CurrentAppVersion, 228, top + 140, Ink, 1.08f, 1040, 1, true);
         bool supported = appUpdates?.Build.CanCheck == true;
-        string title = !supported ? "Get a packaged release" : updateValidating ? "Checking your installer again..."
-            : updateDownloading ? "Downloading version " + availableUpdate?.Version
+        string title = !supported ? "Get a packaged release" : updateValidating ? "Checking the prepared update..."
+            : PreparingUpdate ? "Preparing version " + availableUpdate?.Version
+            : updateDownloading ? (updateFullFallback ? "Downloading the complete update" : "Downloading version " + availableUpdate?.Version)
             : preparedUpdate != null ? "Version " + preparedUpdate.Release.Version + " is verified and ready"
             : updateChecking ? "Checking for a newer release..."
             : availableUpdate != null ? "Version " + availableUpdate.Version + " is available"
             : updateChecked ? "You're up to date" : "Choose when to update";
         canvas.Text(title, 228, top + 203, Ink, 1.2f, 1115, 2, true);
         string detail = !supported ? "Development builds use manual updates. Get the installer or portable download from the releases page."
-            : updateDownloading ? "You can close this panel and keep building or playing. The download continues in the background."
-            : preparedUpdate != null && installUpdate != null ? "Install and restart closes Mana Table while Setup updates and reopens it. Your decks and settings are preserved."
+            : PreparingUpdate ? "The download is complete. Preparing and checking the updated files. You can close this panel and keep building or playing."
+            : updateDownloading ? updateFullFallback ? "The smaller patch could not be used. Downloading the complete update instead; you can keep building or playing."
+                : "You can close this panel and keep building or playing. The download continues in the background."
+            : preparedUpdate != null && installUpdate != null ? "Your update is prepared. Restart when you're ready. Mana Table will reopen with your decks and settings."
             : preparedUpdate != null ? "This is a portable copy. Use the releases page to replace your portable folder, or install a separate copy."
             : updateChecking ? "Your table and deck work stay available while the release check runs."
             : "Download when it suits you. Installation starts only after you choose it and leave any active game or friends table.";
         canvas.Text(detail, 229, top + 276, Muted, .85f, 1108, 3);
-        if (availableUpdate != null && !updateDownloading) canvas.Text("Installer download: " + UpdateSize(availableUpdate.SizeBytes), 229, top + 366, Muted, .79f, 1100, 1);
+        if (availableUpdate != null && !updateDownloading) canvas.Text((availableUpdate.UsesDelta ? "Smaller update: " : "Update download: ")
+            + UpdateSize(availableUpdate.SizeBytes), 229, top + 366, Muted, .79f, 1100, 1);
         if (updateDownloading) {
             long total = Math.Max(0, updateTotal);
             float fraction = total == 0 ? 0 : Math.Clamp(updateBytes / (float)total, 0, 1);
             canvas.Rounded(new(228, top + 369, 1145, 18), new(12, 22, 32), 8);
             if (fraction > 0) canvas.Rounded(new(228, top + 369, Math.Max(2, (int)(1145 * fraction)), 18), Blue, 8);
-            canvas.Text(UpdateSize(updateBytes) + " / " + (total > 0 ? UpdateSize(total) + $"  ({fraction:P0})" : "waiting for total size"), 229, top + 409, Ink, .85f, 1100, 1);
+            canvas.Text(PreparingUpdate ? "Download complete · Preparing your update..." : UpdateSize(updateBytes) + " / "
+                + (total > 0 ? UpdateSize(total) + $"  ({fraction:P0})" : "waiting for total size"), 229, top + 409, Ink, .85f, 1100, 1);
         }
         string blocker = preparedUpdate != null && installUpdate != null ? UpdateInstallBlocker() : "";
         string feedback = updateError.Length > 0 ? updateError : blocker.Length > 0 ? blocker : updateNotice;
@@ -59,9 +66,9 @@ internal sealed partial class TableApplication
             canvas.Text("Downloaded installer: " + preparedUpdate.InstallerPath, 229, top + 514, Muted, .67f, 1110, 2);
         }
         int buttons = top + 564;
-        if (updateDownloading) Button("updates-cancel", updateDownloadCancellation?.IsCancellationRequested == true ? "Cancelling..." : "Cancel download", 228, buttons, 320,
+        if (updateDownloading) Button("updates-cancel", updateDownloadCancellation?.IsCancellationRequested == true ? "Cancelling..." : PreparingUpdate ? "Cancel preparation" : "Cancel download", 228, buttons, 320,
             CancelAppUpdateDownload, updateDownloadCancellation?.IsCancellationRequested == false, height: 46);
-        else if (preparedUpdate != null && installUpdate != null) Button("updates-install", updateValidating ? "Verifying installer..." : "Install and restart", 228, buttons, 410,
+        else if (preparedUpdate != null && installUpdate != null) Button("updates-install", updateValidating ? "Verifying update..." : "Restart to update", 228, buttons, 410,
             InstallAppUpdate, !updateValidating && blocker.Length == 0, true, 46);
         else if (preparedUpdate != null) Button("updates-folder", "Open download folder", 228, buttons, 360, () => OpenUpdateLocation(true), height: 46);
         else if (availableUpdate != null) Button("updates-download", updateError.Length > 0 ? "Retry download" : "Download update", 228, buttons, 360,

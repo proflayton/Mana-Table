@@ -10,10 +10,13 @@ internal sealed partial class TableApplication
     private static readonly Uri AppReleasesPage = new("https://github.com/proflayton/Mana-Table/releases");
     private bool updatesOpen, updateAutoChecked, updateChecking, updateDownloading, updateValidating, updateInstallerLaunched;
     private bool updateChecked, updateInstallDeferred;
+    private bool updateRestartAcknowledged;
     private string updateError = "", updateNotice = "";
     private AppRelease? availableUpdate;
     private PreparedUpdate? preparedUpdate;
     private long updateBytes, updateTotal;
+    private UpdatePreparationStage updateStage;
+    private bool updateFullFallback;
     private int updateCheckGeneration, updateDownloadGeneration, updateModalGeneration;
     private CancellationTokenSource? updateCheckCancellation, updateDownloadCancellation;
     private readonly object updateCompletionGate = new();
@@ -34,6 +37,10 @@ internal sealed partial class TableApplication
     {
         if (updateInstallDeferred && UpdateInstallBlocker().Length == 0) { updateNotice = ""; updateInstallDeferred = false; }
         if (!updateAutoChecked && AutomaticUpdateCheckAllowed) { updateAutoChecked = true; CheckAppUpdates(); }
+        if (!updateRestartAcknowledged && ManagedInstallation.WasRestarted && loaded && !StartupVisible && appUpdates?.Build.CanCheck == true) {
+            updateRestartAcknowledged = true;
+            updateNotice = "Updated to " + CurrentAppVersion + ".";
+        }
     }
     private void LoadUpdatePreferences()
     {
@@ -65,10 +72,12 @@ internal sealed partial class TableApplication
         _ = Task.Run(async () => {
             try {
                 var release = await service.CheckAsync(token);
+                var recovered = release == null ? null : await service.GetPreparedAsync(release, token);
                 PostUpdateCompletion(() => {
                     if (closing || generation != updateCheckGeneration) return;
                     availableUpdate = release; updateChecked = true; updateChecking = false; updateModalGeneration++;
-                    if (preparedUpdate?.Release != release) preparedUpdate = null;
+                    if (recovered != null) preparedUpdate = recovered;
+                    else if (preparedUpdate?.Release != release) preparedUpdate = null;
                 });
             } catch (OperationCanceledException) when (token.IsCancellationRequested) {
                 PostUpdateCompletion(() => { if (generation == updateCheckGeneration) updateChecking = false; });
@@ -87,10 +96,10 @@ internal sealed partial class TableApplication
         updateDownloadCancellation?.Dispose(); updateDownloadCancellation = new();
         var token = updateDownloadCancellation.Token;
         updateDownloading = true; preparedUpdate = null; updateError = updateNotice = "";
-        updateBytes = 0; updateTotal = release.SizeBytes; updateModalGeneration++;
+        updateBytes = 0; updateTotal = release.SizeBytes; updateStage = UpdatePreparationStage.Downloading; updateFullFallback = false; updateModalGeneration++;
         var progress = new Progress<UpdateDownloadProgress>(value => PostUpdateCompletion(() => {
             if (closing || generation != updateDownloadGeneration || !updateDownloading) return;
-            updateBytes = value.BytesReceived; updateTotal = value.TotalBytes;
+            updateBytes = value.BytesReceived; updateTotal = value.TotalBytes; updateStage = value.Stage; updateFullFallback = value.FullFallback;
         }));
         _ = Task.Run(async () => {
             try {
@@ -99,12 +108,12 @@ internal sealed partial class TableApplication
                 PostUpdateCompletion(() => {
                     if (closing || generation != updateDownloadGeneration) return;
                     preparedUpdate = ready; updateDownloading = false; updateModalGeneration++;
-                    updateBytes = updateTotal = release.SizeBytes;
+                    updateStage = UpdatePreparationStage.Ready;
                 });
             } catch (OperationCanceledException) when (token.IsCancellationRequested) {
                 PostUpdateCompletion(() => {
                     if (closing || generation != updateDownloadGeneration) return;
-                    updateDownloading = false; updateNotice = "Download cancelled. Download again whenever you're ready."; updateModalGeneration++;
+                    updateDownloading = false; updateNotice = "Update cancelled. Download again whenever you're ready."; updateModalGeneration++;
                 });
             } catch (Exception ex) {
                 PostUpdateCompletion(() => {
@@ -117,17 +126,17 @@ internal sealed partial class TableApplication
     private void CancelAppUpdateDownload()
     {
         if (!updateDownloading || updateDownloadCancellation?.IsCancellationRequested != false) return;
-        updateNotice = "Cancelling download..."; updateDownloadCancellation.Cancel();
+        updateNotice = "Cancelling update..."; updateDownloadCancellation.Cancel();
     }
     private string UpdateInstallBlocker()
     {
-        if (match != null) return "Return to setup from your game before installing. Your download is ready.";
-        if (Connected) return "Leave your friends table before installing. Your download is ready.";
-        if (!loaded || busy || ActivityOpen) return "Wait for the current action to finish before installing.";
-        if (selectedDeckDetails?.SaveError.Length > 0) return "Save your deck successfully in Build before installing.";
+        if (match != null) return "Return to setup from your game before updating. Your update is ready.";
+        if (Connected) return "Leave your friends table before updating. Your update is ready.";
+        if (!loaded || busy || ActivityOpen) return "Wait for the current action to finish before updating.";
+        if (selectedDeckDetails?.SaveError.Length > 0) return "Save your deck successfully in Build before updating.";
         if (dragging || textFocus || chatFocus || chatOpen && chatDraft.Length > 0 || setupModal.Length > 0)
-            return "Finish or close your current input before installing.";
-        if (CaptureMode) return "Finish the current capture before installing.";
+            return "Finish or close your current input before updating.";
+        if (CaptureMode) return "Finish the current capture before updating.";
         return "";
     }
     private void InstallAppUpdate()
@@ -146,13 +155,13 @@ internal sealed partial class TableApplication
                     if (changed.Length > 0) { updateNotice = changed; updateInstallDeferred = true; return; }
                     try {
                         installUpdate(ready); updateInstallerLaunched = true; RequestExit();
-                    } catch (Exception ex) { updateError = "Couldn't start the installer. " + ex.Message; }
+                    } catch (Exception ex) { updateError = "Couldn't start the update. " + ex.Message; }
                 });
             } catch (Exception ex) {
                 PostUpdateCompletion(() => {
                     if (closing) return;
                     updateValidating = false; preparedUpdate = null; updateModalGeneration++;
-                    updateError = "The downloaded installer could not be verified. Download it again. " + ex.Message;
+                    updateError = "The prepared update could not be verified. Download it again. " + ex.Message;
                 });
             }
         });

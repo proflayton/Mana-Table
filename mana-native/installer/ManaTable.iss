@@ -3,6 +3,11 @@
 #ifndef PackageDirectory
   #error PackageDirectory is required
 #endif
+#ifdef ManagedSetupPath
+  #ifndef ManagedInstallDirectory
+    #define ManagedInstallDirectory "{localappdata}\ManaTable"
+  #endif
+#endif
 #ifndef PackageVersion
   #error PackageVersion is required
 #endif
@@ -58,6 +63,10 @@ WizardStyle=modern
 UninstallDisplayName={#InstallerAppName}
 UninstallDisplayIcon={app}\ManaTable.exe
 UninstallLogMode=append
+#ifdef ManagedSetupPath
+Uninstallable=no
+CreateAppDir=no
+#endif
 CloseApplications=yes
 RestartApplications=no
 AppMutex={#InstallerAppMutex}
@@ -71,15 +80,23 @@ SetupLogging=yes
 Name: desktopicon; Description: "Create a desktop shortcut"; GroupDescription: "Shortcuts:"
 
 [Files]
+#ifdef ManagedSetupPath
+Source: "{#ManagedSetupPath}"; DestDir: "{tmp}"; DestName: "ManaTable-Managed-Setup.exe"; Flags: ignoreversion deleteafterinstall
+#else
 Source: "{#PackageDirectory}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
+#endif
 
 [Icons]
+#ifndef ManagedSetupPath
 Name: "{group}\Mana Table"; Filename: "{app}\ManaTable.exe"; WorkingDir: "{app}"
 Name: "{autodesktop}\Mana Table"; Filename: "{app}\ManaTable.exe"; WorkingDir: "{app}"; Tasks: desktopicon
+#endif
 
 [Run]
+#ifndef ManagedSetupPath
 Filename: "{app}\ManaTable.exe"; WorkingDir: "{app}"; Flags: nowait skipifsilent; Check: IsNormalInstall
 Filename: "{app}\ManaTable.exe"; Parameters: "{code:UpdateRestartParameters}"; WorkingDir: "{app}"; Flags: nowait; Check: ShouldRestartAfterUpdate; BeforeInstall: ReleaseUpdateGate
+#endif
 
 [Code]
 const
@@ -97,6 +114,11 @@ var
   UpdateProfile: String;
   UpdateGate: THandle;
   UpdateGateOwned: Boolean;
+#ifdef ManagedSetupPath
+  ManagedGate: THandle;
+  ManagedGateOwned: Boolean;
+  MigrationCompleted: Boolean;
+#endif
 
 function OpenProcess(DesiredAccess: LongWord; InheritHandle: LongWord; ProcessId: LongWord): THandle;
   external 'OpenProcess@kernel32.dll stdcall';
@@ -111,6 +133,14 @@ function ReleaseMutexForUpdate(Handle: THandle): LongWord;
 
 procedure ReleaseUpdateGate;
 begin
+#ifdef ManagedSetupPath
+  if ManagedGate <> 0 then begin
+    if ManagedGateOwned then ReleaseMutexForUpdate(ManagedGate);
+    CloseHandle(ManagedGate);
+    ManagedGate := 0;
+    ManagedGateOwned := False;
+  end;
+#endif
   if UpdateGate <> 0 then begin
     if UpdateGateOwned then ReleaseMutexForUpdate(UpdateGate);
     CloseHandle(UpdateGate);
@@ -303,8 +333,10 @@ begin
   Result := '';
   if not IsUpdateInstall then Exit;
   Result := UpdateTargetProblem;
+#ifndef ManagedSetupPath
   if (Result = '') and (CompareText(NormalizedPath(WizardDirValue), UpdateDirectory) <> 0) then
     Result := 'The update destination changed after verification. No application files were changed.';
+#endif
   if (Result = '') and CheckForMutexes('{#InstallerAppMutex}') then
     Result := 'Another Mana Table window opened. Close every Mana Table window, then try again.';
   if Result <> '' then begin
@@ -344,6 +376,122 @@ begin
   { Desktop shortcuts default on; /TASKS= or /MERGETASKS=!desktopicon can opt out. }
   Result := PageID = wpSelectTasks;
 end;
+
+#ifdef ManagedSetupPath
+function QuoteMigrationPath(Value: String): String;
+var
+  I: Integer;
+begin
+  if not IsAbsoluteUnquotedPath(Value) then RaiseException('Invalid installation path.');
+  I := Length(Value);
+  while (I > 0) and (Value[I] = '\') do begin
+    Value := Value + '\';
+    I := I - 1;
+  end;
+  Result := '"' + Value + '"';
+end;
+
+procedure RequireMigrationProcess(const FileName, Arguments, Directory: String; const Step: String);
+var
+  ExitCode: Integer;
+begin
+  Log('Mana Table migration: ' + Step);
+  if not Exec(FileName, Arguments, Directory, SW_HIDE, ewWaitUntilTerminated, ExitCode) then
+    RaiseException('Could not start ' + Step + '. Your previous Mana Table installation is retained.');
+  if ExitCode <> 0 then
+    RaiseException(Step + ' failed (' + IntToStr(ExitCode) + '). Your previous installation has not been removed unless its own uninstall completed.');
+end;
+
+procedure ProtectManagedInstall;
+var
+  WaitResult: LongWord;
+begin
+  if CheckForMutexes('Local\ManaTableManaged-{#ManagedPackageId}') then
+    RaiseException('Close every Mana Table window before running Setup.');
+  ManagedGate := CreateMutexForUpdate(0, 0, 'Local\ManaTableManaged-{#ManagedPackageId}-UpdateGate');
+  if ManagedGate = 0 then RaiseException('Could not protect the managed installation.');
+  WaitResult := WaitForSingleObject(ManagedGate, 0);
+  ManagedGateOwned := (WaitResult = WaitObjectSignaled) or (WaitResult = WaitAbandoned);
+  if not ManagedGateOwned then RaiseException('Another managed Mana Table update is running.');
+  if CheckForMutexes('Local\ManaTableManaged-{#ManagedPackageId}') then
+    RaiseException('Another Mana Table window opened. Close it and try Setup again.');
+end;
+
+procedure MigrateManagedInstallation;
+var
+  ManagedRoot, Main, Setup, Profile, LegacyRoot, Uninstaller, RegisteredUninstaller, Args, Receipt: String;
+  HasLegacy, DesktopShortcut: Boolean;
+  WaitResult: LongWord;
+  ExitCode: Integer;
+begin
+  ManagedRoot := NormalizedPath(ExpandConstant('{#ManagedInstallDirectory}'));
+  Main := AddBackslash(ManagedRoot) + 'current\ManaTable.exe';
+  Setup := ExpandConstant('{tmp}\ManaTable-Managed-Setup.exe');
+  Profile := UpdateProfile;
+  if Profile = '' then Profile := ExpandConstant('{localappdata}\ManaTableNative');
+  Profile := NormalizedPath(Profile);
+  HasLegacy := RegQueryStringValue(HKCU64, UpdateRegistryKey, 'InstallLocation', LegacyRoot);
+  if HasLegacy then begin
+    if not IsAbsoluteUnquotedPath(LegacyRoot) then RaiseException('The legacy install location is invalid.');
+    LegacyRoot := NormalizedPath(LegacyRoot);
+    if (CompareText(LegacyRoot, ManagedRoot) = 0) or
+      (Pos(UpperCase(AddBackslash(LegacyRoot)), UpperCase(AddBackslash(ManagedRoot))) = 1) or
+      (Pos(UpperCase(AddBackslash(ManagedRoot)), UpperCase(AddBackslash(LegacyRoot))) = 1) then
+      RaiseException('The managed application must live outside the legacy installation.');
+    if IsUpdateInstall and (CompareText(LegacyRoot, UpdateDirectory) <> 0) then
+      RaiseException('The legacy registration changed during the update.');
+    Uninstaller := AddBackslash(LegacyRoot) + 'unins000.exe';
+    if not RegQueryStringValue(HKCU64, UpdateRegistryKey, 'UninstallString', RegisteredUninstaller) or
+      (CompareText(RemoveQuotes(RegisteredUninstaller), Uninstaller) <> 0) or not FileExists(Uninstaller) then
+      RaiseException('The legacy uninstaller could not be verified. Your existing installation is retained.');
+    if UpdateGate = 0 then begin
+      UpdateGate := CreateMutexForUpdate(0, 0, '{#InstallerAppMutex}-UpdateGate');
+      if UpdateGate = 0 then RaiseException('Could not protect the existing installation.');
+      WaitResult := WaitForSingleObject(UpdateGate, 0);
+      UpdateGateOwned := (WaitResult = WaitObjectSignaled) or (WaitResult = WaitAbandoned);
+      if not UpdateGateOwned then RaiseException('Another legacy update is running.');
+    end;
+    if CheckForMutexes('{#InstallerAppMutex}') then RaiseException('Close every existing Mana Table window first.');
+  end;
+  ProtectManagedInstall;
+  DesktopShortcut := FileExists(ExpandConstant('{userdesktop}\Mana Table.lnk')) or (not HasLegacy and WizardIsTaskSelected('desktopicon'));
+  if CompareText(GetSHA256OfFile(Setup), '{#ManagedSetupSha256}') <> 0 then RaiseException('The managed Setup checksum changed.');
+  RequireMigrationProcess(Setup, '--silent --installto ' + QuoteMigrationPath(ManagedRoot), ExpandConstant('{tmp}'), 'Install the managed application');
+  if not FileExists(Main) then RaiseException('The new managed application was not installed. The previous app is retained.');
+  Args := '--profile ' + QuoteMigrationPath(Profile) + ' --managed-root ' + QuoteMigrationPath(ManagedRoot) +
+    ' --expected-package-id {#ManagedPackageId} --expected-version {#PackageVersion} --expected-source {#PackageSourceRevision}';
+  Receipt := AddBackslash(Profile) + 'updates\migration-health-{#PackageVersion}.json';
+  RequireMigrationProcess(Main, '--installation-health ' + Args + ' --health-receipt ' + QuoteMigrationPath(Receipt), ManagedRoot,
+    'Verify the new application and bundled Forge engine');
+  if not FileExists(Receipt) then RaiseException('The new application did not acknowledge its health check.');
+  Log('Mana Table migration: new app and Forge health passed; legacy cleanup may begin.');
+  if HasLegacy then begin
+    RequireMigrationProcess(Uninstaller, '/VERYSILENT /SUPPRESSMSGBOXES /NORESTART', ExpandConstant('{tmp}'), 'Remove the legacy predecessor after health passes');
+    if RegKeyExists(HKCU64, UpdateRegistryKey) then RaiseException('Legacy cleanup did not finish. Reopen Setup to retry.');
+  end;
+  if DesktopShortcut then Args := Args + ' --desktop-shortcut';
+  RequireMigrationProcess(Main, '--installation-shortcuts ' + Args, ManagedRoot, 'Recreate managed application shortcuts');
+  ReleaseUpdateGate;
+  if not HasSwitch('/NORUN') then begin
+    if not Exec(Main, '--profile ' + QuoteMigrationPath(Profile), ManagedRoot, SW_SHOWNORMAL, ewNoWait, ExitCode) then
+      RaiseException('The update is installed. Open Mana Table from its shortcut.');
+  end;
+  Log('Mana Table migration: complete; player profile retained at ' + Profile);
+  MigrationCompleted := True;
+end;
+
+procedure CurStepChanged(CurStep: TSetupStep);
+begin
+  if CurStep = ssPostInstall then MigrateManagedInstallation;
+end;
+
+function GetCustomSetupExitCode: Integer;
+begin
+  { Inno logs ssPostInstall exceptions but otherwise returns success. The
+    canonical updater must never acknowledge a failed health/migration step. }
+  if MigrationCompleted then Result := 0 else Result := 1;
+end;
+#endif
 
 { Profiles live in LocalAppData\ManaTableNative. They are deliberately absent
   from Files, Registry, InstallDelete, and UninstallDelete, including upgrades. }
