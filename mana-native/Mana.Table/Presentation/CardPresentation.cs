@@ -9,7 +9,7 @@ namespace Mana.Table.Presentation;
 
 /// <summary>The current authority and interaction policy used to prepare cards.</summary>
 internal sealed record CardPresentationContext(GameSnapshot? State, string Scope,
-    bool OverlayOpen, bool GalleryOpen, bool Dragging, bool CompactDecision)
+    bool OverlayOpen, bool GalleryOpen, bool Dragging, bool CompactDecision, bool AbilityChoice = false)
 {
     public Card? ChoiceFace(int slot) => State?.Decision is { } decision
         ? decision.LibraryCards.Length > 0 ? decision.LibraryCards.ElementAtOrDefault(slot)?.Card
@@ -18,9 +18,12 @@ internal sealed record CardPresentationContext(GameSnapshot? State, string Scope
 
     public bool CanRead(PresentedCard entry)
     {
-        if (entry.Request.ChoiceSlot < 0)
-            return !OverlayOpen && State != null && CardViews.Visible(State)
-                .Any(card => CardViews.Same(card, entry.Card) && !card.FaceDown);
+        if (entry.Request.ChoiceSlot < 0) {
+            if (OverlayOpen || State == null) return false;
+            var visible = AbilityChoice ? State.Players.SelectMany(player => player.Zones).SelectMany(zone => zone.Cards)
+                : CardViews.Visible(State);
+            return visible.Any(card => CardViews.Same(card, entry.Card) && !card.FaceDown);
+        }
         // Anonymous revealed faces belong to an original slot in one decision.
         // Neither their name nor a retained visual id can extend that authority.
         return GalleryOpen && entry.Hit.Scope == Scope

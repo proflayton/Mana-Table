@@ -495,17 +495,21 @@ line reports the count, order requirement and selected total without a repeated
 click tutorial. Gallery faces remain anonymous, and library searches, private
 reveals and non-card
 choices retain their chooser.
-Selecting a gallery face retains its compact geometry. Required decisions also
+Selecting a gallery face retains its compact geometry. Card selection decisions
 collapse an existing reader so it cannot intercept the next adjacent choice.
 Selection uses the original prompt-scoped index, independently of names and reflow.
 
-`TableApplication.AbilityChoices` gives small single-select `playAbility` prompts
-a compact source-card panel. This engine context includes abilities and casting
-modes. Complete measured text, costs and source state must fit before the panel
-replaces gallery drawing and input; otherwise the existing chooser handles it.
-Source inspection preserves the draft. Confirmation submits the original option
-index, and optional Cancel submits an empty choice. Required choices have no
-cancel action. Outside clicks and View battlefield never answer the prompt.
+`TableApplication.AbilityChoices` presents single-select `playAbility` actions
+beside the actual source occurrence. This engine context includes abilities and
+casting modes. Pending engine input is separate from visual overlays: the table
+and source reader stay available while unrelated gameplay commands are blocked.
+An explicit action click submits its original index; optional Cancel submits an
+empty choice. Inspection and outside clicks never answer the prompt. The source
+must be currently disclosed before its board position is used; an embedded
+historical source alone cannot establish a live board anchor.
+If that occurrence is not displayed, actions use its current zone or controller
+as context. Opening an ability does not manufacture a stack copy. Choosing the
+action collapses the reader so the engine's resulting board state is visible.
 
 `TableApplication.Allocation` presents numeric assignments using `AllocationGuide` and
 the engine's source, units, recipient occurrences, limits and optional required

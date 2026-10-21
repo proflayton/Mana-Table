@@ -60,12 +60,14 @@ internal sealed partial class TableApplication
         if (!OverlayOpen) DrawReaderControls();
         // Decision text and its controls have priority over card readers and
         // held cards. Their input regions are registered last for the same reason.
-        if (!BattlefieldFocused) { DrawDecisionDock(); DrawQuietPriorityControl(); }
+        if (!BattlefieldFocused && !OverlayOpen && !AbilityActionPending) { DrawDecisionDock(); DrawQuietPriorityControl(); }
         if (!BattlefieldFocused) DrawChangeCallout();
+        if (!BattlefieldFocused) DrawAbilityActions();
         DrawOverlays();
         if (BattlefieldFocused) DrawEffectTransitions();
         DrawLiftedCards();
-        if (BattlefieldFocused) { DrawDecisionDock(); DrawQuietPriorityControl(); DrawChangeCallout(); }
+        if (BattlefieldFocused && !DecisionModal && !AbilityActionPending) { DrawDecisionDock(); DrawQuietPriorityControl(); DrawChangeCallout(); }
+        if (BattlefieldFocused) DrawAbilityActions();
         if (ReadingGalleryOpen || BattlefieldFocused) DrawReaderControls();
         if (ReadingGalleryOpen) hovered = HitAt(pointer)?.Card;
         DrawExperienceLabHeader();
@@ -235,6 +237,9 @@ internal sealed partial class TableApplication
     private void DrawStack()
     {
         var state = match!;
+        // Choosing an ability has not put it on the stack. Its current card
+        // remains the source on the table; do not manufacture a stack copy.
+        if (state.Stack.Length == 0 && AbilityActionPending) return;
         if (state.Stack.Length == 0 && state.Decision?.SourceCard == null) return;
         canvas.Glow(new(807, 485), new(430, 165), Blue * .17f);
         var resting = TableWorld.Card(new(6, 108), new(245, 126));

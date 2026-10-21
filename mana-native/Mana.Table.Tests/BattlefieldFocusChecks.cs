@@ -126,13 +126,16 @@ internal static class BattlefieldFocusChecks
             "Only explicit activation submits the refreshed game/decision/card handles for the currently read Llanowar Elves");
         string option = view.Match!.Decision!.Choices.Single().Label;
         var choice = frame.Hits.LastOrDefault(hit => hit.Id == "choice:0");
-        check(view.ZoneName == null && !frame.Hits.Any(hit => hit.Id.StartsWith("battlefield-focus-", StringComparison.Ordinal))
-                && choice != null && view.HitAt(choice.Bounds.Center)?.Id == choice.Id
+        var source = frame.Cards.SingleOrDefault(card => card.Id == ClutteredChangesScenario.ActionCardId && card.Zone == "Battlefield" && card.Focused);
+        check(view.ZoneName == "Battlefield" && frame.Hits.Any(hit => hit.Id == "battlefield-focus-close")
+                && source != null && source.Card.Key == view.Match.Viewer!.Zone("Battlefield").Cards.Single(card => card.VisualId == ClutteredChangesScenario.ActionCardId).Key
+                && frame.Hits.Any(hit => hit.Id == source.Hit.Id && hit.Scope == source.Hit.Scope && view.CurrentHit(hit))
+                && choice != null && view.CurrentHit(choice) && view.HitAt(choice.Bounds.Center)?.Id == choice.Id
                 && frame.Drawing.Commands.Any(command => command switch {
                     DrawCommand.Text text => text.Value == option,
                     DrawCommand.CenterText text => text.Value == option,
                     _ => false
                 }),
-            "Explicit activation closes battlefield focus and composes the actual current ability choice and its input control");
+            "The explicit ability request retains the same source reader and battlefield workspace while exposing the original option through a reachable current input control");
     }
 }

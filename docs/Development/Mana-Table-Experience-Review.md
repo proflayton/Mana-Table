@@ -131,7 +131,8 @@ acceptance.
 | A narrative panel followed each drag | Removed the generic drag prose; the held card, legal-drop outline and combat aim remain | Implemented |
 | The hand cursor also appeared over input-shield panel backgrounds | Shield-only battlefield, recipient and public-outcome panel backgrounds no longer advertise an action | Implemented |
 | Error or notice banners could cover the reader's former top action tab | Moved the tab to the stable bottom-left card edge, away from the top banner band; banner positions remain unchanged | Implemented |
-| A single text ability option opened a tall gallery with search, paging and clear-selection controls | Small single-select ability or casting-mode choices use a measured source-card panel without gallery chrome; longer, ordered and card-based choices retain their chooser | Implemented |
+| A single text ability option opened a gallery; the smaller dialog still obscured the game's purpose | Attach engine-reported actions to the actual source occurrence on the table. Keep the board visible, choose the action directly, and show its resulting state transition | Reworked after negative human feedback; review pending |
+| Long ability text needs readable context through continuation pages | Complete text is preserved, but its continuation still needs a visual review of action identity and cost | Open |
 | Card gestures vary between the board reader, zone inspection, choices and allocation details | Review these contexts together before changing the common gesture policy; a hand cursor alone does not explain whether a click reads, selects or acts | Open |
 
 Candidate verification: the Release build completed with no warnings or errors;
@@ -143,12 +144,27 @@ is under `.tools/render-refactor-integration-20261021`, including
 `interaction-audit-source-preview.png`, `interaction-audit-candidate-allocation`
 and `interaction-audit-candidate-priority`. Modal exits now measure their label
 width, including View battlefield at 130% text. These are mechanical results and
-agent visual inspection, **not human UX acceptance**. The compact chooser's
-130% source-inspection and cancellation journey is recorded in
-`ability-choice-reviewed-states/19-compact-ability-choice-window.png`. It retains the
-current 6/6 source and counters, stages the original option and requires an
-explicit confirmation; optional Cancel sends an empty choice. Broader gesture
-consistency remains open.
+agent visual inspection, **not human UX acceptance**. The subsequent compact
+dialog also passed mechanical checks, but the human reviewer could not identify
+its purpose or what it asked them to do. That design is **not accepted**; making
+the window smaller did not establish a coherent game interaction.
+
+Context belongs in the game UI. Keep the source card as the visual anchor,
+present its concrete actions there, and show their consequences through the
+reported tap, mana, target or other state changes. Debug fixture explanations
+belong in lab chrome, not the decision itself. Internal checks should cover the
+entry through the result; a developer snapshot starting halfway through a choice
+is not a complete product experience or an implicit task for the reviewer.
+Broader gesture consistency remains open.
+
+The inline candidate builds without warnings or errors. Existing presentation,
+headless presentation, card-state, hand-placement and action-feedback checks
+pass. The input journey starts at priority, opens the source's abilities and
+chooses its original scoped option without a separate confirmation. Its authored
+continuation shows the tapped Elf and one green mana; this is not a Forge rules
+simulation. GPU captures under `inline-actions-r3-*` retain the actual source and
+remove the false stack copy. These checks establish input and rendering behavior,
+not human acceptance of the experience.
 
 Use one `1000x740` interactive window for the short review: `card-reading.v1`
 stages 0 and 3, `ordered-choice.v1`, `stack-priority.v1` stage 2, then

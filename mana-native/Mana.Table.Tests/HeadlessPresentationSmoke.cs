@@ -8,6 +8,7 @@ using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Input;
 using ButtonState = Microsoft.Xna.Framework.Input.ButtonState;
 using Point = Microsoft.Xna.Framework.Point;
+using Keys = Microsoft.Xna.Framework.Input.Keys;
 
 namespace Mana.Table;
 
@@ -118,41 +119,80 @@ internal static class HeadlessPresentationSmoke
                 run.Tick("text-choice-with-current-source");
                 var sourceChoice = run.Engine.State;
                 var sourcePrompt = sourceChoice.Decision!;
-                Check(new[] { "choice:17", "choice:42", "choice-source-inspect" }.All(id => run.Frame.Hits.Any(hit => hit.Id == id))
-                    && !run.Frame.Hits.Any(hit => hit.Id is "choicesfilter" or "choicesprev" or "choicesnext" or "choicesclear" or "choice-cancel")
+                Check(new[] { "choice:17", "choice:42" }.All(id => run.Frame.Hits.Any(hit => hit.Id == id))
+                    && run.Frame.Cards.Any(card => card.Id == choiceSource.VisualId && card.Zone == "Battlefield")
+                    && new[] { "hand-a", "hand-b" }.All(id => run.Frame.Cards.Any(card => card.Id == id && card.Zone == "Hand"))
+                    && !run.Frame.Cards.Any(card => card.Zone == "Stack" && card.Card.VisualId == choiceSource.VisualId)
+                    && !run.Frame.Hits.Any(hit => hit.Id == "stack")
+                    && !run.Frame.Hits.Any(hit => hit.Id is "close-overlay" or "choicesfilter" or "choicesclear" or "choice-cancel" or "choicesdone")
                     && run.Engine.Replies.Count == 0,
-                    "A required compact ability chooser exposes its original option indexes and source without gallery chrome, optional cancellation or an automatic reply");
-                run.ClickHit("choice:17");
+                    "Required inline ability actions retain the actual battlefield and hand while exposing original indexes without a modal, confirmation or automatic reply");
                 string sourceGame = run.View.Match!.Id, sourceDecision = run.View.Match.Decision!.Id;
-                var stagedChoice = run.View.Selections.ToArray();
-                run.ClickHit("choice-source-inspect");
+                run.ClickCard(choiceSource.VisualId, right: true);
                 Check(run.View.Overlay == "inspect" && run.View.Match!.Id == sourceGame
-                    && run.View.Match.Decision!.Id == sourceDecision && stagedChoice.SequenceEqual([17])
-                    && run.View.Selections.SequenceEqual(stagedChoice) && run.Engine.Replies.Count == 0
+                    && run.View.Match.Decision!.Id == sourceDecision
+                    && run.View.Selections.Count == 0 && run.Engine.Replies.Count == 0
                     && Text(run.Frame).Contains(choiceSource.Name)
                     && Text(run.Frame).Contains($"Power / toughness: {choiceSource.Power}/{choiceSource.Toughness}")
                     && Text(run.Frame).Any(text => text.Contains("Ward {2} ×2") && text.Contains("Protection from blue")),
-                    "Clicking the text-choice source inspects its current public state while preserving the exact unanswered decision and staged original choice index");
-                run.ClickHit("close-overlay"); run.Tick("source-inspection-returned-to-choice");
+                    "Clicking the ability source inspects its current public state while preserving the exact unanswered decision without selecting or activating an option");
+                run.ClickHit("close-overlay"); run.Tick("source-inspection-returned-to-inline-actions");
                 Check(run.View.Overlay.Length == 0 && run.View.Match!.Decision!.Id == sourceDecision
-                    && run.View.Selections.SequenceEqual(stagedChoice) && run.Engine.Replies.Count == 0
-                    && run.Frame.Hits.Any(hit => hit.Id == "choicesdone") && run.Frame.Hits.Any(hit => hit.Id == "choice-source-inspect"),
-                    "Closing source inspection restores the same staged chooser without confirming or replacing it");
+                    && run.View.Selections.Count == 0 && run.Engine.Replies.Count == 0
+                    && run.Frame.Hits.Any(hit => hit.Id == "choice:17")
+                    && run.Frame.Cards.Any(card => card.Id == choiceSource.VisualId && card.Zone == "Battlefield"),
+                    "Closing inspection of the actual source restores the same unanswered inline actions without activating or replacing them");
+                run.ClickCard("hand-b"); run.Settle("unrelated-hand-reading-during-ability");
+                Check(run.Engine.Replies.Count == 0 && run.View.Match!.Decision!.Id == sourceDecision
+                    && (run.View.Overlay == "inspect" || run.Frame.Cards.Any(card => card.Id == "hand-b" && card.Focused)),
+                    "Clicking an unrelated selectable hand card during an ability choice only reads it and cannot submit a different card action");
+                if (run.View.Overlay == "inspect") run.ClickHit("close-overlay");
+                else {
+                    run.Input(new(20, 60), label: "dismiss-unrelated-reader", keys: new(Keys.Escape));
+                    run.Tick("unrelated-reader-dismissed");
+                }
+                var handTarget = run.Frame.Cards.Single(card => card.Id == "hand-b" && card.Zone == "Hand");
+                var handPoint = run.PointFor(run.Hit(handTarget.Hit.Id));
+                run.Input(handPoint, left: ButtonState.Pressed, label: "press-unrelated-hand-during-ability");
+                run.Input(new(800, 360), left: ButtonState.Pressed, label: "drag-unrelated-hand-during-ability");
+                run.Input(new(800, 360), label: "release-unrelated-hand-during-ability");
+                Check(run.Engine.Replies.Count == 0 && !run.View.Busy && run.View.Match!.Decision!.Id == sourceDecision
+                    && run.View.Match.Viewer!.Zone("Hand").Cards.Any(card => card.VisualId == "hand-b"),
+                    "Dragging an unrelated hand card cannot bypass the pending ability choice or move that card out of hand");
+                run.ClickHit("choice:17");
+                run.Until(() => !run.View.Busy && run.Engine.Replies.Count == 1, "inline-ability-choice-accepted");
+                Check(run.Engine.Replies.Single() is { Action: ReplyAction.Choose } compactReply
+                    && compactReply.GameId == sourceGame && compactReply.DecisionId == sourceDecision && compactReply.Choices!.SequenceEqual([17]),
+                    "One explicit inline ability action submits exactly its original index in the current scope without a separate confirmation");
                 run.Present(sourceChoice with { Decision = sourcePrompt with { Ordered = true } });
                 run.Tick("ordered-source-choice-gallery-fallback");
+                run.ClickHit("choice:17");
                 Check(run.Frame.Hits.Any(hit => hit.Id == "choicesfilter") && run.Frame.Hits.Any(hit => hit.Id == "choicesclear")
-                    && run.Frame.Hits.Count(hit => hit.Id == "choice-source-inspect") == 1 && run.Engine.Replies.Count == 0,
-                    "An ordered source choice retains its gallery and one source inspection target without publishing a partial compact chooser");
+                    && run.Frame.Hits.Any(hit => hit.Id == "choicesdone") && run.View.Selections.SequenceEqual([17])
+                    && run.Engine.Replies.Count == 1,
+                    "An ordered source choice retains staged gallery selection and confirmation rather than activating a row directly");
                 run.Present(sourceChoice with { Decision = sourcePrompt with {
                     Choices = sourcePrompt.Choices.Select(choice => choice with {
                         Detail = string.Join(" ", Enumerable.Repeat("This authoritative ability detail must remain available without being discarded to fit a compact panel.", 40))
                     }).ToArray()
                 } });
-                run.Tick("long-ability-detail-gallery-fallback");
-                Check(run.Frame.Hits.Any(hit => hit.Id == "choicesfilter") && run.Frame.Hits.Any(hit => hit.Id == "choicesclear")
-                    && run.Frame.Hits.Any(hit => hit.Id == "choice:17") && run.Frame.Hits.Any(hit => hit.Id == "choice:42")
-                    && run.Frame.Hits.Count(hit => hit.Id == "choice-source-inspect") == 1 && run.Engine.Replies.Count == 0,
-                    "Ability details that cannot fit retain the existing gallery and original choices without duplicate compact controls or a reply");
+                run.Tick("long-ability-detail-inline");
+                Check(!run.Frame.Hits.Any(hit => hit.Id is "close-overlay" or "choicesfilter" or "choicesclear" or "choicesdone")
+                    && run.Frame.Cards.Any(card => card.Id == choiceSource.VisualId && card.Zone == "Battlefield")
+                    && run.Frame.Cards.Any(card => card.Id == "hand-a" && card.Zone == "Hand") && run.Engine.Replies.Count == 1,
+                    "Long ability detail stays on the actual board without replacing its source and hand with a gallery or submitting an action");
+                string longDecision = run.View.Match!.Decision!.Id;
+                var pageDeadline = Stopwatch.StartNew();
+                while (!run.Frame.Hits.Any(hit => hit.Id == "choice:42")) {
+                    if (pageDeadline.Elapsed > TimeSpan.FromSeconds(5)) throw new TimeoutException("The second original inline ability action was not reachable through its pages");
+                    run.ClickHit("choicesnext");
+                }
+                run.ClickHit("choice:42");
+                run.Until(() => !run.View.Busy && run.Engine.Replies.Count == 2, "expanded-ability-choice-accepted");
+                Check(run.Engine.Replies.Count == 2 && run.Engine.Replies[^1] is { Action: ReplyAction.Choose } expandedReply
+                    && expandedReply.GameId == sourceGame && expandedReply.DecisionId == longDecision && expandedReply.Choices!.SequenceEqual([42]),
+                    "A long-detail ability row keeps the same direct action intent and submits its exact original index once");
+                int privacyReplies = run.Engine.Replies.Count;
                 run.Present(beforeSourceChoice); run.Tick("source-choice-restored-priority");
                 run.ClickCard("hand-a"); run.Settle("public-reader-before-revocation");
                 var snapshot = run.Engine.State;
@@ -176,7 +216,7 @@ internal static class HeadlessPresentationSmoke
                     "Visibility revocation removes the former face, reader, action and rendered text from the current frame");
                 run.Present(run.Engine.State with { States = [] }); run.Tick("table-mechanic-ended");
                 Check(!run.Frame.Hits.Any(hit => hit.Id.StartsWith("table-state:", StringComparison.Ordinal))
-                    && !Text(run.Frame).Contains("Night") && run.Engine.Replies.Count == 0,
+                    && !Text(run.Frame).Contains("Night") && run.Engine.Replies.Count == privacyReplies,
                     "Removing table state clears its old controls and labels without inventing a game command");
             }
 

@@ -40,6 +40,24 @@ internal static class ExperienceLabChecks
             var point = hit.Bounds.Center;
             Tick(point, ButtonState.Pressed); Tick(point);
         }
+        void Until(Func<bool> ready, string failure)
+        {
+            var deadline = System.Diagnostics.Stopwatch.StartNew();
+            while (!ready()) {
+                if (deadline.Elapsed > TimeSpan.FromSeconds(5)) throw new TimeoutException(failure);
+                Tick(); Thread.Yield();
+            }
+        }
+        bool CardSettled(string id)
+        {
+            var entry = frame.Cards.SingleOrDefault(card => card.Id == id && card.Zone == "Battlefield");
+            var current = lab.State.Viewer!.Zone("Battlefield").Cards.SingleOrDefault(card => card.VisualId == id);
+            if (entry == null || current == null || entry.Card.Key != current.Key
+                || frame.Stamp.GameId != lab.State.Id || frame.Stamp.Revision != lab.State.Revision
+                || !frame.Hits.Any(hit => hit.Id == entry.Hit.Id && hit.Scope == entry.Hit.Scope && app.TestPort.CurrentHit(hit))) return false;
+            var target = entry.Focused ? entry.ReaderTarget ?? entry.Rest : entry.Rest;
+            return Vector2.Distance(entry.Display.Center, target.Center) < 2 && Vector2.Distance(entry.Display.Size, target.Size) < 2;
+        }
         void LoadScenario(string id)
         {
             Click("lab-scenarios");
@@ -99,20 +117,42 @@ internal static class ExperienceLabChecks
                 "Canonical projections contain no other player's private hand faces: " + scenario.Id);
             if (scenario.Id == "public-state.v1") check(frame.Hits.Any(hit => hit.Id == "table-state:day-night"),
                 "The lab uses the production Day/Night widget alongside its scenario controls");
+            if (scenario.Id == "ability-choice.v1") {
+                string game = lab.State.Id;
+                check(lab.StageIndex == 0 && lab.State.Decision?.Intent == DecisionIntent.Priority
+                    && !frame.Hits.Any(hit => hit.Id == "choice:0"),
+                    "The ability experience opens before an ability is requested rather than inside an unexplained choice");
+                Until(() => CardSettled("reader-elf"), "The current Elf must finish entering before its initial card click");
+                Click(frame.Cards.Single(card => card.Id == "reader-elf" && card.Zone == "Battlefield").Hit.Id);
+                Until(() => frame.Hits.Any(hit => hit.Id == "read-card-action"), "The Elf reader did not expose its explicit action");
+                Click("read-card-action");
+                Until(() => !app.TestPort.Busy && frame.Hits.Any(hit => hit.Id == "choice:0"), "The explicit action did not open the ability chooser");
+                check(lab.StageIndex == 0 && lab.State.Decision?.Context == "playAbility"
+                    && frame.Cards.Any(card => card.Id == "reader-elf" && card.Zone == "Battlefield")
+                    && !frame.Hits.Any(hit => hit.Id is "choicesdone" or "close-overlay"),
+                    "The explicit Elf action exposes its ability on the actual board without advancing the stage, opening a modal or adding confirmation");
+                Click("choice:0");
+                Until(() => !app.TestPort.Busy && lab.StageIndex == 1 && frame.Stamp.Revision == lab.State.Revision,
+                    "The direct ability choice did not publish its authored result");
+                check(lab.State.Id == game && lab.State.Viewer is { } viewer
+                    && viewer.Zone("Battlefield").Cards.Single(card => card.VisualId == "reader-elf").Tapped
+                    && viewer.Mana.GetValueOrDefault("G") == 1 && !frame.Hits.Any(hit => hit.Id == "choicesdone"),
+                    "The real input journey reaches the same-session authored tapped Elf and one green mana without a choice confirmation or simulated Forge rules");
+            }
             if (scenario.Id == "card-reading.v1") {
                 Click("lab-next"); Click("lab-next");
                 check(frame.Observe().Text.Any(text => text.Value == "3/3")
                     && frame.Observe().Cards.Single(card => card.Id == "reader-elf" && card.Zone == "Battlefield").Counters.Single().Value == 2,
                     "The actual ordinary renderer displays the authoritative 3/3 body and retains its two-counter projection");
                 Click("lab-next");
-                var sourcePreview = frame.Hits.SingleOrDefault(hit => hit.Id == "choice-source-inspect");
+                var sourceOccurrence = frame.Cards.Single(card => card.Id == "reader-elf" && card.Zone == "Battlefield");
+                var sourceHit = frame.Hits.Single(hit => hit.Id == sourceOccurrence.Hit.Id && hit.Scope == sourceOccurrence.Hit.Scope);
                 var choiceText = frame.Observe().Text;
-                check(sourcePreview is { Card: { Power: 6, Toughness: 6 } source } && source.Counters.GetValueOrDefault("+1/+1") == 2
-                    && choiceText.Any(text => text.Value == "6/6" && sourcePreview.Bounds.Contains(new Point(text.Bounds.X + text.Bounds.Width / 2, text.Bounds.Y + text.Bounds.Height / 2)))
-                    && choiceText.Any(text => text.Value == "+1/+1 ×2" && sourcePreview.Bounds.Contains(new Point(text.Bounds.X + text.Bounds.Width / 2, text.Bounds.Y + text.Bounds.Height / 2)))
-                    && choiceText.Any(text => text.Value == "Preview tapping this Elf and adding one green mana")
-                    && frame.Hits.Any(hit => hit.Id == "choice-cancel") && !frame.Hits.Any(hit => hit.Id == "choicesfilter"),
-                    "The real text-choice composition includes its linked current 6/6 source and two counters despite the older embedded source face");
+                check(sourceOccurrence.Card is { Power: 6, Toughness: 6 } source && source.Counters.GetValueOrDefault("+1/+1") == 2
+                    && choiceText.Any(text => text.Value == "6/6" && sourceHit.Bounds.Contains(new Point(text.Bounds.X + text.Bounds.Width / 2, text.Bounds.Y + text.Bounds.Height / 2)))
+                    && choiceText.Any(text => text.Value == "{T}: Add {G}.")
+                    && frame.Hits.Any(hit => hit.Id == "choice-cancel") && !frame.Hits.Any(hit => hit.Id is "close-overlay" or "choicesfilter" or "choicesdone"),
+                    "Inline ability actions retain the actual current 6/6 battlefield source and two counters despite the older embedded prompt face");
             }
             if (scenario.Id == "turn-orientation.v1") {
                 string initialPrompt = lab.State.Decision!.Id, initialScope = lab.State.Id;

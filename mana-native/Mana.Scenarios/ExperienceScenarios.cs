@@ -12,6 +12,7 @@ public static class ExperienceScenarios
     public static IReadOnlyList<ExperienceScenario> All { get; } = Array.AsReadOnly(new ExperienceScenario[] {
         new(DefaultId, "480 permanents · Toph + Felidar", "Four crowded battlefields, an earthbent land, then 82 exact landfall recipients.", Crowd),
         new("card-reading.v1", "Card reading and selection", "Stable hand slots, inspectable battlefield cards and a hand selection.", Reading),
+        new("ability-choice.v1", "Llanowar Elves · make green mana", "Start before an activation, choose its ability, and see the tapped source and green mana.", AbilityFlow),
         new("ordered-choice.v1", "Ordered card choices", "Same-name cards, explicit selection numbers and a complete ordered draft.", Ordered),
         new("mana-payment.v1", "Mana and payment", "Colored unspent mana, a payment decision and a scripted pool transition.", Mana),
         new("combat-allocation.v1", "Combat damage allocation", "Current stats, marked damage, anonymous blockers and defender thresholds.", Allocation),
@@ -51,9 +52,30 @@ public static class ExperienceScenarios
             new() { Kind = "input", Intent = DecisionIntent.Priority, OkEnabled = false, Message = "Scripted snapshot. Inspect cards, or use the stage controls." });
     }
 
+    private static Card ManaElf() => Body("reader-elf", "Llanowar Elves", power: 1, toughness: 1)
+        with { Selectable = true, Text = "{T}: Add {G}." };
+
+    private static IReadOnlyList<ExperienceStage> AbilityFlow()
+    {
+        var initial = Table("ability-choice", [ManaElf()]);
+        initial = initial with { Decision = initial.Decision! with { Message = "Make one green mana with Llanowar Elves." } };
+        var finished = initial with {
+            Players = initial.Players.Select(player => player.Id != initial.ViewerId ? player : player with {
+                Mana = new() { ["G"] = 1 }, Zones = player.Zones.Select(zone => zone.Name != "Battlefield" ? zone : zone with {
+                    Cards = zone.Cards.Select(card => card with { Tapped = true, Selectable = false }).ToArray()
+                }).ToArray()
+            }).ToArray(),
+            Decision = initial.Decision! with { Message = "One green mana is in your pool." }
+        };
+        return [
+            new("Make one green mana", "Use Llanowar Elves' mana ability.", initial),
+            new("Green mana added", "The Elf is tapped and one green mana is in your pool.", finished)
+        ];
+    }
+
     private static IReadOnlyList<ExperienceStage> Reading()
     {
-        var elf = Body("reader-elf", "Llanowar Elves", power: 1, toughness: 1) with { Selectable = true, Text = "{T}: Add {G}." };
+        var elf = ManaElf();
         var hand = new[] { Body("reader-hand-a", "Grizzly Bears") with { Selectable = true, Text = "A simple creature for checking hand geometry." },
             Body("reader-hand-b", "Serra Angel", power: 4, toughness: 4) with { Selectable = true, CombatKeywords = ["flying", "vigilance"] },
             Body("reader-hand-c", "Forest", "Basic Land", null, null) with { Selectable = true } };
@@ -72,7 +94,7 @@ public static class ExperienceScenarios
                 Count = 4, Cards = [countedElf, zone.Cards.Single(card => card.VisualId == "reader-body"), counterLand, counterSupport]
             }).ToArray()
         }).ToArray(), Decision = state.Decision! with { OkEnabled = true,
-            Message = "Authored public state. Inspect a permanent or preview the Elf's activation; Forge is not running." } };
+            Message = "You have priority." } };
         var modified = counted with { Players = counted.Players.Select(player => player.Id != 0 ? player : player with {
             Zones = player.Zones.Select(zone => zone.Name != "Battlefield" ? zone : zone with {
                 Cards = zone.Cards.Select(card => card.VisualId != elf.VisualId ? card : card with { Power = 6, Toughness = 6 }).ToArray()
@@ -82,8 +104,8 @@ public static class ExperienceScenarios
             // Deliberately older, disclosed prompt face. The exact public source
             // occurrence must supply its current characteristics for display.
             SourceCard = elf, SourceCardId = elf.VisualId, SourceControllerId = 0, SourceZone = "Battlefield",
-            Message = "This authored interaction demonstrates the activation UI; Forge is not running.",
-            Choices = [new(0, "Preview tapping this Elf and adding one green mana", null)]
+            Message = "Choose an ability. Costs and any targets come next.",
+            Choices = [new(0, "{T}: Add {G}.", null)]
         } };
         return new[] {
             new ExperienceStage("Read and collapse", "Click a hand card, click its neighbor, then click again to collapse. The Elf activation is a scripted UI demonstration.", state),

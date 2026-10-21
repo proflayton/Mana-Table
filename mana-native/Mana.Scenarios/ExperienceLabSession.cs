@@ -9,6 +9,7 @@ public sealed class ExperienceLabSession
     private readonly string sessionId = Guid.NewGuid().ToString("N");
     private int epoch;
     private long revision;
+    private GameSnapshot? abilityParent;
     public ExperienceScenario Scenario { get; private set; }
     public IReadOnlyList<ExperienceStage> Stages { get; private set; }
     public int StageIndex { get; private set; }
@@ -25,6 +26,7 @@ public sealed class ExperienceLabSession
     public IReadOnlyList<GameSnapshot> Replay(int stage)
     {
         lock (gate) {
+            abilityParent = null;
             StageIndex = Math.Clamp(stage, 0, Stages.Count - 1); epoch++;
             var states = Enumerable.Range(0, StageIndex + 1).Select(index => Stamp(Stages[index].Snapshot)).ToArray();
             State = states[^1]; return Array.AsReadOnly(states);
@@ -35,6 +37,7 @@ public sealed class ExperienceLabSession
     {
         lock (gate) {
             if (stage != StageIndex + 1 || stage >= Stages.Count) throw new ArgumentOutOfRangeException(nameof(stage), "Continue to the next authored stage; replay to move backward.");
+            abilityParent = null;
             StageIndex = stage; return State = Stamp(Stages[stage].Snapshot);
         }
     }
@@ -73,9 +76,11 @@ public sealed class ExperienceLabSession
             } else if (reply.Action == ReplyAction.SelectCard && decision.Intent is DecisionIntent.Priority or DecisionIntent.Mana) {
                 var source = cards.FirstOrDefault(card => card.Key == reply.Card && card.Selectable);
                 if (source?.VisualId is not (ClutteredChangesScenario.ActionCardId or "reader-elf" or "mana-elf")) throw Unsupported();
+                abilityParent = State;
                 State = Stamp(State with { ActionClass = "", PriorityPlayerId = null, Decision = new() { Kind = "choice", Context = "playAbility", SourceCard = source,
-                    SourceZone = "Battlefield", Title = "Scripted activation preview", Message = "This authored interaction demonstrates the activation UI; Forge is not running.",
-                    Min = 0, Max = 1, Choices = [new(0, "Preview tapping this Elf and adding one green mana", null)] } });
+                    SourceCardId = source.VisualId, SourceControllerId = State.ViewerId, SourceZone = "Battlefield",
+                    Title = "Activate " + source.Name, Message = "Choose an ability. Costs and any targets come next.",
+                    Min = 0, Max = 1, Choices = [new(0, "{T}: Add {G}.", null)] } });
             } else if (reply.Action == ReplyAction.SelectPlayer && decision.Intent == DecisionIntent.Selection
                 && reply.Player is { } recipient && decision.PlayerChoices.Contains(recipient) && Scenario.Id == "trigger-search.v1") {
                 if (recipient == State.ViewerId) { StageIndex = 3; State = Stamp(Stages[3].Snapshot); }
@@ -94,12 +99,25 @@ public sealed class ExperienceLabSession
                             VisualId = "searched-card", CombatId = "searched-card", Selectable = false
                         }] }).ToArray()
                     }).ToArray() });
-                } else if (decision.Context == "playAbility" && selected.Length == 1 && decision.SourceCard is { } source) {
+                } else if (decision.Context == "playAbility" && selected.Length == 0) {
+                    var parent = abilityParent;
+                    abilityParent = null;
+                    State = Stamp(parent ?? State with { ActionClass = "", PriorityPlayerId = State.ViewerId,
+                        DecisionOwnerId = State.ViewerId, Decision = PriorityDecision("") });
+                } else if (decision.Context == "playAbility" && selected.Length == 1 && decision.SourceCard is { } source
+                    && source.VisualId is ClutteredChangesScenario.ActionCardId or "reader-elf" or "mana-elf") {
                     State = State with { Players = State.Players.Select(player => player.Id != State.ViewerId ? player : player with {
                         Mana = new(player.Mana) { ["G"] = player.Mana.GetValueOrDefault("G") + 1 },
-                        Zones = player.Zones.Select(zone => zone with { Cards = zone.Cards.Select(card => card.VisualId != source.VisualId ? card : card with { Tapped = true }).ToArray() }).ToArray()
+                        Zones = player.Zones.Select(zone => zone with { Cards = zone.Cards.Select(card => card.VisualId != source.VisualId ? card : card with {
+                            Tapped = true, Selectable = Scenario.Id == "ability-choice.v1" ? false : card.Selectable
+                        }).ToArray() }).ToArray()
                     }).ToArray() };
-                    Complete("Scripted activation recorded: the Elf is tapped and one green mana is shown. Reset to repeat.");
+                    abilityParent = null;
+                    if (Scenario.Id == "ability-choice.v1") {
+                        StageIndex = 1;
+                        State = Stamp(State with { ActionClass = "", PriorityPlayerId = State.ViewerId, DecisionOwnerId = State.ViewerId,
+                            Decision = PriorityDecision("One green mana is in your pool.") });
+                    } else Complete("Added one green mana.");
                 } else Complete("Scripted order recorded: " + string.Join(" → ", selected.Select(index => decision.Choices.Single(choice => choice.Index == index).Label)) + ". Reset to repeat.");
             } else if (reply.Action == ReplyAction.Allocate && decision.Kind == "allocate") {
                 var amounts = reply.Amounts ?? [];
@@ -121,11 +139,14 @@ public sealed class ExperienceLabSession
                 StageIndex++; State = Stamp(Stages[StageIndex].Snapshot);
             } else if (reply.Action == ReplyAction.Confirm && decision.Intent == DecisionIntent.Mana && Scenario.Id == "mana-payment.v1" && StageIndex == 0) {
                 StageIndex = 1; State = Stamp(Stages[1].Snapshot);
-            } else if (reply.Action == ReplyAction.Cancel) State = Stamp(Stage.Snapshot);
+            } else if (reply.Action == ReplyAction.Cancel) { abilityParent = null; State = Stamp(Stage.Snapshot); }
             else throw Unsupported();
             return State;
         }
     }
+    private static Decision PriorityDecision(string message) => new() {
+        Kind = "input", Intent = DecisionIntent.Priority, Message = message, OkEnabled = false
+    };
     private void Complete(string message) => State = Stamp(State with { ActionClass = "", PriorityPlayerId = null, Decision = new() {
         Kind = "input", Intent = DecisionIntent.General, Message = message, OkEnabled = false
     } });

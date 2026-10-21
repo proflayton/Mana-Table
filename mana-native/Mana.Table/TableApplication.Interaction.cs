@@ -30,13 +30,13 @@ internal sealed partial class TableApplication
         inspectBack = false; inspectPage = 0; overlay = "inspect";
     }
     private void OpenZone(int player, string zone) { zonePlayer = player; zoneName = zone; zonePage = 0; overlay = ""; }
-    private bool IsPlayerTarget(int player) => match?.Decision?.PlayerChoices.Contains(player) == true
+    private bool IsPlayerTarget(int player) => !AbilityActionPending && (match?.Decision?.PlayerChoices.Contains(player) == true
         || selectedCombat != null && match != null && LegalTargets.CanAttack(match, selectedCombat, player)
-        || dragging && dragSource?.Card is { } card && match != null && LegalTargets.CanAttack(match, card.CombatId, player);
+        || dragging && dragSource?.Card is { } card && match != null && LegalTargets.CanAttack(match, card.CombatId, player));
     private bool IsCardActionable(Card card)
     {
         var state = match; var d = state?.Decision;
-        if (state == null || d == null || busy || session.NeedsRecovery) return false;
+        if (state == null || d == null || busy || session.NeedsRecovery || AbilityActionPending) return false;
         if (TableChoices.IsDirect(state)) return TableChoices.Index(state, card) != null;
         if (d.Intent is DecisionIntent.Attack or DecisionIntent.Block) return CombatGuide.CanSelect(state, card) || CombatTarget(card);
         return card.Selectable && !string.IsNullOrEmpty(card.Key) || HandPlacements.Options(state, card).Length > 0;
@@ -44,12 +44,15 @@ internal sealed partial class TableApplication
     private void CardClick(Card card)
     {
         if (match == null || busy) return;
-        if (session.NeedsRecovery) { Inspect(card); return; }
+        if (session.NeedsRecovery || AbilityActionPending) { Inspect(card); return; }
         var result = interaction.CardClick(match, card);
         if (result.ChoiceIndex is { } index) ToggleChoice(match.Decision!, index);
         else if (result.Reply != null) {
             if (match.Decision?.Intent == DecisionIntent.Selection) CollapseCardReading();
-            zoneName = null; Send(result.Reply);
+            bool sourceReader = match.Decision?.Intent == DecisionIntent.Priority
+                && cardPresentation.Pinned is { Zone: "Battlefield" } entry && SameVisibleCard(entry.Card, card);
+            if (!sourceReader) zoneName = null;
+            Send(result.Reply);
         }
         else if (result.Effect == InteractionEffect.ChooseHandPlacement) OpenHandPlacement(card);
         else if (result.Effect == InteractionEffect.Inspect) Inspect(card);
@@ -57,23 +60,23 @@ internal sealed partial class TableApplication
     private void PlayerClick(int player)
     {
         if (match == null || busy) return;
-        if (session.NeedsRecovery) { zonePlayer = player; overlay = "player"; return; }
+        if (session.NeedsRecovery || AbilityActionPending) { zonePlayer = player; overlay = "player"; return; }
         var result = interaction.PlayerClick(match, player);
         if (result.Reply != null) Send(result.Reply);
         else if (result.Effect == InteractionEffect.InspectPlayer) { zonePlayer = player; overlay = "player"; }
     }
     private DecisionReply? DropReply(Hit? target)
     {
-        if (match?.Decision == null || dragSource?.Card is not { } card || dragSource.Scope != Scope || OverlayOpen || !ReaderDragCanCommit) return null;
+        if (match?.Decision == null || AbilityActionPending || dragSource?.Card is not { } card || dragSource.Scope != Scope || OverlayOpen || !ReaderDragCanCommit) return null;
         return match.Decision.Intent is DecisionIntent.Attack or DecisionIntent.Block
             ? InteractionController.Assign(match, card.CombatId, target?.Card == null ? target?.PlayerId : null, target?.Card?.CombatId)
             : dragSource.Zone == "Hand" && TableWorld.CanPlayAt(pointer) && (target == null || target.Card != null) ? InteractionController.Play(match, card) : null;
     }
-    private bool LegalDrop(Hit? target) => ReaderDragCanCommit
+    private bool LegalDrop(Hit? target) => !AbilityActionPending && ReaderDragCanCommit
         && (DropReply(target) != null || (target == null || target.Card != null) && PlacementDropChoice());
     private bool DropCard(Hit? target)
     {
-        if (busy || !ReaderDragCanCommit) return false;
+        if (busy || AbilityActionPending || !ReaderDragCanCommit) return false;
         if ((target == null || target.Card != null) && PlacementDropChoice()) { OpenHandPlacement(dragSource!.Card!); return true; }
         if (DropReply(target) is not { } reply) return false;
         Send(reply); return true;

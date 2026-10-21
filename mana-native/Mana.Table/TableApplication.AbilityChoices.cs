@@ -1,6 +1,7 @@
 using Mana.Contracts;
 using Mana.Magic;
 using Mana.Renderer;
+using Microsoft.Xna.Framework;
 using Color = Microsoft.Xna.Framework.Color;
 using Rectangle = Microsoft.Xna.Framework.Rectangle;
 
@@ -8,108 +9,128 @@ namespace Mana.Table;
 
 internal sealed partial class TableApplication
 {
-    private sealed record AbilityChoiceRow(Choice Choice, int LabelHeight, int ManaHeight, int DetailHeight, int Height);
+    private sealed record AbilityActionText(Choice Choice, string Text, int Height);
 
-    private bool TryDrawAbilityChoices(GameSnapshot state, Decision decision)
+    private static bool IsAbilityActionChoice(Decision decision) => decision.Kind == "choice" && decision.Context == "playAbility"
+        && !decision.Ordered && decision.Max == 1 && decision.Min is 0 or 1 && decision.Choices.Length > 0
+        && decision.LibraryCards.Length == 0 && decision.PlayerChoices.Length == 0
+        && decision.Choices.All(choice => choice.Card == null && choice.CardId.Length == 0 && choice.PlayerId == null);
+
+    private void SubmitAbilityChoice(GameSnapshot state, Decision decision, int index)
     {
-        if (decision.Kind != "choice" || decision.Context != "playAbility" || decision.Ordered
-            || decision.Max != 1 || decision.Min is not (0 or 1) || decision.Choices.Length is < 1 or > 3
-            || decision.LibraryCards.Length > 0 || decision.PlayerChoices.Length > 0
-            || decision.Choices.Any(choice => choice.Card != null || choice.CardId.Length > 0 || choice.PlayerId != null)) return false;
-        var source = InteractionCards.Source(state, decision);
-        if (source == null) return false;
+        textFocus = false;
+        CollapseCardReading();
+        Send(new(state.Id, decision.Id, ReplyAction.Choose, Choices: [index]));
+    }
 
-        const int paneX = 350, paneWidth = 900, padding = 24, leftWidth = 216, gap = 24;
-        const int artWidth = 190, artHeight = 266, rightWidth = paneWidth - padding * 2 - leftWidth - gap;
-        int closeWidth = Math.Max(200, canvas.TextWidth("View battlefield", .76f) + 24);
-        const int confirmWidth = 236, footerHeight = 46;
-        const float titleSize = .95f, messageSize = .72f, labelSize = .8f, detailSize = .65f;
-        string sourceName = source.FaceDown ? "Face-down card" : source.Name;
-        string title = string.IsNullOrWhiteSpace(decision.Title) ? sourceName : decision.Title;
-        string confirm = string.IsNullOrWhiteSpace(decision.Ok) ? "Confirm" : decision.Ok;
-        bool Fits(string text, float size, int width, int limit, bool bold, out int height)
-        {
-            height = canvas.TextSize(text, size, width, 80, bold).Y;
-            return height <= limit && canvas.TextPages(text, size, width, limit, 80, bold).Length == 1;
-        }
-        // Finish all measurement before replacing any drawing or input. A
-        // long authoritative description stays on the existing gallery path.
-        if (!Fits(title, titleSize, paneWidth - padding * 2 - closeWidth - 16, 70, true, out int titleHeight)
-            || !Fits(decision.Message, messageSize, paneWidth - padding * 2, 80, false, out int messageHeight)
-            || canvas.TextWidth(confirm, .76f, true) > confirmWidth - 18
-            || decision.Min == 0 && canvas.TextWidth("Cancel", .76f) > 170 - 18) return false;
-        var counters = CardPresentation.Counters(source);
-        if (counters.Length > 4 || counters.Any(counter =>
-                canvas.TextWidth(counter.Key + " ×" + counter.Value, .86f * .8f, true) > artWidth - 16)) return false;
-        int statsWidth = CardPresentation.HasCombatStats(source) ? canvas.TextWidth(CurrentStats(source), .86f, true) + 12 : 0;
-        if (source.Damage > 0) statsWidth += canvas.TextWidth("DMG " + source.Damage, .86f, true) + 10;
-        if (statsWidth > artWidth - 6) return false;
-
-        var rows = new List<AbilityChoiceRow>();
+    private void DrawAbilityActions()
+    {
+        if (match is not { Decision: { } decision } state || !IsAbilityActionChoice(decision) || session.NeedsRecovery
+            || ActivityOpen || updatesOpen || ExperienceOpen || overlay.Length > 0 || zoneName != null && !BattlefieldFocused) return;
+        var reported = InteractionCards.Source(state, decision);
+        var source = reported == null ? null : VisibleCards().FirstOrDefault(card => SameVisibleCard(card, reported));
+        var location = source == null ? null : state.Players.SelectMany(player => player.Zones.Select(zone => new { Player = player, Zone = zone }))
+            .FirstOrDefault(item => item.Zone.Cards.Any(card => SameVisibleCard(card, source))
+                || item.Zone.TopCard is { } top && SameVisibleCard(top, source));
+        string identity = source == null ? "" : CardViews.Identity(source);
+        var entry = identity.Length == 0 || location == null ? null : cardPresentation.Cards.LastOrDefault(card =>
+            card.ChoiceSlot < 0 && card.Zone == location.Zone.Name && CardViews.Identity(card.Card) == identity);
+        var owner = location?.Player ?? state.Players.FirstOrDefault(player => player.Id == decision.SourceControllerId) ?? state.Viewer;
+        var geometry = owner == null ? null : tableScene?.Seat(owner.Id).Geometry;
+        string zone = location?.Zone.Name ?? decision.SourceZone;
+        var pile = geometry?.Piles.FirstOrDefault(candidate => candidate.Zone == zone);
+        var anchor = (entry?.ReaderTarget ?? entry?.Rest)?.Bounds ?? pile?.Pose.Bounds
+            ?? new Rectangle((int)(geometry?.Hero.X ?? 800) - 55, (int)(geometry?.Hero.Y ?? 744) - 55, 110, 110);
+        const float fontSize = .78f;
+        const int padding = 12, rowGap = 8, controlsHeight = 40;
+        string context = entry != null ? "" : reported is { FaceDown: false } ? reported.Name
+            : !string.IsNullOrWhiteSpace(decision.Title) ? decision.Title : reported == null ? "Card ability" : "Face-down card";
+        if (context.Length > 0 && zone.Length > 0) context += " · " + zone;
+        string Content(Choice choice) => string.Join("\n", new[] { context, choice.Mana, choice.Label, choice.Detail }
+            .Where(value => !string.IsNullOrWhiteSpace(value)));
+        int requestedWidth = Math.Clamp(decision.Choices.SelectMany(choice => Content(choice).Split('\n'))
+            .Select(line => canvas.TextWidth(line, fontSize, true) + padding * 2).DefaultIfEmpty(120).Max(), 120, 460);
+        int requestedHeight = controlsHeight + decision.Choices.Sum(choice => Math.Max(48,
+            canvas.TextSize(Content(choice), fontSize, requestedWidth - padding * 2, 80, true).Y + padding * 2))
+            + (decision.Choices.Length - 1) * rowGap;
+        var area = AbilityActionArea(anchor, requestedWidth, Math.Min(400, requestedHeight));
+        if (area.Width < 100 || area.Height < 110) return;
+        int textWidth = area.Width - padding * 2, bodyHeight = area.Height - controlsHeight;
+        List<List<AbilityActionText>> pages = [[]];
+        int used = 0;
         foreach (var choice in decision.Choices) {
-            const int textWidth = rightWidth - 54;
-            if (!Fits(choice.Label, labelSize, textWidth, 100, true, out int labelHeight)
-                || !Fits(choice.Mana, detailSize, textWidth, 50, true, out int manaHeight)
-                || !Fits(choice.Detail, detailSize, textWidth, 80, false, out int detailHeight)) return false;
-            int height = Math.Max(64, 24 + labelHeight + (manaHeight > 0 ? manaHeight + 6 : 0)
-                + (detailHeight > 0 ? detailHeight + 6 : 0));
-            rows.Add(new(choice, labelHeight, manaHeight, detailHeight, height));
-        }
-        const int sourceHeight = artHeight;
-        int bodyHeight = Math.Max(sourceHeight, rows.Sum(row => row.Height) + (rows.Count - 1) * 10);
-        int headerHeight = Math.Max(36, titleHeight) + (messageHeight > 0 ? messageHeight + 8 : 0);
-        int paneHeight = padding + headerHeight + 18 + bodyHeight + 18 + footerHeight + padding;
-        if (paneHeight > 620) return false;
-
-        int paneY = (900 - paneHeight) / 2, left = paneX + padding, right = left + leftWidth + gap;
-        int bodyY = paneY + padding + headerHeight + 18;
-        hits.Clear(); hovered = null; ClearCardComposition();
-        canvas.Fill(new(0, 54, 1600, 846), Color.Black * .4f);
-        canvas.Panel(new(paneX, paneY, paneWidth, paneHeight), new(23, 30, 40), new(98, 113, 130), 12);
-        canvas.Text(title, left, paneY + padding, Ink, titleSize, paneWidth - padding * 2 - closeWidth - 16, 80, true);
-        Button("close-overlay", "View battlefield", paneX + paneWidth - padding - closeWidth, paneY + padding, closeWidth,
-            () => { collapsedDecision = true; textFocus = false; }, height: 36);
-        if (messageHeight > 0)
-            canvas.Text(decision.Message, left, paneY + padding + Math.Max(36, titleHeight) + 8,
-                Ink, messageSize, paneWidth - padding * 2, 80);
-
-        var sourcePose = new Pose(new(left + leftWidth / 2f, bodyY + artHeight / 2f), new(artWidth, artHeight));
-        PaintInteractionCard(source, sourcePose, false, false);
-        if (!source.FaceDown && VisibleCards().Any(card => SameVisibleCard(card, source))) {
-            var sourceBounds = new Rectangle(left, bodyY, leftWidth, sourceHeight);
-            if (IsControlHovered("choice-source-inspect")) canvas.CardFocus(sourcePose, HoverAccent);
-            hits.Add(new("choice-source-inspect", Scope, sourceBounds, () => Inspect(source), source));
-        }
-        int rowY = bodyY;
-        foreach (var row in rows) {
-            var choice = row.Choice;
-            string id = "choice:" + choice.Index;
-            bool selected = selections.Contains(choice.Index);
-            var bounds = new Rectangle(right, rowY, rightWidth, row.Height);
-            PaintControlSurface(id, bounds, selected ? new Color(36, 63, 79) : Panel,
-                selected ? Gold : new Color(77, 90, 105), !busy);
-            if (selected) canvas.Text("✓", right + 12, rowY + 12, Gold, labelSize, 24, 1, true);
-            int textX = right + 38, textY = rowY + 12;
-            canvas.Text(choice.Label, textX, textY, Ink, labelSize, rightWidth - 54, 80, true);
-            textY += row.LabelHeight;
-            if (row.ManaHeight > 0) {
-                textY += 6;
-                canvas.Text(choice.Mana, textX, textY, Gold, detailSize, rightWidth - 54, 80, true);
-                textY += row.ManaHeight;
+            string content = Content(choice);
+            if (content.Length == 0) content = "Use this option";
+            foreach (string fragment in canvas.TextPages(content, fontSize, textWidth, bodyHeight - padding * 2, 80, true)) {
+                int height = Math.Max(48, canvas.TextSize(fragment, fontSize, textWidth, 80, true).Y + padding * 2);
+                if (used > 0 && used + rowGap + height > bodyHeight) { pages.Add([]); used = 0; }
+                pages[^1].Add(new(choice, fragment, height));
+                used += (used > 0 ? rowGap : 0) + height;
             }
-            if (row.DetailHeight > 0)
-                canvas.Text(choice.Detail, textX, textY + 6, Muted, detailSize, rightWidth - 54, 80);
-            if (!busy) hits.Add(new(id, Scope, bounds, () => ToggleChoice(decision, choice.Index)));
-            rowY += row.Height + 10;
         }
-        int footerY = paneY + paneHeight - padding - footerHeight;
+        choicePage = Math.Clamp(choicePage, 0, pages.Count - 1);
+        var visible = pages[choicePage];
+        int heightNeeded = visible.Sum(row => row.Height) + (visible.Count - 1) * rowGap + controlsHeight;
+        int y = Math.Clamp(anchor.Top, area.Top, area.Bottom - heightNeeded);
+        bool rightSide = area.Left >= anchor.Right;
+        var target = new Vector2(rightSide ? area.Left : area.Right, y + visible[0].Height / 2);
+        var connection = entry?.Display.EdgeToward(target, 4)
+            ?? new Vector2(rightSide ? anchor.Right : anchor.Left, Math.Clamp((int)target.Y, anchor.Top, anchor.Bottom));
+        canvas.Line(connection, target, Blue * .45f, 1.5f);
+        if (entry != null) canvas.CardFrame(entry.Display with { Size = entry.Display.Size + new Vector2(5) }, Blue * .55f, 1);
+        foreach (var row in visible) {
+            string id = "choice:" + row.Choice.Index;
+            var bounds = new Rectangle(area.X, y, area.Width, row.Height);
+            PaintControlSurface(id, bounds, Panel, new(77, 110, 125), !busy);
+            canvas.Text(row.Text, bounds.X + padding, bounds.Y + padding, Ink, fontSize, textWidth, 80, true);
+            int index = row.Choice.Index;
+            if (!busy) hits.Add(new(id, Scope, bounds, () => SubmitAbilityChoice(state, decision, index)));
+            y += row.Height + rowGap;
+        }
+        if (pages.Count > 1) {
+            Button("choicesprev", "‹", area.X, y, 40, () => choicePage--, !busy && choicePage > 0, height: 32);
+            Button("choicesnext", "›", area.X + 46, y, 40, () => choicePage++, !busy && choicePage + 1 < pages.Count, height: 32);
+            canvas.Text($"{choicePage + 1} / {pages.Count}", area.X + 98, y + 6, Muted, .6f,
+                Math.Min(110, Math.Max(0, area.Width - 98 - (decision.Min == 0 ? 117 : 0))), 1);
+        }
         if (decision.Min == 0)
-            Button("choice-cancel", "Cancel", right, footerY, 170,
-                () => Send(new(state.Id, decision.Id, ReplyAction.Choose, Choices: [])), !busy, height: footerHeight);
-        Button("choicesdone", confirm, paneX + paneWidth - padding - confirmWidth, footerY, confirmWidth, () => {
-            textFocus = false;
-            Send(new(state.Id, decision.Id, ReplyAction.Choose, Choices: selections.ToArray()));
-        }, !busy && selections.Count == 1, true, footerHeight);
-        return true;
+            Button("choice-cancel", "Cancel", area.Right - 105, y, 105, () => {
+                CollapseCardReading();
+                Send(new(state.Id, decision.Id, ReplyAction.Choose, Choices: []));
+            }, !busy, height: 32);
+    }
+
+    private Rectangle AbilityActionArea(Rectangle anchor, int requestedWidth, int requestedHeight)
+    {
+        var free = new List<Rectangle> { new(20, 64, 1560, 696) };
+        var source = anchor; source.Inflate(12, 12);
+        var occupied = new List<Rectangle> { source, new(1240, 550, 350, 245) };
+        occupied.AddRange(match!.Players.Select(player => {
+            var hero = TableLayout.Hero(player.Id == match.ViewerId ? 3 : TableLayout.SeatIndex(match, player.Id));
+            return new Rectangle((int)hero.X - 55, (int)hero.Y - 55, 110, 110);
+        }));
+        occupied.AddRange(manaPoolBadges.Values.Select(badge => badge.Bounds).Where(bounds => !bounds.IsEmpty));
+        occupied.AddRange(publicCounterBadges.Values.Select(badge => badge.Bounds).Where(bounds => !bounds.IsEmpty));
+        foreach (var obstacle in occupied) {
+            for (int index = free.Count - 1; index >= 0; index--) {
+                var area = free[index]; var overlap = Rectangle.Intersect(area, obstacle);
+                if (overlap.IsEmpty) continue;
+                free.RemoveAt(index);
+                if (overlap.Left > area.Left) free.Add(new(area.Left, area.Top, overlap.Left - area.Left, area.Height));
+                if (overlap.Right < area.Right) free.Add(new(overlap.Right, area.Top, area.Right - overlap.Right, area.Height));
+                if (overlap.Top > area.Top) free.Add(new(area.Left, area.Top, area.Width, overlap.Top - area.Top));
+                if (overlap.Bottom < area.Bottom) free.Add(new(area.Left, overlap.Bottom, area.Width, area.Bottom - overlap.Bottom));
+            }
+        }
+        var candidates = free.Where(area => area.Width >= Math.Min(260, requestedWidth) && area.Height >= 120).ToArray();
+        if (candidates.Length == 0) candidates = free.Where(area => area.Width >= 100 && area.Height >= 110).ToArray();
+        return candidates.Select(area => {
+            int width = Math.Min(requestedWidth, area.Width), height = Math.Min(400, area.Height);
+            int x = Math.Clamp(anchor.Right + 12, area.Left, area.Right - width);
+            return new Rectangle(x, area.Top, width, height);
+        }).OrderBy(area => area.Height >= requestedHeight ? 0 : 1)
+            .ThenBy(area => area.Left >= anchor.Right || area.Right <= anchor.Left ? 0 : 1)
+            .ThenBy(area => Vector2.DistanceSquared(area.Center.ToVector2(), anchor.Center.ToVector2()))
+            .ThenByDescending(area => area.Width * area.Height).FirstOrDefault();
     }
 }

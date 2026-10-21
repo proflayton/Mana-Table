@@ -272,7 +272,6 @@ internal sealed partial class TableApplication
     {
         var state = match!; var d = state.Decision!;
         if (d.Kind == "allocate") { DrawAllocation(state, d); return; }
-        if (TryDrawAbilityChoices(state, d)) return;
         ModalFrame(d.Title.Length > 0 ? d.Title : d.Kind == "reveal" ? "Revealed cards" : d.Kind == "allocate" ? "Assign damage or counters" : "Make your choice", () => { collapsedDecision = true; textFocus = false; }, "View battlefield", d.Kind is "choice" or "reveal" ? 790 : 706);
         canvas.Text(d.Message, 204, 181, Ink, .77f, 1185, 3);
         if (d.Kind is "number" or "text") { DrawValueDecision(state, d); return; }

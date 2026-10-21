@@ -118,7 +118,7 @@ internal sealed class CardPresentationController
         if (entry.ChoiceSlot >= 0) {
             if (current.State?.Decision?.Kind != "reveal") return false;
         } else if (current.OverlayOpen || hit.Zone is not ("Hand" or "Battlefield" or "Command")
-            || current.State?.Decision is { Intent: not DecisionIntent.Priority }) return false;
+            || !current.AbilityChoice && current.State?.Decision is { Intent: not DecisionIntent.Priority }) return false;
         bool close = pinnedId == entry.Id && pinnedZone == entry.Zone;
         Collapse(hit.Id);
         if (!close) {

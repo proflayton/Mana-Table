@@ -21,10 +21,10 @@ internal sealed partial class TableApplication
     private (string Scope, int Slot)? inspectedChoice;
     private bool ReadingGalleryOpen => overlay.Length == 0 && zoneName == null && DecisionModal
         && match?.Decision?.Kind is "choice" or "reveal";
-    private bool CompactCardDecision => TableChoice
-        || match?.Decision?.Intent is DecisionIntent.Selection or DecisionIntent.Mana or DecisionIntent.Attack or DecisionIntent.Block;
+    private bool CompactCardDecision => !AbilityActionPending && (TableChoice
+        || match?.Decision?.Intent is DecisionIntent.Selection or DecisionIntent.Mana or DecisionIntent.Attack or DecisionIntent.Block);
     private CardPresentationContext CardContext => new(match, Scope, OverlayOpen && !BattlefieldFocused,
-        ReadingGalleryOpen, dragging, CompactCardDecision);
+        ReadingGalleryOpen, dragging, CompactCardDecision, AbilityActionPending);
     private string? readingId => cardPresentation.PinnedId;
     private Rectangle? hoverPreview => cardPresentation.ReaderBounds;
     internal bool InteractivePointer => !dragging && HitAt(pointer) is { } hit
@@ -55,6 +55,14 @@ internal sealed partial class TableApplication
     }
     private void EndCardReading() => cardPresentation.EndFrame();
     private bool ToggleCardReader(Hit hit) => cardPresentation.Toggle(hit, CardContext);
+    private bool ReadingAbilitySource(Decision decision)
+    {
+        if (!AbilityActionPending || match == null || cardPresentation.Pinned is not { Zone: "Battlefield" } entry) return false;
+        string id = decision.SourceCardId.Length > 0 ? decision.SourceCardId
+            : decision.SourceCard is { VisualId.Length: > 0 } source ? source.VisualId : decision.SourceCard?.CombatId ?? "";
+        return id.Length > 0 && match.Players.SelectMany(player => player.Zone("Battlefield").Cards)
+            .Any(card => !card.FaceDown && (card.VisualId == id || card.CombatId == id) && SameVisibleCard(card, entry.Card));
+    }
     private Card? ChoiceFace(int slot) => CardContext.ChoiceFace(slot);
     private Card? RefreshInspectedCard()
     {
@@ -99,7 +107,7 @@ internal sealed partial class TableApplication
         if (Vector2.Distance(entry.Display.Size, target.Size.ToVector2()) > 2
             || Vector2.Distance(entry.Display.Center, target.Center.ToVector2()) > 2) return;
         if (match?.Decision?.Intent == DecisionIntent.Priority && IsCardActionable(entry.Card)) {
-            string label = entry.Zone == "Battlefield" ? "Activate"
+            string label = entry.Zone == "Battlefield" ? "Abilities"
                 : !entry.Card.Selectable && HandPlacements.Options(match, entry.Card).Length > 0 ? "Place"
                 : entry.Card.Type.Contains("Land", StringComparison.Ordinal) ? "Play" : "Cast";
             int width = Math.Max(80, canvas.TextWidth(label, .76f) + 24);
@@ -107,7 +115,8 @@ internal sealed partial class TableApplication
             Button("read-card-action", label, x, y, width, () => {
                 var current = VisibleCards().FirstOrDefault(card => SameVisibleCard(card, entry.Card));
                 if (current == null || !IsCardActionable(current)) return;
-                CollapseCardReading(); if (BattlefieldFocused) zoneName = null; CardClick(current);
+                if (entry.Zone != "Battlefield") { CollapseCardReading(); if (BattlefieldFocused) zoneName = null; }
+                CardClick(current);
             }, !busy, height: 30);
         }
     }

@@ -81,7 +81,8 @@ internal sealed partial class TableApplication : IDisposable
     private static readonly Color Ink = new(236, 236, 230), Muted = new(161, 173, 182), Gold = new(226, 190, 120), Teal = new(45, 94, 115), Panel = new(24, 30, 38), Blue = new(91, 184, 228), Red = new(235, 117, 105);
     private int DesignHeight => match == null ? 1000 : TableLayout.Height;
     private bool TableChoice => match != null && TableChoices.IsDirect(match);
-    private bool DecisionModal => !session.NeedsRecovery && !TableChoice && !collapsedDecision && match?.Decision?.Kind is "choice" or "reveal" or "number" or "text" or "allocate";
+    private bool AbilityActionPending => !session.NeedsRecovery && match?.Decision is { } decision && IsAbilityActionChoice(decision);
+    private bool DecisionModal => !session.NeedsRecovery && !TableChoice && !AbilityActionPending && !collapsedDecision && match?.Decision?.Kind is "choice" or "reveal" or "number" or "text" or "allocate";
     private bool OverlayOpen => updatesOpen || ActivityOpen || ExperienceOpen || workshopDialog.Length > 0 || overlay.Length > 0 || zoneName != null || DecisionModal;
     private string Scope => match == null ? deckEditor ? DeckScope : LobbyScope : session.Scope;
     private string ControlScope(string id) => id.StartsWith("updates-") ? UpdateScope : id.StartsWith("activity-") ? ActivityScope : id.StartsWith("experience-") ? ExperienceScope : id.StartsWith("chat-") ? ChatScope
@@ -171,7 +172,7 @@ internal sealed partial class TableApplication : IDisposable
         UpdateAppUpdates();
         var prompt = match?.Decision;
         if (decisionId != (prompt?.Id ?? "")) {
-            if (BattlefieldFocused && prompt != null && (prompt.Kind is "choice" or "reveal" or "number" or "text" or "allocate"
+            if (BattlefieldFocused && prompt != null && !ReadingAbilitySource(prompt) && (prompt.Kind is "choice" or "reveal" or "number" or "text" or "allocate"
                 || prompt.Intent == DecisionIntent.Selection)) { zoneName = null; CollapseCardReading(); }
             decisionId = prompt?.Id ?? ""; selections.Clear(); choicePage = 0; choiceFilter = ""; selectedCombat = null; priority.Reset();
             dragging = false; dragSource = null; ClearReaderDrag(); collapsedDecision = false; textFocus = false;
@@ -200,7 +201,7 @@ internal sealed partial class TableApplication : IDisposable
             pressed = HitAt(pointer); pressPoint = pointer;
             if (!blockedInput && chatOpen && !ChatBounds.Contains(pointer)) chatFocus = false;
             if (!blockedInput && match == null && deckEditor && pressed?.Id is not ("deck-search-library" or "deck-search-deck" or "deck-clear-library" or "deck-clear-deck")) { deckTextFocus = ""; textFocus = false; }
-            dragSource = !OverlayOpen && pressed?.Card is { } source && IsCardActionable(source) ? pressed : null; dragging = false;
+            dragSource = !OverlayOpen && !AbilityActionPending && pressed?.Card is { } source && IsCardActionable(source) ? pressed : null; dragging = false;
             BeginReaderDrag(dragSource);
         }
         if (mouse.LeftButton == ButtonState.Pressed && dragSource != null && dragSource.Scope == Scope && Vector2.Distance(pressPoint.ToVector2(), pointer.ToVector2()) > 9) {
@@ -231,7 +232,7 @@ internal sealed partial class TableApplication : IDisposable
                 else if (DecisionModal) collapsedDecision = true;
             }
         }
-        if (!chatKeys && !textFocus && keys.IsKeyDown(Keys.Space) && previousKeys.IsKeyUp(Keys.Space) && !OverlayOpen && !busy && match != null) {
+        if (!chatKeys && !textFocus && keys.IsKeyDown(Keys.Space) && previousKeys.IsKeyUp(Keys.Space) && !OverlayOpen && !AbilityActionPending && !busy && match != null) {
             if (TableChoice && TableChoices.CanConfirm(match, selections)) Send(new(match.Id, prompt!.Id, ReplyAction.Choose, Choices: selections.ToArray()));
             else if (!TableChoice && CombatGuide.CanConfirm(match)) Send(new(match.Id, prompt!.Id, ReplyAction.Confirm));
         }
@@ -244,7 +245,7 @@ internal sealed partial class TableApplication : IDisposable
         previousMouse = mouse; previousKeys = keys;
         // Give a ready pass precedence over starting another observation. Use this
         // update's pointer position so entering a card pauses Auto before Draw.
-        bool autoBlocked = commandFailure && error.Length > 0 || OverlayOpen || chatFocus || dragging || pressed != null || readingId != null || selectedCombat != null;
+        bool autoBlocked = commandFailure && error.Length > 0 || OverlayOpen || AbilityActionPending || chatFocus || dragging || pressed != null || readingId != null || selectedCombat != null;
         bool quietReserved = UpdateQuietPriority(autoBlocked);
         if (!quietReserved && (!automatic || held || autoBlocked)) session.CancelAdvance();
         if (!quietReserved && !ExperienceLabOpen && !session.NeedsRecovery && fixture == null && playback.Ready(now) && priority.Update(match, automatic, held, preferences.Stops,
@@ -266,6 +267,12 @@ internal sealed partial class TableApplication : IDisposable
     private void Send(DecisionReply reply)
     {
         if (fixture != null || session.NeedsRecovery || match?.Id != reply.GameId || match.Decision?.Id != reply.DecisionId) return;
+        if (AbilityActionPending) {
+            var decision = match.Decision!;
+            if (reply.Action != ReplyAction.Choose || reply.Choices is not { } choices
+                || !(choices.Length == 0 && decision.Min == 0
+                    || choices.Length == 1 && decision.Choices.Any(choice => choice.Index == choices[0]))) return;
+        }
         if (reply.Action != ReplyAction.PassUntilPublicAction) StopQuietPriority();
         error = ""; commandFailure = false;
         if (session.Submit(reply)) pendingActionLabel = StateClarity.PendingActionLabel(match, reply);
