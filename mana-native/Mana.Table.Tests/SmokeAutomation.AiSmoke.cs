@@ -19,8 +19,7 @@ internal sealed partial class SmokeAutomation
     private string? smokePendingClick;
     private bool smokeClickAccepted;
     private int smokeRetryStage;
-    private bool smokeSecondClick;
-    private Point? smokeDouble;
+    private string? smokeLand;
 
     private void SmokeCheck(bool condition, string description)
     {
@@ -34,7 +33,6 @@ internal sealed partial class SmokeAutomation
         MouseState At(Point point, ButtonState left) => new(point.X, point.Y, 0, left, ButtonState.Released, ButtonState.Released, ButtonState.Released, ButtonState.Released);
         if (smokeDrag is { } destination) { smokeDrag = null; smokeRelease = destination; return At(destination, ButtonState.Pressed); }
         if (smokeRelease is { } release) { smokeRelease = null; return At(release, ButtonState.Released); }
-        if (smokeDouble is { } again) { smokeDouble = null; smokeRelease = again; return At(again, ButtonState.Pressed); }
         if (smokePendingClick != null) {
             // A decision can change between press and release. The client correctly
             // ignores that stale click; retry with the newly rendered control.
@@ -83,7 +81,8 @@ internal sealed partial class SmokeAutomation
                 if (view.Match.ActivePlayerId == view.Match.ViewerId && decision.Intent == DecisionIntent.Priority && view.Match.PhaseKey == "MAIN1") {
                     var land = view.Match.Viewer!.Zone("Hand").Cards.FirstOrDefault(c => c.Selectable && c.Type.Contains("Land"));
                     if (land == null) throw new InvalidOperationException("UI smoke opening has no land to play");
-                    click = "card:" + land.Key + ":" + land.VisualId; drag = smokeStage == 11; smokeSecondClick = !drag; smokeStage++;
+                    click = "card:" + land.Key + ":" + land.VisualId; drag = smokeStage == 11;
+                    smokeLand = land.VisualId; smokeStage = drag ? 12 : 70;
                 } else if (decision.Kind is "choice" or "reveal") {
                     click = decision.Kind == "reveal" || view.Selections.Count >= Math.Max(decision.Min, Math.Min(1, decision.Max)) ? "choicesdone" : "choice:" + decision.Choices[0].Index;
                 } else if (decision.PlayerChoices.Length > 0) click = "player:" + (decision.PlayerChoices.Contains(view.Match.ViewerId) ? view.Match.ViewerId : decision.PlayerChoices[0]);
@@ -91,9 +90,17 @@ internal sealed partial class SmokeAutomation
                 else if (decision.OkEnabled) click = "confirm";
                 else if (decision.Intent == DecisionIntent.Selection && view.Match.Viewer!.Zone("Hand").Cards.FirstOrDefault(c => c.Selectable && !c.Highlighted) is { } selected) click = "card:" + selected.Key + ":" + selected.VisualId;
                 break;
+            case 70:
+                if (smokeLand == null || view.DisplayedPose(smokeLand) is not { Size.X: >= 400 }
+                    || !view.Hits.Any(hit => hit.Id == "read-card-action")) break;
+                SmokeCheck(view.Match?.Decision?.Intent == DecisionIntent.Priority
+                    && view.Match.Viewer!.Zone("Hand").Cards.Any(card => card.VisualId == smokeLand)
+                    && !view.Match.Viewer.Zone("Battlefield").Cards.Any(card => card.VisualId == smokeLand),
+                    "Reading a playable hand land preserves the exact card in hand until its explicit Play action");
+                click = "read-card-action"; smokeStage = 7; break;
             case 7:
-                if (view.Match?.Viewer?.Zone("Battlefield").Cards.Any(c => c.Type.Contains("Land")) != true) { click = SmokeLandEntry(); break; }
-                SmokeCheck(true, "Double-clicking a hand card plays a land through a scoped decision");
+                if (view.Match?.Viewer?.Zone("Battlefield").Cards.Any(c => c.VisualId == smokeLand && c.Type.Contains("Land")) != true) { click = SmokeLandEntry(); break; }
+                SmokeCheck(true, "The explicit Play action moves the exact read hand land onto the battlefield through its scoped decision");
                 smokeScreenshot = "solo-table.png";
                 click = "concede"; smokeStage++; break;
             case 8:
@@ -109,7 +116,7 @@ internal sealed partial class SmokeAutomation
                 SmokeCheck(view.LocalMatch && view.Match.Id != smokeFirstGame && view.Match.Players.Length == 4, "Start button opens a new game after returning to setup");
                 smokeStage++; break;
             case 12:
-                if (view.Match?.Viewer?.Zone("Battlefield").Cards.Any(c => c.Type.Contains("Land")) != true) { click = SmokeLandEntry(); break; }
+                if (view.Match?.Viewer?.Zone("Battlefield").Cards.Any(c => c.VisualId == smokeLand && c.Type.Contains("Land")) != true) { click = SmokeLandEntry(); break; }
                 SmokeCheck(true, "Dragging a hand card onto the battlefield plays a land through the normal mouse path");
                 click = "settings"; smokeStage++; break;
             case 13:
@@ -146,7 +153,6 @@ internal sealed partial class SmokeAutomation
         var point = new Point((int)((viewport.Width - 1600 * scale) / 2 + clickable.Value.X * scale), (int)((viewport.Height - view.DesignHeight * scale) / 2 + clickable.Value.Y * scale));
         if (drag) smokeDrag = new Point((int)((viewport.Width - 1600 * scale) / 2 + 790 * scale), (int)((viewport.Height - view.DesignHeight * scale) / 2 + 540 * scale));
         else smokeRelease = point;
-        if (smokeSecondClick) { smokeDouble = point; smokeSecondClick = false; }
         smokePendingClick = click; smokeClickAccepted = false; smokeRetryStage = currentStage;
         return At(point, ButtonState.Pressed);
     }

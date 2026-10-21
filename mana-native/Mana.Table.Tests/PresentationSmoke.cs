@@ -16,7 +16,22 @@ internal static class PresentationSmoke
         void Check(bool condition, string message) { if (!condition) throw new InvalidOperationException(message); results.Add(message); }
         BitmapPixelSmoke.Run(Check);
         GameplayFeedbackChecks.Run(Check);
+        ManaPoolFeedbackChecks.Run(Check);
         var state = Example();
+        var manaPlayer = state.Viewer! with { Mana = new() { ["C"] = 1, ["G"] = 5, ["U"] = 2, ["W"] = 1, ["R"] = 3, ["B"] = 4 } };
+        Check(PublicResources.Mana(manaPlayer).Select(part => part.Key).SequenceEqual(["W", "U", "B", "R", "G", "C"])
+            && PublicResources.Mana(manaPlayer).Single(part => part.Key == "C") is { Name: "Colorless", Symbol: "C", Amount: 1 },
+            "Unspent mana retains all six exact color totals in stable order, including explicit one colorless");
+        Check(PublicResources.Mana(manaPlayer with { Mana = [] }).Length == 0
+            && PublicResources.Mana(manaPlayer with { Mana = [] }, includeEmpty: true).Length == 6
+            && PublicResources.ManaTotal(manaPlayer with { Mana = [] }) == 0,
+            "An empty authoritative pool has zero total and complete zero-valued detail entries");
+        var largeMana = manaPlayer with { Mana = manaPlayer.Mana.ToDictionary(part => part.Key, _ => int.MaxValue) };
+        Check(PublicResources.ManaTotal(largeMana) == 6L * int.MaxValue && PublicResources.Mana(largeMana).All(part => part.Amount == int.MaxValue),
+            "Large unspent color amounts and their aggregate remain exact without integer overflow");
+        Check(PublicResources.Mana(manaPlayer with { Mana = new() { ["Amber"] = 7, ["C"] = 1 } })
+            .Select(part => (part.Key, part.Amount)).SequenceEqual([("C", 1), ("Amber", 7)]),
+            "An unfamiliar positive public resource is retained by name rather than silently dropped");
         var scene = TableScene.Build(state, 0, new(-100, -100), null, null, false, CardPresentation.IsResource);
         Check(state.Players.All(p => scene.Battlefield(p.Id).Sum(c => c.Cards.Length) == p.Zone("Battlefield").Cards.Length), "Every seat's complete public battlefield is represented without paging");
         Check(scene.Rank(1, false).Cards.Select(c => c.Id).Distinct().Count() == 8, "Every crowded battlefield occurrence remains represented even with duplicate card names");

@@ -192,23 +192,29 @@ You sit at the near edge of one shared table; the other players sit to your left
 across from you, and to your right. Their cards face their seats. Spells and
 abilities on the stack appear in the middle. Decks are physical piles near each
 seat. Life medallions use existing commander artwork, with a lit rim on the
-active seat. Hover or right-click to read cards upright from any seat.
-Double-click a highlighted card in your hand to play it, or drag it onto the table.
-One click on a hand card is safe for reading. Required choices and battlefield
-abilities still use a single click. Commanders also require a double-click to cast.
+active seat. Hover highlights a card without moving or enlarging it.
+Click a card to enlarge it for reading; click it again or empty table to close.
+Use the opened card's Play card or Activate ability action, or drag a playable hand
+card onto the table. Required choices, targets and mana payments use their normal
+single click and stay compact. Right-click opens the complete card inspector.
 Zone piles open browsers containing only the cards your player can see. Your own
 graveyard, exile and command browsers can offer engine-authorized actions,
-including Flashback when available. Casts from these browsers also need a
-double-click. Hidden hands show anonymous backs.
+including Flashback when available. Hidden hands show anonymous backs.
 Gold TAX +2, TAX +4, etc. badges show the extra mana for a command-zone recast.
-Hover or inspect for details. Each commander tracks its own previous casts;
+Click or inspect for details. Each commander tracks its own previous casts;
 dying does not add tax by itself.
 Player state badges beside each life total show counters, progress such as
 Speed 1/4, and statuses such as Monarch. Click a badge for its meaning and the
 player's other states. MAX marks a completed progress track. Changes also appear
 in the recent outcome and match history. These badges do not require activation.
-Hover to lift and enlarge the card itself without clicking; right-click to inspect
-its complete rules and alternate face. Card pictures download when available;
+Colored indicators around each player's icon show mana already in their pool,
+with an exact count for each color. C means colorless. Gains pulse and losses fade;
+reduced motion shows current values immediately. Click an indicator for names
+and current totals. This is separate from untapped lands and other mana sources.
+Mana normally empties as steps and phases end; effects can retain or convert it.
+The display follows the actual pool during priority, payment and those changes.
+Right-click to inspect complete rules and alternate faces during a selection.
+Card pictures download when available;
 text works offline. Choice galleries include a name filter and selection counts.
 Ordered choices show ORDER 1, ORDER 2, etc. on both card images and text rows;
 follow the decision's message for which end of the order is first.
@@ -216,7 +222,7 @@ Battlefield cards in an ordered choice spread apart so their numbers stay visibl
 their usual clusters return when the decision ends.
 Orders involving hand or command-zone cards use the numbered gallery.
 Selecting a gallery card immediately returns its face
-to the compact row; hover or inspect it again to read without clearing your
+to the compact row; right-click to read without clearing your
 selection. When every choice is a visible table card, choose those original
 cards and confirm with the decision button. Other searches keep their gallery.
 Engine-authorized hand-placement actions also appear beside playable hand cards;

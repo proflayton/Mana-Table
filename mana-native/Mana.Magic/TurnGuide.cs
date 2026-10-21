@@ -21,7 +21,7 @@ public static class TurnGuide
         DecisionIntent.Block => "Choose your blocker, then an attacking creature.",
         DecisionIntent.Mana => "Pay the cost with your mana sources, or use Auto-pay.",
         DecisionIntent.Priority when state.Stack.Length > 0 => "Respond with a card or ability, or let the stack resolve.",
-        DecisionIntent.Priority when state.ActivePlayerId == state.ViewerId && state.PhaseKey is "MAIN1" or "MAIN2" => "Double-click or drag a card to play. Hover to read.",
+        DecisionIntent.Priority when state.ActivePlayerId == state.ViewerId && state.PhaseKey is "MAIN1" or "MAIN2" => "Click to read; use Play card or drag onto the table to play.",
         DecisionIntent.Priority => "Your chance to respond.",
         _ => state.Decision?.Message ?? (state.Status == "starting" ? "Preparing your table…" : "The table is resolving.")
     };

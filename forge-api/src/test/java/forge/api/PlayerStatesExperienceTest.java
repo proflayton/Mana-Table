@@ -50,7 +50,7 @@ public class PlayerStatesExperienceTest {
             var counters = HashMultiset.<CounterType>create();
             counters.add(CounterEnumType.POISON, 3); counters.add(CounterEnumType.ENERGY, 2);
             counters.add(CounterEnumType.EXPERIENCE, 1); counters.add(CounterEnumType.RAD, 1); counters.add(CounterEnumType.TICKET, 1);
-            owner.getView().set(TrackableProperty.Counters, counters);
+            for (var counter : counters.entrySet()) owner.setCounters(counter.getElement(), counter.getCount(), null, false);
             var concealed = new CardView(31000, null);
             concealed.set(TrackableProperty.Owner, owner.getView()); concealed.set(TrackableProperty.Controller, owner.getView());
             concealed.set(TrackableProperty.Zone, ZoneType.Battlefield); concealed.set(TrackableProperty.Facedown, true);
@@ -83,7 +83,7 @@ public class PlayerStatesExperienceTest {
             table.game.setMonarch(table.game.getPlayers().get(1));
             table.game.setHasInitiative(null);
             owner.setBlessing(false, null);
-            owner.getView().set(TrackableProperty.Counters, HashMultiset.<CounterType>create());
+            owner.setCounters(HashMultiset.<CounterType>create());
             table.publish();
             for (int seat = 0; seat < 4; seat++) {
                 var state = JSON.toJsonTree(table.seat(seat).state()).getAsJsonObject();

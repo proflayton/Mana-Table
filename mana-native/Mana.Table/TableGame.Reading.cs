@@ -1,4 +1,5 @@
 using Mana.Contracts;
+using Mana.Magic;
 using Mana.Renderer;
 using Microsoft.Xna.Framework;
 using Point = Microsoft.Xna.Framework.Point;
@@ -18,8 +19,19 @@ internal sealed partial class TableGame
     private readonly Dictionary<string, int> cardPaintCounts = [];
     private string? readingId, readingZone;
     private Rectangle? hoverPreview;
-    private (string Id, Point At)? dismissedReading;
     private readonly HashSet<string> pendingReadingCollapses = [];
+    private (string Scope, int Slot)? inspectedChoice;
+
+    private bool CompactCardDecision => TableChoice || match?.Decision?.Intent is DecisionIntent.Selection or DecisionIntent.Mana or DecisionIntent.Attack or DecisionIntent.Block;
+
+    private void ExtendCardHit(Card card, Rectangle bounds)
+    {
+        string hitId = "card:" + card.Key + ":" + card.VisualId;
+        int index = hits.FindLastIndex(hit => hit.Id == hitId && hit.Scope == Scope);
+        if (index < 0) return;
+        var face = hits[index];
+        hits[index] = face with { Bounds = Rectangle.Union(face.Bounds, bounds), Shape = point => face.Contains(point) || bounds.Contains(point) };
+    }
 
     private Hit? TableHitAt(Point point)
     {
@@ -55,18 +67,36 @@ internal sealed partial class TableGame
     {
         var hit = HitAt(pointer);
         var candidate = readingCards.LastOrDefault(c => c.Hit.Id == hit?.Id && !c.Card.FaceDown);
-        if (dragging || selectedCombat != null || candidate != null && !CanReadCard(candidate)) candidate = null;
-        if (dismissedReading is { } dismissed) {
-            // Selection closes the reader. Returning geometry or an unchanged
-            // pointer must not immediately enlarge this card (or its neighbor).
-            if (pointer == dismissed.At || candidate?.Id == dismissed.Id) candidate = null;
-            else dismissedReading = null;
-        }
         string identity = candidate?.Id ?? "";
-        if (lastHover != identity) { lastHover = identity; hoverSince = now; }
-        if (candidate == null) { readingId = readingZone = null; }
-        else if (now - hoverSince >= .18) { readingId = candidate.Id; readingZone = candidate.Zone; readingTransitions.Add(candidate.Id); }
+        lastHover = identity;
+        // Hover only highlights. A reader belongs to an explicit click and must
+        // not disappear because the enlarged face moved away from the pointer.
+        var pinned = readingCards.LastOrDefault(c => c.Id == readingId && c.Zone == readingZone);
+        if (readingId != null && (dragging || CompactCardDecision || pinned == null || !CanReadCard(pinned))) CollapseCardReading();
         readingCards.Clear(); liftedCards.Clear(); cardPaintCounts.Clear(); hoverPreview = null;
+    }
+    private bool ToggleCardReader(Hit hit)
+    {
+        var entry = readingCards.LastOrDefault(c => c.Hit.Id == hit.Id);
+        if (entry == null || entry.Card.FaceDown || !CanReadCard(entry) || dragging || CompactCardDecision) return false;
+        if (entry.ChoiceSlot >= 0) {
+            if (match?.Decision?.Kind != "reveal") return false;
+        } else if (OverlayOpen || hit.Zone is not ("Hand" or "Battlefield" or "Command")
+            || match?.Decision is { Intent: not DecisionIntent.Priority }) return false;
+        if (readingId == entry.Id && readingZone == entry.Zone) CollapseCardReading();
+        else {
+            CollapseCardReading();
+            readingId = entry.Id; readingZone = entry.Zone; readingTransitions.Add(entry.Id);
+        }
+        return true;
+    }
+    private Card? ChoiceFace(int slot) => match?.Decision is { } decision
+        ? decision.LibraryCards.Length > 0 ? decision.LibraryCards.ElementAtOrDefault(slot)?.Card : decision.Choices.ElementAtOrDefault(slot)?.Card
+        : null;
+    private Card? RefreshInspectedCard()
+    {
+        if (inspectedChoice is { } choice) return choice.Scope == Scope && ChoiceFace(choice.Slot) is { FaceDown: false } face ? face : null;
+        return inspected == null ? null : VisibleCards().FirstOrDefault(card => SameVisibleCard(card, inspected));
     }
     private bool CanReadCard(ReadingCard entry)
     {
@@ -104,13 +134,16 @@ internal sealed partial class TableGame
             : motion.Place(id, focused ? ReadingPose(rest, zone) : rest, entrance, entranceDelay);
         if (!focused && Vector2.Distance(pose.Size, rest.Size) < 2 && Vector2.Distance(pose.Center, rest.Center) < 2) readingTransitions.Remove(id);
         // A pile face opens a browser; it is not a cast/play action.
-        var hit = new Hit(hitId, Scope, activationBounds is { } bounds ? Rectangle.Union(pose.Bounds, bounds) : pose.Bounds,
-            activate, card, opensZone ? null : zone, owner, point => pose.Contains(point) || activationBounds?.Contains(point) == true);
+        bool handAnchor = zone == "Hand" && (focused || readingTransitions.Contains(id));
+        var hitBounds = activationBounds is { } bounds ? Rectangle.Union(pose.Bounds, bounds) : pose.Bounds;
+        if (handAnchor) hitBounds = Rectangle.Union(hitBounds, rest.Bounds);
+        var hit = new Hit(hitId, Scope, hitBounds,
+            activate, card, opensZone ? null : zone, owner, point => pose.Contains(point) || handAnchor && rest.Contains(point) || activationBounds?.Contains(point) == true);
         var entry = new ReadingCard(id, card, zone, rest, pose, hit, choiceSlot);
         readingCards.Add(entry); hits.Add(hit);
         void Paint()
         {
-            paint(pose, id == lastHover && !card.FaceDown && readable);
+            paint(pose, (focused || id == lastHover) && !card.FaceDown && readable);
             if (Automation != null) cardPaintCounts[id] = cardPaintCounts.GetValueOrDefault(id) + 1;
         }
         if (focused || readingTransitions.Contains(id)) liftedCards.Add((entry, Paint));
@@ -124,27 +157,49 @@ internal sealed partial class TableGame
         // rank until they settle; the card being read is always foremost.
         foreach (var lifted in liftedCards.OrderBy(c => c.Card.Id == readingId ? 1 : 0)) {
             lifted.Paint();
-            hits.Remove(lifted.Card.Hit); hits.Add(lifted.Card.Hit);
+            var currentHit = hits.LastOrDefault(hit => hit.Id == lifted.Card.Hit.Id && hit.Scope == lifted.Card.Hit.Scope) ?? lifted.Card.Hit;
+            hits.RemoveAll(hit => hit.Id == currentHit.Id && hit.Scope == currentHit.Scope);
+            hits.Add(currentHit);
         }
         liftedCards.Clear();
+    }
+    private void DrawReaderControls()
+    {
+        var entry = readingCards.LastOrDefault(c => c.Id == readingId && c.Zone == readingZone);
+        if (entry == null || CompactCardDecision || !CanReadCard(entry)) return;
+        // Controls do not chase the face while its opening animation settles.
+        var target = ReadingPose(entry.Rest, entry.Zone).Bounds;
+        int x = target.Right + 12;
+        if (x + 220 > 1580) x = target.Left - 232;
+        x = Math.Clamp(x, 20, 1360);
+        int y = Math.Clamp(target.Top + 20, 70, 690);
+        if (match?.Decision?.Intent == DecisionIntent.Priority && IsCardActionable(entry.Card)) {
+            string label = entry.Zone == "Battlefield" ? "Activate ability" : !entry.Card.Selectable && HandPlacements.Options(match, entry.Card).Length > 0 ? "Place card" : "Play card";
+            Button("read-card-action", label, x, y, 220, () => {
+                var current = VisibleCards().FirstOrDefault(card => SameVisibleCard(card, entry.Card));
+                if (current == null || !IsCardActionable(current)) return;
+                CollapseCardReading(); CardClick(current);
+            }, !busy, true, 40);
+            y += 48;
+        }
+        Button("read-card-close", "Close card", x, y, 220, CollapseCardReading, height: 36);
     }
     private void ClearCardReading()
     {
         readingCards.Clear(); liftedCards.Clear(); readingTransitions.Clear(); cardPaintCounts.Clear();
-        readingId = readingZone = null; hoverPreview = null; lastHover = ""; hoverSince = 0;
-        dismissedReading = null;
+        readingId = readingZone = null; hoverPreview = null; lastHover = "";
+        inspectedChoice = null;
         pendingReadingCollapses.Clear();
     }
     private void CollapseCardReading()
     {
         var hit = HitAt(pointer);
         string clickedId = readingCards.LastOrDefault(c => c.Hit.Id == hit?.Id)?.Id ?? readingId ?? lastHover;
-        dismissedReading = (clickedId, pointer);
         // Moving to a neighbor can start its reader while an older one is still
         // returning. Selection restores every rendered reader to its new rest.
         pendingReadingCollapses.UnionWith(readingCards.Where(c => readingTransitions.Contains(c.Id)).Select(c => c.Id));
         pendingReadingCollapses.Add(clickedId);
         if (readingId != null) pendingReadingCollapses.Add(readingId);
-        readingId = readingZone = null; hoverPreview = null; lastHover = ""; hoverSince = now;
+        readingId = readingZone = null; hoverPreview = null; lastHover = "";
     }
 }

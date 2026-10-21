@@ -6,13 +6,42 @@ information. The Electron reference client has its own
 [development guide](../forge-desktop/README.md).
 
 This guide follows the checked-out source, which can be ahead of the public
-installer. The table includes the complete battlefield layout, compact selection
-readers, card-based assignments, connection recovery and public-state explanations.
+installer. The table includes the complete battlefield layout, explicit card
+readers, compact selections, card-based assignments and connection recovery.
 Player counters, progress tracks and statuses share one seat display and contextual
 explanations. Ordered selections show numbered positions on card faces and text
-choices. Engine effect markers use their rules text instead of printed-card artwork.
+choices; lists above twelve items use the numbered gallery while every battlefield
+card remains rendered. Engine effect markers use their rules text instead of
+printed-card artwork.
+Colored indicators around each player's icon show unspent mana with exact counts,
+including during payment. Gains pulse and losses fade; reduced motion shows the
+current values immediately. Pool inspection explains the current totals without
+changing a game decision; step changes never clear a pool locally.
 Check a package's `SOURCE.txt` and `build.json` for its exact revision.
 For playing instructions, use [START-HERE.txt](START-HERE.txt).
+
+## Table interaction and state
+
+Hover highlights a card without enlarging it. During ordinary priority, clicking
+a hand, battlefield or command-zone card opens its reader; clicking that card
+again, empty space or Close card dismisses it. Play card and Activate ability are
+explicit reader actions; dragging a playable hand card onto the table also plays
+it. Required selections, mana payment and combat retain their direct clicks and
+compact faces. Right-click inspects a currently visible face without choosing it.
+
+The battlefield groups Creatures, Support and Lands. Sparse boards keep projected
+lanes; crowded boards switch together to upright cells within separate player
+regions. Dense headers identify the owner, current status and exact role counts,
+while life, mana and public player state remain beside the player icon. Compact
+groups label their name, current power/toughness, marked damage, counters and
+matching-copy count as applicable. Only copies with the same public state share
+a fan; face-down cards retain anonymous labels. State markers remain compact and
+inspection supplies the full details. Labels and faces target the same occurrence.
+
+Decision text uses the actual rendered font and width to grow above the action
+buttons. Read all opens the complete current message when it exceeds the dock;
+help pages are measured to fit above their navigation controls, including at
+larger text settings. Reading and paging do not answer the pending decision.
 
 ## Prerequisites
 
@@ -142,10 +171,10 @@ Choose checks for the changed behavior:
 | Check | Covers |
 | --- | --- |
 | `--smoke-presentation` | Headless presentation rules, signed-stride/alpha pixel transfer and motion timing |
-| `--smoke-card-reading` | Actual hover/read/inspect gestures and Auto presentation beats |
-| `--smoke-card-states` | Flying, phasing and current state transitions in a separate bounded journey |
-| `--smoke-compact-selection` | Real reveal/choice input, immediate compact faces and slow reader handoff |
-| `--smoke-full-battlefield` | All projected occurrences, exposure, hit regions and dense layout |
+| `--smoke-card-reading` | Compact hover, explicit reading/inspection and Auto presentation beats |
+| `--smoke-card-states` | Flying/phasing, player state and mana, explicit readers, decision readability and numbered ordered choices in one bounded journey |
+| `--smoke-compact-selection` | Real reveal/choice input, inspection, compact faces and exact scoped selections |
+| `--smoke-full-battlefield` | All battlefield occurrences, role groups, public labels, exposure, hit regions and dense layout |
 | `--smoke-equipment` | Exact attachment relationships, readable badges, hover connections and re-equipping |
 | `--smoke-allocation` / `--smoke-hand-placement` | Scoped draft/assignment and real hand/source gestures |
 | `--smoke-recovery` / `--smoke-state-clarity` | Interrupted connections, named decisions, public counters and larger text |
@@ -186,5 +215,13 @@ Use prompt-scoped keys to act and opaque occurrence IDs to correlate visuals.
 Never recover a hidden identity from a name, art, earlier snapshot or source
 lookup. Keep rules and target legality in Forge. Update the player/development
 guides when the behavior, setup, CLI, persisted data or packaging changes.
+Player-state labels, kinds, values, progress ceilings and explanations come from
+`forge-game`'s `PublicPlayerStateRegistry` through the API. Native rendering handles
+the declared kinds generically, including MAX at a progress maximum. Current
+coverage is positive counters, Speed, monarch, initiative and the city's blessing;
+adding another mechanic requires an explicit engine descriptor and visibility
+review, not a card-name rule in the renderer. Table state and card/player relations
+remain separate. See the [API contract](../forge-api/README.md#playable-desktop-integration)
+for the provider and regression policy.
 The [architecture map](../docs/Development/Mana-Table-Architecture.md) explains the
 shared session and the separate Electron implementation in more detail.

@@ -49,7 +49,9 @@ internal sealed class EquipmentSmoke : ITableAutomation
             Check(CardPresentation.AttachmentBadge(Local("elf-1-0")) == "EQUIPPED ×2", "Multiple Equipment retain their exact count in the full state label");
             Capture("01-equipped-table"); MoveCard("boots-2-0");
         });
-        Wait(() => view.Hovered?.VisualId == "boots-2-0" && view.HoverPreview is { Width: >= 400 }, 3, () => {
+        Click();
+        Wait(() => Reading("boots-2-0"), 3, () => {
+            Check(Reading("boots-2-0"), "Clicking the exact Equipment opens its reader without a game action");
             AssertConnection("boots-2-0", "elf-2-0");
             Check(CardPresentation.StateLabels(Local("boots-2-0")).Contains("Equipped to: Llanowar Elves"),
                 "Equipment retains its target name in current-state details");
@@ -60,7 +62,7 @@ internal sealed class EquipmentSmoke : ITableAutomation
         Wait(() => view.Overlay == "inspect", 3, () => {
             Check(view.Overlay == "inspect" && view.AttachmentConnections.Count == 0,
                 "Right-click opens the inspector and suppresses table attachment lines behind it");
-            Check(scenario.Replies.Count == 0, "Equipment hover and inspection consume no game decision");
+            Check(scenario.Replies.Count == 0, "Equipment reading and inspection consume no game decision");
             Capture("03-equipment-inspector");
         });
         ClickHit("close-overlay");
@@ -77,11 +79,14 @@ internal sealed class EquipmentSmoke : ITableAutomation
                 "Re-equipping transfers the marker between identical creatures without leaving a stale marker");
             Capture("04-reequipped"); MoveCard("boots-2-0");
         });
-        Wait(() => view.Hovered?.VisualId == "boots-2-0" && view.HoverPreview is { Width: >= 400 }, 3, () => {
+        Click();
+        Wait(() => Reading("boots-2-0"), 3, () => {
+            Check(Reading("boots-2-0"), "The re-equipped occurrence remains explicitly readable");
             AssertConnection("boots-2-0", "elf-3-0");
-            Check(view.AttachmentConnections.All(c => c.TargetId != "elf-2-0"), "The hovered Equipment no longer links to its former identical target");
-            MoveAway(); Publish(Crowded());
+            Check(view.AttachmentConnections.All(c => c.TargetId != "elf-2-0"), "The Equipment being read no longer links to its former identical target");
         });
+        ClickHit("read-card-close");
+        Step(0, () => { MoveAway(); Publish(Crowded()); });
         // Arrivals deliberately show a temporary state banner for1.1seconds.
         // Check persistent crowded markers after those banners have cleared.
         Step(1.25, () => {
@@ -96,12 +101,15 @@ internal sealed class EquipmentSmoke : ITableAutomation
             AssertDistinctRelationships();
             Capture("05-crowded-equipment"); MoveCard("boots-2-1");
         });
-        Wait(() => view.Hovered?.VisualId == "boots-2-1" && view.HoverPreview is { Width: >= 400 }, 3, () => {
+        Click();
+        Wait(() => Reading("boots-2-1"), 3, () => {
+            Check(Reading("boots-2-1"), "Clicking the crowded opponent's Equipment opens that exact occurrence");
             AssertConnection("boots-2-1", "elf-2-1");
             Check(scenario.Replies.Count == 0, "Reading a crowded opponent's exact Equipment sends no game command");
             Capture("06-crowded-opponent-hover");
-            MoveAway(); Publish(ChangeCards(c => c with { AttachedTo = null, Attachments = [] }));
         });
+        ClickHit("read-card-close");
+        Step(0, () => { MoveAway(); Publish(ChangeCards(c => c with { AttachedTo = null, Attachments = [] })); });
         Step(.3, () => {
             Check(view.Match!.Players.SelectMany(p => p.Zone("Battlefield").Cards).All(c => view.AttachmentBadge(c.CombatId) == null)
                 && view.AttachmentConnections.Count == 0, "Detaching removes all painted attachment markers and links on the next snapshot");
@@ -156,15 +164,21 @@ internal sealed class EquipmentSmoke : ITableAutomation
         var badge = view.AttachmentBadge(id);
         var pose = view.DisplayedPose(id);
         var card = view.Match!.Players.SelectMany(p => p.Zone("Battlefield").Cards).Single(c => c.CombatId == id);
+        var stats = badge?.IncludesCombatStats == true ? view.BattlefieldLabels(id).SingleOrDefault(label => label.Kind == "pt") : null;
+        var statsHit = badge?.IncludesCombatStats == true
+            ? view.HitAt(SmokePointer.Table(view, SmokePointer.Screen(view, badge.Bounds.Center))) : null;
         bool fits = badge != null && pose != null && (badge.IncludesCombatStats
             ? CardPresentation.HasCombatStats(card) && badge.Text == $"{card.Power}/{card.Toughness}"
-                && badge.Bounds.Width == 30 && badge.Bounds.Height == 18 && pose.Value.Bounds.Intersects(badge.Bounds)
+                && stats != null && stats.Text == badge.Text && stats.Bounds == badge.Bounds
+                && stats.MeasuredWidth <= stats.AvailableWidth && badge.MeasuredWidth <= stats.AvailableWidth
+                && statsHit is { Card: { } hitCard } && statsHit.Id == "card:" + card.Key + ":" + card.VisualId
+                && statsHit.Scope == view.Scope && CardViews.Identity(hitCard) == id
             : pose.Value.Bounds.Contains(badge.Bounds));
         if (badge != null && pose != null && (BadgePixels(badge.Bounds) <= 8 || !fits))
-            throw new InvalidOperationException($"{id}: badge={badge}; face={pose.Value.Bounds}; pixels={BadgePixels(badge.Bounds)}");
+            throw new InvalidOperationException($"{id}: badge={badge}; face={pose.Value.Bounds}; stats={stats}; hit={statsHit?.Id}; pixels={BadgePixels(badge.Bounds)}");
         Check(fits && badge != null
             && badge.MeasuredWidth <= badge.Bounds.Width && BadgePixels(badge.Bounds) > 8,
-            $"{id}'s painted attachment state fits its own face or unchanged P/T chip and retains current stats at130% text");
+            $"{id}'s painted attachment state fits its own face or exact measured P/T label, retains full current stats and owns its physical target at130% text");
     }
     private int BadgePixels(Rectangle bounds)
     {
@@ -191,6 +205,8 @@ internal sealed class EquipmentSmoke : ITableAutomation
     private void MoveCard(string id) => MoveHit(view.Hits.Single(h => h.Card?.VisualId == id && h.Id.StartsWith("card:", StringComparison.Ordinal)));
     private void MoveHit(TableGame.Hit hit) { var p = SmokePointer.Hit(view, hit); mouse = new(p.X, p.Y, 0, ButtonState.Released, ButtonState.Released, ButtonState.Released, ButtonState.Released, ButtonState.Released); }
     private MouseState Mouse(ButtonState left = ButtonState.Released, ButtonState right = ButtonState.Released) => new(mouse.X, mouse.Y, 0, left, ButtonState.Released, right, ButtonState.Released, ButtonState.Released);
+    private bool Reading(string id) => view.DisplayedPose(id) is { Size.X: >= 400 } && view.HoverPreview is { Width: >= 400 };
+    private void Click() { Step(0, () => mouse = Mouse(ButtonState.Pressed)); Step(0, () => mouse = Mouse()); }
     private void ClickHit(string id) {
         Step(0, () => MoveHit(view.Hits.Single(h => h.Id == id)));
         Step(0, () => mouse = Mouse(ButtonState.Pressed)); Step(0, () => mouse = Mouse());

@@ -1,6 +1,7 @@
 using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Graphics;
 using Color = Microsoft.Xna.Framework.Color;
+using Point = Microsoft.Xna.Framework.Point;
 using Rectangle = Microsoft.Xna.Framework.Rectangle;
 using Gdi = System.Drawing;
 
@@ -256,6 +257,16 @@ public sealed class Canvas : IDisposable
         if (!text.TryGetValue(key, out var cached)) cached = (RenderText(key), frame);
         text[key] = (cached.Texture, frame);
         return cached.Texture.Width;
+    }
+    public Point TextSize(string value, float size, int width, int maxLines, bool bold = false)
+    {
+        if (value.Length == 0) return Point.Zero;
+        float textScale = float.IsFinite(TextScale) ? Math.Clamp(TextScale, 1, 1.3f) : 1;
+        var key = new TextKey(value.Replace("\r", ""), Math.Max(9, (int)Math.Round(22 * size * textScale)), Math.Min(2000, width),
+            Math.Max(1, (int)(Math.Min(80, maxLines) / textScale)), bold, false);
+        if (!text.TryGetValue(key, out var cached)) cached = (RenderText(key), frame);
+        text[key] = (cached.Texture, frame);
+        return new(cached.Texture.Width, cached.Texture.Height);
     }
     public void Text(string? value, int x, int y, Color color, float size = 1, int width = 2000, int maxLines = 100, bool bold = false, bool serif = false)
     {

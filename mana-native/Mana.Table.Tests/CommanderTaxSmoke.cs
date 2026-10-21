@@ -36,7 +36,7 @@ internal sealed class CommanderTaxSmoke(TableGame.Probe view, InteractionScenari
         if (view.Error.Length > 0) throw new InvalidOperationException(view.Error);
         if (view.Now > 25) throw new TimeoutException("Commander tax review at stage " + stage);
         if (view.Now - started < (stage == 0 ? 1.5 : .6)) return;
-        if (stage == 1 && view.HoverPreview is not { Width: >= 400 } && view.Now - started < 3) return;
+        if (stage == 3 && view.HoverPreview is not { Width: >= 400 } && view.Now - started < 3) return;
         switch (stage) {
             case 0:
                 Check(view.Hits.Count(h => h.Zone == "Command" && h.Card != null) == 8, "Both commanders retain their card hit areas at all four seats");
@@ -46,26 +46,33 @@ internal sealed class CommanderTaxSmoke(TableGame.Probe view, InteractionScenari
                 Move((int)center.X, (int)center.Y);
                 break;
             case 1:
-                Check(view.Hovered is { VisualId: "commander-0", CommanderTax: 2 } && view.HoverPreview is { Width: >= 400 }, "Hover reads the taxed commander without a game action");
-                Capture(surface, "02-tax-hover");
-                Buttons(right: ButtonState.Pressed);
+                Check(view.HoverPreview == null && scenario.Replies.Count == 0, "Hover highlights a commander without opening a reader or submitting a game action");
+                Buttons(left: ButtonState.Pressed);
                 break;
             case 2: Buttons(); break;
             case 3:
+                Check(view.DisplayedPose("commander-0") is { Size.X: >= 400 } && view.HoverPreview is { Width: >= 400 }
+                    && view.Match!.Viewer!.Zone("Command").Cards.Single(c => c.VisualId == "commander-0").CommanderTax == 2,
+                    "An explicit click reads the taxed commander without a game action");
+                Capture(surface, "02-tax-hover");
+                Buttons(right: ButtonState.Pressed);
+                break;
+            case 4: Buttons(); break;
+            case 5:
                 Check(view.Overlay == "inspect", "Right-click opens complete commander tax and printed cost details");
                 Capture(surface, "03-tax-inspector");
                 var close = view.Hits.Single(h => h.Id == "close-overlay").Bounds.Center;
                 Move(close.X, close.Y, ButtonState.Pressed);
                 break;
-            case 4: Buttons(); break;
-            case 5:
+            case 6: Buttons(); break;
+            case 7:
                 Check(view.Overlay.Length == 0, "Inspector closes through its normal control");
                 Move(0, 0);
                 Publish(scenario.State with { Players = scenario.State.Players.Select(p => p with { Zones = p.Zones.Select(z => z with {
                     Cards = z.Cards.Select(c => c.VisualId == "commander-0" ? c with { CommanderTax = 6 } : c).ToArray()
                 }).ToArray() }).ToArray() });
                 break;
-            case 6:
+            case 8:
                 Check(view.Match!.Viewer!.Zone("Command").Cards[0].CommanderTax == 6 && view.Match.Viewer.Zone("Command").Cards[1].CommanderTax == 4,
                     "A later engine snapshot updates only the commander whose tax changed");
                 Capture(surface, "04-tax-updated");
@@ -73,7 +80,7 @@ internal sealed class CommanderTaxSmoke(TableGame.Probe view, InteractionScenari
                     Cards = z.Cards.Select(c => c with { CommanderTax = 0 }).ToArray()
                 }).ToArray() }).ToArray() });
                 break;
-            case 7:
+            case 9:
                 Check(view.Match!.Players.SelectMany(p => p.Zone("Command").Cards).All(c => CardPresentation.CommanderTax(c) == 0), "A new game clears all previous commander taxes");
                 Check(CardPresentation.CommanderTax(new() { FaceDown = true, CommanderTax = 8 }) == 0, "A face-down card cannot display commander identity through a tax badge");
                 Check(scenario.Replies.Count == 0, "Tax badges and their inspection never submit a game decision");

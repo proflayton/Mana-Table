@@ -11,7 +11,7 @@ public static class ControlGuidance
     {
         // Resolve stale hover references before inspecting visibility or action handles.
         var current = CardViews.Visible(state).FirstOrDefault(c => CardViews.Same(c, card));
-        if (current == null || current.FaceDown && current.Type.Length == 0) return null;
+        if (current == null || current.FaceDown && (zone != "Battlefield" || current.Type.Length == 0)) return null;
         if (CanDecide(state)) {
             if (TableChoices.Index(state, current) != null)
                 return new("choose-target", "Choose this card", "Click this highlighted card, then confirm your choices.");
@@ -29,17 +29,17 @@ public static class ControlGuidance
             if (zone == "Battlefield" && CardActions.CanActivate(state, current))
                 return new("activate-ability", "Use an ability", state.Decision.Intent == DecisionIntent.Mana
                     ? "Click this card to use its available mana ability."
-                    : "Click this card to use an available ability.");
+                    : staged ? "Choose Activate ability on the opened card." : "Click to read, then choose Activate ability.");
             if (zone == "Hand" && !current.Selectable && HandPlacements.Options(state, current) is { Length: > 0 } placements)
                 return new("hand-play", HandPlacements.Availability(state, current), placements.Length > 1
-                    ? "Double-click or drag to choose a placement source."
+                    ? "Open this card and choose a placement source, or drag onto the table."
                     : dragging ? "Release to place using " + placements[0].SourceName + "."
-                    : staged ? "Click again to place using " + placements[0].SourceName + "."
-                    : "Double-click or drag to place using " + placements[0].SourceName + ".");
+                    : staged ? "Use the placement action for " + placements[0].SourceName + "."
+                    : "Click to read and place, or drag onto the table.");
             if (state.Decision.Intent == DecisionIntent.Priority && current.Selectable && current.Key.Length > 0 && OwnCard(state, current, zone)) {
                 if (zone == "Hand") return Hand(staged, dragging);
                 if (zone == "Command") return new("commander-play", "Play your commander", staged
-                    ? "Click again to play your commander." : "Double-click to play your commander.");
+                    ? "Choose Play card to cast your commander." : "Click to read, then choose Play card.");
             }
         }
         return current.FaceDown ? new("inspect-card", "Read public characteristics", "Right-click for this anonymous permanent's public state.")
@@ -86,7 +86,7 @@ public static class ControlGuidance
     private static bool CanDecide(GameSnapshot state) => state.Status == "playing" && state.Viewer is { Eliminated: false } && state.Decision != null;
     private static bool OwnCard(GameSnapshot state, Card card, string zone) => state.Viewer?.Zone(zone).Cards.Any(c => CardViews.Same(c, card)) == true;
     private static ControlCue Hand(bool staged, bool dragging) => new("hand-play", "Play this card", dragging
-        ? "Drop onto the table to play." : staged ? "Click again to play." : "Double-click to play, or drag onto the table.");
+        ? "Drop onto the table to play." : staged ? "Choose Play card, or drag onto the table." : "Click to read and play, or drag onto the table.");
     private static ControlCue AttackTarget(GameSnapshot state, string source) => new("attack", "Choose a defender",
         "Click a blue " + DefenderLabel(state, source) + " to assign this attacker.");
     private static string AttackInstruction(GameSnapshot state, string source, string creature = "this creature") =>

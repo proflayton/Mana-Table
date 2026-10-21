@@ -12,8 +12,10 @@ internal sealed partial class TableGame
     // Commander names are public for the whole match. Retain only this public
     // cosmetic identity when the card changes zones, never a decision handle.
     private readonly Dictionary<int, string> seatPortraits = [];
+    private readonly Dictionary<(int Player, string Kind), Rectangle> battlefieldRoleLabels = [];
     private void DrawTableSurface()
     {
+        manaPoolBadges.Clear(); manaPoolDetail = null; battlefieldRoleLabels.Clear(); denseStatsBounds.Clear();
         // Neutral material studies, drawn in code. An artist can supply the
         // play-surface texture without baking cards, seating, or UI into it.
         canvas.Gradient(new(0, 0, 1600, 900), new(13, 18, 24), new(7, 11, 16));
@@ -63,14 +65,59 @@ internal sealed partial class TableGame
         DrawWorldBattlefield(player);
         DrawSeatObjects(player, 3);
         heroPositions[player.Id] = TableLayout.Hero(3);
-        if (player.Mana.Values.Sum() > 0) {
-            int x = 110; foreach (var mana in player.Mana.Where(p => p.Value > 0)) { ManaOrb(mana.Key, mana.Value, new(x, 801)); x += 43; }
-        }
     }
     private void DrawWorldBattlefield(Player player)
     {
-        foreach (var cluster in tableScene!.Battlefield(player.Id))
+        int seat = player.Id == match!.ViewerId ? 3 : TableLayout.SeatIndex(match, player.Id);
+        var clusters = tableScene!.Battlefield(player.Id);
+        bool dense = clusters.Any(cluster => cluster.Cards.Any(card => card.Dense));
+        if (dense) {
+            var area = BattlefieldLayout.DenseTerritory(seat);
+            int right = area.Right - 4;
+            foreach (var cluster in clusters.Reverse()) {
+                string text = cluster.Kind.ToUpperInvariant() + " " + cluster.Cards.Length;
+                int width = canvas.TextWidth(text, .375f, true) + 10;
+                var caption = new Rectangle(right - width, area.Top, width - 2, 19);
+                canvas.Panel(caption, new Color(15, 24, 29) * .95f, new Color(88, 107, 112), 3);
+                canvas.Text(text, caption.X + 4, caption.Y + 1, Muted, .375f, caption.Width - 8, 1, true);
+                battlefieldRoleLabels[(player.Id, cluster.Kind)] = caption;
+                right -= width;
+            }
+            int incoming = match!.Combat?.Attackers.Count(attack => attack.DefendingPlayerId == player.Id) ?? 0;
+            string status = player.Eliminated ? "ELIMINATED" : incoming > 0 ? incoming + (seat == 3 ? " ATTACKING YOU" : " INCOMING")
+                : player.Priority ? "PRIORITY" : player.Id == match.ActivePlayerId ? "ACTIVE TURN" : "";
+            int statusWidth = status.Length > 0 ? canvas.TextWidth(status, .375f, true) + 10 : 0;
+            if (statusWidth > 0) {
+                var caption = new Rectangle(right - statusWidth, area.Top, statusWidth - 2, 19);
+                canvas.Panel(caption, new Color(15, 24, 29) * .95f, incoming > 0 ? Red : Gold, 3);
+                canvas.Text(status, caption.X + 4, caption.Y + 1, incoming > 0 ? Red : Gold, .375f, caption.Width - 8, 1, true);
+                right -= statusWidth;
+            }
+            var identity = new Rectangle(area.Left + 4, area.Top, Math.Max(1, right - area.Left - 8), 19);
+            string owner = seat == 3 ? "YOU" : player.Name;
+            canvas.Panel(identity, new Color(15, 24, 29) * .95f, Blue, 3);
+            canvas.Text(owner, identity.X + 4, identity.Y + 1, Ink, .375f, Math.Max(1, identity.Width - 8), 1, true);
+            hits.Add(new("focus:" + player.Id, Scope, identity, () => OpenZone(player.Id, "Battlefield")));
+        }
+        foreach (var cluster in clusters) {
+            if (!dense && cluster.Cards.Length > 0) DrawBattlefieldRole(player.Id, seat, cluster);
             foreach (var node in cluster.Cards) DrawSceneCard(node);
+        }
+    }
+    private void DrawBattlefieldRole(int player, int seat, BattlefieldCluster cluster)
+    {
+        var bounds = cluster.Cards.Select(card => card.Pose.Bounds).Aggregate(Rectangle.Union);
+        string label = cluster.Kind.ToUpperInvariant() + "  " + cluster.Cards.Length;
+        int width = Math.Max(110, canvas.TextWidth(label, .44f, true) + 14);
+        int x = seat == 3 ? Math.Clamp(bounds.Left, 170, 1238 - width)
+            : seat == 1 ? Math.Clamp(bounds.Left, 170, 1400 - width)
+            : Math.Clamp(bounds.Center.X - width / 2, 175, 1425 - width);
+        int y = seat == 1 ? bounds.Bottom + 5 : bounds.Top - 48;
+        y = Math.Clamp(y, 70, 690);
+        var caption = new Rectangle(x, y, width, 19);
+        canvas.Panel(caption, new Color(15, 24, 29) * .9f, new Color(88, 107, 112) * .7f, 3);
+        canvas.Text(label, x + 7, y + 2, Muted, .44f, width - 14, 1, true);
+        battlefieldRoleLabels[(player, cluster.Kind)] = caption;
     }
     private void DrawSeatObjects(Player player, int seat)
     {
@@ -106,12 +153,16 @@ internal sealed partial class TableGame
             var label = new Rectangle((int)pose.Center.X - 42, bounds.Bottom, 84, 19);
             canvas.Rounded(label, new Color(17, 25, 28) * .85f, 3);
             canvas.CenterText((zone == "Graveyard" ? "Grave" : zone) + " " + value.Count, label, Ink, .43f);
-            hits.Add(new("zone:" + player.Id + ":" + zone, Scope, new(bounds.X - 4, bounds.Y - 4, bounds.Width + 8, bounds.Height + 24), () => OpenZone(player.Id, zone)));
+            hits.Add(new("zone:" + player.Id + ":" + zone, Scope, Rectangle.Union(bounds, label), () => OpenZone(player.Id, zone),
+                Shape: point => pose.Contains(point) || label.Contains(point)));
         } else {
             canvas.Circle(new(pose.Center.X, bounds.Bottom + 2), 12, new Color(17, 25, 28));
             canvas.CenterText(value.Count.ToString(), new((int)pose.Center.X - 15, bounds.Bottom - 10, 30, 24), Ink, .56f, true);
             canvas.CenterText(zone == "Graveyard" ? "Grave" : zone, new((int)pose.Center.X - 38, bounds.Bottom + 17, 76, 18), Muted, .45f);
-            hits.Add(new("zone:" + player.Id + ":" + zone, Scope, new(bounds.X - 4, bounds.Y - 4, bounds.Width + 8, bounds.Height + 40), () => OpenZone(player.Id, zone)));
+            var countBounds = new Rectangle((int)pose.Center.X - 15, bounds.Bottom - 10, 30, 24);
+            var labelBounds = new Rectangle((int)pose.Center.X - 38, bounds.Bottom + 17, 76, 18);
+            hits.Add(new("zone:" + player.Id + ":" + zone, Scope, Rectangle.Union(Rectangle.Union(bounds, countBounds), labelBounds), () => OpenZone(player.Id, zone),
+                Shape: point => pose.Contains(point) || countBounds.Contains(point) || labelBounds.Contains(point)));
         }
         if (top != null) DrawTableCard("pile:" + player.Id + ":" + zone + ":" + CardIdentity(top), top, pose, zone, player.Id,
             "pile-card:" + player.Id + ":" + zone, () => OpenZone(player.Id, zone), (displayed, focus) => PaintCard(top, displayed, false, false, focus), opensZone: true);
@@ -162,26 +213,36 @@ internal sealed partial class TableGame
         if (own) { x = (int)center.X + 58; y = (int)center.Y - 22; }
         if (!own && index == 1) { x = (int)center.X + 50; y = (int)center.Y - 32; }
         var nameplate = new Rectangle(x, y, 188, 24);
-        canvas.CenterText(own ? name : name + " ↗", nameplate, !own && nameplate.Contains(pointer) ? Blue : Ink, .6f, true);
+        var manaHalo = PlanManaHalo(player, own ? 3 : index);
+        if (own) { x = Math.Max((int)center.X + 58, manaHalo.Bounds.Right) + 8; nameplate = new(x, y, 100, 24); }
+        else if (index == 1) { x = Math.Max((int)center.X + 50, manaHalo.Bounds.Right) + 8; y = 64; nameplate = new(x, y, 188, 24); }
+        bool dense = tableScene!.Battlefield(player.Id).Any(cluster => cluster.Cards.Any(card => card.Dense));
+        if (!dense) canvas.CenterText(own ? name : name + " ↗", nameplate, !own && nameplate.Contains(pointer) ? Blue : Ink, .6f, true);
         int incoming = match.Combat?.Attackers.Count(a => a.DefendingPlayerId == player.Id) ?? 0;
         string status = player.Eliminated ? "ELIMINATED" : incoming > 0 ? incoming + (own ? " ATTACKING YOU" : " INCOMING") : player.Priority ? "PRIORITY" : active ? "ACTIVE TURN" : "";
         if (!own && index != 1 && hasCounters) status += (status.Length > 0 ? " · " : "") + player.Zone("Hand").Count + " in hand";
-        canvas.CenterText(status, new(x, y + 23, 188, 19), incoming > 0 ? Red : Gold, .43f, true);
+        if (!dense) {
+            if (own) canvas.Text(status, x, y + 23, incoming > 0 ? Red : Gold, .43f, 100, (int)Math.Ceiling(2 * preferences.TextScale), true);
+            else canvas.CenterText(status, new(x, y + 23, 188, 19), incoming > 0 ? Red : Gold, .43f, true);
+        }
         var permanents = player.Zone("Battlefield").Cards;
         int creatures = permanents.Count(c => CardPresentation.HasCombatStats(c) && !c.PhasedOut);
         int phased = permanents.Count(c => CardPresentation.HasCombatStats(c) && c.PhasedOut);
         int unknown = permanents.Count(c => c.FaceDown && c.Type.Length == 0);
-        int countX = own ? x + 198 : x, countY = own ? y : y + 43;
-        canvas.CenterText($"{creatures} " + (creatures == 1 ? "CREATURE" : "CREATURES"), new(countX, countY, 188, 22), Ink, .72f, true);
+        int countX = own ? x + 110 : x, countY = own ? y : y + 43, countWidth = own ? 140 : 188;
+        if (!dense) canvas.CenterText($"{creatures} " + (creatures == 1 ? "CREATURE" : "CREATURES"), new(countX, countY, countWidth, 22), Ink, .72f, true);
         string secondary = phased > 0 || unknown > 0
             ? string.Join(" · ", new[] { phased > 0 ? $"{phased} phased out" : "", unknown > 0 ? $"{unknown} unknown" : "" }.Where(v => v.Length > 0))
             : $"{permanents.Length} permanents";
-        canvas.CenterText(secondary, new(countX, countY + 22, 188, 18), Muted, .51f);
+        if (!dense) canvas.CenterText(secondary, new(countX, countY + 22, countWidth, 18), Muted, .51f);
         if (hasCounters) {
             int counterX = own ? (int)center.X - 240 : (int)center.X - 94;
             int counterY = own ? (int)center.Y - 22 : index == 1 ? (int)center.Y + 35 : (int)center.Y - 64;
+            if (own) counterX = Math.Min(counterX, manaHalo.Bounds.Left - 196);
+            else if (index == 1) counterY = Math.Max(counterY, manaHalo.Bounds.Bottom + 8);
             DrawPublicPlayerCounters(player, counterX, counterY, index == 1 && !own ? 144 : 188, growUp: !own && index != 1);
         }
-        if (!own) hits.Add(new("focus:" + player.Id, Scope, nameplate, () => OpenZone(player.Id, "Battlefield")));
+        DrawPlayerMana(player, manaHalo);
+        if (!own && !dense) hits.Add(new("focus:" + player.Id, Scope, nameplate, () => OpenZone(player.Id, "Battlefield")));
     }
 }

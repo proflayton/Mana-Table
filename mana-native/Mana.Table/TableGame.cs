@@ -68,7 +68,7 @@ internal sealed partial class TableGame : Game
     private MouseState previousMouse;
     private KeyboardState previousKeys;
     private Hit? pressed, dragSource;
-    private double nextPoll, now, hoverSince, turnBannerUntil;
+    private double nextPoll, now, turnBannerUntil;
     private double lastDrawTime;
     private int frames;
     private string? windowCapture;
@@ -152,6 +152,7 @@ internal sealed partial class TableGame : Game
         if (state?.Status == "finished" && previous?.Status != "finished") tableGuideOpen = false;
         if (state != null) { effects.Observe(previous, state, now); presence.Observe(previous, state, now); playback.Observe(previous, state, now); }
         if (state != null) ObserveActionFeedback(previous, state);
+        ObserveMana(previous, state);
         if (state != null && previous != null && state.Id == previous.Id) {
             if (state.Notices.LastOrDefault() is { } latest && latest != previous.Notices.LastOrDefault()) { notice = latest; noticeUntil = now + 8; }
             foreach (var player in state.Players) {
@@ -181,7 +182,7 @@ internal sealed partial class TableGame : Game
         var prompt = match?.Decision;
         if (decisionId != (prompt?.Id ?? "")) {
             decisionId = prompt?.Id ?? ""; selections.Clear(); choicePage = 0; choiceFilter = ""; selectedCombat = null; priority.Reset();
-            dragging = false; dragSource = null; pendingPlay = null; collapsedDecision = false; textFocus = false;
+            dragging = false; dragSource = null; collapsedDecision = false; textFocus = false;
             if (!TableChoice && prompt is { Ordered: true } && prompt.Min == prompt.Choices.Length) selections.AddRange(prompt.Choices.Select(c => c.Index));
             allocations = prompt?.Choices.Select(_ => prompt.AtLeastOne ? 1 : 0).ToArray() ?? [];
             inputText = prompt?.Kind == "number" ? prompt.Min.ToString() : prompt?.Initial ?? "";
@@ -189,7 +190,7 @@ internal sealed partial class TableGame : Game
         string turn = match == null ? "" : match.Id + ":" + match.Turn + ":" + match.ActivePlayerId;
         if (previousTurn != turn) { previousTurn = turn; held = false; turnBannerUntil = now + 1.5; if (match?.ActivePlayerId == match?.ViewerId && match?.Turn > 0 && preferences.Sounds) assets.Play("your-priority", .3f); }
         if (inspected != null) {
-            inspected = VisibleCards().FirstOrDefault(c => SameVisibleCard(c, inspected));
+            inspected = RefreshInspectedCard();
             if (inspected == null && overlay == "inspect") overlay = "";
         }
         if (dragSource?.Card is { } heldCard && !VisibleCards().Any(c => SameVisibleCard(c, heldCard))) { dragging = false; dragSource = null; pressed = null; }
@@ -200,19 +201,22 @@ internal sealed partial class TableGame : Game
         if (!chatKeys) { DeckKeys(keys); SetupKeys(keys); }
         var view = GraphicsDevice.Viewport; float scale = Math.Min(view.Width / 1600f, view.Height / (float)DesignHeight);
         pointer = new((int)((mouse.X - (view.Width - 1600 * scale) / 2) / scale), (int)((mouse.Y - (view.Height - DesignHeight * scale) / 2) / scale));
-        if (!blockedInput && mouse.RightButton == ButtonState.Pressed && previousMouse.RightButton == ButtonState.Released && hovered is { } card) { pendingPlay = null; Inspect(card); }
+        if (!blockedInput && mouse.RightButton == ButtonState.Pressed && previousMouse.RightButton == ButtonState.Released && HitAt(pointer)?.Card is { } card) Inspect(card);
         if (mouse.LeftButton == ButtonState.Pressed && previousMouse.LeftButton == ButtonState.Released) {
             pressed = HitAt(pointer); pressPoint = pointer;
             if (!blockedInput && chatOpen && !ChatBounds.Contains(pointer)) chatFocus = false;
             if (!blockedInput && match == null && deckEditor && pressed?.Id is not ("deck-search-library" or "deck-search-deck" or "deck-clear-library" or "deck-clear-deck")) { deckTextFocus = ""; textFocus = false; }
-            if (pendingPlay is { } pending && (pressed?.Id != pending.Id || pressed.Scope != pending.Scope)) pendingPlay = null;
             dragSource = !OverlayOpen && pressed?.Card is { } source && IsCardActionable(source) ? pressed : null; dragging = false;
         }
-        if (mouse.LeftButton == ButtonState.Pressed && dragSource != null && dragSource.Scope == Scope && Vector2.Distance(pressPoint.ToVector2(), pointer.ToVector2()) > 9) { dragging = true; pendingPlay = null; }
+        if (mouse.LeftButton == ButtonState.Pressed && dragSource != null && dragSource.Scope == Scope && Vector2.Distance(pressPoint.ToVector2(), pointer.ToVector2()) > 9) {
+            if (!dragging) CollapseCardReading();
+            dragging = true;
+        }
         if (mouse.LeftButton == ButtonState.Released && previousMouse.LeftButton == ButtonState.Pressed) {
             var hit = HitAt(pointer);
             if (dragging) { bool accepted = DropCard(hit); if (Automation != null) Automation.ClickAccepted = accepted; }
             else if (hit != null && pressed?.Id == hit.Id && pressed.Scope == hit.Scope && CurrentHit(hit)) { ActivateHit(hit); if (Automation != null && hit.Id == Automation.ExpectedClick) Automation.ClickAccepted = true; }
+            else if (pressed == null && hit == null) CollapseCardReading();
             pressed = null; dragSource = null; dragging = false;
         }
         if (experienceInput && keys.IsKeyDown(Keys.Escape) && previousKeys.IsKeyUp(Keys.Escape)) {
@@ -220,7 +224,8 @@ internal sealed partial class TableGame : Game
         }
         if (updatesOpen && !ActivityOpen && keys.IsKeyDown(Keys.Escape) && previousKeys.IsKeyUp(Keys.Escape)) CloseAppUpdates();
         if (!chatKeys && keys.IsKeyDown(Keys.Escape) && previousKeys.IsKeyUp(Keys.Escape)) {
-            dragging = false; dragSource = null; pressed = null; pendingPlay = null; selectedCombat = null; textFocus = false;
+            CollapseCardReading();
+            dragging = false; dragSource = null; pressed = null; selectedCombat = null; textFocus = false;
             if (match == null && !busy) { if (workshopDialog.Length > 0) workshopDialog = ""; else if (deckMenu.Length > 0) deckMenu = ""; else if (deckEditor) CloseDeckEditor(); else CloseSetupModal(); }
             if (overlay.Length > 0) overlay = ""; else if (zoneName != null) zoneName = null;
             else if (DecisionModal && match?.Decision?.Kind == "allocate" && allocationDetail >= -1) CloseAllocationDetail();
@@ -240,7 +245,7 @@ internal sealed partial class TableGame : Game
         previousMouse = mouse; previousKeys = keys;
         // Give a ready pass precedence over starting another observation. Use this
         // update's pointer position so entering a card pauses Auto before Draw.
-        bool autoBlocked = commandFailure && error.Length > 0 || OverlayOpen || chatFocus || dragging || pressed != null || HitAt(pointer)?.Card is { FaceDown: false } || selectedCombat != null;
+        bool autoBlocked = commandFailure && error.Length > 0 || OverlayOpen || chatFocus || dragging || pressed != null || readingId != null || selectedCombat != null;
         if (!automatic || held || autoBlocked) session.CancelAdvance();
         if (!session.NeedsRecovery && fixture == null && playback.Ready(now) && priority.Update(match, automatic, held, preferences.Stops,
             autoBlocked, busy || polling) != null) {
@@ -304,7 +309,8 @@ internal sealed partial class TableGame : Game
             canvas.Text(message, messageX, 25, Ink, .82f, Math.Max(0, 1175 - messageX), 1);
             DrawLobby();
         } else {
-            tableScene = TableScene.Build(match, handPage, pointer, null, dragging ? dragSource?.Card is { } held ? CardViews.Identity(held) : null : null, false, CardPresentation.IsResource);
+            tableScene = TableScene.Build(match, handPage, pointer, null, dragging ? dragSource?.Card is { } held ? CardViews.Identity(held) : null : null, false, CardPresentation.IsResource,
+                denseMeasure: MeasureDenseBattlefieldLabel, allowInlineOrdering: TableChoices.IsDirect(match));
             DrawArena();
         }
         if (match != null && noticeUntil > now && !OverlayOpen) {

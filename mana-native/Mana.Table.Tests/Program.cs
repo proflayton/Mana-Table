@@ -39,7 +39,7 @@ internal static class Program
             if (args.Contains("--smoke-onboarding")) { OnboardingSmoke.Run(profile, size); return 0; }
             if (args.Contains("--smoke-loading")) { LoadingSmoke.Run(profile, size); return 0; }
             if (args.Contains("--smoke-context-guidance")) { ContextGuidanceSmoke.Run(profile, size); return 0; }
-            if (args.Contains("--smoke-full-battlefield")) { FullBattlefieldSmoke.Run(profile, size, args.Contains("--real-art")); return 0; }
+            if (args.Contains("--smoke-full-battlefield")) { FullBattlefieldSmoke.Run(profile, size, args.Contains("--real-art"), args.Contains("--readable-crowd")); return 0; }
             if (args.Contains("--smoke-commander-tax")) {
                 var scenario = new InteractionScenarioEngine(); scenario.Present(PresentationSmoke.CommanderTaxExample());
                 using var test = new TableGame(scenario, profile, null, null, size, initialState: scenario.State, artSource: new CardReadingArtFixture());
@@ -84,6 +84,7 @@ internal static class Program
                 test.Run(); return 0;
             }
             if (args.Contains("--smoke-card-reading") || args.Contains("--smoke-card-states") || args.Contains("--smoke-compact-selection")) {
+                if (args.Contains("--smoke-card-states")) new PlayPreferences { TextScale = 1.3f, Sounds = false, Automatic = false }.Save(profile);
                 var scenario = new InteractionScenarioEngine(); scenario.Present(PresentationSmoke.Example());
                 using var test = new TableGame(scenario, profile, null, null, size: size, initialState: scenario.State, artSource: new CardReadingArtFixture());
                 test.Automation = new CardReadingSmoke(test.TestPort, scenario, selectionOnly: args.Contains("--smoke-compact-selection"), statesOnly: args.Contains("--smoke-card-states"));

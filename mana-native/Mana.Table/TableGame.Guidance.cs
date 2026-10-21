@@ -61,8 +61,7 @@ internal sealed partial class TableGame
             cue = new("priority-controls", held ? "Priority held this turn" : automatic ? "Auto is following the table" : "You have full control",
                 held ? "Click Hold again to resume. It resets next turn." : automatic ? "Auto follows your pass settings. Hold keeps priority this turn." : "You choose each pass. Auto follows your pass settings.");
             if (Unlearned(cue)) {
-                if (PriorityAbilityOptions().Length > 0) PaintGuidanceHeader(cue);
-                else PaintGuidance(cue, new(1266, 724, 296, 66), true);
+                PaintGuidanceHeader(cue);
             }
             return;
         }
@@ -79,7 +78,7 @@ internal sealed partial class TableGame
         }
         Hit? anchor = hit?.Card == null ? null : hit;
         if (anchor?.Card is { } focused) {
-            bool staged = pendingPlay is { } pending && pending.Id == anchor.Id && pending.Scope == Scope && now - pending.Time <= .5;
+            bool staged = readingId == CardIdentity(focused);
             cue = ControlGuidance.Card(state, focused, anchor.Zone ?? "", staged);
         } else {
             if (TurnGuide.CanAutoPass(state, automatic, held, preferences.Stops, false)) return;
@@ -99,8 +98,7 @@ internal sealed partial class TableGame
         var placement = anchor == null ? null : GuidancePlacement(anchor.Bounds, anchor.Zone);
         if (placement is { } beside) {
             PaintAnchoredGuidance(cue!, anchor!, beside);
-        } else if (PriorityAbilityOptions().Length > 0) PaintGuidanceHeader(cue!);
-        else PaintGuidance(cue!, new(1266, 724, 296, 66), true);
+        } else PaintGuidanceHeader(cue!);
     }
 
     private void PaintAnchoredGuidance(ControlCue cue, Hit anchor, Rectangle bounds)
@@ -124,6 +122,7 @@ internal sealed partial class TableGame
         foreach (var bounds in candidates) {
             if (bounds.IsEmpty || bounds.Left < 14 || bounds.Top < 64 || bounds.Right > 1586 || bounds.Bottom > 850) continue;
             if (bounds.Intersects(TableLayout.LocalSeatBounds)) continue;
+            if (bounds.Intersects(decisionPanelBounds)) continue;
             if (hits.Any(h => h.Bounds.Intersects(bounds))) continue;
             return bounds;
         }
@@ -147,8 +146,8 @@ internal sealed partial class TableGame
     {
         // Every dock fallback leaves the engine's reason for a required choice
         // visible, including targets, mana costs and combat restrictions.
-        guidanceCue = cue; guidanceBounds = new(1266, 723, 296, 17);
+        guidanceCue = cue; guidanceBounds = new(1266, Math.Max(65, decisionPanelBounds.Top - 22), 296, 20);
         canvas.Fill(guidanceBounds.Value, new Color(14, 28, 38));
-        canvas.Text(cue.Key == "choose-target" ? cue.Text : cue.Title, 1266, 725, ActionAccent, .56f, 296, 1, true);
+        canvas.Text(cue.Title, guidanceBounds.Value.X, guidanceBounds.Value.Y + 1, ActionAccent, .56f, 296, 1, true);
     }
 }

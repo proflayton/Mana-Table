@@ -10,7 +10,7 @@ client/engine bundle and isolated source runs.
 | Check | Command | What it covers |
 | --- | --- | --- |
 | Java compilation, style, tests and engine JAR | `mvn -pl forge-api -am verify` (root) | Adapter and required upstream modules |
-| Full Java test reactor | `mvn -U -B clean test` (root, once with JDK 17 and once with JDK 21) | The separate `Test build` workflow; broader than the focused adapter reactor |
+| Full Java test reactor | `mvn -U -B clean test` (root, once with JDK 17 and once with JDK 21) | Broader upstream coverage, also available through `Test build` manual dispatch with `extended=true` |
 | Native client logic | `dotnet run --project mana-native/Mana.Client.Tests/Mana.Client.Tests.csproj -c Release` | Graphics-free client, contract, persistence and updater regressions |
 | Native UI test build | `dotnet build mana-native/Mana.Table.Tests/Mana.Table.Tests.csproj -c Release` | Builds the separate Windows GPU/input test executable; does not run its journeys |
 | Maintained documentation | `node forge-desktop/scripts/check-docs.cjs` (root), or `npm run check:docs` in `forge-desktop` | Local links and heading fragments; does not verify that prose, commands or feature claims are correct |
@@ -52,11 +52,10 @@ Keep the profile, results, diagnostics and captures on failure. Use a new profil
 for the next journey; a successful process exit without its expected result file
 is not sufficient evidence.
 
-Match pointer tests should follow the visible interaction: approach the hand
-from the table's bottom edge and hover an exposed card strip; approach a covered
-battlefield card from the playmat so the fan opens a gap. Keyboard focus is also
-a supported way to lift a card. Direct center clicks can hit an overlapping card;
-keep real hit testing enabled instead of bypassing it with forced clicks.
+Match pointer tests should follow the visible interaction: use an exposed hand
+strip or battlefield face, hover to highlight and click to read. Required choices
+stay compact. Direct center clicks can hit an overlapping card; use the actual
+physical hit regions instead of bypassing them with forced clicks.
 
 ## Run a focused regression
 
@@ -497,9 +496,9 @@ each has a meaningful bounded deadline. Run all three at both `1000x740` and
 
 | Mode | Result file | Journey deadline | Coverage |
 | --- | --- | --- | --- |
-| `--smoke-card-reading` | `reading-results.json` | 50 seconds | Enlarged cards, original hand-strip access, real click/drag edges, anonymous and identical revealed faces, library faces without choice indices, acknowledgement and visibility revocation |
-| `--smoke-card-states` | `card-states-results.json` | 30 seconds | Current counters/keywords, airborne hover, losing flying, phasing out/in and the same displayed occurrence returning to its table pose |
-| `--smoke-compact-selection` | `compact-selection-results.json` | 30 seconds | Selection/deselection collapse, neighboring readers, stationary suppression and slow hover handoff through real input |
+| `--smoke-card-reading` | `reading-results.json` | 50 seconds | Compact hover, persistent click readers, explicit actions, original hand-strip access, real drag edges, anonymous revealed faces, acknowledgement and visibility revocation |
+| `--smoke-card-states` | `card-states-results.json` | 45 seconds | Flying/phasing, player state and mana, explicit hand reading, measured decision/help text and exact numbered ordering on gallery, text and table surfaces |
+| `--smoke-compact-selection` | `compact-selection-results.json` | 30 seconds | Compact selection/deselection, explicit inspection, adjacent physical hit regions and exact scoped confirmation |
 
 The `card-states` fixture includes counter stacks, granted combat abilities and a
 phased-out Teferi's Isle at every seat. State captures include `06-card-states`,
@@ -508,13 +507,14 @@ These are controlled visual states; the renderer consumes the same fields suppli
 by Forge, but the fixture does not establish the cards' actual rules outcomes.
 `PhasingSnapshotTest` exercises real four-seat Forge snapshots through the Isle's
 first phase-out, all three opponents' turns and its return and untap on turn five.
-The native release workflow requires commander-tax and all three journeys at both
-sizes before publishing an installer. Use the workflow's current suite list as
-the executable inventory rather than copying an old total check count.
+Automatic native gates include `card-states` at 1000x740. Manual dispatch with
+`extended=true` includes commander-tax and all three journeys at both sizes.
+Use the workflow's current suite list as the executable inventory rather than
+copying an old total check count.
 
 `Mana.Table.Tests.exe --smoke-full-battlefield --profile <isolated-profile> --size 1000x740`
 checks the complete battlefield through actual native pointer input and GPU
-captures. Repeat at 1540x980; both sizes are required by the native release gate.
+captures. Repeat at 1540x980; both sizes are available in the extended native suite.
 It checks ten creatures per seat, reading and inspecting an opponent's tenth
 creature, and a scoped action on the local tenth creature. Twenty mixed permanents
 per seat cover distinct public states, animated lands in the creature cluster,
@@ -526,6 +526,9 @@ Battlefield paging is absent while normal hand paging remains available. Evidenc
 `full-battlefield-results.json`, captures `01`–`09`, and diagnostic captures/JSON
 on failure. The controlled engine validates commands; this is a presentation
 regression, with real Forge legality exercised by the shared engine suites.
+`--readable-crowd` runs its focused 130% text fixture: fifteen distinct creature
+groups alongside support and lands at every seat, checking upright bounded cells,
+exposed names, power/toughness, counters, copy labels and exact owner/role headers.
 
 `Mana.Table.Tests.exe --smoke-ui-interactions --profile <new-test-directory>` exercises
 the actual MonoGame pointer path against a deterministic `ICardEngine` test double.
@@ -814,8 +817,9 @@ goal controls, analysis sections, and return to the builder. Supply the same
 `--engine-resources`, optional `--engine-jar`, and disposable `--profile` options
 as the other native smoke tests. Results are `analysis-adapter-results.json` and
 `analysis-ui-results.json`; UI captures are named `analysis-*.png`.
-The Windows release gate requires the analysis adapter and both UI sizes,
-alongside the existing workshop, deck-tuning, and gameplay checks.
+Automatic Windows gates include the 1000x740 analysis journey. The real analysis
+adapter, both UI sizes, workshop and deck-tuning journeys remain in the extended
+suite; run the affected cases when changing those behaviors.
 
 For curated interaction changes, check the actual card scripts and primary rules
 sources. The Toph and earthbend registry uses Wizards' [Avatar release notes](https://magic.wizards.com/en/news/feature/avatar-the-last-airbender-release-notes)
@@ -862,7 +866,7 @@ disable forced application closure and system restart during this handoff.
 
 `--smoke-allocation --profile <isolated-profile> --size 1000x740` drives the
 card-based damage and numeric assignment screen through actual pointer input.
-The required release gates run at 1000x740 and 1540x980. Inspect
+Run at 1000x740 and 1540x980; both cases are in the extended suite. Inspect
 `allocation-ui-results.json` and captures `01`–`06`: source/current stats,
 six visible recipients plus a seventh-page defender, distinct same-name cards,
 public anonymous creature characteristics, marked damage, required assignment
@@ -875,10 +879,10 @@ reply validation are verified separately by the Java/API tests.
 
 `--smoke-hand-placement --profile <isolated-profile> --size 1000x740` drives
 normal pointer input through engine-projected extra hand placements, then
-graveyard and exile actions. Repeat at `1540x980`; both sizes are required native
-release gates. Evidence is `hand-placement-results.json` and captures 01–08.
+graveyard and exile actions. Repeat at `1540x980`; both sizes are in the extended
+native suite. Evidence is `hand-placement-results.json` and captures 01–08.
 
-The journey checks that a single hand click reads, deliberate double-click and
+The journey checks that a single hand click reads, explicit reader actions and
 drag use the exact available source, multiple sources require a choice, and a
 revoked or phased-out source cannot submit. A placement first enters the stack;
 the later optional engine decision selects the hand card on resolution. Ordinary

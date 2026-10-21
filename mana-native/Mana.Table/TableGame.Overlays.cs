@@ -48,6 +48,7 @@ internal sealed partial class TableGame
                 case "history": DrawHistory(); break;
                 case "action": DrawActionDetails(); break;
                 case "player": DrawPlayerDetails(); break;
+                case "mana": DrawManaDetails(); break;
                 case "concede": DrawConcede(); break;
                 case "leave-table": DrawLeaveTable(); break;
                 case "help": DrawHelp(); break;
@@ -182,9 +183,11 @@ internal sealed partial class TableGame
     private void DrawHelp()
     {
         ModalFrame("Current decision", () => overlay = "");
-        var text = TextPages((match!.Decision?.Message ?? TurnGuide.Instruction(match)) + "\n\n" + (match.Combat?.BlockProblem ?? "") + "\n\n" + CardActions.Help, ReadingPageSize(2100));
+        string purpose = string.IsNullOrWhiteSpace(match!.Decision?.Message) ? StateClarity.DecisionInstruction(match, busy, pendingActionLabel) : match.Decision.Message;
+        var text = MeasuredHelpPages(purpose + "\n\n" + (match.Combat?.BlockProblem ?? "") + "\n\n" + CardActions.Help);
         inspectPage = Math.Clamp(inspectPage, 0, text.Length - 1);
-        canvas.Text(text[inspectPage], 211, 200, Ink, .93f, 1155, 21);
+        helpPageText = text[inspectPage];
+        canvas.Text(helpPageText, 211, 200, Ink, .93f, 1155, 80);
         Button("help-prev", "Previous", 211, 736, 144, () => inspectPage--, inspectPage > 0);
         Button("help-next", "More", 368, 736, 144, () => inspectPage++, inspectPage + 1 < text.Length);
         Button("guidance-reset", "Show control hints again", 1060, 736, 310, ResetControlHints);
@@ -279,7 +282,7 @@ internal sealed partial class TableGame
             .Where(c => c.Item.Label.Contains(choiceFilter, StringComparison.OrdinalIgnoreCase)).ToArray();
         bool portraits = items.Any(c => c.Card != null); int capacity = portraits ? 7 : 6;
         choicePage = Math.Clamp(choicePage, 0, Math.Max(0, (filtered.Length - 1) / capacity));
-        string instruction = d.Kind == "reveal" ? "Hover to read these cards, then continue." : d.Ordered
+        string instruction = d.Kind == "reveal" ? "Click a card to enlarge it, then continue." : d.Ordered
             ? $"Choose {d.Min}–{d.Max} in your chosen order: 1, 2, 3…  Selected: {selections.Count}. Clear selection to start again."
             : $"Choose {d.Min}–{d.Max}. Selected: {selections.Count}.";
         canvas.Text(instruction, 206, 251, Gold, .72f, 1160, 2);

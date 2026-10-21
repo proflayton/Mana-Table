@@ -16,7 +16,7 @@ internal sealed partial class TableGame
     private void ClearExperienceInput()
     {
         session.CancelAdvance(); priority.Reset();
-        pressed = dragSource = null; dragging = false; pendingPlay = null;
+        pressed = dragSource = null; dragging = false;
         hovered = null; readingId = readingZone = null;
     }
 

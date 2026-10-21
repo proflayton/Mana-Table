@@ -37,17 +37,42 @@ internal sealed partial class TableGame
     {
         string label = CardPresentation.AttachmentBadge(card);
         if (label.Length == 0) return;
+        if (pose.Size.X < 300 && tableScene?.Battlefield(owner).SelectMany(cluster => cluster.Cards)
+            .FirstOrDefault(node => node.Dense && node.Id == CardViews.Identity(card)) is { DenseLabels.IsEmpty: true }) {
+            // The extreme face-only fallback has no room for a detached stats
+            // chip. Keep its relationship cue inside this exact face instead.
+            int side = Math.Min(10, Math.Min(pose.Bounds.Width, pose.Bounds.Height) - 2);
+            Rectangle cue = Rectangle.Empty;
+            while (side > 0) {
+                cue = new((int)pose.Center.X - side / 2, (int)pose.Center.Y - side / 2, side, side);
+                if (pose.Contains(new(cue.Left, cue.Top)) && pose.Contains(new(cue.Right - 1, cue.Top))
+                    && pose.Contains(new(cue.Left, cue.Bottom - 1)) && pose.Contains(new(cue.Right - 1, cue.Bottom - 1))) break;
+                side--;
+            }
+            if (side > 0) {
+                canvas.Panel(cue, new Color(48, 39, 22), Gold, Math.Min(3, side / 2));
+                if (card.CombatId.Length > 0) attachmentBadges[card.CombatId] = new("", cue, 0, true);
+            }
+            return;
+        }
+        if (pose.Size.X < 300 && CardPresentation.HasCombatStats(card)
+            && denseStatsBounds.TryGetValue(CardViews.Identity(card), out var denseStats)) {
+            // Dense labels already paint attachment color on their measured P/T
+            // rectangle. Reuse that exact text and target, including on hover.
+            if (card.CombatId.Length > 0) attachmentBadges[card.CombatId] = new(
+                $"{card.Power}/{card.Toughness}", denseStats.Bounds, denseStats.MeasuredWidth, true, true);
+            return;
+        }
         int seat = owner == match!.ViewerId ? 3 : TableLayout.SeatIndex(match, owner);
         if (compact && CardPresentation.HasCombatStats(card) && pose.Size.X < 300) {
             // A projected creature face can be shorter than its readable P/T
             // chip. Put attachment state on that existing inward-facing chip,
             // preserving both the footprint and the engine's current P/T.
-            var center = CompactStateCenter(pose, seat);
-            var stats = new Rectangle((int)center.X - 15, (int)center.Y - 9, 30, 18);
+            var stats = CompactStatsBounds(card, pose, seat);
             string value = $"{card.Power}/{card.Toughness}";
             canvas.Panel(stats, new Color(48, 39, 22), Gold, 3);
-            canvas.CenterText(value, stats, Ink, .59f, true);
-            if (card.CombatId.Length > 0) attachmentBadges[card.CombatId] = new(value, stats, 0, true, true);
+            canvas.CenterText(value, stats, Ink, CompactStatsSize, true);
+            if (card.CombatId.Length > 0) attachmentBadges[card.CombatId] = new(value, stats, canvas.TextWidth(value, CompactStatsSize, true), true, true);
             return;
         }
         int available = Math.Max(8, Math.Min(105, pose.Bounds.Width - 4));

@@ -25,9 +25,9 @@ internal sealed class FullBattlefieldSmoke : ITableAutomation
     public bool ClickAccepted { get; set; }
     public MouseState ReadMouse() => mouse;
 
-    internal static void Run(string profile, Point? size, bool realArt = false)
+    internal static void Run(string profile, Point? size, bool realArt = false, bool readableCrowd = false)
     {
-        new PlayPreferences { Automatic = false, Sounds = false, ReducedMotion = false, TextScale = realArt ? 1.3f : 1 }.Save(profile);
+        new PlayPreferences { Automatic = false, Sounds = false, ReducedMotion = false, TextScale = 1.3f }.Save(profile);
         var scenario = new InteractionScenarioEngine();
         scenario.Present(Example("ten"));
         ICardArtSource images = new CardReadingArtFixture();
@@ -40,19 +40,21 @@ internal sealed class FullBattlefieldSmoke : ITableAutomation
             images.Dispose(); images = source;
         }
         using var game = new TableGame(scenario, profile, null, null, size, initialState: scenario.State, artSource: images);
-        game.Automation = new FullBattlefieldSmoke(game.TestPort, scenario);
+        game.Automation = new FullBattlefieldSmoke(game.TestPort, scenario, readableCrowd);
         game.Run();
     }
 
-    private FullBattlefieldSmoke(TableGame.Probe view, InteractionScenarioEngine scenario)
+    private FullBattlefieldSmoke(TableGame.Probe view, InteractionScenarioEngine scenario, bool readableCrowd)
     {
         this.view = view; this.scenario = scenario;
+        if (readableCrowd) { QueueReadableCrowd(0); return; }
         Step(1.7, () => { });
         Wait(() => BattlefieldReady(10), 3, () => {
             AssertExposed(10, "Ten creatures");
             Capture("01-ten-creatures");
             MoveCard("ten-1-9");
         });
+        Click();
         Wait(() => Reading("ten-1-9"), 3, () => {
             Check(Reading("ten-1-9") && view.CardPaintCount("ten-1-9") == 1,
                 "An opponent's tenth creature enlarges through its own exposed hit area and is painted once");
@@ -75,6 +77,11 @@ internal sealed class FullBattlefieldSmoke : ITableAutomation
             var card = view.Match!.Viewer!.Zone("Battlefield").Cards.Single(c => c.VisualId == "ten-0-9");
             actionGame = view.Match.Id; actionDecision = view.Match.Decision!.Id; actionCard = card.Key;
             MoveCard(card.VisualId);
+        }); Click();
+        Wait(() => Reading("ten-0-9"), 3, () => {
+            Check(Reading("ten-0-9") && scenario.Replies.Count == 0 && view.Hits.Any(h => h.Id == "read-card-action"),
+                "The local tenth creature reads first and exposes its explicit current activation");
+            MoveHit("read-card-action");
         }); Click();
         Wait(() => scenario.Replies.Count == 1 && view.Match?.Decision?.Context == "playAbility", 3, () => {
             Check(scenario.Replies.Count == 1 && scenario.Replies[0] is { Action: ReplyAction.SelectCard } reply
@@ -122,11 +129,14 @@ internal sealed class FullBattlefieldSmoke : ITableAutomation
             Capture("06-fifty-copies");
             MoveCard("fifty-2-49");
         });
+        Click();
         Wait(() => Reading("fifty-2-49"), 3, () => {
             Check(Reading("fifty-2-49") && view.CardPaintCount("fifty-2-49") == 1 && scenario.Replies.Count == 1,
                 "The fiftieth opposing token remains individually readable without a page change or game action");
-            Capture("07-fiftieth-hover"); MoveAway();
+            Capture("07-fiftieth-hover"); MoveHit("read-card-close");
         });
+        Click();
+        Step(.1, () => MoveAway());
         Step(.6, () => MoveHit("settings")); Click();
         Step(.12, () => {
             Check(view.Overlay == "settings", "Reduced motion is enabled through the normal settings panel");
@@ -149,15 +159,18 @@ internal sealed class FullBattlefieldSmoke : ITableAutomation
             foreach (var player in view.Match!.Players) {
                 var creatures = Scene().Battlefield(player.Id).Single(c => c.Kind == "Creatures").Cards;
                 Check(creatures.Length == 50 && creatures.All(c => c.GroupCount == 1)
-                    && creatures.Select(c => c.Card.Name).Distinct().Count() == 50,
+                    && creatures.Select(c => c.Card.Name).Distinct().Count() == 50
+                    && creatures.All(c => c.Dense && !c.DenseLabels.IsEmpty && InDenseArea(player.Id, c.Pose.Bounds)),
                     $"Seat {player.Id}'s fifty distinct names retain fifty independently exposed occurrences");
             }
             Check(scenario.Replies.Count == 1, "Displaying fifty distinct creatures per seat sends no additional game action");
             Capture("09-fifty-distinct");
             MoveCard("distinct-2-49");
         });
+        Click();
         Wait(() => Reading("distinct-2-49"), 3, () => {
-            Check(view.Hovered?.Name == "Alloy Myr", "The named Alloy Myr remains individually readable among fifty distinct creatures");
+            Check(Reading("distinct-2-49") && view.Match!.Players[2].Zone("Battlefield").Cards.Single(c => c.VisualId == "distinct-2-49").Name == "Alloy Myr",
+                "The named Alloy Myr remains individually readable among fifty distinct creatures");
             Capture("10-named-occurrence");
         });
         Step(0, () => Buttons(right: ButtonState.Pressed));
@@ -165,10 +178,94 @@ internal sealed class FullBattlefieldSmoke : ITableAutomation
         Step(.15, () => {
             Check(view.Overlay == "inspect" && scenario.Replies.Count == 1, "Inspecting the named occurrence preserves the game and sends no command");
             Capture("11-named-inspector");
-            File.WriteAllText(Path.Combine(view.Profile, "full-battlefield-results.json"),
-                JsonSerializer.Serialize(checks, new JsonSerializerOptions { WriteIndented = true }));
-            view.Exit();
+            MoveHit("close-overlay");
+        }); Click();
+        QueueReadableCrowd(1, finish: false);
+        QueueDenseOrdering();
+    }
+    private void QueueReadableCrowd(int expectedReplies, bool finish = true)
+    {
+        Step(.15, () => { Publish(ReadableCrowd()); MoveAway(); });
+        Step(.3, () => { });
+        Wait(() => BattlefieldReady(66), 4, () => {
+            // Flush a real-window artifact before any strict geometry failure,
+            // so a failed crowd remains reviewable at its physical resolution.
+            Capture("12-typed-counters-and-full-stats", captureWindow: false);
+            File.WriteAllText(Path.Combine(view.Profile, "readable-crowd-observations.json"), JsonSerializer.Serialize(new {
+                view.Now, view.TextScale, players = view.Match!.Players.Select(player => new { player.Id,
+                    cards = Scene().Battlefield(player.Id).SelectMany(cluster => cluster.Cards).Select(node => new {
+                        node.Id, node.Card.Name, node.GroupCount, node.GroupFront, pose = view.DisplayedPose(node.Id), labels = view.BattlefieldLabels(node.Id)
+                    }) })
+            }, new JsonSerializerOptions { WriteIndented = true, IncludeFields = true }));
         });
+        Step(0, () => view.CaptureWindow(Path.Combine(view.Profile, "12-typed-counters-and-full-stats-window.png")));
+        Step(0, () => {
+            AssertExposed(66, "Fifteen distinct creature groups alongside support and lands");
+            Check(view.TextScale == 1.3f, "Crowded battlefield state is checked with130% text at the requested physical window size");
+            AssertReadableCrowd();
+            Check(scenario.Replies.Count == expectedReplies, "Rendering and reading all crowded role lanes sends no additional game action");
+            if (finish) Finish();
+        });
+    }
+    private void QueueDenseOrdering()
+    {
+        int[] order = [2, 0, 1];
+        string gameId = "", decisionId = "";
+        Step(0, () => {
+            var state = Example("mixed");
+            var cards = new[] { 0, 1, 4 }.Select(index => state.Viewer!.Zone("Battlefield").Cards.Single(card => card.VisualId == "mixed-0-" + index)).ToArray();
+            Publish(state with { Id = "full-battlefield-dense-order", Decision = new() { Kind = "choice", Ordered = true, Min = 3, Max = 3,
+                Message = "Choose these creatures in order.", Choices = cards.Select((card, index) => new Choice(index, card.Name,
+                    card with { Key = "", VisualId = "", CombatId = "" }) { CardId = card.VisualId }).ToArray() } });
+            MoveAway();
+        });
+        Wait(() => view.Match?.Decision is { Ordered: true } && TableChoices.IsDirect(view.Match) && BattlefieldReady(20), 4, () => {
+            Check(view.Match?.Decision is { Ordered: true } && TableChoices.IsDirect(view.Match) && BattlefieldReady(20),
+                "The fresh dense ordered decision and all twenty real occurrences must settle before clicking");
+            gameId = view.Match!.Id; decisionId = view.Match.Decision!.Id;
+            Check(view.Selections.Count == 0 && view.Match.Decision.Choices.All(choice => Scene().Battlefield(0).SelectMany(cluster => cluster.Cards)
+                .Any(node => node.Id == choice.CardId && node.Dense && !node.DenseLabels.IsEmpty)),
+                "Three ordered candidates use the actual measured dense battlefield, starting with no positions chosen");
+            MoveCard(view.Match.Decision.Choices.Single(choice => choice.Index == order[0]).CardId);
+        });
+        foreach (int position in Enumerable.Range(0, 3)) {
+            int chosen = position;
+            Click();
+            Wait(() => view.Selections.SequenceEqual(order.Take(chosen + 1)) && DenseOrderBadges(order.Take(chosen + 1).ToArray()), 2, () => {
+                Check(view.Selections.SequenceEqual(order.Take(chosen + 1)) && DenseOrderBadges(order.Take(chosen + 1).ToArray())
+                    && scenario.Replies.Count == 1 && view.HoverPreview == null,
+                    $"Dense ordering position {chosen + 1} remains complete, exposed and compact without an automatic reply");
+                if (chosen < 2) MoveCard(view.Match!.Decision!.Choices.Single(choice => choice.Index == order[chosen + 1]).CardId);
+                else { Capture("13-dense-order-three", captureWindow: false); MoveHit("confirm"); }
+            });
+        }
+        Step(0, () => view.CaptureWindow(Path.Combine(view.Profile, "13-dense-order-three-window.png")));
+        Click();
+        Wait(() => !view.Busy && scenario.Replies.Count == 2, 2, () => {
+            Check(scenario.Replies[^1] is { Action: ReplyAction.Choose } reply && reply.GameId == gameId
+                && reply.DecisionId == decisionId && reply.Choices!.SequenceEqual(order),
+                "Only explicit confirmation submits dense order [2,0,1] with its exact current game and decision scope");
+            Finish();
+        });
+    }
+    private bool DenseOrderBadges(int[] order) => view.ChoiceOrderBadges.Count == order.Length
+        && order.Select((index, position) => view.ChoiceOrderBadges.TryGetValue(index, out var badge)
+            && badge.Position == position + 1 && badge.Text.EndsWith((position + 1).ToString(), StringComparison.Ordinal)
+            && badge.MeasuredWidth <= badge.AvailableWidth && badge.Bounds.Width >= 70
+            && DenseOrderExposed(index, badge.Bounds)).All(valid => valid);
+    private bool DenseOrderExposed(int index, Microsoft.Xna.Framework.Rectangle bounds)
+    {
+        string cardId = view.Match!.Decision!.Choices.Single(choice => choice.Index == index).CardId;
+        foreach (int y in new[] { bounds.Top + 3, bounds.Center.Y, bounds.Bottom - 3 })
+            for (int x = bounds.Left + 5; x < bounds.Right - 5; x += 6)
+                if (view.HitAt(SmokePointer.Table(view, Pixel(new(x, y))))?.Card?.VisualId != cardId) return false;
+        return true;
+    }
+    private void Finish()
+    {
+        File.WriteAllText(Path.Combine(view.Profile, "full-battlefield-results.json"),
+            JsonSerializer.Serialize(checks, new JsonSerializerOptions { WriteIndented = true }));
+        view.Exit();
     }
 
     // Captures can consume wall time without advancing entrance motion. Observe
@@ -181,12 +278,63 @@ internal sealed class FullBattlefieldSmoke : ITableAutomation
         return state.Players.All(player => {
             var cards = player.Zone("Battlefield").Cards;
             var hits = view.Hits.Where(h => h.Zone == "Battlefield" && h.PlayerId == player.Id && h.Card != null).ToArray();
-            return cards.Length == count && hits.Length == count
+            var visible = cards.Select(CardViews.Identity).ToHashSet(StringComparer.Ordinal);
+            return cards.Length == count && hits.Length >= count
                 && hits.Select(h => CardViews.Identity(h.Card!)).Distinct().Count() == count
+                && hits.All(hit => visible.Contains(CardViews.Identity(hit.Card!)))
                 && cards.All(card => view.CardPaintCount(CardViews.Identity(card)) == 1
                     && ExposedPixel(CardViews.Identity(card)) != null);
         });
     }
+    private void AssertReadableCrowd()
+    {
+        var scene = Scene();
+        foreach (var player in view.Match!.Players) {
+            Check(scene.Battlefield(player.Id).Select(cluster => (cluster.Kind, cluster.Cards.Length))
+                .SequenceEqual([("Creatures", 60), ("Support", 3), ("Lands", 3)]),
+                $"Seat {player.Id}'s 60 creatures, 3 support cards and 3 lands keep their complete role counts");
+            foreach (string kind in new[] { "Creatures", "Support", "Lands" })
+                Check(view.BattlefieldRoleLabel(player.Id, kind) is { Width: > 0, Height: > 0 },
+                    $"Seat {player.Id}'s {kind.ToLowerInvariant()} count has an explicit visible summary label");
+            var nodes = scene.Battlefield(player.Id).SelectMany(cluster => cluster.Cards).ToArray();
+            Check(nodes.All(node => node.Dense && !node.DenseLabels.IsEmpty
+                && InDenseArea(player.Id, node.Pose.Bounds) && InDenseArea(player.Id, node.DenseLabels)),
+                $"Seat {player.Id}'s rich field keeps measured labels and every face inside its own dense territory");
+            foreach (int group in Enumerable.Range(0, 15)) {
+                string id = $"readable-{player.Id}-{group}-3";
+                var node = nodes.Single(card => card.Id == id);
+                var labels = view.BattlefieldLabels(id);
+                var pt = labels.SingleOrDefault(label => label.Kind == "pt");
+                var counter = labels.SingleOrDefault(label => label.Kind == "counter");
+                Check(pt != null && pt.Text == $"{13 + group}/{13 + group}" && pt.MeasuredWidth <= pt.AvailableWidth,
+                    $"Seat {player.Id}'s group {group} shows its complete authoritative P/T without numeric ellipsis");
+                Check(counter != null && counter.Text.Contains("+1/+1", StringComparison.Ordinal)
+                    && counter.Text.EndsWith("×" + (10 + group), StringComparison.Ordinal) && counter.MeasuredWidth <= counter.AvailableWidth,
+                    $"Seat {player.Id}'s group {group} identifies its exact +1/+1 counter count instead of an ambiguous summed circle");
+                Check(labels.Any(label => label.Kind == "copies" && label.Text is "COPIES 4" or "4 copies")
+                    && labels.All(label => label.Kind == "name" || label.MeasuredWidth <= label.AvailableWidth),
+                    $"Seat {player.Id}'s group {group} distinguishes four copies from counters and preserves complete state values");
+                Check(labels.Any(label => label.Kind == "name"),
+                    $"Seat {player.Id}'s group {group} retains a named identity alongside its public state");
+                int order = Array.IndexOf(nodes, node);
+                foreach (var label in labels) {
+                    var bounds = label.Bounds;
+                    var points = new[] { new Point(bounds.Left + 2, bounds.Top + 2), new Point(bounds.Right - 3, bounds.Top + 2),
+                        new Point(bounds.Left + 2, bounds.Bottom - 3), new Point(bounds.Right - 3, bounds.Bottom - 3), bounds.Center };
+                    Check(!nodes.Skip(order + 1).Any(later => view.DisplayedPose(later.Id) is { } pose && points.Any(pose.Contains)),
+                        $"Seat {player.Id}'s group {group} {label.Kind} header is not buried by a later battlefield face");
+                    Check(points.All(point => view.HitAt(SmokePointer.Table(view, Pixel(point.ToVector2()))) is { Card: { } card }
+                        && CardViews.Identity(card) == id),
+                        $"Seat {player.Id}'s group {group} {label.Kind} strip belongs to the same exact occurrence through physical hit testing");
+                }
+            }
+            Check(view.BattlefieldLabels($"readable-{player.Id}-1-3").Any(label => label.Kind == "counter-types" && label.Text.StartsWith("+1 counter type", StringComparison.Ordinal))
+                && view.BattlefieldLabels($"readable-{player.Id}-2-3").Any(label => label.Kind == "damage" && label.Text == "DMG 2"),
+                $"Seat {player.Id}'s additional counter type and marked damage remain explicitly identified");
+        }
+    }
+    private bool InDenseArea(int player, Microsoft.Xna.Framework.Rectangle bounds) => BattlefieldLayout.DenseAreas(
+        player == view.Match!.ViewerId ? 3 : TableLayout.SeatIndex(view.Match, player)).Any(area => area.Contains(bounds));
     private void AssertExposed(int count, string description)
     {
         Check(view.HoverPreview == null && view.Overlay.Length == 0, description + ": exposure is checked on the resting table");
@@ -195,7 +343,9 @@ internal sealed class FullBattlefieldSmoke : ITableAutomation
         foreach (var player in view.Match!.Players) {
             var cards = player.Zone("Battlefield").Cards;
             var hits = view.Hits.Where(h => h.Zone == "Battlefield" && h.PlayerId == player.Id && h.Card != null).ToArray();
-            Check(cards.Length == count && hits.Length == count && hits.Select(h => CardViews.Identity(h.Card!)).Distinct().Count() == count,
+            var visible = cards.Select(CardViews.Identity).ToHashSet(StringComparer.Ordinal);
+            Check(cards.Length == count && hits.Length >= count && hits.Select(h => CardViews.Identity(h.Card!)).Distinct().Count() == count
+                && hits.All(hit => visible.Contains(CardViews.Identity(hit.Card!))),
                 $"{description}: all {count} seat {player.Id} occurrences are rendered with independent hit areas");
             foreach (var card in cards) {
                 string id = CardViews.Identity(card);
@@ -254,9 +404,9 @@ internal sealed class FullBattlefieldSmoke : ITableAutomation
     private void Move(Point physical) => mouse = new(physical.X, physical.Y, 0, ButtonState.Released, ButtonState.Released, ButtonState.Released, ButtonState.Released, ButtonState.Released);
     private void Buttons(ButtonState left = ButtonState.Released, ButtonState right = ButtonState.Released) => mouse = new(mouse.X, mouse.Y, 0, left, ButtonState.Released, right, ButtonState.Released, ButtonState.Released);
     private void Click() { Step(.03, () => Buttons(ButtonState.Pressed)); Step(.04, () => Buttons()); }
-    private bool Reading(string id) => view.Hovered is { } card && CardViews.Identity(card) == id
+    private bool Reading(string id) => view.DisplayedPose(id) is { Size.X: >= 400 }
         && view.HoverPreview is { Width: >= 400, Height: >= 560 };
-    private TableScene Scene() => TableScene.Build(view.Match!, 0, new(-1, -1), null, null, false, CardPresentation.IsResource);
+    private TableScene Scene() => view.TableScene ?? throw new InvalidOperationException("The production table scene is not ready");
     private void Publish(GameSnapshot state) { scenario.Present(state); view.Accept(scenario.State); }
     private void Step(double delay, Action action) => steps.Enqueue((delay, null, action));
     private void Wait(Func<bool> ready, double deadline, Action action) => steps.Enqueue((deadline, ready, action));
@@ -271,9 +421,9 @@ internal sealed class FullBattlefieldSmoke : ITableAutomation
         }, new JsonSerializerOptions { WriteIndented = true, IncludeFields = true }));
         throw new InvalidOperationException(description);
     }
-    private void Capture(string name) {
+    private void Capture(string name, bool captureWindow = true) {
         using var output = File.Create(Path.Combine(view.Profile, name + ".png")); view.Surface.SaveAsPng(output, view.Surface.Width, view.Surface.Height);
-        view.CaptureWindow(Path.Combine(view.Profile, name + "-window.png"));
+        if (captureWindow) view.CaptureWindow(Path.Combine(view.Profile, name + "-window.png"));
     }
     public void Frame(Texture2D surface)
     {
@@ -299,6 +449,27 @@ internal sealed class FullBattlefieldSmoke : ITableAutomation
         return state with { Id = "full-battlefield-" + mode, Players = players, Combat = combat, Stack = [], Activity = [],
             ActivePlayerId = mode == "mixed" ? 1 : 0, Decision = new() { Kind = "input", Intent = DecisionIntent.Priority,
                 Message = "You have priority.", Ok = "OK", OkEnabled = true, CanAutoPass = false } };
+    }
+    private static GameSnapshot ReadableCrowd()
+    {
+        var state = PresentationSmoke.Example();
+        Card Creature(int seat, int group, int copy) => new() {
+            VisualId = $"readable-{seat}-{group}-{copy}", CombatId = $"readable-{seat}-{group}-{copy}",
+            Name = DistinctNames[group], Type = "Creature", Power = 13 + group, Toughness = 13 + group,
+            Counters = group == 1 ? new() { ["+1/+1"] = 10 + group, ["Shield"] = 2 } : new() { ["+1/+1"] = 10 + group },
+            Damage = group == 2 ? 2 : 0, Sick = group % 4 == 0,
+            CombatKeywords = group % 3 == 0 ? ["flying"] : group % 3 == 1 ? ["trample"] : []
+        };
+        return state with { Id = "full-battlefield-readable", Decision = null, Stack = [], Activity = [], Combat = null,
+            Players = state.Players.Select(player => player with { Zones = player.Zones.Select(zone => zone.Name != "Battlefield" ? zone : zone with {
+                Count = 66, Cards = [.. Enumerable.Range(0, 15).SelectMany(group => Enumerable.Range(0, 4).Select(copy => Creature(player.Id, group, copy))),
+                    new() { VisualId = $"readable-support-{player.Id}-0", Name = "Sol Ring", Type = "Artifact" },
+                    new() { VisualId = $"readable-support-{player.Id}-1", Name = "Rhystic Study", Type = "Enchantment" },
+                    new() { VisualId = $"readable-support-{player.Id}-2", Name = "Doubling Season", Type = "Enchantment" },
+                    new() { VisualId = $"readable-land-{player.Id}-0", Name = "Forest", Type = "Basic Land — Forest", Tapped = true },
+                    new() { VisualId = $"readable-land-{player.Id}-1", Name = "Island", Type = "Basic Land — Island", Tapped = true },
+                    new() { VisualId = $"readable-land-{player.Id}-2", Name = "Wastes", Type = "Basic Land", Tapped = true }]
+            }).ToArray() }).ToArray() };
     }
     private static Card Permanent(string mode, int seat, int index)
     {

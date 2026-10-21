@@ -44,8 +44,9 @@ public static class TableWorld
     }
     public static bool CanPlayAt(Point pointer)
     {
-        var point = Unproject(pointer.ToVector2());
-        return point.X is > -420 and < 420 && point.Y is > 90 and < 375;
+        // Playing a hand card begins its normal engine action; this area does
+        // not choose spell targets or imply ownership of the space underneath.
+        return pointer.X is > 280 and < 1320 && pointer.Y is > 160 and < 785;
     }
     public static Pose Pile(int seat, int index)
     {

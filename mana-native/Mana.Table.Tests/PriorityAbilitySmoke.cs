@@ -16,6 +16,7 @@ internal sealed class PriorityAbilitySmoke(TableGame.Probe view, InteractionScen
     private MouseState mouse = new(0, 0, 0, ButtonState.Released, ButtonState.Released, ButtonState.Released, ButtonState.Released, ButtonState.Released);
     private string? click;
     private Action? staleUndo;
+    private string manualGame = "", manualDecision = "", manualCard = "";
     public string? ExpectedClick => click;
     public bool ClickAccepted { get; set; }
     public MouseState ReadMouse() => mouse;
@@ -93,13 +94,23 @@ internal sealed class PriorityAbilitySmoke(TableGame.Probe view, InteractionScen
                 Check(view.Hits.Any(h => h.Id == "confirm"), "Another available response still stops Auto");
                 var mesaHit = view.Hits.First(h => h.Card?.VisualId == "mesa" && h.Zone == "Battlefield");
                 Check(mesaHit.Card!.Selectable && CardActions.CanActivate(state, mesaHit.Card), "An ignored source remains available for manual activation");
+                manualGame = state.Id; manualDecision = state.Decision!.Id; manualCard = mesaHit.Card.Key;
                 Press(mesaHit.Id); Next(); break;
             case 13: Release(); Next(); break;
             case 14:
-                Check(scenario.Replies[^1].Action == ReplyAction.SelectCard && state.Decision is { Context: "playAbility" }, "Manual activation still opens the normal ability chooser");
+                if (view.DisplayedPose("mesa") is not { Size.X: >= 400 } || !view.Hits.Any(hit => hit.Id == "read-card-action")) return;
+                Check(scenario.Replies.Count == 3 && state.Decision is { Intent: DecisionIntent.Priority }
+                    && state.IgnoredPriorityAbilities is [{ Id: "mesa-second" }],
+                    "Reading the ignored source sends no gameplay reply and preserves its independent ability preference");
+                Press("read-card-action"); Next(); break;
+            case 15: Release(); Next(); break;
+            case 16:
+                Check(scenario.Replies[^1] is { Action: ReplyAction.SelectCard } reply && reply.GameId == manualGame
+                    && reply.DecisionId == manualDecision && reply.Card == manualCard && state.Decision is { Context: "playAbility" },
+                    "Explicit manual activation opens the normal ability chooser with the exact current game, decision and card scope");
                 var nextTurn = Example();
                 Publish(nextTurn with { Turn = nextTurn.Turn + 1, ActivePlayerId = nextTurn.ViewerId, IgnoredPriorityAbilities = [] }); Next(); break;
-            case 15:
+            case 17:
                 staleUndo!();
                 Check(!view.Busy && scenario.Replies.Count == 4, "An Undo captured before expiry quietly does nothing after that preference has cleared");
                 Check(view.Hits.Any(h => h.Id == "ability-pass:mesa-fetch") && !view.Hits.Any(h => h.Id.StartsWith("ability-undo:")), "The viewer's next turn shows the ability available again after engine expiry");
