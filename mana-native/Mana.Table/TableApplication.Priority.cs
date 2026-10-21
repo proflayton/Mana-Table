@@ -70,14 +70,15 @@ internal sealed partial class TableApplication
             if (index >= state.Stack.Length) break;
             var entry = state.Stack[index];
             var bounds = new Rectangle(551, 337 + slot * 58, 198, 56);
-            canvas.Panel(bounds, index == 0 ? new(50, 45, 30) : new(22, 34, 41), index == 0 ? Gold : Muted * .4f, 4);
+            string id = "stack-row:" + entry.Id;
+            PaintControlSurface(id, bounds, index == 0 ? new(50, 45, 30) : new(22, 34, 41), index == 0 ? Gold : Muted * .4f);
             canvas.Circle(new(bounds.X + 14, bounds.Y + 15), 10, index == 0 ? Gold : Muted);
             canvas.CenterText((index + 1).ToString(), new(bounds.X + 4, bounds.Y + 5, 20, 20), new(12, 24, 29), .47f, true);
             canvas.Text(entry.Name, bounds.X + 29, bounds.Y + 2, Ink, .52f, bounds.Width - 34, 2, true);
             string owner = entry.ControllerId is { } ownerId ? StateClarity.PlayerName(state, ownerId) : "Owner not reported";
             canvas.Text((entry.Ability ? "Ability" : "Spell") + " · " + owner, bounds.X + 5, bounds.Y + 40, Muted, .37f, bounds.Width - 10, 1);
             int captured = index;
-            hits.Add(new("stack-row:" + entry.Id, Scope, bounds, () => OpenStack(captured)));
+            hits.Add(new(id, Scope, bounds, () => OpenStack(captured)));
             stackRows.Add(new(entry.Id, index + 1, bounds));
         }
         // The face remains the production card presentation with its own hit.

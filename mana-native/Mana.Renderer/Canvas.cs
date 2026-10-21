@@ -240,14 +240,10 @@ public sealed class Canvas : IDisposable
     }
     public void CardAction(Pose pose, Color accent, float glow = 1)
     {
-        // Keep a solid, wide edge even at the low point of the glow. The dark
-        // separator and pale inner line distinguish it from both art and felt.
-        var rim = pose with { Size = pose.Size + new Vector2(12) };
-        CardFrame(rim, accent * (.12f * glow), 28);
-        CardFrame(rim, accent * (.23f * glow), 19);
-        CardFrame(rim, Color.Black * .9f, 11);
-        CardFrame(rim, accent, 7);
-        CardFrame(pose with { Size = pose.Size + new Vector2(3) }, Color.Lerp(accent, Color.White, .75f), 2);
+        // Availability stays quiet; the separate pointer focus owns the bright rim.
+        var rim = pose with { Size = pose.Size + new Vector2(6) };
+        CardFrame(rim, Color.Black * .9f, 5);
+        CardFrame(rim, accent * (.75f + .25f * glow), 2);
     }
     public void CardFrame(Vector2 center, Vector2 size, float angle, Color color, int width = 2)
     {

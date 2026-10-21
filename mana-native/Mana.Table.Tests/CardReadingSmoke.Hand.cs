@@ -24,7 +24,8 @@ internal sealed partial class CardReadingSmoke
                 && scenario.Replies.Count == replies, "Hover highlights the stationary hand occurrence without moving its grab target or submitting a play");
         });
         Click();
-        Prepared(() => view.HoverPreview != null && view.DisplayedPose(id) is { Size.X: >= 400 }, 2, () => {
+        Prepared(() => view.HoverPreview != null && view.DisplayedPose(id) is { Size.X: >= 400 }
+            && view.Hits.Any(hit => hit.Id == "read-card-action"), 2, () => {
             Check(view.Hits.Any(hit => hit.Id == "read-card-action") && scenario.Replies.Count == replies,
                 "One deliberate click opens a reader with a separate play control and no automatic cast");
             view.CaptureWindow(Path.Combine(view.Profile, "17-explicit-hand-reader-window.png"));

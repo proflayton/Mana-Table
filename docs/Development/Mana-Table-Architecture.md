@@ -377,9 +377,16 @@ Native hover highlights cards at their compact size. During ordinary priority,
 clicking a visible hand, battlefield or command-zone card opens a persistent
 410x574 reader. The same scene occurrence animates upright and is painted once;
 its displayed pose supplies its hit region, while original hand slots remain
-available for browsing. Clicking the same card, empty space or Close card,
-pressing Escape or starting a drag dismisses the reader. Pointer exit alone does
-not dismiss it or replace it with another card.
+available for browsing. Clicking the same card or empty space, pressing Escape
+or starting a drag dismisses the reader. Escape dismisses the reader before its
+parent workspace. Pointer exit alone does not dismiss it or replace it with
+another card. Once the reader settles, an available engine action appears in a
+quiet, short tab attached to its bottom-left edge: Cast, Play, Activate or Place.
+There is no separate Close card control. A drag begun with a hand reader pinned must
+leave both the captured reader face and its original hand slot before a legal
+drop can commit; moving within the enlarged face cannot cast the card. Dragging
+uses the held card, legal-drop outline and combat aim without a narrative hint
+panel.
 The local portrait and life total sit at the center above the hand, using the
 same seat anchor as incoming combat lines, commander entrances and life effects.
 The fan sits behind the portrait, with local battlefield ranks shifted forward
@@ -391,12 +398,17 @@ preserves the chosen set. Anonymous faces have presentation identities scoped to
 the decision and original item slot; names never identify an occurrence. Paging,
 search and Continue/Confirm stay available. Changing a choice's scope, page or
 granted visibility removes its old reader or private inspection.
-Hover focus uses an amber rim, soft edge glow, dark separation and ivory corner
-marks. It follows the card's displayed pose without opening a reader.
-Engine-authorized actions use a persistent 7-pixel ice-blue rim with a pale inner
-edge, dark separation and a broad glow, visible before hovering. Only its glow
-gently varies during priority; reduced motion keeps it steady. Hover focus and
-combat cues retain their separate meaning.
+Pointer hover uses a neutral light rim, soft edge glow, dark separation and
+corner marks without moving the card or opening a reader. Selection has a
+separate gold edge and selection mark or ordered number; engine-authorized
+availability uses a quiet blue edge. Pinned reading state is separate from
+pointer hover. `TableApplication.Controls` shares the button and custom-surface
+painting used by stack rows, text choices, pass policies and phase stops. Resting
+importance or selection stays separate from hover and pressed feedback.
+Shield-only panel backgrounds do not advertise a clickable action. The reader
+action tab sits at its bottom edge, away from the top error and notice banner band;
+agent review inspected the small-window idle, hover and pressed captures. Human
+acceptance remains open; see [Experience review](Mana-Table-Experience-Review.md).
 Combat connections and pointer aiming share a straight, filled arrow in the
 renderer: a tapered shaft, broad directional head and dark separation from card
 art. Attacks are red and blocks blue. Endpoints use the displayed card edges or
@@ -464,10 +476,11 @@ movement. Dense cells use compact state markers without lifting faces into
 neighboring labels. Losing an ability
 or removing counters updates the existing occurrence, without interpreting
 printed rules text or retaining markers after the projection revokes them.
-Reduced motion uses the same poses without tweening. Play card, Activate ability
-and placement actions are explicit controls beside the opened reader; a legal
-hand drag remains an alternative. Zone browsers and inspection retain explicit
-use actions. Required selections, mana payment and combat keep direct clicks.
+Reduced motion uses the same poses without tweening. The opened reader's short
+action tab submits only the current engine-authorized action; a legal hand drag
+remains an alternative. Zone browsers and inspection retain explicit use actions.
+Required selections, mana payment and combat keep direct clicks. These surfaces
+still have different reading and selection gestures, which need review together.
 Card choices may include an optional `cardId` linking a currently visible
 battlefield, command-zone or own-hand occurrence. `TableChoices` validates those
 links against the current snapshot. Eligible table choices stage their engine
@@ -476,8 +489,10 @@ confirm. Ordered sets require battlefield links and at most twelve choices;
 larger sets and ordered hand/command choices use the numbered gallery. This
 changes the choice surface, not which battlefield cards are rendered. Unordered
 sets retain their existing routing without that twelve-item limit. Ordered
-choices use click order; minimum/maximum counts come from the engine. Gallery
-faces remain anonymous, and library searches, private reveals and non-card
+choices use click order; minimum/maximum counts come from the engine. Their task
+line reports the count, order requirement and selected total without a repeated
+click tutorial. Gallery faces remain anonymous, and library searches, private
+reveals and non-card
 choices retain their chooser.
 Selecting a gallery face retains its compact geometry. Required decisions also
 collapse an existing reader so it cannot intercept the next adjacent choice.
@@ -511,8 +526,9 @@ available during animation. The dock has one stable following state for automati
 empty windows and waits; Auto, Hold and phase stops use a match-scoped input
 identity so prompt churn cannot cancel those clicks.
 
-`CardActions` labels engine-authorized battlefield actions as Activate, with hover
-guidance and an inspector button. It never infers playability from rules text.
+`CardActions` labels engine-authorized battlefield actions as Activate, with
+availability highlighting, a reader action tab and an inspector button. It never
+infers playability from rules text.
 Stack projections include viewer-safe card/player targets (including subabilities).
 The renderer draws direct target arrows, marks the exact occurrence and shows a
 spell/ability callout. `MatchActivity` retains public resolution descriptions and

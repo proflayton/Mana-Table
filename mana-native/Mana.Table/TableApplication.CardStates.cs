@@ -111,9 +111,7 @@ internal sealed partial class TableApplication
         if (rows.Length == 0) return;
         int x = pose.Bounds.Right + 17 + 265 <= 1238 ? pose.Bounds.Right + 17 : pose.Bounds.Left - 282;
         var target = cardPresentation.Pinned?.ReaderTarget ?? pose;
-        bool action = match?.Decision?.Intent == DecisionIntent.Priority && IsCardActionable(card);
-        int controlsBottom = Math.Clamp(target.Bounds.Top + 20, 70, 690) + (action ? 84 : 36);
-        int y = Math.Max(Math.Clamp(pose.Bounds.Top, 70, 740), controlsBottom + 12);
+        int y = Math.Clamp(target.Bounds.Top + 8, 70, 740);
         var seat = TableLayout.LocalSeatBounds;
         int bottom = x + 265 > seat.Left && x < seat.Right ? Math.Min(882, seat.Top - 12) : 882;
         int shown = Math.Min(rows.Length, Math.Min(16, Math.Max(0, (bottom - y - 92) / 28)));

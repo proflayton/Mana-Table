@@ -11,8 +11,10 @@ namespace Mana.Table;
 
 internal sealed partial class TableApplication
 {
-    private static readonly Color HoverAccent = new(255, 177, 64);
+    private static readonly Color HoverAccent = new(229, 240, 246);
     private readonly CardPresentationController cardPresentation = new();
+    private Hit? pointerSurface;
+    private bool IsControlHovered(string id) => !dragging && pointerSurface?.Id == id && CurrentHit(pointerSurface);
     // These callbacks compose draw commands and are drained before publication.
     // The card owner and the final GPU frame contain no painting callbacks.
     private readonly Dictionary<int, Action<Pose, bool>> deferredCardComposition = [];
@@ -25,7 +27,9 @@ internal sealed partial class TableApplication
         ReadingGalleryOpen, dragging, CompactCardDecision);
     private string? readingId => cardPresentation.PinnedId;
     private Rectangle? hoverPreview => cardPresentation.ReaderBounds;
-    internal bool CardPointer => !dragging && HitAt(pointer)?.Card is { } card && (!card.FaceDown || IsCardActionable(card));
+    internal bool InteractivePointer => !dragging && HitAt(pointer) is { } hit
+        && hit.Id is not ("battlefield-focus-surface" or "decision-context-panel" or "public-outcome-panel")
+        && (hit.Card is not { } card || !card.FaceDown || IsCardActionable(card));
 
     private void ExtendCardHit(Card card, Rectangle bounds) => hits.ExtendCanonical(
         "card:" + card.Key + ":" + card.VisualId, Scope, bounds);
@@ -44,7 +48,8 @@ internal sealed partial class TableApplication
     {
         // Resolve hover against the last published frame before starting the next
         // frame. Preparation then uses current snapshot visibility and policy.
-        string? hover = HitAt(pointer)?.Id;
+        pointerSurface = HitAt(pointer);
+        string? hover = pointerSurface?.Id;
         cardPresentation.BeginFrame(CardContext, hover, frameElapsed, preferences.ReducedMotion, boardView);
         deferredCardComposition.Clear();
     }
@@ -71,7 +76,8 @@ internal sealed partial class TableApplication
 
     private void ComposeCard(PresentedCard entry, Action<Pose, bool> compose)
     {
-        compose(entry.Display, entry.Emphasized);
+        compose(entry.Display, entry.Focused);
+        if (entry.Hovered) canvas.CardFocus(entry.Display, HoverAccent);
         if (Automated) cardPresentation.RecordComposition(entry);
     }
     private void DrawLiftedCards()
@@ -90,21 +96,20 @@ internal sealed partial class TableApplication
         var entry = cardPresentation.Pinned;
         if (entry == null || CompactCardDecision || !CardContext.CanRead(entry)) return;
         var target = (entry.ReaderTarget ?? CardPresentationController.ReaderPose(entry.Rest, entry.Zone)).Bounds;
-        int x = target.Right + 12;
-        if (x + 220 > 1580) x = target.Left - 232;
-        x = Math.Clamp(x, 20, 1360);
-        int y = Math.Clamp(target.Top + 20, 70, 690);
+        if (Vector2.Distance(entry.Display.Size, target.Size.ToVector2()) > 2
+            || Vector2.Distance(entry.Display.Center, target.Center.ToVector2()) > 2) return;
         if (match?.Decision?.Intent == DecisionIntent.Priority && IsCardActionable(entry.Card)) {
-            string label = entry.Zone == "Battlefield" ? "Activate ability"
-                : !entry.Card.Selectable && HandPlacements.Options(match, entry.Card).Length > 0 ? "Place card" : "Play card";
-            Button("read-card-action", label, x, y, 220, () => {
+            string label = entry.Zone == "Battlefield" ? "Activate"
+                : !entry.Card.Selectable && HandPlacements.Options(match, entry.Card).Length > 0 ? "Place"
+                : entry.Card.Type.Contains("Land", StringComparison.Ordinal) ? "Play" : "Cast";
+            int width = Math.Max(80, canvas.TextWidth(label, .76f) + 24);
+            int x = target.Left + 8, y = Math.Min(840, target.Bottom - 2);
+            Button("read-card-action", label, x, y, width, () => {
                 var current = VisibleCards().FirstOrDefault(card => SameVisibleCard(card, entry.Card));
                 if (current == null || !IsCardActionable(current)) return;
                 CollapseCardReading(); if (BattlefieldFocused) zoneName = null; CardClick(current);
-            }, !busy, true, 40);
-            y += 48;
+            }, !busy, height: 30);
         }
-        Button("read-card-close", "Close card", x, y, 220, CollapseCardReading, height: 36);
     }
 
     private void ClearCardComposition()

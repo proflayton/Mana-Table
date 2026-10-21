@@ -16,7 +16,7 @@ internal sealed partial class CardReadingSmoke
         });
         bool SafeText() => view.TextScale == 1.3f && view.DecisionTextBounds is { Width: > 0, Height: > 0 } text
             && view.DecisionPanelBounds.Contains(text) && text.Bottom < 799
-            && !view.Hits.Any(hit => hit.Id is "read-card-action" or "read-card-close" && hit.Bounds.Intersects(text));
+            && !view.Hits.Any(hit => hit.Id == "read-card-action" && hit.Bounds.Intersects(text));
         Step(0, () => {
             replies = scenario.Replies.Count;
             Move(new(10, 70)); PublishPurpose(purpose);

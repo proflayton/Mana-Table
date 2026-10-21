@@ -41,6 +41,7 @@ internal sealed record PresentedCard(int Sequence, CardPresentationRequest Reque
 {
     public BoardView View { get; init; } = BoardView.Identity;
     public Pose? ReaderTarget { get; init; }
+    public bool Hovered { get; init; }
     public string Id => Request.Id;
     public Card Card => Request.Card;
     public string Zone => Request.Zone;

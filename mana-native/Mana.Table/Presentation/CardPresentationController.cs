@@ -26,6 +26,7 @@ internal sealed class CardPresentationController
     private Pose? readerTarget;
     private string? pinnedId, pinnedZone;
     private string hoveredId = "";
+    private string hoveredHit = "";
 
     public string? PinnedId => pinnedId;
     public bool HasPinnedCard => pinnedId != null;
@@ -39,7 +40,9 @@ internal sealed class CardPresentationController
     {
         if (context.State?.Id != current.State?.Id) Reset();
         context = current;
-        hoveredId = cards.LastOrDefault(card => card.Hit.Id == hoveredHitId && !card.Card.FaceDown)?.Id ?? "";
+        var hovered = cards.LastOrDefault(card => card.Hit.Id == hoveredHitId && card.Hit.Scope == current.Scope && !card.Card.FaceDown);
+        hoveredId = hovered?.Id ?? "";
+        hoveredHit = hovered?.Hit.Id ?? "";
         // A reader survives pointer movement, but never lost visibility or a
         // required compact interaction. Reconciliation uses the current snapshot.
         if (pinnedId != null && (current.Dragging || current.CompactDecision
@@ -86,9 +89,10 @@ internal sealed class CardPresentationController
             request.OpensZone ? null : request.Zone, request.Owner, geometry.Contains);
         var layer = focused ? CardPresentationLayer.Reader
             : transitions.Contains(request.Id) ? CardPresentationLayer.Returning : CardPresentationLayer.Table;
+        bool pointerHover = request.Id == hoveredId && request.HitId == hoveredHit && !request.Card.FaceDown && readable;
         var entry = new PresentedCard(cards.Count, request, pose, hit, focused,
-            (focused || request.Id == hoveredId) && !request.Card.FaceDown && readable, layer)
-            { View = view, ReaderTarget = focused ? readerTarget : null };
+            (focused || pointerHover) && !request.Card.FaceDown && readable, layer)
+            { View = view, ReaderTarget = focused ? readerTarget : null, Hovered = pointerHover };
         cards.Add(entry);
         if (layer != CardPresentationLayer.Table) deferred.Add(entry);
         if (focused) ReaderBounds = pose.Bounds;
@@ -156,7 +160,7 @@ internal sealed class CardPresentationController
         pendingCollapses.UnionWith(cards.Where(card => transitions.Contains(card.Id)).Select(card => card.Id));
         if (clicked.Length > 0) pendingCollapses.Add(clicked);
         if (pinnedId != null) pendingCollapses.Add(pinnedId);
-        pinnedId = pinnedZone = null; readerTarget = null; ReaderBounds = null; hoveredId = "";
+        pinnedId = pinnedZone = null; readerTarget = null; ReaderBounds = null; hoveredId = hoveredHit = "";
     }
 
     public void ClearComposition() { cards.Clear(); deferred.Clear(); }
@@ -179,7 +183,7 @@ internal sealed class CardPresentationController
     {
         ClearComposition(); transitions.Clear(); pendingCollapses.Clear(); compositionCounts.Clear();
         boardMotion.Clear(); displayedPoses.Clear(); previousDisplayedPoses.Clear();
-        pinnedId = pinnedZone = null; readerTarget = null; hoveredId = ""; ReaderBounds = null;
+        pinnedId = pinnedZone = null; readerTarget = null; hoveredId = hoveredHit = ""; ReaderBounds = null;
         boardView = BoardView.Identity; motion.Clear();
     }
 

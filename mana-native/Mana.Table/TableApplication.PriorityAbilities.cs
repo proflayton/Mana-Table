@@ -35,9 +35,8 @@ internal sealed partial class TableApplication
 
     private void PriorityAbilityButton(string id, string label, Rectangle bounds, Action action, bool enabled = true, bool active = false)
     {
-        bool over = bounds.Contains(pointer);
-        canvas.Panel(bounds, active ? new Color(29, 62, 70) : over ? new Color(49, 62, 75) : new Color(28, 39, 50),
-            active ? Blue : new Color(73, 92, 106), 4);
+        PaintControlSurface(id, bounds, active ? new(29, 62, 70) : new(28, 39, 50),
+            active ? Blue : new Color(73, 92, 106), enabled);
         canvas.CenterText(label, new(bounds.X + 5, bounds.Y, bounds.Width - 10, bounds.Height), enabled ? Ink : Muted, .57f);
         if (enabled) hits.Add(new(id, ControlScope(id), bounds, action));
     }

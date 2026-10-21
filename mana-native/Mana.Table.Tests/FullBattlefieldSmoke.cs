@@ -133,7 +133,7 @@ internal sealed class FullBattlefieldSmoke : ITableAutomation
         Wait(() => Reading("fifty-2-49"), 3, () => {
             Check(Reading("fifty-2-49") && view.CardPaintCount("fifty-2-49") == 1 && scenario.Replies.Count == 1,
                 "The fiftieth opposing token remains individually readable without a page change or game action");
-            Capture("07-fiftieth-hover"); MoveHit("read-card-close");
+            Capture("07-fiftieth-hover"); MoveCard(view.Frame!.Cards.Single(card => card.Focused).Id);
         });
         Click();
         Step(.1, () => MoveAway());

@@ -132,17 +132,19 @@ internal sealed partial class TableApplication
         foreach (var chip in chips) {
             var rectangle = new Rectangle(x + chip.X, top + chip.Row * (rowHeight + gap), chip.Width, rowHeight);
             Color accent = chip.State.Kind == "progress" ? Gold : Blue;
-            canvas.Panel(rectangle, new(14, 26, 31), accent, 4);
+            string hitId = "player-state:" + player.Id + ":" + chip.State.Id;
+            PaintControlSurface(hitId, rectangle, new(14, 26, 31), accent);
             canvas.Text(chip.Text, rectangle.X + 6, rectangle.Y + 2, Ink, chip.Size, rectangle.Width - 12, 1, true);
             string stateId = chip.State.Id;
-            hits.Add(new("player-state:" + player.Id + ":" + stateId, Scope, rectangle, () => OpenPlayerState(player.Id, stateId)));
+            hits.Add(new(hitId, Scope, rectangle, () => OpenPlayerState(player.Id, stateId)));
             painted.Add(new(stateId, chip.Text, rectangle, canvas.TextWidth(chip.Text, chip.Size, true), rectangle.Width - 12));
         }
         if (hidden > 0) {
             var rectangle = new Rectangle(x + cursor, top + row * (rowHeight + gap), Math.Min(MoreWidth(), width - cursor), rowHeight);
-            canvas.Panel(rectangle, new(14, 26, 31), Muted, 4);
+            string hitId = "player-state-more:" + player.Id;
+            PaintControlSurface(hitId, rectangle, new(14, 26, 31), Muted);
             canvas.Text(MoreText(), rectangle.X + 6, rectangle.Y + 2, Ink, .53f, rectangle.Width - 12, 1, true);
-            hits.Add(new("player-state-more:" + player.Id, Scope, rectangle, () => OpenPlayerState(player.Id, "")));
+            hits.Add(new(hitId, Scope, rectangle, () => OpenPlayerState(player.Id, "")));
         }
         publicCounterBadges[player.Id] = new(string.Join(" · ", painted.Select(c => c.Text)) + (hidden > 0 ? " " + MoreText() : ""),
             .6f, painted.Max(c => c.MeasuredWidth), width - 12, hidden) { Chips = painted.ToArray(), Bounds = bounds };

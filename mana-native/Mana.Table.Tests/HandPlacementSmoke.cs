@@ -71,8 +71,9 @@ internal sealed class HandPlacementSmoke : ITableAutomation
             before = scenario.Replies.Count; MoveCard("hand-forest");
         });
         Click();
-        Wait(() => Reading("hand-forest"), 3, () => {
-            Check(Reading("hand-forest"), "An eligible hand card remains readable before committing a placement");
+        Wait(() => Reading("hand-forest") && view.Hits.Any(hit => hit.Id == "read-card-action"), 3, () => {
+            Check(Reading("hand-forest") && view.Hits.Any(hit => hit.Id == "read-card-action"),
+                "An eligible hand card exposes its reader action before committing a placement");
             Check(scenario.Replies.Count == before, "A single hand click reads without placing or activating anything");
             Capture("01-placement-hover");
             Expect("placement-a"); MoveHit("read-card-action");
@@ -151,7 +152,7 @@ internal sealed class HandPlacementSmoke : ITableAutomation
             Check(Reading("hand-forest") && scenario.Replies.Count == before && view.Overlay.Length == 0
                 && HandPlacements.Options(view.Match!, Forest()).Length == 0 && !view.Hits.Any(h => h.Id == "read-card-action"),
                 "A phased-out source leaves a readable hand card without an available action or accidental placement");
-            MoveHit("read-card-close");
+            MoveCard(view.Frame!.Cards.Single(card => card.Focused).Id);
         }); Click();
         Step(.1, () => {
             Publish("single"); MoveAway();

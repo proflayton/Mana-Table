@@ -47,10 +47,10 @@ internal sealed class AllocationSmoke : ITableAutomation
                 "Same-name recipients retain distinct prompt occurrences");
             Check(view.Match.Decision.Choices[2].Card is { FaceDown: true, Name: "Face-down card", Power: 2, Toughness: 2 }, "An anonymous recipient keeps authorized public combat stats without exposing its identity");
             Check(!Has("allocate") && view.AllocationAmounts.All(a => a == 0), "The untouched draft has no enabled Confirm action");
-            Capture("01-combat-overview"); MoveHit("alloc-inspect:0"); before = scenario.Replies.Count;
-        }); RightClick();
+            Capture("01-combat-overview"); MoveInspectCaption("alloc-inspect:0"); before = scenario.Replies.Count;
+        }); Click();
         Wait(() => view.AllocationDetail == 0, 2, () => {
-            Check(view.AllocationDetail == 0 && scenario.Replies.Count == before, "Right-click inspects the exact recipient without submitting or discarding the allocation");
+            Check(view.AllocationDetail == 0 && scenario.Replies.Count == before, "Clicking the visible Inspect caption inspects the exact recipient without submitting or discarding the allocation");
             Capture("02-recipient-current-state"); MoveHit("alloc-back");
         }); Click();
         Step(.12, () => MoveHit("alloc-required:0")); Click();
@@ -195,6 +195,16 @@ internal sealed class AllocationSmoke : ITableAutomation
         var hit = view.Hits.Single(h => h.Id == id);
         Check(view.HitAt(hit.Bounds.Center)?.Id == id, "The visible " + id + " control has unobstructed pointer geometry");
         Move(hit.Bounds.Center);
+    }
+    private void MoveInspectCaption(string id)
+    {
+        var hit = view.Frame!.Hits.Single(candidate => candidate.Id == id);
+        var captionCenter = new Point(hit.Bounds.Center.X, hit.Bounds.Bottom - 8);
+        bool reachable = SmokePointer.TryPoint(view, hit, captionCenter, out var physical);
+        var actual = SmokePointer.Table(view, physical);
+        Check(reachable && actual.Y >= hit.Bounds.Top + 112 && actual.Y >= hit.Bounds.Bottom - 16,
+            "The Inspect caption has an exposed physical pointer target below the recipient's card art");
+        mouse = new(physical.X, physical.Y, 0, ButtonState.Released, ButtonState.Released, ButtonState.Released, ButtonState.Released, ButtonState.Released);
     }
     private void MoveAway() => Move(new(1590, 890));
     private void Move(Point logical)

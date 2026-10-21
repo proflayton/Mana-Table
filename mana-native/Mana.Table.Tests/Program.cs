@@ -95,7 +95,7 @@ internal static class Program
             if (args.Contains("--smoke-card-reading") || args.Contains("--smoke-card-states") || args.Contains("--smoke-compact-selection")) {
                 if (args.Contains("--smoke-card-states")) new PlayPreferences { TextScale = 1.3f, Sounds = false, Automatic = false }.Save(profile);
                 var scenario = new InteractionScenarioEngine(); scenario.Present(PresentationSmoke.Example());
-                using var test = new TableWindow(scenario, profile, null, null, size: size, initialState: scenario.State, artSource: new CardReadingArtFixture());
+                using var test = new TableWindow(scenario, profile, null, null, size: size, initialState: scenario.State, artSource: new CardReadingArtFixture(Arg("--art-cache")));
                 test.Automation = new CardReadingSmoke(test.TestPort, scenario, selectionOnly: args.Contains("--smoke-compact-selection"), statesOnly: args.Contains("--smoke-card-states"));
                 test.Run(); return 0;
             }

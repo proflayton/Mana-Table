@@ -30,7 +30,7 @@ internal static class CardPresentationChecks
         owner.BeginFrame(context, normal.Hit.Id, .016f, true);
         var hovered = owner.Prepare(Request(first, firstRest));
         owner.Prepare(Request(second, secondRest)); owner.EndFrame();
-        check(hovered.Emphasized && !owner.HasPinnedCard && hovered.Display == firstRest
+        check(hovered.Hovered && !hovered.Focused && hovered.Emphasized && !owner.HasPinnedCard && hovered.Display == firstRest
             && hovered.Layer == CardPresentationLayer.Table && actions == 0,
             "Card preparation highlights hover without opening a reader, moving its face, or dispatching an action");
 
@@ -44,7 +44,7 @@ internal static class CardPresentationChecks
         owner.BeginFrame(context, null, .016f, true);
         var pinned = owner.Prepare(Request(first, firstRest));
         var adjacent = owner.Prepare(Request(second, secondRest)); owner.EndFrame();
-        check(pinned.Focused && pinned.Display.Size == new Vector2(410, 574)
+        check(pinned.Focused && !pinned.Hovered && pinned.Display.Size == new Vector2(410, 574)
             && pinned.Hit.Contains(firstRest.Center.ToPoint()) && pinned.Hit.Contains(pinned.Display.Center.ToPoint())
             && owner.ReaderBounds == pinned.Display.Bounds,
             "A prepared reader shares its displayed pose with input and retains its original hand anchor");
@@ -54,6 +54,12 @@ internal static class CardPresentationChecks
         check(owner.TakeDeferred().Select(card => card.Id).SequenceEqual([first.VisualId])
             && owner.TakeDeferred().Count == 0,
             "A prepared lifted card is emitted once and draining its layer cannot repaint it");
+
+        owner.BeginFrame(context, pinned.Hit.Id, .016f, true);
+        var hoveredReader = owner.Prepare(Request(first, firstRest));
+        owner.Prepare(Request(second, secondRest)); owner.EndFrame();
+        check(hoveredReader.Focused && hoveredReader.Hovered && hoveredReader.Display == pinned.Display,
+            "Pointer hover is separate from the pinned reading state and does not move the reader or invoke its action");
 
         owner.Toggle(pinned.Hit, context);
         owner.BeginFrame(context, null, .016f, false);

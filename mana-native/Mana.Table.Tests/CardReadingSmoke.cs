@@ -100,12 +100,31 @@ internal sealed partial class CardReadingSmoke : ITableAutomation
         Step(.02, () => MoveCard("hand-2")); Click();
         Prepared(() => ReadingReady("hand-2") && view.Hits.Any(hit => hit.Id == "read-card-action"), 2, () => {
             Check(scenario.Replies.Count == 0, "Dismissing and reopening a reader never submits a card action");
+            Move(new(10, 70));
+        }, "The deliberate reader and its action must settle before playing the card");
+        Step(.04, () => {
+            Capture("01c-reader-action-rest");
+            view.CaptureWindow(Path.Combine(view.Profile, "01c-reader-action-rest-window.png"));
             MoveHit("read-card-action");
-        }, "The deliberate reader and its action must settle before playing the card"); Click();
-        Step(.35, () => {
+        });
+        Step(.04, () => {
+            Capture("01d-reader-action-hover");
+            view.CaptureWindow(Path.Combine(view.Profile, "01d-reader-action-hover-window.png"));
+            Buttons(ButtonState.Pressed);
+        });
+        Step(.04, () => {
+            Check(view.Pressed is { Id: "read-card-action" } held && view.CurrentHit(held)
+                && view.HitAt(SmokePointer.Table(view, new(mouse.X, mouse.Y))) is { } target
+                && target.Id == held.Id && target.Scope == held.Scope && scenario.Replies.Count == 0,
+                "Holding the current reader-action tab submits no card command before release");
+            Capture("01e-reader-action-pressed");
+            view.CaptureWindow(Path.Combine(view.Profile, "01e-reader-action-pressed-window.png"));
+            Buttons();
+        });
+        Prepared(() => view.Match?.Viewer?.Zone("Battlefield").Cards.Any(c => c.VisualId == "hand-2") == true, 2, () => {
             Check(scenario.Replies.Count == 1 && scenario.Replies[0].Action == ReplyAction.SelectCard, "The explicit reader action submits exactly one card command");
             Check(view.Match!.Viewer!.Zone("Battlefield").Cards.Any(c => c.VisualId == "hand-2"), "The played card follows the resulting engine projection onto the battlefield");
-        });
+        }, "The accepted reader action must reconcile its resulting battlefield projection");
         Step(.5, () => MoveCard("hand-4"));
         Step(.4, () => { }); Click();
         Step(.02, () => Buttons(ButtonState.Pressed));
@@ -135,13 +154,13 @@ internal sealed partial class CardReadingSmoke : ITableAutomation
         StepWhen(() => ReadingReady("hand-3") && view.Art(view.Match!.Viewer!.Zone("Hand").Cards.Single(c => c.VisualId == "hand-3")) == null, 3, () => {
             Check(ReadingReady("hand-3") && view.Art(view.Match!.Viewer!.Zone("Hand").Cards.Single(c => c.VisualId == "hand-3")) == null, "The explicit reader has a readable rules fallback even without card art");
             Capture("02-rules-without-art");
-            MoveHit("read-card-close");
+            MoveReaderFace();
         }); Click();
         Prepared(() => view.HoverPreview == null, 3, () => MoveCard("seat-2-1"), "The previous reader must close before choosing an opponent permanent"); Click();
         StepWhen(() => ReadingReady("seat-2-1"), 3, () => {
             Check(ReadingReady("seat-2-1") && scenario.Replies.Count == 2, "Clicking an opponent permanent opens a reader without selecting or activating it");
             Capture("03-opponent-reader");
-            MoveHit("read-card-close");
+            MoveReaderFace();
         }); Click();
         Prepared(() => view.HoverPreview == null, 2, () => MoveHit("pile-card:0:Graveyard"), "The reader closes before opening a public pile");
         Step(.25, () => {
@@ -158,7 +177,7 @@ internal sealed partial class CardReadingSmoke : ITableAutomation
             "The explicit reader is open before allowing automatic priority");
         Step(1.2, () => {
             Check(scenario.Replies.Count == 2 && view.HoverPreview != null, "Auto priority waits while the explicit reader is pinned");
-            MoveHit("read-card-close");
+            MoveReaderFace();
         }); Click();
         Step(.3, () => {
             Check(scenario.Replies.Count == 3 && scenario.Replies[^1].Action == ReplyAction.AutoPass && (view.Match?.Decision == null || view.Busy),
@@ -479,7 +498,7 @@ internal sealed partial class CardReadingSmoke : ITableAutomation
         StepWhen(() => ReadingReady("seat-0-1"), 2, () => {
             Check(ReadingReady("seat-0-1"), "An airborne creature opens its reader only after an explicit click");
             Capture("07-current-state");
-            MoveHit("read-card-close");
+            MoveReaderFace();
         }); Click();
         Step(.1, () => {
             Move(new(10, 70));
@@ -758,6 +777,15 @@ internal sealed partial class CardReadingSmoke : ITableAutomation
     {
         var hit = view.Hits.Last(h => h.Id == id);
         MoveScreen(SmokePointer.Hit(view, hit));
+    }
+    private void MoveReaderFace()
+    {
+        var reader = view.Frame!.Cards.Single(card => card.Focused);
+        var hit = view.Hits.Single(candidate => candidate.Id == reader.Hit.Id && candidate.Scope == reader.Hit.Scope);
+        var physical = SmokePointer.Hit(view, hit);
+        if (!reader.Display.Contains(SmokePointer.Table(view, physical)))
+            throw new InvalidOperationException("The pinned card face has no exposed pointer target: " + reader.Id);
+        MoveScreen(physical);
     }
     private void Publish(GameSnapshot state) { scenario.Present(state); view.Accept(scenario.State); }
     private void Check(bool condition, string description)

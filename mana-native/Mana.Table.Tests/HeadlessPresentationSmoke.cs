@@ -44,6 +44,16 @@ internal static class HeadlessPresentationSmoke
                     && run.Engine.Replies.Count == 0,
                     "Injected card clicks open the production reader without submitting a game action");
                 var pinnedA = run.Frame;
+                var readerStart = pinnedA.Cards.Single(card => card.Id == "hand-a").Display.Center.ToPoint();
+                var readerDrag = readerStart + new Point(20, 0);
+                run.Input(readerStart, left: ButtonState.Pressed, label: "press-expanded-hand-face");
+                run.Input(readerDrag, left: ButtonState.Pressed, label: "small-drag-inside-reader-origin");
+                run.Input(readerDrag, label: "release-inside-reader-origin");
+                run.Settle("uncommitted-reader-drag");
+                Check(run.Engine.Replies.Count == 0 && !run.View.Busy
+                    && run.View.Match!.Viewer!.Zone("Hand").Cards.Any(card => card.VisualId == "hand-a"),
+                    "Dragging within the original expanded hand reader cannot arm or submit a card play");
+                run.ClickCard("hand-a"); run.Settle("reader-a-restored");
                 run.ClickCard("hand-b", originalHandSlot: true); run.Settle("reader-b");
                 Check(run.Frame.Cards.Single(card => card.Id == "hand-b").Focused
                     && !run.Frame.Cards.Single(card => card.Id == "hand-a").Focused && run.Engine.Replies.Count == 0,
@@ -82,12 +92,47 @@ internal static class HeadlessPresentationSmoke
                 Check(Text(run.Frame).Contains("Day") && Text(run.Frame).Contains("Momentum 6/6 MAX")
                     && run.View.ManaPoolBadge(0) is { Total: 2 },
                     "Actual drawing commands show table Day, an unfamiliar player maximum of six, and the current colorless pool");
+                run.View.OpenBattlefield(0); run.Tick("focused-battlefield");
+                var focusCard = run.Frame.Hits.First(hit => hit.Id.StartsWith("battlefield-focus-card:", StringComparison.Ordinal));
+                run.ClickHit(focusCard.Id); run.Settle("reader-over-focused-battlefield");
+                bool hadReader = run.Frame.Cards.Any(card => card.Focused);
+                run.Input(new(20, 60), label: "escape-reader-only", keys: new(Microsoft.Xna.Framework.Input.Keys.Escape));
+                run.Tick("reader-dismissed-parent-retained");
+                Check(hadReader && !run.Frame.Cards.Any(card => card.Focused) && run.View.ZoneName == "Battlefield"
+                    && run.Frame.Hits.Any(hit => hit.Id == "battlefield-focus-close") && run.Engine.Replies.Count == 0,
+                    "Escape dismisses the top card reader while preserving its focused battlefield workspace and unanswered decision");
+                run.ClickHit("battlefield-focus-close"); run.Tick("back-to-table");
                 run.ClickCard("public-ward", right: true);
                 Check(run.View.Overlay == "inspect"
                     && Text(run.Frame).Any(text => text.Contains("Ward {2} ×2") && text.Contains("Protection from blue"))
                     && run.Engine.Replies.Count == 0,
                     "The production inspector renders qualified Ward and protection descriptors without dispatching an action");
                 run.ClickHit("close-overlay");
+                var beforeSourceChoice = run.Engine.State;
+                var choiceSource = beforeSourceChoice.Viewer!.Zone("Battlefield").Cards.Single(card => card.VisualId == "public-ward");
+                run.Present(beforeSourceChoice with { Decision = new() {
+                    Kind = "choice", Context = "playAbility", Min = 1, Max = 1, SourceCard = choiceSource,
+                    SourceCardId = choiceSource.VisualId, SourceZone = "Battlefield", SourceControllerId = 0,
+                    Choices = [new(17, "First reported ability", null), new(42, "Second reported ability", null)]
+                } });
+                run.Tick("text-choice-with-current-source");
+                run.ClickHit("choice:17");
+                string sourceGame = run.View.Match!.Id, sourceDecision = run.View.Match.Decision!.Id;
+                var stagedChoice = run.View.Selections.ToArray();
+                run.ClickHit("choice-source-inspect");
+                Check(run.View.Overlay == "inspect" && run.View.Match!.Id == sourceGame
+                    && run.View.Match.Decision!.Id == sourceDecision && stagedChoice.SequenceEqual([17])
+                    && run.View.Selections.SequenceEqual(stagedChoice) && run.Engine.Replies.Count == 0
+                    && Text(run.Frame).Contains(choiceSource.Name)
+                    && Text(run.Frame).Contains($"Power / toughness: {choiceSource.Power}/{choiceSource.Toughness}")
+                    && Text(run.Frame).Any(text => text.Contains("Ward {2} ×2") && text.Contains("Protection from blue")),
+                    "Clicking the text-choice source inspects its current public state while preserving the exact unanswered decision and staged original choice index");
+                run.ClickHit("close-overlay"); run.Tick("source-inspection-returned-to-choice");
+                Check(run.View.Overlay.Length == 0 && run.View.Match!.Decision!.Id == sourceDecision
+                    && run.View.Selections.SequenceEqual(stagedChoice) && run.Engine.Replies.Count == 0
+                    && run.Frame.Hits.Any(hit => hit.Id == "choicesdone") && run.Frame.Hits.Any(hit => hit.Id == "choice-source-inspect"),
+                    "Closing source inspection restores the same staged chooser without confirming or replacing it");
+                run.Present(beforeSourceChoice); run.Tick("source-choice-restored-priority");
                 run.ClickCard("hand-a"); run.Settle("public-reader-before-revocation");
                 var snapshot = run.Engine.State;
                 run.Present(snapshot with {
@@ -176,10 +221,10 @@ internal static class HeadlessPresentationSmoke
         }
         internal PresentationFrame Tick(string label) => Input(pointer, label: label);
         internal PresentationFrame Input(Point point, ButtonState left = ButtonState.Released,
-            ButtonState right = ButtonState.Released, string label = "input")
+            ButtonState right = ButtonState.Released, string label = "input", KeyboardState? keys = null)
         {
             pointer = point; seconds += 1.0 / 60;
-            application.Update(Time(), new(point.X, point.Y, 0, left, ButtonState.Released, right, ButtonState.Released, ButtonState.Released), new(), viewport);
+            application.Update(Time(), new(point.X, point.Y, 0, left, ButtonState.Released, right, ButtonState.Released, ButtonState.Released), keys ?? new(), viewport);
             return Compose(label);
         }
         internal PresentationFrame Compose(string label)

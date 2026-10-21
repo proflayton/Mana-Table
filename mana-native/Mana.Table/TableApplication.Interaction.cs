@@ -64,15 +64,16 @@ internal sealed partial class TableApplication
     }
     private DecisionReply? DropReply(Hit? target)
     {
-        if (match?.Decision == null || dragSource?.Card is not { } card || dragSource.Scope != Scope || OverlayOpen) return null;
+        if (match?.Decision == null || dragSource?.Card is not { } card || dragSource.Scope != Scope || OverlayOpen || !ReaderDragCanCommit) return null;
         return match.Decision.Intent is DecisionIntent.Attack or DecisionIntent.Block
             ? InteractionController.Assign(match, card.CombatId, target?.Card == null ? target?.PlayerId : null, target?.Card?.CombatId)
             : dragSource.Zone == "Hand" && TableWorld.CanPlayAt(pointer) && (target == null || target.Card != null) ? InteractionController.Play(match, card) : null;
     }
-    private bool LegalDrop(Hit? target) => DropReply(target) != null || (target == null || target.Card != null) && PlacementDropChoice();
+    private bool LegalDrop(Hit? target) => ReaderDragCanCommit
+        && (DropReply(target) != null || (target == null || target.Card != null) && PlacementDropChoice());
     private bool DropCard(Hit? target)
     {
-        if (busy) return false;
+        if (busy || !ReaderDragCanCommit) return false;
         if ((target == null || target.Card != null) && PlacementDropChoice()) { OpenHandPlacement(dragSource!.Card!); return true; }
         if (DropReply(target) is not { } reply) return false;
         Send(reply); return true;

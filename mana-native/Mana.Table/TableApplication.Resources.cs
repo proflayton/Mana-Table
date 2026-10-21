@@ -134,7 +134,8 @@ internal sealed partial class TableApplication
                 var rim = bounds; rim.Inflate(2 + (int)(pulse * 3), 2 + (int)(pulse * 3));
                 canvas.Panel(rim, Color.Transparent, color * ((1 - progress) * .9f), 12);
             }
-            canvas.Panel(bounds, new Color(17, 28, 35) * opacity, color * opacity, 10);
+            string hitId = "mana-pool:" + player.Id + ":" + item.Part.Key;
+            PaintControlSurface(hitId, bounds, new(17, 28, 35), color, opacity: opacity);
             if (item.Part.Symbol.Length > 0) {
                 canvas.Circle(new(bounds.X + 12, bounds.Center.Y), 8, color * opacity);
                 canvas.CenterText(item.Part.Symbol, new(bounds.X + 3, bounds.Y + 2, 18, 20), new Color(20, 26, 34) * opacity, .48f, true);
@@ -144,7 +145,7 @@ internal sealed partial class TableApplication
             canvas.Text(amount, bounds.X + item.LabelWidth + 5, bounds.Y + 1, Ink * opacity, item.Size, available, 1, true);
             painted.Add(new(item.Part.Key, item.Part.Name, amount, bounds, canvas.TextWidth(amount, item.Size, true), available)
                 { Delta = cue?.Delta, AnimationStarted = cue?.Started, Opacity = opacity });
-            hits.Add(new("mana-pool:" + player.Id + ":" + item.Part.Key, Scope, bounds, () => OpenManaPool(player.Id)));
+            hits.Add(new(hitId, Scope, bounds, () => OpenManaPool(player.Id)));
         }
         manaPoolBadges[player.Id] = new("UNSPENT MANA", PublicResources.ManaTotal(player), halo.Bounds, painted.ToArray(), 0, 0);
     }

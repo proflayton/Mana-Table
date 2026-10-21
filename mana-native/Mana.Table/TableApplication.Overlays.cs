@@ -35,8 +35,10 @@ internal sealed partial class TableApplication
         hits.Clear(); hovered = null; ClearCardComposition();
         canvas.Fill(new(0, 60, 1600, 840), Color.Black * .72f);
         canvas.Panel(new(166, 94, 1268, height), new(23, 30, 40), new(98, 113, 130), 14);
-        canvas.Text(title, 192, 115, Ink, 1.12f, 990, 2, true);
-        Button("close-overlay", closeLabel, 1253, 112, 154, close, height: 34);
+        int closeWidth = Math.Clamp(canvas.TextWidth(closeLabel, .76f) + 24, 154, 400);
+        int closeX = 1407 - closeWidth;
+        canvas.Text(title, 192, 115, Ink, 1.12f, Math.Min(990, closeX - 212), 2, true);
+        Button("close-overlay", closeLabel, closeX, 112, closeWidth, close, height: 34);
         canvas.Line(new(191, 161), new(1410, 161), Muted * .24f);
     }
     private void DrawOverlays()
@@ -291,13 +293,19 @@ internal sealed partial class TableApplication
         bool portraits = items.Any(c => c.Card != null); int capacity = portraits ? 7 : 6;
         var sourcePreview = !portraits ? InteractionCards.Source(state, d) : null;
         if (sourcePreview != null) {
-            PaintInteractionCard(sourcePreview, new(new(1268, 435), new(166, 232)), false, false);
+            var sourcePose = new Pose(new(1268, 435), new(166, 232));
+            PaintInteractionCard(sourcePreview, sourcePose, false, false);
             canvas.Text(sourcePreview.FaceDown ? "Face-down card" : sourcePreview.Name, 1185, 562, Ink, .68f, 166, 3, true);
+            if (!sourcePreview.FaceDown && VisibleCards().Any(card => SameVisibleCard(card, sourcePreview))) {
+                var sourceBounds = new Rectangle(1185, 319, 166, 298);
+                if (sourceBounds.Contains(pointer)) canvas.CardFocus(sourcePose, HoverAccent);
+                hits.Add(new("choice-source-inspect", Scope, sourceBounds, () => Inspect(sourcePreview), sourcePreview));
+            }
         }
         bool cardChoices = items.Length > 0 && items.All(c => c.Card != null);
         choicePage = Math.Clamp(choicePage, 0, Math.Max(0, (filtered.Length - 1) / capacity));
         string instruction = d.Kind == "reveal" ? "" : d.Ordered
-            ? $"Choose {d.Min}–{d.Max} in your chosen order: 1, 2, 3…  Selected: {selections.Count}. Clear selection to start again."
+            ? $"Choose {d.Min}–{d.Max} in order. Selected: {selections.Count}."
             : d.Min == 1 && d.Max == 1 ? selections.Count == 0
                 ? cardChoices ? "Choose one card" : "Choose one option"
                 : cardChoices ? "One card selected" : "One option selected"
@@ -332,13 +340,18 @@ internal sealed partial class TableApplication
                 canvas.Text(item.Label, x + 1, 526, Ink, .66f, column, 3, true);
                 var badgeBounds = new Rectangle(x, 605, column, 28);
                 if (selected && d.Ordered) PaintChoiceOrder(item.Index!.Value, badgeBounds, .65f);
-                else canvas.CenterText(selected ? "SELECTED" : !available ? "VIEW ONLY" : "SELECT", badgeBounds, selected ? Gold : Muted, .56f, true);
+                else if (selected) {
+                    var center = new Vector2(badgeBounds.Center.X, badgeBounds.Center.Y);
+                    canvas.Line(center + new Vector2(-8, 0), center + new Vector2(-2, 6), Gold, 3);
+                    canvas.Line(center + new Vector2(-2, 6), center + new Vector2(9, -7), Gold, 3);
+                }
                 if (available && item.Card == null) hits.Add(new(buttonId, Scope, new(x, 304, 150, 329), () => ToggleChoice(d, captured.Index!.Value)));
             } else {
                 int columnWidth = sourcePreview != null ? 465 : 585;
                 int x = 206 + index % 2 * (columnWidth + 17), y = 302 + index / 2 * 116;
                 var bounds = new Rectangle(x, y, columnWidth, 103);
-                canvas.Panel(bounds, selected ? new Color(36, 63, 79) : Panel, selected ? Gold : new Color(77, 90, 105), 7);
+                PaintControlSurface(buttonId, bounds, selected ? new Color(36, 63, 79) : Panel,
+                    selected ? Gold : new Color(77, 90, 105), available);
                 bool numbered = selected && d.Ordered;
                 int offset = (numbered ? 99 : 16) + (item.Mana.Length > 0 ? 47 : 0);
                 if (numbered) PaintChoiceOrder(item.Index!.Value, new(x + 12, y + 12, 76, 33), .65f);

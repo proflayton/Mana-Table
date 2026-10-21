@@ -85,7 +85,7 @@ internal sealed class EquipmentSmoke : ITableAutomation
             AssertConnection("boots-2-0", "elf-3-0");
             Check(view.AttachmentConnections.All(c => c.TargetId != "elf-2-0"), "The Equipment being read no longer links to its former identical target");
         });
-        ClickHit("read-card-close");
+        Step(0, () => MoveCard(view.Frame!.Cards.Single(card => card.Focused).Id)); Click();
         Step(0, () => { MoveAway(); Publish(Crowded()); });
         // Arrivals deliberately show a temporary state banner for1.1seconds.
         // Check persistent crowded markers after those banners have cleared.
@@ -108,7 +108,7 @@ internal sealed class EquipmentSmoke : ITableAutomation
             Check(scenario.Replies.Count == 0, "Reading a crowded opponent's exact Equipment sends no game command");
             Capture("06-crowded-opponent-hover");
         });
-        ClickHit("read-card-close");
+        Step(0, () => MoveCard(view.Frame!.Cards.Single(card => card.Focused).Id)); Click();
         Step(0, () => { MoveAway(); Publish(ChangeCards(c => c with { AttachedTo = null, Attachments = [] })); });
         Step(.3, () => {
             Check(view.Match!.Players.SelectMany(p => p.Zone("Battlefield").Cards).All(c => view.AttachmentBadge(c.CombatId) == null)

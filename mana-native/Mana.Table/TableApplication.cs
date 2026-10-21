@@ -174,7 +174,7 @@ internal sealed partial class TableApplication : IDisposable
             if (BattlefieldFocused && prompt != null && (prompt.Kind is "choice" or "reveal" or "number" or "text" or "allocate"
                 || prompt.Intent == DecisionIntent.Selection)) { zoneName = null; CollapseCardReading(); }
             decisionId = prompt?.Id ?? ""; selections.Clear(); choicePage = 0; choiceFilter = ""; selectedCombat = null; priority.Reset();
-            dragging = false; dragSource = null; collapsedDecision = false; textFocus = false;
+            dragging = false; dragSource = null; ClearReaderDrag(); collapsedDecision = false; textFocus = false;
             if (!TableChoice && prompt is { Ordered: true } && prompt.Min == prompt.Choices.Length) selections.AddRange(prompt.Choices.Select(c => c.Index));
             allocations = prompt?.Choices.Select(_ => prompt.AtLeastOne ? 1 : 0).ToArray() ?? [];
             inputText = prompt?.Kind == "number" ? prompt.Min.ToString() : prompt?.Initial ?? "";
@@ -185,7 +185,7 @@ internal sealed partial class TableApplication : IDisposable
             inspected = RefreshInspectedCard();
             if (inspected == null && overlay == "inspect") overlay = "";
         }
-        if (dragSource?.Card is { } heldCard && !VisibleCards().Any(c => SameVisibleCard(c, heldCard))) { dragging = false; dragSource = null; pressed = null; }
+        if (dragSource?.Card is { } heldCard && !VisibleCards().Any(c => SameVisibleCard(c, heldCard))) { dragging = false; dragSource = null; pressed = null; ClearReaderDrag(); }
         bool experienceInput = ExperienceOpen && !ActivityOpen && !updatesOpen;
         bool blockedInput = ActivityOpen || experienceInput || updatesOpen;
         bool chatKeys = blockedInput || ChatKeys(keys);
@@ -201,29 +201,35 @@ internal sealed partial class TableApplication : IDisposable
             if (!blockedInput && chatOpen && !ChatBounds.Contains(pointer)) chatFocus = false;
             if (!blockedInput && match == null && deckEditor && pressed?.Id is not ("deck-search-library" or "deck-search-deck" or "deck-clear-library" or "deck-clear-deck")) { deckTextFocus = ""; textFocus = false; }
             dragSource = !OverlayOpen && pressed?.Card is { } source && IsCardActionable(source) ? pressed : null; dragging = false;
+            BeginReaderDrag(dragSource);
         }
         if (mouse.LeftButton == ButtonState.Pressed && dragSource != null && dragSource.Scope == Scope && Vector2.Distance(pressPoint.ToVector2(), pointer.ToVector2()) > 9) {
             if (!dragging) CollapseCardReading();
             dragging = true;
+            ObserveReaderDrag(pointer);
         }
         if (mouse.LeftButton == ButtonState.Released && previousMouse.LeftButton == ButtonState.Pressed) {
             var hit = HitAt(pointer);
-            if (dragging) AcceptedDrag = DropCard(hit);
+            if (dragging) { ObserveReaderDrag(pointer); AcceptedDrag = DropCard(hit); }
             else if (hit != null && pressed?.Id == hit.Id && pressed.Scope == hit.Scope && CurrentHit(hit)) { ActivateHit(hit); AcceptedHit = hit.Id; }
             else if (pressed == null && hit == null) CollapseCardReading();
-            pressed = null; dragSource = null; dragging = false;
+            pressed = null; dragSource = null; dragging = false; ClearReaderDrag();
         }
         if (experienceInput && keys.IsKeyDown(Keys.Escape) && previousKeys.IsKeyUp(Keys.Escape)) {
             if (tableGuideOpen) CloseTableGuide(); else DismissWelcome();
         }
         if (updatesOpen && !ActivityOpen && keys.IsKeyDown(Keys.Escape) && previousKeys.IsKeyUp(Keys.Escape)) CloseAppUpdates();
         if (!chatKeys && keys.IsKeyDown(Keys.Escape) && previousKeys.IsKeyUp(Keys.Escape)) {
+            bool closedReader = readingId != null;
             CollapseCardReading();
-            dragging = false; dragSource = null; pressed = null; selectedCombat = null; textFocus = false;
-            if (match == null && !busy) { if (workshopDialog == "printings") ClosePrintings(); else if (workshopDialog.Length > 0) workshopDialog = ""; else if (deckMenu.Length > 0) deckMenu = ""; else if (deckEditor) CloseDeckEditor(); else CloseSetupModal(); }
-            if (overlay.Length > 0) overlay = ""; else if (zoneName != null) zoneName = null;
-            else if (DecisionModal && match?.Decision?.Kind == "allocate" && allocationDetail >= -1) CloseAllocationDetail();
-            else if (DecisionModal) collapsedDecision = true;
+            dragging = false; dragSource = null; pressed = null; ClearReaderDrag();
+            if (!closedReader) {
+                selectedCombat = null; textFocus = false;
+                if (match == null && !busy) { if (workshopDialog == "printings") ClosePrintings(); else if (workshopDialog.Length > 0) workshopDialog = ""; else if (deckMenu.Length > 0) deckMenu = ""; else if (deckEditor) CloseDeckEditor(); else CloseSetupModal(); }
+                if (overlay.Length > 0) overlay = ""; else if (zoneName != null) zoneName = null;
+                else if (DecisionModal && match?.Decision?.Kind == "allocate" && allocationDetail >= -1) CloseAllocationDetail();
+                else if (DecisionModal) collapsedDecision = true;
+            }
         }
         if (!chatKeys && !textFocus && keys.IsKeyDown(Keys.Space) && previousKeys.IsKeyUp(Keys.Space) && !OverlayOpen && !busy && match != null) {
             if (TableChoice && TableChoices.CanConfirm(match, selections)) Send(new(match.Id, prompt!.Id, ReplyAction.Choose, Choices: selections.ToArray()));
@@ -263,21 +269,6 @@ internal sealed partial class TableApplication : IDisposable
         if (reply.Action != ReplyAction.PassUntilPublicAction) StopQuietPriority();
         error = ""; commandFailure = false;
         if (session.Submit(reply)) pendingActionLabel = StateClarity.PendingActionLabel(match, reply);
-    }
-    private void Button(string id, string label, int x, int y, int width, Action action, bool enabled = true, bool accent = false, int height = 40)
-    {
-        var bounds = new Rectangle(x, y, width, height); bool over = bounds.Contains(pointer);
-        Color fill = enabled ? accent ? new(45, 91, 116) : over ? new(53, 64, 76) : new(32, 40, 51) : new(26, 31, 38);
-        if (enabled && pressed?.Id == id && CurrentHit(pressed)) fill = Color.Lerp(fill, Blue, .3f);
-        if (match != null && id is "confirm" or "open-decision") {
-            // A single substantial action control, with a lit edge when it can advance play.
-            canvas.Glow(bounds.Center.ToVector2(), new(width + 45, height * 2.7f), (enabled ? Gold : Color.Black) * (over ? .25f : .13f));
-            canvas.Panel(bounds, enabled ? new Color(47, 72, 82) : fill, enabled ? Gold : Muted * .3f, 4);
-            canvas.Gradient(new(x + 3, y + 3, width - 6, height - 6), enabled ? new Color(74, 114, 128) * (over ? .7f : .42f) : Color.Transparent, Color.Transparent);
-            canvas.Line(new(x + 12, y + 2), new(x + width - 12, y + 2), (enabled ? Ink : Muted) * .4f);
-        } else canvas.Panel(bounds, fill, enabled ? accent ? Gold : new Color(72, 85, 98) : new Color(45, 51, 59), 6);
-        canvas.CenterText(label, new(x + 9, y + 1, width - 18, height - 2), enabled ? Ink : Muted * .6f, .76f, accent);
-        if (enabled) hits.Add(new(id, ControlScope(id), bounds, action));
     }
     internal PresentationFrame ComposePresentation(GameTime time)
     {

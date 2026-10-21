@@ -3,6 +3,7 @@ using Mana.Magic;
 using Mana.Renderer;
 using Microsoft.Xna.Framework;
 using Color = Microsoft.Xna.Framework.Color;
+using Rectangle = Microsoft.Xna.Framework.Rectangle;
 
 namespace Mana.Table;
 
@@ -127,8 +128,9 @@ internal sealed partial class TableApplication
         if (card != null) {
             var pose = new Pose(new(x + 52, y + 68), new(80, 112));
             PaintInteractionCard(card, pose, false, false);
-            AllocationArtHit("alloc-inspect:" + index, card, pose, () => OpenAllocationDetail(index));
-            canvas.CenterText("Inspect", new(x + 10, y + 123, 84, 16), Muted, .49f);
+            var caption = new Rectangle(x + 10, y + 123, 84, 16);
+            AllocationArtHit("alloc-inspect:" + index, card, pose, () => OpenAllocationDetail(index), caption);
+            canvas.CenterText("Inspect", caption, Muted, .49f);
         } else {
             canvas.Panel(new(x + 12, y + 12, 80, 112), new(28, 40, 51), Muted * .35f, 5);
             var player = state.Players.FirstOrDefault(p => p.Id == choice.PlayerId);
@@ -159,10 +161,12 @@ internal sealed partial class TableApplication
         Button("amount-more:" + index, "+", x + 533, y + 111, 39, () => allocations[index]++, !busy && value < maximum && remaining > 0, height: 29);
     }
 
-    private void AllocationArtHit(string id, Card card, Pose pose, Action inspect)
+    private void AllocationArtHit(string id, Card card, Pose pose, Action inspect, Rectangle? caption = null)
     {
-        if (pose.Contains(pointer)) hovered = card;
-        hits.Add(new(id, Scope, pose.Bounds, inspect, card));
+        var bounds = caption is { } label ? Rectangle.Union(pose.Bounds, label) : pose.Bounds;
+        bool Contains(Microsoft.Xna.Framework.Point point) => pose.Contains(point) || caption?.Contains(point) == true;
+        if (Contains(pointer)) { hovered = card; canvas.CardFocus(pose, HoverAccent); }
+        hits.Add(new(id, Scope, bounds, inspect, card, Shape: Contains));
     }
 
     private void DrawAllocationDetail(GameSnapshot state, Decision d)

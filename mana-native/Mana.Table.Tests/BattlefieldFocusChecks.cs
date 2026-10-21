@@ -101,6 +101,10 @@ internal static class BattlefieldFocusChecks
             wheel -= 120; Tick(new(1180, 690));
         }
         Click("battlefield-focus-card:" + ClutteredChangesScenario.ActionCardId);
+        // The release frame first reconciles the original compact occurrence.
+        // The action belongs to the settled reader, not that initial frame.
+        Wait(() => frame.Cards.Any(card => card.Id == ClutteredChangesScenario.ActionCardId && card.Focused)
+            && frame.Hits.Any(hit => hit.Id == "read-card-action"));
         check(frame.Cards.Any(card => card.Id == ClutteredChangesScenario.ActionCardId && card.Focused)
                 && frame.Hits.Any(hit => hit.Id == "read-card-action") && engine.Replies.Count == 0,
             "Finding and reading Llanowar Elves exposes its explicit activation control without activating it");

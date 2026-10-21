@@ -60,7 +60,7 @@ internal sealed partial class TableApplication
                 PaintInteractionCard(card, pose, selectedCombat == card.CombatId, true);
                 canvas.Text(card.Name, x, 541, Ink, .74f, 176, 3, true);
                 canvas.Text(AllocationGuide.Counters(card), x, 610, Gold, .61f, 176, 2);
-                if (pose.Contains(pointer)) hovered = card;
+                if (new Microsoft.Xna.Framework.Rectangle(x, 304, 176, 345).Contains(pointer)) { hovered = card; canvas.CardFocus(pose, HoverAccent); }
                 hits.Add(new("combat-source:" + card.CombatId, Scope, new(x, 304, 176, 345), () => { selectedCombat = card.CombatId; overlay = ""; }, card));
             }
             if (candidates.Length == 0) canvas.Text("No creatures can be assigned for this decision.", 230, 362, Muted, 1);
@@ -75,7 +75,7 @@ internal sealed partial class TableApplication
             canvas.Panel(new(204, y, 1190, 127), new(27, 35, 45), Muted * .3f, 7);
             if (card != null) {
                 var pose = new Pose(new(259, y + 62), new(67, 94)); PaintInteractionCard(card, pose, false, CombatTarget(card));
-                if (pose.Contains(pointer)) hovered = card;
+                if (pose.Contains(pointer)) { hovered = card; canvas.CardFocus(pose, HoverAccent); }
                 hits.Add(new("combat-inspect:" + card.CombatId, Scope, pose.Bounds, () => Inspect(card), card));
             }
             canvas.Text(card?.Name ?? "Attacker", 309, y + 10, Ink, .84f, 373, 2, true);
@@ -93,7 +93,6 @@ internal sealed partial class TableApplication
             } else if (state.Decision?.Intent == DecisionIntent.Attack && CombatGuide.Remove(state, attack.CardId) != null) {
                 Button("combat-recall:" + attack.CardId, "Recall attacker", 1180, y + 20, 196, () => RemoveAssignment(attack.CardId), !busy, height: 38);
             }
-            if (card != null) Button("combat-locate:" + card.CombatId, "Back to table", 1180, y + 71, 196, () => overlay = "", height: 34);
         }
         if (attacks.Length == 0) canvas.Text("No attacks have been assigned yet.", 230, 362, Muted, 1);
         CombatPages(attacks.Length, 3);
@@ -122,7 +121,7 @@ internal sealed partial class TableApplication
             PaintInteractionCard(card, pose, false, false);
             canvas.Text(card.Name, x, 515, Ink, .72f, 176, 3, true);
             canvas.Text(AllocationGuide.Counters(card), x, 585, Gold, .61f, 176, 2);
-            if (pose.Contains(pointer)) hovered = card;
+            if (pose.Contains(pointer)) { hovered = card; canvas.CardFocus(pose, HoverAccent); }
             hits.Add(new("blocker-inspect:" + card.CombatId, Scope, pose.Bounds, () => Inspect(card), card));
             if (CombatGuide.Remove(state, card.CombatId, attack.CardId) != null) Button("blocker-remove:" + card.CombatId, "Remove block", x, 636, 173, () => RemoveAssignment(card.CombatId, attack.CardId), !busy, height: 35);
         }

@@ -55,12 +55,6 @@ internal sealed partial class TableApplication
                 var heldPose = cardPresentation.Hold(CardIdentity(heldCard), new(pointer.ToVector2(), new(154, 216), -.04f, Elevation: 46));
                 PaintInteractionCard(heldCard, heldPose, true, false);
             }
-            string hint = legal ? "Release to " + (state.Decision?.Intent == DecisionIntent.Attack ? "assign attacker" : state.Decision?.Intent == DecisionIntent.Block ? "assign blocker"
-                : PlacementDropChoice() ? "choose a placement source" : !heldCard.Selectable && HandPlacements.Options(state, heldCard).Length > 0 ? "place card" : "play card")
-                : dragSource.Zone == "Hand" ? "Move onto the central battlefield · Escape to cancel" : "Choose a highlighted target · Escape to cancel";
-            int hintX = Math.Clamp(pointer.X - 192, 20, 1190), hintY = Math.Clamp(pointer.Y + 31, 70, 846);
-            canvas.Panel(new(hintX, hintY, 388, 32), new(16, 24, 33), legal ? Blue : Muted, 5);
-            canvas.CenterText(hint, new(hintX + 6, hintY, 376, 32), Ink, .62f);
         }
         hovered = !dragging ? HitAt(pointer)?.Card : null;
         if (!OverlayOpen) DrawReaderControls();
@@ -194,7 +188,8 @@ internal sealed partial class TableApplication
         if (legal || selected) {
             float glow = !preferences.ReducedMotion && legal && match?.Decision?.Intent == DecisionIntent.Priority
                 ? .85f + .15f * MathF.Sin((float)now * 2.4f) : 1;
-            canvas.CardAction(pose, selected ? Gold : ActionAccent, glow);
+            if (selected) canvas.CardFrame(pose with { Size = pose.Size + new Vector2(6) }, Gold, 4);
+            else canvas.CardAction(pose, ActionAccent, glow);
         }
         if (card.Attacking || card.Blocking) canvas.CardFrame(pose with { Size = pose.Size + new Vector2(4) }, card.Attacking ? Red : Blue, 2);
         if (pose.Elevation > 4) {
@@ -202,7 +197,7 @@ internal sealed partial class TableApplication
             canvas.Line(pose.Point(.03f, .01f), pose.Point(.97f, .01f), Ink * light, 1);
             canvas.Line(pose.Point(.99f, .03f), pose.Point(.99f, .5f), Ink * light * .5f, 1);
         }
-        if (focus) canvas.CardFocus(pose, HoverAccent);
+        if (focus) canvas.CardFrame(pose with { Size = pose.Size + new Vector2(4) }, Ink * .5f, 2);
     }
     private void PaintBack(Pose pose, float opacity = 1)
     {
@@ -348,12 +343,14 @@ internal sealed partial class TableApplication
         int x = 27;
         foreach (var phase in TurnGuide.Stops) {
             bool current = phase.Key == match!.PhaseKey || phase.Key == "COMBAT_BEGIN" && match.PhaseKey.StartsWith("COMBAT");
+            string key = phase.Key, id = "phase-stop:" + key;
+            var bounds = new Rectangle(x, 863, 36, 32);
             var r = new Rectangle(x, 870, 36, 25);
-            canvas.Rounded(r, current ? new Color(80, 78, 62) : new Color(25, 33, 44), 4);
+            PaintControlSurface(id, bounds, current ? new Color(80, 78, 62) : new Color(25, 33, 44),
+                current ? Gold * .6f : new Color(51, 64, 75));
             canvas.CenterText(phase.Label switch { "Upkeep" => "UP", "Draw" => "DR", "Main 1" => "M1", "Combat" => "ATK", "Main 2" => "M2", _ => "END" }, r, current ? Gold : Muted, .43f, true);
             if (preferences.Stops.Contains(phase.Key)) canvas.Circle(new(x + 18, 866), 2.5f, Blue);
-            string key = phase.Key;
-            hits.Add(new("phase-stop:" + key, ControlScope("phase-stop:" + key), new(x, 863, 36, 32), () => { if (!preferences.Stops.Remove(key)) preferences.Stops.Add(key); SavePreferences(); }));
+            hits.Add(new(id, ControlScope(id), bounds, () => { if (!preferences.Stops.Remove(key)) preferences.Stops.Add(key); SavePreferences(); }));
             x += 38;
         }
     }

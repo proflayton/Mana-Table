@@ -111,6 +111,51 @@ redundant role and hero counts have been removed. These changes are implemented,
 but human clarity and comfort have **not been accepted**. The crowded whole-table
 layout remains an open design problem.
 
+## Gameplay interaction audit: 21 October 2026
+
+This audit found repeated instructions and controls competing with the current
+decision. The table records source changes; candidate verification is recorded
+once below. Neither source inspection nor automated checks record human UX
+acceptance.
+
+| Finding | Scoped change or remaining work | Source status |
+| --- | --- | --- |
+| Constant card-reading instructions, activation badges and an empty mana caption repeated information already conveyed by the board | Removed the repeated board hints, per-card activation captions and zero-pool caption; meaningful resources, legal actions and decision consequences remain | Implemented |
+| Opening a card creates a separate Play card / Close card control column | Replaced the side column with a short tab at the card's bottom-left edge; clicking the enlarged face again collapses it without a Close button | Implemented |
+| A primary button's permanent accent can look like hover; custom stack rows and text choices have separate painting paths | The shared Controls helper separates resting importance or selection from hover and pressed feedback across buttons, stack rows, policies, text choices and phase stops; card hover, selection and availability have distinct treatment | Implemented |
+| The allocation recipient's visible Inspect caption lay mostly outside its clickable art | The existing inspect-only target now includes the exact art or painted caption; assignment amounts and commands are unchanged | Implemented |
+| Every combat row repeated Back to table without locating that attacker | Removed the row copies; the panel exit and actual assign, remove and recall actions remain | Implemented |
+| Text-choice source art looked like other inspectable card art but had no interaction | A currently visible source preview now has an inspect-only target and hover feedback; original option indexes and action handles remain unchanged | Implemented |
+| Choice cards repeated SELECT / SELECTED / VIEW ONLY captions alongside their frames and task constraints | Replaced repeated captions with selection marks; the shortened ordered-choice task keeps counts and order, with each selected position still numbered | Implemented |
+| Small drags inside an enlarged hand card could be mistaken for a play | A drag begun with a pinned hand reader must leave both its captured reader face and original hand slot before a legal drop can commit | Implemented |
+| A narrative panel followed each drag | Removed the generic drag prose; the held card, legal-drop outline and combat aim remain | Implemented |
+| The hand cursor also appeared over input-shield panel backgrounds | Shield-only battlefield, recipient and public-outcome panel backgrounds no longer advertise an action | Implemented |
+| Error or notice banners could cover the reader's former top action tab | Moved the tab to the stable bottom-left card edge, away from the top banner band; banner positions remain unchanged | Implemented |
+| A single text ability option still opens a tall gallery with search, paging and clear-selection controls | Replace that case with a compact contextual chooser; see `interaction-audit-source-preview.png` | Open |
+| Card gestures vary between the board reader, zone inspection, choices and allocation details | Review these contexts together before changing the common gesture policy; a hand cursor alone does not explain whether a click reads, selects or acts | Open |
+
+Candidate verification: the Release build completed with no warnings or errors;
+presentation/headless checks and the card-reading, card-states, allocation and
+priority GPU journeys passed. An agent inspected actual `1000x740` cached-art
+captures of the bottom tab at rest, hovered and pressed, plus ordered choices,
+mana, the allocation caption journey and the priority walkthrough. Local evidence
+is under `.tools/render-refactor-integration-20261021`, including
+`interaction-audit-source-preview.png`, `interaction-audit-candidate-allocation`
+and `interaction-audit-candidate-priority`. Modal exits now measure their label
+width, including View battlefield at 130% text. These are mechanical results and
+agent visual inspection, **not human UX acceptance**. The compact ability chooser
+and broader gesture consistency remain open.
+
+Use one `1000x740` interactive window for the short review: `card-reading.v1`
+stages 0 and 3, `ordered-choice.v1`, `stack-priority.v1` stage 2, then
+`combat-allocation.v1`. Hover, click, deselect and close each surface; also click
+the allocation Inspect caption itself. `trigger-search.v1` stage 2 checks that
+the actual consequence and named recipients survive the removal of repeated
+instructions. Review graveyard/exile inspection in the existing hand-placement
+journey or a real game; the lab's reading case does not demonstrate flashback.
+Keep current stats, counters, nonempty mana, costs, choice constraints and pending
+effect information throughout this cleanup.
+
 ## Human acceptance
 
 Before marking an experience change ready, inspect actual screens and transitions
