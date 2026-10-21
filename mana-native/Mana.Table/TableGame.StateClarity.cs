@@ -10,7 +10,16 @@ internal sealed partial class TableGame
 {
     private string playerCounterContext = "";
     private int playerCounterPage;
-    internal sealed record PublicCounterBadge(string Text, float Size, int MeasuredWidth, int AvailableWidth, int HiddenTypes);
+    private string playerStateFocus = "";
+    internal sealed record PublicStateChipPaint(string Id, string Text, Rectangle Bounds, int MeasuredWidth, int AvailableWidth);
+    internal sealed record PublicCounterBadge(string Text, float Size, int MeasuredWidth, int AvailableWidth, int HiddenTypes)
+    {
+        public PublicStateChipPaint[] Chips { get; init; } = [];
+        public Rectangle Bounds { get; init; }
+        public string DetailStateId { get; init; } = "";
+        public string DetailCaption { get; init; } = "";
+        public string DetailText { get; init; } = "";
+    }
     private readonly Dictionary<int, PublicCounterBadge> publicCounterBadges = [];
     // This complements the portraits. Both surfaces submit the same current,
     // engine-projected player handle; no recipient is selected automatically.
@@ -40,8 +49,9 @@ internal sealed partial class TableGame
         return true;
     }
 
-    private void DrawPublicPlayerCounters(Player player, int x, int y, int width)
+    private void DrawPublicPlayerCounters(Player player, int x, int y, int width, bool growUp = false)
     {
+        if (player.States.Length > 0) { DrawPublicPlayerStates(player, x, y, width, growUp); return; }
         var counters = StateClarity.PlayerCounters(player);
         if (counters.Length == 0) { publicCounterBadges.Remove(player.Id); return; }
         // Keep the caption footprint stable at every text size. The most urgent
@@ -70,10 +80,69 @@ internal sealed partial class TableGame
         hits.Add(new("player-counters:" + player.Id, Scope, bounds, () => { zonePlayer = player.Id; overlay = "player"; }));
     }
 
+    private void DrawPublicPlayerStates(Player player, int x, int y, int width, bool growUp)
+    {
+        var states = StateClarity.ProminentPlayerStates(player);
+        if (states.Length == 0) { publicCounterBadges.Remove(player.Id); return; }
+        const int rowHeight = 24, gap = 3;
+        var chips = new List<(PlayerState State, string Text, float Size, int Width, int X, int Row)>();
+        int cursor = 0, row = 0;
+        foreach (var state in states) {
+            string text = StateClarity.StateCaption(state);
+            float size = .6f;
+            while (canvas.TextWidth(text, size, true) > width - 12 && size > .4f) size -= .025f;
+            int chipWidth = Math.Min(width, canvas.TextWidth(text, size, true) + 12);
+            if (cursor > 0 && cursor + chipWidth > width) { row++; cursor = 0; }
+            if (row >= 2) break;
+            chips.Add((state, text, size, chipWidth, cursor, row)); cursor += chipWidth + gap;
+        }
+        int hidden = states.Length - chips.Count;
+        string MoreText() => "+" + hidden + " states";
+        int MoreWidth() => canvas.TextWidth(MoreText(), .53f, true) + 12;
+        if (hidden > 0) {
+            // Reserve a real, readable control instead of truncating a total.
+            while (chips.Count > 1) {
+                var last = chips[^1]; cursor = last.X + last.Width + gap; row = last.Row;
+                if (cursor + MoreWidth() <= width || row == 0) break;
+                chips.RemoveAt(chips.Count - 1); hidden++;
+            }
+            var final = chips[^1]; cursor = final.X + final.Width + gap; row = final.Row;
+            if (cursor + MoreWidth() > width && row == 0) { row = 1; cursor = 0; }
+        }
+        int rows = Math.Max(chips.Max(c => c.Row) + 1, hidden > 0 ? row + 1 : 1);
+        int top = growUp ? y - (rows - 1) * (rowHeight + gap) : y;
+        var bounds = new Rectangle(x, top, width, rows * rowHeight + (rows - 1) * gap);
+        hits.Add(new("player-counters:" + player.Id, Scope, bounds, () => OpenPlayerState(player.Id, "")));
+        var painted = new List<PublicStateChipPaint>();
+        foreach (var chip in chips) {
+            var rectangle = new Rectangle(x + chip.X, top + chip.Row * (rowHeight + gap), chip.Width, rowHeight);
+            Color accent = chip.State.Kind == "progress" ? Gold : Blue;
+            canvas.Panel(rectangle, new(14, 26, 31), accent, 4);
+            canvas.Text(chip.Text, rectangle.X + 6, rectangle.Y + 2, Ink, chip.Size, rectangle.Width - 12, 1, true);
+            string stateId = chip.State.Id;
+            hits.Add(new("player-state:" + player.Id + ":" + stateId, Scope, rectangle, () => OpenPlayerState(player.Id, stateId)));
+            painted.Add(new(stateId, chip.Text, rectangle, canvas.TextWidth(chip.Text, chip.Size, true), rectangle.Width - 12));
+        }
+        if (hidden > 0) {
+            var rectangle = new Rectangle(x + cursor, top + row * (rowHeight + gap), Math.Min(MoreWidth(), width - cursor), rowHeight);
+            canvas.Panel(rectangle, new(14, 26, 31), Muted, 4);
+            canvas.Text(MoreText(), rectangle.X + 6, rectangle.Y + 2, Ink, .53f, rectangle.Width - 12, 1, true);
+            hits.Add(new("player-state-more:" + player.Id, Scope, rectangle, () => OpenPlayerState(player.Id, "")));
+        }
+        publicCounterBadges[player.Id] = new(string.Join(" · ", painted.Select(c => c.Text)) + (hidden > 0 ? " " + MoreText() : ""),
+            .6f, painted.Max(c => c.MeasuredWidth), width - 12, hidden) { Chips = painted.ToArray(), Bounds = bounds };
+    }
+
+    private void OpenPlayerState(int player, string state)
+    {
+        zonePlayer = player; playerStateFocus = state; overlay = "player";
+    }
+
     // Returns the height consumed so the caller can place commander damage
     // below it. Full public totals remain available even with many types.
     private int DrawPlayerCounterDetails(Player player, int x, int y, int width)
     {
+        if (player.States.Length > 0) return DrawPlayerStateDetails(player, x, y, width);
         var counters = StateClarity.PlayerCounters(player);
         canvas.Text("PUBLIC COUNTERS", x, y, Gold, .65f, width, 1, true);
         string context = match!.Id + ":" + player.Id;
@@ -90,6 +159,33 @@ internal sealed partial class TableGame
         if (pages > 1) {
             Button("counter-details-prev", "Previous", x + width - 272, y - 5, 125, () => playerCounterPage--, playerCounterPage > 0, height: 26);
             Button("counter-details-next", "More counters", x + width - 137, y - 5, 137, () => playerCounterPage++, playerCounterPage + 1 < pages, height: 26);
+        }
+        return 80;
+    }
+
+    private int DrawPlayerStateDetails(Player player, int x, int y, int width)
+    {
+        var states = StateClarity.ProminentPlayerStates(player);
+        string context = match!.Id + ":" + player.Id;
+        if (playerCounterContext != context) { playerCounterContext = context; playerCounterPage = 0; }
+        if (playerStateFocus.Length > 0) {
+            int index = Array.FindIndex(states, s => s.Id == playerStateFocus);
+            if (index >= 0) playerCounterPage = index;
+            playerStateFocus = "";
+        }
+        playerCounterPage = Math.Clamp(playerCounterPage, 0, Math.Max(0, states.Length - 1));
+        string heading = "PLAYER STATE" + (states.Length > 1 ? "  " + (playerCounterPage + 1) + " / " + states.Length : "");
+        canvas.Text(heading, x, y, Gold, .5f, 190, 1, true);
+        if (states.Length == 0) { canvas.Text("None", x, y + 24, Ink, .75f, width, 1); return 80; }
+        var state = states[playerCounterPage];
+        string caption = StateClarity.StateCaption(state);
+        canvas.Text(caption, x + 200, y - 3, Ink, .7f, width - 490, 1, true);
+        canvas.Text(state.Detail, x, y + 30, Muted, .55f, width, (int)Math.Ceiling(2 * preferences.TextScale));
+        if (publicCounterBadges.TryGetValue(player.Id, out var badge))
+            publicCounterBadges[player.Id] = badge with { DetailStateId = state.Id, DetailCaption = caption, DetailText = state.Detail };
+        if (states.Length > 1) {
+            Button("counter-details-prev", "Previous state", x + width - 284, y - 5, 136, () => playerCounterPage--, playerCounterPage > 0, height: 26);
+            Button("counter-details-next", "Next state", x + width - 138, y - 5, 138, () => playerCounterPage++, playerCounterPage + 1 < states.Length, height: 26);
         }
         return 80;
     }

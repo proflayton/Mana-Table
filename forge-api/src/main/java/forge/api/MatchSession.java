@@ -5,6 +5,7 @@ import com.google.common.eventbus.Subscribe;
 import forge.StaticData;
 import forge.card.MagicColor;
 import forge.card.CardStateName;
+import forge.card.GamePieceType;
 import forge.deck.Deck;
 import forge.game.*;
 import forge.game.event.GameEventTurnPhase;
@@ -545,8 +546,13 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
         var view = game.getView();
         activity.refreshVisibility();
         var players = new ArrayList<Object>();
-        var allPlayers = game.getRegisteredPlayers().stream().map(Player::getView).toList();
+        var registeredPlayers = game.getRegisteredPlayers();
+        var allPlayers = registeredPlayers.stream().map(Player::getView).toList();
+        var statesByPlayer = new LinkedHashMap<Integer, List<PublicPlayerStates.State>>();
+        for (Player player : registeredPlayers) statesByPlayer.put(player.getId(), PublicPlayerStates.of(player));
         for (PlayerView player : allPlayers) {
+            var states = statesByPlayer.get(player.getId());
+            activity.observePlayerStates(player, states);
             var zones = new ArrayList<Object>();
             for (ZoneType zone : List.of(ZoneType.Battlefield, ZoneType.Hand, ZoneType.Library, ZoneType.Graveyard, ZoneType.Exile, ZoneType.Command)) {
                 var visible = new ArrayList<Object>();
@@ -576,7 +582,7 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
                     "seat", allPlayers.indexOf(player) + 1, "eliminated", player.getHasLost(),
                     "life", player.getLife(), "maxHandSize", player.hasUnlimitedHandSize() ? null : player.getMaxHandSize(),
                     "landPlaysUsed", player.getNumLandThisTurn(), "landPlayLimit", player.hasUnlimitedLandPlay() ? null : player.getMaxLandPlay(),
-                    "priority", player.getHasPriority(), "mana", mana, "counters", publicCounters(player), "zones", zones, "commanderDamage", commanderDamage));
+                    "priority", player.getHasPriority(), "mana", mana, "counters", publicCounters(player), "states", states, "zones", zones, "commanderDamage", commanderDamage));
         }
         var stack = new ArrayList<Object>();
         for (var item : view.getStack()) {
@@ -704,7 +710,8 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
         var combat = game.getView().getCombat();
         var defender = combat == null ? null : combat.getDefender(card);
         boolean publicFace = !hidden || card.getZone() == ZoneType.Battlefield;
-        var result = map("key", key, "visualId", activity.visualId(card), "combatId", combatIds.id(card), "name", hidden ? "Face-down card" : face.getName(), "type", publicFace ? face.getType().toString() : "",
+        var result = map("key", key, "visualId", activity.visualId(card), "combatId", combatIds.id(card), "name", hidden ? "Face-down card" : face.getName(),
+                "type", hidden ? publicFace ? face.getType().toString() : "" : visibleType(card), "gamePieceType", gamePieceType(card, hidden),
                 "manaCost", hidden ? "" : face.getManaCost().toString(), "commanderTax", commanderTax(card, hidden),
                 "power", publicFace ? face.getPower() : null, "toughness", publicFace ? face.getToughness() : null,
                 "text", hidden ? "" : card.getText(), "tapped", card.isTapped(), "phasedOut", card.isPhasedOut(), "sick", card.isSick(), "damage", card.getDamage(),
@@ -722,6 +729,15 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
 
     private static int commanderTax(CardView card, boolean hidden) {
         return hidden || !card.isCommander() || card.getOwner() == null ? 0 : 2 * card.getOwner().getCommanderCast(card);
+    }
+
+    private static String gamePieceType(CardView card, boolean hidden) {
+        return hidden ? "card" : Objects.requireNonNullElse(card.getGamePieceType(), GamePieceType.CARD).name().toLowerCase(Locale.ROOT);
+    }
+
+    private static String visibleType(CardView card) {
+        String type = card.getCurrentState().getType().toString();
+        return type.isBlank() && card.getGamePieceType() == GamePieceType.EFFECT ? "Effect" : type;
     }
 
     static Map<String, Integer> publicCounters(GameEntityView entity) {
@@ -911,7 +927,7 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
         boolean hidden = card.isFaceDown() || !card.canBeShownTo(viewer);
         var face = card.getCurrentState();
         var result = map("name", hidden ? "Face-down or hidden card" : face.getName(), "faceDown", hidden,
-                "type", hidden ? "" : face.getType().toString(), "manaCost", hidden ? "" : face.getManaCost().toString(),
+                "type", hidden ? "" : visibleType(card), "gamePieceType", gamePieceType(card, hidden), "manaCost", hidden ? "" : face.getManaCost().toString(),
                 "commanderTax", commanderTax(card, hidden),
                 "text", hidden ? "" : card.getText(), "power", hidden ? null : face.getPower(), "toughness", hidden ? null : face.getToughness());
         addCardFaces(result, card, !hidden);

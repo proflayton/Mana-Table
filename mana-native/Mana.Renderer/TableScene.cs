@@ -42,10 +42,12 @@ public sealed class TableScene
         var handNodes = visibleHand.Select((card, i) => Node(card, TableLayout.Hand(i, visibleHand.Length, i == raised), "Hand", state.ViewerId, i, TableWorld.Pile(3, 0).Center) with { EntranceDelay = i * .035f })
             .Where(n => CardViews.Identity(n.Card) != dragged).OrderBy(n => n.Card == visibleHand.ElementAtOrDefault(raised) ? 1 : 0).ToArray();
         var scene = new TableScene { Hand = new(page, hand.Length, raised < 0 ? null : CardViews.Identity(visibleHand[raised]), handNodes) };
+        var orderedChoices = state.Decision is { Kind: "choice", Ordered: true } decision
+            ? decision.Choices.Where(c => c.Card != null && !string.IsNullOrEmpty(c.CardId)).Select(c => c.CardId).ToHashSet(StringComparer.Ordinal) : null;
         foreach (var player in state.Players) {
             int seat = player.Id == state.ViewerId ? 3 : TableLayout.SeatIndex(state, player.Id);
             if (seat is < 0 or > 3) continue;
-            var clusters = BattlefieldLayout.Build(seat, player.Id, player.Zone("Battlefield").Cards, isResource);
+            var clusters = BattlefieldLayout.Build(seat, player.Id, player.Zone("Battlefield").Cards, isResource, orderedChoices);
             scene.battlefield[player.Id] = clusters;
             foreach (bool resources in new[] { true, false }) {
                 string key = player.Id + (resources ? ":lands" : ":permanents");

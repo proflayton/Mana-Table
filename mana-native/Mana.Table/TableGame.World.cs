@@ -122,7 +122,7 @@ internal sealed partial class TableGame
     {
         heroPositions[player.Id] = center;
         bool target = IsPlayerTarget(player.Id), active = match!.ActivePlayerId == player.Id;
-        bool hasCounters = StateClarity.PlayerCounters(player).Length > 0;
+        bool hasCounters = StateClarity.PlayerStates(player).Length > 0;
         float radius = own ? 40 : 34;
         if (!own) {
             int count = Math.Min(7, player.Zone("Hand").Count);
@@ -145,7 +145,8 @@ internal sealed partial class TableGame
         canvas.Circle(center, radius + 3, new Color(36, 41, 42));
         canvas.Circle(center - new Vector2(0, 1), radius, new Color(55, 67, 66));
         DrawSeatImpact(player.Id, center, radius);
-        if (player.Zone("Command").Cards.FirstOrDefault(c => !c.FaceDown) is { } commander) seatPortraits.TryAdd(player.Id, commander.ArtName.Length > 0 ? commander.ArtName : commander.Name);
+        if (player.Zone("Command").Cards.FirstOrDefault(c => !c.FaceDown && c.GamePieceType != "effect") is { } commander)
+            seatPortraits.TryAdd(player.Id, commander.ArtName.Length > 0 ? commander.ArtName : commander.Name);
         if (seatPortraits.TryGetValue(player.Id, out var nameOfCommander) && art.Get(new Card { Name = nameOfCommander, ArtName = nameOfCommander }) is { } portrait) {
             canvas.Portrait(portrait, center - new Vector2(0, 1), radius, Color.White * .8f);
             canvas.Circle(center, radius, new Color(11, 20, 24) * .38f);
@@ -179,7 +180,7 @@ internal sealed partial class TableGame
         if (hasCounters) {
             int counterX = own ? (int)center.X - 240 : (int)center.X - 94;
             int counterY = own ? (int)center.Y - 22 : index == 1 ? (int)center.Y + 35 : (int)center.Y - 64;
-            DrawPublicPlayerCounters(player, counterX, counterY, index == 1 && !own ? 144 : 188);
+            DrawPublicPlayerCounters(player, counterX, counterY, index == 1 && !own ? 144 : 188, growUp: !own && index != 1);
         }
         if (!own) hits.Add(new("focus:" + player.Id, Scope, nameplate, () => OpenZone(player.Id, "Battlefield")));
     }

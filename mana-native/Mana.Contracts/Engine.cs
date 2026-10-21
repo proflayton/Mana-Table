@@ -131,6 +131,8 @@ public sealed record Card
     public CardAttachment? AttachedTo { get; init; }
     public CardAttachment[] Attachments { get; init; } = [];
     public string Name { get; init; } = "";
+    // Engine helpers and emblems are effect objects, not printed card identities.
+    public string GamePieceType { get; init; } = "card";
     public string ArtName { get; init; } = "";
     public string ArtFace { get; init; } = "front";
     public CardFace? OtherFace { get; init; }
@@ -158,8 +160,12 @@ public sealed record Card
 public sealed record CardAttachment(string Id, string Name, string Type);
 public sealed record CardFace(string Name, string Type, string ManaCost, string OracleText, int? Power, int? Toughness, string ArtName, string ArtFace);
 public sealed record Zone(string Name, int Count, Card[] Cards, Card? TopCard);
+// Public player mechanics share one presentation contract. Values and rules
+// descriptions come from the engine; the client does not inspect card names.
+public sealed record PlayerState(string Id, string Label, string Kind, int? Value, int? Maximum, string Detail);
 public sealed record Player(int Id, string Name, int Life, bool Priority, bool Eliminated, Dictionary<string, int> Mana, Zone[] Zones)
 {
+    public PlayerState[] States { get; init; } = [];
     // Public engine-owned player resources; card counters live on Card separately.
     public Dictionary<string, int> Counters { get; init; } = [];
     // Missing used count means an older engine did not project this state.

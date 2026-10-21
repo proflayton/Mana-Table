@@ -52,6 +52,73 @@ internal static class GameplayFeedbackChecks
         feedback.Observe(events, events with { Id = "new-game" }, 9);
         check(feedback.Last == null && feedback.LastPublicOutcome == null, "A new game cannot inherit earlier resolution or public outcome cues");
         CheckResolutionDraws(check, state);
+        CheckPlayerStates(check, state);
+        CheckEffectArtwork(check);
+    }
+
+    private static void CheckEffectArtwork(Action<bool, string> check)
+    {
+        var effect = new Card { Name = "Start Your Engines!", GamePieceType = "effect", Type = "Effect", Text = "Speed 1" };
+        check(Mana.Magic.CardPresentation.Artwork(effect) == null
+            && Mana.Magic.CardPresentation.Artwork(effect with { Name = "An unrelated status", ArtName = "A real card" }) == null,
+            "Engine effect markers never request printed-card artwork, including collisions with real sorcery names");
+        var printed = effect with { Name = "Start Your Engines", GamePieceType = "card", Type = "Sorcery" };
+        check(Mana.Magic.CardPresentation.Artwork(printed) is { Name: "Start Your Engines", Face: "front" }
+            && Mana.Magic.CardPresentation.Artwork(printed with { FaceDown = true }) == null,
+            "The actual printed sorcery retains its artwork while hidden objects do not request an image");
+        var face = printed with { ArtName = "A printed double-faced card", ArtFace = "back" };
+        check(Mana.Magic.CardPresentation.Artwork(face) is { Name: "A printed double-faced card", Face: "back" },
+            "Ordinary alternate faces retain their explicit printed artwork identity");
+        var source = new ObservedArt();
+        using var art = new CardArt(source);
+        check(art.Get(effect) == null && art.Get(effect with { Name = "Another marker", ArtFace = "back" }) == null
+            && !source.Requested.Task.Wait(TimeSpan.FromMilliseconds(100)),
+            "The actual texture loader declines effect objects before consulting its cache or image source");
+    }
+
+    private sealed class ObservedArt : ICardArtSource
+    {
+        internal readonly TaskCompletionSource<ArtRequest> Requested = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public Task<byte[]?> LoadAsync(ArtRequest request, CancellationToken cancellationToken)
+        {
+            Requested.TrySetResult(request);
+            return Task.FromResult<byte[]?>(null);
+        }
+        public void Dispose() { }
+    }
+
+    private static void CheckPlayerStates(Action<bool, string> check, GameSnapshot state)
+    {
+        var feedback = new ActionFeedback();
+        var started = state with { Activity = [
+            new(1, state.Turn, state.PhaseKey, "playerState", state.ViewerId, "Your Speed is now 1/4.", null, null) {
+                Detail = "Speed increases once on each of your turns when an opponent loses life." },
+            new(2, state.Turn, state.PhaseKey, "resolved", state.ViewerId, "A creature resolved.", null, null) { Outcome = "resolved" }] };
+        feedback.Observe(state, started, 20);
+        check(feedback.LastPublicOutcome is { Messages: ["Your Speed is now 1/4."] }
+            && feedback.Last?.Changes.FirstOrDefault() == "Your Speed is now 1/4.",
+            "A reported player-state change stays visible when its source resolves in the same poll");
+        feedback.Observe(started, started with { Revision = started.Revision + 1 }, 21);
+        check(feedback.LastPublicOutcome?.Started == 20 && feedback.Last?.Started == 20,
+            "Repeated snapshots cannot replay or prolong a player-state transition");
+        var unknown = started with { Activity = [.. started.Activity,
+            new(3, state.Turn, state.PhaseKey, "playerState", 1, "Opponent gained a new public status.", null, null)] };
+        feedback.Observe(started, unknown, 22);
+        check(feedback.LastPublicOutcome is { Messages: ["Opponent gained a new public status."], Started: 22 },
+            "A newly reported public mechanic uses the shared feedback path without a mechanic-specific client case");
+        var unrelated = unknown with { Activity = [.. unknown.Activity,
+            new(4, state.Turn, state.PhaseKey, "resolved", state.ViewerId, "Another ability resolved.", null, null) { Outcome = "resolved" }] };
+        feedback.Observe(unknown, unrelated, 23);
+        check(feedback.Last is { Changes.Length: 0 } && feedback.LastPublicOutcome?.Started == 22,
+            "A later unrelated resolution does not inherit an earlier player-state transition");
+        var noEvent = unrelated with { Players = unrelated.Players.Select(p => p.Id == state.ViewerId
+            ? p with { States = [new("speed", "Speed", "progress", 4, 4, "Max speed.")] } : p).ToArray() };
+        feedback.Observe(unrelated, noEvent, 24);
+        check(feedback.LastPublicOutcome?.Started == 22,
+            "A changed snapshot alone does not invent or attribute a public state-change event");
+        feedback.Observe(noEvent, noEvent with { Id = "another-table" }, 25);
+        check(feedback.Last == null && feedback.LastPublicOutcome == null,
+            "Player-state cues from a previous table cannot leak into a new game");
     }
 
     private static void CheckResolutionDraws(Action<bool, string> check, GameSnapshot state)

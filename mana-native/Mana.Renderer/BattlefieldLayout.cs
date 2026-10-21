@@ -9,13 +9,17 @@ public sealed record BattlefieldCluster(string Kind, SceneCard[] Cards);
 // rows overlap only their faces, leaving an individually reachable header edge.
 public static class BattlefieldLayout
 {
-    public static BattlefieldCluster[] Build(int seat, int owner, Card[] cards, Func<Card, bool> isResource)
+    public static BattlefieldCluster[] Build(int seat, int owner, Card[] cards, Func<Card, bool> isResource, IReadOnlySet<string>? separateOccurrences = null)
     {
         return new[] { "Creatures", "Support", "Lands" }.Select(kind => {
             var role = cards.Where(c => Role(c, isResource) == kind).ToArray();
             // Keep public families adjacent, but give differing states their own
             // cells. Only matching public-state copies share a compact fan.
-            var groups = role.GroupBy(FamilyKey).SelectMany(f => f.GroupBy(StateKey).SelectMany(g => g.Chunk(8))).ToArray();
+            // Ordering needs every candidate's own visible position badge.
+            // Split the complete candidate set once, independently of selection.
+            var groups = role.GroupBy(c => separateOccurrences?.Contains(c.VisualId) == true
+                    ? "ordered:" + c.VisualId : "family:" + FamilyKey(c))
+                .SelectMany(f => f.GroupBy(StateKey).SelectMany(g => g.Chunk(8))).ToArray();
             if (groups.Length == 0) return new BattlefieldCluster(kind, []);
             bool own = seat == 3, side = seat is 0 or 2, land = kind == "Lands", support = kind == "Support";
             float width = land ? 54 : support ? 64 : own ? 84 : side ? 66 : 77;
@@ -35,9 +39,12 @@ public static class BattlefieldLayout
                 cells.Clear(); int rowIndex = 0; float cursor = -span / 2;
                 foreach (var group in groups) {
                     float faceAcross = group[0].Tapped ? width * 1.4f : width;
-                    float cellWidth = faceAcross + (group.Length - 1) * fanStep;
+                    // The position badge is wider than a small land face.
+                    // Reserve a whole cell for it, including distant seats.
+                    float reservedAcross = separateOccurrences?.Contains(group[0].VisualId) == true ? Math.Max(84, faceAcross) : faceAcross;
+                    float cellWidth = reservedAcross + (group.Length - 1) * fanStep;
                     if (cursor + cellWidth > span / 2 + .01f) { rowIndex++; cursor = -span / 2; }
-                    cells.Add((rowIndex, acrossCenter + cursor + faceAcross / 2));
+                    cells.Add((rowIndex, acrossCenter + cursor + reservedAcross / 2));
                     cursor += cellWidth + 14;
                 }
                 rows = rowIndex + 1;

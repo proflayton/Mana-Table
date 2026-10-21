@@ -8,8 +8,10 @@ public static class TableChoices
     public static bool IsDirect(GameSnapshot state)
     {
         if (state.Decision is not { Kind: "choice", Choices.Length: > 0, LibraryCards.Length: 0 } d) return false;
-        var cards = state.Players.SelectMany(p => p.Zones.Where(z => z.Name is "Battlefield" or "Command"
-            || z.Name == "Hand" && p.Id == state.ViewerId).SelectMany(z => z.Cards)).ToArray();
+        // Ordered hand fans and command piles cannot expose every position
+        // badge. Keep those lists in the numbered gallery instead.
+        var cards = state.Players.SelectMany(p => p.Zones.Where(z => z.Name == "Battlefield"
+            || !d.Ordered && (z.Name == "Command" || z.Name == "Hand" && p.Id == state.ViewerId)).SelectMany(z => z.Cards)).ToArray();
         return d.Choices.All(c => c.Card != null && !string.IsNullOrEmpty(c.CardId) && cards.Any(card => card.VisualId == c.CardId))
             && d.Choices.Select(c => c.CardId).Distinct().Count() == d.Choices.Length;
     }

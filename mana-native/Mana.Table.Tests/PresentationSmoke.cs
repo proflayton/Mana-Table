@@ -4,6 +4,7 @@ using Mana.Contracts;
 using Mana.Renderer;
 using Microsoft.Xna.Framework;
 using Point = Microsoft.Xna.Framework.Point;
+using Rectangle = Microsoft.Xna.Framework.Rectangle;
 
 namespace Mana.Table;
 
@@ -26,6 +27,40 @@ internal static class PresentationSmoke
         Dictionary<string, Pose> Poses(GameSnapshot value) => TableScene.Build(value, 0, new(-1, -1), null, null, false, CardPresentation.IsResource)
             .Battlefield(value.ViewerId).SelectMany(c => c.Cards).ToDictionary(c => c.Id, c => c.Pose);
         var resting = Poses(stableBoard);
+        SceneCard[] BoardCards(GameSnapshot value) => TableScene.Build(value, 0, new(-1, -1), null, null, false, CardPresentation.IsResource)
+            .Battlefield(value.ViewerId).SelectMany(cluster => cluster.Cards).ToArray();
+        var candidates = stableBoard.Viewer!.Zone("Battlefield").Cards.Where(c => c.VisualId != "stable-0-2").ToArray();
+        var orderedBoard = stableBoard with { Decision = new() { Id = "ordered-copies", Kind = "choice", Ordered = true,
+            Min = 4, Max = 4, Choices = candidates.Select((card, index) => new Choice(index, card.Name, card) { CardId = card.VisualId }).ToArray() } };
+        Check(BoardCards(stableBoard).Any(c => c.GroupCount == 3 && c.Card.Type == "Creature")
+            && BoardCards(stableBoard).Any(c => c.GroupCount == 2 && c.Card.Type == "Basic Land"),
+            "Identical creatures and resources retain normal copy grouping outside ordered choices");
+        Check(BoardCards(orderedBoard).Length == 5 && candidates.All(card => BoardCards(orderedBoard).Single(c => c.Id == card.VisualId).GroupCount == 1),
+            "Every linked ordered creature and resource receives a separate occurrence without dropping other cards");
+        Check(Poses(orderedBoard with { Decision = orderedBoard.Decision! with { Id = "refreshed-order", Choices = orderedBoard.Decision.Choices.Reverse().ToArray() } })
+            .All(c => Poses(orderedBoard)[c.Key] == c.Value),
+            "Reordering choice indices or refreshing the same candidate set never reflows ordered battlefield positions");
+        Check(Poses(orderedBoard with { Decision = null }).All(c => resting[c.Key] == c.Value)
+            && Poses(orderedBoard with { Decision = orderedBoard.Decision! with { Ordered = false } }).All(c => resting[c.Key] == c.Value),
+            "Completing an order or using an unordered choice preserves the original copy grouping and poses");
+        Check(TableChoices.IsDirect(orderedBoard), "Linked battlefield ordering keeps every available target on the table");
+        foreach (var player in stableBoard.Players) {
+            var lands = player.Zone("Battlefield").Cards.Where(c => c.Type == "Basic Land").ToArray();
+            var order = stableBoard with { Decision = new() { Kind = "choice", Ordered = true,
+                Choices = lands.Select((card, index) => new Choice(index, card.Name, card) { CardId = card.VisualId }).ToArray() } };
+            var landScene = TableScene.Build(order, 0, new(-1, -1), null, null, false, CardPresentation.IsResource);
+            var badges = landScene.Battlefield(player.Id).SelectMany(c => c.Cards).Where(c => lands.Any(land => land.VisualId == c.Id))
+                .Select(c => new Rectangle((int)c.Pose.Center.X - 39, c.Pose.Bounds.Top + 8, 78, 24)).ToArray();
+            Check(badges.Length == 2 && !badges[0].Intersects(badges[1]),
+                "Seat " + player.Id + "'s identical ordered lands reserve separate readable position badges in perspective");
+        }
+        foreach (string zoneName in new[] { "Hand", "Command" }) {
+            var linked = stableBoard.Viewer!.Zone(zoneName).Cards.Take(1).ToArray();
+            var choice = stableBoard with { Decision = new() { Kind = "choice", Ordered = true, Min = 1, Max = 1,
+                Choices = linked.Select((card, index) => new Choice(index, card.Name, card) { CardId = card.VisualId }).ToArray() } };
+            Check(linked.Length == 1 && !TableChoices.IsDirect(choice) && TableChoices.IsDirect(choice with { Decision = choice.Decision! with { Ordered = false } }),
+                zoneName + " ordering uses the numbered gallery while unordered selections retain their existing direct behavior");
+        }
         GameSnapshot EditStable(Func<Card, Card> edit) => stableBoard with { Players = stableBoard.Players.Select(p => p with { Zones = p.Zones.Select(z =>
             z.Name == "Battlefield" ? z with { Cards = z.Cards.Select(edit).ToArray() } : z).ToArray() }).ToArray() };
         Check(Poses(EditStable(c => c with { Key = "new-decision:" + c.VisualId, Selectable = true, Highlighted = true })).All(c => resting[c.Key] == c.Value),

@@ -18,6 +18,7 @@ public final class MatchActivity {
     private boolean ownsIdentities;
     private final Deque<Entry> entries = new ArrayDeque<>();
     private final Map<CardView, String> visibleIds = new HashMap<>();
+    private final Map<Integer, Map<String, PublicPlayerStates.State>> playerStates = new HashMap<>();
     private long sequence;
     private int turn;
     private String phase = "PREGAME";
@@ -56,6 +57,38 @@ public final class MatchActivity {
     private String cardName(CardView card) { return visible(card) ? card.getCurrentState().getName() : "a face-down or hidden card"; }
     private String playerName(PlayerView player) { return player == null ? "A player" : player.equals(viewer) ? "You" : player.getName(); }
     private String possessive(PlayerView player) { return player != null && player.equals(viewer) ? "Your" : playerName(player) + "'s"; }
+
+    /** Observe safe controller-boundary snapshots, not network polls or inferred rules causes. */
+    synchronized void observePlayerStates(PlayerView player, List<PublicPlayerStates.State> states) {
+        var current = new LinkedHashMap<String, PublicPlayerStates.State>();
+        for (var state : states) current.put(state.id(), state);
+        var previous = playerStates.put(player.getId(), Collections.unmodifiableMap(current));
+        if (previous == null) return; // The initial board is a baseline, not a replay of its history.
+        var ids = new LinkedHashSet<>(previous.keySet());
+        ids.addAll(current.keySet());
+        for (String id : ids) {
+            var before = previous.get(id);
+            var after = current.get(id);
+            if (Objects.equals(before, after)) continue;
+            // Metadata changes do not represent a new mechanic state.
+            if (before != null && after != null && Objects.equals(before.value(), after.value())
+                    && Objects.equals(before.maximum(), after.maximum()) && before.kind().equals(after.kind())) continue;
+            var state = after == null ? before : after;
+            String label = possessive(player) + " " + state.label();
+            String message;
+            if (state.kind().equals("status")) {
+                message = label + (after == null ? " status ended." : " status became active.");
+            } else {
+                int oldValue = before == null || before.value() == null ? 0 : before.value();
+                int newValue = after == null || after.value() == null ? 0 : after.value();
+                if (after == null) message = label + " decreased from " + oldValue + " to 0.";
+                else if (state.kind().equals("progress") && state.maximum() != null && state.maximum() > 0 && newValue >= state.maximum()) message = label + " reached the maximum: " + newValue + ".";
+                else if (before == null && state.kind().equals("progress")) message = label + " started at " + newValue + ".";
+                else message = label + (newValue >= oldValue ? " increased from " : " decreased from ") + oldValue + " to " + newValue + ".";
+            }
+            add("playerState", player, message, null, state.detail());
+        }
+    }
 
     private void add(String kind, PlayerView player, String message, CardView card) {
         add(kind, player, message, card, "");

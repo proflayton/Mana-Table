@@ -21,15 +21,13 @@ internal sealed class CardArt : IDisposable
     }
     public Texture2D? Get(Card card)
     {
-        if (card.FaceDown || string.IsNullOrEmpty(card.Name)) return null;
-        string name = string.IsNullOrWhiteSpace(card.ArtName) ? card.Name : card.ArtName;
-        string face = card.ArtFace == "back" ? "back" : "front";
-        string cacheName = face == "back" ? name + "\0back" : name;
+        if (Mana.Magic.CardPresentation.Artwork(card) is not { } request) return null;
+        string cacheName = request.Key;
         if (textures.TryGetValue(cacheName, out var texture)) return texture;
         textures[cacheName] = null;
         _ = Task.Run(async () => {
             try {
-                var bytes = await source.LoadAsync(new(name, face), stopped.Token);
+                var bytes = await source.LoadAsync(request, stopped.Token);
                 if (bytes != null) loaded.Enqueue((cacheName, bytes));
             } catch (Exception ex) when (ex is HttpRequestException or IOException or OperationCanceledException) { }
         });

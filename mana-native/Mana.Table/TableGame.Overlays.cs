@@ -10,6 +10,25 @@ namespace Mana.Table;
 internal sealed partial class TableGame
 {
     private int playerDamagePage;
+    internal sealed record ChoiceOrderBadge(int Index, int Position, Rectangle Bounds, string Text, int MeasuredWidth, int AvailableWidth);
+    private readonly Dictionary<int, ChoiceOrderBadge> choiceOrderBadges = [];
+    private void PaintChoiceOrder(int index, Rectangle bounds, float fontSize = .56f)
+    {
+        int position = selections.IndexOf(index) + 1;
+        if (position == 0) return;
+        string caption = "ORDER " + position;
+        float size = fontSize;
+        int available = bounds.Width - 8;
+        while (size > .45f && canvas.TextWidth(caption, size, true) > available) size = Math.Max(.45f, size - .025f);
+        if (canvas.TextWidth(caption, size, true) > available) {
+            caption = position.ToString();
+            size = fontSize;
+            while (size > .45f && canvas.TextWidth(caption, size, true) > available) size = Math.Max(.45f, size - .025f);
+        }
+        canvas.Panel(bounds, new(34, 48, 49), Gold, 4);
+        canvas.CenterText(caption, new(bounds.X + 4, bounds.Y, available, bounds.Height), Gold, size, true);
+        if (Automation != null) choiceOrderBadges[index] = new(index, position, bounds, caption, canvas.TextWidth(caption, size, true), available);
+    }
     private void ModalFrame(string title, Action close, string closeLabel = "Close", int height = 706)
     {
         // Modal hit regions replace the table's regions, including invisible cards.
@@ -260,7 +279,9 @@ internal sealed partial class TableGame
             .Where(c => c.Item.Label.Contains(choiceFilter, StringComparison.OrdinalIgnoreCase)).ToArray();
         bool portraits = items.Any(c => c.Card != null); int capacity = portraits ? 7 : 6;
         choicePage = Math.Clamp(choicePage, 0, Math.Max(0, (filtered.Length - 1) / capacity));
-        string instruction = d.Kind == "reveal" ? "Hover to read these cards, then continue." : d.Ordered ? "Select cards in the order you want them. Numbers show your chosen order." : $"Choose {d.Min}–{d.Max}. Selected: {selections.Count}.";
+        string instruction = d.Kind == "reveal" ? "Hover to read these cards, then continue." : d.Ordered
+            ? $"Choose {d.Min}–{d.Max} in your chosen order: 1, 2, 3…  Selected: {selections.Count}. Clear selection to start again."
+            : $"Choose {d.Min}–{d.Max}. Selected: {selections.Count}.";
         canvas.Text(instruction, 206, 251, Gold, .72f, 1160, 2);
         var pageItems = filtered.Skip(choicePage * capacity).Take(capacity).ToArray();
         int expanded = Array.FindIndex(pageItems, e => readingId == "choice-face:" + Scope + ":" + e.Slot);
@@ -284,16 +305,19 @@ internal sealed partial class TableGame
                     choiceSlot: entry.Slot, activationBounds: new(x, 304, column, 329));
                 else canvas.Panel(new(x, 304, 148, 207), Panel, Muted);
                 canvas.Text(item.Label, x + 1, 526, Ink, .66f, column, 3, true);
-                string badge = selected ? d.Ordered ? "ORDER " + (selections.IndexOf(item.Index!.Value) + 1) : "SELECTED" : !available ? "VIEW ONLY" : "SELECT";
-                canvas.CenterText(badge, new(x, 605, column, 28), selected ? Gold : Muted, .56f, true);
+                var badgeBounds = new Rectangle(x, 605, column, 28);
+                if (selected && d.Ordered) PaintChoiceOrder(item.Index!.Value, badgeBounds, .65f);
+                else canvas.CenterText(selected ? "SELECTED" : !available ? "VIEW ONLY" : "SELECT", badgeBounds, selected ? Gold : Muted, .56f, true);
                 if (available && item.Card == null) hits.Add(new(buttonId, Scope, new(x, 304, 150, 329), () => ToggleChoice(d, captured.Index!.Value)));
             } else {
                 int x = 206 + index % 2 * 602, y = 302 + index / 2 * 116;
                 var bounds = new Rectangle(x, y, 585, 103);
                 canvas.Panel(bounds, selected ? new Color(36, 63, 79) : Panel, selected ? Gold : new Color(77, 90, 105), 7);
-                int offset = item.Mana.Length > 0 ? 63 : 16;
-                if (item.Mana.Length > 0) ManaOrb(item.Mana.Trim('{', '}'), 1, new(x + 33, y + 48));
-                canvas.Text((selected ? "✓  " : "") + item.Label, x + offset, y + 12, Ink, .83f, 563 - offset, 3, true);
+                bool numbered = selected && d.Ordered;
+                int offset = (numbered ? 99 : 16) + (item.Mana.Length > 0 ? 47 : 0);
+                if (numbered) PaintChoiceOrder(item.Index!.Value, new(x + 12, y + 12, 76, 33), .65f);
+                if (item.Mana.Length > 0) ManaOrb(item.Mana.Trim('{', '}'), 1, new(x + offset - 30, y + 48));
+                canvas.Text((selected && !d.Ordered ? "✓  " : "") + item.Label, x + offset, y + 12, Ink, .83f, 563 - offset, 3, true);
                 if (item.Detail.Length > 0) canvas.Text(item.Detail, x + offset, y + 69, Muted, .65f, 563 - offset, 1);
                 if (available) hits.Add(new(buttonId, Scope, bounds, () => ToggleChoice(d, captured.Index!.Value)));
             }

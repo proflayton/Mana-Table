@@ -6,10 +6,11 @@ information. The Electron reference client has its own
 [development guide](../forge-desktop/README.md).
 
 This guide follows the checked-out source, which can be ahead of the public
-installer. Release 0.2.39 contains the complete battlefield layout, compact
-selection readers, card-based assignments and additional hand-placement actions
-from master revision `c11a3094be6c95ba1bddbafbe54aa7ad8fe3a7db`. Later source adds
-connection recovery, public-state explanations and version-aware deck review.
+installer. The table includes the complete battlefield layout, compact selection
+readers, card-based assignments, connection recovery and public-state explanations.
+Player counters, progress tracks and statuses share one seat display and contextual
+explanations. Ordered selections show numbered positions on card faces and text
+choices. Engine effect markers use their rules text instead of printed-card artwork.
 Check a package's `SOURCE.txt` and `build.json` for its exact revision.
 For playing instructions, use [START-HERE.txt](START-HERE.txt).
 
