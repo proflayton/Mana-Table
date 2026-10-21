@@ -152,6 +152,7 @@ await RecoveryRegression.RunAsync(Check);
 GameplayClarityChecks.Run(Check);
 PublicStateDescriptorChecks.Run(Check);
 DeckExperienceChecks.Run(Check);
+await PrintingArtRegression.RunAsync(Check);
 Console.WriteLine($"Passed {checks} headless checks.");
 
 sealed class ControlledConnection : IMatchConnection

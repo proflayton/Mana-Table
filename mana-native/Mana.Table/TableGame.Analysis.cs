@@ -1,4 +1,5 @@
 using Mana.Contracts;
+using Mana.Magic;
 using Microsoft.Xna.Framework;
 
 namespace Mana.Table;
@@ -11,6 +12,7 @@ internal sealed partial class TableGame
     private string analysisError = "", analysisDetailTitle = "", analysisDetailText = "";
     private string[] analysisDetailCards = [];
     private string[] analysisDetailPages = [""];
+    private TuningQuestion? analysisDetailQuestion;
     private readonly HashSet<string> analysisRelatedCards = new(StringComparer.OrdinalIgnoreCase);
     private int analysisTab, analysisPage, analysisDetailPage;
     private bool analysisShowReviewed;
@@ -106,9 +108,10 @@ internal sealed partial class TableGame
             "pool" => p with { Pool = Names() }, _ => p with { TargetTurn = int.Parse(next) }
         });
     }
-    private void ShowAnalysisDetails(string title, string text, string[]? cards = null)
+    private void ShowAnalysisDetails(string title, string text, string[]? cards = null, TuningQuestion? question = null)
     {
         analysisDetailTitle = title; analysisDetailText = text; analysisDetailCards = cards ?? [];
+        analysisDetailQuestion = question;
         analysisDetailPages = AnalysisDetailPages(text);
         analysisDetailPage = 0; workshopDialog = "analysis-detail";
     }
@@ -224,9 +227,11 @@ internal sealed partial class TableGame
         var report = state.Report;
         canvas.Panel(new(48, y, 1504, 132), new(21, 29, 39), new(54, 67, 79), 5);
         string title, summary, details; string[] cards = [];
+        TuningQuestion? question = null;
         if (analysisTab == 0) {
             var f = report.Findings[index]; title = f.Dimension + ": " + f.Title; summary = f.Evidence;
             details = f.Evidence + "\n\nSeverity: " + f.Severity + "\nBasis: " + AnalysisBasis(f.Confidence); cards = f.Cards;
+            question = f.Severity == "review" ? DeckTuning.FromFinding(report, f) : null;
         } else if (analysisTab == 1) {
             var e = report.Engines[index]; title = e.Name + (e.Missing.Length == 0 ? " - pieces present" : " - pieces missing");
             summary = "Pieces: " + string.Join(" + ", e.Cards) + ". " + string.Join(" ", e.Steps);
@@ -270,7 +275,7 @@ internal sealed partial class TableGame
         }
         canvas.Text(title, 64, y + 12, Gold, .77f, 1184, 1, true);
         canvas.Text(summary.Length == 0 ? "No function was confidently detected; inspect this card's rules." : summary, 64, y + 47, Ink, .68f, 1180, 3);
-        Button("analysis-details:" + index, "Read details", 1264, y + (analysisTab == 2 ? 91 : 48), 270, () => ShowAnalysisDetails(title, details, cards), !busy, height: 30);
+        Button("analysis-details:" + index, "Read details", 1264, y + (analysisTab == 2 ? 91 : 48), 270, () => ShowAnalysisDetails(title, details, cards, question), !busy, height: 30);
     }
     private void DrawAnalysisDetails()
     {
@@ -280,6 +285,8 @@ internal sealed partial class TableGame
         Button("analysis-detail-prev", "Previous", 208, 817, 160, () => analysisDetailPage--, analysisDetailPage > 0, height: 36);
         Button("analysis-detail-next", "More", 380, 817, 126, () => analysisDetailPage++, analysisDetailPage + 1 < pages.Length, height: 36);
         canvas.Text($"{analysisDetailPage + 1} / {pages.Length}", 526, 827, Muted, .7f, 220, 1);
+        if (analysisDetailQuestion is { } question && DeckTuning.Matches(question, workshop))
+            Button("analysis-test-check", "Test this check", 742, 817, 226, () => TestAnalysisFinding(question), !busy && AnalysisCurrent && WorkshopCurrent, true, 36);
         bool hasCards = selectedDeckDetails?.Entries.Any(e => analysisDetailCards.Contains(e.Card.Name, StringComparer.OrdinalIgnoreCase)) == true;
         if (hasCards) Button("analysis-show-cards", "Show related cards in Build", 980, 817, 402, ShowAnalysisCards, !busy, true, 36);
     }

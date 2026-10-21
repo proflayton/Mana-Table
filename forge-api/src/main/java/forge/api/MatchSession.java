@@ -727,6 +727,7 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
                 "states", publicFace ? PublicStates.of(face.getPublicStates()) : List.of());
         AttachmentProjection.add(result, card, viewer, combatIds);
         addCardFaces(result, card, !hidden && card.canBeShownTo(viewer));
+        addCardPrinting(result, card, !hidden && card.canBeShownTo(viewer));
         return result;
     }
 
@@ -752,6 +753,17 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
 
     private static List<String> publicKeywords(CardView.CardStateView face) {
         return face.getPublicStates().stream().map(forge.game.PublicState::key).distinct().toList();
+    }
+
+    static void addCardPrinting(Map<String, Object> result, CardView card, boolean visible) {
+        if (visible) {
+            var printing = forge.util.ImageUtil.getPaperCardFromImageKey(card.getCurrentState().getTrackableImageKey());
+            if (printing != null) {
+                result.put("artSet", CardCatalog.artSet(printing));
+                result.put("edition", printing.getEdition());
+                result.put("collectorNumber", printing.getCollectorNumber());
+            }
+        }
     }
 
     /** Only add alternate identities after the same visibility check as the current face. */

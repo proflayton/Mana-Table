@@ -48,6 +48,22 @@ The ready message advertises `protocolVersion: 2` and the `seat-sync`, `snapshot
 `command-receipts`, `resume`, `table-social`, `deck-workshop`, and `deck-analysis` capabilities. All connected players
 need this build; the seat synchronization handshake now uses version 3.
 Printing IDs are opaque, case-sensitive identifiers; clients must round-trip them.
+`cardPrintings` takes `{cardId, offset, limit, text, finish}` (limit 1–200, default 6) and returns
+a catalog page of exact printings of that card, including alternate artwork and
+foil finishes. Optional `text` filters set codes/collector numbers, and `finish`
+is empty, `foil` or `nonfoil`. `replacePrinting` takes `{deckId, revision, section, cardId,
+printingId}` and replaces every copy in that section with the chosen printing.
+It checks the active document/revision and card identity, merges existing copies,
+and preserves commander partners and other sections. It is one undoable edit and
+merges manual categories and preserves either printing's favorite status. Existing deck
+files and printing IDs keep their version-1 format; no migration is required.
+Text exports now retain separate printing rows with set, collector number and
+`*F*` for foils; cards without a collector number use Forge's art-index notation.
+Visible card snapshots add `artSet` (the edition's Scryfall code), `edition` and
+`collectorNumber`. Hidden cards omit these fields. Native image caches include
+set/collector number and face; old name-only caches remain valid for unspecified
+art requests. An unavailable exact image uses the readable card fallback.
+
 `multiplayerState` includes `tableId`. Pass that ID to `tableSocial` to read the
 table conversation, `tableChat` with `kind` (`chat` or `emote`) and `text` to send,
 or `tableName` with `name` to change your display name between games. Sender

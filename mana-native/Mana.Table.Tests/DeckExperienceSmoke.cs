@@ -16,6 +16,7 @@ internal sealed class DeckExperienceSmoke(TableGame.Probe view) : ITableAutomati
     private int stage, mousePhase, next;
     private Point mouse;
     private string recommendation = "", version = "", sample = "";
+    private string experimentQuestion = "";
     private string sourceBefore = "", sourceVersion = "", unchangedSourceCard = "";
     private long sourceMetadataRevision;
     private DeckSourcePreview? sourcePreview;
@@ -101,13 +102,24 @@ internal sealed class DeckExperienceSmoke(TableGame.Probe view) : ITableAutomati
                 Check(DeckExperience.LatestDecision(view.Analysis!, recommendation)?.Decision == "dismiss" && view.Analysis!.History.Count(h => h.RecommendationId == recommendation) == 3,
                     "Dismiss supersedes the reopened decision while keeping the full history");
                 Check(Deck.Revision == revision && Deck.Entries.All(e => e.Card.Name != "Ichor Wellspring"), "Recommendation decisions leave playable cards and editor revision unchanged");
-                Click("analysis-test", 10); break;
+                Click("analysis-tab:0", 91); break;
+            case 91:
+                experimentQuestion = DeckTuning.FromFinding(view.Analysis!.Report, view.Analysis.Report.Findings[0]).Question;
+                Click("analysis-details:0", 92); break;
+            case 92:
+                Check(view.Hits.Any(hit => hit.Id == "analysis-test-check"), "An actionable finding offers a test question beside its evidence");
+                Click("analysis-test-check", 93); break;
+            case 93:
+                Check(view.Workshop!.Question == experimentQuestion && view.Workshop.VersionId == version && Deck.Revision == revision,
+                    "Testing a finding saves its question and keeps the playable cards, revision and version unchanged");
+                Capture("01b-finding-experiment"); Click("workshop-hand-new", 11); break;
             case 10: Click("workshop-hand-new", 11); break;
             case 11:
                 sample = view.WorkshopHand!.TestId; Click("workshop-hand-keep", 12); break;
             case 12: Click("workshop-results", 13); break;
             case 13:
-                Check(view.WorkshopTests.Any(t => t.Id == sample && t.VersionId == version), "A real sample retains its exact playable version");
+                Check(view.WorkshopTests.Any(t => t.Id == sample && t.VersionId == version && t.Question == experimentQuestion),
+                    "A real sample retains both the analysis question and exact playable version");
                 Click("workshop-view-tested", 14); break;
             case 14:
                 Check(view.WorkshopDialog == "version-view" && view.WorkshopVersion!.Entries.Sum(e => e.Quantity) == 100, "View tested deck opens the complete saved list without restoring it");
@@ -133,6 +145,8 @@ internal sealed class DeckExperienceSmoke(TableGame.Probe view) : ITableAutomati
             case 19: Click("deck-remove", 20); break;
             case 20:
                 Check(view.Workshop!.VersionId != version, "A genuine quantity edit creates a different playable version");
+                Check(view.WorkshopTests.Single(test => test.Id == sample).Question == experimentQuestion,
+                    "Tuning the playable deck preserves the earlier test's original question and evidence");
                 revision = Deck.Revision; Click("workshop-results", 21); break;
             case 21: Click("workshop-view-tested", 22); break;
             case 22: Click("workshop-view-diff", 23); break;

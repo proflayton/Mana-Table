@@ -31,6 +31,11 @@ public interface IEngineCatalog
     Task<DeckDetails> SaveDeckAsync(string deckId, long revision);
     Task<string> ExportDeckAsync(string deckId, long revision);
 }
+public interface ICardPrintings
+{
+    Task<CatalogPage> CardPrintingsAsync(string cardId, int offset = 0, int limit = 6, string text = "", string finish = "");
+    Task<DeckDetails> ReplacePrintingAsync(string deckId, long revision, string section, string cardId, string printingId);
+}
 public interface ITableSetup
 {
     Task<SoloSetup> PrepareSoloAsync(string deckId);
@@ -135,6 +140,11 @@ public sealed record Card
     public string GamePieceType { get; init; } = "card";
     public string ArtName { get; init; } = "";
     public string ArtFace { get; init; } = "front";
+    public string ArtSet { get; init; } = "";
+    public string Edition { get; init; } = "";
+    public string CollectorNumber { get; init; } = "";
+    public int ArtIndex { get; init; }
+    public bool Foil { get; init; }
     public CardFace? OtherFace { get; init; }
     public string[] CombatKeywords { get; init; } = [];
     // Null means a legacy engine. A present empty list authoritatively clears

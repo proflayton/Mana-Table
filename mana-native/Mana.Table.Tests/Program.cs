@@ -21,6 +21,7 @@ internal static class Program
         testRun |= args.Contains("--smoke-allocation");
         testRun |= args.Contains("--smoke-recovery");
         testRun |= args.Contains("--smoke-state-clarity") || args.Contains("--smoke-deck-experience");
+        testRun |= args.Contains("--smoke-printings");
         var profile = Arg("--profile") ?? (testRun
             ? Path.Combine(Path.GetTempPath(), "ManaTableNative-tests", Guid.NewGuid().ToString())
             : Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "ManaTableNative"));
@@ -115,6 +116,7 @@ internal static class Program
                 if (args.Contains("--smoke-deck-building")) game.Automation = new DeckBuildingSmoke(game.TestPort);
                 if (args.Contains("--smoke-analysis")) game.Automation = new AnalysisSmoke(game.TestPort);
                 if (args.Contains("--smoke-workshop")) game.Automation = new DeckWorkshopSmoke(game.TestPort);
+                if (args.Contains("--smoke-printings")) game.Automation = new PrintingsSmoke(game.TestPort);
                 if (args.Contains("--smoke-deck-tuning")) game.Automation = new DeckTuningSmoke(game.TestPort);
                 if (args.Contains("--smoke-deck-experience")) game.Automation = new DeckExperienceSmoke(game.TestPort);
                 if (game.Automation != null) game.TestPort.DismissWelcome();

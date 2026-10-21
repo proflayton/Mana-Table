@@ -8,7 +8,7 @@ namespace Mana.Forge;
 
 public sealed record ForgePaths(string Java, string Jar, string Resources, string Profile);
 
-public sealed partial class ForgeEngine(ForgePaths paths) : ICardEngine, ITableSocial, IDeckWorkshop, ITableSeatSetup
+public sealed partial class ForgeEngine(ForgePaths paths) : ICardEngine, ITableSocial, IDeckWorkshop, ITableSeatSetup, ICardPrintings
 {
     private static readonly JsonSerializerOptions Json = new() { PropertyNameCaseInsensitive = true };
     private readonly ConcurrentDictionary<long, TaskCompletionSource<JsonElement>> pending = new();
@@ -115,6 +115,9 @@ public sealed partial class ForgeEngine(ForgePaths paths) : ICardEngine, ITableS
     public async Task<DeckSummary> ImportPresetAsync(string id) => Deck(await Request("presetImport", new { id }));
     private static Card MapCatalogFace(JsonElement card) => new() {
         Name = Text(card, "name"), ArtName = Text(card, "artName"), ArtFace = Text(card, "artFace"),
+        Edition = Text(card, "edition"), ArtSet = Text(card, "artSet"), CollectorNumber = Text(card, "collectorNumber"),
+        ArtIndex = card.TryGetProperty("artIndex", out var artIndex) ? artIndex.GetInt32() : 0,
+        Foil = card.TryGetProperty("foil", out var foil) && foil.GetBoolean(),
         ManaCost = Text(card, "manaCost"), Type = Text(card, "type"), Text = Text(card, "oracleText"),
         Power = int.TryParse(Text(card, "power"), out var power) ? power : null,
         Toughness = int.TryParse(Text(card, "toughness"), out var toughness) ? toughness : null,
@@ -156,6 +159,14 @@ public sealed partial class ForgeEngine(ForgePaths paths) : ICardEngine, ITableS
             data.GetProperty("cards").EnumerateArray().Select(MapCatalogCard).ToArray());
     }
     public async Task<DeckDetails> CreateDeckAsync(string name) => MapDeck(await Request("new", new { name, format = "Commander" }));
+    public async Task<CatalogPage> CardPrintingsAsync(string cardId, int offset = 0, int limit = 6, string text = "", string finish = "")
+    {
+        var data = await Request("cardPrintings", new { cardId, offset, limit, text, finish });
+        return new(data.GetProperty("total").GetInt32(), data.GetProperty("offset").GetInt32(),
+            data.GetProperty("cards").EnumerateArray().Select(MapCatalogCard).ToArray());
+    }
+    public async Task<DeckDetails> ReplacePrintingAsync(string deckId, long revision, string section, string cardId, string printingId) =>
+        MapDeck(await Request("replacePrinting", new { deckId, revision, section, cardId, printingId }));
     public async Task<DeckDetails> EditDeckAsync(string deckId, long revision, IReadOnlyList<DeckEdit> edits) =>
         MapDeck(await Request("edit", new { deckId, revision, edits = edits.Select(e => new { section = e.Section, cardId = e.CardId, quantity = e.Quantity }) }));
     public async Task<DeckDetails> RenameDeckAsync(string deckId, long revision, string name) => MapDeck(await Request("rename", new { deckId, revision, name }));

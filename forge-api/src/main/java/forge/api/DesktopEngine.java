@@ -156,6 +156,14 @@ public final class DesktopEngine implements AutoCloseable {
                     integer(p, "colors"), integer(p, "maxManaValue"), number(p, "offset", 0), number(p, "limit", 48)),
                     string(p, "type", ""), string(p, "sort", "name"), !p.has("unique") || p.get("unique").getAsBoolean(),
                     integer(p, "colorIdentity"), string(p, "role", ""));
+            case "cardPrintings" -> catalog.printings(string(p, "cardId", ""), number(p, "offset", 0), number(p, "limit", 6),
+                    string(p, "text", ""), string(p, "finish", ""));
+            case "replacePrinting" -> {
+                requireWorkshopDeck(p);
+                workshop.replacePrinting(deckId, editor, format, string(p, "section", ""),
+                        string(p, "cardId", ""), string(p, "printingId", ""));
+                clearPractice(); yield save();
+            }
             case "deckInsights" -> { requireDeck(); yield DeckInsights.analyze(catalog, editor.snapshot(), format, deckId); }
             case "workshop" -> { requireWorkshopDeck(p); yield workshop.view(deckId, editor.snapshot(), format); }
             case "workshopMetadata" -> { requireWorkshopDeck(p); yield workshop.metadata(deckId, editor.snapshot(), format, p); }
@@ -458,9 +466,18 @@ public final class DesktopEngine implements AutoCloseable {
                 var entries = editor.snapshot().entries().stream().filter(entry -> entry.section().equals(section.name())).toList();
                 if (entries.isEmpty()) { continue; }
                 result.append(section == DeckSection.Main ? "Deck" : section.name()).append('\n');
-                var counts = new LinkedHashMap<String, Integer>();
-                entries.forEach(entry -> counts.merge(entry.card().name(), entry.quantity(), Integer::sum));
-                counts.forEach((name, count) -> result.append(count).append(' ').append(name).append('\n'));
+                for (var entry : entries) {
+                    var card = entry.card();
+                    if (forge.item.IPaperCard.NO_COLLECTOR_NUMBER.equals(card.collectorNumber()) || card.collectorNumber().isBlank()) {
+                        result.append(entry.quantity()).append(' ').append(forge.card.CardDb.CardRequest.compose(
+                                forge.card.CardDb.CardRequest.compose(card.name(), card.foil()), card.edition(), card.artIndex())).append('\n');
+                        continue;
+                    }
+                    result.append(entry.quantity()).append(' ').append(card.name()).append(" (").append(card.edition()).append(')');
+                    result.append(' ').append(card.collectorNumber());
+                    if (card.foil()) result.append(" *F*");
+                    result.append('\n');
+                }
                 result.append('\n');
             }
         }

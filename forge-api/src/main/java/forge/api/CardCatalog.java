@@ -25,7 +25,7 @@ public final class CardCatalog {
                            String manaCost, int manaValue, String type, String oracleText,
                            int colors, int colorIdentity, String rarity, String collectorNumber,
                            String deckSection, String power, String toughness,
-                           String artName, String artFace, FaceInfo otherFace) { }
+                           String artName, String artFace, FaceInfo otherFace, String artSet) { }
     public record FaceInfo(String name, String manaCost, String type, String oracleText,
                            String power, String toughness, String artName, String artFace) { }
 
@@ -140,6 +140,28 @@ public final class CardCatalog {
     // than a paginated full-text search that can omit the requested edition.
     List<CardInfo> printings(String name) { return byPrintingName.getOrDefault(normalize(name), List.of()); }
 
+    public Page printings(String cardId, int offset, int limit) {
+        return printings(cardId, offset, limit, "", "");
+    }
+
+    public Page printings(String cardId, int offset, int limit, String text, String finish) {
+        if (offset < 0 || limit < 1 || limit > 200) throw new IllegalArgumentException("Invalid printing page");
+        if (!List.of("", "foil", "nonfoil").contains(finish)) throw new IllegalArgumentException("Invalid printing finish");
+        String filter = normalize(text.strip());
+        var selected = resolve(cardId);
+        var matches = printings(selected.getName()).stream().filter(info -> Objects.equals(
+                selected.getFunctionalVariant(), resolve(info.id()).getFunctionalVariant()))
+                .filter(info -> normalize(info.edition() + " " + info.artSet() + " " + info.collectorNumber()).contains(filter))
+                .filter(info -> finish.isEmpty() || info.foil() == finish.equals("foil")).toList();
+        return new Page(matches.size(), offset, matches.stream().skip(offset).limit(limit).toList(), cards.size());
+    }
+
+    static String artSet(PaperCard card) {
+        var data = forge.StaticData.instance();
+        var edition = data == null ? null : data.getEditions().get(card.getEdition());
+        return edition == null ? card.getEdition().toLowerCase(Locale.ROOT) : edition.getScryfallCode();
+    }
+
     public static CardCatalog fromDatabase(CardDb database) {
         return fromDatabases(List.of(database));
     }
@@ -178,6 +200,6 @@ public final class CardCatalog {
                 card.getRarity().name(), card.getCollectorNumber(), DeckSection.matchingSection(card).name(),
                 rules.getMainPart().getPower(), rules.getMainPart().getToughness(), card.getName(), "front",
                 CardSplitType.DUAL_FACED_CARDS.contains(rules.getSplitType()) && rules.getOtherPart() != null
-                        ? describeFace(rules.getOtherPart(), card.getName(), "back") : null);
+                        ? describeFace(rules.getOtherPart(), card.getName(), "back") : null, artSet(card));
     }
 }

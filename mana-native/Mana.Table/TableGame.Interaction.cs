@@ -95,6 +95,7 @@ internal sealed partial class TableGame
             return;
         }
         if (match == null && deckEditor) {
+            if (workshopDialog.Length > 0) return;
             if (deckMenu.Length > 0) return;
             if (pointer.X < 580 && catalogPage is { } page) {
                 catalogOffset = Math.Clamp(catalogOffset - direction * 6, 0, Math.Max(0, (page.Total - 1) / 6 * 6)); ChangeCatalog(true);

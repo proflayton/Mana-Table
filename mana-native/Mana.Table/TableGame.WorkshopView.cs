@@ -21,9 +21,9 @@ internal sealed partial class TableGame
     private void DrawWorkshopNavigation()
     {
         Button("workshop-build", "Build", 48, 190, 100, () => ShowWorkshopTab("build"), !busy, workshopTab == "build", 32);
-        Button("workshop-test", "Test", 158, 190, 100, () => ShowWorkshopTab("test"), !busy, workshopTab == "test", 32);
-        Button("workshop-results", "Results", 268, 190, 116, () => ShowWorkshopTab("results"), !busy, workshopTab == "results", 32);
-        if (engine is IDeckAnalysis) Button("deck-analysis", "Analyze", 394, 190, 134, OpenDeckAnalysis, !busy && WorkshopCurrent, analysisOpen, 32);
+        if (engine is IDeckAnalysis) Button("deck-analysis", "Analyze", 158, 190, 134, OpenDeckAnalysis, !busy && WorkshopCurrent, analysisOpen, 32);
+        Button("workshop-test", "Test", 302, 190, 100, () => ShowWorkshopTab("test"), !busy, workshopTab == "test", 32);
+        Button("workshop-results", "Results", 412, 190, 116, () => ShowWorkshopTab("results"), !busy, workshopTab == "results", 32);
         Button("workshop-insights", "Insights", 538, 190, 126, () => { workshopDialog = "insights"; WorkshopDialogPage = 0; }, !busy && WorkshopCurrent, height: 32);
         string version = workshop?.Versions.FirstOrDefault(v => v.Id == workshop.VersionId)?.Label ?? "";
         string info = workshopError.Length > 0 ? "Deck tools unavailable" : !WorkshopCurrent ? "Loading deck tools..." : version + (workshop!.Plan.Length == 0 ? "  ·  Add your deck's plan" : "  ·  " + workshop.Plan);
@@ -154,9 +154,11 @@ internal sealed partial class TableGame
         canvas.Fill(new(0, 64, 1600, 936), Color.Black * .82f);
         canvas.Panel(new(168, 142, 1264, 752), new(22, 32, 44), LobbyTrim, 16);
         string title = workshopDialog switch { "analysis-detail" => "Strategy review details", "analysis-preferences" => "Make this review yours (optional)", "insights" => "Understand your deck", "versions" => "Playable deck versions", "version-view" => "Saved deck — read only", "source-confirm" => "Confirm the whole-list outcome", "card" => "This card in your plan", "swap" => "Choose a card to swap out", "opponents" => "Choose AI opponent " + (workshopOpponentSeat + 1), "source" => "Your Archidekt connection", "source-details" => "Archidekt import details", "saved-hand" => "Your recorded sample hand", "saved-card" => "Inspect a recorded card", _ => "Review the Archidekt deck" };
+        if (workshopDialog == "printings") title = "Choose a printing";
         canvas.Text(title, 202, 179, Ink, 1.35f, 1020, 1, true);
-        Button("workshop-dialog-close", "Back", 1292, 160, 112, () => { workshopDialog = workshopDialog switch { "saved-card" => workshopSavedReturn, "version-view" => workshopVersionReturn, "source-confirm" or "source-details" => "source-preview", "swap" => "card", _ => "" }; }, !busy, height: 36);
+        Button("workshop-dialog-close", "Back", 1292, 160, 112, () => { if (workshopDialog == "printings") { ClosePrintings(); return; } workshopDialog = workshopDialog switch { "saved-card" => workshopSavedReturn, "version-view" => workshopVersionReturn, "source-confirm" or "source-details" => "source-preview", "swap" => "card", _ => "" }; }, !busy, height: 36);
         switch (workshopDialog) {
+            case "printings": DrawPrintings(); break;
             case "analysis-detail": DrawAnalysisDetails(); break;
             case "analysis-preferences": DrawAnalysisPreferences(); break;
             case "insights": DrawWorkshopInsights(); break;

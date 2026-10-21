@@ -134,7 +134,8 @@ internal sealed partial class TableGame
             canvas.Rounded(new(600, y, 500, 30), fill, 3);
             if (problem || entry.Section == "Commander") canvas.Fill(new(600, y, 3, 30), Gold);
             canvas.Text(entry.Quantity + "×", 610, y + 7, problem ? Gold : Muted, .64f, 38, 1, problem);
-            canvas.Text(entry.Card.Name, 651, y + 6, problem || entry.Section == "Commander" ? Gold : Ink, .66f, 354, 1, selected);
+            canvas.Text(entry.Card.Name, 651, y + 6, problem || entry.Section == "Commander" ? Gold : Ink, .66f, 268, 1, selected);
+            canvas.Text(entry.Edition + (entry.Card.CollectorNumber.Length > 0 ? " #" + entry.Card.CollectorNumber : ""), 922, y + 9, Muted, .43f, 88, 1);
             if (problem) { canvas.Text("!", 1016, y + 6, Gold, .7f, 18, 1, true); renderedDeckIssueCardIds.Add(entry.Id); }
             canvas.Text(entry.Section == "Commander" ? "CMD" : entry.Section == "Sideboard" ? "SIDE" : entry.Section == "Considering" ? "OPT" : entry.ManaValue.ToString(), 1040, y + 9, Muted, .53f, 54, 1);
             hits.Add(new("deck-card:" + entry.Section + ":" + entry.Id, Scope, new(600, y, 500, 30), () => SelectDeckRow(entry)));
@@ -154,11 +155,14 @@ internal sealed partial class TableGame
         var preview = DeckCardFace(card.Card, deckBackId == card.Id);
         PaintCard(preview, new Pose(new(1349, 450), new(286, 400)), false, false);
         int copies = deck.Entries.Where(e => e.Card.Name == card.Card.Name).Sum(e => e.Quantity);
+        if (engine is ICardPrintings && deckCardSection != "Considering")
+            Button("deck-printings", PrintingLabel(card.Card) + " ▾", 1150, 660, WorkshopEngine != null ? 238 : 398, OpenPrintings, !busy, height: 28);
         if (WorkshopEngine != null) {
             var role = workshop?.Roles.FirstOrDefault(r => r.CardId == card.Id);
             string label = (role?.Pinned == true ? "★ " : "") + (role?.Roles.Length > 0 ? string.Join(" · ", role.Roles) : "Set categories / keep / Considering") + "  >";
-            Button("workshop-card-tools", label, 1150, 660, 398, () => workshopDialog = "card", !busy && WorkshopCurrent, height: 28);
-        } else canvas.Text(card.Edition + " · " + deckCardSection + " · " + copies + (copies == 1 ? " copy in list" : " copies in list"), 1150, 663, Muted, .63f, 398, 1);
+            bool printings = engine is ICardPrintings && deckCardSection != "Considering";
+            Button("workshop-card-tools", printings ? "Card plan >" : label, printings ? 1396 : 1150, 660, printings ? 152 : 398, () => workshopDialog = "card", !busy && WorkshopCurrent, height: 28);
+        } else if (engine is not ICardPrintings) canvas.Text(card.Edition + " · " + deckCardSection + " · " + copies + (copies == 1 ? " copy in list" : " copies in list"), 1150, 663, Muted, .63f, 398, 1);
         DrawSelectedDeckIssues(card);
         int count = DeckQuantity(); bool editable = deckCardSection is "Main" or "Sideboard" or "Considering";
         Button("deck-remove", "−", 1150, 784, 46, () => DeckQuantity(count - 1), !busy && editable && count > 0, height: 36);

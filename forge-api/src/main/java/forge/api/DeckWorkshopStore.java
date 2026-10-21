@@ -182,6 +182,32 @@ final class DeckWorkshopStore {
         return DeckVersionView.compare(version.id(), version.name(), version.format(), entries, current, format);
     }
 
+    synchronized void replacePrinting(String deckId, DeckEditor editor, String format, String section, String cardId, String printingId) throws IOException {
+        var candidate = new DeckEditor(catalog, editor.toDeck());
+        candidate.replacePrinting(0, section, cardId, printingId);
+        if (cardId.equals(printingId)) return;
+        var document = read(deckId);
+        // Keep the old annotation for Undo and other sections using that printing.
+        var source = document.roles.stream().filter(row -> row.cardId().equals(cardId)).findFirst();
+        if (source.isPresent()) {
+            var previous = source.get();
+            var target = document.roles.stream().filter(row -> row.cardId().equals(printingId)).findFirst();
+            var categories = new LinkedHashSet<String>();
+            target.ifPresent(role -> categories.addAll(role.roles()));
+            categories.addAll(previous.roles());
+            var copied = new Role(printingId, checkedTags(List.copyOf(categories)),
+                    previous.pinned() || target.map(Role::pinned).orElse(false),
+                    previous.origin().equals("local") || target.map(role -> role.origin().equals("local")).orElse(false) ? "local" : previous.origin());
+            if (target.isEmpty() || !target.get().equals(copied)) {
+                document.roles.removeIf(role -> role.cardId().equals(printingId));
+                document.roles.add(copied);
+                document.metadataRevision++;
+            }
+        }
+        commit(deckId, candidate.snapshot(), format, document);
+        editor.replacePrinting(editor.snapshot().revision(), section, cardId, printingId);
+    }
+
     synchronized Applied restore(String deckId, DeckEditor editor, String format, String versionId) throws IOException {
         var document = read(deckId);
         var version = document.versions.stream().filter(item -> item.id().equals(versionId)).findFirst()

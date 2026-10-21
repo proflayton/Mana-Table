@@ -250,6 +250,22 @@ decisions, which ends the game instead of continuing with only AI players.
 
 ### Native deck workshop
 
+`--smoke-analysis` checks a review with no goals or target configured, then opens
+the optional question-based preferences and chooses a pace through real pointer
+hit testing. Run at 1280x720 and 1200x900; inspect `analysis-findings.png` and
+`analysis-preferences.png` alongside the detail, swap and navigation captures.
+`DeckAnalysisTest` covers automatic targets, explicit overrides, zero-cost
+commanders, and Limited Sideboard availability without treating Considering as
+owned cards. The Electron strategy-review scenario covers collapsed preferences,
+direct format/pool question focus, persistence, and unchanged playable lists.
+
+`--smoke-deck-experience` also follows a supported finding through **Test this
+check**, saves the generated manual-observation question, records a real hand
+sample, and verifies that its question and rules version survive a later edit.
+Run at 1000x740 and 1540x980 with 130% text; evidence includes the finding's test
+screen, recorded list and saved-to-current comparison. This does not claim that
+aggregate counters automatically answer the question.
+
 Build `Mana.Table.Tests` as below, then run each mode with its own fresh profile:
 
 ```powershell
@@ -296,6 +312,24 @@ snapshots. Review at 1280x720 and 1200x900; cached art is optional. Run the comm
 scenario below to cover readiness and actual match setup after workshop changes.
 
 ### Native deck import and commander selection
+
+`CardPrintingsTest` covers printing pages, alternate art/foils, section-scoped
+replacement, commander partners, copy merging/overflow, stale documents, undo,
+and restart persistence. `DeckImportTest` also checks exact commander printing
+export/import and visible/hidden gameplay artwork metadata. Run these with
+`DeckCommandersTest`, `EngineApiTest` and `DeckWorkshopTest` in the Maven reactor.
+`Mana.Client.Tests` exercises exact image URLs, cache separation/reopening and
+missing-image handling through fake HTTP responses, with no live service needed.
+
+`--smoke-printings --engine-resources <package>/engine --engine-jar <rebuilt-jar>
+--profile <isolated-profile> --size 1000x740` drives the native printing chooser,
+imports an alternate foil Toph, changes its printing, checks its command zone and
+100-card list, and verifies filters, pagination, mixed printings, Undo/Redo and
+cancellation. Repeat at 1540x980 and review `printings-ui-results.json` and
+`printings-*.png`. Live Scryfall availability is not a CI requirement. The focused
+client checks additionally reject a chooser from a changed deck, revision or
+section, and ensure that exact-printing metadata never enables hidden-card or
+rules-effect artwork requests.
 
 `DeckValidationTest` covers structured issues alongside unchanged Forge validity
 and the legacy problem message, including copy limits across printings, commander

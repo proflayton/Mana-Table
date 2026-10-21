@@ -88,6 +88,7 @@ internal sealed partial class TableGame
         internal CatalogCard? DeckSelection => game.DeckSelection;
         internal void TypeSetupText(string text) { foreach (char c in text) game.SetupText(c); }
         internal CatalogPage? Catalog => game.catalogPage;
+        internal CatalogPage? Printings => game.printingPage;
         internal bool CatalogBusy => game.catalogInFlight || game.catalogPending;
         internal void TypeDeckText(string text) { foreach (char c in text) game.DeckText(c); }
         internal void DeckQuantity(int quantity) => game.DeckQuantity(quantity);

@@ -11,7 +11,7 @@ public static class CardPresentation
         if (card.FaceDown || card.GamePieceType.Equals("effect", StringComparison.OrdinalIgnoreCase)
             || string.IsNullOrWhiteSpace(card.Name)) return null;
         return new(string.IsNullOrWhiteSpace(card.ArtName) ? card.Name : card.ArtName,
-            card.ArtFace == "back" ? "back" : "front");
+            card.ArtFace == "back" ? "back" : "front", card.ArtSet, card.CollectorNumber);
     }
 
     public static bool IsEquipment(Card card) => !card.FaceDown && card.Type.Contains("Equipment", StringComparison.Ordinal);

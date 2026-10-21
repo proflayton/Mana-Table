@@ -73,6 +73,32 @@ public class DeckImportTest {
         assertEquals(MatchSetup.suggestedFormat(deck), "Commander");
     }
 
+    @Test public void alternateCommanderArtworkAndFinishSurviveExportAndReimport() throws Exception {
+        var preview = DeckImport.preview("Commander\n1 Toph, the First Metalbender (TLA) 362 *F*\nMain\n99 Forest (M13) 249");
+        assertTrue(preview.problems().isEmpty(), preview.problems().toString());
+        var selected = entry(preview, "Toph, the First Metalbender").card();
+        assertEquals(selected.collectorNumber(), "362"); assertTrue(selected.foil());
+        assertEquals(selected.artSet(), "tla");
+        var source = catalog(preview);
+        var face = forge.game.card.CardView.getCardForUi(source.resolve(selected.id()));
+        var projection = new java.util.LinkedHashMap<String, Object>();
+        MatchSession.addCardPrinting(projection, face, false);
+        assertTrue(projection.isEmpty(), "Hidden cards never publish printing metadata");
+        MatchSession.addCardPrinting(projection, face, true);
+        assertEquals(projection.get("collectorNumber"), "362", "Gameplay artwork follows the exact printed image key");
+        assertEquals(projection.get("artSet"), "tla");
+        try (var engine = new DesktopEngine(catalog(preview), Files.createTempDirectory("mana-printing-roundtrip-"))) {
+            var request = new JsonObject(); request.addProperty("name", "Alternate commander");
+            request.addProperty("text", "Commander\n1 Toph, the First Metalbender (TLA) 362 *F*\nMain\n99 Forest (M13) 249");
+            engine.dispatch("import", request);
+            String exported = (String)engine.dispatch("export", new JsonObject());
+            var restored = DeckImport.preview(exported);
+            assertTrue(restored.problems().isEmpty(), restored.problems().toString());
+            assertEquals(entry(restored, "Toph, the First Metalbender").card().id(), selected.id());
+            assertEquals(entry(restored, "Toph, the First Metalbender").section(), "Commander");
+        }
+    }
+
     @DataProvider public Object[][] textFormats() {
         return new Object[][] {
                 {"MTGO/plain", "4 Forest\n\nSideboard\n2 Shock"},

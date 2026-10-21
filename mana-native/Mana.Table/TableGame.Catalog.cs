@@ -44,7 +44,7 @@ internal sealed partial class TableGame
     private void DeckText(char character)
     {
         if (deckTextFocus.Length == 0) return;
-        string value = deckTextFocus == "library" ? catalogText : deckFilter;
+        string value = DeckTextValue;
         if (character == '\b') value = deckSelectAll ? "" : value.Length == 0 ? value : value[..^1];
         else if (!char.IsControl(character)) value = (deckSelectAll ? "" : value) + character;
         else return;
@@ -55,14 +55,16 @@ internal sealed partial class TableGame
         value = value[..Math.Min(value.Length, 200)];
         if (deckTextFocus == "library") { catalogText = value; ChangeCatalog(); }
         else if (deckTextFocus == "deck") { deckFilter = value; deckCardsPage = 0; }
+        else if (deckTextFocus == "printing") { printingFilter = value; LoadPrintings(0); }
     }
+    private string DeckTextValue => deckTextFocus == "printing" ? printingFilter : deckTextFocus == "library" ? catalogText : deckFilter;
     private void DeckKeys(KeyboardState keys)
     {
-        if (!deckEditor || match != null || deckTextFocus.Length == 0) return;
+        if (!deckEditor || match != null || deckTextFocus.Length == 0 || workshopDialog.Length > 0 && workshopDialog != "printings") return;
         bool control = keys.IsKeyDown(Keys.LeftControl) || keys.IsKeyDown(Keys.RightControl);
         if (control && keys.IsKeyDown(Keys.A) && previousKeys.IsKeyUp(Keys.A)) deckSelectAll = true;
         if (control && keys.IsKeyDown(Keys.V) && previousKeys.IsKeyUp(Keys.V) && Clipboard.ContainsText()) {
-            string old = deckTextFocus == "library" ? catalogText : deckFilter;
+            string old = DeckTextValue;
             SetDeckText((deckSelectAll ? "" : old) + Clipboard.GetText().Replace("\r", " ").Replace("\n", " ")); deckSelectAll = false;
         }
         if (keys.IsKeyDown(Keys.Enter) && previousKeys.IsKeyUp(Keys.Enter)) { catalogAfter = now; deckTextFocus = ""; textFocus = false; }

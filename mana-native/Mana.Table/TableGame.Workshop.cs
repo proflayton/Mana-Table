@@ -34,7 +34,7 @@ internal sealed partial class TableGame
     private bool workshopPending, workshopInFlight, workshopSourceImport;
     private IDeckWorkshop? WorkshopEngine => engine as IDeckWorkshop;
     private bool WorkshopCurrent => workshop != null && workshop.DeckId == selectedDeckDetails?.Id && workshop.Revision == selectedDeckDetails?.Revision && !workshopPending && !workshopInFlight;
-    private string WorkshopScope => $"{workshopTab}:{workshopDialog}:{WorkshopDialogPage}:{workshopCompareVersion}:{workshopVersionView?.VersionId}:{workshopSourceChoice}:{workshopRoleFilter}:{workshopManaFilter}:{workshopGeneration}:{workshopPage}:{workshopPlayers}:{workshopSelectedTest}:{workshopOpponentSeat}:{workshopOpponentSearch}:{workshopSourcePreview?.Token}:{workshopHand?.TestId}:{workshopHand?.Draws}:{workshopHand?.Redraws}:{string.Join(',', workshopOpponents)}";
+    private string WorkshopScope => $"{workshopTab}:{workshopDialog}:{printingGeneration}:{WorkshopDialogPage}:{workshopCompareVersion}:{workshopVersionView?.VersionId}:{workshopSourceChoice}:{workshopRoleFilter}:{workshopManaFilter}:{workshopGeneration}:{workshopPage}:{workshopPlayers}:{workshopSelectedTest}:{workshopOpponentSeat}:{workshopOpponentSearch}:{workshopSourcePreview?.Token}:{workshopHand?.TestId}:{workshopHand?.Draws}:{workshopHand?.Redraws}:{string.Join(',', workshopOpponents)}";
     private bool IsWorkshopMatch => match != null && workshopMatchTestId != null;
 
     private void RequestWorkshopRefresh(bool changed = false)
