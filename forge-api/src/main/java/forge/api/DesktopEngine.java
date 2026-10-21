@@ -178,6 +178,14 @@ public final class DesktopEngine implements AutoCloseable {
                 editor = applied.editor(); deckId = applied.deckId(); format = applied.format(); clearPractice(); yield save();
             }
             case "workshopTests" -> playtests.list(string(p, "deckId", ""));
+            case "workshopInspectTest" -> {
+                requireWorkshopDeck(p);
+                yield playtests.inspect(deckId, string(p, "testId", ""), editor.snapshot(), format);
+            }
+            case "workshopInspectVersion" -> {
+                requireWorkshopDeck(p);
+                yield workshop.inspect(deckId, string(p, "versionId", ""), editor.snapshot(), format);
+            }
             case "workshopTestNote" -> playtests.note(string(p, "deckId", ""), string(p, "testId", ""), string(p, "note", ""));
             case "workshopPractice" -> {
                 requireWorkshopDeck(p);
@@ -306,7 +314,7 @@ public final class DesktopEngine implements AutoCloseable {
             case "matchOpponents" -> MatchSession.opponents(format);
             case "matchSetup" -> {
                 requireDeck();
-                var preview = MatchSetup.prepare(editor.toDeck(), format, string(p, "commanderId", "")).preview();
+                var preview = preparedMatch(p).preview();
                 var result = new LinkedHashMap<String, Object>();
                 result.put("deckId", deckId); result.put("revision", editor.snapshot().revision());
                 result.put("name", editor.snapshot().name()); result.put("setup", preview);
@@ -510,7 +518,7 @@ public final class DesktopEngine implements AutoCloseable {
     }
     private void startMatch(JsonObject p, List<String> opponents, String testId) throws Exception {
         validateMatchStart(p);
-        var prepared = MatchSetup.prepare(editor.toDeck(), format, string(p, "commanderId", ""));
+        var prepared = preparedMatch(p);
         if (testId == null) playtests.interruptActive();
         if (match != null) match.close();
         var session = MatchSession.solo(prepared.deck(), format, opponents, resources, directory.getParent());
@@ -523,9 +531,17 @@ public final class DesktopEngine implements AutoCloseable {
         if (match != null && !match.finished()) throw new IllegalStateException("Finish or concede the current match first");
         if (p.has("deckId") && !deckId.equals(string(p, "deckId", "")) || p.has("revision") && p.get("revision").getAsLong() != editor.snapshot().revision())
             throw new IllegalArgumentException("The deck changed. Reopen match setup before starting.");
-        var prepared = MatchSetup.prepare(editor.toDeck(), format, string(p, "commanderId", ""));
+        var prepared = preparedMatch(p);
         if (prepared.preview().problem() != null) throw new IllegalArgumentException(prepared.preview().problem());
         if (multiplayer != null && multiplayer.connected()) throw new IllegalStateException("Leave the current table first");
+    }
+    private MatchSetup.Prepared preparedMatch(JsonObject p) {
+        var prepared = MatchSetup.prepare(editor.toDeck(), format, string(p, "commanderId", ""));
+        var preview = prepared.preview();
+        if (preview.problem() != null) return prepared;
+        String problem = new DeckEditor(catalog, prepared.deck()).validate(DeckFormat.valueOf(format)).problem();
+        return new MatchSetup.Prepared(prepared.deck(), new MatchSetup.Preview(preview.format(), preview.startingLife(),
+                preview.commanderId(), preview.commanders(), preview.needsCommander(), preview.commanderChoices(), problem));
     }
     private void requireDeck() { if (editor == null) { throw new IllegalStateException("Open or create a deck first"); } }
     private void ensureSaved() {

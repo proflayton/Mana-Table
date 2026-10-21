@@ -4,8 +4,17 @@ using Mana.Contracts;
 
 namespace Mana.Forge;
 
-public sealed partial class ForgeEngine
+public sealed partial class ForgeEngine : IDeckVersionHistory
 {
+    private static DeckVersionView MapDeckVersion(JsonElement data) => new(Text(data, "versionId"), Text(data, "name"),
+        Text(data, "format"), Text(data, "currentFormat"), data.GetProperty("entries").EnumerateArray().Select(e => {
+            var c = MapCatalogCard(e.GetProperty("card"));
+            return new DeckEntry(Text(e, "section"), c.Id, c.Card, e.GetProperty("quantity").GetInt32(), c.ManaValue, c.ColorIdentity, c.Edition);
+        }).ToArray(), Read<DeckVersionDifference[]>(data.GetProperty("differences")));
+    public async Task<DeckVersionView> InspectTestAsync(string deckId, long revision, string testId) =>
+        MapDeckVersion(await Request("workshopInspectTest", new { deckId, revision, testId }));
+    public async Task<DeckVersionView> InspectVersionAsync(string deckId, long revision, string versionId) =>
+        MapDeckVersion(await Request("workshopInspectVersion", new { deckId, revision, versionId }));
     private static WorkshopState MapWorkshop(JsonElement data)
     {
         // CardInfo is the engine catalog representation. Keep that translation at

@@ -30,6 +30,7 @@ final class SyncLobby {
     SyncLobby(Path resources, Path profile) {
         this.resources = resources; this.profile = profile;
         catalog = CardCatalog.fromDatabases(forge.StaticData.instance().getAvailableDatabases().values());
+        new DeckAnalysisFormats(catalog).load(resources);
     }
     Object host(String format, int count, boolean autoForward) {
         return host(format, count, autoForward, "mixed");
@@ -121,7 +122,7 @@ final class SyncLobby {
                 var editor = new DeckEditor(catalog, new Deck(name));
                 editor.apply(0, List.of(SyncTransport.JSON.fromJson(p.get("cards"), DeckEditor.Edit[].class)));
                 var deck = editor.toDeck();
-                var problem = (format.equals("Commander") ? DeckFormat.Commander : DeckFormat.Constructed).getDeckConformanceProblem(deck);
+                var problem = editor.validate(format.equals("Commander") ? DeckFormat.Commander : DeckFormat.Constructed).problem();
                 if (problem != null) throw new IllegalArgumentException(name + " is not legal for " + format + ": " + problem);
                 slot.deck = deck; slot.ready = false; conversation.activity(seat, "selected " + deck.getName() + "."); break;
             }

@@ -154,6 +154,7 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
                 "status", "starting", "message", message, "format", format, "viewerId", viewer.getId(),
                 "playerCount", game.getPlayers().size(), "players", List.of(), "stack", List.of(),
                 "turn", 0, "phase", "Pregame", "phaseKey", "PREGAME", "activePlayerId", null,
+                "priorityPlayerId", null, "decisionOwnerId", null, "actionClass", "starting",
                 "prompt", null, "combat", null, "result", null, "error", null, "activity", List.of(), "notices", List.of()));
     }
 
@@ -276,6 +277,7 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
             if (promptSource != null && promptSource.canBeShownTo(viewer)) {
                 next.prompt.put("sourceCard", cardState(promptSource, null));
                 next.prompt.put("sourceZone", promptSource.getZone() == null ? "" : promptSource.getZone().name());
+                next.prompt.put("sourceControllerId", promptSource.getController() == null ? null : promptSource.getController().getId());
             }
             pending = next;
             publish(next);
@@ -494,6 +496,35 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
         var next = new LinkedHashMap<>(latest);
         next.put("revision", ++revision); next.put("prompt", null); next.put("status", "resolving");
         latest = Collections.unmodifiableMap(next);
+        table.refreshDecisionState();
+    }
+
+    record PublicDecision(int ownerId, String actionClass) { }
+
+    PublicDecision publicDecision() {
+        Pending current = pending;
+        if (current == null || closed || error != null || viewer.getHasLost()) return null;
+        String actionClass = current.kind;
+        if (current.input != null) {
+            Input input = current.input;
+            actionClass = input instanceof InputPassPriority ? "priority" : input instanceof InputPayMana ? "mana"
+                    : input instanceof InputAttack ? "attack" : input instanceof InputBlock ? "block"
+                    : input instanceof InputSelectTargets || input instanceof InputSelectEntitiesFromList<?> ? "selection"
+                    : input instanceof InputLondonMulligan ? "mulligan" : input instanceof InputConfirm ? "confirm" : "choice";
+        }
+        return new PublicDecision(viewer.getId(), actionClass);
+    }
+
+    void updatePublicDecision(Integer owner, String actionClass) {
+        String status = (String) latest.get("status");
+        if (status.equals("finished") || status.equals("error") || status.equals("starting")) { owner = null; actionClass = status; }
+        boolean clearPriority = actionClass.equals("resolving") || actionClass.equals("finished") || actionClass.equals("error");
+        if (Objects.equals(latest.get("decisionOwnerId"), owner) && Objects.equals(latest.get("actionClass"), actionClass)
+                && (!clearPriority || latest.get("priorityPlayerId") == null)) return;
+        var next = new LinkedHashMap<>(latest);
+        next.put("revision", ++revision); next.put("decisionOwnerId", owner); next.put("actionClass", actionClass);
+        if (clearPriority) next.put("priorityPlayerId", null);
+        latest = Collections.unmodifiableMap(next);
     }
 
     private void publish(Pending prompt) { pending = prompt; table.publish(); }
@@ -540,7 +571,7 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
                     "seat", allPlayers.indexOf(player) + 1, "eliminated", player.getHasLost(),
                     "life", player.getLife(), "maxHandSize", player.hasUnlimitedHandSize() ? null : player.getMaxHandSize(),
                     "landPlaysUsed", player.getNumLandThisTurn(), "landPlayLimit", player.hasUnlimitedLandPlay() ? null : player.getMaxLandPlay(),
-                    "priority", player.getHasPriority(), "mana", mana, "zones", zones, "commanderDamage", commanderDamage));
+                    "priority", player.getHasPriority(), "mana", mana, "counters", publicCounters(player), "zones", zones, "commanderDamage", commanderDamage));
         }
         var stack = new ArrayList<Object>();
         for (var item : view.getStack()) {
@@ -550,7 +581,8 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
                     "card", source != null && source.canBeShownTo(viewer) ? cardState(source, null) : null,
                     "ability", item.isAbility(),
                     "targets", visible ? stackTargets(item) : List.of(),
-                    "controller", item.getActivatingPlayer() == null ? "" : item.getActivatingPlayer().getName()));
+                    "controller", item.getActivatingPlayer() == null ? "" : item.getActivatingPlayer().getName(),
+                    "controllerId", item.getActivatingPlayer() == null ? null : item.getActivatingPlayer().getId()));
         }
         String result = gameResult();
         var activityFrame = activity.frame();
@@ -564,6 +596,8 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
                 "error", error, "playerCount", allPlayers.size(), "viewerId", viewer.getId(), "turn", view.getTurn(), "phase", view.getPhase() == null ? "Pregame" : view.getPhase().nameForUi,
                 "phaseKey", view.getPhase() == null ? "PREGAME" : view.getPhase().name(),
                 "activePlayerId", view.getPlayerTurn() == null ? null : view.getPlayerTurn().getId(), "players", players,
+                "priorityPlayerId", allPlayers.stream().filter(p -> !p.getHasLost() && p.getHasPriority()).map(PlayerView::getId).findFirst().orElse(null),
+                "decisionOwnerId", null, "actionClass", "resolving",
                 "stack", stack, "combat", combatState(prompt), "prompt", prompt == null ? null : prompt.prompt,
                 "ignoredPriorityAbilities", priorityAbilities(human.getIgnoredPriorityAbilities(), prompt),
                 "result", result, "notices", List.copyOf(notices), "activity", activityFrame.entries()));
@@ -664,9 +698,10 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
         if (card.getCounters() != null) for (var entry : card.getCounters().entrySet()) counters.put(entry.getElement().getName(), entry.getCount());
         var combat = game.getView().getCombat();
         var defender = combat == null ? null : combat.getDefender(card);
-        var result = map("key", key, "visualId", activity.visualId(card), "combatId", combatIds.id(card), "name", hidden ? "Face-down card" : face.getName(), "type", hidden ? "" : face.getType().toString(),
+        boolean publicFace = !hidden || card.getZone() == ZoneType.Battlefield;
+        var result = map("key", key, "visualId", activity.visualId(card), "combatId", combatIds.id(card), "name", hidden ? "Face-down card" : face.getName(), "type", publicFace ? face.getType().toString() : "",
                 "manaCost", hidden ? "" : face.getManaCost().toString(), "commanderTax", commanderTax(card, hidden),
-                "power", hidden ? null : face.getPower(), "toughness", hidden ? null : face.getToughness(),
+                "power", publicFace ? face.getPower() : null, "toughness", publicFace ? face.getToughness() : null,
                 "text", hidden ? "" : card.getText(), "tapped", card.isTapped(), "phasedOut", card.isPhasedOut(), "sick", card.isSick(), "damage", card.getDamage(),
                 "attacking", card.isAttacking(), "blocking", card.isBlocking(), "counters", counters,
                 "defenderId", defender instanceof PlayerView ? defender.getId() : null,
@@ -674,15 +709,29 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
                 "selectable", selectable.contains(card) || actionable.contains(card)
                         || prompt != null && prompt.input instanceof InputLondonMulligan && card.getController().equals(viewer) && card.getZone() == ZoneType.Hand,
                 "highlighted", highlighted.contains(card), "faceDown", hidden,
-                "combatKeywords", hidden ? List.of() : List.of(Keyword.FLYING, Keyword.REACH, Keyword.TRAMPLE, Keyword.FIRST_STRIKE,
-                        Keyword.DOUBLE_STRIKE, Keyword.DEATHTOUCH, Keyword.LIFELINK, Keyword.MENACE, Keyword.VIGILANCE, Keyword.INDESTRUCTIBLE)
-                        .stream().filter(face::hasKeyword).map(keyword -> keyword.name().toLowerCase(Locale.ROOT).replace('_', ' ')).toList());
+                "combatKeywords", publicFace ? publicKeywords(face) : List.of());
         addCardFaces(result, card, !hidden && card.canBeShownTo(viewer));
         return result;
     }
 
     private static int commanderTax(CardView card, boolean hidden) {
         return hidden || !card.isCommander() || card.getOwner() == null ? 0 : 2 * card.getOwner().getCommanderCast(card);
+    }
+
+    static Map<String, Integer> publicCounters(GameEntityView entity) {
+        var counters = new LinkedHashMap<String, Integer>();
+        if (entity.getCounters() != null) for (var entry : entity.getCounters().entrySet())
+            if (entry.getCount() > 0) counters.put(entry.getElement().getName(), entry.getCount());
+        return Collections.unmodifiableMap(counters);
+    }
+
+    private static List<String> publicKeywords(CardView.CardStateView face) {
+        if (face.getKeywords() == null) return List.of();
+        return List.of(Keyword.FLYING, Keyword.REACH, Keyword.TRAMPLE, Keyword.FIRST_STRIKE,
+                Keyword.DOUBLE_STRIKE, Keyword.DEATHTOUCH, Keyword.LIFELINK, Keyword.MENACE,
+                Keyword.VIGILANCE, Keyword.INDESTRUCTIBLE, Keyword.INFECT, Keyword.WITHER,
+                Keyword.PROTECTION, Keyword.HASTE, Keyword.HEXPROOF, Keyword.WARD, Keyword.DEFENDER)
+                .stream().filter(face::hasKeyword).map(keyword -> keyword.name().toLowerCase(Locale.ROOT).replace('_', ' ')).toList();
     }
 
     /** Only add alternate identities after the same visibility check as the current face. */
@@ -713,6 +762,7 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
             pending = null;
             var next = new LinkedHashMap<>(latest);
             next.put("revision", ++revision); next.put("status", "error"); next.put("error", failure); next.put("prompt", null);
+            next.put("priorityPlayerId", null); next.put("decisionOwnerId", null); next.put("actionClass", "error");
             latest = Collections.unmodifiableMap(next);
             notifyPlaytest();
             human.concede();
@@ -1128,10 +1178,7 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
         var counters = new LinkedHashMap<String, Integer>();
         if (card.getCounters() != null) for (var entry : card.getCounters().entrySet()) counters.put(entry.getElement().getName(), entry.getCount());
         details.put("counters", counters);
-        details.put("combatKeywords", face.getKeywords() == null ? List.of() : List.of(Keyword.FLYING, Keyword.REACH,
-                Keyword.TRAMPLE, Keyword.FIRST_STRIKE, Keyword.DOUBLE_STRIKE, Keyword.DEATHTOUCH, Keyword.LIFELINK,
-                Keyword.MENACE, Keyword.VIGILANCE, Keyword.INDESTRUCTIBLE, Keyword.INFECT, Keyword.WITHER, Keyword.PROTECTION)
-                .stream().filter(face::hasKeyword).map(keyword -> keyword.name().toLowerCase(Locale.ROOT).replace('_', ' ')).toList());
+        details.put("combatKeywords", publicKeywords(face));
         return details;
     }
 

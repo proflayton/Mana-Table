@@ -66,9 +66,9 @@ internal sealed partial class TableGame
         canvas.Text($"Turn {state.Turn}  ·  {state.Phase}", 220, 32, Muted, .6f, 600, 1);
         Button("history", "History", 1190, 12, 110, () => { overlay = "history"; historyPage = 0; }, height: 35);
         Button("settings", "Settings", 1310, 12, 112, () => overlay = "settings", height: 35);
-        Button("concede", "Concede", 1432, 12, 143, () => {
-            overlay = "concede";
-        }, !busy && state.Status is not ("finished" or "error"), height: 35);
+        bool departure = session.NeedsRecovery || state.Viewer?.Eliminated == true || state.Status == "error";
+        Button(departure ? "leave-table" : "concede", departure ? "Leave table" : "Concede", 1432, 12, 143,
+            () => overlay = departure ? "leave-table" : "concede", !busy && state.Status != "finished", height: 35);
 
     }
     private void DrawHand()
@@ -269,26 +269,34 @@ internal sealed partial class TableGame
     {
         var state = match!; var d = state.Decision;
         canvas.Gradient(new(1240, 712, 360, 188), Color.Transparent, new Color(10, 16, 21) * .95f);
+        if (DrawRecoveryDock(state)) return;
         if (state.Status is "finished" or "error") {
             canvas.Text(state.Result ?? "Game stopped", 1267, 730, Gold, 1.17f, 295, 1, true);
             canvas.Text(state.Error ?? "You can still inspect the final battlefield.", 1267, 767, Muted, .63f, 294, 2);
             if (localMatch || state.Status == "finished") Button("return", IsWorkshopMatch ? "Return to tune" : localMatch ? "Return to setup" : "Return to lobby", 1266, 828, 296, ReturnFromMatch, !busy, true, 47);
+            else Button("error-leave", "Leave table", 1266, 828, 296, () => overlay = "leave-table", !busy, true, 47);
             return;
         }
-        bool following = busy || d == null || TurnGuide.CanAutoPass(state, automatic, held, preferences.Stops, false);
-        string status = following ? "FOLLOWING THE TABLE" : d!.Intent == DecisionIntent.Block ? "CHOOSE YOUR BLOCKERS"
-            : d.Intent == DecisionIntent.Priority ? "YOUR PRIORITY" : "YOUR DECISION";
-        canvas.Text(status, 1266, 727, following ? Muted : Gold, .54f, 298, 1, true);
+        if (state.Viewer?.Eliminated == true) {
+            canvas.Text("WATCHING THE TABLE", 1266, 727, Gold, .69f, 298, 1, true);
+            canvas.Text("You have been eliminated. You can inspect the table while the remaining players finish.", 1266, 754, Ink, .78f, 295, 3);
+            Button("eliminated-leave", "Leave table", 1266, 828, 296, () => overlay = "leave-table", !busy, height: 47);
+            return;
+        }
+        bool autoFollowing = TurnGuide.CanAutoPass(state, automatic, held, preferences.Stops, false);
+        bool following = busy || d == null || autoFollowing;
+        string status = !busy && autoFollowing ? "AUTO · PASSING PRIORITY" : StateClarity.DecisionStatus(state, busy);
+        canvas.Text(status, 1266, 724, following ? Muted : Gold, .7f, 298, 1, true);
         var abilities = PriorityAbilityOptions();
-        string instruction = abilities.Length == 1 ? abilities[0].IgnoredUntilNextTurn
+        string instruction = !busy && abilities.Length == 1 ? abilities[0].IgnoredUntilNextTurn
             ? abilities[0].SourceName + (automatic ? ": passing this ability" : ": Auto may pass this ability") : abilities[0].SourceName + " can be activated."
-            : following ? "Waiting for your next action. Use Hold to pause Auto." : TurnGuide.Instruction(state);
-        canvas.Text(instruction, 1266, 741, Ink, .66f, 295, abilities.Length > 0 ? 1 : 3);
+            : StateClarity.DecisionInstruction(state, busy, pendingActionLabel);
+        canvas.Text(instruction, 1266, 749, Ink, .75f, 295, abilities.Length > 0 ? 1 : 3);
         hits.Add(new("instructions", ControlScope("instructions"), new(1262, 724, 304, abilities.Length > 0 ? 45 : 65), () => { overlay = "help"; inspectPage = 0; }));
         if (abilities.Length > 0) DrawPriorityAbilityControl(abilities);
         if (following) {
             canvas.Panel(new(1266, 799, 296, 47), new(22, 31, 39), new Color(66, 82, 94), 4);
-            canvas.CenterText("Table in progress", new(1275, 800, 278, 45), Muted, .76f);
+            canvas.CenterText(busy ? "Waiting for confirmation…" : autoFollowing ? "Auto is passing priority" : StateClarity.WaitingTitle(state), new(1275, 800, 278, 45), Muted, .76f);
         } else if (TableChoice) {
             Button("confirm", selections.Count == 0 && d!.Min == 0 ? "Choose none" : $"Confirm ({selections.Count}/{d!.Max})", 1266, 799, 296,
                 () => Send(new(state.Id, d.Id, ReplyAction.Choose, Choices: selections.ToArray())), !busy && TableChoices.CanConfirm(state, selections), true, 47);
@@ -301,7 +309,7 @@ internal sealed partial class TableGame
             Button("cancel", d.Intent == DecisionIntent.Priority && d.Cancel == "End Turn" ? "Pass turn" : d.Cancel, 1459, 852, 103, () => Send(new(state.Id, d.Id, ReplyAction.Cancel)), d.CancelEnabled && !busy, height: 27);
         } else if (d != null) Button("open-decision", "Make a choice", 1266, 799, 296, () => collapsedDecision = false, !busy, true, 47);
         else { canvas.CenterText(state.Status == "starting" ? "Starting game…" : "Resolving…", new(1266, 797, 296, 45), Muted, .9f); }
-        Button("auto", automatic ? "Auto" : "Full control", 1266, 852, 111, () => UseAutomaticControl(!automatic), true, automatic, 27);
+        Button("auto", automatic ? "Auto" : preferences.TextScale > 1.1f ? "Manual" : "Full control", 1266, 852, 111, () => UseAutomaticControl(!automatic), true, automatic, 27);
         Button("hold", held ? "Held" : "Hold", 1383, 852, 70, ToggleHoldControl, true, held, 27);
         DrawPhaseStrip();
     }

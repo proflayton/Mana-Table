@@ -4,12 +4,14 @@ using Mana.Contracts;
 namespace Mana.Client;
 
 /// <summary>Serial commands and ordered snapshots for every connection, without a graphics dependency.</summary>
-public sealed class ClientSession(IMatchConnection connection, ITableSetup? setup = null)
+public sealed class ClientSession(IMatchConnection connection, ITableSetup? setup = null, TimeProvider? clock = null)
 {
     public ClientSession(ICardEngine engine) : this(engine, engine) { }
     private readonly ConcurrentQueue<Action> completions = new();
     private readonly SessionReplica<GameSnapshot> replica = new(s => s.Id, s => s.Revision);
     private readonly DecisionAdvance advance = new(connection);
+    private readonly TimeProvider time = clock ?? TimeProvider.System;
+    private bool recoveryRequired;
     private CancellationTokenSource? advancing;
     private readonly Queue<DecisionReply> pendingSettings = [];
     private DecisionReply? activeSetting;
@@ -18,22 +20,34 @@ public sealed class ClientSession(IMatchConnection connection, ITableSetup? setu
     public bool Busy { get; private set; }
     public bool Polling { get; private set; }
     public bool Closed { get; private set; }
+    public DateTimeOffset? LastSynchronizedAt { get; private set; }
+    public string LastConnectionError { get; private set; } = "";
+    public bool NeedsRecovery => recoveryRequired || State != null && Polling && LastSynchronizedAt is { } synchronized
+        && time.GetUtcNow() - synchronized > TimeSpan.FromSeconds(5);
+    public bool UncertainCommand { get; private set; }
+    public bool LastFailureWasCommand { get; private set; }
     public event Action<Exception>? Failed;
     public event Action? Completed;
     public event Action<GameSnapshot?, GameSnapshot?>? Changed;
+    public event Action? Recovered;
     public void Post(Action action) => completions.Enqueue(action);
     public void Pump()
     {
         while (completions.TryDequeue(out var action)) if (!Closed) action();
-        while (!Busy && pendingSettings.TryDequeue(out var setting)) Submit(setting);
+        while (!Busy && !NeedsRecovery && pendingSettings.TryDequeue(out var setting)) Submit(setting);
     }
     public bool Accept(GameSnapshot? state) => Accept(state, replica.Epoch);
-    public void Reset() { CancelAdvance(); pendingSettings.Clear(); replica.BeginCommand(); Accept(null); }
+    public void Reset() { CancelAdvance(); pendingSettings.Clear(); LastFailureWasCommand = false; replica.BeginCommand(); Accept(null); }
     private bool Accept(GameSnapshot? state, long epoch)
     {
         var previous = State;
         if (!replica.Accept(state, epoch)) return false;
-        Changed?.Invoke(previous, state); return true;
+        bool recovered = NeedsRecovery;
+        LastSynchronizedAt = time.GetUtcNow();
+        recoveryRequired = UncertainCommand = false; LastConnectionError = "";
+        Changed?.Invoke(previous, state);
+        if (recovered) Recovered?.Invoke();
+        return true;
     }
     public void Run(Func<Task> operation) => Run(_ => operation());
     private void Run(Func<long, Task> operation)
@@ -42,7 +56,7 @@ public sealed class ClientSession(IMatchConnection connection, ITableSetup? setu
         long epoch = replica.BeginCommand(); Busy = true;
         _ = Task.Run(async () => {
             try { await operation(epoch); }
-            catch (Exception error) { Post(() => Failed?.Invoke(error)); }
+            catch (Exception error) { Post(() => { if (epoch == replica.Epoch) ReportFailure(error, true); }); }
             finally { Post(() => { Busy = false; activeSetting = null; Completed?.Invoke(); }); }
         });
     }
@@ -55,14 +69,14 @@ public sealed class ClientSession(IMatchConnection connection, ITableSetup? setu
                 var lobby = withLobby ? await (setup ?? throw new InvalidOperationException("No lobby connection")).LobbyAsync() : null;
                 var state = !withLobby || lobby?.MatchActive == true ? await connection.ObserveAsync() : null;
                 Post(() => { if (epoch == replica.Epoch && Accept(state, epoch)) lobbyChanged(lobby); });
-            } catch (Exception error) { Post(() => { if (epoch == replica.Epoch) Failed?.Invoke(error); }); }
+            } catch (Exception error) { Post(() => { if (epoch == replica.Epoch) ReportFailure(error, false); }); }
             finally { Post(() => Polling = false); }
         });
     }
     public bool Submit(DecisionReply reply)
     {
         bool undoSetting = reply is { Action: ReplyAction.SetAbilityAutoPass, Ignore: false, DecisionId.Length: 0 };
-        if (Busy || Closed || State?.Id != reply.GameId || !undoSetting && State.Decision?.Id != reply.DecisionId) return false;
+        if (Busy || Closed || NeedsRecovery || State?.Id != reply.GameId || !undoSetting && State.Decision?.Id != reply.DecisionId) return false;
         if (undoSetting && !State.IgnoredPriorityAbilities.Any(a => a.Id == reply.AbilityId)) return false;
         reply.Validate();
         if (undoSetting) activeSetting = reply;
@@ -73,7 +87,7 @@ public sealed class ClientSession(IMatchConnection connection, ITableSetup? setu
     // has priority. Finish any in-flight command before sending the setting.
     public bool SubmitSetting(DecisionReply reply)
     {
-        if (Closed || State?.Id != reply.GameId || reply is not { Action: ReplyAction.SetAbilityAutoPass, Ignore: false, DecisionId.Length: 0 }) return false;
+        if (Closed || NeedsRecovery || State?.Id != reply.GameId || reply is not { Action: ReplyAction.SetAbilityAutoPass, Ignore: false, DecisionId.Length: 0 }) return false;
         if (!State.IgnoredPriorityAbilities.Any(a => a.Id == reply.AbilityId)) return false;
         reply.Validate(); CancelAdvance();
         if (activeSetting == reply || pendingSettings.Contains(reply)) return false;
@@ -82,7 +96,7 @@ public sealed class ClientSession(IMatchConnection connection, ITableSetup? setu
     }
     public bool Advance(Func<GameSnapshot, bool> canPass, Func<GameSnapshot, GameSnapshot, bool> shouldPresent)
     {
-        if (Busy || Polling || Closed || State is not { } initial || !canPass(initial)) return false;
+        if (Busy || Polling || Closed || NeedsRecovery || State is not { } initial || !canPass(initial)) return false;
         var cancellation = advancing = new CancellationTokenSource();
         Run(async epoch => {
             try {
@@ -95,5 +109,17 @@ public sealed class ClientSession(IMatchConnection connection, ITableSetup? setu
         return true;
     }
     public void CancelAdvance() => advancing?.Cancel();
+    private void ReportFailure(Exception error, bool command)
+    {
+        LastFailureWasCommand = command;
+        if (State != null) {
+            CancelAdvance();
+            if (!command || error is not EngineCommandRejectedException) {
+                recoveryRequired = true; UncertainCommand |= command;
+                LastConnectionError = error.Message;
+            }
+        }
+        Failed?.Invoke(error);
+    }
     public void Close() { CancelAdvance(); pendingSettings.Clear(); Closed = true; replica.BeginCommand(); }
 }

@@ -9,11 +9,23 @@ internal sealed partial class TableGame
     private HandPractice? workshopHand;
     private CatalogCard? workshopSavedCard;
     private bool workshopSavedBack;
+    private string workshopSavedReturn = "saved-hand";
+    private DeckVersionView? workshopVersionView;
+    private string workshopVersionReturn = "";
+    private bool workshopCompareVersion;
+    private string workshopSourceChoice = "";
     private DeckSourcePreview? workshopSourcePreview;
     private string workshopTab = "build", workshopDialog = "", workshopRoleFilter = "";
     private string workshopError = "", workshopSelectedTest = "";
     private string? workshopMatchDeckId, workshopMatchTestId;
     private int workshopGeneration, workshopPage, workshopPlayers = 4;
+    // Background tabs still render beneath a modal. Their page clamps must
+    // never alter a modal's page, including when returning from a detail view.
+    private readonly Dictionary<string, int> workshopDialogPages = new(StringComparer.Ordinal);
+    private int WorkshopDialogPage {
+        get => workshopDialogPages.GetValueOrDefault(workshopDialog);
+        set => workshopDialogPages[workshopDialog] = Math.Max(0, value);
+    }
     private int? workshopManaFilter;
     private int workshopOpponentSeat;
     private string workshopOpponentSearch = "";
@@ -22,7 +34,7 @@ internal sealed partial class TableGame
     private bool workshopPending, workshopInFlight, workshopSourceImport;
     private IDeckWorkshop? WorkshopEngine => engine as IDeckWorkshop;
     private bool WorkshopCurrent => workshop != null && workshop.DeckId == selectedDeckDetails?.Id && workshop.Revision == selectedDeckDetails?.Revision && !workshopPending && !workshopInFlight;
-    private string WorkshopScope => $"{workshopTab}:{workshopDialog}:{workshopRoleFilter}:{workshopManaFilter}:{workshopGeneration}:{workshopPage}:{workshopPlayers}:{workshopSelectedTest}:{workshopOpponentSeat}:{workshopOpponentSearch}:{workshopSourcePreview?.Token}:{workshopHand?.TestId}:{workshopHand?.Draws}:{workshopHand?.Redraws}:{string.Join(',', workshopOpponents)}";
+    private string WorkshopScope => $"{workshopTab}:{workshopDialog}:{WorkshopDialogPage}:{workshopCompareVersion}:{workshopVersionView?.VersionId}:{workshopSourceChoice}:{workshopRoleFilter}:{workshopManaFilter}:{workshopGeneration}:{workshopPage}:{workshopPlayers}:{workshopSelectedTest}:{workshopOpponentSeat}:{workshopOpponentSearch}:{workshopSourcePreview?.Token}:{workshopHand?.TestId}:{workshopHand?.Draws}:{workshopHand?.Redraws}:{string.Join(',', workshopOpponents)}";
     private bool IsWorkshopMatch => match != null && workshopMatchTestId != null;
 
     private void RequestWorkshopRefresh(bool changed = false)
@@ -30,6 +42,7 @@ internal sealed partial class TableGame
         if (WorkshopEngine == null) return;
         workshopGeneration++; workshopPending = true; workshopError = "";
         if (changed) {
+            workshopDialogPages.Clear();
             workshop = null; workshopTests = []; workshopHand = null; workshopSetup = null;
             workshopManaFilter = null;
             workshopTab = "build"; workshopDialog = workshopRoleFilter = workshopSelectedTest = ""; workshopPage = 0;
@@ -57,6 +70,7 @@ internal sealed partial class TableGame
     }
     private void ShowWorkshopTab(string tab)
     {
+        workshopDialogPages.Clear();
         workshopTab = tab; workshopDialog = ""; workshopPage = 0;
         deckTextFocus = ""; textFocus = false;
         if (tab == "results") RequestWorkshopRefresh();
@@ -205,13 +219,17 @@ internal sealed partial class TableGame
     private void ImportArchidekt(string? suppliedUrl = null)
     {
         if (WorkshopEngine is not { } service) return;
-        string initial = Clipboard.ContainsText() ? Clipboard.GetText().Trim() : "";
+        string initial = "";
+        if (suppliedUrl == null) {
+            try { initial = Clipboard.ContainsText() ? Clipboard.GetText().Trim() : ""; }
+            catch (System.Runtime.InteropServices.ExternalException) { message = "The clipboard is unavailable. Enter the public Archidekt URL manually."; }
+        }
         if (!initial.Contains("archidekt.com", StringComparison.OrdinalIgnoreCase)) initial = "";
         string? url = suppliedUrl ?? Ask("Link an Archidekt deck", "Paste the URL of a public Archidekt deck. Review the cards before importing.", initial);
         if (string.IsNullOrWhiteSpace(url)) return;
         Work(async () => {
             var preview = await service.PreviewDeckSourceAsync(url.Trim());
-            updates.Enqueue(() => { workshopSourcePreview = preview; workshopSourceImport = true; workshopDialog = "source-preview"; workshopPage = 0; setupModal = ""; });
+            updates.Enqueue(() => { workshopSourcePreview = preview; workshopSourceImport = true; workshopDialog = "source-preview"; WorkshopDialogPage = 0; setupModal = ""; });
         }, "Reading your Archidekt deck", "Fetching its playable cards, categories, and Considering list.");
     }
     private void RefreshArchidekt()
@@ -219,12 +237,18 @@ internal sealed partial class TableGame
         if (WorkshopEngine is not { } service || selectedDeckDetails is not { } deck) return;
         Work(async () => {
             var preview = await service.RefreshDeckSourceAsync(deck.Id, deck.Revision);
-            updates.Enqueue(() => { workshopSourcePreview = preview; workshopSourceImport = false; workshopDialog = "source-preview"; workshopPage = 0; });
+            updates.Enqueue(() => { workshopSourcePreview = preview; workshopSourceImport = false; workshopDialog = "source-preview"; WorkshopDialogPage = 0; });
         }, "Checking Archidekt", "Comparing the source with your last accepted list and local edits.");
     }
     private void ApplyArchidekt(string choice)
     {
+        if (workshopSourcePreview == null) return;
+        workshopSourceChoice = choice; workshopDialog = "source-confirm"; WorkshopDialogPage = 0;
+    }
+    private void ConfirmArchidekt()
+    {
         if (WorkshopEngine is not { } service || workshopSourcePreview is not { } preview) return;
+        string choice = workshopSourceChoice;
         bool importing = workshopSourceImport;
         string? deckId = importing ? null : selectedDeckDetails?.Id;
         long? revision = importing ? null : selectedDeckDetails?.Revision;
@@ -234,6 +258,19 @@ internal sealed partial class TableGame
             var saved = await engine.DecksAsync();
             updates.Enqueue(() => { decks = saved; ApplyDeck(deck, true); workshopDialog = ""; workshopSourcePreview = null; workshopTab = "build"; message = choice == "local" ? "Kept your playable list and accepted the source baseline." : "Archidekt deck saved. Earlier tests keep their original versions."; });
         }, choice == "copy" ? "Saving a source copy" : "Saving your linked deck", "Applying the reviewed changes and keeping version history.");
+    }
+    private void InspectWorkshopVersion(string? testId, string versionId)
+    {
+        if (engine is not IDeckVersionHistory history || selectedDeckDetails is not { } deck) return;
+        Work(async () => {
+            var result = testId != null ? await history.InspectTestAsync(deck.Id, deck.Revision, testId)
+                : await history.InspectVersionAsync(deck.Id, deck.Revision, versionId);
+            updates.Enqueue(() => {
+                if (selectedDeckDetails?.Id != deck.Id || selectedDeckDetails.Revision != deck.Revision) return;
+                workshopVersionView = result; workshopVersionReturn = testId == null ? "versions" : "";
+                workshopCompareVersion = false; workshopDialog = "version-view"; WorkshopDialogPage = 0;
+            });
+        }, "Opening the saved list", "Reading this version without changing your current deck.", false);
     }
     private void OpenArchidekt()
     {

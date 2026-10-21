@@ -34,5 +34,8 @@ public sealed record AnalysisReport(string DeckId, long Revision, string Fingerp
     public string VersionId { get; init; } = "";
 }
 public sealed record AnalysisHistory(string Id, string Fingerprint, string RecommendationId, string Decision, string Note, long Created);
-public sealed record DeckAnalysisState(long MetadataRevision, AnalysisReport Report, AnalysisHistory[] History);
+public sealed record DeckAnalysisState(long MetadataRevision, AnalysisReport Report, AnalysisHistory[] History)
+{
+    public AnalysisHistory[] Decisions { get; init; } = [];
+}
 public sealed record AnalysisConsiderResult(DeckAnalysisState Analysis, WorkshopState Workshop);
