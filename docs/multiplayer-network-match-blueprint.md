@@ -1,5 +1,10 @@
 # Multiplayer Network Match Blueprint
 
+Historical design proposal. The shared multiplayer match is implemented; use
+the [current architecture](Development/Mana-Table-Architecture.md) and
+[API contract](../forge-api/README.md) for the shipping boundary. Checkpoints and
+future work below describe the earlier proposal, not current setup instructions.
+
 ## Goal
 
 Make hosted Forge multiplayer games playable through the Mana Table table UI.
@@ -219,8 +224,8 @@ Add a small integration smoke test that documents the current boundary and futur
 
 Current setup:
 
-1. start host engine with `forge-desktop/.data`
-2. start guest engine with `forge-desktop/.data-second`
+1. start the host engine with a separate disposable host profile
+2. start the guest engine with a separate disposable guest profile
 3. host calls `multiplayerHost`
 4. guest calls `multiplayerJoin` with `127.0.0.1:36743`
 5. both call `multiplayerSelectDeck`

@@ -10,21 +10,8 @@ on:
       - 'forge-game/**'
       - 'forge-ai/**'
       - 'forge-gui/**'
-      - 'forge-desktop/engine-client.cjs'
-      - 'forge-desktop/runtime.cjs'
-      - 'forge-desktop/deck-sources.cjs'
-      - 'forge-desktop/preferences.cjs'
-      - 'forge-desktop/renderer/turn-guide.js'
-      - 'forge-desktop/scripts/release-artifacts.cjs'
-      - 'forge-desktop/scripts/test-node.cjs'
-      - 'forge-desktop/scripts/ci-engine-artifact.cjs'
-      - 'forge-desktop/scripts/wait-ci-engine.cjs'
+      - 'scripts/mana-table/**'
       - '.github/workflows/test-build.yaml'
-      - 'forge-desktop/scripts/wait-release-ci.cjs'
-      - 'forge-desktop/tests/*.test.cjs'
-      - 'forge-desktop/tests/support/**'
-      - 'forge-desktop/tests/fixtures/**'
-      - 'scenarios/**'
       - 'pom.xml'
       - '.mvn/**'
       - 'LICENSE'
@@ -33,7 +20,7 @@ on:
   workflow_dispatch:
     inputs:
       extended:
-        description: 'Run all 47 native UI cases instead of the 10 critical release cases'
+        description: 'Run all 46 native UI cases instead of the 10 critical release cases'
         type: boolean
         default: false
 
@@ -61,11 +48,6 @@ jobs:
       - uses: actions/setup-dotnet@v6
         with:
           dotnet-version: '9.0.x'
-      - uses: actions/setup-node@v7
-        with:
-          node-version: '24'
-      - name: Verify release publication gate helper
-        run: node --test forge-desktop/tests/release-ci.test.cjs
       - name: Verify native client logic
         run: |
           dotnet run --project mana-native/Mana.Client.Tests/Mana.Client.Tests.csproj -c Release
@@ -130,14 +112,14 @@ jobs:
         with:
           node-version: '24'
       # One bridge polls the Java producer, never each native UI consumer.
-      # Its early artifact does not waive either full Java job or desktop CI.
+      # Its early artifact does not waive either full Java job or shared-tooling CI.
       - name: Find the exact-source shared engine
         id: producer
         env:
           GH_TOKEN: ${{ github.token }}
           SOURCE_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
           SOURCE_EVENT: ${{ github.event_name == 'pull_request' && 'pull_request' || 'push' }}
-        run: node forge-desktop/scripts/wait-ci-engine.cjs
+        run: node scripts/mana-table/wait-ci-engine.cjs
       - uses: actions/download-artifact@v8
         with:
           name: engine-${{ github.sha }}
@@ -146,7 +128,7 @@ jobs:
           github-token: ${{ github.token }}
       - name: Verify the shared engine source and bytes
         run: |
-          node forge-desktop/scripts/ci-engine-artifact.cjs verify
+          node scripts/mana-table/ci-engine-artifact.cjs verify
           if ($LASTEXITCODE -ne 0) { throw 'Shared engine verification failed.' }
       - name: Build the clean self-contained native package
         run: |
@@ -165,11 +147,23 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Cluttered battlefield and causal state presentation checks failed.' }
           dotnet ./dist/harness/Mana.Table.Tests.dll --smoke-headless-priority-flow --profile dist/headless-priority-checks
           if ($LASTEXITCODE -ne 0) { throw 'Priority and required-choice command handoff checks failed.' }
+          dotnet ./dist/harness/Mana.Table.Tests.dll --smoke-headless-engine --engine-resources dist/package/engine --profile dist/headless-engine-checks
+          if ($LASTEXITCODE -ne 0) { throw 'Production native adapter and packaged Forge command checks failed.' }
           $root = (Resolve-Path dist/harness).Path
           $files = @(Get-ChildItem -LiteralPath $root -File -Recurse | ForEach-Object {
             @{ path=$_.FullName.Substring($root.Length+1).Replace('\','/'); sha256=(Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash }
           })
           @{ sourceRevision=$env:GITHUB_SHA; files=$files } | ConvertTo-Json -Depth 5 | Set-Content dist/ci-harness-manifest.json -Encoding utf8
+      - name: Save production adapter and composition failure evidence
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: mana-native-package-checks-failure-${{ github.run_attempt }}
+          path: |
+            dist/*-checks/**/*.json
+            dist/*-checks/**/*.log
+          if-no-files-found: ignore
+          retention-days: 14
       - name: Share immutable package and harness for UI shards
         uses: actions/upload-artifact@v7
         with:
@@ -490,7 +484,7 @@ jobs:
         with:
           node-version: '24'
       - name: Wait for all required source CI before publication
-        run: node forge-desktop/scripts/wait-release-ci.cjs
+        run: node scripts/mana-table/wait-release-ci.cjs
       - uses: actions/download-artifact@v8
         with:
           name: mana-native-windows-x64-${{ github.sha }}
@@ -529,7 +523,7 @@ jobs:
           gh release upload $tag @uploadPaths --repo $env:GH_REPO --clobber
           if ($LASTEXITCODE -ne 0) { throw 'Download upload failed; the release remains a draft.' }
           if (-not (MasterIsCurrent)) { 'Master advanced during upload; the release remains a draft.' >> $env:GITHUB_STEP_SUMMARY; exit 0 }
-          node forge-desktop/scripts/wait-release-ci.cjs
+          node scripts/mana-table/wait-release-ci.cjs
           if ($LASTEXITCODE -ne 0) { throw 'Required source CI changed; the release remains a draft.' }
           gh release edit $tag --repo $env:GH_REPO --draft=false --latest
           if ($LASTEXITCODE -ne 0) { throw 'Could not publish the tested release.' }

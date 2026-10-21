@@ -1,7 +1,7 @@
 # Mana Table
 
 Mana Table is a Windows desktop deck workshop and playable Magic: The Gathering
-table. The primary app uses a native MonoGame client with Forge's rules engine
+table. The app uses a native MonoGame client with Forge's rules engine
 and AI. It is an independent community fork, currently in beta.
 
 ## Play on Windows
@@ -40,21 +40,19 @@ setup, portable limitations and update instructions.
 | I want to… | Guide |
 | --- | --- |
 | Play, import a deck, or invite friends | [Native player guide](mana-native/START-HERE.txt) |
-| Build and run the primary Windows app | [Native development](mana-native/README.md) |
+| Build and run the Windows app | [Native development](mana-native/README.md) |
 | Contribute a change | [Contributing](CONTRIBUTING.md) |
 | Understand the app and engine boundaries | [Architecture](docs/Development/Mana-Table-Architecture.md) |
 | Run checks or diagnose a regression | [Testing](docs/Development/Mana-Table-Testing.md) |
 | Reproduce edge cases and review the native experience | [Experience Lab and human review](docs/Development/Mana-Table-Experience-Review.md) |
 | Package a preview or understand publication | [Packaging and releases](docs/Development/Mana-Table-Releases.md) |
 | Extend projected state or game commands | [Engine API contract](forge-api/README.md) |
-| Maintain the Electron client | [Electron development](forge-desktop/README.md) |
-| Run an Electron encounter or guided playtest | [Encounter guide](docs/Development/Mana-Table-Encounters.md) |
 
 ## Build from source
 
 The native client targets **Windows x64** and requires the **.NET 9 SDK**.
 Building Forge requires **JDK 17+** and **Maven 3.8.1+**. Contributor checks use
-Node 24 for shared test tools; the Electron client also requires Node/npm.
+Node 24 for repository documentation and CI tools.
 Java CI covers JDK 17 and 21. Set `JAVA_HOME` to your JDK directory.
 
 From a checkout, these commands compile and verify the engine, then build the app:
@@ -70,15 +68,10 @@ isolated development profile. Rebuilding the target JAR alone does not refresh a
 previously packaged engine.
 
 After packaging, [Launch Mana Table.cmd](Launch%20Mana%20Table.cmd) opens the build
-recorded in `dist/latest-native.json`, with a fallback to the older Electron
-manifest. `Launch Workshop.cmd` is a compatibility alias. These launchers do not
+recorded in `dist/latest-native.json`. `Launch Workshop.cmd` is a compatibility alias. These launchers do not
 build a fresh clone or select a Git branch.
 
 ## Beta scope
-
-The native app is the primary Windows download. The maintained Electron client
-has a separate UI, profile and package workflow; its wider Constructed and
-2–6-player engine support does not describe the native lobby's controls.
 
 Matches are not durable saves: closing the app ends the local game, and friends
 need a running host. Direct hosting has no relay. Deck checks and bundled format

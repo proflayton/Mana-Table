@@ -48,7 +48,7 @@ try {
     if ($inventory.Count -ne 10 -or @($inventory.name | Sort-Object -Unique).Count -ne 10 -or @($inventory.shard | Sort-Object -Unique).Count -ne 4) { throw 'Critical native suite discovery is incomplete or duplicated.' }
     $checks++
     [object[]]$inventory = & (Join-Path $PSScriptRoot 'native-ui.ps1') -ListOnly -Extended | ConvertFrom-Json
-    if ($inventory.Count -ne 47 -or @($inventory.name | Sort-Object -Unique).Count -ne 47 -or @($inventory.shard | Sort-Object -Unique).Count -ne 12) { throw 'Extended native suite discovery is incomplete or duplicated.' }
+    if ($inventory.Count -ne 46 -or @($inventory.name | Sort-Object -Unique).Count -ne 46 -or @($inventory.shard | Sort-Object -Unique).Count -ne 12) { throw 'Extended native suite discovery is incomplete or duplicated.' }
     $checks++
     $valid = New-PackageFixture 'valid' ''
     & (Join-Path $PSScriptRoot 'restore-package.ps1') -Directory $valid -RequireHarness

@@ -2,6 +2,13 @@
 
 October 19, 2026
 
+This is a historical audit. As of October 21, MonoGame is the sole Mana Table
+client; the former Electron client, UI suites and packaging workflow are retired.
+Use [Testing](Mana-Table-Testing.md), [Releases](Mana-Table-Releases.md) and
+[Experience review](Mana-Table-Experience-Review.md) for current instructions.
+Repository tools now live under `scripts/mana-table`; there is no replacement
+Node application or engine integration package.
+
 The main documentation was still routing players and contributors through
 Electron even though the Windows download is the native MonoGame app. The
 largest consequences were incorrect setup instructions, incorrect test-profile
@@ -52,11 +59,11 @@ P2 findings undermine repeatability or allow documentation drift.
 | P2 | Test guidance mixes native, Electron and shared-engine proof; some mode names, viewport advice and battlefield-paging claims no longer match the code. Unquoted path placeholders also fail PowerShell parsing. | Correct the [testing guide](Mana-Table-Testing.md), quote path placeholders, distinguish controlled UI fixtures from rules coverage, and label the encounter runner as Electron-only. |
 | P2 | API wording omits current hand-placement/allocation behavior and conflates ordinary anonymous cards with richer allocation snapshots. Some test/data claims are too broad. | Correct the [API contract](../../forge-api/README.md) against master, preserve the current protocol/synchronization versions, and identify pending PR 7 fields separately. |
 | P2 | The documented draft and assistance-disclosure rules were not followed consistently: PR 7 was opened ready while checks were pending and omitted its AI disclosure. | Return PR 7 to draft, add its disclosure and make exact-head checks, artifact identity, documentation changes and AI assistance explicit in the PR template. |
-| P2 | Maintained local links and heading fragments had no dedicated automated validation; guide maintenance had no clear routing. | Add a dependency-free [documentation checker](../../forge-desktop/scripts/check-docs.cjs), unit fixtures and an early desktop CI step. [Contributing](../../CONTRIBUTING.md#keep-documentation-current) maps behavior changes to the guide that must change with them. |
+| P2 | Maintained local links and heading fragments had no dedicated automated validation; guide maintenance had no clear routing. | Add a dependency-free [documentation checker](../../scripts/mana-table/check-docs.cjs), focused fixtures and a lightweight CI step. [Contributing](../../CONTRIBUTING.md#keep-documentation-current) maps behavior changes to the guide that must change with them. |
 
-## Merge and publication rules
+## Merge and publication rules at the audit checkpoint
 
-The active [master ruleset](https://api.github.com/repos/proflayton/Mana-Table/rulesets/25431097)
+The [master ruleset](https://api.github.com/repos/proflayton/Mana-Table/rulesets/25431097) at this checkpoint
 requires a pull request, an up-to-date branch and four GitHub Actions checks:
 `desktop`, `Verify and package Windows x64`, `Test with Java 17`, and
 `Test with Java 21`. It has no bypass actors. Applicable iOS compatibility checks
@@ -96,20 +103,19 @@ review ownership or release authorization.
 
 ## Validation
 
-Run `node forge-desktop/scripts/check-docs.cjs` from the root, or
-`npm run check:docs` in `forge-desktop`. Its unit fixtures run in the existing
-Node unit suite. The checker covers the maintained entry points and Mana Table
+Run `node scripts/mana-table/check-docs.cjs` from the root. The checker covers
+the maintained entry points and Mana Table
 development guides, resolves local files and Markdown heading fragments, and
 does not contact external sites or certify arbitrary Markdown syntax.
 
 Review PowerShell examples for syntax and profile isolation, and verify command
-names, result files, npm scripts, workflow labels and release flags against
+names, result files, workflow labels and release flags against
 their implementation. A docs-only local check does not substitute for the
 required PR builds. Historical audits and design prototypes remain reference
 material rather than a competing current setup guide.
 
-Local verification passed 54 Node unit tests, JavaScript syntax checks for 103
-files, and local-link/heading checks across 15 maintained documents. All 15
-PowerShell example blocks parsed successfully after correcting placeholders;
-the syntax check did not execute the examples. Required PR build evidence is
-separate from these documentation checks.
+The original audit recorded local link, script and PowerShell syntax checks;
+those did not validate prose, run the setup examples or establish experience
+quality. Current lightweight tool contracts run from `scripts/mana-table/tests`.
+Choose checks for the changed behavior rather than rebuilding unrelated clients
+or repeating every graphical journey for a documentation correction.

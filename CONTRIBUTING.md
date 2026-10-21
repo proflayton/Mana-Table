@@ -12,9 +12,6 @@ integration branch is **`master`**; base feature branches and pull requests on i
 - **Native engine boundary:** `Mana.Contracts` contains typed state and commands;
   `Mana.Forge` maps the Java process protocol. Keep Java projection, mapping and
   native contracts aligned when changing an API field.
-- **Electron maintenance:** `forge-desktop/renderer`, `main.cjs`, `preload.cjs`,
-  and their CommonJS helpers form a separate client. Its environment variables,
-  UI tests and packaging are described in the [Electron guide](forge-desktop/README.md).
 - **API and visibility:** `forge-api/src/main/java/forge/api`. Extend the adapter
   when a UI needs new projected state or an engine-controlled interaction.
 - **Card rules and AI:** the existing Forge modules and `forge-gui/res`. Consult
@@ -22,8 +19,8 @@ integration branch is **`master`**; base feature branches and pull requests on i
 
 Keep unrelated upstream formatting and resource changes out of focused PRs.
 Follow the style of the file being changed: Java 17 and the Maven checks for Java;
-C# and the existing .NET project boundaries for the native app; plain
-JavaScript/CSS for Electron's renderer; CommonJS for Electron and Node tools.
+C# and the existing .NET project boundaries for the native app; CommonJS for
+repository documentation and CI tools.
 Do not add a framework or broad formatting migration as incidental cleanup.
 
 ## Work on a change
@@ -40,16 +37,15 @@ and pending choice. For visual changes, capture the relevant state at 1000×740
 and a larger window; check keyboard access and reduced motion when affected.
 
 Run checks appropriate to the change. The [testing guide](docs/Development/Mana-Table-Testing.md)
-separates native client logic, native UI, real-engine tests and Electron interactions. New tests
+separates client logic, native presentation and real-engine integration. New tests
 should catch a meaningful behavior or regression, rather than restating the
 implementation. Native UI tests live in `mana-native/Mana.Table.Tests`; shared
-graphics-free checks live in `Mana.Client.Tests`. Electron and Node tests use
-the helpers under `forge-desktop/tests/support` for isolated data and Java discovery.
+graphics-free checks live in `Mana.Client.Tests`. Real-engine native adapter
+journeys and Java API/rules/synchronization tests cover the shipping engine boundary.
 
 Never commit generated packages, local profiles, caches, logs, or test output.
 They are already ignored. Use native `--profile <disposable-directory>` for
-manual runs. Electron uses `MANA_USER_DATA_DIR` or `FORGE_USER_DATA`; those
-variables do not isolate the native app. See the testing guide's
+manual runs. See the testing guide's
 [profile and artifact locations](docs/Development/Mana-Table-Testing.md#profiles-and-artifacts).
 
 ## Review expectations
@@ -57,7 +53,7 @@ variables do not isolate the native app. See the testing guide's
 A PR should explain the concrete problem, resulting behavior, and checks run.
 Include screenshots for visible changes and mention remaining limitations.
 Open PRs as drafts and keep them there until the final commit has passed Windows native,
-desktop, Java 17, and Java 21 checks, plus any applicable iOS checks. Record that
+repository tools (`desktop`), Java 17, and Java 21 checks, plus any applicable iOS checks. Record that
 commit and links to the completed runs in the validation notes, then mark it
 ready for review. CI runs on draft PRs. A new commit requires checking its own
 results; passing local or earlier-commit checks does
@@ -97,10 +93,10 @@ Use this map to avoid adding competing setup or release instructions:
 | Protocol, permissions or projected state | [API contract](forge-api/README.md) and affected client guide |
 | Regression command, result file or CI check | [Testing](docs/Development/Mana-Table-Testing.md) |
 | Packaging, version, installer or updater | [Releases](docs/Development/Mana-Table-Releases.md) |
-| Electron-specific behavior or encounters | [Electron development](forge-desktop/README.md) and [encounters](docs/Development/Mana-Table-Encounters.md) |
+| Reproducible experience or visual interaction | [Experience review](docs/Development/Mana-Table-Experience-Review.md) |
 
-Run `node forge-desktop/scripts/check-docs.cjs` from the repository root, or
-`npm run check:docs` in `forge-desktop`. It checks maintained local links and
+Run `node scripts/mana-table/check-docs.cjs` from the repository root.
+It checks maintained local links and
 heading fragments; a passing result does not verify prose or external websites.
 Check instructions from a clean checkout or isolated profile when changing a
 setup or packaging command. Label source-only features beside the claim when
@@ -114,7 +110,6 @@ beta version/commit, OS, window size, deck format, number of players, reproducti
 and expected versus actual behavior. Engine diagnostics are in `engine.log`
 inside the active data directory; share the relevant excerpt and a minimal deck.
 For the native app, use the [profile and troubleshooting guide](mana-native/README.md#profiles-and-troubleshooting).
-Electron locations are in its separate [development guide](forge-desktop/README.md#data-and-troubleshooting).
 
 ## Keep upstream changes manageable
 

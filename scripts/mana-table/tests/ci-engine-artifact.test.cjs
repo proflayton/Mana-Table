@@ -1,0 +1,24 @@
+const { test } = require('node:test');
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const os = require('node:os');
+const path = require('node:path');
+const { create, verify } = require('../ci-engine-artifact.cjs');
+test('shared engine artifacts reject stale source, changed bytes, incomplete manifests and wrong checkouts', async t => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'mana-ci-artifact-'));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  const jar = path.join(dir, 'forge-engine.jar'), manifest = path.join(dir, 'manifest.json');
+  const revision = 'a'.repeat(40), other = 'b'.repeat(40);
+  fs.writeFileSync(jar, 'verified engine bytes');
+  const record = await create(jar, manifest, revision, revision);
+  assert.deepEqual(await verify(jar, manifest, revision, revision), record);
+  await assert.rejects(verify(jar, manifest, other, other), /another source/);
+  await assert.rejects(verify(jar, manifest, revision, other), /Checkout/);
+  await assert.rejects(create(jar, path.join(dir, 'wrong.json'), revision, other), /Checkout/);
+  fs.appendFileSync(jar, '!');
+  await assert.rejects(verify(jar, manifest, revision, revision), /bytes differ/);
+  fs.writeFileSync(manifest, '{}');
+  await assert.rejects(verify(jar, manifest, revision, revision), /another source/);
+  fs.writeFileSync(jar, '');
+  await assert.rejects(create(jar, path.join(dir, 'empty.json'), revision, revision), /nonempty regular file/);
+});
