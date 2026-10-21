@@ -50,9 +50,10 @@ internal sealed partial class TableApplication
             if (target.Kind == "card" && cardPresentation.TryGetPose(target.Id, out var card)) {
                 end = card.EdgeToward(source.Center, 8);
                 canvas.CardFrame(card with { Size = card.Size + new Vector2(10) }, Red, 3);
-                var badge = new Rectangle((int)card.Center.X - 48, card.Bounds.Top - 22, 96, 23);
-                canvas.Panel(badge, new(43, 24, 27), Red, 4); canvas.CenterText("TARGETED", badge, Ink, .49f, true);
-            } else if (target.PlayerId is { } player && heroPositions.TryGetValue(player, out var hero)) end = hero;
+            } else if (target.PlayerId is { } player && heroPositions.TryGetValue(player, out var hero)) {
+                var delta = source.Center - hero;
+                end = hero + (delta.LengthSquared() > 0 ? Vector2.Normalize(delta) : Vector2.UnitY) * (player == match!.ViewerId ? 52 : 40);
+            }
             if (end is { } point) canvas.Arrow(source.EdgeToward(point, 5), point, Red * .8f, 11);
         }
     }
@@ -60,8 +61,8 @@ internal sealed partial class TableApplication
     {
         if (AbilityActionPending || SelectingActionTarget) return;
         if (DrawDecisionClarity(match!)) return;
-        // Pending effects already have faces, ordered rows, targets and a
-        // responder on the table. Rules prose belongs behind their Details.
+        // The pending-effect surface already owns the reported effect, target
+        // connections and responder. Do not repeat it in a second callout.
         if (match!.Stack.Length > 0) return;
         if (match!.Stack.Length == 0 && publicChanges.Latest is { } change && now - change.Updated < 8) return;
         var recent = actionFeedback.Last;

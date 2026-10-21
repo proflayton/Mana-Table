@@ -87,8 +87,6 @@ internal sealed class PriorityFlowSmoke : ITableAutomation
                 && !view.DecisionText.Contains("Arid Mesa", StringComparison.Ordinal)
                 && view.Hits.Any(hit => hit.Id == "ability-pass:optional-mesa"),
                 "An optional activation retains its own pass control without replacing the pending effect's response instruction");
-            Check(!Current.Drawing.Commands.OfType<DrawCommand.Panel>().Any(panel => panel.Bounds == new Rectangle(20, 66, 379, 175)),
-                "The pending stack is presented in its shared queue instead of the former duplicate left prose panel");
             AssertQueue(1, 2, 3); MoveHit("stack-queue-next");
         }); Click();
         Step(() => {
@@ -120,6 +118,7 @@ internal sealed class PriorityFlowSmoke : ITableAutomation
                 && view.Match.Stack.Any(item => item.Id == "search-pending-trigger")
                 && !view.Hits.Any(hit => hit.Id == "confirm") && !Text().Any(value => value == "JUST RESOLVED"),
                 "After the local pass the turn owner stays unchanged, the trigger stays pending, the reported opponent has the token, and no local pass or false resolution appears");
+            AssertQueue(1);
             Observe("opponent-response"); Capture("04-opponent-pending");
             view.Accept(engine.AdvanceToRecipient());
         });
@@ -162,12 +161,22 @@ internal sealed class PriorityFlowSmoke : ITableAutomation
         Check(view.StackRows.Select(row => row.Position).SequenceEqual(positions), "The queue page preserves exact global next-to-resolve positions " + string.Join(",", positions));
         foreach (var row in view.StackRows) {
             var entry = view.Match!.Stack[row.Position - 1]; inspectedQueueIds.Add(row.Id);
-            Check(row.Id == entry.Id && view.Hits.Any(hit => hit.Id == "stack-row:" + entry.Id), "A queue row targets its exact public stack-item ID: " + entry.Id);
+            Check(row.Id == entry.Id && view.Hits.Count(hit => hit.Id == "stack-row:" + entry.Id) == 1,
+                "One combined effect surface targets its exact public stack-item ID: " + entry.Id);
             foreach (var point in new[] { row.Bounds.Center, new Point(row.Bounds.Left + 3, row.Bounds.Top + 3), new Point(row.Bounds.Right - 4, row.Bounds.Bottom - 4) })
                 Check(Hit(Pixel(point.ToVector2()))?.Id == "stack-row:" + entry.Id, "The visible queue row retains its own physical input surface: " + entry.Id);
         }
-        Check(Current.Drawing.Commands.OfType<DrawCommand.CenterText>().Any(text => text.Value == "Stack · " + view.Match!.Stack.Length),
-            "The stack control shows the complete pending count rather than the current page size");
+        var expanded = view.StackRows.First();
+        var pending = view.Match!.Stack[expanded.Position - 1];
+        string painted = string.Join(" ", Current.Observe().Text.Where(text => expanded.Bounds.Contains(new Point(text.Bounds.X, text.Bounds.Y)))
+            .Select(text => text.Value));
+        Check(painted.Contains(pending.Name, StringComparison.Ordinal) && painted.Contains(pending.Text, StringComparison.Ordinal)
+            && (pending.Card == null || painted.Contains(pending.Card.Name, StringComparison.Ordinal))
+            && (pending.ControllerId == null || painted.Contains(StateClarity.PlayerName(view.Match, pending.ControllerId.Value), StringComparison.Ordinal))
+            && pending.Targets.All(target => painted.Contains(target.Name, StringComparison.Ordinal)),
+            "The first visible effect shows its actual pending text, source, controller and reported targets before inspection: " + pending.Id);
+        Check(!view.Hits.Any(hit => hit.Id is "stack" or "action-details") && !Current.Cards.Any(card => card.Zone == "Stack"),
+            "Pending effects have no redundant Stack/Details opens or copied source-card surface on the ordinary board");
     }
     private string[] Text() => Current.Drawing.Commands.Select(command => command switch {
         DrawCommand.Text text => text.Value, DrawCommand.CenterText text => text.Value, _ => null

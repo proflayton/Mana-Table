@@ -132,8 +132,9 @@ acceptance.
 | Small drags inside an enlarged hand card could be mistaken for a play | A drag begun with a pinned hand reader must leave both its captured reader face and original hand slot before a legal drop can commit | Implemented |
 | A narrative panel followed each drag | Removed the generic drag prose; the held card, legal-drop outline and combat aim remain | Implemented |
 | The hand cursor also appeared over input-shield panel backgrounds | Shield-only battlefield, recipient and public-outcome panel backgrounds no longer advertise an action | Implemented |
-| Error or notice banners could cover the reader's former top action tab | The selected-card action now sits within its illustration, away from the top banner band | Implemented |
+| Error or notice banners could cover the reader's former top action tab | Concrete actions now have a measured rules area in the card reader; the illustration remains clear | Reworked after the illustration-overlay iteration was rejected |
 | A single text ability option opened a gallery; the smaller dialog still obscured the game's purpose | Attach engine-reported actions to the actual source occurrence on the table. Keep the board visible, choose the action directly, and show its resulting state transition | Reworked after negative human feedback; review pending |
+| A pending ability repeated its source card, source-name row, Details button and stack count while its actual effect was not visible | Combine each real stack item into one effect surface with its reported effect, controller, targets and order; the row itself opens inspection | Reworked after screenshot rejection; human review pending |
 | Long ability text needs readable context through continuation pages | Complete text is preserved, but its continuation still needs a visual review of action identity and cost | Open |
 | Card gestures vary between the board reader, zone inspection, choices and allocation details | Review these contexts together before changing the common gesture policy; a hand cursor alone does not explain whether a click reads, selects or acts | Open |
 
@@ -263,6 +264,27 @@ the exercised protocol and interaction paths, not human clarity or every card's
 rules. Evidence is in `source-actions-final-real-engine`,
 `source-actions-final-hand-placement` and `source-actions-validation.json` under
 the same local integration artifact directory.
+
+Later screenshot feedback rejected the pending-stack presentation: the source
+card, repeated source name, Details button and Stack count competed while the
+actual pending effect was absent. The current iteration uses one combined
+surface for each real stack item. Its main row shows the reported effect text,
+a quiet source thumbnail, controller and targets with arrows; subsequent items
+keep their exact queue order. Clicking the row opens that current effect or
+selects a genuine engine-permitted stack target. Long effects remain available
+in inspection. Payment and recipient source context retain their separate paths.
+This records the implementation and rejection evidence; human acceptance of the
+new stack presentation remains open.
+
+The native build and the existing presentation and priority-flow checks pass.
+The latter keeps exact order, read-only inspection and the scoped pass → required
+recipient → library search journey, and now checks the effect text before
+inspection rather than requiring the redundant Stack button. GPU review uses
+`pending-effect-final-priority-gpu` at `1000x740` with 130% text and the same
+Ballista input journey in `pending-effect-final-ballista-review`. The effect
+surface fits its measured content, keeps the real source on the battlefield and
+shows the reported target; a pending effect is not called resolved. These
+artifacts remain agent review, not human acceptance.
 
 ## Existing regression walkthrough
 

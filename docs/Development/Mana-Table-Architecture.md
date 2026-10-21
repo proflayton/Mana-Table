@@ -572,8 +572,15 @@ identity so prompt churn cannot cancel those clicks.
 Source-aware readers use engine-owned action descriptions in the live card's
 rules area. Neither path infers playability from rules text.
 Stack projections include viewer-safe card/player targets (including subabilities).
-The renderer draws direct target arrows, marks the exact occurrence and shows a
-spell/ability callout. `MatchActivity` retains public resolution descriptions and
+`TableApplication.Priority` composes one effect surface per actual stack item.
+The expanded row leads with `StackItem.Text`, a source thumbnail, controller,
+order and reported targets with direct arrows; later items retain ordered rows.
+The surface fits measured content. Long previews expose overflow and the same row opens complete effect inspection
+by its current item ID. Genuine stack-target decisions retain their engine-owned
+selection path. The former separate stack-card copy, Details button and stack-count
+opener are removed. Payment and recipient source context remain separate from the
+actual pending effects. Human acceptance of this iteration remains open.
+`MatchActivity` retains public resolution descriptions and
 spell rules, plus token arrival names; `ActionFeedback` exposes a timed summary
 and reviewable details. Recent changes are reported without inferring causality.
 Typed resolution outcomes distinguish resolved from not resolved. Actual public

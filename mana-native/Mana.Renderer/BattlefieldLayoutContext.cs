@@ -78,7 +78,7 @@ internal sealed class BattlefieldLayoutContext
                     : seat == 1 ? new((int)hero.X - 98, (int)hero.Y + 35, 150, 66)
                     : new((int)hero.X - 98, (int)hero.Y - 90, 196, 55);
         }
-        if (state.Stack.Length > 0 || state.Decision?.SourceCard != null) yield return new(545, 285, 435, 265);
+        if (state.Stack.Length > 0 || state.Decision?.SourceCard != null) yield return new(545, 285, 435, state.Stack.Length > 1 ? 400 : 265);
         yield return new(1240, 550, 350, 245);
         if (state.Decision is { Kind: "choice" }) yield return new(350, 714, 370, 50);
     }

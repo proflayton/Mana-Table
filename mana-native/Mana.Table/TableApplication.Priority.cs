@@ -58,36 +58,85 @@ internal sealed partial class TableApplication
         if (stackQueueTop != topId) { stackQueueTop = topId; stackQueuePage = 0; }
         const int capacity = 3;
         stackQueuePage = Math.Clamp(stackQueuePage, 0, (state.Stack.Length - 1) / capacity);
-        // This entire footprint is reserved by the same layout used for cards.
-        canvas.Panel(new(545, 285, 435, 263), new Color(11, 22, 28) * .94f, PriorityAccent * .5f, 7);
         string status = view.ResponderId is { } responder ? responder == state.ViewerId ? "YOU CAN RESPOND" : view.ResponderName + " CAN RESPOND"
             : view.Phase == PriorityPhase.Payment ? "PAYING A COST" : view.Phase == PriorityPhase.Decision ? "CHOICE IN PROGRESS" : "PROCESSING";
-        PaintPriorityToken(new(562, 304), 8, 1);
-        canvas.Text(status, 578, 293, PriorityAccent, .56f, 388, 1, true);
-        canvas.Text("1  NEXT TO RESOLVE", 553, 319, Gold, .44f, 156, 1, true);
+        int y = 319;
         for (int slot = 0; slot < capacity; slot++) {
             int index = stackQueuePage * capacity + slot;
             if (index >= state.Stack.Length) break;
             var entry = state.Stack[index];
-            var bounds = new Rectangle(551, 337 + slot * 58, 198, 56);
-            string id = "stack-row:" + entry.Id;
-            PaintControlSurface(id, bounds, index == 0 ? new(50, 45, 30) : new(22, 34, 41), index == 0 ? Gold : Muted * .4f);
-            canvas.Circle(new(bounds.X + 14, bounds.Y + 15), 10, index == 0 ? Gold : Muted);
-            canvas.CenterText((index + 1).ToString(), new(bounds.X + 4, bounds.Y + 5, 20, 20), new(12, 24, 29), .47f, true);
-            canvas.Text(entry.Name, bounds.X + 29, bounds.Y + 2, Ink, .52f, bounds.Width - 34, 2, true);
+            bool expanded = slot == 0;
             string owner = entry.ControllerId is { } ownerId ? StateClarity.PlayerName(state, ownerId) : "Owner not reported";
-            canvas.Text((entry.Ability ? "Ability" : "Spell") + " · " + owner, bounds.X + 5, bounds.Y + 40, Muted, .37f, bounds.Width - 10, 1);
-            int captured = index;
-            hits.Add(new(id, Scope, bounds, () => OpenStack(captured)));
+            string effect = !string.IsNullOrWhiteSpace(entry.Text) ? entry.Text
+                : !entry.Ability && entry.Card is { Text.Length: > 0 } spell ? spell.Text : "Effect text not reported.";
+            int height = expanded ? Math.Clamp(PendingEffectHeaderHeight(entry, owner)
+                + canvas.TextSize(effect, .86f, 407, 80, true).Y + (entry.Targets.Length > 0 ? 27 : 0) + 12, 134, 220) : 46;
+            var bounds = new Rectangle(545, y, 435, height);
+            string id = "stack-row:" + entry.Id;
+            // World connections pass behind the reading surface and its
+            // responder band, including when the target sits directly above it.
+            if (index == 0) DrawStackTargets(entry, new(bounds.Center.ToVector2(), bounds.Size.ToVector2()));
+            PaintControlSurface(id, bounds, new(17, 29, 36), index == 0 ? Gold * .7f : Muted * .45f);
+            if (expanded) PaintPendingEffect(entry, index, bounds, owner, effect);
+            else {
+                canvas.Circle(new(bounds.X + 17, bounds.Y + 18), 10, Muted);
+                canvas.CenterText((index + 1).ToString(), new(bounds.X + 7, bounds.Y + 8, 20, 20), new(12, 24, 29), .47f, true);
+                canvas.Text(entry.Name + " · " + owner, bounds.X + 34, bounds.Y + 3, Ink, .54f, bounds.Width - 45, 1, true);
+                canvas.Text(effect, bounds.X + 34, bounds.Y + 24, Muted, .48f, bounds.Width - 45, 1);
+            }
+            string capturedId = entry.Id;
+            Card? targetCard = !entry.Ability && entry.Card is { } candidate && IsCardActionable(candidate) ? candidate : null;
+            hits.Add(new(id, Scope, bounds, () => InspectPendingEffect(capturedId), targetCard, "Stack"));
             stackRows.Add(new(entry.Id, index + 1, bounds));
+            y = bounds.Bottom + 5;
         }
-        // The face remains the production card presentation with its own hit.
-        // A compact queue makes the order and controllers readable beside it.
-        Button("stack", "Stack · " + state.Stack.Length, 551, 514, 158, () => OpenStack(), height: 28);
+        canvas.Rounded(new(545, 285, 435, 34), new(11, 22, 28), 5);
+        PaintPriorityToken(new(562, 304), 8, 1);
+        canvas.Text(status, 578, 293, PriorityAccent, .56f, 388, 1, true);
         if (state.Stack.Length > capacity) {
-            Button("stack-queue-prev", "‹", 918, 504, 24, () => stackQueuePage--, stackQueuePage > 0, height: 28);
-            Button("stack-queue-next", "›", 948, 504, 24, () => stackQueuePage++, (stackQueuePage + 1) * capacity < state.Stack.Length, height: 28);
-            canvas.Text($"{stackQueuePage * capacity + 1}–{Math.Min(state.Stack.Length, (stackQueuePage + 1) * capacity)} / {state.Stack.Length}", 837, 512, Muted, .44f, 78, 1);
+            Button("stack-queue-prev", "‹", 905, y + 1, 32, () => stackQueuePage--, stackQueuePage > 0, height: 28);
+            Button("stack-queue-next", "›", 945, y + 1, 32, () => stackQueuePage++, (stackQueuePage + 1) * capacity < state.Stack.Length, height: 28);
+            canvas.Text($"{stackQueuePage * capacity + 1}–{Math.Min(state.Stack.Length, (stackQueuePage + 1) * capacity)} / {state.Stack.Length} pending", 555, y + 7, Muted, .51f, 338, 1);
         }
+    }
+
+    private void InspectPendingEffect(string id)
+    {
+        if (match == null) return;
+        int index = Array.FindIndex(match.Stack, item => item.Id == id);
+        if (index < 0) return;
+        // A real counterspell target remains a game choice. Otherwise the one
+        // combined surface reads this exact effect without activating its source.
+        if (!match.Stack[index].Ability && match.Stack[index].Card is { } card && IsCardActionable(card)) CardClick(card);
+        else OpenStack(index);
+    }
+
+    private int PendingEffectHeaderHeight(StackItem entry, string owner) => Math.Max(64,
+        21 + canvas.TextSize(entry.Name, .67f, 347, 2, true).Y + canvas.TextSize("Pending · " + owner, .5f, 347, 1).Y);
+
+    private void PaintPendingEffect(StackItem entry, int index, Rectangle bounds, string owner, string effect)
+    {
+        var art = new Rectangle(bounds.X + 12, bounds.Y + 12, 52, 44);
+        if (entry.Card is { FaceDown: false } source && resources.Card(source) is { } image) {
+            var crop = new Rectangle((int)(image.Width * .12f), (int)(image.Height * .14f),
+                (int)(image.Width * .76f), (int)(image.Height * .38f));
+            canvas.Sprite(image, art.Center.ToVector2(), art.Size.ToVector2(), 0, Color.White, crop);
+        } else canvas.Gradient(art, new(43, 58, 64), new(28, 40, 48));
+        int nameHeight = canvas.TextSize(entry.Name, .67f, bounds.Width - 88, 2, true).Y;
+        canvas.Text(entry.Name, bounds.X + 76, bounds.Y + 10, Ink, .67f, bounds.Width - 88, 2, true);
+        string order = match!.Stack.Length == 1 ? "Pending" : (index + 1) + (index == 0 ? " · Next" : " · Waiting");
+        canvas.Text(order + " · " + owner, bounds.X + 76, bounds.Y + 13 + nameHeight,
+            index == 0 ? Gold : Muted, .5f, bounds.Width - 88, 1);
+        int bodyY = bounds.Y + PendingEffectHeaderHeight(entry, owner);
+        int targetHeight = entry.Targets.Length > 0 ? 27 : 0;
+        int bodyHeight = Math.Max(25, bounds.Bottom - bodyY - targetHeight - 12);
+        string[] pages = canvas.TextPages(effect, .86f, bounds.Width - 28, bodyHeight, 80, true);
+        canvas.Text(pages[0], bounds.X + 14, bodyY, Ink, .86f, bounds.Width - 28, 80, true);
+        if (entry.Targets.Length > 0) {
+            int targetY = bounds.Bottom - 27;
+            canvas.Arrow(new(bounds.X + 14, targetY + 11), new(bounds.X + 31, targetY + 11), Red, 3);
+            canvas.Text(string.Join(", ", entry.Targets.Select(target => target.Name)), bounds.X + 39, targetY + 1, Red, .58f, bounds.Width - 67, 1);
+        }
+        if (pages.Length > 1) canvas.Text("…", bounds.Right - 24, bounds.Bottom - 26, Muted, .75f, 18, 1, true);
     }
 }

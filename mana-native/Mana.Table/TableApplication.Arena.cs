@@ -245,15 +245,14 @@ internal sealed partial class TableApplication
         // remains the source on the table; do not manufacture a stack copy.
         if (state.Stack.Length == 0 && (AbilityActionPending || SelectingActionTarget)) return;
         if (state.Stack.Length == 0 && state.Decision?.SourceCard == null) return;
+        bool payingSource = state.Decision is { Intent: DecisionIntent.Mana, SourceCard: not null }
+            || !SelectingActionTarget && state.Decision is { Intent: DecisionIntent.Selection, SourceCard: not null, PlayerChoices.Length: > 0 };
+        if (state.Stack.Length > 0 && !payingSource) { DrawStackFlow(); return; }
         canvas.Glow(new(807, 485), new(430, 165), Blue * .17f);
         var resting = TableWorld.Card(new(6, 108), new(245, 126));
         canvas.CardFrame(resting, Gold * .12f, 1);
-        DrawStackFlow();
-        bool payingSource = state.Decision is { Intent: DecisionIntent.Mana, SourceCard: not null }
-            || state.Decision is { Intent: DecisionIntent.Selection, SourceCard: not null, PlayerChoices.Length: > 0 };
         var stackCards = state.Stack.Take(3).Select(s => s.Card ?? new Card { Name = s.Name, Text = s.Text, Type = s.Ability ? "Ability" : "Spell" }).ToArray();
         if (payingSource) stackCards = [state.Decision!.SourceCard!];
-        Pose? topPose = null;
         if (stackCards.Length == 0 && state.Decision?.SourceCard is { } source) stackCards = [source];
         for (int i = stackCards.Length - 1; i >= 0; i--) {
             var reported = stackCards[i];
@@ -271,26 +270,16 @@ internal sealed partial class TableApplication
             int stackIndex = i;
             var spellPose = TableWorld.Spell(i);
             if (state.Stack.Length > 0 || payingSource) spellPose = spellPose with { Center = spellPose.Center + new Vector2(32, 14), Size = new(124, 174) };
-            var stackPose = DrawTableCard(identity, card, spellPose, "Stack", null, "stack-item:" + i, () => {
+            DrawTableCard(identity, card, spellPose, "Stack", null, "stack-item:" + i, () => {
                 if (payingSource) Inspect(card);
                 else if (IsCardActionable(reported)) CardClick(reported);
                 else if (state.Stack.Length > stackIndex) OpenStack(stackIndex);
                 else Inspect(card);
             }, (displayed, focus) => PaintInteractionCard(card, displayed, stackIndex == 0, false, focus), entrance);
-            if (i == 0) topPose = stackPose;
         }
-        if (!payingSource && topPose is { } origin && state.Stack.FirstOrDefault() is { } top) DrawStackTargets(top, origin);
         if (state.Stack.Length == 0 && !payingSource) {
             canvas.Text(stackCards[0].Name, 549, 400, Ink, .62f, 154, 3, true);
             Button("stack", "Inspect source", 549, 462, 154, () => { if (state.Decision?.SourceCard is { } source) Inspect(source); }, height: 29);
-        } else if (!payingSource && topPose is { } topCard) {
-            var next = topCard.Point(.92f, .08f);
-            canvas.Circle(next, 15, Gold);
-            canvas.CenterText("1", new((int)next.X - 15, (int)next.Y - 15, 30, 30), new(16, 26, 31), .7f, true);
-        }
-        if (state.Stack.Length > 0) {
-            Button("action-details", "Details", 871, 465, 101, () => OpenStack(), height: 28);
-            canvas.Text("After everyone passes", 717, 520, Muted, .46f, 196, 1);
         }
     }
     private void DrawDecisionDock()

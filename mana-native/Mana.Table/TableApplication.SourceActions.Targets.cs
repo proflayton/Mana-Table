@@ -23,6 +23,10 @@ internal sealed partial class TableApplication
         if (hit?.Card is { Selectable: true, Key.Length: > 0 } card) {
             var destination = cardPresentation.Cards.LastOrDefault(entry => entry.ChoiceSlot < 0 && SameVisibleCard(entry.Card, card));
             if (destination != null && destination.Id != origin.Id) target = destination.Display.EdgeToward(origin.Display.Center, 5);
+            else if (hit.Zone == "Stack") {
+                var effect = new Mana.Renderer.Pose(hit.Bounds.Center.ToVector2(), hit.Bounds.Size.ToVector2());
+                target = effect.EdgeToward(origin.Display.Center, 5);
+            }
         } else if (hit?.PlayerId is { } player && decision.PlayerChoices.Contains(player) && heroPositions.TryGetValue(player, out var hero)) {
             var direction = origin.Display.Center - hero;
             target = hero + (direction.LengthSquared() > 0 ? Vector2.Normalize(direction) : Vector2.UnitY) * (player == state.ViewerId ? 51 : 40);

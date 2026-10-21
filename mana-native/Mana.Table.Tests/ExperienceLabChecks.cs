@@ -106,9 +106,10 @@ internal static class ExperienceLabChecks
         var boardFace = frame.Cards.Last(card => card.Id == countedFront.Id && card.Zone == "Battlefield");
         var counterMarker = app.TestPort.BattlefieldLabels(countedFront.Id).Single(label => label.Kind == "counter").Bounds;
         var affected = app.TestPort.EffectTransitions.Targets.Where(target => target.AffectedIds.Contains(countedFront.Id)).ToArray();
-        check(affected.Length > 0 && frame.Cards.Any(card => card.Zone == "Stack" && card.Card.VisualId == countedFront.Id)
+        check(affected.Length > 0 && !frame.Cards.Any(card => card.Zone == "Stack")
+            && app.TestPort.StackRows.Any(row => row.Id == "counter-source-preview")
             && affected.All(target => target.Target.Pose == boardFace.Display && counterMarker.Contains(target.Target.CounterLanding.ToPoint())),
-            "A stack preview of the same permanent cannot steal its battlefield counter arrival anchor or affected-card highlight");
+            "A pending effect keeps its own surface without copying its source or stealing the battlefield counter arrival anchor");
         foreach (var scenario in ExperienceScenarios.All) {
             LoadScenario(scenario.Id);
             check(lab.Scenario.Id == scenario.Id && frame.Hits.Any(hit => hit.Id == "lab-reset") && frame.Hits.Any(hit => hit.Id == "lab-scenarios"),
@@ -191,6 +192,16 @@ internal static class ExperienceLabChecks
                     && lab.State.Viewer.Zone("Battlefield").Cards.Single(card => card.VisualId == ExperienceScenarios.BallistaId) is { Power: 2, Toughness: 2 } paid
                     && paid.Counters.GetValueOrDefault("+1/+1") == 2,
                     "Committing the player target pays exactly one counter and puts the damage ability on the stack without dealing damage early");
+                var pending = lab.State.Stack.Single();
+                var effectRow = app.TestPort.StackRows.Single();
+                string effectText = string.Join(" ", frame.Observe().Text.Where(text => effectRow.Bounds.Contains(new Point(text.Bounds.X, text.Bounds.Y)))
+                    .Select(text => text.Value));
+                check(effectRow.Id == pending.Id && effectText.Contains(pending.Text, StringComparison.Ordinal)
+                    && effectText.Contains(pending.Name, StringComparison.Ordinal) && effectText.Contains("You", StringComparison.Ordinal)
+                    && pending.Targets.All(target => effectText.Contains(target.Name, StringComparison.Ordinal))
+                    && frame.Hits.Count(hit => hit.Id == "stack-row:" + pending.Id) == 1
+                    && !frame.Hits.Any(hit => hit.Id is "stack" or "action-details") && !frame.Cards.Any(card => card.Zone == "Stack"),
+                    "The single Ballista effect exposes its pending damage, source, controller and player target on one surface without duplicate opens or a copied source card");
                 Click("confirm");
                 Until(() => !app.TestPort.Busy && lab.StageIndex == 2 && frame.Stamp.Revision == lab.State.Revision,
                     "Passing priority must expose the next authored responder");
