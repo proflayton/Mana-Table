@@ -2,6 +2,7 @@ name: Mana Table
 
 on:
   push:
+    branches: [master]
     paths:
       - 'mana-native/**'
       - 'scenarios/**'
@@ -16,27 +17,104 @@ on:
       - 'pom.xml'
       - '.mvn/**'
       - '.github/workflows/mana-table.yml'
+      - '.github/workflows/test-build.yaml'
       - 'README.md'
       - 'CONTRIBUTING.md'
       - 'docs/Development/Mana-Table-*.md'
   pull_request:
   workflow_dispatch:
+    inputs:
+      extended:
+        description: Run the full desktop and encounter suite
+        type: boolean
+        default: true
 
 permissions:
   contents: read
+  actions: read
 
 concurrency:
   group: mana-table-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
-  desktop:
-    runs-on: windows-latest
-    # The last verified run took 37m46s before the strategy review suite was added.
-    # Keep every check and allow room for the extra suite and hosted-runner variation.
-    timeout-minutes: 60
+  checks:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
     defaults:
       run:
+        working-directory: forge-desktop
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+      - name: Check maintained documentation links
+        run: npm run check:docs
+      - name: Check JavaScript syntax
+        run: npm run check
+      - name: Run unit tests
+        run: npm run test:unit
+      - name: Save failure diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: desktop-checks-failure
+          path: forge-desktop/test-results/
+          if-no-files-found: ignore
+          retention-days: 7
+
+  engine-source:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+      - name: Find the exact-source shared Java engine
+        id: producer
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+          SOURCE_EVENT: ${{ github.event_name == 'pull_request' && 'pull_request' || 'push' }}
+        run: node forge-desktop/scripts/wait-ci-engine.cjs
+      - name: Download from the proven producer run
+        uses: actions/download-artifact@v8
+        with:
+          name: engine-${{ github.sha }}
+          path: forge-api/target
+          run-id: ${{ steps.producer.outputs.run-id }}
+          github-token: ${{ github.token }}
+      - name: Verify the exact checkout and engine bytes
+        run: node forge-desktop/scripts/ci-engine-artifact.cjs verify
+      - name: Share the exact-source engine with isolated test runners
+        uses: actions/upload-artifact@v7
+        with:
+          name: engine-${{ github.sha }}
+          path: |
+            forge-api/target/forge-engine.jar
+            forge-api/target/ci-engine-manifest.json
+          if-no-files-found: error
+          retention-days: 1
+          compression-level: 0
+          overwrite: true
+
+  engine-tests:
+    needs: engine-source
+    runs-on: windows-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4, 5, 6, 7, 8]
+    defaults:
+      run:
+        shell: pwsh
         working-directory: forge-desktop
     steps:
       - uses: actions/checkout@v7
@@ -46,50 +124,140 @@ jobs:
         with:
           distribution: temurin
           java-version: '17'
-          cache: maven
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+      - uses: actions/download-artifact@v8
+        with:
+          name: engine-${{ github.sha }}
+          path: forge-api/target
+      - name: Verify the exact-source engine and its checksum
+        working-directory: .
+        run: node forge-desktop/scripts/ci-engine-artifact.cjs verify
+      - name: Run real-engine tests
+        run: |
+          New-Item -ItemType Directory -Path test-results -Force | Out-Null
+          npm run test:engine -- --shard=${{ matrix.shard }}/8 --test-reporter=tap 2>&1 | Tee-Object -FilePath test-results/engine.tap
+          if ($LASTEXITCODE -ne 0) { throw 'Engine shard failed.' }
+      - name: Save engine shard results
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: desktop-engine-results-${{ matrix.shard }}
+          path: |
+            forge-desktop/test-results/engine.tap
+            forge-desktop/test-results/**/benchmark.json
+            forge-desktop/test-results/**/*evidence.json
+          if-no-files-found: error
+          retention-days: 7
+      - name: Save engine shard failure diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: desktop-engine-failure-${{ matrix.shard }}
+          path: forge-desktop/test-results/
+          if-no-files-found: ignore
+          retention-days: 7
+
+  ui-tests:
+    needs: engine-source
+    runs-on: windows-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4]
+    defaults:
+      run:
+        shell: pwsh
+        working-directory: forge-desktop
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '17'
       - uses: actions/setup-node@v7
         with:
           node-version: '24'
           cache: npm
           cache-dependency-path: forge-desktop/package-lock.json
-      - name: Check maintained documentation links
+      - uses: actions/download-artifact@v8
+        with:
+          name: engine-${{ github.sha }}
+          path: forge-api/target
+      - name: Verify the exact-source engine and its checksum
         working-directory: .
-        run: node forge-desktop/scripts/check-docs.cjs
-      - name: Build and test engine adapter
-        working-directory: .
-        run: mvn -B -pl forge-api -am verify
+        run: node forge-desktop/scripts/ci-engine-artifact.cjs verify
       - name: Install desktop dependencies
         run: npm ci --no-audit --no-fund
       - name: Check development setup
         run: npm run doctor
-      - name: Check JavaScript syntax
-        run: npm run check
-      - name: Run unit tests
-        run: npm run test:unit
-      - name: Run multiplayer combat UI
-        run: npx playwright test tests/network-combat.spec.cjs --reporter=line --output=test-results/combat-ui
-      - name: Run real-engine tests
-        run: npm run test:engine
-      - name: Run desktop smoke tests
-        run: npm run test:smoke -- --reporter=line --grep-invert "a three-player table declares split attacks and blocks directly on the battlefield" --output=test-results/desktop-smoke
-      - name: Run reusable encounters
-        run: npm run test:encounters -- --reporter=line --output=test-results/encounter-suite
-      - name: Save failure diagnostics
+      - name: Run critical desktop journeys or the extended suite
+        # Each test owns its disposable app/profile. One worker per runner
+        # avoids contention; fully-parallel also distributes large spec files.
+        env:
+          UI_SHARD: ${{ matrix.shard }}/4
+          EXTENDED_UI: ${{ github.event_name == 'workflow_dispatch' && inputs.extended && 'true' || 'false' }}
+        run: |
+          @'
+          const { spawnSync } = require('node:child_process');
+          const { scripts } = require('./package.json');
+          const extended = process.env.EXTENDED_UI === 'true';
+          const critical = ['startup', 'deck-strategy-review', 'network-lobby', 'network-combat', 'top-library', 'card-selection']
+            .map(name => `tests/${name}.spec.cjs`);
+          const specs = new Set(extended ? ['smoke', 'encounters'].flatMap(suite => {
+            const command = scripts[`test:${suite}`], prefix = 'playwright test ';
+            if (!command?.startsWith(prefix)) throw new Error(`Unsupported ${suite} command; update the CI suite discovery.`);
+            const files = command.slice(prefix.length).trim().split(/\s+/);
+            if (!files.every(file => /^tests\/[\w-]+\.spec\.cjs$/.test(file))) throw new Error(`Unsupported ${suite} arguments; update CI discovery.`);
+            return files;
+          }) : critical);
+          const result = spawnSync(process.execPath, ['node_modules/@playwright/test/cli.js', 'test', ...specs,
+            '--fully-parallel', '--workers=1', '--shard=' + process.env.UI_SHARD,
+            '--reporter=line', '--output=test-results/desktop-suite'], { stdio: 'inherit', windowsHide: true });
+          if (result.error) throw result.error;
+          process.exitCode = result.status ?? 1;
+          '@ | node
+          if ($LASTEXITCODE -ne 0) { throw 'Desktop UI/encounter shard failed.' }
+      - name: Save desktop UI failure diagnostics
         if: failure()
         uses: actions/upload-artifact@v7
         with:
-          name: desktop-test-failure
-          path: |
-            forge-desktop/test-results/
-            forge-*/target/surefire-reports/
-            forge-api/target/rules-regressions/
+          name: desktop-ui-failure-${{ matrix.shard }}
+          path: forge-desktop/test-results/
           if-no-files-found: ignore
           retention-days: 7
+
       - name: Save encounter evidence
         if: ${{ !cancelled() }}
         uses: actions/upload-artifact@v7
         with:
-          name: encounter-evidence
-          path: forge-desktop/test-results/encounter-suite/
+          name: encounter-evidence-${{ matrix.shard }}
+          path: forge-desktop/test-results/desktop-suite/
           if-no-files-found: ignore
           retention-days: 14
+
+  # Branch protection keeps requiring this stable context. Every shard and
+  # source verification must succeed; skipped/cancelled dependencies fail it.
+  desktop:
+    if: ${{ always() }}
+    needs: [checks, engine-source, engine-tests, ui-tests]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      JOB_RESULTS: ${{ toJSON(needs) }}
+    steps:
+      - name: Require every desktop check and shard
+        run: |
+          node <<'NODE'
+          const results = JSON.parse(process.env.JOB_RESULTS);
+          const failures = Object.entries(results).filter(([, job]) => job.result !== 'success');
+          for (const [name, job] of Object.entries(results)) console.log(`${name}: ${job.result}`);
+          if (failures.length) {
+            console.error(`Desktop verification failed: ${failures.map(([name, job]) => `${name}=${job.result}`).join(', ')}`);
+            process.exitCode = 1;
+          }
+          NODE

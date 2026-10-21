@@ -701,21 +701,45 @@ Keep a PR in draft until its exact final head has successful applicable checks:
 
 | Workflow | Required evidence |
 | --- | --- |
-| [Mana Table native Windows release](../../.github/workflows/mana-table-native-release.yml), `Verify and package Windows x64` | Windows JDK 17 focused `verify`, serial shared Node unit/engine tests, .NET client logic, native UI journeys, clean package and installer/updater tests |
-| [Mana Table](../../.github/workflows/mana-table.yml), `desktop` | Windows JDK 17 focused `verify`, npm setup/syntax/unit/engine tests, combat UI, desktop smoke and encounters |
-| [Test build](../../.github/workflows/test-build.yaml), `Test with Java 17` and `Test with Java 21` | Full clean Java tests on Linux with both JDKs, using Xvfb for GUI-dependent tests |
+| [Mana Table native Windows release](../../.github/workflows/mana-table-native-release.yml), `Verify and package Windows x64` | Fail-closed aggregate of the clean Windows package, .NET client logic, critical native UI shards, installer lifecycle and updater tests |
+| [Mana Table](../../.github/workflows/mana-table.yml), `desktop` | Fail-closed aggregate of setup/syntax/unit checks, all shared-engine shards, combat UI, desktop smoke and encounters |
+| [Test build](../../.github/workflows/test-build.yaml), `Test with Java 17` and `Test with Java 21` | Full Java reactor tests on Linux with both JDKs, using Xvfb for GUI-dependent tests; Java 17 also produces the shared engine artifact |
 | [iOS compatibility gate](../../.github/workflows/ios-compat-gate.yml), `iOS/MobiVM link audit` | Java transform/link audit when Java, Maven POMs, iOS sources or its workflow change; this does not build or test an installed iOS app |
 
 Native and desktop PR workflows run without path filters; iOS is path-filtered.
-`Test build` runs on every push and PR. Native push verification/publication is
-filtered to relevant paths on `master`; desktop and iOS push runs also have path
-filters. Push applicability is separate and can differ from the PR's aggregate
+Java and desktop run on PRs and `master` pushes, avoiding duplicate feature-branch
+push runs. Native push verification/publication is filtered to relevant paths on
+`master`; iOS push runs also have path filters. Push applicability is separate and can differ from the PR's aggregate
 diff. A missing required run, a pending run, or an earlier commit's success is not a pass.
 Record the exact head, completed run links, commands and artifact/source identity.
 After merging, the release workflow checks the actual `master` source again before
 publication; PR results do not substitute for those master runs.
 The native publication job is intentionally skipped on PRs; its Windows
 verification job must still pass.
+
+The Java 17 job uploads one source-bound engine JAR early, then continues its full
+tests. Uploading that provisional artifact is not a passing Java check. Consumers
+require the exact event and source checkout, verify its manifest, byte count and
+SHA256, and use that same artifact for gameplay and packaging. Publication still
+requires the completed Java 17/21, desktop and applicable iOS checks for `master`.
+Foreign-source, missing, failed, skipped and cancelled evidence cannot count as a pass.
+
+Engine and UI tests run in isolated shards rather than one long serial job. Automatic
+PR/master gates run eight critical native journeys and eight critical desktop UI
+tests, each across four workers. Manual `workflow_dispatch` with `extended=true`
+retains all 43 native journeys and 23 desktop UI/encounter tests. The full shared
+engine suite remains required across eight isolated workers. The
+Node shard planner covers every discovered engine file; Commander benchmark and
+pregame-concession suites run all three supported transports across their shards.
+Each worker retains serial execution and its own profiles and ports. Shard
+coverage and artifact provenance have focused unit checks. The performance target
+is five minutes; record observed hosted timings instead of treating that target
+as an achieved guarantee.
+
+Release resources store tracked card and token scripts in the engine's existing
+`cardsfolder.zip` format. This avoids installing tens of thousands of tiny files;
+the complete source archive remains unchanged. The packaging fixture verifies
+entry names and bytes, while packaged-engine journeys exercise real archive loading.
 
 The desktop workflow runs the named smoke subset, not every `tests/*.spec.cjs`.
 The full Electron UI suite is an additional local/release-candidate check.

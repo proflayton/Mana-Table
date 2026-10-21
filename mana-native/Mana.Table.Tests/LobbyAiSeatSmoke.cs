@@ -96,9 +96,10 @@ internal sealed class LobbyAiSeatSmoke : ITableAutomation, IDisposable
             Capture("05-three-friends-one-ai");
             background = ReadGuestAndCheckAuthority();
         });
-        Step(.1, () => {
+        Wait(() => !view.Polling, 10, () => {
             Check(guestRejected && guestView?.Mode == "joined" && guestView.Seats.Any(s => s.Type == "AI" && s.Ready),
                 "The guest receives the public AI deck/readiness and the engine rejects its attempt to change a seat");
+            Check(!view.Polling, "The host's in-flight observation finishes before presenting the guest projection");
             // Inspect the actual joined-client projection using the same renderer.
             // Pause host polling so it cannot overwrite the guest view mid-frame.
             view.PresentLobby(guestView!, true);

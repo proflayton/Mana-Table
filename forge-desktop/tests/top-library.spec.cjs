@@ -1,4 +1,5 @@
 const { test, expect } = require('@playwright/test');
+const fs = require('node:fs');
 const { launchDesktop } = require('./support/desktop.cjs');
 const { startEngine, testProfile, ready } = require('./support/engine.cjs');
 const { localDeck, startChorusTable, playChorus, zone, waitFor } = require('./support/top-library.cjs');
@@ -27,7 +28,7 @@ test('Elven Chorus shows an inspectable top card on the 3D and 2D deck pile, the
     await expect(page.locator('#match-view')).toBeVisible();
     await expect(page.locator('.library-top-card')).toHaveCount(0);
     let inspected = false;
-    await playChorus([client, opponent], { inspect: async state => {
+    await playChorus([client, opponent], { report: evidence => fs.writeFileSync(test.info().outputPath('library-observations.json'), JSON.stringify(evidence, null, 2)), inspect: async state => {
       if (inspected || !zone(state, 'Library').topCard.type.includes('Land') || !state.prompt || state.stack.length) return;
       const top = zone(state, 'Library').topCard;
       const card = page.locator('#match-human .library-top-card');
