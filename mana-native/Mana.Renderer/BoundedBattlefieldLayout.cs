@@ -11,6 +11,9 @@ internal static class BoundedBattlefieldLayout
 {
     private sealed record Group(string Role, Card[] Cards, bool Plain, bool Ordered, bool Miniature,
         int LabelWidth, int Rows, int RowHeight, CopyFan Fan);
+    private static Vector2 FaceSize(Group group, float scale) => new(
+        Math.Max(group.Ordered ? 78 : 0, (group.Plain ? 27 : group.Miniature ? 26 : 42) * scale),
+        (group.Plain ? 28 : group.Miniature ? 34 : 60) * scale);
     // A two-dimensional fan gives every real copy a four-pixel corner. Fifty
     // identical tokens need one state label, rather than a 200-pixel art strip.
     // The final occurrence stays in front and owns that shared state label.
@@ -62,8 +65,11 @@ internal static class BoundedBattlefieldLayout
                 // useful name needs 48 logical pixels, without shrinking type.
                 if (crowded) label = Math.Max(label, metrics.HeaderWidth + 48);
                 if (ordered) label = Math.Max(96, label);
-                int rows = 1 + (card.Power != null && card.Toughness != null || copies.Length > 1 ? 1 : 0)
-                    + (card.Counters.Any(counter => counter.Value > 0) ? 1 : 0) + (card.Counters.Count(counter => counter.Value > 0) > 1 ? 1 : 0);
+                // The name and one combined P/T, copy and counter-marker row
+                // form a single tile. Counter types belong in the reader,
+                // rather than extending a separate stack beside the card.
+                int rows = 1 + (card.Type.Contains("Creature", StringComparison.Ordinal) || copies.Length > 1
+                    || card.Counters.Any(counter => counter.Value > 0) ? 1 : 0);
                 return new Group(role, copies, plain, ordered, miniature, label, rows, Math.Max(crowded && miniature ? 16 : 18, metrics.RowHeight),
                     CopyFan.Create(copies.Length, crowded));
             })).ToArray();
@@ -71,16 +77,21 @@ internal static class BoundedBattlefieldLayout
         var territory = Territory(seat);
         Rectangle[] placements = [];
         float scale = 1;
-        for (int attempt = 0; attempt < 32; attempt++) {
-            scale = attempt < 16 ? 1 : .8f;
+        // Already-crowded fields try a final smaller thumbnail before losing
+        // metadata. Measured label width, font and row height never shrink;
+        // physical copy fans and the ordering band retain their dimensions.
+        int attempts = crowded ? 48 : 32;
+        for (int attempt = 0; attempt < attempts; attempt++) {
+            scale = attempt < 16 ? 1 : attempt < 32 ? .8f : .5f;
             var free = FreeAreas(seat);
             foreach (var obstacle in obstacles) Subtract(free, obstacle);
             var placed = new Rectangle[groups.Length]; int placedCount = 0;
             var workItems = groups.Select((group, index) => {
-                int faceWidth = (int)MathF.Ceiling((group.Plain ? 27 : group.Miniature ? 26 : 42) * scale);
+                var faceSize = FaceSize(group, scale);
+                int faceWidth = (int)MathF.Ceiling(faceSize.X);
                 int width = Math.Max(group.Ordered ? 82 : 0,
-                    Math.Max(group.Fan.Width + faceWidth, group.Fan.Front.X + group.LabelWidth) + 4);
-                int face = (int)MathF.Ceiling((group.Plain ? 28 : group.Miniature ? 34 : 60) * scale);
+                    Math.Max(group.Fan.Width + faceWidth, group.Fan.Front.X + faceWidth + 4 + group.LabelWidth) + 4);
+                int face = (int)MathF.Ceiling(faceSize.Y);
                 int height = Math.Max(group.Fan.Front.Y + group.Rows * group.RowHeight, group.Fan.Height + face)
                     + 4 + (group.Ordered ? 36 : 0);
                 return (group, index, width, height);
@@ -114,17 +125,17 @@ internal static class BoundedBattlefieldLayout
         for (int groupIndex = 0; groupIndex < groups.Length; groupIndex++) {
             var group = groups[groupIndex]; var cell = placements[groupIndex];
             int orderBand = group.Ordered ? 36 : 0;
-            var labels = new Rectangle(cell.X + group.Fan.Front.X + 2, cell.Y + group.Fan.Front.Y + 2 + orderBand,
+            var faceSize = FaceSize(group, scale);
+            var labels = new Rectangle(cell.X + group.Fan.Front.X + 2 + (int)MathF.Ceiling(faceSize.X) + 4,
+                cell.Y + group.Fan.Front.Y + 2 + orderBand,
                 group.LabelWidth, group.Rows * group.RowHeight);
             for (int copy = 0; copy < group.Cards.Length; copy++) {
                 var card = group.Cards[copy];
-                float width = (group.Plain ? 27 : group.Miniature ? 26 : 42) * scale, height = (group.Plain ? 28 : group.Miniature ? 34 : 60) * scale;
-                if (group.Ordered) width = Math.Max(78, width);
                 // Earlier rows keep their top corner; earlier columns in the
-                // front row keep their left corner. Shared labels start at the
-                // front occurrence and cannot steal either physical target.
+                // front row keep their left corner. Shared labels sit beside
+                // the front art without covering those exposed copy targets.
                 var offset = group.Fan.Offset(copy);
-                var pose = new Pose(new(cell.X + 2 + offset.X + width / 2, cell.Y + 2 + offset.Y + height / 2), new(width, height));
+                var pose = new Pose(new(cell.X + 2 + offset.X + faceSize.X / 2, cell.Y + 2 + offset.Y + faceSize.Y / 2), faceSize);
                 string id = CardViews.Identity(card);
                 if (id.Length == 0) id = $"anonymous:{owner}:Battlefield:{Array.FindIndex(cards, candidate => ReferenceEquals(candidate, card))}";
                 result[group.Role].Add(new(id, card, pose, "Battlefield", owner, TableLayout.SeatHand(seat)) {

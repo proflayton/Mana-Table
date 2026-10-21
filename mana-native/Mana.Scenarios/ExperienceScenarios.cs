@@ -58,12 +58,41 @@ public static class ExperienceScenarios
             Body("reader-hand-b", "Serra Angel", power: 4, toughness: 4) with { Selectable = true, CombatKeywords = ["flying", "vigilance"] },
             Body("reader-hand-c", "Forest", "Basic Land", null, null) with { Selectable = true } };
         var state = Table("reading", [elf, Body("reader-body", "Wall of Blossoms", power: 0, toughness: 4)], hand);
+        var countedElf = elf with { Power = 3, Toughness = 3, Counters = new() { ["+1/+1"] = 2 } };
+        var counterLand = Body("reader-counter-land", "Blast Zone", "Land", null, null) with {
+            Counters = new() { ["Charge"] = 3, ["Stun"] = 1 }
+        };
+        var counterSupport = Body("reader-counter-support", "Everflowing Chalice", "Artifact", null, null) with {
+            Counters = new() { ["Charge"] = 2, ["Shield"] = 1 }
+        };
+        // These are authored current characteristics, not effects calculated by
+        // this fixture. Counters must never be added to already reported P/T.
+        var counted = state with { Players = state.Players.Select(player => player.Id != 0 ? player : player with {
+            Zones = player.Zones.Select(zone => zone.Name != "Battlefield" ? zone : zone with {
+                Count = 4, Cards = [countedElf, zone.Cards.Single(card => card.VisualId == "reader-body"), counterLand, counterSupport]
+            }).ToArray()
+        }).ToArray(), Decision = state.Decision! with { OkEnabled = true,
+            Message = "Authored public state. Inspect a permanent or preview the Elf's activation; Forge is not running." } };
+        var modified = counted with { Players = counted.Players.Select(player => player.Id != 0 ? player : player with {
+            Zones = player.Zones.Select(zone => zone.Name != "Battlefield" ? zone : zone with {
+                Cards = zone.Cards.Select(card => card.VisualId != elf.VisualId ? card : card with { Power = 6, Toughness = 6 }).ToArray()
+            }).ToArray()
+        }).ToArray(), Decision = new() {
+            Kind = "choice", Context = "playAbility", Title = "Activate Llanowar Elves", Min = 0, Max = 1,
+            // Deliberately older, disclosed prompt face. The exact public source
+            // occurrence must supply its current characteristics for display.
+            SourceCard = elf, SourceCardId = elf.VisualId, SourceControllerId = 0, SourceZone = "Battlefield",
+            Message = "This authored interaction demonstrates the activation UI; Forge is not running.",
+            Choices = [new(0, "Preview tapping this Elf and adding one green mana", null)]
+        } };
         return new[] {
             new ExperienceStage("Read and collapse", "Click a hand card, click its neighbor, then click again to collapse. The Elf activation is a scripted UI demonstration.", state),
             new ExperienceStage("Choose from your hand", "Select and deselect cards without moving their original hand slots.", state with { Decision = new() {
                 Kind = "input", Intent = DecisionIntent.Selection, Min = 1, Max = 2, OkEnabled = true,
                 Message = "Scripted hand selection: choose one or two cards, then confirm. No real cards are discarded."
-            } })
+            } }),
+            new ExperienceStage("Counters on current permanents", "The printed 1/1 Elf is currently 3/3 with two +1/+1 counters. A land and artifact carry different counter types. Read or inspect each public occurrence; these are authored snapshots, not simulated effects.", counted),
+            new ExperienceStage("Current stats in an activation choice", "The same Elf is currently 6/6 with the same two +1/+1 counters. The chooser retains an older disclosed source face and an exact source ID, so display must use current public characteristics. No rules are simulated.", modified)
         };
     }
     private static IReadOnlyList<ExperienceStage> Ordered()

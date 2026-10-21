@@ -14,7 +14,7 @@ internal sealed partial class TableApplication
     private void DrawArena()
     {
         attachmentBadges.Clear(); attachmentConnections.Clear();
-        battlefieldLabels.Clear(); denseStatsBounds.Clear();
+        battlefieldLabels.Clear(); denseStatsBounds.Clear(); counterAnchors.Clear();
         choiceOrderBadges.Clear();
         stackRows.Clear(); prioritySeats.Clear();
         changeCalloutBounds = null; highlightedChangeTargets.Clear(); highlightedChangeSource = null;
@@ -53,7 +53,7 @@ internal sealed partial class TableApplication
                 // Keep the held occurrence in the scene, so release continues
                 // from the pointer instead of respawning it at the library.
                 var heldPose = cardPresentation.Hold(CardIdentity(heldCard), new(pointer.ToVector2(), new(154, 216), -.04f, Elevation: 46));
-                PaintCard(heldCard, heldPose, true, false);
+                PaintInteractionCard(heldCard, heldPose, true, false);
             }
             string hint = legal ? "Release to " + (state.Decision?.Intent == DecisionIntent.Attack ? "assign attacker" : state.Decision?.Intent == DecisionIntent.Block ? "assign blocker"
                 : PlacementDropChoice() ? "choose a placement source" : !heldCard.Selectable && HandPlacements.Options(state, heldCard).Length > 0 ? "place card" : "play card")
@@ -160,31 +160,14 @@ internal sealed partial class TableApplication
             }
         }
         if (CombatTarget(card)) canvas.CardFrame(pose with { Size = pose.Size + new Vector2(10) }, Blue, 4);
-        bool creature = CardPresentation.HasCombatStats(card);
         if (zone == "Battlefield" && (groupFront || focus)) {
-            if (compact && pose.Size.X < 300) {
-                if (groupFront) PaintCompactState(card, pose, owner, groupCount);
-            } else if (card.PhasedOut || creature || card.AttachedTo != null || card.Attachments.Length > 0 || card.Counters.Count > 0 || card.Damage > 0 || (card.States?.Length ?? card.CombatKeywords.Length) > 0) {
-            int x = (int)pose.Center.X, y = pose.Bounds.Bottom - 14;
-            int seat = owner == match!.ViewerId ? 3 : TableLayout.SeatIndex(match, owner);
-            // Side seats read toward the center, keeping badges out of the next
-            // card's footprint while their faces still lie in the seat's plane.
-            if (seat is 0 or 2) { x = seat == 0 ? pose.Bounds.Right + 21 : pose.Bounds.Left - 21; y = (int)pose.Center.Y - 12; }
-            if (creature) {
-                string stats = $"{card.Power}/{card.Toughness}";
-                int statsWidth = Math.Max(58, canvas.TextWidth(stats, .7f, true) + 12);
-                var statsBounds = new Rectangle(x - statsWidth / 2, y, statsWidth, 25);
-                canvas.Panel(statsBounds, card.Attacking ? new Color(98, 39, 40) : new Color(23, 31, 42), selected ? Blue : new Color(136, 144, 148), 5);
-                canvas.CenterText(stats, statsBounds, Ink, .7f, true);
+            if (pose.Size.X < 300) PaintBattlefieldLabels(card, pose, owner, groupCount);
+            else {
+                PaintAttachedCardState(card, pose, owner);
+                if (focus) PaintStateDetails(card, pose);
             }
-            if (card.Damage > 0) { canvas.Circle(new(x + 39, y + 10), 14, Red); canvas.CenterText(card.Damage.ToString(), new(x + 25, y - 4, 28, 28), Color.Black, .61f, true); }
-            PaintStateMarkers(card, pose, x, y, seat, owner, compact);
-            }
-            if (focus && pose.Size.X >= 300) PaintStateDetails(card, pose);
         }
-        if (zone == "Battlefield" && groupFront && groupCount > 1 && pose.Size.X < 300) {
-            if (!compact) PaintBattlefieldCopies(card, pose, owner, groupCount);
-        }
+        if (zone is "Hand" or "Command" && pose.Size.X >= 300) PaintAttachedCardState(card, pose);
         // Paint the relationship marker after combat stats so the small corner
         // indicator remains visible on densely packed projected card faces.
         if (zone == "Battlefield" && (groupFront || focus)) PaintAttachmentBadge(card, pose, owner, compact && !focus);
@@ -274,7 +257,9 @@ internal sealed partial class TableApplication
         Pose? topPose = null;
         if (stackCards.Length == 0 && state.Decision?.SourceCard is { } source) stackCards = [source];
         for (int i = stackCards.Length - 1; i >= 0; i--) {
-            var card = stackCards[i];
+            var reported = stackCards[i];
+            var card = state.Decision is { } sourceDecision && (payingSource || state.Stack.Length == 0)
+                ? InteractionCards.Source(state, sourceDecision) ?? stackCards[i] : InteractionCards.Current(state, stackCards[i]);
             bool alsoInZone = state.Players.Any(p => p.Zones.Any(z => z.Cards.Any(c => CardIdentity(c) == CardIdentity(card))));
             string identity = payingSource ? "payment:" + state.Decision!.Id : alsoInZone ? "stack:" + (state.Stack.ElementAtOrDefault(i)?.Id ?? "source") : CardIdentity(card);
             if (identity.Length == 0) identity = "stack:" + (state.Stack.ElementAtOrDefault(i)?.Id ?? card.Name);
@@ -289,10 +274,10 @@ internal sealed partial class TableApplication
             if (state.Stack.Length > 0 || payingSource) spellPose = spellPose with { Center = spellPose.Center + new Vector2(32, 14), Size = new(124, 174) };
             var stackPose = DrawTableCard(identity, card, spellPose, "Stack", null, "stack-item:" + i, () => {
                 if (payingSource) Inspect(card);
-                else if (IsCardActionable(card)) CardClick(card);
+                else if (IsCardActionable(reported)) CardClick(reported);
                 else if (state.Stack.Length > stackIndex) OpenStack(stackIndex);
                 else Inspect(card);
-            }, (displayed, focus) => PaintCard(card, displayed, stackIndex == 0, false, focus), entrance);
+            }, (displayed, focus) => PaintInteractionCard(card, displayed, stackIndex == 0, false, focus), entrance);
             if (i == 0) topPose = stackPose;
         }
         if (!payingSource && topPose is { } origin && state.Stack.FirstOrDefault() is { } top) DrawStackTargets(top, origin);

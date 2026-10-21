@@ -65,36 +65,19 @@ internal sealed partial class TableApplication
             .Select(group => group.MaxBy(target => target.LastActivityId)!)) {
             var accent = target.Delta.Total < 0 ? Red : new Color(103, 228, 200);
             if (!preferences.ReducedMotion)
-                canvas.Ring(target.Target.CounterLanding, 12 + (1 - target.Strength) * 17,
-                    accent * target.Strength, 3);
-            PaintEffectCounterTile(target.Label, target.Target.CounterLanding, accent, target.Strength);
+                canvas.Ring(target.Target.CounterLanding, 7 + (1 - target.Strength) * 7,
+                    accent * target.Strength, 2);
         }
         foreach (var flight in effectTransitionFrame.Flights) {
             var accent = flight.Delta.Total < 0 ? Red : new Color(103, 228, 200);
-            var target = effectTransitionFrame.Targets.LastOrDefault(target => target.EffectId == flight.EffectId
-                && target.Target.FrontId == flight.FrontId && target.Delta.Property == flight.Delta.Property);
-            PaintEffectCounterTile(target?.Label ?? flight.Delta.Label, flight.Position, accent, 1);
-            PaintEffectSpark(flight.Position - new Vector2(0, 12), 4, Gold);
+            PaintEffectSpark(flight.Position, 4, accent);
         }
     }
 
     private Vector2 CounterLanding(SceneCard node, Pose displayed)
     {
-        if (node.Dense && !node.DenseLabels.IsEmpty && CardPresentation.Counters(node.Card).Length > 0) {
-            int row = 1 + (CardPresentation.HasCombatStats(node.Card) || node.GroupCount > 1 ? 1 : 0);
-            return boardView.Apply(new Vector2(node.DenseLabels.Right - 12, node.DenseLabels.Top + row * node.DenseRowHeight + node.DenseRowHeight / 2));
-        }
+        if (counterAnchors.TryGetValue(node.Id, out var anchor)) return anchor;
         return displayed.Point(.80f, .82f);
-    }
-
-    private void PaintEffectCounterTile(string label, Vector2 point, Color accent, float strength)
-    {
-        float size = BattlefieldFocused ? .60f : .4f;
-        int height = BattlefieldFocused ? 26 : 20;
-        int width = canvas.TextWidth(label, size, true) + 8;
-        var bounds = new Rectangle((int)MathF.Round(point.X) - width / 2, (int)MathF.Round(point.Y) - height / 2, width, height);
-        canvas.Panel(bounds, new Color(12, 29, 30) * Math.Max(.5f, strength), accent * Math.Max(.5f, strength), 3);
-        canvas.CenterText(label, bounds, accent, size, true);
     }
 
     private void PaintEffectSpark(Vector2 point, float radius, Color accent)

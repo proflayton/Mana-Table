@@ -56,24 +56,13 @@ internal sealed partial class TableApplication
         }
         if (pose.Size.X < 300 && CardPresentation.HasCombatStats(card)
             && denseStatsBounds.TryGetValue(CardViews.Identity(card), out var denseStats)) {
-            // Dense labels already paint attachment color on their measured P/T
-            // rectangle. Reuse that exact text and target, including on hover.
+            // The shared state strip already carries the relationship color.
+            // Reuse its exact P/T target rather than painting another badge.
             if (card.CombatId.Length > 0) attachmentBadges[card.CombatId] = new(
                 $"{card.Power}/{card.Toughness}", denseStats.Bounds, denseStats.MeasuredWidth, true, true);
             return;
         }
         int seat = owner == match!.ViewerId ? 3 : TableLayout.SeatIndex(match, owner);
-        if (compact && CardPresentation.HasCombatStats(card) && pose.Size.X < 300) {
-            // A projected creature face can be shorter than its readable P/T
-            // chip. Put attachment state on that existing inward-facing chip,
-            // preserving both the footprint and the engine's current P/T.
-            var stats = CompactStatsBounds(card, pose, seat);
-            string value = $"{card.Power}/{card.Toughness}";
-            canvas.Panel(stats, new Color(48, 39, 22), Gold, 3);
-            canvas.CenterText(value, stats, Ink, CompactStatsSize, true);
-            if (card.CombatId.Length > 0) attachmentBadges[card.CombatId] = new(value, stats, canvas.TextWidth(value, CompactStatsSize, true), true, true);
-            return;
-        }
         int available = Math.Max(8, Math.Min(105, pose.Bounds.Width - 4));
         int measured = canvas.TextWidth(label, .48f, true);
         compact |= measured + 8 > available;

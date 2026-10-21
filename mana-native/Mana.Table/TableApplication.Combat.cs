@@ -57,9 +57,9 @@ internal sealed partial class TableApplication
             int index = 0;
             foreach (var card in candidates.Skip(combatPage * count).Take(count)) {
                 int x = 214 + index++ * 197; var pose = new Pose(new(x + 78, 413), new(156, 218));
-                PaintCard(card, pose, selectedCombat == card.CombatId, true);
+                PaintInteractionCard(card, pose, selectedCombat == card.CombatId, true);
                 canvas.Text(card.Name, x, 541, Ink, .74f, 176, 3, true);
-                canvas.Text($"{card.Power}/{card.Toughness}", x, 610, Gold, .84f, 176, 1, true);
+                canvas.Text(AllocationGuide.Counters(card), x, 610, Gold, .61f, 176, 2);
                 if (pose.Contains(pointer)) hovered = card;
                 hits.Add(new("combat-source:" + card.CombatId, Scope, new(x, 304, 176, 345), () => { selectedCombat = card.CombatId; overlay = ""; }, card));
             }
@@ -74,12 +74,14 @@ internal sealed partial class TableApplication
             int y = 289 + row++ * 139; var card = CombatGuide.Find(state, attack.CardId);
             canvas.Panel(new(204, y, 1190, 127), new(27, 35, 45), Muted * .3f, 7);
             if (card != null) {
-                var pose = new Pose(new(259, y + 62), new(67, 94)); PaintCard(card, pose, false, CombatTarget(card));
+                var pose = new Pose(new(259, y + 62), new(67, 94)); PaintInteractionCard(card, pose, false, CombatTarget(card));
                 if (pose.Contains(pointer)) hovered = card;
                 hits.Add(new("combat-inspect:" + card.CombatId, Scope, pose.Bounds, () => Inspect(card), card));
             }
             canvas.Text(card?.Name ?? "Attacker", 309, y + 10, Ink, .84f, 373, 2, true);
-            canvas.Text(card == null ? "" : $"{card.Power}/{card.Toughness}  " + string.Join(" · ", CardPresentation.AbilityLabels(card)), 309, y + 62, Gold, .66f, 375, 2);
+            canvas.Text(string.Join(" · ", new[] { AllocationGuide.Stats(card), AllocationGuide.MarkedDamage(card), AllocationGuide.Abilities(card) }
+                .Where(value => value.Length > 0)), 309, y + 56, Gold, .66f, 375, 2);
+            canvas.Text(AllocationGuide.Counters(card), 309, y + 98, Gold, .56f, 375, 1);
             string defender = attack.Defender?.Name ?? state.Players.FirstOrDefault(p => p.Id == attack.DefendingPlayerId)?.Name ?? "Defender";
             canvas.Text("ATTACKING " + defender, 708, y + 12, Red, .66f, 443, 2, true);
             string blockers = string.Join(", ", attack.BlockerIds.Select(id => CombatGuide.Find(state, id)?.Name ?? "Blocker"));
@@ -117,9 +119,9 @@ internal sealed partial class TableApplication
         int index = 0;
         foreach (var card in blockers.Skip(combatPage * count).Take(count)) {
             int x = 214 + index++ * 197; var pose = new Pose(new(x + 78, 386), new(156, 218));
-            PaintCard(card, pose, false, false);
+            PaintInteractionCard(card, pose, false, false);
             canvas.Text(card.Name, x, 515, Ink, .72f, 176, 3, true);
-            canvas.Text($"{card.Power}/{card.Toughness}", x, 585, Gold, .84f, 176, 1, true);
+            canvas.Text(AllocationGuide.Counters(card), x, 585, Gold, .61f, 176, 2);
             if (pose.Contains(pointer)) hovered = card;
             hits.Add(new("blocker-inspect:" + card.CombatId, Scope, pose.Bounds, () => Inspect(card), card));
             if (CombatGuide.Remove(state, card.CombatId, attack.CardId) != null) Button("blocker-remove:" + card.CombatId, "Remove block", x, 636, 173, () => RemoveAssignment(card.CombatId, attack.CardId), !busy, height: 35);

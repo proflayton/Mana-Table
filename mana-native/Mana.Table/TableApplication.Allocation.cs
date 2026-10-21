@@ -88,9 +88,10 @@ internal sealed partial class TableApplication
 
     private void DrawAllocationHeader(GameSnapshot state, Decision d)
     {
-        if (d.SourceCard is { } source) {
+        var source = InteractionCards.Source(state, d);
+        if (source != null) {
             var pose = new Pose(new(250, 242), new(83, 116));
-            PaintCard(source, pose, false, false);
+            PaintInteractionCard(source, pose, false, false);
             AllocationArtHit("alloc-inspect-source", source, pose, () => OpenAllocationDetail(-1));
         } else {
             canvas.Panel(new(209, 184, 83, 116), Panel, Muted * .4f);
@@ -98,10 +99,10 @@ internal sealed partial class TableApplication
         }
         string seat = d.SourceControllerId is { } controller
             ? AllocationGuide.Seat(state, new(0, "", null) { ControllerId = controller }) : "";
-        canvas.Text(d.SourceCard?.Name ?? "Allocation", 310, 185, Ink, .91f, 690, 1, true);
+        canvas.Text(source?.Name ?? "Allocation", 310, 185, Ink, .91f, 690, 1, true);
         canvas.Text(seat, 311, 214, Muted, .62f, 680, 1);
         string sourceState = string.Join(" · ", new[] {
-            AllocationGuide.Stats(d.SourceCard), AllocationGuide.MarkedDamage(d.SourceCard), AllocationGuide.Counters(d.SourceCard), AllocationGuide.Abilities(d.SourceCard)
+            AllocationGuide.Stats(source), AllocationGuide.MarkedDamage(source), AllocationGuide.Counters(source), AllocationGuide.Abilities(source)
         }.Where(value => value.Length > 0));
         canvas.Text(sourceState, 311, 237, Gold, .69f, 685, 2, true);
         canvas.Text(d.Message, 311, 275, Muted, .64f, 685, 2);
@@ -118,13 +119,14 @@ internal sealed partial class TableApplication
     private void DrawAllocationRecipient(GameSnapshot state, Decision d, int index, int x, int y)
     {
         var choice = d.Choices[index];
+        var card = InteractionCards.Choice(state, choice);
         int value = allocations[index], minimum = AllocationGuide.Minimum(d, index), maximum = AllocationGuide.Maximum(d, index);
         long remaining = d.Amount - AllocationGuide.Total(allocations);
         canvas.Panel(new(x, y, 588, 143), value > 0 ? new Color(29, 47, 59) : Panel,
             value > 0 ? new Color(102, 139, 152) : new Color(68, 82, 98), 7);
-        if (choice.Card is { } card) {
+        if (card != null) {
             var pose = new Pose(new(x + 52, y + 68), new(80, 112));
-            PaintCard(card, pose, false, false);
+            PaintInteractionCard(card, pose, false, false);
             AllocationArtHit("alloc-inspect:" + index, card, pose, () => OpenAllocationDetail(index));
             canvas.CenterText("Inspect", new(x + 10, y + 123, 84, 16), Muted, .49f);
         } else {
@@ -139,13 +141,13 @@ internal sealed partial class TableApplication
         canvas.Text((index + 1) + ". " + AllocationGuide.Name(choice, index), x + 106, y + 8, Ink, .78f, 465, 1, true);
         string seat = AllocationGuide.Seat(state, choice);
         canvas.Text(seat.Length == 0 ? choice.IsDefender ? "Defender" : "Recipient" : seat + (choice.IsDefender ? " · Defender" : ""), x + 107, y + 33, Muted, .58f, 460, 1);
-        string stats = AllocationGuide.Stats(choice.Card);
-        string marked = AllocationGuide.MarkedDamage(choice.Card);
+        string stats = AllocationGuide.Stats(card);
+        string marked = AllocationGuide.MarkedDamage(card);
         string stateLine = string.Join(" · ", new[] { stats.Length > 0 ? "Current " + stats : "", marked }.Where(value => value.Length > 0));
-        if (stateLine.Length == 0) stateLine = choice.Card?.Type ?? (choice.PlayerId != null ? "Player" : AllocationGuide.Unit(d));
+        if (stateLine.Length == 0) stateLine = card?.Type ?? (choice.PlayerId != null ? "Player" : AllocationGuide.Unit(d));
         canvas.Text(stateLine, x + 107, y + 52, Ink, .76f, 462, 1, true);
-        canvas.Text(AllocationGuide.Counters(choice.Card), x + 107, y + 77, Gold, .61f, 462, 1);
-        canvas.Text(AllocationGuide.Abilities(choice.Card), x + 107, y + 95, Muted, .61f, 462, 1);
+        canvas.Text(AllocationGuide.Counters(card), x + 107, y + 77, Gold, .61f, 462, 1);
+        canvas.Text(AllocationGuide.Abilities(card), x + 107, y + 95, Muted, .61f, 462, 1);
         Button("alloc-fill:" + index, "Remaining", x + 106, y + 114, 117, () => {
             allocations[index] = (int)Math.Min(maximum, Math.Max(value, (long)value + Math.Max(0, d.Amount - AllocationGuide.Total(allocations))));
         }, !busy && remaining > 0 && value < maximum, height: 26);
@@ -167,12 +169,12 @@ internal sealed partial class TableApplication
     {
         int index = allocationDetail;
         Choice? choice = index >= 0 ? d.Choices[index] : null;
-        Card? card = choice?.Card ?? (index < 0 ? d.SourceCard : null);
+        Card? card = choice != null ? InteractionCards.Choice(state, choice) : InteractionCards.Source(state, d);
         string name = choice == null ? card?.Name ?? "Source" : AllocationGuide.Name(choice, index);
         ModalFrame(name, CloseAllocationDetail, "Back", 790);
-        // This detail belongs to the current prompt, rather than a name-based
-        // battlefield lookup. Identical and anonymous occurrences stay distinct.
-        if (card != null) PaintCard(card, new(new(432, 451), new(330, 462)), false, false);
+        // Current characteristics use an exact engine occurrence link. Amounts,
+        // thresholds and reply indexes remain on the original current prompt.
+        if (card != null) PaintInteractionCard(card, new(new(432, 451), new(330, 462)), false, false);
         else canvas.Panel(new(267, 220, 330, 462), Panel, Muted * .4f);
         string seat = choice == null && d.SourceControllerId is { } controller
             ? AllocationGuide.Seat(state, new(0, "", null) { ControllerId = controller }) : choice == null ? "" : AllocationGuide.Seat(state, choice);

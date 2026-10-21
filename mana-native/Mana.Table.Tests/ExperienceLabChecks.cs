@@ -84,6 +84,17 @@ internal static class ExperienceLabChecks
                 "Canonical projections contain no other player's private hand faces: " + scenario.Id);
             if (scenario.Id == "public-state.v1") check(frame.Hits.Any(hit => hit.Id == "table-state:day-night"),
                 "The lab uses the production Day/Night widget alongside its scenario controls");
+            if (scenario.Id == "card-reading.v1") {
+                Click("lab-next"); Click("lab-next");
+                check(frame.Observe().Text.Any(text => text.Value == "3/3")
+                    && frame.Observe().Cards.Single(card => card.Id == "reader-elf" && card.Zone == "Battlefield").Counters.Single().Value == 2,
+                    "The actual ordinary renderer displays the authoritative 3/3 body and retains its two-counter projection");
+                Click("lab-next");
+                check(frame.Observe().Text.Any(text => text.Value == "6/6" && text.Bounds.X > 1180)
+                    && frame.Observe().Text.Any(text => text.Value == "+1/+1 ×2")
+                    && frame.Observe().Text.Any(text => text.Value == "Preview tapping this Elf and adding one green mana"),
+                    "The real text-choice composition includes its linked current 6/6 source and two counters despite the older embedded source face");
+            }
             if (scenario.Id == "turn-orientation.v1") {
                 string initialPrompt = lab.State.Decision!.Id, initialScope = lab.State.Id;
                 Click("lab-follow-turn");

@@ -1,4 +1,5 @@
 using Mana.Contracts;
+using Mana.Magic;
 using Mana.Renderer;
 using Microsoft.Xna.Framework;
 using Point = Microsoft.Xna.Framework.Point;
@@ -12,7 +13,7 @@ internal sealed record CardPresentationContext(GameSnapshot? State, string Scope
 {
     public Card? ChoiceFace(int slot) => State?.Decision is { } decision
         ? decision.LibraryCards.Length > 0 ? decision.LibraryCards.ElementAtOrDefault(slot)?.Card
-            : decision.Choices.ElementAtOrDefault(slot)?.Card
+            : decision.Choices.ElementAtOrDefault(slot) is { } choice ? InteractionCards.Choice(State, choice) : null
         : null;
 
     public bool CanRead(PresentedCard entry)

@@ -42,7 +42,7 @@ native renderer and input pipeline with controlled state, not a rules simulator.
 | Scenario ID | Review focus |
 | --- | --- |
 | `crowded-counters.v1` | 480 permanents, Toph earthbend 2, then one Felidar Retreat effect with 82 recipients; source, changed land and complete affected set |
-| `card-reading.v1` | Hand slots remain available; click to read, switch cards and collapse; compact required selection |
+| `card-reading.v1` | Hand slots, reading/collapse and required selection; current P/T/counters in card and ability-source previews despite an older embedded source face |
 | `ordered-choice.v1` | Visible position numbers, same-name occurrences, selection order and confirmation |
 | `mana-payment.v1` | Unspent colored mana, payment instructions and pool transitions |
 | `combat-allocation.v1` | Attacker/blocker identity, current P/T, marked damage and assignment thresholds, including anonymous cards |
@@ -89,6 +89,27 @@ Review both the design surface and actual window output at `1000x740` and
 `1540x980`, then use the interactive window. Check normal and larger text,
 ordinary and reduced motion, and realistic art alongside fallback surfaces.
 Keyframes cannot establish readable motion timing or comfortable pointer use.
+
+For counter and interaction-state review, `card-reading.v1` stage 2 shows a 3/3
+creature with two +1/+1 counters, plus lands/support with multiple counter types.
+Stage 3 shows the same creature at 6/6 with those same two counters and an ability
+chooser whose embedded source face still says 1/1. The preview must use the exact
+current public occurrence; the original choice handles remain unchanged. These
+authored values demonstrate that current P/T must not be calculated from counters.
+
+```powershell
+& 'C:\candidate\ManaTable.exe' --experience-lab card-reading.v1 --stage 2 --size 1000x740 --capture 'C:\review\current-counters.png'
+& 'C:\candidate\ManaTable.exe' --experience-lab card-reading.v1 --stage 3 --size 1000x740 --capture 'C:\review\ability-current-source.png'
+```
+
+Also advance between those stages interactively and inspect the creature. Review
+the on-card stats strip, dice/count marker and its additional-types ellipsis, then
+find the full counter names in the reader. In `crowded-counters.v1`, follow the
+source spark to the actual counter-marker pulse without losing the current value.
+Dense cards use connected thumbnail/name metadata and one combined stats row;
+redundant role and hero counts have been removed. These changes are implemented,
+but human clarity and comfort have **not been accepted**. The crowded whole-table
+layout remains an open design problem.
 
 ## Human acceptance
 

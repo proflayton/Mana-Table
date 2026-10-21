@@ -9,15 +9,6 @@ namespace Mana.Table;
 
 internal sealed partial class TableApplication
 {
-    private static Vector2 CompactStateCenter(Pose pose, int seat)
-    {
-        var r = pose.Bounds;
-        return seat switch {
-            0 => new Vector2(r.Right - 16, r.Center.Y), 2 => new Vector2(r.Left + 16, r.Center.Y),
-            1 => new Vector2(r.Center.X, r.Bottom - 10), _ => new Vector2(r.Center.X, r.Top + 10)
-        };
-    }
-    private void PaintCompactState(Card card, Pose pose, int owner, int copies = 1) => PaintBattlefieldLabels(card, pose, owner, copies);
     private void PaintCommanderTax(Card card, Pose pose)
     {
         int tax = CardPresentation.CommanderTax(card);
@@ -68,38 +59,6 @@ internal sealed partial class TableApplication
                 canvas.Line(Vector2.Lerp(from, to, offset / length), Vector2.Lerp(from, to, Math.Min(offset + 7, length) / length), color * .72f, 1.5f);
         }
     }
-    private void PaintStateMarkers(Card card, Pose pose, int x, int y, int seat, int owner, bool compact = false)
-    {
-        if (pose.Size.X >= 300) return;
-        var counters = CardPresentation.Counters(card);
-        int count = Math.Min(compact ? 1 : 2, counters.Length), width = compact ? 76 : seat is 0 or 2 ? 98 : Math.Clamp(pose.Bounds.Width, 80, 110);
-        int counterX = seat == 0 ? x + 37 : seat == 2 ? x - 37 - width : x - width / 2;
-        int counterY = seat is 0 or 2 ? y - 9 : pose.Bounds.Top - count * 27 - 8;
-        if (compact) { counterX = x - width / 2; counterY = pose.Bounds.Top + 24; }
-        for (int i = 0; i < count; i++) {
-            var counter = counters[i];
-            var bounds = new Rectangle(counterX, counterY + i * 27, width, 24);
-            // A small stack of chips says "counters"; the separate numeral is
-            // their count, not an additional power/toughness calculation.
-            if (counter.Value > 1) canvas.Rounded(new(bounds.X - 3, bounds.Y - 3, bounds.Width, bounds.Height), new(68, 100, 100), 5);
-            canvas.Panel(bounds, new(26, 47, 52), new(168, 207, 200), 5);
-            canvas.Text(counter.Key, bounds.X + 5, bounds.Y + 4, Ink, .56f, bounds.Width - 32, 1, true);
-            canvas.Rounded(new(bounds.Right - 26, bounds.Y + 2, 24, 20), new(181, 216, 205), 3);
-            canvas.CenterText(counter.Value.ToString(), new(bounds.Right - 26, bounds.Y + 1, 24, 21), new(15, 30, 32), .65f, true);
-        }
-        if (counters.Length > count) canvas.Text("+" + (counters.Length - count) + " types", counterX, counterY - 22, Ink, .56f, width, 1, true);
-        var states = CardPresentation.Abilities(card).ToList();
-        if (card.Sick && CardPresentation.HasCombatStats(card)) states.Insert(0, "summoning sick");
-        if (card.PhasedOut) states.Insert(0, "phased out");
-        int visible = Math.Min(3, states.Count), total = visible + (states.Count > visible ? 1 : 0);
-        int iconY = compact ? y - 12 : seat is 0 or 2 ? y + 37 : y - 15;
-        for (int i = 0; i < visible; i++) PaintAbilityIcon(states[i], new(x + (i - (total - 1) / 2f) * 23, iconY));
-        if (total > visible) {
-            var center = new Vector2(x + (visible - (total - 1) / 2f) * 23, iconY);
-            canvas.Circle(center, 11, new(22, 30, 39));
-            canvas.CenterText("+" + (states.Count - visible), new((int)center.X - 11, (int)center.Y - 10, 22, 20), Ink, .5f, true);
-        }
-    }
     private void PaintAbilityIcon(string keyword, Vector2 center)
     {
         var color = AbilityColor(keyword);
@@ -143,21 +102,25 @@ internal sealed partial class TableApplication
     }
     private void PaintStateDetails(Card card, Pose pose)
     {
-        var counters = CardPresentation.Counters(card);
-        var states = CardPresentation.StateLabels(card);
+        var counters = CardPresentation.Counters(card).Skip(4);
+        var states = CardPresentation.StateLabels(card).Where(state => state != "Untapped");
         var values = new List<(string Label, string Value)>();
-        if (CardPresentation.HasCombatStats(card)) values.Add(("Power / toughness", $"{card.Power}/{card.Toughness}"));
-        if (card.Damage > 0) values.Add(("Damage marked", card.Damage.ToString()));
         if (CardPresentation.CommanderTax(card) > 0) values.Add(("Command zone tax", "+" + CardPresentation.CommanderTax(card)));
         var rows = values.Concat(counters.Select(c => (Label: c.Key + " counter" + (c.Value == 1 ? "" : "s"), Value: "× " + c.Value)))
             .Concat(states.Select(s => (Label: s, Value: ""))).ToArray();
-        int shown = Math.Min(16, rows.Length), height = 64 + shown * 28 + (shown < rows.Length ? 28 : 0);
+        if (rows.Length == 0) return;
         int x = pose.Bounds.Right + 17 + 265 <= 1238 ? pose.Bounds.Right + 17 : pose.Bounds.Left - 282;
-        int y = Math.Clamp(pose.Bounds.Top, 70, 882 - height);
+        var target = cardPresentation.Pinned?.ReaderTarget ?? pose;
+        bool action = match?.Decision?.Intent == DecisionIntent.Priority && IsCardActionable(card);
+        int controlsBottom = Math.Clamp(target.Bounds.Top + 20, 70, 690) + (action ? 84 : 36);
+        int y = Math.Max(Math.Clamp(pose.Bounds.Top, 70, 740), controlsBottom + 12);
         var seat = TableLayout.LocalSeatBounds;
-        if (x + 265 > seat.Left && x < seat.Right) y = Math.Min(y, seat.Top - 12 - height);
+        int bottom = x + 265 > seat.Left && x < seat.Right ? Math.Min(882, seat.Top - 12) : 882;
+        int shown = Math.Min(rows.Length, Math.Min(16, Math.Max(0, (bottom - y - 92) / 28)));
+        if (shown == 0) return;
+        int height = 64 + shown * 28 + (shown < rows.Length ? 28 : 0);
         canvas.Panel(new(x, y, 265, height), new(19, 28, 37), new(115, 145, 158), 9);
-        canvas.Text("CURRENT STATE", x + 15, y + 12, Gold, .62f, 235, 1, true);
+        canvas.Text("ABILITIES & STATE", x + 15, y + 12, Gold, .62f, 235, 1, true);
         for (int i = 0; i < shown; i++) {
             string value = rows[i].Value;
             float valueSize = .72f;
@@ -167,8 +130,7 @@ internal sealed partial class TableApplication
                 valueWidth = canvas.TextWidth(value, valueSize, true);
             }
             int labelWidth = value.Length > 0 ? Math.Max(0, 235 - valueWidth - 12) : 235;
-            string label = rows[i].Label == "Power / toughness" && canvas.TextWidth(rows[i].Label, .68f, true) > labelWidth ? "P/T" : rows[i].Label;
-            canvas.Text(label, x + 15, y + 44 + i * 28, Ink, .68f, labelWidth, 1, true);
+            canvas.Text(rows[i].Label, x + 15, y + 44 + i * 28, Ink, .68f, labelWidth, 1, true);
             canvas.Text(value, x + 250 - valueWidth, y + 44 + i * 28, Gold, valueSize, valueWidth, 1, true);
         }
         if (shown < rows.Length) canvas.Text("Right-click for all details", x + 15, y + height - 27, Muted, .6f, 235, 1);

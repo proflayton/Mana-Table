@@ -14,15 +14,10 @@ internal sealed partial class TableApplication
         bool plain = !CardPresentation.HasCombatStats(card) && card.Power == null && card.Toughness == null
             && counters.Length == 0 && card.Damage == 0 && (card.States?.Length ?? card.CombatKeywords.Length) == 0 && !card.PhasedOut;
         int width = miniature ? 48 : plain ? 56 : 96;
-        int CopyWidth() => copies > 1 ? canvas.TextWidth(copies + " copies", size, true) + padding : 0;
-        if (CardPresentation.HasCombatStats(card))
-            width = Math.Max(width, canvas.TextWidth($"{card.Power}/{card.Toughness}", size, true) + padding + CopyWidth());
-        else width = Math.Max(width, CopyWidth());
-        if (counters.Length > 0)
-            width = Math.Max(width, canvas.TextWidth(CounterLabel(card, counters[0].Key, counters[0].Value), size, true) + padding);
-        if (counters.Length > 1)
-            width = Math.Max(width, canvas.TextWidth("+" + (counters.Length - 1) + " counter type" + (counters.Length > 2 ? "s" : ""), size, true) + padding);
-        int header = (card.States?.Length ?? card.CombatKeywords.Length) > 0 || card.PhasedOut || card.Sick && CardPresentation.HasCombatStats(card) ? 24 : 0;
+        int stats = CardPresentation.HasCombatStats(card) ? canvas.TextWidth(CurrentStats(card), size, true) + padding : 0;
+        int copy = copies > 1 ? canvas.TextWidth("×" + copies, size, true) + padding : 0;
+        width = Math.Max(width, stats + copy + CounterMarkerWidth(card, size));
+        int header = (card.States?.Length ?? card.CombatKeywords.Length) > 0 || card.PhasedOut || card.Sick && CardPresentation.HasCombatStats(card) ? 14 : 0;
         if (card.Tapped) header += canvas.TextWidth("TAPPED", size, true) + padding;
         if (card.Damage > 0) header += canvas.TextWidth("DMG " + card.Damage, size, true) + padding;
         // State indicators share the identity row; reserve both their complete

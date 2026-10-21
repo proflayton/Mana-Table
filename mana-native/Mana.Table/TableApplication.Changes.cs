@@ -85,14 +85,6 @@ internal sealed partial class TableApplication
         int height = Math.Min(114, bottom - 550 - 16), width = (int)(height / 1.4f);
         return (card, new(new(1266 + width / 2, 558 + height / 2), new(width, height)));
     }
-    private string CounterLabel(Card card, string type, int value)
-    {
-        string label = type + " ×" + value;
-        if (publicChanges.Latest is not { } group || now - group.Updated > 8) return label;
-        long delta = group.Changes.Where(change => change.TargetId == CardViews.Identity(card) && change.Change.Property == type)
-            .Sum(change => (long)change.Change.After - change.Change.Before);
-        return label + (delta == 0 ? "" : " (" + (delta > 0 ? "+" : "") + delta + ")");
-    }
     private void DrawChangeHighlights()
     {
         if (OverlayOpen || publicChanges.Latest is not { } group || now - group.Updated > 8) return;

@@ -1,4 +1,5 @@
 using Mana.Contracts;
+using Mana.Magic;
 using Mana.Renderer;
 using Mana.Table.Presentation;
 using Microsoft.Xna.Framework;
@@ -11,6 +12,7 @@ internal static class CardPresentationChecks
 {
     internal static void Run(Action<bool, string> check)
     {
+        CurrentInteractionState(check);
         var first = new Card { Key = "first-key", VisualId = "first", Name = "First" };
         var second = new Card { Key = "second-key", VisualId = "second", Name = "Second" };
         var state = Snapshot(first, second);
@@ -114,6 +116,55 @@ internal static class CardPresentationChecks
         var fresh = owner.Prepare(Request(first, firstRest)); owner.EndFrame();
         check(!owner.HasPinnedCard && fresh.Display == firstRest && actions == 0,
             "Changing games clears presentation identity, pinned readers, and motion without executing a card action");
+    }
+
+    private static void CurrentInteractionState(Action<bool, string> check)
+    {
+        var reported = new Card { Key = "old-action-key", VisualId = "live-body", CombatId = "combat-body", Name = "Same name",
+            Type = "Creature", Power = 1, Toughness = 1, CombatKeywords = ["Flying"] };
+        var current = reported with { Key = "current-action-key", Power = 6, Toughness = 6, Damage = 1,
+            Counters = new() { ["+1/+1"] = 2 }, States = [new("ward", "Ward {2}", "ability", null, null, "Pay {2}.", "ward")] };
+        var otherCopy = reported with { VisualId = "other-body", CombatId = "other-combat", Power = 10, Toughness = 10,
+            Counters = new() { ["+1/+1"] = 9 } };
+        var state = Snapshot(current, otherCopy);
+        var resolved = InteractionCards.Current(state, reported);
+        check(ReferenceEquals(resolved, current) && AllocationGuide.Stats(resolved) == "6/6"
+            && resolved.Counters["+1/+1"] == 2 && AllocationGuide.MarkedDamage(resolved) == "1 damage marked"
+            && reported.Power == 1 && reported.Key == "old-action-key",
+            "Interaction state binds the exact current occurrence without adding counters to authoritative P/T or replacing its original action handle");
+        check(AllocationGuide.Abilities(resolved) == "Ward {2}"
+            && AllocationGuide.Abilities(current with { States = [] }) == "",
+            "Allocation state preserves effective ability qualifiers and explicit removal instead of reviving legacy keyword hints");
+
+        var choice = new Choice(37, "Choose this recipient", reported) { CardId = current.VisualId, Id = "recipient-7", Minimum = 1, Maximum = 7, Lethal = 4 };
+        var decision = new Decision { Id = "allocation-current", Kind = "allocate", Amount = 7,
+            SourceCardId = current.CombatId, SourceCard = reported, Choices = [choice] };
+        var prompt = state with { Decision = decision };
+        var reply = AllocationGuide.Reply(prompt, [7]);
+        check(ReferenceEquals(InteractionCards.Choice(prompt, choice), current)
+            && ReferenceEquals(InteractionCards.Source(prompt, decision), current)
+            && ReferenceEquals(choice.Card, reported) && ReferenceEquals(decision.SourceCard, reported)
+            && choice is { Index: 37, Id: "recipient-7", Minimum: 1, Maximum: 7, Lethal: 4 }
+            && reply is { Action: ReplyAction.Allocate, DecisionId: "allocation-current" } && reply.Amounts!.SequenceEqual([7]),
+            "Current source and recipient display leaves original prompt indexes, handles, thresholds and scoped allocation commands intact");
+
+        var anonymous = new Card { Name = reported.Name, Type = "Creature", Power = 3, Toughness = 3 };
+        var removed = reported with { VisualId = "reported-only", CombatId = "reported-combat" };
+        check(ReferenceEquals(InteractionCards.Current(state, anonymous), anonymous)
+            && ReferenceEquals(InteractionCards.Current(state, removed), removed)
+            && ReferenceEquals(InteractionCards.Choice(state, choice with { Card = null }), current),
+            "Same-name and anonymous reported faces are never rebound by name, while an explicit engine occurrence link can supply a currently disclosed face");
+
+        var masked = current with { FaceDown = true, Name = "Face-down card", ArtName = "", Text = "", OtherFace = null,
+            Power = 2, Toughness = 2, Counters = new() { ["stun"] = 1 } };
+        var hidden = prompt with { Players = Snapshot(masked, otherCopy).Players,
+            Decision = decision with { Kind = "reveal", Choices = [choice] } };
+        var hiddenDisplay = InteractionCards.Choice(hidden, choice)!;
+        var context = new CardPresentationContext(hidden, "current:reveal", true, true, false, false);
+        check(ReferenceEquals(hiddenDisplay, masked) && context.ChoiceFace(0) is { FaceDown: true }
+            && CardPresentation.Artwork(hiddenDisplay) == null && hiddenDisplay.Power == 2
+            && hiddenDisplay.Counters["stun"] == 1 && hiddenDisplay.Text.Length == 0,
+            "A current face-down projection revokes an older revealed face while retaining only its authorized public characteristics and counters");
     }
 
     private static GameSnapshot Snapshot(params Card[] hand) => new("card-presentation", "playing", null, null,

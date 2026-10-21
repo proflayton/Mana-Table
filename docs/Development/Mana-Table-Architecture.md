@@ -69,7 +69,7 @@ callbacks or decide card layout. CPU font geometry and GPU text rasterization us
 the same `TextLayout`; measuring a label creates no texture. Card readers and
 travel belong to `CardPresentationController`, and indexed scene seats and
 occurrences avoid rebuilding layouts or scanning the whole battlefield per card.
-Hit regions use those same displayed poses, including detached labels and the
+Hit regions use those same displayed poses, including connected metadata and the
 original hand anchor.
 
 `FrameObservation` copies public text commands, card values, full projected poses,
@@ -256,8 +256,9 @@ battlefield occurrence, with ordered groups and exposed individual hit regions.
 Sparse boards keep projected role lanes. When crowding requires bounded packing,
 all seats switch together to upright cells inside separate player regions;
 `BoundedBattlefieldLayout` reserves space for piles, commanders, resources and
-controls. Dense headers carry owner/status and exact role counts while life,
-mana and player-state ribbons remain at their player icons. Matching public-state
+controls. Dense headers carry owner/status while life, mana and player-state
+ribbons remain at their player icons. Redundant role and hero creature counts
+have been removed. Matching public-state
 copies share small fans; every occurrence stays rendered and independently hit.
 Its compatibility rank views do not page the battlefield. Long hands and
 selection/inspection galleries still page. Release 0.2.39 introduced unpaged
@@ -405,12 +406,26 @@ renderer: a tapered shaft, broad directional head and dark separation from card
 art. Attacks are red and blocks blue. Endpoints use the displayed card edges or
 portrait rim; short connections scale the head down, and aiming inside the source
 card hides the arrow. The renderer contains no combat legality or input logic.
-The battlefield groups creatures, support and lands. Compact groups show
-name, current power/toughness, damage, counters, state and matching-copy count as
-applicable, with an explicit extra-types count when needed. Only matching public
-states share a fan. Labels extend the same occurrence's hit region rather than
-clicking through to a neighbor. Reading and inspection show the complete details.
-Power/toughness always comes from the engine and is never recomputed from counters.
+The battlefield groups creatures, support and lands. Ordinary cards carry an
+attached strip for current power/toughness, marked damage and a compact dice/count
+marker. The marker shows the leading counter amount; an ellipsis means additional
+counter types, whose qualified names and amounts remain available in the reader
+and inspector. Dense cells connect the thumbnail to its name and one combined
+stats row; counter types share that row instead of adding detached rows. Only
+matching public states share a fan. Connected metadata extends the same
+occurrence's hit region rather than clicking through to a neighbor.
+
+`PaintInteractionCard` shares this current-state presentation across source,
+choice, stack, combat and allocation previews. `InteractionCards` resolves exact
+public occurrence IDs against the current snapshot for display, including a
+current face-down projection. It never matches printed names or changes the
+original choice index, action handle, allocation threshold or reply. If an
+occurrence is absent, only the face already disclosed in that current interaction
+is available as a fallback. Power/toughness always comes from the engine and is
+never recomputed from counters: continuous effects can change P/T while the
+counter amount stays the same. Text-only ability choosers also show the current
+source preview. Inspection of an alternate printed face remains separate from
+the current battlefield face.
 Public player counters, progress and statuses share persistent seat ribbons and
 paged context in the player inspector. `forge-game`'s `PublicPlayerStateRegistry`
 declares typed public providers; the API forwards immutable snapshots and native
@@ -514,6 +529,13 @@ legacy outcome data remains unspecified rather than inferred from message text.
 New public battlefield occurrences receive arrival cues. Departures to public
 graveyard/exile retain a brief ghost at the former position; hidden transitions
 immediately revoke it. No extra game rules or multiplayer-specific path is added.
+Reported counter changes use their engine-supplied cause and exact affected
+occurrences. Feedback travels from the source as a small spark and pulses the
+owning card's actual counter marker; floating delta tiles no longer cover current
+values. This presentation does not infer a cause from neighboring timestamps or
+add the reported delta to a card's authoritative current stats. Its clarity and
+comfort still need human review; the crowded whole-table layout remains an open
+design problem.
 `TextureFiltering` builds GPU mipmaps once per loaded image; anisotropic card
 sampling handles angled minification, and table surfaces request 4x MSAA.
 Full-resolution artwork and rendered rules text remain available for inspection.

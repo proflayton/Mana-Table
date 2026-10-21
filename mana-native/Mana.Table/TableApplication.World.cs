@@ -12,10 +12,9 @@ internal sealed partial class TableApplication
     // Commander names are public for the whole match. Retain only this public
     // cosmetic identity when the card changes zones, never a decision handle.
     private readonly Dictionary<int, string> seatPortraits = [];
-    private readonly Dictionary<(int Player, string Kind), Rectangle> battlefieldRoleLabels = [];
     private void DrawTableSurface()
     {
-        manaPoolBadges.Clear(); manaPoolDetail = null; battlefieldRoleLabels.Clear(); denseStatsBounds.Clear();
+        manaPoolBadges.Clear(); manaPoolDetail = null; denseStatsBounds.Clear();
         // Neutral material studies, drawn in code. An artist can supply the
         // play-surface texture without baking cards, seating, or UI into it.
         canvas.Gradient(new(0, 0, 1600, 900), new(13, 18, 24), new(7, 11, 16));
@@ -76,15 +75,6 @@ internal sealed partial class TableApplication
         if (dense) {
             var area = BattlefieldLayout.DenseTerritory(seat);
             int right = area.Right - 4;
-            foreach (var cluster in clusters.Reverse()) {
-                string text = cluster.Kind.ToUpperInvariant() + " " + cluster.Cards.Length;
-                int width = canvas.TextWidth(text, .375f, true) + 10;
-                var caption = new Rectangle(right - width, area.Top, width - 2, 19);
-                canvas.Panel(caption, new Color(15, 24, 29) * .95f, new Color(88, 107, 112), 3);
-                canvas.Text(text, caption.X + 4, caption.Y + 1, Muted, .375f, caption.Width - 8, 1, true);
-                battlefieldRoleLabels[(player.Id, cluster.Kind)] = caption;
-                right -= width;
-            }
             int incoming = match!.Combat?.Attackers.Count(attack => attack.DefendingPlayerId == player.Id) ?? 0;
             string status = player.Eliminated ? "ELIMINATED" : incoming > 0 ? incoming + (seat == 3 ? " ATTACKING YOU" : " INCOMING")
                 : player.Priority ? "PRIORITY" : player.Id == match.ActivePlayerId ? "ACTIVE TURN" : "";
@@ -101,30 +91,8 @@ internal sealed partial class TableApplication
             canvas.Text(owner, identity.X + 4, identity.Y + 1, Ink, .375f, Math.Max(1, identity.Width - 8), 1, true);
             hits.Add(new("focus:" + player.Id, Scope, identity, () => OpenZone(player.Id, "Battlefield")));
         }
-        foreach (var cluster in clusters) {
-            if (!dense && cluster.Cards.Length > 0) DrawBattlefieldRole(player.Id, seat, cluster);
+        foreach (var cluster in clusters)
             foreach (var node in cluster.Cards) DrawSceneCard(node);
-        }
-    }
-    private Rectangle BattlefieldRoleBounds(int seat, BattlefieldCluster cluster)
-    {
-        var bounds = cluster.Cards.Select(card => card.Pose.Bounds).Aggregate(Rectangle.Union);
-        string label = cluster.Kind.ToUpperInvariant() + "  " + cluster.Cards.Length;
-        int width = Math.Max(110, canvas.TextWidth(label, .44f, true) + 14);
-        int x = seat == 3 ? Math.Clamp(bounds.Left, 170, 1238 - width)
-            : seat == 1 ? Math.Clamp(bounds.Left, 170, 1400 - width)
-            : Math.Clamp(bounds.Center.X - width / 2, 175, 1425 - width);
-        int y = seat == 1 ? bounds.Bottom + 5 : bounds.Top - 48;
-        y = Math.Clamp(y, 70, 690);
-        return new(x, y, width, 19);
-    }
-    private void DrawBattlefieldRole(int player, int seat, BattlefieldCluster cluster)
-    {
-        string label = cluster.Kind.ToUpperInvariant() + "  " + cluster.Cards.Length;
-        var caption = boardView.Apply(BattlefieldRoleBounds(seat, cluster));
-        canvas.Panel(caption, new Color(15, 24, 29) * .9f, new Color(88, 107, 112) * .7f, 3);
-        canvas.Text(label, caption.X + 7, caption.Y + 2, Muted, .44f, caption.Width - 14, 1, true);
-        battlefieldRoleLabels[(player, cluster.Kind)] = caption;
     }
     private void DrawSeatObjects(Player player)
     {
@@ -232,16 +200,6 @@ internal sealed partial class TableApplication
             if (own) canvas.Text(status, x, y + 23, incoming > 0 ? Red : Gold, .43f, 100, (int)Math.Ceiling(2 * preferences.TextScale), true);
             else canvas.CenterText(status, new(x, y + 23, 188, 19), incoming > 0 ? Red : Gold, .43f, true);
         }
-        var permanents = player.Zone("Battlefield").Cards;
-        int creatures = permanents.Count(c => CardPresentation.HasCombatStats(c) && !c.PhasedOut);
-        int phased = permanents.Count(c => CardPresentation.HasCombatStats(c) && c.PhasedOut);
-        int unknown = permanents.Count(c => c.FaceDown && c.Type.Length == 0);
-        int countX = own ? x + 110 : x, countY = own ? y : y + 43, countWidth = own ? 140 : 188;
-        if (!dense) canvas.CenterText($"{creatures} " + (creatures == 1 ? "CREATURE" : "CREATURES"), new(countX, countY, countWidth, 22), Ink, .72f, true);
-        string secondary = phased > 0 || unknown > 0
-            ? string.Join(" · ", new[] { phased > 0 ? $"{phased} phased out" : "", unknown > 0 ? $"{unknown} unknown" : "" }.Where(v => v.Length > 0))
-            : $"{permanents.Length} permanents";
-        if (!dense) canvas.CenterText(secondary, new(countX, countY + 22, countWidth, 18), Muted, .51f);
         if (hasCounters) {
             int counterX = own ? (int)center.X - 240 : (int)center.X - 94;
             int counterY = own ? (int)center.Y - 22 : index == 1 ? (int)center.Y + 35 : (int)center.Y - 64;

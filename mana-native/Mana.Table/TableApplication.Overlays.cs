@@ -83,7 +83,9 @@ internal sealed partial class TableApplication
             ? original with { Name = back.Name, Type = back.Type, ManaCost = back.ManaCost, Text = back.OracleText, Power = back.Power, Toughness = back.Toughness, ArtName = back.ArtName, ArtFace = back.ArtFace }
             : original;
         ModalFrame(card.Name, () => { overlay = ""; inspected = null; });
-        PaintCard(card, new(new(447, 460), new(380, 532)), false, false);
+        var inspectedPose = new Pose(new(447, 460), new(380, 532));
+        PaintCard(card, inspectedPose, false, false);
+        if (!inspectBack) PaintAttachedCardState(InteractionCards.Current(match, original), inspectedPose);
         canvas.Text(card.Type, 686, 191, Gold, .9f, 690, 2, true);
         canvas.Text(card.ManaCost == "no cost" ? "" : card.ManaCost, 686, 248, Ink, 1, 675, 1);
         string values = card.Type.Contains("Creature") ? $"Power / toughness: {card.Power}/{card.Toughness}" : "";
@@ -214,7 +216,7 @@ internal sealed partial class TableApplication
         foreach (var card in cards.Skip(zonePage * count).Take(count)) {
             int x = 210 + index++ * 169;
             var pose = new Pose(new(x + 74, 409), new(148, 207));
-            PaintCard(card, pose, card.Highlighted, IsCardActionable(card));
+            PaintInteractionCard(card, pose, card.Highlighted, IsCardActionable(card));
             if (zoneName == "Command") PaintCommanderTax(card, pose);
             canvas.Text(card.Name, x, 533, Ink, .68f, 155, 3, true);
             canvas.Text(card.ManaCost == "no cost" ? "" : card.ManaCost, x, 600, Gold, .62f, 156, 2);
@@ -250,7 +252,7 @@ internal sealed partial class TableApplication
         canvas.Text($"{zonePage + 1} / {entries.Length}   " + (zonePage == 0 ? "Next to resolve" : "Waiting on the stack"), 217, 190, Gold, .8f, 1100, 1, true);
         if (entry.Card is { } card) {
             var pose = new Pose(new(408, 459), new(304, 426));
-            PaintCard(card, pose, false, IsCardActionable(card));
+            PaintInteractionCard(card, pose, false, IsCardActionable(card));
             if (pose.Contains(pointer)) hovered = card;
             if (IsCardActionable(card)) hits.Add(new("stack-target:" + zonePage, Scope, pose.Bounds, () => { zoneName = null; CardClick(card); }, card));
         }
@@ -284,10 +286,15 @@ internal sealed partial class TableApplication
     {
         var items = d.LibraryCards.Length > 0
             ? d.LibraryCards.Select(c => (c.Index, c.Label, Card: (Card?)c.Card, Detail: "", Mana: "")).ToArray()
-            : d.Choices.Select(c => (Index: (int?)c.Index, c.Label, c.Card, c.Detail, c.Mana)).ToArray();
+            : d.Choices.Select(c => (Index: (int?)c.Index, c.Label, Card: InteractionCards.Choice(state, c), c.Detail, c.Mana)).ToArray();
         var filtered = items.Select((item, slot) => (Item: item, Slot: slot))
             .Where(c => c.Item.Label.Contains(choiceFilter, StringComparison.OrdinalIgnoreCase)).ToArray();
         bool portraits = items.Any(c => c.Card != null); int capacity = portraits ? 7 : 6;
+        var sourcePreview = !portraits ? InteractionCards.Source(state, d) : null;
+        if (sourcePreview != null) {
+            PaintInteractionCard(sourcePreview, new(new(1268, 435), new(166, 232)), false, false);
+            canvas.Text(sourcePreview.FaceDown ? "Face-down card" : sourcePreview.Name, 1185, 562, Ink, .68f, 166, 3, true);
+        }
         bool cardChoices = items.Length > 0 && items.All(c => c.Card != null);
         choicePage = Math.Clamp(choicePage, 0, Math.Max(0, (filtered.Length - 1) / capacity));
         string instruction = d.Kind == "reveal" ? "Click a card to enlarge it, then continue." : d.Ordered
@@ -316,7 +323,7 @@ internal sealed partial class TableApplication
                 if (item.Card != null) DrawTableCard("choice-face:" + Scope + ":" + entry.Slot, item.Card, pose, "Choice", null,
                     buttonId, () => { if (available) ToggleChoice(d, captured.Index!.Value); },
                     (displayed, focus) => {
-                        PaintCard(item.Card, displayed, selected, false, focus);
+                        PaintInteractionCard(item.Card, displayed, selected, false, focus);
                         // Availability stays visible, while the chosen face owns
                         // the strong gold frame and glow instead of competing halos.
                         if (available && !selected) canvas.CardFrame(displayed, ActionAccent * .65f, 1);
@@ -329,15 +336,16 @@ internal sealed partial class TableApplication
                 else canvas.CenterText(selected ? "SELECTED" : !available ? "VIEW ONLY" : "SELECT", badgeBounds, selected ? Gold : Muted, .56f, true);
                 if (available && item.Card == null) hits.Add(new(buttonId, Scope, new(x, 304, 150, 329), () => ToggleChoice(d, captured.Index!.Value)));
             } else {
-                int x = 206 + index % 2 * 602, y = 302 + index / 2 * 116;
-                var bounds = new Rectangle(x, y, 585, 103);
+                int columnWidth = sourcePreview != null ? 465 : 585;
+                int x = 206 + index % 2 * (columnWidth + 17), y = 302 + index / 2 * 116;
+                var bounds = new Rectangle(x, y, columnWidth, 103);
                 canvas.Panel(bounds, selected ? new Color(36, 63, 79) : Panel, selected ? Gold : new Color(77, 90, 105), 7);
                 bool numbered = selected && d.Ordered;
                 int offset = (numbered ? 99 : 16) + (item.Mana.Length > 0 ? 47 : 0);
                 if (numbered) PaintChoiceOrder(item.Index!.Value, new(x + 12, y + 12, 76, 33), .65f);
                 if (item.Mana.Length > 0) ManaOrb(item.Mana.Trim('{', '}'), 1, new(x + offset - 30, y + 48));
-                canvas.Text((selected && !d.Ordered ? "✓  " : "") + item.Label, x + offset, y + 12, Ink, .83f, 563 - offset, 3, true);
-                if (item.Detail.Length > 0) canvas.Text(item.Detail, x + offset, y + 69, Muted, .65f, 563 - offset, 1);
+                canvas.Text((selected && !d.Ordered ? "✓  " : "") + item.Label, x + offset, y + 12, Ink, .83f, columnWidth - 22 - offset, 3, true);
+                if (item.Detail.Length > 0) canvas.Text(item.Detail, x + offset, y + 69, Muted, .65f, columnWidth - 22 - offset, 1);
                 if (available) hits.Add(new(buttonId, Scope, bounds, () => ToggleChoice(d, captured.Index!.Value)));
             }
         }

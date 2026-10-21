@@ -41,9 +41,6 @@ internal sealed partial class TableApplication
             };
         var footprints = enabled ? TableViewGeometry.BoardFootprints(tableScene).ToList() : [];
         if (enabled) {
-            foreach (var seat in tableScene.Seats)
-                foreach (var cluster in seat.Battlefield.Where(cluster => cluster.Cards.Length > 0))
-                    footprints.Add(BattlefieldRoleBounds(seat.Index, cluster));
             // Existing displayed poses include transient elevation/flight. Guard
             // those too, without retaining faces in the view controller.
             foreach (var card in cardPresentation.Cards.Where(card => BoardView.AffectsZone(card.Zone) && !card.Focused))
