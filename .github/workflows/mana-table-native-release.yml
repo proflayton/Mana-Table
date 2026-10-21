@@ -90,7 +90,7 @@ jobs:
         run: ./mana-native/ci/tools.ps1 -Directory dist/ci-tools -DownloadOnly
       - uses: actions/upload-artifact@v7
         with:
-          name: mana-native-tools-${{ github.run_attempt }}
+          name: mana-native-tools-${{ github.sha }}
           path: dist/ci-tools/
           if-no-files-found: error
           compression-level: 0
@@ -159,7 +159,7 @@ jobs:
       - name: Share immutable package and harness for UI shards
         uses: actions/upload-artifact@v7
         with:
-          name: mana-native-ui-inputs-${{ github.run_attempt }}
+          name: mana-native-ui-inputs-${{ github.sha }}
           path: |
             dist/package-windows-x64.zip
             dist/package-windows-x64.zip.sha256
@@ -173,7 +173,7 @@ jobs:
       - name: Share immutable archives for installer jobs
         uses: actions/upload-artifact@v7
         with:
-          name: mana-native-installer-inputs-${{ github.run_attempt }}
+          name: mana-native-installer-inputs-${{ github.sha }}
           path: |
             dist/package-windows-x64.zip
             dist/package-windows-x64.zip.sha256
@@ -209,11 +209,11 @@ jobs:
           dotnet-version: '9.0.x'
       - uses: actions/download-artifact@v8
         with:
-          name: mana-native-ui-inputs-${{ github.run_attempt }}
+          name: mana-native-ui-inputs-${{ github.sha }}
           path: dist/ci-inputs
       - uses: actions/download-artifact@v8
         with:
-          name: mana-native-tools-${{ github.run_attempt }}
+          name: mana-native-tools-${{ github.sha }}
           path: dist/ci-tools
       - name: Verify package, central engine and harness identity
         run: ./mana-native/ci/restore-package.ps1 -Directory dist/ci-inputs -RequireHarness
@@ -226,7 +226,10 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: mana-native-ui-evidence-${{ matrix.shard }}-${{ github.run_attempt }}
-          path: ${{ runner.temp }}/mana-native-tests/
+          path: |
+            ${{ runner.temp }}/mana-native-tests/**/*.json
+            ${{ runner.temp }}/mana-native-tests/**/*.png
+            ${{ runner.temp }}/mana-native-tests/**/*.log
           if-no-files-found: ignore
           compression-level: 0
           retention-days: 14
@@ -247,11 +250,11 @@ jobs:
           persist-credentials: false
       - uses: actions/download-artifact@v8
         with:
-          name: mana-native-installer-inputs-${{ github.run_attempt }}
+          name: mana-native-installer-inputs-${{ github.sha }}
           path: dist/ci-inputs
       - uses: actions/download-artifact@v8
         with:
-          name: mana-native-tools-${{ github.run_attempt }}
+          name: mana-native-tools-${{ github.sha }}
           path: dist/ci-tools
       - name: Verify package and central engine identity
         run: ./mana-native/ci/restore-package.ps1 -Directory dist/ci-inputs
@@ -274,7 +277,7 @@ jobs:
           Copy-Item dist/installer/installer-manifest.json $downloads
       - uses: actions/upload-artifact@v7
         with:
-          name: mana-native-windows-x64-${{ github.run_attempt }}
+          name: mana-native-windows-x64-${{ github.sha }}
           path: dist/downloads/
           compression-level: 0
           if-no-files-found: error
@@ -297,11 +300,11 @@ jobs:
           persist-credentials: false
       - uses: actions/download-artifact@v8
         with:
-          name: mana-native-installer-inputs-${{ github.run_attempt }}
+          name: mana-native-installer-inputs-${{ github.sha }}
           path: dist/ci-inputs
       - uses: actions/download-artifact@v8
         with:
-          name: mana-native-tools-${{ github.run_attempt }}
+          name: mana-native-tools-${{ github.sha }}
           path: dist/ci-tools
       - name: Verify package and central engine identity
         run: ./mana-native/ci/restore-package.ps1 -Directory dist/ci-inputs
@@ -314,7 +317,10 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: mana-native-installer-evidence-${{ github.run_attempt }}
-          path: ${{ runner.temp }}/mana-native-installer/
+          path: |
+            ${{ runner.temp }}/mana-native-installer/**/*.json
+            ${{ runner.temp }}/mana-native-installer/**/*.png
+            ${{ runner.temp }}/mana-native-installer/**/*.log
           if-no-files-found: ignore
           compression-level: 0
           retention-days: 14
@@ -330,7 +336,7 @@ jobs:
           persist-credentials: false
       - uses: actions/download-artifact@v8
         with:
-          name: mana-native-tools-${{ github.run_attempt }}
+          name: mana-native-tools-${{ github.sha }}
           path: dist/ci-tools
       - name: Install the pinned installer compiler
         shell: pwsh
@@ -345,7 +351,10 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: mana-native-update-installer-evidence-${{ github.run_attempt }}
-          path: ${{ runner.temp }}/mana-native-update-installer/
+          path: |
+            ${{ runner.temp }}/mana-native-update-installer/**/*.json
+            ${{ runner.temp }}/mana-native-update-installer/**/*.png
+            ${{ runner.temp }}/mana-native-update-installer/**/*.log
           if-no-files-found: ignore
           compression-level: 0
           retention-days: 14
@@ -397,7 +406,7 @@ jobs:
         run: node forge-desktop/scripts/wait-release-ci.cjs
       - uses: actions/download-artifact@v8
         with:
-          name: mana-native-windows-x64-${{ github.run_attempt }}
+          name: mana-native-windows-x64-${{ github.sha }}
           path: downloads
       - name: Upload a draft, then publish only the current master
         shell: pwsh
