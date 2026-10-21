@@ -166,6 +166,8 @@ internal static class LoadingSmoke
             s.Then(() => Check(!view.ActivityOpen && table.Replies == 1 && table.Scenario.Replies.Count == 1, "The gameplay reply completes normally with its own decision presentation"));
             s.Then(() => { table.Scenario.Present(PresentationSmoke.Example()); view.Accept(table.Scenario.State); view.SetAutomatic(true); });
             s.Move(new(0, 0));
+            // Inspection deliberately pauses Auto, including across fresh prompts.
+            s.Pulse(Keys.Escape);
             s.Until(() => table.AutoReplies == 1 && view.Busy);
             s.Then(() => {
                 Check(!view.ActivityOpen && view.Hits.Any(h => h.Id == "auto"), "An in-flight automatic priority pass never opens setup-loading feedback");

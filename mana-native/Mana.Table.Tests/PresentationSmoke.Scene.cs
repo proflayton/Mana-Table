@@ -61,10 +61,10 @@ internal static class PresentationSceneChecks
                 bounds.Inflate(7, 12);
                 return context.Obstacles.Contains(bounds);
             }) && seat.Piles.All(pile => {
-                var bounds = pile.Pose.Bounds;
-                bounds.Inflate(7, 7);
-                bounds.Height += 40;
-                return context.Obstacles.Contains(bounds);
+                var displayed = PileGeometry.Create(pile.Pose,
+                    denseState.Players.Single(player => player.Id == seat.PlayerId).Zone(pile.Zone).Count, pile.Compact);
+                return context.Obstacles.Any(bounds => bounds.Contains(displayed.Top.Bounds)
+                    && bounds.Contains(displayed.Label) && (displayed.Count.IsEmpty || bounds.Contains(displayed.Count)));
             })),
             "Crowded battlefield reservations derive from the exact commander and pile geometry exposed by the scene");
     }

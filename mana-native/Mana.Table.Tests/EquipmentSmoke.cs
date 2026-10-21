@@ -174,19 +174,24 @@ internal sealed class EquipmentSmoke : ITableAutomation
                 && statsHit is { Card: { } hitCard } && statsHit.Id == "card:" + card.Key + ":" + card.VisualId
                 && statsHit.Scope == view.Scope && CardViews.Identity(hitCard) == id
             : pose.Value.Bounds.Contains(badge.Bounds));
-        if (badge != null && pose != null && (BadgePixels(badge.Bounds) <= 8 || !fits))
-            throw new InvalidOperationException($"{id}: badge={badge}; face={pose.Value.Bounds}; stats={stats}; hit={statsHit?.Id}; pixels={BadgePixels(badge.Bounds)}");
+        int pixels = badge == null ? 0 : BadgePixels(badge.Bounds, badge.IncludesCombatStats);
+        if (badge != null && pose != null && (pixels <= 8 || !fits))
+            throw new InvalidOperationException($"{id}: badge={badge}; face={pose.Value.Bounds}; stats={stats}; hit={statsHit?.Id}; pixels={pixels}");
         Check(fits && badge != null
-            && badge.MeasuredWidth <= badge.Bounds.Width && BadgePixels(badge.Bounds) > 8,
-            $"{id}'s painted attachment state fits its own face or exact measured P/T label, retains full current stats and owns its physical target at130% text");
+            && badge.MeasuredWidth <= badge.Bounds.Width && pixels > 8,
+            $"{id}'s painted attachment cue fits its own face or gold-outlined current P/T ribbon, retains full current stats and owns its physical target at130% text");
     }
-    private int BadgePixels(Rectangle bounds)
+    private int BadgePixels(Rectangle bounds, bool sharedStats)
     {
         var region = Rectangle.Intersect(bounds, new(0, 0, view.Surface.Width, view.Surface.Height));
         if (region.Width <= 0 || region.Height <= 0) return 0;
         var pixels = new Color[region.Width * region.Height];
         view.Surface.GetData(0, region, pixels, 0, pixels.Length);
-        return pixels.Count(c => c.R == 48 && c.G == 39 && c.B == 22);
+        // Creature attachments share the P/T ribbon's gold relationship outline;
+        // only separate Equipment badges retain the older brown backing.
+        return sharedStats
+            ? pixels.Count(c => c.R == 226 && c.G == 190 && c.B == 120)
+            : pixels.Count(c => c.R == 48 && c.G == 39 && c.B == 22);
     }
     private void AssertConnection(string source, string target)
     {

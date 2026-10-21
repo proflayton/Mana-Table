@@ -116,29 +116,20 @@ internal sealed partial class TableApplication
     private void DrawWorldPile(Player player, string zone, Pose pose, bool compact = false)
     {
         var value = player.Zone(zone); var top = zone == "Library" ? value.TopCard : value.Cards.LastOrDefault();
-        int thickness = value.Count == 0 ? 0 : Math.Clamp(value.Count / 12, 1, 7);
-        canvas.Surface(null, pose with { Center = pose.Center + new Vector2(4, 6), Size = pose.Size + new Vector2(4) }, Color.Black * .4f);
-        for (int i = 0; i < thickness; i++) {
-            var layer = pose with { Center = pose.Center - new Vector2(0, i * 1.5f) };
-            canvas.Surface(null, layer, i % 2 == 0 ? new Color(154, 149, 131) : new Color(54, 58, 56));
-        }
-        pose = pose with { Center = pose.Center - new Vector2(0, thickness * 1.5f) };
-        var bounds = pose.Bounds;
+        var geometry = PileGeometry.Create(pose, value.Count, compact);
+        canvas.Surface(null, geometry.Shadow, Color.Black * .4f);
+        for (int i = 0; i < geometry.Layers.Count; i++)
+            canvas.Surface(null, geometry.Layers[i], i % 2 == 0 ? new Color(154, 149, 131) : new Color(54, 58, 56));
+        pose = geometry.Top;
         if (compact) {
-            var label = new Rectangle((int)pose.Center.X - 42, bounds.Bottom, 84, 19);
-            canvas.Rounded(label, new Color(17, 25, 28) * .85f, 3);
-            canvas.CenterText((zone == "Graveyard" ? "Grave" : zone) + " " + value.Count, label, Ink, .43f);
-            hits.Add(new("zone:" + player.Id + ":" + zone, Scope, Rectangle.Union(bounds, label), () => OpenZone(player.Id, zone),
-                Shape: point => pose.Contains(point) || label.Contains(point)));
+            canvas.Rounded(geometry.Label, new Color(17, 25, 28) * .85f, 3);
+            canvas.CenterText((zone == "Graveyard" ? "Grave" : zone) + " " + value.Count, geometry.Label, Ink, .43f);
         } else {
-            canvas.Circle(new(pose.Center.X, bounds.Bottom + 2), 12, new Color(17, 25, 28));
-            canvas.CenterText(value.Count.ToString(), new((int)pose.Center.X - 15, bounds.Bottom - 10, 30, 24), Ink, .56f, true);
-            canvas.CenterText(zone == "Graveyard" ? "Grave" : zone, new((int)pose.Center.X - 38, bounds.Bottom + 17, 76, 18), Muted, .45f);
-            var countBounds = new Rectangle((int)pose.Center.X - 15, bounds.Bottom - 10, 30, 24);
-            var labelBounds = new Rectangle((int)pose.Center.X - 38, bounds.Bottom + 17, 76, 18);
-            hits.Add(new("zone:" + player.Id + ":" + zone, Scope, Rectangle.Union(Rectangle.Union(bounds, countBounds), labelBounds), () => OpenZone(player.Id, zone),
-                Shape: point => pose.Contains(point) || countBounds.Contains(point) || labelBounds.Contains(point)));
+            canvas.Circle(geometry.CountCenter, 12, new Color(17, 25, 28));
+            canvas.CenterText(value.Count.ToString(), geometry.Count, Ink, .56f, true);
+            canvas.CenterText(zone == "Graveyard" ? "Grave" : zone, geometry.Label, Muted, .45f);
         }
+        hits.Add(new("zone:" + player.Id + ":" + zone, Scope, geometry.HitBounds, () => OpenZone(player.Id, zone), Shape: geometry.Contains));
         if (top != null) DrawTableCard("pile:" + player.Id + ":" + zone + ":" + CardIdentity(top), top, pose, zone, player.Id,
             "pile-card:" + player.Id + ":" + zone, () => OpenZone(player.Id, zone), (displayed, focus) => PaintCard(top, displayed, false, false, focus), opensZone: true);
         else PaintBack(pose, value.Count == 0 ? .3f : 1);

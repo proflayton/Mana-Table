@@ -83,14 +83,14 @@ internal sealed class ClutteredChangesSmoke : ITableAutomation
             Publish(ClutteredChangesScenario.Earthbend(engine.State));
         });
         Step(() => {
-            Observe("earthbend"); AssertCause(ClutteredChangesScenario.TophName, 1, "+2");
+            Observe("earthbend"); AssertCause(ClutteredChangesScenario.TophName, 1, 2);
             Check(view.HighlightedChangeTargets.SetEquals([ClutteredChangesScenario.AnimatedLandId])
                 && view.HighlightedChangeSource == ClutteredChangesScenario.TophId(0),
                 "Earthbend highlights the actual Toph source and exactly its newly animated land");
             Capture("02-toph-earthbend"); Publish(ClutteredChangesScenario.Retreat(engine.State));
         });
         Step(() => {
-            Observe("retreat"); AssertCause(ClutteredChangesScenario.RetreatName, 82, "+1"); AssertBattlefield();
+            Observe("retreat"); AssertCause(ClutteredChangesScenario.RetreatName, 82, 1); AssertBattlefield();
             var targets = view.Match!.Viewer!.Zone("Battlefield").Cards.Where(card => card.Type.Contains("Creature", StringComparison.Ordinal)).Select(CardViews.Identity).ToHashSet();
             Check(view.HighlightedChangeTargets.SetEquals(targets) && view.HighlightedChangeSource == ClutteredChangesScenario.RetreatId(0),
                 "Felidar's engine-issued result highlights all 82 affected creatures, including thirteen earthbent lands, and its own source");
@@ -109,6 +109,10 @@ internal sealed class ClutteredChangesSmoke : ITableAutomation
         // ReadResultPages inserts its page traversal immediately before these actions.
         Step(() => {
             Check(pages > 1 && readRows.Count == 82, "Paging exposes all 82 named before/after result records");
+            var expected = view.PublicChanges.Last().Changes.Select(change => change.TargetName + " · " + change.Change.Property
+                + " counters " + change.Change.Before + " → " + change.Change.After).Order(StringComparer.Ordinal);
+            Check(readRows.Order(StringComparer.Ordinal).SequenceEqual(expected),
+                "The complete result pages preserve every affected card's exact counter type and before/after values, including repeated names");
             MoveHit("changes-source-prev");
         }); Click();
         Step(() => {
@@ -119,10 +123,18 @@ internal sealed class ClutteredChangesSmoke : ITableAutomation
             Capture("05-earlier-earthbend"); MoveHit("close-overlay");
         }); Click();
         Step(() => { MoveCard(ClutteredChangesScenario.ActionCardId); }); Click();
-        Step(() => {
-            Check(FrameData.Cards.Single(card => card.Id == ClutteredChangesScenario.ActionCardId).Focused
+        Wait(() => FrameData.Cards.Any(card => card.Id == ClutteredChangesScenario.ActionCardId && card.Focused)
+            && view.Hits.Any(hit => hit.Id == "read-card-action"), () => {
+            var reader = FrameData.Cards.Single(card => card.Id == ClutteredChangesScenario.ActionCardId);
+            Check(reader.Focused
                 && view.Hits.Any(hit => hit.Id == "read-card-action") && engine.Replies.Count == 0,
                 "A current crowded Llanowar Elves opens its card reader and explicit activation without an automatic action");
+            var current = view.Match!.Viewer!.Zone("Battlefield").Cards.Single(card => card.VisualId == ClutteredChangesScenario.ActionCardId);
+            Check(reader.Card.Counters["+1/+1"] == current.Counters["+1/+1"]
+                && Text().Contains("+1/+1 ×" + current.Counters["+1/+1"])
+                && FrameData.Drawing.Commands.OfType<DrawCommand.CenterText>().Any(text => reader.Display.Bounds.Contains(text.Bounds)
+                    && text.Value == $"{current.Power}/{current.Toughness}"),
+                "Reading the current permanent shows its full typed counter total and authoritative power/toughness on that same card");
             Check(view.ChangeCalloutBounds == null, "Opening a card reader yields the result callout's space");
             Capture("06-current-activation");
             gameId = view.Match!.Id; decisionId = view.Match.Decision!.Id;
@@ -161,9 +173,10 @@ internal sealed class ClutteredChangesSmoke : ITableAutomation
                         && label.MeasuredWidth <= label.AvailableWidth && label.Bounds.Height * Scale >= 7),
                         $"Group front {node.Id} displays its complete current power/toughness");
                 if (node.Card.Counters.Count > 0)
-                    Check(labels.Any(label => label.Kind == "counter" && label.Text.Contains("+1/+1")
-                        && label.Text.Contains("×" + node.Card.Counters["+1/+1"]) && label.MeasuredWidth <= label.AvailableWidth
-                        && label.Bounds.Height * Scale >= 7), $"Group front {node.Id} displays an untruncated typed counter amount");
+                    Check(labels.Count(label => label.Kind == "counter") == 1
+                        && labels.Any(label => label.Kind == "counter" && label.Text == node.Card.Counters["+1/+1"].ToString()
+                            && label.MeasuredWidth <= label.AvailableWidth && label.Bounds.Height * Scale >= 7),
+                        $"Group front {node.Id} displays its exact current counter total once in its attached compact marker");
                 foreach (var label in labels.Where(label => label.Kind is "name" or "pt" or "counter")) {
                     var logical = label.Bounds.Center;
                     Check(Hit(Pixel(logical.ToVector2()))?.Card is { } actual && CardViews.Identity(actual) == node.Id,
@@ -174,7 +187,7 @@ internal sealed class ClutteredChangesSmoke : ITableAutomation
         Check(!view.Hits.Any(hit => hit.Id.StartsWith("rank-next:") || hit.Id.StartsWith("rank-prev:")), "The battlefield never requires paging to expose permanents");
     }
 
-    private void AssertCause(string name, int affected, string delta)
+    private void AssertCause(string name, int affected, int delta)
     {
         var group = view.PublicChanges.Last();
         Check(group.Title == name && group.Changes.Select(change => change.TargetId).Distinct().Count() == affected
@@ -184,10 +197,12 @@ internal sealed class ClutteredChangesSmoke : ITableAutomation
         Check(view.ChangeCalloutBounds is { } bounds && !bounds.Intersects(view.DecisionPanelBounds)
             && !view.DecisionTextOverflow && view.Hits.Any(hit => hit.Id == "change-details"),
             "The result control bounds do not intersect the decision bounds, and its instruction composition reports no overflow");
-        var target = FrameData.Scene!.Battlefield(0).SelectMany(cluster => cluster.Cards)
-            .First(node => node.GroupFront && group.Changes.Any(change => change.TargetId == node.Id));
-        Check(view.BattlefieldLabels(target.Id).Any(label => label.Kind == "counter" && label.Text.Contains("(" + delta + ")")
-            && label.MeasuredWidth <= label.AvailableWidth), "A visible target shows its exact recent signed counter delta beside the total");
+        var targets = view.EffectTransitions.Targets.Where(target => target.EffectId == group.Id).ToArray();
+        Check(group.Changes.All(change => change.Change.Property == "+1/+1" && change.Change.After - change.Change.Before == delta)
+            && targets.All(target => target.Delta.Property == "+1/+1" && target.Delta.PerPermanent == delta
+                && target.Delta.AffectedCount == target.AffectedIds.Count && target.Delta.Total == (long)delta * target.AffectedIds.Count)
+            && group.Changes.All(change => FrameData.Cards.Single(card => card.Id == change.TargetId).Card.Counters["+1/+1"] == change.Change.After),
+            "The reported effect retains each exact typed counter delta and its affected occurrences while the cards display the authoritative new totals");
         Check(view.HighlightedChangeTargets.Append(view.HighlightedChangeSource ?? "").Where(id => id.Length > 0)
             .All(id => view.DisplayedPose(id) is { } pose && !(pose with { Size = pose.Size + new Vector2(6) }).Bounds.Intersects(view.DecisionPanelBounds)),
             "Source and affected-card outlines stay outside the decision dock");
@@ -238,6 +253,16 @@ internal sealed class ClutteredChangesSmoke : ITableAutomation
         for (int y = Math.Max(0, top.Y); y < Math.Min(viewport.Y - 1, bottom.Y); y++)
             for (int x = Math.Max(0, top.X); x < Math.Min(viewport.X - 1, bottom.X); x++)
                 if (Patch(new(x, y))) return new(x, y);
+        observations.Add(new {
+            stage = "occluded-card", id, hit.Bounds, displayed = view.DisplayedPose(id), scale = Scale,
+            samples = Enumerable.Range(0, 5).SelectMany(y => Enumerable.Range(0, 5).Select(x => {
+                var physical = new Point(top.X + x, top.Y + y);
+                var logical = Logical(physical);
+                var actual = Hit(physical);
+                return new { physical, logical, contains = hit.Contains(logical), topHit = actual?.Id,
+                    topCard = actual?.Card == null ? null : CardViews.Identity(actual.Card), topBounds = actual?.Bounds };
+            })).ToArray()
+        });
         return null;
     }
     private void MoveCard(string id) => Move(Exposed(id) ?? throw new InvalidOperationException("Covered card: " + id));

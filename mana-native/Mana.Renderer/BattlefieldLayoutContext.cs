@@ -50,10 +50,7 @@ internal sealed class BattlefieldLayoutContext
             else yield return new((int)geometry.Hand.X - 83, (int)geometry.Hand.Y - 30, 166, 90);
 
             foreach (var pile in geometry.Piles) {
-                var bounds = pile.Pose.Bounds;
-                bounds.Inflate(7, 7);
-                bounds.Height += 40;
-                yield return bounds;
+                yield return PileGeometry.Create(pile.Pose, player.Zone(pile.Zone).Count, pile.Compact).Reservation;
             }
             var command = geometry.CommandLink;
             yield return new((int)command.X - 56, (int)command.Y - 3, 112,

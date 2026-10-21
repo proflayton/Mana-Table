@@ -27,6 +27,8 @@ internal sealed partial class TableApplication
         void Text(string kind, string text, Rectangle bounds, Color color)
         {
             int measured = canvas.TextWidth(text, size, true), available = Math.Max(1, bounds.Width - padding * 2);
+            if (kind == "pt" && (card.AttachedTo != null || card.Attachments.Length > 0))
+                canvas.Panel(bounds, new(19, 34, 40), Gold, 3);
             canvas.Text(text, bounds.X + padding, bounds.Y + 1, color, size, available, 1, true);
             RecordBattlefieldLabel(card, owner, kind, text, bounds, measured, available);
             if (kind == "pt") denseStatsBounds[CardViews.Identity(card)] = new(bounds, measured);
