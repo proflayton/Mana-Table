@@ -17,7 +17,8 @@ internal sealed partial class TableApplication
         if (OverlayOpen && !BattlefieldFocused || readingId != null || tableScene == null) return;
         var visible = cardPresentation.Cards.Where(card => card.Zone is "Battlefield" or "Command" or "Stack" or "Graveyard" or "Exile")
             .GroupBy(card => CardViews.Identity(card.Card), StringComparer.Ordinal)
-            .Where(group => group.Key.Length > 0).ToDictionary(group => group.Key, group => group.Last().Display, StringComparer.Ordinal);
+            .Where(group => group.Key.Length > 0).ToDictionary(group => group.Key,
+                group => group.FirstOrDefault(card => card.Zone == "Battlefield")?.Display ?? group.Last().Display, StringComparer.Ordinal);
         var groups = new List<EffectPermanentGroup>();
         if (BattlefieldFocused && battlefieldFocusPlan is { } focus) {
             foreach (string id in visible.Where(entry => entry.Value.Bounds.Intersects(BattlefieldFocusBounds)).Select(entry => entry.Key).ToArray()) visible.Remove(id);

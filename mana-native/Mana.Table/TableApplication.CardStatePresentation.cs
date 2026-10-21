@@ -43,7 +43,7 @@ internal sealed partial class TableApplication
         canvas.Text(value, bounds.X + side + 5, bounds.Y + Math.Max(0, (bounds.Height - canvas.TextSize(value, size, 1000, 1, true).Y) / 2),
             accent, size, Math.Max(1, bounds.Width - side - 5), 1, true);
         string id = CardViews.Identity(card);
-        if (id.Length > 0) counterAnchors[id] = bounds.Center.ToVector2();
+        if (owner != null && id.Length > 0) counterAnchors[id] = bounds.Center.ToVector2();
         if (owner is { } player)
             RecordBattlefieldLabel(card, player, "counter", value, bounds, canvas.TextWidth(value, size, true), bounds.Width - side - 5);
     }
@@ -105,7 +105,7 @@ internal sealed partial class TableApplication
             if (index == counterRows - 1 && counters.Length > counterRows) label += " …";
             var bounds = new Rectangle(x + 5, top + height + index * rowHeight, width - 10, rowHeight);
             canvas.Text(label, bounds.X, bounds.Y + 2, new(154, 224, 203), size * .8f, bounds.Width, 1, true);
-            if (index == 0 && CardViews.Identity(card) is { Length: > 0 } id) counterAnchors[id] = bounds.Center.ToVector2();
+            if (owner != null && index == 0 && CardViews.Identity(card) is { Length: > 0 } id) counterAnchors[id] = bounds.Center.ToVector2();
         }
     }
 }

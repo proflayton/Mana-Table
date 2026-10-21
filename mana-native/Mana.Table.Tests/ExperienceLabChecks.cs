@@ -76,6 +76,21 @@ internal static class ExperienceLabChecks
         Click("lab-reset");
         check(lab.State.Id != priorReset && app.TestPort.PublicChanges is { Count: 1 },
             "Reset creates a fresh game epoch and makes the authored current-stage transition inspectable again");
+        Click("battlefield-focus-close");
+        var counterState = ClutteredChangesScenario.Retreat(lab.State);
+        app.TestPort.Accept(counterState); Tick();
+        var countedFront = frame.Scene!.Battlefield(0).SelectMany(cluster => cluster.Cards).First(card => card.GroupFront
+            && Mana.Magic.CardPresentation.HasCombatStats(card.Card) && card.Card.Counters.Any(counter => counter.Value > 0));
+        app.TestPort.Accept(counterState with {
+            Stack = [new("Public ability preview", "", true, countedFront.Card) { Id = "counter-source-preview", ControllerId = 0 }],
+            Decision = null
+        }); Tick();
+        var boardFace = frame.Cards.Last(card => card.Id == countedFront.Id && card.Zone == "Battlefield");
+        var counterMarker = app.TestPort.BattlefieldLabels(countedFront.Id).Single(label => label.Kind == "counter").Bounds;
+        var affected = app.TestPort.EffectTransitions.Targets.Where(target => target.AffectedIds.Contains(countedFront.Id)).ToArray();
+        check(affected.Length > 0 && frame.Cards.Any(card => card.Zone == "Stack" && card.Card.VisualId == countedFront.Id)
+            && affected.All(target => target.Target.Pose == boardFace.Display && counterMarker.Contains(target.Target.CounterLanding.ToPoint())),
+            "A stack preview of the same permanent cannot steal its battlefield counter arrival anchor or affected-card highlight");
         foreach (var scenario in ExperienceScenarios.All) {
             LoadScenario(scenario.Id);
             check(lab.Scenario.Id == scenario.Id && frame.Hits.Any(hit => hit.Id == "lab-reset") && frame.Hits.Any(hit => hit.Id == "lab-scenarios"),
