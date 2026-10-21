@@ -9,7 +9,7 @@ using ButtonState = Microsoft.Xna.Framework.Input.ButtonState;
 namespace Mana.Table;
 
 // A visual sequence, not a rules simulation. The real engine/UI tests validate play.
-internal sealed class TableFeelSmoke(TableGame.Probe view, InteractionScenarioEngine scenario) : ITableAutomation
+internal sealed class TableFeelSmoke(TableWindow.Probe view, InteractionScenarioEngine scenario) : ITableAutomation
 {
     private int stage;
     private double started;

@@ -12,7 +12,7 @@ namespace Mana.Table;
 // exercises host controls, then renders an actual guest's read-only projection.
 internal sealed class LobbyAiSeatSmoke : ITableAutomation, IDisposable
 {
-    private readonly TableGame.Probe view;
+    private readonly TableWindow.Probe view;
     private readonly ForgePaths paths;
     private readonly List<ForgeEngine> guests = [];
     private readonly Queue<(double Delay, Func<bool>? Ready, Action Action)> steps = [];
@@ -38,12 +38,12 @@ internal sealed class LobbyAiSeatSmoke : ITableAutomation, IDisposable
         try {
             engine.InitializeAsync().GetAwaiter().GetResult();
             engine.ImportAsync("Mixed table host", "Commander\n1 Rograkh, Son of Rohgahh\nDeck\n99 Mountain").GetAwaiter().GetResult();
-            using var game = new TableGame(engine, paths.Profile, null, null, size, artSource: new CardReadingArtFixture());
+            using var game = new TableWindow(engine, paths.Profile, null, null, size, artSource: new CardReadingArtFixture());
             using var smoke = new LobbyAiSeatSmoke(game.TestPort, paths);
             game.Automation = smoke; game.TestPort.DismissWelcome(); game.Run();
         } finally { engine.DisposeAsync().AsTask().GetAwaiter().GetResult(); }
     }
-    private LobbyAiSeatSmoke(TableGame.Probe view, ForgePaths paths)
+    private LobbyAiSeatSmoke(TableWindow.Probe view, ForgePaths paths)
     {
         this.view = view; this.paths = paths;
         Wait(() => view.Loaded && !view.Busy && !view.ActivityOpen && view.DeckDetails != null, 40, () => {

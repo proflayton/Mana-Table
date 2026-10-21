@@ -16,7 +16,7 @@ namespace Mana.Table;
 // Java tests separately establish the real equip rules and privacy projection.
 internal sealed class EquipmentSmoke : ITableAutomation
 {
-    private readonly TableGame.Probe view;
+    private readonly TableWindow.Probe view;
     private readonly InteractionScenarioEngine scenario;
     private readonly Queue<(double Delay, Func<bool>? Ready, Action Action)> steps = [];
     private readonly List<string> checks = [];
@@ -31,11 +31,11 @@ internal sealed class EquipmentSmoke : ITableAutomation
     {
         new PlayPreferences { Automatic = false, Sounds = false, ReducedMotion = true, TextScale = 1.3f }.Save(profile);
         var scenario = new InteractionScenarioEngine(); scenario.Present(Example());
-        using var game = new TableGame(scenario, profile, null, null, size, initialState: scenario.State, artSource: new CardReadingArtFixture());
+        using var game = new TableWindow(scenario, profile, null, null, size, initialState: scenario.State, artSource: new CardReadingArtFixture());
         game.Automation = new EquipmentSmoke(game.TestPort, scenario); game.Run();
     }
 
-    private EquipmentSmoke(TableGame.Probe view, InteractionScenarioEngine scenario)
+    private EquipmentSmoke(TableWindow.Probe view, InteractionScenarioEngine scenario)
     {
         this.view = view; this.scenario = scenario;
         Step(.4, () => { });

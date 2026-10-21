@@ -22,9 +22,9 @@ internal static class LoadingSmoke
             if (!valid) throw new InvalidOperationException(message);
             checks.Add(message); File.AppendAllText(Path.Combine(profile, "loading-progress.log"), message + "\n");
         }
-        void Scene(string path, GatedEngine engine, Action<Script, TableGame.Probe> arrange, GameSnapshot? state = null)
+        void Scene(string path, GatedEngine engine, Action<Script, TableWindow.Probe> arrange, GameSnapshot? state = null)
         {
-            using var game = new TableGame(engine, path, null, null, size, initialState: state, artSource: new EmptyArt());
+            using var game = new TableWindow(engine, path, null, null, size, initialState: state, artSource: new EmptyArt());
             var script = new Script(game.TestPort); arrange(script, game.TestPort); game.Automation = script; game.Run();
         }
 
@@ -183,7 +183,7 @@ internal static class LoadingSmoke
         public void Dispose() { }
     }
 
-    private sealed class Script(TableGame.Probe view) : ITableAutomation
+    private sealed class Script(TableWindow.Probe view) : ITableAutomation
     {
         private readonly Queue<(Action? Action, Func<bool>? Ready)> steps = [];
         private MouseState mouse;

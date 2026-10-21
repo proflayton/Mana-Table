@@ -14,7 +14,7 @@ namespace Mana.Table;
 // engine validates the one deliberate action; no layout or game rules are mocked.
 internal sealed class FullBattlefieldSmoke : ITableAutomation
 {
-    private readonly TableGame.Probe view;
+    private readonly TableWindow.Probe view;
     private readonly InteractionScenarioEngine scenario;
     private readonly Queue<(double Delay, Func<bool>? Ready, Action Action)> steps = [];
     private readonly List<string> checks = [];
@@ -39,12 +39,12 @@ internal sealed class FullBattlefieldSmoke : ITableAutomation
             }
             images.Dispose(); images = source;
         }
-        using var game = new TableGame(scenario, profile, null, null, size, initialState: scenario.State, artSource: images);
+        using var game = new TableWindow(scenario, profile, null, null, size, initialState: scenario.State, artSource: images);
         game.Automation = new FullBattlefieldSmoke(game.TestPort, scenario, readableCrowd);
         game.Run();
     }
 
-    private FullBattlefieldSmoke(TableGame.Probe view, InteractionScenarioEngine scenario, bool readableCrowd)
+    private FullBattlefieldSmoke(TableWindow.Probe view, InteractionScenarioEngine scenario, bool readableCrowd)
     {
         this.view = view; this.scenario = scenario;
         if (readableCrowd) { QueueReadableCrowd(0); return; }

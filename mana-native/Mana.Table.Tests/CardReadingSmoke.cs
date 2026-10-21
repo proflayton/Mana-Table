@@ -14,7 +14,7 @@ namespace Mana.Table;
 // the Forge UI smoke separately verifies that deliberate gestures play a land.
 internal sealed partial class CardReadingSmoke : ITableAutomation
 {
-    private readonly TableGame.Probe view;
+    private readonly TableWindow.Probe view;
     private readonly InteractionScenarioEngine scenario;
     private readonly bool selectionOnly, statesOnly;
     private string ResultPrefix => statesOnly ? "card-states" : selectionOnly ? "compact-selection" : "reading";
@@ -32,7 +32,7 @@ internal sealed partial class CardReadingSmoke : ITableAutomation
     public bool ClickAccepted { get; set; }
     public MouseState ReadMouse() => mouse;
 
-    public CardReadingSmoke(TableGame.Probe view, InteractionScenarioEngine scenario, bool selectionOnly = false, bool statesOnly = false)
+    public CardReadingSmoke(TableWindow.Probe view, InteractionScenarioEngine scenario, bool selectionOnly = false, bool statesOnly = false)
     {
         this.view = view; this.scenario = scenario; this.selectionOnly = selectionOnly; this.statesOnly = statesOnly;
         if (statesOnly) {
@@ -639,7 +639,7 @@ internal sealed partial class CardReadingSmoke : ITableAutomation
             && badge.Bounds is { Width: >= 70, Height: >= 24, Left: >= 0, Top: >= 0, Right: <= 1600, Bottom: <= 900 }
             && (!TableChoices.IsDirect(view.Match!) || OrderedBadgeExposed(badge))
             && view.ChoiceOrderBadges.Values.Where(other => other.Index != index).All(other => !other.Bounds.Intersects(badge.Bounds))).All(valid => valid);
-    private bool OrderedBadgeExposed(TableGame.ChoiceOrderBadge badge)
+    private bool OrderedBadgeExposed(TableApplication.ChoiceOrderBadge badge)
     {
         string cardId = view.Match!.Decision!.Choices.Single(c => c.Index == badge.Index).CardId;
         if (view.HitAt(badge.Bounds.Center)?.Card?.VisualId != cardId) return false;

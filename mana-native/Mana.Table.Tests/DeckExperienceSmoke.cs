@@ -9,7 +9,7 @@ using ButtonState = Microsoft.Xna.Framework.Input.ButtonState;
 namespace Mana.Table;
 
 // Real Forge storage/analysis, real input, and read-only history across an actual deck edit.
-internal sealed class DeckExperienceSmoke(TableGame.Probe view) : ITableAutomation
+internal sealed class DeckExperienceSmoke(TableWindow.Probe view) : ITableAutomation
 {
     private readonly DateTime deadline = DateTime.UtcNow.AddSeconds(120);
     private readonly List<string> checks = [];

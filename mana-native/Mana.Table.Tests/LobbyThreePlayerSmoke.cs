@@ -12,7 +12,7 @@ namespace Mana.Table;
 // start an actual three-human Commander game with independent private views.
 internal sealed class LobbyThreePlayerSmoke : ITableAutomation, IDisposable
 {
-    private readonly TableGame.Probe view;
+    private readonly TableWindow.Probe view;
     private readonly ForgePaths paths;
     private readonly List<ForgeEngine> guests = [];
     private readonly Queue<(double Delay, Func<bool>? Ready, Action Action)> steps = [];
@@ -36,12 +36,12 @@ internal sealed class LobbyThreePlayerSmoke : ITableAutomation, IDisposable
         try {
             engine.InitializeAsync().GetAwaiter().GetResult();
             engine.ImportAsync("Three-player host", "Commander\n1 Rograkh, Son of Rohgahh\nDeck\n99 Mountain").GetAwaiter().GetResult();
-            using var game = new TableGame(engine, paths.Profile, null, null, size, artSource: new CardReadingArtFixture());
+            using var game = new TableWindow(engine, paths.Profile, null, null, size, artSource: new CardReadingArtFixture());
             using var smoke = new LobbyThreePlayerSmoke(game.TestPort, paths);
             game.Automation = smoke; game.TestPort.DismissWelcome(); game.Run();
         } finally { engine.DisposeAsync().AsTask().GetAwaiter().GetResult(); }
     }
-    private LobbyThreePlayerSmoke(TableGame.Probe view, ForgePaths paths)
+    private LobbyThreePlayerSmoke(TableWindow.Probe view, ForgePaths paths)
     {
         this.view = view; this.paths = paths;
         Wait(() => view.Loaded && !view.Busy && !view.ActivityOpen && view.DeckDetails != null, 40, () => {

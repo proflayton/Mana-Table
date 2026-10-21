@@ -65,6 +65,9 @@ public static class CardPresentation
             .Select(PublicStatePresentation.Description).ToArray()
         : AbilityLabels(card);
     public static string AbilityName(string keyword) => System.Globalization.CultureInfo.InvariantCulture.TextInfo.ToTitleCase(keyword);
+    public static string[] DescriptorLabels(Card card) => card.FaceDown && card.Type.Length == 0 ? []
+        : card.States == null ? AbilityLabels(card)
+        : card.States.Select(PublicStatePresentation.Caption).ToArray();
     public static KeyValuePair<string, int>[] Counters(Card card) => card.Counters.Where(c => c.Value > 0)
         .OrderBy(c => c.Key is "+1/+1" or "-1/-1" ? 0 : 1).ThenBy(c => c.Key, StringComparer.Ordinal).ToArray();
     public static string[] StateLabels(Card card)

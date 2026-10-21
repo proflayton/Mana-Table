@@ -23,9 +23,9 @@ internal static class OnboardingSmoke
             checks.Add(message);
             File.AppendAllText(Path.Combine(profile, "onboarding-progress.log"), message + "\n");
         }
-        void Scene(string path, ICardEngine engine, Action<Script, TableGame.Probe> arrange, GameSnapshot? state = null, string? fixture = null)
+        void Scene(string path, ICardEngine engine, Action<Script, TableWindow.Probe> arrange, GameSnapshot? state = null, string? fixture = null)
         {
-            using var game = new TableGame(engine, path, null, fixture, size, initialState: state, artSource: new EmptyArt());
+            using var game = new TableWindow(engine, path, null, fixture, size, initialState: state, artSource: new EmptyArt());
             var script = new Script(game.TestPort);
             arrange(script, game.TestPort); game.Automation = script; game.Run();
         }
@@ -168,7 +168,7 @@ internal static class OnboardingSmoke
         public void Dispose() { }
     }
 
-    private sealed class Script(TableGame.Probe view) : ITableAutomation
+    private sealed class Script(TableWindow.Probe view) : ITableAutomation
     {
         private readonly Queue<Action> steps = [];
         private MouseState mouse;

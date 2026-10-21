@@ -32,7 +32,7 @@ internal static class Program
                     var entries = JsonSerializer.Deserialize<Dictionary<string, string>>(File.ReadAllText(manifest)) ?? throw new IOException("Invalid art manifest");
                     art = new LocalArtSource(Path.GetDirectoryName(manifest)!, entries);
                 }
-                using var game = new TableGame(engine, profile, Arg("--capture"), Arg("--fixture"), size, artSource: art,
+                using var game = new TableWindow(engine, profile, Arg("--capture"), Arg("--fixture"), size, artSource: art,
                     appUpdates: appUpdates, installUpdate: WindowsUpdateInstaller.TryCreate(AppContext.BaseDirectory, profile));
                 game.Run();
             } finally { engine.DisposeAsync().AsTask().GetAwaiter().GetResult(); }

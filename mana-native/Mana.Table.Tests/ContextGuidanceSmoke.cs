@@ -24,9 +24,9 @@ internal static class ContextGuidanceSmoke
             if (!valid) throw new InvalidOperationException(message);
             checks.Add(message); File.AppendAllText(Path.Combine(profile, "context-guidance-progress.log"), message + "\n");
         }
-        void Scene(string path, InteractionScenarioEngine engine, Action<Script, TableGame.Probe> arrange)
+        void Scene(string path, InteractionScenarioEngine engine, Action<Script, TableWindow.Probe> arrange)
         {
-            using var game = new TableGame(engine, path, null, null, size, initialState: engine.State, artSource: new EmptyArt());
+            using var game = new TableWindow(engine, path, null, null, size, initialState: engine.State, artSource: new EmptyArt());
             var script = new Script(game.TestPort); arrange(script, game.TestPort); game.Automation = script; game.Run();
         }
         static GameSnapshot Priority()
@@ -42,7 +42,7 @@ internal static class ContextGuidanceSmoke
                 return z with { Cards = cards, Count = z.Name is "Hand" or "Command" or "Battlefield" ? cards.Length : z.Count };
             }).ToArray() }).ToArray() };
         }
-        void Publish(TableGame.Probe view, InteractionScenarioEngine engine, GameSnapshot state) { engine.Present(state); view.Accept(engine.State); }
+        void Publish(TableWindow.Probe view, InteractionScenarioEngine engine, GameSnapshot state) { engine.Present(state); view.Accept(engine.State); }
 
         string learnedPath = Case("learn-through-play");
         var play = new InteractionScenarioEngine(); play.Present(Priority());
@@ -209,7 +209,7 @@ internal static class ContextGuidanceSmoke
         public void Dispose() { }
     }
 
-    private sealed class Script(TableGame.Probe view) : ITableAutomation
+    private sealed class Script(TableWindow.Probe view) : ITableAutomation
     {
         private readonly Queue<(Action? Action, Func<bool>? Ready)> steps = [];
         private MouseState mouse;

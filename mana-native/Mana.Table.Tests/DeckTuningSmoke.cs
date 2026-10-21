@@ -9,7 +9,7 @@ namespace Mana.Table;
 
 // A real engine drives these frames. This covers the complete tune/test/return
 // loop, while source HTTP parsing and merge conflicts have deterministic API tests.
-internal sealed class DeckTuningSmoke(TableGame.Probe view) : ITableAutomation
+internal sealed class DeckTuningSmoke(TableWindow.Probe view) : ITableAutomation
 {
     private readonly List<string> checks = [];
     private readonly DateTime deadline = DateTime.UtcNow.AddMinutes(7);

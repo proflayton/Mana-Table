@@ -11,7 +11,7 @@ namespace Mana.Table;
 // Controlled engine permissions; real production gestures and overlays.
 internal sealed class HandPlacementSmoke : ITableAutomation
 {
-    private readonly TableGame.Probe view;
+    private readonly TableWindow.Probe view;
     private readonly InteractionScenarioEngine scenario;
     private readonly Queue<(double Delay, Func<bool>? Ready, Action Action)> steps = [];
     private readonly List<string> checks = [];
@@ -57,11 +57,11 @@ internal sealed class HandPlacementSmoke : ITableAutomation
         new PlayPreferences { Automatic = false, Sounds = false }.Save(profile);
         var scenario = new InteractionScenarioEngine();
         scenario.Present(Example(scenario.State, "single"));
-        using var game = new TableGame(scenario, profile, null, null, size, initialState: scenario.State, artSource: new CardReadingArtFixture());
+        using var game = new TableWindow(scenario, profile, null, null, size, initialState: scenario.State, artSource: new CardReadingArtFixture());
         game.Automation = new HandPlacementSmoke(game.TestPort, scenario);
         game.Run();
     }
-    private HandPlacementSmoke(TableGame.Probe view, InteractionScenarioEngine scenario)
+    private HandPlacementSmoke(TableWindow.Probe view, InteractionScenarioEngine scenario)
     {
         this.view = view; this.scenario = scenario;
         Step(1.5, () => {

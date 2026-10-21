@@ -12,7 +12,7 @@ namespace Mana.Table;
 
 // Deliberately feeds the frames the old client used to expose. The dock must remain
 // visually identical even when a batch yields while waiting on another human.
-internal sealed class AutoDockSmoke(TableGame.Probe view, InteractionScenarioEngine scenario) : ITableAutomation
+internal sealed class AutoDockSmoke(TableWindow.Probe view, InteractionScenarioEngine scenario) : ITableAutomation
 {
     private int stage;
     private double changed;

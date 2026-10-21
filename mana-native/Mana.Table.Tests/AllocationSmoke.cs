@@ -12,7 +12,7 @@ namespace Mana.Table;
 // This fixture checks presentation/commands; real rules are verified separately.
 internal sealed class AllocationSmoke : ITableAutomation
 {
-    private readonly TableGame.Probe view;
+    private readonly TableWindow.Probe view;
     private readonly InteractionScenarioEngine scenario;
     private readonly Queue<(double Delay, Func<bool>? Ready, Action Action)> steps = [];
     private readonly List<string> checks = [];
@@ -29,12 +29,12 @@ internal sealed class AllocationSmoke : ITableAutomation
         new PlayPreferences { Automatic = false, Sounds = false }.Save(profile);
         var scenario = new InteractionScenarioEngine();
         scenario.Present(Example(scenario.State, true));
-        using var game = new TableGame(scenario, profile, null, null, size, initialState: scenario.State, artSource: new CardReadingArtFixture());
+        using var game = new TableWindow(scenario, profile, null, null, size, initialState: scenario.State, artSource: new CardReadingArtFixture());
         game.Automation = new AllocationSmoke(game.TestPort, scenario);
         game.Run();
     }
 
-    private AllocationSmoke(TableGame.Probe view, InteractionScenarioEngine scenario)
+    private AllocationSmoke(TableWindow.Probe view, InteractionScenarioEngine scenario)
     {
         this.view = view; this.scenario = scenario;
         Wait(() => view.Now >= 1.2 && Has("alloc-inspect:5"), 5, () => {

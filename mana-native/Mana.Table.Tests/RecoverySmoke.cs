@@ -10,7 +10,7 @@ namespace Mana.Table;
 
 internal sealed class RecoverySmoke : ITableAutomation
 {
-    private readonly TableGame.Probe view;
+    private readonly TableWindow.Probe view;
     private readonly RecoveryEngine engine;
     private readonly List<string> checks;
     private readonly Queue<(Func<bool>? Ready, double Delay, Action Action)> steps = [];
@@ -28,13 +28,13 @@ internal sealed class RecoverySmoke : ITableAutomation
             string path = Path.Combine(profile, mode); Directory.CreateDirectory(path);
             new PlayPreferences { Automatic = false, Sounds = false }.Save(path);
             var engine = new RecoveryEngine(mode);
-            using var game = new TableGame(engine, path, null, null, size, artSource: new CardReadingArtFixture());
+            using var game = new TableWindow(engine, path, null, null, size, artSource: new CardReadingArtFixture());
             game.Automation = new RecoverySmoke(game.TestPort, engine, checks); game.Run();
         }
         File.WriteAllText(Path.Combine(profile, "recovery-results.json"), JsonSerializer.Serialize(new { passed = true, checks }, new JsonSerializerOptions { WriteIndented = true }));
     }
 
-    private RecoverySmoke(TableGame.Probe view, RecoveryEngine engine, List<string> checks)
+    private RecoverySmoke(TableWindow.Probe view, RecoveryEngine engine, List<string> checks)
     {
         this.view = view; this.engine = engine; this.checks = checks;
         Wait(() => view.Loaded && !view.Busy && !view.ActivityOpen, () => {

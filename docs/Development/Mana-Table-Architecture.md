@@ -43,6 +43,52 @@ the same scoped player handles as portraits; the client never chooses one itself
 
 ## Native client boundaries
 
+The window and application have separate lifetimes. `TableWindow : Game` owns
+MonoGame, GPU textures, sound, input sampling, letterboxing and captures.
+`TableApplication` owns the shared client session, screen state and input policy.
+It can initialize, update and compose with no `Game`, window or graphics device.
+Its optional `PresentationResources` supplies textures and sound for a real window;
+an empty resource set uses the production rules-text and neutral-surface fallbacks.
+
+The production pipeline is:
+
+```mermaid
+flowchart LR
+    Engine[Seat-filtered engine snapshot] --> Session[ClientSession]
+    Input[Pointer / keyboard / time / viewport] --> Application[TableApplication]
+    Session --> Application
+    Application --> Layout[TableScene + CardPresentationController]
+    Layout --> Frame[PresentationFrame]
+    Frame --> GPU[Canvas GPU replay]
+    Frame --> Observe[Copied FrameObservation]
+    Observe --> Checks[Headless replay and state checks]
+```
+
+`ComposePresentation` publishes ordered typed `DrawCommand` data through
+`DrawList`, a frozen `InteractionFrame`, prepared card occurrences, a scene and
+the exact game/revision/decision stamp. GPU replay does not run application
+callbacks or decide card layout. CPU font geometry and GPU text rasterization use
+the same `TextLayout`; measuring a label creates no texture. Card readers and
+travel belong to `CardPresentationController`, and indexed scene seats and
+occurrences avoid rebuilding layouts or scanning the whole battlefield per card.
+Hit regions use those same displayed poses, including detached labels and the
+original hand anchor.
+
+`FrameObservation` copies public text commands, card values, full projected poses,
+controls and scope into serializable records. It retains no action callbacks,
+engine connection or graphics resources. It describes submitted presentation
+data; pixel clipping, texture appearance and physical-window readability still
+need selected GPU captures. Frame publication does not answer the engine's pending
+decision. Every command still passes current game/decision scope checks.
+
+Simulations inject elapsed/total time and pointer/keyboard state into the same
+application methods used by the window. Recovery checks and recovery text share
+an injectable `TimeProvider`; use a controlled provider when replaying connection
+failures. Background engine completion order and artwork availability are inputs,
+not promises of deterministic asynchronous scheduling. Controlled projection
+scenarios establish UI behavior; separate real-Forge journeys establish rules and
+transport behavior. Neither is a substitute for the other.
+
 The normal native Commander setup defaults to four seats or starts one human with
 three Forge AI opponents. A friends' host can choose two, three or four seats;
 three humans can play without filling a fourth seat. The builder's Test workspace
@@ -68,7 +114,7 @@ a route never imports a deck, hosts a table or readies a seat. `experience.json`
 stores the first menu visit and demonstrated controls independently of play preferences.
 Games open directly at their current decision. Setup captions sit beside their
 actions; `ControlGuidance` resolves the current private card occurrence and
-projected legal actions to produce one short control cue. `TableGame.Guidance`
+projected legal actions to produce one short control cue. `TableApplication.Guidance`
 places it beside the relevant card/target when there is room, using the action
 dock as a fallback. Required engine messages, costs and restrictions stay visible.
 Cues add no hit regions and do not enter the overlay or Auto policy. A control
@@ -95,7 +141,7 @@ beside Pass, explains the selected ability, and keeps an Undo indicator visible.
 `ClientSession` serializes Undo behind any in-flight pass and cancels further
 buffered passes. Full control, Hold and saved phase stops retain precedence.
 
-`TableGame.Loading` tracks explicit operations separately from session polling and
+`TableApplication.Loading` tracks explicit operations separately from session polling and
 gameplay replies. Startup stages advance only after each awaited engine request.
 Setup commands acknowledge input immediately and own a scoped foreground surface;
 game entry and host/join use the same full-screen table motif as startup. Routine
@@ -121,8 +167,8 @@ its consequence; an eliminated seat can watch or leave.
 | `Mana.Client` | Generic versioned replica, command scheduling, stale-poll protection, main-thread completion delivery and local artist asset loading |
 | `Mana.Magic` | Phase language, legal-target interpretation, click/drag command construction, Auto priority, Magic card classification and Magic art provider |
 | `Mana.Forge` | Process lifetime, protocol negotiation and Forge-to-contract mapping |
-| `Mana.Renderer` | Canvas, projection, immutable table layout, card poses, hit geometry, motion and effects |
-| `Mana.Table` | Application composition, controls, overlays and rendering of the shared session |
+| `Mana.Renderer` | GPU replay, typed draw commands, CPU font metrics, immutable table layout, projection, motion and effects |
+| `Mana.Table` | Headless application, interaction publication, card presentation, screen composition and thin native window |
 | `Mana.Conformance` | Test-only semantic scenarios, canonical full checkpoints and first-divergence reporting for two engine adapters |
 | `Mana.Client.Tests`, `Mana.Table.Tests` | Headless behavior checks and separate native test/automation executable |
 
@@ -146,7 +192,7 @@ views, so revoked information is removed consistently. Artist image loading is
 separate from GPU texture creation; the default Magic provider is replaceable.
 
 The table renders to a 1600x900 design surface, while setup uses 1600x1000.
-`TableGame` scales and letterboxes that surface into the actual backbuffer and
+`TableWindow` scales and letterboxes that surface into the actual backbuffer and
 maps physical pointer coordinates through the inverse transform. A design-surface
 capture does not establish physical-window readability. Review the actual window
 at the supported small and large sizes as well as the underlying layout.
@@ -171,7 +217,7 @@ Fixes, undo and redo refresh these annotations automatically. Save status remain
 separate from deck conformance; neither requires a review dialog. Back to setup
 returns directly to the lobby, where deck selection and readiness remain explicit.
 
-`TableGame.Decks` routes every mutation through the same readiness, persistence
+`TableApplication.Decks` routes every mutation through the same readiness, persistence
 and refresh path. Each native edit carries both the deck ID and revision; the
 adapter rejects commands for a different active document or an older revision.
 Opening the builder refreshes its document after match setup has reopened it.
@@ -205,7 +251,7 @@ Archidekt import/manual refresh requires a whole-list confirmation of quantities
 and source-baseline effects before an existing token-guarded application. It
 does not authenticate, continuously synchronize or write back to Archidekt.
 
-`TableGame.LobbyFlow` separates selecting, confirming, readying and starting.
+`TableApplication.LobbyFlow` separates selecting, confirming, readying and starting.
 The deck chooser and the builder return to a shared review of commander faces,
 counts, validation and save status. Confirm prepares the solo setup or submits
 the saved deck through `SelectDeckAsync`; multiplayer readiness is a separate
@@ -216,7 +262,7 @@ await the ordinary `SetReadyAsync(false)` before opening or changing a document.
 Browsing the chooser alone preserves readiness. These are client workflow states;
 rules and the synchronized seat roster remain authoritative in the existing engine.
 
-`TableGame.LobbyView` renders the four-seat roster, commander preview, saved/precon
+`TableApplication.LobbyView` renders the four-seat roster, commander preview, saved/precon
 chooser, review, native invite entry, and connection details. Its hit scopes include
 the active modal, selected deck, confirmation, mode, readiness and start permission.
 Modal input cannot reach controls behind it. Start requires current confirmation
@@ -224,13 +270,13 @@ plus the engine's readiness/start state. Builder edits preserve the selected AI
 opponent IDs when the updated deck is reconfirmed. Returning from a network game
 refreshes the lobby before showing its controls; readiness must be declared again.
 
-`TableGame.LobbyDecks` shares the searchable chooser between saved/precon lists
+`TableApplication.LobbyDecks` shares the searchable chooser between saved/precon lists
 and engine-owned AI opponent choices. Its read-only deck review browses the loaded
 document by section, name, type and rules text, with exact-printing previews.
 Browsing or reselecting the current deck makes no engine mutation and preserves
 readiness. Entering the builder from a reviewed card first withdraws readiness,
 refreshes the editor revision, and selects that printing in its original section.
-`TableGame.DeckPresentation` shares the main-deck curve and alternate-face rendering
+`TableApplication.DeckPresentation` shares the main-deck curve and alternate-face rendering
 between building and review. Search and page state participate in hit scoping.
 
 Table social features use the optional `ITableSocial` contract independently of
@@ -335,7 +381,7 @@ Selecting a gallery face retains its compact geometry. Required decisions also
 collapse an existing reader so it cannot intercept the next adjacent choice.
 Selection uses the original prompt-scoped index, independently of names and reflow.
 
-`TableGame.Allocation` presents numeric assignments using `AllocationGuide` and
+`TableApplication.Allocation` presents numeric assignments using `AllocationGuide` and
 the engine's source, units, recipient occurrences, limits and optional required
 amounts. Each row keeps public art/name/seat, current stats, marked damage,
 counters and the proposed amount visible. Detail inspection preserves the draft.

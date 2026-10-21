@@ -59,6 +59,30 @@ physical hit regions instead of bypassing them with forced clicks.
 
 ## Run a focused regression
 
+### Headless production presentation
+
+After building `Mana.Table.Tests`, run:
+
+```powershell
+dotnet mana-native/Mana.Table.Tests/bin/Release/net9.0-windows/Mana.Table.Tests.dll --smoke-headless-presentation --profile '<fresh-profile>'
+```
+
+This creates no game window or graphics device. It injects pointer input and
+time into the same `TableApplication` used by `TableWindow`, composes real typed
+drawing commands, and checks readers, fresh-scoped actions, stale press/release,
+privacy revocation, generic card/player/table state, mana transitions and every
+occurrence on a dense field. Its controlled connection validates commands and
+publishes prepared snapshots; it does not implement Magic rules.
+
+Keep `headless-presentation-results.json` and `headless-presentation-trace.json`.
+Composition timing is an observation without a machine-dependent pass threshold.
+`PresentationFrame.Observe()` also produces copied, serializable card values,
+projected geometry, text and controls tied to the exact game/revision/decision.
+Use an injected `TimeProvider` for deterministic connection-age scenarios.
+The package job runs this headless gate before distributing the GPU harness.
+Continue selected GPU journeys for clipping, actual art and physical-window
+readability; submitted commands alone cannot establish those visual properties.
+
 ### Experience clarity and recovery
 
 `Mana.Client.Tests` covers stale-state command blocking, uncertain acknowledgements,
