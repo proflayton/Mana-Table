@@ -317,11 +317,13 @@ internal sealed partial class TableApplication
         string instruction = !busy && (recipientChoice || d?.Intent == DecisionIntent.Priority && state.Stack.Length == 0)
             ? "" : StateClarity.DecisionInstruction(state, busy, pendingActionLabel);
         var textLayout = PlanDecisionText(status, instruction, abilities.Length > 0);
-        canvas.Panel(new(1254, decisionPanelBounds.Top, 320, 795 - decisionPanelBounds.Top), new(12, 22, 30), new(57, 75, 88), 5);
-        canvas.Text(status, 1266, textLayout.StatusY, following ? Muted : Gold, .7f, decisionTextOverflow ? 180 : 298, 1, true);
-        canvas.Text(instruction, 1266, textLayout.TextY, Ink, .75f, 295, textLayout.Lines);
-        hits.Add(new("instructions", ControlScope("instructions"), new(1262, textLayout.StatusY, 304, 789 - textLayout.StatusY), () => { overlay = "help"; inspectPage = 0; }));
-        if (decisionTextOverflow) Button("decision-read-all", "Read all", 1456, textLayout.StatusY - 1, 106, () => { overlay = "help"; inspectPage = 0; }, height: 23);
+        if (!recipientChoice) {
+            canvas.Panel(new(1254, decisionPanelBounds.Top, 320, 795 - decisionPanelBounds.Top), new(12, 22, 30), new(57, 75, 88), 5);
+            canvas.Text(status, 1266, textLayout.StatusY, following ? Muted : Gold, .7f, decisionTextOverflow ? 180 : 298, 1, true);
+            canvas.Text(instruction, 1266, textLayout.TextY, Ink, .75f, 295, textLayout.Lines);
+            hits.Add(new("instructions", ControlScope("instructions"), new(1262, textLayout.StatusY, 304, 789 - textLayout.StatusY), () => { overlay = "help"; inspectPage = 0; }));
+            if (decisionTextOverflow) Button("decision-read-all", "Read all", 1456, textLayout.StatusY - 1, 106, () => { overlay = "help"; inspectPage = 0; }, height: 23);
+        } else decisionPanelBounds = new(1240, 852, 360, 48);
         if (abilities.Length > 0) DrawPriorityAbilityControl(abilities);
         if (following) {
             canvas.Panel(new(1266, 799, 296, 47), new(22, 31, 39), new Color(66, 82, 94), 4);
