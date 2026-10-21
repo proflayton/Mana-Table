@@ -173,4 +173,74 @@ public class DeckAnalysisTest {
             assertThrows(IllegalArgumentException.class, () -> DeckAnalysis.analyze(new CardCatalog(List.of()), deck(), actual, "deck", "version", profile, null));
         }
     }
+
+    @Test public void completeListsGetALandCheckWithoutFillingOutGoals() {
+        var forest = card("Forest", "no cost", "Basic Land Forest", "{T}: Add {G}.");
+        var spell = card("Blank spell", "2 G", "Sorcery", "You gain 3 life.");
+        for (String format : List.of("Constructed", "Limited")) {
+            int size = format.equals("Limited") ? 40 : 60;
+            var report = analyze(List.of(forest, spell), deck(entry(forest, "Main", 20), entry(spell, "Main", size - 20)), format, DeckAnalysis.Profile.defaults());
+            assertEquals(report.metrics().landGoal(), 3);
+            assertEquals(report.metrics().cardsSeen(), 9);
+            assertEquals(report.metrics().landProbability(), DeckAnalysis.atLeast(size, 20, 9, 3), 1e-12);
+            assertTrue(report.metrics().probabilityAssumptions().contains("Automatic target: the first three land drops"));
+            assertEquals(report.profile(), DeckAnalysis.Profile.defaults(), "Automatic analysis must not save guesses as player choices");
+            assertFalse(report.findings().stream().anyMatch(f -> f.id().equals("choose-plan")));
+        }
+    }
+
+    @Test public void chosenLandTargetCanBeResetToCommanderDefaultIncludingZeroCostCommanders() {
+        var forest = card("Forest", "no cost", "Basic Land Forest", "{T}: Add {G}.");
+        for (var commander : List.of(toph(), card("Zero leader", "0", "Legendary Creature Spirit", ""))) {
+            var cards = List.of(forest, commander);
+            var deck = deck(entry(commander, "Commander", 1), entry(forest, "Main", 99));
+            var custom = new DeckAnalysis.Profile("", "unspecified", "", "", "balanced", 5, List.of(), List.of());
+            var chosen = analyze(cards, deck, "Commander", custom);
+            assertEquals(chosen.metrics().landGoal(), 5);
+            assertTrue(chosen.metrics().probabilityAssumptions().contains("Your chosen target: turn 5"));
+            var automatic = analyze(cards, deck, "Commander", DeckAnalysis.Profile.defaults());
+            assertEquals(automatic.metrics().landGoal(), commander.getRules().getManaCost().getCMC() == 0 ? 3 : 4);
+            assertEquals(automatic.metrics().cardsSeen(), 7 + automatic.metrics().landGoal());
+            assertNotNull(automatic.metrics().landProbability());
+        }
+    }
+
+    @Test public void automaticTargetUsesTheHighestCommanderAndExcludesCommandersFromTheLibrary() {
+        var forest = card("Forest", "no cost", "Basic Land Forest", "{T}: Add {G}.");
+        var partner = card("Higher leader", "4 G G", "Legendary Creature Spirit", "");
+        var commander = toph();
+        var report = analyze(List.of(forest, partner, commander), deck(entry(commander, "Commander", 1), entry(partner, "Commander", 1), entry(forest, "Main", 98)), "Commander", DeckAnalysis.Profile.defaults());
+        assertEquals(report.metrics().landGoal(), 6);
+        assertEquals(report.metrics().cardsSeen(), 13);
+        assertEquals(report.metrics().mainCards(), 98);
+        assertEquals(report.metrics().landProbability(), 1.0, 1e-12);
+        assertTrue(report.metrics().probabilityAssumptions().contains("using the highest commander mana value"));
+    }
+
+    @Test public void actionableChecksAppearBeforeInformationalRulesAndIncompleteListNotes() {
+        var commander = toph();
+        var curio = card("Cloudstone Curio", "3", "Artifact", "");
+        var lattice = card("Mycosynth Lattice", "6", "Artifact", "");
+        var report = analyze(List.of(commander, curio, lattice), deck(entry(commander, "Commander", 1), entry(curio, "Main", 1), entry(lattice, "Main", 1)), "Commander", DeckAnalysis.Profile.defaults());
+        assertTrue(report.findings().stream().anyMatch(f -> f.severity().equals("review")));
+        assertEquals(report.findings().get(0).severity(), "review");
+        boolean informationalSeen = false;
+        for (var finding : report.findings()) {
+            if (!finding.severity().equals("review")) informationalSeen = true;
+            else assertFalse(informationalSeen, "An actionable check must not follow informational notes");
+        }
+    }
+
+    @Test public void limitedUsesUnusedSideboardCardsWithoutTreatingConsideringAsOwned() {
+        var divination = card("Divination", "2 U", "Sorcery", "Draw two cards.");
+        var quick = card("Quick Study", "2 U", "Instant", "Draw two cards.");
+        var cards = List.of(divination, quick);
+        var report = analyze(cards, deck(entry(divination, "Main", 1), entry(quick, "Sideboard", 1)), "Limited", DeckAnalysis.Profile.defaults());
+        assertEquals(report.recommendations().get(0).add().name(), "Quick Study");
+        assertFalse(report.findings().stream().anyMatch(f -> f.id().equals("missing-pool")));
+        assertTrue(report.profile().pool().isEmpty(), "Inferred availability must not overwrite the saved pool");
+        var considering = analyze(cards, deck(entry(divination, "Main", 1), entry(quick, "Considering", 1)), "Limited", DeckAnalysis.Profile.defaults());
+        assertTrue(considering.recommendations().isEmpty());
+        assertTrue(considering.findings().stream().anyMatch(f -> f.id().equals("missing-pool")));
+    }
 }

@@ -1,5 +1,9 @@
 # Mana Table — beta 0.1.0-beta.37
 
+This is the Electron client's player guide and beta history. For the primary
+Windows MonoGame app, use the [native player guide](../mana-native/START-HERE.txt).
+The clients have separate controls, profiles and release channels.
+
 Double-click **Mana Table.exe**. Keep the executable with its accompanying
 folders. Java and the Forge card library are bundled; no separate installation
 or account is needed. The first launch scans the card library and can take a moment.

@@ -9,14 +9,18 @@ namespace Mana.Table;
 
 internal sealed partial class TableGame
 {
-    private void PaintCompactState(Card card, Pose pose, int owner)
+    private static Vector2 CompactStateCenter(Pose pose, int seat)
     {
-        int seat = owner == match!.ViewerId ? 3 : TableLayout.SeatIndex(match, owner);
         var r = pose.Bounds;
-        var center = seat switch {
+        return seat switch {
             0 => new Vector2(r.Right - 16, r.Center.Y), 2 => new Vector2(r.Left + 16, r.Center.Y),
             1 => new Vector2(r.Center.X, r.Bottom - 10), _ => new Vector2(r.Center.X, r.Top + 10)
         };
+    }
+    private void PaintCompactState(Card card, Pose pose, int owner)
+    {
+        int seat = owner == match!.ViewerId ? 3 : TableLayout.SeatIndex(match, owner);
+        var center = CompactStateCenter(pose, seat);
         if (CardPresentation.HasCombatStats(card)) {
             var stats = new Rectangle((int)center.X - 15, (int)center.Y - 9, 30, 18);
             canvas.Panel(stats, card.Attacking ? new Color(98, 39, 40) : new Color(17, 27, 35), new(140, 155, 162), 3);

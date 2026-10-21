@@ -1,4 +1,9 @@
-# Mana Table desktop development
+# Mana Table Electron maintenance client
+
+The primary Windows client is the [native MonoGame app](../mana-native/README.md).
+This guide covers the older Electron client and its development/test tooling.
+Both use Forge's Java host, but native controls, updater and workshop features
+should not be assumed available in the Electron UI.
 
 Electron hosts the HTML/CSS/JavaScript UI, a Three.js table, and a Java child process.
 The Java process owns the card catalog, deck operations, persistence, rules, AI,
@@ -6,11 +11,22 @@ and matches. Communication uses private stdin/stdout JSON pipes; there is no HTT
 server. Read the [architecture](../docs/Development/Mana-Table-Architecture.md)
 and [engine API](../forge-api/README.md) before extending that boundary.
 
+In a hosted lobby, the host can Add AI to an open seat, select an offered
+format-compatible deck, or Open for friend before starting. Guests see the AI
+and its deck without seat-management controls. Three human players plus one AI
+can start a four-seat Commander game; human seats still choose decks and ready
+normally. Connected humans cannot be replaced, and mid-game AI takeover is not
+supported. AI choices are the bundled opponents/precons, not arbitrary saved lists.
+For three people without AI, set **Total seats** to **3**. Commander supports
+2–6 seats in this client. The host can reduce the total when removed seats are
+unoccupied; saved decks remain selected and people ready again after a change.
+
 ## Prerequisites
 
 - Git, **JDK 17+**, **Maven 3.8.1+**, **Node.js 22.12+** with npm.
-- Contributor CI uses JDK 17, Node 24, and Windows. Windows x64 is the tested
-  desktop target and the only target supported by the package script.
+- The Electron workflow uses JDK 17, Node 24 and Windows; the shared Maven workflow
+  also tests Java 17 and 21 on Linux. Windows x64 is the tested Electron target
+  and the only target supported by its package script.
 - Set `JAVA_HOME` to the JDK directory. Java discovery works on Windows, Linux,
   and macOS, but non-Windows desktop behavior is not yet validated by this fork.
 
@@ -137,7 +153,8 @@ also checks that review is read-only and role/identity filters use real card dat
 | --- | --- |
 | `JAVA_HOME` | JDK directory for development; required by packaging for `jlink` |
 | `FORGE_JAVA` | Explicit Java executable override, including for packaged tests |
-| `FORGE_USER_DATA` | Override the complete data directory for a manual or automated test |
+| `MANA_USER_DATA_DIR` | Override the complete Electron profile for a manual or automated test |
+| `FORGE_USER_DATA` | Legacy profile override, used when `MANA_USER_DATA_DIR` is unset |
 | `FORGE_OFFLINE=1` | Disable artwork retrieval; the engine/catalog still use bundled scripts |
 | `FORGE_TEST=1` | Start the Electron window hidden for automation |
 | `MANA_TEST_PACKAGED=1` | UI tests use the executable in `dist/latest-beta.json` |
@@ -149,12 +166,15 @@ Legacy `FORGE_*` variable and module names are kept for compatibility.
 
 ## Data and troubleshooting
 
-Development data lives in `forge-desktop/.data`. A packaged build uses `UserData`
-beside its executable. Either can be overridden with `FORGE_USER_DATA`.
+Development data lives in `forge-desktop/.data`. A packaged build reuses an existing
+`UserData` beside its executable; otherwise it uses the OS application-data directory
+under `Mana Table` (normally `%APPDATA%\Mana Table` on Windows). `MANA_USER_DATA_DIR`
+takes precedence over `FORGE_USER_DATA`; either overrides that complete profile path.
 Each profile contains `decks/` (UUID JSON files), `art/` (cached illustrations),
 `preferences.json` (response mode, own-turn stops, and card inspector), `engine.log`,
-and Electron preferences/cache files. Play preferences carry forward when packaging
-the next beta. Deck saves use schema version
+and Electron preferences/cache files. Local beta packaging copies the previous
+beta's portable data; clean release packages contain no player data and reuse the
+resolved profile. Deck saves use schema version
 1 and atomic file replacement where supported. Match state is not a saved deck
 and does not survive closing the app.
 
@@ -168,6 +188,14 @@ and does not survive closing the app.
   read a generated manifest; they do not start the development source tree.
 - **Artwork is absent:** offline tests intentionally omit it. The card catalog
   and rules do not depend on downloaded images.
+
+The seat transport can resume a disconnected player while the same host remains
+alive, with ordered receipts preventing duplicate execution. That is not a saved
+match or host migration. Electron's child-process errors and 30-second request
+timeouts still advise relaunching. The native recovery UI proposed in
+[PR 7](https://github.com/proflayton/Mana-Table/pull/7) is pending and is not Electron
+behavior. Do not blindly resend an action whose acknowledgement was lost. For the
+current boundary, see the [API contract](../forge-api/README.md).
 
 The [player guide](BETA.md) describes current features and limitations. The
 [contribution guide](../CONTRIBUTING.md) explains branch and review conventions.

@@ -4,6 +4,21 @@ namespace Mana.Magic;
 
 public static class CardPresentation
 {
+    public static bool IsEquipment(Card card) => !card.FaceDown && card.Type.Contains("Equipment", StringComparison.Ordinal);
+    public static string[] AttachmentLabels(Card card)
+    {
+        var labels = new List<string>();
+        if (card.AttachedTo is { } target) labels.Add((IsEquipment(card) ? "Equipped to: " : "Attached to: ") + target.Name);
+        labels.AddRange(card.Attachments.Select(a => (a.Type.Contains("Equipment", StringComparison.Ordinal) ? "Equipped with: " : "Attached: ") + a.Name));
+        return labels.ToArray();
+    }
+    public static string AttachmentBadge(Card card)
+    {
+        if (card.AttachedTo != null) return IsEquipment(card) ? "EQUIPPED" : "ATTACHED";
+        int equipment = card.Attachments.Count(a => a.Type.Contains("Equipment", StringComparison.Ordinal));
+        if (equipment > 0) return equipment > 1 ? "EQUIPPED ×" + equipment : "EQUIPPED";
+        return card.Attachments.Length > 0 ? "ATTACHED" : "";
+    }
     public static int CommanderTax(Card card) => card.FaceDown ? 0 : Math.Max(0, card.CommanderTax);
     public static string CommanderTaxDetails(Card card) => CommanderTax(card) is > 0 and var tax
         ? $"Commander tax: +{tax} generic mana on the next cast from the command zone. Each previous cast from that zone adds 2 mana." : "";
@@ -24,6 +39,7 @@ public static class CardPresentation
         if (card.Sick && HasCombatStats(card)) labels.Add("Summoning sick");
         if (card.Attacking) labels.Add("Attacking");
         if (card.Blocking) labels.Add("Blocking");
+        labels.AddRange(AttachmentLabels(card));
         labels.AddRange(Abilities(card).Select(AbilityName));
         return labels.ToArray();
     }

@@ -1,5 +1,9 @@
 MANA TABLE NATIVE - BUILD, TEST AND PLAY COMMANDER
 
+This guide follows the source revision recorded by the package. Check SOURCE.txt and
+build.json for its exact revision. Older installers can have fewer controls;
+the release page identifies each download's source and verified build.
+
 Download ManaTable-Setup.exe from https://github.com/proflayton/Mana-Table/releases/latest
 and open it. Setup installs for your Windows account, adds shortcuts, and opens
 the game. Administrator access, Java and .NET installation are not required.
@@ -27,6 +31,7 @@ Opening a deck, confirming it, or connecting to a table shows visible progress.
 Entering a game uses the same table imagery before revealing the battlefield.
 Deck edits show Saving/Changes saved beside the builder without covering it.
 Failed actions explain the problem and offer Back; startup failures offer Retry.
+An unreadable import or unavailable clipboard leaves your saved deck untouched.
 Short hints appear beside deck choices, Confirm, Ready and Start as needed.
 At the table, a playable card explains its gesture; choosing an attacker or
 blocker changes the hint to the next target. Hover Auto or Hold for its meaning.
@@ -64,6 +69,10 @@ For Archidekt, choose Link Archidekt or paste a public deck URL. Review the impo
 before saving it. Linked imports preserve custom categories and put excluded
 cards in Considering. Check for changes previews the source against your local
 edits; choose a merge, keep local, use source, or save a separate source copy.
+Before applying, review every affected quantity and the explanation of the new
+source baseline. Keep local preserves your playable list while accepting that
+baseline; a separate copy creates another linked deck. Use Previous/Next to read
+all rows, including Considering. Back to review cancels without changing the deck.
 Opening Archidekt and copying your playable list lets you bring card edits back
 there. This export includes commander, main and sideboard; categories and
 Considering stay in Mana Table. Changes are not published to Archidekt for you.
@@ -74,13 +83,27 @@ PLAY WITH FRIENDS
 2. Select Play with friends. One player selects Host table.
    Allow the bundled Java runtime
    through Windows Firewall when Windows asks, for the network you are using.
+   Choose 2 players, 3 players or 4 players before hosting. Three people can
+   choose three seats and play without AI; choose four to add a fourth opponent.
 3. The host opens Invite friends and copies the internet invite, or an address
    for the local/VPN network. Friends select Join with invite and paste it.
+   Short a player? The host can Add AI to an open seat and choose its deck from
+   the compatible bundled opponents/precons. Three people plus one AI can play
+   a four-seat game. AI seats show their deck and are ready automatically.
+   Remove AI opens its seat before the game so another person can join.
 4. Everyone reviews their deck and selects Confirm deck, then Ready up.
    Confirming selects the saved list for the table; it does not make you ready.
    The four-seat roster shows who has joined, chosen a deck, and readied up.
-5. Start Commander becomes available to the host when all four seats are ready.
+5. Start Commander becomes available to the host when every selected seat is ready.
    Not ready withdraws your readiness. After the game everyone readies again.
+If three people are waiting in a four-seat lobby, the host can choose 3 players
+under Total seats while the last seat is open. Saved decks stay selected; people ready
+again after the seat count changes. A connected person's seat cannot be removed.
+Only the host changes AI seats, before starting. Connected human seats cannot
+be replaced, and AI cannot take over a departed player during a game. AI decks
+come from the offered choices; arbitrary saved decks are not AI seat choices.
+AI deck changes preserve human readiness. Returning to the lobby retains AI
+decks and readiness; each human must ready again for the rematch.
 
 BUILD AND EDIT DECKS
 Open Deck builder for the selected deck, or choose + New deck.
@@ -95,14 +118,23 @@ Other face flips double-faced cards in the preview without adding another card.
 Changes save automatically. Undo/Redo restores edits, Duplicate makes a separate
 deck, and Copy list exports text with commander and sideboard sections.
 Card counts, a nonland mana curve and live deck checks identify needed changes.
+Checks distinguish deck structure from the bundled format rules. Unknown means
+the bundled data cannot establish eligibility. These checks do not certify
+current tournament legality online.
 Insights stay available while a draft has errors. Categories can overlap; select
 a role to see its cards, or select a card to edit its categories and mark favorites.
 Considering holds options outside your playable list. Swap a candidate for a main
-deck card in one saved change. Versions restores earlier playable lists.
+deck card in one saved change. Versions lets you inspect a saved list and compare
+its quantities with your current deck before choosing whether to restore it.
 Use Test to set a question, sample opening hands, or play against AI with two
 or four Commander players. Hand sampling is draw-only practice; Redraw seven
 does not enforce London mulligan rules. Real games use Forge's full game rules.
 Results keeps observed counts and your notes with the version actually tested.
+View tested deck / compare shows that test's exact saved cards; Compare to current
+shows changed quantities by section without editing either list. A game ended
+early is labelled separately from a completed result. Your test question is a
+manual observation: use the notes to answer it from play, since aggregate counts
+cannot establish what was available on a particular turn.
 Tune deck returns to building; Test again sets up another experiment. Changing
 the deck does not rewrite earlier results. Small AI samples are not a win rate.
 For a friends' table, finish a valid 100-card deck including its commander(s),
@@ -151,6 +183,9 @@ Remaining to stage the available amount. Required fills an engine-supplied
 assignment threshold before damage can go to the defender. Inspect a card or
 View battlefield without losing your draft. Confirm assignment sends the
 completed distribution; Assign later appears only when the engine allows it.
+Current toughness and marked damage are separate values. A required assignment
+threshold is not a prediction that the recipient will die. The engine also uses
+this screen for counters and other numeric assignments; follow its amount label.
 
 CONTROLS
 You sit at the near edge of one shared table; the other players sit to your left,
@@ -161,14 +196,22 @@ active seat. Hover or right-click to read cards upright from any seat.
 Double-click a highlighted card in your hand to play it, or drag it onto the table.
 One click on a hand card is safe for reading. Required choices and battlefield
 abilities still use a single click. Commanders also require a double-click to cast.
-Double-click your commander to cast it. Zone piles open browsers
-containing only the cards your player can see. Hidden hands show anonymous backs.
+Zone piles open browsers containing only the cards your player can see. Your own
+graveyard, exile and command browsers can offer engine-authorized actions,
+including Flashback when available. Casts from these browsers also need a
+double-click. Hidden hands show anonymous backs.
 Gold TAX +2, TAX +4, etc. badges show the extra mana for a command-zone recast.
 Hover or inspect for details. Each commander tracks its own previous casts;
 dying does not add tax by itself.
 Hover to lift and enlarge the card itself without clicking; right-click to inspect
 its complete rules and alternate face. Card pictures download when available;
 text works offline. Choice galleries include a name filter and selection counts.
+Selecting a gallery card immediately returns its face
+to the compact row; hover or inspect it again to read without clearing your
+selection. When every choice is a visible table card, choose those original
+cards and confirm with the decision button. Other searches keep their gallery.
+Engine-authorized hand-placement actions also appear beside playable hand cards;
+use the offered action and any required source choice shown by the game.
 Cards deal from their library piles. Opponents draw anonymous card backs into
 their hands; visible spells rise into the center while you decide how to respond.
 Turn callouts and life-counter impacts mark changes without blocking controls.
@@ -180,8 +223,7 @@ You can also drag attackers to a legal defending player or card, and blockers
 to a legal attacker. Arrows show assignments; blue highlights show legal targets.
 Confirm your assignments using the decision panel.
 Press C or select Combat to review attackers, their defenders, and blockers.
-Your creatures lists eligible creatures, including ones on other battlefield
-pages. Selecting one brings it into view. Select an assigned creature and use
+Your creatures lists eligible creatures. Select an assigned creature and use
 Remove to undo its assignment; the review panel can also recall attackers.
 Review blockers opens a paged gallery for each attack, with individual removal
 controls while you are assigning blocks.
@@ -193,8 +235,16 @@ Number, text, color and damage-allocation decisions open inside the table.
 Use View battlefield to collapse a required choice, then the decision button to
 return to it. History opens the game log. Click an opponent's name to open all
 of their visible permanents in an upright battlefield gallery.
-Crowded ranks have page arrows; the mouse wheel also browses ranks and long hands.
-Click a player's life header to inspect commander damage when it is not a target.
+The table keeps every battlefield occurrence visible, including
+crowded groups; enlarge or inspect an individual card to read it. Battlefield
+ranks do not have pages. Long hands and choice galleries still have page controls.
+Hover an Equipment or its attached creature to trace the connection. Badges and
+inspection identify what it is attached to and how many attachments it has.
+Current stats already include the engine's effects; do not add an Equipment's
+printed bonus again. Re-equipping updates the same occurrences.
+Click a player's life header to inspect public counters and commander damage
+when it is not a target. Poison and other public counters stay beside the seat;
+an extra-types indicator leads to the complete paged totals in that inspection.
 Space confirms an enabled input decision. Escape closes a panel or cancels a drag.
 F switches Auto/full control, Ctrl holds priority for this turn, F11 is fullscreen.
 Auto starts enabled and passes priority when there is no playable response to
@@ -208,14 +258,30 @@ This keeps Auto moving when that ability is your only play. The ability remains
 usable; other available plays still pause the game. The indicator offers Undo,
 and the preference clears when your next turn starts. Hold overrides it immediately.
 Triggered abilities happen automatically; answer any choices the game presents.
+For a player choice, a named recipient panel keeps the source, controller and
+purpose visible. Choose an offered name or highlighted portrait. The decision
+dock distinguishes your choice, your priority, another player's action and
+resolution; a submitted action remains acknowledged while the engine responds.
 Spells show their targets with arrows and a source/effect callout. After resolution,
 the callout shows recent changes; Details keeps the explanation available to read.
 New permanents and tokens show ENTERED; exiled or graveyard-bound cards leave a
 brief labelled outline. Match history retains the public events.
+Resolution feedback distinguishes resolved and did not resolve. Draw and shuffle
+cues report actual public events, without revealing hidden card identities.
 Inspecting a card, opening a panel or dragging suspends Auto. Use Full control to
 inspect every priority window. Settings persist between sessions.
+Settings > Text size offers 100%, 115% and 130% for larger labels and decisions.
 The result screen lets you inspect the final battlefield, review history, or
 return to setup. Stack inspection stays on the same spell when new items appear.
+
+INTERRUPTED CONNECTIONS AND LEAVING
+If updates stop or a connection fails, the table remains visible for inspection
+and shows how old its last update is. Actions and Auto wait for a fresh state.
+Reconnect checks the current table; it does not replay an uncertain last action.
+After elimination, you can watch the remaining players or leave. Leaving while
+still playing concedes your seat. The host's leave confirmation explains that
+closing the hosted table disconnects everyone and ends that game. Local Exit
+ends the local game. Saved decks remain available after leaving or an error.
 
 ARTWORK
 The table currently uses neutral shapes and gradients, ready for artist-authored
@@ -223,14 +289,17 @@ assets. No generated arena illustration is included. Assets/ARTIST-HANDOFF.txt
 lists the replaceable background, card back and optional sound cues.
 
 LIMITS
-This native preview uses Forge's rules; the replacement engine is not yet
+This native client uses Forge's rules; the replacement engine is not yet
 implemented. No durable match saves: keep the host and clients open during play.
-All four players should use the same package. Deck files persist in
+All players should use the same package. Deck files persist in
 %LOCALAPPDATA%\ManaTableNative. That directory also holds logs and the image cache.
 Broad card interactions still need playtesting. Preserve client.log and engine.log
 if you hit a blocked decision. Closing the host ends the network game.
 
 DEVELOPMENT
+For native source prerequisites, isolated profiles and build/run commands, see
+mana-native/README.md in the repository. Building the executable alone does not
+provide its matching Java engine, runtime and card-resource bundle.
 SOURCE.txt links the exact source revision recorded in build.json.
 A complete matching source ZIP is available beside the installer on Releases.
 Local preview packages also include their native and adapter sources under source/.
@@ -240,9 +309,16 @@ See FORGE-LICENSE.txt and THIRD-PARTY.txt for attribution.
 
 STRATEGY REVIEW
 Choose Analyze beside Build, Test and Results. Your plan and favorite cards are
-shared with the builder. Set a pace, then review Findings, Engines, Suggested
-swaps, Card functions and Decisions. Save to Considering keeps a proposed card
+shared with the builder. The review starts with defaults; preferences are optional
+questions you can open when useful. Review Findings, Engines, Suggested swaps,
+Card functions and Decisions. Save to Considering keeps a proposed card
 outside the playable list; Keep current and Dismiss record your reasons with
-the deck version. Test deck opens the existing Test setup. Review actual tests
-and your notes in Results, then return to Build to tune the list. Analysis and
+the deck version. Review decisions shows reviewed suggestions until you choose
+Reopen this swap. Editing the playable list gives its own review while preserving
+earlier history.
+Automatic land targets use your highest positive commander mana value, otherwise
+the first three land drops; you can choose another target. Limited review uses
+your entered pool plus unused Sideboard cards, excluding Considering.
+Test deck opens the existing Test setup. Review actual tests and your notes in
+Results, then return to Build to tune the list. Analysis and
 format checks use the bundled snapshot and show their assumptions.

@@ -780,35 +780,56 @@ public class Game {
     public void forEachCardInGame(Visitor<Card> visitor) {
         forEachCardInGame(visitor, false);
     }
-    // Allows visiting cards in game without allocating a temporary list.
+    // Concession can clear a zone while the game thread scans replacement effects.
+    // Keep each traversal stable without holding locks across visitor callbacks.
     public void forEachCardInGame(Visitor<Card> visitor, boolean withSideboard) {
         for (final Player player : getPlayers().threadSafeIterable()) {
-            if (!visitor.visitAll(player.getZone(ZoneType.Graveyard).getCards())) {
+            if (!visitCardSnapshot(visitor, player.getZone(ZoneType.Graveyard).getCards(), false)) {
                 return;
             }
-            if (!visitor.visitAll(player.getZone(ZoneType.Hand).getCards())) {
+            if (!visitCardSnapshot(visitor, player.getZone(ZoneType.Hand).getCards(), false)) {
                 return;
             }
-            if (!visitor.visitAll(player.getZone(ZoneType.Library).getCards())) {
+            if (!visitCardSnapshot(visitor, player.getZone(ZoneType.Library).getCards(), false)) {
                 return;
             }
-            if (!visitor.visitAll(player.getZone(ZoneType.Battlefield).getCards(false))) {
+            if (!visitCardSnapshot(visitor, player.getZone(ZoneType.Battlefield).getCards(false), false)) {
                 return;
             }
-            if (!visitor.visitAll(player.getZone(ZoneType.Exile).getCards())) {
+            if (!visitCardSnapshot(visitor, player.getZone(ZoneType.Exile).getCards(), false)) {
                 return;
             }
-            if (!visitor.visitAll(player.getCardsIn(ZoneType.PART_OF_COMMAND_ZONE))) {
+            final CardCollection commandCards = new CardCollection();
+            for (ZoneType zone : ZoneType.PART_OF_COMMAND_ZONE) {
+                commandCards.addAll(player.getCardsIn(zone).threadSafeIterable());
+            }
+            if (!visitCardSnapshot(visitor, commandCards, false)) {
                 return;
             }
-            if (withSideboard && !visitor.visitAll(player.getZone(ZoneType.Sideboard).getCards())) {
+            if (withSideboard && !visitCardSnapshot(visitor, player.getZone(ZoneType.Sideboard).getCards(), false)) {
                 return;
             }
-            if (!visitor.visitAll(player.getInboundTokens())) {
+            if (!visitCardSnapshot(visitor, player.getInboundTokens(), true)) {
                 return;
             }
         }
-        visitor.visitAll(getStackZone().getCards());
+        visitCardSnapshot(visitor, getStackZone().getCards(), false);
+    }
+
+    private static boolean visitCardSnapshot(Visitor<Card> visitor, CardCollectionView cards, boolean includeUnzoned) {
+        for (Card card : cards.threadSafeIterable()) {
+            // A copied reference can cease to exist before it is visited. Do not
+            // return departed cards from findById or treat them as effect sources.
+            // Inbound tokens deliberately have not entered a zone yet.
+            var zone = card == null ? null : card.getZone();
+            if (card == null || !includeUnzoned && (zone == null || zone.is(ZoneType.None))) {
+                continue;
+            }
+            if (!visitor.visit(card)) {
+                return false;
+            }
+        }
+        return true;
     }
     public CardCollectionView getCardsInGame() {
         final CardCollection all = new CardCollection();

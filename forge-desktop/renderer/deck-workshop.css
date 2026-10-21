@@ -99,6 +99,8 @@
 .strategy-review button:disabled { opacity: .5; cursor: default; }
 .strategy-review article { margin: 12px 0; padding: 14px; background: #1b2b2c; border: 1px solid #34483f; border-radius: 6px; }
 .strategy-review p { font-size: 13px; line-height: 1.6; overflow-wrap: anywhere; }
+#strategy-question { margin: 16px 0; padding: 14px; background: #263c32; border: 1px solid #758c70; border-radius: 6px; }
+#strategy-question p { margin-top: 0; }
 .strategy-review small, .strategy-muted { color: #afc3b7; }
 .strategy-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
 .strategy-note-label { margin: 16px 0 8px; }

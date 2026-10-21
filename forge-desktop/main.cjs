@@ -28,7 +28,7 @@ let window;
 let engine;
 let quitting = false;
 let relaunchQueued = false;
-const methods = new Set(['search', 'deckInsights', 'deckAnalysis', 'analysisProfile', 'analysisReview', 'list', 'new', 'open', 'snapshot', 'edit', 'rename', 'undo', 'redo', 'format', 'save', 'importPreview', 'import', 'deckPresets', 'presetImport', 'export', 'practice', 'multiplayerHost', 'multiplayerJoin', 'multiplayerConfigure', 'multiplayerSelectDeck', 'multiplayerReady', 'multiplayerStart', 'multiplayerState', 'multiplayerReturn', 'multiplayerClose', 'matchOpponents', 'matchSetup', 'matchStart', 'matchState', 'matchAction', 'matchConcede']);
+const methods = new Set(['search', 'deckInsights', 'deckAnalysis', 'analysisProfile', 'analysisReview', 'list', 'new', 'open', 'snapshot', 'edit', 'rename', 'undo', 'redo', 'format', 'save', 'importPreview', 'import', 'deckPresets', 'presetImport', 'export', 'practice', 'multiplayerHost', 'multiplayerJoin', 'multiplayerConfigure', 'multiplayerSetSeat', 'multiplayerSelectDeck', 'multiplayerReady', 'multiplayerStart', 'multiplayerState', 'multiplayerReturn', 'multiplayerClose', 'matchOpponents', 'matchSetup', 'matchStart', 'matchState', 'matchAction', 'matchConcede']);
 function verify(event) {
   if (!window || event.sender !== window.webContents || event.senderFrame !== window.webContents.mainFrame
     || !event.senderFrame.url.startsWith('workshop://app/')) throw new Error('Unknown desktop client');

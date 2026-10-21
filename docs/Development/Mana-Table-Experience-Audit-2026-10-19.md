@@ -8,6 +8,8 @@ This audit focuses on Commander players who already know Magic and are learning 
 
 Findings combine current source, existing captures and the reported play sessions. A code-confirmed failure path is distinguished from a newly reproduced incident. Historical controlled screenshots establish layout and wording where the relevant source is unchanged; they do not establish real-card recognition or readability at the physical window size.
 
+October 20 follow-up: [PR 7](https://github.com/proflayton/Mana-Table/pull/7) merged the recovery, public-state and deck-review improvements addressing these findings. Release 0.2.39 ships the earlier `c11a3094be6c95ba1bddbafbe54aa7ad8fe3a7db` baseline; the merged PR 7 behavior and subsequent equipment/analysis integration require a later package. The findings below remain a record of the audit, rather than a current list of unfixed defects. A merged change, completed candidate checks and a published installer are separate milestones.
+
 ## What the recent sessions taught us
 
 1. **A valid action needs an understandable reason.** The Toothy recipient choice and Gaea's Touch interaction show that an engine-correct sequence can still feel wrong. Show the source, purpose and available choice beside the relevant cards or players.

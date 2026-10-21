@@ -19,7 +19,8 @@ internal sealed partial class TableGame
         if (deckEditor && selectedDeckDetails != null) { DrawDeckEditor(); return; }
         canvas.Glow(new(310, 450), new(840, 810), Teal * .25f);
         canvas.Text("Gather your table.", 48, 106, Ink, 1.9f, 970, 1, true);
-        canvas.Text(CommanderDeck ? "COMMANDER   /   FOUR PLAYERS   /   40 LIFE" : selectedDeckDetails!.Format.ToUpperInvariant() + "   /   TWO PLAYERS", 51, 165, Muted, .73f, 970, 1);
+        int playerCount = Connected ? lobby!.Seats.Length : soloTab ? 4 : friendPlayerCount;
+        canvas.Text(CommanderDeck ? $"COMMANDER   /   {playerCount} PLAYERS   /   40 LIFE" : selectedDeckDetails!.Format.ToUpperInvariant() + "   /   TWO PLAYERS", 51, 165, Muted, .73f, 970, 1);
         Button("solo-tab", "Play with AI", 1122, 112, 200, () => SetupMode(true), !busy && !Connected, soloTab && !Connected, 44);
         Button("friends-tab", "Play with friends", 1334, 112, 220, () => SetupMode(false), !busy && !Connected, !soloTab || Connected, 44);
         canvas.Line(new(48, 205), new(1552, 205), LobbyTrim);
@@ -117,7 +118,12 @@ internal sealed partial class TableGame
         canvas.Text("One player hosts. Everyone chooses a deck and readies their seat.", 588, 305, Muted, .8f, 917, 2);
         canvas.Panel(new(586, 375, 940, 180), new(28, 40, 53), LobbyTrim, 12);
         canvas.Text("Start a new table", 614, 405, Ink, 1.13f, 510, 1, true);
-        canvas.Text("Create four seats and share your invite.", 614, 453, Muted, .83f, 510, 2);
+        canvas.Text("Choose seats for your group, then share an invite.", 614, 450, Muted, .75f, 510, 1);
+        for (int count = 2; count <= 4; count++) {
+            int players = count;
+            Button("friends-count:" + count, count + " players", 614 + (count - 2) * 158, 490, 146,
+                () => friendPlayerCount = players, !busy, friendPlayerCount == count, 34);
+        }
         Button("host", "Host table", 1174, 439, 324, () => ConnectLobby(true), loaded && !busy, true, 52);
         canvas.Panel(new(586, 581, 940, 180), new(24, 35, 47), LobbyTrim, 12);
         canvas.Text("Your friends are waiting", 614, 612, Ink, 1.13f, 510, 1, true);
@@ -129,16 +135,22 @@ internal sealed partial class TableGame
     {
         var state = lobby!;
         int joined = state.Seats.Count(s => s.Type != "OPEN"), ready = state.Seats.Count(s => s.Ready);
+        int ai = state.Seats.Count(s => s.Type == "AI"), people = joined - ai;
         canvas.Text(state.Mode == "hosting" ? "Your friends' table" : "You're at the table", 586, 257, Ink, 1.16f, 570, 1, true);
         Button("connection-options", "Connection", 1110, 252, 151, () => { setupModal = "connection"; connectionPage = 0; }, !busy, height: 34);
         if (state.Mode == "hosting") Button("invite", "Invite friends", 1273, 252, 143, () => { setupModal = "connection"; connectionPage = 0; }, !busy, true, 34);
         Button("leave", "Leave", 1428, 252, 98, LeaveLobby, !busy, height: 34);
-        canvas.Text($"{joined} / {state.Seats.Length} connected     ·     {ready} ready" + (state.Mode == "hosting" ? "     ·     You are hosting" : ""), 588, 301, Muted, .78f, 915, 1);
+        canvas.Text($"{people} player{(people == 1 ? "" : "s")} + {ai} AI     ·     {ready} / {state.Seats.Length} ready" + (state.Mode == "hosting" ? "     ·     You are hosting" : ""), 588, 301, Muted, .78f, 915, 1);
         for (int i = 0; i < Math.Min(4, state.Seats.Length); i++) {
-            var seat = state.Seats[i]; bool open = seat.Type == "OPEN";
-            string detail = open ? "Share an invite to fill this seat." : seat.Ready ? "Ready for the host to start." : seat.Local && !DeckConfirmed ? "Review your selected deck, then confirm." : seat.Deck == null ? "Choosing a deck." : "Deck selected. Not ready yet.";
-            DrawLobbySeat(i, seat.Local ? "You" : seat.Name, open ? "Open seat" : seat.Deck ?? "No deck confirmed", detail, open ? "OPEN" : seat.Ready ? "READY" : "NOT READY", seat.Ready, seat.Local, open);
+            var seat = state.Seats[i]; bool open = seat.Type == "OPEN", computer = seat.Type == "AI";
+            bool manage = CanManageLobbySeats && seat.Index > 0 && (open || computer);
+            string detail = manage ? "" : open ? "Waiting for a friend or an AI opponent." : computer ? "AI opponent. The host chooses its deck."
+                : seat.Ready ? "Ready for the host to start." : seat.Local && !DeckConfirmed ? "Review your selected deck, then confirm." : seat.Deck == null ? "Choosing a deck." : "Deck selected. Not ready yet.";
+            DrawLobbySeat(i, seat.Local ? "You" : computer ? "AI opponent " + (seat.Index + 1) : seat.Name, open ? "Open seat" : seat.Deck ?? "No deck confirmed", detail,
+                open ? "OPEN" : computer ? seat.Ready ? "AI READY" : "AI" : seat.Ready ? "READY" : "NOT READY", seat.Ready, seat.Local, open);
+            if (manage) DrawLobbySeatControls(i, seat);
         }
+        if (CanManageLobbySeats) DrawLobbySizeControls();
         bool localReady = LocalSeat?.Ready == true;
         Button(localReady ? "unready" : "ready", localReady ? "Not ready" : "Ready up", 586, 790, 250, () => SetLobbyReady(!localReady), !busy && (localReady || DeckConfirmed), !localReady, 54);
         Button("start", state.Mode == "hosting" ? "Start Commander" : "Waiting for host", 1070, 790, 456, StartFriends, !busy && DeckConfirmed && localReady && state.CanStart, true, 54);
@@ -149,8 +161,8 @@ internal sealed partial class TableGame
         int missing = Math.Max(0, state.Seats.Length - joined);
         string startHint = state.CanStart ? state.Mode == "hosting" ? "Everyone is ready. Start when you're set." : "Everyone is ready. Your host can start."
             : !string.IsNullOrWhiteSpace(state.StartProblem) ? state.StartProblem
-            : missing > 0 ? $"Waiting for {missing} more player{(missing == 1 ? "" : "s")}."
-            : state.Mode == "hosting" ? "Waiting for all four seats to ready up." : "Your host starts once all four seats are ready.";
+            : missing > 0 ? state.Mode == "hosting" ? $"{missing} open seat{(missing == 1 ? "" : "s")}. Invite friends or add AI above." : $"Waiting for {missing} more player{(missing == 1 ? "" : "s")} or AI."
+            : state.Mode == "hosting" ? "Waiting for every seat to ready up." : "Your host starts once every seat is ready.";
         canvas.Text(startHint, 1072, 855, state.CanStart ? ReadyColor : Muted, .67f, 452, 2);
     }
     private void DrawSetupModal()
@@ -165,6 +177,7 @@ internal sealed partial class TableGame
             case "join": DrawJoinLobby(); break;
             case "connection": DrawLobbyConnection(); break;
             case "profile": DrawPlayerName(); break;
+            case "lobby-ai": DrawLobbyAiPicker(); break;
         }
     }
     private void DrawDeckConfirmation()

@@ -48,15 +48,8 @@ if ($Release) {
     $resourcePaths = @('cardsfolder', 'tokenscripts', 'editions', 'languages', 'blockdata', 'lists', 'setlookup', 'ai', 'formats') | ForEach-Object { $resourcePrefix + $_ }
     $trackedResources = & git -c core.excludesfile= -c core.quotepath=false -C $repository ls-files -- @resourcePaths
     if ($LASTEXITCODE -ne 0 -or -not $trackedResources) { throw 'Could not enumerate tracked engine resources.' }
-    $directories = New-Object 'System.Collections.Generic.HashSet[string]' ([StringComparer]::OrdinalIgnoreCase)
-    foreach ($relative in $trackedResources) {
-        if (-not $relative.StartsWith($resourcePrefix, [StringComparison]::Ordinal)) { throw 'Unexpected engine resource path.' }
-        if ([IO.File]::GetAttributes((Join-Path $repository $relative)) -band [IO.FileAttributes]::ReparsePoint) { throw "Engine resources must be regular tracked files: $relative" }
-        $destination = Join-Path $resources $relative.Substring($resourcePrefix.Length)
-        $directory = Split-Path -Parent $destination
-        if ($directories.Add($directory)) { [void][IO.Directory]::CreateDirectory($directory) }
-        [IO.File]::Copy((Join-Path $repository $relative), $destination, $false)
-    }
+    . (Join-Path $PSScriptRoot 'package-resources.ps1')
+    Copy-ManaEngineResources -Repository $repository -Destination $resources -TrackedResources $trackedResources
     Write-Output 'Building the bundled Java runtime...'
     & (Join-Path $env:JAVA_HOME 'bin/jlink.exe') --add-modules java.se,jdk.unsupported,jdk.crypto.ec --strip-debug --no-header-files --no-man-pages --compress=2 --output (Join-Path $engineDirectory 'runtime')
     if ($LASTEXITCODE -ne 0) { throw 'Bundled Java runtime build failed.' }

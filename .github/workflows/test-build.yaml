@@ -1,6 +1,22 @@
 name: Test build
 
-on: [push, pull_request]
+on:
+  push:
+    branches: [master]
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      extended:
+        description: Run the complete upstream Forge reactor
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: java-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   build:
@@ -8,7 +24,7 @@ jobs:
     strategy:
       matrix:
         java: ['17', '21']
-    name: Test with Java ${{ matrix.Java }}
+    name: Test with Java ${{ matrix.java }}
     steps:
       - uses: actions/checkout@v7
 
@@ -22,11 +38,43 @@ jobs:
       - name: Install virtual framebuffer (if not available) to allow running GUI on a headless server
         run: command -v Xvfb >/dev/null 2>&1 || { sudo apt update && sudo apt install -y xvfb; }
 
+      - uses: actions/setup-node@v7
+        if: matrix.java == '17'
+        with:
+          node-version: '24'
+
+      # Release/desktop consumers can start while the complete Java matrix runs.
+      # Tests are still mandatory below and publication requires both Java jobs.
+      - name: Produce the shared source-bound engine
+        if: matrix.java == '17'
+        run: |
+          xvfb-run -a mvn -B -ntp -pl forge-api -am package -DskipTests
+          node forge-desktop/scripts/ci-engine-artifact.cjs create
+
+      - name: Share the exact engine build
+        if: matrix.java == '17'
+        uses: actions/upload-artifact@v7
+        with:
+          name: engine-${{ github.sha }}
+          path: |
+            forge-api/target/forge-engine.jar
+            forge-api/target/ci-engine-manifest.json
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 1
+          overwrite: true
+
       - name: Run tests in virtual framebuffer
+        env:
+          EXTENDED: ${{ github.event_name == 'workflow_dispatch' && inputs.extended || false }}
         run: |
           export DISPLAY=":1"
           Xvfb :1 -screen 0 800x600x8 &
-          mvn -U -B clean test
+          if [ "$EXTENDED" = 'true' ]; then
+            mvn -B -ntp test
+          else
+            mvn -B -ntp -pl forge-api -am verify
+          fi
 
       - name: Save failed test reports and decision traces
         if: failure()

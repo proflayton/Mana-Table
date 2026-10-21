@@ -95,7 +95,7 @@
             <div class="eyebrow">LOBBY</div>
             <h2>Host or join a game.</h2>
             <p>Everyone needs the same Mana Table build. The host keeps the game running.</p>
-            <div class="multiplayer-actions"><div id="multiplayer-settings" class="multiplayer-settings"><label>Game mode<select id="multiplayer-format"><option value="Constructed">Standard</option><option value="Commander">Commander</option></select></label><label id="multiplayer-player-count-label" hidden>Players<select id="multiplayer-player-count"><option>2</option><option>3</option><option selected>4</option><option>5</option><option>6</option></select></label></div><label id="multiplayer-forward-label" class="multiplayer-forward"><input id="multiplayer-forward" type="checkbox" checked><span>Automatic port forwarding<small>Ask your router to allow friends to connect while you host.</small></span></label><button id="multiplayer-host" class="button primary" type="button">Host table</button><button id="multiplayer-configure" class="button secondary" type="button" hidden>Apply lobby settings</button><label id="multiplayer-address-label">Friend's invite<input id="multiplayer-address" placeholder="MT1-XXXX-XXXX-XXXX-XXXX" autocomplete="off" spellcheck="false" maxlength="200"><small>An invite or a direct address works here.</small></label><button id="multiplayer-join" class="button secondary" type="button">Join table</button></div>
+            <div class="multiplayer-actions"><div id="multiplayer-settings" class="multiplayer-settings"><label>Game mode<select id="multiplayer-format"><option value="Constructed">Standard</option><option value="Commander">Commander</option></select></label><label id="multiplayer-player-count-label" hidden>Total seats<select id="multiplayer-player-count"><option>2</option><option>3</option><option selected>4</option><option>5</option><option>6</option></select></label><p id="multiplayer-seats-help" hidden>Choose 3 for three people, or 4 for three people and an AI opponent. Every seat needs a player or AI before starting. Changing the total asks people to ready again.</p></div><label id="multiplayer-forward-label" class="multiplayer-forward"><input id="multiplayer-forward" type="checkbox" checked><span>Automatic port forwarding<small>Ask your router to allow friends to connect while you host.</small></span></label><button id="multiplayer-host" class="button primary" type="button">Host table</button><button id="multiplayer-configure" class="button secondary" type="button" hidden>Apply lobby settings</button><label id="multiplayer-address-label">Friend's invite<input id="multiplayer-address" placeholder="MT1-XXXX-XXXX-XXXX-XXXX" autocomplete="off" spellcheck="false" maxlength="200"><small>An invite or a direct address works here.</small></label><button id="multiplayer-join" class="button secondary" type="button">Join table</button></div>
             <div id="multiplayer-loadout" class="multiplayer-actions multiplayer-loadout" hidden><p id="multiplayer-rules" class="multiplayer-rules" hidden></p><label>Deck<select id="multiplayer-deck"></select></label><button id="multiplayer-select-deck" class="button secondary" type="button">Set deck</button><button id="multiplayer-ready" class="button secondary" type="button" aria-pressed="false">Ready</button><button id="multiplayer-start" class="button primary" type="button" disabled aria-describedby="multiplayer-start-help">Start game</button><p id="multiplayer-start-help" role="status" hidden></p><button id="multiplayer-leave" class="button secondary" type="button">Leave lobby</button></div>
           </section>
           <section class="multiplayer-status">
@@ -132,26 +132,28 @@
   <dialog id="strategy-review" class="strategy-review" aria-labelledby="strategy-title">
     <div class="strategy-header"><h2 id="strategy-title">Strategy review</h2><button type="button" data-close-review aria-label="Close strategy review">Close</button></div>
     <p id="strategy-status" role="status"></p><button type="button" id="strategy-refresh">Refresh review</button>
-    <details id="strategy-goals" open><summary>Deck goals</summary><form id="strategy-profile" class="strategy-profile">
-      <label>Rules format<select id="strategy-format"></select></label>
-      <label>Strategy<select id="strategy-kind"><option value="unspecified">Choose a strategy</option><option value="aggro">Aggro</option><option value="midrange">Midrange</option><option value="control">Control</option><option value="combo">Combo</option><option value="landfall">Landfall</option><option value="artifact-recursion">Artifact recursion</option></select></label>
-      <label>Pace<select id="strategy-pace"><option value="relaxed">Relaxed</option><option value="balanced">Balanced</option><option value="fast">Fast</option></select></label>
-      <label>Land-drop target turn (0 = automatic)<input id="strategy-turn" type="number" min="0" max="30" value="0"></label>
-      <label class="wide">Primary plan<textarea id="strategy-plan" maxlength="2000" rows="2"></textarea></label>
-      <label class="wide">Backup plan<textarea id="strategy-backup" maxlength="1000" rows="2"></textarea></label>
-      <label>Preserve these cards (one name per line)<textarea id="strategy-protected" rows="3"></textarea></label>
-      <label id="strategy-pool-label">Available pool additions (one name per line)<textarea id="strategy-pool" rows="3"></textarea></label>
-      <button type="submit">Save goals</button>
-    </form></details>
+    <h3>Your deck at a glance</h3><p id="strategy-overview"></p>
     <p id="strategy-metrics"></p><p id="strategy-probability" class="strategy-muted"></p>
-    <details open><summary>Needs attention</summary><div id="strategy-findings"></div></details>
-    <details><summary>Engine dependencies</summary><div id="strategy-engines"></div></details>
-    <details open><summary>Suggested swaps</summary><p class="strategy-muted">Save proposed cards in Considering, and record your decisions and reasons with this deck version.</p><div id="strategy-swaps"></div></details>
+    <div id="strategy-question" hidden><p id="strategy-question-text"></p><button type="button" id="strategy-answer">Answer this question</button></div>
+    <details open><summary>What to check</summary><div id="strategy-findings"></div></details>
+    <details><summary>How cards work together</summary><div id="strategy-engines"></div></details>
+    <details open><summary>Cards to try</summary><p class="strategy-muted">Read the benefit and tradeoff, save an idea to Considering, then try one change. Your playable list stays under your control.</p><div id="strategy-swaps"></div></details>
+    <details id="strategy-goals"><summary>Review preferences (optional)</summary><p>Ready without setup. Answer only what matters to you. Plans are your notes; the review does not interpret free text as rules.</p><form id="strategy-profile" class="strategy-profile">
+      <label>Which format do you play?<select id="strategy-format"></select></label>
+      <label>Should swaps favor a particular plan?<select id="strategy-kind"><option value="unspecified">Use card interactions (default)</option><option value="aggro">Attack early</option><option value="midrange">Build a strong board</option><option value="control">Control the game</option><option value="combo">Assemble a combo</option><option value="landfall">Trigger landfall</option><option value="artifact-recursion">Reuse artifacts</option></select></label>
+      <label>How quickly should the deck get going?<select id="strategy-pace"><option value="relaxed">Take time to set up</option><option value="balanced">Balanced (default)</option><option value="fast">Get going quickly</option></select></label>
+      <label>When should we check land drops? (0 = automatic)<input id="strategy-turn" type="number" min="0" max="30" value="0"><small>Automatic uses your commander's mana value, or the first three land drops.</small></label>
+      <label class="wide">What would you like the deck to do? (optional note)<textarea id="strategy-plan" maxlength="2000" rows="2"></textarea></label>
+      <label class="wide">How else could it win? (optional note)<textarea id="strategy-backup" maxlength="1000" rows="2"></textarea></label>
+      <label>Which cards should we keep? (one name per line)<textarea id="strategy-protected" rows="3"></textarea></label>
+      <label id="strategy-pool-label">Which pool cards can you use? (one name per line)<textarea id="strategy-pool" rows="3"></textarea><small>Unused cards in Sideboard are included automatically.</small></label>
+      <button type="submit">Save preferences</button>
+    </form></details>
     <label class="strategy-note-label">Review or playtest note<textarea id="strategy-note" maxlength="2000" rows="2" placeholder="What happened, or why would you accept or reject a swap?"></textarea></label>
     <button type="button" id="strategy-observation">Save manual playtest note</button>
-    <details><summary>Card functions and requirements</summary><div id="strategy-cards"></div></details>
+    <details><summary>What each card does</summary><div id="strategy-cards"></div></details>
     <details><summary>Review history</summary><div id="strategy-history"></div></details>
-    <p id="strategy-limitations" class="strategy-muted"></p>
+    <details><summary>How this works and what it covers</summary><p id="strategy-assumptions"></p><p id="strategy-limitations" class="strategy-muted"></p></details>
   </dialog>
 </body>
 </html>

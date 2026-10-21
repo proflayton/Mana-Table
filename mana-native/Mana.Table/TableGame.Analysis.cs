@@ -16,7 +16,7 @@ internal sealed partial class TableGame
     private bool analysisShowReviewed;
     private AnalysisRecommendation[] VisibleRecommendations(DeckAnalysisState state) => state.Report.Recommendations
         .Where(r => Mana.Magic.DeckExperience.Reviewed(state, r.Id) == analysisShowReviewed).ToArray();
-    private static readonly string[] AnalysisTabs = ["Findings", "Engines", "Suggested swaps", "Card functions", "Decisions"];
+    private static readonly string[] AnalysisTabs = ["What to check", "How cards work together", "Cards to try", "What each card does", "Your decisions"];
     private static string AnalysisBasis(string value) => value switch {
         "text-estimate" => "Estimated from card text", "strategic-estimate" => "Strategy estimate",
         "curated-rules-line" => "Curated rules interaction", "bundled-rules" => "Bundled format snapshot",
@@ -69,7 +69,7 @@ internal sealed partial class TableGame
                 current.Report.Fingerprint, profile);
             var shared = WorkshopEngine is { } builder ? await builder.WorkshopAsync(current.Report.DeckId, current.Report.Revision) : null;
             updates.Enqueue(() => AcceptAnalysis(result, shared));
-        }, "Saving your deck goals", "Updating the review against your chosen plan.", false);
+        }, "Saving review preferences", "Updating the checks against your choices.", false);
     }
     private void ConsiderAnalysis(AnalysisRecommendation recommendation)
     {
@@ -97,8 +97,8 @@ internal sealed partial class TableGame
         if (!AnalysisCurrent || analysisState is not { } current) return;
         var p = current.Report.Profile;
         string value = field switch { "backup" => p.Backup, "protected" => string.Join("; ", p.ProtectedCards), "pool" => string.Join("; ", p.Pool), _ => p.TargetTurn.ToString() };
-        string prompt = field switch { "backup" => "Describe its backup plan", "protected" => "Favorites to keep, shared with Build. Separate card names with semicolons.", "pool" => "Available pool card names, separated by semicolons", _ => "Land-drop target turn: 0 for commander mana value or no target" };
-        var next = Ask("Deck goals", prompt, value); if (next == null) return;
+        string prompt = field switch { "backup" => "How else could this deck win? (optional note)", "protected" => "Which cards should we keep? Separate card names with semicolons, or mark favorites in Build.", "pool" => "Which cards are available from your draft or sealed pool? Separate card names with semicolons.", _ => "Which turn should the land check use? 0 uses your commander's mana value, or turn 3." };
+        var next = Ask("Review preferences", prompt, value); if (next == null) return;
         string[] Names() => next.Split(';', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
         if (field == "turn" && (!int.TryParse(next, out int turn) || turn < 0 || turn > 30)) { error = "Choose a turn from 0 to 30."; return; }
         SaveAnalysisProfile(field switch {
@@ -142,26 +142,23 @@ internal sealed partial class TableGame
             if (analysisError.Length > 0) Button("analysis-refresh", "Retry analysis", 84, 690, 284, OpenDeckAnalysis, !busy, height: 42);
             return;
         }
-        var report = state.Report; var profile = report.Profile; var m = report.Metrics;
+        var report = state.Report; var m = report.Metrics;
         canvas.Panel(new(32, 236, 1536, 180), new(21, 29, 39), LobbyTrim, 8);
-        canvas.Text("STRATEGY ANALYSIS", 50, 252, Gold, .78f, 710, 1, true);
+        canvas.Text("YOUR DECK AT A GLANCE", 50, 252, Gold, .78f, 710, 1, true);
         canvas.Text(WorkshopVersionLabel(report.Fingerprint) + " | Current playable list", 798, 255, Muted, .65f, 736, 1);
-        string[] strategies = ["unspecified", "aggro", "midrange", "control", "combo", "landfall", "artifact-recursion"];
-        Button("analysis-strategy", "Strategy: " + profile.Strategy, 48, 286, 282, () => SaveAnalysisProfile(profile with { Strategy = strategies[(Array.IndexOf(strategies, profile.Strategy) + 1) % strategies.Length] }), !busy, height: 34);
-        string[] paces = ["relaxed", "balanced", "fast"];
-        Button("analysis-pace", "Pace: " + profile.Pace, 342, 286, 210, () => SaveAnalysisProfile(profile with { Pace = paces[(Array.IndexOf(paces, profile.Pace) + 1) % paces.Length] }), !busy, height: 34);
-        Button("analysis-backup", "Backup plan", 564, 286, 210, () => EditAnalysisText("backup"), !busy, height: 34);
-        Button("analysis-protect", "Favorites to keep", 786, 286, 210, () => EditAnalysisText("protected"), !busy, height: 34);
-        Button("analysis-turn", "Target turn: " + (profile.TargetTurn == 0 ? "auto" : profile.TargetTurn), 1008, 286, 226, () => EditAnalysisText("turn"), !busy, height: 34);
-        if (report.Format.PoolRequired) Button("analysis-pool", "Set available pool", 1246, 286, 306, () => EditAnalysisText("pool"), !busy, height: 34);
-        else if (!report.Format.CommanderIdentity) {
-            string[] formats = ["Constructed", "Standard", "Pioneer", "Modern", "Legacy", "Vintage", "Pauper"];
-            Button("analysis-format", "Rules: " + report.Format.Name, 1246, 286, 306, () => SaveAnalysisProfile(profile with { RulesFormat = formats[(Array.IndexOf(formats, report.Format.Name) + 1) % formats.Length] }), !busy, height: 34);
-        }
-        string stats = $"{report.Format.Name} | {m.MainCards} main | {m.Lands} lands | {m.EarlyRamp} early ramp | {m.UnconditionalDraw} draw | {m.ConditionalDraw} conditional draw | {m.ExpensiveSpells} spells costing 5+";
-        canvas.Text(stats, 50, 340, Ink, .7f, 1485, 1);
-        canvas.Text(m.LandProbability is { } p ? $"Land-count estimate: {p:P0} to see {m.LandGoal} lands in {m.CardsSeen} cards. Check assumptions before tuning." : "Set a target turn to explore the land-count model. Curated engines are not simulator proofs.", 50, 378, Muted, .65f, 1222, 1);
-        Button("analysis-model", "Model & limits", 1292, 365, 260, ShowAnalysisModel, !busy, height: 34);
+        canvas.Text($"{report.Format.Name} | {m.MainCards} main cards | {m.Lands} lands | {m.EarlyRamp} early ramp | {m.UnconditionalDraw + m.ConditionalDraw} draw | {m.Interaction} interaction", 50, 290, Ink, .73f, 1222, 1);
+        canvas.Text($"{report.Findings.Count(f => f.Severity == "review")} checks to review | {report.Recommendations.Length} swap ideas. Read a check, then try one change in Test.", 50, 324, Ink, .69f, 1222, 1);
+        Button("analysis-preferences", "Review preferences", 1292, 284, 260, () => workshopDialog = "analysis-preferences", !busy, height: 34);
+        canvas.Text(m.LandProbability is { } p ? $"Land check: {p:P0} chance to see {m.LandGoal} lands by turn {m.LandGoal}. Counts lands only; see how this works."
+            : "Finish the main deck to see a land-drop estimate. Other supported checks are available now.", 50, 358, Muted, .65f, 1222, 1);
+        Button("analysis-model", "How this works", 1292, 349, 260, ShowAnalysisModel, !busy, height: 30);
+        bool needsPool = report.Findings.Any(f => f.Id == "missing-pool");
+        bool needsFormat = report.Format.Name == "Constructed" && report.Profile.RulesFormat.Length == 0;
+        canvas.Text(needsPool ? "Which cards can you use? Add your draft or sealed pool to get swap ideas."
+            : needsFormat ? "Which format do you play? Using casual Constructed until you choose one."
+            : "Ready without setup. Preferences are optional; your plan and favorites are shared with Build.", 50, 391, Muted, .63f, 1222, 1);
+        if (needsPool || needsFormat) Button("analysis-question", needsPool ? "Add available cards" : "Choose format", 1292, 385, 260,
+            () => { if (needsPool) EditAnalysisText("pool"); else workshopDialog = "analysis-preferences"; }, !busy, height: 28);
         for (int i = 0; i < AnalysisTabs.Length; i++) {
             int tab = i;
             Button("analysis-tab:" + i, AnalysisTabs[i], 48 + i * 302, 432, 290, () => { analysisTab = tab; analysisPage = 0; }, !busy, analysisTab == i, 36);
@@ -171,13 +168,56 @@ internal sealed partial class TableGame
         for (int i = 0; i < Math.Min(3, count - analysisPage * 3); i++) DrawAnalysisRow(state, analysisPage * 3 + i, 486 + i * 142);
         if (count == 0) canvas.Text(analysisTab == 1 ? "No lines from the curated engine registry were found. This does not mean the deck lacks synergy."
             : analysisTab == 2 ? analysisShowReviewed ? "No reviewed swaps for this playable version." : "No undecided supported swaps. Review saved decisions or the findings and card functions."
-            : analysisTab == 4 ? "Save a recommendation decision here. Keep observations from hands and real games in Results." : "Nothing to show in this view.", 72, 540, Muted, .9f, 1430, 4);
+            : analysisTab == 4 ? "Save a recommendation decision here. Keep observations from hands and real games in Results."
+            : analysisTab == 0 ? "No specific issues found by the supported checks. Try an opening hand in Test; this review does not cover every interaction." : "Nothing to show in this view.", 72, 540, Muted, .9f, 1430, 4);
         Button("analysis-prev", "Previous", 48, 920, 150, () => analysisPage--, !busy && analysisPage > 0, height: 32);
         Button("analysis-next", "Next", 210, 920, 150, () => analysisPage++, !busy && (analysisPage + 1) * 3 < count, height: 32);
         if (analysisTab == 2) Button("analysis-reviewed", analysisShowReviewed ? "Show undecided swaps" : "Review decisions (" + report.Recommendations.Count(r => Mana.Magic.DeckExperience.Reviewed(state, r.Id)) + ")", 385, 918, 452, () => { analysisShowReviewed = !analysisShowReviewed; analysisPage = 0; }, !busy, height: 34);
         else canvas.Text($"Page {analysisPage + 1} / {Math.Max(1, (count + 2) / 3)} | Strategic estimates. Test changes at the table.", 385, 929, Muted, .62f, 850, 1);
         Button("analysis-back", "Build", 1260, 918, 122, () => ShowWorkshopTab("build"), !busy, height: 34);
         Button("analysis-test", "Test deck", 1394, 918, 158, () => ShowWorkshopTab("test"), !busy, true, 34);
+    }
+    private void DrawAnalysisPreferences()
+    {
+        if (!AnalysisCurrent || analysisState is not { } state) return;
+        var p = state.Report.Profile;
+        canvas.Text("Your deck is reviewed automatically. Answer only what matters to you; choices save immediately.", 208, 240, Muted, .77f, 1164, 2);
+        canvas.Text("How quickly do you want the deck to get going?", 208, 292, Gold, .82f, 1164, 1, true);
+        string[] paces = ["relaxed", "balanced", "fast"], paceLabels = ["Take time to set up", "Balanced (default)", "Get going quickly"];
+        for (int i = 0; i < paces.Length; i++) {
+            string pace = paces[i];
+            Button("analysis-pace:" + pace, paceLabels[i], 208 + i * 388, 326, 374, () => SaveAnalysisProfile(p with { Pace = pace }), !busy, p.Pace == pace, 36);
+        }
+        canvas.Text("Should swap ideas favor a particular plan? (optional)", 208, 382, Gold, .82f, 1164, 1, true);
+        string[] strategies = ["unspecified", "aggro", "midrange", "control", "combo", "landfall", "artifact-recursion"];
+        string[] labels = ["Use card interactions", "Attack early", "Build a strong board", "Control the game", "Assemble a combo", "Trigger landfall", "Reuse artifacts"];
+        for (int i = 0; i < strategies.Length; i++) {
+            string strategy = strategies[i];
+            Button("analysis-strategy:" + strategy, labels[i], 208 + i % 4 * 291, 416 + i / 4 * 42, 278,
+                () => SaveAnalysisProfile(p with { Strategy = strategy }), !busy, p.Strategy == strategy, 34);
+        }
+        if (!state.Report.Format.CommanderIdentity && !state.Report.Format.PoolRequired) {
+            canvas.Text("Which format do you play? This filters the cards we suggest.", 208, 514, Gold, .8f, 1164, 1, true);
+            string[] formats = ["", "Constructed", "Standard", "Pioneer", "Modern", "Legacy", "Vintage", "Pauper"];
+            for (int i = 0; i < formats.Length; i++) {
+                string format = formats[i];
+                Button("analysis-format:" + format, i == 0 ? "Automatic" : i == 1 ? "Casual / any" : format, 208 + i * 146, 548, 136,
+                    () => SaveAnalysisProfile(p with { RulesFormat = format }), !busy, p.RulesFormat == format, 34);
+            }
+        } else canvas.Text(state.Report.Format.Name + " comes from your deck. Its structure is kept automatically.", 208, 536, Muted, .77f, 1164, 2);
+        canvas.Text("When should we check your land drops?", 208, 604, Gold, .82f, 1164, 1, true);
+        int[] turns = [0, 3, 4, 5];
+        for (int i = 0; i < turns.Length; i++) {
+            int turn = turns[i];
+            Button("analysis-turn:" + turn, turn == 0 ? "Automatic (default)" : "Turn " + turn, 208 + i * 239, 638, 226,
+                () => SaveAnalysisProfile(p with { TargetTurn = turn }), !busy, p.TargetTurn == turn, 36);
+        }
+        Button("analysis-turn", p.TargetTurn is > 0 and not (3 or 4 or 5) ? "Turn " + p.TargetTurn : "Another turn", 1164, 638, 208, () => EditAnalysisText("turn"), !busy, height: 36);
+        canvas.Text("Automatic uses your commander's mana value, or the first three land drops. It does not model colors or ramp.", 208, 686, Muted, .69f, 1164, 2);
+        Button("analysis-protect", "Which cards should we keep?", 208, 746, 380, () => EditAnalysisText("protected"), !busy, height: 36);
+        Button("analysis-backup", "Add a backup-plan note", 606, 746, 374, () => EditAnalysisText("backup"), !busy, height: 36);
+        if (state.Report.Format.PoolRequired) Button("analysis-pool", "Add available pool cards", 998, 746, 374, () => EditAnalysisText("pool"), !busy, height: 36);
+        canvas.Text("Favorites also live in Build. Plans are your notes; the review does not interpret free text as rules.", 208, 807, Muted, .69f, 1164, 2);
     }
     private void DrawAnalysisRow(DeckAnalysisState state, int index, int y)
     {
@@ -218,9 +258,9 @@ internal sealed partial class TableGame
             title = c.Quantity + "x " + c.Name + " (" + c.Section + ")" + (favorite ? " - favorite" : c.ProtectedCard ? enginePiece ? " - engine piece" : " - preserved preference" : "");
             summary = string.Join(" | ", c.Functions.Select(f => f.Role + " [" + f.Event + "]: " + f.Provides));
             details = c.Functions.Length == 0 ? "No function was confidently detected. Inspect the card's rules before deciding its role." : string.Join("\n\n", c.Functions.Select(f => f.Role + " | " + f.Event + "\n" + f.Provides + "\nRequires: " + (f.Requires.Length == 0 ? "No additional condition detected" : string.Join("; ", f.Requires)) + "\nBasis: " + AnalysisBasis(f.Confidence)));
-            if (c.ProtectedCard) details = (favorite ? "A favorite you chose to keep. Change its marker in Build or Favorites to keep."
+            if (c.ProtectedCard) details = (favorite ? "A favorite you chose to keep. Change its marker in Build or Review preferences."
                 : enginePiece ? "This card is part of a detected complete engine, so this review preserves it when suggesting cuts. It is not marked as a favorite."
-                : "An existing analysis preference preserves this card from suggested cuts. Review its preference in Favorites to keep.") + "\n\n" + details;
+                : "An existing analysis preference preserves this card from suggested cuts. Change it in Review preferences.") + "\n\n" + details;
             cards = [c.Name];
         } else {
             var h = state.History[state.History.Length - 1 - index]; title = h.Decision + " | " + WorkshopVersionLabel(h.Fingerprint);

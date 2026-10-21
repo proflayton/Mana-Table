@@ -58,6 +58,11 @@ public class RemoteClientGuiGame extends NetworkGuiGame implements IHasForgeLog 
     private final GameProtocolSender sender;
     private final DeltaSyncManager syncManager;
 
+    // This proxy's monitor covers each state walk through its ordered outbound enqueue.
+    // Input teardown may publish while the game thread resumes; serializing only the
+    // manager would still allow packet N+1 onto the wire before packet N. Reply waits
+    // stay outside this monitor so another callback can publish while a dialog is open.
+
     private boolean initialSyncSent = false;
     private boolean objectsRegistered = false;
     private boolean fallbackLogged = false;  // Prevent duplicate fallback log messages
@@ -68,7 +73,12 @@ public class RemoteClientGuiGame extends NetworkGuiGame implements IHasForgeLog 
     private boolean flushing;
 
     public RemoteClientGuiGame(final RemoteClient client) {
+        this(client, FModel.getNetPreferences().getPrefBoolean(forge.localinstance.properties.ForgeNetPreferences.FNetPref.NET_BANDWIDTH_LOGGING));
+    }
+
+    RemoteClientGuiGame(final RemoteClient client, final boolean logBandwidth) {
         this.client = client;
+        this.logBandwidth = logBandwidth;
         sender = new GameProtocolSender(client);
         syncManager = new DeltaSyncManager();
         client.setGui(this);
@@ -98,14 +108,14 @@ public class RemoteClientGuiGame extends NetworkGuiGame implements IHasForgeLog 
      * After a client reconnects, it has no prior delta baseline,
      * so we must send a full state before resuming delta sync.
      */
-    public void resetForReconnect() {
+    public synchronized void resetForReconnect() {
         initialSyncSent = false;
         objectsRegistered = false;
         fallbackLogged = false;
         syncManager.reset();
     }
 
-    public void setForwarder(GameEventForwarder forwarder) {
+    public synchronized void setForwarder(GameEventForwarder forwarder) {
         this.forwarder = forwarder;
     }
 
@@ -113,7 +123,7 @@ public class RemoteClientGuiGame extends NetworkGuiGame implements IHasForgeLog 
         return forwarder;
     }
 
-    public void shutdownForwarder() {
+    public synchronized void shutdownForwarder() {
         if (forwarder != null) {
             forwarder.flush();
             forwarder = null;
@@ -178,7 +188,7 @@ public class RemoteClientGuiGame extends NetworkGuiGame implements IHasForgeLog 
     private long totalDeltaBytes = 0;
     private long totalFullStateBytes = 0;
     private int deltaPacketCount = 0;
-    private boolean logBandwidth = FModel.getNetPreferences().getPrefBoolean(forge.localinstance.properties.ForgeNetPreferences.FNetPref.NET_BANDWIDTH_LOGGING);
+    private boolean logBandwidth;
 
     /**
      * Push pending state to the client. Flushes the event queue if any events
@@ -192,7 +202,7 @@ public class RemoteClientGuiGame extends NetworkGuiGame implements IHasForgeLog 
     public void updateGameView() {
         updateGameView(true);
     }
-    private void updateGameView(boolean flush) {
+    private synchronized void updateGameView(boolean flush) {
         GameView gameView = getGameView();
         if (gameView == null) {
             return;
@@ -262,7 +272,7 @@ public class RemoteClientGuiGame extends NetworkGuiGame implements IHasForgeLog 
      * Request a full state resync on the next updateGameView call.
      * Called from the Netty thread; the actual send happens on the game thread.
      */
-    public void setResyncPending() {
+    public synchronized void setResyncPending() {
         resyncPending = true;
         syncManager.onResyncRequested();
     }
@@ -271,7 +281,7 @@ public class RemoteClientGuiGame extends NetworkGuiGame implements IHasForgeLog 
      * Send the full game state to the client.
      * Used for initial connection and reconnection.
      */
-    public void sendFullState() {
+    public synchronized void sendFullState() {
         GameView gameView = getGameView();
         if (gameView == null) {
             return;
@@ -291,7 +301,7 @@ public class RemoteClientGuiGame extends NetworkGuiGame implements IHasForgeLog 
     }
 
     @Override
-    public void setGameView(final GameView gameView) {
+    public synchronized void setGameView(final GameView gameView) {
         super.setGameView(gameView);
         // Each game owns a Tracker and restarts card ids at 1, so client IdRefs must resolve
         // against the current game's. A null view is a transient clear between games — leave
@@ -303,7 +313,7 @@ public class RemoteClientGuiGame extends NetworkGuiGame implements IHasForgeLog 
     }
 
     @Override
-    public void openView(final TrackableCollection<PlayerView> myPlayers) {
+    public synchronized void openView(final TrackableCollection<PlayerView> myPlayers) {
         send(ProtocolMethod.openView, myPlayers);
         updateGameView();
         // Initialize delta sync by sending the initial full state
@@ -547,7 +557,7 @@ public class RemoteClientGuiGame extends NetworkGuiGame implements IHasForgeLog 
     }
 
     @Override
-    public void handleGameEvents(List<GameEvent> events) {
+    public synchronized void handleGameEvents(List<GameEvent> events) {
         if (paused) { return; }
         for (GameEvent ev : events) {
             if (ev instanceof GameEventPlayerControl pc) {

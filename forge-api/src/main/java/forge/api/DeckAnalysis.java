@@ -146,15 +146,18 @@ public final class DeckAnalysis {
         int interaction = sum(main, c -> has(c, "Interaction"));
         int[] curve = new int[8];
         main.stream().filter(c -> !has(c, "Lands")).forEach(c -> curve[Math.min(7, c.manaValue())] += c.quantity());
-        int target = profile.targetTurn() > 0 ? profile.targetTurn() : format.commanderIdentity()
+        int commanderTarget = format.commanderIdentity()
                 ? active.stream().filter(e -> e.section().equals("Commander")).mapToInt(e -> e.card().manaValue()).max().orElse(0) : 0;
+        int target = profile.targetTurn() > 0 ? profile.targetTurn() : commanderTarget > 0 ? commanderTarget : 3;
+        String targetBasis = profile.targetTurn() > 0 ? "Your chosen target: turn " + target
+                : commanderTarget > 0 ? "Automatic target: turn " + target + ", using the highest commander mana value"
+                : "Automatic target: the first three land drops";
         int seen = target == 0 ? 0 : Math.min(size, 7 + Math.max(0, target - (format.commanderIdentity() ? 0 : 1)));
         Double probability = target == 0 || size < format.minimumMain() ? null : atLeast(size, lands, seen, target);
         var metrics = new Metrics(size, lands, creatures, expensive, earlyRamp, unconditional, conditional, interaction, curve, seen, target,
-                probability, (format.commanderIdentity() ? "Seven-card keep, one draw on every turn including turn one in multiplayer Commander" : "Seven-card keep, on the play, one draw on turns 2 onward")
+                probability, targetBasis + ". " + (format.commanderIdentity() ? "Seven-card keep, one draw on every turn including turn one in multiplayer Commander" : "Seven-card keep, on the play, one draw on turns 2 onward")
                         + "; no mulligans, ramp, selection, color, or tapped-land modeling. This is a land-count probability, not castability or win probability.");
         var findings = new ArrayList<Finding>();
-        if (profile.plan().isBlank() && profile.strategy().equals("unspecified")) findings.add(finding("choose-plan", "Plan", "info", "Describe what this deck is trying to do", "Choose a strategy and a primary plan to give strategic recommendations context.", List.of()));
         if (size < format.minimumMain()) findings.add(finding("incomplete", "Structure", "info", "This list is still being built", "Main deck has " + size + " cards; this profile needs " + format.minimumMain() + ". Counts are shown without diagnosing shortages in an unfinished list.", List.of()));
         if (probability != null && probability < .65) findings.add(finding("land-consistency", "Mana", "review", "Check access to early land drops",
                 lands + " lands give approximately " + Math.round(probability * 100) + "% to see " + target + " lands in " + seen + " cards under the displayed assumptions. Review ramp and colored sources before changing the land count.", List.of()));
@@ -162,7 +165,7 @@ public final class DeckAnalysis {
                 expensive + " nonland cards cost five or more mana. Your chosen pace is fast; inspect which contribute immediately or have a real alternate casting route.", main.stream().filter(c -> !has(c, "Lands") && c.manaValue() >= 5 && !c.protectedCard()).map(CardReview::name).toList()));
         if (conditional > 0 && unconditional == 0 && size >= format.minimumMain()) findings.add(finding("conditional-draw", "Resources", "review", "All detected card access needs setup",
                 conditional + " draw cards require an event, activation, or discard. Check how the deck finds pieces before its engine is working; these are text estimates.", main.stream().filter(c -> has(c, "Draw")).map(CardReview::name).toList()));
-        if (format.poolRequired() && profile.pool().isEmpty()) findings.add(finding("missing-pool", "Pool", "info", "Add your draft or sealed pool", "Limited recommendations must come from your available pool. No catalog additions are recommended without it.", List.of()));
+        if (format.poolRequired() && availablePool(deck, profile).isEmpty()) findings.add(finding("missing-pool", "Pool", "info", "Add your draft or sealed pool", "Which cards can you use? Add pool cards in review preferences, or put unused pool cards in Sideboard. Other checks are ready now; swap ideas use only your available cards.", List.of()));
         if (eligibility != null) for (var entry : deck.entries()) {
             if (!List.of("Main", "Sideboard", "Commander").contains(entry.section())) continue;
             String status = eligibility.check(entry.card(), rulesFormat);
@@ -181,11 +184,13 @@ public final class DeckAnalysis {
         if (byName.containsKey("Scourglass") && byName.containsKey("Mycosynth Lattice")) findings.add(finding("scourglass-lattice", "Dependencies", "review", "Lattice leaves Scourglass nothing to destroy", "Scourglass preserves artifacts and lands; Lattice makes all permanents artifacts.", List.of("Scourglass", "Mycosynth Lattice")));
         if (byName.containsKey("Lifecrafter's Bestiary") && (profile.strategy().equals("artifact-recursion") || byName.containsKey(TOPH))) findings.add(finding("bestiary-casts", "Resources", "review", "Bestiary does not draw from returns", "Its draw ability requires casting a creature and paying green mana. Sacrificing and returning a creature bypasses that event.", List.of("Lifecrafter's Bestiary")));
         var recommendations = recommend(catalog, deck, format, profile, reviews, findings, eligibility);
+        // Show actionable checks before explanatory rules notes, without requiring a goals form.
+        findings.sort(Comparator.comparingInt(f -> f.severity().equals("review") ? 0 : 1));
         return new Report(deckId, deck.revision(), fingerprint, fingerprint, profile, format, metrics, reviews, engines, List.copyOf(findings), recommendations,
                 List.of("Functions and strategic findings are estimates; no overall power score or automatic bracket assignment.",
                         "Engine coverage is a small curated registry with explicit prerequisites, not exhaustive combo discovery or a simulator proof.",
                         "Card prices, matchup statistics, and playtest outcomes are not inferred. Format eligibility uses bundled rules when available and reports unknown otherwise.",
-                        "Limited pool entries are names only; available quantities are not modeled. Card-function estimates are separate from your editable building categories."));
+                        "Limited uses your saved pool names and Sideboard cards; available quantities are not modeled. Card-function estimates are separate from your editable building categories."));
     }
 
     private record LoopOutlet(String name, String output) { }
@@ -235,7 +240,8 @@ public final class DeckAnalysis {
 
     private static List<Recommendation> recommend(CardCatalog catalog, DeckEditor.Snapshot deck, FormatProfile format, Profile profile,
                                                   List<CardReview> reviews, List<Finding> findings, Eligibility eligibility) {
-        if (format.poolRequired() && profile.pool().isEmpty()) return List.of();
+        var pool = availablePool(deck, profile);
+        if (format.poolRequired() && pool.isEmpty()) return List.of();
         var result = new ArrayList<Recommendation>();
         boolean toph = reviews.stream().anyMatch(c -> c.name().equals(TOPH) && (c.section().equals("Main") || c.section().equals("Commander") && format.commanderIdentity()));
         var swaps = new ArrayList<Swap>();
@@ -252,7 +258,7 @@ public final class DeckAnalysis {
             if (cut == null) continue;
             var add = catalog.named(swap.add());
             if (add == null || !add.deckSection().equals("Main")) continue;
-            if (format.poolRequired() && profile.pool().stream().noneMatch(name -> name.equalsIgnoreCase(add.name()))) continue;
+            if (format.poolRequired() && !pool.contains(add.name())) continue;
             if (format.commanderIdentity() && (identity == null || (add.colorIdentity() & ~identity) != 0)) continue;
             int copies = deck.entries().stream().filter(e -> (e.section().equals("Main") || e.section().equals("Sideboard") || format.commanderIdentity() && e.section().equals("Commander")) && e.card().name().equals(add.name())).mapToInt(DeckEditor.Entry::quantity).sum();
             if (format.copyLimit() > 0 && copies >= format.copyLimit()) continue;
@@ -270,6 +276,13 @@ public final class DeckAnalysis {
         }
         result.sort(Comparator.comparing(Recommendation::id));
         return List.copyOf(result);
+    }
+
+    private static Set<String> availablePool(DeckEditor.Snapshot deck, Profile profile) {
+        var pool = new TreeSet<String>(String.CASE_INSENSITIVE_ORDER);
+        pool.addAll(profile.pool());
+        deck.entries().stream().filter(e -> e.section().equals("Sideboard")).forEach(e -> pool.add(e.card().name()));
+        return pool;
     }
 
     public static double atLeast(int population, int successes, int draws, int required) {

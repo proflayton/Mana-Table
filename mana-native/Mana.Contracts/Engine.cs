@@ -44,6 +44,11 @@ public interface ITableSetup
     Task ReturnToLobbyAsync();
     Task LeaveAsync();
 }
+public interface ITableSeatSetup
+{
+    Task<Lobby> ConfigureSeatsAsync(string tableId, int players);
+    Task<Lobby> SetSeatAsync(string tableId, int seat, string type, string? opponentId = null);
+}
 public interface IMatchConnection
 {
     Task<GameSnapshot?> ObserveAsync();
@@ -85,9 +90,15 @@ public sealed record SoloSetup(string DeckId, string DeckName, AiOpponent[] Oppo
     public int MaxPlayers { get; init; } = 6;
 }
 public sealed record Address(string Label, string Url, string Invite);
-public sealed record Seat(int Index, string Name, string Type, string? Deck, bool Ready, bool Local);
+public sealed record Seat(int Index, string Name, string Type, string? Deck, bool Ready, bool Local)
+{
+    public string? OpponentId { get; init; }
+}
 public sealed record Lobby(string Mode, string Status, string? Error, bool CanStart, string? StartProblem,
-    bool MatchActive, string PortMapping, string? InternetInvite, Address[] Addresses, Seat[] Seats, string TableId = "");
+    bool MatchActive, string PortMapping, string? InternetInvite, Address[] Addresses, Seat[] Seats, string TableId = "")
+{
+    public AiOpponent[] AiOpponents { get; init; } = [];
+}
 public enum DecisionIntent { General, Priority, Attack, Block, Mana, Selection }
 public enum ReplyAction { Confirm, Cancel, SelectCard, SelectPlayer, AssignAttack, AssignBlock, AutoPass, Skip, Choose, Value, Allocate, SetAbilityAutoPass, UseHandPlacement }
 public sealed record DecisionReply(string GameId, string DecisionId, ReplyAction Action,
@@ -117,6 +128,8 @@ public sealed record Card
     public string Key { get; init; } = "";
     public string VisualId { get; init; } = "";
     public string CombatId { get; init; } = "";
+    public CardAttachment? AttachedTo { get; init; }
+    public CardAttachment[] Attachments { get; init; } = [];
     public string Name { get; init; } = "";
     public string ArtName { get; init; } = "";
     public string ArtFace { get; init; } = "front";
@@ -142,6 +155,7 @@ public sealed record Card
     public bool Blocking { get; init; }
     public Dictionary<string, int> Counters { get; init; } = [];
 }
+public sealed record CardAttachment(string Id, string Name, string Type);
 public sealed record CardFace(string Name, string Type, string ManaCost, string OracleText, int? Power, int? Toughness, string ArtName, string ArtFace);
 public sealed record Zone(string Name, int Count, Card[] Cards, Card? TopCard);
 public sealed record Player(int Id, string Name, int Life, bool Priority, bool Eliminated, Dictionary<string, int> Mana, Zone[] Zones)

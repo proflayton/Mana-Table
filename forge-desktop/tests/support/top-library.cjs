@@ -35,14 +35,55 @@ async function startChorusTable(clients, cardSeat, { deck = networkDeck } = {}) 
   await host.request('multiplayerStart');
 }
 
+function createLibraryDrawObserver({ now = Date.now } = {}) {
+  const started = now(), setupDeadline = started + 100000;
+  const observed = new Map(), transitions = [], actions = [];
+  let firstTopAt, drawn, previous;
+  return {
+    observe(state) {
+      const library = zone(state, 'Library'), hand = zone(state, 'Hand').cards;
+      for (const card of hand) {
+        const top = observed.get(card.visualId);
+        if (!drawn && top && !top.alreadyInHand && library.count < top.libraryCount)
+          drawn = { visualId: card.visualId, name: card.name, observedTurn: top.turn, drawnTurn: state.turn,
+            observedLibraryCount: top.libraryCount, drawnLibraryCount: library.count, elapsedMs: now() - started };
+      }
+      if (library.topCard?.visualId && !observed.has(library.topCard.visualId)) {
+        firstTopAt ??= now();
+        observed.set(library.topCard.visualId, { name: library.topCard.name, turn: state.turn, libraryCount: library.count,
+          alreadyInHand: hand.some(card => card.visualId === library.topCard.visualId), elapsedMs: now() - started });
+      }
+      const transition = { turn: state.turn, phase: state.phaseKey, prompt: state.prompt?.inputType ?? state.prompt?.kind,
+        libraryCount: library.count, top: library.topCard?.visualId ?? null,
+        hand: hand.map(card => ({ id: card.visualId, name: card.name })) };
+      const key = JSON.stringify(transition);
+      if (key !== previous) {
+        previous = key; transitions.push({ elapsedMs: now() - started, ...transition });
+        if (transitions.length > 64) transitions.shift();
+      }
+    },
+    action(seat, state, answer, applied) {
+      actions.push({ elapsedMs: now() - started, seat, turn: state.turn, phase: state.phaseKey,
+        prompt: state.prompt?.inputType ?? state.prompt?.kind, promptId: state.prompt?.id, answer, applied });
+      if (actions.length > 32) actions.shift();
+    },
+    get drewTop() { return Boolean(drawn); },
+    // Late random setup must still leave time for the next draw and removal.
+    // Ordinary polls/actions never extend either bounded milestone budget.
+    get deadline() { return firstTopAt == null ? setupDeadline : Math.max(setupDeadline, firstTopAt + 30000); },
+    snapshot() { return { elapsedMs: now() - started, firstTopMs: firstTopAt == null ? null : firstTopAt - started,
+      draw: drawn ?? null, observedTop: [...observed].map(([visualId, card]) => ({ visualId, ...card })), transitions, actions }; }
+  };
+}
+
 // Drive actual engine decisions. No fixture injects hidden cards or permissions.
-async function playChorus(clients, { requireCreature = false, inspect = async () => {} } = {}) {
-  let sawTop = false, sawLand = false, castCreature = false, removed = false, previousTop, drewTop = false;
+async function playChorus(clients, { requireCreature = false, inspect = async () => {}, report = () => {} } = {}) {
+  let sawTop = false, sawLand = false, castCreature = false, removed = false;
   let removing = false, lastState, castingCreatureId;
   const waiting = new Map();
   const answered = new Map();
-  const deadline = Date.now() + 100000;
-  while (Date.now() < deadline && !removed) {
+  const observer = createLibraryDrawObserver();
+  while (Date.now() < observer.deadline && !removed) {
     for (let index = 0; index < clients.length; index++) {
       const client = clients[index], state = await client.request('matchState');
       if (!state?.players?.length) continue;
@@ -55,6 +96,7 @@ async function playChorus(clients, { requireCreature = false, inspect = async ()
         assert.deepEqual(zone(state, 'Library', opponent.id).cards, []);
       }
       if (index === 0) {
+        observer.observe(state);
         lastState = { turn: state.turn, phase: state.phaseKey, prompt: state.prompt, hand: hand.map(card => card.name) };
         if (castingCreatureId && field.some(card => card.visualId === castingCreatureId)) castCreature = true;
         if (chorus && library.topCard) {
@@ -64,8 +106,6 @@ async function playChorus(clients, { requireCreature = false, inspect = async ()
             sawLand = true;
             assert.equal(library.topCard.selectable, false, 'Chorus lets you look at a land, not play it');
           }
-          if (previousTop && hand.some(card => card.visualId === previousTop)) drewTop = true;
-          previousTop = library.topCard.visualId;
           await inspect(state);
         }
         if (removing && !chorus && !state.stack.length && field.length) {
@@ -90,7 +130,7 @@ async function playChorus(clients, { requireCreature = false, inspect = async ()
           assert.equal(prompt.canAutoPass, false, 'A playable creature on top must hold Auto');
           answer = { action: 'card', key: library.topCard.key };
           progress = () => { castingCreatureId = library.topCard.visualId; };
-        } else if (chorus && sawLand && drewTop && (!requireCreature || castCreature) && removal && mana >= 2) {
+        } else if (chorus && sawLand && observer.drewTop && (!requireCreature || castCreature) && removal && mana >= 2) {
           answer = { action: 'card', key: removal.key }; progress = () => { removing = true; };
         } else answer = { action: 'ok' };
       } else if (index === 0 && removing && prompt.inputType === 'InputSelectTargets') {
@@ -114,7 +154,9 @@ async function playChorus(clients, { requireCreature = false, inspect = async ()
       }
       waiting.delete(client);
       try {
-        if (await submitMatchAction(client, state, answer)) { answered.set(client, prompt.id); progress?.(); }
+        const applied = await submitMatchAction(client, state, answer);
+        observer.action(index, state, answer, applied);
+        if (applied) { answered.set(client, prompt.id); progress?.(); }
       } catch (error) {
         error.message += ` (${JSON.stringify({ prompt, answer })})`;
         throw error;
@@ -123,7 +165,10 @@ async function playChorus(clients, { requireCreature = false, inspect = async ()
     }
     await sleep(15);
   }
-  assert.ok(sawTop && sawLand && drewTop && removed && (!requireCreature || castCreature), JSON.stringify({ sawTop, sawLand, drewTop, castCreature, removed, lastState }));
+  const evidence = { sawTop, sawLand, drewTop: observer.drewTop, castCreature, removed, lastState, ...observer.snapshot() };
+  report(evidence);
+  assert.ok(sawTop && sawLand && observer.drewTop && removed && (!requireCreature || castCreature), JSON.stringify(evidence));
+  return evidence;
 }
 
-module.exports = { zone, localDeck, networkDeck, startChorusTable, playChorus, waitFor };
+module.exports = { zone, localDeck, networkDeck, startChorusTable, playChorus, waitFor, createLibraryDrawObserver };

@@ -24,7 +24,8 @@ final class SyncLobby {
     private PortForwarding forwarding;
     private CompletableFuture<String> external = CompletableFuture.completedFuture(null);
     private static final class Slot {
-        String name; Deck deck; boolean ready, occupied;
+        String name; Deck deck; boolean ready, occupied, ai;
+        String opponentId;
         Slot(String name, boolean occupied) { this.name = name; this.occupied = occupied; }
     }
     SyncLobby(Path resources, Path profile) {
@@ -61,7 +62,7 @@ final class SyncLobby {
     }
     private synchronized int joinSeat() {
         if (table != null) throw new IllegalStateException("This table has already started");
-        for (int i = 1; i < slots.size(); i++) if (!slots.get(i).occupied) {
+        for (int i = 1; i < slots.size(); i++) if (!slots.get(i).occupied && !slots.get(i).ai) {
             slots.get(i).occupied = true; slots.get(i).name = "Player " + (i + 1);
             conversation.join(i, slots.get(i).name); return i;
         }
@@ -72,7 +73,8 @@ final class SyncLobby {
         if (current == null) throw new IllegalStateException("Join or host a lobby first.");
         return current.request(method, args);
     }
-    Object configure(String format, int count) { return request("configure", object(Map.of("format", format, "count", count))); }
+    Object configure(String tableId, String format, int count) { return request("configure", object(Map.of("tableId", tableId, "format", format, "count", count))); }
+    Object setSeat(JsonObject args) { return request("seat", args); }
     Object selectDeck(Deck deck, String format) {
         var entries = new ArrayList<Map<String, Object>>();
         for (var section : deck) for (var card : section.getValue()) entries.add(Map.of("section", section.getKey().name(), "cardId", CardCatalog.describe(card.getKey()).id(), "quantity", card.getValue()));
@@ -112,7 +114,8 @@ final class SyncLobby {
             case "observe": return table == null ? null : table.seat(seat).state();
             case "reply": requireMatch(); return table.seat(seat).action(p);
             case "concede": requireMatch(); return table.seat(seat).concede(p);
-            case "configure": requireHost(seat); requireSetup(); configureSeats(p.get("format").getAsString(), p.get("count").getAsInt()); break;
+            case "configure": requireHost(seat); requireSetup(); requireConversation(p); configureSeats(p.get("format").getAsString(), p.get("count").getAsInt()); break;
+            case "seat": requireHost(seat); requireSetup(); requireConversation(p); configureSeat(seat, p); break;
             case "deck": {
                 requireSetup();
                 if (!format.equals(p.get("format").getAsString())) throw new IllegalArgumentException("Choose a saved " + format + " deck for this lobby.");
@@ -134,11 +137,12 @@ final class SyncLobby {
             }
             case "start": {
                 requireHost(seat); requireSetup(); String problem = startProblem(); if (problem != null) throw new IllegalStateException(problem);
-                List<RegisteredPlayer> players = slots.stream().map(s -> MatchTable.human(s.deck, format, s.name)).toList();
+                List<RegisteredPlayer> players = slots.stream().map(s -> s.ai
+                        ? MatchTable.ai(s.deck, format, s.name) : MatchTable.human(s.deck, format, s.name)).toList();
                 table = new MatchTable(format, players, resources, profile); table.start(); conversation.activity(seat, "started the game."); break;
             }
             case "return":
-                if (table != null) { if (!table.game.isGameOver()) throw new IllegalStateException("The match is still active"); table.close(); table = null; for (var s : slots) s.ready = false; conversation.activity(seat, "returned the table to the lobby."); }
+                if (table != null) { if (!table.game.isGameOver()) throw new IllegalStateException("The match is still active"); table.close(); table = null; for (var s : slots) s.ready = s.ai && s.deck != null; conversation.activity(seat, "returned the table to the lobby."); }
                 slot.ready = false; break;
             case "leave":
                 if (table != null && !table.game.isGameOver()) table.seat(seat).concede(object(Map.of("sessionId", table.id)));
@@ -149,23 +153,63 @@ final class SyncLobby {
     }
     private void requireHost(int seat) { if (seat != 0) throw new IllegalStateException("Only the host can change this table"); }
     private void requireConversation(JsonObject p) {
-        if (!p.has("tableId") || !conversation.id().equals(p.get("tableId").getAsString())) throw new IllegalStateException("This table has changed. Reopen chat.");
+        if (!p.has("tableId") || !p.get("tableId").isJsonPrimitive() || !p.getAsJsonPrimitive("tableId").isString()
+                || !conversation.id().equals(p.get("tableId").getAsString())) throw new IllegalStateException("This table has changed. Reopen the table.");
     }
     private void requireSetup() { if (table != null) throw new IllegalStateException("Return to the lobby before changing the table"); }
     private void requireMatch() { if (table == null) throw new IllegalStateException("No active match"); }
+    private void configureSeat(int host, JsonObject p) {
+        int index;
+        try {
+            if (!p.has("seat") || !p.get("seat").isJsonPrimitive() || !p.getAsJsonPrimitive("seat").isNumber())
+                throw new IllegalArgumentException("Choose an open or AI seat");
+            index = p.get("seat").getAsBigDecimal().intValueExact();
+        } catch (NumberFormatException | ArithmeticException invalid) { throw new IllegalArgumentException("Choose an open or AI seat"); }
+        if (index <= 0 || index >= slots.size()) throw new IllegalArgumentException("Choose an open or AI seat other than the host");
+        var target = slots.get(index);
+        if (target.occupied) throw new IllegalStateException("A connected player occupies this seat");
+        String type = p.has("type") && p.get("type").isJsonPrimitive() && p.getAsJsonPrimitive("type").isString()
+                ? p.get("type").getAsString() : "";
+        if (!List.of("AI", "OPEN").contains(type)) throw new IllegalArgumentException("Choose AI or an open seat");
+        if (type.equals("OPEN")) {
+            if (!target.ai) return;
+            target.ai = false; target.opponentId = null; target.deck = null; target.ready = false;
+            target.name = "Player " + (index + 1);
+            conversation.activity(host, "opened seat " + (index + 1) + " for a friend.");
+            return;
+        }
+        if (p.has("opponentId") && !p.get("opponentId").isJsonNull()
+                && (!p.get("opponentId").isJsonPrimitive() || !p.getAsJsonPrimitive("opponentId").isString()))
+            throw new IllegalArgumentException("Choose an available AI deck");
+        String opponent = p.has("opponentId") && !p.get("opponentId").isJsonNull() ? p.get("opponentId").getAsString() : "";
+        if (opponent.isBlank()) opponent = MatchSession.opponents(format).get(0).get("id");
+        var deck = MatchSession.aiDeck(opponent, format);
+        var rules = format.equals("Commander") ? DeckFormat.Commander : DeckFormat.Constructed;
+        String problem = DeckLegality.validate(catalog, deck, rules, rules.getDeckConformanceProblem(deck)).problem();
+        if (problem != null) throw new IllegalArgumentException("This AI deck is not legal for " + format + ": " + problem);
+        target.ai = true; target.opponentId = opponent; target.deck = deck; target.ready = true;
+        target.name = "AI opponent " + (index + 1);
+        conversation.activity(host, "set seat " + (index + 1) + " to AI with " + deck.getName() + ".");
+    }
     private void configureSeats(String nextFormat, int count) {
         if (!List.of("Commander", "Constructed").contains(nextFormat)) throw new IllegalArgumentException("Unsupported format");
         if (count < 2 || count > (nextFormat.equals("Commander") ? 6 : 2)) throw new IllegalArgumentException("Invalid number of seats");
         for (int i = count; i < slots.size(); i++) if (slots.get(i).occupied) throw new IllegalStateException("A connected player occupies a seat you are trying to remove");
         while (slots.size() > count) slots.remove(slots.size() - 1);
         while (slots.size() < count) slots.add(new Slot("Player " + (slots.size() + 1), false));
-        for (var slot : slots) { slot.ready = false; if (!format.equals(nextFormat)) slot.deck = null; }
+        for (var slot : slots) {
+            if (!format.equals(nextFormat)) {
+                slot.deck = null;
+                if (slot.ai) { slot.ai = false; slot.opponentId = null; slot.name = "Player " + (slots.indexOf(slot) + 1); }
+            }
+            slot.ready = slot.ai && slot.deck != null;
+        }
         format = nextFormat;
     }
     private String startProblem() {
         if (table != null) return "A game is already running.";
-        long occupied = slots.stream().filter(s -> s.occupied).count();
-        if (occupied < slots.size()) return "Waiting for players (" + occupied + "/" + slots.size() + " connected). Invite more friends or change the number of seats.";
+        long occupied = slots.stream().filter(s -> s.occupied || s.ai).count();
+        if (occupied < slots.size()) return "Waiting for players (" + occupied + "/" + slots.size() + " seats filled). Invite more friends, add AI, or change the number of seats.";
         for (var slot : slots) if (slot.deck == null || !slot.ready) return slot.name + " needs to choose a deck and ready up.";
         return null;
     }
@@ -175,10 +219,12 @@ final class SyncLobby {
         result.put("mode", viewer == 0 ? "hosting" : "joined"); result.put("status", table == null ? "Connected to table." : "Game in progress.");
         result.put("hosting", viewer == 0); result.put("format", format); result.put("playerCount", slots.size()); result.put("maxPlayers", format.equals("Commander") ? 6 : 2);
         result.put("canStart", viewer == 0 && startProblem() == null); result.put("startProblem", viewer == 0 ? startProblem() : "Only the host can start the game."); result.put("matchActive", table != null);
+        result.put("aiOpponents", MatchSession.opponents(format));
         var rows = new ArrayList<Map<String, Object>>();
         for (int i = 0; i < slots.size(); i++) {
             var slot = slots.get(i); var row = new LinkedHashMap<String, Object>();
-            row.put("index", i); row.put("name", slot.name); row.put("type", !slot.occupied ? "OPEN" : i == viewer ? "LOCAL" : "REMOTE");
+            row.put("index", i); row.put("name", slot.name); row.put("type", slot.ai ? "AI" : !slot.occupied ? "OPEN" : i == viewer ? "LOCAL" : "REMOTE");
+            row.put("opponentId", slot.opponentId);
             row.put("ready", slot.ready); row.put("local", i == viewer); row.put("team", i); row.put("deck", slot.deck == null ? null : slot.deck.getName()); rows.add(row);
         }
         result.put("slots", rows);
@@ -201,6 +247,6 @@ final class SyncLobby {
         var state = new LinkedHashMap<String, Object>();
         state.put("mode", "idle"); state.put("status", "Not connected."); state.put("error", null); state.put("canStart", false); state.put("startProblem", "Host a table first.");
         state.put("hosting", false); state.put("format", "Constructed"); state.put("playerCount", 2); state.put("maxPlayers", 2); state.put("addressLookupPending", false);
-        state.put("matchActive", false); state.put("portMapping", "disabled"); state.put("internetInvite", null); state.put("addresses", List.of()); state.put("slots", List.of()); state.put("messages", List.of()); return state;
+        state.put("matchActive", false); state.put("portMapping", "disabled"); state.put("internetInvite", null); state.put("addresses", List.of()); state.put("slots", List.of()); state.put("messages", List.of()); state.put("aiOpponents", List.of()); return state;
     }
 }

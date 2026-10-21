@@ -8,7 +8,7 @@ namespace Mana.Forge;
 
 public sealed record ForgePaths(string Java, string Jar, string Resources, string Profile);
 
-public sealed partial class ForgeEngine(ForgePaths paths) : ICardEngine, ITableSocial, IDeckWorkshop
+public sealed partial class ForgeEngine(ForgePaths paths) : ICardEngine, ITableSocial, IDeckWorkshop, ITableSeatSetup
 {
     private static readonly JsonSerializerOptions Json = new() { PropertyNameCaseInsensitive = true };
     private readonly ConcurrentDictionary<long, TaskCompletionSource<JsonElement>> pending = new();
@@ -190,7 +190,9 @@ public sealed partial class ForgeEngine(ForgePaths paths) : ICardEngine, ITableS
     }
     private static Lobby MapLobby(JsonElement data) => new(Text(data, "mode"), Text(data, "status"), Text(data, "error"),
         data.GetProperty("canStart").GetBoolean(), Text(data, "startProblem"), data.GetProperty("matchActive").GetBoolean(),
-        Text(data, "portMapping"), Text(data, "internetInvite"), Read<Address[]>(data.GetProperty("addresses")), Read<Seat[]>(data.GetProperty("slots")), Text(data, "tableId"));
+        Text(data, "portMapping"), Text(data, "internetInvite"), Read<Address[]>(data.GetProperty("addresses")), Read<Seat[]>(data.GetProperty("slots")), Text(data, "tableId")) {
+            AiOpponents = data.TryGetProperty("aiOpponents", out var opponents) ? Read<AiOpponent[]>(opponents) : []
+        };
     public async Task<TableConversation> ConversationAsync(string tableId) => Read<TableConversation>(await Request("tableSocial", new { tableId }));
     public async Task<TableConversation> SendMessageAsync(string tableId, string kind, string text) => Read<TableConversation>(await Request("tableChat", new { tableId, kind, text }));
     public async Task<TableConversation> SetPlayerNameAsync(string tableId, string name) => Read<TableConversation>(await Request("tableName", new { tableId, name }));
@@ -199,6 +201,10 @@ public sealed partial class ForgeEngine(ForgePaths paths) : ICardEngine, ITableS
     public async Task<Lobby> LobbyAsync() => MapLobby(await Request("multiplayerState"));
     public async Task SelectDeckAsync(string id) => await Request("multiplayerSelectDeck", new { deckId = id });
     public async Task SetReadyAsync(bool ready) => await Request("multiplayerReady", new { ready });
+    public async Task<Lobby> ConfigureSeatsAsync(string tableId, int players) =>
+        MapLobby(await Request("multiplayerConfigure", new { tableId, format = "Commander", playerCount = players }));
+    public async Task<Lobby> SetSeatAsync(string tableId, int seat, string type, string? opponentId = null) =>
+        MapLobby(await Request("multiplayerSetSeat", new { tableId, seat, type, opponentId }));
     public async Task StartAsync() => await Request("multiplayerStart");
     public async Task ReturnToLobbyAsync() => await Request("multiplayerReturn");
     public async Task LeaveAsync() => await Request("multiplayerClose");

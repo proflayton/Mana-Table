@@ -28,7 +28,11 @@ internal sealed class AnalysisSmoke(TableGame.Probe view) : ITableAutomation
         ExpectedClick = id; ClickAccepted = false; next = target; mousePhase = 1;
     }
     private void Check(bool condition, string text) { if (!condition) { Capture("analysis-failure"); throw new InvalidOperationException("Analysis stage " + stage + ": " + text); } checks.Add(text); File.AppendAllText(Path.Combine(view.Profile, "analysis-progress.log"), text + "\n"); }
-    private void Capture(string name) { using var file = File.Create(Path.Combine(view.Profile, name + ".png")); view.Surface.SaveAsPng(file, view.Surface.Width, view.Surface.Height); }
+    private void Capture(string name) {
+        using var file = File.Create(Path.Combine(view.Profile, name + ".png"));
+        view.Surface.SaveAsPng(file, view.Surface.Width, view.Surface.Height);
+        view.CaptureWindow(Path.Combine(view.Profile, name + "-window.png"));
+    }
     public void Frame(Texture2D surface) {
         if (DateTime.UtcNow > deadline) { Capture("analysis-failure"); throw new TimeoutException("Analysis smoke timeout at " + stage); }
         if (view.Error.Length > 0) throw new InvalidOperationException(view.Error);
@@ -53,11 +57,24 @@ internal sealed class AnalysisSmoke(TableGame.Probe view) : ITableAutomation
                 string[] navigation = ["workshop-build", "workshop-test", "workshop-results", "deck-analysis", "workshop-insights", "workshop-plan-summary", "workshop-source", "workshop-history"];
                 var nav = navigation.Select(id => view.Hits.Single(h => h.Id == id)).ToArray();
                 Check(nav.SelectMany((hit, i) => nav.Skip(i + 1).Select(other => !hit.Bounds.Intersects(other.Bounds))).All(value => value), "Build, Test, Results, analysis, shared plan, source and versions remain visible without overlap");
-                Capture("analysis-findings"); Click("analysis-pace", 3); break;
+                Check(view.Analysis.Report.Profile.Plan.Length == 0 && view.Analysis.Report.Profile.TargetTurn == 0
+                    && view.Analysis.Report.Metrics.LandProbability != null && view.Analysis.Report.Findings.All(f => f.Id != "choose-plan"), "The first review works without any goals or manual target");
+                Check(view.Hits.Any(h => h.Id == "analysis-preferences") && view.Hits.All(h => h.Id != "analysis-pace"), "Optional settings do not occupy the review overview");
+                Capture("analysis-findings"); Click("analysis-preferences", 26); break;
+            case 26:
+                Check(view.WorkshopDialog == "analysis-preferences" && new[] { "analysis-pace:relaxed", "analysis-pace:balanced", "analysis-pace:fast", "analysis-strategy:unspecified", "analysis-turn:0" }.All(id => view.Hits.Any(h => h.Id == id)), "Preferences offer visible answers and automatic defaults instead of cycling values");
+                Capture("analysis-preferences"); Click("analysis-turn:5", 28); break;
+            case 28:
+                Check(view.Analysis!.Report.Profile.TargetTurn == 5 && view.Analysis.Report.Metrics.LandGoal == 5, "A direct turn answer overrides the automatic land target");
+                Click("analysis-turn:0", 29); break;
+            case 29:
+                Check(view.Analysis!.Report.Profile.TargetTurn == 0 && view.Analysis.Report.Metrics.LandGoal == 4, "Automatic restores the commander's land target without saving an inferred choice");
+                Click("analysis-pace:fast", 3); break;
             case 3:
                 Check(view.Analysis!.Report.Profile.Pace == "fast", "Pace can be edited with a real native control");
-                Check(view.Analysis.MetadataRevision == view.Workshop!.MetadataRevision && view.Workshop.VersionId == version, "Saving goals refreshes shared metadata without changing the played list");
-                Click("analysis-model", 4); break;
+                Check(view.Analysis.MetadataRevision == view.Workshop!.MetadataRevision && view.Workshop.VersionId == version, "Saving preferences refreshes shared metadata without changing the played list");
+                Click("workshop-dialog-close", 27); break;
+            case 27: Click("analysis-model", 4); break;
             case 4:
                 Check(view.WorkshopDialog == "analysis-detail", "Probability assumptions and analysis limitations have a readable detail view");
                 Capture("analysis-model"); Click("workshop-dialog-close", 5); break;

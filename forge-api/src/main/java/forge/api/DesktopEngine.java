@@ -111,6 +111,8 @@ public final class DesktopEngine implements AutoCloseable {
             if (seat == null) throw new IllegalArgumentException("Unknown local seat connection");
             return switch (method) {
                 case "multiplayerState" -> seat.state();
+                case "multiplayerConfigure" -> seat.configure(string(p, "tableId", ""), string(p, "format", "Constructed"), number(p, "playerCount", 2));
+                case "multiplayerSetSeat" -> seat.setSeat(p);
                 case "tableSocial" -> seat.social(p);
                 case "tableChat" -> seat.chat(p);
                 case "tableName" -> seat.rename(p);
@@ -297,7 +299,8 @@ public final class DesktopEngine implements AutoCloseable {
             case "multiplayerHost" -> multiplayer().host(string(p, "format", "Constructed"), number(p, "playerCount", 2),
                     p.has("autoPortForward") && p.get("autoPortForward").getAsBoolean(), string(p, "transport", "mixed"));
             case "multiplayerJoin" -> multiplayer().join(string(p, "address", ""));
-            case "multiplayerConfigure" -> multiplayer().configure(string(p, "format", "Constructed"), number(p, "playerCount", 2));
+            case "multiplayerConfigure" -> multiplayer().configure(string(p, "tableId", ""), string(p, "format", "Constructed"), number(p, "playerCount", 2));
+            case "multiplayerSetSeat" -> multiplayer().setSeat(p);
             case "multiplayerSelectDeck" -> {
                 var loaded = loadStoredDeck(string(p, "deckId", ""));
                 yield multiplayer().selectDeck(loaded.editor().toDeck(), checkedFormat(loaded.format()));

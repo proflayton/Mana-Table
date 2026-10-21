@@ -17,6 +17,9 @@ on:
       - 'forge-desktop/renderer/turn-guide.js'
       - 'forge-desktop/scripts/release-artifacts.cjs'
       - 'forge-desktop/scripts/test-node.cjs'
+      - 'forge-desktop/scripts/ci-engine-artifact.cjs'
+      - 'forge-desktop/scripts/wait-ci-engine.cjs'
+      - '.github/workflows/test-build.yaml'
       - 'forge-desktop/scripts/wait-release-ci.cjs'
       - 'forge-desktop/tests/*.test.cjs'
       - 'forge-desktop/tests/support/**'
@@ -28,6 +31,11 @@ on:
       - '.github/workflows/mana-table-native-release.yml'
   pull_request:
   workflow_dispatch:
+    inputs:
+      extended:
+        description: 'Run all 43 native UI cases instead of the 8 critical release cases'
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -39,10 +47,63 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
-  windows:
-    name: Verify and package Windows x64
+  checks:
+    name: Native client and packaging checks
     runs-on: windows-2025
-    timeout-minutes: 100
+    timeout-minutes: 10
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: '9.0.x'
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+      - name: Verify release publication gate helper
+        run: node --test forge-desktop/tests/release-ci.test.cjs
+      - name: Verify native client logic
+        run: |
+          dotnet run --project mana-native/Mana.Client.Tests/Mana.Client.Tests.csproj -c Release
+          if ($LASTEXITCODE -ne 0) { throw 'Native client logic checks failed.' }
+      - name: Verify compact script packaging on Windows PowerShell
+        run: |
+          powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File mana-native/test-package-resources.ps1
+          if ($LASTEXITCODE -ne 0) { throw 'Compact script archive regression failed.' }
+      - name: Verify native shard coverage and artifact rejection
+        run: ./mana-native/ci/test-native-ci.ps1
+
+  tools:
+    name: Pinned native CI tools
+    runs-on: windows-2025
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Download and verify immutable tool archives
+        shell: pwsh
+        run: ./mana-native/ci/tools.ps1 -Directory dist/ci-tools -DownloadOnly
+      - uses: actions/upload-artifact@v7
+        with:
+          name: mana-native-tools-${{ github.sha }}
+          path: dist/ci-tools/
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 1
+          overwrite: true
+
+  package:
+    name: Build the exact-source native package once
+    runs-on: windows-2025
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      actions: read
     defaults:
       run:
         shell: pwsh
@@ -56,185 +117,270 @@ jobs:
         with:
           distribution: temurin
           java-version: '17'
-          cache: maven
       - uses: actions/setup-dotnet@v6
         with:
           dotnet-version: '9.0.x'
       - uses: actions/setup-node@v7
         with:
           node-version: '24'
-      - name: Verify release publication gate helper
-        run: node --test forge-desktop/tests/release-ci.test.cjs
-      - name: Create isolated regression profiles
+      # One bridge polls the Java producer, never each native UI consumer.
+      # Its early artifact does not waive either full Java job or desktop CI.
+      - name: Find the exact-source shared engine
+        id: producer
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+          SOURCE_EVENT: ${{ github.event_name == 'pull_request' && 'pull_request' || 'push' }}
+        run: node forge-desktop/scripts/wait-ci-engine.cjs
+      - uses: actions/download-artifact@v8
+        with:
+          name: engine-${{ github.sha }}
+          path: forge-api/target
+          run-id: ${{ steps.producer.outputs.run-id }}
+          github-token: ${{ github.token }}
+      - name: Verify the shared engine source and bytes
         run: |
-          $testRoot = Join-Path $env:RUNNER_TEMP 'mana-native-tests'
-          New-Item -ItemType Directory -Path $testRoot -Force | Out-Null
-          "MANA_TEST_ROOT=$testRoot" >> $env:GITHUB_ENV
-      - name: Build and verify Forge
+          node forge-desktop/scripts/ci-engine-artifact.cjs verify
+          if ($LASTEXITCODE -ne 0) { throw 'Shared engine verification failed.' }
+      - name: Build the clean self-contained native package
         run: |
-          mvn -B -ntp -pl forge-api -am verify
-          if ($LASTEXITCODE -ne 0) { throw 'Forge verification failed.' }
-      - name: Verify shared engine gameplay and multiplayer
-        timeout-minutes: 35
-        run: |
-          # This serial, graphics-free suite exercises the same Forge JAR that
-          # the native package will bundle. Electron installation is unnecessary.
-          node forge-desktop/scripts/test-node.cjs unit --test-reporter=tap 2>&1 | Tee-Object -FilePath (Join-Path $env:MANA_TEST_ROOT 'shared-unit.tap')
-          if ($LASTEXITCODE -ne 0) { throw 'Shared engine helper regressions failed; native publication is blocked.' }
-          node forge-desktop/scripts/test-node.cjs engine --test-reporter=tap 2>&1 | Tee-Object -FilePath (Join-Path $env:MANA_TEST_ROOT 'shared-engine.tap')
-          if ($LASTEXITCODE -ne 0) { throw 'Shared engine gameplay regressions failed; native publication is blocked.' }
-      - name: Verify native client logic
-        run: |
-          dotnet run --project mana-native/Mana.Client.Tests/Mana.Client.Tests.csproj -c Release
-          if ($LASTEXITCODE -ne 0) { throw 'Native client logic checks failed.' }
-          dotnet build mana-native/Mana.Table.Tests/Mana.Table.Tests.csproj -c Release
-          if ($LASTEXITCODE -ne 0) { throw 'Native regression build failed.' }
-      - name: Build a clean self-contained native package
-        run: |
-          ./mana-native/package.ps1 -Release -Version $env:MANA_RELEASE_VERSION -OutputDirectory "dist/ManaTable-Native-$env:MANA_RELEASE_VERSION"
+          ./mana-native/package.ps1 -Release -Version $env:MANA_RELEASE_VERSION -OutputDirectory dist/package
           if ($LASTEXITCODE -ne 0) { throw 'Native packaging failed.' }
-      - name: Install pinned CI graphics and installer tools
+          Copy-Item forge-api/target/ci-engine-manifest.json dist/ci-engine-manifest.json
+      - name: Build and bind the native UI harness
         run: |
-          $tools = Join-Path $env:RUNNER_TEMP 'mana-native-tools'
-          New-Item -ItemType Directory -Path $tools -Force | Out-Null
-          $inno = Join-Path $tools 'innosetup-6.7.3.exe'
-          Invoke-WebRequest 'https://github.com/jrsoftware/issrc/releases/download/is-6_7_3/innosetup-6.7.3.exe' -OutFile $inno
-          if ((Get-FileHash $inno -Algorithm SHA256).Hash -ne '9c73c3bae7ed48d44112a0f48e66742c00090bdb5bef71d9d3c056c66e97b732') { throw 'Inno Setup checksum mismatch.' }
-          $signature = Get-AuthenticodeSignature -LiteralPath $inno
-          if ($signature.Status -ne 'Valid' -or $signature.SignerCertificate.Subject -notmatch 'CN=Pyrsys B\.V\.') { throw 'Unexpected Inno Setup publisher.' }
-          $innoDirectory = Join-Path $tools 'inno'
-          $process = Start-Process -FilePath $inno -ArgumentList @('/PORTABLE=1', '/CURRENTUSER', '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', '/SP-', '/NOICONS', "/DIR=`"$innoDirectory`"") -WindowStyle Hidden -Wait -PassThru
-          if ($process.ExitCode -ne 0) { throw 'Inno Setup installation failed.' }
-          "MANA_ISCC=$innoDirectory/ISCC.exe" >> $env:GITHUB_ENV
+          dotnet build mana-native/Mana.Table.Tests/Mana.Table.Tests.csproj -c Release -o dist/harness "-p:Version=$env:MANA_RELEASE_VERSION" "-p:InformationalVersion=$env:MANA_RELEASE_VERSION+$env:GITHUB_SHA" -p:IncludeSourceRevisionInInformationalVersion=false
+          if ($LASTEXITCODE -ne 0) { throw 'Native regression harness build failed.' }
+          $root = (Resolve-Path dist/harness).Path
+          $files = @(Get-ChildItem -LiteralPath $root -File -Recurse | ForEach-Object {
+            @{ path=$_.FullName.Substring($root.Length+1).Replace('\','/'); sha256=(Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash }
+          })
+          @{ sourceRevision=$env:GITHUB_SHA; files=$files } | ConvertTo-Json -Depth 5 | Set-Content dist/ci-harness-manifest.json -Encoding utf8
+      - name: Share immutable package and harness for UI shards
+        uses: actions/upload-artifact@v7
+        with:
+          name: mana-native-ui-inputs-${{ github.sha }}
+          path: |
+            dist/package-windows-x64.zip
+            dist/package-windows-x64.zip.sha256
+            dist/ci-engine-manifest.json
+            dist/ci-harness-manifest.json
+            dist/harness/
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 1
+          overwrite: true
+      - name: Share immutable archives for installer jobs
+        uses: actions/upload-artifact@v7
+        with:
+          name: mana-native-installer-inputs-${{ github.sha }}
+          path: |
+            dist/package-windows-x64.zip
+            dist/package-windows-x64.zip.sha256
+            dist/package-source.zip
+            dist/package-source.zip.sha256
+            dist/ci-engine-manifest.json
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 1
+          overwrite: true
 
-          # Hosted runners lack a hardware OpenGL driver. SDL loads this
-          # software driver only during CI; it is never copied into a download.
-          $mesa = Join-Path $tools 'mesa-llvmpipe-x64-26.2.5.7z'
-          Invoke-WebRequest 'https://github.com/mmozeiko/build-mesa/releases/download/26.2.5/mesa-llvmpipe-x64-26.2.5.7z' -OutFile $mesa
-          if ((Get-FileHash $mesa -Algorithm SHA256).Hash -ne 'd1b713ca2a7fba47a50c058099f13c435ddb76a16a422c334e4d787f9755a31d') { throw 'Mesa checksum mismatch.' }
-          $mesaDirectory = Join-Path $tools 'mesa'
-          & 7z x $mesa "-o$mesaDirectory" -y
-          if ($LASTEXITCODE -ne 0 -or -not (Test-Path "$mesaDirectory/opengl32.dll")) { throw 'Mesa extraction failed.' }
-          "SDL_OPENGL_LIBRARY=$mesaDirectory/opengl32.dll" >> $env:GITHUB_ENV
-          'GALLIUM_DRIVER=llvmpipe' >> $env:GITHUB_ENV
-      - name: Verify native UI and the packaged engine
-        timeout-minutes: 40
-        run: |
-          $test = (Resolve-Path 'mana-native/Mana.Table.Tests/bin/Release/net9.0-windows/Mana.Table.Tests.exe').Path
-          $release = Get-Content dist/latest-native.json -Raw | ConvertFrom-Json
-          $engine = Join-Path $release.directory 'engine'
-          $suites = @(
-            @{ Name='startup'; Mode='--smoke-engine-startup'; Result='engine-startup-regression.json' },
-            @{ Name='adapter'; Mode='--smoke-workshop-adapter'; Result='workshop-adapter-results.json' },
-            @{ Name='presentation'; Mode='--smoke-presentation'; Result='presentation-results.json' },
-            @{ Name='onboarding'; Mode='--smoke-onboarding'; Result='onboarding-results.json' },
-            @{ Name='loading'; Mode='--smoke-loading'; Result='loading-results.json' },
-            @{ Name='recovery-1000'; Mode='--smoke-recovery'; Result='recovery-results.json'; Size='1000x740' },
-            @{ Name='recovery-1540'; Mode='--smoke-recovery'; Result='recovery-results.json'; Size='1540x980' },
-            @{ Name='state-clarity-1000'; Mode='--smoke-state-clarity'; Result='state-clarity-results.json'; Size='1000x740' },
-            @{ Name='state-clarity-1540'; Mode='--smoke-state-clarity'; Result='state-clarity-results.json'; Size='1540x980' },
-            @{ Name='deck-experience-1000'; Mode='--smoke-deck-experience'; Result='deck-experience-results.json'; Size='1000x740' },
-            @{ Name='deck-experience-1540'; Mode='--smoke-deck-experience'; Result='deck-experience-results.json'; Size='1540x980' },
-            @{ Name='priority-1280'; Mode='--smoke-priority-abilities'; Result='priority-ability-results.json' },
-            @{ Name='priority-1200'; Mode='--smoke-priority-abilities'; Result='priority-ability-results.json'; Size='1200x900' },
-            @{ Name='hand-placement-1000'; Mode='--smoke-hand-placement'; Result='hand-placement-results.json'; Size='1000x740' },
-            @{ Name='hand-placement-1540'; Mode='--smoke-hand-placement'; Result='hand-placement-results.json'; Size='1540x980' },
-            @{ Name='allocation-1000'; Mode='--smoke-allocation'; Result='allocation-ui-results.json'; Size='1000x740' },
-            @{ Name='allocation-1540'; Mode='--smoke-allocation'; Result='allocation-ui-results.json'; Size='1540x980' },
-            @{ Name='workshop'; Mode='--smoke-workshop'; Result='workshop-ui-results.json' },
-            @{ Name='tuning'; Mode='--smoke-deck-tuning'; Result='deck-tuning-ui-results.json'; Size='1280x900' },
-            @{ Name='analysis-adapter'; Mode='--smoke-analysis-adapter'; Result='analysis-adapter-results.json' },
-            @{ Name='analysis-1000'; Mode='--smoke-analysis'; Result='analysis-ui-results.json'; Size='1000x740' },
-            @{ Name='analysis-1540'; Mode='--smoke-analysis'; Result='analysis-ui-results.json'; Size='1540x980' },
-            @{ Name='updates-1000'; Mode='--smoke-updates'; Result='update-ui-results.json'; Size='1000x740' },
-            @{ Name='updates-1540'; Mode='--smoke-updates'; Result='update-ui-results.json'; Size='1540x980' },
-            @{ Name='commander-tax-1000'; Mode='--smoke-commander-tax'; Result='commander-tax-results.json'; Size='1000x740' },
-            @{ Name='commander-tax-1540'; Mode='--smoke-commander-tax'; Result='commander-tax-results.json'; Size='1540x980' },
-            @{ Name='card-reading-1000'; Mode='--smoke-card-reading'; Result='reading-results.json'; Size='1000x740' },
-            @{ Name='card-reading-1540'; Mode='--smoke-card-reading'; Result='reading-results.json'; Size='1540x980' },
-            @{ Name='card-states-1000'; Mode='--smoke-card-states'; Result='card-states-results.json'; Size='1000x740' },
-            @{ Name='card-states-1540'; Mode='--smoke-card-states'; Result='card-states-results.json'; Size='1540x980' },
-            @{ Name='compact-selection-1000'; Mode='--smoke-compact-selection'; Result='compact-selection-results.json'; Size='1000x740' },
-            @{ Name='compact-selection-1540'; Mode='--smoke-compact-selection'; Result='compact-selection-results.json'; Size='1540x980' },
-            @{ Name='full-battlefield-1000'; Mode='--smoke-full-battlefield'; Result='full-battlefield-results.json'; Size='1000x740' },
-            @{ Name='full-battlefield-1540'; Mode='--smoke-full-battlefield'; Result='full-battlefield-results.json'; Size='1540x980' },
-            @{ Name='import'; Mode='--smoke-deck-import'; Result='deck-import-results.json' },
-            @{ Name='building'; Mode='--smoke-deck-building'; Result='deck-building-results.json' },
-            @{ Name='lobby'; Mode='--smoke-lobby'; Result='lobby-results.json' }
-          )
-          $summary = @()
-          foreach ($suite in $suites) {
-            $profile = Join-Path $env:MANA_TEST_ROOT $suite.Name
-            New-Item -ItemType Directory -Path $profile -Force | Out-Null
-            $size = if ($suite.Size) { $suite.Size } else { '1280x720' }
-            $arguments = @($suite.Mode, '--engine-resources', "`"$engine`"", '--profile', "`"$profile`"", '--size', $size)
-            $process = Start-Process -FilePath $test -ArgumentList $arguments -WindowStyle Hidden -PassThru
-            if (-not $process.WaitForExit(600000)) { $process.Kill($true); throw "Native suite timed out: $($suite.Name)" }
-            if ($process.ExitCode -ne 0) { throw "Native suite failed: $($suite.Name). See its native-error.log." }
-            $result = Join-Path $profile $suite.Result
-            if (-not (Test-Path $result)) { throw "Missing native suite result: $result" }
-            [object[]]$checks = Get-Content $result -Raw | ConvertFrom-Json
-            if ($checks.Count -eq 0) { throw "Native suite performed no checks: $($suite.Name)" }
-            $summary += @{ suite=$suite.Name; checks=$checks.Count }
-            Write-Output "$($suite.Name): $($checks.Count) checks passed"
-          }
-          $summary | ConvertTo-Json | Set-Content (Join-Path $env:MANA_TEST_ROOT 'suite-results.json')
-      - name: Build and test install, reinstall, startup and uninstall
-        timeout-minutes: 20
-        run: |
-          $release = Get-Content dist/latest-native.json -Raw | ConvertFrom-Json
-          ./mana-native/build-installer.ps1 -InputPackageDirectory $release.directory -Version $env:MANA_RELEASE_VERSION -OutputDirectory dist/installer -CompilerPath $env:MANA_ISCC
-          ./mana-native/installer/test-installer.ps1 -InputPackageDirectory $release.directory -Version $env:MANA_RELEASE_VERSION -CompilerPath $env:MANA_ISCC -TestDirectory (Join-Path $env:MANA_TEST_ROOT 'installer')
-          # The benign executable fixture uses Windows PowerShell's .NET Framework
-          # compiler; PowerShell 7 cannot emit WindowsApplication with Add-Type.
-          powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File ./mana-native/installer/test-update-installer.ps1 -CompilerPath $env:MANA_ISCC -TestDirectory (Join-Path $env:MANA_TEST_ROOT 'update-installer')
-          if ($LASTEXITCODE -ne 0) { throw 'Update installer protocol regression failed.' }
-      - name: Prepare friend-friendly download names
-        run: |
-          $release = Get-Content dist/latest-native.json -Raw | ConvertFrom-Json
-          $downloads = Join-Path $env:GITHUB_WORKSPACE 'dist/downloads'
-          New-Item -ItemType Directory -Path $downloads -Force | Out-Null
-          Copy-Item dist/installer/ManaTable-Setup.exe $downloads
-          Copy-Item $release.archive (Join-Path $downloads 'ManaTable-Windows-x64.zip')
-          Copy-Item $release.sourceArchive (Join-Path $downloads 'ManaTable-Source.zip')
-          foreach ($name in @('ManaTable-Setup.exe', 'ManaTable-Windows-x64.zip', 'ManaTable-Source.zip')) {
-            $hash = (Get-FileHash (Join-Path $downloads $name) -Algorithm SHA256).Hash.ToLowerInvariant()
-            "$hash  $name" | Set-Content -Encoding ascii (Join-Path $downloads ($name + '.sha256'))
-          }
-          Copy-Item (Join-Path $release.directory 'build.json') (Join-Path $downloads 'build.json')
-          Copy-Item dist/installer/installer-manifest.json $downloads
-      - name: Save test evidence
+  native-ui:
+    name: Native UI shard ${{ matrix.shard }}
+    needs: [package, tools]
+    runs-on: windows-2025
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: ${{ github.event_name == 'workflow_dispatch' && inputs.extended && fromJSON('[1,2,3,4,5,6,7,8,9,10,11,12]') || fromJSON('[1,2,3,4]') }}
+    defaults:
+      run:
+        shell: pwsh
+    env:
+      MANA_RELEASE_VERSION: 0.2.${{ github.run_number }}
+      MANA_EXTENDED: ${{ github.event_name == 'workflow_dispatch' && inputs.extended || false }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: '9.0.x'
+      - uses: actions/download-artifact@v8
+        with:
+          name: mana-native-ui-inputs-${{ github.sha }}
+          path: dist/ci-inputs
+      - uses: actions/download-artifact@v8
+        with:
+          name: mana-native-tools-${{ github.sha }}
+          path: dist/ci-tools
+      - name: Verify package, central engine and harness identity
+        run: ./mana-native/ci/restore-package.ps1 -Directory dist/ci-inputs -RequireHarness
+      - name: Install CI-only software graphics
+        run: ./mana-native/ci/tools.ps1 -Directory dist/ci-tools -Graphics
+      - name: Run the selected native UI partition
+        run: ./mana-native/ci/native-ui.ps1 -Shard ${{ matrix.shard }} -Directory dist/ci-inputs -ProfileDirectory '${{ runner.temp }}/mana-native-tests' -Extended:($env:MANA_EXTENDED -eq 'true')
+      - name: Save native UI evidence
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: mana-native-test-evidence-${{ github.run_attempt }}
+          name: mana-native-ui-evidence-${{ matrix.shard }}-${{ github.run_attempt }}
           path: |
-            ${{ runner.temp }}/mana-native-tests/**/*-results.json
-            ${{ runner.temp }}/mana-native-tests/**/*-regression.json
-            ${{ runner.temp }}/mana-native-tests/**/*-observations.json
-            ${{ runner.temp }}/mana-native-tests/**/*-diagnostic.json
-            ${{ runner.temp }}/mana-native-tests/**/*-events.json
-            ${{ runner.temp }}/mana-native-tests/**/failure.json
-            ${{ runner.temp }}/mana-native-tests/**/*-failure.json
+            ${{ runner.temp }}/mana-native-tests/**/*.json
             ${{ runner.temp }}/mana-native-tests/**/*.png
             ${{ runner.temp }}/mana-native-tests/**/*.log
-            ${{ runner.temp }}/mana-native-tests/shared-engine.tap
-            ${{ runner.temp }}/mana-native-tests/shared-unit.tap
-            forge-desktop/test-results/**/*.log
-            forge-desktop/test-results/**/*.json
-            forge-*/target/surefire-reports/*.xml
-            forge-api/target/rules-regressions/**/*.json
           if-no-files-found: ignore
+          compression-level: 0
           retention-days: 14
-      - name: Save tested Windows downloads
-        uses: actions/upload-artifact@v7
+
+  installer:
+    name: Build immutable production installer
+    needs: [package, tools]
+    runs-on: windows-2025
+    timeout-minutes: 15
+    defaults:
+      run:
+        shell: pwsh
+    env:
+      MANA_RELEASE_VERSION: 0.2.${{ github.run_number }}
+    steps:
+      - uses: actions/checkout@v7
         with:
-          name: mana-native-windows-x64-${{ github.run_attempt }}
+          persist-credentials: false
+      - uses: actions/download-artifact@v8
+        with:
+          name: mana-native-installer-inputs-${{ github.sha }}
+          path: dist/ci-inputs
+      - uses: actions/download-artifact@v8
+        with:
+          name: mana-native-tools-${{ github.sha }}
+          path: dist/ci-tools
+      - name: Verify package and central engine identity
+        run: ./mana-native/ci/restore-package.ps1 -Directory dist/ci-inputs
+      - name: Install the pinned installer compiler
+        run: ./mana-native/ci/tools.ps1 -Directory dist/ci-tools -Installer
+      - name: Compile the production installer from the same immutable package
+        run: ./mana-native/build-installer.ps1 -InputPackageDirectory $env:MANA_NATIVE_PACKAGE -Version $env:MANA_RELEASE_VERSION -PortableArchive $env:MANA_NATIVE_ARCHIVE -SourceArchive $env:MANA_NATIVE_SOURCE -OutputDirectory dist/installer -CompilerPath $env:MANA_ISCC
+      - name: Prepare friend-friendly download names
+        run: |
+          $downloads = Join-Path $env:GITHUB_WORKSPACE 'dist/downloads'
+          New-Item -ItemType Directory -Path $downloads | Out-Null
+          Copy-Item dist/installer/ManaTable-Setup.exe $downloads
+          Copy-Item $env:MANA_NATIVE_ARCHIVE (Join-Path $downloads 'ManaTable-Windows-x64.zip')
+          Copy-Item $env:MANA_NATIVE_SOURCE (Join-Path $downloads 'ManaTable-Source.zip')
+          foreach ($name in @('ManaTable-Setup.exe','ManaTable-Windows-x64.zip','ManaTable-Source.zip')) {
+            $hash = (Get-FileHash -LiteralPath (Join-Path $downloads $name) -Algorithm SHA256).Hash.ToLowerInvariant()
+            "$hash  $name" | Set-Content -Encoding ascii (Join-Path $downloads ($name + '.sha256'))
+          }
+          Copy-Item (Join-Path $env:MANA_NATIVE_PACKAGE 'build.json') (Join-Path $downloads 'build.json')
+          Copy-Item dist/installer/installer-manifest.json $downloads
+      - uses: actions/upload-artifact@v7
+        with:
+          name: mana-native-windows-x64-${{ github.sha }}
           path: dist/downloads/
           compression-level: 0
           if-no-files-found: error
           retention-days: 30
+          overwrite: true
 
+  installer-lifecycle:
+    name: Isolated installer lifecycle
+    needs: [package, tools]
+    runs-on: windows-2025
+    timeout-minutes: 15
+    defaults:
+      run:
+        shell: pwsh
+    env:
+      MANA_RELEASE_VERSION: 0.2.${{ github.run_number }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@v8
+        with:
+          name: mana-native-installer-inputs-${{ github.sha }}
+          path: dist/ci-inputs
+      - uses: actions/download-artifact@v8
+        with:
+          name: mana-native-tools-${{ github.sha }}
+          path: dist/ci-tools
+      - name: Verify package and central engine identity
+        run: ./mana-native/ci/restore-package.ps1 -Directory dist/ci-inputs
+      - name: Install pinned graphics and installer tools
+        run: ./mana-native/ci/tools.ps1 -Directory dist/ci-tools -Graphics -Installer
+      - name: Verify install, reinstall, bundled startup and uninstall
+        run: ./mana-native/installer/test-installer.ps1 -InputPackageDirectory $env:MANA_NATIVE_PACKAGE -Version $env:MANA_RELEASE_VERSION -PortableArchive $env:MANA_NATIVE_ARCHIVE -SourceArchive $env:MANA_NATIVE_SOURCE -CompilerPath $env:MANA_ISCC -TestDirectory '${{ runner.temp }}/mana-native-installer'
+      - name: Save installer lifecycle evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: mana-native-installer-evidence-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/mana-native-installer/**/*.json
+            ${{ runner.temp }}/mana-native-installer/**/*.png
+            ${{ runner.temp }}/mana-native-installer/**/*.log
+          if-no-files-found: ignore
+          compression-level: 0
+          retention-days: 14
+
+  update-installer:
+    name: Isolated updater installer protocol
+    needs: tools
+    runs-on: windows-2025
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@v8
+        with:
+          name: mana-native-tools-${{ github.sha }}
+          path: dist/ci-tools
+      - name: Install the pinned installer compiler
+        shell: pwsh
+        run: ./mana-native/ci/tools.ps1 -Directory dist/ci-tools -Installer
+      - name: Verify update handoff independently of Forge packaging
+        shell: pwsh
+        run: |
+          powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File mana-native/installer/test-update-installer.ps1 -CompilerPath $env:MANA_ISCC -TestDirectory '${{ runner.temp }}/mana-native-update-installer'
+          if ($LASTEXITCODE -ne 0) { throw 'Update installer protocol regression failed.' }
+      - name: Save updater protocol evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: mana-native-update-installer-evidence-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/mana-native-update-installer/**/*.json
+            ${{ runner.temp }}/mana-native-update-installer/**/*.png
+            ${{ runner.temp }}/mana-native-update-installer/**/*.log
+          if-no-files-found: ignore
+          compression-level: 0
+          retention-days: 14
+
+  # Preserve branch protection's stable check name. The matrix result is success
+  # only when every shard succeeds; skipped/cancelled dependencies also fail.
+  windows:
+    name: Verify and package Windows x64
+    if: ${{ always() }}
+    needs: [checks, tools, package, native-ui, installer, installer-lifecycle, update-installer]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      JOB_RESULTS: ${{ toJSON(needs) }}
+    steps:
+      - name: Require every native check, artifact and shard
+        run: |
+          node <<'NODE'
+          const results = JSON.parse(process.env.JOB_RESULTS);
+          const failures = Object.entries(results).filter(([, job]) => job.result !== 'success');
+          for (const [name, job] of Object.entries(results)) console.log(`${name}: ${job.result}`);
+          if (failures.length) {
+            console.error(`Native verification failed: ${failures.map(([name, job]) => `${name}=${job.result}`).join(', ')}`);
+            process.exitCode = 1;
+          }
+          NODE
   publish:
     name: Publish the tested Windows release
     needs: windows
@@ -260,7 +406,7 @@ jobs:
         run: node forge-desktop/scripts/wait-release-ci.cjs
       - uses: actions/download-artifact@v8
         with:
-          name: mana-native-windows-x64-${{ github.run_attempt }}
+          name: mana-native-windows-x64-${{ github.sha }}
           path: downloads
       - name: Upload a draft, then publish only the current master
         shell: pwsh
