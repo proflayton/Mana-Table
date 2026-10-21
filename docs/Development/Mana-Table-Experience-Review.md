@@ -133,3 +133,46 @@ See [Testing](Mana-Table-Testing.md) for command/state regressions and CI owners
 and [Architecture](Mana-Table-Architecture.md#native-client-boundaries) for the
 shared composition/input boundary. This workflow documents the review required;
 it makes no claim that current visual quality has completed that review.
+
+## Planned turn-orientation comparison
+
+Gentle turn-follow is part of the presentation refactor's exploration, with
+production defaults unchanged. This comparison is not implemented yet. Build the
+shared board-view drawing/input boundary described in
+[Architecture](Mana-Table-Architecture.md#planned-experiment-orienting-a-multiplayer-turn)
+before adding a lab control or capture mode.
+
+Compare **stationary turn emphasis** with **optional gentle turn-follow** over
+the same authored four-player journey. Start with translation only, preserving
+zoom, seat orientation and all fixed controls. A turn boundary may move the board;
+ordinary response windows do not. Add a versioned canonical turn-orientation case
+when the actual presentation hook exists. Existing stack/search and crowded
+counter cases do not contain that complete journey and must not be relabeled as
+proof of turn-follow behavior.
+
+| Battlefield | Stationary emphasis | Gentle follow enabled |
+| --- | --- | --- |
+| Ordinary Commander table | Play the complete journey | Replay the same states and actions |
+| Very crowded table | Play the complete journey | Review stationary fallback and retention of the other seats |
+
+The journey includes a turn handoff, an off-turn response, combat involving
+multiple defenders, a required cross-seat target choice, and opening/closing a
+card reader and the focused battlefield workspace. Also begin a handoff while
+the pointer is held or a choice is active: the move must be skipped, without
+catching up after the interaction. Return to **Whole table** and verify following
+stays paused until explicitly resumed. Review reconnect, extra turns, elimination
+and reduced motion with the same policy; the next player's identity always comes
+from the current public engine state.
+
+Observe whether people notice the relevant seat, distinguish whose turn it is
+from who can respond, retain their sense of where everyone sits, and reach their
+intended cards without chasing them. Record any disrupted reading, hidden
+combat/target context or surprising movement. Use realistic art and the actual
+small window as well as the larger view. A preference for stationary emphasis is
+a useful outcome; keeping camera movement is not the goal of the comparison.
+
+Mechanical checks can protect transform/hit alignment, fixed-control bounds,
+scope, privacy and cancellation of movement. They cannot accept comfort, clarity
+or orientation. Agent inspection can surface concerns; acceptance still requires
+people playing through the comparison. The whole-table crowded layout remains
+an open design problem regardless of the camera experiment's outcome.
