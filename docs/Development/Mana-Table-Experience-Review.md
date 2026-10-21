@@ -286,6 +286,17 @@ surface fits its measured content, keeps the real source on the battlefield and
 shows the reported target; a pending effect is not called resolved. These
 artifacts remain agent review, not human acceptance.
 
+Follow-up human feedback found the combined effect clearer, but called `You can
+respond` awkward after initiating your own action and found both connection
+directions hidden. The band now reports `Your priority` or the named holder.
+A gold arrow connects the current public source to the effect; red arrows leave
+the effect for its reported targets. Dedicated ports route around the full
+panel/header footprint. Agent review includes the nearby Bears target above the
+header (`priority-connections-near-card.png`) and the existing player-target
+journey (`priority-connections-player-review`), alongside the existing priority
+and presentation checks. Arrow counts are not evidence of legibility, and human
+acceptance of these changes is still open.
+
 ## Existing regression walkthrough
 
 Use one `1000x740` interactive window for the short review: `card-reading.v1`

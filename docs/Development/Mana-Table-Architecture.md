@@ -580,6 +580,14 @@ by its current item ID. Genuine stack-target decisions retain their engine-owned
 selection path. The former separate stack-card copy, Details button and stack-count
 opener are removed. Payment and recipient source context remain separate from the
 actual pending effects. Human acceptance of this iteration remains open.
+The responder band states `Your priority` or names the actual priority holder;
+it does not frame holding priority after your own action as a reply to another
+player. `TableApplication.PendingConnections` binds a gold source → effect link
+only to a currently disclosed, displayed occurrence. Red effect → target links
+use current card poses or player portraits. Separate edge ports and
+`PanelConnection` routes keep these paths outside the complete panel, including
+its responder band and later rows. Missing live source occurrences are not
+reconstructed from the stack's retained source face.
 `MatchActivity` retains public resolution descriptions and
 spell rules, plus token arrival names; `ActionFeedback` exposes a timed summary
 and reviewable details. Recent changes are reported without inferring causality.

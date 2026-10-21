@@ -43,20 +43,6 @@ internal sealed partial class TableApplication
             canvas.CenterText(departure.Destination == "Exile" ? "EXILED" : "TO GRAVEYARD", label, Ink * alpha, .61f, true);
         }
     }
-    private void DrawStackTargets(StackItem item, Pose source)
-    {
-        foreach (var target in item.Targets) {
-            Vector2? end = null;
-            if (target.Kind == "card" && cardPresentation.TryGetPose(target.Id, out var card)) {
-                end = card.EdgeToward(source.Center, 8);
-                canvas.CardFrame(card with { Size = card.Size + new Vector2(10) }, Red, 3);
-            } else if (target.PlayerId is { } player && heroPositions.TryGetValue(player, out var hero)) {
-                var delta = source.Center - hero;
-                end = hero + (delta.LengthSquared() > 0 ? Vector2.Normalize(delta) : Vector2.UnitY) * (player == match!.ViewerId ? 52 : 40);
-            }
-            if (end is { } point) canvas.Arrow(source.EdgeToward(point, 5), point, Red * .8f, 11);
-        }
-    }
     private void DrawActionCallout()
     {
         if (AbilityActionPending || SelectingActionTarget) return;

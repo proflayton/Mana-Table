@@ -58,8 +58,8 @@ internal sealed partial class TableApplication
         if (stackQueueTop != topId) { stackQueueTop = topId; stackQueuePage = 0; }
         const int capacity = 3;
         stackQueuePage = Math.Clamp(stackQueuePage, 0, (state.Stack.Length - 1) / capacity);
-        string status = view.ResponderId is { } responder ? responder == state.ViewerId ? "YOU CAN RESPOND" : view.ResponderName + " CAN RESPOND"
-            : view.Phase == PriorityPhase.Payment ? "PAYING A COST" : view.Phase == PriorityPhase.Decision ? "CHOICE IN PROGRESS" : "PROCESSING";
+        string status = view.ResponderId is { } responder ? responder == state.ViewerId ? "Your priority" : view.ResponderName + " has priority"
+            : view.Phase == PriorityPhase.Payment ? "Paying a cost" : view.Phase == PriorityPhase.Decision ? "Choice in progress" : "Processing";
         int y = 319;
         for (int slot = 0; slot < capacity; slot++) {
             int index = stackQueuePage * capacity + slot;
@@ -73,9 +73,6 @@ internal sealed partial class TableApplication
                 + canvas.TextSize(effect, .86f, 407, 80, true).Y + (entry.Targets.Length > 0 ? 27 : 0) + 12, 134, 220) : 46;
             var bounds = new Rectangle(545, y, 435, height);
             string id = "stack-row:" + entry.Id;
-            // World connections pass behind the reading surface and its
-            // responder band, including when the target sits directly above it.
-            if (index == 0) DrawStackTargets(entry, new(bounds.Center.ToVector2(), bounds.Size.ToVector2()));
             PaintControlSurface(id, bounds, new(17, 29, 36), index == 0 ? Gold * .7f : Muted * .45f);
             if (expanded) PaintPendingEffect(entry, index, bounds, owner, effect);
             else {
@@ -97,6 +94,10 @@ internal sealed partial class TableApplication
             Button("stack-queue-prev", "‹", 905, y + 1, 32, () => stackQueuePage--, stackQueuePage > 0, height: 28);
             Button("stack-queue-next", "›", 945, y + 1, 32, () => stackQueuePage++, (stackQueuePage + 1) * capacity < state.Stack.Length, height: 28);
             canvas.Text($"{stackQueuePage * capacity + 1}–{Math.Min(state.Stack.Length, (stackQueuePage + 1) * capacity)} / {state.Stack.Length} pending", 555, y + 7, Muted, .51f, 338, 1);
+        }
+        if (stackRows.FirstOrDefault() is { } expandedRow) {
+            var occupied = new Rectangle(545, 285, 435, y - 285 + (state.Stack.Length > capacity ? 34 : 0));
+            DrawPendingEffectConnections(state.Stack[expandedRow.Position - 1], expandedRow.Bounds, occupied);
         }
     }
 

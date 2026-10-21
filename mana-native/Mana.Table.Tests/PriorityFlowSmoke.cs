@@ -80,6 +80,7 @@ internal sealed class PriorityFlowSmoke : ITableAutomation
                 "Priority pointer input uses the actual requested physical viewport");
             Check(view.PrioritySeats.Keys.SequenceEqual([0]) && view.Match!.ActivePlayerId == 2,
                 "Only the reported local responder has the teal portrait token, separate from another player's turn");
+            Check(Text().Contains("Your priority"), "The local pending-effect heading states current priority without framing your own action as an interruption");
             Check(Text().Contains("Pass priority") && view.Hits.Any(hit => hit.Id == "confirm")
                 && !Text().Any(value => value.Contains("Let it resolve", StringComparison.OrdinalIgnoreCase)),
                 "The enabled primary action says Pass priority without promising that an effect will resolve");
@@ -118,6 +119,8 @@ internal sealed class PriorityFlowSmoke : ITableAutomation
                 && view.Match.Stack.Any(item => item.Id == "search-pending-trigger")
                 && !view.Hits.Any(hit => hit.Id == "confirm") && !Text().Any(value => value == "JUST RESOLVED"),
                 "After the local pass the turn owner stays unchanged, the trigger stays pending, the reported opponent has the token, and no local pass or false resolution appears");
+            Check(Text().Contains(StateClarity.PlayerName(view.Match!, view.Match!.PriorityPlayerId!.Value) + " has priority"),
+                "The opponent pending-effect heading names the engine-reported priority holder");
             AssertQueue(1);
             Observe("opponent-response"); Capture("04-opponent-pending");
             view.Accept(engine.AdvanceToRecipient());
