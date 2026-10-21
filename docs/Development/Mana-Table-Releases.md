@@ -19,23 +19,17 @@ Pull requests run the same verification without publishing. A manual Actions run
 can build a selected branch; only a successful run for the current `master` can
 publish a release.
 
-The Windows job verifies Forge, runs the Node unit checks, then the complete
-serial engine suite
-(`node forge-desktop/scripts/test-node.cjs engine`) against that same engine JAR.
-These graphics-free gameplay, Commander and multiplayer checks gate native
-publication independently of the Electron UI workflow; their TAP output and
-diagnostics are saved with the test evidence. Changes to the Node regression
-files, their support helpers, runner or engine connection also trigger this gate.
-The job then runs the native client and UI regressions against
-fresh bundled resources, builds the installer, then tests install, reinstall,
-startup and uninstall using a separate test identity and profile. CI uses a
-software graphics driver outside the package; players receive the normal client.
-Publication also waits for the **same master source SHA** to pass the full Java
-17/21 `Test build` matrix, the desktop workflow, and applicable iOS compatibility
-checks. The [read-only prerequisite helper](../../forge-desktop/scripts/wait-release-ci.cjs)
-waits up to 70 minutes and fails on failed or missing required evidence; it never
-merges, reruns or cancels CI. It excludes its own native workflow to avoid waiting
-on the publisher itself.
+The native workflow consumes the exact-source Java engine artifact, packages
+the MonoGame app once, and runs its required native logic, headless real-engine,
+UI and installer/update checks. The existing `--smoke-headless-engine` journey
+exercises the shipping C# adapter against that packaged engine. Repository
+documentation and CI contracts belong to the lightweight `desktop` check;
+there is no second client or Node engine test pipeline.
+
+Publication waits for the **same master source SHA** to pass Java 17/21,
+`desktop`, the native verification aggregate and applicable iOS compatibility
+checks. The [read-only prerequisite helper](../../scripts/mana-table/wait-release-ci.cjs)
+checks those completed runs. It never merges, reruns or cancels CI.
 
 Downloads are first uploaded to a draft, then published and marked Latest only
 if the tested revision is still the head of `master`. The prerequisite helper
@@ -59,35 +53,74 @@ Share this permanent link with friends:
 
 <https://github.com/proflayton/Mana-Table/releases/latest/download/ManaTable-Setup.exe>
 
-The installer updates the same per-user application directory. Close the game
-before updating. Decks, artwork and preferences live separately in
-`%LOCALAPPDATA%\ManaTableNative`; both updates and uninstall retain that directory.
+The managed application lives in `%LOCALAPPDATA%\ManaTable`, with versioned
+contents under `current`, an `Update.exe` helper, a stable root launcher and a
+package cache. The former flat Inno installation normally lives in
+`%LOCALAPPDATA%\Programs\Mana Table`. Decks, artwork and preferences remain in
+`%LOCALAPPDATA%\ManaTableNative`; updates and uninstall retain that separate profile.
 Players at a multiplayer table should use the same release. Packaged release
 builds offer an **Updates** panel and a saved **Check on startup** preference.
-Checking and downloading can run in the background; installation only starts
-after the player chooses **Install and restart** and leaves any active game or
-friends table. The app revalidates the download before starting Setup. Portable
-release builds without an installed-app handoff use the download-folder/manual
-install route; development builds link to releases. There is no unattended installation.
+Checks notify first and fetch metadata only. Application downloads start only
+after **Download update**. Downloading and **Preparing** can continue while the
+app is used. **Restart to update** stays blocked during a game, connected friends
+table, pending action, failed deck save or unfinished input. The app checks the
+prepared files again and exits normally so Java can shut down before replacement.
+An ordinary launch never applies a waiting update automatically. A completed SDK
+restart is acknowledged after the app's startup succeeds.
 
-The updater discovers public, stable `mana-native-v*` releases and requires a
-matching `installer-manifest.json` (supported installer protocol, source, version,
-Windows x64, exact bytes and SHA256). Old builds without the protocol need a
-manual bootstrap install. Native and legacy Electron release tags are separate;
-do not use the repository's generic Latest release as an updater channel.
+Velopack **1.2.161** supplies package caching, native binary patches, full-package
+fallback and apply/restart. The selected strategy determines the displayed
+download size. Missing bases, unsuitable chains or failed patches use a complete
+package; the UI identifies that fallback. A small transfer still needs room for
+a full cached base, reconstructed package and temporary expanded files. Sizes
+depend on the actual versions and runtime/resource changes, not a fixed saving.
+
+The stable channel accepts public, non-draft, non-prerelease `mana-native-v*`
+tags. Each release's `releases.win-x64.json` describes only its attached full and
+delta packages. `update-manifest.json` separately binds package ID, version,
+source revision, full-package identity and every ZIP file entry's size/SHA256.
+The adapter validates reconstructed and cached contents against that contract;
+it does not require identical ZIP compression/layout. Unexpected, missing or
+modified files fail verification. A verified cached target can become Ready
+again after an ordinary launch without another download.
+
+### Compatible migration and portable copies
+
+Existing updater clients select the highest `installer-manifest.json` and
+understand **installer protocol1**. Keep that manifest and canonical
+`ManaTable-Setup.exe` compatible. The canonical executable remains genuine Inno
+Setup; it embeds the genuine Velopack setup under a separate name. Renaming a
+Velopack setup to masquerade as protocol1 would break old clients' verified
+handoff arguments. They need one complete bridge update before receiving patches.
+
+The bridge installs into the separate managed root and checks its exact app,
+build and real Forge catalog before retiring the old Inno installation. It keeps
+the same explicit profile and recreates shortcuts after old uninstall. Failed
+first-install health retains the old installation. This migration gate differs
+from the SDK's recovery when an update cannot replace a locked application;
+there is no claim of automatic rollback for arbitrary later application failures.
+
+Managed portable layouts can use the SDK update path from their writable root.
+Older flat portable ZIPs keep the manual download/extract route; extract a newer
+complete ZIP into a separate directory or install the app. Development builds
+link to releases. Updater discovery selects the compatible native channel;
+the generic GitHub Latest endpoint is not its discovery channel.
 Builds are unsigned, so Windows can show an unknown publisher or reputation
 prompt until code signing is configured.
 
 ## Build a native installer locally
 
-Use a clean committed Windows checkout, JDK 17, the .NET 9 SDK and Inno Setup 6.
+Use a clean committed Windows checkout, JDK 17, the .NET 9 SDK, a .NET 10 runtime
+for the pinned Velopack CLI, and Inno Setup 6.
 CI pins its JDK/SDK, Inno compiler and software graphics driver in the native
 workflow; consult that file when matching CI. From the repository root, first
 verify Forge with `mvn -pl forge-api -am verify`, then run:
 
 ```powershell
 ./mana-native/package.ps1 -Release -Version 0.2.0 -OutputDirectory dist/ManaTable-Native-0.2.0
-./mana-native/build-installer.ps1 -InputPackageDirectory dist/ManaTable-Native-0.2.0 -Version 0.2.0 -OutputDirectory dist/installer
+$vpk = ./mana-native/ci/update-tools.ps1 -Directory .tools/update-tools
+./mana-native/build-update-bundles.ps1 -InputPackageDirectory dist/ManaTable-Native-0.2.0 -Version 0.2.0 -OutputDirectory dist/update-bundles -VpkDll $vpk
+./mana-native/build-installer.ps1 -InputPackageDirectory dist/ManaTable-Native-0.2.0 -Version 0.2.0 -OutputDirectory dist/installer -ManagedSetup dist/update-bundles/ManaTable-win-x64-Setup.exe
 ```
 
 `JAVA_HOME` selects the JDK used to create a fresh bundled runtime. The clean
@@ -99,6 +132,14 @@ calling the result an exact-source release. `build.json` records the checkout SH
 and JAR hash; that alone is not independent proof of the JAR's source.
 Installer compilation checks the package version, engine, portable ZIP, and source
 archive hashes. `-CompilerPath <ISCC.exe>` selects a portable Inno Setup compiler.
+The bridge additionally requires the genuine setup's sibling bundle report and
+content manifest to match that same input build and source. For subsequent
+bundles, pass a previous published `-PreviousFullPackage` and its independently
+verified `-PreviousFullSha256`; without a base the bundle contains a full update.
+The bundle builder pins CLI/SDK versions, creates full/delta artifacts and their
+content proof, and disables installer shortcut creation until the migration
+health gate succeeds. Change runtime versions deliberately so unrelated releases
+do not accidentally replace unchanged dependencies.
 These commands create local artifacts, not a public GitHub release and not a
 completed CI gate. Review the [required checks](Mana-Table-Testing.md#ci-and-review)
 and installer tests before a handoff. Use a new output directory/versioned path
@@ -109,6 +150,16 @@ for each candidate and retain earlier packages.
 installer with a separate smoke-test application identity. It tests installation,
 reinstallation, bundled Java, client startup and uninstall while retaining a saved
 profile sentinel. It never installs the production app or uses the normal profile.
+
+`mana-native/updates/test-installed-updates.ps1 -TestDirectory <fresh-directory>
+-VpkDll <pinned-vpk.dll>` exercises a genuine installed SDK test executable with a
+real Windows locator and package cache. Its sequence covers delta preparation
+and restart, cancellation of the owned native patch helper, damaged-patch full
+fallback, retaining a prepared update on ordinary launch, explicit restart and
+the same profile. These controlled fixture sizes are not production bandwidth
+predictions. Product migration has a separate
+`mana-native/installer/test-managed-migration.ps1` test: it uses unique Inno/SDK
+identities, the real native executable and bundled Forge health query.
 
 ## Verify a published native handoff
 
@@ -125,10 +176,18 @@ does not establish that the public download contains the final merged source.
 - Verify the update manifest's version, source, architecture, installer protocol,
   installer byte count and SHA256 against the downloaded Setup executable.
   Check the source ZIP matches the committed release tree.
+- Verify the managed release index and `update-manifest.json` agree with the
+  actual full/delta assets and source. Download and validate the full package's
+  complete file-entry contract. Keep the canonical protocol1 setup check as
+  well; new metadata does not replace compatibility for existing clients.
 - Start the extracted app with a fresh isolated `--profile`, wait for the real
   process exit and retain startup evidence. Run the installer lifecycle and
   update-handoff tests with their separate smoke identity before handoff; do not
   use a player's installed app as the test destination.
+- Verify updater discovery, preparation and explicit restart from a genuine
+  installed or supported portable base. Test a failed patch's complete-package
+  fallback and retain the same-profile health acknowledgement. A standalone
+  command-line delta reconstruction does not prove the installed update flow.
 
 Retain the release URL, exact source SHA, workflow run, download hashes and test
 evidence together. If master advances during publication, verify which revision
@@ -147,111 +206,6 @@ Always choose a new `-OutputDirectory` and verify the client and engine hashes.
 Native profiles live in `%LOCALAPPDATA%\ManaTableNative`; use `--profile` with an
 isolated path to review the first-session welcome without changing saved decks
 or play preferences. A completed native package updates `dist/latest-native.json`;
-the checkout launcher prefers that manifest and falls back to the Electron beta
-when no native package exists. The preview is marked `release: false`, is not
+the checkout launcher uses that manifest and reports a missing native package
+when none exists. The preview is marked `release: false`, is not
 offered through the stable updater, and is not an installer-publication gate.
-The workflow below describes the Electron release package.
-
-## Downloads for testers
-
-The remaining sections document the **legacy Electron client** and its separate
-`mana-table-v*` release workflow. Use the native downloads above for current play.
-
-Published builds live on [Mana Table Releases](https://github.com/proflayton/Mana-Table/releases).
-Download the **ManaTable-<version>-windows-x64.zip** asset, extract the whole folder,
-and open **Mana Table.exe**. GitHub's automatically generated source archives are
-for contributors, not playable builds. Java and the card library are bundled.
-Everyone joining a multiplayer game should use the same release.
-
-Close Mana Table before updating, then extract the new ZIP into a new folder.
-Clean release builds keep decks, artwork, preferences, and diagnostics in
-`%APPDATA%\Mana Table`, independently of the application folder. Existing local
-packages with a neighboring `UserData` directory continue using that portable
-profile. To move from one of those packages, close both apps and copy its
-`UserData` into `%APPDATA%\Mana Table` before the first release launch; retain the
-original as a backup and do not overwrite an existing profile without reviewing it.
-
-## Prepare a build
-
-1. Work from a reviewed commit. For a new beta number, update `forge-desktop/package.json`,
-   both project version fields in its lockfile, the two version labels in
-   `renderer/index.html`, and `BETA.md`. Keep player-visible changes in the guide.
-2. From the repository root, run `mvn -pl forge-api -am verify` with JDK 17+.
-   Packaging uses the existing JAR; it does not build Java or detect a stale JAR.
-3. In `forge-desktop`, run `npm ci`, `npm run doctor`, `npm run check`,
-   `npm run test:unit`, `npm run test:engine`, and the relevant UI tests. Use the
-   full UI suite for a release candidate.
-4. Set `JAVA_HOME` to the JDK containing `bin/jlink.exe`, then run `npm run package`.
-   `FORGE_JAVA` selects an engine executable, not the JDK used by `jlink`.
-
-For a **shareable download**, use `npm run package:release` instead. This never
-reads the personal `latest-beta.json` manifest and never copies player data.
-It creates a Windows ZIP, a `.zip.sha256` checksum, and `dist/latest-release.json`
-containing their paths, the unpacked directory, and source revision. It leaves the
-personal launcher manifest untouched. The archive step rejects profiles, test
-output, diagnostics, and filesystem links inside the package.
-
-## GitHub release workflow
-
-The [release workflow](../../.github/workflows/mana-table-release.yml) runs on
-tags named `mana-table-v<version>` and can be rerun manually for an existing tag.
-The tag must exactly match `forge-desktop/package.json`. From the reviewed commit:
-
-```sh
-git tag mana-table-v0.1.0-beta.37
-git push origin mana-table-v0.1.0-beta.37
-```
-
-The Windows job builds and verifies Java, runs the desktop unit and engine suites,
-builds a clean ZIP, and runs the smoke suite against the packaged executable and
-bundled Java. Only after those gates pass does it attach the ZIP and checksum to
-a **draft** GitHub release. Beta versions are marked prereleases. Review its notes
-and assets, then publish it from GitHub Releases for testers to download. Failed
-tests prevent release creation; failure evidence is kept as a workflow artifact.
-
-For this legacy Electron channel, no signing certificate, hosted game service or
-automatic update installer is configured. Downloads are portable unsigned Windows
-packages. This limitation does not describe the native updater above. The workflow uses
-GitHub's repository token; no personal access token is required. It refuses to
-silently replace an existing release. See the [GitHub CLI release documentation](https://cli.github.com/manual/gh_release_create)
-for draft publication and manual recovery after a failed upload.
-
-The script stages files under ignored `.tools/desktop-beta-<timestamp>` and writes
-a new `dist/ManaTable-<version>-<timestamp>/Mana Table-win32-x64` directory.
-Packages include only the explicit host-file list and the renderer, so update
-that list when extracting a new runtime module. The two pinned Three.js runtime
-modules and their MIT license are copied into `vendor/three`; npm's development
-tree and test helpers are not shipped.
-
-## Data preservation
-
-If `dist/latest-beta.json` exists, packaging copies `UserData/decks` and
-`UserData/art` and `UserData/preferences.json` from that previous package to the
-new one. Every copied deck JSON is verified with SHA-256; play preferences are
-verified byte for byte. The manifest changes only after packaging and copying
-succeed; older packages remain in place. It does not copy development `.data`,
-live match state, or every Electron preference.
-
-Finish saving and close the player's old app before a release handoff so edits
-made after the copy do not remain only in the old package. Do not delete or patch
-the old package in place. To launch an older build, run its executable directly;
-its profile contains the data last saved in that build.
-
-## Verify and hand off
-
-Use the [packaged smoke commands](Mana-Table-Testing.md#packaged-verification).
-Check the expected version and the app's bundled Java by leaving `FORGE_JAVA`
-unset. `Launch Mana Table.cmd` reads the generated manifest; the legacy
-`Launch Workshop.cmd` delegates to it. A source checkout has no manifest until a
-package is built.
-
-Distribute the **entire package directory**, including runtime/resource folders,
-`START-HERE.md`, `SOURCE.txt`, and license notices. A local package may contain the
-previous player's copied `UserData`; use `npm run package:release` for distributable
-artifacts, and retain personal packages separately. Never upload player profiles,
-test profiles, or cached artwork as a release artifact.
-
-Preserve GPL and third-party notices and provide the corresponding source revision
-with a distribution. `SOURCE.txt` points to this fork and the upstream engine;
-record the exact commit in release notes. Creating a local package does not publish
-a GitHub release, upload binaries, or modify the source branch.

@@ -7,7 +7,7 @@ namespace Mana.Table;
 // A logical point can cross an overlap edge when converted to integer pixels.
 internal static class SmokePointer
 {
-    internal static Point Screen(TableGame.Probe view, Point logical)
+    internal static Point Screen(TableWindow.Probe view, Point logical)
     {
         var viewport = view.GraphicsDevice.Viewport;
         float scale = Math.Min(viewport.Width / 1600f, viewport.Height / (float)view.DesignHeight);
@@ -15,7 +15,7 @@ internal static class SmokePointer
             (int)((viewport.Height - view.DesignHeight * scale) / 2 + logical.Y * scale));
     }
 
-    internal static Point Table(TableGame.Probe view, Point physical)
+    internal static Point Table(TableWindow.Probe view, Point physical)
     {
         var viewport = view.GraphicsDevice.Viewport;
         float scale = Math.Min(viewport.Width / 1600f, viewport.Height / (float)view.DesignHeight);
@@ -23,13 +23,13 @@ internal static class SmokePointer
             (int)((physical.Y - (viewport.Height - view.DesignHeight * scale) / 2) / scale));
     }
 
-    internal static bool TryPoint(TableGame.Probe view, TableGame.Hit hit, Point logical, out Point physical)
+    internal static bool TryPoint(TableWindow.Probe view, Mana.Table.Interaction.TableHit hit, Point logical, out Point physical)
     {
         physical = Screen(view, logical);
         return view.CurrentHit(hit) && Matches(view, hit, physical);
     }
 
-    private static bool Matches(TableGame.Probe view, TableGame.Hit hit, Point physical)
+    private static bool Matches(TableWindow.Probe view, Mana.Table.Interaction.TableHit hit, Point physical)
     {
         var viewport = view.GraphicsDevice.Viewport;
         if (physical.X < 0 || physical.Y < 0 || physical.X >= viewport.Width || physical.Y >= viewport.Height) return false;
@@ -37,7 +37,7 @@ internal static class SmokePointer
         return actual?.Id == hit.Id && actual.Scope == hit.Scope;
     }
 
-    internal static Point Hit(TableGame.Probe view, TableGame.Hit hit)
+    internal static Point Hit(TableWindow.Probe view, Mana.Table.Interaction.TableHit hit)
     {
         if (!view.CurrentHit(hit)) throw new InvalidOperationException("Stale pointer target: " + hit.Id);
         var viewport = view.GraphicsDevice.Viewport;

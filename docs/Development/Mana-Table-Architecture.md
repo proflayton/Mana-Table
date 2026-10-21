@@ -1,15 +1,13 @@
 # Mana Table architecture
 
-Mana Table's released Windows client is MonoGame (`mana-native`). The repository
-also retains an Electron reference client (`forge-desktop`) and a Java rules
-adapter (`forge-api`). Forge remains the installed
-rules engine. Switching a seat between local and remote must not change game logic,
+Mana Table's sole client is MonoGame (`mana-native`), backed by the Java adapter
+(`forge-api`). Forge remains the installed rules engine. Switching a seat between local and remote must not change game logic,
 decisions, visibility, or presentation.
 
 This map describes the current source, which can be ahead of the public installer.
 Use the package's `SOURCE.txt`/`build.json` and release notes to identify its behavior.
 The [native development guide](../../mana-native/README.md) is the build/run entry
-point for the Windows client; the Electron guide covers its separate client.
+point for the Windows client.
 
 ## Shared match and synchronization
 
@@ -43,6 +41,114 @@ the same scoped player handles as portraits; the client never chooses one itself
 
 ## Native client boundaries
 
+The window and application have separate lifetimes. `TableWindow : Game` owns
+MonoGame, GPU textures, sound, input sampling, letterboxing and captures.
+`TableApplication` owns the shared client session, screen state and input policy.
+It can initialize, update and compose with no `Game`, window or graphics device.
+Its optional `PresentationResources` supplies textures and sound for a real window;
+an empty resource set uses the production rules-text and neutral-surface fallbacks.
+
+The production pipeline is:
+
+```mermaid
+flowchart LR
+    Engine[Seat-filtered engine snapshot] --> Session[ClientSession]
+    Input[Pointer / keyboard / time / viewport] --> Application[TableApplication]
+    Session --> Application
+    Application --> Layout[TableScene + CardPresentationController]
+    Layout --> Frame[PresentationFrame]
+    Frame --> GPU[Canvas GPU replay]
+    Frame --> Observe[Copied FrameObservation]
+    Observe --> Checks[Headless replay and state checks]
+```
+
+`ComposePresentation` publishes ordered typed `DrawCommand` data through
+`DrawList`, a frozen `InteractionFrame`, prepared card occurrences, a scene and
+the exact game/revision/decision stamp. GPU replay does not run application
+callbacks or decide card layout. CPU font geometry and GPU text rasterization use
+the same `TextLayout`; measuring a label creates no texture. Card readers and
+travel belong to `CardPresentationController`, and indexed scene seats and
+occurrences avoid rebuilding layouts or scanning the whole battlefield per card.
+Hit regions use those same displayed poses, including connected metadata and the
+original hand anchor.
+
+`FrameObservation` copies public text commands, card values, full projected poses,
+controls and scope into serializable records. It retains no action callbacks,
+engine connection or graphics resources. It describes submitted presentation
+data; pixel clipping, texture appearance and physical-window readability still
+need human review of actual screens, transitions and manual interaction.
+Frame publication does not answer the engine's pending
+decision. Every command still passes current game/decision scope checks.
+
+Simulations inject elapsed/total time and pointer/keyboard state into the same
+application methods used by the window. Recovery checks and recovery text share
+an injectable `TimeProvider`; use a controlled provider when replaying connection
+failures. Background engine completion order and artwork availability are inputs,
+not promises of deterministic asynchronous scheduling. Controlled projection
+scenarios check scoped input and projection behavior; separate real-Forge journeys
+check rules and transport behavior. Both support human review of the experience.
+
+`Mana.Scenarios` holds versioned authored projections shared by the explicit
+Experience Lab and regression drivers. The lab runs those snapshots through the
+same `TableApplication`, composition, hit testing and `TableWindow` as normal
+play. It starts without Forge, uses an isolated temporary profile and reads
+already-cached art without a network request. Its controls advance authored
+stages, not Magic rules. Reset/back creates a fresh scope and replays the baseline
+before later changes. See [Experience review](Mana-Table-Experience-Review.md) for one-click
+launching, transition captures and the required human review. Automated command,
+geometry and privacy checks cannot establish readability, clear causality or a
+comfortable interaction; those require actual screens, transitions and manual play.
+
+### Experimental multiplayer turn orientation
+
+The current source implements the shared board-view boundary and opt-in
+**Follow turn** diagnostics in the Experience Lab's two turn-orientation cases.
+It has not yet produced meaningful camera movement on the current table layouts:
+the ordinary four-player layout's requested 28-design-pixel horizontal shift
+would overlap fixed controls, so the path guard leaves it stationary. The crowded
+case also remains stationary. A stable layout with reserved travel space is
+needed before a useful stationary/follow human comparison. That comparison has
+not been reviewed or accepted; there is no production setting or changed default.
+
+`TableApplication.BoardView` can request a small translation at a reported turn
+boundary. Priority handoffs alone do not move the view. Only battlefield cards,
+their board labels and connected presentation geometry participate. The hand,
+portraits, player resources, Command/Library/Graveyard/Exile controls, stack,
+decision dock and reader remain anchored. Zoom and seat orientation stay fixed.
+Two-player, reduced-motion and dense-table views remain stationary; an unsafe
+path also leaves the view in place rather than concealing another seat or control.
+
+Hover, reading, board pointer activity, a held pointer, dragging, a modal/focused
+battlefield workspace, combat, stack activity or a required choice suppress or
+interrupt motion. The current turn stamp is consumed even while blocked: closing
+the reader or completing a choice does not cause a delayed shift. A later eligible
+turn boundary can request movement again, subject to the same space guard. An
+extra turn with the same desired framing does not repeat the movement. The lab
+header's **Whole table** restores the stationary
+view and disables following until **Follow turn** is enabled again. Opening or
+resetting a case establishes a baseline before any subsequent turn movement.
+
+Canonical `TableScene` coordinates remain separate from immutable `BoardView`
+presentation translation. `BoardViewMotion` consumes public match/turn/active-player
+identity, supplied time and interaction state. Card presentation applies the view
+after canonical pose smoothing, then publishes matching draw and hit geometry.
+Reader/returning-card transitions convert presentation spaces once rather than
+applying the view twice. Path checks include card and label footprints against
+fixed reservations; cards are not repacked during movement. `PresentationFrame`
+and its copied `FrameObservation` include the effective view and enabled mode.
+`TableWindow` retains its existing viewport/letterbox transform.
+
+Follow controls submit no engine commands and change no priority, pass policy,
+ownership or visibility. The authored ordinary/crowded journeys currently expose
+the layout constraint; they do not demonstrate a successful follow experience.
+The lab distinguishes **Follow: limited space** from **Follow: full table** rather
+than implying that enabling the toggle guarantees movement. Finding the relevant
+seat still depends on grouping, source feedback and explicit response ownership.
+Reconnect and elimination need live-game review before any production proposal.
+Zoom, rotation, seat swapping and per-spell tracking remain outside this increment.
+See the [turn-orientation comparison](Mana-Table-Experience-Review.md#experimental-turn-orientation-comparison)
+for the diagnostic captures and human review needed after the layout is ready.
+
 The normal native Commander setup defaults to four seats or starts one human with
 three Forge AI opponents. A friends' host can choose two, three or four seats;
 three humans can play without filling a fourth seat. The builder's Test workspace
@@ -59,24 +165,20 @@ Changing total seats uses a separate host/setup operation bound to the current
 table ID. It cannot remove an occupied human slot. Same-format changes preserve
 selected decks and reset human readiness; compatible AI stays ready. The backend
 does not renumber connected seats to fill a gap.
-The API and Electron client expose broader format/seat configuration, including
-two through six Commander seats. The native lobby's size controls stop at four.
+The Java API supports broader format/seat configuration, including two through
+six Commander seats. The Mana Table lobby's size controls stop at four.
 
 Every native launch moves from startup into a main menu with AI, friends and deck entry points.
 These routes reuse the existing deck picker, review and readiness gates; choosing
 a route never imports a deck, hosts a table or readies a seat. `experience.json`
-stores the first menu visit and demonstrated controls independently of play preferences.
+remembers menu and explicit help visits independently of play preferences.
 Games open directly at their current decision. Setup captions sit beside their
-actions; `ControlGuidance` resolves the current private card occurrence and
-projected legal actions to produce one short control cue. `TableGame.Guidance`
-places it beside the relevant card/target when there is room, using the action
-dock as a fallback. Required engine messages, costs and restrictions stay visible.
-Cues add no hit regions and do not enter the overlay or Auto policy. A control
-is learned only after an accepted command completes with a changed authoritative
-snapshot, or an explicit local control succeeds (inspection, Auto or Hold).
-Rejected commands, first clicks, hover and elapsed time never retire reminders.
-Settings can reset the learned set. F1 remains a brief contextual reference with
-its own modal scope; opening it preserves the underlying decision and play policy.
+actions, while gameplay presents actual engine messages, costs, restrictions and
+action controls without unsolicited card/target/priority coaching overlays.
+The former learned-control bookkeeping, hint-reset controls and dedicated coaching
+UI suite have been removed. `ControlGuidance` remains available to the explicitly
+opened F1 reference, with its own modal scope; opening it preserves the underlying
+decision and play policy. Setup and deck guidance retain their existing behavior.
 
 Native priority controls offer a per-ability pass preference until the player's
 next turn. `AvailableActions` produces a complete legal activation list alongside
@@ -95,7 +197,24 @@ beside Pass, explains the selected ability, and keeps an Undo indicator visible.
 `ClientSession` serializes Undo behind any in-flight pass and cancels further
 buffered passes. Full control, Hold and saved phase stops retain precedence.
 
-`TableGame.Loading` tracks explicit operations separately from session polling and
+**Pass for now** is a separate explicit policy for empty-stack priority on an
+opponent's turn. The engine issues a private `quietYieldToken` for a copied public
+situation. Every `passUntilPublicAction` command supplies that original token and
+the current session/prompt scope. The engine rechecks both at acceptance and on
+the owned input thread; a revoked queued action restores the unanswered prompt.
+Public state changes, public events that happened between snapshots, a new turn
+or a required choice revoke the permission. Unchanged stat recomputation and
+retained-mana refreshes do not count as actions. Another seat's required choice
+revokes it through public decision ownership/class without disclosing the options.
+`DecisionQuietAdvance` observes ordinary priority handoffs but submits only against
+a current local priority prompt with that exact token. It never adopts a replacement
+token or consumes targets, payment, searches or other required decisions. Hold,
+Take control and manual game actions stop further quiet passes; an already submitted
+command is reconciled before the connection is reused. Inspection pauses passing.
+This policy is match-local intent, not a saved F6/end-turn preference, and does not
+broaden the existing `canAutoPass` availability permission.
+
+`TableApplication.Loading` tracks explicit operations separately from session polling and
 gameplay replies. Startup stages advance only after each awaited engine request.
 Setup commands acknowledge input immediately and own a scoped foreground surface;
 game entry and host/join use the same full-screen table motif as startup. Routine
@@ -121,8 +240,9 @@ its consequence; an eliminated seat can watch or leave.
 | `Mana.Client` | Generic versioned replica, command scheduling, stale-poll protection, main-thread completion delivery and local artist asset loading |
 | `Mana.Magic` | Phase language, legal-target interpretation, click/drag command construction, Auto priority, Magic card classification and Magic art provider |
 | `Mana.Forge` | Process lifetime, protocol negotiation and Forge-to-contract mapping |
-| `Mana.Renderer` | Canvas, projection, immutable table layout, card poses, hit geometry, motion and effects |
-| `Mana.Table` | Application composition, controls, overlays and rendering of the shared session |
+| `Mana.Renderer` | GPU replay, typed draw commands, CPU font metrics, immutable table layout, projection, motion and effects |
+| `Mana.Table` | Headless application, interaction publication, card presentation, screen composition and thin native window |
+| `Mana.Scenarios` | Versioned authored projections and isolated Experience Lab sessions shared with presentation checks; no Magic rules simulation |
 | `Mana.Conformance` | Test-only semantic scenarios, canonical full checkpoints and first-divergence reporting for two engine adapters |
 | `Mana.Client.Tests`, `Mana.Table.Tests` | Headless behavior checks and separate native test/automation executable |
 
@@ -132,8 +252,9 @@ battlefield occurrence, with ordered groups and exposed individual hit regions.
 Sparse boards keep projected role lanes. When crowding requires bounded packing,
 all seats switch together to upright cells inside separate player regions;
 `BoundedBattlefieldLayout` reserves space for piles, commanders, resources and
-controls. Dense headers carry owner/status and exact role counts while life,
-mana and player-state ribbons remain at their player icons. Matching public-state
+controls. Dense headers carry owner/status while life, mana and player-state
+ribbons remain at their player icons. Redundant role and hero creature counts
+have been removed. Matching public-state
 copies share small fans; every occurrence stays rendered and independently hit.
 Its compatibility rank views do not page the battlefield. Long hands and
 selection/inspection galleries still page. Release 0.2.39 introduced unpaged
@@ -146,7 +267,7 @@ views, so revoked information is removed consistently. Artist image loading is
 separate from GPU texture creation; the default Magic provider is replaceable.
 
 The table renders to a 1600x900 design surface, while setup uses 1600x1000.
-`TableGame` scales and letterboxes that surface into the actual backbuffer and
+`TableWindow` scales and letterboxes that surface into the actual backbuffer and
 maps physical pointer coordinates through the inverse transform. A design-surface
 capture does not establish physical-window readability. Review the actual window
 at the supported small and large sizes as well as the underlying layout.
@@ -171,7 +292,7 @@ Fixes, undo and redo refresh these annotations automatically. Save status remain
 separate from deck conformance; neither requires a review dialog. Back to setup
 returns directly to the lobby, where deck selection and readiness remain explicit.
 
-`TableGame.Decks` routes every mutation through the same readiness, persistence
+`TableApplication.Decks` routes every mutation through the same readiness, persistence
 and refresh path. Each native edit carries both the deck ID and revision; the
 adapter rejects commands for a different active document or an older revision.
 Opening the builder refreshes its document after match setup has reopened it.
@@ -205,7 +326,7 @@ Archidekt import/manual refresh requires a whole-list confirmation of quantities
 and source-baseline effects before an existing token-guarded application. It
 does not authenticate, continuously synchronize or write back to Archidekt.
 
-`TableGame.LobbyFlow` separates selecting, confirming, readying and starting.
+`TableApplication.LobbyFlow` separates selecting, confirming, readying and starting.
 The deck chooser and the builder return to a shared review of commander faces,
 counts, validation and save status. Confirm prepares the solo setup or submits
 the saved deck through `SelectDeckAsync`; multiplayer readiness is a separate
@@ -216,7 +337,7 @@ await the ordinary `SetReadyAsync(false)` before opening or changing a document.
 Browsing the chooser alone preserves readiness. These are client workflow states;
 rules and the synchronized seat roster remain authoritative in the existing engine.
 
-`TableGame.LobbyView` renders the four-seat roster, commander preview, saved/precon
+`TableApplication.LobbyView` renders the four-seat roster, commander preview, saved/precon
 chooser, review, native invite entry, and connection details. Its hit scopes include
 the active modal, selected deck, confirmation, mode, readiness and start permission.
 Modal input cannot reach controls behind it. Start requires current confirmation
@@ -224,13 +345,13 @@ plus the engine's readiness/start state. Builder edits preserve the selected AI
 opponent IDs when the updated deck is reconfirmed. Returning from a network game
 refreshes the lobby before showing its controls; readiness must be declared again.
 
-`TableGame.LobbyDecks` shares the searchable chooser between saved/precon lists
+`TableApplication.LobbyDecks` shares the searchable chooser between saved/precon lists
 and engine-owned AI opponent choices. Its read-only deck review browses the loaded
 document by section, name, type and rules text, with exact-printing previews.
 Browsing or reselecting the current deck makes no engine mutation and preserves
 readiness. Entering the builder from a reviewed card first withdraws readiness,
 refreshes the editor revision, and selects that printing in its original section.
-`TableGame.DeckPresentation` shares the main-deck curve and alternate-face rendering
+`TableApplication.DeckPresentation` shares the main-deck curve and alternate-face rendering
 between building and review. Search and page state participate in hit scoping.
 
 Table social features use the optional `ITableSocial` contract independently of
@@ -256,9 +377,16 @@ Native hover highlights cards at their compact size. During ordinary priority,
 clicking a visible hand, battlefield or command-zone card opens a persistent
 410x574 reader. The same scene occurrence animates upright and is painted once;
 its displayed pose supplies its hit region, while original hand slots remain
-available for browsing. Clicking the same card, empty space or Close card,
-pressing Escape or starting a drag dismisses the reader. Pointer exit alone does
-not dismiss it or replace it with another card.
+available for browsing. Clicking the same card or empty space, pressing Escape
+or starting a drag dismisses the reader. Escape dismisses the reader before its
+parent workspace. Pointer exit alone does not dismiss it or replace it with
+another card. Once the reader settles, an available engine action appears in a
+quiet, short tab attached to its bottom-left edge: Cast, Play, Activate or Place.
+There is no separate Close card control. A drag begun with a hand reader pinned must
+leave both the captured reader face and its original hand slot before a legal
+drop can commit; moving within the enlarged face cannot cast the card. Dragging
+uses the held card, legal-drop outline and combat aim without a narrative hint
+panel.
 The local portrait and life total sit at the center above the hand, using the
 same seat anchor as incoming combat lines, commander entrances and life effects.
 The fan sits behind the portrait, with local battlefield ranks shifted forward
@@ -270,31 +398,52 @@ preserves the chosen set. Anonymous faces have presentation identities scoped to
 the decision and original item slot; names never identify an occurrence. Paging,
 search and Continue/Confirm stay available. Changing a choice's scope, page or
 granted visibility removes its old reader or private inspection.
-Hover focus uses an amber rim, soft edge glow, dark separation and ivory corner
-marks. It follows the card's displayed pose without opening a reader.
-Engine-authorized actions use a persistent 7-pixel ice-blue rim with a pale inner
-edge, dark separation and a broad glow, visible before hovering. Only its glow
-gently varies during priority; reduced motion keeps it steady. Hover focus and
-combat cues retain their separate meaning.
+Pointer hover uses a neutral light rim, soft edge glow, dark separation and
+corner marks without moving the card or opening a reader. Selection has a
+separate gold edge and selection mark or ordered number; engine-authorized
+availability uses a quiet blue edge. Pinned reading state is separate from
+pointer hover. `TableApplication.Controls` shares the button and custom-surface
+painting used by text choices, pass policies and phase stops. Resting
+importance or selection stays separate from hover and pressed feedback.
+Shield-only panel backgrounds do not advertise a clickable action. Source-aware
+readers show concrete engine actions in a deliberately composed rules area below
+the illustration. Reading and choosing an action remain separate. Human
+acceptance remains open; see [Experience review](Mana-Table-Experience-Review.md).
 Combat connections and pointer aiming share a straight, filled arrow in the
 renderer: a tapered shaft, broad directional head and dark separation from card
 art. Attacks are red and blocks blue. Endpoints use the displayed card edges or
 portrait rim; short connections scale the head down, and aiming inside the source
 card hides the arrow. The renderer contains no combat legality or input logic.
-The battlefield groups creatures, support and lands. Compact groups show
-name, current power/toughness, damage, counters, state and matching-copy count as
-applicable, with an explicit extra-types count when needed. Only matching public
-states share a fan. Labels extend the same occurrence's hit region rather than
-clicking through to a neighbor. Reading and inspection show the complete details.
-Power/toughness always comes from the engine and is never recomputed from counters.
+The battlefield groups creatures, support and lands. Ordinary cards carry an
+attached strip for current power/toughness, marked damage and a compact dice/count
+marker. The marker shows the leading counter amount; an ellipsis means additional
+counter types, whose qualified names and amounts remain available in the reader
+and inspector. Dense cells connect the thumbnail to its name and one combined
+stats row; counter types share that row instead of adding detached rows. Only
+matching public states share a fan. Connected metadata extends the same
+occurrence's hit region rather than clicking through to a neighbor.
+
+`PaintInteractionCard` shares this current-state presentation across source,
+choice, stack, combat and allocation previews. `InteractionCards` resolves exact
+public occurrence IDs against the current snapshot for display, including a
+current face-down projection. It never matches printed names or changes the
+original choice index, action handle, allocation threshold or reply. If an
+occurrence is absent, only the face already disclosed in that current interaction
+is available as a fallback. Power/toughness always comes from the engine and is
+never recomputed from counters: continuous effects can change P/T while the
+counter amount stays the same. Counter rows use the measured text height at the
+current text scale. Text-only ability choosers also show the current source
+preview. Inspection of an alternate printed face remains separate from
+the current battlefield face.
 Public player counters, progress and statuses share persistent seat ribbons and
 paged context in the player inspector. `forge-game`'s `PublicPlayerStateRegistry`
 declares typed public providers; the API forwards immutable snapshots and native
 rendering uses their kinds and declared progress maxima. Current coverage is
 positive counters, Speed, monarch, initiative and the city's blessing. New public
 mechanics require a descriptor and visibility/lifetime review; private fields are
-not discovered automatically. Table mechanics and card/player relations retain
-their own projection. Cached font metrics bound ribbons at 100%, 115% or 130% text.
+not discovered automatically. Generic `GameSnapshot.States` carries table-wide
+mechanics, currently Day/Night, to persistent header indicators and a complete
+detail view. Cached font metrics bound ribbons at 100%, 115% or 130% text.
 
 Decision instructions use the rendered font metrics to grow upward above their
 action buttons. Overflow exposes Read all for the exact current engine message.
@@ -307,7 +456,19 @@ and inspection show those relationships without treating attached cards as one
 occurrence or recalculating the host's current characteristics. Grouping preserves
 attachment differences so identical card names do not hide separate equipped
 states. Phasing retains the public relationship; leaving visible zones removes it.
-Current combat keywords drive distinct markers for flying, reach, trample,
+Cards publish typed `PublicState` descriptors from the engine's effective keyword
+view, including qualified costs, protection restrictions and repeated instances.
+The engine copies descriptors before keyword-set deduplication; older published
+snapshots cannot change when an ability changes. Native presentation recognizes
+some keys for familiar icons and uses the engine's label/detail for every other
+ability. No native keyword allowlist determines whether an ability exists.
+`Card.States = null` supports older adapters through `combatKeywords`; an empty
+typed array authoritatively means no current descriptors. Grouping includes the
+complete typed state, so different Ward costs or protection qualities do not
+collapse into the same fan. Long qualified labels keep a compact table marker
+and remain complete in inspection. Public face-down characteristics do not
+expose printed identity, text, artwork or hidden abilities.
+Familiar keys drive distinct markers for flying, reach, trample,
 first/double strike, deathtouch, lifelink, menace, vigilance and indestructible.
 Summoning sickness has an hourglass marker. On ordinary projected boards, flying
 raises the same card pose used for hit testing and combat arrows, with separated
@@ -316,10 +477,13 @@ movement. Dense cells use compact state markers without lifting faces into
 neighboring labels. Losing an ability
 or removing counters updates the existing occurrence, without interpreting
 printed rules text or retaining markers after the projection revokes them.
-Reduced motion uses the same poses without tweening. Play card, Activate ability
-and placement actions are explicit controls beside the opened reader; a legal
-hand drag remains an alternative. Zone browsers and inspection retain explicit
-use actions. Required selections, mana payment and combat keep direct clicks.
+Reduced motion uses the same poses without tweening. A reader's concrete action
+submits only the current engine-owned handle; a legal hand drag remains an
+alternative. Older adapters without source actions retain their existing reader
+tab. Zone browsers and inspection retain explicit use actions. Required card
+selections and combat keep direct clicks; source-aware mana payment permits
+reading a mana source before choosing its actual ability. These surfaces
+still have different reading and selection gestures, which need review together.
 Card choices may include an optional `cardId` linking a currently visible
 battlefield, command-zone or own-hand occurrence. `TableChoices` validates those
 links against the current snapshot. Eligible table choices stage their engine
@@ -328,14 +492,55 @@ confirm. Ordered sets require battlefield links and at most twelve choices;
 larger sets and ordered hand/command choices use the numbered gallery. This
 changes the choice surface, not which battlefield cards are rendered. Unordered
 sets retain their existing routing without that twelve-item limit. Ordered
-choices use click order; minimum/maximum counts come from the engine. Gallery
-faces remain anonymous, and library searches, private reveals and non-card
+choices use click order; minimum/maximum counts come from the engine. Their task
+line reports the count, order requirement and selected total without a repeated
+click tutorial. Gallery faces remain anonymous, and library searches, private
+reveals and non-card
 choices retain their chooser.
-Selecting a gallery face retains its compact geometry. Required decisions also
+Selecting a gallery face retains its compact geometry. Card selection decisions
 collapse an existing reader so it cannot intercept the next adjacent choice.
 Selection uses the original prompt-scoped index, independently of names and reflow.
 
-`TableGame.Allocation` presents numeric assignments using `AllocationGuide` and
+`ISourceActions` is an optional, capability-negotiated engine boundary. A lazy
+`matchSourceActions` query runs on the input owner, preserves the current prompt
+and board, and returns opaque handles plus genuine action descriptions for one
+disclosed source. The catalog is separate from the conservative Auto-pass scan,
+which intentionally excludes mana abilities. `useSourceAction` validates the
+exact input, source instance, game version and handle before calling the engine's
+existing priority or mana-payment ability path. Costs, targets and resolution
+continue through Forge. No native rules-text parser determines legal actions.
+
+`TableApplication.SourceActions` coalesces read queries and rejects results after
+source, snapshot, visibility or decision changes. Action hits include their query
+generation and binding so a held press cannot activate a refreshed first option.
+The selected canonical occurrence is composed by `SourceActions.View` as a live
+card: clear illustration, readable concrete action rows, full public rules,
+current counters and P/T, with local overflow pages. A genuine empty result gives
+no invented action. Only an explicit unsupported-method response from an older
+table host disables the optional capability; stale queries do not.
+Graveyard and Exile zone browsers support the same current-occurrence reader;
+reading preserves the browser until an explicit use action. Eligible hand-card
+placement options, including Gaea's Touch, retain the existing `HandPlacements`
+and `UseHandPlacement` route, followed by Forge's required card selection.
+
+Actual `InputSelectTargets` decisions retain their semantic input type. Their
+source is highlighted on the table, pointer aiming links it to legal cards or
+portraits, and the dock retains engine-permitted cancellation without calling a
+mixed card/player decision "Choose a player" or synthesizing a stack card.
+
+`TableApplication.AbilityChoices` handles genuine later single-select
+`playAbility` choices beside the actual source occurrence. This context includes abilities and
+casting modes. Pending engine input is separate from visual overlays: the table
+and source reader stay available while unrelated gameplay commands are blocked.
+An explicit action click submits its original index; optional Cancel submits an
+empty choice. Inspection and outside clicks never answer the prompt. The source
+must be currently disclosed before its board position is used; an embedded
+historical source alone cannot establish a live board anchor.
+If that occurrence is not displayed, actions use its current zone or controller
+as context. Opening an ability does not manufacture a stack copy. Choosing the
+action collapses the reader so the engine's resulting board state is visible.
+
+`TableApplication.Allocation` presents numeric assignments using `AllocationGuide` and
 the engine's source, units, recipient occurrences, limits and optional required
 amounts. Each row keeps public art/name/seat, current stats, marked damage,
 counters and the proposed amount visible. Detail inspection preserves the draft.
@@ -363,11 +568,37 @@ available during animation. The dock has one stable following state for automati
 empty windows and waits; Auto, Hold and phase stops use a match-scoped input
 identity so prompt churn cannot cancel those clicks.
 
-`CardActions` labels engine-authorized battlefield actions as Activate, with hover
-guidance and an inspector button. It never infers playability from rules text.
+`CardActions` retains availability highlighting and legacy inspection routes.
+Source-aware readers use engine-owned action descriptions in the live card's
+rules area. Neither path infers playability from rules text.
 Stack projections include viewer-safe card/player targets (including subabilities).
-The renderer draws direct target arrows, marks the exact occurrence and shows a
-spell/ability callout. `MatchActivity` retains public resolution descriptions and
+`TableApplication.Priority` composes one effect surface per actual stack item.
+The expanded row leads with `StackItem.Text`, a source thumbnail, controller,
+order and reported targets with direct arrows; later items retain ordered rows.
+The surface fits measured content. Its background has no hit or hover fill.
+Only overflow and secondary-effect summaries open complete effect inspection
+by the exact current item ID. Genuine stack-target decisions retain their engine-owned
+selection path. The former separate stack-card copy, Details button and stack-count
+opener are removed. Payment and recipient source context remain separate from the
+actual pending effects. Human acceptance of this iteration remains open.
+`TableApplication.PendingReferences` makes the source art/name and individual
+target names references to their public cards. Hover highlights the actual
+displayed battlefield face when present and shows a full read-only card with current stats and
+counters beside the effect. The preview holds its position while being read,
+shields the cards underneath and offers no actions; canonical card poses and hit
+regions never move. A player reference highlights the actual portrait instead.
+Auto pauses while a card reference is being read. Visibility and the current
+stack-item identity bound the reference's lifetime.
+The responder band states `Your priority` or names the actual priority holder;
+it does not frame holding priority after your own action as a reply to another
+player. `TableApplication.PendingConnections` binds a gold source → effect link
+only to a currently disclosed, displayed occurrence. Red effect → target links
+use current card poses or player portraits. Same-side ports follow the endpoints'
+vertical order; adjacent cards move a port to a feasible edge position without
+reversing that order. `PanelConnection` routes stay outside the complete panel,
+including its responder band and later rows. Missing live source occurrences are not
+reconstructed from the stack's retained source face.
+`MatchActivity` retains public resolution descriptions and
 spell rules, plus token arrival names; `ActionFeedback` exposes a timed summary
 and reviewable details. Recent changes are reported without inferring causality.
 Typed resolution outcomes distinguish resolved from not resolved. Actual public
@@ -377,17 +608,29 @@ legacy outcome data remains unspecified rather than inferred from message text.
 New public battlefield occurrences receive arrival cues. Departures to public
 graveyard/exile retain a brief ghost at the former position; hidden transitions
 immediately revoke it. No extra game rules or multiplayer-specific path is added.
+Reported counter changes use their engine-supplied cause and exact affected
+occurrences. Feedback travels from the source as a small spark and pulses the
+owning card's actual counter marker; floating delta tiles no longer cover current
+values. This presentation does not infer a cause from neighboring timestamps or
+add the reported delta to a card's authoritative current stats. Its clarity and
+comfort still need human review; the crowded whole-table layout remains an open
+design problem.
 `TextureFiltering` builds GPU mipmaps once per loaded image; anisotropic card
 sampling handles angled minification, and table surfaces request 4x MSAA.
 Full-resolution artwork and rendered rules text remain available for inspection.
 
-Native updates are separate from engine commands. `AppBuild` permits stable
-checks only for a versioned release package. `GitHubAppUpdates` validates the
-native release manifest, asset size and SHA256 before caching an installer;
-preview packages remain outside the stable update channel. The table can keep
-running during download. Installation revalidates the file and requires leaving
-the game and network table, completing current work and saving the deck before
-`WindowsUpdateInstaller` hands off to Setup. Profiles live outside the payload.
+Native updates are separate from engine commands. Supported managed installations
+use `IncrementalAppUpdates` and the pinned Velopack SDK for selected full/delta
+packages, verified preparation and explicit restart. The user chooses when to
+download. Older installer clients retain `GitHubAppUpdates` and the compatible
+Inno bridge through `WindowsUpdateInstaller`; the bridge establishes the managed
+layout before patch updates become available. Stable checks require a versioned
+release package. Preparation verifies exact source/artifact identity; restart
+requires leaving the game/friends table, completing work and saving the deck.
+Profiles remain outside installation roots. The
+[release guide](Mana-Table-Releases.md#compatible-migration-and-portable-copies)
+defines supported layouts, migration and update verification; a portable or
+legacy path must not be described as already using the managed SDK.
 
 `TablePresence` turns public hand/library counts and life changes into seat cues.
 Opponent draw cues contain no card identities; the local hand animates only its
@@ -402,17 +645,16 @@ This supports selecting another backend without adding a renderer or multiplayer
 implementation. It does not imply live engine migration. A native rules engine is
 not installed yet. The conformance runner requires canonical occurrence aliases,
 controlled random outcomes and complete rules/seat checkpoints from each adapter;
-the current Forge transport benchmark proves synchronization, not cross-engine
-rules equivalence. A complete Forge rules-state oracle remains separate work from
+Java synchronization checks and native real-engine journeys exercise the current
+Forge boundary; they do not establish cross-engine rules equivalence. A complete
+Forge rules-state oracle remains separate work from
 the existing test-only seat-view audit.
 
 ```mermaid
 flowchart LR
     Native[MonoGame table] --> Client[Mana.Client and Mana.Magic]
     Client --> Adapter[Mana.Forge adapter]
-    Electron[Electron table] --> Desktop[Electron main process]
     Adapter <-->|private IPC| Host[DesktopEngine]
-    Desktop <-->|private IPC| Host
     Host --> Connection[SeatConnection]
     Connection <-->|local or TCP synchronization| Table[MatchTable]
     Table --> Seats[MatchSession per human seat]
@@ -423,108 +665,38 @@ flowchart LR
 
 ## Where to change things
 
-For native changes, start with the project boundaries above and the
-[native guide's layer map](../../mana-native/README.md#where-to-change-things).
-The entry points below describe the Electron reference client and shared Java
-adapter. DOM, CSS and Three.js details in the following sections apply to Electron.
+| Area | Owner |
+| --- | --- |
+| Window, GPU, input sampling and captures | `mana-native/Mana.Table/TableWindow.cs` |
+| Application composition and interaction | `TableApplication` and its feature partials |
+| Snapshot ordering, commands, assets and updates | `mana-native/Mana.Client` |
+| Typed DTOs and capabilities | `mana-native/Mana.Contracts` |
+| Forge process and protocol mapping | `mana-native/Mana.Forge` |
+| Magic presentation and projected action guides | `mana-native/Mana.Magic` |
+| Typed drawing, layout, geometry, motion and effects | `mana-native/Mana.Renderer` |
+| Shared authored experiences | `mana-native/Mana.Scenarios` |
+| Command host, deck tools and seat-filtered snapshots | `forge-api/src/main/java/forge/api` |
+| Authoritative rules, card scripts and AI | Existing Forge modules and `forge-gui/res` |
 
-| Area | Entry points | Responsibility |
-| --- | --- | --- |
-| Desktop process | `forge-desktop/main.cjs`, `preload.cjs` | Window, permitted IPC, file dialogs, artwork cache, engine lifetime |
-| Runtime/transport | `runtime.cjs`, `engine-client.cjs` | Java/path resolution, request IDs, replies, startup status, logs |
-| Workshop | `renderer/app.js`, `presets.js` | Catalog, deck editing, imports, practice, preset browsing |
-| Match coordination | `renderer/match.js` | Setup, scoped answers, polling, stable board rendering, prompt controls |
-| Card interaction | `hand-view.js`, `table-gestures.js`, `card-preview.js`, `table-card-preview.js`, `battlefield-view.js` | Fan layout, cancelable dragging, card enlargement, optional inspector, alternate faces and crowded ranks |
-| 3D presentation | `table-scene.js`, `table-scene-world.mjs`, `table-world-layout.mjs`, `table-scene.css` | World-space seating and camera, projected controls, stable card objects, textures, movement and graphics fallback |
-| Match explanation | `turn-guide.js`, `match-feedback.js` | Phase guidance, activity history, turn indicators and animation |
-| Table events | `cast-view.js`, `reveal-view.js` | Pending spell and stack portraits, prompt-scoped revealed cards |
-| Response preferences | `preferences.cjs`, `play-preferences.js`, `response-skip.js` | Remembered Auto/Full control, own-turn stops, temporary holds and engine-authorized passes |
-| Combat | `combat-view.js` | Attackers, defenders, legal block connections and assignment controls |
-| Battlefield combat | `table-combat.js` | Creature-first click pairs and scoped drags, legal destination highlights, defender badges and connection arrows; detailed combat is optional |
-| Java protocol | `DesktopEngine.java` | Method dispatch, current deck, saved files, practice and one active match |
-| Deck hooks | `CardCatalog`, `DeckEditor`, `DeckImport`, `DeckPresets`, `MatchSetup` | Search, revisioned edits, validation, imports, detached match decks |
-| Game adapter | `MatchSession`, `MatchActivity`, `HeadlessPlatform`, `CombatCardIds` | Human input, AI session, visibility filtering, stable projected state |
-| Minimal observation hooks | `GameStateMapper`, `GameObservation` | Smaller immutable projection and event invalidation for other consumers |
-
-Deck-building discovery and review live in `deck-workshop.js` / `.css`, with
-`DeckInsights.java` providing role estimates and recommendations. The script
-loads before `app.js`; its callbacks use the shared app state after initialization.
-`app.js` owns the edit queue. Catalog controls count by card name across printings
-and reuse an existing printing in the selected destination. Deck-row quantity
-and section moves preserve exact printing IDs. Moves use a single atomic edit
-batch, so undo restores both sections. Queued edits capture the deck ID and source
-section; review replies are checked against the deck ID, revision, and format
-request key. Search/grouping filters change presentation only.
-
-Java classes above live in `forge-api/src/main/java/forge/api`. Renderer files
-are under `forge-desktop/renderer`. The API README is the detailed
-[integration contract](../../forge-api/README.md).
-
-Most renderer files use classic scripts and shared globals, loaded in the
-order listed by `renderer/index.html`. The 3D controller lazily imports a native
-ES module and the pinned Three.js build. There is no bundler or UI framework.
-CSS is layered: base workshop/match styles, battlefield layout, then
-feature-specific styles. Keep feature behavior in its owning file and document
-cross-file assumptions instead of expanding the central `match.js` indefinitely.
-
-Battlefield cards use an explicit `battlefield` presentation in `cardTile`.
-The 2D fallback in `battlefield.css` reserves a square footprint around each portrait surface, which
-turns a full 90 degrees when tapped. Current stats, counters and damage remain
-upright. `match-feedback.js` animates that same surface only when the tap state
-changes. Two battlefield ranks remain vertical at every supported size.
-`battlefield-view.js` overlaps crowded ranks and provides edge buttons, wheel and
-keyboard browsing; native scrollbars are hidden without removing access to cards.
-`card-preview.js` delegates match roots to `table-card-preview.js`. Hand cards lift
-in place; other cards use an image-only, pointer-transparent layer anchored to the
-source. The optional rail inspector shows rules and current values. Both consume
-only the visibility-filtered projection, including permitted alternate faces.
-`hand-view.css` reserves the lower-left player controls; `hand-view.js` keeps the
-fan and local gap behavior. `match-feedback.css` fixes response controls at the
-lower right with fixed grid tracks, including the persistent turn/step dock.
-The primary action stays at the bottom of the prompt; explanatory text stays
-inside its scrollport. The prompt's instructions and each upper information panel scroll
-independently; decision buttons remain outside the prompt scrollport. Preferences
-open above the fixed controls. Card inspection occupies the upper information area.
-Game overlays sit above the hand and player controls while selecting combat or
-library cards. `cast-view.js` reconciles projected sources and stack IDs without
-replaying entrance animations on polls; its portraits do not intercept targets.
-`reveal-view.js` pages through only the current reveal's cards and clears them
-when that prompt ends. Both views respect hidden identities and reduced motion.
+See the [native layer map](../../mana-native/README.md#where-to-change-things)
+for project responsibilities and the [API contract](../../forge-api/README.md)
+for protocol fields. Repository documentation/artifact/publication tools live
+under `scripts/mana-table`; they are not an application runtime.
 
 ## A game action, end to end
 
-1. The engine publishes a stable, immutable snapshot for the trusted human viewer.
-2. The renderer displays the current prompt and gives actionable cards that
-   prompt's handles. It retains DOM nodes across status-only updates and reuses
-   unchanged hand cards when other zones or player information change.
-3. A click/drag records its source element, session, and prompt before submitting.
-4. The host validates those IDs and the answer, then dispatches to the existing
-   human controller. Synchronous dialogs complete a response future directly.
-5. The engine resolves the action. The renderer acknowledges immediately and
-   polls for the next stable state; animation never delays or submits input.
+1. Forge publishes an immutable snapshot for the trusted human viewer.
+2. `ClientSession` accepts its game, revision and current decision scope.
+3. `TableApplication` composes the visible cards and controls into one frame.
+   Drawing and hit testing use the same displayed occurrences.
+4. A deliberate input resolves the current occurrence and prompt-scoped handle.
+   `Mana.Forge` sends the command over the private process protocol.
+5. The host validates the session, prompt and permission before dispatching to
+   the shared human controller. The client reconciles the next snapshot.
 
-`match.js` prevents overlapping polls and ignores results from superseded
-sessions. Polling is faster while resolving than while waiting for input.
-Required selections keep the engine's message and enabled actions; explanatory
-turn guidance never chooses an action on the player's behalf.
-
-In **Auto**, `response-skip.js` submits `passIfNoResponse` only for
-`InputPassPriority` with engine-issued `canAutoPass: true`.
-This permission comes from the controller's current action scan. Main phases
-advance when no playable action remains; land plays, affordable spells and
-abilities, and castable commanders hold priority. Required inputs always wait.
-The normal session/prompt checks
-still apply. Switching to **Full control**, selecting an own-turn stop, or using
-**Hold this turn** cancels a queued pass. Only the temporary hold resets at a
-turn/session boundary. Both main phases can be selected as saved stops. A
-one-second pause before leaving an empty main phase lets the last play settle
-on the table. Browsing the workshop suspends automatic passes.
-`preferences.cjs` validates and atomically stores the response mode, phase stops
-and inspector preference in the fixed profile file `preferences.json` through
-dedicated, origin-checked IPC. Auto is the production default; the renderer uses
-Full control until loading finishes. Failed saves preserve the latest local
-choice instead of re-enabling automatic play. Tests seed Full control unless
-they explicitly exercise Auto. Packaging preserves this file across betas.
+Serial command ownership, stale-result rejection and Auto cancellation belong
+to the client session. Required decisions remain explicit. Animation never
+grants permission, submits an answer, or delays authoritative state.
 
 ## Identifiers with different jobs
 
@@ -547,21 +719,19 @@ serialize live Forge objects, raw logs, or mutable views directly to the rendere
 
 ## Extending the app
 
-**New visual component:** add its script/styles to `renderer/index.html` and the
-static resource allowlist in `main.cjs`. Reuse projected state and the existing
-answer path. Check keyboard operation, minimum window size, and reduced motion.
+**Presentation:** use the current typed projection and existing scoped action
+path. Keep domain layout, card presentation and application interaction separate;
+publish final drawing and input geometry together. Review visible changes in
+the real window with the [Experience Lab](Mana-Table-Experience-Review.md).
 
-**New engine command:** add dispatch/validation in `DesktopEngine`, allowlist it
-in `main.cjs`, document it in the API contract, and exercise it through the real
-pipe transport. `preload.cjs` intentionally exposes a small bridge, not Node APIs.
+**Commands:** update Java dispatch/validation, `Mana.Contracts`, `Mana.Forge`
+mapping and the API contract together. Verify the shipping process boundary with
+the relevant native real-engine journey.
 
-**New match state:** copy data at stable engine/controller boundaries inside
-`MatchSession`; do not read live views from the transport or renderer threads.
-Check both authorized visibility and absence of hidden details.
-
-**New host module:** update the explicit file list in `scripts/package.cjs` and
-verify a packaged smoke test. A source-tree run alone will not detect a missing
-file in the package.
+**Projected state:** capture immutable, visibility-reviewed data at stable
+engine/controller boundaries. Do not read live mutable views from transport or
+rendering threads, infer permissions from card names, or retain a face after its
+visibility is revoked. Add a focused engine regression for the changed contract.
 
 ## Upstream boundary and current limits
 
@@ -573,84 +743,21 @@ explicit resource/profile paths, and reusing initialized `StaticData` through
 prompts while its default delegates to the existing picker for other clients.
 Keep further shared changes small and reviewable.
 
-Generic state coverage currently means the registered public player states in
-`PublicPlayerStateRegistry`, not every mechanic in the engine. Card state still
-uses `MatchSession.publicKeywords`, a seventeen-keyword presence filter; typed
-ward costs and protection/hexproof qualifiers are not carried by that list.
-An engine-owned immutable public-card descriptor collection is needed for fuller
-effective keyword coverage and repeated instances. Raw keyword strings or live
-views are not a safe replacement. Table facts such as day/night and storm, the
-Ring-bearer relation, and dungeon/room relations need their own typed, visibility-
+Public state remains a reviewed engine projection, not serialization of every
+internal field. `PublicPlayerStateRegistry` supplies generic player mechanics.
+`CardView.getPublicStates` copies effective public keyword labels, reminders,
+qualifiers and repeated instances into immutable descriptors; `MatchSession`
+projects them as card `states`. Native `CardPresentation` uses that typed list,
+including Shroud, qualified Ward/Protection/Hexproof and unfamiliar keys. A null
+typed list supports an older adapter's `combatKeywords`; an empty typed list is
+authoritative. The former seventeen-keyword adapter filter has been removed.
+The compatibility `combatKeywords` array still carries presence keys only, so
+older consumers that read that field do not gain qualified rendering merely
+because the engine now exports the descriptors. Review each projection consumer.
+
+Table-scoped `GameSnapshot.States` currently includes day/night. Storm,
+Ring-bearer and dungeon/room relationships need their own typed, visibility-
 reviewed projections rather than entries invented in the player-state collection.
-
-## 3D scene and interaction boundary
-
-The default table has authored world coordinates for two through six seats.
-`table-world-layout.mjs` arranges playmats, life medallions, hidden hand backs,
-decks, public discard piles, commanders, and battlefield ranks around the table.
-The camera fits the whole table to the viewport; clicking a player's name moves
-closer to that seat, and **Whole table** restores the overview. Camera focus never
-sends an engine action. Crowded ranks page in world space using their arrows,
-the wheel, or Left/Right/Home/End on a focused card.
-
-Hand, battlefield, and casting portraits are meshes with card thickness and soft
-projected shadows. `visualId` correlates the same object across zones; a source
-still on the battlefield gets a separate representation for its stack ability.
-Polling updates targets without replaying entrances. Transforms interpolate
-only until settled, then rendering sleeps. Reduced motion and Animations off
-snap directly to the new state. DOM flight clones are disabled for scene cards.
-
-World objects project their bounds back onto accessible DOM controls each frame.
-The 3D view removes the old scrolling seat lanes; the 2D fallback keeps them.
-Held and casting cards use camera-relative screen anchors and face the camera.
-Their depths are camera-relative too: resting cards follow fan order, and a
-lifted or dragged card sits closer than its neighbors. Ground-plane intersections
-must not determine held-card depth; the camera tilt otherwise lets lower cards
-occlude the enlarged face. Hand badges behind the lifted card are hidden alongside
-covered world labels, because the accessible DOM sits above the WebGL canvas.
-Clicks, keyboard input, legal target highlighting, combat arrows, and scoped
-drags continue through the existing engine answer path. A combat click selects
-your creature locally, then submits one scoped assignment on a legal destination click. Polls
-retain that selection only within the same prompt. Escape, a new prompt, and
-mode changes clear it. The engine supplies all attack and block eligibility.
-Combat arrows follow the projected targets as the camera moves.
-The battlefield combat dock provides instructions, assignment counts, undo and
-confirmation. Attacking and blocking meshes advance within their playmats;
-projected hit regions follow them. Opponent life markers show incoming attacks.
-
-Network sessions receive `CombatInputState` from the host's active `InputAttack`
-or `InputBlock`, scoped to the input owner and sequence. Only that snapshot
-authorizes legal pairs; highlights do not. `assignAttack` and `assignBlock` send
-one controller operation containing both endpoints. The host rechecks the input
-sequence and legality before changing combat. Assignment updates refresh the
-prompt ID; unchanged polls preserve it. Combat events flush immediately so
-observers see assignments while the acting player reviews them.
-
-Life numbers, stats, menus, the detailed
-combat inspector and reveal/search galleries remain HTML controls. Projection
-writes and combat SVG updates are excluded from the scene's mutation observer
-so they cannot keep the render loop awake.
-World labels covered by held or casting cards become transparent while retaining
-their hit regions, preventing DOM text from showing through a WebGL card face.
-
-Card textures come only from existing authorized card portraits. Opponent hand
-counts produce anonymous backs, without reading hidden card identities. Face changes clear
-the previous texture; objects leaving the visible projection are removed and
-disposed immediately. No hidden-zone images are synthesized. Context loss or
-initialization failure restores the complete 2D presentation, and the player
-can switch with **3D table / 2D table** without changing the engine state.
-
-Three.js is pinned in `package-lock.json` and served through two exact protocol
-paths. Packaging copies its two runtime modules and MIT license into the ASAR;
-the scene never downloads executable code. `table-scene.spec.cjs` checks real
-engine card continuity, tapping, idle rendering, sizes, context loss and retry.
-`table-world.spec.cjs` checks two, four, and six seats, projected life hit targets,
-camera focus, and crowded-rank paging while a real engine decision stays unchanged.
-`battlefield-fit.spec.cjs` and `multiplayer.spec.cjs` retain explicit 2D fallback
-coverage for scrollports, seat navigation, and drawers.
-
-Each engine process owns one active match. Local and network seats share the
-authoritative Forge rules implementation, and interrupted TCP seats can reconnect
-while the host remains running. Durable match saves, host migration and full
-tournament-format legality checks are not implemented. Packaging is currently
-Windows x64 only.
+Public face-down characteristics remain available without printed identity, rules
+text, artwork or hidden faces. Raw keyword scripting strings and live mutable
+engine views are never a fallback for missing public coverage.

@@ -10,6 +10,7 @@
     <ProjectReference Include="../Mana.Client/Mana.Client.csproj" />
     <ProjectReference Include="../Mana.Magic/Mana.Magic.csproj" />
     <ProjectReference Include="../Mana.Renderer/Mana.Renderer.csproj" />
+    <ProjectReference Include="../Mana.Scenarios/Mana.Scenarios.csproj" />
     <Content Include="Assets/**" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>

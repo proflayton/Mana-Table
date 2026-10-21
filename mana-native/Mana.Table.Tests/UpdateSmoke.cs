@@ -20,14 +20,14 @@ internal static class UpdateSmoke
             if (!valid) throw new InvalidOperationException(text);
             checks.Add(text); File.AppendAllText(Path.Combine(profile, "update-progress.log"), text + "\n");
         }
-        TableGame.Probe Scene(string path, FakeUpdates? service, Action<Script, TableGame.Probe, StartupEngine> arrange, Action<PreparedUpdate>? install = null)
+        TableWindow.Probe Scene(string path, FakeUpdates? service, Action<Script, TableWindow.Probe, StartupEngine> arrange, Action<PreparedUpdate>? install = null)
         {
             var engine = new StartupEngine();
-            using var game = new TableGame(engine, path, null, null, size, artSource: new EmptyArt(), appUpdates: service, installUpdate: install);
+            using var game = new TableWindow(engine, path, null, null, size, artSource: new EmptyArt(), appUpdates: service, installUpdate: install);
             var view = game.TestPort; var script = new Script(view); game.Automation = script;
             arrange(script, view, engine); game.Run(); return view;
         }
-        void QuietFrames(Script script, TableGame.Probe view, FakeUpdates fake, bool expectCheck)
+        void QuietFrames(Script script, TableWindow.Probe view, FakeUpdates fake, bool expectCheck)
         {
             script.Then(() => {
                 view.SetAutomation(null);
@@ -179,7 +179,7 @@ internal static class UpdateSmoke
         public Task<byte[]?> LoadAsync(ArtRequest art, CancellationToken cancellationToken) => Task.FromResult<byte[]?>(null);
         public void Dispose() { }
     }
-    private sealed class Script(TableGame.Probe view) : ITableAutomation
+    private sealed class Script(TableWindow.Probe view) : ITableAutomation
     {
         private readonly Queue<Action> steps = [];
         private KeyboardState keyboard = new(); private MouseState mouse;

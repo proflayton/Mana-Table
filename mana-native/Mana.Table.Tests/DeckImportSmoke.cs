@@ -34,11 +34,11 @@ internal static class DeckImportSmoke
         static string Contents(DeckDetails deck) => string.Join('\n', deck.Entries.Select(e => $"{e.Section}:{e.Id}:{e.Quantity}").Order(StringComparer.Ordinal));
         static int Copies(DeckDetails deck, string name) => deck.Entries.Where(e => e.Card.Name == name).Sum(e => e.Quantity);
         string[] Files() => Directory.GetFiles(Path.Combine(working.Profile, "decks"), "*.json").Select(file => Path.GetFileName(file)!).Order(StringComparer.Ordinal).ToArray();
-        void Scene(Action<Script, TableGame.Probe> arrange)
+        void Scene(Action<Script, TableWindow.Probe> arrange)
         {
             var engine = new ForgeEngine(working);
             try {
-                using var game = new TableGame(engine, working.Profile, null, null, size, artSource: new EmptyArt());
+                using var game = new TableWindow(engine, working.Profile, null, null, size, artSource: new EmptyArt());
                 var script = new Script(game.TestPort); arrange(script, game.TestPort);
                 game.Automation = script; game.TestPort.DismissWelcome(); game.Run();
             } finally { engine.DisposeAsync().AsTask().GetAwaiter().GetResult(); }
@@ -107,7 +107,7 @@ internal static class DeckImportSmoke
         public void Dispose() { }
     }
 
-    private sealed class Script(TableGame.Probe view) : ITableAutomation
+    private sealed class Script(TableWindow.Probe view) : ITableAutomation
     {
         private readonly Queue<(Action? Action, Func<bool>? Ready)> steps = [];
         private readonly DateTime deadline = DateTime.UtcNow.AddMinutes(4);

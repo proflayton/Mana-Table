@@ -8,19 +8,26 @@ Download ManaTable-Setup.exe from https://github.com/proflayton/Mana-Table/relea
 and open it. Setup installs for your Windows account, adds shortcuts, and opens
 the game. Administrator access, Java and .NET installation are not required.
 Open Updates from Home, setup or Settings to check for a newer release. Startup
-checks can be turned off there. Download shows progress and can be canceled;
-you can continue playing while it downloads. After leaving your game and any
-friends' table, choose Install and restart. Setup waits for Mana Table to close,
-updates the installed app and reopens it with the same player profile.
+checks can be turned off there. The app notifies you first and downloads only
+when you choose. Smaller patches are used when available; a complete download
+is the fallback if a patch cannot be used. Progress distinguishes Downloading,
+Preparing and Ready. You can close the panel and keep playing or building.
+After leaving your game and friends' table and finishing your work, choose
+Restart to update. Mana Table closes normally and reopens the same profile.
+A downloaded update waits for that explicit choice, including after an ordinary
+app restart. Older installed builds receive one compatible installer update to
+enable smaller in-app updates.
 Your decks and settings stay in %LOCALAPPDATA%\ManaTableNative and are retained
 during updates or uninstall. Players on v0.2.7 and earlier need to download the
 first updater-enabled installer manually. Everyone at a table should update.
 Windows x64 only. First startup loads the card catalog.
 
-The portable ZIP is an alternative: extract the entire folder and open
-ManaTable.exe. Keep the engine folder beside it; do not run inside the ZIP.
-Portable copies can check and download updates; open the release page to install
-the app or extract the complete newer portable ZIP into a separate folder.
+The portable ZIP is an alternative: extract the entire folder and use its root
+launcher. Keep its full layout together; do not run inside the ZIP. Managed
+portable copies can offer Restart to update. Older flat ZIPs still use a manual
+replacement: extract the complete newer portable ZIP into a separate folder,
+or install the app. Update preparation also needs disk space for cached and
+temporary files, even when the download is small.
 
 STARTUP AND YOUR FIRST SESSION
 Every launch opens a loading screen, then the main menu: Play with AI,
@@ -44,6 +51,19 @@ The deck builder checks every saved edit. Problem cards are highlighted and
 their reasons appear beside the selected card; deck-wide checks stay visible.
 Back to setup returns to the lobby. Deck checks and saving update automatically.
 
+REVIEW YOUR DECK
+Open Analyze in the deck workshop for an automatic review. Start with What to
+check, read the benefit and tradeoff in Cards to try, then test one change.
+Review preferences are optional and ask direct questions about pace, format,
+and cards to keep. Your deck format and land-check target start automatically.
+Limited uses unused Sideboard cards as available pool cards; if no pool is known,
+the review asks which cards you can use. Your playable list changes only in Build.
+For a supported check, open its details and choose Test this check. The Test view
+keeps a concrete observation question for your next hand sample or AI game.
+Record what happened in Results, compare the tested list with your current one,
+then tune in Build. Earlier tests retain their original question and deck version.
+Card counts do not automatically answer turn-by-turn questions or prove a matchup.
+
 PLAY SOLO AGAINST AI
 1. Under Play with AI, select Choose a deck (or Change deck). Pick a saved list,
    try a precon, import a list, or build a new deck. Imported lists open the builder.
@@ -63,6 +83,9 @@ numbers, foil markers and Archidekt category tags can remain in the list.
 Explicit Commander tags or section headings select the commander automatically.
 Import errors identify the line that needs attention and preserve your saved deck.
 Use a text export for structured formats such as MTGO .dek XML or CSV files.
+For an exact printing, use a row such as:
+  1 Toph, the First Metalbender (TLA) 362 *F*
+The set and collector number select the artwork; *F* requests foil.
 Companion and Maybeboard sections currently need to be removed from the import;
 the importer reports them rather than adding those cards to the main deck.
 For Archidekt, choose Link Archidekt or paste a public deck URL. Review the import
@@ -115,6 +138,17 @@ quantity, or move it between Main and Side. The Leaders tab finds commander
 candidates already in your list. Set a commander, replace it, or add a compatible
 partner/Background; returning a commander to Main keeps the card in your deck.
 Other face flips double-faced cards in the preview without adding another card.
+
+Click the set/collector button under the large card to choose another printing,
+including for commanders. Browse the available artwork and foil/nonfoil finishes,
+or filter by set code/collector number and cycle All finishes, Nonfoil or Foil.
+then choose Use printing. All copies in that row keep their section; partners
+stay in the command zone. Undo restores the previous choice. To mix printings,
+choose a different printing from the library before adding its copies.
+Copy list includes each printing's set, collector number and foil finish so it
+can be imported again with the same choices. Exact artwork is cached separately;
+when an image is unavailable, the card remains readable with rules text.
+
 Changes save automatically. Undo/Redo restores edits, Duplicate makes a separate
 deck, and Copy list exports text with commander and sideboard sections.
 Card counts, a nonland mana curve and live deck checks identify needed changes.

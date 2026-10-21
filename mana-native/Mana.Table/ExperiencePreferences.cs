@@ -6,15 +6,13 @@ internal sealed record ExperiencePreferences
 {
     public bool WelcomeSeen { get; init; }
     public bool TableGuideSeen { get; init; }
-    public HashSet<string> LearnedControls { get; init; } = [];
 
     public static ExperiencePreferences Load(string profile)
     {
         string path = Path.Combine(profile, "experience.json");
         if (File.Exists(path)) {
             try {
-                var saved = JsonSerializer.Deserialize<ExperiencePreferences>(File.ReadAllText(path)) ?? new();
-                return saved with { LearnedControls = saved.LearnedControls ?? [] };
+                return JsonSerializer.Deserialize<ExperiencePreferences>(File.ReadAllText(path)) ?? new();
             }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException) { return new(); }
         }

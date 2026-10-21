@@ -1,19 +1,29 @@
 using System.Drawing;
 using System.Drawing.Imaging;
+using System.Security.Cryptography;
+using System.Text;
 using Mana.Contracts;
 
 namespace Mana.Table;
 
 // Encoded pixels still pass through CardArt, image decoding and GPU mipmap
 // generation. The deliberately missing image exercises the rules-text fallback.
-internal sealed class CardReadingArtFixture : ICardArtSource
+internal sealed class CardReadingArtFixture(string? cacheDirectory = null) : ICardArtSource
 {
     private static readonly byte[] Pattern = CreatePattern();
 
-    public Task<byte[]?> LoadAsync(ArtRequest art, CancellationToken cancellationToken)
+    public async Task<byte[]?> LoadAsync(ArtRequest art, CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        return Task.FromResult<byte[]?>(art.Name == "No-art readability fixture" ? null : Pattern);
+        if (art.Name == "No-art readability fixture") return null;
+        if (!string.IsNullOrWhiteSpace(cacheDirectory)) {
+            string key = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(art.Key)));
+            string path = Path.Combine(cacheDirectory, key + ".jpg");
+            try {
+                if (File.Exists(path)) return await File.ReadAllBytesAsync(path, cancellationToken);
+            } catch (Exception error) when (error is IOException or UnauthorizedAccessException) { }
+        }
+        return Pattern;
     }
 
     private static byte[] CreatePattern()

@@ -1,15 +1,13 @@
 # Mana Table engine API
 
 Mana Table includes a native desktop deck workshop and playable match table,
-backed by Forge's existing rules and AI. The older Electron client also consumes
-this API.
+backed by Forge's existing rules and AI.
 `forge-api` supplies catalog, deck, and match hooks. It depends on the shared
 `forge-gui` module (including the human controller), `forge-ai`, `forge-game`, and
 `forge-core`. It creates no Swing or LibGDX UI; `HeadlessPlatform` supplies the
 shared controller's platform services and preferences.
 
-The primary [Windows native client](../mana-native/README.md) and the
-[maintenance Electron client](../forge-desktop/README.md) consume `DesktopEngine`
+The [Windows MonoGame client](../mana-native/README.md) consumes `DesktopEngine`
 through private stdin/stdout JSON pipes. The host provides deck persistence,
 practice, AI games and multiplayer seats. Build with `mvn -pl forge-api -am verify`;
 the executable engine is `forge-api/target/forge-engine.jar` from the repository root.
@@ -48,6 +46,22 @@ The ready message advertises `protocolVersion: 2` and the `seat-sync`, `snapshot
 `command-receipts`, `resume`, `table-social`, `deck-workshop`, and `deck-analysis` capabilities. All connected players
 need this build; the seat synchronization handshake now uses version 3.
 Printing IDs are opaque, case-sensitive identifiers; clients must round-trip them.
+`cardPrintings` takes `{cardId, offset, limit, text, finish}` (limit 1–200, default 6) and returns
+a catalog page of exact printings of that card, including alternate artwork and
+foil finishes. Optional `text` filters set codes/collector numbers, and `finish`
+is empty, `foil` or `nonfoil`. `replacePrinting` takes `{deckId, revision, section, cardId,
+printingId}` and replaces every copy in that section with the chosen printing.
+It checks the active document/revision and card identity, merges existing copies,
+and preserves commander partners and other sections. It is one undoable edit and
+merges manual categories and preserves either printing's favorite status. Existing deck
+files and printing IDs keep their version-1 format; no migration is required.
+Text exports now retain separate printing rows with set, collector number and
+`*F*` for foils; cards without a collector number use Forge's art-index notation.
+Visible card snapshots add `artSet` (the edition's Scryfall code), `edition` and
+`collectorNumber`. Hidden cards omit these fields. Native image caches include
+set/collector number and face; old name-only caches remain valid for unspecified
+art requests. An unavailable exact image uses the readable card fallback.
+
 `multiplayerState` includes `tableId`. Pass that ID to `tableSocial` to read the
 table conversation, `tableChat` with `kind` (`chat` or `emote`) and `text` to send,
 or `tableName` with `name` to change your display name between games. Sender
@@ -98,7 +112,7 @@ stderr for diagnostics. Applications normally manage this child process themselv
 
 Set `JAVA_HOME` to your JDK installation and put Maven on `PATH`. No particular
 JDK vendor, local tool directory, or custom dependency cache is required. See
-the [desktop setup guide](../forge-desktop/README.md) for the application and
+the [native setup guide](../mana-native/README.md) for the application and
 the [testing guide](../docs/Development/Mana-Table-Testing.md) for real-engine tests.
 
 ```java
@@ -163,8 +177,8 @@ Returning after a game preserves AI decks/readiness while humans ready again.
 `DesktopEngine` reads newline-delimited UTF-8 JSON from its private stdin:
 `{id, method, params}`. Replies are `{id, result}` or `{id, error}`. Startup emits
 `{event: "loading", message}` and `{event: "ready", printings}`. Diagnostics go to
-stderr; stdout is reserved for protocol messages. The Electron `EngineClient`
-correlates request IDs and records diagnostics in the active profile's log.
+stderr; stdout is reserved for protocol messages. `Mana.Forge` correlates request
+IDs and records diagnostics in the active profile's log.
 
 | Command | Parameters / behavior |
 | --- | --- |
@@ -277,7 +291,7 @@ with their test records. Neither is a playable match.
 
 Native callers scope `edit`, `rename`, `undo`, `redo`, `save`, `export` and
 `duplicate` with `deckId` plus `revision`. When supplied, both must match the
-active document before the command runs. Existing Electron calls that omit
+active document before the command runs. Legacy protocol calls that omit
 `deckId` retain their revision behavior. `setCommanders` always requires both.
 
 `search.colorIdentity` is an additional allowed-color-identity mask (0..31),
@@ -300,11 +314,10 @@ includes the limitations and the reason for each suggestion.
 
 For exact request/response fields, see
 [`DesktopEngine.java`](src/main/java/forge/api/DesktopEngine.java) and the
-[real transport tests](../forge-desktop/tests/engine.test.cjs). Native integrations
-also update `Mana.Contracts` and the `Mana.Forge` adapter. Add a command to the
-Electron host's allowlist only when exposing it to that client; it does not expose
-every native workshop capability. Preserve scoped input and visibility tests when
-changing either boundary; see [contributing](../CONTRIBUTING.md) for validation gates.
+[native real-engine journey](../mana-native/Mana.Table.Tests/HeadlessEngineSmoke.cs).
+Protocol changes also update `Mana.Contracts` and the `Mana.Forge` adapter.
+Preserve scoped input and visibility checks when changing this boundary; see
+[contributing](../CONTRIBUTING.md) for validation gates.
 
 ## Game integration contract
 
@@ -338,8 +351,8 @@ action authorization token, or durable resume ID.
 
 ```mermaid
 flowchart LR
-    UI[Desktop web renderer] <-->|context-isolated preload| Desktop[Electron main process]
-    Desktop <-->|private JSON lines over stdio| Host[Java host and session adapter]
+    UI[MonoGame TableApplication] --> Client[ClientSession and Mana.Forge]
+    Client <-->|private JSON lines over stdio| Host[Java host and session adapter]
     Host --> API[forge-api: catalog, decks, projected state]
     Host <-->|prompts and input| GUI[Shared Forge human controller]
     API --> Engine[forge-core and forge-game]
@@ -530,10 +543,9 @@ fresh handles. Synchronization retries return a cached command receipt rather
 than executing the input twice.
 
 `SyncTransportTest` checks ordering, retry receipts, revocation and resume.
-`network-auto.test.cjs` exercises host and guest seats with playable lands and
-commanders; `response-skip.test.cjs` covers local stack responses and availability.
-`commander-benchmark.test.cjs` runs the same four-player encounter through local,
-network and mixed connections, auditing every seat's complete filtered snapshot.
+Java API/rules regressions cover authoritative game behavior. Native real-engine
+journeys exercise the shipped C# adapter, process handshake and scoped actions;
+controlled presentation fixtures remain separate from those engine checks.
 
 Library choices carry `context: librarySearch` and combine the delayed reveal
 with the actual selection in one prompt. `choices` retains the engine's eligible
@@ -767,6 +779,6 @@ keyword overlap an infinite loop.
 Native consumers use the `IDeckAnalysis` capability and its records in
 `Mana.Contracts/DeckAnalysis.cs`; `ForgeEngine.Analysis.cs` translates it to the
 same API. The native Analyze tab sits beside Build, Test and Results and uses
-their existing workspace. Electron's Strategy review dialog renders the same
-reports. Both save decisions through the engine instead of implementing analysis
-logic in a renderer. The original `deckInsights` API remains compatible.
+their existing workspace. Review decisions are saved through the engine instead
+of implementing analysis logic in the renderer. The original `deckInsights` API
+remains compatible.

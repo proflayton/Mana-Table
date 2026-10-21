@@ -19,6 +19,10 @@ public interface Input {
 
     boolean selectAbility(SpellAbility ab);
 
+    /** Explicit actions for one source in this exact input. Describing them does
+     * not select the card, choose an ability, or begin paying its costs. */
+    default List<SpellAbility> getSourceActions(Card card) { return List.of(); }
+
     void selectPlayer(Player player, ITriggerEvent triggerEvent);
 
     void selectButtonOK();

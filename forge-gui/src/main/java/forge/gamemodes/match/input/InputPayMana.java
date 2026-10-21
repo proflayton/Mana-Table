@@ -129,6 +129,13 @@ public abstract class InputPayMana extends InputSyncronizedBase {
     }
 
     @Override
+    public List<SpellAbility> getSourceActions(Card card) {
+        return isPaymentActive() ? getAllManaAbilities(card) : List.of();
+    }
+
+    public boolean isPaymentActive() { return !isFinished() && !locked; }
+
+    @Override
     public String getActivateAction(Card card) {
         for (SpellAbility sa : getAllManaAbilities(card)) {
             if (sa.canPlay()) {

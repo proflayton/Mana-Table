@@ -35,6 +35,17 @@ internal static class DeckWorkshopRegression
         deck = await engine.EditDeckAsync(deck.Id, deck.Revision, [new("Main", forest.Id, 98), new("Main", rhys.Id, 1), new("Main", ring.Id, 1)]);
         deck = await engine.SetCommandersAsync(deck.Id, deck.Revision, [rhys.Id]);
         Check(deck.Problem.Length == 0 && deck.Entries.Sum(e => e.Quantity) == 100, "A deck built from catalog cards passes Commander validation");
+        var printings = await engine.CardPrintingsAsync(rhys.Id, limit: 200);
+        Check(printings.Total > 1 && printings.Cards.All(c => c.Card.Name == rhys.Card.Name), "The native adapter lists exact printings of one commander");
+        var alternate = printings.Cards.First(c => c.Id != rhys.Id && c.Card.Foil);
+        var filtered = await engine.CardPrintingsAsync(rhys.Id, text: alternate.Edition + " " + alternate.Card.ArtSet + " " + alternate.Card.CollectorNumber, finish: "foil");
+        Check(filtered.Cards.Any(c => c.Id == alternate.Id) && filtered.Cards.All(c => c.Card.Foil), "Typed printing filters preserve set, collector and finish constraints");
+        deck = await engine.ReplacePrintingAsync(deck.Id, deck.Revision, "Commander", rhys.Id, alternate.Id);
+        Check(deck.CommanderIds.SequenceEqual([alternate.Id]) && deck.Entries.Sum(e => e.Quantity) == 100 && deck.Problem.Length == 0
+            && deck.Entries.Single(e => e.Section == "Commander").Card.CollectorNumber == alternate.Card.CollectorNumber,
+            "Typed printing replacement retains commander role, artwork metadata and deck legality");
+        deck = await engine.UndoDeckAsync(deck.Id, deck.Revision);
+        Check(deck.CommanderIds.SequenceEqual([rhys.Id]), "Undo restores the original commander through the native adapter");
         string valid = Contents(deck);
         await Reject(() => engine.EditDeckAsync(deck.Id, deck.Revision - 1, [new("Main", forest.Id, 2)]), "Stale edit revisions are rejected");
         await Reject(() => engine.EditDeckAsync(deck.Id, deck.Revision, [new("Main", forest.Id, 2), new("Main", "missing-card", 1)]), "A bad card in a batch rejects the entire edit");
@@ -63,6 +74,7 @@ internal static class DeckWorkshopRegression
         var imported = await engine.ImportAsync("Export round trip", exported);
         var restored = await engine.OpenDeckAsync(imported.Id);
         Check(restored.Entries.Sum(e => e.Quantity) == 100 && restored.CommanderIds.Length == 1 && restored.Entries.Any(e => e.Section == "Sideboard" && e.Card.Name == "Sol Ring"), "Export/import round trip preserves section counts");
+        Check(Contents(restored) == Contents(copy), "Native export/import preserves every exact printing and finish");
         deck = await engine.OpenDeckAsync(originalId);
         Check(deck.Name == "Renamed workshop regression" && Contents(deck) == valid && deck.Problem.Length == 0, "Editing the duplicate leaves the original saved deck intact");
         checks.AddRange(await DeckTuningRegression.RunAsync(paths));

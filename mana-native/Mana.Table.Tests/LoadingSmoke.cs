@@ -22,9 +22,9 @@ internal static class LoadingSmoke
             if (!valid) throw new InvalidOperationException(message);
             checks.Add(message); File.AppendAllText(Path.Combine(profile, "loading-progress.log"), message + "\n");
         }
-        void Scene(string path, GatedEngine engine, Action<Script, TableGame.Probe> arrange, GameSnapshot? state = null)
+        void Scene(string path, GatedEngine engine, Action<Script, TableWindow.Probe> arrange, GameSnapshot? state = null)
         {
-            using var game = new TableGame(engine, path, null, null, size, initialState: state, artSource: new EmptyArt());
+            using var game = new TableWindow(engine, path, null, null, size, initialState: state, artSource: new EmptyArt());
             var script = new Script(game.TestPort); arrange(script, game.TestPort); game.Automation = script; game.Run();
         }
 
@@ -166,6 +166,8 @@ internal static class LoadingSmoke
             s.Then(() => Check(!view.ActivityOpen && table.Replies == 1 && table.Scenario.Replies.Count == 1, "The gameplay reply completes normally with its own decision presentation"));
             s.Then(() => { table.Scenario.Present(PresentationSmoke.Example()); view.Accept(table.Scenario.State); view.SetAutomatic(true); });
             s.Move(new(0, 0));
+            // Inspection deliberately pauses Auto, including across fresh prompts.
+            s.Pulse(Keys.Escape);
             s.Until(() => table.AutoReplies == 1 && view.Busy);
             s.Then(() => {
                 Check(!view.ActivityOpen && view.Hits.Any(h => h.Id == "auto"), "An in-flight automatic priority pass never opens setup-loading feedback");
@@ -183,7 +185,7 @@ internal static class LoadingSmoke
         public void Dispose() { }
     }
 
-    private sealed class Script(TableGame.Probe view) : ITableAutomation
+    private sealed class Script(TableWindow.Probe view) : ITableAutomation
     {
         private readonly Queue<(Action? Action, Func<bool>? Ready)> steps = [];
         private MouseState mouse;
@@ -209,7 +211,7 @@ internal static class LoadingSmoke
         internal void Pulse(params Keys[] keys) { Then(() => keyboard = new(keys)); Then(() => keyboard = new()); }
         internal void Click(string id) => Then(() => StartClick(view.Hits.LastOrDefault(h => h.Id == id) ?? throw new InvalidOperationException("Loading smoke is missing " + id)));
         internal void ClickCard(string id) => Then(() => StartClick(view.Hits.Last(h => h.Card?.VisualId == id && h.Zone == "Battlefield")));
-        private void StartClick(TableGame.Hit hit)
+        private void StartClick(Mana.Table.Interaction.TableHit hit)
         {
             target = SmokePointer.Hit(view, hit); ExpectedClick = hit.Id; ClickAccepted = false; mousePhase = 1;
         }

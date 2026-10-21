@@ -9,6 +9,8 @@ licenses. Runtime package license files are retained in the bundled distribution
 SDL and OpenAL are supplied by the MonoGame runtime packages.
 .NET: https://github.com/dotnet/runtime (MIT); runtime license and notices included.
 Java: the engine/runtime directory retains the Java runtime's legal notices.
+Velopack 1.2.161: https://github.com/velopack/velopack (MIT).
+The updater SDK and native update tools retain their upstream license notices.
 
 Magic: The Gathering and card artwork belong to their respective owners.
 Card images are requested from Scryfall and cached per user. This community

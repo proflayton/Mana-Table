@@ -81,6 +81,24 @@ public final class DeckEditor {
         return snapshot();
     }
 
+    /** Replace only this section's copies; the command zone and partners stay intact. */
+    public synchronized Snapshot replacePrinting(long expectedRevision, String sectionName, String cardId, String printingId) {
+        checkRevision(expectedRevision);
+        var section = DeckSection.valueOf(sectionName);
+        var previous = catalog.resolve(cardId);
+        var replacement = catalog.resolve(printingId);
+        if (!previous.getName().equals(replacement.getName())
+                || !Objects.equals(previous.getFunctionalVariant(), replacement.getFunctionalVariant())) {
+            throw new IllegalArgumentException("Choose another printing of the same card");
+        }
+        var pool = deck.get(section);
+        int quantity = pool == null ? 0 : pool.count(previous);
+        if (quantity == 0) throw new IllegalArgumentException("That printing is no longer in this deck section");
+        if (cardId.equals(printingId)) return snapshot();
+        return apply(expectedRevision, List.of(new Edit(sectionName, cardId, 0),
+                new Edit(sectionName, printingId, quantity + pool.count(replacement))));
+    }
+
     public synchronized Snapshot undo(long expectedRevision) {
         checkRevision(expectedRevision);
         if (!undo.isEmpty()) {

@@ -11,7 +11,7 @@ namespace Mana.Table;
 // Imported text follows the same application path as the file/clipboard dialog.
 // Every deck selection and role change after that uses real pointer input and
 // the bundled adapter, including persistence, network readiness and AI startup.
-internal sealed class DeckBuildingSmoke(TableGame.Probe view) : ITableAutomation
+internal sealed class DeckBuildingSmoke(TableWindow.Probe view) : ITableAutomation
 {
     private readonly List<string> checks = [];
     private readonly DateTime deadline = DateTime.UtcNow.AddMinutes(4);

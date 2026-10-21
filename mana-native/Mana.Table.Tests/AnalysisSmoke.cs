@@ -6,7 +6,7 @@ using ButtonState = Microsoft.Xna.Framework.Input.ButtonState;
 
 namespace Mana.Table;
 
-internal sealed class AnalysisSmoke(TableGame.Probe view) : ITableAutomation
+internal sealed class AnalysisSmoke(TableWindow.Probe view) : ITableAutomation
 {
     private readonly DateTime deadline = DateTime.UtcNow.AddMinutes(5);
     private readonly List<string> checks = [];

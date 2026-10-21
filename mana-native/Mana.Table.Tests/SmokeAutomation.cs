@@ -1,7 +1,7 @@
 using Microsoft.Xna.Framework.Graphics;
 using Microsoft.Xna.Framework.Input;
 namespace Mana.Table;
-internal sealed partial class SmokeAutomation(TableGame.Probe view, bool interaction) : ITableAutomation
+internal sealed partial class SmokeAutomation(TableWindow.Probe view, bool interaction) : ITableAutomation
 {
     public MouseState ReadMouse() => interaction ? InteractionMouse() : SmokeMouse();
     public string? ExpectedClick => smokePendingClick;

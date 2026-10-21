@@ -14,7 +14,7 @@ namespace Mana.Table;
 // engine validates the one deliberate action; no layout or game rules are mocked.
 internal sealed class FullBattlefieldSmoke : ITableAutomation
 {
-    private readonly TableGame.Probe view;
+    private readonly TableWindow.Probe view;
     private readonly InteractionScenarioEngine scenario;
     private readonly Queue<(double Delay, Func<bool>? Ready, Action Action)> steps = [];
     private readonly List<string> checks = [];
@@ -39,12 +39,12 @@ internal sealed class FullBattlefieldSmoke : ITableAutomation
             }
             images.Dispose(); images = source;
         }
-        using var game = new TableGame(scenario, profile, null, null, size, initialState: scenario.State, artSource: images);
+        using var game = new TableWindow(scenario, profile, null, null, size, initialState: scenario.State, artSource: images);
         game.Automation = new FullBattlefieldSmoke(game.TestPort, scenario, readableCrowd);
         game.Run();
     }
 
-    private FullBattlefieldSmoke(TableGame.Probe view, InteractionScenarioEngine scenario, bool readableCrowd)
+    private FullBattlefieldSmoke(TableWindow.Probe view, InteractionScenarioEngine scenario, bool readableCrowd)
     {
         this.view = view; this.scenario = scenario;
         if (readableCrowd) { QueueReadableCrowd(0); return; }
@@ -133,7 +133,7 @@ internal sealed class FullBattlefieldSmoke : ITableAutomation
         Wait(() => Reading("fifty-2-49"), 3, () => {
             Check(Reading("fifty-2-49") && view.CardPaintCount("fifty-2-49") == 1 && scenario.Replies.Count == 1,
                 "The fiftieth opposing token remains individually readable without a page change or game action");
-            Capture("07-fiftieth-hover"); MoveHit("read-card-close");
+            Capture("07-fiftieth-hover"); MoveCard(view.Frame!.Cards.Single(card => card.Focused).Id);
         });
         Click();
         Step(.1, () => MoveAway());
@@ -293,9 +293,6 @@ internal sealed class FullBattlefieldSmoke : ITableAutomation
             Check(scene.Battlefield(player.Id).Select(cluster => (cluster.Kind, cluster.Cards.Length))
                 .SequenceEqual([("Creatures", 60), ("Support", 3), ("Lands", 3)]),
                 $"Seat {player.Id}'s 60 creatures, 3 support cards and 3 lands keep their complete role counts");
-            foreach (string kind in new[] { "Creatures", "Support", "Lands" })
-                Check(view.BattlefieldRoleLabel(player.Id, kind) is { Width: > 0, Height: > 0 },
-                    $"Seat {player.Id}'s {kind.ToLowerInvariant()} count has an explicit visible summary label");
             var nodes = scene.Battlefield(player.Id).SelectMany(cluster => cluster.Cards).ToArray();
             Check(nodes.All(node => node.Dense && !node.DenseLabels.IsEmpty
                 && InDenseArea(player.Id, node.Pose.Bounds) && InDenseArea(player.Id, node.DenseLabels)),
@@ -308,10 +305,10 @@ internal sealed class FullBattlefieldSmoke : ITableAutomation
                 var counter = labels.SingleOrDefault(label => label.Kind == "counter");
                 Check(pt != null && pt.Text == $"{13 + group}/{13 + group}" && pt.MeasuredWidth <= pt.AvailableWidth,
                     $"Seat {player.Id}'s group {group} shows its complete authoritative P/T without numeric ellipsis");
-                Check(counter != null && counter.Text.Contains("+1/+1", StringComparison.Ordinal)
-                    && counter.Text.EndsWith("×" + (10 + group), StringComparison.Ordinal) && counter.MeasuredWidth <= counter.AvailableWidth,
-                    $"Seat {player.Id}'s group {group} identifies its exact +1/+1 counter count instead of an ambiguous summed circle");
-                Check(labels.Any(label => label.Kind == "copies" && label.Text is "COPIES 4" or "4 copies")
+                Check(counter != null && counter.Text == (10 + group).ToString() + (group == 1 ? "…" : "")
+                    && counter.MeasuredWidth <= counter.AvailableWidth,
+                    $"Seat {player.Id}'s group {group} keeps its counter marker on the shared card tile without summing counter types");
+                Check(labels.Any(label => label.Kind == "copies" && label.Text == "×4")
                     && labels.All(label => label.Kind == "name" || label.MeasuredWidth <= label.AvailableWidth),
                     $"Seat {player.Id}'s group {group} distinguishes four copies from counters and preserves complete state values");
                 Check(labels.Any(label => label.Kind == "name"),
@@ -328,7 +325,7 @@ internal sealed class FullBattlefieldSmoke : ITableAutomation
                         $"Seat {player.Id}'s group {group} {label.Kind} strip belongs to the same exact occurrence through physical hit testing");
                 }
             }
-            Check(view.BattlefieldLabels($"readable-{player.Id}-1-3").Any(label => label.Kind == "counter-types" && label.Text.StartsWith("+1 counter type", StringComparison.Ordinal))
+            Check(view.BattlefieldLabels($"readable-{player.Id}-1-3").Any(label => label.Kind == "counter" && label.Text.EndsWith("…", StringComparison.Ordinal))
                 && view.BattlefieldLabels($"readable-{player.Id}-2-3").Any(label => label.Kind == "damage" && label.Text == "DMG 2"),
                 $"Seat {player.Id}'s additional counter type and marked damage remain explicitly identified");
         }

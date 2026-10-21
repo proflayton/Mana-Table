@@ -12,7 +12,7 @@ namespace Mana.Table;
 // start an actual three-human Commander game with independent private views.
 internal sealed class LobbyThreePlayerSmoke : ITableAutomation, IDisposable
 {
-    private readonly TableGame.Probe view;
+    private readonly TableWindow.Probe view;
     private readonly ForgePaths paths;
     private readonly List<ForgeEngine> guests = [];
     private readonly Queue<(double Delay, Func<bool>? Ready, Action Action)> steps = [];
@@ -36,12 +36,12 @@ internal sealed class LobbyThreePlayerSmoke : ITableAutomation, IDisposable
         try {
             engine.InitializeAsync().GetAwaiter().GetResult();
             engine.ImportAsync("Three-player host", "Commander\n1 Rograkh, Son of Rohgahh\nDeck\n99 Mountain").GetAwaiter().GetResult();
-            using var game = new TableGame(engine, paths.Profile, null, null, size, artSource: new CardReadingArtFixture());
+            using var game = new TableWindow(engine, paths.Profile, null, null, size, artSource: new CardReadingArtFixture());
             using var smoke = new LobbyThreePlayerSmoke(game.TestPort, paths);
             game.Automation = smoke; game.TestPort.DismissWelcome(); game.Run();
         } finally { engine.DisposeAsync().AsTask().GetAwaiter().GetResult(); }
     }
-    private LobbyThreePlayerSmoke(TableGame.Probe view, ForgePaths paths)
+    private LobbyThreePlayerSmoke(TableWindow.Probe view, ForgePaths paths)
     {
         this.view = view; this.paths = paths;
         Wait(() => view.Loaded && !view.Busy && !view.ActivityOpen && view.DeckDetails != null, 40, () => {
@@ -158,7 +158,7 @@ internal sealed class LobbyThreePlayerSmoke : ITableAutomation, IDisposable
         throw new TimeoutException("Three-player opening decisions did not reach the first main phase");
     }
     private void Click(string id) { Step(.1, () => MoveHit(view.Hits.Single(h => h.Id == id))); Step(0, () => mouse = Mouse(ButtonState.Pressed)); Step(0, () => mouse = Mouse()); }
-    private void MoveHit(TableGame.Hit hit) { var p = SmokePointer.Hit(view, hit); mouse = new(p.X, p.Y, 0, ButtonState.Released, ButtonState.Released, ButtonState.Released, ButtonState.Released, ButtonState.Released); }
+    private void MoveHit(Mana.Table.Interaction.TableHit hit) { var p = SmokePointer.Hit(view, hit); mouse = new(p.X, p.Y, 0, ButtonState.Released, ButtonState.Released, ButtonState.Released, ButtonState.Released, ButtonState.Released); }
     private MouseState Mouse(ButtonState left = ButtonState.Released) => new(mouse.X, mouse.Y, 0, left, ButtonState.Released, ButtonState.Released, ButtonState.Released, ButtonState.Released);
     private void Step(double delay, Action action) => steps.Enqueue((delay, null, action));
     private void Wait(Func<bool> ready, double maximum, Action action) => steps.Enqueue((maximum, ready, action));

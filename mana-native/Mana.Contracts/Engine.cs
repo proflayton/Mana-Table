@@ -31,6 +31,11 @@ public interface IEngineCatalog
     Task<DeckDetails> SaveDeckAsync(string deckId, long revision);
     Task<string> ExportDeckAsync(string deckId, long revision);
 }
+public interface ICardPrintings
+{
+    Task<CatalogPage> CardPrintingsAsync(string cardId, int offset = 0, int limit = 6, string text = "", string finish = "");
+    Task<DeckDetails> ReplacePrintingAsync(string deckId, long revision, string section, string cardId, string printingId);
+}
 public interface ITableSetup
 {
     Task<SoloSetup> PrepareSoloAsync(string deckId);
@@ -55,6 +60,14 @@ public interface IMatchConnection
     Task ReplyAsync(DecisionReply reply);
     Task ConcedeAsync(string gameId);
 }
+// Reading a source's current engine-owned actions does not answer its decision.
+public interface ISourceActions
+{
+    bool SupportsSourceActions => true;
+    Task<SourceActionSet> SourceActionsAsync(string gameId, string decisionId, string sourceCardKey);
+}
+public sealed record SourceActionSet(string GameId, string DecisionId, string SourceCardKey, string SourceCardId, SourceAction[] Actions);
+public sealed record SourceAction(string Id, string Kind, string Text);
 // Social commands have their own ordering and never advance a game decision.
 public interface ITableSocial
 {
@@ -100,11 +113,11 @@ public sealed record Lobby(string Mode, string Status, string? Error, bool CanSt
     public AiOpponent[] AiOpponents { get; init; } = [];
 }
 public enum DecisionIntent { General, Priority, Attack, Block, Mana, Selection }
-public enum ReplyAction { Confirm, Cancel, SelectCard, SelectPlayer, AssignAttack, AssignBlock, AutoPass, Skip, Choose, Value, Allocate, SetAbilityAutoPass, UseHandPlacement }
+public enum ReplyAction { Confirm, Cancel, SelectCard, SelectPlayer, AssignAttack, AssignBlock, AutoPass, Skip, Choose, Value, Allocate, SetAbilityAutoPass, UseHandPlacement, PassUntilPublicAction, UseSourceAction }
 public sealed record DecisionReply(string GameId, string DecisionId, ReplyAction Action,
     string? Card = null, int? Player = null, string? Attacker = null, string? Blocker = null,
     string? DefenderCard = null, int[]? Choices = null, string? Value = null, int[]? Amounts = null,
-    string? AbilityId = null, bool? Ignore = null)
+    string? AbilityId = null, bool? Ignore = null, string? YieldToken = null)
 {
     public void Validate()
     {
@@ -116,7 +129,8 @@ public sealed record DecisionReply(string GameId, string DecisionId, ReplyAction
             ReplyAction.Choose => Choices != null && Choices.All(i => i >= 0) && Choices.Distinct().Count() == Choices.Length,
             ReplyAction.Value => Value != null, ReplyAction.Allocate => Amounts != null && Amounts.All(i => i >= 0),
             ReplyAction.SetAbilityAutoPass => Present(AbilityId) && Ignore != null,
-            ReplyAction.UseHandPlacement => Present(AbilityId) && Present(Card),
+            ReplyAction.UseHandPlacement or ReplyAction.UseSourceAction => Present(AbilityId) && Present(Card),
+            ReplyAction.PassUntilPublicAction => Present(YieldToken),
             ReplyAction.Confirm or ReplyAction.Cancel or ReplyAction.AutoPass or ReplyAction.Skip => true,
             _ => false
         };
@@ -135,8 +149,16 @@ public sealed record Card
     public string GamePieceType { get; init; } = "card";
     public string ArtName { get; init; } = "";
     public string ArtFace { get; init; } = "front";
+    public string ArtSet { get; init; } = "";
+    public string Edition { get; init; } = "";
+    public string CollectorNumber { get; init; } = "";
+    public int ArtIndex { get; init; }
+    public bool Foil { get; init; }
     public CardFace? OtherFace { get; init; }
     public string[] CombatKeywords { get; init; } = [];
+    // Null means a legacy engine. A present empty list authoritatively clears
+    // effective abilities rather than falling back to older keyword hints.
+    public PublicState[]? States { get; init; }
     public int? DefenderId { get; init; }
     public string? Defender { get; init; }
     public string Type { get; init; } = "";
@@ -163,6 +185,9 @@ public sealed record Zone(string Name, int Count, Card[] Cards, Card? TopCard);
 // Public player mechanics share one presentation contract. Values and rules
 // descriptions come from the engine; the client does not inspect card names.
 public sealed record PlayerState(string Id, string Label, string Kind, int? Value, int? Maximum, string Detail);
+// Human-readable engine descriptors shared by public card and table mechanics.
+// Key selects a familiar icon; Label/Detail preserve qualifiers and unknown mechanics.
+public sealed record PublicState(string Id, string Label, string Kind, int? Value, int? Maximum, string Detail, string Key = "");
 public sealed record Player(int Id, string Name, int Life, bool Priority, bool Eliminated, Dictionary<string, int> Mana, Zone[] Zones)
 {
     public PlayerState[] States { get; init; } = [];
@@ -207,6 +232,7 @@ public sealed record Decision
 {
     public string Id { get; init; } = "";
     public string Kind { get; init; } = "";
+    public string InputType { get; init; } = "";
     public DecisionIntent Intent { get; init; }
     public string Message { get; init; } = "";
     public string Ok { get; init; } = "Confirm";
@@ -214,6 +240,9 @@ public sealed record Decision
     public bool OkEnabled { get; init; }
     public bool CancelEnabled { get; init; }
     public bool CanAutoPass { get; init; }
+    // Separate, engine-owned permission for an explicitly chosen quiet-window yield.
+    // Empty on legacy engines, responses to a stack item, and required decisions.
+    public string QuietYieldToken { get; init; } = "";
     public PriorityAbility[] PriorityAbilities { get; init; } = [];
     public int[] PlayerChoices { get; init; } = [];
     public Choice[] Choices { get; init; } = [];
@@ -256,6 +285,7 @@ public sealed record GameSnapshot(string Id, string Status, string? Error, strin
     int Turn, string Phase, string PhaseKey, int? ActivePlayerId, Player[] Players,
     StackItem[] Stack, Combat? Combat, Decision? Decision)
 {
+    public PublicState[] States { get; init; } = [];
     public long Revision { get; init; }
     public long BoardRevision { get; init; }
     public int? PriorityPlayerId { get; init; }
@@ -272,4 +302,8 @@ public sealed record ActivityEntry(long Id, int Turn, string PhaseKey, string Ki
     public string Detail { get; init; } = "";
     public string Outcome { get; init; } = "";
     public int Count { get; init; }
+    public PublicCardChange? Change { get; init; }
+    public PublicEffectCause? Cause { get; init; }
 }
+public sealed record PublicCardChange(string Kind, string Property, int Before, int After);
+public sealed record PublicEffectCause(string? CardId, string Name, string Ability, int? ControllerId, string Kind = "effect", string Id = "");

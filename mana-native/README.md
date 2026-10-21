@@ -2,8 +2,7 @@
 
 `Mana.Table` is the MonoGame client shipped in the Windows installer. Forge runs
 as a separate Java process and owns the rules, AI, legal actions and private
-information. The Electron reference client has its own
-[development guide](../forge-desktop/README.md).
+information. MonoGame is the sole Mana Table client.
 
 This guide follows the checked-out source, which can be ahead of the public
 installer. The table includes the complete battlefield layout, explicit card
@@ -38,6 +37,12 @@ matching-copy count as applicable. Only copies with the same public state share
 a fan; face-down cards retain anonymous labels. State markers remain compact and
 inspection supplies the full details. Labels and faces target the same occurrence.
 
+Battlefields opens a continuously scrolling, owner-selectable workspace with
+card art, full names, current stats, typed counter chips and matching-copy counts.
+Animated lands appear with Creatures; Other lands contains the noncreature lands.
+Recent reported effects keep otherwise-equal affected and unaffected copies
+separate while that effect remains in the retained history.
+
 Decision text uses the actual rendered font and width to grow above the action
 buttons. Read all opens the complete current message when it exceeds the dock;
 help pages are measured to fit above their navigation controls, including at
@@ -49,17 +54,19 @@ larger text settings. Reading and paging do not answer the pending decision.
   `net9.0-windows`; installing a runtime alone does not provide the build tools.
 - **JDK 17+** and **Maven 3.8.1+** for the Forge adapter. Set `JAVA_HOME` to the
   JDK directory. Native release packaging needs its `bin/jlink.exe`.
-- Node.js **22.12+** with npm for the shared Node/desktop regression suites.
+- Node.js **22.12+** for repository documentation and CI tools.
   Node is not needed to build or launch the MonoGame client itself.
 - Inno Setup 6 only when compiling an installer. A source run or portable preview
   does not need it.
+- The pinned Velopack **1.2.161** CLI requires a **.NET 10 runtime** when building
+  full/delta update bundles. The application and SDK integration remain .NET 9.
+  `ci/update-tools.ps1` verifies the official CLI archive before extraction.
 
 The first Maven/NuGet restore needs network access. Players using the installer
 need no separate Java or .NET installation. Non-Windows native runs and packages
 are not supported.
 
-Run the commands below from the repository root. In PowerShell, use `npm.cmd`
-if local policy prevents running `npm.ps1`.
+Run the commands below from the repository root.
 
 ## Build and run with a complete engine bundle
 
@@ -134,16 +141,31 @@ it does not build the app or necessarily open the source you just edited.
 ## Profiles and troubleshooting
 
 Native runs default to `%LOCALAPPDATA%\ManaTableNative`. Use an explicit fresh
-`--profile <directory>` for development and acceptance runs. `FORGE_USER_DATA`
-belongs to Electron's runtime resolution and does not redirect the native app.
+`--profile <directory>` for development and review runs.
 Keep player profiles, caches, packages and test output out of commits.
 
 Retain `native-error.log`, `client.log` and `engine.log` from the test profile when
 present, plus the exact revision, package/JAR, window size, cards and pending
 decision. A protocol mismatch requires a complete compatible client/engine build.
 Native previews have `release:false` metadata and do not join the stable update
-channel. Released packages can check/download updates; installation waits until
-the game and friends' table are closed and current work is complete.
+channel. Released packages check for updates without downloading application
+content. Download and preparation require an explicit click; restart waits until
+the game and friends' table are closed and current work is complete. Downloaded
+updates are never applied automatically on ordinary startup.
+
+The update adapter is in `Mana.Client/Updates`: it issues a sized plan, delegates
+native patching and full fallback to pinned Velopack, and verifies every package
+file against the published content manifest before calling it ready. ZIP layout
+differences are accepted only when all file contents match. The SDK cache retains
+a full base package and needs additional temporary preparation space; transfer
+savings do not imply equally small disk use. `Updates` can recover a verified
+prepared package after an ordinary restart without downloading it again.
+
+Flat Inno installations use the existing protocol1 installer path for their
+one-time migration; the canonical setup remains a genuine Inno bridge. Managed
+and flat portable copies have different update capabilities. See the
+[release guide](../docs/Development/Mana-Table-Releases.md) for layout, artifacts,
+migration and isolated lifecycle verification.
 
 ## Focused verification
 
@@ -187,14 +209,14 @@ Repeat affected GPU journeys at **1000x740** and **1540x980** with fresh profile
 Real-engine modes also need `--engine-resources <bundle>/engine`; use
 `--engine-jar <fresh-verified.jar>` when selecting a rebuilt JAR in the test driver.
 Controlled UI checks establish rendering/input behavior, not Forge rules
-correctness. Java regressions and shared Node tests establish the relevant real
-engine behavior. Read the [testing guide](../docs/Development/Mana-Table-Testing.md)
+correctness. Java regressions and real-engine native journeys cover the engine
+boundary. Read the [testing guide](../docs/Development/Mana-Table-Testing.md)
 for each mode's setup, result files, keyboard/reduced-motion checks and full CI.
 
 Inspect both the rendered design surface and the physical window, including
 letterboxing. Do not infer window readability from a 1600px design capture alone.
-For MonoGame-only changes, npm is not a native build step; shared transport,
-Java and release changes still need their appropriate cross-client checks.
+Node is not a native build step. Shared transport, Java and release changes
+still need their appropriate checks.
 Keep a PR in draft until its final commit's applicable CI has completed; local
 passes and earlier-head CI do not establish readiness.
 
@@ -224,4 +246,4 @@ review, not a card-name rule in the renderer. Table state and card/player relati
 remain separate. See the [API contract](../forge-api/README.md#playable-desktop-integration)
 for the provider and regression policy.
 The [architecture map](../docs/Development/Mana-Table-Architecture.md) explains the
-shared session and the separate Electron implementation in more detail.
+shared session and production presentation pipeline in more detail.

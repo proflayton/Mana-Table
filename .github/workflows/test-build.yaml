@@ -43,13 +43,13 @@ jobs:
         with:
           node-version: '24'
 
-      # Release/desktop consumers can start while the complete Java matrix runs.
+      # Native packaging can start while the complete Java matrix runs.
       # Tests are still mandatory below and publication requires both Java jobs.
       - name: Produce the shared source-bound engine
         if: matrix.java == '17'
         run: |
           xvfb-run -a mvn -B -ntp -pl forge-api -am package -DskipTests
-          node forge-desktop/scripts/ci-engine-artifact.cjs create
+          node scripts/mana-table/ci-engine-artifact.cjs create
 
       - name: Share the exact engine build
         if: matrix.java == '17'

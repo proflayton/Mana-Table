@@ -18,7 +18,7 @@ function New-PackageFixture([string]$Name, [string]$Mutation) {
     [IO.File]::WriteAllText($jar, 'verified shared engine', $utf8)
     $jarHash = (Get-FileHash -LiteralPath $jar -Algorithm SHA256).Hash
     $hashes = [ordered]@{}
-    foreach ($name in @('ManaTable.dll','Mana.Client.dll','Mana.Contracts.dll','Mana.Magic.dll','Mana.Forge.dll')) {
+    foreach ($name in @('ManaTable.dll','Mana.Client.dll','Mana.Contracts.dll','Mana.Magic.dll','Mana.Forge.dll','Mana.Renderer.dll','Mana.Scenarios.dll')) {
         $file = Join-Path $package $name
         [IO.File]::WriteAllText($file, ('verified bytes ' + $name), $utf8)
         $hashes[$name] = (Get-FileHash -LiteralPath $file -Algorithm SHA256).Hash
@@ -31,6 +31,8 @@ function New-PackageFixture([string]$Name, [string]$Mutation) {
     Write-Json (Join-Path $directory 'ci-harness-manifest.json') @{sourceRevision=$env:GITHUB_SHA; files=@(@{path='Mana.Table.Tests.exe'; sha256=(Get-FileHash -LiteralPath $harness -Algorithm SHA256).Hash})}
     if ($Mutation -eq 'engine') { [IO.File]::AppendAllText($jar, 'changed bytes', $utf8) }
     if ($Mutation -eq 'client') { [IO.File]::AppendAllText((Join-Path $package 'Mana.Client.dll'), 'changed bytes', $utf8) }
+    if ($Mutation -eq 'renderer') { [IO.File]::AppendAllText((Join-Path $package 'Mana.Renderer.dll'), 'changed bytes', $utf8) }
+    if ($Mutation -eq 'scenarios') { [IO.File]::AppendAllText((Join-Path $package 'Mana.Scenarios.dll'), 'changed bytes', $utf8) }
     if ($Mutation -eq 'harness') { [IO.File]::AppendAllText($harness, 'changed bytes', $utf8) }
     $archive = Join-Path $directory 'package-windows-x64.zip'
     [IO.Compression.ZipFile]::CreateFromDirectory($package, $archive, [IO.Compression.CompressionLevel]::Fastest, $true)
@@ -43,15 +45,15 @@ try {
     $env:MANA_RELEASE_VERSION = '0.2.123'
     $env:GITHUB_ENV = Join-Path $TestDirectory 'github-env.txt'
     [object[]]$inventory = & (Join-Path $PSScriptRoot 'native-ui.ps1') -ListOnly | ConvertFrom-Json
-    if ($inventory.Count -ne 8 -or @($inventory.name | Sort-Object -Unique).Count -ne 8 -or @($inventory.shard | Sort-Object -Unique).Count -ne 4) { throw 'Critical native suite discovery is incomplete or duplicated.' }
+    if ($inventory.Count -ne 10 -or @($inventory.name | Sort-Object -Unique).Count -ne 10 -or @($inventory.shard | Sort-Object -Unique).Count -ne 4) { throw 'Critical native suite discovery is incomplete or duplicated.' }
     $checks++
     [object[]]$inventory = & (Join-Path $PSScriptRoot 'native-ui.ps1') -ListOnly -Extended | ConvertFrom-Json
-    if ($inventory.Count -ne 43 -or @($inventory.name | Sort-Object -Unique).Count -ne 43 -or @($inventory.shard | Sort-Object -Unique).Count -ne 12) { throw 'Extended native suite discovery is incomplete or duplicated.' }
+    if ($inventory.Count -ne 46 -or @($inventory.name | Sort-Object -Unique).Count -ne 46 -or @($inventory.shard | Sort-Object -Unique).Count -ne 12) { throw 'Extended native suite discovery is incomplete or duplicated.' }
     $checks++
     $valid = New-PackageFixture 'valid' ''
     & (Join-Path $PSScriptRoot 'restore-package.ps1') -Directory $valid -RequireHarness
     $checks++
-    foreach ($mutation in @('source','engine','client','harness','archive')) {
+    foreach ($mutation in @('source','engine','client','renderer','scenarios','harness','archive')) {
         $fixture = New-PackageFixture $mutation $mutation
         $rejected = $false
         try { & (Join-Path $PSScriptRoot 'restore-package.ps1') -Directory $fixture -RequireHarness }

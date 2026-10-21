@@ -10,7 +10,7 @@ using Keys = Microsoft.Xna.Framework.Input.Keys;
 namespace Mana.Table;
 
 // Real native controls, real persisted deck and four independent Forge processes.
-internal sealed class LobbySmoke(TableGame.Probe view, ForgePaths paths) : ITableAutomation, IDisposable
+internal sealed class LobbySmoke(TableWindow.Probe view, ForgePaths paths) : ITableAutomation, IDisposable
 {
     private readonly List<string> checks = [];
     private readonly List<ForgeEngine> guests = [];

@@ -5,7 +5,7 @@ using Rectangle = Microsoft.Xna.Framework.Rectangle;
 namespace Mana.Renderer;
 
 public sealed record BattlefieldCluster(string Kind, SceneCard[] Cards);
-public sealed record BattlefieldLabelMetrics(int Width, int RowHeight);
+public sealed record BattlefieldLabelMetrics(int Width, int RowHeight, int HeaderWidth = 0);
 
 // Packs public-state copy groups into separate role lanes. Overlap may hide art,
 // but ordinary rows reserve the inward edge used by identity and state labels.
@@ -16,11 +16,22 @@ public static class BattlefieldLayout
     public static BattlefieldCluster[] Build(int seat, int owner, Card[] cards, Func<Card, bool> isResource, IReadOnlySet<string>? separateOccurrences = null, GameSnapshot? state = null,
         Func<Card, int, bool, BattlefieldLabelMetrics>? denseMeasure = null)
     {
-        if (state != null && state.Players.Any(player => Groups(player.Zone("Battlefield").Cards, separateOccurrences, 8).Length > 7))
-            return BoundedBattlefieldLayout.Build(seat, owner, cards, isResource, separateOccurrences, state, denseMeasure);
-        var occupied = cards.Select(c => Role(c, isResource)).ToHashSet(StringComparer.Ordinal);
+        var context = state == null ? BattlefieldLayoutContext.RoleLanes
+            : BattlefieldLayoutContext.Build(state, separateOccurrences, SeatGeometry.Build(state), isResource);
+        return Arrange(context, seat, owner, cards, isResource, separateOccurrences, denseMeasure);
+    }
+
+    internal static BattlefieldCluster[] Arrange(BattlefieldLayoutContext context, int seat, int owner, Card[] cards,
+        Func<Card, bool> isResource, IReadOnlySet<string>? separateOccurrences,
+        Func<Card, int, bool, BattlefieldLabelMetrics>? denseMeasure)
+    {
+        if (context.PreparedRoleLanes(owner) is { } prepared) return prepared;
+        var roleByCard = cards.Select(card => Role(card, isResource)).ToArray();
+        if (context.Bounded)
+            return BoundedBattlefieldLayout.Build(seat, owner, cards, roleByCard, separateOccurrences, context.Obstacles, denseMeasure);
+        var occupied = roleByCard.ToHashSet(StringComparer.Ordinal);
         return new[] { "Creatures", "Support", "Lands" }.Select(kind => {
-            var role = cards.Where(c => Role(c, isResource) == kind).ToArray();
+            var role = cards.Where((_, index) => roleByCard[index] == kind).ToArray();
             // Keep public families adjacent, but give differing states their own
             // cells. Only matching public-state copies share a compact fan.
             // Ordering needs every candidate's own visible position badge.
@@ -114,5 +125,6 @@ public static class BattlefieldLayout
     private static string StateKey(Card c) => string.Join("\u001f", c.Name, c.ArtFace, c.Type, c.ManaCost, c.Text, c.Power, c.Toughness, c.Damage,
         c.Tapped, c.PhasedOut, c.Sick, c.FaceDown, c.Attacking, c.Blocking, c.DefenderId, c.Defender,
         string.Join(',', c.CombatKeywords.Order(StringComparer.Ordinal)), string.Join(',', c.Counters.OrderBy(v => v.Key, StringComparer.Ordinal)),
+        c.States == null ? "legacy" : System.Text.Json.JsonSerializer.Serialize(c.States.OrderBy(state => state.Id, StringComparer.Ordinal)),
         c.AttachedTo?.Id, string.Join(',', c.Attachments.Select(a => a.Id).Order(StringComparer.Ordinal)));
 }

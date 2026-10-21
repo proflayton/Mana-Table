@@ -93,7 +93,6 @@ foreach ($module in @('forge-core', 'forge-ai', 'forge-gui')) {
     Copy-Item -LiteralPath (Join-Path $repository ($module + '/src')) -Destination $moduleSource -Recurse
     Copy-Item -LiteralPath (Join-Path $repository ($module + '/pom.xml')) -Destination $moduleSource
 }
-Copy-Item -LiteralPath (Join-Path $repository 'scenarios') -Destination (Join-Path $OutputDirectory 'source') -Recurse
 $documentation = Join-Path $OutputDirectory 'source/docs'
 New-Item -ItemType Directory -Path $documentation -Force | Out-Null
 foreach ($name in @('Mana-Table-Architecture.md', 'Mana-Table-Testing.md')) {
@@ -103,7 +102,7 @@ foreach ($name in @('Mana-Table-Architecture.md', 'Mana-Table-Testing.md')) {
 $sourceUrl = 'https://github.com/proflayton/Mana-Table/tree/' + $revision
 $build = [ordered]@{ version=$Version; sourceRevision=$revision; engineBaseRevision=$revision; builtAt=(Get-Date).ToUniversalTime().ToString('o'); engineSha256=(Get-FileHash $engineJar -Algorithm SHA256).Hash; client='MonoGame'; backend='Forge'; release=[bool]$Release; sourceUrl=$sourceUrl }
 $clientHashes = [ordered]@{}
-foreach ($dll in @('ManaTable.dll', 'Mana.Client.dll', 'Mana.Contracts.dll', 'Mana.Magic.dll', 'Mana.Forge.dll')) {
+foreach ($dll in @('ManaTable.dll', 'Mana.Client.dll', 'Mana.Contracts.dll', 'Mana.Magic.dll', 'Mana.Forge.dll', 'Mana.Renderer.dll', 'Mana.Scenarios.dll')) {
     $clientHashes[$dll] = (Get-FileHash -LiteralPath (Join-Path $OutputDirectory $dll) -Algorithm SHA256).Hash
 }
 $build['clientFilesSha256'] = $clientHashes

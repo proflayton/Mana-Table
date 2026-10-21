@@ -10,13 +10,20 @@ internal static class Program
     [STAThread]
     private static int Main(string[] args)
     {
+        ManagedInstallation.Bootstrap(args);
         Application.SetHighDpiMode(HighDpiMode.PerMonitorV2);
+        if (args.Any(arg => arg == "--experience-lab" || arg.StartsWith("--experience-lab=", StringComparison.Ordinal)))
+            return ExperienceLabLauncher.Run(args);
         string? Arg(string name) { int index = Array.IndexOf(args, name); return index >= 0 && index + 1 < args.Length ? args[index + 1] : null; }
         var profile = Arg("--profile") ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "ManaTableNative");
-        Directory.CreateDirectory(profile);
         try {
+            Directory.CreateDirectory(profile);
+            if (ManagedInstallation.IsMaintenance(args)) return ManagedInstallation.MaintainAsync(args, profile).GetAwaiter().GetResult();
             using var instance = WindowsUpdateInstaller.EnterInstance();
-            using var appUpdates = new GitHubAppUpdates(AppBuild.Load(AppContext.BaseDirectory));
+            var build = AppBuild.Load(AppContext.BaseDirectory);
+            var incremental = IncrementalAppUpdates.TryCreate(build);
+            IAppUpdates appUpdates = incremental ?? (IAppUpdates)new GitHubAppUpdates(build);
+            using var updateLifetime = (IDisposable)appUpdates;
             Microsoft.Xna.Framework.Point? size = null;
             if (Arg("--size")?.Split('x') is { Length: 2 } dimensions && int.TryParse(dimensions[0], out int width) && int.TryParse(dimensions[1], out int height)) size = new(Math.Clamp(width, 800, 3840), Math.Clamp(height, 450, 2160));
             var bundle = Arg("--engine-resources") ?? Path.Combine(AppContext.BaseDirectory, "engine");
@@ -32,14 +39,15 @@ internal static class Program
                     var entries = JsonSerializer.Deserialize<Dictionary<string, string>>(File.ReadAllText(manifest)) ?? throw new IOException("Invalid art manifest");
                     art = new LocalArtSource(Path.GetDirectoryName(manifest)!, entries);
                 }
-                using var game = new TableGame(engine, profile, Arg("--capture"), Arg("--fixture"), size, artSource: art,
-                    appUpdates: appUpdates, installUpdate: WindowsUpdateInstaller.TryCreate(AppContext.BaseDirectory, profile));
+                using var game = new TableWindow(engine, profile, Arg("--capture"), Arg("--fixture"), size, artSource: art,
+                    appUpdates: appUpdates, installUpdate: incremental != null ? update => incremental.StartRestart(update, profile)
+                        : WindowsUpdateInstaller.TryCreate(AppContext.BaseDirectory, profile));
                 game.Run();
             } finally { engine.DisposeAsync().AsTask().GetAwaiter().GetResult(); }
             return 0;
         } catch (Exception ex) {
             File.WriteAllText(Path.Combine(profile, "native-error.log"), ex.ToString());
-            if (!args.Contains("--capture")) MessageBox.Show(ex.Message, "Mana Table", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            if (!args.Contains("--capture") && !ManagedInstallation.IsMaintenance(args)) MessageBox.Show(ex.Message, "Mana Table", MessageBoxButtons.OK, MessageBoxIcon.Error);
             return 1;
         }
     }

@@ -8,7 +8,7 @@ using Point = Microsoft.Xna.Framework.Point;
 
 namespace Mana.Table;
 
-internal sealed class PriorityAbilitySmoke(TableGame.Probe view, InteractionScenarioEngine scenario) : ITableAutomation
+internal sealed class PriorityAbilitySmoke(TableWindow.Probe view, InteractionScenarioEngine scenario) : ITableAutomation
 {
     private int stage;
     private double changed;

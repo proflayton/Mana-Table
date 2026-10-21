@@ -10,6 +10,7 @@ public sealed class ClientSession(IMatchConnection connection, ITableSetup? setu
     private readonly ConcurrentQueue<Action> completions = new();
     private readonly SessionReplica<GameSnapshot> replica = new(s => s.Id, s => s.Revision);
     private readonly DecisionAdvance advance = new(connection);
+    private readonly DecisionQuietAdvance quietAdvance = new(connection);
     private readonly TimeProvider time = clock ?? TimeProvider.System;
     private bool recoveryRequired;
     private CancellationTokenSource? advancing;
@@ -109,6 +110,22 @@ public sealed class ClientSession(IMatchConnection connection, ITableSetup? setu
         return true;
     }
     public void CancelAdvance() => advancing?.Cancel();
+    public bool AdvanceQuietly(string token, Func<GameSnapshot, bool> canContinue,
+        Func<GameSnapshot, GameSnapshot, bool> shouldPresent)
+    {
+        if (Busy || Polling || Closed || NeedsRecovery || State is not { } initial
+            || !DecisionQuietAdvance.CanPass(initial, token) || !canContinue(initial)) return false;
+        var cancellation = advancing = new CancellationTokenSource();
+        Run(async epoch => {
+            try {
+                var state = await quietAdvance.RunAsync(initial, token, canContinue, shouldPresent, cancellation.Token);
+                Post(() => Accept(state, epoch));
+            } finally {
+                Post(() => { if (advancing == cancellation) advancing = null; cancellation.Dispose(); });
+            }
+        });
+        return true;
+    }
     private void ReportFailure(Exception error, bool command)
     {
         LastFailureWasCommand = command;

@@ -6,9 +6,11 @@ param(
     [string]$CompilerPath,
     [string]$PortableArchive,
     [string]$SourceArchive,
+    [string]$ManagedSetup,
     [Parameter(Mandatory = $true, ParameterSetName = 'SmokeTest')]
     [ValidatePattern('^ManaTableNative-Smoke-[a-fA-F0-9]{32}$')][string]$SmokeTestAppId,
-    [Parameter(Mandatory = $true, ParameterSetName = 'SmokeTest')][string]$SmokeTestInstallDirectory
+    [Parameter(Mandatory = $true, ParameterSetName = 'SmokeTest')][string]$SmokeTestInstallDirectory,
+    [Parameter(ParameterSetName = 'SmokeTest')][string]$SmokeTestManagedDirectory
 )
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
@@ -35,6 +37,7 @@ function MetadataValue([string]$Name) {
     return $null
 }
 if ((MetadataValue 'version') -ne $Version) { throw 'Installer version must match build.json version.' }
+if ($PSCmdlet.ParameterSetName -eq 'Release' -and ((MetadataValue 'release') -ne $true -or (MetadataValue 'smokeOnly') -eq $true)) { throw 'Production installers require a genuine production package, not a smoke fixture.' }
 if ((MetadataValue 'client') -ne 'MonoGame' -or (MetadataValue 'backend') -ne 'Forge') { throw 'Only native MonoGame/Forge packages can be installed.' }
 if (-not (MetadataValue 'sourceUrl')) { throw 'build.json must link the matching release source in sourceUrl.' }
 $sourceRevision = MetadataValue 'sourceRevision'
@@ -58,6 +61,26 @@ $SourceArchive = [IO.Path]::GetFullPath($SourceArchive)
 if (-not (Test-Path -LiteralPath $SourceArchive -PathType Leaf)) { throw "Source archive not found: $SourceArchive" }
 $sourceArchiveHash = (Get-FileHash -LiteralPath $SourceArchive -Algorithm SHA256).Hash
 if ($sourceArchiveHash -ne (MetadataValue 'sourceArchiveSha256')) { throw 'Source archive does not match build.json sourceArchiveSha256.' }
+
+$managedSetupHash = $null
+$managedPackageId = if ($SmokeTestAppId) { $SmokeTestAppId } else { 'ManaTable' }
+if ($ManagedSetup) {
+    $ManagedSetup = [IO.Path]::GetFullPath($ManagedSetup)
+    if (-not (Test-Path -LiteralPath $ManagedSetup -PathType Leaf)) { throw 'Genuine managed Setup was not found.' }
+    $managedDirectory = Split-Path -Parent $ManagedSetup
+    $managedReport = Get-Content -LiteralPath (Join-Path $managedDirectory 'update-bundle-report.json') -Raw | ConvertFrom-Json
+    $managedManifest = Get-Content -LiteralPath (Join-Path $managedDirectory 'update-manifest.json') -Raw | ConvertFrom-Json
+    $managedSetupHash = (Get-FileHash -LiteralPath $ManagedSetup -Algorithm SHA256).Hash
+    if ($managedReport.version -cne $Version -or $managedReport.sourceRevision -cne $sourceRevision -or
+        $managedReport.packageId -cne $managedPackageId -or $managedReport.setupFileName -cne [IO.Path]::GetFileName($ManagedSetup) -or
+        $managedReport.setupBytes -ne (Get-Item -LiteralPath $ManagedSetup).Length -or $managedReport.setupSha256 -ine $managedSetupHash -or
+        $managedReport.inputBuildMetadataSha256 -ine (Get-FileHash -LiteralPath (Join-Path $InputPackageDirectory 'build.json') -Algorithm SHA256).Hash -or
+        $managedManifest.updateProtocol -ne 2 -or $managedManifest.framework -cne 'velopack' -or
+        $managedManifest.version -cne $Version -or $managedManifest.sourceRevision -cne $sourceRevision -or
+        $managedManifest.packageId -cne $managedPackageId) { throw 'Managed Setup and update packages must come from this exact native package and source.' }
+} elseif ($PSCmdlet.ParameterSetName -eq 'Release') {
+    throw 'Production installers must wrap the verified genuine Velopack Setup. Pass -ManagedSetup from build-update-bundles.ps1.'
+}
 
 # Ensure the portable download and installer contain the same build, rather than
 # accepting an old ZIP with a valid checksum next to a newer unpacked package.
@@ -110,7 +133,7 @@ try {
     $compilerBanner = $probeOutput.GetAwaiter().GetResult() + $probeErrors.GetAwaiter().GetResult()
     if ($compilerBanner -notmatch '(?m)^Inno Setup 6 Command-Line Compiler\s*$') { throw 'Inno Setup 6 ISCC.exe is required.' }
 } finally { $probe.Dispose() }
-foreach ($path in @($InputPackageDirectory, $OutputDirectory, $SmokeTestInstallDirectory)) {
+foreach ($path in @($InputPackageDirectory, $OutputDirectory, $SmokeTestInstallDirectory, $SmokeTestManagedDirectory, $ManagedSetup)) {
     if ($path -and $path.Contains('"')) { throw 'Paths cannot contain a double quote.' }
 }
 New-Item -ItemType Directory -Path $OutputDirectory | Out-Null
@@ -120,6 +143,22 @@ if ($PSCmdlet.ParameterSetName -eq 'SmokeTest') {
     $SmokeTestInstallDirectory = [IO.Path]::GetFullPath($SmokeTestInstallDirectory)
     $compilerArguments += '/DSmokeTestAppId=' + $SmokeTestAppId
     $compilerArguments += '/DSmokeTestInstallDirectory=' + $SmokeTestInstallDirectory
+}
+if ($ManagedSetup) {
+    $compilerArguments += '/DManagedSetupPath=' + $ManagedSetup
+    $compilerArguments += '/DManagedSetupSha256=' + $managedSetupHash
+    $compilerArguments += '/DManagedPackageId=' + $managedPackageId
+    $compilerArguments += '/DPackageSourceRevision=' + $sourceRevision
+    if ($PSCmdlet.ParameterSetName -eq 'SmokeTest') {
+        if (-not $SmokeTestManagedDirectory) { throw 'A managed smoke bridge requires its own isolated managed directory.' }
+        $SmokeTestManagedDirectory = [IO.Path]::GetFullPath($SmokeTestManagedDirectory)
+        if ($SmokeTestManagedDirectory.Equals($SmokeTestInstallDirectory, [StringComparison]::OrdinalIgnoreCase) -or
+            $SmokeTestManagedDirectory.StartsWith($SmokeTestInstallDirectory.TrimEnd('\') + '\', [StringComparison]::OrdinalIgnoreCase) -or
+            $SmokeTestInstallDirectory.StartsWith($SmokeTestManagedDirectory.TrimEnd('\') + '\', [StringComparison]::OrdinalIgnoreCase)) {
+            throw 'The managed installation must be separate from the legacy smoke installation.'
+        }
+        $compilerArguments += '/DManagedInstallDirectory=' + $SmokeTestManagedDirectory
+    }
 }
 $compilerArguments += Join-Path $PSScriptRoot 'installer/ManaTable.iss'
 & $CompilerPath @compilerArguments
@@ -138,6 +177,9 @@ $manifest = [ordered]@{
     architecture = 'win-x64'
     installer = 'ManaTable-Setup.exe'
     installerProtocol = 1
+    installationFramework = $(if ($ManagedSetup) { 'velopack-bridge' } else { 'inno-smoke-fixture' })
+    managedPackageId = $(if ($ManagedSetup) { $managedPackageId } else { $null })
+    managedSetupSha256 = $managedSetupHash
     installerBytes = (Get-Item -LiteralPath $installer).Length
     installerSha256 = $installerHash
     portableArchive = [IO.Path]::GetFileName($PortableArchive)

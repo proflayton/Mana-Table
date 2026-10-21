@@ -17,7 +17,7 @@ $engine = [IO.File]::ReadAllText((Join-Path $Directory 'ci-engine-manifest.json'
 $jar = Join-Path $package 'engine/forge-engine.jar'
 $jarHash = (Get-FileHash -LiteralPath $jar -Algorithm SHA256).Hash
 if ($engine.schemaVersion -ne 1 -or $engine.sourceRevision -cne $env:GITHUB_SHA -or $engine.engine.sha256 -ine $jarHash -or $build.engineSha256 -ine $jarHash -or $engine.engine.bytes -ne (Get-Item -LiteralPath $jar).Length) { throw 'Native package differs from the exact-source shared Forge engine.' }
-foreach ($name in @('ManaTable.dll','Mana.Client.dll','Mana.Contracts.dll','Mana.Magic.dll','Mana.Forge.dll')) {
+foreach ($name in @('ManaTable.dll','Mana.Client.dll','Mana.Contracts.dll','Mana.Magic.dll','Mana.Forge.dll','Mana.Renderer.dll','Mana.Scenarios.dll')) {
     $declared = $build.clientFilesSha256.PSObject.Properties[$name]
     if ($null -eq $declared -or [string]$declared.Value -notmatch '^[a-fA-F0-9]{64}$' -or (Get-FileHash -LiteralPath (Join-Path $package $name) -Algorithm SHA256).Hash -ine $declared.Value) { throw "Native client hash mismatch: $name" }
 }

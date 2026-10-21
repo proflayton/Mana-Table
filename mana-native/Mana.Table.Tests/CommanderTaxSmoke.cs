@@ -7,7 +7,7 @@ using ButtonState = Microsoft.Xna.Framework.Input.ButtonState;
 
 namespace Mana.Table;
 
-internal sealed class CommanderTaxSmoke(TableGame.Probe view, InteractionScenarioEngine scenario) : ITableAutomation
+internal sealed class CommanderTaxSmoke(TableWindow.Probe view, InteractionScenarioEngine scenario) : ITableAutomation
 {
     private readonly List<string> checks = [];
     private int stage;

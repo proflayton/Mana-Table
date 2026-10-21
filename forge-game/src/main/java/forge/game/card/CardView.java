@@ -1564,6 +1564,11 @@ public class CardView extends GameEntityView {
         }
 
         public KeywordCollectionView getKeywords()  { return get(TrackableProperty.Keywords); }
+        /** Human presentation copied from the current effective keyword collection. */
+        public java.util.List<forge.game.PublicState> getPublicStates() {
+            var keywords = getKeywords();
+            return keywords == null ? java.util.List.of() : keywords.getPublicStates();
+        }
         public boolean hasKeyword(Keyword keyword) { return getKeywords().contains(keyword); }
 
         public boolean hasAnnihilator() { return get(TrackableProperty.HasAnnihilator); }

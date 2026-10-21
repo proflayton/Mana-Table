@@ -16,7 +16,7 @@ namespace Mana.Table;
 // Java tests separately establish the real equip rules and privacy projection.
 internal sealed class EquipmentSmoke : ITableAutomation
 {
-    private readonly TableGame.Probe view;
+    private readonly TableWindow.Probe view;
     private readonly InteractionScenarioEngine scenario;
     private readonly Queue<(double Delay, Func<bool>? Ready, Action Action)> steps = [];
     private readonly List<string> checks = [];
@@ -31,11 +31,11 @@ internal sealed class EquipmentSmoke : ITableAutomation
     {
         new PlayPreferences { Automatic = false, Sounds = false, ReducedMotion = true, TextScale = 1.3f }.Save(profile);
         var scenario = new InteractionScenarioEngine(); scenario.Present(Example());
-        using var game = new TableGame(scenario, profile, null, null, size, initialState: scenario.State, artSource: new CardReadingArtFixture());
+        using var game = new TableWindow(scenario, profile, null, null, size, initialState: scenario.State, artSource: new CardReadingArtFixture());
         game.Automation = new EquipmentSmoke(game.TestPort, scenario); game.Run();
     }
 
-    private EquipmentSmoke(TableGame.Probe view, InteractionScenarioEngine scenario)
+    private EquipmentSmoke(TableWindow.Probe view, InteractionScenarioEngine scenario)
     {
         this.view = view; this.scenario = scenario;
         Step(.4, () => { });
@@ -85,7 +85,7 @@ internal sealed class EquipmentSmoke : ITableAutomation
             AssertConnection("boots-2-0", "elf-3-0");
             Check(view.AttachmentConnections.All(c => c.TargetId != "elf-2-0"), "The Equipment being read no longer links to its former identical target");
         });
-        ClickHit("read-card-close");
+        Step(0, () => MoveCard(view.Frame!.Cards.Single(card => card.Focused).Id)); Click();
         Step(0, () => { MoveAway(); Publish(Crowded()); });
         // Arrivals deliberately show a temporary state banner for1.1seconds.
         // Check persistent crowded markers after those banners have cleared.
@@ -108,7 +108,7 @@ internal sealed class EquipmentSmoke : ITableAutomation
             Check(scenario.Replies.Count == 0, "Reading a crowded opponent's exact Equipment sends no game command");
             Capture("06-crowded-opponent-hover");
         });
-        ClickHit("read-card-close");
+        Step(0, () => MoveCard(view.Frame!.Cards.Single(card => card.Focused).Id)); Click();
         Step(0, () => { MoveAway(); Publish(ChangeCards(c => c with { AttachedTo = null, Attachments = [] })); });
         Step(.3, () => {
             Check(view.Match!.Players.SelectMany(p => p.Zone("Battlefield").Cards).All(c => view.AttachmentBadge(c.CombatId) == null)
@@ -174,19 +174,24 @@ internal sealed class EquipmentSmoke : ITableAutomation
                 && statsHit is { Card: { } hitCard } && statsHit.Id == "card:" + card.Key + ":" + card.VisualId
                 && statsHit.Scope == view.Scope && CardViews.Identity(hitCard) == id
             : pose.Value.Bounds.Contains(badge.Bounds));
-        if (badge != null && pose != null && (BadgePixels(badge.Bounds) <= 8 || !fits))
-            throw new InvalidOperationException($"{id}: badge={badge}; face={pose.Value.Bounds}; stats={stats}; hit={statsHit?.Id}; pixels={BadgePixels(badge.Bounds)}");
+        int pixels = badge == null ? 0 : BadgePixels(badge.Bounds, badge.IncludesCombatStats);
+        if (badge != null && pose != null && (pixels <= 8 || !fits))
+            throw new InvalidOperationException($"{id}: badge={badge}; face={pose.Value.Bounds}; stats={stats}; hit={statsHit?.Id}; pixels={pixels}");
         Check(fits && badge != null
-            && badge.MeasuredWidth <= badge.Bounds.Width && BadgePixels(badge.Bounds) > 8,
-            $"{id}'s painted attachment state fits its own face or exact measured P/T label, retains full current stats and owns its physical target at130% text");
+            && badge.MeasuredWidth <= badge.Bounds.Width && pixels > 8,
+            $"{id}'s painted attachment cue fits its own face or gold-outlined current P/T ribbon, retains full current stats and owns its physical target at130% text");
     }
-    private int BadgePixels(Rectangle bounds)
+    private int BadgePixels(Rectangle bounds, bool sharedStats)
     {
         var region = Rectangle.Intersect(bounds, new(0, 0, view.Surface.Width, view.Surface.Height));
         if (region.Width <= 0 || region.Height <= 0) return 0;
         var pixels = new Color[region.Width * region.Height];
         view.Surface.GetData(0, region, pixels, 0, pixels.Length);
-        return pixels.Count(c => c.R == 48 && c.G == 39 && c.B == 22);
+        // Creature attachments share the P/T ribbon's gold relationship outline;
+        // only separate Equipment badges retain the older brown backing.
+        return sharedStats
+            ? pixels.Count(c => c.R == 226 && c.G == 190 && c.B == 120)
+            : pixels.Count(c => c.R == 48 && c.G == 39 && c.B == 22);
     }
     private void AssertConnection(string source, string target)
     {
@@ -203,7 +208,7 @@ internal sealed class EquipmentSmoke : ITableAutomation
     private void Check(bool condition, string description) { if (!condition) throw new InvalidOperationException(description); checks.Add(description); }
     private void MoveAway() { var p = SmokePointer.Screen(view, new(1500, 70)); mouse = new(p.X, p.Y, 0, ButtonState.Released, ButtonState.Released, ButtonState.Released, ButtonState.Released, ButtonState.Released); }
     private void MoveCard(string id) => MoveHit(view.Hits.Single(h => h.Card?.VisualId == id && h.Id.StartsWith("card:", StringComparison.Ordinal)));
-    private void MoveHit(TableGame.Hit hit) { var p = SmokePointer.Hit(view, hit); mouse = new(p.X, p.Y, 0, ButtonState.Released, ButtonState.Released, ButtonState.Released, ButtonState.Released, ButtonState.Released); }
+    private void MoveHit(Mana.Table.Interaction.TableHit hit) { var p = SmokePointer.Hit(view, hit); mouse = new(p.X, p.Y, 0, ButtonState.Released, ButtonState.Released, ButtonState.Released, ButtonState.Released, ButtonState.Released); }
     private MouseState Mouse(ButtonState left = ButtonState.Released, ButtonState right = ButtonState.Released) => new(mouse.X, mouse.Y, 0, left, ButtonState.Released, right, ButtonState.Released, ButtonState.Released);
     private bool Reading(string id) => view.DisplayedPose(id) is { Size.X: >= 400 } && view.HoverPreview is { Width: >= 400 };
     private void Click() { Step(0, () => mouse = Mouse(ButtonState.Pressed)); Step(0, () => mouse = Mouse()); }

@@ -63,8 +63,7 @@ public static class AllocationGuide
 
     // Allocation snapshots expose only current, public keywords, including the
     // anonymous characteristics of face-down battlefield permanents.
-    public static string Abilities(Card? card) => card == null ? "" : string.Join(" · ", card.CombatKeywords
-        .Where(keyword => !string.IsNullOrWhiteSpace(keyword)).Distinct(StringComparer.OrdinalIgnoreCase).Select(CardPresentation.AbilityName));
+    public static string Abilities(Card? card) => card == null ? "" : string.Join(" · ", CardPresentation.AbilityLabels(card));
 
     public static string RecipientState(Choice choice) => string.Join(" · ", new[] {
         Stats(choice.Card), MarkedDamage(choice.Card), Counters(choice.Card), Abilities(choice.Card)
