@@ -5,11 +5,12 @@ as a separate Java process and owns the rules, AI, legal actions and private
 information. The Electron reference client has its own
 [development guide](../forge-desktop/README.md).
 
-This guide follows current `master`, which can be ahead of the public installer.
-Installers through 0.2.37 predate the complete battlefield layout, compact selection
-readers, card-based assignments and additional hand-placement actions now in
-source. Check a package's `SOURCE.txt` and `build.json` for its exact revision.
-Unmerged PR7 experience-clarity changes are not assumed by these instructions.
+This guide follows the checked-out source, which can be ahead of the public
+installer. Release 0.2.39 contains the complete battlefield layout, compact
+selection readers, card-based assignments and additional hand-placement actions
+from master revision `c11a3094be6c95ba1bddbafbe54aa7ad8fe3a7db`. Later source adds
+connection recovery, public-state explanations and version-aware deck review.
+Check a package's `SOURCE.txt` and `build.json` for its exact revision.
 For playing instructions, use [START-HERE.txt](START-HERE.txt).
 
 ## Prerequisites
@@ -144,8 +145,13 @@ Choose checks for the changed behavior:
 | `--smoke-card-states` | Flying, phasing and current state transitions in a separate bounded journey |
 | `--smoke-compact-selection` | Real reveal/choice input, immediate compact faces and slow reader handoff |
 | `--smoke-full-battlefield` | All projected occurrences, exposure, hit regions and dense layout |
+| `--smoke-equipment` | Exact attachment relationships, readable badges, hover connections and re-equipping |
 | `--smoke-allocation` / `--smoke-hand-placement` | Scoped draft/assignment and real hand/source gestures |
+| `--smoke-recovery` / `--smoke-state-clarity` | Interrupted connections, named decisions, public counters and larger text |
+| `--smoke-deck-experience` | Reviewed recommendations, frozen test lists and whole-list source confirmations |
 | `--smoke-engine-startup` / `--smoke-workshop-adapter` | Real Forge startup and native adapter behavior |
+| `--smoke-lobby-ai-seats` | Host open/AI controls, compatible deck choices and guest read-only seats |
+| `--smoke-lobby-three-player` | Three human seats, safe lobby resizing, readiness and real three-player startup |
 
 Repeat affected GPU journeys at **1000x740** and **1540x980** with fresh profiles.
 Real-engine modes also need `--engine-resources <bundle>/engine`; use

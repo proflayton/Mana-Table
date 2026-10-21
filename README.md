@@ -13,14 +13,18 @@ for your Windows account. A portable Windows x64 ZIP is also available on the
 
 The app opens with **Play with AI**, **Play with friends**, and **Your decks**.
 Build or import a Commander list, try a bundled precon, practice opening hands,
-and test changes against Forge AI. The normal table has four seats; deck tests
-also support two-player Commander. Friends can join a directly hosted table
+and test changes against Forge AI. Tables default to four seats; a host can choose
+two, three or four total seats. Friends can join a directly hosted table
 through an invite. Everyone at the table should use the same build.
+Three people can play a three-seat Commander game, or the host can add AI to
+play at four seats. The host chooses each AI deck.
 
 The builder includes autosave, Undo/Redo, categories, Considering, saved versions,
-and deck analysis. Public Archidekt decks can be imported and manually refreshed
-through a preview; local edits are not uploaded to Archidekt. During a game, the
-engine handles costs, legal actions, targeting, priority, phases and combat.
+and deck analysis. Review recommendations, inspect the exact list used in an
+earlier test, and compare it with your current deck. Public Archidekt decks can
+be imported and manually refreshed through a preview and confirmation; local
+edits are not uploaded to Archidekt. During a game, the engine handles costs,
+legal actions, targeting, priority, phases and combat.
 
 Your decks and preferences live in `%LOCALAPPDATA%\ManaTableNative`, separately
 from the installation. Use **Updates** in the app to check for and download a

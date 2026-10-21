@@ -84,18 +84,20 @@ public class NetworkPlayIntegrationTest implements IHasForgeLog {
     public void testServerStartAndStop() {
         netLog.info("Testing server start/stop...");
         var server = forge.gamemodes.net.server.FServerManager.getInstance();
-        int port = 55556;
-
         try {
-            server.startServer(port);
+            // Let the OS bind an ephemeral port; a shared fixed port can be in
+            // use by another test or process on the runner. This lifecycle
+            // check does not need a client address or router mapping.
+            server.startServer(0, false);
             Assert.assertTrue(server.isHosting(), "Server should be hosting after start");
-            netLog.info("Server started on port {}", port);
+            netLog.info("Server started on an OS-assigned port");
         } finally {
             if (server.isHosting()) {
                 server.stopServer();
                 netLog.info("Server stopped");
             }
         }
+        Assert.assertFalse(server.isHosting(), "Server should stop hosting after shutdown");
     }
 
     /**

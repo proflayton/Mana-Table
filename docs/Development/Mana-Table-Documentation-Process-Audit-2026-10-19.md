@@ -21,6 +21,15 @@ The review covers the root and client guides, API contract, architecture,
 testing, encounters, packaging and updates, contribution and issue templates,
 workflow triggers and the active master ruleset.
 
+October 20 follow-up: the baseline above is the historical review checkpoint.
+Release 0.2.39 subsequently shipped revision
+`c11a3094be6c95ba1bddbafbe54aa7ad8fe3a7db`, and PR 7 and this documentation PR
+have merged. The guides now reconcile the merged recovery, public-state,
+bundled-eligibility and deck-review contracts, plus the equipment and analysis
+work included in the next release candidate. Those later changes are not
+retroactively part of 0.2.39. Check the candidate's source metadata and its own
+completed CI/artifact evidence before describing it as a published release.
+
 ## Findings and corrections
 
 P1 findings can send a reader to the wrong app, profile or release procedure.

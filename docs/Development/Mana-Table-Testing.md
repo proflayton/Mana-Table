@@ -136,6 +136,27 @@ uninterrupted table polling, replies and Auto. Repeat at 1200x900 and review
 isolated invalid JAR, repairs the copy and retries the same adapter. It verifies
 healthy process reuse, retained undo history and idempotent disposal.
 
+### Native equipment
+
+`--smoke-equipment --profile <isolated-profile> --size 1000x740` checks Equipment
+and creature badges at all four seats, multiple attachments, exact hover
+connections, inspection, re-equipping between identical creatures and removal.
+Repeat at `1540x980`; both native CI cases use 130% text and reduced motion.
+Inspect `equipment-results.json` and captures `01`–`07`, including their physical
+`-window.png` versions. The journey checks connector endpoints, re-equipping,
+removal and 50-per-seat density. Grouping must retain attachment differences and
+every occurrence. Compact attached creatures reuse their existing readable P/T
+chip with a gold border and brown backing; other measured badges fit their card
+footprint. Native
+fixture results establish rendering and input behavior rather than Forge equip rules.
+
+Java `EquipmentSnapshotTest` drives real equip, re-equip and sacrifice choices
+and checks every seat's relationship projection. `AttachmentProjectionTest`
+covers opaque occurrence IDs, face-down redaction and hidden-zone revocation.
+`LootCombatRegressionTest` separately exercises real blocking with the two Loot
+creatures against ordinary, deathtouch and double-strike attackers, checking life,
+survival and marked damage instead of deriving outcomes from UI labels.
+
 ### Native ability auto-pass
 
 `--smoke-priority-abilities --profile <isolated-profile> --size 1280x720` drives
@@ -157,6 +178,31 @@ turns, source/control changes and game cleanup. Run these with
 `AutomaticPriorityShould`, `EngineApiTest` and the normal rules regressions.
 
 ### Native lobby and deck confirmation
+
+`--smoke-lobby-ai-seats` checks the host's open/AI seat controls, compatible AI deck
+selection, occupied-human protection and read-only guest presentation. Run at
+`1000x740` and `1540x980` with fresh profiles; it uses 130% text. Inspect
+`lobby-ai-seat-results.json` and captures `01`–`06`, including their physical
+`-window.png` versions. Java and the shared `sync-lobby.test.cjs` scenario
+separately establish host/table authorization, joining around AI seats, preserving
+human readiness, three-human/one-AI game startup and AI retention on a rematch.
+
+`--smoke-lobby-three-player` chooses 3 players before hosting, joins two real
+friends, expands to four seats, removes only the last open seat, readies again
+and starts the three-player game with private hand projections. Run both sizes
+above; this journey also uses 130% text. Inspect `lobby-three-player-results.json`
+and captures `01`–`06` with their physical-window versions. The shared Node
+scenario additionally checks stale/missing table IDs, guest authority, occupied
+seat protection and a usable first main phase for the three-human game.
+
+Electron `network-lobby.spec.cjs` uses two desktop windows and a third real engine
+client. Normal host controls add/remove AI, change its deck before and after
+human readiness, preserve three human seats, and start the four-player table.
+It checks guest AI labels with no management controls, rejects a guest mutation,
+and captures the host at both supported sizes. This file runs in desktop smoke CI.
+Its separate three-human scenario starts with a four-seat lobby, follows the
+visible Total seats guidance to remove the last open seat, verifies preserved
+human decks and reset readiness, and starts a real three-player game without AI.
 
 ```powershell
 dotnet build mana-native/Mana.Table.Tests/Mana.Table.Tests.csproj -c Release
@@ -704,6 +750,20 @@ cues, no duplicate feedback, rematch reset and retargeting pauses. These tests
 use isolated profiles; existing card art is reused without generated artwork.
 
 ### Strategy review
+
+`--smoke-analysis` starts a review without configured goals, opens the optional
+question-based preferences and changes pace through actual hit testing. Run at
+`1000x740` and `1540x980`; inspect findings, preferences, detail and swap captures.
+Review physical `-window.png` captures as well as the design surface, including
+130% text when checking readability. The journey changes an explicit turn-five
+target back to Automatic and verifies shared metadata with an unchanged playable
+version. Java coverage includes paired commanders, exclusion of library cards
+from commander targets, and actionable findings appearing before information.
+`DeckAnalysisTest` covers inferred land targets, explicit overrides, zero-cost
+commanders and Limited Sideboard availability without treating Considering as
+owned inventory. The Electron strategy-review scenario covers initially collapsed
+preferences, direct format/pool question focus, persistence and unchanged playable
+lists. These interface checks do not validate arbitrary free-text plans as rules.
 
 The focused Java suite is `DeckAnalysisTest,DeckAnalysisStoreTest,DeckInsightsTest`;
 run with `-Dsurefire.failIfNoSpecifiedTests=false` when building the reactor.

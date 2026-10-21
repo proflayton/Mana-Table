@@ -199,6 +199,7 @@ let multiplayerRefreshTimer;
 let multiplayerStatusMarkup = '';
 let multiplayerStarting = false;
 let multiplayerReadying = false;
+let multiplayerSeating = false;
 function stopMultiplayerRefresh() {
   if (multiplayerRefreshTimer) {
     clearInterval(multiplayerRefreshTimer);
@@ -252,6 +253,7 @@ function renderMultiplayerDecks(format) {
 function updateMultiplayerSettings() {
   const commander = $('multiplayer-format').value === 'Commander';
   $('multiplayer-player-count-label').hidden = !commander;
+  $('multiplayer-seats-help').hidden = !commander;
   renderMultiplayerDecks($('multiplayer-format').value);
 }
 function showWorkshop() {
@@ -278,6 +280,17 @@ function showMultiplayer() {
   $('multiplayer-tab').classList.add('active');
   startMultiplayerRefresh();
 }
+function multiplayerSeatMarkup(slot, result) {
+  const seat = slot.index;
+  const editable = result.hosting && !result.matchActive && seat > 0
+    && (slot.type === 'OPEN' || slot.type === 'AI');
+  const disabled = multiplayerSeating ? 'disabled' : '';
+  const opponents = result.aiOpponents || [];
+  const controls = !editable ? '' : slot.type === 'OPEN'
+    ? `<div class="multiplayer-seat-controls"><button class="button secondary" type="button" data-ai-add="${seat}" aria-label="Add AI to seat ${seat + 1}" ${disabled || (!opponents.length ? 'disabled' : '')}>Add AI</button></div>`
+    : `<div class="multiplayer-seat-controls"><label>AI deck<select data-ai-deck="${seat}" aria-label="AI deck for seat ${seat + 1}" ${disabled}>${opponents.map(opponent => `<option value="${esc(opponent.id)}" ${opponent.id === slot.opponentId ? 'selected' : ''}>${esc(opponent.name)}</option>`).join('')}</select></label><button class="button secondary" type="button" data-ai-remove="${seat}" aria-label="Open seat ${seat + 1} for a friend" ${disabled}>Open for friend</button></div>`;
+  return `<li class="${slot.local ? 'local' : ''}" data-seat="${seat}" data-seat-type="${esc(slot.type)}"><span>${esc(slot.type)}</span><b>${esc(slot.type === 'OPEN' ? 'Open seat' : slot.name || 'Player')}${slot.local ? ' · you' : ''}</b><small>${slot.type === 'OPEN' ? 'Waiting for a friend' : slot.ready ? 'Ready' : 'Not ready'}${slot.deck ? ` · ${esc(slot.deck)}` : ''}</small>${controls}</li>`;
+}
 function renderMultiplayer(result) {
   if (!result) return;
   multiplayerState = result;
@@ -290,7 +303,9 @@ function renderMultiplayer(result) {
     disabled: ['Direct connections only', 'Automatic port forwarding is off. Same-network play works; internet guests need an existing forwarding rule.']
   }[result.portMapping] || ['Rebuild the engine to enable invites', 'This engine does not report automatic port forwarding.'];
   const invite = result.hosting ? `<section class="multiplayer-invite"><strong>${mapping[0]}</strong><p>${mapping[1]}</p>${result.internetInvite ? `<label>Internet invite<input aria-label="Internet invite" readonly value="${esc(result.internetInvite)}"></label><button class="button primary" type="button" data-copy-invite="${esc(result.internetInvite)}">Copy invite</button><p>Share with your friends. This invite contains your connection address and changes when you host a new table.</p>` : `<p>${result.addressLookupPending ? 'Finding your internet address…' : 'Could not find your internet address. Local addresses are available below.'}</p>`}</section>` : '';
-  const slots = result.slots?.length ? `<div class="multiplayer-block"><strong>Seats</strong><ol>${result.slots.map(slot => `<li class="${slot.local ? 'local' : ''}"><span>${esc(slot.type)}</span><b>${esc(slot.name || 'Open seat')}${slot.local ? ' · you' : ''}</b><small>${slot.ready ? 'Ready' : 'Not ready'}${slot.deck ? ` · ${esc(slot.deck)}` : ''}</small></li>`).join('')}</ol></div>` : '';
+  const filled = result.slots?.filter(slot => slot.type !== 'OPEN').length || 0;
+  const openSeats = (result.slots?.length || 0) - filled;
+  const slots = result.slots?.length ? `<div class="multiplayer-block"><strong>Seats · ${filled} / ${result.slots.length} filled</strong>${result.hosting && !result.matchActive ? '<p>Choose Total seats to match your group, or Add AI to fill an open seat. Open an AI seat again before another friend joins.</p>' : ''}<ol>${result.slots.map(slot => multiplayerSeatMarkup(slot, result)).join('')}</ol></div>` : '';
   const messages = result.messages?.length ? `<div class="multiplayer-block"><strong>Messages</strong>${result.messages.slice(-6).map(message => `<p><span>${esc(message.timestamp || '')}</span> ${esc(message.source || 'Server')}: ${esc(message.message || '')}</p>`).join('')}</div>` : '';
   const statusMarkup = `<b>${result.hosting ? 'Your table is open.' : esc(result.status || 'Not connected.')}</b>${result.error ? `<span class="warning">${esc(result.error)}</span>` : ''}${invite}${slots}${addresses}${messages}`;
   // Polling must not replace an unchanged copy button or selected invite text.
@@ -306,13 +321,16 @@ function renderMultiplayer(result) {
   $('multiplayer-ready').setAttribute('aria-pressed', String(Boolean(localSlot?.ready)));
   $('multiplayer-ready').disabled = !localSlot || multiplayerReadying;
   $('multiplayer-start').hidden = !hosting;
-  $('multiplayer-start').disabled = multiplayerStarting || result.canStart !== true;
+  $('multiplayer-start').disabled = multiplayerStarting || multiplayerSeating || result.canStart !== true;
   $('multiplayer-start-help').hidden = !hosting;
   $('multiplayer-start-help').textContent = multiplayerStarting ? 'Starting the game…'
-    : result.startProblem || 'Everyone is ready. Start when your table is ready to play.';
+    : (result.startProblem || 'Everyone is ready. Start when your table is ready to play.')
+      + (openSeats > 0 ? ' Use Total seats above to match your group, or fill the open seats with AI.' : '');
   $('multiplayer-loadout').hidden = !connected;
   $('multiplayer-leave').textContent = hosting ? 'Close lobby' : 'Leave lobby';
   $('multiplayer-configure').hidden = !hosting;
+  $('multiplayer-configure').disabled = multiplayerSeating;
+  $('multiplayer-leave').disabled = multiplayerSeating;
   $('multiplayer-settings').hidden = joined;
   $('multiplayer-host').hidden = connected;
   $('multiplayer-forward-label').hidden = connected;
@@ -320,14 +338,31 @@ function renderMultiplayer(result) {
   $('multiplayer-join').hidden = connected;
   $('multiplayer-rules').hidden = !joined;
   $('multiplayer-rules').textContent = `${result.format === 'Commander' ? 'Commander' : 'Standard'} · ${result.playerCount || 2} players`;
-  $('multiplayer-format').disabled = joined;
-  $('multiplayer-player-count').disabled = joined;
+  $('multiplayer-format').disabled = joined || multiplayerSeating;
+  $('multiplayer-player-count').disabled = joined || multiplayerSeating;
   if (localSlot && !multiplayerSettingsPending) {
     $('multiplayer-format').value = result.format || 'Constructed';
     $('multiplayer-player-count').value = String(result.playerCount || 2);
     updateMultiplayerSettings();
   }
   if (result.matchActive) run(openMultiplayerMatch);
+}
+async function setMultiplayerSeat(seat, type, opponentId) {
+  if (multiplayerSeating) return;
+  const current = multiplayerState;
+  const slot = current?.slots?.find(item => item.index === seat);
+  if (!current?.hosting || current.matchActive || !current.tableId || seat <= 0
+    || !slot || !['OPEN', 'AI'].includes(slot.type)) throw new Error('Only the host can change an open or AI seat before the game.');
+  if (opponentId && !current.aiOpponents?.some(opponent => opponent.id === opponentId))
+    throw new Error('Choose an AI deck offered for this table.');
+  multiplayerSeating = true;
+  renderMultiplayer(current);
+  try {
+    renderMultiplayer(await api.request('multiplayerSetSeat', { tableId: current.tableId, seat, type, ...(opponentId ? { opponentId } : {}) }));
+  } finally {
+    multiplayerSeating = false;
+    renderMultiplayer(multiplayerState);
+  }
 }
 async function returnToMultiplayerLobby() {
   if (multiplayerReturning) return;
@@ -362,9 +397,12 @@ async function hostMultiplayer() {
   } finally { $('multiplayer-host').disabled = $('multiplayer-join').disabled = false; }
 }
 async function configureMultiplayer() {
+  const tableId = multiplayerState?.tableId;
+  if (!multiplayerState?.hosting || !tableId) return;
   multiplayerSettingsPending = true;
   try {
     renderMultiplayer(await api.request('multiplayerConfigure', {
+      tableId,
       format: $('multiplayer-format').value,
       playerCount: Number($('multiplayer-player-count').value)
     }));
@@ -550,11 +588,21 @@ $('multiplayer-ready').onclick = () => run(readyMultiplayer);
 $('multiplayer-start').onclick = () => run(startMultiplayerGame);
 $('multiplayer-leave').onclick = () => run(leaveMultiplayer);
 $('multiplayer-status').onclick = event => {
+  const add = event.target.closest('[data-ai-add]');
+  const remove = event.target.closest('[data-ai-remove]');
+  if (add || remove) {
+    run(() => setMultiplayerSeat(Number((add || remove).dataset[add ? 'aiAdd' : 'aiRemove']), add ? 'AI' : 'OPEN'));
+    return;
+  }
   const button = event.target.closest('[data-copy-address], [data-copy-invite]');
   if (button) run(async () => {
     await api.copyInvite(button.dataset.copyInvite || button.dataset.copyAddress);
     toast(button.dataset.copyInvite ? 'Invite copied. Send it to your friends.' : 'Address copied.');
   });
+};
+$('multiplayer-status').onchange = event => {
+  const select = event.target.closest('[data-ai-deck]');
+  if (select) run(() => setMultiplayerSeat(Number(select.dataset.aiDeck), 'AI', select.value));
 };
 $('shuffle-hand').onclick = () => run(() => practice('shuffle'));
 $('mulligan').onclick = () => run(() => practice('mulligan'));

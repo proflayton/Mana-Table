@@ -150,6 +150,8 @@ jobs:
             @{ Name='updates-1540'; Mode='--smoke-updates'; Result='update-ui-results.json'; Size='1540x980' },
             @{ Name='commander-tax-1000'; Mode='--smoke-commander-tax'; Result='commander-tax-results.json'; Size='1000x740' },
             @{ Name='commander-tax-1540'; Mode='--smoke-commander-tax'; Result='commander-tax-results.json'; Size='1540x980' },
+            @{ Name='equipment-1000'; Mode='--smoke-equipment'; Result='equipment-results.json'; Size='1000x740' },
+            @{ Name='equipment-1540'; Mode='--smoke-equipment'; Result='equipment-results.json'; Size='1540x980' },
             @{ Name='card-reading-1000'; Mode='--smoke-card-reading'; Result='reading-results.json'; Size='1000x740' },
             @{ Name='card-reading-1540'; Mode='--smoke-card-reading'; Result='reading-results.json'; Size='1540x980' },
             @{ Name='card-states-1000'; Mode='--smoke-card-states'; Result='card-states-results.json'; Size='1000x740' },
@@ -160,7 +162,11 @@ jobs:
             @{ Name='full-battlefield-1540'; Mode='--smoke-full-battlefield'; Result='full-battlefield-results.json'; Size='1540x980' },
             @{ Name='import'; Mode='--smoke-deck-import'; Result='deck-import-results.json' },
             @{ Name='building'; Mode='--smoke-deck-building'; Result='deck-building-results.json' },
-            @{ Name='lobby'; Mode='--smoke-lobby'; Result='lobby-results.json' }
+            @{ Name='lobby'; Mode='--smoke-lobby'; Result='lobby-results.json' },
+            @{ Name='lobby-ai-1000'; Mode='--smoke-lobby-ai-seats'; Result='lobby-ai-seat-results.json'; Size='1000x740' },
+            @{ Name='lobby-ai-1540'; Mode='--smoke-lobby-ai-seats'; Result='lobby-ai-seat-results.json'; Size='1540x980' },
+            @{ Name='lobby-three-1000'; Mode='--smoke-lobby-three-player'; Result='lobby-three-player-results.json'; Size='1000x740' },
+            @{ Name='lobby-three-1540'; Mode='--smoke-lobby-three-player'; Result='lobby-three-player-results.json'; Size='1540x980' }
           )
           $summary = @()
           foreach ($suite in $suites) {

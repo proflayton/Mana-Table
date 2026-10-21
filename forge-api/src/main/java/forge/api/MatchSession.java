@@ -3,7 +3,6 @@ package forge.api;
 import com.google.gson.JsonObject;
 import com.google.common.eventbus.Subscribe;
 import forge.StaticData;
-import forge.ai.LobbyPlayerAi;
 import forge.card.MagicColor;
 import forge.card.CardStateName;
 import forge.deck.Deck;
@@ -123,10 +122,8 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
         for (String opponent : opponents) {
             var preset = commander && opponent.startsWith("preset:") ? DeckPresets.find(opponent.substring(7)) : null;
             String name = preset != null ? preset.name() : opponent.equals("red") ? "Cinder" : "Verdant";
-            var ai = new LobbyPlayerAi(name + " · AI" + (opponents.size() > 1 ? " " + seats.size() : ""), Set.of());
-            ai.setAiProfile("Default");
-            var aiDeck = preset != null ? DeckPresets.create(preset.id()) : commander ? CommanderOpponents.create(opponent) : opponentDeck(opponent);
-            seats.add((commander ? RegisteredPlayer.forCommander(aiDeck) : new RegisteredPlayer(aiDeck)).setPlayer(ai));
+            seats.add(MatchTable.ai(aiDeck(opponent, format), format,
+                    name + " · AI" + (opponents.size() > 1 ? " " + seats.size() : "")));
         }
         var table = new MatchTable(format, seats, resources, profile);
         table.start();
@@ -215,6 +212,14 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
         }
         return List.of(Map.of("id", "green", "name", "Verdant", "description", "Green creatures, mana ramp, and combat tricks · Constructed · 60 cards"),
                 Map.of("id", "red", "name", "Cinder", "description", "Red creatures and direct damage · Constructed · 60 cards"));
+    }
+
+    /** Both solo games and hosted AI seats use these engine-owned, format-compatible choices. */
+    static Deck aiDeck(String opponent, String format) {
+        validateOpponents(format, List.of(opponent));
+        boolean commander = format.equals("Commander");
+        var preset = commander && opponent.startsWith("preset:") ? DeckPresets.find(opponent.substring(7)) : null;
+        return preset != null ? DeckPresets.create(preset.id()) : commander ? CommanderOpponents.create(opponent) : opponentDeck(opponent);
     }
 
     private static Deck opponentDeck(String key) {
@@ -710,6 +715,7 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
                         || prompt != null && prompt.input instanceof InputLondonMulligan && card.getController().equals(viewer) && card.getZone() == ZoneType.Hand,
                 "highlighted", highlighted.contains(card), "faceDown", hidden,
                 "combatKeywords", publicFace ? publicKeywords(face) : List.of());
+        AttachmentProjection.add(result, card, viewer, combatIds);
         addCardFaces(result, card, !hidden && card.canBeShownTo(viewer));
         return result;
     }

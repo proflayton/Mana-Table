@@ -13,6 +13,9 @@ internal static class Program
         bool testRun = args.Any(a => a is "--smoke" or "--smoke-ai" or "--smoke-ui-ai" or "--smoke-presentation" or "--smoke-ui-interactions" or "--smoke-table-feel" or "--smoke-card-reading" or "--smoke-card-states" or "--smoke-compact-selection" or "--smoke-cleanup" or "--smoke-deck-building" or "--smoke-workshop" or "--smoke-analysis" or "--smoke-workshop-adapter" or "--smoke-analysis-adapter" or "--smoke-deck-tuning" or "--smoke-lobby" or "--smoke-social" or "--smoke-advance" or "--smoke-auto-dock" or "--smoke-action-feedback" or "--smoke-onboarding" or "--smoke-loading" or "--smoke-engine-startup" or "--smoke-context-guidance" or "--smoke-deck-import" or "--smoke-priority-abilities");
         testRun |= args.Contains("--smoke-updates");
         testRun |= args.Contains("--smoke-commander-tax");
+        testRun |= args.Contains("--smoke-equipment");
+        testRun |= args.Contains("--smoke-lobby-ai-seats");
+        testRun |= args.Contains("--smoke-lobby-three-player");
         testRun |= args.Contains("--smoke-full-battlefield");
         testRun |= args.Contains("--smoke-hand-placement");
         testRun |= args.Contains("--smoke-allocation");
@@ -43,6 +46,7 @@ internal static class Program
                 test.Automation = new CommanderTaxSmoke(test.TestPort, scenario);
                 test.Run(); return 0;
             }
+            if (args.Contains("--smoke-equipment")) { EquipmentSmoke.Run(profile, size); return 0; }
             // Existing UI regressions start directly at their subject. Onboarding
             // has its own fresh-profile and persistence coverage above.
             if (args.Any(a => a is "--smoke-ui-ai" or "--smoke-ui-interactions" or "--smoke-table-feel" or "--smoke-card-reading" or "--smoke-card-states" or "--smoke-compact-selection" or "--smoke-deck-building" or "--smoke-workshop" or "--smoke-analysis" or "--smoke-lobby" or "--smoke-auto-dock" or "--smoke-action-feedback" or "--smoke-priority-abilities"))
@@ -97,6 +101,8 @@ internal static class Program
             if (args.Contains("--smoke-cleanup")) { CleanupSmoke.RunAsync(paths).GetAwaiter().GetResult(); return 0; }
             if (args.Contains("--smoke-analysis-adapter")) { AnalysisRegression.RunAsync(paths).GetAwaiter().GetResult(); return 0; }
             if (args.Contains("--smoke-workshop-adapter")) { DeckWorkshopRegression.RunAsync(paths).GetAwaiter().GetResult(); return 0; }
+            if (args.Contains("--smoke-lobby-ai-seats")) { LobbyAiSeatSmoke.Run(paths, size); return 0; }
+            if (args.Contains("--smoke-lobby-three-player")) { LobbyThreePlayerSmoke.Run(paths, size); return 0; }
             var engine = new ForgeEngine(paths);
             if (args.Contains("--smoke-deck-experience"))
                 (PlayPreferences.Load(profile) with { TextScale = 1.3f, Automatic = false, Sounds = false }).Save(profile);

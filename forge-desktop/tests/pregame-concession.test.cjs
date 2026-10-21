@@ -99,8 +99,11 @@ for (const transport of transports) test(`pregame concessions preserve the Comma
         await concede(seat, sessionId, record);
       }
     }
-    const finished = await until(current => current.filter(Boolean).every(state => state.status === 'finished' && state.result) && current,
-      'Pregame concessions did not produce a normal game result');
+    // Network result and player-loss views arrive independently. Require the
+    // complete terminal state before checking it; never resend a concession.
+    const finished = await until(current => current.filter(Boolean).every(state => state.status === 'finished' && state.result
+      && state.prompt === null && state.players.filter(player => !player.eliminated).length === 1) && current,
+      'Pregame concessions did not settle to a single surviving player and cleared decisions');
     for (let seat = 0; seat < clients.length; seat++) {
       if (disconnected.has(seat)) continue;
       assert.equal(finished[seat].result, seat === winner ? 'Victory' : 'Defeat');

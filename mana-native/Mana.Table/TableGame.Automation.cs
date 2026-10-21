@@ -110,6 +110,8 @@ internal sealed partial class TableGame
         internal void SaveWorkshopNote(string testId, string note) => game.SaveWorkshopTestNote(game.workshopTests.First(t => t.Id == testId), note);
         internal void ConcedeWorkshop() => game.ReturnToWorkshop();
         internal Lobby? Lobby => game.lobby;
+        internal bool LobbyAiSeatControlsAvailable => game.CanManageLobbySeats;
+        internal void PresentLobby(Lobby state, bool pausePolling) { game.lobby = state; game.nextPoll = pausePolling ? double.MaxValue : game.now; }
         internal void ImportDeck(string name, string text) => game.ImportDeck(() => game.engine.ImportAsync(name, text), true);
         internal SoloSetup? SoloSetup => game.soloSetup;
         internal int[] SoloChoices => game.soloChoices;
@@ -122,6 +124,8 @@ internal sealed partial class TableGame
         internal bool Automatic => game.automatic;
         internal bool Held => game.held;
         internal PublicCounterBadge? CounterBadge(int player) => game.publicCounterBadges.TryGetValue(player, out var badge) ? badge : null;
+        internal AttachmentBadgePaint? AttachmentBadge(string id) => game.attachmentBadges.TryGetValue(id, out var badge) ? badge : null;
+        internal IReadOnlyList<AttachmentConnection> AttachmentConnections => game.attachmentConnections;
         internal bool WelcomeOpen => game.welcomeOpen;
         internal bool TableGuideOpen => game.tableGuideOpen;
         internal bool ExperienceOpen => game.ExperienceOpen;

@@ -11,6 +11,16 @@ and matches. Communication uses private stdin/stdout JSON pipes; there is no HTT
 server. Read the [architecture](../docs/Development/Mana-Table-Architecture.md)
 and [engine API](../forge-api/README.md) before extending that boundary.
 
+In a hosted lobby, the host can Add AI to an open seat, select an offered
+format-compatible deck, or Open for friend before starting. Guests see the AI
+and its deck without seat-management controls. Three human players plus one AI
+can start a four-seat Commander game; human seats still choose decks and ready
+normally. Connected humans cannot be replaced, and mid-game AI takeover is not
+supported. AI choices are the bundled opponents/precons, not arbitrary saved lists.
+For three people without AI, set **Total seats** to **3**. Commander supports
+2–6 seats in this client. The host can reduce the total when removed seats are
+unoccupied; saved decks remain selected and people ready again after a change.
+
 ## Prerequisites
 
 - Git, **JDK 17+**, **Maven 3.8.1+**, **Node.js 22.12+** with npm.

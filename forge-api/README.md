@@ -14,11 +14,10 @@ through private stdin/stdout JSON pipes. The host provides deck persistence,
 practice, AI games and multiplayer seats. Build with `mvn -pl forge-api -am verify`;
 the executable engine is `forge-api/target/forge-engine.jar` from the repository root.
 
-This page describes current `master`. [PR 7](https://github.com/proflayton/Mana-Table/pull/7)
-is still pending: public player counters and ordinary anonymous battlefield stats,
-explicit decision ownership and event outcomes, native recovery controls, full-list
-bundled eligibility, read-only tested-version comparison and recommendation reopening
-must not be assumed available in this baseline.
+This page describes the checked-out source. Packages identify their exact source
+in `SOURCE.txt` and `build.json`; an older installer may expose a smaller contract.
+New public-state and deck-review fields are additive. Clients must preserve the
+engine's visibility and decision scope rather than deriving permissions from them.
 
 ## Implemented
 
@@ -29,7 +28,7 @@ must not be assumed available in this baseline.
 | `DeckImport.preview(text)` | Forge's existing deck recognizer with line-numbered problems; imports cannot silently discard unresolved rows |
 | `DeckEditor.apply(revision, edits)` | Atomic batches of absolute quantities across deck sections; stale writes fail |
 | `DeckEditor.undo/redo(revision)` | Bounded history, monotonically increasing revisions |
-| `DeckEditor.validate(format)` | Forge's structural deck validation plus current issues with codes, sections and affected printing IDs; not Standard/Modern set or ban-list legality |
+| `DeckEditor.validate(format)` | Structural checks plus available bundled format eligibility across the playable list; separate `structureValid` and `eligibility`, with card-linked issues; no live tournament-legality claim |
 | `DeckEditor.toDeck()` | Detached Forge deck for existing persistence and match setup |
 | `DeckCommanders.choices/set(...)` | Rules-authorized commander/partner choices and atomic, persistent section moves; `setCommanders` requires deck ID and revision |
 | `DeckInsights.analyze(...)` | Read-only role estimates and explained suggestions from a small offline candidate pool |
@@ -137,6 +136,27 @@ listener and its UPnP service. Mapping callbacks from an older hosting attempt
 cannot update a newer lobby's status. Router acknowledgement does not prove
 external reachability; the UI must not label it as a successful internet test.
 
+`multiplayerConfigure {tableId, format, playerCount}` changes the current host's
+setup before a game. The table ID is required to reject stale controls from an
+earlier lobby. Commander supports 2–6 seats in the API; three human players can
+use three seats without AI. Reducing the count cannot remove a connected human.
+Selected human decks remain when the format is unchanged, but people must ready
+again. Compatible AI choices remain ready; changing format clears them.
+
+`multiplayerSetSeat {tableId, seat, type, opponentId?}` changes an open or AI seat
+before a game. `seat` is its zero-based slot index, `type` is `AI` or `OPEN`, and
+`opponentId` selects one of the lobby's compatible `aiOpponents` (`id`, `name`,
+`description`); omitted AI choice uses the default. Only the host may call it,
+against the current table ID, and seat zero or a connected human is never
+replaceable. The host validates the selected deck with the same deck checks as
+other match setup. Arbitrary saved AI decks and mid-game takeover are unsupported.
+
+Lobby slots add `type: AI` and `opponentId`, retain their public `deck` name, and
+report AI readiness automatically. AI slots do not claim a human connection;
+joining takes an open human seat. Changing AI choices leaves human readiness
+unchanged. Match start uses actual Forge AI controllers with the selected decks.
+Returning after a game preserves AI decks/readiness while humans ready again.
+
 ### Deck commands
 
 `DesktopEngine` reads newline-delimited UTF-8 JSON from its private stdin:
@@ -151,7 +171,7 @@ correlates request IDs and records diagnostics in the active profile's log.
 | `deckInsights` | Current deck ID/revision, color identity, estimated main-deck role counts, per-card roles and explained suggestions; no mutation |
 | `deckAnalysis` | `{deckId, revision}`; strategy profile, conditional card functions, metrics, engine dependencies, explained paired swaps, and versioned review history |
 | `analysisProfile` | `{deckId, revision, metadataRevision, fingerprint, profile}`; save shared goals and favorites separately from the playable list and recompute the review |
-| `analysisReview` | `{deckId, revision, metadataRevision, fingerprint, recommendationId, decision, note}`; record a recommendation decision or manual playtest observation |
+| `analysisReview` | `{deckId, revision, metadataRevision, fingerprint, recommendationId, decision, note}`; `consider`, `keep`, `dismiss`, `reopen`, `tested`, or a manual `observation` with no recommendation ID |
 | `analysisConsider` | Same version guards and recommendation fields as `analysisReview`; save the suggestion to Considering and return `{analysis, workshop}` together |
 | `list`, `open` | List saved decks; open by `{id}` |
 | `new` | `{name, format}`; create a saved deck |
@@ -168,6 +188,8 @@ correlates request IDs and records diagnostics in the active profile's log.
 | `workshop` | `{deckId, revision}`; durable playable-content version, plan/question, roles, pins, Considering, source link, history and draft-safe estimates |
 | `workshopMetadata` | `{deckId, revision, metadataRevision?, plan?, question?, roles?, considering?}`; optimistic metadata edits; roles may overlap and Considering never enters a game |
 | `workshopRestore` | `{deckId, revision, versionId}`; restore immutable played contents while preserving current notes and source link |
+| `workshopInspectVersion` | `{deckId, revision, versionId}`; inspect a saved list and compare playable quantities with the current list without restoring or saving |
+| `workshopInspectTest` | `{deckId, revision, testId}`; inspect the exact frozen played list and compare it with the current list without mutation |
 | `workshopMove` | `{deckId, revision, metadataRevision, cardId, to, cutCardId?}`; move Main/Considering or swap one candidate for one main-deck card as one durable transaction |
 | `workshopSourcePreview` | `{url}`; bounded public Archidekt fetch, mapping preview, categories and excluded rows; no deck mutation |
 | `workshopSourceRefresh` | `{deckId, revision}`; fetch linked source and compare accepted baseline, current local deck and remote contents |
@@ -189,6 +211,19 @@ deck. Durable versions remain available after restarting, when transient undo
 history is no longer present. Duplication copies the current workspace and source
 baseline into a fresh history without copying another deck's test records.
 
+`DeckVersionView` returns `versionId`, `name`, saved `format`, `currentFormat`,
+saved `entries` and `differences` (`section`, `card`, `saved`, `current`).
+Differences compare rules-card names and quantities within each section;
+alternate-printing changes are not tuning changes. Inspection requires the
+active deck ID/revision and does not create a version or change the current list.
+
+Validation returns `structureValid` independently of `eligibility`, which is
+`bundled-rules`, `failed`, or `unknown`. Bundled checks cover every actual deck
+section and sum restricted copies across sections and printings; Considering is
+metadata outside the playable list. Missing rules and generic Constructed remain
+unknown. Match setup uses the same validation as the editor. A structurally valid
+list with unknown eligibility is not presented as verified tournament legality.
+
 Archidekt integration reads public decks only. Original source JSON preserves
 printing, finish, categories, notes and excluded cards; unmapped rows block import
 instead of disappearing. Refresh never overwrites the local deck before a preview
@@ -196,6 +231,11 @@ is accepted. Independent quantity changes can merge; conflicting edits require a
 choice, and an unchanged source does not manufacture a gameplay version. Source
 checking requires no account credentials. Returning changes to Archidekt uses deck
 export and opening the source site; authenticated remote write-back is not provided.
+The native confirmation lists every affected quantity before applying a choice,
+including local-only and Considering rows, and explains source-baseline changes.
+A separate-copy confirmation lists the complete source copy. Reviewing, paging
+and canceling do not mutate the deck; applying still requires a valid preview token
+and unchanged deck, editor revision and source/metadata baseline.
 Archidekt's separate 1v1 Commander and Duel Commander formats block import with an
 explanation; they are not converted into regular 40-life Commander games.
 
@@ -277,10 +317,12 @@ from a network/renderer thread. Cache and publish the immutable snapshot instead
 Hidden zones publish counts and only cards Forge allows the viewer to see. Unseen
 hand/library cards receive no persistent correlation IDs or positional placeholders.
 `GameStateMapper` redacts face-down identity, type, mana cost and power/toughness,
-even for the controller. Ordinary `MatchSession` cards likewise mask the printed
-face and current type/P/T in this baseline; anonymous battlefield occurrences can
-retain an opaque `combatId`. Allocation snapshots of anonymous battlefield cards
-include public current characteristics while masking name, text, mana and alternate identities.
+even for the controller. The richer `MatchSession` battlefield and allocation
+projections preserve public current type, power/toughness, marked damage and
+combat keywords on anonymous permanents while masking printed identity, rules
+text, mana, artwork and alternate faces. Anonymous battlefield occurrences can
+retain an opaque `combatId`; that ID never authorizes an action or identifies a
+hidden card outside its current public occurrence.
 Scoped selection keys authorize input; presentation IDs do not. The original
 `GameStateMapper` excludes stack
 entries, combat assignments, attachments, counters, mana pools, temporary reveal
@@ -310,6 +352,28 @@ stack, combat flags, counters, mana, and transient reveal choices. Card handles
 are scoped to a prompt; the renderer never receives hidden card IDs or raw logs.
 The original `GameStateMapper` remains a smaller projection for other consumers.
 
+`MatchSession` players include a `counters` map of positive public counter totals.
+Public `priorityPlayerId`, `decisionOwnerId` and `actionClass` distinguish priority,
+a required choice, simultaneous choices and resolution. They do not disclose
+another seat's private prompt or legal options. Stack entries include
+`controllerId`; a decision with a visible source may include `sourceCard` and
+`sourceControllerId`. The optional partner-search confirmation retains that source
+so clients can explain whose effect is asking, without choosing a recipient.
+
+Activity entries add `outcome` (`resolved` or `notResolved` for a resolution) and
+`count` (positive actual draw/shuffle events). Library-to-hand movement alone is
+`moved`, not proof of a draw. Clients must not guess a missing outcome from prose
+or animate an untyped movement as a draw. Event IDs deduplicate presentation;
+neither these events nor public role fields change legal input permissions.
+
+Battlefield cards include `attachedTo` (a card reference or null) and `attachments`
+(an array of card references). Each reference has `id`, `name`, and `type`; `id`
+matches the referenced card's opaque `combatId`, including face-down permanents.
+Face-down references use `Face-down permanent` and an empty type. Relationships
+include only visible battlefield occurrences and are rebuilt on each snapshot;
+phasing retains the public relationship. Older native snapshots default to no
+attachment and an empty attachment list.
+
 Match card snapshots include the public boolean `phasedOut`, including on
 face-down permanents. The card keeps its battlefield position and visual identity
 while phased out. Clients display this state directly; they must not infer it
@@ -331,6 +395,8 @@ The private desktop transport exposes:
 | `matchAction` | `{sessionId, promptId, ...answer}`; replies once to the current prompt |
 | `matchConcede` | `{sessionId}`; concedes this seat without editing the deck; other human seats continue |
 | `multiplayerReconnect` | Resumes an interrupted TCP connection to its existing seat while the host remains alive |
+| `multiplayerSetSeat` | `{tableId, seat, type: "AI" / "OPEN", opponentId?}`; host-only setup operation on an open/AI slot |
+| `multiplayerConfigure` | `{tableId, format, playerCount}`; host-only setup changes, preserving occupied human seats and rejecting stale table IDs |
 
 Input answers use `action: ok/cancel/attackAll/card/player`, with `key` for a
 visible card or `playerId` for a player. Dialog answers use `choices` (indices in
@@ -353,11 +419,11 @@ state is projected at input boundaries, never read live by the IPC request loop.
 `activity` retains the latest 120 viewer-filtered event summaries with increasing
 IDs, turn/phase, kind, actor or affected player, and a message. Permitted resolution
 details copy the engine's stack description and visible spell text; raw event
-objects and logs are never exported. In this baseline, `kind: resolved` also covers
-non-resolution: retain its actual message instead of assuming success. The legacy
-`draw` kind means a library-to-hand move, which may be a tutor rather than a rules
-draw, and omits the card identity. There is no explicit public shuffle summary yet.
-During `resolving`, polling may
+objects and logs are never exported. A `resolved` entry's typed `outcome`
+distinguishes resolution from non-resolution. Actual `draw` and `shuffle` entries
+carry positive counts and omit hidden card identities; a library-to-hand move
+without a draw event remains `moved`. Older untyped entries cannot establish an
+outcome or a true draw merely from their kind or prose. During `resolving`, polling may
 advance `revision`, turn/phase metadata, and activity while keeping the last stable
 board. `boardRevision` changes only when a fresh board snapshot is published.
 Clients can update status and history without rebuilding cards during AI work.
@@ -605,9 +671,12 @@ win-rate statistics.
 
 The `consider` decision saves the proposed addition in shared Considering and
 records the reason in one metadata transaction. `analysisConsider` returns both
-updated views for clients that display them together. Other decisions record
-review notes. Suggested swaps are previews; changing the playable list uses the
-existing workshop move or paired-swap operation.
+updated views for clients that display them together. `decisions` contains the
+latest entry per recommendation for the current playable fingerprint. Keep,
+Dismiss and Tested remain reviewed until Reopen; historical entries remain in
+`history` when a changed playable list starts its own review. An `observation`
+requires a nonempty manual note. Suggested swaps are previews; changing the
+playable list uses the existing workshop move or paired-swap operation.
 
 A profile contains `rulesFormat`, `strategy`, `plan`, `backup`, `pace`,
 `targetTurn` (0 means automatic), `protectedCards`, and `pool` (available addition
@@ -615,8 +684,17 @@ names for Limited). Strategies are unspecified, aggro, midrange, control, combo,
 landfall, and artifact-recursion. Paces are relaxed, balanced, and fast. Empty
 rules format uses the saved deck's format. Constructed analysis may select
 Standard, Pioneer, Modern, Legacy, Vintage, or Pauper. Commander and Limited
-retain their saved deck structure. Limited never recommends outside its supplied
-pool. Pool membership is name-based; inventory quantity is not modeled yet.
+retain their saved deck structure. Limited uses supplied pool names plus unused
+Sideboard cards, and never treats Considering as owned inventory. Pool membership
+is name-based; inventory quantity is not modeled yet.
+
+Defaults produce a review without a plan, strategy label or profile write.
+An automatic land target uses the highest positive commander mana value,
+otherwise the first three land drops, including for zero-mana-value commanders.
+Explicit positive targets override it. Probability assumptions disclose the target
+source; inferred values are not persisted as player choices. Actionable checks
+precede rules notes. Clients offer optional preferences as direct questions, with
+missing-pool and unspecified-Constructed-format questions beside the review.
 
 The report separates functions and requirements from raw counts. Lands may also
 have draw functions; cast-triggered draw is distinct from entering or dying.
@@ -628,11 +706,12 @@ They never edit the deck. Generic efficiency comparisons and the Toph case study
 are curated examples, not exhaustive ranking of the card catalog.
 
 The optional `DeckAnalysisFormats` adapter reads shipped Forge format definitions
-without FModel. It excludes ineligible additions and handles restricted-copy
-limits. Eligibility is explicitly unknown without that data, and the bundled
-snapshot is not a claim of live tournament legality. Generic Constructed has no
-specific tournament eligibility assertion. Missing prices, matchup statistics,
-alternate casting routes, and unsupported interactions are not invented.
+without FModel. The editor uses the same rules for full-list checks, and analysis
+excludes ineligible additions and handles restricted-copy limits. Eligibility is
+explicitly unknown without that data; the bundled snapshot is not a claim of live
+tournament legality. Generic Constructed has no specific tournament eligibility
+assertion. Missing prices, matchup statistics, alternate casting routes and
+unsupported interactions are not invented.
 
 The land probability is an exact hypergeometric land-count calculation under
 shown assumptions: seven-card keep; on the play for two-player Constructed and

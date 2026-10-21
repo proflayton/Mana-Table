@@ -110,6 +110,30 @@ installer with a separate smoke-test application identity. It tests installation
 reinstallation, bundled Java, client startup and uninstall while retaining a saved
 profile sentinel. It never installs the production app or uses the normal profile.
 
+## Verify a published native handoff
+
+Use the release tag's commit and its completed master workflow run as the source
+of truth. A green PR run, an uploaded Actions artifact or an unpublished draft
+does not establish that the public download contains the final merged source.
+
+- Download Setup, portable ZIP, complete-source ZIP, their checksum files and
+  `installer-manifest.json` from that release. Verify all three SHA256 values.
+- Extract the portable ZIP into a new directory. Check `build.json` version,
+  `sourceRevision` and production flag against the tag and workflow. Compare its
+  engine hash with `engine/forge-engine.jar` and its recorded client hashes with
+  the corresponding DLLs. Check `SOURCE.txt` identifies the same revision.
+- Verify the update manifest's version, source, architecture, installer protocol,
+  installer byte count and SHA256 against the downloaded Setup executable.
+  Check the source ZIP matches the committed release tree.
+- Start the extracted app with a fresh isolated `--profile`, wait for the real
+  process exit and retain startup evidence. Run the installer lifecycle and
+  update-handoff tests with their separate smoke identity before handoff; do not
+  use a player's installed app as the test destination.
+
+Retain the release URL, exact source SHA, workflow run, download hashes and test
+evidence together. If master advances during publication, verify which revision
+actually became public before sharing the permanent Latest link.
+
 ## Native preview packages
 
 `mana-native/package.ps1 -EngineResources <existing-package>/engine` publishes the

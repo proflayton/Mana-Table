@@ -35,13 +35,32 @@ The IPC ready message publishes protocol version and capabilities. `Mana.Forge`
 checks both. Snapshots retain publication and board revisions; prompt handles
 remain scoped capabilities, separate from opaque card presentation identities.
 
+Public role fields distinguish the priority holder, a required decision owner,
+simultaneous choices and resolution without exposing another seat's private
+options. Stack controllers and visible decision sources let the client name
+the actor and explain the current choice. Named recipient buttons use exactly
+the same scoped player handles as portraits; the client never chooses one itself.
+
 ## Native client boundaries
 
-The normal native Commander setup hosts four seats or starts one human with
-three Forge AI opponents. The builder's Test workspace offers two- or four-seat
-Commander experiments. Existing non-Commander decks use a two-seat AI setup.
+The normal native Commander setup defaults to four seats or starts one human with
+three Forge AI opponents. A friends' host can choose two, three or four seats;
+three humans can play without filling a fourth seat. The builder's Test workspace
+offers two- or four-seat Commander experiments. Existing non-Commander decks use
+a two-seat AI setup.
+The host of a friends' table can fill open seats with AI using the same compatible
+opponent catalog, including a three-human/one-AI Commander game. AI slots are
+separate from occupied human connections, show the chosen deck to every guest,
+and ready automatically. Only the host can switch open/AI slots before play;
+human readiness survives AI deck changes. Return-to-lobby keeps those AI choices
+while humans ready again. Connected humans and mid-game departures cannot be
+replaced by this control.
+Changing total seats uses a separate host/setup operation bound to the current
+table ID. It cannot remove an occupied human slot. Same-format changes preserve
+selected decks and reset human readiness; compatible AI stays ready. The backend
+does not renumber connected seats to fill a gap.
 The API and Electron client expose broader format/seat configuration, including
-two through six Commander seats; that is not a native lobby size selector.
+two through six Commander seats. The native lobby's size controls stop at four.
 
 Every native launch moves from startup into a main menu with AI, friends and deck entry points.
 These routes reuse the existing deck picker, review and readiness gates; choosing
@@ -86,6 +105,16 @@ off as soon as they finish. Failure surfaces retain the destination and require 
 explicit Back or startup Retry. Retry reuses a healthy Forge process or drains a
 failed process and its reader tasks before creating a new process generation.
 
+`ClientSession` retains the last accepted replica and its synchronization time
+after a failed request or a stalled poll. `NeedsRecovery` blocks commands and
+Auto until an ordered fresh state arrives, while inspection remains available.
+The recovery dock shows the age, reconnect state and whether the last action's
+acknowledgement is uncertain. Reconnection observes the authority rather than
+resubmitting that action. Queued priority-setting changes wait for recovery.
+Local action failures remain acknowledged until dismissed or a new action starts;
+a successful background poll does not erase them. Host/guest departure confirms
+its consequence; an eliminated seat can watch or leave.
+
 | Project | Responsibility |
 | --- | --- |
 | `Mana.Contracts` | Catalog, deck, setup and match-connection interfaces; typed seat snapshots and commands; visibility enumeration and art-source contract |
@@ -101,8 +130,9 @@ failed process and its reader tasks before creating a new process generation.
 Current native source uses `BattlefieldLayout` to include every projected
 battlefield occurrence, with ordered groups and exposed individual hit regions.
 Its compatibility rank views do not page the battlefield. Long hands and
-selection/inspection galleries still page. Installers through 0.2.37 have the
-older paged battlefield layout.
+selection/inspection galleries still page. Release 0.2.39 includes this layout
+from revision `c11a3094be6c95ba1bddbafbe54aa7ad8fe3a7db`; inspect package metadata
+before attributing later source behavior to an installed release.
 Painting and input use the same displayed pose. Card names never identify an
 occurrence. Client inspection, effects and interactions enumerate the same allowed
 views, so revoked information is removed consistently. Artist image loading is
@@ -143,6 +173,30 @@ Commander in one `DeckEditor` batch; replacing a commander returns the old card
 to Main. Duplicating creates a separate persisted deck with identical printings.
 The same saved list feeds solo and network setup. Validation remains authoritative
 in Forge, and invalid or unsaved decks cannot enter setup.
+
+Deck validation separates structural conformance from bundled format eligibility.
+The editor, analysis candidate filter and match setup use the shipped format
+definitions when available, with restricted-copy totals across printings and
+playable sections. Considering is outside the playable list. Missing format data
+stays unknown, and a successful bundled check does not assert live tournament
+legality.
+
+The native Build, Analyze, Test and Results tabs share one saved deck and workshop
+metadata. Analysis starts with useful defaults and exposes optional preferences
+as questions. Its automatic land target uses the highest positive commander
+mana value or turn three; an explicit player target takes precedence. Limited
+availability combines entered pool names and unused Sideboard cards, excluding
+Considering. Inferred defaults are explained without being saved as player choices.
+
+Recommendation review retains the latest decision per suggestion and playable
+fingerprint; Reopen returns it to undecided without deleting history. Results
+retain the frozen list from each test. Read-only saved-list inspection and
+section/name quantity comparisons never restore or save a deck. Question answers
+remain the player's notes alongside observed aggregates. Each workshop dialog
+owns its page state, so background lists cannot reset a source or history review.
+Archidekt import/manual refresh requires a whole-list confirmation of quantities
+and source-baseline effects before an existing token-guarded application. It
+does not authenticate, continuously synchronize or write back to Archidekt.
 
 `TableGame.LobbyFlow` separates selecting, confirming, readying and starting.
 The deck chooser and the builder return to a shared review of commander faces,
@@ -224,6 +278,17 @@ types fit on a resting card, with an overflow count; enlargement shows named
 counters and current state beside the face, and the inspector paginates the
 complete details. Power/toughness always comes from the engine and is never
 recomputed by adding the displayed counters.
+Public player counters use a persistent seat badge with complete named totals
+in the player inspector. Poison is prioritized, and an explicit extra-types count
+replaces a summary that cannot fit. The same cached font metrics used for painting
+bound the badge at the saved 100%, 115% or 130% text size.
+
+Public attachment references link visible battlefield occurrences by opaque
+`combatId`, with face-down names/types redacted. Native badges, hover connectors
+and inspection show those relationships without treating attached cards as one
+occurrence or recalculating the host's current characteristics. Grouping preserves
+attachment differences so identical card names do not hide separate equipped
+states. Phasing retains the public relationship; leaving visible zones removes it.
 Current combat keywords drive distinct markers for flying, reach, trample,
 first/double strike, deathtouch, lifelink, menace, vigilance and indestructible.
 Summoning sickness has an hourglass marker. Flying raises the same card pose
@@ -283,6 +348,10 @@ The renderer draws direct target arrows, marks the exact occurrence and shows a
 spell/ability callout. `MatchActivity` retains public resolution descriptions and
 spell rules, plus token arrival names; `ActionFeedback` exposes a timed summary
 and reviewable details. Recent changes are reported without inferring causality.
+Typed resolution outcomes distinguish resolved from not resolved. Actual public
+draw/shuffle events supply counts; a library-to-hand movement alone does not
+produce a draw cue. Repeated snapshots do not replay those event IDs, and absent
+legacy outcome data remains unspecified rather than inferred from message text.
 New public battlefield occurrences receive arrival cues. Departures to public
 graveyard/exile retain a brief ghost at the former position; hidden transitions
 immediately revoke it. No extra game rules or multiplayer-specific path is added.

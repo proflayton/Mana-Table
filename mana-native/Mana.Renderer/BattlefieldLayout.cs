@@ -76,5 +76,6 @@ public static class BattlefieldLayout
         : string.Join("\u001f", c.Name, c.ArtFace, c.Type);
     private static string StateKey(Card c) => string.Join("\u001f", c.Name, c.ArtFace, c.Type, c.ManaCost, c.Text, c.Power, c.Toughness, c.Damage,
         c.Tapped, c.PhasedOut, c.Sick, c.FaceDown, c.Attacking, c.Blocking, c.DefenderId, c.Defender,
-        string.Join(',', c.CombatKeywords.Order(StringComparer.Ordinal)), string.Join(',', c.Counters.OrderBy(v => v.Key, StringComparer.Ordinal)));
+        string.Join(',', c.CombatKeywords.Order(StringComparer.Ordinal)), string.Join(',', c.Counters.OrderBy(v => v.Key, StringComparer.Ordinal)),
+        c.AttachedTo?.Id, string.Join(',', c.Attachments.Select(a => a.Id).Order(StringComparer.Ordinal)));
 }

@@ -10,10 +10,11 @@ internal sealed partial class TableGame
     private string? confirmedDeckId;
     private bool pickerPresets, setupSelectAll;
     private int connectionPage;
+    private int friendPlayerCount = 4;
     private bool Connected => lobby is { Mode: not "idle" };
     private Seat? LocalSeat => lobby?.Seats.FirstOrDefault(s => s.Local);
     private bool DeckConfirmed => DeckReady && confirmedDeckId == selectedDeckDetails?.Id;
-    private string LobbyScope => $"{DeckScope}:{setupModal}:{soloTab}:{pickerPresets}:{deckPage}:{pickerSearch}:{pickerSeat}:{reviewList}:{reviewSearch}:{reviewSection}:{reviewPage}:{reviewCard?.Section}:{reviewCard?.Id}:{connectionPage}:{confirmedDeckId}:{lobby?.Mode}:{LocalSeat?.Ready}:{lobby?.CanStart}:{string.Join(',', soloChoices)}";
+    private string LobbyScope => $"{DeckScope}:{setupModal}:{soloTab}:{pickerPresets}:{deckPage}:{pickerSearch}:{pickerSeat}:{reviewList}:{reviewSearch}:{reviewSection}:{reviewPage}:{reviewCard?.Section}:{reviewCard?.Id}:{connectionPage}:{confirmedDeckId}:{friendPlayerCount}:{lobby?.TableId}:{lobby?.Mode}:{LocalSeat?.Ready}:{lobby?.CanStart}:{string.Join(',', soloChoices)}:{lobbyAiSeat}:{lobbyAiPage}:{string.Join(';', lobby?.Seats.Select(s => $"{s.Index}:{s.Type}:{s.OpponentId}:{s.Ready}") ?? [])}";
     private void InvalidateDeckConfirmation() { confirmedDeckId = null; }
     private void SetupMode(bool solo) { if (soloTab != solo) InvalidateDeckConfirmation(); soloTab = solo; setupModal = ""; }
     private void OpenDeckPicker() { pickerPresets = decks.Count == 0; pickerSeat = -1; pickerSearch = ""; deckPage = 0; setupModal = "decks"; textFocus = false; }
@@ -75,7 +76,7 @@ internal sealed partial class TableGame
     private void StartFriends()
     {
         if (!DeckConfirmed || LocalSeat?.Ready != true || lobby?.CanStart != true) return;
-        Work(async () => { await engine.StartAsync(); var state = await engine.ObserveAsync(); updates.Enqueue(() => { setupModal = ""; Accept(state); }); }, "Starting Commander", "Bringing all four players to the table.", scene: true);
+        Work(async () => { await engine.StartAsync(); var state = await engine.ObserveAsync(); updates.Enqueue(() => { setupModal = ""; Accept(state); }); }, "Starting Commander", $"Bringing all {lobby.Seats.Length} players to the table.", scene: true);
     }
     private void ConnectLobby(bool hosting)
     {
@@ -83,7 +84,7 @@ internal sealed partial class TableGame
         if (!hosting && address.Length == 0) return;
         string? deckId = DeckConfirmed ? selectedDeck?.Id : null;
         Work(async () => {
-            var state = hosting ? await engine.HostAsync(4, forward) : await engine.JoinAsync(address);
+            var state = hosting ? await engine.HostAsync(friendPlayerCount, forward) : await engine.JoinAsync(address);
             // Publish a successful connection even if submitting its deck later fails.
             updates.Enqueue(() => { lobby = state; soloTab = false; setupModal = ""; textFocus = false; InvalidateDeckConfirmation(); });
             if (!string.IsNullOrWhiteSpace(preferences.PlayerName) && engine is ITableSocial social) {
@@ -95,7 +96,7 @@ internal sealed partial class TableGame
                 updates.Enqueue(() => { lobby = selected; confirmedDeckId = deckId; });
             }
             updates.Enqueue(() => message = hosting ? "Table open. Invite your friends." : "You joined the table. Confirm your deck and ready up.");
-        }, hosting ? "Opening your table" : "Joining your friends", hosting ? "Preparing four seats and your table connection." : "Connecting to the table from your invite.", scene: true);
+        }, hosting ? "Opening your table" : "Joining your friends", hosting ? $"Preparing {friendPlayerCount} seats and your table connection." : "Connecting to the table from your invite.", scene: true);
     }
     private void LeaveLobby() => Work(async () => {
         await engine.LeaveAsync(); updates.Enqueue(() => { lobby = null; InvalidateDeckConfirmation(); setupModal = ""; message = "You left the table."; });

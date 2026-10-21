@@ -13,6 +13,7 @@ internal sealed partial class TableGame
     private static readonly Color ActionAccent = new(115, 220, 255);
     private void DrawArena()
     {
+        attachmentBadges.Clear(); attachmentConnections.Clear();
         var state = match!;
         DrawTableSurface();
         // Queue the player's faces first; slow remote downloads must not bury the hand.
@@ -22,7 +23,7 @@ internal sealed partial class TableGame
         foreach (int i in new[] { 1, 0, 2 }) if (i < opponents.Length) DrawOpponent(opponents[i], i);
         if (state.Viewer is { } viewer) DrawLocal(viewer);
         for (int i = 0; i < opponents.Length && i < 3; i++) DrawHero(opponents[i], TableLayout.Hero(i), false, i);
-        DrawCombatConnections(); DrawStack(); DrawSeatTransfers();
+        DrawCombatConnections(); DrawAttachmentConnections(); DrawStack(); DrawSeatTransfers();
         DrawHand(); DrawCardEffects(); DrawDepartures(); DrawLiftedCards();
         // Your seat stays in front of the fan and readable during card travel.
         if (state.Viewer is { } local) DrawHero(local, TableLayout.Hero(3), true, 3);
@@ -131,7 +132,7 @@ internal sealed partial class TableGame
         }
         if (CombatTarget(card)) canvas.CardFrame(pose with { Size = pose.Size + new Vector2(10) }, Blue, 4);
         bool creature = CardPresentation.HasCombatStats(card);
-        if (zone == "Battlefield" && (groupFront || focus) && (card.PhasedOut || creature || card.Counters.Count > 0 || card.Damage > 0 || card.CombatKeywords.Length > 0)) {
+        if (zone == "Battlefield" && (groupFront || focus) && (card.PhasedOut || creature || card.AttachedTo != null || card.Attachments.Length > 0 || card.Counters.Count > 0 || card.Damage > 0 || card.CombatKeywords.Length > 0)) {
             if (compact && pose.Size.X < 300) {
                 PaintCompactState(card, pose, owner);
             } else {
@@ -160,6 +161,9 @@ internal sealed partial class TableGame
             canvas.Panel(badge, new(25, 37, 42), Gold, 4);
             canvas.CenterText("×" + groupCount, badge, Gold, .52f, true);
         }
+        // Paint the relationship marker after combat stats so the small corner
+        // indicator remains visible on densely packed projected card faces.
+        if (zone == "Battlefield" && (groupFront || focus)) PaintAttachmentBadge(card, pose, owner, compact && !focus);
     }
     private void PaintCard(Card card, Pose pose, bool selected, bool legal, bool focus = false, float opacity = 1)
     {

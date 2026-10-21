@@ -1,6 +1,7 @@
 package forge.api;
 
 import forge.deck.Deck;
+import forge.ai.LobbyPlayerAi;
 import forge.game.*;
 import forge.game.player.RegisteredPlayer;
 import forge.gui.interfaces.IGuiGame;
@@ -44,6 +45,13 @@ final class MatchTable implements ManaTableSession, AutoCloseable {
     static RegisteredPlayer human(Deck deck, String format, String name) {
         return (format.equals("Commander") ? RegisteredPlayer.forCommander(new Deck(deck)) : new RegisteredPlayer(new Deck(deck)))
                 .setPlayer(new LobbyPlayerHuman(name));
+    }
+
+    static RegisteredPlayer ai(Deck deck, String format, String name) {
+        var player = new LobbyPlayerAi(name, Set.of());
+        player.setAiProfile("Default");
+        return (format.equals("Commander") ? RegisteredPlayer.forCommander(new Deck(deck)) : new RegisteredPlayer(new Deck(deck)))
+                .setPlayer(player);
     }
 
     MatchSession seat(int index) {
