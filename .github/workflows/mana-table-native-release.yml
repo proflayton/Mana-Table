@@ -147,10 +147,12 @@ jobs:
           ./mana-native/package.ps1 -Release -Version $env:MANA_RELEASE_VERSION -OutputDirectory dist/package
           if ($LASTEXITCODE -ne 0) { throw 'Native packaging failed.' }
           Copy-Item forge-api/target/ci-engine-manifest.json dist/ci-engine-manifest.json
-      - name: Build and bind the native UI harness
+      - name: Build, check and bind the native UI harness
         run: |
           dotnet build mana-native/Mana.Table.Tests/Mana.Table.Tests.csproj -c Release -o dist/harness "-p:Version=$env:MANA_RELEASE_VERSION" "-p:InformationalVersion=$env:MANA_RELEASE_VERSION+$env:GITHUB_SHA" -p:IncludeSourceRevisionInInformationalVersion=false
           if ($LASTEXITCODE -ne 0) { throw 'Native regression harness build failed.' }
+          dotnet ./dist/harness/Mana.Table.Tests.dll --smoke-presentation --profile dist/presentation-checks
+          if ($LASTEXITCODE -ne 0) { throw 'Native presentation and public-feedback checks failed.' }
           $root = (Resolve-Path dist/harness).Path
           $files = @(Get-ChildItem -LiteralPath $root -File -Recurse | ForEach-Object {
             @{ path=$_.FullName.Substring($root.Length+1).Replace('\','/'); sha256=(Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash }

@@ -51,5 +51,53 @@ internal static class GameplayFeedbackChecks
         check(feedback.LastPublicOutcome?.Started == 6, "A search decline or unchanged snapshot cannot invent a shuffle event");
         feedback.Observe(events, events with { Id = "new-game" }, 9);
         check(feedback.Last == null && feedback.LastPublicOutcome == null, "A new game cannot inherit earlier resolution or public outcome cues");
+        CheckResolutionDraws(check, state);
+    }
+
+    private static void CheckResolutionDraws(Action<bool, string> check, GameSnapshot state)
+    {
+        var feedback = new ActionFeedback();
+        var draw = state with { Activity = [
+            new(1, state.Turn, state.PhaseKey, "moved", state.ViewerId, "Toothy moved from battlefield to hand.", null, null),
+            new(2, state.Turn, state.PhaseKey, "moved", state.ViewerId, "You moved a card from library to hand.", null, null),
+            new(3, state.Turn, state.PhaseKey, "draw", state.ViewerId, "You drew a card.", null, null) { Count = 1 },
+            new(4, state.Turn, state.PhaseKey, "moved", state.ViewerId, "You moved a card from library to hand.", null, null),
+            new(5, state.Turn, state.PhaseKey, "draw", state.ViewerId, "You drew a card.", null, null) { Count = 1 },
+            new(6, state.Turn, state.PhaseKey, "moved", state.ViewerId, "You moved a card from library to hand.", null, null),
+            new(7, state.Turn, state.PhaseKey, "draw", state.ViewerId, "You drew a card.", null, null) { Count = 1 },
+            new(8, state.Turn, state.PhaseKey, "resolved", state.ViewerId, "Toothy's ability resolved.", null, "Toothy") {
+                Outcome = "resolved", Detail = "Draw a card for each +1/+1 counter on Toothy." }] };
+        feedback.Observe(state, draw, 10);
+        check(feedback.LastPublicOutcome?.Started == feedback.Last?.Started,
+            "A resolution and its draw events can be published in the same observed frame");
+        check(feedback.Last is { Title: "Toothy's ability resolved.", Heading: "JUST RESOLVED" } resolved
+            && resolved.Detail.Contains("+1/+1 counter") && resolved.Changes.FirstOrDefault() == "You drew 3 cards."
+            && resolved.Changes.Count(c => c.Contains("drew")) == 1,
+            "The visible first resolution result retains the exact three-card draw batch and source instead of one deduplicated draw or an earlier zone move");
+        feedback.Observe(draw, draw with { Revision = draw.Revision + 1 }, 11);
+        check(feedback.Last?.Started == 10 && feedback.LastPublicOutcome?.Started == 10
+            && feedback.Last.Changes.FirstOrDefault() == "You drew 3 cards.",
+            "Reobserving a resolution does not replay, prolong or add its draw total again");
+        var unrelated = draw with { Activity = [.. draw.Activity,
+            new(9, state.Turn, state.PhaseKey, "resolved", state.ViewerId, "Sol Ring's ability resolved.", null, "Sol Ring") { Outcome = "resolved" }] };
+        feedback.Observe(draw, unrelated, 12);
+        check(feedback.Last is { Title: "Sol Ring's ability resolved.", Changes.Length: 0 }
+            && feedback.LastPublicOutcome?.Started == 10,
+            "An unrelated later resolution never inherits a cached draw total from a previous outcome");
+        var spell = unrelated with { Activity = [.. unrelated.Activity,
+            new(10, state.Turn, state.PhaseKey, "draw", 1, "Opponent drew cards.", null, null) { Count = 2 },
+            new(11, state.Turn, state.PhaseKey, "resolved", 1, "Divination resolved.", null, "Divination") { Outcome = "resolved" }] };
+        feedback.Observe(unrelated, spell, 13);
+        check(feedback.Last is { Title: "Divination resolved.", Changes.Length: 1 } spellResult
+            && spellResult.Changes[0].Contains("Seat 2 drew 2 cards."),
+            "A spell resolving in the same poll as a counted draw keeps the opponent's explicit total and seat");
+        var tutor = spell with { Activity = [.. spell.Activity,
+            new(12, state.Turn, state.PhaseKey, "moved", state.ViewerId, "A card moved from library to hand.", null, null),
+            new(13, state.Turn, state.PhaseKey, "resolved", state.ViewerId, "Search spell resolved.", null, "Search spell") { Outcome = "resolved" }] };
+        feedback.Observe(spell, tutor, 14);
+        check(feedback.Last is { Changes.Length: 1 } tutorResult
+            && tutorResult.Changes[0] == "A card moved from library to hand."
+            && feedback.LastPublicOutcome?.Started == 13,
+            "A library-to-hand move is never inferred to be a draw or given an older spell's counted draw result");
     }
 }
