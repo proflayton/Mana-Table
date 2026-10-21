@@ -131,7 +131,7 @@ acceptance.
 | A narrative panel followed each drag | Removed the generic drag prose; the held card, legal-drop outline and combat aim remain | Implemented |
 | The hand cursor also appeared over input-shield panel backgrounds | Shield-only battlefield, recipient and public-outcome panel backgrounds no longer advertise an action | Implemented |
 | Error or notice banners could cover the reader's former top action tab | Moved the tab to the stable bottom-left card edge, away from the top banner band; banner positions remain unchanged | Implemented |
-| A single text ability option still opens a tall gallery with search, paging and clear-selection controls | Replace that case with a compact contextual chooser; see `interaction-audit-source-preview.png` | Open |
+| A single text ability option opened a tall gallery with search, paging and clear-selection controls | Small single-select ability or casting-mode choices use a measured source-card panel without gallery chrome; longer, ordered and card-based choices retain their chooser | Implemented |
 | Card gestures vary between the board reader, zone inspection, choices and allocation details | Review these contexts together before changing the common gesture policy; a hand cursor alone does not explain whether a click reads, selects or acts | Open |
 
 Candidate verification: the Release build completed with no warnings or errors;
@@ -143,8 +143,12 @@ is under `.tools/render-refactor-integration-20261021`, including
 `interaction-audit-source-preview.png`, `interaction-audit-candidate-allocation`
 and `interaction-audit-candidate-priority`. Modal exits now measure their label
 width, including View battlefield at 130% text. These are mechanical results and
-agent visual inspection, **not human UX acceptance**. The compact ability chooser
-and broader gesture consistency remain open.
+agent visual inspection, **not human UX acceptance**. The compact chooser's
+130% source-inspection and cancellation journey is recorded in
+`ability-choice-reviewed-states/19-compact-ability-choice-window.png`. It retains the
+current 6/6 source and counters, stages the original option and requires an
+explicit confirmation; optional Cancel sends an empty choice. Broader gesture
+consistency remains open.
 
 Use one `1000x740` interactive window for the short review: `card-reading.v1`
 stages 0 and 3, `ordered-choice.v1`, `stack-priority.v1` stage 2, then

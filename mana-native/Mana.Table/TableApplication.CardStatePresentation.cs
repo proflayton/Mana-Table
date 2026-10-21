@@ -69,6 +69,7 @@ internal sealed partial class TableApplication
         int width = Math.Max(Measure(), Math.Min(maximum, creature ? 54 : 30));
         int counterRows = detailed ? Math.Min(4, counters.Length) : 0;
         int rowHeight = pose.Size.X >= 300 ? 26 : 21;
+        if (counterRows > 0) rowHeight = Math.Max(rowHeight, canvas.TextSize("Ag", size * .8f, maximum, 1, true).Y + 4);
         if (counterRows > 0) width = Math.Max(width, Math.Min(maximum, counters.Take(counterRows)
             .Max(counter => canvas.TextWidth(counter.Key + " ×" + counter.Value, size * .8f, true) + 12)));
         int total = height + counterRows * rowHeight;

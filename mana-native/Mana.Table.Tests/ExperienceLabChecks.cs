@@ -105,9 +105,13 @@ internal static class ExperienceLabChecks
                     && frame.Observe().Cards.Single(card => card.Id == "reader-elf" && card.Zone == "Battlefield").Counters.Single().Value == 2,
                     "The actual ordinary renderer displays the authoritative 3/3 body and retains its two-counter projection");
                 Click("lab-next");
-                check(frame.Observe().Text.Any(text => text.Value == "6/6" && text.Bounds.X > 1180)
-                    && frame.Observe().Text.Any(text => text.Value == "+1/+1 ×2")
-                    && frame.Observe().Text.Any(text => text.Value == "Preview tapping this Elf and adding one green mana"),
+                var sourcePreview = frame.Hits.SingleOrDefault(hit => hit.Id == "choice-source-inspect");
+                var choiceText = frame.Observe().Text;
+                check(sourcePreview is { Card: { Power: 6, Toughness: 6 } source } && source.Counters.GetValueOrDefault("+1/+1") == 2
+                    && choiceText.Any(text => text.Value == "6/6" && sourcePreview.Bounds.Contains(new Point(text.Bounds.X + text.Bounds.Width / 2, text.Bounds.Y + text.Bounds.Height / 2)))
+                    && choiceText.Any(text => text.Value == "+1/+1 ×2" && sourcePreview.Bounds.Contains(new Point(text.Bounds.X + text.Bounds.Width / 2, text.Bounds.Y + text.Bounds.Height / 2)))
+                    && choiceText.Any(text => text.Value == "Preview tapping this Elf and adding one green mana")
+                    && frame.Hits.Any(hit => hit.Id == "choice-cancel") && !frame.Hits.Any(hit => hit.Id == "choicesfilter"),
                     "The real text-choice composition includes its linked current 6/6 source and two counters despite the older embedded source face");
             }
             if (scenario.Id == "turn-orientation.v1") {

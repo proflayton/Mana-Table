@@ -1,4 +1,5 @@
 using Mana.Contracts;
+using Mana.Scenarios;
 using Microsoft.Xna.Framework;
 
 namespace Mana.Table;
@@ -66,5 +67,53 @@ internal sealed partial class CardReadingSmoke
             }), "Help navigation remains physically reachable below the measured text area");
             MoveHit("close-overlay");
         }, "More must paint the remaining decision explanation before checking its content"); Click();
+        GameSnapshot? previousState = null;
+        string sourceGame = "", sourceDecision = "", sourceId = "", sourcePhase = "";
+        Step(0, () => {
+            previousState = scenario.State;
+            var lab = new ExperienceLabSession("card-reading.v1");
+            lab.Replay(3);
+            Publish(lab.State with { Id = previousState.Id }); Move(new(10, 70));
+            replies = scenario.Replies.Count;
+            var prompt = scenario.State.Decision!;
+            sourceGame = scenario.State.Id; sourceDecision = prompt.Id;
+            sourceId = prompt.SourceCardId; sourcePhase = scenario.State.PhaseKey;
+        });
+        Prepared(() => view.Hits.Any(hit => hit.Id == "choice-source-inspect") && view.Hits.Any(hit => hit.Id == "choice:0")
+            && !view.Hits.Any(hit => hit.Id == "choicesfilter"), 3, () => MoveHit("choice:0"),
+            "The canonical current-source ability choice must use the compact presentation before selecting its original option"); Click();
+        Prepared(() => view.Selections.SequenceEqual([0]) && view.Hits.Any(hit => hit.Id == "choicesdone")
+            && view.Hits.Any(hit => hit.Id == "choice-source-inspect"), 2, () => {
+            Check(view.TextScale == 1.3f && scenario.Replies.Count == replies
+                && view.Hits.Single(hit => hit.Id == "choice-source-inspect").Card is { Power: 6, Toughness: 6 } source
+                && source.VisualId == sourceId && source.Counters.GetValueOrDefault("+1/+1") == 2,
+                "At130% the compact chooser stages its original option and exposes the current source without submitting an ability");
+            view.CaptureWindow(Path.Combine(view.Profile, "19-compact-ability-choice-window.png"));
+            MoveHit("choice-source-inspect");
+        }, "The compact choice and current source must be physically reachable before inspection"); Click();
+        Prepared(() => view.Overlay == "inspect", 2, () => {
+            Check(view.Match is { Decision: { } decision } current && current.Id == sourceGame && decision.Id == sourceDecision
+                && decision.SourceCardId == sourceId && view.Selections.SequenceEqual([0]) && scenario.Replies.Count == replies,
+                "Inspecting the compact chooser's source preserves the exact unanswered decision and staged option without a game command");
+            MoveHit("close-overlay");
+        }, "The compact source's real inspect control must open its details"); Click();
+        Prepared(() => view.Overlay.Length == 0 && view.Hits.Any(hit => hit.Id == "choice-cancel")
+            && view.Hits.Any(hit => hit.Id == "choicesdone"), 2, () => {
+            Check(view.Match is { Decision: { } decision } current && current.Id == sourceGame && decision.Id == sourceDecision
+                && decision.SourceCardId == sourceId && view.Selections.SequenceEqual([0]) && scenario.Replies.Count == replies,
+                "Closing source details restores the same compact chooser and optional cancellation without confirming its draft");
+            MoveHit("choice-cancel");
+        }, "Source inspection must return to the original compact optional ability choice"); Click();
+        Prepared(() => !view.Busy && scenario.Replies.Count == replies + 1, 2, () => {
+            Check(scenario.Replies[^1] is { Action: ReplyAction.Choose, Choices.Length: 0 } reply
+                && reply.GameId == sourceGame && reply.DecisionId == sourceDecision
+                && view.Match is { } current && current.Id == sourceGame && current.PhaseKey == sourcePhase
+                && current.Viewer!.Zone("Battlefield").Cards.Single(card => card.VisualId == sourceId) is { Tapped: false, Power: 6, Toughness: 6 },
+                "Optional Cancel sends exactly one empty choice in the original scope and leaves its current source and phase intact");
+            Publish(previousState!); Move(new(10, 70));
+        }, "The compact ability cancellation must reconcile its one scoped empty choice");
+        Prepared(() => previousState is { } previous && view.Match is { } current
+            && current.Id == previous.Id && current.Revision == scenario.State.Revision, 2, () => { },
+            "The prior controlled snapshot must be accepted before the following player-state journey");
     }
 }

@@ -116,6 +116,12 @@ internal static class HeadlessPresentationSmoke
                     Choices = [new(17, "First reported ability", null), new(42, "Second reported ability", null)]
                 } });
                 run.Tick("text-choice-with-current-source");
+                var sourceChoice = run.Engine.State;
+                var sourcePrompt = sourceChoice.Decision!;
+                Check(new[] { "choice:17", "choice:42", "choice-source-inspect" }.All(id => run.Frame.Hits.Any(hit => hit.Id == id))
+                    && !run.Frame.Hits.Any(hit => hit.Id is "choicesfilter" or "choicesprev" or "choicesnext" or "choicesclear" or "choice-cancel")
+                    && run.Engine.Replies.Count == 0,
+                    "A required compact ability chooser exposes its original option indexes and source without gallery chrome, optional cancellation or an automatic reply");
                 run.ClickHit("choice:17");
                 string sourceGame = run.View.Match!.Id, sourceDecision = run.View.Match.Decision!.Id;
                 var stagedChoice = run.View.Selections.ToArray();
@@ -132,6 +138,21 @@ internal static class HeadlessPresentationSmoke
                     && run.View.Selections.SequenceEqual(stagedChoice) && run.Engine.Replies.Count == 0
                     && run.Frame.Hits.Any(hit => hit.Id == "choicesdone") && run.Frame.Hits.Any(hit => hit.Id == "choice-source-inspect"),
                     "Closing source inspection restores the same staged chooser without confirming or replacing it");
+                run.Present(sourceChoice with { Decision = sourcePrompt with { Ordered = true } });
+                run.Tick("ordered-source-choice-gallery-fallback");
+                Check(run.Frame.Hits.Any(hit => hit.Id == "choicesfilter") && run.Frame.Hits.Any(hit => hit.Id == "choicesclear")
+                    && run.Frame.Hits.Count(hit => hit.Id == "choice-source-inspect") == 1 && run.Engine.Replies.Count == 0,
+                    "An ordered source choice retains its gallery and one source inspection target without publishing a partial compact chooser");
+                run.Present(sourceChoice with { Decision = sourcePrompt with {
+                    Choices = sourcePrompt.Choices.Select(choice => choice with {
+                        Detail = string.Join(" ", Enumerable.Repeat("This authoritative ability detail must remain available without being discarded to fit a compact panel.", 40))
+                    }).ToArray()
+                } });
+                run.Tick("long-ability-detail-gallery-fallback");
+                Check(run.Frame.Hits.Any(hit => hit.Id == "choicesfilter") && run.Frame.Hits.Any(hit => hit.Id == "choicesclear")
+                    && run.Frame.Hits.Any(hit => hit.Id == "choice:17") && run.Frame.Hits.Any(hit => hit.Id == "choice:42")
+                    && run.Frame.Hits.Count(hit => hit.Id == "choice-source-inspect") == 1 && run.Engine.Replies.Count == 0,
+                    "Ability details that cannot fit retain the existing gallery and original choices without duplicate compact controls or a reply");
                 run.Present(beforeSourceChoice); run.Tick("source-choice-restored-priority");
                 run.ClickCard("hand-a"); run.Settle("public-reader-before-revocation");
                 var snapshot = run.Engine.State;

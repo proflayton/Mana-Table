@@ -431,8 +431,9 @@ original choice index, action handle, allocation threshold or reply. If an
 occurrence is absent, only the face already disclosed in that current interaction
 is available as a fallback. Power/toughness always comes from the engine and is
 never recomputed from counters: continuous effects can change P/T while the
-counter amount stays the same. Text-only ability choosers also show the current
-source preview. Inspection of an alternate printed face remains separate from
+counter amount stays the same. Counter rows use the measured text height at the
+current text scale. Text-only ability choosers also show the current source
+preview. Inspection of an alternate printed face remains separate from
 the current battlefield face.
 Public player counters, progress and statuses share persistent seat ribbons and
 paged context in the player inspector. `forge-game`'s `PublicPlayerStateRegistry`
@@ -497,6 +498,14 @@ choices retain their chooser.
 Selecting a gallery face retains its compact geometry. Required decisions also
 collapse an existing reader so it cannot intercept the next adjacent choice.
 Selection uses the original prompt-scoped index, independently of names and reflow.
+
+`TableApplication.AbilityChoices` gives small single-select `playAbility` prompts
+a compact source-card panel. This engine context includes abilities and casting
+modes. Complete measured text, costs and source state must fit before the panel
+replaces gallery drawing and input; otherwise the existing chooser handles it.
+Source inspection preserves the draft. Confirmation submits the original option
+index, and optional Cancel submits an empty choice. Required choices have no
+cancel action. Outside clicks and View battlefield never answer the prompt.
 
 `TableApplication.Allocation` presents numeric assignments using `AllocationGuide` and
 the engine's source, units, recipient occurrences, limits and optional required
