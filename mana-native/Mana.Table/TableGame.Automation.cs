@@ -44,6 +44,7 @@ internal sealed partial class TableGame
         internal bool AnalysisOpen => game.analysisOpen;
         internal DeckAnalysisState? Analysis => game.analysisState;
         internal bool AnalysisCurrent => game.AnalysisCurrent;
+        internal string[] AnalysisVisibleRecommendationIds => game.analysisState is { } a ? game.VisibleRecommendations(a).Select(r => r.Id).ToArray() : [];
         internal bool UpdatesOpen => game.updatesOpen;
         internal bool UpdateChecking => game.updateChecking;
         internal bool UpdateDownloading => game.updateDownloading;
@@ -94,6 +95,11 @@ internal sealed partial class TableGame
         internal void DuplicateDeck(string name) => game.DuplicateDeck(name);
         internal void EditPreset(string id) => game.ImportDeck(() => game.engine.ImportPresetAsync(id), true);
         internal WorkshopState? Workshop => game.workshop;
+        internal DeckVersionView? WorkshopVersion => game.workshopVersionView;
+        internal void ShowSourcePreview(DeckSourcePreview preview) {
+            game.workshopSourcePreview = preview; game.workshopSourceImport = false; game.workshopSourceChoice = "";
+            game.workshopDialog = "source-preview"; game.WorkshopDialogPage = 0;
+        }
         internal bool WorkshopCurrent => game.WorkshopCurrent;
         internal HandPractice? WorkshopHand => game.workshopHand;
         internal DeckTest[] WorkshopTests => game.workshopTests;
@@ -108,8 +114,14 @@ internal sealed partial class TableGame
         internal SoloSetup? SoloSetup => game.soloSetup;
         internal int[] SoloChoices => game.soloChoices;
         internal bool LocalMatch => game.localMatch;
+        internal bool NeedsRecovery => game.session.NeedsRecovery;
+        internal float TextScale => game.preferences.TextScale;
+        internal void CaptureWindow(string path) => game.windowCapture = path;
+        internal void ImportFilePath(string path) => game.ImportFilePath(path);
+        internal void SetConnectedTable(Lobby state) { game.localMatch = false; game.lobby = state; }
         internal bool Automatic => game.automatic;
         internal bool Held => game.held;
+        internal PublicCounterBadge? CounterBadge(int player) => game.publicCounterBadges.TryGetValue(player, out var badge) ? badge : null;
         internal bool WelcomeOpen => game.welcomeOpen;
         internal bool TableGuideOpen => game.tableGuideOpen;
         internal bool ExperienceOpen => game.ExperienceOpen;

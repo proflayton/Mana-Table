@@ -62,8 +62,9 @@ internal static class ContextGuidanceSmoke
             s.Wait(.7);
             s.Then(() => { play.RejectNextReply = true; s.AllowError = true; });
             s.DoubleClickCurrent();
-            s.Until(() => play.RejectedReplies == 1 && !view.Busy);
-            s.Then(() => Check(view.Error.Contains("Controlled rejected play") && !view.LearnedControls.Contains("hand-play") && play.Replies.Count == 0, "A rejected play cannot mark a control learned"));
+            s.Until(() => play.RejectedReplies == 1 && !view.Busy && !view.Polling && play.Observations > play.ObservationsAtRejection);
+            s.Then(() => Check(view.Error.Contains("Controlled rejected play") && !view.NeedsRecovery && !view.LearnedControls.Contains("hand-play") && play.Replies.Count == 0,
+                "An explicit rejected play remains visible after healthy observation without reconnecting, replaying, or marking its control learned"));
             s.Click("dismiss");
             s.MoveCard("hand-1"); s.Wait(.25);
             s.Then(() => {

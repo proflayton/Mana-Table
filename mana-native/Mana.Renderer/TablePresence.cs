@@ -6,18 +6,26 @@ namespace Mana.Renderer;
 public enum SeatCueKind { Draw, LifeLoss, LifeGain }
 public sealed record SeatCue(int PlayerId, SeatCueKind Kind, int Amount, double Started);
 
-// Public counts and life deltas only. An opponent's draw has no card identity,
+// Public engine draw events and life deltas only. An opponent's draw has no card identity,
 // art, or cached hidden object. These cues never delay an authoritative update.
 public sealed class TablePresence
 {
     public const double DrawDuration = .62, DrawStagger = .09;
     private readonly List<SeatCue> cues = [];
+    private string? gameId;
+    private long lastActivityId;
     public IReadOnlyList<SeatCue> Cues => cues;
-    public void Clear() => cues.Clear();
+    public void Clear() { cues.Clear(); gameId = null; lastActivityId = 0; }
     public void Observe(GameSnapshot? previous, GameSnapshot current, double now)
     {
         cues.RemoveAll(c => now - c.Started > 1.5 || !current.Players.Any(p => p.Id == c.PlayerId && !p.Eliminated));
-        if (previous == null || previous.Id != current.Id || current.Status == "finished") { Clear(); return; }
+        if (previous == null || previous.Id != current.Id || current.Status == "finished") {
+            Clear(); gameId = current.Id; lastActivityId = current.Activity.Select(e => e.Id).DefaultIfEmpty().Max(); return;
+        }
+        if (gameId != current.Id) { gameId = current.Id; lastActivityId = previous.Activity.Select(e => e.Id).DefaultIfEmpty().Max(); }
+        var draws = current.Activity.Where(e => e.Id > lastActivityId && e.Kind == "draw" && e.Count > 0 && e.PlayerId != null)
+            .GroupBy(e => e.PlayerId!.Value).ToDictionary(g => g.Key, g => (int)Math.Min(int.MaxValue, g.Sum(e => (long)e.Count)));
+        lastActivityId = Math.Max(lastActivityId, current.Activity.Select(e => e.Id).DefaultIfEmpty().Max());
         foreach (var player in current.Players) {
             var before = previous.Players.FirstOrDefault(p => p.Id == player.Id);
             if (before == null || player.Eliminated) continue;
@@ -27,17 +35,14 @@ public sealed class TablePresence
                 cues.Add(new(player.Id, life < 0 ? SeatCueKind.LifeLoss : SeatCueKind.LifeGain, Math.Abs(life), now));
             }
             if (player.Id == current.ViewerId) continue; // The local hand uses visible-card motion.
-            int gained = player.Zone("Hand").Count - before.Zone("Hand").Count;
-            int leftLibrary = before.Zone("Library").Count - player.Zone("Library").Count;
-            if (gained < 0) cues.RemoveAll(c => c.PlayerId == player.Id && c.Kind == SeatCueKind.Draw);
-            if (gained > 0 && leftLibrary > 0) {
+            if (draws.TryGetValue(player.Id, out int drawn)) {
                 cues.RemoveAll(c => c.PlayerId == player.Id && c.Kind == SeatCueKind.Draw);
-                cues.Add(new(player.Id, SeatCueKind.Draw, Math.Min(5, Math.Min(gained, leftLibrary)), now));
+                cues.Add(new(player.Id, SeatCueKind.Draw, drawn, now));
             }
         }
     }
     public int PendingDraws(int player, double now) => cues.Where(c => c.PlayerId == player && c.Kind == SeatCueKind.Draw)
-        .Sum(c => Enumerable.Range(0, c.Amount).Count(i => now - c.Started < DrawDuration + i * DrawStagger));
+        .Sum(c => Enumerable.Range(0, Math.Min(7, c.Amount)).Count(i => now - c.Started < DrawDuration + i * DrawStagger));
 
     public static Pose DrawPose(Pose library, Pose hand, double elapsed)
     {

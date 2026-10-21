@@ -11,7 +11,7 @@ public static class ControlGuidance
     {
         // Resolve stale hover references before inspecting visibility or action handles.
         var current = CardViews.Visible(state).FirstOrDefault(c => CardViews.Same(c, card));
-        if (current == null || current.FaceDown) return null;
+        if (current == null || current.FaceDown && current.Type.Length == 0) return null;
         if (CanDecide(state)) {
             if (TableChoices.Index(state, current) != null)
                 return new("choose-target", "Choose this card", "Click this highlighted card, then confirm your choices.");
@@ -42,7 +42,8 @@ public static class ControlGuidance
                     ? "Click again to play your commander." : "Double-click to play your commander.");
             }
         }
-        return new("inspect-card", "Read the full card", "Right-click to inspect the full card.");
+        return current.FaceDown ? new("inspect-card", "Read public characteristics", "Right-click for this anonymous permanent's public state.")
+            : new("inspect-card", "Read the full card", "Right-click to inspect the full card.");
     }
 
     public static ControlCue? Decision(GameSnapshot state, string? selectedCombat = null)
@@ -70,7 +71,7 @@ public static class ControlGuidance
             bool players = state.Players.Any(p => !p.Eliminated && decision.PlayerChoices.Contains(p.Id));
             bool cards = CardViews.Visible(state).Any(c => !c.FaceDown && c.Selectable && c.Key.Length > 0);
             if (players || cards) return new("choose-target", "Make your choice", players && cards
-                ? "Click a highlighted card or player." : players ? "Click a highlighted player." : "Click a highlighted card.");
+                ? "Choose a named recipient or a highlighted card." : players ? "Choose a named recipient or click a highlighted player." : "Click a highlighted card.");
             return null;
         }
         if (decision.Intent != DecisionIntent.Priority) return null;

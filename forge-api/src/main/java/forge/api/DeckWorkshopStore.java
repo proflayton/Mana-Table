@@ -174,6 +174,14 @@ final class DeckWorkshopStore {
         if (!before.equals(JSON.toJson(document))) { document.metadataRevision++; write(deckId, document); }
     }
 
+    synchronized DeckVersionView inspect(String deckId, String versionId, DeckEditor.Snapshot current, String format) throws IOException {
+        var version = read(deckId).versions.stream().filter(v -> v.id().equals(versionId)).findFirst()
+                .orElseThrow(() -> new IllegalArgumentException("That saved deck version is unavailable"));
+        var entries = version.cards().stream().map(e -> new DeckEditor.Entry(e.section(),
+                CardCatalog.describe(catalog.resolve(e.cardId())), e.quantity())).toList();
+        return DeckVersionView.compare(version.id(), version.name(), version.format(), entries, current, format);
+    }
+
     synchronized Applied restore(String deckId, DeckEditor editor, String format, String versionId) throws IOException {
         var document = read(deckId);
         var version = document.versions.stream().filter(item -> item.id().equals(versionId)).findFirst()

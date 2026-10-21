@@ -9,6 +9,7 @@ namespace Mana.Table;
 
 internal sealed partial class TableGame
 {
+    private int playerDamagePage;
     private void ModalFrame(string title, Action close, string closeLabel = "Close", int height = 706)
     {
         // Modal hit regions replace the table's regions, including invisible cards.
@@ -29,6 +30,7 @@ internal sealed partial class TableGame
                 case "action": DrawActionDetails(); break;
                 case "player": DrawPlayerDetails(); break;
                 case "concede": DrawConcede(); break;
+                case "leave-table": DrawLeaveTable(); break;
                 case "help": DrawHelp(); break;
                 case "ability-auto-pass": DrawAbilityAutoPass(); break;
                 case "hand-placement": DrawHandPlacement(); break;
@@ -49,6 +51,7 @@ internal sealed partial class TableGame
         }
         pages.Add(rest); return pages.ToArray();
     }
+    private int ReadingPageSize(int characters) => Math.Max(100, (int)(characters / (preferences.TextScale * preferences.TextScale)));
     private void DrawInspector()
     {
         if (inspected == null) { overlay = ""; return; }
@@ -69,7 +72,7 @@ internal sealed partial class TableGame
         if (CardPresentation.Counters(card) is { Length: > 0 } counters) stateText += "\nCounters: " + string.Join("; ", counters.Select(c => c.Key + " × " + c.Value));
         if (onBattlefield) canvas.Text(CardActions.Hint(match, original), 686, 335, CardActions.CanActivate(match, original) ? ActionAccent : Muted, .77f, 670, 2, true);
         bool contextual = onBattlefield || HandPlacements.Options(match, original).Length > 0 || AvailableZone(original) != null;
-        var paragraphs = TextPages((stateText.Length > 0 ? stateText + "\n\n" : "") + card.Text + (onBattlefield ? "\n\n" + CardActions.Help : ""), contextual ? 750 : 1050); inspectPage = Math.Clamp(inspectPage, 0, paragraphs.Length - 1);
+        var paragraphs = TextPages((stateText.Length > 0 ? stateText + "\n\n" : "") + card.Text + (onBattlefield ? "\n\n" + CardActions.Help : ""), ReadingPageSize(contextual ? 750 : 1050)); inspectPage = Math.Clamp(inspectPage, 0, paragraphs.Length - 1);
         canvas.Text(paragraphs[inspectPage], 686, contextual ? 394 : 378, Ink, .8f, 660, contextual ? 12 : 17);
         if (paragraphs.Length > 1) {
             Button("inspect-prev", "Previous", 686, 727, 135, () => inspectPage--, inspectPage > 0);
@@ -86,7 +89,7 @@ internal sealed partial class TableGame
         canvas.Text("PRIORITY", 201, 196, Gold, .65f, 600, 1, true);
         Button("settings-auto", "Auto", 202, 231, 256, () => UseAutomaticControl(true), accent: automatic, height: 48);
         Button("settings-manual", "Full control", 472, 231, 256, () => UseAutomaticControl(false), accent: !automatic, height: 48);
-        canvas.Text("Auto follows your pass settings after each visible action. Pass for individual abilities until your next turn beside the priority controls. Other available plays and required decisions still wait for you.", 202, 298, Muted, .81f, 544, 5);
+        canvas.Text("Auto passes according to your settings. Use the priority controls to ignore individual abilities until your next turn. Other legal plays and required choices still wait for you.", 202, 298, Muted, .81f, 544, 6);
         Button("settings-hold", held ? "Held for this turn" : "Hold priority this turn", 202, 445, 526, ToggleHoldControl, accent: held, height: 45);
         canvas.Text("Always stop at these steps on your turn", 805, 196, Gold, .76f, 551, 1, true);
         for (int i = 0; i < TurnGuide.Stops.Length; i++) {
@@ -96,6 +99,11 @@ internal sealed partial class TableGame
         Button("motion", preferences.ReducedMotion ? "Reduced motion: On" : "Reduced motion: Off", 805, 455, 553, () => { preferences = preferences with { ReducedMotion = !preferences.ReducedMotion }; SavePreferences(); }, accent: preferences.ReducedMotion, height: 45);
         Button("sound", preferences.Sounds ? "Sound cues: On" : "Sound cues: Off", 805, 512, 553, () => { preferences = preferences with { Sounds = !preferences.Sounds }; SavePreferences(); }, accent: preferences.Sounds, height: 45);
         Button("guidance-reset", "Show control hints again", 202, 519, 526, ResetControlHints, height: 42);
+        Button("text-size", $"Text size: {preferences.TextScale:P0}", 202, 569, 526, () => {
+            preferences = preferences with { TextScale = preferences.TextScale < 1.1f ? 1.15f : preferences.TextScale < 1.25f ? 1.3f : 1 };
+            SavePreferences();
+        }, height: 32);
+        canvas.Text("Larger text keeps controls in place. Inspect cards for full details; F11 opens fullscreen.", 805, 574, Muted, .64f, 553, 1);
         canvas.Line(new(201, 607), new(1370, 607), Muted * .25f);
         canvas.Text("Space  Continue / confirm     F  Auto / full control     Ctrl Hold this turn\nC  Review combat     Escape  Cancel a drag / close a panel     F11  Fullscreen\nRight-click  Inspect a card     Wheel  Browse a long hand or an open card gallery", 203, 632, Ink, .78f, 1150, 5);
         Button("updates-settings", "Updates", 202, 737, 260, OpenAppUpdates, height: 38);
@@ -127,15 +135,22 @@ internal sealed partial class TableGame
         canvas.Text(player.Life + " LIFE", 212, 202, Ink, 2, 1090, 1, true);
         string handLimit = player.MaxHandSize is { } maximum ? $"Maximum hand size: {maximum} · Discard during this player's cleanup" : "No maximum hand size";
         canvas.Text($"{player.Zone("Hand").Count} cards in hand · {handLimit}", 213, 258, Muted, .7f, 1090, 1);
-        canvas.Text("COMMANDER DAMAGE RECEIVED", 213, 289, Gold, .76f, 1000, 1, true);
-        int y = 343;
-        foreach (var entry in player.CommanderDamage.Take(8)) {
+        DrawPlayerCounterDetails(player, 213, 290, 1090);
+        canvas.Text("COMMANDER DAMAGE RECEIVED", 213, 375, Gold, .76f, 1000, 1, true);
+        int y = 414;
+        const int count = 6;
+        playerDamagePage = Math.Clamp(playerDamagePage, 0, Math.Max(0, (player.CommanderDamage.Length - 1) / count));
+        foreach (var entry in player.CommanderDamage.Skip(playerDamagePage * count).Take(count)) {
             canvas.Text(entry.Name, 216, y, Ink, .89f, 815, 1, true);
             canvas.Text(entry.Owner, 216, y + 28, Muted, .66f, 815, 1);
             canvas.Text(entry.Damage + " / 21", 1121, y, entry.Damage >= 18 ? Red : Gold, 1.2f, 200, 1, true);
             y += 47;
         }
-        canvas.Text("Each opposing commander is tracked separately.", 216, 741, Muted, .75f, 970, 1);
+        canvas.Text("Each opposing commander is tracked separately.", 216, 710, Muted, .75f, 970, 1);
+        if (player.CommanderDamage.Length > count) {
+            Button("commander-damage-prev", "Previous", 216, 745, 150, () => playerDamagePage--, playerDamagePage > 0, height: 32);
+            Button("commander-damage-next", "More commanders", 380, 745, 230, () => playerDamagePage++, (playerDamagePage + 1) * count < player.CommanderDamage.Length, height: 32);
+        }
     }
     private void DrawConcede()
     {
@@ -148,7 +163,7 @@ internal sealed partial class TableGame
     private void DrawHelp()
     {
         ModalFrame("Current decision", () => overlay = "");
-        var text = TextPages((match!.Decision?.Message ?? TurnGuide.Instruction(match)) + "\n\n" + (match.Combat?.BlockProblem ?? "") + "\n\n" + CardActions.Help, 2100);
+        var text = TextPages((match!.Decision?.Message ?? TurnGuide.Instruction(match)) + "\n\n" + (match.Combat?.BlockProblem ?? "") + "\n\n" + CardActions.Help, ReadingPageSize(2100));
         inspectPage = Math.Clamp(inspectPage, 0, text.Length - 1);
         canvas.Text(text[inspectPage], 211, 200, Ink, .93f, 1155, 21);
         Button("help-prev", "Previous", 211, 736, 144, () => inspectPage--, inspectPage > 0);
@@ -211,8 +226,8 @@ internal sealed partial class TableGame
             if (IsCardActionable(card)) hits.Add(new("stack-target:" + zonePage, Scope, pose.Bounds, () => { zoneName = null; CardClick(card); }, card));
         }
         canvas.Text(entry.Name, 630, 246, Ink, 1.05f, 716, 3, true);
-        canvas.Text(entry.Ability ? "ABILITY" : "SPELL", 631, 328, Gold, .64f, 700, 1, true);
-        var text = TextPages(entry.Text, 1000); inspectPage = Math.Clamp(inspectPage, 0, text.Length - 1);
+        canvas.Text((entry.Ability ? "ABILITY" : "SPELL") + " · " + StateClarity.StackController(match, entry), 631, 328, Gold, .74f, 700, 1, true);
+        var text = TextPages(entry.Text, ReadingPageSize(1000)); inspectPage = Math.Clamp(inspectPage, 0, text.Length - 1);
         canvas.Text(text[inspectPage], 632, 369, Ink, .8f, 714, 15);
         Button("stack-newer", "Above", 216, 734, 130, () => OpenStack(zonePage - 1), zonePage > 0);
         Button("stack-older", "Below", 359, 734, 130, () => OpenStack(zonePage + 1), zonePage + 1 < entries.Length);

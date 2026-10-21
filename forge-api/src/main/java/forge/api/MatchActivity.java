@@ -11,7 +11,7 @@ import java.util.*;
 /** Copies an allowlist of events at emission time; never exports raw engine logs or views. */
 public final class MatchActivity {
     public record Entry(long id, int turn, String phaseKey, String kind, Integer playerId,
-                        String message, String cardId, String cardName, String detail) { }
+                        String message, String cardId, String cardName, String detail, String outcome, int count) { }
     public record Frame(long revision, int turn, String phaseKey, String phase, Integer activePlayerId, List<Entry> entries) { }
     private final PlayerView viewer;
     private final MatchIdentities identities;
@@ -61,9 +61,12 @@ public final class MatchActivity {
         add(kind, player, message, card, "");
     }
     private void add(String kind, PlayerView player, String message, CardView card, String detail) {
+        add(kind, player, message, card, detail, "", 0);
+    }
+    private void add(String kind, PlayerView player, String message, CardView card, String detail, String outcome, int count) {
         revision++;
         entries.addLast(new Entry(++sequence, turn, phase, kind, player == null ? null : player.getId(),
-                message, visualId(card), visible(card) ? card.getCurrentState().getName() : null, detail));
+                message, visualId(card), visible(card) ? card.getCurrentState().getName() : null, detail, outcome, count));
         while (entries.size() > 120) entries.removeFirst();
     }
 
@@ -103,7 +106,7 @@ public final class MatchActivity {
             if (visible(card) && e.spell().isSpell()) detail += "\n" + card.getCurrentState().getOracleText();
             add("resolved", card == null ? null : card.getController(), cardName(card) + (e.spell().isSpell() ? "" : "'s ability")
                     + (e.hasFizzled() ? " did not resolve." : " resolved."), card,
-                    detail);
+                    detail, e.hasFizzled() ? "notResolved" : "resolved", 0);
         } else if (event instanceof GameEventCardChangeZone e) {
             ZoneType from = e.from() == null ? null : e.from().zoneType();
             ZoneType to = e.to() == null ? null : e.to().zoneType();
@@ -115,7 +118,7 @@ public final class MatchActivity {
             if (turn == 0 || from == to || to == null) return;
             var player = e.to().player();
             if (from == ZoneType.Library && to == ZoneType.Hand) {
-                add("draw", player, playerName(player) + " moved a card from library to hand.", null);
+                add("moved", player, playerName(player) + " moved a card from library to hand.", null);
             } else if (to == ZoneType.Battlefield) {
                 // Ordinary land plays have their own event.
                 if (from != ZoneType.Hand || !e.card().getCurrentState().getType().isLand() || !visible(e.card()))
@@ -151,11 +154,13 @@ public final class MatchActivity {
         } else if (event instanceof GameEventShuffle e) {
             // A shuffle breaks identity correlation even when the new top is visible.
             visibleIds.keySet().removeIf(card -> card.getZone() == ZoneType.Library && e.player().equals(card.getController()));
+            if (turn > 0) add("shuffle", e.player(), playerName(e.player()) + " shuffled their library.", null, "", "", 1);
         } else if (event instanceof GameEventMulligan e) {
             if (viewer.equals(e.player())) mulligans++;
             add("mulligan", e.player(), playerName(e.player()) + " took a mulligan.", null);
-        } else if (event instanceof GameEventCardDrawn e && viewer.equals(e.player())) {
-            cardsDrawn++;
+        } else if (event instanceof GameEventCardDrawn e) {
+            if (viewer.equals(e.player())) cardsDrawn++;
+            add("draw", e.player(), playerName(e.player()) + " drew a card.", null, "", "", 1);
         }
     }
 }

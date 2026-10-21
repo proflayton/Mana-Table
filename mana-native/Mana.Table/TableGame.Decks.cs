@@ -21,8 +21,9 @@ internal sealed partial class TableGame
     private DeckIssue[] CardIssues(string cardId, string section) => DeckIssues
         .Where(issue => (issue.Section == null || issue.Section == section) && issue.CardIds.Contains(cardId)).ToArray();
     private sealed record DeckIssueText(DeckIssue Issue, string Text);
-    private static DeckIssueText[] IssueTextPages(IEnumerable<DeckIssue> issues, int characters) => issues
-        .SelectMany(issue => TextPages(issue.Message, characters).Select(text => new DeckIssueText(issue, text))).ToArray();
+    private DeckIssueText[] IssueTextPages(IEnumerable<DeckIssue> issues, int characters) => issues
+        .SelectMany(issue => TextPages(issue.Message, Math.Max(28, (int)(characters / (preferences.TextScale * preferences.TextScale))))
+            .Select(text => new DeckIssueText(issue, text))).ToArray();
     private int? CommanderIdentity => selectedDeckDetails?.Entries.Where(e => e.Section == "Commander").ToArray() is { Length: > 0 } leaders
         ? leaders.Aggregate(0, (mask, e) => mask | e.ColorIdentity) : null;
     private CatalogCard? DeckSelection {
@@ -45,6 +46,7 @@ internal sealed partial class TableGame
         RequestWorkshopRefresh(changed);
         deckIssuePage = deckCardIssuePage = 0;
         if (changed) {
+            analysisShowReviewed = false;
             analysisOpen = false; analysisState = null; analysisError = ""; analysisRelatedCards.Clear();
             commanderCandidates = details.CommanderIds.Length == 0 && details.Entries.Length > 0;
             deckSection = ""; deckFilter = ""; deckCardsPage = 0; deckIssuesOnly = false;

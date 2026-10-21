@@ -19,7 +19,7 @@ import java.util.UUID;
 final class DeckAnalysisStore {
     private static final Gson JSON = new GsonBuilder().serializeNulls().create();
     record Entry(String id, String fingerprint, String recommendationId, String decision, String note, long created) { }
-    record View(long metadataRevision, DeckAnalysis.Report report, List<Entry> history) { }
+    record View(long metadataRevision, DeckAnalysis.Report report, List<Entry> history, List<Entry> decisions) { }
     private static final class Document {
         int schema = 1;
         long revision;
@@ -39,7 +39,12 @@ final class DeckAnalysisStore {
         return view(id, deck, format, load(id), eligibility);
     }
     private View view(String id, DeckEditor.Snapshot deck, String format, Loaded loaded, DeckAnalysis.Eligibility eligibility) {
-        return new View(revision(loaded), DeckAnalysis.analyze(catalog, deck, format, id, fingerprint(deck, format), effective(loaded, format), eligibility), List.copyOf(loaded.document().history));
+        String fingerprint = fingerprint(deck, format);
+        var latest = new java.util.LinkedHashMap<String, Entry>();
+        for (var item : loaded.document().history)
+            if (item.fingerprint().equals(fingerprint) && !item.recommendationId().isEmpty()) latest.put(item.recommendationId(), item);
+        return new View(revision(loaded), DeckAnalysis.analyze(catalog, deck, format, id, fingerprint, effective(loaded, format), eligibility),
+                List.copyOf(loaded.document().history), List.copyOf(latest.values()));
     }
     synchronized View profile(String id, DeckEditor.Snapshot deck, String format, long revision,
                               JsonObject profile, DeckAnalysis.Eligibility eligibility) throws IOException {
@@ -62,7 +67,7 @@ final class DeckAnalysisStore {
     synchronized View review(String id, DeckEditor.Snapshot deck, String format, long revision, String fingerprint,
                              String recommendationId, String decision, String note, DeckAnalysis.Eligibility eligibility) throws IOException {
         var loaded = load(id); requireRevision(loaded, revision); requireFingerprint(deck, format, fingerprint);
-        if (!List.of("consider", "keep", "dismiss", "tested", "observation").contains(decision)) throw new IllegalArgumentException("Unknown review decision");
+        if (!List.of("consider", "keep", "dismiss", "reopen", "tested", "observation").contains(decision)) throw new IllegalArgumentException("Unknown review decision");
         if (note == null || note.length() > 2000) throw new IllegalArgumentException("Review note must be at most 2000 characters");
         DeckAnalysis.Recommendation recommendation = null;
         if (decision.equals("observation")) {

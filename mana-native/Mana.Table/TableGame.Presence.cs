@@ -14,10 +14,13 @@ internal sealed partial class TableGame
             var player = match!.Players.FirstOrDefault(p => p.Id == cue.PlayerId);
             if (seat is < 0 or > 2 || player == null) continue;
             int count = Math.Min(7, player.Zone("Hand").Count);
-            for (int i = 0; i < cue.Amount; i++) {
+            // Large real draw batches retain their full count in event feedback;
+            // only a bounded handful of anonymous backs travel at once.
+            int animated = Math.Min(7, cue.Amount);
+            for (int i = 0; i < animated; i++) {
                 double age = now - cue.Started - i * TablePresence.DrawStagger;
                 if (age < 0 || age >= TablePresence.DrawDuration) continue;
-                var destination = TableLayout.HiddenHand(seat, Math.Max(0, count - cue.Amount + i), count);
+                var destination = TableLayout.HiddenHand(seat, Math.Max(0, count - animated + i), count);
                 var pose = TablePresence.DrawPose(TableWorld.Pile(seat, 0), destination, age);
                 canvas.Surface(null, pose with { Center = pose.Center + new Vector2(4, 5 + pose.Elevation), Size = pose.Size + new Vector2(5) }, Color.Black * .26f);
                 PaintBack(pose);

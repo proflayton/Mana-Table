@@ -47,7 +47,7 @@ internal sealed partial class TableGame
     private bool IsCardActionable(Card card)
     {
         var state = match; var d = state?.Decision;
-        if (state == null || d == null || busy) return false;
+        if (state == null || d == null || busy || session.NeedsRecovery) return false;
         if (TableChoices.IsDirect(state)) return TableChoices.Index(state, card) != null;
         if (d.Intent is DecisionIntent.Attack or DecisionIntent.Block) return CombatGuide.CanSelect(state, card) || CombatTarget(card);
         return card.Selectable && !string.IsNullOrEmpty(card.Key) || HandPlacements.Options(state, card).Length > 0;
@@ -55,6 +55,7 @@ internal sealed partial class TableGame
     private void CardClick(Card card)
     {
         if (match == null || busy) return;
+        if (session.NeedsRecovery) { Inspect(card); return; }
         var result = interaction.CardClick(match, card);
         if (result.ChoiceIndex is { } index) ToggleChoice(match.Decision!, index);
         else if (result.Reply != null) {
@@ -67,6 +68,7 @@ internal sealed partial class TableGame
     private void PlayerClick(int player)
     {
         if (match == null || busy) return;
+        if (session.NeedsRecovery) { zonePlayer = player; overlay = "player"; return; }
         var result = interaction.PlayerClick(match, player);
         if (result.Reply != null) Send(result.Reply);
         else if (result.Effect == InteractionEffect.InspectPlayer) { zonePlayer = player; overlay = "player"; }

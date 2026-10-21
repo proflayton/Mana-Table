@@ -13,6 +13,9 @@ internal sealed partial class TableGame
     private string[] analysisDetailPages = [""];
     private readonly HashSet<string> analysisRelatedCards = new(StringComparer.OrdinalIgnoreCase);
     private int analysisTab, analysisPage, analysisDetailPage;
+    private bool analysisShowReviewed;
+    private AnalysisRecommendation[] VisibleRecommendations(DeckAnalysisState state) => state.Report.Recommendations
+        .Where(r => Mana.Magic.DeckExperience.Reviewed(state, r.Id) == analysisShowReviewed).ToArray();
     private static readonly string[] AnalysisTabs = ["Findings", "Engines", "Suggested swaps", "Card functions", "Decisions"];
     private static string AnalysisBasis(string value) => value switch {
         "text-estimate" => "Estimated from card text", "strategic-estimate" => "Strategy estimate",
@@ -20,7 +23,7 @@ internal sealed partial class TableGame
         "unknown" => "Eligibility unknown", "restricted" => "Restricted in the bundled format snapshot",
         _ => value.Replace('-', ' ')
     };
-    private string AnalysisScope => $"{analysisTab}:{analysisPage}:{analysisState?.MetadataRevision}:{analysisDetailTitle}:{analysisDetailPage}:{string.Join(',', analysisRelatedCards)}";
+    private string AnalysisScope => $"{analysisTab}:{analysisPage}:{analysisShowReviewed}:{analysisState?.MetadataRevision}:{analysisDetailTitle}:{analysisDetailPage}:{string.Join(',', analysisRelatedCards)}";
     private bool AnalysisCurrent => analysisState is { } state && state.Report.DeckId == selectedDeckDetails?.Id
         && state.Report.Revision == selectedDeckDetails.Revision && (WorkshopEngine == null || WorkshopCurrent
             && workshop!.MetadataRevision == state.MetadataRevision && workshop.VersionId == state.Report.Fingerprint);
@@ -163,15 +166,16 @@ internal sealed partial class TableGame
             int tab = i;
             Button("analysis-tab:" + i, AnalysisTabs[i], 48 + i * 302, 432, 290, () => { analysisTab = tab; analysisPage = 0; }, !busy, analysisTab == i, 36);
         }
-        int count = analysisTab switch { 0 => report.Findings.Length, 1 => report.Engines.Length, 2 => report.Recommendations.Length, 3 => report.Cards.Length, _ => state.History.Length };
+        int count = analysisTab switch { 0 => report.Findings.Length, 1 => report.Engines.Length, 2 => VisibleRecommendations(state).Length, 3 => report.Cards.Length, _ => state.History.Length };
         analysisPage = Math.Clamp(analysisPage, 0, Math.Max(0, (count - 1) / 3));
         for (int i = 0; i < Math.Min(3, count - analysisPage * 3); i++) DrawAnalysisRow(state, analysisPage * 3 + i, 486 + i * 142);
         if (count == 0) canvas.Text(analysisTab == 1 ? "No lines from the curated engine registry were found. This does not mean the deck lacks synergy."
-            : analysisTab == 2 ? "No supported paired swaps match this list. Review the findings and card functions."
+            : analysisTab == 2 ? analysisShowReviewed ? "No reviewed swaps for this playable version." : "No undecided supported swaps. Review saved decisions or the findings and card functions."
             : analysisTab == 4 ? "Save a recommendation decision here. Keep observations from hands and real games in Results." : "Nothing to show in this view.", 72, 540, Muted, .9f, 1430, 4);
         Button("analysis-prev", "Previous", 48, 920, 150, () => analysisPage--, !busy && analysisPage > 0, height: 32);
         Button("analysis-next", "Next", 210, 920, 150, () => analysisPage++, !busy && (analysisPage + 1) * 3 < count, height: 32);
-        canvas.Text($"Page {analysisPage + 1} / {Math.Max(1, (count + 2) / 3)} | Strategic estimates. Test changes at the table.", 385, 929, Muted, .62f, 850, 1);
+        if (analysisTab == 2) Button("analysis-reviewed", analysisShowReviewed ? "Show undecided swaps" : "Review decisions (" + report.Recommendations.Count(r => Mana.Magic.DeckExperience.Reviewed(state, r.Id)) + ")", 385, 918, 452, () => { analysisShowReviewed = !analysisShowReviewed; analysisPage = 0; }, !busy, height: 34);
+        else canvas.Text($"Page {analysisPage + 1} / {Math.Max(1, (count + 2) / 3)} | Strategic estimates. Test changes at the table.", 385, 929, Muted, .62f, 850, 1);
         Button("analysis-back", "Build", 1260, 918, 122, () => ShowWorkshopTab("build"), !busy, height: 34);
         Button("analysis-test", "Test deck", 1394, 918, 158, () => ShowWorkshopTab("test"), !busy, true, 34);
     }
@@ -192,7 +196,9 @@ internal sealed partial class TableGame
                 + "\nRequirements: " + string.Join("; ", e.Requirements) + "\nBasis: " + AnalysisBasis(e.Confidence);
             cards = e.Cards.Concat(e.Payoffs).ToArray();
         } else if (analysisTab == 2) {
-            var r = report.Recommendations[index]; title = r.CutName + " -> " + r.Add.Name;
+            var r = VisibleRecommendations(state)[index]; title = r.CutName + " -> " + r.Add.Name;
+            var decision = Mana.Magic.DeckExperience.LatestDecision(state, r.Id);
+            if (decision != null) title += " | " + (decision.Decision == "keep" ? "Keeping current" : decision.Decision == "dismiss" ? "Dismissed" : decision.Decision);
             summary = r.Benefit + " Tradeoff: " + r.Tradeoff + (r.Eligibility == "unknown" ? " Format eligibility is unverified." : "");
             details = r.Benefit + "\n\nTradeoff: " + r.Tradeoff + "\nMana value change: " + r.ManaValueDelta
                 + "\nRole changes: " + string.Join(", ", r.RoleDelta.Select(p => p.Key + " " + p.Value.ToString("+0;-0;0")))
@@ -200,8 +206,11 @@ internal sealed partial class TableGame
             cards = [r.CutName];
             bool saved = workshop?.Considering.Any(c => c.Card.Card.Name.Equals(r.Add.Name, StringComparison.OrdinalIgnoreCase)) == true;
             Button("analysis-consider:" + index, saved ? "View option" : "Save to Considering", 1264, y + 9, 270, () => { if (saved) ShowAnalysisOption(r); else ConsiderAnalysis(r); }, !busy, height: 32);
-            Button("analysis-keep:" + index, "Keep current", 1264, y + 50, 130, () => RecordAnalysis(r.Id, "keep"), !busy, height: 30);
-            Button("analysis-dismiss:" + index, "Dismiss", 1404, y + 50, 130, () => RecordAnalysis(r.Id, "dismiss"), !busy, height: 30);
+            if (analysisShowReviewed) Button("analysis-reopen:" + index, "Reopen this swap", 1264, y + 50, 270, () => RecordAnalysis(r.Id, "reopen", ""), !busy, height: 30);
+            else {
+                Button("analysis-keep:" + index, "Keep current", 1264, y + 50, 130, () => RecordAnalysis(r.Id, "keep", ""), !busy, height: 30);
+                Button("analysis-dismiss:" + index, "Dismiss", 1404, y + 50, 130, () => RecordAnalysis(r.Id, "dismiss", ""), !busy, height: 30);
+            }
         } else if (analysisTab == 3) {
             var c = report.Cards[index];
             bool favorite = workshop?.Roles.Any(r => r.CardId == c.CardId && r.Pinned) == true;
@@ -234,11 +243,12 @@ internal sealed partial class TableGame
         bool hasCards = selectedDeckDetails?.Entries.Any(e => analysisDetailCards.Contains(e.Card.Name, StringComparer.OrdinalIgnoreCase)) == true;
         if (hasCards) Button("analysis-show-cards", "Show related cards in Build", 980, 817, 402, ShowAnalysisCards, !busy, true, 36);
     }
-    private static string[] AnalysisDetailPages(string value)
+    private string[] AnalysisDetailPages(string value)
     {
         using var bitmap = new System.Drawing.Bitmap(1, 1);
         using var graphics = System.Drawing.Graphics.FromImage(bitmap);
-        using var font = new System.Drawing.Font("Segoe UI", 18, System.Drawing.FontStyle.Regular, System.Drawing.GraphicsUnit.Pixel);
+        int pixels = Math.Max(9, (int)Math.Round(22 * .83f * preferences.TextScale));
+        using var font = new System.Drawing.Font("Segoe UI", pixels, System.Drawing.FontStyle.Regular, System.Drawing.GraphicsUnit.Pixel);
         using var format = new System.Drawing.StringFormat(System.Drawing.StringFormat.GenericTypographic);
         var pages = new List<string>(); string rest = value.Replace("\r", "");
         do {

@@ -122,6 +122,7 @@ internal sealed partial class TableGame
     {
         heroPositions[player.Id] = center;
         bool target = IsPlayerTarget(player.Id), active = match!.ActivePlayerId == player.Id;
+        bool hasCounters = StateClarity.PlayerCounters(player).Length > 0;
         float radius = own ? 40 : 34;
         if (!own) {
             int count = Math.Min(7, player.Zone("Hand").Count);
@@ -134,7 +135,7 @@ internal sealed partial class TableGame
             }
             var handBounds = new Rectangle((int)handCenter.X - 83, (int)handCenter.Y - 30, 166, 75);
             hits.Add(new("hand-zone:" + player.Id, Scope, handBounds, () => OpenZone(player.Id, "Hand")));
-            if (index != 1) canvas.CenterText(player.Zone("Hand").Count + " in hand", new((int)handCenter.X - 65, (int)handCenter.Y + 35, 130, 22), Muted, .48f);
+            if (index != 1 && !hasCounters) canvas.CenterText(player.Zone("Hand").Count + " in hand", new((int)handCenter.X - 65, (int)handCenter.Y + 35, 130, 22), Muted, .48f);
         }
         canvas.Glow(center + new Vector2(0, 10), new(radius * 3.8f, radius * 2.5f), Color.Black * .9f);
         if (target || player.Priority || active) canvas.Glow(center, new(radius * 4.7f), (target ? Blue : Gold) * .4f);
@@ -163,6 +164,7 @@ internal sealed partial class TableGame
         canvas.CenterText(own ? name : name + " ↗", nameplate, !own && nameplate.Contains(pointer) ? Blue : Ink, .6f, true);
         int incoming = match.Combat?.Attackers.Count(a => a.DefendingPlayerId == player.Id) ?? 0;
         string status = player.Eliminated ? "ELIMINATED" : incoming > 0 ? incoming + (own ? " ATTACKING YOU" : " INCOMING") : player.Priority ? "PRIORITY" : active ? "ACTIVE TURN" : "";
+        if (!own && index != 1 && hasCounters) status += (status.Length > 0 ? " · " : "") + player.Zone("Hand").Count + " in hand";
         canvas.CenterText(status, new(x, y + 23, 188, 19), incoming > 0 ? Red : Gold, .43f, true);
         var permanents = player.Zone("Battlefield").Cards;
         int creatures = permanents.Count(c => CardPresentation.HasCombatStats(c) && !c.PhasedOut);
@@ -174,6 +176,11 @@ internal sealed partial class TableGame
             ? string.Join(" · ", new[] { phased > 0 ? $"{phased} phased out" : "", unknown > 0 ? $"{unknown} unknown" : "" }.Where(v => v.Length > 0))
             : $"{permanents.Length} permanents";
         canvas.CenterText(secondary, new(countX, countY + 22, 188, 18), Muted, .51f);
+        if (hasCounters) {
+            int counterX = own ? (int)center.X - 240 : (int)center.X - 94;
+            int counterY = own ? (int)center.Y - 22 : index == 1 ? (int)center.Y + 35 : (int)center.Y - 64;
+            DrawPublicPlayerCounters(player, counterX, counterY, index == 1 && !own ? 144 : 188);
+        }
         if (!own) hits.Add(new("focus:" + player.Id, Scope, nameplate, () => OpenZone(player.Id, "Battlefield")));
     }
 }

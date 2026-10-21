@@ -16,6 +16,8 @@ internal static class Program
         testRun |= args.Contains("--smoke-full-battlefield");
         testRun |= args.Contains("--smoke-hand-placement");
         testRun |= args.Contains("--smoke-allocation");
+        testRun |= args.Contains("--smoke-recovery");
+        testRun |= args.Contains("--smoke-state-clarity") || args.Contains("--smoke-deck-experience");
         var profile = Arg("--profile") ?? (testRun
             ? Path.Combine(Path.GetTempPath(), "ManaTableNative-tests", Guid.NewGuid().ToString())
             : Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "ManaTableNative"));
@@ -27,12 +29,14 @@ internal static class Program
             Microsoft.Xna.Framework.Point? size = null;
             if (Arg("--size")?.Split('x') is { Length: 2 } dimensions && int.TryParse(dimensions[0], out int width) && int.TryParse(dimensions[1], out int height)) size = new(Math.Clamp(width, 800, 3840), Math.Clamp(height, 450, 2160));
             if (args.Contains("--smoke-updates")) { UpdateSmoke.Run(profile, size); return 0; }
+            if (args.Contains("--smoke-recovery")) { RecoverySmoke.Run(profile, size); return 0; }
+            if (args.Contains("--smoke-state-clarity")) { StateClaritySmoke.Run(profile, size); return 0; }
             if (args.Contains("--smoke-hand-placement")) { HandPlacementSmoke.Run(profile, size); return 0; }
             if (args.Contains("--smoke-allocation")) { AllocationSmoke.Run(profile, size); return 0; }
             if (args.Contains("--smoke-onboarding")) { OnboardingSmoke.Run(profile, size); return 0; }
             if (args.Contains("--smoke-loading")) { LoadingSmoke.Run(profile, size); return 0; }
             if (args.Contains("--smoke-context-guidance")) { ContextGuidanceSmoke.Run(profile, size); return 0; }
-            if (args.Contains("--smoke-full-battlefield")) { FullBattlefieldSmoke.Run(profile, size); return 0; }
+            if (args.Contains("--smoke-full-battlefield")) { FullBattlefieldSmoke.Run(profile, size, args.Contains("--real-art")); return 0; }
             if (args.Contains("--smoke-commander-tax")) {
                 var scenario = new InteractionScenarioEngine(); scenario.Present(PresentationSmoke.CommanderTaxExample());
                 using var test = new TableGame(scenario, profile, null, null, size, initialState: scenario.State, artSource: new CardReadingArtFixture());
@@ -42,6 +46,8 @@ internal static class Program
             // Existing UI regressions start directly at their subject. Onboarding
             // has its own fresh-profile and persistence coverage above.
             if (args.Any(a => a is "--smoke-ui-ai" or "--smoke-ui-interactions" or "--smoke-table-feel" or "--smoke-card-reading" or "--smoke-card-states" or "--smoke-compact-selection" or "--smoke-deck-building" or "--smoke-workshop" or "--smoke-analysis" or "--smoke-lobby" or "--smoke-auto-dock" or "--smoke-action-feedback" or "--smoke-priority-abilities"))
+                File.WriteAllText(Path.Combine(profile, "experience.json"), JsonSerializer.Serialize(new { WelcomeSeen = true, TableGuideSeen = true }));
+            if (args.Contains("--smoke-deck-experience"))
                 File.WriteAllText(Path.Combine(profile, "experience.json"), JsonSerializer.Serialize(new { WelcomeSeen = true, TableGuideSeen = true }));
             if (args.Contains("--smoke-auto-dock")) {
                 var scenario = new InteractionScenarioEngine(); scenario.Present(PresentationSmoke.Example());
@@ -92,6 +98,8 @@ internal static class Program
             if (args.Contains("--smoke-analysis-adapter")) { AnalysisRegression.RunAsync(paths).GetAwaiter().GetResult(); return 0; }
             if (args.Contains("--smoke-workshop-adapter")) { DeckWorkshopRegression.RunAsync(paths).GetAwaiter().GetResult(); return 0; }
             var engine = new ForgeEngine(paths);
+            if (args.Contains("--smoke-deck-experience"))
+                (PlayPreferences.Load(profile) with { TextScale = 1.3f, Automatic = false, Sounds = false }).Save(profile);
             try {
                 using var game = new TableGame(engine, profile, Arg("--capture"), Arg("--fixture"), size);
                 using var lobbySmoke = args.Contains("--smoke-lobby") ? new LobbySmoke(game.TestPort, paths) : null;
@@ -101,6 +109,7 @@ internal static class Program
                 if (args.Contains("--smoke-analysis")) game.Automation = new AnalysisSmoke(game.TestPort);
                 if (args.Contains("--smoke-workshop")) game.Automation = new DeckWorkshopSmoke(game.TestPort);
                 if (args.Contains("--smoke-deck-tuning")) game.Automation = new DeckTuningSmoke(game.TestPort);
+                if (args.Contains("--smoke-deck-experience")) game.Automation = new DeckExperienceSmoke(game.TestPort);
                 if (game.Automation != null) game.TestPort.DismissWelcome();
                 game.Run();
             } finally { engine.DisposeAsync().AsTask().GetAwaiter().GetResult(); }

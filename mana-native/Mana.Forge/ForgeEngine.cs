@@ -64,7 +64,7 @@ public sealed partial class ForgeEngine(ForgePaths paths) : ICardEngine, ITableS
                         }
                         else if (ev.GetString() == "error") throw new IOException(Text(message, "message"));
                     } else if (message.TryGetProperty("id", out var id) && pending.TryRemove(id.GetInt64(), out var reply)) {
-                        if (message.TryGetProperty("error", out var error)) reply.TrySetException(new InvalidOperationException(error.GetString()));
+                        if (message.TryGetProperty("error", out var error)) reply.TrySetException(new EngineCommandRejectedException(error.GetString() ?? "The rules engine rejected this request."));
                         else reply.TrySetResult(message.GetProperty("result").Clone());
                     }
                 }
@@ -140,6 +140,8 @@ public sealed partial class ForgeEngine(ForgePaths paths) : ICardEngine, ITableS
             Read<CommanderOption[]>(data.GetProperty("commanderChoices")), Text(validation, "problem"), Text(data, "saveError"),
             deck.GetProperty("canUndo").GetBoolean(), deck.GetProperty("canRedo").GetBoolean()) {
                 Issues = validation.TryGetProperty("issues", out var issues) ? Read<DeckIssue[]>(issues) : [],
+                StructureValid = validation.TryGetProperty("structureValid", out var structural) ? structural.GetBoolean() : null,
+                Eligibility = Text(validation, "eligibility") is { Length: > 0 } eligibility ? eligibility : "unknown",
                 Format = Text(data, "format")
             };
     }

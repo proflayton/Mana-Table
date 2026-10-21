@@ -27,15 +27,33 @@ internal sealed partial class TableGame
     }
     private void ImportFile()
     {
-        using var picker = new OpenFileDialog { Title = "Import a Commander deck", Filter = "Deck lists|*.txt;*.dck|All files|*.*" };
-        if (picker.ShowDialog() != DialogResult.OK) return;
-        string name = Path.GetFileNameWithoutExtension(picker.FileName), text = File.ReadAllText(picker.FileName);
-        ImportDeck(() => engine.ImportAsync(name, text), true);
+        try {
+            using var picker = new OpenFileDialog { Title = "Import a Commander deck", Filter = "Deck lists|*.txt;*.dck|All files|*.*" };
+            if (picker.ShowDialog() == DialogResult.OK) ImportFilePath(picker.FileName);
+        } catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or System.Runtime.InteropServices.ExternalException) {
+            error = "Could not open the deck file picker. Try again. " + ex.Message;
+        }
+    }
+    private void ImportFilePath(string path)
+    {
+        ImportDeck(async () => {
+            string text;
+            try { text = await File.ReadAllTextAsync(path); }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) {
+                throw new IOException($"Could not read '{Path.GetFileName(path)}'. Check that it is available and you have permission, then choose the file again. Your current deck is unchanged.", ex);
+            }
+            return await engine.ImportAsync(Path.GetFileNameWithoutExtension(path), text);
+        }, true, "Importing deck file", "Opening the file, then reading its deck list.");
     }
     private void ImportClipboard()
     {
-        if (!Clipboard.ContainsText()) { error = "Copy an exported deck list to the clipboard first."; return; }
-        var text = Clipboard.GetText();
+        string text;
+        try {
+            if (!Clipboard.ContainsText()) { error = "Copy an exported deck list to the clipboard first."; return; }
+            text = Clipboard.GetText();
+        } catch (System.Runtime.InteropServices.ExternalException) {
+            error = "Could not read the clipboard. Another app may be using it. Try Paste again or import a deck file."; return;
+        }
         if (WorkshopEngine != null && text.Trim().Contains("archidekt.com", StringComparison.OrdinalIgnoreCase) && !text.Trim().Contains('\n')) { ImportArchidekt(text.Trim()); return; }
         var name = Ask("Deck name", "Name your Commander deck", "My Commander deck");
         if (name != null) ImportDeck(() => engine.ImportAsync(name, text), true);

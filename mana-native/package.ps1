@@ -150,6 +150,7 @@ $archive = $OutputDirectory + '-windows-x64.zip'
 (Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash | Set-Content -Encoding ASCII ($archive + '.sha256')
 $manifest = @{ version=$Version; directory=$OutputDirectory; executable='ManaTable.exe'; sourceRevision=$revision; archive=$archive; checksum=($archive + '.sha256') }
 if ($Release) { $manifest['sourceArchive'] = $sourceArchive; $manifest['sourceChecksum'] = $sourceChecksum }
+New-Item -ItemType Directory -Path (Join-Path $repository 'dist') -Force | Out-Null
 $manifest |
     ConvertTo-Json | Set-Content -Encoding UTF8 (Join-Path $repository 'dist/latest-native.json.tmp')
 Move-Item -LiteralPath (Join-Path $repository 'dist/latest-native.json.tmp') -Destination (Join-Path $repository 'dist/latest-native.json') -Force

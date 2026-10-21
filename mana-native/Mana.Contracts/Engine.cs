@@ -73,6 +73,8 @@ public sealed record DeckDetails(string Id, string Name, long Revision, DeckEntr
 {
     public DeckIssue[] Issues { get; init; } = [];
     public string Format { get; init; } = "Commander";
+    public bool? StructureValid { get; init; }
+    public string Eligibility { get; init; } = "unknown";
     public string[] CommanderIds => Entries.Where(e => e.Section == "Commander").Select(e => e.Id).ToArray();
 }
 public sealed record DeckPreset(string Id, string Name, string Description);
@@ -144,6 +146,8 @@ public sealed record CardFace(string Name, string Type, string ManaCost, string 
 public sealed record Zone(string Name, int Count, Card[] Cards, Card? TopCard);
 public sealed record Player(int Id, string Name, int Life, bool Priority, bool Eliminated, Dictionary<string, int> Mana, Zone[] Zones)
 {
+    // Public engine-owned player resources; card counters live on Card separately.
+    public Dictionary<string, int> Counters { get; init; } = [];
     // Missing used count means an older engine did not project this state.
     // A null limit with a present used count means unlimited land plays.
     public int? LandPlaysUsed { get; init; }
@@ -224,6 +228,7 @@ public sealed record Combat(Attack[] Attackers, AttackOption[] AttackOptions, st
 public sealed record StackItem(string Name, string Text, bool Ability, Card? Card)
 {
     public string Id { get; init; } = "";
+    public int? ControllerId { get; init; }
     public StackTarget[] Targets { get; init; } = [];
 }
 public sealed record StackTarget(string Kind, string Id, string Name, int? PlayerId = null);
@@ -233,6 +238,10 @@ public sealed record GameSnapshot(string Id, string Status, string? Error, strin
 {
     public long Revision { get; init; }
     public long BoardRevision { get; init; }
+    public int? PriorityPlayerId { get; init; }
+    // Public acting seat only. Another seat's private prompt/options are never copied here.
+    public int? DecisionOwnerId { get; init; }
+    public string ActionClass { get; init; } = "";
     public ActivityEntry[] Activity { get; init; } = [];
     public string[] Notices { get; init; } = [];
     public PriorityAbility[] IgnoredPriorityAbilities { get; init; } = [];
@@ -241,4 +250,6 @@ public sealed record GameSnapshot(string Id, string Status, string? Error, strin
 public sealed record ActivityEntry(long Id, int Turn, string PhaseKey, string Kind, int? PlayerId, string Message, string? CardId, string? CardName)
 {
     public string Detail { get; init; } = "";
+    public string Outcome { get; init; } = "";
+    public int Count { get; init; }
 }

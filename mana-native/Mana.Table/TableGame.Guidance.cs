@@ -54,7 +54,7 @@ internal sealed partial class TableGame
     private void DrawContextGuidance()
     {
         guidanceCue = null; guidanceBounds = null;
-        if (match is not { Status: "playing" } state || busy || OverlayOpen || dragging || chatOpen) return;
+        if (match is not { Status: "playing" } state || busy || session.NeedsRecovery || OverlayOpen || dragging || chatOpen) return;
         var hit = HitAt(pointer);
         ControlCue? cue;
         if (hit?.Id is "auto" or "hold") {

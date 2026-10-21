@@ -25,13 +25,21 @@ internal sealed class FullBattlefieldSmoke : ITableAutomation
     public bool ClickAccepted { get; set; }
     public MouseState ReadMouse() => mouse;
 
-    internal static void Run(string profile, Point? size)
+    internal static void Run(string profile, Point? size, bool realArt = false)
     {
-        new PlayPreferences { Automatic = false, Sounds = false, ReducedMotion = false }.Save(profile);
+        new PlayPreferences { Automatic = false, Sounds = false, ReducedMotion = false, TextScale = realArt ? 1.3f : 1 }.Save(profile);
         var scenario = new InteractionScenarioEngine();
         scenario.Present(Example("ten"));
-        using var game = new TableGame(scenario, profile, null, null, size, initialState: scenario.State,
-            artSource: new CardReadingArtFixture());
+        ICardArtSource images = new CardReadingArtFixture();
+        if (realArt) {
+            var source = new MagicArtSource(profile);
+            foreach (string name in DistinctNames.Concat(new[] { "Forest", "Plains", "Island", "Toothy, Imaginary Friend", "Sol Ring", "Rhystic Study", "Treetop Village" }).Distinct()) {
+                source.LoadAsync(new(name, "front"), CancellationToken.None).GetAwaiter().GetResult();
+                File.AppendAllText(Path.Combine(profile, "real-art-progress.log"), name + "\n");
+            }
+            images.Dispose(); images = source;
+        }
+        using var game = new TableGame(scenario, profile, null, null, size, initialState: scenario.State, artSource: images);
         game.Automation = new FullBattlefieldSmoke(game.TestPort, scenario);
         game.Run();
     }
@@ -146,6 +154,17 @@ internal sealed class FullBattlefieldSmoke : ITableAutomation
             }
             Check(scenario.Replies.Count == 1, "Displaying fifty distinct creatures per seat sends no additional game action");
             Capture("09-fifty-distinct");
+            MoveCard("distinct-2-49");
+        });
+        Wait(() => Reading("distinct-2-49"), 3, () => {
+            Check(view.Hovered?.Name == "Alloy Myr", "The named Alloy Myr remains individually readable among fifty distinct creatures");
+            Capture("10-named-occurrence");
+        });
+        Step(0, () => Buttons(right: ButtonState.Pressed));
+        Step(.04, () => Buttons());
+        Step(.15, () => {
+            Check(view.Overlay == "inspect" && scenario.Replies.Count == 1, "Inspecting the named occurrence preserves the game and sends no command");
+            Capture("11-named-inspector");
             File.WriteAllText(Path.Combine(view.Profile, "full-battlefield-results.json"),
                 JsonSerializer.Serialize(checks, new JsonSerializerOptions { WriteIndented = true }));
             view.Exit();
@@ -252,7 +271,10 @@ internal sealed class FullBattlefieldSmoke : ITableAutomation
         }, new JsonSerializerOptions { WriteIndented = true, IncludeFields = true }));
         throw new InvalidOperationException(description);
     }
-    private void Capture(string name) { using var output = File.Create(Path.Combine(view.Profile, name + ".png")); view.Surface.SaveAsPng(output, view.Surface.Width, view.Surface.Height); }
+    private void Capture(string name) {
+        using var output = File.Create(Path.Combine(view.Profile, name + ".png")); view.Surface.SaveAsPng(output, view.Surface.Width, view.Surface.Height);
+        view.CaptureWindow(Path.Combine(view.Profile, name + "-window.png"));
+    }
     public void Frame(Texture2D surface)
     {
         if (view.Now > 90) Fail("Full battlefield regression did not finish");
@@ -284,7 +306,7 @@ internal sealed class FullBattlefieldSmoke : ITableAutomation
         var card = new Card { VisualId = id, CombatId = id, Name = mode == "fifty" ? "Soldier Token" : "Llanowar Elves",
             Type = mode == "fifty" ? "Token Creature — Soldier" : "Creature — Elf Druid", Power = mode == "fifty" ? 1 : 2,
             Toughness = mode == "fifty" ? 1 : 2, Text = mode == "fifty" ? "" : "{T}: Add {G}.", Selectable = mode == "ten" && seat == 0 && index == 9 };
-        if (mode == "distinct") return card with { Name = $"Distinct creature {index + 1:00}", Text = "" };
+        if (mode == "distinct") return card with { Name = DistinctNames[index], Text = "" };
         if (mode != "mixed") return card;
         return index switch {
             0 => card with { Name = "Treetop Village", Type = "Land Creature — Ape", Power = 3, Toughness = 3, CombatKeywords = ["trample"] },
@@ -308,4 +330,18 @@ internal sealed class FullBattlefieldSmoke : ITableAutomation
             _ => card
         };
     }
+    // Real names make the distinct-occurrence exercise useful for art recognition.
+    // These are controlled current characteristics, not a simulation of printed rules.
+    private static readonly string[] DistinctNames = [
+        "Grizzly Bears", "Runeclaw Bear", "Walking Corpse", "Savannah Lions", "Isamaru, Hound of Konda",
+        "Elite Vanguard", "Memnite", "Ornithopter", "Phyrexian Walker", "Shield Sphere",
+        "Goblin Guide", "Monastery Swiftspear", "Llanowar Elves", "Elvish Mystic", "Fyndhorn Elves",
+        "Birds of Paradise", "Noble Hierarch", "Lotus Cobra", "Tireless Tracker", "Scavenging Ooze",
+        "Tarmogoyf", "Snapcaster Mage", "Dark Confidant", "Stoneforge Mystic", "Thalia, Guardian of Thraben",
+        "Mother of Runes", "Giver of Runes", "Delver of Secrets", "Young Pyromancer", "Baleful Strix",
+        "Coiling Oracle", "Elvish Visionary", "Wall of Omens", "Wall of Blossoms", "Eternal Witness",
+        "Reclamation Sage", "Acidic Slime", "Solemn Simulacrum", "Mulldrifter", "Kitchen Finks",
+        "Restoration Angel", "Siege Rhino", "Questing Beast", "Questing Druid", "Silver Myr",
+        "Gold Myr", "Iron Myr", "Leaden Myr", "Copper Myr", "Alloy Myr"
+    ];
 }

@@ -56,17 +56,21 @@ internal sealed partial class TableGame
     }
     private void DrawActionCallout()
     {
+        if (DrawDecisionClarity(match!)) return;
         var recent = actionFeedback.Last;
+        if (match!.Stack.Length == 0 && actionFeedback.LastPublicOutcome is { } publicOutcome && now - publicOutcome.Started < 5
+            && (recent == null || publicOutcome.Started > recent.Started)) { DrawPublicOutcome(); return; }
         bool resolving = recent != null && now - recent.Started < 5 && (match!.Stack.Length == 0 || now - recent.Started < 2.6);
         var next = match!.Stack.FirstOrDefault();
-        if (!resolving && next == null) return;
+        if (!resolving && next == null) { DrawPublicOutcome(); return; }
         string title = resolving ? recent!.Title : next!.Name;
         string detail = resolving ? recent!.Changes.FirstOrDefault() ?? recent.Detail
             : !next!.Ability && next.Card is { Text.Length: > 0 } spell ? spell.Text : next.Text;
+        if (!resolving && next is { ControllerId: not null }) detail = StateClarity.StackController(match, next) + "\n" + detail;
         string targets = resolving ? (recent!.Changes.Length > 1 ? recent.Changes[1] : "")
             : next!.Targets.Length == 0 ? "" : "Target: " + string.Join(", ", next.Targets.Select(t => t.Name));
         canvas.Panel(new(20, 66, 379, 175), new Color(15, 24, 32) * .97f, resolving ? Gold : Red, 7);
-        canvas.Text(resolving ? "JUST RESOLVED" : "NEXT TO RESOLVE", 34, 77, resolving ? Gold : Red, .55f, 342, 1, true);
+        canvas.Text(resolving ? recent!.Heading : "NEXT TO RESOLVE", 34, 77, resolving ? Gold : Red, .55f, 342, 1, true);
         canvas.Text(title, 34, 101, Ink, .78f, 350, 2, true);
         canvas.Text(detail, 34, 143, Ink, .63f, 350, 3);
         canvas.Text(targets, 34, 201, resolving ? Gold : Red, .6f, 275, 2);

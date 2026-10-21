@@ -14,6 +14,7 @@ internal static class PresentationSmoke
         Directory.CreateDirectory(profile); var results = new List<string>();
         void Check(bool condition, string message) { if (!condition) throw new InvalidOperationException(message); results.Add(message); }
         BitmapPixelSmoke.Run(Check);
+        GameplayFeedbackChecks.Run(Check);
         var state = Example();
         var scene = TableScene.Build(state, 0, new(-100, -100), null, null, false, CardPresentation.IsResource);
         Check(state.Players.All(p => scene.Battlefield(p.Id).Sum(c => c.Cards.Length) == p.Zone("Battlefield").Cards.Length), "Every seat's complete public battlefield is represented without paging");
@@ -49,7 +50,10 @@ internal static class PresentationSmoke
         Check(TurnGuide.CanAutoPass(state, true, false, noStops, false), "Engine-authorized empty priority can advance in Auto");
         var flier = new Card { Type = "Creature", CombatKeywords = ["flying", "vigilance"], Power = 4, Toughness = 4, Counters = new() { ["+1/+1"] = 3, ["Shield"] = 2, ["Time"] = 0 } };
         Check(CardPresentation.HasAbility(flier, "flying") && !CardPresentation.HasAbility(flier with { CombatKeywords = [], Text = "Flying" }, "flying"), "Effective ability markers use the engine projection, never printed rules text");
-        Check(CardPresentation.Abilities(flier with { FaceDown = true }).Length == 0, "Concealed faces expose no ability markers");
+        Check(CardPresentation.Abilities(flier with { FaceDown = true, Type = "", Power = null, Toughness = null }).Length == 0,
+            "A private hidden face with no public characteristics exposes no ability markers");
+        Check(CardPresentation.Abilities(flier with { FaceDown = true, Name = "Face-down card", Text = "", ArtName = "", OtherFace = null }).SequenceEqual(["flying", "vigilance"]),
+            "An anonymous public creature retains authoritative ability markers without its hidden identity or printed text");
         var phased = new Card { Name = "Teferi's Isle", Type = "Legendary Land", Tapped = true, PhasedOut = true };
         Check(CardPresentation.StateLabels(phased).Contains("Phased out") && !CardPresentation.StateLabels(phased with { PhasedOut = false }).Contains("Phased out"), "Phasing status follows the engine flag and clears when the same land phases in");
         Check(CardPresentation.StateLabels(phased with { FaceDown = true }).Contains("Phased out") && CardPresentation.Abilities(phased).Length == 0, "Phasing is a public status, including on face-down cards, independent of combat abilities");
@@ -113,9 +117,10 @@ internal static class PresentationSmoke
         Check(releasedPose.Center.X > heldPose.Center.X && releasedPose.Center.X < end.Center.X, "Release continues from the held position rather than a new library entrance");
         CheckMotionTiming(Check);
         var presence = new TablePresence();
-        var afterDraw = state with { Players = state.Players.Select(p => p.Id == 1 ? p with { Zones = p.Zones.Select(z => z.Name == "Hand" ? z with { Count = z.Count + 1 } : z.Name == "Library" ? z with { Count = z.Count - 1 } : z).ToArray() } : p.Id == 2 ? p with { Life = p.Life - 3 } : p).ToArray() };
+        var afterDraw = state with { Players = state.Players.Select(p => p.Id == 1 ? p with { Zones = p.Zones.Select(z => z.Name == "Hand" ? z with { Count = z.Count + 1 } : z.Name == "Library" ? z with { Count = z.Count - 1 } : z).ToArray() } : p.Id == 2 ? p with { Life = p.Life - 3 } : p).ToArray(),
+            Activity = [new(1, state.Turn, state.PhaseKey, "draw", 1, "Opponent drew a card.", null, null) { Count = 1 }] };
         presence.Observe(state, afterDraw, 5);
-        Check(presence.Cues.Count == 2 && presence.PendingDraws(1, 5.2) == 1 && presence.Cues.Any(c => c.Kind == SeatCueKind.LifeLoss && c.Amount == 3), "Public count and life deltas create seat feedback without hidden card identities");
+        Check(presence.Cues.Count == 2 && presence.PendingDraws(1, 5.2) == 1 && presence.Cues.Any(c => c.Kind == SeatCueKind.LifeLoss && c.Amount == 3), "Public draw events and life deltas create seat feedback without hidden card identities");
         presence.Observe(afterDraw, afterDraw, 5.1);
         Check(presence.Cues.Count == 2 && presence.PendingDraws(1, 6) == 0, "Repeated polls neither repeat nor prolong anonymous card draws");
         foreach (int seat in new[] { 0, 1, 2 }) {
