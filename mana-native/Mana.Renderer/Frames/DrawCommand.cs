@@ -102,4 +102,3 @@ public abstract record DrawCommand
         internal override void Paint(Canvas canvas) => canvas.CenterText(Value, Bounds, Color, Size, Bold, Serif);
     }
 }
-

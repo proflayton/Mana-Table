@@ -13,4 +13,3 @@ public sealed class DrawingFrame
         Scale = scale;
     }
 }
-
