@@ -25,6 +25,7 @@ internal sealed partial class TableApplication
         ReadingGalleryOpen, dragging, CompactCardDecision);
     private string? readingId => cardPresentation.PinnedId;
     private Rectangle? hoverPreview => cardPresentation.ReaderBounds;
+    internal bool CardPointer => !dragging && HitAt(pointer)?.Card is { } card && (!card.FaceDown || IsCardActionable(card));
 
     private void ExtendCardHit(Card card, Rectangle bounds) => hits.ExtendCanonical(
         "card:" + card.Key + ":" + card.VisualId, Scope, bounds);
@@ -33,7 +34,7 @@ internal sealed partial class TableApplication
     {
         if (ActivityOpen) return hits.LastOrDefault(hit => hit.Id.StartsWith("activity-") && hit.Contains(point) && CurrentHit(hit));
         if (updatesOpen) return hits.LastOrDefault(hit => hit.Id.StartsWith("updates-") && hit.Contains(point) && CurrentHit(hit));
-        if (ExperienceOpen) return hits.LastOrDefault(hit => (hit.Id.StartsWith("experience-") || hit.Id.StartsWith("updates-") || hit.Id == "guidance-reset") && hit.Contains(point) && CurrentHit(hit));
+        if (ExperienceOpen) return hits.LastOrDefault(hit => (hit.Id.StartsWith("experience-") || hit.Id.StartsWith("updates-")) && hit.Contains(point) && CurrentHit(hit));
         if (BattlefieldFocused && hits.LastOrDefault(hit => hit.Contains(point)) is { } focusHit
             && focusHit.Id.StartsWith("battlefield-focus-", StringComparison.Ordinal)) return focusHit;
         return cardPresentation.ResolveHit(point, hits, hits.LastOrDefault(hit => hit.Contains(point)), CardContext);

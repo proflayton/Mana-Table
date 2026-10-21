@@ -36,6 +36,7 @@ internal sealed class TableWindow : Game
     private SpriteBatch? screen;
     private bool resizing;
     private KeyboardState previousKeys;
+    private bool? handCursor;
     private string? windowCapture;
     private int frames;
     private ITableAutomation? automation;
@@ -84,6 +85,11 @@ internal sealed class TableWindow : Game
         var keys = Automation?.ReadKeyboard() ?? Keyboard.GetState();
         var viewport = GraphicsDevice.Viewport;
         application.Update(time, mouse, keys, new(viewport.Width, viewport.Height));
+        bool cardPointer = application.CardPointer;
+        if (handCursor != cardPointer) {
+            Mouse.SetCursor(cardPointer ? MouseCursor.Hand : MouseCursor.Arrow);
+            handCursor = cardPointer;
+        }
         if (Automation is { } driver && (application.AcceptedDrag || application.AcceptedHit is { } id && id == driver.ExpectedClick)) driver.ClickAccepted = true;
         if (keys.IsKeyDown(Keys.F11) && previousKeys.IsKeyUp(Keys.F11)) graphics.ToggleFullScreen();
         previousKeys = keys;

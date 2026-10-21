@@ -27,15 +27,6 @@ internal sealed partial class TableApplication
     private bool PlacementDropChoice() => match != null && !OverlayOpen && dragSource is { Zone: "Hand", Card: { Selectable: false } card }
         && dragSource.Scope == Scope && TableWorld.CanPlayAt(pointer) && HandPlacements.Options(match, card).Length > 1;
 
-    private void PaintHandPlacement(Card card, Pose pose)
-    {
-        if (match == null || HandPlacements.Options(match, card) is not { Length: > 0 } options) return;
-        if (pose.Size.X < 300) {
-            var badge = new Rectangle((int)pose.Center.X - 29, pose.Bounds.Top + 7, 58, 20);
-            canvas.Panel(badge, new(15, 41, 54), ActionAccent, 4);
-            canvas.CenterText("PLACE", badge, ActionAccent, .47f, true);
-        }
-    }
     private void DrawHandPlacement()
     {
         if (match == null || placementCard == null || Scope != placementScope) { overlay = ""; placementCard = null; return; }

@@ -28,7 +28,6 @@ internal sealed partial class TableApplication
         if (inspected == null) return;
         CollapseCardReading();
         inspectBack = false; inspectPage = 0; overlay = "inspect";
-        LearnControl("inspect-card");
     }
     private void OpenZone(int player, string zone) { zonePlayer = player; zoneName = zone; zonePage = 0; overlay = ""; }
     private bool IsPlayerTarget(int player) => match?.Decision?.PlayerChoices.Contains(player) == true

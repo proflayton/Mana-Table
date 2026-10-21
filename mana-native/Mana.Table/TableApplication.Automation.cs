@@ -140,9 +140,6 @@ internal sealed partial class TableApplication
         internal bool WelcomeOpen => game.welcomeOpen;
         internal bool TableGuideOpen => game.tableGuideOpen;
         internal bool ExperienceOpen => game.ExperienceOpen;
-        internal IReadOnlySet<string> LearnedControls => game.experience.LearnedControls;
-        internal Mana.Magic.ControlCue? GuidanceCue => game.guidanceCue;
-        internal Rectangle? GuidanceBounds => game.guidanceBounds;
         internal void DismissWelcome() => game.DismissWelcome();
         internal void OpenTableGuide() => game.OpenTableGuide();
         internal void SetHeld(bool value) { game.held = value; game.priority.Reset(); }

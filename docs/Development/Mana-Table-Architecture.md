@@ -171,18 +171,14 @@ six Commander seats. The Mana Table lobby's size controls stop at four.
 Every native launch moves from startup into a main menu with AI, friends and deck entry points.
 These routes reuse the existing deck picker, review and readiness gates; choosing
 a route never imports a deck, hosts a table or readies a seat. `experience.json`
-stores the first menu visit and demonstrated controls independently of play preferences.
+remembers menu and explicit help visits independently of play preferences.
 Games open directly at their current decision. Setup captions sit beside their
-actions; `ControlGuidance` resolves the current private card occurrence and
-projected legal actions to produce one short control cue. `TableApplication.Guidance`
-places it beside the relevant card/target when there is room, using the action
-dock as a fallback. Required engine messages, costs and restrictions stay visible.
-Cues add no hit regions and do not enter the overlay or Auto policy. A control
-is learned only after an accepted command completes with a changed authoritative
-snapshot, or an explicit local control succeeds (inspection, Auto or Hold).
-Rejected commands, first clicks, hover and elapsed time never retire reminders.
-Settings can reset the learned set. F1 remains a brief contextual reference with
-its own modal scope; opening it preserves the underlying decision and play policy.
+actions, while gameplay presents actual engine messages, costs, restrictions and
+action controls without unsolicited card/target/priority coaching overlays.
+The former learned-control bookkeeping, hint-reset controls and dedicated coaching
+UI suite have been removed. `ControlGuidance` remains available to the explicitly
+opened F1 reference, with its own modal scope; opening it preserves the underlying
+decision and play policy. Setup and deck guidance retain their existing behavior.
 
 Native priority controls offer a per-ability pass preference until the player's
 next turn. `AvailableActions` produces a complete legal activation list alongside

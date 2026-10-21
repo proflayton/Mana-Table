@@ -84,7 +84,7 @@ internal sealed partial class TableApplication : IDisposable
     private bool DecisionModal => !session.NeedsRecovery && !TableChoice && !collapsedDecision && match?.Decision?.Kind is "choice" or "reveal" or "number" or "text" or "allocate";
     private bool OverlayOpen => updatesOpen || ActivityOpen || ExperienceOpen || workshopDialog.Length > 0 || overlay.Length > 0 || zoneName != null || DecisionModal;
     private string Scope => match == null ? deckEditor ? DeckScope : LobbyScope : session.Scope;
-    private string ControlScope(string id) => id.StartsWith("updates-") ? UpdateScope : id.StartsWith("activity-") ? ActivityScope : id.StartsWith("experience-") || id == "guidance-reset" && ExperienceOpen ? ExperienceScope : id.StartsWith("chat-") ? ChatScope
+    private string ControlScope(string id) => id.StartsWith("updates-") ? UpdateScope : id.StartsWith("activity-") ? ActivityScope : id.StartsWith("experience-") ? ExperienceScope : id.StartsWith("chat-") ? ChatScope
         : match != null && (id is "auto" or "hold" or "instructions" or "action-details" or "battlefields" or "quiet-priority-stop" or "ability-auto-pass-open" or "ability-prev" or "ability-next" or "ability-text-prev" or "ability-text-next"
             || id.StartsWith("phase-stop:") || id.StartsWith("ability-undo:")) ? match.Id + ":playback" : Scope;
     private bool CurrentHit(Hit hit) => hit.Scope == ControlScope(hit.Id);
@@ -98,7 +98,7 @@ internal sealed partial class TableApplication : IDisposable
         this.restartedAfterUpdate = restartedAfterUpdate;
         session = new(engine, engine, this.clock); updates = new(session);
         session.Changed += AcceptEffects;
-        session.Completed += () => { FinishActivity(); FinishGuidanceAttempt(); nextPoll = 0; if (error.Length == 0) priority.Reset(); };
+        session.Completed += () => { FinishActivity(); nextPoll = 0; if (error.Length == 0) priority.Reset(); };
         session.Failed += ex => { error = ex.Message; commandFailure = session.LastFailureWasCommand; FailActivity(); try { File.AppendAllText(Path.Combine(profile, "client.log"), ex + "\n"); } catch (Exception logError) when (logError is IOException or UnauthorizedAccessException) { } };
         // Fresh observations restore play, but an explicit action failure remains
         // available until acknowledged instead of disappearing between frames.
@@ -261,10 +261,8 @@ internal sealed partial class TableApplication : IDisposable
     {
         if (fixture != null || session.NeedsRecovery || match?.Id != reply.GameId || match.Decision?.Id != reply.DecisionId) return;
         if (reply.Action != ReplyAction.PassUntilPublicAction) StopQuietPriority();
-        string? key = GuidanceForReply(reply);
-        var attempt = key == null ? null : new GuidanceAttempt(key, match.Id, match.Decision.Id, match.Revision);
         error = ""; commandFailure = false;
-        if (session.Submit(reply)) { guidanceAttempt = attempt; pendingActionLabel = StateClarity.PendingActionLabel(match, reply); }
+        if (session.Submit(reply)) pendingActionLabel = StateClarity.PendingActionLabel(match, reply);
     }
     private void Button(string id, string label, int x, int y, int width, Action action, bool enabled = true, bool accent = false, int height = 40)
     {
@@ -313,7 +311,6 @@ internal sealed partial class TableApplication : IDisposable
             canvas.Text(notice, 440, 76, Ink, .75f, 719, 2);
             hits.Add(new("notice", Scope, new(427, 64, 746, 60), () => { overlay = "history"; historyPage = 0; noticeUntil = 0; }));
         }
-        DrawContextGuidance();
         if (!updatesOpen && !ExperienceOpen && !ActivityOpen) DrawSocial();
         if (!ActivityOpen && !string.IsNullOrWhiteSpace(error)) {
             int y = match == null ? 942 : 59;

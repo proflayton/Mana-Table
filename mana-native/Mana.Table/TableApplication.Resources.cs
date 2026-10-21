@@ -21,7 +21,7 @@ internal sealed partial class TableApplication
     private sealed record ResourcePartLayout(PublicResourcePart Part, int X, int Row, int Width, int LabelWidth, float Size);
     private sealed record ResourceRowLayout(int Width, int Height, int HeaderHeight, ResourcePartLayout[] Parts);
     private sealed record ManaHaloPart(PublicResourcePart Part, Rectangle Bounds, int LabelWidth, float Size);
-    private sealed record ManaHaloPlan(Rectangle Bounds, ManaHaloPart[] Parts, Rectangle? EmptyCue);
+    private sealed record ManaHaloPlan(Rectangle Bounds, ManaHaloPart[] Parts);
 
     private ResourceRowLayout ResourceLayout(string label, long total, PublicResourcePart[] parts, int width)
     {
@@ -114,10 +114,9 @@ internal sealed partial class TableApplication
             int labelWidth = entry.Part.Symbol.Length > 0 ? 20 : canvas.TextWidth(entry.Part.Name + " ", .6f, true);
             plan.Add(new(entry.Part, bounds, labelWidth, .6f));
         }
-        Rectangle? empty = parts.Count == 0 && seat == 3 ? new Rectangle((int)hero.X - inner - 63, (int)hero.Y - 12, 63, 24) : null;
-        Rectangle envelope = plan.Select(item => item.Bounds).Aggregate(empty ?? Rectangle.Empty,
+        Rectangle envelope = plan.Select(item => item.Bounds).Aggregate(Rectangle.Empty,
             (current, next) => current.IsEmpty ? next : Rectangle.Union(current, next));
-        return new(envelope, plan.ToArray(), empty);
+        return new(envelope, plan.ToArray());
     }
     private void DrawPlayerMana(Player player, ManaHaloPlan halo)
     {
@@ -146,11 +145,6 @@ internal sealed partial class TableApplication
             painted.Add(new(item.Part.Key, item.Part.Name, amount, bounds, canvas.TextWidth(amount, item.Size, true), available)
                 { Delta = cue?.Delta, AnimationStarted = cue?.Started, Opacity = opacity });
             hits.Add(new("mana-pool:" + player.Id + ":" + item.Part.Key, Scope, bounds, () => OpenManaPool(player.Id)));
-        }
-        if (halo.EmptyCue is { } empty) {
-            canvas.Panel(empty, new(17, 28, 35), Muted, 10);
-            canvas.CenterText("MANA 0", empty, Ink, .48f, true);
-            hits.Add(new("mana-pool:" + player.Id, Scope, empty, () => OpenManaPool(player.Id)));
         }
         manaPoolBadges[player.Id] = new("UNSPENT MANA", PublicResources.ManaTotal(player), halo.Bounds, painted.ToArray(), 0, 0);
     }

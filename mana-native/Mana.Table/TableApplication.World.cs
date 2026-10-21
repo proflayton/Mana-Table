@@ -203,7 +203,7 @@ internal sealed partial class TableApplication
         if (hasCounters) {
             int counterX = own ? (int)center.X - 240 : (int)center.X - 94;
             int counterY = own ? (int)center.Y - 22 : index == 1 ? (int)center.Y + 35 : (int)center.Y - 64;
-            if (own) counterX = Math.Min(counterX, manaHalo.Bounds.Left - 196);
+            if (own && manaHalo.Parts.Length > 0) counterX = Math.Min(counterX, manaHalo.Bounds.Left - 196);
             else if (index == 1) counterY = Math.Max(counterY, manaHalo.Bounds.Bottom + 8);
             DrawPublicPlayerCounters(player, counterX, counterY, index == 1 && !own ? 144 : 188, growUp: !own && index != 1);
         }

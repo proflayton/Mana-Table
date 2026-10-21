@@ -20,7 +20,8 @@ internal sealed partial class TableApplication
         decisionTextOverflow = complete.Y > shown.Y;
         int statusHeight = Math.Max(23, canvas.TextSize(status, .7f, decisionTextOverflow ? 180 : 298, 1, true).Y);
         int statusY = textY - statusHeight - 6;
-        decisionPanelBounds = new(1240, Math.Min(712, statusY - 12), 360, 900 - Math.Min(712, statusY - 12));
+        int top = Math.Min(764, statusY - 12);
+        decisionPanelBounds = new(1240, top, 360, 900 - top);
         decisionTextBounds = new(1266, textY, 295, shown.Y);
         decisionText = instruction;
         return (statusY, textY, lines);

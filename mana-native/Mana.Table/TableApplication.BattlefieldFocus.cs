@@ -121,7 +121,6 @@ internal sealed partial class TableApplication
             int y = rail.Top + (rail.Height - height) * plan.Scroll / plan.MaximumScroll;
             canvas.Rounded(new(rail.X, y, rail.Width, height), Muted, 2);
         }
-        canvas.Text("Click a card to inspect", 191, 746, Muted, .65f, 510, 1);
         if (plan.MaximumScroll > 0) canvas.Text("Scroll to browse", 987, 746, Muted, .65f, 223, 1);
     }
 

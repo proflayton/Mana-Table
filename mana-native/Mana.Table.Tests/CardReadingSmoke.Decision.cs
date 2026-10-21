@@ -16,8 +16,7 @@ internal sealed partial class CardReadingSmoke
         });
         bool SafeText() => view.TextScale == 1.3f && view.DecisionTextBounds is { Width: > 0, Height: > 0 } text
             && view.DecisionPanelBounds.Contains(text) && text.Bottom < 799
-            && !view.Hits.Any(hit => hit.Id is "read-card-action" or "read-card-close" && hit.Bounds.Intersects(text))
-            && (view.GuidanceBounds is not { } guidance || !guidance.Intersects(text));
+            && !view.Hits.Any(hit => hit.Id is "read-card-action" or "read-card-close" && hit.Bounds.Intersects(text));
         Step(0, () => {
             replies = scenario.Replies.Count;
             Move(new(10, 70)); PublishPurpose(purpose);
@@ -61,7 +60,7 @@ internal sealed partial class CardReadingSmoke
                 && reference.TextSize(firstHelpPage, .93f, 1155, 80).Y <= 500
                 && reference.TextSize(view.HelpPageText, .93f, 1155, 80).Y <= 500 && scenario.Replies.Count == replies,
                 "A real More click reaches the complete engine-message tail without omitted text, overflowing pages or a game reply");
-            Check(new[] { "close-overlay", "help-prev", "guidance-reset" }.All(id => {
+            Check(new[] { "close-overlay", "help-prev" }.All(id => {
                 var hit = view.Hits.Single(candidate => candidate.Id == id);
                 return view.HitAt(SmokePointer.Table(view, SmokePointer.Hit(view, hit)))?.Id == id;
             }), "Help navigation remains physically reachable below the measured text area");

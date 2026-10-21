@@ -59,9 +59,7 @@ internal sealed partial class TableApplication
         var cue = match == null ? null : Mana.Magic.ControlGuidance.Decision(match, selectedCombat);
         canvas.Text(cue?.Title ?? (match?.Status == "finished" ? "Your game has finished" : "Follow the next action"), 376, top + 99, Ink, 1.2f, 835, 2, true);
         canvas.Text(cue?.Text ?? (match?.Status == "finished" ? "Inspect the final battlefield, or return to setup for another game."
-            : "Short reminders appear beside the cards and controls when you need them."), 377, top + 158, Ink, .91f, 830, 3);
-        canvas.Text("Reminders retire after successful actions. You can show them again in Settings.", 377, top + 247, Muted, .77f, 830, 2);
-        Button("guidance-reset", "Show hints again", 377, top + 314, 270, () => { ResetControlHints(); CloseTableGuide(); }, height: 43);
+            : "Choose a play path from the main menu, or return to your current table."), 377, top + 158, Ink, .91f, 830, 3);
         Button("experience-guide-done", "Back to it", 940, top + 314, 282, CloseTableGuide, accent: true, height: 43);
     }
 }

@@ -73,9 +73,19 @@ internal sealed partial class CardReadingSmoke
         Step(0, () => Publish(scenario.State with { Players = scenario.State.Players.Select(player => player with { Mana = [] }).ToArray() }));
         Prepared(() => view.Match!.Players.All(player => view.ManaPoolBadge(player.Id)?.Parts.Length == 0), 2, () => {
             Check(PlayPreferences.Load(view.Profile).ReducedMotion && view.ManaPoolBadge(0) is { Total: 0, Parts.Length: 0 }
-                && view.Hits.Any(hit => hit.Id == "mana-pool:0") && scenario.Replies.Count == replies,
-                "Reduced motion immediately clears zeroed colors with an explicit own MANA0 readout and no lingering pulse or gameplay command");
-        }, "Reduced motion must show current zero immediately without loss ghosts");
+                && view.Match!.Players.All(player => view.ManaPoolBadge(player.Id)!.Bounds.IsEmpty)
+                && !view.Hits.Any(hit => hit.Id.StartsWith("mana-pool:", StringComparison.Ordinal)) && scenario.Replies.Count == replies,
+                "Reduced motion clears zeroed colors without an empty-pool badge, lingering pulse or gameplay command");
+            MoveHit("player:0");
+        }, "An empty pool leaves no mana badge or hit region"); Click();
+        Prepared(() => view.Overlay == "player" && view.Hits.Any(hit => hit.Id == "player-mana"), 2,
+            () => MoveHit("player-mana"), "The portrait opens player details with an explicit mana-pool action"); Click();
+        Prepared(() => view.Overlay == "mana" && view.ManaPoolDetail?.Parts.Length == 6, 2, () => {
+            Check(view.ManaPoolDetail is { Total: 0 } detail && detail.Parts.All(part => part.Amount == "0")
+                && scenario.Replies.Count == replies,
+                "Portrait details retain read-only access to the exact empty pool without submitting a game action");
+            MoveHit("close-overlay");
+        }, "An empty pool remains inspectable through player details"); Click();
     }
 
     private bool ManaGeometryReady()

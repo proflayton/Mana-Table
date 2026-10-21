@@ -126,7 +126,6 @@ internal sealed partial class TableApplication
         }
         Button("motion", preferences.ReducedMotion ? "Reduced motion: On" : "Reduced motion: Off", 805, 455, 553, () => { preferences = preferences with { ReducedMotion = !preferences.ReducedMotion }; SavePreferences(); }, accent: preferences.ReducedMotion, height: 45);
         Button("sound", preferences.Sounds ? "Sound cues: On" : "Sound cues: Off", 805, 512, 553, () => { preferences = preferences with { Sounds = !preferences.Sounds }; SavePreferences(); }, accent: preferences.Sounds, height: 45);
-        Button("guidance-reset", "Show control hints again", 202, 519, 526, ResetControlHints, height: 42);
         Button("text-size", $"Text size: {preferences.TextScale:P0}", 202, 569, 526, () => {
             preferences = preferences with { TextScale = preferences.TextScale < 1.1f ? 1.15f : preferences.TextScale < 1.25f ? 1.3f : 1 };
             SavePreferences();
@@ -160,6 +159,7 @@ internal sealed partial class TableApplication
         var player = match!.Players.FirstOrDefault(p => p.Id == zonePlayer);
         if (player == null) { overlay = ""; return; }
         ModalFrame(player.Name, () => overlay = "");
+        Button("player-mana", "Mana pool", 1130, 211, 220, () => OpenManaPool(player.Id), height: 36);
         canvas.Text(player.Life + " LIFE", 212, 202, Ink, 2, 1090, 1, true);
         string handLimit = player.MaxHandSize is { } maximum ? $"Maximum hand size: {maximum} · Discard during this player's cleanup" : "No maximum hand size";
         canvas.Text($"{player.Zone("Hand").Count} cards in hand · {handLimit}", 213, 258, Muted, .7f, 1090, 1);
@@ -198,7 +198,6 @@ internal sealed partial class TableApplication
         canvas.Text(helpPageText, 211, 200, Ink, .93f, 1155, 80);
         Button("help-prev", "Previous", 211, 736, 144, () => inspectPage--, inspectPage > 0);
         Button("help-next", "More", 368, 736, 144, () => inspectPage++, inspectPage + 1 < text.Length);
-        Button("guidance-reset", "Show control hints again", 1060, 736, 310, ResetControlHints);
     }
     private void DrawZone()
     {
@@ -297,7 +296,7 @@ internal sealed partial class TableApplication
         }
         bool cardChoices = items.Length > 0 && items.All(c => c.Card != null);
         choicePage = Math.Clamp(choicePage, 0, Math.Max(0, (filtered.Length - 1) / capacity));
-        string instruction = d.Kind == "reveal" ? "Click a card to enlarge it, then continue." : d.Ordered
+        string instruction = d.Kind == "reveal" ? "" : d.Ordered
             ? $"Choose {d.Min}–{d.Max} in your chosen order: 1, 2, 3…  Selected: {selections.Count}. Clear selection to start again."
             : d.Min == 1 && d.Max == 1 ? selections.Count == 0
                 ? cardChoices ? "Choose one card" : "Choose one option"

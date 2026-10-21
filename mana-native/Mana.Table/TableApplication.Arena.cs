@@ -138,25 +138,20 @@ internal sealed partial class TableApplication
         bool legal = IsCardActionable(card);
         if (zone == "Battlefield") PaintAbilityEffects(card, pose);
         PaintCard(card, pose, selected, legal, focus, zone == "Battlefield" && card.PhasedOut && !focus ? .42f : 1);
-        if (zone == "Hand" && owner == match!.ViewerId) PaintHandPlacement(card, pose);
         if (zone == "Battlefield" && card.PhasedOut) PaintPhasedOutline(pose);
         if (zone == "Command") {
             PaintCommanderTax(card, pose);
             if (focus && pose.Size.X >= 300) PaintCommanderTaxDetails(card, pose);
-        }
-        if (zone == "Battlefield" && (!dense || pose.Size.X >= 300) && (groupFront || focus) && legal && CardActions.CanActivate(match!, card)) {
-            var badge = new Rectangle((int)pose.Center.X - 39, pose.Bounds.Top + 6, 78, 21);
-            canvas.Panel(badge, new(15, 41, 54), ActionAccent, 4);
-            int placements = HandPlacements.AllOptions(match!).Where(a => a.SourceCardKey == card.Key).Sum(a => a.HandPlacementLimit);
-            canvas.CenterText(placements > 0 ? placements + " PLACEMENT" + (placements == 1 ? "" : "S") : "ACTIVATE", badge, ActionAccent, .46f, true);
         }
         if (choice != null && selected) {
             var badge = new Rectangle((int)pose.Center.X - 39, pose.Bounds.Top + 8, 78, 24);
             ExtendCardHit(card, badge);
             if (match!.Decision!.Ordered) PaintChoiceOrder(choice.Value, badge, .48f);
             else {
-                canvas.Panel(badge, new(34, 48, 49), Gold, 4);
-                canvas.CenterText("SELECTED", badge, Gold, .48f, true);
+                var mark = pose.Point(.85f, .12f);
+                canvas.Circle(mark, 9, new(19, 33, 35));
+                canvas.Line(mark + new Vector2(-4, 0), mark + new Vector2(-1, 3), Gold, 2);
+                canvas.Line(mark + new Vector2(-1, 3), mark + new Vector2(5, -4), Gold, 2);
             }
         }
         if (CombatTarget(card)) canvas.CardFrame(pose with { Size = pose.Size + new Vector2(10) }, Blue, 4);
@@ -174,7 +169,7 @@ internal sealed partial class TableApplication
     }
     private void PaintCard(Card card, Pose pose, bool selected, bool legal, bool focus = false, float opacity = 1)
     {
-        if (legal || selected) canvas.Glow(pose.Center, pose.Size * 1.6f, (selected ? Gold : ActionAccent) * .6f);
+        if (selected) canvas.Glow(pose.Center, pose.Size * 1.2f, Gold * .18f);
         canvas.Surface(null, pose with { Center = pose.Center + new Vector2(4 + pose.Elevation * .18f, (pose.IsProjected ? 5 : 10) + pose.Elevation), Size = pose.Size + new Vector2(7) }, Color.Black * ((pose.Elevation > 0 ? .27f : .4f) * opacity));
         // The backing must fade too, otherwise the face only darkens against an opaque slab.
         canvas.Surface(null, pose with { Size = pose.Size + new Vector2(4) }, new Color(9, 13, 18) * opacity);
@@ -319,10 +314,8 @@ internal sealed partial class TableApplication
         bool following = busy || d == null || autoFollowing;
         string status = !busy && autoFollowing ? "AUTO · PASSING PRIORITY" : !busy && recipientChoice ? "CHOOSE A PLAYER" : StateClarity.DecisionStatus(state, busy);
         var abilities = PriorityAbilityOptions();
-        string instruction = !busy && recipientChoice ? "Choose a player beside the effect." : !busy && abilities.Length == 1 && state.Stack.Length == 0 ? abilities[0].IgnoredUntilNextTurn
-            ? abilities[0].SourceName + (automatic ? ": passing this ability" : ": Auto may pass this ability") : abilities[0].SourceName + " can be activated."
-            : !busy && BattlefieldFocused && d?.Intent == DecisionIntent.Priority && state.Stack.Length == 0 ? "Click a permanent to inspect it."
-            : StateClarity.DecisionInstruction(state, busy, pendingActionLabel);
+        string instruction = !busy && (recipientChoice || d?.Intent == DecisionIntent.Priority && state.Stack.Length == 0)
+            ? "" : StateClarity.DecisionInstruction(state, busy, pendingActionLabel);
         var textLayout = PlanDecisionText(status, instruction, abilities.Length > 0);
         canvas.Panel(new(1254, decisionPanelBounds.Top, 320, 795 - decisionPanelBounds.Top), new(12, 22, 30), new(57, 75, 88), 5);
         canvas.Text(status, 1266, textLayout.StatusY, following ? Muted : Gold, .7f, decisionTextOverflow ? 180 : 298, 1, true);
@@ -334,15 +327,11 @@ internal sealed partial class TableApplication
             canvas.Panel(new(1266, 799, 296, 47), new(22, 31, 39), new Color(66, 82, 94), 4);
             canvas.CenterText(busy ? "Waiting for confirmation…" : autoFollowing ? "Auto is passing priority" : StateClarity.WaitingTitle(state), new(1275, 800, 278, 45), Muted, .76f);
         } else if (recipientChoice) {
-            canvas.Panel(new(1266, 799, 296, 47), new(22, 31, 39), ActionAccent * .5f, 4);
-            canvas.CenterText("Choose a player", new(1275, 800, 278, 45), ActionAccent, .76f);
+            // The named recipient controls beside the source own this choice.
         } else if (TableChoice) {
             Button("confirm", selections.Count == 0 && d!.Min == 0 ? "Choose none" : $"Confirm ({selections.Count}/{d!.Max})", 1266, 799, 296,
                 () => Send(new(state.Id, d.Id, ReplyAction.Choose, Choices: selections.ToArray())), !busy && TableChoices.CanConfirm(state, selections), true, 47);
             Button("choicesclear", "Clear", 1459, 852, 103, () => selections.Clear(), !busy && selections.Count > 0, height: 27);
-            canvas.Panel(new(350, 714, 370, 50), new Color(12, 22, 31) * .96f, ActionAccent, 5);
-            canvas.CenterText(d.Ordered ? "Click cards in order" : "Click highlighted cards", new(356, 716, 358, 22), ActionAccent, .65f);
-            canvas.CenterText($"Choose {d.Min}–{d.Max} · {selections.Count} selected", new(356, 739, 358, 20), Ink, .57f);
         } else if (d?.Kind == "input") {
             Button("confirm", TurnGuide.Confirm(state), 1266, 799, 296, () => Send(new(state.Id, d.Id, ReplyAction.Confirm)), CombatGuide.CanConfirm(state) && !busy, true, 47);
             Button("cancel", d.Intent == DecisionIntent.Priority && d.Cancel == "End Turn" ? "Pass turn" : d.Cancel, 1459, 852, 103, () => Send(new(state.Id, d.Id, ReplyAction.Cancel)), d.CancelEnabled && !busy, height: 27);
