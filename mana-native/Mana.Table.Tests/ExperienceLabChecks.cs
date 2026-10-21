@@ -119,26 +119,88 @@ internal static class ExperienceLabChecks
                 "The lab uses the production Day/Night widget alongside its scenario controls");
             if (scenario.Id == "ability-choice.v1") {
                 string game = lab.State.Id;
+                var beforeQuery = lab.State;
+                var elf = beforeQuery.Viewer!.Zone("Battlefield").Cards.Single(card => card.VisualId == "reader-elf");
+                var offered = engine.SourceActionsAsync(game, beforeQuery.Decision!.Id, elf.Key).GetAwaiter().GetResult();
                 check(lab.StageIndex == 0 && lab.State.Decision?.Intent == DecisionIntent.Priority
-                    && !frame.Hits.Any(hit => hit.Id == "choice:0"),
-                    "The ability experience opens before an ability is requested rather than inside an unexplained choice");
+                    && ReferenceEquals(lab.State, beforeQuery) && offered.Actions is [{ Kind: "activate", Text: "{T}: Add {G}." }]
+                    && offered.SourceCardKey == elf.Key && !frame.Hits.Any(hit => hit.Id == "choice:0"),
+                    "The Elf action read leaves the authored priority/source unchanged and returns its one explicit mana ability");
                 Until(() => CardSettled("reader-elf"), "The current Elf must finish entering before its initial card click");
                 Click(frame.Cards.Single(card => card.Id == "reader-elf" && card.Zone == "Battlefield").Hit.Id);
                 Until(() => frame.Hits.Any(hit => hit.Id == "read-card-action"), "The Elf reader did not expose its explicit action");
                 Click("read-card-action");
-                Until(() => !app.TestPort.Busy && frame.Hits.Any(hit => hit.Id == "choice:0"), "The explicit action did not open the ability chooser");
-                check(lab.StageIndex == 0 && lab.State.Decision?.Context == "playAbility"
-                    && frame.Cards.Any(card => card.Id == "reader-elf" && card.Zone == "Battlefield" && card.Focused
-                        && card.Display.Bounds.Contains(frame.Hits.Single(hit => hit.Id == "choice:0").Bounds))
-                    && !frame.Hits.Any(hit => hit.Id is "choicesdone" or "close-overlay"),
-                    "The explicit Elf action exposes its ability on the actual source reader without advancing the stage, opening a modal or adding confirmation");
-                Click("choice:0");
                 Until(() => !app.TestPort.Busy && lab.StageIndex == 1 && frame.Stamp.Revision == lab.State.Revision,
-                    "The direct ability choice did not publish its authored result");
+                    "The direct on-card mana action did not publish its authored result");
                 check(lab.State.Id == game && lab.State.Viewer is { } viewer
                     && viewer.Zone("Battlefield").Cards.Single(card => card.VisualId == "reader-elf").Tapped
-                    && viewer.Mana.GetValueOrDefault("G") == 1 && !frame.Hits.Any(hit => hit.Id == "choicesdone"),
-                    "The real input journey reaches the same-session authored tapped Elf and one green mana without a choice confirmation or simulated Forge rules");
+                    && viewer.Mana.GetValueOrDefault("G") == 1 && lab.State.Decision?.Context != "playAbility"
+                    && !frame.Hits.Any(hit => hit.Id is "choice:0" or "choicesdone")
+                    && engine.SourceActionsAsync(game, lab.State.Decision!.Id,
+                        viewer.Zone("Battlefield").Cards.Single(card => card.VisualId == "reader-elf").Key).GetAwaiter().GetResult().Actions.Length == 0,
+                    "The real on-card input reaches the authored tapped Elf and green mana directly, without a generic chooser or another action for the tapped source");
+            }
+            if (scenario.Id == "ability-targeting.v1") {
+                var parent = lab.State;
+                var ballista = parent.Viewer!.Zone("Battlefield").Cards.Single(card => card.VisualId == ExperienceScenarios.BallistaId);
+                var actions = engine.SourceActionsAsync(parent.Id, parent.Decision!.Id, ballista.Key).GetAwaiter().GetResult();
+                check(ReferenceEquals(lab.State, parent) && actions.Actions.Length == 2
+                    && actions.Actions[0].Text == "{4}: Put a +1/+1 counter on Walking Ballista."
+                    && actions.Actions[1].Text == "Remove a +1/+1 counter from Walking Ballista: It deals 1 damage to any target."
+                    && ballista is { Power: 3, Toughness: 3 } && ballista.Counters.GetValueOrDefault("+1/+1") == 3,
+                    "Walking Ballista's nonmutating read exposes two distinct authored costs/effects and its current three-counter 3/3 source");
+                void OpenDamageAction()
+                {
+                    Until(() => CardSettled(ExperienceScenarios.BallistaId), "Walking Ballista must settle before reading its source");
+                    var current = lab.State.Viewer!.Zone("Battlefield").Cards.Single(card => card.VisualId == ExperienceScenarios.BallistaId);
+                    var currentActions = engine.SourceActionsAsync(lab.State.Id, lab.State.Decision!.Id, current.Key).GetAwaiter().GetResult();
+                    string damageHit = "source-action:" + currentActions.Actions[1].Id;
+                    Click(frame.Cards.Single(card => card.Id == ExperienceScenarios.BallistaId && card.Zone == "Battlefield").Hit.Id);
+                    Until(() => frame.Hits.Any(hit => hit.Id == "read-card-action") || frame.Hits.Any(hit => hit.Id == damageHit),
+                        "The original Ballista actions must load on its reader");
+                    var pageDeadline = System.Diagnostics.Stopwatch.StartNew();
+                    while (!frame.Hits.Any(hit => hit.Id == damageHit)) {
+                        if (pageDeadline.Elapsed > TimeSpan.FromSeconds(5)) throw new TimeoutException("The Ballista damage action was not reachable on its reader pages");
+                        Click("source-reader-next");
+                    }
+                    Click(damageHit);
+                    Until(() => !app.TestPort.Busy && lab.State.Decision is { Intent: DecisionIntent.Selection, CancelEnabled: true }
+                        && frame.Stamp.Revision == lab.State.Revision, "The damage action must enter its authored target decision");
+                }
+                OpenDamageAction();
+                check(lab.State.Viewer!.Mana.GetValueOrDefault("C") == 4 && lab.State.Stack.Length == 0
+                    && lab.State.Viewer.Zone("Battlefield").Cards.Single(card => card.VisualId == ExperienceScenarios.BallistaId).Counters.GetValueOrDefault("+1/+1") == 3
+                    && lab.State.Players.SelectMany(player => player.Zone("Battlefield").Cards).All(card => card.Selectable)
+                    && lab.State.Decision!.PlayerChoices.SequenceEqual([0, 1, 2, 3]),
+                    "The mixed target decision exposes actual card/player handles and leaves the counter cost unpaid until a target is committed");
+                Click("cancel");
+                Until(() => !app.TestPort.Busy && lab.State.Decision?.Intent == DecisionIntent.Priority
+                    && frame.Stamp.Revision == lab.State.Revision, "Target Cancel must restore the parent action window");
+                check(lab.State.Id == parent.Id && lab.StageIndex == 0 && lab.State.Stack.Length == 0
+                    && lab.State.Viewer!.Mana.GetValueOrDefault("C") == 4
+                    && lab.State.Viewer.Zone("Battlefield").Cards.Single(card => card.VisualId == ExperienceScenarios.BallistaId) is { Power: 3, Toughness: 3 } restored
+                    && restored.Counters.GetValueOrDefault("+1/+1") == 3 && lab.State.Players.All(player => player.Life == 40),
+                    "Cancelling target selection restores the same source, mana, counters and life without inventing an activation");
+                OpenDamageAction();
+                Click("player:1");
+                Until(() => !app.TestPort.Busy && lab.StageIndex == 1 && frame.Stamp.Revision == lab.State.Revision,
+                    "A committed target must publish the cost and pending stack ability");
+                check(lab.State.Stack is [{ Targets: [{ Kind: "player", PlayerId: 1 }] }]
+                    && lab.State.Players.Single(player => player.Id == 1).Life == 40
+                    && lab.State.Viewer!.Mana.GetValueOrDefault("C") == 4
+                    && lab.State.Viewer.Zone("Battlefield").Cards.Single(card => card.VisualId == ExperienceScenarios.BallistaId) is { Power: 2, Toughness: 2 } paid
+                    && paid.Counters.GetValueOrDefault("+1/+1") == 2,
+                    "Committing the player target pays exactly one counter and puts the damage ability on the stack without dealing damage early");
+                Click("confirm");
+                Until(() => !app.TestPort.Busy && lab.StageIndex == 2 && frame.Stamp.Revision == lab.State.Revision,
+                    "Passing priority must expose the next authored responder");
+                check(lab.State.PriorityPlayerId == 1 && lab.State.Decision == null && lab.State.Stack.Length == 1
+                    && lab.State.Players.Single(player => player.Id == 1).Life == 40,
+                    "Passing local priority preserves the pending effect and exposes the other responder rather than silently resolving it");
+                Click("lab-next");
+                check(lab.StageIndex == 3 && lab.State.Stack.Length == 0 && lab.State.Players.Single(player => player.Id == 1).Life == 39
+                    && lab.State.Viewer!.Zone("Battlefield").Cards.Single(card => card.VisualId == ExperienceScenarios.BallistaId).Counters.GetValueOrDefault("+1/+1") == 2,
+                    "The explicit authored continuation shows one damage to the chosen player and retains the already-paid counter cost");
             }
             if (scenario.Id == "card-reading.v1") {
                 Click("lab-next"); Click("lab-next");

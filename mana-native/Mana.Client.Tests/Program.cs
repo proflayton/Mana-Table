@@ -30,6 +30,16 @@ Check(InteractionController.Assign(state, "forest-1", 2) == null, "Unprojected d
 Check(interaction.CardClick(state with { Players = [] }, first).Effect == InteractionEffect.None, "Revoked cards cannot be selected through an old reference");
 var malformed = new DecisionReply("game", "decision", ReplyAction.AssignAttack, Attacker: "card", Player: 1, DefenderCard: "also-a-card");
 try { malformed.Validate(); throw new Exception("Invalid reply was accepted"); } catch (ArgumentException) { Check(true, "Attack replies require exactly one kind of defender"); }
+var sourceReply = new DecisionReply("game", "decision", ReplyAction.UseSourceAction, Card: "current-source-key", AbilityId: "opaque-action");
+sourceReply.Validate();
+Check((int)ReplyAction.PassUntilPublicAction == 13 && (int)ReplyAction.UseSourceAction == 14,
+    "Adding source actions preserves the existing serialized reply action values");
+foreach (var incomplete in new[] { sourceReply with { GameId = "" }, sourceReply with { DecisionId = "" },
+    sourceReply with { Card = " " }, sourceReply with { AbilityId = null } }) {
+    bool rejected = false;
+    try { incomplete.Validate(); } catch (ArgumentException) { rejected = true; }
+    Check(rejected, "A source action requires the current game, decision, source key and opaque action handle");
+}
 
 var scenario = new Scenario("oracle-check", "test", new(), [new(0, "pass", new())], [], Players: 1);
 var expected = new JsonObject { ["library"] = new JsonArray("occurrence-1", "occurrence-2"), ["life"] = 40 };

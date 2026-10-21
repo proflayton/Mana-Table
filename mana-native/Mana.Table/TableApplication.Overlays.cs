@@ -213,17 +213,22 @@ internal sealed partial class TableApplication
         canvas.Text(cards.Length + " visible" + (zoneName == "Stack" ? "" : " / " + (zone?.Count ?? 0) + " total"), 205, 183, Muted, .72f, 650, 1);
         if (player != null && AvailableZoneCount(player, zoneName!) is > 0 and var available)
             canvas.Text(available + " available · Use a card below to see its play and costs.", 205, 220, ActionAccent, .77f, 1170, 2, true);
+        bool sourceReader = ZoneReadingOpen;
+        string displayedZone = zoneName!;
         int index = 0;
         foreach (var card in cards.Skip(zonePage * count).Take(count)) {
             int x = 210 + index++ * 169;
             var pose = new Pose(new(x + 74, 409), new(148, 207));
-            PaintInteractionCard(card, pose, card.Highlighted, IsCardActionable(card));
+            if (sourceReader) DrawTableCard("zone:" + zonePlayer + ":" + displayedZone + ":" + CardIdentity(card),
+                card, pose, displayedZone, zonePlayer, "card:" + card.Key + ":" + card.VisualId, () => Inspect(card),
+                (displayed, focused) => PaintCard(card, displayed, card.Highlighted, IsCardActionable(card), focused));
+            else PaintInteractionCard(card, pose, card.Highlighted, IsCardActionable(card));
             if (zoneName == "Command") PaintCommanderTax(card, pose);
             canvas.Text(card.Name, x, 533, Ink, .68f, 155, 3, true);
             canvas.Text(card.ManaCost == "no cost" ? "" : card.ManaCost, x, 600, Gold, .62f, 156, 2);
             if (pose.Contains(pointer)) hovered = card;
-            hits.Add(new("card:" + card.Key + ":" + card.VisualId, Scope, new(x, 304, 148, 298), () => { if (IsCardActionable(card)) { zoneName = null; CardClick(card); } else Inspect(card); }, card, zoneName, zonePlayer));
-            if (AvailableZone(card) is { } availableZone && zonePlayer == match.ViewerId) {
+            if (!sourceReader) hits.Add(new("card:" + card.Key + ":" + card.VisualId, Scope, new(x, 304, 148, 298), () => { if (IsCardActionable(card)) { zoneName = null; CardClick(card); } else Inspect(card); }, card, zoneName, zonePlayer));
+            if (!sourceReader && AvailableZone(card) is { } availableZone && zonePlayer == match.ViewerId) {
                 string scope = Scope;
                 PriorityAbilityButton("zone-use:" + CardIdentity(card), ZoneUseLabel(availableZone), new(x - 3, 644, 160, 42),
                     () => UseZoneCard(card, availableZone, scope), !busy, true);

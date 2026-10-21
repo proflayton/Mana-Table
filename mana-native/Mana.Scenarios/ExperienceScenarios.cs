@@ -6,13 +6,14 @@ public sealed record ExperienceStage(string Name, string Description, GameSnapsh
 public sealed record ExperienceScenario(string Id, string Name, string Description, Func<IReadOnlyList<ExperienceStage>> Create);
 
 /// <summary>Versioned, authored public projections. These exercise presentation; Forge remains the rules authority.</summary>
-public static class ExperienceScenarios
+public static partial class ExperienceScenarios
 {
     public const string DefaultId = "crowded-counters.v1";
     public static IReadOnlyList<ExperienceScenario> All { get; } = Array.AsReadOnly(new ExperienceScenario[] {
         new(DefaultId, "480 permanents · Toph + Felidar", "Four crowded battlefields, an earthbent land, then 82 exact landfall recipients.", Crowd),
         new("card-reading.v1", "Card reading and selection", "Stable hand slots, inspectable battlefield cards and a hand selection.", Reading),
         new("ability-choice.v1", "Llanowar Elves · make green mana", "Start before an activation, choose its ability, and see the tapped source and green mana.", AbilityFlow),
+        new("ability-targeting.v1", "Walking Ballista · costs and targets", "Two on-card abilities, cancellable targeting, a pending stack ability and its authored result.", BallistaFlow),
         new("ordered-choice.v1", "Ordered card choices", "Same-name cards, explicit selection numbers and a complete ordered draft.", Ordered),
         new("mana-payment.v1", "Mana and payment", "Colored unspent mana, a payment decision and a scripted pool transition.", Mana),
         new("combat-allocation.v1", "Combat damage allocation", "Current stats, marked damage, anonymous blockers and defender thresholds.", Allocation),
@@ -76,9 +77,9 @@ public static class ExperienceScenarios
     private static IReadOnlyList<ExperienceStage> Reading()
     {
         var elf = ManaElf();
-        var hand = new[] { Body("reader-hand-a", "Grizzly Bears") with { Selectable = true, Text = "A simple creature for checking hand geometry." },
-            Body("reader-hand-b", "Serra Angel", power: 4, toughness: 4) with { Selectable = true, CombatKeywords = ["flying", "vigilance"] },
-            Body("reader-hand-c", "Forest", "Basic Land", null, null) with { Selectable = true } };
+        var hand = new[] { Body("reader-hand-a", "Grizzly Bears") with { Text = "A simple creature for checking hand geometry." },
+            Body("reader-hand-b", "Serra Angel", power: 4, toughness: 4) with { CombatKeywords = ["flying", "vigilance"] },
+            Body("reader-hand-c", "Forest", "Basic Land", null, null) };
         var state = Table("reading", [elf, Body("reader-body", "Wall of Blossoms", power: 0, toughness: 4)], hand);
         var countedElf = elf with { Power = 3, Toughness = 3, Counters = new() { ["+1/+1"] = 2 } };
         var counterLand = Body("reader-counter-land", "Blast Zone", "Land", null, null) with {
@@ -109,7 +110,12 @@ public static class ExperienceScenarios
         } };
         return new[] {
             new ExperienceStage("Read and collapse", "Click a hand card, click its neighbor, then click again to collapse. The Elf activation is a scripted UI demonstration.", state),
-            new ExperienceStage("Choose from your hand", "Select and deselect cards without moving their original hand slots.", state with { Decision = new() {
+            new ExperienceStage("Choose from your hand", "Select and deselect cards without moving their original hand slots.", state with {
+                Players = state.Players.Select(player => player.Id != state.ViewerId ? player : player with {
+                    Zones = player.Zones.Select(zone => zone.Name != "Hand" ? zone : zone with {
+                        Cards = zone.Cards.Select(card => card with { Selectable = true }).ToArray()
+                    }).ToArray()
+                }).ToArray(), Decision = new() {
                 Kind = "input", Intent = DecisionIntent.Selection, Min = 1, Max = 2, OkEnabled = true,
                 Message = "Scripted hand selection: choose one or two cards, then confirm. No real cards are discarded."
             } }),

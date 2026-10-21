@@ -21,10 +21,14 @@ internal sealed partial class TableApplication
     private (string Scope, int Slot)? inspectedChoice;
     private bool ReadingGalleryOpen => overlay.Length == 0 && zoneName == null && DecisionModal
         && match?.Decision?.Kind is "choice" or "reveal";
+    private bool ZoneReadingOpen => SourceActionsSupported && overlay.Length == 0
+        && !updatesOpen && !ActivityOpen && !ExperienceOpen
+        && zoneName is "Graveyard" or "Exile" or "Hand" or "Command";
     private bool CompactCardDecision => !AbilityActionPending && (TableChoice
-        || match?.Decision?.Intent is DecisionIntent.Selection or DecisionIntent.Mana or DecisionIntent.Attack or DecisionIntent.Block);
-    private CardPresentationContext CardContext => new(match, Scope, OverlayOpen && !BattlefieldFocused,
-        ReadingGalleryOpen, dragging, CompactCardDecision, AbilityActionPending);
+        || match?.Decision?.Intent is DecisionIntent.Selection or DecisionIntent.Attack or DecisionIntent.Block
+        || !SourceActionsSupported && match?.Decision?.Intent == DecisionIntent.Mana);
+    private CardPresentationContext CardContext => new(match, Scope, OverlayOpen && !BattlefieldFocused && !ZoneReadingOpen,
+        ReadingGalleryOpen, dragging, CompactCardDecision, AbilityActionPending, SourceActionsSupported, SourceReaderHeight);
     private string? readingId => cardPresentation.PinnedId;
     private Rectangle? hoverPreview => cardPresentation.ReaderBounds;
     internal bool InteractivePointer => !dragging && HitAt(pointer) is { } hit
@@ -52,6 +56,7 @@ internal sealed partial class TableApplication
         string? hover = pointerSurface?.Id;
         cardPresentation.BeginFrame(CardContext, hover, frameElapsed, preferences.ReducedMotion, boardView);
         deferredCardComposition.Clear();
+        sourceReaderControls.Clear(); sourceReaderPages = 0;
     }
     private void EndCardReading() => cardPresentation.EndFrame();
     private bool ToggleCardReader(Hit hit) => cardPresentation.Toggle(hit, CardContext);
@@ -84,8 +89,9 @@ internal sealed partial class TableApplication
 
     private void ComposeCard(PresentedCard entry, Action<Pose, bool> compose)
     {
-        compose(entry.Display, entry.Focused);
-        if (entry.Hovered) canvas.CardFocus(entry.Display, HoverAccent);
+        bool liveReader = DrawSourceActionReader(entry);
+        if (!liveReader) compose(entry.Display, entry.Focused);
+        if (entry.Hovered && !liveReader) canvas.CardFocus(entry.Display, HoverAccent);
         if (Automated) cardPresentation.RecordComposition(entry);
     }
     private void DrawLiftedCards()
@@ -106,31 +112,20 @@ internal sealed partial class TableApplication
         var target = (entry.ReaderTarget ?? CardPresentationController.ReaderPose(entry.Rest, entry.Zone)).Bounds;
         if (Vector2.Distance(entry.Display.Size, target.Size.ToVector2()) > 2
             || Vector2.Distance(entry.Display.Center, target.Center.ToVector2()) > 2) return;
+        if (SourceActionsSupported) { DrawSourceReaderControls(entry); return; }
         if (match?.Decision?.Intent == DecisionIntent.Priority && IsCardActionable(entry.Card)) {
             string label = entry.Zone == "Battlefield" ? "Abilities"
                 : !entry.Card.Selectable && HandPlacements.Options(match, entry.Card).Length > 0 ? "Place"
                 : entry.Card.Type.Contains("Land", StringComparison.Ordinal) ? "Play" : "Cast";
-            var area = OnCardActionArea(target);
-            var bounds = new Rectangle(area.X, area.Center.Y - 26, area.Width, 52);
-            PaintControlSurface("read-card-action", bounds, new(18, 30, 38), Blue * .75f, !busy);
-            canvas.CenterText(label, new(bounds.X + 14, bounds.Y, bounds.Width - 50, bounds.Height), Ink, .9f, true);
-            var arrow = new Vector2(bounds.Right - 25, bounds.Center.Y);
-            canvas.Line(arrow + new Vector2(-4, -6), arrow + new Vector2(2, 0), Ink, 2);
-            canvas.Line(arrow + new Vector2(2, 0), arrow + new Vector2(-4, 6), Ink, 2);
-            if (!busy) hits.Add(new("read-card-action", Scope, bounds, () => {
+            Button("read-card-action", label, target.X + 8, Math.Min(840, target.Bottom - 2),
+                Math.Max(90, canvas.TextWidth(label, .76f) + 24), () => {
                 var current = VisibleCards().FirstOrDefault(card => SameVisibleCard(card, entry.Card));
                 if (current == null || !IsCardActionable(current)) return;
                 if (entry.Zone != "Battlefield") { CollapseCardReading(); if (BattlefieldFocused) zoneName = null; }
                 CardClick(current);
-            }));
+            }, !busy, height: 30);
         }
     }
-
-    // Put deliberate actions over the illustration, leaving the name, oracle
-    // text and current power/toughness available on the same card.
-    private static Rectangle OnCardActionArea(Rectangle card) => new(
-        card.X + card.Width / 10, card.Y + (int)(card.Height * .22f),
-        card.Width * 8 / 10, (int)(card.Height * .28f));
 
     private void ClearCardComposition()
     {

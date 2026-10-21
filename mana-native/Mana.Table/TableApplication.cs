@@ -85,7 +85,10 @@ internal sealed partial class TableApplication : IDisposable
     private bool DecisionModal => !session.NeedsRecovery && !TableChoice && !AbilityActionPending && !collapsedDecision && match?.Decision?.Kind is "choice" or "reveal" or "number" or "text" or "allocate";
     private bool OverlayOpen => updatesOpen || ActivityOpen || ExperienceOpen || workshopDialog.Length > 0 || overlay.Length > 0 || zoneName != null || DecisionModal;
     private string Scope => match == null ? deckEditor ? DeckScope : LobbyScope : session.Scope;
-    private string ControlScope(string id) => id.StartsWith("updates-") ? UpdateScope : id.StartsWith("activity-") ? ActivityScope : id.StartsWith("experience-") ? ExperienceScope : id.StartsWith("chat-") ? ChatScope
+    private string ControlScope(string id) => SourceActionsSupported && (id == "read-card-action" || id.StartsWith("source-action:", StringComparison.Ordinal)
+        || id.StartsWith("source-placement:", StringComparison.Ordinal))
+        ? Scope + ":source:" + readerActionsGeneration + ":" + readerActionsBinding
+        : id.StartsWith("updates-") ? UpdateScope : id.StartsWith("activity-") ? ActivityScope : id.StartsWith("experience-") ? ExperienceScope : id.StartsWith("chat-") ? ChatScope
         : match != null && (id is "auto" or "hold" or "instructions" or "action-details" or "battlefields" or "quiet-priority-stop" or "ability-auto-pass-open" or "ability-prev" or "ability-next" or "ability-text-prev" or "ability-text-next"
             || id.StartsWith("phase-stop:") || id.StartsWith("ability-undo:")) ? match.Id + ":playback" : Scope;
     private bool CurrentHit(Hit hit) => hit.Scope == ControlScope(hit.Id);
@@ -170,6 +173,7 @@ internal sealed partial class TableApplication : IDisposable
         UpdateWorkshopData();
         UpdateDeckAnalysis();
         UpdateAppUpdates();
+        UpdateReaderActions();
         var prompt = match?.Decision;
         if (decisionId != (prompt?.Id ?? "")) {
             if (BattlefieldFocused && prompt != null && !ReadingAbilitySource(prompt) && (prompt.Kind is "choice" or "reveal" or "number" or "text" or "allocate"

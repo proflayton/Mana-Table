@@ -62,13 +62,13 @@ internal sealed partial class TableApplication
         // held cards. Their input regions are registered last for the same reason.
         if (!BattlefieldFocused && !OverlayOpen && !AbilityActionPending) { DrawDecisionDock(); DrawQuietPriorityControl(); }
         if (!BattlefieldFocused) DrawChangeCallout();
-        if (!BattlefieldFocused) DrawAbilityActions();
+        if (!BattlefieldFocused) { DrawAbilityActions(); DrawSourceTargeting(); }
         DrawOverlays();
         if (BattlefieldFocused) DrawEffectTransitions();
         DrawLiftedCards();
         if (BattlefieldFocused && !DecisionModal && !AbilityActionPending) { DrawDecisionDock(); DrawQuietPriorityControl(); DrawChangeCallout(); }
-        if (BattlefieldFocused) DrawAbilityActions();
-        if (ReadingGalleryOpen || BattlefieldFocused) DrawReaderControls();
+        if (BattlefieldFocused) { DrawAbilityActions(); DrawSourceTargeting(); }
+        if (ReadingGalleryOpen || BattlefieldFocused || ZoneReadingOpen) DrawReaderControls();
         if (ReadingGalleryOpen) hovered = HitAt(pointer)?.Card;
         DrawExperienceLabHeader();
     }
@@ -243,7 +243,7 @@ internal sealed partial class TableApplication
         var state = match!;
         // Choosing an ability has not put it on the stack. Its current card
         // remains the source on the table; do not manufacture a stack copy.
-        if (state.Stack.Length == 0 && AbilityActionPending) return;
+        if (state.Stack.Length == 0 && (AbilityActionPending || SelectingActionTarget)) return;
         if (state.Stack.Length == 0 && state.Decision?.SourceCard == null) return;
         canvas.Glow(new(807, 485), new(430, 165), Blue * .17f);
         var resting = TableWorld.Card(new(6, 108), new(245, 126));
@@ -314,9 +314,9 @@ internal sealed partial class TableApplication
             return;
         }
         bool autoFollowing = TurnGuide.CanAutoPass(state, automatic, held, preferences.Stops, false);
-        bool recipientChoice = d?.Intent == DecisionIntent.Selection && StateClarity.Recipients(state).Length > 0;
+        bool recipientChoice = !SelectingActionTarget && d?.Intent == DecisionIntent.Selection && StateClarity.Recipients(state).Length > 0;
         bool following = busy || d == null || autoFollowing;
-        string status = !busy && autoFollowing ? "AUTO · PASSING PRIORITY" : !busy && recipientChoice ? "CHOOSE A PLAYER" : StateClarity.DecisionStatus(state, busy);
+        string status = !busy && SelectingActionTarget ? "CHOOSE A TARGET" : !busy && autoFollowing ? "AUTO · PASSING PRIORITY" : !busy && recipientChoice ? "CHOOSE A PLAYER" : StateClarity.DecisionStatus(state, busy);
         var abilities = PriorityAbilityOptions();
         string instruction = !busy && (recipientChoice || d?.Intent == DecisionIntent.Priority && state.Stack.Length == 0)
             ? "" : StateClarity.DecisionInstruction(state, busy, pendingActionLabel);
@@ -332,6 +332,9 @@ internal sealed partial class TableApplication
         if (following) {
             canvas.Panel(new(1266, 799, 296, 47), new(22, 31, 39), new Color(66, 82, 94), 4);
             canvas.CenterText(busy ? "Waiting for confirmation…" : autoFollowing ? "Auto is passing priority" : StateClarity.WaitingTitle(state), new(1275, 800, 278, 45), Muted, .76f);
+        } else if (SelectingActionTarget) {
+            if (d!.OkEnabled) Button("confirm", d.Ok, 1266, 799, 296, () => Send(new(state.Id, d.Id, ReplyAction.Confirm)), !busy, true, 47);
+            if (d.CancelEnabled) Button("cancel", d.Cancel, 1459, d.OkEnabled ? 852 : 799, 103, () => Send(new(state.Id, d.Id, ReplyAction.Cancel)), !busy, height: 32);
         } else if (recipientChoice) {
             // The named recipient controls beside the source own this choice.
         } else if (TableChoice) {
@@ -343,8 +346,10 @@ internal sealed partial class TableApplication
             Button("cancel", d.Intent == DecisionIntent.Priority && d.Cancel == "End Turn" ? "Pass turn" : d.Cancel, 1459, 852, 103, () => Send(new(state.Id, d.Id, ReplyAction.Cancel)), d.CancelEnabled && !busy, height: 27);
         } else if (d != null) Button("open-decision", "Make a choice", 1266, 799, 296, () => collapsedDecision = false, !busy, true, 47);
         else { canvas.CenterText(state.Status == "starting" ? "Starting game…" : "Resolving…", new(1266, 797, 296, 45), Muted, .9f); }
-        Button("auto", automatic ? "Auto" : preferences.TextScale > 1.1f ? "Manual" : "Full control", 1266, 852, 111, () => UseAutomaticControl(!automatic), true, automatic, 27);
-        Button("hold", held ? "Held" : "Hold", 1383, 852, 70, ToggleHoldControl, true, held, 27);
+        if (!SelectingActionTarget) {
+            Button("auto", automatic ? "Auto" : preferences.TextScale > 1.1f ? "Manual" : "Full control", 1266, 852, 111, () => UseAutomaticControl(!automatic), true, automatic, 27);
+            Button("hold", held ? "Held" : "Hold", 1383, 852, 70, ToggleHoldControl, true, held, 27);
+        }
         DrawPhaseStrip();
     }
     private void DrawPhaseStrip()

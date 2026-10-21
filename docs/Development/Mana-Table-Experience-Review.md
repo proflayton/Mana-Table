@@ -43,7 +43,8 @@ native renderer and input pipeline with controlled state, not a rules simulator.
 | --- | --- |
 | `crowded-counters.v1` | 480 permanents, Toph earthbend 2, then one Felidar Retreat effect with 82 recipients; source, changed land and complete affected set |
 | `card-reading.v1` | Hand slots, reading/collapse and required selection; current P/T/counters in card and ability-source previews despite an older embedded source face |
-| `ability-choice.v1` | Interim authored mana continuation; its forced one-option chooser does not match the normal live Elf activation and is not a product interaction reference |
+| `ability-choice.v1` | Select the Elf, read its concrete mana action without changing the prompt, then explicitly activate and see the authored tapped source and green mana; no extra one-option chooser |
+| `ability-targeting.v1` | Walking Ballista's distinct costs/effects, card/player targets, cancellation, paid counter cost, pending stack, another player's response window, and authored result |
 | `ordered-choice.v1` | Visible position numbers, same-name occurrences, selection order and confirmation |
 | `mana-payment.v1` | Unspent colored mana, payment instructions and pool transitions |
 | `combat-allocation.v1` | Attacker/blocker identity, current P/T, marked damage and assignment thresholds, including anonymous cards |
@@ -201,37 +202,67 @@ of the card reading surface; unrelated printed text must not appear clickable.
 Availability and unavailable reasons must be engine-reported, never inferred
 from Oracle prose. Unknown availability must remain unknown.
 
-The data boundary currently prevents an honest direct presentation. The
+The audit found a data boundary preventing an honest direct presentation. The
 auto-pass `PriorityAbilities` list excludes mana abilities and is not a complete
 catalog of card actions (`AvailableActions.scanAll`, `PriorityAbilityPass`).
 Concrete play choices are projected later by `MatchSession.chooseAbility`.
 Selecting a card needs a noncommitting, prompt-scoped projection of its real
 actions before a separate explicit action can invoke one. Both priority and
 mana-payment contexts need this contract, with stale-source validation and the
-viewer's existing visibility limits. This is a design requirement, not an
-implemented capability.
+viewer's existing visibility limits. The new candidate implements that optional
+source-action boundary and uses it in the selected card's rules area. Its
+engine-owned handles stay separate from Auto-pass policies.
 
 This follows the useful separation described by Wizards' rules/client teams:
 the engine supplies finalized actions and decision constraints, while the client
 chooses how to present each interaction. See [On Whiteboards, Naps, and Living
 Breakthrough](https://magic.wizards.com/en/news/mtg-arena/on-whiteboards-naps-and-living-breakthrough).
 
-The current Elf fixture is misleading: it forces a one-option `playAbility`
+The rejected Elf fixture was misleading: it forced a one-option `playAbility`
 choice even though the adapter normally returns that sole playable ability
 immediately unless it explicitly requires a prompt (`MatchSession`'s
 `getAbilityToPlay` dispatch). Its authored tap/green-mana continuation and the
 on-card rectangle checks do not demonstrate a coherent real-game experience.
-Other lab cards also advertise unsupported Cast/Play actions. Do not present
-these fixtures as a complete playable interaction.
+The corrected Elf case invokes its concrete source action directly; unsupported
+hand cards in the reading case no longer advertise Cast/Play. Authored lab results
+remain distinct from actual Forge outcomes.
 
-The next review must cover the same grammar across a simple mana source and a
+The candidate review covers the same grammar across a simple mana source and a
 real multi-ability source with distinct costs and effects, including a targeted
 action: select, read the action, choose it, target, back out where permitted,
 retry, and observe the authoritative result. Include an unavailable state,
 graveyard casting and a crowded source location. Use actual engine continuations
 for commitment and cancellation; keep visual review separate from command
 assertions. The existing fake second-option labels and generic scripted result
-are insufficient. These are review gaps, not a request for another test suite.
+are insufficient. No additional CI suite is introduced for this review.
+
+The current candidate keeps the illustration clear and typesets concrete actions
+with the card's public rules, current counters and stats. Its height follows
+measured content; exact repeated Oracle/action lines display once while the full
+original rules remain available for inspection. Source reads are coalesced and
+bound to the current source/decision/revision. Explicit selection, cost/target
+continuations and cancellation keep their engine authority. Actual target-input
+semantics prevent a mixed card/player prompt from being labeled Choose a player,
+and keep the permitted Cancel available.
+
+Agent GPU review used genuine art at `1000x740`. Evidence under
+`source-actions-review-harness/elf-1000-r2` and `ballista-1000-r2` records the full
+authored physical-pointer journeys, state/frame JSON and candidate assembly
+hash. The single source shows tap and green mana; the multi-ability source covers
+cancel, retry, card/player aiming, paid cost, stack, another responder and the
+authored result. These are observed rendering/input behaviors. Human acceptance
+is still open.
+
+The final native build completes with no warnings. Focused Java 17/21 checks and
+the real Forge/native walkthrough pass: querying current actions does not change
+the pending decision, and selecting the concrete action plays a land and casts a
+commander. The existing hand-placement walkthrough also passes with a valid empty
+source-action list, preserving Gaea's Touch's placement permission, and records a
+graveyard reader with its concrete flashback cost and effect. These checks prove
+the exercised protocol and interaction paths, not human clarity or every card's
+rules. Evidence is in `source-actions-final-real-engine`,
+`source-actions-final-hand-placement` and `source-actions-validation.json` under
+the same local integration artifact directory.
 
 ## Existing regression walkthrough
 

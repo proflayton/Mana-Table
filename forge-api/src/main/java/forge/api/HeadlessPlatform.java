@@ -86,6 +86,23 @@ final class HeadlessPlatform {
         UI.execute(() -> run(task, owner));
     }
 
+    /** Input-owned observation without the normal GUI callback publication. */
+    static <T> T query(Callable<T> task) {
+        try {
+            if (Thread.currentThread() == uiThread) return task.call();
+            return UI.submit(() -> { uiThread = Thread.currentThread(); return task.call(); }).get(10, TimeUnit.SECONDS);
+        } catch (ExecutionException error) {
+            if (error.getCause() instanceof RuntimeException failure) throw failure;
+            throw new IllegalStateException("Could not inspect the current source actions", error.getCause());
+        } catch (InterruptedException error) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException("Inspecting source actions was interrupted", error);
+        } catch (Exception error) {
+            if (error instanceof RuntimeException failure) throw failure;
+            throw new IllegalStateException("Could not inspect the current source actions", error);
+        }
+    }
+
     private static void run(Runnable task, ManaTableSession owner) {
         uiThread = Thread.currentThread();
         try {

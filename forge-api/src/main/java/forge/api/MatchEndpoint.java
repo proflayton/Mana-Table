@@ -7,6 +7,7 @@ import java.util.Map;
 interface MatchEndpoint {
     Map<String, Object> state();
     Map<String, Object> action(JsonObject command);
+    Map<String, Object> sourceActions(JsonObject command);
     Map<String, Object> concede(JsonObject command);
     boolean finished();
 }

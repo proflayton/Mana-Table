@@ -6,12 +6,17 @@ namespace Mana.Table;
 
 // Deterministic presentation test double. It validates scoped commands and models
 // a few explicit projections, not Magic rules. Real Forge checks run separately.
-internal sealed class InteractionScenarioEngine : ICardEngine
+internal sealed class InteractionScenarioEngine : ICardEngine, ISourceActions
 {
     private GameSnapshot state;
     private int revision;
     public string Name => "Presentation scenario";
     public List<DecisionReply> Replies { get; } = [];
+    internal Func<string, string, string, SourceActionSet>? SourceActionRead { get; set; }
+    public bool SupportsSourceActions => SourceActionRead != null;
+    public Task<SourceActionSet> SourceActionsAsync(string gameId, string decisionId, string sourceCardKey) =>
+        SourceActionRead is { } read ? Task.FromResult(read(gameId, decisionId, sourceCardKey))
+            : Task.FromException<SourceActionSet>(new NotSupportedException("This presentation fixture has no source-action reader."));
     internal bool RejectNextReply { get; set; }
     internal int RejectedReplies { get; private set; }
     internal bool PriorityHasOtherResponse { get; set; }

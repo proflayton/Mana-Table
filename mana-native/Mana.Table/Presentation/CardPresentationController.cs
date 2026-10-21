@@ -63,7 +63,11 @@ internal sealed class CardPresentationController
         if (request.Card.FaceDown) transitions.Remove(request.Id);
         var view = request.ChoiceSlot < 0 && BoardView.AffectsZone(request.Zone) ? boardView : BoardView.Identity;
         var rest = view.Apply(request.Rest);
-        if (focused) readerTarget ??= ReaderPose(rest, request.Zone);
+        if (focused) {
+            readerTarget ??= ReaderPose(rest, request.Zone);
+            if (context.SourceActions && context.ReaderHeight is { } height)
+                readerTarget = readerTarget.Value with { Size = new(readerTarget.Value.Size.X, Math.Clamp(height, 350, 574)) };
+        }
         bool useBoardMotion = !focused && BoardView.AffectsZone(request.Zone) && request.ChoiceSlot < 0;
         bool collapse = pendingCollapses.Remove(request.Id);
         if (!collapse && boardMotion.TryGetValue(request.Id, out bool wasBoardMotion)
@@ -117,8 +121,10 @@ internal sealed class CardPresentationController
             || current.Dragging || current.CompactDecision) return false;
         if (entry.ChoiceSlot >= 0) {
             if (current.State?.Decision?.Kind != "reveal") return false;
-        } else if (current.OverlayOpen || hit.Zone is not ("Hand" or "Battlefield" or "Command")
-            || !current.AbilityChoice && current.State?.Decision is { Intent: not DecisionIntent.Priority }) return false;
+        } else if (current.OverlayOpen || !(hit.Zone is "Hand" or "Battlefield" or "Command"
+                || current.SourceActions && hit.Zone is ("Graveyard" or "Exile"))
+            || !current.AbilityChoice && current.State?.Decision is { Intent: not DecisionIntent.Priority }
+                && !(current.SourceActions && current.State?.Decision?.Intent == DecisionIntent.Mana)) return false;
         bool close = pinnedId == entry.Id && pinnedZone == entry.Zone;
         Collapse(hit.Id);
         if (!close) {

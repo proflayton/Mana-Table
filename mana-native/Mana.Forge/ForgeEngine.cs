@@ -8,7 +8,7 @@ namespace Mana.Forge;
 
 public sealed record ForgePaths(string Java, string Jar, string Resources, string Profile);
 
-public sealed partial class ForgeEngine(ForgePaths paths) : ICardEngine, ITableSocial, IDeckWorkshop, ITableSeatSetup, ICardPrintings
+public sealed partial class ForgeEngine(ForgePaths paths) : ICardEngine, ITableSocial, IDeckWorkshop, ITableSeatSetup, ICardPrintings, ISourceActions
 {
     private static readonly JsonSerializerOptions Json = new() { PropertyNameCaseInsensitive = true };
     private readonly ConcurrentDictionary<long, TaskCompletionSource<JsonElement>> pending = new();
@@ -21,6 +21,7 @@ public sealed partial class ForgeEngine(ForgePaths paths) : ICardEngine, ITableS
         public Task? Reader { get; set; }
         public Task? Diagnostics { get; set; }
         public Task? Stopped { get; set; }
+        public bool SourceActionsAvailable { get; set; }
         public volatile Exception? Failure;
     }
     private EngineProcess? current;
@@ -60,6 +61,7 @@ public sealed partial class ForgeEngine(ForgePaths paths) : ICardEngine, ITableS
                                 throw new IOException("The client and rules adapter use different protocol versions. Install the complete matching build.");
                             var capabilities = message.GetProperty("capabilities").EnumerateArray().Select(c => c.GetString()).ToHashSet();
                             if (EngineProtocol.RequiredCapabilities.Any(c => !capabilities.Contains(c))) throw new IOException("The rules adapter is missing required synchronization capabilities.");
+                            owner.SourceActionsAvailable = capabilities.Contains("source-actions");
                             owner.Ready.TrySetResult();
                         }
                         else if (ev.GetString() == "error") throw new IOException(Text(message, "message"));
@@ -246,7 +248,9 @@ public sealed partial class ForgeEngine(ForgePaths paths) : ICardEngine, ITableS
                 foreach (var defender in defenders) if (defender is JsonObject d) d["id"] = d["id"]?.ToString() ?? "";
         if (node["combat"]?["attackers"] is JsonArray attackers)
             foreach (var attacker in attackers) if (attacker?["defender"] is JsonObject defender) defender["id"] = defender["id"]?.ToString() ?? "";
-        return node.Deserialize<GameSnapshot>(Json);
+        var snapshot = node.Deserialize<GameSnapshot>(Json);
+        sourceActionsGame = snapshot?.Id ?? "";
+        return snapshot;
     }
     public async Task ReplyAsync(DecisionReply reply)
     {
@@ -255,7 +259,8 @@ public sealed partial class ForgeEngine(ForgePaths paths) : ICardEngine, ITableS
         var action = reply.Action switch { ReplyAction.Confirm => "ok", ReplyAction.Cancel => "cancel", ReplyAction.SelectCard => "card",
             ReplyAction.SelectPlayer => "player", ReplyAction.AssignAttack => "attack", ReplyAction.AssignBlock => "block",
             ReplyAction.AutoPass => "passIfNoResponse", ReplyAction.Skip => "skip", ReplyAction.SetAbilityAutoPass => "setAbilityAutoPass",
-            ReplyAction.UseHandPlacement => "useHandPlacement", ReplyAction.PassUntilPublicAction => "passUntilPublicAction", _ => null };
+            ReplyAction.UseHandPlacement => "useHandPlacement", ReplyAction.PassUntilPublicAction => "passUntilPublicAction",
+            ReplyAction.UseSourceAction => "useSourceAction", _ => null };
         if (action != null) args["action"] = action;
         if (reply.Card != null) args[reply.Action == ReplyAction.UseHandPlacement ? "handKey" : "key"] = reply.Card;
         if (reply.Player != null) args[reply.Action == ReplyAction.AssignAttack ? "defenderPlayerId" : "playerId"] = reply.Player;
@@ -265,7 +270,7 @@ public sealed partial class ForgeEngine(ForgePaths paths) : ICardEngine, ITableS
         if (reply.Choices != null) args["choices"] = reply.Choices;
         if (reply.Value != null) args["value"] = reply.Value;
         if (reply.Amounts != null) args["values"] = reply.Amounts;
-        if (reply.AbilityId != null) args["abilityId"] = reply.AbilityId;
+        if (reply.AbilityId != null) args[reply.Action == ReplyAction.UseSourceAction ? "actionId" : "abilityId"] = reply.AbilityId;
         if (reply.Ignore != null) args["ignored"] = reply.Ignore;
         if (reply.YieldToken != null) args["yieldToken"] = reply.YieldToken;
         await Request("matchAction", args);

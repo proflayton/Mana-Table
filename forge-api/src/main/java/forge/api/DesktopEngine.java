@@ -66,7 +66,7 @@ public final class DesktopEngine implements AutoCloseable {
         var engine = new DesktopEngine(CardCatalog.fromDatabases(data.getAvailableDatabases().values()), Path.of(args[1]));
         engine.resources = Path.of(args[0]);
         engine.analysisFormats.load(engine.resources);
-        protocol.println(JSON.toJson(Map.of("event", "ready", "printings", engine.catalog.size(), "protocolVersion", 2, "capabilities", List.of("seat-sync", "snapshots", "command-receipts", "resume", "table-social", "deck-workshop", "deck-analysis"))));
+        protocol.println(JSON.toJson(Map.of("event", "ready", "printings", engine.catalog.size(), "protocolVersion", 2, "capabilities", List.of("seat-sync", "snapshots", "command-receipts", "resume", "table-social", "deck-workshop", "deck-analysis", "source-actions"))));
         try (engine; var input = new BufferedReader(new InputStreamReader(System.in, StandardCharsets.UTF_8))) {
             String line;
             while ((line = input.readLine()) != null) {
@@ -122,6 +122,7 @@ public final class DesktopEngine implements AutoCloseable {
                 case "multiplayerClose" -> seat.close();
                 case "matchState" -> seat.match().state();
                 case "matchAction" -> seat.match().action(p);
+                case "matchSourceActions" -> seat.match().sourceActions(p);
                 case "matchConcede" -> seat.match().concede(p);
                 default -> throw new IllegalArgumentException("Command is not available on a seat connection");
             };
@@ -352,6 +353,11 @@ public final class DesktopEngine implements AutoCloseable {
                 }
                 if (match == null) throw new IllegalStateException("No active match");
                 yield match.action(p);
+            }
+            case "matchSourceActions" -> {
+                if (multiplayer != null && multiplayer.connected()) yield multiplayer.match().sourceActions(p);
+                if (match == null) throw new IllegalStateException("No active match");
+                yield match.sourceActions(p);
             }
             case "matchConcede" -> {
                 if (multiplayer != null && multiplayer.connected()) {

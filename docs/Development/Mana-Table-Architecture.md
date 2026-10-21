@@ -405,9 +405,9 @@ availability uses a quiet blue edge. Pinned reading state is separate from
 pointer hover. `TableApplication.Controls` shares the button and custom-surface
 painting used by stack rows, text choices, pass policies and phase stops. Resting
 importance or selection stays separate from hover and pressed feedback.
-Shield-only panel backgrounds do not advertise a clickable action. The reader
-action tab sits at its bottom edge, away from the top error and notice banner band;
-agent review inspected the small-window idle, hover and pressed captures. Human
+Shield-only panel backgrounds do not advertise a clickable action. Source-aware
+readers show concrete engine actions in a deliberately composed rules area below
+the illustration. Reading and choosing an action remain separate. Human
 acceptance remains open; see [Experience review](Mana-Table-Experience-Review.md).
 Combat connections and pointer aiming share a straight, filled arrow in the
 renderer: a tapered shaft, broad directional head and dark separation from card
@@ -477,10 +477,12 @@ movement. Dense cells use compact state markers without lifting faces into
 neighboring labels. Losing an ability
 or removing counters updates the existing occurrence, without interpreting
 printed rules text or retaining markers after the projection revokes them.
-Reduced motion uses the same poses without tweening. The opened reader's short
-action tab submits only the current engine-authorized action; a legal hand drag
-remains an alternative. Zone browsers and inspection retain explicit use actions.
-Required selections, mana payment and combat keep direct clicks. These surfaces
+Reduced motion uses the same poses without tweening. A reader's concrete action
+submits only the current engine-owned handle; a legal hand drag remains an
+alternative. Older adapters without source actions retain their existing reader
+tab. Zone browsers and inspection retain explicit use actions. Required card
+selections and combat keep direct clicks; source-aware mana payment permits
+reading a mana source before choosing its actual ability. These surfaces
 still have different reading and selection gestures, which need review together.
 Card choices may include an optional `cardId` linking a currently visible
 battlefield, command-zone or own-hand occurrence. `TableChoices` validates those
@@ -499,9 +501,35 @@ Selecting a gallery face retains its compact geometry. Card selection decisions
 collapse an existing reader so it cannot intercept the next adjacent choice.
 Selection uses the original prompt-scoped index, independently of names and reflow.
 
-`TableApplication.AbilityChoices` presents single-select `playAbility` actions
-over the selected source's illustration when complete options fit; longer
-choices stay beside the actual source occurrence. This engine context includes abilities and
+`ISourceActions` is an optional, capability-negotiated engine boundary. A lazy
+`matchSourceActions` query runs on the input owner, preserves the current prompt
+and board, and returns opaque handles plus genuine action descriptions for one
+disclosed source. The catalog is separate from the conservative Auto-pass scan,
+which intentionally excludes mana abilities. `useSourceAction` validates the
+exact input, source instance, game version and handle before calling the engine's
+existing priority or mana-payment ability path. Costs, targets and resolution
+continue through Forge. No native rules-text parser determines legal actions.
+
+`TableApplication.SourceActions` coalesces read queries and rejects results after
+source, snapshot, visibility or decision changes. Action hits include their query
+generation and binding so a held press cannot activate a refreshed first option.
+The selected canonical occurrence is composed by `SourceActions.View` as a live
+card: clear illustration, readable concrete action rows, full public rules,
+current counters and P/T, with local overflow pages. A genuine empty result gives
+no invented action. Only an explicit unsupported-method response from an older
+table host disables the optional capability; stale queries do not.
+Graveyard and Exile zone browsers support the same current-occurrence reader;
+reading preserves the browser until an explicit use action. Eligible hand-card
+placement options, including Gaea's Touch, retain the existing `HandPlacements`
+and `UseHandPlacement` route, followed by Forge's required card selection.
+
+Actual `InputSelectTargets` decisions retain their semantic input type. Their
+source is highlighted on the table, pointer aiming links it to legal cards or
+portraits, and the dock retains engine-permitted cancellation without calling a
+mixed card/player decision "Choose a player" or synthesizing a stack card.
+
+`TableApplication.AbilityChoices` handles genuine later single-select
+`playAbility` choices beside the actual source occurrence. This context includes abilities and
 casting modes. Pending engine input is separate from visual overlays: the table
 and source reader stay available while unrelated gameplay commands are blocked.
 An explicit action click submits its original index; optional Cancel submits an
@@ -540,9 +568,9 @@ available during animation. The dock has one stable following state for automati
 empty windows and waits; Auto, Hold and phase stops use a match-scoped input
 identity so prompt churn cannot cancel those clicks.
 
-`CardActions` labels engine-authorized battlefield actions as Activate, with
-availability highlighting, an action over the selected card's illustration and
-an inspector button. It never infers playability from rules text.
+`CardActions` retains availability highlighting and legacy inspection routes.
+Source-aware readers use engine-owned action descriptions in the live card's
+rules area. Neither path infers playability from rules text.
 Stack projections include viewer-safe card/player targets (including subabilities).
 The renderer draws direct target arrows, marks the exact occurrence and shows a
 spell/ability callout. `MatchActivity` retains public resolution descriptions and

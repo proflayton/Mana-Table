@@ -184,15 +184,40 @@ internal static class HeadlessEngineSmoke
             async Task PlayCard(Card card)
             {
                 string occurrence = CardViews.Identity(card);
+                var beforeQuery = view.Match!;
+                string prompt = beforeQuery.Decision!.Id;
+                Check(engine.SupportsSourceActions, "The real rules adapter negotiates engine-owned source actions");
+                var sourceActions = await engine.SourceActionsAsync(beforeQuery.Id, prompt, card.Key);
+                var repeated = await engine.SourceActionsAsync(beforeQuery.Id, prompt, card.Key);
+                var afterQuery = await engine.ObserveAsync() ?? throw new InvalidOperationException("The source action read lost the game.");
+                string expectedKind = card.Type.Contains("Land", StringComparison.Ordinal) ? "play" : "cast";
+                Check(sourceActions.GameId == beforeQuery.Id && sourceActions.DecisionId == prompt
+                    && sourceActions.SourceCardKey == card.Key && sourceActions.SourceCardId == card.VisualId
+                    && sourceActions.Actions.Any(action => action.Kind == expectedKind && !string.IsNullOrWhiteSpace(action.Text))
+                    && sourceActions.Actions.SequenceEqual(repeated.Actions)
+                    && afterQuery.Decision?.Id == prompt && afterQuery.Revision == beforeQuery.Revision
+                    && afterQuery.Viewer!.Zones.SelectMany(zone => zone.Cards).Single(item => item.VisualId == card.VisualId).Key == card.Key,
+                    "Reading the real source actions twice preserves full engine text, stable opaque handles and the unanswered prompt: " + card.Name);
+                bool staleQueryRejected = false;
+                try { await engine.SourceActionsAsync(beforeQuery.Id, prompt, "expired-source-key"); }
+                catch (EngineCommandRejectedException) { staleQueryRejected = true; }
+                Check(staleQueryRejected && (await engine.ObserveAsync())?.Decision?.Id == prompt,
+                    "A stale source query is rejected without consuming the current game decision");
                 var entry = frame.Cards.Single(item => item.Id == occurrence);
                 var hit = frame.Hits.Last(item => item.Id == entry.Hit.Id && item.Scope == entry.Hit.Scope);
                 Click(hit.Id);
                 frame = Tick("restore-reader-footprint"); frame = Tick("reader-settled");
                 if (!frame.Cards.Any(item => item.Id == occurrence && item.Focused)) throw new InvalidOperationException("The real card reader did not open.");
+                while (!frame.Hits.Any(item => item.Id == "read-card-action")) {
+                    Guard(); await Task.Delay(1); frame = Tick("await-engine-source-actions");
+                }
                 string decisionId = view.Match!.Decision!.Id;
                 Click("read-card-action");
-                actions.Add(new { mode = "application-pointer", decision = decisionId, action = "read-card-action", card.Name, occurrence });
+                actions.Add(new { mode = "application-pointer", decision = decisionId, action = "read-card-action", card.Name, occurrence,
+                    offeredActions = sourceActions.Actions });
                 await Idle();
+                Check(view.Match?.Decision?.Context != "playAbility",
+                    "The real on-card source action proceeds directly without a second generic ability choice: " + card.Name);
             }
         } catch (Exception exception) {
             error = exception.ToString(); throw;

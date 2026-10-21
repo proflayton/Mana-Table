@@ -222,6 +222,58 @@ internal sealed class HandPlacementSmoke : ITableAutomation
         });
         Step(.7, () => {
             Check(!view.Hits.Any(h => h.Id.StartsWith("zone-actions:")), "Unavailable zones lose their action cues on the next authoritative snapshot");
+            MoveHit("close-overlay");
+        }); Click();
+        (string Game, string Prompt, string Key) sourceRead = default;
+        Step(.2, () => {
+            scenario.SourceActionRead = (game, prompt, key) => {
+                var current = scenario.State; var card = current.Viewer!.Zones.SelectMany(zone => zone.Cards).Single(card => card.Key == key);
+                sourceRead = (game, prompt, key);
+                return new(current.Id, current.Decision!.Id, card.Key, card.VisualId, []);
+            };
+            Publish("single"); MoveAway();
+        });
+        Step(.7, () => { Expect("placement-a"); MoveCard("hand-forest"); }); Click();
+        Wait(() => Reading("hand-forest") && view.Hits.Any(hit => hit.Id == "read-card-action"), 3, () => {
+            Check(scenario.Replies.Count == before && sourceRead == (expectedGame, expectedDecision, expectedCard)
+                && view.Frame!.Observe().Text.Any(text => text.Value == HandPlacements.Options(view.Match!, Forest()).Single().Text),
+                "A valid empty source-action read preserves the hand card's concrete engine-reported placement action without submitting anything");
+            Capture("09-source-aware-hand-placement"); MoveHit("read-card-action");
+        }); Click();
+        Wait(ReplySettled, 3, () => {
+            CheckPlacement("The source-aware reader submits the existing exact hand-placement permission even when the source-action list is empty");
+            scenario.Present(scenario.State with { Stack = [], Decision = new() { Kind = "choice", Context = "hand-placement", Min = 0, Max = 1,
+                Choices = [new(0, "Forest", Forest())] } });
+            view.Accept(scenario.State); before = scenario.Replies.Count; MoveAway();
+        });
+        Step(.3, () => MoveHit("choice:0")); Click();
+        Step(.15, () => MoveHit("choicesdone")); Click();
+        Wait(ReplySettled, 3, () => {
+            Check(view.Match!.Viewer!.Zone("Battlefield").Cards.Any(card => card.VisualId == "hand-forest") && view.Match.Viewer.LandPlaysUsed == 1,
+                "The later authored hand-card choice still places that Forest while retaining the spent normal land play");
+            scenario.SourceActionRead = (game, prompt, key) => {
+                var current = scenario.State; var card = current.Viewer!.Zones.SelectMany(zone => zone.Cards).Single(card => card.Key == key);
+                sourceRead = (game, prompt, key);
+                return new(current.Id, current.Decision!.Id, card.Key, card.VisualId, card.VisualId == "own-grave"
+                    ? [new("grave-flashback", "cast", "Flashback {1}{U}, Pay 3 life: Target player draws two cards.")] : []);
+            };
+            Publish("zones"); before = scenario.Replies.Count; MoveAway();
+        });
+        Step(.7, () => MoveHit("zone-actions:0:Graveyard")); Click();
+        Wait(() => view.Frame!.Cards.Any(card => card.Card.VisualId == "own-grave" && card.Zone == "Graveyard"
+            && Microsoft.Xna.Framework.Vector2.Distance(card.Display.Center, card.Rest.Center) < 2
+            && Microsoft.Xna.Framework.Vector2.Distance(card.Display.Size, card.Rest.Size) < 2), 3, () => MoveCard("own-grave")); Click();
+        Wait(() => view.Frame!.Cards.Any(card => card.Focused && card.Card.VisualId == "own-grave" && card.Zone == "Graveyard")
+            && view.Hits.Any(hit => hit.Id == "read-card-action"), 3, () => {
+            var current = view.Match!.Viewer!.Zone("Graveyard").Cards.Single(card => card.VisualId == "own-grave");
+            Check(scenario.Replies.Count == before && view.ZoneName == "Graveyard" && view.Overlay.Length == 0
+                && sourceRead == (view.Match.Id, view.Match.Decision!.Id, current.Key)
+                && view.Frame!.Observe().Text.Any(text => text.Value == "Flashback {1}{U}, Pay 3 life: Target player draws two cards.")
+                && !view.Hits.Any(hit => hit.Id is "zone-use:own-grave" or "inspect-zone-use"),
+                "A source-aware graveyard card opens its actual live reader and current-key cast action without an inspector detour or a game reply");
+            Capture("10-source-aware-grave-reader");
+        });
+        Step(.2, () => {
             Check(view.Error.Length == 0, "The complete hand and zone action journey completes without client errors");
             File.WriteAllText(Path.Combine(view.Profile, "gesture-events.json"), JsonSerializer.Serialize(gestures, new JsonSerializerOptions { WriteIndented = true, IncludeFields = true }));
             File.WriteAllText(Path.Combine(view.Profile, "hand-placement-results.json"), JsonSerializer.Serialize(checks, new JsonSerializerOptions { WriteIndented = true }));

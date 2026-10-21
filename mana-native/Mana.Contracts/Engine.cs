@@ -60,6 +60,14 @@ public interface IMatchConnection
     Task ReplyAsync(DecisionReply reply);
     Task ConcedeAsync(string gameId);
 }
+// Reading a source's current engine-owned actions does not answer its decision.
+public interface ISourceActions
+{
+    bool SupportsSourceActions => true;
+    Task<SourceActionSet> SourceActionsAsync(string gameId, string decisionId, string sourceCardKey);
+}
+public sealed record SourceActionSet(string GameId, string DecisionId, string SourceCardKey, string SourceCardId, SourceAction[] Actions);
+public sealed record SourceAction(string Id, string Kind, string Text);
 // Social commands have their own ordering and never advance a game decision.
 public interface ITableSocial
 {
@@ -105,7 +113,7 @@ public sealed record Lobby(string Mode, string Status, string? Error, bool CanSt
     public AiOpponent[] AiOpponents { get; init; } = [];
 }
 public enum DecisionIntent { General, Priority, Attack, Block, Mana, Selection }
-public enum ReplyAction { Confirm, Cancel, SelectCard, SelectPlayer, AssignAttack, AssignBlock, AutoPass, Skip, Choose, Value, Allocate, SetAbilityAutoPass, UseHandPlacement, PassUntilPublicAction }
+public enum ReplyAction { Confirm, Cancel, SelectCard, SelectPlayer, AssignAttack, AssignBlock, AutoPass, Skip, Choose, Value, Allocate, SetAbilityAutoPass, UseHandPlacement, PassUntilPublicAction, UseSourceAction }
 public sealed record DecisionReply(string GameId, string DecisionId, ReplyAction Action,
     string? Card = null, int? Player = null, string? Attacker = null, string? Blocker = null,
     string? DefenderCard = null, int[]? Choices = null, string? Value = null, int[]? Amounts = null,
@@ -121,7 +129,7 @@ public sealed record DecisionReply(string GameId, string DecisionId, ReplyAction
             ReplyAction.Choose => Choices != null && Choices.All(i => i >= 0) && Choices.Distinct().Count() == Choices.Length,
             ReplyAction.Value => Value != null, ReplyAction.Allocate => Amounts != null && Amounts.All(i => i >= 0),
             ReplyAction.SetAbilityAutoPass => Present(AbilityId) && Ignore != null,
-            ReplyAction.UseHandPlacement => Present(AbilityId) && Present(Card),
+            ReplyAction.UseHandPlacement or ReplyAction.UseSourceAction => Present(AbilityId) && Present(Card),
             ReplyAction.PassUntilPublicAction => Present(YieldToken),
             ReplyAction.Confirm or ReplyAction.Cancel or ReplyAction.AutoPass or ReplyAction.Skip => true,
             _ => false
@@ -224,6 +232,7 @@ public sealed record Decision
 {
     public string Id { get; init; } = "";
     public string Kind { get; init; } = "";
+    public string InputType { get; init; } = "";
     public DecisionIntent Intent { get; init; }
     public string Message { get; init; } = "";
     public string Ok { get; init; } = "Confirm";

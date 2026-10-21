@@ -3,7 +3,7 @@ using Mana.Contracts;
 namespace Mana.Scenarios;
 
 /// <summary>Replays authored snapshots and a few explicit UI acknowledgements, never Magic rules.</summary>
-public sealed class ExperienceLabSession
+public sealed partial class ExperienceLabSession
 {
     private readonly object gate = new();
     private readonly string sessionId = Guid.NewGuid().ToString("N");
@@ -27,6 +27,7 @@ public sealed class ExperienceLabSession
     {
         lock (gate) {
             abilityParent = null;
+            ResetSourceActions();
             StageIndex = Math.Clamp(stage, 0, Stages.Count - 1); epoch++;
             var states = Enumerable.Range(0, StageIndex + 1).Select(index => Stamp(Stages[index].Snapshot)).ToArray();
             State = states[^1]; return Array.AsReadOnly(states);
@@ -38,6 +39,7 @@ public sealed class ExperienceLabSession
         lock (gate) {
             if (stage != StageIndex + 1 || stage >= Stages.Count) throw new ArgumentOutOfRangeException(nameof(stage), "Continue to the next authored stage; replay to move backward.");
             abilityParent = null;
+            if (Scenario.Id == "ability-targeting.v1") return AdvanceBallista(stage);
             StageIndex = stage; return State = Stamp(Stages[stage].Snapshot);
         }
     }
@@ -65,7 +67,15 @@ public sealed class ExperienceLabSession
                 throw new EngineCommandRejectedException("This scripted snapshot changed. Use its current controls.");
             var decision = State.Decision!;
             var cards = State.Viewer!.Zones.SelectMany(zone => zone.Cards).ToArray();
-            if (reply.Action == ReplyAction.SelectCard && decision.Intent == DecisionIntent.Selection) {
+            if (reply.Action == ReplyAction.UseSourceAction) {
+                reply.Validate();
+                return UseSourceAction(reply);
+            } else if (Scenario.Id == "ability-targeting.v1" && decision.Context == BallistaTargetContext) {
+                return ReplyBallistaTarget(reply);
+            } else if (Scenario.Id == "ability-targeting.v1" && StageIndex == 1
+                && reply.Action == ReplyAction.Confirm && decision.Intent == DecisionIntent.Priority) {
+                return AdvanceBallista(2);
+            } else if (reply.Action == ReplyAction.SelectCard && decision.Intent == DecisionIntent.Selection) {
                 var chosen = cards.FirstOrDefault(card => card.Key == reply.Card && card.Selectable)
                     ?? throw Unsupported();
                 State = Stamp(State with { Players = State.Players.Select(player => player.Id != State.ViewerId ? player : player with {
@@ -109,7 +119,7 @@ public sealed class ExperienceLabSession
                     State = State with { Players = State.Players.Select(player => player.Id != State.ViewerId ? player : player with {
                         Mana = new(player.Mana) { ["G"] = player.Mana.GetValueOrDefault("G") + 1 },
                         Zones = player.Zones.Select(zone => zone with { Cards = zone.Cards.Select(card => card.VisualId != source.VisualId ? card : card with {
-                            Tapped = true, Selectable = Scenario.Id == "ability-choice.v1" ? false : card.Selectable
+                            Tapped = true, Selectable = false
                         }).ToArray() }).ToArray()
                     }).ToArray() };
                     abilityParent = null;

@@ -3,12 +3,14 @@ using Mana.Contracts;
 namespace Mana.Scenarios;
 
 /// <summary>Explicit presentation fixture connection. It cannot start Forge, connect to tables or write decks.</summary>
-public sealed class ExperienceLabEngine(ExperienceLabSession session) : ICardEngine
+public sealed class ExperienceLabEngine(ExperienceLabSession session) : ICardEngine, ISourceActions
 {
     public ExperienceLabSession Session { get; } = session;
     public string Name => "Scripted experience lab";
     public Task InitializeAsync() => Task.CompletedTask;
     public Task<GameSnapshot?> ObserveAsync() => Task.FromResult<GameSnapshot?>(Session.State);
+    public Task<SourceActionSet> SourceActionsAsync(string gameId, string decisionId, string sourceCardKey) =>
+        Task.FromResult(Session.SourceActions(gameId, decisionId, sourceCardKey));
     public Task ReplyAsync(DecisionReply reply) { Session.Reply(reply); return Task.CompletedTask; }
     public ValueTask DisposeAsync() => ValueTask.CompletedTask;
     private static Exception Unavailable() => new EngineCommandRejectedException("The experience lab uses isolated scripted snapshots. Real decks, networking and game rules are available in the normal app.");

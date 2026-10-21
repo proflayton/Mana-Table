@@ -113,6 +113,7 @@ final class SyncLobby {
             case "lobby": return lobby(seat);
             case "observe": return table == null ? null : table.seat(seat).state();
             case "reply": requireMatch(); return table.seat(seat).action(p);
+            case "sourceActions": requireMatch(); return table.seat(seat).sourceActions(p);
             case "concede": requireMatch(); return table.seat(seat).concede(p);
             case "configure": requireHost(seat); requireSetup(); requireConversation(p); configureSeats(p.get("format").getAsString(), p.get("count").getAsInt()); break;
             case "seat": requireHost(seat); requireSetup(); requireConversation(p); configureSeat(seat, p); break;

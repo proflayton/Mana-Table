@@ -41,6 +41,7 @@ import java.lang.reflect.Proxy;
 import java.nio.file.Path;
 import java.util.*;
 import java.util.concurrent.*;
+import java.util.concurrent.atomic.AtomicLong;
 
 /** One seat in an authoritative match, independent of its connection. Mutable engine objects never leave this adapter. */
 public final class MatchSession implements ManaTableSession, MatchEndpoint {
@@ -67,6 +68,7 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
     private volatile Map<String, Object> latest;
     private volatile Pending pending;
     private boolean inputActionQueued;
+    private final AtomicLong sourceActionVersion = new AtomicLong();
     private volatile boolean closed;
     private volatile String error;
     private long revision;
@@ -111,6 +113,7 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
         final Input input;
         final Map<String, CardView> cards = new LinkedHashMap<>();
         final Map<Integer, String> cardKeys = new HashMap<>();
+        final Map<String, SourceActions.Catalog> sourceActions = new HashMap<>();
         int nextCardKey;
         final Set<Integer> players = new HashSet<>();
         final Set<String> blockPairs = new HashSet<>();
@@ -213,6 +216,10 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
     public void onPhase(GameEventTurnPhase event) {
         table.stopIfNoHumans();
     }
+
+    // Any rules mutation, including a hidden one, revokes the previous action
+    // capability without disclosing which fact changed.
+    @Subscribe public void onSourceActionEvent(GameEvent event) { sourceActionVersion.incrementAndGet(); }
 
     @Subscribe
     public void onQuietYieldEvent(GameEvent event) {
@@ -358,6 +365,65 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
         return canQuietYield(prompt.input) && quietYield.permits(token, activity.sequence());
     }
 
+    @Override
+    public Map<String, Object> sourceActions(JsonObject request) {
+        // Never hold the table gate while waiting for its input owner.
+        return HeadlessPlatform.query(() -> {
+            synchronized (gate) {
+                requireSession(request);
+                Pending current = pending;
+                if (current == null || !current.id.equals(string(request, "promptId")))
+                    throw new IllegalArgumentException("That choice has changed. Use the current prompt.");
+                if (!sourceInputCurrent(current)) throw new IllegalArgumentException("Source actions are not available in this decision");
+                String key = string(request, "key");
+                CardView view = current.cards.get(key);
+                Card source = sourceCard(view);
+                if (source == null) throw new IllegalArgumentException("Card is not visible in this prompt");
+                long version = sourceActionVersion.get();
+                var catalog = current.sourceActions.get(key);
+                if (view.isFaceDown() || catalog == null || !catalog.matches(source, version)) {
+                    catalog = view.isFaceDown() ? new SourceActions.Catalog(key, source, source.getGameTimestamp(),
+                            source.getZone().getZoneType(), version, List.of()) : SourceActions.describe(current.input, source, key, version);
+                    if (!sourceInputCurrent(current) || sourceActionVersion.get() != version)
+                        throw new IllegalArgumentException("The source actions changed. Read the current card again.");
+                    current.sourceActions.put(key, catalog);
+                }
+                var actions = catalog.actions().stream().map(action -> Map.<String, Object>of(
+                        "id", action.id(), "kind", action.kind(), "text", action.text())).toList();
+                return Collections.unmodifiableMap(map("gameId", id, "decisionId", current.id, "sourceCardKey", key,
+                        "sourceCardId", activity.visualId(view), "actions", actions));
+            }
+        });
+    }
+
+    private boolean sourceInputCurrent(Pending current) {
+        return !closed && error == null && !viewer.getHasLost() && !game.isGameOver() && !inputActionQueued
+                && current.kind.equals("input") && sourceInputActive(current.input)
+                && human.getInputQueue().getInput() == current.input && human.getInputProxy().getInput() == current.input;
+    }
+
+    private static boolean sourceInputActive(Input input) {
+        return input instanceof InputPassPriority priority ? priority.isPriorityActive()
+                : input instanceof InputPayMana payment && payment.isPaymentActive();
+    }
+
+    private Card sourceCard(CardView view) {
+        if (view == null || view.getZone() == null || !isVisibleInZone(view, view.getZone(), viewer)) return null;
+        Card source = human.getCard(view);
+        return source == null || source.getZone() == null ? null : source;
+    }
+
+    private boolean sourceActionCurrent(Pending current, SourceActions.Catalog catalog, SourceActions.Action action) {
+        // inputActionQueued is expected after acceptance, so recheck the exact
+        // owned input directly rather than using sourceInputCurrent here.
+        Card source = sourceCard(current.cards.get(catalog.key()));
+        return !closed && error == null && !viewer.getHasLost() && !game.isGameOver()
+                && sourceInputActive(current.input)
+                && human.getInputQueue().getInput() == current.input && human.getInputProxy().getInput() == current.input
+                && catalog.matches(source, sourceActionVersion.get()) && !source.isFaceDown()
+                && action.ability().getHostCard() == source && action.ability().canPlay(true);
+    }
+
     public Map<String, Object> action(JsonObject request) {
         synchronized (gate) {
             requireSession(request);
@@ -390,11 +456,24 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
             PlayerView target = null;
             String placementAbility = null;
             Integer placementHandId = null;
+            SourceActions.Catalog sourceCatalog = null;
+            SourceActions.Action sourceAction = null;
             switch (action) {
                 case "ok", "passIfNoResponse", "passUntilPublicAction" -> { if (!okEnabled) throw new IllegalArgumentException("Continue is not available"); }
                 case "cancel" -> { if (!cancelEnabled) throw new IllegalArgumentException("Cancel is not available"); }
                 case "attackAll" -> { if (!(next.input instanceof InputAttack)) throw new IllegalArgumentException("Not declaring attackers"); }
                 case "card" -> { card = next.cards.get(string(request, "key")); if (card == null) throw new IllegalArgumentException("Card is not visible in this prompt"); }
+                case "useSourceAction" -> {
+                    if (!sourceInputCurrent(next)) throw new IllegalArgumentException("Source actions are not available in this decision");
+                    sourceCatalog = next.sourceActions.get(string(request, "key"));
+                    String actionId = string(request, "actionId");
+                    if (sourceCatalog != null) sourceAction = sourceCatalog.actions().stream()
+                            .filter(candidate -> candidate.id().equals(actionId)).findFirst().orElse(null);
+                    // IPC validation reads only the scoped cache. Live source
+                    // resolution and canPlay run on the owned input thread.
+                    if (sourceAction == null || sourceCatalog.version() != sourceActionVersion.get())
+                        throw new IllegalArgumentException("That source action is no longer available. Read the current card again.");
+                }
                 case "useHandPlacement" -> {
                     if (!(next.input instanceof InputPassPriority) || human.getInputQueue().getInput() != next.input
                             || closed || viewer.getHasLost() || game.isGameOver())
@@ -445,6 +524,8 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
             String chosenPlacementAbility = placementAbility;
             Integer chosenPlacementHandId = placementHandId;
             String chosenYieldToken = yieldToken;
+            SourceActions.Catalog chosenSourceCatalog = sourceCatalog;
+            SourceActions.Action chosenSourceAction = sourceAction;
             pending = null;
             inputActionQueued = true;
             markBusy();
@@ -466,6 +547,12 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
                         case "cancel" -> human.selectButtonCancel();
                         case "attackAll" -> human.alphaStrike();
                         case "card" -> human.selectCard(chosenCard, null, CARD_CLICK);
+                        case "useSourceAction" -> {
+                            synchronized (gate) {
+                                restorePriority = !sourceActionCurrent(next, chosenSourceCatalog, chosenSourceAction)
+                                        || !next.input.selectAbility(chosenSourceAction.ability());
+                            }
+                        }
                         case "useHandPlacement" -> restorePriority = !human.useHandPlacement(chosenPlacementAbility, chosenPlacementHandId);
                         case "block" -> {
                             // One scoped gesture: select the attacker and toggle this exact
@@ -492,6 +579,7 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
                             pending = next;
                             notices.add(action.equals("passUntilPublicAction")
                                     ? "The table changed. Passing for now stopped; review the current decision."
+                                    : action.equals("useSourceAction") ? "That source action changed. Read the current card again."
                                     : "That hand-placement option is no longer available. Use the current prompt.");
                             while (notices.size() > 12) notices.remove(0);
                         }

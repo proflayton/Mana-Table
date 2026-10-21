@@ -58,7 +58,7 @@ internal sealed partial class TableApplication
     }
     private void DrawActionCallout()
     {
-        if (AbilityActionPending) return;
+        if (AbilityActionPending || SelectingActionTarget) return;
         if (DrawDecisionClarity(match!)) return;
         // Pending effects already have faces, ordered rows, targets and a
         // responder on the table. Rules prose belongs behind their Details.

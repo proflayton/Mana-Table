@@ -25,6 +25,7 @@ internal sealed partial class TableApplication
     // engine-projected player handle; no recipient is selected automatically.
     private bool DrawDecisionClarity(GameSnapshot state)
     {
+        if (SelectingActionTarget) return false;
         var recipients = StateClarity.Recipients(state);
         if (session.NeedsRecovery || state.Status != "playing" || OverlayOpen || recipients.Length == 0 || state.Decision is not { Intent: DecisionIntent.Selection } decision)
             return false;
