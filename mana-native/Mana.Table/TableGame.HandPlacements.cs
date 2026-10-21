@@ -17,7 +17,7 @@ internal sealed partial class TableGame
     {
         if (match == null || busy || HandPlacements.Options(match, card).Length == 0) return;
         placementCard = card; placementScope = Scope; placementPage = 0;
-        pendingPlay = null; zoneName = null; overlay = "hand-placement";
+        zoneName = null; overlay = "hand-placement";
     }
     private void UseHandPlacement(Card card, string abilityId, string scope)
     {

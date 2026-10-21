@@ -8,24 +8,11 @@ namespace Mana.Table;
 
 internal sealed partial class TableGame
 {
-    private (string Id, string Scope, Point Position, double Time)? pendingPlay;
     private void ActivateHit(Hit hit)
     {
-        // Reading a hand card must never commit a play. Required selections and
-        // battlefield abilities still use the prompt's normal single-click path.
-        bool play = match?.Decision?.Intent == DecisionIntent.Priority && hit.Card is { } card && IsCardActionable(card)
-            && hit.Zone is "Hand" or "Command" or "Graveyard" or "Exile" or "Library";
-        if (play) {
-            bool repeat = pendingPlay is { } first && first.Id == hit.Id && first.Scope == Scope
-                && now - first.Time <= .5 && Vector2.Distance(first.Position.ToVector2(), pointer.ToVector2()) <= 12;
-            pendingPlay = repeat ? null : (hit.Id, Scope, pointer, now);
-            if (!repeat) { hoverSince = now - .25; return; }
-        } else {
-            pendingPlay = null;
-            if (!OverlayOpen && hit.Zone == "Hand" && hit.Card is { } handCard && !IsCardActionable(handCard)) {
-                hoverSince = now - .25; return;
-            }
-        }
+        if (ToggleCardReader(hit)) return;
+        if (OverlayOpen && match?.Decision?.Intent == DecisionIntent.Priority && hit.Card is { } card
+                && hit.Zone is "Hand" or "Command" or "Graveyard" or "Exile" or "Library") { Inspect(card); return; }
         hit.Action();
     }
     private IEnumerable<Card> AllCards() => match?.Players.SelectMany(p => p.Zones).SelectMany(z => z.Cards) ?? [];
@@ -35,8 +22,11 @@ internal sealed partial class TableGame
     {
         if (InspectAllocationAtPointer()) return;
         // A poll may have revoked visibility since the last rendered hit region.
-        inspected = VisibleCards().FirstOrDefault(c => SameVisibleCard(c, card));
+        var choice = ReadingGalleryOpen ? readingCards.LastOrDefault(entry => entry.ChoiceSlot >= 0 && ReferenceEquals(entry.Card, card) && CanReadCard(entry)) : null;
+        inspectedChoice = choice == null ? null : (Scope, choice.ChoiceSlot);
+        inspected = choice == null ? VisibleCards().FirstOrDefault(c => SameVisibleCard(c, card)) : ChoiceFace(choice.ChoiceSlot);
         if (inspected == null) return;
+        CollapseCardReading();
         inspectBack = false; inspectPage = 0; overlay = "inspect";
         LearnControl("inspect-card");
     }
@@ -78,13 +68,13 @@ internal sealed partial class TableGame
         if (match?.Decision == null || dragSource?.Card is not { } card || dragSource.Scope != Scope || OverlayOpen) return null;
         return match.Decision.Intent is DecisionIntent.Attack or DecisionIntent.Block
             ? InteractionController.Assign(match, card.CombatId, target?.Card == null ? target?.PlayerId : null, target?.Card?.CombatId)
-            : dragSource.Zone == "Hand" && TableWorld.CanPlayAt(pointer) ? InteractionController.Play(match, card) : null;
+            : dragSource.Zone == "Hand" && TableWorld.CanPlayAt(pointer) && (target == null || target.Card != null) ? InteractionController.Play(match, card) : null;
     }
-    private bool LegalDrop(Hit? target) => DropReply(target) != null || PlacementDropChoice();
+    private bool LegalDrop(Hit? target) => DropReply(target) != null || (target == null || target.Card != null) && PlacementDropChoice();
     private bool DropCard(Hit? target)
     {
         if (busy) return false;
-        if (PlacementDropChoice()) { OpenHandPlacement(dragSource!.Card!); return true; }
+        if ((target == null || target.Card != null) && PlacementDropChoice()) { OpenHandPlacement(dragSource!.Card!); return true; }
         if (DropReply(target) is not { } reply) return false;
         Send(reply); return true;
     }

@@ -73,6 +73,8 @@ import java.util.stream.Collectors;
  * @version $Id$
  */
 public class Player extends GameEntity implements Comparable<Player> {
+    public static final int MAX_SPEED = 4;
+
     public static final List<ZoneType> ALL_ZONES = Collections.unmodifiableList(Arrays.asList(ZoneType.Battlefield,
             ZoneType.Library, ZoneType.Graveyard, ZoneType.Hand, ZoneType.Exile, ZoneType.Command, ZoneType.Ante,
             ZoneType.Sideboard, ZoneType.PlanarDeck, ZoneType.SchemeDeck, ZoneType.AttractionDeck, ZoneType.ContraptionDeck,
@@ -1886,7 +1888,7 @@ public class Player extends GameEntity implements Comparable<Player> {
         return speed;
     }
     public final void increaseSpeed() {
-        if (!maxSpeed()) { // can't increase past 4
+        if (!maxSpeed()) { // can't increase past MAX_SPEED
             int old = speed;
             speed++;
             getGame().fireEvent(new GameEventSpeedChanged(this, old, speed)); //play sound effect
@@ -1905,7 +1907,7 @@ public class Player extends GameEntity implements Comparable<Player> {
         return speed == 0;
     }
     public final boolean maxSpeed() {
-        return speed == 4;
+        return speed == MAX_SPEED;
     }
     public final void setSpeed(int i) { //just used for copy/save
         speed = i;
@@ -1937,8 +1939,8 @@ public class Player extends GameEntity implements Comparable<Player> {
         // 702.179d There is an inherent triggered ability associated with a player having 1 or more speed. This ability has no source and is controlled by that player.
         // That ability is “Whenever one or more opponents lose life during your turn, if your speed is less than 4, your speed increases by 1. This ability triggers only once each turn.”
         String trigger = "Mode$ LifeLostAll | ValidPlayer$ Opponent | TriggerZones$ Command | ActivationLimit$ 1 | " +
-                "PlayerTurn$ True | CheckSVar$ Count$YourSpeed | SVarCompare$ LT4 | "
-                + "TriggerDescription$ Whenever one or more opponents lose life during your turn, if your speed is less than 4, your speed increases by 1. This ability triggers only once each turn.";
+                "PlayerTurn$ True | CheckSVar$ Count$YourSpeed | SVarCompare$ LT" + MAX_SPEED + " | "
+                + "TriggerDescription$ Whenever one or more opponents lose life during your turn, if your speed is less than " + MAX_SPEED + ", your speed increases by 1. This ability triggers only once each turn.";
         String speedUp = "DB$ ChangeSpeed";
         Trigger lifeLostTrigger = TriggerHandler.parseTrigger(trigger, speedEffect, true);
         lifeLostTrigger.setOverridingAbility(AbilityFactory.getAbility(speedUp, speedEffect));

@@ -129,10 +129,17 @@ its consequence; an eliminated seat can watch or leave.
 `TableScene` describes visible ranks, command cards, piles and hand placement.
 Current native source uses `BattlefieldLayout` to include every projected
 battlefield occurrence, with ordered groups and exposed individual hit regions.
+Sparse boards keep projected role lanes. When crowding requires bounded packing,
+all seats switch together to upright cells inside separate player regions;
+`BoundedBattlefieldLayout` reserves space for piles, commanders, resources and
+controls. Dense headers carry owner/status and exact role counts while life,
+mana and player-state ribbons remain at their player icons. Matching public-state
+copies share small fans; every occurrence stays rendered and independently hit.
 Its compatibility rank views do not page the battlefield. Long hands and
-selection/inspection galleries still page. Release 0.2.39 includes this layout
-from revision `c11a3094be6c95ba1bddbafbe54aa7ad8fe3a7db`; inspect package metadata
-before attributing later source behavior to an installed release.
+selection/inspection galleries still page. Release 0.2.39 introduced unpaged
+battlefields at revision `c11a3094be6c95ba1bddbafbe54aa7ad8fe3a7db`; current packing
+includes later changes. Inspect package metadata before attributing source
+behavior to an installed release.
 Painting and input use the same displayed pose. Card names never identify an
 occurrence. Client inspection, effects and interactions enumerate the same allowed
 views, so revoked information is removed consistently. Artist image loading is
@@ -245,25 +252,26 @@ The rest of the table remains interactive. Full messages can be expanded, and
 older pages retain an anchor while new messages arrive. Chat exists only while
 connected to a human table; solo AI does not simulate human conversation.
 
-Native hand, battlefield, stack and visible pile cards grow to 410x574 after a
-180 ms hover. The original scene occurrence animates upright and is painted once
-above its rank, then settles back on pointer exit. Its displayed pose supplies
-its hit region; original hand slots remain available for browsing the fan.
+Native hover highlights cards at their compact size. During ordinary priority,
+clicking a visible hand, battlefield or command-zone card opens a persistent
+410x574 reader. The same scene occurrence animates upright and is painted once;
+its displayed pose supplies its hit region, while original hand slots remain
+available for browsing. Clicking the same card, empty space or Close card,
+pressing Escape or starting a drag dismisses the reader. Pointer exit alone does
+not dismiss it or replace it with another card.
 The local portrait and life total sit at the center above the hand, using the
 same seat anchor as incoming combat lines, commander entrances and life effects.
 The fan sits behind the portrait, with local battlefield ranks shifted forward
 to leave room. Enlarged faces and state panels keep the local target area clear;
 the portrait is painted after the hand so travelling cards cannot obscure it.
-Revealed and selectable gallery faces use this same pose, focus and deferred
-painting path. Anonymous faces have presentation identities scoped to the
-decision and original item slot; names never identify an occurrence. Read-only
-faces participate in hover hit testing without gaining a selection action.
-The gallery makes space for the growing face and keeps its label strip available
-for browsing adjacent cards. Paging, search and Continue/Confirm stay below the
-enlarged face. Changing the
-decision, page or granted visibility removes the old readable occurrence.
+Revealed gallery faces use the same reader through an explicit click. Required
+choices remain compact and use clicks for selection; right-click inspection
+preserves the chosen set. Anonymous faces have presentation identities scoped to
+the decision and original item slot; names never identify an occurrence. Paging,
+search and Continue/Confirm stay available. Changing a choice's scope, page or
+granted visibility removes its old reader or private inspection.
 Hover focus uses an amber rim, soft edge glow, dark separation and ivory corner
-marks. It appears before enlargement and follows the card's displayed pose.
+marks. It follows the card's displayed pose without opening a reader.
 Engine-authorized actions use a persistent 7-pixel ice-blue rim with a pale inner
 edge, dark separation and a broad glow, visible before hovering. Only its glow
 gently varies during priority; reduced motion keeps it steady. Hover focus and
@@ -273,15 +281,25 @@ renderer: a tapered shaft, broad directional head and dark separation from card
 art. Attacks are red and blocks blue. Endpoints use the displayed card edges or
 portrait rim; short connections scale the head down, and aiming inside the source
 card hides the arrow. The renderer contains no combat legality or input logic.
-Battlefield counters are separate labeled stacks with an explicit count. Two
-types fit on a resting card, with an overflow count; enlargement shows named
-counters and current state beside the face, and the inspector paginates the
-complete details. Power/toughness always comes from the engine and is never
-recomputed by adding the displayed counters.
-Public player counters use a persistent seat badge with complete named totals
-in the player inspector. Poison is prioritized, and an explicit extra-types count
-replaces a summary that cannot fit. The same cached font metrics used for painting
-bound the badge at the saved 100%, 115% or 130% text size.
+The battlefield groups creatures, support and lands. Compact groups show
+name, current power/toughness, damage, counters, state and matching-copy count as
+applicable, with an explicit extra-types count when needed. Only matching public
+states share a fan. Labels extend the same occurrence's hit region rather than
+clicking through to a neighbor. Reading and inspection show the complete details.
+Power/toughness always comes from the engine and is never recomputed from counters.
+Public player counters, progress and statuses share persistent seat ribbons and
+paged context in the player inspector. `forge-game`'s `PublicPlayerStateRegistry`
+declares typed public providers; the API forwards immutable snapshots and native
+rendering uses their kinds and declared progress maxima. Current coverage is
+positive counters, Speed, monarch, initiative and the city's blessing. New public
+mechanics require a descriptor and visibility/lifetime review; private fields are
+not discovered automatically. Table mechanics and card/player relations retain
+their own projection. Cached font metrics bound ribbons at 100%, 115% or 130% text.
+
+Decision instructions use the rendered font metrics to grow upward above their
+action buttons. Overflow exposes Read all for the exact current engine message.
+Help pages are measured to fit above navigation controls and retain all text;
+opening or paging help never answers the decision.
 
 Public attachment references link visible battlefield occurrences by opaque
 `combatId`, with face-down names/types redacted. Native badges, hover connectors
@@ -291,27 +309,31 @@ attachment differences so identical card names do not hide separate equipped
 states. Phasing retains the public relationship; leaving visible zones removes it.
 Current combat keywords drive distinct markers for flying, reach, trample,
 first/double strike, deathtouch, lifelink, menace, vigilance and indestructible.
-Summoning sickness has an hourglass marker. Flying raises the same card pose
-used for hit testing and combat arrows, with separated shadow and air trails;
-reduced motion keeps its height while stopping idle movement. Losing an ability
+Summoning sickness has an hourglass marker. On ordinary projected boards, flying
+raises the same card pose used for hit testing and combat arrows, with separated
+shadow and air trails; reduced motion keeps its height while stopping idle
+movement. Dense cells use compact state markers without lifting faces into
+neighboring labels. Losing an ability
 or removing counters updates the existing occurrence, without interpreting
 printed rules text or retaining markers after the projection revokes them.
-Reduced motion uses the same poses without tweening. Hand plays and casts from Command/zone browsers
-require a double-click on the same scoped card within 500 ms, or a legal hand
-drag. Other clicks, a drag, Escape, or a changed decision clear the first click.
-Required selections and battlefield abilities retain single-click behavior.
+Reduced motion uses the same poses without tweening. Play card, Activate ability
+and placement actions are explicit controls beside the opened reader; a legal
+hand drag remains an alternative. Zone browsers and inspection retain explicit
+use actions. Required selections, mana payment and combat keep direct clicks.
 Card choices may include an optional `cardId` linking a currently visible
 battlefield, command-zone or own-hand occurrence. `TableChoices` validates those
-links against the current snapshot. When every choice is on the table, clicking
-the original cards stages their engine indices, marks them selected, and uses
-the normal action button (or Space) to confirm. Ordered choices use click order;
-minimum/maximum counts still come from the engine. Gallery faces remain anonymous,
-and library searches, private reveals and non-card choices retain their chooser.
-Selecting a gallery face collapses all currently rendered reading transitions
-back to their current rests. A one-shot hold removes stale enlarged geometry;
-stationary-pointer suppression prevents the new row beneath the pointer from
-reopening until a real pointer journey. Selection still uses the original
-prompt-scoped choice index, independently of face names and reflow.
+links against the current snapshot. Eligible table choices stage their engine
+indices on the original cards and use the normal action button (or Space) to
+confirm. Ordered sets require battlefield links and at most twelve choices;
+larger sets and ordered hand/command choices use the numbered gallery. This
+changes the choice surface, not which battlefield cards are rendered. Unordered
+sets retain their existing routing without that twelve-item limit. Ordered
+choices use click order; minimum/maximum counts come from the engine. Gallery
+faces remain anonymous, and library searches, private reveals and non-card
+choices retain their chooser.
+Selecting a gallery face retains its compact geometry. Required decisions also
+collapse an existing reader so it cannot intercept the next adjacent choice.
+Selection uses the original prompt-scoped index, independently of names and reflow.
 
 `TableGame.Allocation` presents numeric assignments using `AllocationGuide` and
 the engine's source, units, recipient occurrences, limits and optional required
@@ -550,6 +572,16 @@ explicit resource/profile paths, and reusing initialized `StaticData` through
 `FModel.getMagicDb`. `IGuiGame.chooseColor` retains the source card in API color
 prompts while its default delegates to the existing picker for other clients.
 Keep further shared changes small and reviewable.
+
+Generic state coverage currently means the registered public player states in
+`PublicPlayerStateRegistry`, not every mechanic in the engine. Card state still
+uses `MatchSession.publicKeywords`, a seventeen-keyword presence filter; typed
+ward costs and protection/hexproof qualifiers are not carried by that list.
+An engine-owned immutable public-card descriptor collection is needed for fuller
+effective keyword coverage and repeated instances. Raw keyword strings or live
+views are not a safe replacement. Table facts such as day/night and storm, the
+Ring-bearer relation, and dungeon/room relations need their own typed, visibility-
+reviewed projections rather than entries invented in the player-state collection.
 
 ## 3D scene and interaction boundary
 

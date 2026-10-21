@@ -6,6 +6,7 @@ import forge.StaticData;
 import forge.card.MagicColor;
 import forge.card.CardStateName;
 import forge.card.GamePieceType;
+import forge.card.mana.ManaAtom;
 import forge.deck.Deck;
 import forge.game.*;
 import forge.game.event.GameEventTurnPhase;
@@ -569,7 +570,8 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
                 zones.add(zoneState);
             }
             var mana = new LinkedHashMap<String, Integer>();
-            byte[] colors = {MagicColor.WHITE, MagicColor.BLUE, MagicColor.BLACK, MagicColor.RED, MagicColor.GREEN, MagicColor.COLORLESS};
+            // Colorless mana has its own atom; the card-color absence mask is zero.
+            byte[] colors = ManaAtom.MANATYPES;
             String[] labels = {"W", "U", "B", "R", "G", "C"};
             for (int i = 0; i < colors.length; i++) mana.put(labels[i], player.getMana(colors[i]));
             var commanderDamage = new ArrayList<Object>();

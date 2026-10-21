@@ -118,12 +118,22 @@ internal sealed partial class TableGame
         internal bool LocalMatch => game.localMatch;
         internal bool NeedsRecovery => game.session.NeedsRecovery;
         internal float TextScale => game.preferences.TextScale;
+        internal Rectangle DecisionTextBounds => game.decisionTextBounds;
+        internal Rectangle DecisionPanelBounds => game.decisionPanelBounds;
+        internal string DecisionText => game.decisionText;
+        internal bool DecisionTextOverflow => game.decisionTextOverflow;
+        internal string HelpPageText => game.helpPageText;
+        internal IReadOnlyList<BattlefieldLabelPaint> BattlefieldLabels(string id) => game.battlefieldLabels.TryGetValue(id, out var labels) ? labels : [];
+        internal Mana.Renderer.TableScene? TableScene => game.tableScene;
+        internal Rectangle? BattlefieldRoleLabel(int player, string kind) => game.battlefieldRoleLabels.TryGetValue((player, kind), out var bounds) ? bounds : null;
         internal void CaptureWindow(string path) => game.windowCapture = path;
         internal void ImportFilePath(string path) => game.ImportFilePath(path);
         internal void SetConnectedTable(Lobby state) { game.localMatch = false; game.lobby = state; }
         internal bool Automatic => game.automatic;
         internal bool Held => game.held;
         internal PublicCounterBadge? CounterBadge(int player) => game.publicCounterBadges.TryGetValue(player, out var badge) ? badge : null;
+        internal PublicResourcePaint? ManaPoolBadge(int player) => game.manaPoolBadges.TryGetValue(player, out var badge) ? badge : null;
+        internal PublicResourcePaint? ManaPoolDetail => game.overlay == "mana" ? game.manaPoolDetail : null;
         internal AttachmentBadgePaint? AttachmentBadge(string id) => game.attachmentBadges.TryGetValue(id, out var badge) ? badge : null;
         internal IReadOnlyList<AttachmentConnection> AttachmentConnections => game.attachmentConnections;
         internal bool WelcomeOpen => game.welcomeOpen;

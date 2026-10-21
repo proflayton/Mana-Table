@@ -58,10 +58,10 @@ internal static class ContextGuidanceSmoke
             s.Wait(1.1);
             s.Then(() => Check(view.GuidanceCue?.Key == "hand-play" && !view.LearnedControls.Contains("hand-play") && play.Replies.Count == 0 && !view.Automatic && !view.Held, "Waiting and hovering neither dismiss the lesson nor change game or playback state"));
             s.ClickCurrent();
-            s.Then(() => Check(view.GuidanceCue is { Key: "hand-play" } staged && staged.Text.Contains("again", StringComparison.OrdinalIgnoreCase) && play.Replies.Count == 0 && !view.LearnedControls.Contains("hand-play"), "The first hand click explains the confirming click without playing or marking the control learned; cue=" + view.GuidanceCue + ", replies=" + play.Replies.Count));
+            s.Then(() => Check(view.GuidanceCue is { Key: "hand-play" } staged && staged.Text.Contains("Play card", StringComparison.OrdinalIgnoreCase) && play.Replies.Count == 0 && !view.LearnedControls.Contains("hand-play"), "The first hand click opens reading and explains the explicit play action without playing or marking the control learned; cue=" + view.GuidanceCue + ", replies=" + play.Replies.Count));
             s.Wait(.7);
             s.Then(() => { play.RejectNextReply = true; s.AllowError = true; });
-            s.DoubleClickCurrent();
+            s.Click("read-card-action");
             s.Until(() => play.RejectedReplies == 1 && !view.Busy && !view.Polling && play.Observations > play.ObservationsAtRejection);
             s.Then(() => Check(view.Error.Contains("Controlled rejected play") && !view.NeedsRecovery && !view.LearnedControls.Contains("hand-play") && play.Replies.Count == 0,
                 "An explicit rejected play remains visible after healthy observation without reconnecting, replaying, or marking its control learned"));
@@ -71,17 +71,17 @@ internal static class ContextGuidanceSmoke
                 s.AllowError = false;
                 Check(view.Hovered?.VisualId == "hand-1" && view.GuidanceCue?.Key == "hand-play" && view.Error.Length == 0, "The play cue remains at the actual hovered card after a rejected command is dismissed");
             });
-            s.DoubleClickCurrent();
+            s.ReadAndActCurrent();
             s.Until(() => !view.Busy && view.LearnedControls.Contains("hand-play"));
             s.Then(() => Check(play.Replies.Count == 1 && play.Replies[0].Action == ReplyAction.SelectCard && view.Match!.Viewer!.Zone("Hand").Cards.Length == 0 && view.GuidanceCue?.Key != "hand-play", "A completed real play retires the hand instruction and leaves the resulting table intact"));
             s.MoveCard("commander-0"); s.Wait(.25);
             s.Then(() => { Check(view.Hovered?.VisualId == "commander-0" && view.GuidanceCue?.Key == "commander-play", "The hovered command-zone card receives commander-specific play guidance"); s.Capture("02-commander-cue"); });
-            s.DoubleClickCurrent();
+            s.ReadAndActCurrent();
             s.Until(() => !view.Busy && view.LearnedControls.Contains("commander-play"));
             s.Then(() => Check(play.Replies.Count == 2 && view.Match!.Viewer!.Zone("Command").Cards.Length == 0 && view.GuidanceCue?.Key != "commander-play", "An accepted commander play teaches its control without blocking the command-zone action"));
             s.MoveCard("seat-0-1"); s.Wait(.25);
             s.Then(() => { Check(view.Hovered?.VisualId == "seat-0-1" && view.GuidanceCue?.Key == "activate-ability", "An engine-available hovered battlefield ability gets an activation instruction"); s.Capture("03-ability-cue"); });
-            s.ClickCurrent();
+            s.ReadAndActCurrent();
             s.Until(() => !view.Busy && view.LearnedControls.Contains("activate-ability"));
             s.Then(() => Check(play.Replies.Count == 3 && view.Match?.Decision?.Context == "playAbility", "The ability cue permits the real click and learns from its accepted ability chooser"));
             s.Click("choice-cancel");
@@ -90,12 +90,12 @@ internal static class ContextGuidanceSmoke
             s.Move(new(10, 70)); s.Wait(.1);
             s.Then(() => {
                 Check(view.GuidanceCue?.Key == "choose-target" && !view.LearnedControls.Contains("choose-target"), "An actual player-target decision explains highlighted targets before one is chosen");
-                Check(view.GuidanceBounds is { } bounds && !bounds.Intersects(new Rectangle(1266, 741, 296, 49)), "Target guidance preserves the engine's explanation of the required choice");
+                Check(view.GuidanceBounds is { } bounds && !bounds.Intersects(view.DecisionTextBounds), "Target guidance preserves the engine's explanation of the required choice");
                 s.Capture("04-target-cue");
             });
             s.MoveHit("auto"); s.Wait(.1);
             s.Then(() => {
-                Check(view.GuidanceCue?.Key == "priority-controls" && view.GuidanceBounds is { } bounds && !bounds.Intersects(new Rectangle(1266, 741, 296, 49)), "Hovering Auto during a required target choice preserves the engine's instruction body");
+                Check(view.GuidanceCue?.Key == "priority-controls" && view.GuidanceBounds is { } bounds && !bounds.Intersects(view.DecisionTextBounds), "Hovering Auto during a required target choice preserves the engine's instruction body");
                 Check(play.Replies.Count == 4 && view.Match?.Decision?.Intent == DecisionIntent.Selection && !view.Automatic && !view.Held && !view.LearnedControls.Contains("priority-controls"), "Playback hover leaves the required target unanswered and changes no control preferences");
             });
             s.Click("player:1");
@@ -117,7 +117,7 @@ internal static class ContextGuidanceSmoke
         Scene(Case("crowded-mana"), mana, (s, view) => {
             s.Move(new(10, 70)); s.Wait(.8);
             s.Then(() => {
-                Check(view.GuidanceCue?.Key == "activate-ability" && view.GuidanceBounds is { } bounds && !bounds.Intersects(new Rectangle(1266, 741, 296, 49)), "Idle mana-source guidance on a crowded table preserves the required payment instruction");
+                Check(view.GuidanceCue?.Key == "activate-ability" && view.GuidanceBounds is { } bounds && !bounds.Intersects(view.DecisionTextBounds), "Idle mana-source guidance on a crowded table preserves the required payment instruction");
                 Check(view.Match?.Decision?.Intent == DecisionIntent.Mana && mana.Replies.Count == 0 && view.LearnedControls.Count == 0 && !view.Automatic && !view.Held, "Mana guidance leaves payment and playback settings under the player's control");
                 s.Capture("07-crowded-mana-cue");
             });
@@ -136,7 +136,7 @@ internal static class ContextGuidanceSmoke
             s.Click("close-overlay");
             s.MoveCard("hand-1"); s.Wait(.2);
             s.Then(() => Check(view.GuidanceCue?.Key == "hand-play", "Resetting hints restores the instruction at its actual card"));
-            s.DoubleClickCurrent();
+            s.ReadAndActCurrent();
             s.Until(() => !view.Busy && view.LearnedControls.Contains("hand-play"));
             s.Pulse(Keys.F1);
             s.Click("guidance-reset");
@@ -151,7 +151,7 @@ internal static class ContextGuidanceSmoke
             s.MoveCard("own-0"); s.Wait(.3);
             s.Then(() => {
                 Check(view.GuidanceCue?.Key == "attack", "Eligible attackers receive combat guidance at the point of assignment");
-                Check(view.GuidanceBounds is { } bounds && !bounds.Intersects(new Rectangle(1266, 741, 296, 49)), "Attack guidance keeps the authoritative combat instruction readable");
+                Check(view.GuidanceBounds is { } bounds && !bounds.Intersects(view.DecisionTextBounds), "Attack guidance keeps the authoritative combat instruction readable");
                 s.Capture("05-attack-cue");
             });
             s.DragCard("own-0", "player:3");
@@ -164,7 +164,7 @@ internal static class ContextGuidanceSmoke
             s.MoveCard("own-9"); s.Wait(.2);
             s.Then(() => {
                 Check(view.GuidanceCue?.Key == "block", "A required blocking decision receives its own combat instruction");
-                Check(view.GuidanceBounds is { } bounds && !bounds.Intersects(new Rectangle(1266, 741, 296, 49)), "Block guidance leaves the engine's restrictions and problem text visible");
+                Check(view.GuidanceBounds is { } bounds && !bounds.Intersects(view.DecisionTextBounds), "Block guidance leaves the engine's restrictions and problem text visible");
                 s.Capture("06-block-cue");
             });
             s.DragCard("own-9", () => s.CardHit("enemy-b"));
@@ -274,7 +274,12 @@ internal static class ContextGuidanceSmoke
             if (hit?.Card == null) throw new InvalidOperationException("No card remains at the context smoke pointer");
             ExpectedClick = hit.Id; ClickAccepted = false; mousePhase = 1;
         });
-        internal void DoubleClickCurrent() { ClickCurrent(); ClickCurrent(); }
+        internal void ReadAndActCurrent()
+        {
+            ClickCurrent();
+            Until(() => view.Hits.Any(hit => hit.Id == "read-card-action"));
+            Click("read-card-action");
+        }
         internal void DragCard(string card, string destination) => DragCard(card, () => destination);
         internal void DragCard(string card, Func<string> destination)
         {

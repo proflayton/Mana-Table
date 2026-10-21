@@ -37,6 +37,7 @@ engine's visibility and decision scope rather than deriving permissions from the
 | `MatchSetup` | Validated match copy with a selectable commander when an imported list has no Commander section |
 | `MatchTable` | One authoritative game with human and AI seats, shared occurrence identities and publication boundaries |
 | `MatchSession` | One human seat's filtered state, scoped prompts, controller input and concession, independent of transport |
+| `PublicPlayerStateRegistry` (`forge-game`) | Typed descriptors and immutable snapshots of explicitly public player mechanics; the API forwards their declared values |
 | `SyncTransport` | Local/TCP ordered requests, cached receipts and seat resume; no game rules or projections |
 | `MatchActivity` | Immutable, viewer-filtered recent actions and event-time turn/phase metadata |
 
@@ -360,6 +361,24 @@ Speed, monarch, initiative and the city's blessing. Values come from the rules
 engine at publication boundaries; clients render new entries through the same
 state display rather than recognizing individual card names. An absent state is
 inactive. The existing `counters` map remains available to older clients.
+
+`forge.game.player.PublicPlayerStateRegistry` owns these definitions in the rules
+engine. Its `Descriptor` declares a stable ID, label, typed `PublicPlayerState.Kind`,
+progress maximum and explanation; its provider reads the authoritative player at
+the publication boundary. Speed uses the same `Player.MAX_SPEED` constant as its
+rules and trigger. The counter family includes every positive player counter,
+including energy, rad and custom types. `PublicPlayerStates` only translates these
+immutable values into the wire schema; the native client shows MAX when a progress
+entry reaches its declared maximum, without a mechanic-specific switch.
+
+Adding a public player mechanic requires an explicit engine descriptor/provider
+and review of visibility, lifetime/reset behavior, explanation and any real
+progress ceiling. Update the catalog coverage and snapshot/transition regressions,
+including an unfamiliar provider passing unchanged through the API. The registry
+validates provider IDs, kinds and ranges; it does not discover arbitrary engine
+fields. Current scalar coverage remains counters, Speed, monarch, initiative and
+the city's blessing. Table-wide mechanics and card/player relations need their
+own appropriate projection rather than invented player counters.
 
 Visible card objects include `gamePieceType`. An `effect` is an intangible rules
 object, including status markers and emblems. Its name is not a printed-card

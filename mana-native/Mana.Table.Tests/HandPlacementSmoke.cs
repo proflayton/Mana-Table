@@ -20,8 +20,7 @@ internal sealed class HandPlacementSmoke : ITableAutomation
     private (string Id, string Scope)? pointerTarget;
     private readonly List<object> gestures = [];
     private bool validatePointer = true;
-    private int doubleClickPart, stepNumber, frameNumber;
-    private double? firstDoubleClickRelease;
+    private int stepNumber, frameNumber;
     private string stage = "Starting hand-placement journey";
     private double lastStep;
     private int before;
@@ -38,26 +37,16 @@ internal sealed class HandPlacementSmoke : ITableAutomation
             var physical = new Point(mouse.X, mouse.Y);
             var logical = SmokePointer.Table(view, physical);
             var actual = view.HitAt(logical);
-            double? doubleClickInterval = leftRelease && doubleClickPart == 2 && firstDoubleClickRelease is { } firstRelease
-                ? view.Now - firstRelease : null;
             gestures.Add(new { time = view.Now, stepNumber, frameNumber, stage, physical, logical,
                 edge = leftPress ? "left-press" : leftRelease ? "left-release" : rightPress ? "right-press" : "right-release",
                 expected = pointerTarget?.Id, expectedScope = pointerTarget?.Scope, actual = actual?.Id, actualScope = actual?.Scope,
-                doubleClickPart, doubleClickInterval, validatePointer, replies = scenario.Replies.Count });
+                validatePointer, replies = scenario.Replies.Count });
             if (gestures.Count > 200) gestures.RemoveAt(0);
             // Right-click acts on press and may open an inspector before release.
             // Drag releases have a free table destination rather than a card target.
             if (!rightRelease && validatePointer && pointerTarget is { } target
                 && (actual is null || actual.Id != target.Id || actual.Scope != target.Scope || !view.CurrentHit(actual)))
                 DriverFailure("The physical gesture no longer reaches its expected current hit: " + target.Id);
-            if (leftRelease && doubleClickPart > 0) {
-                if (doubleClickPart == 1) firstDoubleClickRelease = view.Now;
-                else {
-                    if (doubleClickInterval is null or > .5)
-                        DriverFailure("The driver did not deliver two real releases within the production 0.5-second double-click window; interval=" + doubleClickInterval);
-                    firstDoubleClickRelease = null;
-                }
-            }
         }
         consumedMouse = mouse;
         return mouse;
@@ -79,17 +68,18 @@ internal sealed class HandPlacementSmoke : ITableAutomation
             Check(view.Match!.Viewer is { LandPlaysUsed: 1, LandPlayLimit: 1 }, "The normal land-play allowance is already used");
             Check(HandPlacements.Options(view.Match, Forest()).Length == 1 && !Forest().Selectable,
                 "A separate engine-projected hand placement remains available without a normal card action");
-            MoveCard("hand-forest");
-        });
-        Wait(() => Reading("hand-forest"), 3, () => {
-            Check(Reading("hand-forest"), "An eligible hand card remains readable before committing a placement");
-            Capture("01-placement-hover"); before = scenario.Replies.Count;
+            before = scenario.Replies.Count; MoveCard("hand-forest");
         });
         Click();
-        Step(.15, () => Check(scenario.Replies.Count == before, "A single hand click reads without placing or activating anything"));
-        Step(.6, () => { Expect("placement-a"); MoveCard("hand-forest"); }); DoubleClick();
+        Wait(() => Reading("hand-forest"), 3, () => {
+            Check(Reading("hand-forest"), "An eligible hand card remains readable before committing a placement");
+            Check(scenario.Replies.Count == before, "A single hand click reads without placing or activating anything");
+            Capture("01-placement-hover");
+            Expect("placement-a"); MoveHit("read-card-action");
+        });
+        Click();
         Wait(ReplySettled, 3, () => {
-            CheckPlacement("Double-clicking the Forest uses the exact projected placement directly");
+            CheckPlacement("The reader's explicit placement action uses the exact projected source directly");
             Check(view.Match!.Viewer!.Zone("Hand").Cards.Any(c => c.VisualId == "hand-forest") && view.Match.Stack is [{ Id: "placement-on-stack" }],
                 "The exact placement ability enters the stack while the hand card remains uncommitted for the response window");
             Capture("02-placement-response-window");
@@ -115,7 +105,7 @@ internal sealed class HandPlacementSmoke : ITableAutomation
             CheckPlacement("Dragging onto the table uses the same exact projected placement");
             Capture("02-drag-placement"); Publish("multi"); MoveAway();
         });
-        Step(.7, () => { before = scenario.Replies.Count; MoveCard("hand-forest"); }); DoubleClick();
+        Step(.7, () => { before = scenario.Replies.Count; MoveCard("hand-forest"); }); ReadAndUse();
         Wait(() => view.Overlay == "hand-placement", 3, () => {
             Check(view.Overlay == "hand-placement" && scenario.Replies.Count == before,
                 "Multiple placement sources require an explicit choice without activating a default source");
@@ -141,10 +131,10 @@ internal sealed class HandPlacementSmoke : ITableAutomation
                 "Revoking the placement between press and release closes the chooser and discards the stale action");
             Publish("normal"); MoveAway();
         });
-        Step(.7, () => { before = scenario.Replies.Count; MoveCard("hand-forest"); }); DoubleClick();
+        Step(.7, () => { before = scenario.Replies.Count; MoveCard("hand-forest"); }); ReadAndUse();
         Wait(ReplySettled, 3, () => {
             Check(scenario.Replies.Count == before + 1 && scenario.Replies[^1].Action == ReplyAction.SelectCard,
-                "When ordinary play is legal, the normal hand gesture keeps the ordinary engine route");
+                "When ordinary play is legal, the reader's Play card action keeps the ordinary engine route");
             Publish("normal"); MoveAway();
         });
         Step(.7, () => MoveCard("hand-forest")); RightClick();
@@ -156,13 +146,17 @@ internal sealed class HandPlacementSmoke : ITableAutomation
             CheckPlacement("The inspector's explicit alternate action uses the requested placement source");
             Publish("phased"); MoveAway();
         });
-        Step(.7, () => { before = scenario.Replies.Count; MoveCard("hand-forest"); }); DoubleClick();
-        Step(.3, () => {
-            Check(scenario.Replies.Count == before && view.Overlay.Length == 0 && HandPlacements.Options(view.Match!, Forest()).Length == 0,
-                "A phased-out source cannot make a hand card actionable or submit a placement");
+        Step(.7, () => { before = scenario.Replies.Count; MoveCard("hand-forest"); }); Click();
+        Wait(() => Reading("hand-forest"), 3, () => {
+            Check(Reading("hand-forest") && scenario.Replies.Count == before && view.Overlay.Length == 0
+                && HandPlacements.Options(view.Match!, Forest()).Length == 0 && !view.Hits.Any(h => h.Id == "read-card-action"),
+                "A phased-out source leaves a readable hand card without an available action or accidental placement");
+            MoveHit("read-card-close");
+        }); Click();
+        Step(.1, () => {
             Publish("single"); MoveAway();
         });
-        Step(.7, () => { Expect("placement-a"); MoveCard("hand-forest"); }); DoubleClick();
+        Step(.7, () => { Expect("placement-a"); MoveCard("hand-forest"); }); ReadAndUse();
         Wait(ReplySettled, 3, () => {
             CheckPlacement("An optional placement begins through the same exact source route");
             var state = scenario.State;
@@ -190,12 +184,10 @@ internal sealed class HandPlacementSmoke : ITableAutomation
                 "Opening the graveyard exposes an explicit use action on the available card");
             before = scenario.Replies.Count; Capture("06-graveyard-action"); MoveCard("own-grave");
         }); Click();
-        Step(.15, () => {
-            Check(scenario.Replies.Count == before && view.ZoneName == "Graveyard", "Reading a graveyard card with one click never commits its available action");
-            MoveCard("own-grave");
-        }); RightClick();
         Wait(() => view.Overlay == "inspect", 3, () => {
-            Check(view.Hits.Any(h => h.Id == "inspect-zone-use"), "A graveyard inspector also offers the legitimate current zone action");
+            Check(scenario.Replies.Count == before && view.ZoneName == "Graveyard" && view.Overlay == "inspect",
+                "A single graveyard-card click opens its inspector without committing its available action");
+            Check(view.Hits.Any(h => h.Id == "inspect-zone-use"), "The graveyard inspector offers the legitimate current zone action");
             Capture("07-graveyard-inspector"); MoveHit("inspect-zone-use");
         }); Click();
         Wait(ReplySettled, 3, () => {
@@ -273,7 +265,7 @@ internal sealed class HandPlacementSmoke : ITableAutomation
                     ? [Option("placement-a", "source-a", "Gaea's Touch"), Option("placement-b", "source-b", "Second test source")]
                     : [Option("placement-a", "source-a", "Gaea's Touch")] } };
     }
-    private bool Reading(string id) => view.Hovered?.VisualId == id && view.HoverPreview is { Width: >= 400 };
+    private bool Reading(string id) => view.DisplayedPose(id) is { Size.X: >= 400 } && view.HoverPreview is { Width: >= 400 };
     private void MoveCard(string id)
     {
         var hit = view.Hits.Last(h => h.Card?.VisualId == id);
@@ -296,13 +288,22 @@ internal sealed class HandPlacementSmoke : ITableAutomation
             0, left, ButtonState.Released, ButtonState.Released, ButtonState.Released, ButtonState.Released);
         pointerTarget = null; validatePointer = true; stage = "Free move " + logical;
     }
-    private void Buttons(ButtonState left = ButtonState.Released, ButtonState right = ButtonState.Released, bool validateTarget = true, int doublePart = 0)
+    private void Buttons(ButtonState left = ButtonState.Released, ButtonState right = ButtonState.Released, bool validateTarget = true)
     {
         mouse = new(mouse.X, mouse.Y, 0, left, ButtonState.Released, right, ButtonState.Released, ButtonState.Released);
-        validatePointer = validateTarget; doubleClickPart = doublePart;
+        validatePointer = validateTarget;
     }
-    private void Click(int doublePart = 0) { Step(.03, () => Buttons(left: ButtonState.Pressed, doublePart: doublePart)); Step(.04, () => Buttons(doublePart: doublePart)); }
-    private void DoubleClick() { Click(1); Click(2); }
+    private void Click() { Step(.03, () => Buttons(left: ButtonState.Pressed)); Step(.04, () => Buttons()); }
+    private void ReadAndUse()
+    {
+        Click();
+        Wait(() => Reading("hand-forest") && view.Hits.Any(h => h.Id == "read-card-action"), 3, () => {
+            Check(Reading("hand-forest") && scenario.Replies.Count == before && view.Hits.Any(h => h.Id == "read-card-action"),
+                "Reading the current hand card leaves its engine command behind an explicit action button");
+            MoveHit("read-card-action");
+        });
+        Click();
+    }
     private void RightClick() { Step(.03, () => Buttons(right: ButtonState.Pressed)); Step(.04, () => Buttons()); }
     private void Drag() { Step(.03, () => Buttons(left: ButtonState.Pressed)); Step(.08, () => Move(new(800, 580), ButtonState.Pressed)); Step(.18, () => Buttons()); }
     private void Step(double delay, Action action) => steps.Enqueue((delay, null, action));
@@ -319,7 +320,7 @@ internal sealed class HandPlacementSmoke : ITableAutomation
             expectedGame, expectedDecision, expectedCard, expectedAbility, before,
             expectedHit = pointerTarget?.Id, expectedScope = pointerTarget?.Scope, physical, logical,
             actualHit = hit?.Id, actualScope = hit?.Scope, currentScope = view.Scope,
-            buttons = new { mouse.LeftButton, mouse.RightButton }, firstDoubleClickRelease, doubleClickPart,
+            buttons = new { mouse.LeftButton, mouse.RightButton },
             hovered = view.Hovered?.VisualId, view.HoverPreview, view.Busy, view.Error, view.Overlay, view.ZoneName,
             poses = new[] { "hand-forest", "hand-island" }.Select(id => new { id, pose = view.DisplayedPose(id), paints = view.CardPaintCount(id) }),
             replies = scenario.Replies, match = view.Match, scenario = scenario.State, gestures

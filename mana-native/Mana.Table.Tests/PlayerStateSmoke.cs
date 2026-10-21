@@ -11,10 +11,6 @@ internal sealed partial class CardReadingSmoke
     {
         const string speedDetail = "Speed starts at 1. Once each of this player's turns, when an opponent loses life, speed increases by 1, up to 4. It stays after its source leaves. Cards may have abilities at max speed.";
         int repliesBefore = 0;
-        Step(0, () => MoveHit("settings")); Click();
-        StepWhen(() => view.Hits.Any(h => h.Id == "text-size"), 2, () => MoveHit("text-size")); Click();
-        Step(0, () => MoveHit("text-size")); Click();
-        Step(0, () => MoveHit("close-overlay")); Click();
         Step(.1, () => {
             repliesBefore = scenario.Replies.Count;
             Move(new(10, 70));
@@ -62,15 +58,15 @@ internal sealed partial class CardReadingSmoke
                 "An authoritative progress transition to its maximum updates every seat with an explicit MAX label");
             CapturePlayerState("13-player-state-maximum");
             Publish(scenario.State with { Players = scenario.State.Players.Select(p => p.Id != 0 ? p : p with { States = [
-                new("future-track", "Momentum", "progress", 2, 6, "An unfamiliar public progress track supplied by the engine."),
+                new("future-track", "Momentum", "progress", 6, 6, "An unfamiliar public progress track supplied by the engine."),
                 .. p.States.Where(s => s.Id != "speed"),
                 .. Enumerable.Range(0, 6).Select(i => new PlayerState("future-status-" + i, "Public status " + (i + 1), "status", null, null, "An unfamiliar public status supplied by the engine."))
             ] }).ToArray() });
         });
-        StepWhen(() => view.CounterBadge(0) is { HiddenTypes: > 0 } badge && badge.Chips.Any(c => c.Text == "Momentum 2/6"), 2, () => {
-            Check(view.CounterBadge(0) is { HiddenTypes: > 0 } badge && badge.Chips.Any(c => c.Text == "Momentum 2/6")
+        StepWhen(() => view.CounterBadge(0) is { HiddenTypes: > 0 } badge && badge.Chips.Any(c => c.Text == "Momentum 6/6 MAX"), 2, () => {
+            Check(view.CounterBadge(0) is { HiddenTypes: > 0 } badge && badge.Chips.Any(c => c.Text == "Momentum 6/6 MAX")
                 && view.Hits.Any(h => h.Id == "player-state-more:0"),
-                "A new engine-defined progress track renders immediately with explicit access to crowded additional states");
+                "An unfamiliar engine-defined track renders its own maximum of six generically, with explicit access to crowded additional states");
             CapturePlayerState("14-generic-state-overflow");
             MoveHit("player-state-more:0");
         }); Click();
@@ -89,7 +85,6 @@ internal sealed partial class CardReadingSmoke
 
     private void CapturePlayerState(string name)
     {
-        Capture(name);
         view.CaptureWindow(Path.Combine(view.Profile, name + "-window.png"));
     }
 }

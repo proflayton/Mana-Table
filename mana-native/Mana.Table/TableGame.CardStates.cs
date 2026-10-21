@@ -17,37 +17,7 @@ internal sealed partial class TableGame
             1 => new Vector2(r.Center.X, r.Bottom - 10), _ => new Vector2(r.Center.X, r.Top + 10)
         };
     }
-    private void PaintCompactState(Card card, Pose pose, int owner)
-    {
-        int seat = owner == match!.ViewerId ? 3 : TableLayout.SeatIndex(match, owner);
-        var center = CompactStateCenter(pose, seat);
-        if (CardPresentation.HasCombatStats(card)) {
-            var stats = new Rectangle((int)center.X - 15, (int)center.Y - 9, 30, 18);
-            canvas.Panel(stats, card.Attacking ? new Color(98, 39, 40) : new Color(17, 27, 35), new(140, 155, 162), 3);
-            canvas.CenterText($"{card.Power}/{card.Toughness}", stats, Ink, .59f, true);
-        }
-        var counters = CardPresentation.Counters(card);
-        if (counters.Length > 0) {
-            var point = center + (seat is 0 or 2 ? new Vector2(0, 16) : new Vector2(-24, 0));
-            canvas.Circle(point, 9, new(168, 207, 200));
-            canvas.CenterText(counters.Sum(c => c.Value).ToString(), new((int)point.X - 9, (int)point.Y - 9, 18, 18), new(15, 30, 32), .53f, true);
-        }
-        if (card.Damage > 0) {
-            var point = center + (seat is 0 or 2 ? new Vector2(0, -16) : new Vector2(24, 0));
-            canvas.Circle(point, 9, Red);
-            canvas.CenterText(card.Damage.ToString(), new((int)point.X - 9, (int)point.Y - 9, 18, 18), Color.Black, .53f, true);
-        }
-        var states = CardPresentation.Abilities(card).ToList();
-        if (card.Sick && CardPresentation.HasCombatStats(card)) states.Insert(0, "summoning sick");
-        if (card.PhasedOut) states.Insert(0, "phased out");
-        if (states.Count > 0) {
-            var point = center + (seat is 0 or 2
-                ? card.Damage > 0 ? new Vector2(seat == 0 ? -23 : 23, 0) : new Vector2(0, -17)
-                : new Vector2(0, 20));
-            PaintAbilityIcon(states[0], point);
-            if (states.Count > 1) canvas.Text("+" + (states.Count - 1), (int)point.X + 9, (int)point.Y - 12, Ink, .48f, 27, 1, true);
-        }
-    }
+    private void PaintCompactState(Card card, Pose pose, int owner, int copies = 1) => PaintBattlefieldLabels(card, pose, owner, copies);
     private void PaintCommanderTax(Card card, Pose pose)
     {
         int tax = CardPresentation.CommanderTax(card);
@@ -59,7 +29,7 @@ internal sealed partial class TableGame
     private void PaintCommanderTaxDetails(Card card, Pose pose)
     {
         if (CardPresentation.CommanderTax(card) <= 0) return;
-        int x = pose.Bounds.Right + 17 + 265 <= 1580 ? pose.Bounds.Right + 17 : pose.Bounds.Left - 282;
+        int x = pose.Bounds.Right + 17 + 265 <= 1238 ? pose.Bounds.Right + 17 : pose.Bounds.Left - 282;
         int y = Math.Clamp(pose.Bounds.Top, 70, 740);
         canvas.Panel(new(x, y, 265, 122), new(19, 28, 37), Gold, 9);
         canvas.Text($"COMMANDER TAX  +{CardPresentation.CommanderTax(card)}", x + 15, y + 12, Gold, .65f, 235, 1, true);
@@ -182,15 +152,24 @@ internal sealed partial class TableGame
         var rows = values.Concat(counters.Select(c => (Label: c.Key + " counter" + (c.Value == 1 ? "" : "s"), Value: "× " + c.Value)))
             .Concat(states.Select(s => (Label: s, Value: ""))).ToArray();
         int shown = Math.Min(16, rows.Length), height = 64 + shown * 28 + (shown < rows.Length ? 28 : 0);
-        int x = pose.Bounds.Right + 17 + 265 <= 1580 ? pose.Bounds.Right + 17 : pose.Bounds.Left - 282;
+        int x = pose.Bounds.Right + 17 + 265 <= 1238 ? pose.Bounds.Right + 17 : pose.Bounds.Left - 282;
         int y = Math.Clamp(pose.Bounds.Top, 70, 882 - height);
         var seat = TableLayout.LocalSeatBounds;
         if (x + 265 > seat.Left && x < seat.Right) y = Math.Min(y, seat.Top - 12 - height);
         canvas.Panel(new(x, y, 265, height), new(19, 28, 37), new(115, 145, 158), 9);
         canvas.Text("CURRENT STATE", x + 15, y + 12, Gold, .62f, 235, 1, true);
         for (int i = 0; i < shown; i++) {
-            canvas.Text(rows[i].Label, x + 15, y + 44 + i * 28, Ink, .68f, rows[i].Value.Length > 0 ? 177 : 235, 1, true);
-            canvas.Text(rows[i].Value, x + 198, y + 44 + i * 28, Gold, .72f, 54, 1, true);
+            string value = rows[i].Value;
+            float valueSize = .72f;
+            int valueWidth = canvas.TextWidth(value, valueSize, true);
+            while (valueWidth > 235 && valueSize > .3f) {
+                valueSize = Math.Max(.3f, valueSize - .025f);
+                valueWidth = canvas.TextWidth(value, valueSize, true);
+            }
+            int labelWidth = value.Length > 0 ? Math.Max(0, 235 - valueWidth - 12) : 235;
+            string label = rows[i].Label == "Power / toughness" && canvas.TextWidth(rows[i].Label, .68f, true) > labelWidth ? "P/T" : rows[i].Label;
+            canvas.Text(label, x + 15, y + 44 + i * 28, Ink, .68f, labelWidth, 1, true);
+            canvas.Text(value, x + 250 - valueWidth, y + 44 + i * 28, Gold, valueSize, valueWidth, 1, true);
         }
         if (shown < rows.Length) canvas.Text("Right-click for all details", x + 15, y + height - 27, Muted, .6f, 235, 1);
     }

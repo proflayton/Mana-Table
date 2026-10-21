@@ -46,7 +46,7 @@ internal sealed partial class TableGame
     private void ToggleChat()
     {
         chatOpen = !chatOpen; chatFocus = chatOpen; chatSelectAll = false;
-        textFocus = false; deckTextFocus = ""; pendingPlay = null; pressed = null;
+        textFocus = false; deckTextFocus = ""; pressed = null;
         if (chatOpen) { chatPeople = false; chatPage = 0; chatSelectedMessage = null; conversation.MarkRead(); }
     }
     private void SendChat(string? emote = null)

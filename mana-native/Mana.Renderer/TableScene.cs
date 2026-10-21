@@ -1,6 +1,7 @@
 using Mana.Contracts;
 using Microsoft.Xna.Framework;
 using Point = Microsoft.Xna.Framework.Point;
+using Rectangle = Microsoft.Xna.Framework.Rectangle;
 
 namespace Mana.Renderer;
 
@@ -10,6 +11,11 @@ public sealed record SceneCard(string Id, Card Card, Pose Pose, string Zone, int
     public bool Compact { get; init; }
     public bool GroupFront { get; init; } = true;
     public int GroupCount { get; init; } = 1;
+    public bool Dense { get; init; }
+    public Rectangle DenseLabels { get; init; }
+    public float DenseScale { get; init; } = 1;
+    public int DenseRowHeight { get; init; } = 20;
+    public bool DenseMiniature { get; init; }
 }
 public sealed record RankPlan(string Key, int Total, SceneCard[] Cards);
 public sealed record PilePlan(string Zone, Pose Pose, bool Compact);
@@ -29,7 +35,8 @@ public sealed class TableScene
     public IReadOnlyList<BattlefieldCluster> Battlefield(int player) => battlefield[player];
 
     public static TableScene Build(GameSnapshot state, int handPage,
-        Point pointer, string? previouslyRaised, string? dragged, bool allowHover, Func<Card, bool> isResource)
+        Point pointer, string? previouslyRaised, string? dragged, bool allowHover, Func<Card, bool> isResource,
+        Func<Card, int, bool, BattlefieldLabelMetrics>? denseMeasure = null, bool allowInlineOrdering = true)
     {
         var hand = state.Viewer?.Zone("Hand").Cards ?? [];
         int page = Math.Clamp(handPage, 0, Math.Max(0, (hand.Length - 1) / 11));
@@ -42,12 +49,12 @@ public sealed class TableScene
         var handNodes = visibleHand.Select((card, i) => Node(card, TableLayout.Hand(i, visibleHand.Length, i == raised), "Hand", state.ViewerId, i, TableWorld.Pile(3, 0).Center) with { EntranceDelay = i * .035f })
             .Where(n => CardViews.Identity(n.Card) != dragged).OrderBy(n => n.Card == visibleHand.ElementAtOrDefault(raised) ? 1 : 0).ToArray();
         var scene = new TableScene { Hand = new(page, hand.Length, raised < 0 ? null : CardViews.Identity(visibleHand[raised]), handNodes) };
-        var orderedChoices = state.Decision is { Kind: "choice", Ordered: true } decision
+        var orderedChoices = allowInlineOrdering && state.Decision is { Kind: "choice", Ordered: true } decision
             ? decision.Choices.Where(c => c.Card != null && !string.IsNullOrEmpty(c.CardId)).Select(c => c.CardId).ToHashSet(StringComparer.Ordinal) : null;
         foreach (var player in state.Players) {
             int seat = player.Id == state.ViewerId ? 3 : TableLayout.SeatIndex(state, player.Id);
             if (seat is < 0 or > 3) continue;
-            var clusters = BattlefieldLayout.Build(seat, player.Id, player.Zone("Battlefield").Cards, isResource, orderedChoices);
+            var clusters = BattlefieldLayout.Build(seat, player.Id, player.Zone("Battlefield").Cards, isResource, orderedChoices, state, denseMeasure);
             scene.battlefield[player.Id] = clusters;
             foreach (bool resources in new[] { true, false }) {
                 string key = player.Id + (resources ? ":lands" : ":permanents");

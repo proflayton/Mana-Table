@@ -50,6 +50,11 @@ Check(interaction.CardClick(tableChoice, second) is { Effect: InteractionEffect.
 Check(!TableChoices.CanConfirm(tableChoice, []) && !TableChoices.CanConfirm(tableChoice, [7, 7]) && TableChoices.CanConfirm(tableChoice, [9, 7]), "Choice confirmation preserves count, uniqueness, and selection order");
 Check(!TableChoices.IsDirect(tableChoice with { Players = [] }), "A disappeared table occurrence falls back to the chooser");
 Check(!TableChoices.IsDirect(tableChoice with { Decision = tableChoice.Decision! with { Choices = [new(0, first.Name, first)] } }), "A face with no explicit occurrence link cannot select an identically named card");
+var bulkCards = Enumerable.Range(0, 50).Select(i => first with { VisualId = "bulk-" + i, CombatId = "bulk-" + i, Key = "bulk:" + i }).ToArray();
+var bulkChoice = tableChoice with { Players = [tableChoice.Viewer! with { Zones = [new("Battlefield", bulkCards.Length, bulkCards, null)] }],
+    Decision = tableChoice.Decision! with { Ordered = true, Choices = bulkCards.Select((card, i) => new Choice(i, card.Name, card) { CardId = card.VisualId }).ToArray() } };
+Check(!TableChoices.IsDirect(bulkChoice), "Ordering fifty visible occurrences uses the numbered gallery without removing cards from the battlefield");
+Check(TableChoices.IsDirect(bulkChoice with { Decision = bulkChoice.Decision! with { Ordered = false } }), "An unordered bulk selection retains its direct battlefield targets");
 var tempo = new PresentationPacing();
 tempo.Observe(null, passState, 0);
 Check(!tempo.Ready(.5) && tempo.Ready(1.2), "The opening table has a readable beat before Auto");
