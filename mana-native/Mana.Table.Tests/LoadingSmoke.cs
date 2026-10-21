@@ -152,6 +152,11 @@ internal static class LoadingSmoke
             s.Until(() => table.Observations > 1);
             s.Wait(.35);
             s.ClickCard("seat-0-1");
+            s.Until(() => view.DisplayedPose("seat-0-1") is { Size.X: >= 400 }
+                && view.HoverPreview != null && view.Hits.Any(hit => hit.Id == "read-card-action"));
+            s.Then(() => Check(table.Replies == 0 && !view.Busy && !view.ActivityOpen,
+                "Reading an available battlefield ability keeps the table visible and sends no gameplay reply before its explicit action"));
+            s.Click("read-card-action");
             s.Until(() => table.Replies == 1 && view.Busy);
             s.Then(() => {
                 Check(!view.ActivityOpen && view.Hits.Any(h => h.Id == "settings"), "A pending gameplay reply keeps the table visible without a setup-loading overlay");
