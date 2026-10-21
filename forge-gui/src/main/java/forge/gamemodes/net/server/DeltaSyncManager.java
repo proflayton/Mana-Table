@@ -84,7 +84,7 @@ public class DeltaSyncManager implements IHasForgeLog {
     // Used to block stale cross-reference replacements
     private final Map<Integer, CardView> authoritativeInstances = new HashMap<>();
 
-    // Not atomic: only accessed from game thread
+    // Guarded by this manager's monitor, including input teardown and reconnect callbacks.
     // Defer the first checksum until the game state stabilizes — seq=1 races
     // with game initialization (hand drawing), so an immediate checksum would
     // compare a mid-init snapshot against the client's post-delta state.
@@ -108,7 +108,7 @@ public class DeltaSyncManager implements IHasForgeLog {
      * rather than letting the exception reach the caller — on the game thread that would end
      * the game loop and leave the match unable to continue.
      */
-    public DeltaPacket collectDeltas(GameView gameView) {
+    public synchronized DeltaPacket collectDeltas(GameView gameView) {
         Map<Integer, Map<TrackableProperty, Object>> objectDeltas = new HashMap<>();
         // need parent-before-child insertion order
         Map<Integer, Map<TrackableProperty, Object>> newObjects = new LinkedHashMap<>();
@@ -475,7 +475,7 @@ public class DeltaSyncManager implements IHasForgeLog {
      * (which sees an empty view). Objects already registered by collectDeltas'
      * new-object path are skipped — their consumers and dirty bits are preserved.
      */
-    public void registerNewObjects(GameView gameView) {
+    public synchronized void registerNewObjects(GameView gameView) {
         if (gameView == null) {
             return;
         }
@@ -584,7 +584,7 @@ public class DeltaSyncManager implements IHasForgeLog {
      * Called when a resync is requested due to checksum mismatch.
      * Halves the checksum interval (more frequent checks) and resets clean streak.
      */
-    public void onResyncRequested() {
+    public synchronized void onResyncRequested() {
         cleanChecksumStreak = 0;
         int oldInterval = checksumInterval;
         checksumInterval = Math.max(MIN_CHECKSUM_INTERVAL, checksumInterval / 2);
@@ -610,7 +610,7 @@ public class DeltaSyncManager implements IHasForgeLog {
      * Unregisters this consumer from all tracked objects.
      * After reset, the next sync will be treated as a fresh initial sync.
      */
-    public void reset() {
+    public synchronized void reset() {
         // Unregister consumer from all tracked objects
         for (TrackableObject obj : registeredByKey.values()) {
             obj.unregisterConsumer(consumerId);
@@ -625,7 +625,7 @@ public class DeltaSyncManager implements IHasForgeLog {
         lastChecksumDetail = null;
     }
 
-    public long getCurrentSequence() {
+    public synchronized long getCurrentSequence() {
         return sequenceNumber;
     }
 

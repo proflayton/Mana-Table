@@ -23,12 +23,19 @@ workflow triggers and the active master ruleset.
 
 October 20 follow-up: the baseline above is the historical review checkpoint.
 Release 0.2.39 subsequently shipped revision
-`c11a3094be6c95ba1bddbafbe54aa7ad8fe3a7db`, and PR 7 and this documentation PR
-have merged. The guides now reconcile the merged recovery, public-state,
+`c11a3094be6c95ba1bddbafbe54aa7ad8fe3a7db`, and PR 7 has merged. This release
+candidate reconciles the merged recovery, public-state,
 bundled-eligibility and deck-review contracts, plus the equipment and analysis
 work included in the next release candidate. Those later changes are not
 retroactively part of 0.2.39. Check the candidate's source metadata and its own
 completed CI/artifact evidence before describing it as a published release.
+
+The release integration also exposed a concurrent delta-publication failure in
+the full Java network suite. Collecting a snapshot, updating its baseline and
+queuing it must share one publication boundary; protecting a map alone does not
+preserve packet order. The fix includes coordinated concurrency regressions.
+Passing one workflow does not override a failure in another run of the same
+source revision.
 
 ## Findings and corrections
 
