@@ -14,7 +14,7 @@ internal sealed partial class TableApplication
     private void PaintDenseBattlefieldLabels(Card card, int owner, SceneCard node, int copies)
     {
         if (BattlefieldFocused) return;
-        var area = node.DenseLabels;
+        var area = boardView.Apply(node.DenseLabels);
         if (area.IsEmpty) return;
         float scale = node.DenseScale;
         float fontSize = node.DenseMiniature ? .3f : .375f;

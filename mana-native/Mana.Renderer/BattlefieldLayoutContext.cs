@@ -38,7 +38,7 @@ internal sealed class BattlefieldLayoutContext
         return new(false, obstacles, RoleLaneAvoidance.Arrange(ordinary, obstacles, separate));
     }
 
-    private static IEnumerable<Rectangle> ReserveObjects(GameSnapshot state, IReadOnlyList<SeatGeometry> seats)
+    internal static IEnumerable<Rectangle> ReserveObjects(GameSnapshot state, IReadOnlyList<SeatGeometry> seats)
     {
         for (int playerIndex = 0; playerIndex < state.Players.Length; playerIndex++) {
             var player = state.Players[playerIndex];

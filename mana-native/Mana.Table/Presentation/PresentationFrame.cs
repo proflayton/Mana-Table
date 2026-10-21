@@ -12,9 +12,12 @@ internal sealed class PresentationFrame
     public TableScene? Scene { get; }
     public int DesignHeight { get; }
     public FrameStamp Stamp { get; }
+    public BoardView BoardView { get; }
+    public bool TurnFollowEnabled { get; }
 
     public PresentationFrame(DrawingFrame drawing, IReadOnlyList<TableHit> hits,
-        TableScene? scene, IEnumerable<PresentedCard> cards, int designHeight, FrameStamp stamp)
+        TableScene? scene, IEnumerable<PresentedCard> cards, int designHeight, FrameStamp stamp,
+        BoardView boardView = default, bool turnFollowEnabled = false)
     {
         Drawing = drawing;
         Hits = hits;
@@ -22,6 +25,7 @@ internal sealed class PresentationFrame
         Cards = Array.AsReadOnly(cards.ToArray());
         DesignHeight = designHeight;
         Stamp = stamp;
+        BoardView = boardView; TurnFollowEnabled = turnFollowEnabled;
     }
 
     public FrameObservation Observe() => FrameObservation.From(this);

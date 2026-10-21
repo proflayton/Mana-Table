@@ -27,20 +27,23 @@ internal sealed record CardPresentationContext(GameSnapshot? State, string Scope
     }
 }
 
+/// <summary>Rest is canonical layout geometry; Entrance is an already presented source position.</summary>
 internal sealed record CardPresentationRequest(string Id, Card Card, Pose Rest, string Zone,
     int? Owner, string HitId, Action Activate, Vector2? Entrance = null, float EntranceDelay = 0,
     bool OpensZone = false, int ChoiceSlot = -1, Rectangle? ActivationBounds = null);
 
 internal enum CardPresentationLayer { Table, Returning, Reader }
 
-/// <summary>A prepared occurrence. Painting and input share its displayed pose.</summary>
+/// <summary>A prepared occurrence. Rest, painting and input share presentation-space geometry.</summary>
 internal sealed record PresentedCard(int Sequence, CardPresentationRequest Request,
     Pose Display, Hit Hit, bool Focused, bool Emphasized, CardPresentationLayer Layer)
 {
+    public BoardView View { get; init; } = BoardView.Identity;
+    public Pose? ReaderTarget { get; init; }
     public string Id => Request.Id;
     public Card Card => Request.Card;
     public string Zone => Request.Zone;
-    public Pose Rest => Request.Rest;
+    public Pose Rest => View.Apply(Request.Rest);
     public int ChoiceSlot => Request.ChoiceSlot;
 }
 

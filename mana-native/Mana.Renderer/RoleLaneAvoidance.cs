@@ -60,7 +60,7 @@ internal static class RoleLaneAvoidance
     // Ordinary labels have fixed rows beside or within the projected face.
     // Reserve their envelope too, so moving the art cannot place its stats or
     // counters beneath the protected panel. This does not change typography.
-    private static Rectangle[] Footprints(IReadOnlyList<SceneCard> copies, int seat, IReadOnlySet<string>? ordered)
+    internal static Rectangle[] Footprints(IReadOnlyList<SceneCard> copies, int seat, IReadOnlySet<string>? ordered)
     {
         var bounds = copies.Select(node => {
             var face = node.Pose.Bounds; face.Inflate(6, 8); return face;

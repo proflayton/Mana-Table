@@ -28,6 +28,7 @@ internal static class PresentationSmoke
         RoleLaneAvoidanceChecks.Run(Check);
         BattlefieldFocusChecks.Run(Check);
         FocusedBattlefieldGroupingChecks.Run(Check);
+        BoardViewChecks.Run(Check);
         var state = Example();
         var manaPlayer = state.Viewer! with { Mana = new() { ["C"] = 1, ["G"] = 5, ["U"] = 2, ["W"] = 1, ["R"] = 3, ["B"] = 4 } };
         Check(PublicResources.Mana(manaPlayer).Select(part => part.Key).SequenceEqual(["W", "U", "B", "R", "G", "C"])

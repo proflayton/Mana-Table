@@ -49,6 +49,8 @@ native renderer and input pipeline with controlled state, not a rules simulator.
 | `public-state.v1` | Qualified/repeated abilities, generic player resources, day/night and revocation of visible information |
 | `stack-priority.v1` | Named stack order, controller/targets, whose response is pending, local response and resolution |
 | `trigger-search.v1` | Passing priority hands off to another responder, then required recipient/library choices and the searched card in hand |
+| `turn-orientation.v1` | Ordinary four-player turn sequence; Follow turn currently exposes insufficient travel space and remains stationary |
+| `turn-orientation-crowded.v1` | The same authored turn sequence with the crowded battlefield; stationary fallback and table context |
 
 Keep IDs versioned when changing an authored case's meaning. The factories live
 in `Mana.Scenarios` and feed both the lab and checks. Reuse them instead of adding
@@ -72,8 +74,13 @@ it. For causal feedback and motion, use interactive Next or a replay capture:
 
 Replay capture starts at stage 0 and advances to the requested final stage.
 It saves baseline and source/travel/landing/settled keyframes, their physical
-`-window.png` counterparts and `replay-capture.json` with actual timing and
-public state/actor stamps. The labels are scheduled observation points, not
+`-window.png` counterparts and a `.frame.json` for each keyframe, copied from the
+completed production `PresentationFrame`. The frame records public card values,
+display/hit/text geometry and the effective view offset/enabled mode.
+`replay-capture.json` records timing, `Turn`/`ActivePlayerId` separately from
+`PriorityPlayerId`/`DecisionOwnerId`, plus view offset and limited-space status.
+These records tie each screen to its actual state and composed frame; they make
+no usability assertion. Keyframe labels are scheduled observation points, not
 animation acceptance assertions. `--focus-player 0` opens the local battlefield
 focus view; also review the ordinary whole table. Do not combine `--capture`
 and `--capture-replay`.
@@ -134,37 +141,54 @@ and [Architecture](Mana-Table-Architecture.md#native-client-boundaries) for the
 shared composition/input boundary. This workflow documents the review required;
 it makes no claim that current visual quality has completed that review.
 
-## Planned turn-orientation comparison
+## Experimental turn-orientation comparison
 
-Gentle turn-follow is part of the presentation refactor's exploration, with
-production defaults unchanged. This comparison is not implemented yet. Build the
-shared board-view drawing/input boundary described in
-[Architecture](Mana-Table-Architecture.md#planned-experiment-orienting-a-multiplayer-turn)
-before adding a lab control or capture mode.
+The current source has a lab-only **Follow turn** toggle and shared drawing/input
+view boundary described in
+[Architecture](Mana-Table-Architecture.md#experimental-multiplayer-turn-orientation).
+The current ordinary layout cannot safely accommodate the requested shift around
+fixed controls, and the crowded layout uses stationary fallback too. **Neither
+case currently demonstrates meaningful camera movement.** The lab is a diagnostic
+for this constraint. A stable layout with reserved travel space is needed before
+the intended human comparison, which has **not been reviewed or accepted**.
+Production has no follow setting or changed default. The implemented boundary
+permits battlefield translation with fixed zoom, seat orientation and anchored
+hand/player/zone/decision controls; response ownership alone cannot request it.
 
-Compare **stationary turn emphasis** with **optional gentle turn-follow** over
-the same authored four-player journey. Start with translation only, preserving
-zoom, seat orientation and all fixed controls. A turn boundary may move the board;
-ordinary response windows do not. Add a versioned canonical turn-orientation case
-when the actual presentation hook exists. Existing stack/search and crowded
-counter cases do not contain that complete journey and must not be relabeled as
-proof of turn-follow behavior.
+Capture the same candidate stationary and with follow requests enabled to review
+the current limitation:
 
-| Battlefield | Stationary emphasis | Gentle follow enabled |
+```powershell
+& 'C:\candidate\ManaTable.exe' --experience-lab turn-orientation.v1 --size 1000x740 --capture-replay 'C:\review\turn-stationary'
+& 'C:\candidate\ManaTable.exe' --experience-lab turn-orientation.v1 --follow-turn --size 1000x740 --capture-replay 'C:\review\turn-follow'
+```
+
+Repeat with `turn-orientation-crowded.v1` and separate output directories. Omit
+`--capture-replay` for manual interaction. **Next** advances the authored state;
+**Previous** and **Reset** replay through the selected stage in a fresh scope.
+**Scenarios** opens the paged gallery. The header's **Whole table** restores the
+stationary view and turns following off; **Follow turn** explicitly enables
+requests again for a subsequent eligible boundary. **Follow: limited space**
+explains the guarded ordinary view; **Follow: full table** identifies the crowded
+fallback. An enabled toggle does not mean movement occurred. These controls send
+no engine commands.
+
+| Battlefield | Stationary emphasis | Follow requests enabled: current finding |
 | --- | --- | --- |
-| Ordinary Commander table | Play the complete journey | Replay the same states and actions |
-| Very crowded table | Play the complete journey | Review stationary fallback and retention of the other seats |
+| Ordinary Commander table | Play the complete journey | Stationary: requested path overlaps fixed controls |
+| Very crowded table | Play the complete journey | Stationary: dense-table fallback |
 
-The journey includes a turn handoff, an off-turn response, combat involving
-multiple defenders, a required cross-seat target choice, and opening/closing a
-card reader and the focused battlefield workspace. Also begin a handoff while
-the pointer is held or a choice is active: the move must be skipped, without
-catching up after the interaction. Return to **Whole table** and verify following
-stays paused until explicitly resumed. Review reconnect, extra turns, elimination
-and reduced motion with the same policy; the next player's identity always comes
-from the current public engine state.
+Both authored journeys include a turn handoff, an off-turn response, combat with
+two defenders, a required cross-seat choice, quiet priority and an extra turn for
+the same owner. They do not simulate those Magic rules. During manual review,
+open/close a card reader and the focused battlefield workspace, and hold or move
+the pointer across a handoff. Interrupted or suppressed movement must not catch up
+after the interaction. Review reduced motion and the crowded case's stationary
+fallback. Reconnect and elimination need separate live-game review; these cases
+do not cover them.
 
-Observe whether people notice the relevant seat, distinguish whose turn it is
+Once a layout admits useful movement, compare the same journeys and observe
+whether people notice the relevant seat, distinguish whose turn it is
 from who can respond, retain their sense of where everyone sits, and reach their
 intended cards without chasing them. Record any disrupted reading, hidden
 combat/target context or surprising movement. Use realistic art and the actual

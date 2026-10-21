@@ -20,32 +20,33 @@ internal sealed partial class TableApplication
         // play-surface texture without baking cards, seating, or UI into it.
         canvas.Gradient(new(0, 0, 1600, 900), new(13, 18, 24), new(7, 11, 16));
         canvas.Glow(new(800, 472), new(1800, 1080), new Color(81, 105, 113) * .23f);
-        canvas.Polygon(TableWorld.Rim(-9, 32), Color.Black * .5f);
-        canvas.Polygon(TableWorld.Rim(0, 17), new(23, 25, 28));
-        canvas.Polygon(TableWorld.Rim(), new(89, 80, 65));
-        canvas.Polygon(TableWorld.Rim(5), new(48, 46, 43));
-        canvas.Polygon(TableWorld.Rim(24), new(19, 28, 32));
-        canvas.Polygon(TableWorld.Rim(28), new(35, 48, 51));
-        if (resources.Arena != null) canvas.ProjectedEllipse(resources.Arena, TableWorld.Card(Vector2.Zero, new(1664, 972)), Color.White);
+        Vector2[] Rim(float inset = 0, float drop = 0) => TableWorld.Rim(inset, drop).Select(point => boardView.Apply(point)).ToArray();
+        canvas.Polygon(Rim(-9, 32), Color.Black * .5f);
+        canvas.Polygon(Rim(0, 17), new(23, 25, 28));
+        canvas.Polygon(Rim(), new(89, 80, 65));
+        canvas.Polygon(Rim(5), new(48, 46, 43));
+        canvas.Polygon(Rim(24), new(19, 28, 32));
+        canvas.Polygon(Rim(28), new(35, 48, 51));
+        if (resources.Arena != null) canvas.ProjectedEllipse(resources.Arena, boardView.Apply(TableWorld.Card(Vector2.Zero, new(1664, 972))), Color.White);
         else {
             canvas.Glow(new(800, 355), new(1450, 710), new Color(126, 149, 145) * .26f);
             // Fine woven marks remain understated at play distance.
             for (int i = 0; i < 650; i++) {
                 float x = (i * 173 % 1591) - 795, y = (i * 137 % 887) - 443;
                 if (x * x / (810 * 810) + y * y / (464 * 464) > 1) continue;
-                var p = TableWorld.Project(new(x, y));
+                var p = boardView.Apply(TableWorld.Project(new(x, y)));
                 canvas.Line(p, p + new Vector2(2, .45f), new Color(176, 188, 173) * .04f, 1);
             }
         }
         // One continuous inlay, rather than four independent player panels.
-        var inner = TableWorld.Rim(53);
+        var inner = Rim(53);
         for (int i = 0; i < inner.Length; i++) canvas.Line(inner[i], inner[(i + 1) % inner.Length], new Color(162, 150, 119) * .25f, 1);
         for (int i = 0; i < 64; i++) {
             float a = i * MathF.Tau / 64, b = (i + 1) * MathF.Tau / 64;
-            canvas.Line(TableWorld.Project(new(MathF.Cos(a) * 136, MathF.Sin(a) * 136)), TableWorld.Project(new(MathF.Cos(b) * 136, MathF.Sin(b) * 136)), Gold * .055f, 1);
+            canvas.Line(boardView.Apply(TableWorld.Project(new(MathF.Cos(a) * 136, MathF.Sin(a) * 136))), boardView.Apply(TableWorld.Project(new(MathF.Cos(b) * 136, MathF.Sin(b) * 136))), Gold * .055f, 1);
         }
         foreach (int seat in new[] { 0, 1, 2, 3 }) {
-            var p = TableWorld.Project(TableWorld.SeatPoint(seat, 0, seat is 0 or 2 ? 690 : 421));
+            var p = boardView.Apply(TableWorld.Project(TableWorld.SeatPoint(seat, 0, seat is 0 or 2 ? 690 : 421)));
             var player = seat == 3 ? match!.Viewer : TableLayout.Opponents(match!).ElementAtOrDefault(seat);
             bool active = player?.Id == match!.ActivePlayerId;
             canvas.Glow(p, seat is 0 or 2 ? new(245, 370) : new(620, 230), (active ? Gold : Blue) * (active ? .16f : .035f));
@@ -105,7 +106,7 @@ internal sealed partial class TableApplication
             foreach (var node in cluster.Cards) DrawSceneCard(node);
         }
     }
-    private void DrawBattlefieldRole(int player, int seat, BattlefieldCluster cluster)
+    private Rectangle BattlefieldRoleBounds(int seat, BattlefieldCluster cluster)
     {
         var bounds = cluster.Cards.Select(card => card.Pose.Bounds).Aggregate(Rectangle.Union);
         string label = cluster.Kind.ToUpperInvariant() + "  " + cluster.Cards.Length;
@@ -115,9 +116,14 @@ internal sealed partial class TableApplication
             : Math.Clamp(bounds.Center.X - width / 2, 175, 1425 - width);
         int y = seat == 1 ? bounds.Bottom + 5 : bounds.Top - 48;
         y = Math.Clamp(y, 70, 690);
-        var caption = new Rectangle(x, y, width, 19);
+        return new(x, y, width, 19);
+    }
+    private void DrawBattlefieldRole(int player, int seat, BattlefieldCluster cluster)
+    {
+        string label = cluster.Kind.ToUpperInvariant() + "  " + cluster.Cards.Length;
+        var caption = boardView.Apply(BattlefieldRoleBounds(seat, cluster));
         canvas.Panel(caption, new Color(15, 24, 29) * .9f, new Color(88, 107, 112) * .7f, 3);
-        canvas.Text(label, x + 7, y + 2, Muted, .44f, width - 14, 1, true);
+        canvas.Text(label, caption.X + 7, caption.Y + 2, Muted, .44f, caption.Width - 14, 1, true);
         battlefieldRoleLabels[(player, cluster.Kind)] = caption;
     }
     private void DrawSeatObjects(Player player)

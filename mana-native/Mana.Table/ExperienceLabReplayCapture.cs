@@ -84,12 +84,16 @@ internal sealed class ExperienceLabReplayCapture : ITableAutomation
         string name = $"stage-{session.StageIndex:00}-{label}";
         string surfacePath = Path.Combine(directory, name + ".png");
         string windowPath = Path.Combine(directory, name + "-window.png");
+        string framePath = Path.Combine(directory, name + ".frame.json");
         using (var output = File.Create(surfacePath)) surface.SaveAsPng(output, surface.Width, surface.Height);
         view.CaptureWindow(windowPath);
+        File.WriteAllText(framePath, JsonSerializer.Serialize(view.Frame!.Observe(), new JsonSerializerOptions { WriteIndented = true }));
         var state = view.Match;
         captures.Add(new(session.StageIndex, session.Stage.Name, label, requestedOffset, actualOffset, view.Now, wall.Elapsed.TotalSeconds,
-            Path.GetFileName(surfacePath), Path.GetFileName(windowPath), state?.Id, state?.Revision ?? 0, state?.ActionClass,
+            Path.GetFileName(surfacePath), Path.GetFileName(windowPath), Path.GetFileName(framePath), state?.Id, state?.Revision ?? 0,
+            state?.Turn ?? 0, state?.ActivePlayerId, state?.ActionClass,
             state?.PriorityPlayerId, state?.DecisionOwnerId, state?.Decision?.Kind,
+            view.BoardView.Offset.X, view.BoardView.Offset.Y, view.FollowTurnEnabled, view.BoardViewLimitedByLayout,
             state?.Stack.Select(item => new StackRecord(item.Id, item.Name, item.ControllerId)).ToArray() ?? []));
         Save(null);
     }
@@ -112,6 +116,7 @@ internal sealed class ExperienceLabReplayCapture : ITableAutomation
     }
     private sealed record StackRecord(string Id, string Name, int? ControllerId);
     private sealed record CaptureRecord(int Stage, string StageName, string Label, double? RequestedOffset, double? ActualOffset,
-        double GameSeconds, double WallSeconds, string SurfaceFile, string WindowFile, string? GameId, long Revision,
-        string? ActionClass, int? PriorityPlayerId, int? DecisionOwnerId, string? DecisionKind, StackRecord[] Stack);
+        double GameSeconds, double WallSeconds, string SurfaceFile, string WindowFile, string FrameFile, string? GameId, long Revision,
+        int Turn, int? ActivePlayerId, string? ActionClass, int? PriorityPlayerId, int? DecisionOwnerId, string? DecisionKind,
+        float ViewX, float ViewY, bool FollowTurnEnabled, bool LimitedByLayout, StackRecord[] Stack);
 }

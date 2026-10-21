@@ -99,66 +99,55 @@ launching, transition captures and the required human review. Automated command,
 geometry and privacy checks cannot establish readability, clear causality or a
 comfortable interaction; those require actual screens, transitions and manual play.
 
-### Planned experiment: orienting a multiplayer turn
+### Experimental multiplayer turn orientation
 
-Turn-follow belongs to the presentation refactor as an optional experiment. It
-addresses finding the relevant battlefield at a four-player table, alongside
-clearer permanent grouping, source-to-target feedback and explicit response
-ownership. Battlefield organization remains necessary in a stationary view.
-No native turn-follow behavior is implemented yet; production defaults remain
-unchanged. The first comparison belongs in the Experience Lab.
+The current source implements the shared board-view boundary and opt-in
+**Follow turn** diagnostics in the Experience Lab's two turn-orientation cases.
+It has not yet produced meaningful camera movement on the current table layouts:
+the ordinary four-player layout's requested 28-design-pixel horizontal shift
+would overlap fixed controls, so the path guard leaves it stationary. The crowded
+case also remains stationary. A stable layout with reserved travel space is
+needed before a useful stationary/follow human comparison. That comparison has
+not been reviewed or accepted; there is no production setting or changed default.
 
-The initial experiment uses a gentle translation at a reported turn boundary,
-with fixed zoom and seat orientation. The local hand, portraits and resources,
-stack, decision dock and opened card reader keep their screen positions.
-Stationary turn emphasis remains available throughout. Priority handoffs,
-activations and resolution use responder/source cues without camera travel.
-Keep 1v1 and reduced-motion presentation stationary. Dense battlefields also
-keep their existing framing in this first experiment; review them explicitly
-rather than forcing a movement that conceals other seats or available targets.
+`TableApplication.BoardView` can request a small translation at a reported turn
+boundary. Priority handoffs alone do not move the view. Only battlefield cards,
+their board labels and connected presentation geometry participate. The hand,
+portraits, player resources, Command/Library/Graveyard/Exile controls, stack,
+decision dock and reader remain anchored. Zoom and seat orientation stay fixed.
+Two-player, reduced-motion and dense-table views remain stationary; an unsafe
+path also leaves the view in place rather than concealing another seat or control.
 
-Interaction takes precedence. Skip the turn's automatic shift while a card is
-hovered or read, a pointer is held, a drag or required decision is active, or a
-modal/focused battlefield workspace is open. Do not queue a delayed movement.
-New pointer activity interrupts a shift without snapping back. Closing the reader
-or workspace does not restart it. Explicit camera navigation or **Whole table**
-pauses following for that game until the player resumes it; temporary inspection
-can become eligible again at the next turn boundary. Combat and cross-seat target
-choices retain a shared, stationary view of relevant participants. An extra turn
-can receive turn emphasis while an already suitable view stays still. Elimination
-preserves seat positions and waits for the engine's next turn report. Reconnect
-establishes the current baseline without replaying missed movements and preserves
-a valid same-game manual override.
+Hover, reading, board pointer activity, a held pointer, dragging, a modal/focused
+battlefield workspace, combat, stack activity or a required choice suppress or
+interrupt motion. The current turn stamp is consumed even while blocked: closing
+the reader or completing a choice does not cause a delayed shift. A later eligible
+turn boundary can request movement again, subject to the same space guard. An
+extra turn with the same desired framing does not repeat the movement. The lab
+header's **Whole table** restores the stationary
+view and disables following until **Follow turn** is enabled again. Opening or
+resetting a case establishes a baseline before any subsequent turn movement.
 
-Keep canonical `TableScene` layout separate from one immutable effective board
-view. Application-owned view motion consumes the public match/turn/active-player
-stamp, explicit `GameTime` and interaction state. Apply the shared view to smoothed
-world poses before final drawing and hit geometry are published; transforming
-motion goals would make each card independently chase the camera. Resting reader
-anchors, detached labels, board piles/commanders and combat/attachment/effect
-endpoints must agree with the presented card geometry. Fixed portraits and source
-previews remain fixed endpoints when connected to a moving board card.
+Canonical `TableScene` coordinates remain separate from immutable `BoardView`
+presentation translation. `BoardViewMotion` consumes public match/turn/active-player
+identity, supplied time and interaction state. Card presentation applies the view
+after canonical pose smoothing, then publishes matching draw and hit geometry.
+Reader/returning-card transitions convert presentation spaces once rather than
+applying the view twice. Path checks include card and label footprints against
+fixed reservations; cards are not repacked during movement. `PresentationFrame`
+and its copied `FrameObservation` include the effective view and enabled mode.
+`TableWindow` retains its existing viewport/letterbox transform.
 
-The existing motion cache is shared by board, reader and returning-card layers.
-Make their presentation spaces explicit and convert the last presented pose when
-entering or leaving the fixed reader; otherwise collapsing a card could jump or
-apply the board view twice. Keep this mapping local to card presentation.
-
-The effective view and its mode should be copied into `PresentationFrame` and
-`FrameObservation` for reproducible inspection. `TableWindow` retains the existing
-viewport/letterbox transform. Camera input never submits a game reply or changes
-priority/pass policy, ownership, permissions or visible information. Current
-screen-anchored dense territories, labels and reservations are explicit refactor
-dependencies; a GPU-only offset is insufficient. Preserve the canonical layout
-and permit only a shift whose entire path keeps board objects clear of fixed
-controls and retains the full table context. Fall back to stationary framing
-when that is impossible. Avoid repacking cards during a camera movement.
-
-Implement that shared geometry boundary before wiring the opt-in comparison;
-then add the authored turn-handoff journey and review the actual interaction.
-Zoom, rotation, seat swapping, per-spell tracking and production enablement remain
-outside this first increment. See the [turn-orientation comparison](Mana-Table-Experience-Review.md#planned-turn-orientation-comparison)
-for the human review that determines whether the experiment is worth keeping.
+Follow controls submit no engine commands and change no priority, pass policy,
+ownership or visibility. The authored ordinary/crowded journeys currently expose
+the layout constraint; they do not demonstrate a successful follow experience.
+The lab distinguishes **Follow: limited space** from **Follow: full table** rather
+than implying that enabling the toggle guarantees movement. Finding the relevant
+seat still depends on grouping, source feedback and explicit response ownership.
+Reconnect and elimination need live-game review before any production proposal.
+Zoom, rotation, seat swapping and per-spell tracking remain outside this increment.
+See the [turn-orientation comparison](Mana-Table-Experience-Review.md#experimental-turn-orientation-comparison)
+for the diagnostic captures and human review needed after the layout is ready.
 
 The normal native Commander setup defaults to four seats or starts one human with
 three Forge AI opponents. A friends' host can choose two, three or four seats;

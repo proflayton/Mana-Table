@@ -44,7 +44,7 @@ internal sealed partial class TableApplication
         // Resolve hover against the last published frame before starting the next
         // frame. Preparation then uses current snapshot visibility and policy.
         string? hover = HitAt(pointer)?.Id;
-        cardPresentation.BeginFrame(CardContext, hover, frameElapsed, preferences.ReducedMotion);
+        cardPresentation.BeginFrame(CardContext, hover, frameElapsed, preferences.ReducedMotion, boardView);
         deferredCardComposition.Clear();
     }
     private void EndCardReading() => cardPresentation.EndFrame();
@@ -88,7 +88,7 @@ internal sealed partial class TableApplication
     {
         var entry = cardPresentation.Pinned;
         if (entry == null || CompactCardDecision || !CardContext.CanRead(entry)) return;
-        var target = CardPresentationController.ReaderPose(entry.Rest, entry.Zone).Bounds;
+        var target = (entry.ReaderTarget ?? CardPresentationController.ReaderPose(entry.Rest, entry.Zone)).Bounds;
         int x = target.Right + 12;
         if (x + 220 > 1580) x = target.Left - 232;
         x = Math.Clamp(x, 20, 1360);

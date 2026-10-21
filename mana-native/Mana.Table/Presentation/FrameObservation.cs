@@ -8,7 +8,8 @@ namespace Mana.Table.Presentation;
 
 /// <summary>Copied, serializable evidence from the actual completed frame. No actions, engine or GPU objects.</summary>
 internal sealed record FrameObservation(FrameStamp Stamp, int Width, int Height, int CommandCount,
-    IReadOnlyList<ObservedCard> Cards, IReadOnlyList<ObservedControl> Controls, IReadOnlyList<ObservedText> Text)
+    IReadOnlyList<ObservedCard> Cards, IReadOnlyList<ObservedControl> Controls, IReadOnlyList<ObservedText> Text,
+    ObservedBoardView? BoardView = null)
 {
     internal static FrameObservation From(PresentationFrame frame) => new(frame.Stamp, 1600, frame.DesignHeight,
         frame.Drawing.Commands.Count,
@@ -26,8 +27,10 @@ internal sealed record FrameObservation(FrameStamp Stamp, int Width, int Height,
             DrawCommand.CenterText text => new ObservedText(text.Value ?? "", ObservedBounds.From(text.Bounds), text.Size,
                 1, text.Bold, true, frame.Drawing.TextScale),
             _ => null
-        }).OfType<ObservedText>().ToArray()));
+        }).OfType<ObservedText>().ToArray()), new(frame.BoardView.Offset.X, frame.BoardView.Offset.Y, frame.TurnFollowEnabled));
 }
+
+internal sealed record ObservedBoardView(float X, float Y, bool FollowTurnEnabled);
 
 internal sealed record ObservedBounds(int X, int Y, int Width, int Height)
 {

@@ -24,7 +24,9 @@ internal sealed partial class TableApplication
             // Keep no ghost face when a card enters a hidden zone or loses its public identity.
             if (destination.Card == null || destination.Zone is not ("Graveyard" or "Exile") || !cardPresentation.TryGetPose(card.VisualId, out var pose)) continue;
             departures.RemoveAll(d => d.Card.VisualId == card.VisualId);
-            departures.Add(new(card, pose, destination.Zone, now));
+            var entry = cardPresentation.Cards.LastOrDefault(entry => entry.Id == card.VisualId);
+            var origin = entry?.Focused == true ? entry.Rest : pose;
+            departures.Add(new(card, (entry?.View ?? boardView).Inverse(origin), destination.Zone, now));
         }
     }
     private void DrawDepartures()
@@ -33,7 +35,7 @@ internal sealed partial class TableApplication
             double age = now - departure.Started;
             if (age > 1.5) continue;
             float alpha = preferences.ReducedMotion ? .6f : (float)(1 - age / 1.5);
-            var pose = departure.Pose;
+            var pose = boardView.Apply(departure.Pose);
             if (resources.Card(departure.Card) is { } image) canvas.Surface(image, pose, Color.White * (.55f * alpha));
             canvas.CardFrame(pose, Red * alpha, 3);
             var label = new Rectangle((int)pose.Center.X - 82, (int)pose.Center.Y - 15, 164, 30);

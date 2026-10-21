@@ -11,18 +11,32 @@ internal sealed partial class TableApplication
 {
     private bool ExperienceLabOpen => engine is ExperienceLabEngine;
     private ExperienceLabSession Lab => ((ExperienceLabEngine)engine).Session;
+    private int labGalleryPage;
+    private bool TurnOrientationLab => ExperienceLabOpen && Lab.Scenario.Id.StartsWith("turn-orientation", StringComparison.Ordinal);
 
     // Composed last so modal hit replacement cannot hide the reserved header controls.
     private void DrawExperienceLabHeader()
     {
         if (!ExperienceLabOpen) return;
         canvas.Panel(new(0, 0, 1600, 54), new Color(12, 25, 33), new Color(70, 108, 119), 0);
-        canvas.Text("EXPERIENCE LAB · SCRIPTED SNAPSHOT", 18, 7, Gold, .5f, 750, 1, true);
+        canvas.Text(TurnOrientationLab ? "LAB · SCRIPTED SNAPSHOT" : "EXPERIENCE LAB · SCRIPTED SNAPSHOT", 18, 7, Gold, .5f, TurnOrientationLab ? 180 : 750, 1, true);
+        if (TurnOrientationLab) {
+            string followLabel = !followTurnEnabled ? "Try turn follow"
+                : preferences.ReducedMotion ? "Follow: reduced motion"
+                : tableScene?.Seats.Any(seat => seat.IsDense) == true ? "Follow: full table"
+                : boardViewMotion.LimitedByLayout ? "Follow: limited space" : "Follow turn: On";
+            Button("lab-follow-turn", followLabel, 210, 3, 210,
+                () => SetTurnFollow(!followTurnEnabled), accent: followTurnEnabled, height: 22);
+            Button("lab-whole-table", "Whole table", 620, 3, 200, () => SetTurnFollow(false), height: 22);
+        }
         Button("lab-battlefield", "Battlefields", 436, 3, 176, () => OpenZone(match!.ViewerId, "Battlefield"), height: 22);
-        DrawTableStates(match!, new Rectangle(620, 3, 220, 21));
+        if (!TurnOrientationLab) DrawTableStates(match!, new Rectangle(620, 3, 220, 21));
         canvas.Text(Lab.Scenario.Name, 18, 29, Ink, .64f, 410, 1, true);
         canvas.Text($"{Lab.StageIndex + 1}/{Lab.Stages.Count} · {Lab.Stage.Name}", 436, 28, Muted, .57f, 402, 1);
-        Button("lab-scenarios", "Scenarios", 850, 11, 140, () => { overlay = "experience-lab"; CollapseCardReading(); }, !busy, height: 34);
+        Button("lab-scenarios", "Scenarios", 850, 11, 140, () => {
+            overlay = "experience-lab"; CollapseCardReading();
+            labGalleryPage = ExperienceScenarios.All.ToList().FindIndex(item => item.Id == Lab.Scenario.Id) / 6;
+        }, !busy, height: 34);
         Button("lab-reset", "Reset", 1000, 11, 100, () => ReplayLabStage(Lab.StageIndex), !busy, height: 34);
         Button("lab-previous", "Previous", 1110, 11, 125, () => ReplayLabStage(Lab.StageIndex - 1), !busy && Lab.StageIndex > 0, height: 34);
         Button("lab-next", "Next", 1245, 11, 100, () => ReplayLabStage(Lab.StageIndex + 1), !busy && Lab.StageIndex + 1 < Lab.Stages.Count, height: 34);
@@ -45,8 +59,12 @@ internal sealed partial class TableApplication
         ModalFrame("Experience lab · authored presentation scenarios", () => overlay = "");
         canvas.Text("These snapshots use the normal game renderer and input. They do not run Forge, connect to a table, or edit your real decks.",
             208, 183, Muted, .77f, 1150, 2);
-        for (int index = 0; index < ExperienceScenarios.All.Count; index++) {
-            var scenario = ExperienceScenarios.All[index];
+        const int pageSize = 6;
+        int pages = (ExperienceScenarios.All.Count + pageSize - 1) / pageSize;
+        labGalleryPage = Math.Clamp(labGalleryPage, 0, pages - 1);
+        var visible = ExperienceScenarios.All.Skip(labGalleryPage * pageSize).Take(pageSize).ToArray();
+        for (int index = 0; index < visible.Length; index++) {
+            var scenario = visible[index];
             int x = 208 + index % 2 * 588, y = 238 + index / 2 * 125;
             canvas.Panel(new(x, y, 560, 118), new Color(17, 30, 39), scenario.Id == Lab.Scenario.Id ? Gold : Muted * .45f, 7);
             canvas.Text(scenario.Name, x + 14, y + 10, Ink, .8f, 530, 1, true);
@@ -54,8 +72,11 @@ internal sealed partial class TableApplication
             Button("lab-load:" + scenario.Id, "Open " + scenario.Id, x + 14, y + 82, 530,
                 () => PresentLab(Lab.Select(scenario.Id)), !busy, height: 28);
         }
-        canvas.Text("Every reset replays the baseline before its transitions, so source → target feedback can be inspected again. Profile: isolated temporary folder.",
-            208, 750, Muted, .6f, 1150, 2);
+        canvas.Text("Reset replays the baseline and its transitions. These cases use an isolated temporary profile.",
+            208, 650, Muted, .6f, 1150, 2);
+        Button("lab-gallery-prev", "Previous cases", 208, 734, 185, () => labGalleryPage--, labGalleryPage > 0);
+        Button("lab-gallery-next", "More cases", 405, 734, 185, () => labGalleryPage++, labGalleryPage + 1 < pages);
+        canvas.Text($"Page {labGalleryPage + 1} / {pages}", 620, 747, Muted, .65f, 260, 1);
     }
 }
 
@@ -99,6 +120,7 @@ internal static class ExperienceLabLauncher
             string artCache = Arg("--art-cache") ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "ManaTableNative", "art");
             using var window = new TableWindow(engine, profile, capture, null, size, initialState: lab.State, artSource: new OfflineArt(artCache));
             window.Window.Title = "Mana Table — Experience Lab";
+            if (args.Contains("--follow-turn")) window.TestPort.Post(() => window.TestPort.SetTurnFollow(true));
             if (Arg("--focus-player") is { } requestedOwner) {
                 if (!int.TryParse(requestedOwner, out int owner) || !lab.State.Players.Any(player => player.Id == owner))
                     throw new ArgumentException("Choose a public player ID for --focus-player.");

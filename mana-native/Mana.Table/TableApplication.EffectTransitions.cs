@@ -82,7 +82,7 @@ internal sealed partial class TableApplication
     {
         if (node.Dense && !node.DenseLabels.IsEmpty && CardPresentation.Counters(node.Card).Length > 0) {
             int row = 1 + (CardPresentation.HasCombatStats(node.Card) || node.GroupCount > 1 ? 1 : 0);
-            return new(node.DenseLabels.Right - 12, node.DenseLabels.Top + row * node.DenseRowHeight + node.DenseRowHeight / 2);
+            return boardView.Apply(new Vector2(node.DenseLabels.Right - 12, node.DenseLabels.Top + row * node.DenseRowHeight + node.DenseRowHeight / 2));
         }
         return displayed.Point(.80f, .82f);
     }

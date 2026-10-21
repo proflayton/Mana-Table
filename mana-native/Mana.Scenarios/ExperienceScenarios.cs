@@ -17,7 +17,9 @@ public static class ExperienceScenarios
         new("combat-allocation.v1", "Combat damage allocation", "Current stats, marked damage, anonymous blockers and defender thresholds.", Allocation),
         new("public-state.v1", "Public state and privacy", "Qualified abilities, generic player resources, day/night and visibility revocation.", PublicStates),
         new("stack-priority.v1", "Stack and priority", "A trigger, another player's response, your response, resolution and the resulting battlefield.", StackPriority),
-        new("trigger-search.v1", "Trigger and library search", "Public priority hands off to required recipient and private library choices, then the local hand.", TriggerSearch)
+        new("trigger-search.v1", "Trigger and library search", "Public priority hands off to required recipient and private library choices, then the local hand.", TriggerSearch),
+        new("turn-orientation.v1", "Turn orientation · ordinary table", "A turn handoff, off-turn response, multiple defenders, target choice and extra turn.", TurnOrientationScenario.Ordinary),
+        new("turn-orientation-crowded.v1", "Turn orientation · crowded table", "The same authored turn sequence over four crowded battlefields; compare stationary context.", TurnOrientationScenario.Crowded)
     });
 
     public static ExperienceScenario Find(string id) => All.FirstOrDefault(item => item.Id == id)

@@ -192,6 +192,9 @@ internal sealed partial class TableApplication : IDisposable
         if (!chatKeys) { DeckKeys(keys); SetupKeys(keys); }
         var view = new Rectangle(0, 0, viewport.X, viewport.Y); float scale = Math.Min(view.Width / 1600f, view.Height / (float)DesignHeight);
         pointer = new((int)((mouse.X - (view.Width - 1600 * scale) / 2) / scale), (int)((mouse.Y - (view.Height - DesignHeight * scale) / 2) / scale));
+        boardPointerActivity = mouse.X != previousMouse.X || mouse.Y != previousMouse.Y
+            || mouse.ScrollWheelValue != previousMouse.ScrollWheelValue || mouse.LeftButton != previousMouse.LeftButton;
+        boardViewportChanged = boardViewport != viewport; boardViewport = viewport;
         if (!blockedInput && mouse.RightButton == ButtonState.Pressed && previousMouse.RightButton == ButtonState.Released && HitAt(pointer)?.Card is { } card) Inspect(card);
         if (mouse.LeftButton == ButtonState.Pressed && previousMouse.LeftButton == ButtonState.Released) {
             pressed = HitAt(pointer); pressPoint = pointer;
@@ -282,11 +285,15 @@ internal sealed partial class TableApplication : IDisposable
     {
         float frameElapsed = (float)(time.TotalGameTime.TotalSeconds - lastDrawTime);
         lastDrawTime = time.TotalGameTime.TotalSeconds;
+        canvas.TextScale = preferences.TextScale;
+        tableScene = match == null ? null : TableScene.Build(match, handPage, pointer, null,
+            dragging && dragSource?.Card is { } held ? CardViews.Identity(held) : null, false, CardPresentation.IsResource,
+            denseMeasure: MeasureDenseBattlefieldLabel, allowInlineOrdering: TableChoices.IsDirect(match));
+        UpdateBoardView();
         BeginCardReading(frameElapsed);
         hits.Begin();
         publicCounterBadges.Clear();
-        hovered = null; cardPositions.Clear(); heroPositions.Clear(); tableScene = null;
-        canvas.TextScale = preferences.TextScale;
+        hovered = null; cardPositions.Clear(); heroPositions.Clear();
         canvas.BeginComposition();
         if (StartupVisible) DrawStartup();
         else if (match == null && welcomeOpen) DrawWelcome();
@@ -299,8 +306,6 @@ internal sealed partial class TableApplication : IDisposable
             canvas.Text(message, messageX, 25, Ink, .82f, Math.Max(0, 1175 - messageX), 1);
             DrawLobby();
         } else {
-            tableScene = TableScene.Build(match, handPage, pointer, null, dragging ? dragSource?.Card is { } held ? CardViews.Identity(held) : null : null, false, CardPresentation.IsResource,
-                denseMeasure: MeasureDenseBattlefieldLabel, allowInlineOrdering: TableChoices.IsDirect(match));
             DrawArena();
         }
         if (match != null && noticeUntil > now && !OverlayOpen) {
@@ -324,7 +329,7 @@ internal sealed partial class TableApplication : IDisposable
         var drawing = canvas.Complete();
         hits.Publish();
         return Frame = new(drawing, hits.Published, tableScene, cardPresentation.Cards, DesignHeight,
-            new(match?.Id, match?.Revision ?? 0, match?.Decision?.Id, Scope, time.TotalGameTime.TotalSeconds));
+            new(match?.Id, match?.Revision ?? 0, match?.Decision?.Id, Scope, time.TotalGameTime.TotalSeconds), boardView, followTurnEnabled);
     }
     public void Dispose()
     {

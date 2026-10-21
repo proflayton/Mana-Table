@@ -12,9 +12,9 @@ internal static class ExperienceLabChecks
 {
     internal static void Run(Action<bool, string> check)
     {
-        check(ExperienceScenarios.All.Count == 8 && ExperienceScenarios.All.Select(item => item.Id).Distinct().Count() == 8
+        check(ExperienceScenarios.All.Count > 0 && ExperienceScenarios.All.Select(item => item.Id).Distinct().Count() == ExperienceScenarios.All.Count
             && ExperienceScenarios.All.All(item => item.Id.EndsWith(".v1", StringComparison.Ordinal)),
-            "Eight named, versioned canonical experiences are shared by the production lab and scoped composition/input checks");
+            "Named, versioned canonical experiences are shared by the production lab and scoped composition/input checks");
         var lab = new ExperienceLabSession();
         check(lab.State.Id != new ExperienceLabSession().State.Id,
             "Independent lab sessions have distinct game namespaces before any stage navigation");
@@ -39,6 +39,17 @@ internal static class ExperienceLabChecks
                 ?? throw new InvalidOperationException("The production lab did not expose " + id);
             var point = hit.Bounds.Center;
             Tick(point, ButtonState.Pressed); Tick(point);
+        }
+        void LoadScenario(string id)
+        {
+            Click("lab-scenarios");
+            int target = ExperienceScenarios.All.ToList().FindIndex(item => item.Id == id);
+            for (int attempts = 0; !frame.Hits.Any(hit => hit.Id == "lab-load:" + id); attempts++) {
+                if (attempts >= ExperienceScenarios.All.Count) throw new InvalidOperationException("Lab case is unreachable: " + id);
+                int first = ExperienceScenarios.All.ToList().FindIndex(item => frame.Hits.Any(hit => hit.Id == "lab-load:" + item.Id));
+                Click(target < first ? "lab-gallery-prev" : "lab-gallery-next");
+            }
+            Click("lab-load:" + id);
         }
         Tick();
         check(frame.Cards.Count(card => card.Zone == "Battlefield") == 480 && !app.TestPort.Polling && !app.TestPort.StartupVisible,
@@ -66,18 +77,31 @@ internal static class ExperienceLabChecks
         check(lab.State.Id != priorReset && app.TestPort.PublicChanges is { Count: 1 },
             "Reset creates a fresh game epoch and makes the authored current-stage transition inspectable again");
         foreach (var scenario in ExperienceScenarios.All) {
-            Click("lab-scenarios");
-            check(frame.Hits.Count(hit => hit.Id.StartsWith("lab-load:", StringComparison.Ordinal)) == 8,
-                "The production scenario gallery exposes every canonical case: " + scenario.Id);
-            Click("lab-load:" + scenario.Id);
+            LoadScenario(scenario.Id);
             check(lab.Scenario.Id == scenario.Id && frame.Hits.Any(hit => hit.Id == "lab-reset") && frame.Hits.Any(hit => hit.Id == "lab-scenarios"),
                 "The case opens through real input and keeps navigation above its decision modal: " + scenario.Id);
             check(lab.State.Players.Where(player => player.Id != lab.State.ViewerId).All(player => player.Zone("Hand").Cards.Length == 0),
                 "Canonical projections contain no other player's private hand faces: " + scenario.Id);
             if (scenario.Id == "public-state.v1") check(frame.Hits.Any(hit => hit.Id == "table-state:day-night"),
                 "The lab uses the production Day/Night widget alongside its scenario controls");
+            if (scenario.Id == "turn-orientation.v1") {
+                string initialPrompt = lab.State.Decision!.Id, initialScope = lab.State.Id;
+                Click("lab-follow-turn");
+                check(app.TestPort.FollowTurnEnabled && lab.StageIndex == 0 && lab.State.Id == initialScope && lab.State.Decision?.Id == initialPrompt,
+                    "The actual Follow turn button changes presentation intent without answering the pending game decision");
+                Click("lab-next");
+                for (int settle = 0; settle < 20; settle++) Tick();
+                check(app.TestPort.BoardView.IsIdentity && app.TestPort.BoardViewLimitedByLayout
+                    && frame.BoardView == app.TestPort.BoardView && lab.StageIndex == 1
+                    && frame.Observe().Text.Any(text => text.Value == "Follow: limited space"),
+                    "The current ordinary four-seat layout refuses a pan through fixed controls and publishes its actual stationary view");
+                Click("lab-whole-table");
+                check(!app.TestPort.FollowTurnEnabled && app.TestPort.BoardView.IsIdentity && lab.StageIndex == 1,
+                    "Whole table explicitly restores neutral framing without advancing the authored game");
+            }
         }
-        // The gallery loop ends on this required-choice scenario. Its private
+        LoadScenario("trigger-search.v1");
+        // Select the required-choice scenario explicitly. Its private
         // library uses prompt indices, then issues a new visible hand occurrence.
         lab.Reply(new(lab.State.Id, lab.State.Decision!.Id, ReplyAction.Confirm));
         check(lab.State.PriorityPlayerId == 1 && lab.State.DecisionOwnerId == 1 && lab.State.Decision == null

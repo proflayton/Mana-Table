@@ -15,6 +15,10 @@ internal sealed partial class TableApplication
     internal class Probe(TableApplication game)
     {
         internal Mana.Table.Presentation.PresentationFrame? Frame => game.Frame;
+        internal Mana.Renderer.BoardView BoardView => game.boardView;
+        internal bool FollowTurnEnabled => game.followTurnEnabled;
+        internal bool BoardViewLimitedByLayout => game.boardViewMotion.LimitedByLayout;
+        internal void SetTurnFollow(bool enabled) => game.SetTurnFollow(enabled);
         internal IReadOnlyList<Mana.Renderer.EffectChangeGroup> PublicChanges => game.publicChanges.Groups;
         internal Rectangle? ChangeCalloutBounds => game.changeCalloutBounds;
         internal IReadOnlySet<string> HighlightedChangeTargets => game.highlightedChangeTargets;
