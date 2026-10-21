@@ -827,7 +827,7 @@ internal sealed partial class CardReadingSmoke : ITableAutomation
     private object[] ChoiceOrderDiagnostics() => view.ChoiceOrderBadges.Values.Select(badge => {
         string sourceCardId = view.Match?.Decision?.Choices.FirstOrDefault(choice => choice.Index == badge.Index)?.CardId ?? "";
         var currentSource = sourceCardId.Length == 0 ? null : view.AllCards().FirstOrDefault(card => card.VisualId == sourceCardId);
-        TableGame.Hit[] sourceHits = sourceCardId.Length == 0 ? [] : view.Hits.Where(hit => hit.Card?.VisualId == sourceCardId).ToArray();
+        Mana.Table.Interaction.TableHit[] sourceHits = sourceCardId.Length == 0 ? [] : view.Hits.Where(hit => hit.Card?.VisualId == sourceCardId).ToArray();
         var canonical = sourceHits.LastOrDefault(hit => hit.Id.StartsWith("card:", StringComparison.Ordinal));
         var points = new List<Point> { badge.Bounds.Center };
         for (int x = badge.Bounds.Left + 5; x < badge.Bounds.Right - 5; x += 6) points.Add(new(x, badge.Bounds.Center.Y));
@@ -843,9 +843,9 @@ internal sealed partial class CardReadingSmoke : ITableAutomation
             }).ToArray()
         };
     }).ToArray();
-    private object? HitDiagnostic(TableGame.Hit? hit) => hit == null ? null : new {
+    private object? HitDiagnostic(Mana.Table.Interaction.TableHit? hit) => hit == null ? null : new {
         hit.Id, hit.Scope, hit.Bounds, visualId = hit.Card?.VisualId, cardKey = hit.Card?.Key,
-        hit.Zone, hit.PlayerId, current = view.CurrentHit(hit), hasShape = hit.Shape != null, drawIndex = view.Hits.IndexOf(hit)
+        hit.Zone, hit.PlayerId, current = view.CurrentHit(hit), hasShape = hit.Shape != null, drawIndex = view.Hits.ToList().IndexOf(hit)
     };
     public void Frame(Texture2D surface)
     {

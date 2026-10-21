@@ -23,13 +23,13 @@ internal static class SmokePointer
             (int)((physical.Y - (viewport.Height - view.DesignHeight * scale) / 2) / scale));
     }
 
-    internal static bool TryPoint(TableGame.Probe view, TableGame.Hit hit, Point logical, out Point physical)
+    internal static bool TryPoint(TableGame.Probe view, Mana.Table.Interaction.TableHit hit, Point logical, out Point physical)
     {
         physical = Screen(view, logical);
         return view.CurrentHit(hit) && Matches(view, hit, physical);
     }
 
-    private static bool Matches(TableGame.Probe view, TableGame.Hit hit, Point physical)
+    private static bool Matches(TableGame.Probe view, Mana.Table.Interaction.TableHit hit, Point physical)
     {
         var viewport = view.GraphicsDevice.Viewport;
         if (physical.X < 0 || physical.Y < 0 || physical.X >= viewport.Width || physical.Y >= viewport.Height) return false;
@@ -37,7 +37,7 @@ internal static class SmokePointer
         return actual?.Id == hit.Id && actual.Scope == hit.Scope;
     }
 
-    internal static Point Hit(TableGame.Probe view, TableGame.Hit hit)
+    internal static Point Hit(TableGame.Probe view, Mana.Table.Interaction.TableHit hit)
     {
         if (!view.CurrentHit(hit)) throw new InvalidOperationException("Stale pointer target: " + hit.Id);
         var viewport = view.GraphicsDevice.Viewport;

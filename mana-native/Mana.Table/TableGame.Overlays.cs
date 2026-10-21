@@ -32,7 +32,7 @@ internal sealed partial class TableGame
     private void ModalFrame(string title, Action close, string closeLabel = "Close", int height = 706)
     {
         // Modal hit regions replace the table's regions, including invisible cards.
-        hits.Clear(); hovered = null; readingCards.Clear(); liftedCards.Clear();
+        hits.Clear(); hovered = null; ClearCardComposition();
         canvas.Fill(new(0, 60, 1600, 840), Color.Black * .72f);
         canvas.Panel(new(166, 94, 1268, height), new(23, 30, 40), new(98, 113, 130), 14);
         canvas.Text(title, 192, 115, Ink, 1.12f, 990, 2, true);
@@ -49,6 +49,7 @@ internal sealed partial class TableGame
                 case "action": DrawActionDetails(); break;
                 case "player": DrawPlayerDetails(); break;
                 case "mana": DrawManaDetails(); break;
+                case "table-state": DrawTableStateDetails(); break;
                 case "concede": DrawConcede(); break;
                 case "leave-table": DrawLeaveTable(); break;
                 case "help": DrawHelp(); break;

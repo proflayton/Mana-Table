@@ -207,7 +207,7 @@ internal sealed class StateClaritySmoke : ITableAutomation
     private void Wait(Func<bool> ready, double maximum, Action action) => steps.Enqueue((maximum, ready, action));
     private void Check(bool condition, string description) { if (!condition) throw new InvalidOperationException(description); checks.Add(description); }
     private void Move(Point logical) { var physical = SmokePointer.Screen(view, logical); mouse = new(physical.X, physical.Y, 0, ButtonState.Released, ButtonState.Released, ButtonState.Released, ButtonState.Released, ButtonState.Released); }
-    private void MoveHit(TableGame.Hit hit) { var physical = SmokePointer.Hit(view, hit); mouse = new(physical.X, physical.Y, 0, ButtonState.Released, ButtonState.Released, ButtonState.Released, ButtonState.Released, ButtonState.Released); }
+    private void MoveHit(Mana.Table.Interaction.TableHit hit) { var physical = SmokePointer.Hit(view, hit); mouse = new(physical.X, physical.Y, 0, ButtonState.Released, ButtonState.Released, ButtonState.Released, ButtonState.Released, ButtonState.Released); }
     private MouseState Mouse(ButtonState left, ButtonState right = ButtonState.Released) => new(mouse.X, mouse.Y, 0, left, ButtonState.Released, right, ButtonState.Released, ButtonState.Released);
     private void Click() { Step(0, () => mouse = Mouse(ButtonState.Pressed)); Step(0, () => mouse = Mouse(ButtonState.Released)); }
     private void ClickHit(string id) { Step(0, () => MoveHit(view.Hits.Single(h => h.Id == id))); Click(); }

@@ -10,7 +10,7 @@ internal sealed partial class TableGame
 
     private void DrawStartup()
     {
-        hits.Clear(); hovered = null; readingCards.Clear(); liftedCards.Clear();
+        hits.Clear(); hovered = null; ClearCardComposition();
         canvas.Gradient(new(0, 0, 1600, 1000), new(20, 29, 39), new(8, 14, 20));
         canvas.Glow(new(800, 414), new(1200, 840), Teal * .25f);
         canvas.CenterText("COMMANDER", new(100, 72, 1400, 32), Muted, .7f, true);
@@ -43,7 +43,7 @@ internal sealed partial class TableGame
 
     private void DrawActivity()
     {
-        hits.Clear(); hovered = null; readingCards.Clear(); liftedCards.Clear();
+        hits.Clear(); hovered = null; ClearCardComposition();
         bool failed = !ActivityPending && ActivityFailed;
         if (activityScene && !failed) { DrawTableTransition(); return; }
         int top = (DesignHeight - 344) / 2;

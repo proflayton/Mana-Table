@@ -79,7 +79,7 @@ internal sealed partial class TableGame
                 hits.Add(new("combat-inspect:" + card.CombatId, Scope, pose.Bounds, () => Inspect(card), card));
             }
             canvas.Text(card?.Name ?? "Attacker", 309, y + 10, Ink, .84f, 373, 2, true);
-            canvas.Text(card == null ? "" : $"{card.Power}/{card.Toughness}  " + string.Join(" · ", card.CombatKeywords), 309, y + 62, Gold, .66f, 375, 2);
+            canvas.Text(card == null ? "" : $"{card.Power}/{card.Toughness}  " + string.Join(" · ", CardPresentation.AbilityLabels(card)), 309, y + 62, Gold, .66f, 375, 2);
             string defender = attack.Defender?.Name ?? state.Players.FirstOrDefault(p => p.Id == attack.DefendingPlayerId)?.Name ?? "Defender";
             canvas.Text("ATTACKING " + defender, 708, y + 12, Red, .66f, 443, 2, true);
             string blockers = string.Join(", ", attack.BlockerIds.Select(id => CombatGuide.Find(state, id)?.Name ?? "Blocker"));
@@ -132,7 +132,7 @@ internal sealed partial class TableGame
     {
         foreach (var cue in effects.Cards) {
             double age = now - cue.Started;
-            if (age < 0 || age > 1.1 || !motion.TryGet(cue.VisualId, out var pose)) continue;
+            if (age < 0 || age > 1.1 || !cardPresentation.TryGetPose(cue.VisualId, out var pose)) continue;
             float alpha = preferences.ReducedMotion ? 1 : (float)(1 - age / 1.1);
             var color = cue.Kind == CueKind.Damage ? Red : cue.Kind == CueKind.Arrive ? Gold : Blue;
             canvas.CardFrame(pose with { Size = pose.Size + new Vector2(8 + (preferences.ReducedMotion ? 0 : (float)age * 17)) }, color * alpha, 2);

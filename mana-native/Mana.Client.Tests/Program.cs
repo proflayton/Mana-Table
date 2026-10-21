@@ -150,6 +150,7 @@ HandPlacementRegression.Run(Check);
 AllocationRegression.Run(Check);
 await RecoveryRegression.RunAsync(Check);
 GameplayClarityChecks.Run(Check);
+PublicStateDescriptorChecks.Run(Check);
 DeckExperienceChecks.Run(Check);
 Console.WriteLine($"Passed {checks} headless checks.");
 

@@ -19,7 +19,7 @@ internal sealed partial class TableGame
     }
     private void DrawAppUpdates()
     {
-        hits.Clear(); hovered = null; readingCards.Clear(); liftedCards.Clear();
+        hits.Clear(); hovered = null; ClearCardComposition();
         int top = (DesignHeight - 720) / 2;
         canvas.Fill(new(0, 0, 1600, DesignHeight), Color.Black * .8f);
         canvas.Panel(new(190, top, 1220, 720), new(23, 32, 43), LobbyTrim, 16);

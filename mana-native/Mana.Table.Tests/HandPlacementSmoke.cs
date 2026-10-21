@@ -272,7 +272,7 @@ internal sealed class HandPlacementSmoke : ITableAutomation
         MoveToHit(hit);
     }
     private void MoveHit(string id) => MoveToHit(view.Hits.Single(h => h.Id == id));
-    private void MoveToHit(TableGame.Hit hit)
+    private void MoveToHit(Mana.Table.Interaction.TableHit hit)
     {
         var physical = SmokePointer.Hit(view, hit);
         mouse = new(physical.X, physical.Y, 0, ButtonState.Released, ButtonState.Released,

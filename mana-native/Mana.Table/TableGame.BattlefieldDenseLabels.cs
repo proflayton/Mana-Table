@@ -45,7 +45,7 @@ internal sealed partial class TableGame
             // crowded permanent grow another complete text row.
             if (scale >= .8f) PaintAbilityIcon(states[0], new(stateBounds.Center.X, stateBounds.Center.Y));
             else canvas.CenterText("+" + states.Count, stateBounds, AbilityColor(states[0]), .32f * scale, true);
-            RecordBattlefieldLabel(card, owner, "state-icon", CardPresentation.AbilityName(states[0]) + (states.Count > 1 ? " +" + (states.Count - 1) : ""), stateBounds, 0, stateBounds.Width);
+            RecordBattlefieldLabel(card, owner, "state-icon", CardPresentation.AbilityLabel(card, states[0]) + (states.Count > 1 ? " +" + (states.Count - 1) : ""), stateBounds, 0, stateBounds.Width);
         }
         if (card.Tapped) {
             string tapped = "TAPPED";

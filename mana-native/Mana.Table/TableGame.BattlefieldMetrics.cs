@@ -12,7 +12,7 @@ internal sealed partial class TableGame
         const int padding = 8;
         var counters = CardPresentation.Counters(card);
         bool plain = !CardPresentation.HasCombatStats(card) && card.Power == null && card.Toughness == null
-            && counters.Length == 0 && card.Damage == 0 && card.CombatKeywords.Length == 0 && !card.PhasedOut;
+            && counters.Length == 0 && card.Damage == 0 && (card.States?.Length ?? card.CombatKeywords.Length) == 0 && !card.PhasedOut;
         int width = miniature ? 48 : plain ? 56 : 96;
         int CopyWidth() => copies > 1 ? canvas.TextWidth(copies + " copies", size, true) + padding : 0;
         if (CardPresentation.HasCombatStats(card))
@@ -22,7 +22,7 @@ internal sealed partial class TableGame
             width = Math.Max(width, canvas.TextWidth(counters[0].Key + " ×" + counters[0].Value, size, true) + padding);
         if (counters.Length > 1)
             width = Math.Max(width, canvas.TextWidth("+" + (counters.Length - 1) + " counter type" + (counters.Length > 2 ? "s" : ""), size, true) + padding);
-        int header = card.CombatKeywords.Length > 0 || card.PhasedOut || card.Sick && CardPresentation.HasCombatStats(card) ? 24 : 0;
+        int header = (card.States?.Length ?? card.CombatKeywords.Length) > 0 || card.PhasedOut || card.Sick && CardPresentation.HasCombatStats(card) ? 24 : 0;
         if (card.Tapped) header += canvas.TextWidth("TAPPED", size, true) + padding;
         if (card.Damage > 0) header += canvas.TextWidth("DMG " + card.Damage, size, true) + padding;
         // State indicators share the identity row; reserve both their complete

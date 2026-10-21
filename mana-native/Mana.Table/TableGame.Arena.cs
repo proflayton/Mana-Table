@@ -45,7 +45,7 @@ internal sealed partial class TableGame
             else {
                 // Keep the held occurrence in the scene, so release continues
                 // from the pointer instead of respawning it at the library.
-                var heldPose = motion.Hold(CardIdentity(heldCard), new(pointer.ToVector2(), new(154, 216), -.04f, Elevation: 46));
+                var heldPose = cardPresentation.Hold(CardIdentity(heldCard), new(pointer.ToVector2(), new(154, 216), -.04f, Elevation: 46));
                 PaintCard(heldCard, heldPose, true, false);
             }
             string hint = legal ? "Release to " + (state.Decision?.Intent == DecisionIntent.Attack ? "assign attacker" : state.Decision?.Intent == DecisionIntent.Block ? "assign blocker"
@@ -64,7 +64,6 @@ internal sealed partial class TableGame
         DrawLiftedCards();
         if (ReadingGalleryOpen) DrawReaderControls();
         if (ReadingGalleryOpen) hovered = HitAt(pointer)?.Card;
-        readingTransitions.RemoveWhere(id => !readingCards.Any(c => c.Id == id));
     }
     private void DrawGameHeader()
     {
@@ -76,6 +75,7 @@ internal sealed partial class TableGame
         string label = state.Turn == 0 ? "Opening hands" : state.ActivePlayerId == state.ViewerId ? "Your turn" : active?.Name ?? "Waiting";
         canvas.Text(label, 220, 9, Ink, .85f, 600, 1, true);
         canvas.Text($"Turn {state.Turn}  ·  {state.Phase}", 220, 32, Muted, .6f, 600, 1);
+        DrawTableStates(state);
         Button("history", "History", 1190, 12, 110, () => { overlay = "history"; historyPage = 0; }, height: 35);
         Button("settings", "Settings", 1310, 12, 112, () => overlay = "settings", height: 35);
         bool departure = session.NeedsRecovery || state.Viewer?.Eliminated == true || state.Status == "error";
@@ -150,7 +150,7 @@ internal sealed partial class TableGame
         if (zone == "Battlefield" && (groupFront || focus)) {
             if (compact && pose.Size.X < 300) {
                 if (groupFront) PaintCompactState(card, pose, owner, groupCount);
-            } else if (card.PhasedOut || creature || card.AttachedTo != null || card.Attachments.Length > 0 || card.Counters.Count > 0 || card.Damage > 0 || card.CombatKeywords.Length > 0) {
+            } else if (card.PhasedOut || creature || card.AttachedTo != null || card.Attachments.Length > 0 || card.Counters.Count > 0 || card.Damage > 0 || (card.States?.Length ?? card.CombatKeywords.Length) > 0) {
             int x = (int)pose.Center.X, y = pose.Bounds.Bottom - 14;
             int seat = owner == match!.ViewerId ? 3 : TableLayout.SeatIndex(match, owner);
             // Side seats read toward the center, keeping badges out of the next
@@ -263,7 +263,7 @@ internal sealed partial class TableGame
             if (identity.Length == 0) identity = "stack:" + (state.Stack.ElementAtOrDefault(i)?.Id ?? card.Name);
             Vector2 entrance = new(800, 520);
             if (card.VisualId.Length > 0) {
-                if (motion.TryGet(card.VisualId, out var sourcePose)) entrance = sourcePose.Center;
+                if (cardPresentation.TryGetPose(card.VisualId, out var sourcePose)) entrance = sourcePose.Center;
                 else if (state.Activity.LastOrDefault(a => a.CardId == card.VisualId && a.PlayerId != null) is { PlayerId: { } actor })
                     entrance = TableLayout.SeatHand(actor == state.ViewerId ? 3 : TableLayout.SeatIndex(state, actor));
             }

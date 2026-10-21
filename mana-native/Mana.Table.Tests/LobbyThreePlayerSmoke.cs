@@ -158,7 +158,7 @@ internal sealed class LobbyThreePlayerSmoke : ITableAutomation, IDisposable
         throw new TimeoutException("Three-player opening decisions did not reach the first main phase");
     }
     private void Click(string id) { Step(.1, () => MoveHit(view.Hits.Single(h => h.Id == id))); Step(0, () => mouse = Mouse(ButtonState.Pressed)); Step(0, () => mouse = Mouse()); }
-    private void MoveHit(TableGame.Hit hit) { var p = SmokePointer.Hit(view, hit); mouse = new(p.X, p.Y, 0, ButtonState.Released, ButtonState.Released, ButtonState.Released, ButtonState.Released, ButtonState.Released); }
+    private void MoveHit(Mana.Table.Interaction.TableHit hit) { var p = SmokePointer.Hit(view, hit); mouse = new(p.X, p.Y, 0, ButtonState.Released, ButtonState.Released, ButtonState.Released, ButtonState.Released, ButtonState.Released); }
     private MouseState Mouse(ButtonState left = ButtonState.Released) => new(mouse.X, mouse.Y, 0, left, ButtonState.Released, ButtonState.Released, ButtonState.Released, ButtonState.Released);
     private void Step(double delay, Action action) => steps.Enqueue((delay, null, action));
     private void Wait(Func<bool> ready, double maximum, Action action) => steps.Enqueue((maximum, ready, action));

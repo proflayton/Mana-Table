@@ -8,7 +8,7 @@ internal sealed partial class TableGame
 {
     private void DrawWelcome()
     {
-        hits.Clear(); hovered = null; readingCards.Clear(); liftedCards.Clear();
+        hits.Clear(); hovered = null; ClearCardComposition();
         canvas.Gradient(new(0, 0, 1600, 1000), new(20, 29, 39), new(8, 14, 20));
         canvas.Glow(new(1120, 490), new(1150, 860), Teal * .25f);
         canvas.Text("MANA TABLE", 85, 91, Gold, 3.15f, 1100, 1, true);
@@ -50,7 +50,7 @@ internal sealed partial class TableGame
 
     private void DrawTableGuide()
     {
-        hits.Clear(); hovered = null; readingCards.Clear(); liftedCards.Clear();
+        hits.Clear(); hovered = null; ClearCardComposition();
         int top = (DesignHeight - 390) / 2;
         canvas.Fill(new(0, 0, 1600, DesignHeight), Color.Black * .82f);
         canvas.Panel(new(340, top, 920, 390), new(23, 32, 43), LobbyTrim, 18);

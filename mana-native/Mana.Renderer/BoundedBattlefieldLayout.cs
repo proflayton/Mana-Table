@@ -20,19 +20,19 @@ internal static class BoundedBattlefieldLayout
     };
     private static List<Rectangle> FreeAreas(int seat) => Areas(seat).Select((area, index) => new Rectangle(
         area.X + 3, area.Y + (index == 0 ? 22 : 3), area.Width - 6, area.Height - (index == 0 ? 25 : 6))).ToList();
-    internal static BattlefieldCluster[] Build(int seat, int owner, Card[] cards, Func<Card, bool> resource,
-        IReadOnlySet<string>? separate, GameSnapshot state, Func<Card, int, bool, BattlefieldLabelMetrics>? denseMeasure)
+    internal static BattlefieldCluster[] Build(int seat, int owner, Card[] cards, IReadOnlyList<string> roleByCard,
+        IReadOnlySet<string>? separate, IReadOnlyList<Rectangle> obstacles, Func<Card, int, bool, BattlefieldLabelMetrics>? denseMeasure)
     {
         string[] roles = ["Creatures", "Support", "Lands"];
         var allGroups = BattlefieldLayout.Groups(cards, separate, 4);
-        var groups = roles.SelectMany(role => BattlefieldLayout.Groups(cards.Where(card => BattlefieldLayout.Role(card, resource) == role).ToArray(), separate, 4)
+        var groups = roles.SelectMany(role => BattlefieldLayout.Groups(cards.Where((_, index) => roleByCard[index] == role).ToArray(), separate, 4)
             .Select(copies => {
                 var card = copies[0];
                 bool plain = !card.Type.Contains("Creature", StringComparison.Ordinal) && card.Power == null && card.Toughness == null
-                    && !card.Counters.Any(counter => counter.Value > 0) && card.Damage == 0 && card.CombatKeywords.Length == 0 && !card.PhasedOut;
+                    && !card.Counters.Any(counter => counter.Value > 0) && card.Damage == 0 && (card.States?.Length ?? card.CombatKeywords.Length) == 0 && !card.PhasedOut;
                 bool ordered = separate?.Contains(card.VisualId) == true;
                 bool miniature = allGroups.Length > 25 && !ordered && !card.Counters.Any(counter => counter.Value > 0)
-                    && card.Damage == 0 && card.CombatKeywords.Length == 0 && !card.PhasedOut && !card.Sick;
+                    && card.Damage == 0 && (card.States?.Length ?? card.CombatKeywords.Length) == 0 && !card.PhasedOut && !card.Sick;
                 int label = plain ? 56 : miniature ? 48 : 96;
                 var metrics = denseMeasure?.Invoke(card, copies.Length, miniature) ?? new(label, miniature || plain ? 18 : 20);
                 label = Math.Max(label, metrics.Width);
@@ -43,7 +43,6 @@ internal static class BoundedBattlefieldLayout
             })).ToArray();
         if (groups.Length == 0) return roles.Select(role => new BattlefieldCluster(role, [])).ToArray();
         var territory = Territory(seat);
-        var obstacles = Obstacles(state).ToArray();
         Rectangle[] placements = [];
         float scale = 1;
         for (int attempt = 0; attempt < 32; attempt++) {
@@ -78,7 +77,7 @@ internal static class BoundedBattlefieldLayout
             if (placedCount == groups.Length) { placements = placed; break; }
         }
         if (placements.Length != groups.Length) {
-            return PackFaces(seat, owner, cards, resource, territory, obstacles);
+            return PackFaces(seat, owner, cards, roleByCard, territory, obstacles);
         }
         var result = roles.ToDictionary(role => role, _ => new List<SceneCard>());
         for (int groupIndex = 0; groupIndex < groups.Length; groupIndex++) {
@@ -104,7 +103,7 @@ internal static class BoundedBattlefieldLayout
         }
         return roles.Select(role => new BattlefieldCluster(role, result[role].ToArray())).ToArray();
     }
-    private static BattlefieldCluster[] PackFaces(int seat, int owner, Card[] cards, Func<Card, bool> resource, Rectangle area, Rectangle[] obstacles)
+    private static BattlefieldCluster[] PackFaces(int seat, int owner, Card[] cards, IReadOnlyList<string> roleByCard, Rectangle area, IReadOnlyList<Rectangle> obstacles)
     {
         // Beyond the readable label budget, retain actual individual faces and
         // their explicit reader instead of covering another seat or a control.
@@ -134,7 +133,7 @@ internal static class BoundedBattlefieldLayout
             while (positions.Count < cards.Length) positions.Add(new(safe.X, safe.Y, 1, 1));
         }
         return new[] { "Creatures", "Support", "Lands" }.Select(role => new BattlefieldCluster(role,
-            cards.Select((card, index) => (card, index)).Where(entry => BattlefieldLayout.Role(entry.card, resource) == role).Select(entry => {
+            cards.Select((card, index) => (card, index)).Where(entry => roleByCard[entry.index] == role).Select(entry => {
                 var bounds = positions[entry.index];
                 var size = entry.card.Tapped ? new Vector2(Math.Max(.5f, bounds.Height - 1), Math.Max(.5f, bounds.Width - 1))
                     : new(Math.Max(.5f, bounds.Width - 1), Math.Max(.5f, bounds.Height - 1));
@@ -160,44 +159,5 @@ internal static class BoundedBattlefieldLayout
             if (!next.Where((_, other) => other != index).Any(rectangle => rectangle.Contains(next[index])
                 && (rectangle != next[index] || next.FindIndex(candidate => candidate == rectangle) < index))) free.Add(next[index]);
         void Add(Rectangle rectangle) { if (rectangle.Width > 0 && rectangle.Height > 0) next.Add(rectangle); }
-    }
-    private static IEnumerable<Rectangle> Obstacles(GameSnapshot state)
-    {
-        foreach (var player in state.Players) {
-            int seat = player.Id == state.ViewerId ? 3 : TableLayout.SeatIndex(state, player.Id);
-            var hero = TableLayout.Hero(seat);
-            yield return new((int)hero.X - 55, (int)hero.Y - 55, 110, 110);
-            if (seat == 3) yield return new((int)hero.X - 130, (int)hero.Y - 55, 190, 110);
-            else {
-                var hand = TableLayout.SeatHand(seat);
-                yield return new((int)hand.X - 83, (int)hand.Y - 30, 166, 90);
-            }
-            foreach (int index in Enumerable.Range(0, 3)) {
-                var pile = TableWorld.Pile(seat, index).Bounds; pile.Inflate(7, 7); pile.Height += 40; yield return pile;
-            }
-            var commandLink = seat == 3 ? new Vector2(191, 647) : seat == 2 ? new Vector2(1380, 520)
-                : seat == 0 ? TableWorld.Project(TableWorld.SeatPoint(seat, -270, 645)) : new Vector2(1100, 156);
-            yield return new((int)commandLink.X - 56, (int)commandLink.Y - 3, 112,
-                player.Zone("Command").Count > 0 ? 52 : 30);
-            var commanders = player.Zone("Command").Cards.Take(2).ToArray();
-            for (int index = 0; index < commanders.Length; index++) {
-                bool own = seat == 3, side = seat is 0 or 2;
-                Vector2 center = own ? new(-516 + index * 82, 202) : side ? TableWorld.SeatPoint(seat, -262 + index * 91, 525) : TableWorld.SeatPoint(seat, -359 - index * 85, 302);
-                var size = own ? commanders.Length > 1 ? new Vector2(62, 87) : new Vector2(81, 114) : new Vector2(69, 97);
-                var bounds = TableWorld.Card(center, size, TableWorld.SeatAngle(seat)).Bounds; bounds.Inflate(7, 12); yield return bounds;
-            }
-            var positive = player.Mana.Where(part => part.Value > 0).ToArray();
-            if (positive.Length > 0) {
-                int width = Math.Max(34, positive.Max(part => 30 + part.Value.ToString().Length * 11));
-                if (seat is 0 or 2) yield return new(seat == 0 ? (int)hero.X + 50 : (int)hero.X - 50 - width * 2 - 6, (int)hero.Y - 42, width * 2 + 6, 84);
-                else { yield return new((int)hero.X - 58 - width, (int)hero.Y - 42, width, 84); yield return new((int)hero.X + 58, (int)hero.Y - 42, width, 84); }
-            }
-            if (player.States.Length > 0 || player.Counters.Any(counter => counter.Value > 0))
-                yield return seat == 3 ? new((int)hero.X - 390, (int)hero.Y - 24, 190, 76)
-                    : seat == 1 ? new((int)hero.X - 98, (int)hero.Y + 35, 150, 66) : new((int)hero.X - 98, (int)hero.Y - 90, 196, 55);
-        }
-        if (state.Stack.Length > 0 || state.Decision?.SourceCard != null) yield return new(545, 285, 435, 265);
-        yield return new(1240, 550, 350, 245);
-        if (state.Decision is { Kind: "choice" }) yield return new(350, 714, 370, 50);
     }
 }

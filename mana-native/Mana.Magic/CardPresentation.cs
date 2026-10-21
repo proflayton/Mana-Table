@@ -36,9 +36,34 @@ public static class CardPresentation
     public static bool HasCombatStats(Card card) => card.Type.Contains("Creature", StringComparison.Ordinal);
     // A masked battlefield object can still have authoritative public characteristics.
     // Hidden-zone faces have no projected type/keywords; this never reconstructs identity.
-    public static bool HasAbility(Card card, string keyword) => (!card.FaceDown || card.Type.Length > 0) && card.CombatKeywords.Contains(keyword, StringComparer.OrdinalIgnoreCase);
-    public static string[] Abilities(Card card) => card.FaceDown && card.Type.Length == 0 ? [] : card.CombatKeywords.Where(k => !string.IsNullOrWhiteSpace(k))
+    public static bool HasAbility(Card card, string keyword)
+    {
+        if (card.FaceDown && card.Type.Length == 0) return false;
+        return card.States != null
+            ? card.States.Any(state => state.Kind == "ability" && state.Key.Equals(keyword, StringComparison.OrdinalIgnoreCase))
+            : card.CombatKeywords.Contains(keyword, StringComparer.OrdinalIgnoreCase);
+    }
+    public static string[] Abilities(Card card) => card.FaceDown && card.Type.Length == 0 ? []
+        : card.States != null ? card.States.Where(state => state.Kind == "ability" && !string.IsNullOrWhiteSpace(state.Key))
+            .Select(state => state.Key.ToLowerInvariant()).Distinct(StringComparer.Ordinal).ToArray()
+        : card.CombatKeywords.Where(k => !string.IsNullOrWhiteSpace(k))
         .Select(k => k.ToLowerInvariant()).Distinct(StringComparer.Ordinal).ToArray();
+    public static string[] AbilityLabels(Card card) => card.FaceDown && card.Type.Length == 0 ? []
+        : card.States != null ? card.States.Where(state => state.Kind == "ability").Select(PublicStatePresentation.Caption).ToArray()
+        : Abilities(card).Select(AbilityName).ToArray();
+    public static string AbilityLabel(Card card, string key)
+    {
+        if (card.FaceDown && card.Type.Length == 0) return "";
+        if (card.States == null) return AbilityName(key);
+        var labels = card.States.Where(state => state.Kind == "ability"
+            && state.Key.Equals(key, StringComparison.OrdinalIgnoreCase)).Select(PublicStatePresentation.Caption);
+        string label = string.Join("; ", labels);
+        return label.Length > 0 ? label : AbilityName(key);
+    }
+    public static string[] AbilityDetails(Card card) => card.FaceDown && card.Type.Length == 0 ? []
+        : card.States != null ? card.States.Where(state => state.Kind == "ability")
+            .Select(PublicStatePresentation.Description).ToArray()
+        : AbilityLabels(card);
     public static string AbilityName(string keyword) => System.Globalization.CultureInfo.InvariantCulture.TextInfo.ToTitleCase(keyword);
     public static KeyValuePair<string, int>[] Counters(Card card) => card.Counters.Where(c => c.Value > 0)
         .OrderBy(c => c.Key is "+1/+1" or "-1/-1" ? 0 : 1).ThenBy(c => c.Key, StringComparer.Ordinal).ToArray();
@@ -50,7 +75,9 @@ public static class CardPresentation
         if (card.Attacking) labels.Add("Attacking");
         if (card.Blocking) labels.Add("Blocking");
         labels.AddRange(AttachmentLabels(card));
-        labels.AddRange(Abilities(card).Select(AbilityName));
+        labels.AddRange(AbilityLabels(card));
+        if ((!card.FaceDown || card.Type.Length > 0) && card.States != null)
+            labels.AddRange(card.States.Where(state => state.Kind != "ability").Select(PublicStatePresentation.Caption));
         return labels.ToArray();
     }
 }

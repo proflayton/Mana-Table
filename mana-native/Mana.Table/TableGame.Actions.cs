@@ -22,7 +22,7 @@ internal sealed partial class TableGame
         foreach (var card in before.Players.SelectMany(p => p.Zone("Battlefield").Cards).Where(c => !c.FaceDown && c.VisualId.Length > 0)) {
             var destination = CardViews.Located(after).FirstOrDefault(c => c.Card.VisualId == card.VisualId && !c.Card.FaceDown);
             // Keep no ghost face when a card enters a hidden zone or loses its public identity.
-            if (destination.Card == null || destination.Zone is not ("Graveyard" or "Exile") || !motion.TryGet(card.VisualId, out var pose)) continue;
+            if (destination.Card == null || destination.Zone is not ("Graveyard" or "Exile") || !cardPresentation.TryGetPose(card.VisualId, out var pose)) continue;
             departures.RemoveAll(d => d.Card.VisualId == card.VisualId);
             departures.Add(new(card, pose, destination.Zone, now));
         }
@@ -45,7 +45,7 @@ internal sealed partial class TableGame
     {
         foreach (var target in item.Targets) {
             Vector2? end = null;
-            if (target.Kind == "card" && motion.TryGet(target.Id, out var card)) {
+            if (target.Kind == "card" && cardPresentation.TryGetPose(target.Id, out var card)) {
                 end = card.EdgeToward(source.Center, 8);
                 canvas.CardFrame(card with { Size = card.Size + new Vector2(10) }, Red, 3);
                 var badge = new Rectangle((int)card.Center.X - 48, card.Bounds.Top - 22, 96, 23);

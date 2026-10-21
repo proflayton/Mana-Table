@@ -3,7 +3,6 @@ using Microsoft.Xna.Framework.Graphics;
 using Color = Microsoft.Xna.Framework.Color;
 using Point = Microsoft.Xna.Framework.Point;
 using Rectangle = Microsoft.Xna.Framework.Rectangle;
-using Gdi = System.Drawing;
 
 namespace Mana.Renderer;
 
@@ -15,10 +14,10 @@ public sealed class Canvas : IDisposable
     private readonly Texture2D pixel, disk, halo;
     private readonly BasicEffect surfaceEffect;
     private float scale = 1;
-    private readonly Dictionary<TextKey, (Texture2D Texture, long Used)> text = [];
+    private readonly Dictionary<TextLayout, (Texture2D Texture, long Used)> text = [];
+    private readonly TextMetrics metrics = new();
     private long frame;
     public float TextScale { get; set; } = 1;
-    private readonly record struct TextKey(string Value, int Size, int Width, int Lines, bool Bold, bool Serif);
     public Canvas(GraphicsDevice device)
     {
         this.device = device; batch = new(device);
@@ -49,6 +48,14 @@ public sealed class Canvas : IDisposable
     {
         batch.End();
         if (text.Count > 600) foreach (var key in text.OrderBy(p => p.Value.Used).Take(text.Count - 450).Select(p => p.Key).ToArray()) { text[key].Texture.Dispose(); text.Remove(key); }
+        metrics.Trim();
+    }
+    public void Draw(DrawingFrame drawing)
+    {
+        TextScale = drawing.TextScale;
+        Begin(drawing.Scale);
+        foreach (var command in drawing.Commands) command.Paint(this);
+        End();
     }
     public void Fill(Rectangle bounds, Color color) { if (bounds.Width > 0 && bounds.Height > 0) batch.Draw(pixel, bounds, color); }
     public void Rounded(Rectangle r, Color color, int radius = 10)
@@ -251,29 +258,16 @@ public sealed class Canvas : IDisposable
     }
     public int TextWidth(string value, float size = 1, bool bold = false)
     {
-        if (value.Length == 0) return 0;
-        float textScale = float.IsFinite(TextScale) ? Math.Clamp(TextScale, 1, 1.3f) : 1;
-        var key = new TextKey(value, Math.Max(9, (int)Math.Round(22 * size * textScale)), 2000, 1, bold, false);
-        if (!text.TryGetValue(key, out var cached)) cached = (RenderText(key), frame);
-        text[key] = (cached.Texture, frame);
-        return cached.Texture.Width;
+        return metrics.TextWidth(value, size, bold, TextScale);
     }
     public Point TextSize(string value, float size, int width, int maxLines, bool bold = false)
     {
-        if (value.Length == 0) return Point.Zero;
-        float textScale = float.IsFinite(TextScale) ? Math.Clamp(TextScale, 1, 1.3f) : 1;
-        var key = new TextKey(value.Replace("\r", ""), Math.Max(9, (int)Math.Round(22 * size * textScale)), Math.Min(2000, width),
-            Math.Max(1, (int)(Math.Min(80, maxLines) / textScale)), bold, false);
-        if (!text.TryGetValue(key, out var cached)) cached = (RenderText(key), frame);
-        text[key] = (cached.Texture, frame);
-        return new(cached.Texture.Width, cached.Texture.Height);
+        return metrics.TextSize(value, size, width, maxLines, bold, TextScale);
     }
     public void Text(string? value, int x, int y, Color color, float size = 1, int width = 2000, int maxLines = 100, bool bold = false, bool serif = false)
     {
         if (string.IsNullOrEmpty(value) || width <= 0 || maxLines <= 0) return;
-        float textScale = float.IsFinite(TextScale) ? Math.Clamp(TextScale, 1, 1.3f) : 1;
-        var key = new TextKey(value.Replace("\r", ""), Math.Max(9, (int)Math.Round(22 * size * textScale)), Math.Min(2000, width),
-            Math.Max(1, (int)(Math.Min(80, maxLines) / textScale)), bold, serif);
+        var key = TextLayout.Block(value, size, width, maxLines, bold, serif, TextScale);
         if (!text.TryGetValue(key, out var cached)) cached = (RenderText(key), frame);
         text[key] = (cached.Texture, frame);
         batch.Draw(cached.Texture, new Vector2(x, y), color);
@@ -281,27 +275,17 @@ public sealed class Canvas : IDisposable
     public void CenterText(string? value, Rectangle r, Color color, float size = 1, bool bold = false, bool serif = false)
     {
         if (string.IsNullOrEmpty(value)) return;
-        float textScale = float.IsFinite(TextScale) ? Math.Clamp(TextScale, 1, 1.3f) : 1;
-        var key = new TextKey(value, Math.Max(9, Math.Min((int)Math.Round(22 * size * textScale), (int)(r.Height * .76f))), r.Width, 1, bold, serif);
+        var key = TextLayout.Centered(value, size, r, bold, serif, TextScale);
         if (!text.TryGetValue(key, out var cached)) cached = (RenderText(key), frame);
         text[key] = (cached.Texture, frame);
         batch.Draw(cached.Texture, new Vector2(r.X + Math.Max(0, (r.Width - cached.Texture.Width) / 2), r.Y + Math.Max(0, (r.Height - cached.Texture.Height) / 2)), color);
     }
-    private Texture2D RenderText(TextKey key)
+    private Texture2D RenderText(TextLayout key)
     {
-        using var font = new Gdi.Font(key.Serif ? "Georgia" : "Segoe UI", key.Size, key.Bold ? Gdi.FontStyle.Bold : Gdi.FontStyle.Regular, Gdi.GraphicsUnit.Pixel);
-        using var measure = new Gdi.Bitmap(1, 1); using var measuring = Gdi.Graphics.FromImage(measure);
-        using var format = new Gdi.StringFormat(Gdi.StringFormat.GenericTypographic) { Trimming = Gdi.StringTrimming.EllipsisWord };
-        var measured = measuring.MeasureString(key.Value, font, key.Width, format);
-        int height = Math.Max(1, Math.Min((int)Math.Ceiling(measured.Height) + 4, (int)Math.Ceiling(font.GetHeight(measuring) * key.Lines) + 2));
-        int width = Math.Max(1, Math.Min(key.Width, (int)Math.Ceiling(measured.Width) + 6));
-        using var bitmap = new Gdi.Bitmap(width, height, Gdi.Imaging.PixelFormat.Format32bppArgb);
-        using (var graphics = Gdi.Graphics.FromImage(bitmap)) {
-            graphics.Clear(Gdi.Color.Transparent); graphics.TextRenderingHint = Gdi.Text.TextRenderingHint.AntiAliasGridFit;
-            graphics.DrawString(key.Value, font, Gdi.Brushes.White, new Gdi.RectangleF(0, 0, width, height), format);
-        }
+        var size = metrics.Measure(key);
+        using var bitmap = TextRasterizer.Rasterize(key, size);
         var data = BitmapPixels.ReadArgb32(bitmap);
-        var texture = new Texture2D(device, width, height, false, SurfaceFormat.Color);
+        var texture = new Texture2D(device, size.X, size.Y, false, SurfaceFormat.Color);
         try { texture.SetData(data); return texture; }
         catch { texture.Dispose(); throw; }
     }

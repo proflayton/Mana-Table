@@ -13,7 +13,6 @@ import forge.game.event.GameEventTurnPhase;
 import forge.game.card.CardView;
 import forge.game.card.Card;
 import forge.game.combat.CombatUtil;
-import forge.game.keyword.Keyword;
 import forge.game.player.*;
 import forge.game.spellability.SpellAbilityView;
 import forge.game.spellability.StackItemView;
@@ -612,6 +611,7 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
                 "priorityPlayerId", allPlayers.stream().filter(p -> !p.getHasLost() && p.getHasPriority()).map(PlayerView::getId).findFirst().orElse(null),
                 "decisionOwnerId", null, "actionClass", "resolving",
                 "stack", stack, "combat", combatState(prompt), "prompt", prompt == null ? null : prompt.prompt,
+                "states", PublicStates.of(forge.game.PublicTableStates.snapshot(game)),
                 "ignoredPriorityAbilities", priorityAbilities(human.getIgnoredPriorityAbilities(), prompt),
                 "result", result, "notices", List.copyOf(notices), "activity", activityFrame.entries()));
         notifyPlaytest();
@@ -723,7 +723,8 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
                 "selectable", selectable.contains(card) || actionable.contains(card)
                         || prompt != null && prompt.input instanceof InputLondonMulligan && card.getController().equals(viewer) && card.getZone() == ZoneType.Hand,
                 "highlighted", highlighted.contains(card), "faceDown", hidden,
-                "combatKeywords", publicFace ? publicKeywords(face) : List.of());
+                "combatKeywords", publicFace ? publicKeywords(face) : List.of(),
+                "states", publicFace ? PublicStates.of(face.getPublicStates()) : List.of());
         AttachmentProjection.add(result, card, viewer, combatIds);
         addCardFaces(result, card, !hidden && card.canBeShownTo(viewer));
         return result;
@@ -750,12 +751,7 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
     }
 
     private static List<String> publicKeywords(CardView.CardStateView face) {
-        if (face.getKeywords() == null) return List.of();
-        return List.of(Keyword.FLYING, Keyword.REACH, Keyword.TRAMPLE, Keyword.FIRST_STRIKE,
-                Keyword.DOUBLE_STRIKE, Keyword.DEATHTOUCH, Keyword.LIFELINK, Keyword.MENACE,
-                Keyword.VIGILANCE, Keyword.INDESTRUCTIBLE, Keyword.INFECT, Keyword.WITHER,
-                Keyword.PROTECTION, Keyword.HASTE, Keyword.HEXPROOF, Keyword.WARD, Keyword.DEFENDER)
-                .stream().filter(face::hasKeyword).map(keyword -> keyword.name().toLowerCase(Locale.ROOT).replace('_', ' ')).toList();
+        return face.getPublicStates().stream().map(forge.game.PublicState::key).distinct().toList();
     }
 
     /** Only add alternate identities after the same visibility check as the current face. */
@@ -931,7 +927,9 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
         var result = map("name", hidden ? "Face-down or hidden card" : face.getName(), "faceDown", hidden,
                 "type", hidden ? "" : visibleType(card), "gamePieceType", gamePieceType(card, hidden), "manaCost", hidden ? "" : face.getManaCost().toString(),
                 "commanderTax", commanderTax(card, hidden),
-                "text", hidden ? "" : card.getText(), "power", hidden ? null : face.getPower(), "toughness", hidden ? null : face.getToughness());
+                "text", hidden ? "" : card.getText(), "power", hidden ? null : face.getPower(), "toughness", hidden ? null : face.getToughness(),
+                "combatKeywords", hidden ? List.of() : publicKeywords(face),
+                "states", hidden ? List.of() : PublicStates.of(face.getPublicStates()));
         addCardFaces(result, card, !hidden);
         return result;
     }
@@ -1203,6 +1201,7 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
         if (card.getCounters() != null) for (var entry : card.getCounters().entrySet()) counters.put(entry.getElement().getName(), entry.getCount());
         details.put("counters", counters);
         details.put("combatKeywords", publicKeywords(face));
+        details.put("states", PublicStates.of(face.getPublicStates()));
         return details;
     }
 

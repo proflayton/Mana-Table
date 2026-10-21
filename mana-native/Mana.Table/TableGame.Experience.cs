@@ -17,7 +17,7 @@ internal sealed partial class TableGame
     {
         session.CancelAdvance(); priority.Reset();
         pressed = dragSource = null; dragging = false;
-        hovered = null; readingId = readingZone = null;
+        hovered = null; cardPresentation.Collapse();
     }
 
     private void DismissWelcome()

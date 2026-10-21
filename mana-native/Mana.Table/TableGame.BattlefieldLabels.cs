@@ -44,9 +44,8 @@ internal sealed partial class TableGame
 
     private void PaintBattlefieldLabels(Card card, Pose pose, int owner, int copies)
     {
-        var dense = tableScene?.Battlefield(owner).SelectMany(cluster => cluster.Cards)
-            .FirstOrDefault(node => node.Dense && node.Id == CardViews.Identity(card));
-        if (dense != null) { PaintDenseBattlefieldLabels(card, owner, dense, copies); return; }
+        var dense = tableScene?.BattlefieldCard(owner, CardViews.Identity(card));
+        if (dense is { Dense: true }) { PaintDenseBattlefieldLabels(card, owner, dense, copies); return; }
         int seat = owner == match!.ViewerId ? 3 : TableLayout.SeatIndex(match, owner);
         var stats = CompactStatsBounds(card, pose, seat);
         int left = stats.Left, row = 0, used = 0;

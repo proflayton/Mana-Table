@@ -137,6 +137,9 @@ public sealed record Card
     public string ArtFace { get; init; } = "front";
     public CardFace? OtherFace { get; init; }
     public string[] CombatKeywords { get; init; } = [];
+    // Null means a legacy engine. A present empty list authoritatively clears
+    // effective abilities rather than falling back to older keyword hints.
+    public PublicState[]? States { get; init; }
     public int? DefenderId { get; init; }
     public string? Defender { get; init; }
     public string Type { get; init; } = "";
@@ -163,6 +166,9 @@ public sealed record Zone(string Name, int Count, Card[] Cards, Card? TopCard);
 // Public player mechanics share one presentation contract. Values and rules
 // descriptions come from the engine; the client does not inspect card names.
 public sealed record PlayerState(string Id, string Label, string Kind, int? Value, int? Maximum, string Detail);
+// Human-readable engine descriptors shared by public card and table mechanics.
+// Key selects a familiar icon; Label/Detail preserve qualifiers and unknown mechanics.
+public sealed record PublicState(string Id, string Label, string Kind, int? Value, int? Maximum, string Detail, string Key = "");
 public sealed record Player(int Id, string Name, int Life, bool Priority, bool Eliminated, Dictionary<string, int> Mana, Zone[] Zones)
 {
     public PlayerState[] States { get; init; } = [];
@@ -256,6 +262,7 @@ public sealed record GameSnapshot(string Id, string Status, string? Error, strin
     int Turn, string Phase, string PhaseKey, int? ActivePlayerId, Player[] Players,
     StackItem[] Stack, Combat? Combat, Decision? Decision)
 {
+    public PublicState[] States { get; init; } = [];
     public long Revision { get; init; }
     public long BoardRevision { get; init; }
     public int? PriorityPlayerId { get; init; }

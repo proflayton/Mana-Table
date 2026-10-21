@@ -154,7 +154,7 @@ internal sealed partial class TableGame
         internal string? AllocationProblem => game.match?.Decision is { Kind: "allocate" } decision ? Mana.Magic.AllocationGuide.Problem(decision, game.allocations) : null;
         internal string Overlay => game.overlay;
         internal string? ZoneName => game.zoneName;
-        internal List<Hit> Hits => game.hits;
+        internal IReadOnlyList<Hit> Hits => game.hits.Published;
         internal string Scope => game.Scope;
         internal GraphicsDevice GraphicsDevice => game.GraphicsDevice;
         internal int DesignHeight => game.DesignHeight;
@@ -174,8 +174,8 @@ internal sealed partial class TableGame
         internal double Now => game.now;
         internal Rectangle? HoverPreview => game.hoverPreview;
         internal Card? Hovered => game.hovered;
-        internal int CardPaintCount(string id) => game.cardPaintCounts.GetValueOrDefault(id);
+        internal int CardPaintCount(string id) => game.cardPresentation.CompositionCount(id);
         internal Texture2D? Art(Card card) => game.art.Get(card);
-        internal Mana.Renderer.Pose? DisplayedPose(string id) => game.motion.TryGet(id, out var pose) ? pose : null;
+        internal Mana.Renderer.Pose? DisplayedPose(string id) => game.cardPresentation.TryGetPose(id, out var pose) ? pose : null;
     }
 }

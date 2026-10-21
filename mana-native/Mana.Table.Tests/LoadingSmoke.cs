@@ -209,7 +209,7 @@ internal static class LoadingSmoke
         internal void Pulse(params Keys[] keys) { Then(() => keyboard = new(keys)); Then(() => keyboard = new()); }
         internal void Click(string id) => Then(() => StartClick(view.Hits.LastOrDefault(h => h.Id == id) ?? throw new InvalidOperationException("Loading smoke is missing " + id)));
         internal void ClickCard(string id) => Then(() => StartClick(view.Hits.Last(h => h.Card?.VisualId == id && h.Zone == "Battlefield")));
-        private void StartClick(TableGame.Hit hit)
+        private void StartClick(Mana.Table.Interaction.TableHit hit)
         {
             target = SmokePointer.Hit(view, hit); ExpectedClick = hit.Id; ClickAccepted = false; mousePhase = 1;
         }

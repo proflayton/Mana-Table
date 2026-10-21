@@ -203,7 +203,7 @@ internal sealed class EquipmentSmoke : ITableAutomation
     private void Check(bool condition, string description) { if (!condition) throw new InvalidOperationException(description); checks.Add(description); }
     private void MoveAway() { var p = SmokePointer.Screen(view, new(1500, 70)); mouse = new(p.X, p.Y, 0, ButtonState.Released, ButtonState.Released, ButtonState.Released, ButtonState.Released, ButtonState.Released); }
     private void MoveCard(string id) => MoveHit(view.Hits.Single(h => h.Card?.VisualId == id && h.Id.StartsWith("card:", StringComparison.Ordinal)));
-    private void MoveHit(TableGame.Hit hit) { var p = SmokePointer.Hit(view, hit); mouse = new(p.X, p.Y, 0, ButtonState.Released, ButtonState.Released, ButtonState.Released, ButtonState.Released, ButtonState.Released); }
+    private void MoveHit(Mana.Table.Interaction.TableHit hit) { var p = SmokePointer.Hit(view, hit); mouse = new(p.X, p.Y, 0, ButtonState.Released, ButtonState.Released, ButtonState.Released, ButtonState.Released, ButtonState.Released); }
     private MouseState Mouse(ButtonState left = ButtonState.Released, ButtonState right = ButtonState.Released) => new(mouse.X, mouse.Y, 0, left, ButtonState.Released, right, ButtonState.Released, ButtonState.Released);
     private bool Reading(string id) => view.DisplayedPose(id) is { Size.X: >= 400 } && view.HoverPreview is { Width: >= 400 };
     private void Click() { Step(0, () => mouse = Mouse(ButtonState.Pressed)); Step(0, () => mouse = Mouse()); }

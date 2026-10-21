@@ -4,6 +4,8 @@ using System.Collections.Concurrent;
 using System.Text.Json;
 using Mana.Contracts;
 using Mana.Renderer;
+using Mana.Table.Interaction;
+using Mana.Table.Presentation;
 using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Graphics;
 using Microsoft.Xna.Framework.Input;
@@ -29,15 +31,16 @@ internal sealed partial class TableGame : Game
     private bool busy => session.Busy;
     private bool polling => session.Polling;
     private readonly InteractionController interaction = new();
-    private readonly List<Hit> hits = [];
+    private readonly InteractionFrame hits = new();
     private readonly List<int> selections = [];
-    private readonly SceneMotion motion = new();
     private readonly TablePresence presence = new();
     private readonly PresentationPacing playback = new();
     private TableScene? tableScene;
     private readonly Dictionary<string, Pose> cardPositions = [];
     private readonly Dictionary<int, Vector2> heroPositions = [];
-    private Canvas canvas = null!;
+    private DrawList canvas = null!;
+    private Canvas painter = null!;
+    private PresentationFrame? presentationFrame;
     private CardArt art = null!;
     private TableAssets assets = null!;
     private RenderTarget2D tableSurface = null!, setupSurface = null!, surface = null!;
@@ -53,7 +56,7 @@ internal sealed partial class TableGame : Game
     private bool soloTab = true, localMatch, loaded, closing, automatic, forward = true;
     private bool held, dragging, collapsedDecision, textFocus, filterInput, inspectBack, resizing;
     private string message = "Loading the card library…", error = "", decisionId = "", choiceFilter = "";
-    private string overlay = "", inputText = "", previousTurn = "", lastHover = "";
+    private string overlay = "", inputText = "", previousTurn = "";
     private string notice = "";
     private string pendingActionLabel = "";
     private bool commandFailure;
@@ -84,10 +87,6 @@ internal sealed partial class TableGame : Game
         : match != null && (id is "auto" or "hold" or "instructions" or "action-details" or "ability-auto-pass-open" or "ability-prev" or "ability-next" or "ability-text-prev" or "ability-text-next"
             || id.StartsWith("phase-stop:") || id.StartsWith("ability-undo:")) ? match.Id + ":playback" : Scope;
     private bool CurrentHit(Hit hit) => hit.Scope == ControlScope(hit.Id);
-    internal sealed record Hit(string Id, string Scope, Rectangle Bounds, Action Action, Card? Card = null, string? Zone = null, int? PlayerId = null, Func<Point, bool>? Shape = null)
-    {
-        public bool Contains(Point point) => Bounds.Contains(point) && (Shape?.Invoke(point) ?? true);
-    }
     private Hit? HitAt(Point at) => TableHitAt(at);
 
     public TableGame(ICardEngine engine, string profile, string? capture, string? fixture, Point? size = null, GameSnapshot? initialState = null, ICardArtSource? artSource = null,
@@ -132,7 +131,7 @@ internal sealed partial class TableGame : Game
     }
     protected override void LoadContent()
     {
-        canvas = new(GraphicsDevice); art = new(artSource); screen = new(GraphicsDevice);
+        canvas = new(); painter = new(GraphicsDevice); art = new(artSource); screen = new(GraphicsDevice);
         assets = new(GraphicsDevice, Path.Combine(AppContext.BaseDirectory, "Assets"));
         tableSurface = new(GraphicsDevice, 1600, 900, false, SurfaceFormat.Color, DepthFormat.None, 4, RenderTargetUsage.DiscardContents);
         setupSurface = new(GraphicsDevice, 1600, 1000, false, SurfaceFormat.Color, DepthFormat.None, 4, RenderTargetUsage.DiscardContents); surface = setupSurface;
@@ -289,15 +288,38 @@ internal sealed partial class TableGame : Game
     }
     protected override void Draw(GameTime time)
     {
-        BeginCardReading();
-        publicCounterBadges.Clear();
-        hits.Clear(); hovered = null; hoverPreview = null; cardPositions.Clear(); heroPositions.Clear();
-        surface = match == null ? setupSurface : tableSurface;
-        GraphicsDevice.SetRenderTarget(surface); GraphicsDevice.Clear(new Color(17, 22, 29));
+        var frame = ComposePresentation(time);
+        surface = frame.DesignHeight == TableLayout.Height ? tableSurface : setupSurface;
+        GraphicsDevice.SetRenderTarget(surface);
+        GraphicsDevice.Clear(new Color(17, 22, 29));
+        painter.Draw(frame.Drawing);
+        presentationFrame = frame;
+        GraphicsDevice.SetRenderTarget(null); GraphicsDevice.Clear(Color.Black);
+        Automation?.Frame(surface);
+        var view = GraphicsDevice.Viewport;
+        float scale = Math.Min(view.Width / 1600f, view.Height / (float)frame.DesignHeight);
+        screen.Begin(SpriteSortMode.Deferred, BlendState.Opaque, SamplerState.LinearClamp);
+        screen.Draw(surface, new Rectangle((int)((view.Width - 1600 * scale) / 2), (int)((view.Height - frame.DesignHeight * scale) / 2), (int)(1600 * scale), (int)(frame.DesignHeight * scale)), Color.White); screen.End();
+        if (windowCapture is { } windowPath) {
+            windowCapture = null;
+            var pixels = new Color[view.Width * view.Height]; GraphicsDevice.GetBackBufferData(pixels);
+            using var texture = new Texture2D(GraphicsDevice, view.Width, view.Height); texture.SetData(pixels);
+            using var output = File.Create(windowPath); texture.SaveAsPng(output, view.Width, view.Height);
+        }
+        if (capture != null && loaded && ++frames >= 90) { using var output = File.Create(capture); surface.SaveAsPng(output, surface.Width, surface.Height); Exit(); }
+        base.Draw(time);
+    }
+
+    private PresentationFrame ComposePresentation(GameTime time)
+    {
         float frameElapsed = (float)(time.TotalGameTime.TotalSeconds - lastDrawTime);
         lastDrawTime = time.TotalGameTime.TotalSeconds;
+        BeginCardReading(frameElapsed);
+        hits.Begin();
+        publicCounterBadges.Clear();
+        hovered = null; cardPositions.Clear(); heroPositions.Clear(); tableScene = null;
         canvas.TextScale = preferences.TextScale;
-        canvas.Begin(); motion.Begin(frameElapsed, preferences.ReducedMotion);
+        canvas.BeginComposition();
         if (StartupVisible) DrawStartup();
         else if (match == null && welcomeOpen) DrawWelcome();
         else if (match == null) {
@@ -330,24 +352,15 @@ internal sealed partial class TableGame : Game
         if (updatesOpen && !ActivityOpen && !StartupVisible) DrawAppUpdates();
         if (!ActivityOpen && !preferences.ReducedMotion && sceneRevealAt >= 0 && now - sceneRevealAt < .2)
             canvas.Fill(new(0, 0, 1600, DesignHeight), new Color(12, 18, 26) * (float)(.5 * (1 - (now - sceneRevealAt) / .2)));
-        motion.End(); canvas.End(); GraphicsDevice.SetRenderTarget(null); GraphicsDevice.Clear(Color.Black);
-        Automation?.Frame(surface);
-        var view = GraphicsDevice.Viewport; float scale = Math.Min(view.Width / 1600f, view.Height / (float)DesignHeight);
-        screen.Begin(SpriteSortMode.Deferred, BlendState.Opaque, SamplerState.LinearClamp);
-        screen.Draw(surface, new Rectangle((int)((view.Width - 1600 * scale) / 2), (int)((view.Height - DesignHeight * scale) / 2), (int)(1600 * scale), (int)(DesignHeight * scale)), Color.White); screen.End();
-        if (windowCapture is { } windowPath) {
-            windowCapture = null;
-            var pixels = new Color[view.Width * view.Height]; GraphicsDevice.GetBackBufferData(pixels);
-            using var texture = new Texture2D(GraphicsDevice, view.Width, view.Height); texture.SetData(pixels);
-            using var output = File.Create(windowPath); texture.SaveAsPng(output, view.Width, view.Height);
-        }
-        if (capture != null && loaded && ++frames >= 90) { using var output = File.Create(capture); surface.SaveAsPng(output, surface.Width, surface.Height); Exit(); }
-        base.Draw(time);
+        EndCardReading();
+        var drawing = canvas.Complete();
+        hits.Publish();
+        return new(drawing, hits.Published, tableScene, cardPresentation.Cards, DesignHeight);
     }
     protected override void OnExiting(object sender, ExitingEventArgs args)
     {
         closing = true; CloseUpdateRequests(); session.Close(); engine.DisposeAsync().AsTask().GetAwaiter().GetResult();
-        art.Dispose(); assets.Dispose(); canvas.Dispose(); screen.Dispose(); tableSurface.Dispose(); setupSurface.Dispose();
+        art.Dispose(); assets.Dispose(); canvas.Dispose(); painter.Dispose(); screen.Dispose(); tableSurface.Dispose(); setupSurface.Dispose();
         base.OnExiting(sender, args);
     }
 }

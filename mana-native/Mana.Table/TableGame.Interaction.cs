@@ -22,7 +22,7 @@ internal sealed partial class TableGame
     {
         if (InspectAllocationAtPointer()) return;
         // A poll may have revoked visibility since the last rendered hit region.
-        var choice = ReadingGalleryOpen ? readingCards.LastOrDefault(entry => entry.ChoiceSlot >= 0 && ReferenceEquals(entry.Card, card) && CanReadCard(entry)) : null;
+        var choice = cardPresentation.RevealedEntry(card, CardContext);
         inspectedChoice = choice == null ? null : (Scope, choice.ChoiceSlot);
         inspected = choice == null ? VisibleCards().FirstOrDefault(c => SameVisibleCard(c, card)) : ChoiceFace(choice.ChoiceSlot);
         if (inspected == null) return;

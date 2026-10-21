@@ -58,19 +58,20 @@ internal sealed partial class TableGame
     private void DrawOpponent(Player player, int seat)
     {
         DrawWorldBattlefield(player);
-        DrawSeatObjects(player, seat);
+        DrawSeatObjects(player);
     }
     private void DrawLocal(Player player)
     {
         DrawWorldBattlefield(player);
-        DrawSeatObjects(player, 3);
+        DrawSeatObjects(player);
         heroPositions[player.Id] = TableLayout.Hero(3);
     }
     private void DrawWorldBattlefield(Player player)
     {
-        int seat = player.Id == match!.ViewerId ? 3 : TableLayout.SeatIndex(match, player.Id);
-        var clusters = tableScene!.Battlefield(player.Id);
-        bool dense = clusters.Any(cluster => cluster.Cards.Any(card => card.Dense));
+        var plan = tableScene!.Seat(player.Id);
+        int seat = plan.Index;
+        var clusters = plan.Battlefield;
+        bool dense = plan.IsDense;
         if (dense) {
             var area = BattlefieldLayout.DenseTerritory(seat);
             int right = area.Right - 4;
@@ -119,14 +120,14 @@ internal sealed partial class TableGame
         canvas.Text(label, x + 7, y + 2, Muted, .44f, width - 14, 1, true);
         battlefieldRoleLabels[(player, cluster.Kind)] = caption;
     }
-    private void DrawSeatObjects(Player player, int seat)
+    private void DrawSeatObjects(Player player)
     {
-        bool own = seat == 3, side = seat is 0 or 2;
-        foreach (var node in tableScene!.Commanders(player.Id)) {
+        var geometry = tableScene!.Seat(player.Id).Geometry;
+        foreach (var node in geometry.Commanders) {
             canvas.CardFrame(node.Pose with { Size = node.Pose.Size + new Vector2(13) }, Gold * .35f, 1);
             DrawSceneCard(node);
         }
-        var commandLink = own ? new Vector2(191, 647) : seat == 2 ? new Vector2(1380, 520) : side ? TableWorld.Project(TableWorld.SeatPoint(seat, -270, 645)) : new Vector2(1100, 156);
+        var commandLink = geometry.CommandLink;
         int cx = (int)commandLink.X, cy = (int)commandLink.Y;
         canvas.CenterText("Command " + player.Zone("Command").Count, new(cx - 52, cy, 104, 24), Gold * .85f, .48f);
         hits.Add(new("zone:" + player.Id + ":Command", Scope, new(cx - 56, cy - 3, 112, 30), () => OpenZone(player.Id, "Command")));
@@ -136,7 +137,7 @@ internal sealed partial class TableGame
             canvas.CenterText(available + " available", badge, ActionAccent, .5f, true);
             hits.Add(new("zone-actions:" + player.Id + ":Command", Scope, badge, () => OpenZone(player.Id, "Command")));
         }
-        foreach (var pile in tableScene.Piles(player.Id)) DrawWorldPile(player, pile.Zone, pile.Pose, pile.Compact);
+        foreach (var pile in geometry.Piles) DrawWorldPile(player, pile.Zone, pile.Pose, pile.Compact);
     }
     private void DrawWorldPile(Player player, string zone, Pose pose, bool compact = false)
     {
@@ -216,7 +217,7 @@ internal sealed partial class TableGame
         var manaHalo = PlanManaHalo(player, own ? 3 : index);
         if (own) { x = Math.Max((int)center.X + 58, manaHalo.Bounds.Right) + 8; nameplate = new(x, y, 100, 24); }
         else if (index == 1) { x = Math.Max((int)center.X + 50, manaHalo.Bounds.Right) + 8; y = 64; nameplate = new(x, y, 188, 24); }
-        bool dense = tableScene!.Battlefield(player.Id).Any(cluster => cluster.Cards.Any(card => card.Dense));
+        bool dense = tableScene!.Seat(player.Id).IsDense;
         if (!dense) canvas.CenterText(own ? name : name + " ↗", nameplate, !own && nameplate.Contains(pointer) ? Blue : Ink, .6f, true);
         int incoming = match.Combat?.Attackers.Count(a => a.DefendingPlayerId == player.Id) ?? 0;
         string status = player.Eliminated ? "ELIMINATED" : incoming > 0 ? incoming + (own ? " ATTACKING YOU" : " INCOMING") : player.Priority ? "PRIORITY" : active ? "ACTIVE TURN" : "";

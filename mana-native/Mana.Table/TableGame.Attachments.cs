@@ -37,8 +37,7 @@ internal sealed partial class TableGame
     {
         string label = CardPresentation.AttachmentBadge(card);
         if (label.Length == 0) return;
-        if (pose.Size.X < 300 && tableScene?.Battlefield(owner).SelectMany(cluster => cluster.Cards)
-            .FirstOrDefault(node => node.Dense && node.Id == CardViews.Identity(card)) is { DenseLabels.IsEmpty: true }) {
+        if (pose.Size.X < 300 && tableScene?.BattlefieldCard(owner, CardViews.Identity(card)) is { Dense: true, DenseLabels.IsEmpty: true }) {
             // The extreme face-only fallback has no room for a detached stats
             // chip. Keep its relationship cue inside this exact face instead.
             int side = Math.Min(10, Math.Min(pose.Bounds.Width, pose.Bounds.Height) - 2);
