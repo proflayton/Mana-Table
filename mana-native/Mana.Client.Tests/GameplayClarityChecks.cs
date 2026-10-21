@@ -48,6 +48,22 @@ internal static class GameplayClarityChecks
             "Public player resources retain their exact types/totals and suppress zero values");
         check(StateClarity.CounterSummary(counters with { Counters = [] }) == "",
             "Removing a public counter removes its persistent summary rather than retaining a stale value");
+        var speed = new PlayerState("speed", "Speed", "progress", 1, 4, "The engine's public progress explanation.");
+        var generic = counters with { States = [new("counter:energy", "Energy", "counter", 3, null, "Public energy."), speed,
+            new("monarch", "Monarch", "status", null, null, "This player's end-step ability."),
+            new("future", "Momentum", "progress", 2, 6, "A future engine-projected mechanic.")] };
+        check(StateClarity.ProminentPlayerStates(generic).Take(3).Select(s => s.Kind).SequenceEqual(["progress", "counter", "status"])
+            && StateClarity.PlayerStates(generic).Length == 4,
+            "Persistent player state keeps a progress track, counter and public role prominent without mechanic-specific IDs");
+        check(StateClarity.StateCaption(speed) == "Speed 1/4" && !StateClarity.StateAtMaximum(speed)
+            && StateClarity.StateCaption(speed with { Value = 4 }) == "Speed 4/4 MAX",
+            "Engine progress retains its exact current value, ceiling and maximum-state label");
+        check(StateClarity.StateCaption(generic.States[2]) == "Monarch" && StateClarity.StateCaption(generic.States[3]) == "Momentum 2/6"
+            && !StateClarity.StateAtMaximum(new("counter:limited", "Counter", "counter", 4, 4, "")),
+            "Statuses and unseen future progress render generically while counter limits are never called max progress");
+        check(StateClarity.PlayerStates(counters).Select(s => s.Label).SequenceEqual(["Poison", "Energy", "Experience"])
+            && StateClarity.PlayerStates(counters with { Counters = [] }).Length == 0,
+            "Older engine counters remain an honest positive-value fallback without inventing progress or roles");
         var anonymous = new Card { Name = "Face-down card", FaceDown = true, Type = "Creature", Power = 3, Toughness = 3,
             Damage = 1, CombatKeywords = ["flying"], Counters = new() { ["+1/+1"] = 1 } };
         check(CardPresentation.HasCombatStats(anonymous) && CardPresentation.HasAbility(anonymous, "flying")

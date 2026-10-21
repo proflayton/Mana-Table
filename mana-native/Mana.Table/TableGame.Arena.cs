@@ -14,6 +14,7 @@ internal sealed partial class TableGame
     private void DrawArena()
     {
         attachmentBadges.Clear(); attachmentConnections.Clear();
+        choiceOrderBadges.Clear();
         var state = match!;
         DrawTableSurface();
         // Queue the player's faces first; slow remote downloads must not bury the hand.
@@ -127,8 +128,11 @@ internal sealed partial class TableGame
         }
         if (choice != null && selected) {
             var badge = new Rectangle((int)pose.Center.X - 39, pose.Bounds.Top + 8, 78, 24);
-            canvas.Panel(badge, new(34, 48, 49), Gold, 4);
-            canvas.CenterText(match!.Decision!.Ordered ? "ORDER " + (selections.IndexOf(choice.Value) + 1) : "SELECTED", badge, Gold, .48f, true);
+            if (match!.Decision!.Ordered) PaintChoiceOrder(choice.Value, badge, .48f);
+            else {
+                canvas.Panel(badge, new(34, 48, 49), Gold, 4);
+                canvas.CenterText("SELECTED", badge, Gold, .48f, true);
+            }
         }
         if (CombatTarget(card)) canvas.CardFrame(pose with { Size = pose.Size + new Vector2(10) }, Blue, 4);
         bool creature = CardPresentation.HasCombatStats(card);

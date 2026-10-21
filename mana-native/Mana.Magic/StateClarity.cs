@@ -61,6 +61,31 @@ public static class StateClarity
 
     public static string CounterSummary(Player player) => string.Join(" · ", PlayerCounters(player).Select(c => c.Key + " " + c.Value));
 
+    public static PlayerState[] PlayerStates(Player player) => player.States.Length > 0
+        ? player.States.Where(s => s.Id.Length > 0 && s.Label.Length > 0).GroupBy(s => s.Id).Select(g => g.First()).ToArray()
+        : PlayerCounters(player).Select(c => new PlayerState("counter:" + c.Key, c.Key, "counter", c.Value, null,
+            "A public player counter reported by the game.")).ToArray();
+
+    // Keep a representative of each public mechanic visible before additional
+    // counters fill the seat. No card name or mechanic ID controls rendering.
+    public static PlayerState[] ProminentPlayerStates(Player player)
+    {
+        var states = PlayerStates(player);
+        var first = new[] { "progress", "counter", "status" }.Select(kind => states.FirstOrDefault(s => s.Kind == kind))
+            .OfType<PlayerState>().ToArray();
+        return first.Concat(states.Where(s => first.All(f => f.Id != s.Id))).ToArray();
+    }
+
+    public static bool StateAtMaximum(PlayerState state) => state.Kind == "progress"
+        && state.Value is { } value && state.Maximum is > 0 && value >= state.Maximum;
+
+    public static string StateCaption(PlayerState state)
+    {
+        string value = state.Value is { } amount ? " " + amount : "";
+        if (state.Kind == "progress" && state.Value != null && state.Maximum is > 0) value += "/" + state.Maximum;
+        return state.Label + value + (StateAtMaximum(state) ? " MAX" : "");
+    }
+
     public static string PendingActionLabel(GameSnapshot state, DecisionReply reply)
     {
         string card = CardViews.Visible(state).FirstOrDefault(c => c.Key == reply.Card)?.Name ?? "Card";

@@ -12,7 +12,7 @@ namespace Mana.Table;
 
 // Exercises real pointer input and GPU output. The scenario records commands;
 // the Forge UI smoke separately verifies that deliberate gestures play a land.
-internal sealed class CardReadingSmoke : ITableAutomation
+internal sealed partial class CardReadingSmoke : ITableAutomation
 {
     private readonly TableGame.Probe view;
     private readonly InteractionScenarioEngine scenario;
@@ -37,6 +37,8 @@ internal sealed class CardReadingSmoke : ITableAutomation
         this.view = view; this.scenario = scenario; this.selectionOnly = selectionOnly; this.statesOnly = statesOnly;
         if (statesOnly) {
             QueueStateChecks();
+            QueuePlayerStateChecks();
+            QueueOrderedChoiceChecks();
             return;
         }
         if (selectionOnly) {
@@ -516,6 +518,125 @@ internal sealed class CardReadingSmoke : ITableAutomation
                 "The returning land renders the engine's untapped state without stale phasing");
             Capture("10-phased-in-land");
         });
+    }
+    private void QueueOrderedChoiceChecks()
+    {
+        foreach (string context in new[] { "private-gallery", "text-rows", "table-cards" }) {
+            int repliesBefore = 0;
+            string scope = "", gameId = "", decisionId = "";
+            bool direct = context == "table-cards";
+            Step(0, () => {
+                Move(new(10, 70));
+                var state = FocusedSeed(PresentationSmoke.Example());
+                var cards = direct ? state.Viewer!.Zone("Battlefield").Cards.Take(3).ToArray()
+                    : Enumerable.Range(0, 3).Select(i => new Card { Name = "Private face " + (i + 1), Type = "Creature", Text = "A private ordering choice." }).ToArray();
+                var choices = Enumerable.Range(0, 3).Select(i => new Choice(i,
+                    context == "text-rows" ? "Effect " + (char)('A' + i) : cards[i].Name,
+                    context == "text-rows" ? null : cards[i]) { CardId = direct ? cards[i].VisualId : "" }).ToArray();
+                Publish(state with { Decision = new() { Kind = "choice", Title = "Choose an order", Ordered = true, Min = 3, Max = 3, Choices = choices } });
+                repliesBefore = scenario.Replies.Count;
+                scope = view.Scope; gameId = view.Match!.Id; decisionId = view.Match.Decision!.Id;
+            });
+            Prepared(() => view.Match?.Decision is { Ordered: true } && view.Hits.Any(h => h.Id == (direct ? "confirm" : "choicesdone")) == !direct
+                && view.Selections.SequenceEqual(direct ? [] : new[] { 0, 1, 2 })
+                && OrderedBadgesMatch(direct ? [] : [0, 1, 2]), 2, () => {
+                    Check(view.Selections.SequenceEqual(direct ? [] : new[] { 0, 1, 2 }),
+                        context + ": numbering retains the existing initial selection behavior");
+                    if (!direct) MoveHit("choicesclear");
+                }, context + ": the actual ordered choices must render before changing their order");
+            if (!direct) Click();
+            Prepared(() => view.Selections.Count == 0 && OrderedBadgesMatch([]) && (!direct || OrderedTargetsSettled()), 2, () => {
+                Check(!view.Hits.Any(h => h.Id == (direct ? "confirm" : "choicesdone")) && scenario.Replies.Count == repliesBefore,
+                    context + ": an empty required order disables confirmation and submits no command");
+            }, context + ": clearing selection must remove every painted position");
+            int[] order = [2, 0, 1];
+            for (int slot = 0; slot < order.Length; slot++) {
+                int choice = order[slot];
+                int[] prefix = order.Take(slot + 1).ToArray();
+                Step(0, () => MoveOrderedChoice(choice, direct)); Click();
+                Prepared(() => view.Selections.SequenceEqual(prefix) && OrderedBadgesMatch(prefix), 2, () => {
+                    Check(OrderedBadgesMatch(prefix) && scenario.Replies.Count == repliesBefore,
+                        context + ": real click " + choice + " paints exact positions " + string.Join(",", prefix.Select((index, position) => index + "=" + (position + 1))));
+                }, context + ": every selected item needs a visible position, rather than only a selected mark");
+            }
+            if (context == "text-rows") {
+                // Removing an earlier item must immediately renumber those after it.
+                foreach (int choice in new[] { 0, 1 }) { Step(0, () => MoveOrderedChoice(choice, false)); Click(); }
+                Prepared(() => view.Selections.SequenceEqual([2]) && OrderedBadgesMatch([2]), 2, () =>
+                    Check(OrderedBadgesMatch([2]), "Text ordering removes stale positions and renumbers the remaining row"),
+                    "Text ordering must repaint positions after deselection");
+                foreach (int choice in new[] { 0, 1 }) { Step(0, () => MoveOrderedChoice(choice, false)); Click(); }
+            }
+            Prepared(() => view.Selections.SequenceEqual(order) && OrderedBadgesMatch(order), 2, () => {
+                Capture("11-order-" + context);
+                view.Accept(scenario.State); // A poll of the same decision must preserve the chosen order.
+                Move(new(10, 70));
+            }, context + ": the complete intended permutation must remain visible");
+            Step(.08, () => {
+                Check(view.Scope == scope && view.Selections.SequenceEqual(order) && OrderedBadgesMatch(order)
+                    && scenario.Replies.Count == repliesBefore,
+                    context + ": repeated snapshots preserve all three visible numbers without submitting");
+                MoveHit(direct ? "confirm" : "choicesdone");
+            }); Click();
+            Prepared(() => !view.Busy && scenario.Replies.Count == repliesBefore + 1, 2, () => {
+                Check(scenario.Replies[^1] is { Action: ReplyAction.Choose } reply && reply.GameId == gameId
+                    && reply.DecisionId == decisionId && reply.Choices!.SequenceEqual(order),
+                    context + ": explicit confirmation submits exact [2,0,1] with the current game and decision scope");
+                Publish(scenario.State with { Decision = new() { Kind = "choice", Ordered = true, Min = 0, Max = 3,
+                    Choices = [new(0, "New effect A", null), new(1, "New effect B", null), new(2, "New effect C", null)] } });
+            }, context + ": the explicit ordering command must finish");
+            Prepared(() => view.Scope != scope && view.Selections.Count == 0 && OrderedBadgesMatch([]), 2, () =>
+                Check(view.Scope != scope && OrderedBadgesMatch([]), context + ": a new decision clears previous order numbers"),
+                context + ": previous numbers must never leak into another decision");
+        }
+        Step(0, () => {
+            Publish(scenario.State with { Decision = new() { Kind = "choice", Ordered = true, Min = 99, Max = 99,
+                Choices = Enumerable.Range(0, 99).Select(i => new Choice(i, "Ordered item " + (i + 1), null)).ToArray() } });
+        });
+        Prepared(() => view.Selections.Count == 99 && view.Hits.Any(h => h.Id == "choicesfilter"), 2,
+            () => MoveHit("choicesfilter"), "The long ordered list must render before filtering"); Click();
+        Step(.02, () => view.TypeText("Ordered item 99"));
+        Prepared(() => view.ChoiceOrderBadges.TryGetValue(98, out var badge) && badge.Position == 99, 2, () => {
+            var badge = view.ChoiceOrderBadges[98];
+            Check(view.TextScale == 1.3f && badge.Text.EndsWith("99", StringComparison.Ordinal)
+                && badge.MeasuredWidth <= badge.AvailableWidth && view.Selections.Count == 99,
+                "At130% a two-digit order number stays whole after filtering, retaining its original position99");
+            Capture("11-order-two-digit");
+        }, "The filtered item must show its full two-digit ordinal rather than an ellipsis");
+    }
+    private bool OrderedBadgesMatch(int[] order) => view.ChoiceOrderBadges.Count == order.Length
+        && order.Select((index, position) => view.ChoiceOrderBadges.TryGetValue(index, out var badge)
+            && badge.Position == position + 1 && badge.Text.EndsWith((position + 1).ToString(), StringComparison.Ordinal)
+            && badge.MeasuredWidth <= badge.AvailableWidth
+            && badge.Bounds is { Width: >= 70, Height: >= 24, Left: >= 0, Top: >= 0, Right: <= 1600, Bottom: <= 900 }
+            && (!TableChoices.IsDirect(view.Match!) || OrderedBadgeExposed(badge))
+            && view.ChoiceOrderBadges.Values.Where(other => other.Index != index).All(other => !other.Bounds.Intersects(badge.Bounds))).All(valid => valid);
+    private bool OrderedBadgeExposed(TableGame.ChoiceOrderBadge badge)
+    {
+        string cardId = view.Match!.Decision!.Choices.Single(c => c.Index == badge.Index).CardId;
+        if (view.HitAt(badge.Bounds.Center)?.Card?.VisualId != cardId) return false;
+        // A painted label is insufficient if a later copy or UI panel covers
+        // its number. Check its entire text strip through production hit testing.
+        for (int x = badge.Bounds.Left + 5; x < badge.Bounds.Right - 5; x += 6) {
+            var top = view.HitAt(new(x, badge.Bounds.Center.Y));
+            if (top != null && top.Card?.VisualId != cardId) return false;
+        }
+        return true;
+    }
+    private bool OrderedTargetsSettled()
+    {
+        var state = view.Match!;
+        var scene = TableScene.Build(state, 0, new(-1, -1), null, null, false, CardPresentation.IsResource);
+        var nodes = state.Players.SelectMany(p => scene.Battlefield(p.Id).SelectMany(c => c.Cards)).ToArray();
+        return state.Decision!.Choices.All(choice => nodes.SingleOrDefault(c => c.Id == choice.CardId) is { } node
+            && view.DisplayedPose(choice.CardId) is { } displayed
+            && Microsoft.Xna.Framework.Vector2.Distance(displayed.Center, node.Pose.Center) < 2
+            && Microsoft.Xna.Framework.Vector2.Distance(displayed.Size, node.Pose.Size) < 2);
+    }
+    private void MoveOrderedChoice(int index, bool direct)
+    {
+        if (direct) MoveCard(view.Match!.Decision!.Choices.Single(c => c.Index == index).CardId);
+        else MoveHit("choice:" + index);
     }
     // Reading exercises specific cards; crowded-board exposure has its own suite.
     // Apply only to fresh seeds so later played/selected cards are never trimmed.

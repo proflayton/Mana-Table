@@ -353,6 +353,20 @@ are scoped to a prompt; the renderer never receives hidden card IDs or raw logs.
 The original `GameStateMapper` remains a smaller projection for other consumers.
 
 `MatchSession` players include a `counters` map of positive public counter totals.
+They also include `states`, an array of active public mechanics with stable `id`,
+`label`, `kind` (`counter`, `progress`, or `status`), nullable numeric `value` and
+`maximum`, and contextual `detail`. This covers all positive player counters,
+Speed, monarch, initiative and the city's blessing. Values come from the rules
+engine at publication boundaries; clients render new entries through the same
+state display rather than recognizing individual card names. An absent state is
+inactive. The existing `counters` map remains available to older clients.
+
+Visible card objects include `gamePieceType`. An `effect` is an intangible rules
+object, including status markers and emblems. Its name is not a printed-card
+artwork identifier: clients must not look up an unrelated card image by that
+name. An effect with no printed type is labelled `Effect`; hidden faces retain
+their existing masked projection.
+
 Public `priorityPlayerId`, `decisionOwnerId` and `actionClass` distinguish priority,
 a required choice, simultaneous choices and resolution. They do not disclose
 another seat's private prompt or legal options. Stack entries include
@@ -365,6 +379,11 @@ Activity entries add `outcome` (`resolved` or `notResolved` for a resolution) an
 `moved`, not proof of a draw. Clients must not guess a missing outcome from prose
 or animate an untyped movement as a draw. Event IDs deduplicate presentation;
 neither these events nor public role fields change legal input permissions.
+Generic `playerState` activity reports changes between authoritative published
+states, including additions and removals. Initial state establishes a baseline
+without replaying past changes, and unchanged publications produce no event.
+These summaries do not infer a cause or claim to record intermediate values
+within one uninterrupted resolution.
 
 Battlefield cards include `attachedTo` (a card reference or null) and `attachments`
 (an array of card references). Each reference has `id`, `name`, and `type`; `id`

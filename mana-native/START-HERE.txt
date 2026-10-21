@@ -203,9 +203,18 @@ double-click. Hidden hands show anonymous backs.
 Gold TAX +2, TAX +4, etc. badges show the extra mana for a command-zone recast.
 Hover or inspect for details. Each commander tracks its own previous casts;
 dying does not add tax by itself.
+Player state badges beside each life total show counters, progress such as
+Speed 1/4, and statuses such as Monarch. Click a badge for its meaning and the
+player's other states. MAX marks a completed progress track. Changes also appear
+in the recent outcome and match history. These badges do not require activation.
 Hover to lift and enlarge the card itself without clicking; right-click to inspect
 its complete rules and alternate face. Card pictures download when available;
 text works offline. Choice galleries include a name filter and selection counts.
+Ordered choices show ORDER 1, ORDER 2, etc. on both card images and text rows;
+follow the decision's message for which end of the order is first.
+Battlefield cards in an ordered choice spread apart so their numbers stay visible;
+their usual clusters return when the decision ends.
+Orders involving hand or command-zone cards use the numbered gallery.
 Selecting a gallery card immediately returns its face
 to the compact row; hover or inspect it again to read without clearing your
 selection. When every choice is a visible table card, choose those original
