@@ -128,9 +128,10 @@ internal static class ExperienceLabChecks
                 Click("read-card-action");
                 Until(() => !app.TestPort.Busy && frame.Hits.Any(hit => hit.Id == "choice:0"), "The explicit action did not open the ability chooser");
                 check(lab.StageIndex == 0 && lab.State.Decision?.Context == "playAbility"
-                    && frame.Cards.Any(card => card.Id == "reader-elf" && card.Zone == "Battlefield")
+                    && frame.Cards.Any(card => card.Id == "reader-elf" && card.Zone == "Battlefield" && card.Focused
+                        && card.Display.Bounds.Contains(frame.Hits.Single(hit => hit.Id == "choice:0").Bounds))
                     && !frame.Hits.Any(hit => hit.Id is "choicesdone" or "close-overlay"),
-                    "The explicit Elf action exposes its ability on the actual board without advancing the stage, opening a modal or adding confirmation");
+                    "The explicit Elf action exposes its ability on the actual source reader without advancing the stage, opening a modal or adding confirmation");
                 Click("choice:0");
                 Until(() => !app.TestPort.Busy && lab.StageIndex == 1 && frame.Stamp.Revision == lab.State.Revision,
                     "The direct ability choice did not publish its authored result");

@@ -110,16 +110,27 @@ internal sealed partial class TableApplication
             string label = entry.Zone == "Battlefield" ? "Abilities"
                 : !entry.Card.Selectable && HandPlacements.Options(match, entry.Card).Length > 0 ? "Place"
                 : entry.Card.Type.Contains("Land", StringComparison.Ordinal) ? "Play" : "Cast";
-            int width = Math.Max(80, canvas.TextWidth(label, .76f) + 24);
-            int x = target.Left + 8, y = Math.Min(840, target.Bottom - 2);
-            Button("read-card-action", label, x, y, width, () => {
+            var area = OnCardActionArea(target);
+            var bounds = new Rectangle(area.X, area.Center.Y - 26, area.Width, 52);
+            PaintControlSurface("read-card-action", bounds, new(18, 30, 38), Blue * .75f, !busy);
+            canvas.CenterText(label, new(bounds.X + 14, bounds.Y, bounds.Width - 50, bounds.Height), Ink, .9f, true);
+            var arrow = new Vector2(bounds.Right - 25, bounds.Center.Y);
+            canvas.Line(arrow + new Vector2(-4, -6), arrow + new Vector2(2, 0), Ink, 2);
+            canvas.Line(arrow + new Vector2(2, 0), arrow + new Vector2(-4, 6), Ink, 2);
+            if (!busy) hits.Add(new("read-card-action", Scope, bounds, () => {
                 var current = VisibleCards().FirstOrDefault(card => SameVisibleCard(card, entry.Card));
                 if (current == null || !IsCardActionable(current)) return;
                 if (entry.Zone != "Battlefield") { CollapseCardReading(); if (BattlefieldFocused) zoneName = null; }
                 CardClick(current);
-            }, !busy, height: 30);
+            }));
         }
     }
+
+    // Put deliberate actions over the illustration, leaving the name, oracle
+    // text and current power/toughness available on the same card.
+    private static Rectangle OnCardActionArea(Rectangle card) => new(
+        card.X + card.Width / 10, card.Y + (int)(card.Height * .22f),
+        card.Width * 8 / 10, (int)(card.Height * .28f));
 
     private void ClearCardComposition()
     {

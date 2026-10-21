@@ -500,7 +500,8 @@ collapse an existing reader so it cannot intercept the next adjacent choice.
 Selection uses the original prompt-scoped index, independently of names and reflow.
 
 `TableApplication.AbilityChoices` presents single-select `playAbility` actions
-beside the actual source occurrence. This engine context includes abilities and
+over the selected source's illustration when complete options fit; longer
+choices stay beside the actual source occurrence. This engine context includes abilities and
 casting modes. Pending engine input is separate from visual overlays: the table
 and source reader stay available while unrelated gameplay commands are blocked.
 An explicit action click submits its original index; optional Cancel submits an
@@ -540,8 +541,8 @@ empty windows and waits; Auto, Hold and phase stops use a match-scoped input
 identity so prompt churn cannot cancel those clicks.
 
 `CardActions` labels engine-authorized battlefield actions as Activate, with
-availability highlighting, a reader action tab and an inspector button. It never
-infers playability from rules text.
+availability highlighting, an action over the selected card's illustration and
+an inspector button. It never infers playability from rules text.
 Stack projections include viewer-safe card/player targets (including subabilities).
 The renderer draws direct target arrows, marks the exact occurrence and shows a
 spell/ability callout. `MatchActivity` retains public resolution descriptions and

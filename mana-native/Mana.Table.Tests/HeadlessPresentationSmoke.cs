@@ -40,10 +40,15 @@ internal static class HeadlessPresentationSmoke
                     "Production table composition creates drawing, scene and input data without a graphics device or card textures");
 
                 run.ClickCard("hand-a"); run.Settle("reader-a");
-                Check(run.Frame.Cards.Single(card => card.Id == "hand-a").Focused
-                    && run.Frame.Cards.Single(card => card.Id == "hand-a").Display.Size.X == 410
+                var readerA = run.Frame.Cards.Single(card => card.Id == "hand-a");
+                var readerAction = run.Hit("read-card-action");
+                var actionBounds = readerAction.Bounds;
+                Check(readerA.Focused && readerA.Display.Size.X == 410
+                    && new[] { new Point(actionBounds.Left, actionBounds.Top), new(actionBounds.Right - 1, actionBounds.Top),
+                        new(actionBounds.Left, actionBounds.Bottom - 1), new(actionBounds.Right - 1, actionBounds.Bottom - 1) }.All(readerA.Display.Contains)
+                    && run.View.HitAt(actionBounds.Center) is { } actionHit && actionHit.Id == readerAction.Id && actionHit.Scope == readerAction.Scope
                     && run.Engine.Replies.Count == 0,
-                    "Injected card clicks open the production reader without submitting a game action");
+                    "Injected card clicks open the production reader with its action inside the actual card face and an exposed current hit, without submitting a game action");
                 var pinnedA = run.Frame;
                 var readerStart = pinnedA.Cards.Single(card => card.Id == "hand-a").Display.Center.ToPoint();
                 var readerDrag = readerStart + new Point(20, 0);
@@ -67,7 +72,16 @@ internal static class HeadlessPresentationSmoke
                 run.ClickCard("hand-a"); run.Settle("reader-before-play");
                 string decision = run.View.Match!.Decision!.Id;
                 string key = run.View.Match.Viewer!.Zone("Hand").Cards.Single(card => card.VisualId == "hand-a").Key;
-                run.ClickHit("read-card-action");
+                var playAction = run.Hit("read-card-action");
+                run.Input(new(20, 60), label: "reader-action-idle");
+                var idleFill = run.Frame.Drawing.Commands.OfType<DrawCommand.Panel>().Single(panel => panel.Bounds == playAction.Bounds).FillColor;
+                run.Input(playAction.Bounds.Center, label: "reader-action-hover");
+                var hoverFill = run.Frame.Drawing.Commands.OfType<DrawCommand.Panel>().Single(panel => panel.Bounds == playAction.Bounds).FillColor;
+                run.Input(playAction.Bounds.Center, left: ButtonState.Pressed, label: "reader-action-pressed");
+                var pressedFill = run.Frame.Drawing.Commands.OfType<DrawCommand.Panel>().Single(panel => panel.Bounds == playAction.Bounds).FillColor;
+                Check(idleFill != hoverFill && hoverFill != pressedFill && run.Engine.Replies.Count == 0,
+                    "The on-card action distinguishes pointer hover and press through production drawing without submitting before release");
+                run.Input(playAction.Bounds.Center, label: "reader-action-release");
                 run.Until(() => !run.View.Busy && run.Engine.Replies.Count == 1, "play-confirmed");
                 var reply = run.Engine.Replies.Single();
                 Check(reply is { Action: ReplyAction.SelectCard } && reply.DecisionId == decision && reply.Card == key

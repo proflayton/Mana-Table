@@ -76,7 +76,8 @@ internal static class Program
             }
             if (args.Contains("--smoke-action-feedback")) {
                 var scenario = new InteractionScenarioEngine(); scenario.Present(PresentationSmoke.Example());
-                using var test = new TableWindow(scenario, profile, null, null, size, initialState: scenario.State);
+                using var test = new TableWindow(scenario, profile, null, null, size, initialState: scenario.State,
+                    artSource: new CardReadingArtFixture(Arg("--art-cache")));
                 test.Automation = new ActionFeedbackSmoke(test.TestPort, scenario);
                 test.Run(); return 0;
             }

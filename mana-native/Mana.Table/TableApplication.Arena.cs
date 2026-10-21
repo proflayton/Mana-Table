@@ -176,11 +176,15 @@ internal sealed partial class TableApplication
             canvas.CardFrame(pose with { Size = pose.Size - new Vector2(7) }, Muted * (.25f * opacity));
             var r = pose.Bounds;
             if (pose.Size.X >= 300) {
+                bool actionSpace = focus && (match?.Decision?.Intent == DecisionIntent.Priority && IsCardActionable(card)
+                    || AbilityActionPending && match?.Decision is { } decision
+                        && InteractionCards.Source(match, decision) is { } source && SameVisibleCard(card, source));
+                int typeTop = actionSpace ? (int)(r.Height * .53f) : 121;
                 canvas.Text(card.Name, r.X + 20, r.Y + 20, Ink * opacity, 1.05f, r.Width - 40, 2, true);
                 canvas.Text(card.ManaCost == "no cost" ? "" : card.ManaCost, r.X + 20, r.Y + 82, Gold * opacity, .8f, r.Width - 40, 1);
-                canvas.Text(card.Type, r.X + 20, r.Y + 121, Gold * opacity, .75f, r.Width - 40, 2);
-                canvas.Line(new(r.X + 20, r.Y + 176), new(r.Right - 20, r.Y + 176), Muted * (.4f * opacity));
-                canvas.Text(card.Text, r.X + 20, r.Y + 195, Ink * opacity, .78f, r.Width - 40, Math.Max(1, (r.Height - 220) / 27));
+                canvas.Text(card.Type, r.X + 20, r.Y + typeTop, Gold * opacity, .75f, r.Width - 40, 2);
+                canvas.Line(new(r.X + 20, r.Y + typeTop + 55), new(r.Right - 20, r.Y + typeTop + 55), Muted * (.4f * opacity));
+                canvas.Text(card.Text, r.X + 20, r.Y + typeTop + 74, Ink * opacity, .78f, r.Width - 40, Math.Max(1, (r.Height - typeTop - 99) / 27));
             } else {
                 canvas.Text(card.Name, r.X + 5, r.Y + 5, Ink * opacity, pose.Size.X > 100 ? .67f : .47f, r.Width - 10, pose.Size.X > 100 ? 3 : 2, true);
                 canvas.Text(card.ManaCost == "no cost" ? "" : card.ManaCost, r.X + 5, r.Bottom - 27, Gold * opacity, .54f, r.Width - 10, 1);

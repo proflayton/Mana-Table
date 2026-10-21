@@ -53,7 +53,14 @@ internal sealed partial class TableApplication
         int requestedHeight = controlsHeight + decision.Choices.Sum(choice => Math.Max(48,
             canvas.TextSize(Content(choice), fontSize, requestedWidth - padding * 2, 80, true).Y + padding * 2))
             + (decision.Choices.Length - 1) * rowGap;
-        var area = AbilityActionArea(anchor, requestedWidth, Math.Min(400, requestedHeight));
+        var onCard = OnCardActionArea(anchor);
+        int onCardHeight = entry?.Focused != true ? int.MaxValue : controlsHeight + decision.Choices.Sum(choice => Math.Max(48,
+            canvas.TextSize(Content(choice), fontSize, onCard.Width - padding * 2, 80, true).Y + padding * 2))
+            + (decision.Choices.Length - 1) * rowGap;
+        bool sourceReader = entry?.Focused == true && onCardHeight <= onCard.Height;
+        if (sourceReader && (Vector2.Distance(entry!.Display.Size, anchor.Size.ToVector2()) > 2
+            || Vector2.Distance(entry.Display.Center, anchor.Center.ToVector2()) > 2)) return;
+        var area = sourceReader ? onCard : AbilityActionArea(anchor, requestedWidth, Math.Min(400, requestedHeight));
         if (area.Width < 100 || area.Height < 110) return;
         int textWidth = area.Width - padding * 2, bodyHeight = area.Height - controlsHeight;
         List<List<AbilityActionText>> pages = [[]];
@@ -71,12 +78,12 @@ internal sealed partial class TableApplication
         choicePage = Math.Clamp(choicePage, 0, pages.Count - 1);
         var visible = pages[choicePage];
         int heightNeeded = visible.Sum(row => row.Height) + (visible.Count - 1) * rowGap + controlsHeight;
-        int y = Math.Clamp(anchor.Top, area.Top, area.Bottom - heightNeeded);
+        int y = sourceReader ? area.Center.Y - heightNeeded / 2 : Math.Clamp(anchor.Top, area.Top, area.Bottom - heightNeeded);
         bool rightSide = area.Left >= anchor.Right;
         var target = new Vector2(rightSide ? area.Left : area.Right, y + visible[0].Height / 2);
         var connection = entry?.Display.EdgeToward(target, 4)
             ?? new Vector2(rightSide ? anchor.Right : anchor.Left, Math.Clamp((int)target.Y, anchor.Top, anchor.Bottom));
-        canvas.Line(connection, target, Blue * .45f, 1.5f);
+        if (!sourceReader) canvas.Line(connection, target, Blue * .45f, 1.5f);
         if (entry != null) canvas.CardFrame(entry.Display with { Size = entry.Display.Size + new Vector2(5) }, Blue * .55f, 1);
         foreach (var row in visible) {
             string id = "choice:" + row.Choice.Index;

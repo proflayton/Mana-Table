@@ -121,7 +121,7 @@ acceptance.
 | Finding | Scoped change or remaining work | Source status |
 | --- | --- | --- |
 | Constant card-reading instructions, activation badges and an empty mana caption repeated information already conveyed by the board | Removed the repeated board hints, per-card activation captions and zero-pool caption; meaningful resources, legal actions and decision consequences remain | Implemented |
-| Opening a card creates a separate Play card / Close card control column | Replaced the side column with a short tab at the card's bottom-left edge; clicking the enlarged face again collapses it without a Close button | Implemented |
+| Opening a card creates a separate Play card / Close card control column; the replacement edge tab was easy to miss | Put the deliberate action over the selected card's illustration, with distinct hover/press feedback; clicking the rest of the enlarged face still collapses it | Reworked after human feedback; review pending |
 | A primary button's permanent accent can look like hover; custom stack rows and text choices have separate painting paths | The shared Controls helper separates resting importance or selection from hover and pressed feedback across buttons, stack rows, policies, text choices and phase stops; card hover, selection and availability have distinct treatment | Implemented |
 | The allocation recipient's visible Inspect caption lay mostly outside its clickable art | The existing inspect-only target now includes the exact art or painted caption; assignment amounts and commands are unchanged | Implemented |
 | Every combat row repeated Back to table without locating that attacker | Removed the row copies; the panel exit and actual assign, remove and recall actions remain | Implemented |
@@ -130,7 +130,7 @@ acceptance.
 | Small drags inside an enlarged hand card could be mistaken for a play | A drag begun with a pinned hand reader must leave both its captured reader face and original hand slot before a legal drop can commit | Implemented |
 | A narrative panel followed each drag | Removed the generic drag prose; the held card, legal-drop outline and combat aim remain | Implemented |
 | The hand cursor also appeared over input-shield panel backgrounds | Shield-only battlefield, recipient and public-outcome panel backgrounds no longer advertise an action | Implemented |
-| Error or notice banners could cover the reader's former top action tab | Moved the tab to the stable bottom-left card edge, away from the top banner band; banner positions remain unchanged | Implemented |
+| Error or notice banners could cover the reader's former top action tab | The selected-card action now sits within its illustration, away from the top banner band | Implemented |
 | A single text ability option opened a gallery; the smaller dialog still obscured the game's purpose | Attach engine-reported actions to the actual source occurrence on the table. Keep the board visible, choose the action directly, and show its resulting state transition | Reworked after negative human feedback; review pending |
 | Long ability text needs readable context through continuation pages | Complete text is preserved, but its continuation still needs a visual review of action identity and cost | Open |
 | Card gestures vary between the board reader, zone inspection, choices and allocation details | Review these contexts together before changing the common gesture policy; a hand cursor alone does not explain whether a click reads, selects or acts | Open |
@@ -165,6 +165,17 @@ continuation shows the tapped Elf and one green mana; this is not a Forge rules
 simulation. GPU captures under `inline-actions-r3-*` retain the actual source and
 remove the false stack copy. These checks establish input and rendering behavior,
 not human acceptance of the experience.
+
+The edge tab was subsequently found too easy to miss. The current candidate puts
+the entry over the selected card's illustration, then replaces it with the actual
+engine-reported ability cost/effect when the complete options fit there. Longer
+choices keep the adjacent layout. Missing-art faces reserve that same action
+space above their rules; names and current stats remain outside it. This change
+still needs human review.
+The Release build and existing presentation, headless presentation, card-reading
+and action-feedback checks pass. Cached-art captures under `on-card-actions-*`
+show the entry at rest, hovered and pressed, and the ability over Llanowar Elves'
+illustration. These are implementation checks and agent inspection.
 
 Use one `1000x740` interactive window for the short review: `card-reading.v1`
 stages 0 and 3, `ordered-choice.v1`, `stack-priority.v1` stage 2, then
