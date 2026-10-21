@@ -403,7 +403,7 @@ corner marks without moving the card or opening a reader. Selection has a
 separate gold edge and selection mark or ordered number; engine-authorized
 availability uses a quiet blue edge. Pinned reading state is separate from
 pointer hover. `TableApplication.Controls` shares the button and custom-surface
-painting used by stack rows, text choices, pass policies and phase stops. Resting
+painting used by text choices, pass policies and phase stops. Resting
 importance or selection stays separate from hover and pressed feedback.
 Shield-only panel backgrounds do not advertise a clickable action. Source-aware
 readers show concrete engine actions in a deliberately composed rules area below
@@ -575,18 +575,28 @@ Stack projections include viewer-safe card/player targets (including subabilitie
 `TableApplication.Priority` composes one effect surface per actual stack item.
 The expanded row leads with `StackItem.Text`, a source thumbnail, controller,
 order and reported targets with direct arrows; later items retain ordered rows.
-The surface fits measured content. Long previews expose overflow and the same row opens complete effect inspection
-by its current item ID. Genuine stack-target decisions retain their engine-owned
+The surface fits measured content. Its background has no hit or hover fill.
+Only overflow and secondary-effect summaries open complete effect inspection
+by the exact current item ID. Genuine stack-target decisions retain their engine-owned
 selection path. The former separate stack-card copy, Details button and stack-count
 opener are removed. Payment and recipient source context remain separate from the
 actual pending effects. Human acceptance of this iteration remains open.
+`TableApplication.PendingReferences` makes the source art/name and individual
+target names references to their public cards. Hover highlights the actual
+displayed battlefield face when present and shows a full read-only card with current stats and
+counters beside the effect. The preview holds its position while being read,
+shields the cards underneath and offers no actions; canonical card poses and hit
+regions never move. A player reference highlights the actual portrait instead.
+Auto pauses while a card reference is being read. Visibility and the current
+stack-item identity bound the reference's lifetime.
 The responder band states `Your priority` or names the actual priority holder;
 it does not frame holding priority after your own action as a reply to another
 player. `TableApplication.PendingConnections` binds a gold source → effect link
 only to a currently disclosed, displayed occurrence. Red effect → target links
-use current card poses or player portraits. Separate edge ports and
-`PanelConnection` routes keep these paths outside the complete panel, including
-its responder band and later rows. Missing live source occurrences are not
+use current card poses or player portraits. Same-side ports follow the endpoints'
+vertical order; adjacent cards move a port to a feasible edge position without
+reversing that order. `PanelConnection` routes stay outside the complete panel,
+including its responder band and later rows. Missing live source occurrences are not
 reconstructed from the stack's retained source face.
 `MatchActivity` retains public resolution descriptions and
 spell rules, plus token arrival names; `ActionFeedback` exposes a timed summary

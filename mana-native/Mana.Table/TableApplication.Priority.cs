@@ -72,18 +72,18 @@ internal sealed partial class TableApplication
             int height = expanded ? Math.Clamp(PendingEffectHeaderHeight(entry, owner)
                 + canvas.TextSize(effect, .86f, 407, 80, true).Y + (entry.Targets.Length > 0 ? 27 : 0) + 12, 134, 220) : 46;
             var bounds = new Rectangle(545, y, 435, height);
-            string id = "stack-row:" + entry.Id;
-            PaintControlSurface(id, bounds, new(17, 29, 36), index == 0 ? Gold * .7f : Muted * .45f);
+            canvas.Panel(bounds, new(17, 29, 36), index == 0 ? Gold * .7f : Muted * .45f, 4);
             if (expanded) PaintPendingEffect(entry, index, bounds, owner, effect);
             else {
                 canvas.Circle(new(bounds.X + 17, bounds.Y + 18), 10, Muted);
                 canvas.CenterText((index + 1).ToString(), new(bounds.X + 7, bounds.Y + 8, 20, 20), new(12, 24, 29), .47f, true);
                 canvas.Text(entry.Name + " · " + owner, bounds.X + 34, bounds.Y + 3, Ink, .54f, bounds.Width - 45, 1, true);
                 canvas.Text(effect, bounds.X + 34, bounds.Y + 24, Muted, .48f, bounds.Width - 45, 1);
+                AddPendingSourceReference(entry, new(bounds.X + 34, bounds.Y + 1,
+                    Math.Min(bounds.Width - 45, canvas.TextWidth(entry.Name + " · " + owner, .54f, true) + 6), 22));
+                string captured = entry.Id;
+                hits.Add(new("stack-effect:" + entry.Id, Scope, new(bounds.X + 34, bounds.Y + 23, bounds.Width - 45, 22), () => InspectPendingEffect(captured)));
             }
-            string capturedId = entry.Id;
-            Card? targetCard = !entry.Ability && entry.Card is { } candidate && IsCardActionable(candidate) ? candidate : null;
-            hits.Add(new(id, Scope, bounds, () => InspectPendingEffect(capturedId), targetCard, "Stack"));
             stackRows.Add(new(entry.Id, index + 1, bounds));
             y = bounds.Bottom + 5;
         }
@@ -128,6 +128,11 @@ internal sealed partial class TableApplication
         string order = match!.Stack.Length == 1 ? "Pending" : (index + 1) + (index == 0 ? " · Next" : " · Waiting");
         canvas.Text(order + " · " + owner, bounds.X + 76, bounds.Y + 13 + nameHeight,
             index == 0 ? Gold : Muted, .5f, bounds.Width - 88, 1);
+        var sourceBounds = new Rectangle(art.X, bounds.Y + 8,
+            Math.Min(bounds.Width - 24, 64 + Math.Max(canvas.TextWidth(entry.Name, .67f, true), canvas.TextWidth(order + " · " + owner, .5f))),
+            PendingEffectHeaderHeight(entry, owner) - 8);
+        AddPendingSourceReference(entry, sourceBounds);
+        if (IsControlHovered("stack-source:" + entry.Id)) canvas.CardFrame(new(art.Center.ToVector2(), art.Size.ToVector2()), HoverAccent, 2);
         int bodyY = bounds.Y + PendingEffectHeaderHeight(entry, owner);
         int targetHeight = entry.Targets.Length > 0 ? 27 : 0;
         int bodyHeight = Math.Max(25, bounds.Bottom - bodyY - targetHeight - 12);
@@ -136,8 +141,12 @@ internal sealed partial class TableApplication
         if (entry.Targets.Length > 0) {
             int targetY = bounds.Bottom - 27;
             canvas.Arrow(new(bounds.X + 14, targetY + 11), new(bounds.X + 31, targetY + 11), Red, 3);
-            canvas.Text(string.Join(", ", entry.Targets.Select(target => target.Name)), bounds.X + 39, targetY + 1, Red, .58f, bounds.Width - 67, 1);
+            DrawPendingTargetReferences(entry, new(bounds.X + 39, targetY + 1, bounds.Width - 53, 24));
         }
-        if (pages.Length > 1) canvas.Text("…", bounds.Right - 24, bounds.Bottom - 26, Muted, .75f, 18, 1, true);
+        if (pages.Length > 1) {
+            canvas.Text("…", bounds.Right - 24, bounds.Bottom - 26, Muted, .75f, 18, 1, true);
+            string captured = entry.Id;
+            hits.Add(new("stack-effect:" + entry.Id, Scope, new(bounds.Right - 30, bounds.Bottom - 29, 28, 28), () => InspectPendingEffect(captured)));
+        }
     }
 }

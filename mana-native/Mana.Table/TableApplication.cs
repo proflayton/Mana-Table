@@ -249,7 +249,7 @@ internal sealed partial class TableApplication : IDisposable
         previousMouse = mouse; previousKeys = keys;
         // Give a ready pass precedence over starting another observation. Use this
         // update's pointer position so entering a card pauses Auto before Draw.
-        bool autoBlocked = commandFailure && error.Length > 0 || OverlayOpen || AbilityActionPending || chatFocus || dragging || pressed != null || readingId != null || selectedCombat != null;
+        bool autoBlocked = commandFailure && error.Length > 0 || OverlayOpen || AbilityActionPending || chatFocus || dragging || pressed != null || readingId != null || selectedCombat != null || HoveredPendingReference() != null;
         bool quietReserved = UpdateQuietPriority(autoBlocked);
         if (!quietReserved && (!automatic || held || autoBlocked)) session.CancelAdvance();
         if (!quietReserved && !ExperienceLabOpen && !session.NeedsRecovery && fixture == null && playback.Ready(now) && priority.Update(match, automatic, held, preferences.Stops,

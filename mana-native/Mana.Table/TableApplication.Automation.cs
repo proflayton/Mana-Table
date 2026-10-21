@@ -25,6 +25,8 @@ internal sealed partial class TableApplication
         internal string? HighlightedChangeSource => game.highlightedChangeSource;
         internal Mana.Renderer.EffectTransitionFrame EffectTransitions => game.effectTransitionFrame;
         internal IReadOnlyList<StackRowPaint> StackRows => game.stackRows;
+        internal string? ReferencePreviewCardId => game.pendingPreviewCardId;
+        internal Rectangle? ReferencePreviewBounds => game.pendingPreviewBounds;
         internal IReadOnlyDictionary<int, Rectangle> PrioritySeats => game.prioritySeats;
         internal void OpenBattlefield(int owner) => game.OpenZone(owner, "Battlefield");
         internal string Profile => game.profile;

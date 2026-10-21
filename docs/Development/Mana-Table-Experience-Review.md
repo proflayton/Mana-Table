@@ -124,7 +124,7 @@ acceptance.
 | --- | --- | --- |
 | Constant card-reading instructions, activation badges and an empty mana caption repeated information already conveyed by the board | Removed the repeated board hints, per-card activation captions and zero-pool caption; meaningful resources, legal actions and decision consequences remain | Implemented |
 | Opening a card creates a separate Play card / Close card control column; the replacement edge tab was easy to miss | Moving that same control over the illustration did not improve the interaction model | Both placement iterations rejected by human review |
-| A primary button's permanent accent can look like hover; custom stack rows and text choices have separate painting paths | The shared Controls helper separates resting importance or selection from hover and pressed feedback across buttons, stack rows, policies, text choices and phase stops; card hover, selection and availability have distinct treatment | Implemented |
+| A primary button's permanent accent can look like hover; custom text choices have separate painting paths | The shared Controls helper separates resting importance or selection from hover and pressed feedback across buttons, policies, text choices and phase stops; card hover, selection and availability have distinct treatment | Implemented |
 | The allocation recipient's visible Inspect caption lay mostly outside its clickable art | The existing inspect-only target now includes the exact art or painted caption; assignment amounts and commands are unchanged | Implemented |
 | Every combat row repeated Back to table without locating that attacker | Removed the row copies; the panel exit and actual assign, remove and recall actions remain | Implemented |
 | Text-choice source art looked like other inspectable card art but had no interaction | A currently visible source preview now has an inspect-only target and hover feedback; original option indexes and action handles remain unchanged | Implemented |
@@ -134,7 +134,7 @@ acceptance.
 | The hand cursor also appeared over input-shield panel backgrounds | Shield-only battlefield, recipient and public-outcome panel backgrounds no longer advertise an action | Implemented |
 | Error or notice banners could cover the reader's former top action tab | Concrete actions now have a measured rules area in the card reader; the illustration remains clear | Reworked after the illustration-overlay iteration was rejected |
 | A single text ability option opened a gallery; the smaller dialog still obscured the game's purpose | Attach engine-reported actions to the actual source occurrence on the table. Keep the board visible, choose the action directly, and show its resulting state transition | Reworked after negative human feedback; review pending |
-| A pending ability repeated its source card, source-name row, Details button and stack count while its actual effect was not visible | Combine each real stack item into one effect surface with its reported effect, controller, targets and order; the row itself opens inspection | Reworked after screenshot rejection; human review pending |
+| A pending ability repeated its source card, source-name row, Details button and stack count while its actual effect was not visible | Show its actual effect, controller, targets and order together; hover source/target references to read their cards, with exact-effect inspection only for overflow and secondary summaries | Reworked after screenshot rejection; human review pending |
 | Long ability text needs readable context through continuation pages | Complete text is preserved, but its continuation still needs a visual review of action identity and cost | Open |
 | Card gestures vary between the board reader, zone inspection, choices and allocation details | Review these contexts together before changing the common gesture policy; a hand cursor alone does not explain whether a click reads, selects or acts | Open |
 
@@ -270,8 +270,8 @@ card, repeated source name, Details button and Stack count competed while the
 actual pending effect was absent. The current iteration uses one combined
 surface for each real stack item. Its main row shows the reported effect text,
 a quiet source thumbnail, controller and targets with arrows; subsequent items
-keep their exact queue order. Clicking the row opens that current effect or
-selects a genuine engine-permitted stack target. Long effects remain available
+keep their exact queue order. Source and target references retain genuine
+engine-permitted stack selection. Long effects remain available
 in inspection. Payment and recipient source context retain their separate paths.
 This records the implementation and rejection evidence; human acceptance of the
 new stack presentation remains open.
@@ -296,6 +296,25 @@ header (`priority-connections-near-card.png`) and the existing player-target
 journey (`priority-connections-player-review`), alongside the existing priority
 and presentation checks. Arrow counts are not evidence of legibility, and human
 acceptance of these changes is still open.
+
+Further feedback rejected hover fill on the whole effect box and crossing
+connections. The box now has no hit or hover state. Its source art/name and each
+target name are card references: hovering one highlights the actual battlefield
+face when present and shows a full read-only card with current stats and counters beside the
+panel. The preview stays in place, shields input beneath it and has no actions;
+the canonical card and its input region do not move. Player references highlight
+the actual portrait. Auto pauses during card-reference reading. Overflow and
+secondary-effect summaries retain exact-item inspection only.
+
+Same-side connection ports now follow the endpoints' vertical order. A nearby
+card gets a feasible edge port while preserving that order, correcting the Bears
+case without relaxing the panel clearance. Current agent capture evidence is
+under `card-reference-final-bears-review` and `card-reference-final-player-review`.
+Both physical-pointer GPU journeys complete, including source and target hovers,
+the unchanged pending effect, priority handoff and the authored result. An agent
+inspected the actual body/source/card-target/player-target captures. The native
+build and existing presentation/priority checks pass; these mechanical results
+do not establish visual clarity. Human acceptance remains open.
 
 ## Existing regression walkthrough
 

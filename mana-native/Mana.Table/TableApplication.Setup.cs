@@ -17,6 +17,7 @@ internal sealed partial class TableApplication
         handPage = zonePage = choicePage = 0; choiceFilter = decisionId = "";
         automatic = !Automated && preferences.Automatic; priority.Reset(); pressed = null;
         ClearCardReading(); ClearReaderActions();
+        pendingPreviewReference = null; pendingPreviewBounds = null; pendingPreviewCardId = null;
         seatPortraits.Clear(); overlay = ""; inspected = null; held = false; dragging = false; dragSource = null;
         collapsedDecision = false; textFocus = false; feedback.Clear(); previousTurn = ""; notice = ""; noticeUntil = 0;
     }

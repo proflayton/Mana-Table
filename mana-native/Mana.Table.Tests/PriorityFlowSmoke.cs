@@ -94,12 +94,12 @@ internal sealed class PriorityFlowSmoke : ITableAutomation
             AssertQueue(4, 5);
             Check(inspectedQueueIds.Count == 5 && engine.Replies.Count == 0,
                 "Every one of five pending effects is reachable through the real queue pages without sending a game command");
-            Capture("02-later-stack-page"); MoveHit("stack-row:" + view.StackRows.Last().Id);
+            Capture("02-later-stack-page"); MoveHit("stack-effect:" + view.StackRows.Last().Id);
         }); Click();
         Step(() => {
             Check(view.ZoneName == "Stack" && view.InspectedStack == engine.State.Stack[4].Id
                 && Text().Any(value => value.Contains(engine.State.Stack[4].Name)) && engine.Replies.Count == 0,
-                "A paged row inspects its exact stack-item ID and public name without activating its source or passing");
+                "A collapsed effect reference inspects its exact stack-item ID and public name without activating its source or passing");
             Capture("03-stack-item-details"); MoveHit("close-overlay");
         }); Click();
         Step(() => {
@@ -164,10 +164,15 @@ internal sealed class PriorityFlowSmoke : ITableAutomation
         Check(view.StackRows.Select(row => row.Position).SequenceEqual(positions), "The queue page preserves exact global next-to-resolve positions " + string.Join(",", positions));
         foreach (var row in view.StackRows) {
             var entry = view.Match!.Stack[row.Position - 1]; inspectedQueueIds.Add(row.Id);
-            Check(row.Id == entry.Id && view.Hits.Count(hit => hit.Id == "stack-row:" + entry.Id) == 1,
-                "One combined effect surface targets its exact public stack-item ID: " + entry.Id);
-            foreach (var point in new[] { row.Bounds.Center, new Point(row.Bounds.Left + 3, row.Bounds.Top + 3), new Point(row.Bounds.Right - 4, row.Bounds.Bottom - 4) })
-                Check(Hit(Pixel(point.ToVector2()))?.Id == "stack-row:" + entry.Id, "The visible queue row retains its own physical input surface: " + entry.Id);
+            Check(row.Id == entry.Id && !view.Hits.Any(hit => hit.Id == "stack-row:" + entry.Id),
+                "The painted pending-effect row preserves its exact identity without making its whole surface a button: " + entry.Id);
+            if (row == view.StackRows.First()) {
+                var source = view.Hits.Single(hit => hit.Id == "stack-source:" + entry.Id);
+                Check(view.CurrentHit(source) && Hit(Pixel(source.Bounds.Center.ToVector2()))?.Id == source.Id
+                    && (entry.Card is not { FaceDown: false } || source.Card?.VisualId == entry.Card.VisualId),
+                    "The expanded effect exposes its bounded current source reference instead of a whole-row action: " + entry.Id);
+            } else Check(view.Hits.Any(hit => hit.Id == "stack-effect:" + entry.Id),
+                "A collapsed effect retains one exact inspection reference: " + entry.Id);
         }
         var expanded = view.StackRows.First();
         var pending = view.Match!.Stack[expanded.Position - 1];

@@ -70,6 +70,7 @@ internal sealed partial class TableApplication
         if (BattlefieldFocused) { DrawAbilityActions(); DrawSourceTargeting(); }
         if (ReadingGalleryOpen || BattlefieldFocused || ZoneReadingOpen) DrawReaderControls();
         if (ReadingGalleryOpen) hovered = HitAt(pointer)?.Card;
+        DrawPendingReferencePreview();
         DrawExperienceLabHeader();
     }
     private void DrawGameHeader()

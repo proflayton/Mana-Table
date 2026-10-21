@@ -199,9 +199,36 @@ internal static class ExperienceLabChecks
                 check(effectRow.Id == pending.Id && effectText.Contains(pending.Text, StringComparison.Ordinal)
                     && effectText.Contains(pending.Name, StringComparison.Ordinal) && effectText.Contains("You", StringComparison.Ordinal)
                     && pending.Targets.All(target => effectText.Contains(target.Name, StringComparison.Ordinal))
-                    && frame.Hits.Count(hit => hit.Id == "stack-row:" + pending.Id) == 1
+                    && frame.Hits.Count(hit => hit.Id == "stack-source:" + pending.Id) == 1
+                    && !frame.Hits.Any(hit => hit.Id == "stack-row:" + pending.Id)
                     && !frame.Hits.Any(hit => hit.Id is "stack" or "action-details") && !frame.Cards.Any(card => card.Zone == "Stack"),
-                    "The single Ballista effect exposes its pending damage, source, controller and player target on one surface without duplicate opens or a copied source card");
+                    "The single Ballista effect exposes its damage, controller and player target with specific references instead of a whole-box action or copied source card");
+                Until(() => CardSettled(ExperienceScenarios.BallistaId), "The current Ballista must settle before checking its read-only source preview");
+                var unanswered = lab.State;
+                var sourcePose = frame.Cards.Single(card => card.Id == ExperienceScenarios.BallistaId && card.Zone == "Battlefield").Display;
+                var sourceRest = frame.Cards.Single(card => card.Id == ExperienceScenarios.BallistaId && card.Zone == "Battlefield").Rest;
+                var sourceReference = frame.Hits.Single(hit => hit.Id == "stack-source:" + pending.Id);
+                Tick(sourceReference.Bounds.Center); Tick(sourceReference.Bounds.Center);
+                var afterHover = frame.Cards.Single(card => card.Id == ExperienceScenarios.BallistaId && card.Zone == "Battlefield");
+                bool sourceHoverUnchanged = ReferenceEquals(lab.State, unanswered) && app.TestPort.Overlay.Length == 0 && !app.TestPort.Busy
+                    && app.TestPort.ReferencePreviewCardId == ExperienceScenarios.BallistaId && app.TestPort.ReferencePreviewBounds is { } preview
+                    && !preview.Intersects(effectRow.Bounds) && !preview.Intersects(app.TestPort.DecisionPanelBounds)
+                    && afterHover.Rest == sourceRest && !afterHover.Focused
+                    && Vector2.Distance(afterHover.Display.Center, sourceRest.Center) < 2 && Vector2.Distance(afterHover.Display.Size, sourceRest.Size) < 2
+                    && frame.Hits.All(hit => hit.Id != "stack-card-preview" || hit.Card == null);
+                string sourceHoverMessage = "Hovering the effect's source previews its actual current card clear of the effect/dock without changing the battlefield rest pose, opening a reader/overlay or answering the decision";
+                if (!sourceHoverUnchanged) sourceHoverMessage += ". Observed: " + System.Text.Json.JsonSerializer.Serialize(new {
+                        stateSame = ReferenceEquals(lab.State, unanswered), app.TestPort.Overlay, app.TestPort.Busy,
+                        app.TestPort.ReferencePreviewCardId, app.TestPort.ReferencePreviewBounds, effectRow.Bounds, app.TestPort.DecisionPanelBounds,
+                        sourcePose, sourceRest, currentPose = afterHover.Display, currentRest = afterHover.Rest, afterHover.Focused,
+                        previewHasCard = frame.Hits.Any(hit => hit.Id == "stack-card-preview" && hit.Card != null)
+                    }, new System.Text.Json.JsonSerializerOptions { IncludeFields = true });
+                check(sourceHoverUnchanged, sourceHoverMessage);
+                var targetReference = frame.Hits.Single(hit => hit.Id == "stack-target:" + pending.Id + ":player:1");
+                Tick(targetReference.Bounds.Center); Tick(targetReference.Bounds.Center);
+                check(ReferenceEquals(lab.State, unanswered) && app.TestPort.Overlay.Length == 0 && !app.TestPort.Busy
+                    && app.TestPort.ReferencePreviewCardId == null,
+                    "Hovering the reported player target leaves the same unanswered effect and does not invent a card preview for a player");
                 Click("confirm");
                 Until(() => !app.TestPort.Busy && lab.StageIndex == 2 && frame.Stamp.Revision == lab.State.Revision,
                     "Passing priority must expose the next authored responder");
