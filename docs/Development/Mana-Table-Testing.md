@@ -702,8 +702,8 @@ Keep a PR in draft until its exact final head has successful applicable checks:
 | Workflow | Required evidence |
 | --- | --- |
 | [Mana Table native Windows release](../../.github/workflows/mana-table-native-release.yml), `Verify and package Windows x64` | Fail-closed aggregate of the clean Windows package, .NET client logic, critical native UI shards, installer lifecycle and updater tests |
-| [Mana Table](../../.github/workflows/mana-table.yml), `desktop` | Fail-closed aggregate of setup/syntax/unit checks, all shared-engine shards, combat UI, desktop smoke and encounters |
-| [Test build](../../.github/workflows/test-build.yaml), `Test with Java 17` and `Test with Java 21` | Full Java reactor tests on Linux with both JDKs, using Xvfb for GUI-dependent tests; Java 17 also produces the shared engine artifact |
+| [Mana Table](../../.github/workflows/mana-table.yml), `desktop` | Fail-closed aggregate of setup/syntax/unit checks, all shared-engine shards and critical desktop journeys |
+| [Test build](../../.github/workflows/test-build.yaml), `Test with Java 17` and `Test with Java 21` | Shipped engine/API reactor `verify` on Linux with both JDKs, using Xvfb; Java 17 also produces the shared engine artifact |
 | [iOS compatibility gate](../../.github/workflows/ios-compat-gate.yml), `iOS/MobiVM link audit` | Java transform/link audit when Java, Maven POMs, iOS sources or its workflow change; this does not build or test an installed iOS app |
 
 Native and desktop PR workflows run without path filters; iOS is path-filtered.
@@ -723,6 +723,9 @@ require the exact event and source checkout, verify its manifest, byte count and
 SHA256, and use that same artifact for gameplay and packaging. Publication still
 requires the completed Java 17/21, desktop and applicable iOS checks for `master`.
 Foreign-source, missing, failed, skipped and cancelled evidence cannot count as a pass.
+Automatic Java checks cover `forge-api` and every required engine dependency;
+the complete upstream Forge reactor (including separate upstream clients) remains
+available through manual `workflow_dispatch` with `extended=true`.
 
 Engine and UI tests run in isolated shards rather than one long serial job. Automatic
 PR/master gates run eight critical native journeys and eight critical desktop UI

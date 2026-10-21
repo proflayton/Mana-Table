@@ -5,6 +5,11 @@ on:
     branches: [master]
   pull_request:
   workflow_dispatch:
+    inputs:
+      extended:
+        description: Run the complete upstream Forge reactor
+        type: boolean
+        default: true
 
 permissions:
   contents: read
@@ -60,10 +65,16 @@ jobs:
           overwrite: true
 
       - name: Run tests in virtual framebuffer
+        env:
+          EXTENDED: ${{ github.event_name == 'workflow_dispatch' && inputs.extended || false }}
         run: |
           export DISPLAY=":1"
           Xvfb :1 -screen 0 800x600x8 &
-          mvn -B -ntp test
+          if [ "$EXTENDED" = 'true' ]; then
+            mvn -B -ntp test
+          else
+            mvn -B -ntp -pl forge-api -am verify
+          fi
 
       - name: Save failed test reports and decision traces
         if: failure()
