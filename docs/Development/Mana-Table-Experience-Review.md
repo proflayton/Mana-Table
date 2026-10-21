@@ -43,6 +43,7 @@ native renderer and input pipeline with controlled state, not a rules simulator.
 | --- | --- |
 | `crowded-counters.v1` | 480 permanents, Toph earthbend 2, then one Felidar Retreat effect with 82 recipients; source, changed land and complete affected set |
 | `card-reading.v1` | Hand slots, reading/collapse and required selection; current P/T/counters in card and ability-source previews despite an older embedded source face |
+| `ability-choice.v1` | Interim authored mana continuation; its forced one-option chooser does not match the normal live Elf activation and is not a product interaction reference |
 | `ordered-choice.v1` | Visible position numbers, same-name occurrences, selection order and confirmation |
 | `mana-payment.v1` | Unspent colored mana, payment instructions and pool transitions |
 | `combat-allocation.v1` | Attacker/blocker identity, current P/T, marked damage and assignment thresholds, including anonymous cards |
@@ -121,7 +122,7 @@ acceptance.
 | Finding | Scoped change or remaining work | Source status |
 | --- | --- | --- |
 | Constant card-reading instructions, activation badges and an empty mana caption repeated information already conveyed by the board | Removed the repeated board hints, per-card activation captions and zero-pool caption; meaningful resources, legal actions and decision consequences remain | Implemented |
-| Opening a card creates a separate Play card / Close card control column; the replacement edge tab was easy to miss | Put the deliberate action over the selected card's illustration, with distinct hover/press feedback; clicking the rest of the enlarged face still collapses it | Reworked after human feedback; review pending |
+| Opening a card creates a separate Play card / Close card control column; the replacement edge tab was easy to miss | Moving that same control over the illustration did not improve the interaction model | Both placement iterations rejected by human review |
 | A primary button's permanent accent can look like hover; custom stack rows and text choices have separate painting paths | The shared Controls helper separates resting importance or selection from hover and pressed feedback across buttons, stack rows, policies, text choices and phase stops; card hover, selection and availability have distinct treatment | Implemented |
 | The allocation recipient's visible Inspect caption lay mostly outside its clickable art | The existing inspect-only target now includes the exact art or painted caption; assignment amounts and commands are unchanged | Implemented |
 | Every combat row repeated Back to table without locating that attacker | Removed the row copies; the panel exit and actual assign, remove and recall actions remain | Implemented |
@@ -171,11 +172,68 @@ the entry over the selected card's illustration, then replaces it with the actua
 engine-reported ability cost/effect when the complete options fit there. Longer
 choices keep the adjacent layout. Missing-art faces reserve that same action
 space above their rules; names and current stats remain outside it. This change
-still needs human review.
+was rejected by human review: it put the same generic control over the artwork
+without designing a better interaction.
 The Release build and existing presentation, headless presentation, card-reading
 and action-feedback checks pass. Cached-art captures under `on-card-actions-*`
 show the entry at rest, hovered and pressed, and the ability over Llanowar Elves'
 illustration. These are implementation checks and agent inspection.
+
+## Card interaction decision after the rejected placement changes
+
+The design question is what selecting a card lets a player understand and do.
+Moving an Abilities button changes neither its meaning nor the unnecessary
+navigation it adds. The proposed interaction is:
+
+| Player intent | Visible behavior |
+| --- | --- |
+| Read or select a card | Promote the exact current occurrence into a stable, readable card. Keep the illustration clear; show current stats and counters with the card. Reading alone must not pay a cost or begin an activation. |
+| Use a card | Show concrete engine-reported cost/effect actions within its rules area. One ability gives one action; multiple abilities or casting alternatives use the same structure. Passive text remains text. No generic Abilities step. |
+| Complete an action | Keep the chosen source identifiable while the engine requests modes, targets or payment in its actual order. Highlight legal battlefield targets and relevant resources in place. A short current task can accompany those objects. |
+| Back out | Offer cancellation only where the engine permits it. Preserve already-committed costs; do not imply a universal undo. Before commitment, selection and inspection leave game state unchanged. |
+| Understand the result | Return attention to the affected card, target or resource. Show the actual tap, movement, damage, counter or mana change; retain the source relationship through the transition. |
+
+The rules area must be composed deliberately. A rectangle at a percentage of a
+card image is not a mapping from its printed rules to a live action. The engine
+must supply action identity and presentation data. When it cannot identify the
+corresponding rules segment, explicit action text belongs in a distinct portion
+of the card reading surface; unrelated printed text must not appear clickable.
+Availability and unavailable reasons must be engine-reported, never inferred
+from Oracle prose. Unknown availability must remain unknown.
+
+The data boundary currently prevents an honest direct presentation. The
+auto-pass `PriorityAbilities` list excludes mana abilities and is not a complete
+catalog of card actions (`AvailableActions.scanAll`, `PriorityAbilityPass`).
+Concrete play choices are projected later by `MatchSession.chooseAbility`.
+Selecting a card needs a noncommitting, prompt-scoped projection of its real
+actions before a separate explicit action can invoke one. Both priority and
+mana-payment contexts need this contract, with stale-source validation and the
+viewer's existing visibility limits. This is a design requirement, not an
+implemented capability.
+
+This follows the useful separation described by Wizards' rules/client teams:
+the engine supplies finalized actions and decision constraints, while the client
+chooses how to present each interaction. See [On Whiteboards, Naps, and Living
+Breakthrough](https://magic.wizards.com/en/news/mtg-arena/on-whiteboards-naps-and-living-breakthrough).
+
+The current Elf fixture is misleading: it forces a one-option `playAbility`
+choice even though the adapter normally returns that sole playable ability
+immediately unless it explicitly requires a prompt (`MatchSession`'s
+`getAbilityToPlay` dispatch). Its authored tap/green-mana continuation and the
+on-card rectangle checks do not demonstrate a coherent real-game experience.
+Other lab cards also advertise unsupported Cast/Play actions. Do not present
+these fixtures as a complete playable interaction.
+
+The next review must cover the same grammar across a simple mana source and a
+real multi-ability source with distinct costs and effects, including a targeted
+action: select, read the action, choose it, target, back out where permitted,
+retry, and observe the authoritative result. Include an unavailable state,
+graveyard casting and a crowded source location. Use actual engine continuations
+for commitment and cancellation; keep visual review separate from command
+assertions. The existing fake second-option labels and generic scripted result
+are insufficient. These are review gaps, not a request for another test suite.
+
+## Existing regression walkthrough
 
 Use one `1000x740` interactive window for the short review: `card-reading.v1`
 stages 0 and 3, `ordered-choice.v1`, `stack-priority.v1` stage 2, then
