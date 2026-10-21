@@ -42,8 +42,21 @@ public record AppBuild(string Version, bool IsRelease, string SourceRevision)
         new JsonDocumentOptions { MaxDepth = 32 });
 }
 
-public record AppRelease(Version Version, Uri PageUrl, Uri InstallerUrl, long SizeBytes, string Sha256);
-public record UpdateDownloadProgress(long BytesReceived, long TotalBytes);
+public enum UpdatePayloadKind { Installer, Incremental }
+public enum UpdatePreparationStage { Downloading, Preparing, Ready }
+public record AppRelease(Version Version, Uri PageUrl, Uri InstallerUrl, long SizeBytes, string Sha256)
+{
+    public UpdatePayloadKind PayloadKind { get; init; }
+    public bool UsesDelta { get; init; }
+    public long FullSizeBytes { get; init; }
+    public string PlanId { get; init; } = "";
+}
+public record UpdateDownloadProgress(long BytesReceived, long TotalBytes)
+{
+    public UpdatePreparationStage Stage { get; init; }
+    public int PreparationPercent { get; init; }
+    public bool FullFallback { get; init; }
+}
 public record PreparedUpdate(AppRelease Release, string InstallerPath);
 
 public interface IAppUpdates
@@ -53,6 +66,7 @@ public interface IAppUpdates
     Task<PreparedUpdate> DownloadAsync(AppRelease release, string cacheDirectory,
         IProgress<UpdateDownloadProgress>? progress = null, CancellationToken cancellationToken = default);
     Task ValidateAsync(PreparedUpdate update, CancellationToken cancellationToken = default);
+    Task<PreparedUpdate?> GetPreparedAsync(AppRelease release, CancellationToken cancellationToken = default) => Task.FromResult<PreparedUpdate?>(null);
 }
 
 /// <summary>Only published, updater-aware native installers from the project's public repository are eligible.</summary>

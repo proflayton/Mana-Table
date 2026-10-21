@@ -146,6 +146,7 @@ while ((client.Busy || client.Polling) && DateTime.UtcNow < deadline) { client.P
 Check(client.State?.Decision?.Id == "next" && client.State.Result == null && connection.Replies == 1, "A late pre-command poll cannot replace the command's authoritative result");
 Check(!client.Submit(command), "An old decision cannot be submitted after a new snapshot");
 checks += await AppUpdateRegression.RunAsync();
+await IncrementalUpdateRegression.RunAsync(Check);
 HandPlacementRegression.Run(Check);
 AllocationRegression.Run(Check);
 await RecoveryRegression.RunAsync(Check);

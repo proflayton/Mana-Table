@@ -8,19 +8,26 @@ Download ManaTable-Setup.exe from https://github.com/proflayton/Mana-Table/relea
 and open it. Setup installs for your Windows account, adds shortcuts, and opens
 the game. Administrator access, Java and .NET installation are not required.
 Open Updates from Home, setup or Settings to check for a newer release. Startup
-checks can be turned off there. Download shows progress and can be canceled;
-you can continue playing while it downloads. After leaving your game and any
-friends' table, choose Install and restart. Setup waits for Mana Table to close,
-updates the installed app and reopens it with the same player profile.
+checks can be turned off there. The app notifies you first and downloads only
+when you choose. Smaller patches are used when available; a complete download
+is the fallback if a patch cannot be used. Progress distinguishes Downloading,
+Preparing and Ready. You can close the panel and keep playing or building.
+After leaving your game and friends' table and finishing your work, choose
+Restart to update. Mana Table closes normally and reopens the same profile.
+A downloaded update waits for that explicit choice, including after an ordinary
+app restart. Older installed builds receive one compatible installer update to
+enable smaller in-app updates.
 Your decks and settings stay in %LOCALAPPDATA%\ManaTableNative and are retained
 during updates or uninstall. Players on v0.2.7 and earlier need to download the
 first updater-enabled installer manually. Everyone at a table should update.
 Windows x64 only. First startup loads the card catalog.
 
-The portable ZIP is an alternative: extract the entire folder and open
-ManaTable.exe. Keep the engine folder beside it; do not run inside the ZIP.
-Portable copies can check and download updates; open the release page to install
-the app or extract the complete newer portable ZIP into a separate folder.
+The portable ZIP is an alternative: extract the entire folder and use its root
+launcher. Keep its full layout together; do not run inside the ZIP. Managed
+portable copies can offer Restart to update. Older flat ZIPs still use a manual
+replacement: extract the complete newer portable ZIP into a separate folder,
+or install the app. Update preparation also needs disk space for cached and
+temporary files, even when the download is small.
 
 STARTUP AND YOUR FIRST SESSION
 Every launch opens a loading screen, then the main menu: Play with AI,

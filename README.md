@@ -27,9 +27,13 @@ edits are not uploaded to Archidekt. During a game, the engine handles costs,
 legal actions, targeting, priority, phases and combat.
 
 Your decks and preferences live in `%LOCALAPPDATA%\ManaTableNative`, separately
-from the installation. Use **Updates** in the app to check for and download a
-newer installer. See the [player guide](mana-native/START-HERE.txt) for controls,
-network setup and update instructions.
+from the installation. **Updates** notifies you first; downloads start only when
+you choose. Managed installations download smaller patches where possible,
+prepare and check the new files in the background, then offer **Restart to
+update** after you leave your game and friends table and finish your work.
+Older installed builds receive one compatible installer update to enable this
+layout. See the [player guide](mana-native/START-HERE.txt) for controls, network
+setup, portable limitations and update instructions.
 
 ## Project guides
 

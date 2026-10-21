@@ -59,35 +59,74 @@ Share this permanent link with friends:
 
 <https://github.com/proflayton/Mana-Table/releases/latest/download/ManaTable-Setup.exe>
 
-The installer updates the same per-user application directory. Close the game
-before updating. Decks, artwork and preferences live separately in
-`%LOCALAPPDATA%\ManaTableNative`; both updates and uninstall retain that directory.
+The managed application lives in `%LOCALAPPDATA%\ManaTable`, with versioned
+contents under `current`, an `Update.exe` helper, a stable root launcher and a
+package cache. The former flat Inno installation normally lives in
+`%LOCALAPPDATA%\Programs\Mana Table`. Decks, artwork and preferences remain in
+`%LOCALAPPDATA%\ManaTableNative`; updates and uninstall retain that separate profile.
 Players at a multiplayer table should use the same release. Packaged release
 builds offer an **Updates** panel and a saved **Check on startup** preference.
-Checking and downloading can run in the background; installation only starts
-after the player chooses **Install and restart** and leaves any active game or
-friends table. The app revalidates the download before starting Setup. Portable
-release builds without an installed-app handoff use the download-folder/manual
-install route; development builds link to releases. There is no unattended installation.
+Checks notify first and fetch metadata only. Application downloads start only
+after **Download update**. Downloading and **Preparing** can continue while the
+app is used. **Restart to update** stays blocked during a game, connected friends
+table, pending action, failed deck save or unfinished input. The app checks the
+prepared files again and exits normally so Java can shut down before replacement.
+An ordinary launch never applies a waiting update automatically. A completed SDK
+restart is acknowledged after the app's startup succeeds.
 
-The updater discovers public, stable `mana-native-v*` releases and requires a
-matching `installer-manifest.json` (supported installer protocol, source, version,
-Windows x64, exact bytes and SHA256). Old builds without the protocol need a
-manual bootstrap install. Native and legacy Electron release tags are separate;
-do not use the repository's generic Latest release as an updater channel.
+Velopack **1.2.161** supplies package caching, native binary patches, full-package
+fallback and apply/restart. The selected strategy determines the displayed
+download size. Missing bases, unsuitable chains or failed patches use a complete
+package; the UI identifies that fallback. A small transfer still needs room for
+a full cached base, reconstructed package and temporary expanded files. Sizes
+depend on the actual versions and runtime/resource changes, not a fixed saving.
+
+The stable channel accepts public, non-draft, non-prerelease `mana-native-v*`
+tags. Each release's `releases.win-x64.json` describes only its attached full and
+delta packages. `update-manifest.json` separately binds package ID, version,
+source revision, full-package identity and every ZIP file entry's size/SHA256.
+The adapter validates reconstructed and cached contents against that contract;
+it does not require identical ZIP compression/layout. Unexpected, missing or
+modified files fail verification. A verified cached target can become Ready
+again after an ordinary launch without another download.
+
+### Compatible migration and portable copies
+
+Existing updater clients select the highest `installer-manifest.json` and
+understand **installer protocol1**. Keep that manifest and canonical
+`ManaTable-Setup.exe` compatible. The canonical executable remains genuine Inno
+Setup; it embeds the genuine Velopack setup under a separate name. Renaming a
+Velopack setup to masquerade as protocol1 would break old clients' verified
+handoff arguments. They need one complete bridge update before receiving patches.
+
+The bridge installs into the separate managed root and checks its exact app,
+build and real Forge catalog before retiring the old Inno installation. It keeps
+the same explicit profile and recreates shortcuts after old uninstall. Failed
+first-install health retains the old installation. This migration gate differs
+from the SDK's recovery when an update cannot replace a locked application;
+there is no claim of automatic rollback for arbitrary later application failures.
+
+Managed portable layouts can use the SDK update path from their writable root.
+Older flat portable ZIPs keep the manual download/extract route; extract a newer
+complete ZIP into a separate directory or install the app. Development builds
+link to releases. Native and legacy Electron tags are separate; the generic
+GitHub Latest endpoint is not the updater's discovery channel.
 Builds are unsigned, so Windows can show an unknown publisher or reputation
 prompt until code signing is configured.
 
 ## Build a native installer locally
 
-Use a clean committed Windows checkout, JDK 17, the .NET 9 SDK and Inno Setup 6.
+Use a clean committed Windows checkout, JDK 17, the .NET 9 SDK, a .NET 10 runtime
+for the pinned Velopack CLI, and Inno Setup 6.
 CI pins its JDK/SDK, Inno compiler and software graphics driver in the native
 workflow; consult that file when matching CI. From the repository root, first
 verify Forge with `mvn -pl forge-api -am verify`, then run:
 
 ```powershell
 ./mana-native/package.ps1 -Release -Version 0.2.0 -OutputDirectory dist/ManaTable-Native-0.2.0
-./mana-native/build-installer.ps1 -InputPackageDirectory dist/ManaTable-Native-0.2.0 -Version 0.2.0 -OutputDirectory dist/installer
+$vpk = ./mana-native/ci/update-tools.ps1 -Directory .tools/update-tools
+./mana-native/build-update-bundles.ps1 -InputPackageDirectory dist/ManaTable-Native-0.2.0 -Version 0.2.0 -OutputDirectory dist/update-bundles -VpkDll $vpk
+./mana-native/build-installer.ps1 -InputPackageDirectory dist/ManaTable-Native-0.2.0 -Version 0.2.0 -OutputDirectory dist/installer -ManagedSetup dist/update-bundles/ManaTable-win-x64-Setup.exe
 ```
 
 `JAVA_HOME` selects the JDK used to create a fresh bundled runtime. The clean
@@ -99,6 +138,14 @@ calling the result an exact-source release. `build.json` records the checkout SH
 and JAR hash; that alone is not independent proof of the JAR's source.
 Installer compilation checks the package version, engine, portable ZIP, and source
 archive hashes. `-CompilerPath <ISCC.exe>` selects a portable Inno Setup compiler.
+The bridge additionally requires the genuine setup's sibling bundle report and
+content manifest to match that same input build and source. For subsequent
+bundles, pass a previous published `-PreviousFullPackage` and its independently
+verified `-PreviousFullSha256`; without a base the bundle contains a full update.
+The bundle builder pins CLI/SDK versions, creates full/delta artifacts and their
+content proof, and disables installer shortcut creation until the migration
+health gate succeeds. Change runtime versions deliberately so unrelated releases
+do not accidentally replace unchanged dependencies.
 These commands create local artifacts, not a public GitHub release and not a
 completed CI gate. Review the [required checks](Mana-Table-Testing.md#ci-and-review)
 and installer tests before a handoff. Use a new output directory/versioned path
@@ -109,6 +156,16 @@ for each candidate and retain earlier packages.
 installer with a separate smoke-test application identity. It tests installation,
 reinstallation, bundled Java, client startup and uninstall while retaining a saved
 profile sentinel. It never installs the production app or uses the normal profile.
+
+`mana-native/updates/test-installed-updates.ps1 -TestDirectory <fresh-directory>
+-VpkDll <pinned-vpk.dll>` exercises a genuine installed SDK test executable with a
+real Windows locator and package cache. Its sequence covers delta preparation
+and restart, cancellation of the owned native patch helper, damaged-patch full
+fallback, retaining a prepared update on ordinary launch, explicit restart and
+the same profile. These controlled fixture sizes are not production bandwidth
+predictions. Product migration has a separate
+`mana-native/installer/test-managed-migration.ps1` test: it uses unique Inno/SDK
+identities, the real native executable and bundled Forge health query.
 
 ## Verify a published native handoff
 
@@ -125,10 +182,18 @@ does not establish that the public download contains the final merged source.
 - Verify the update manifest's version, source, architecture, installer protocol,
   installer byte count and SHA256 against the downloaded Setup executable.
   Check the source ZIP matches the committed release tree.
+- Verify the managed release index and `update-manifest.json` agree with the
+  actual full/delta assets and source. Download and validate the full package's
+  complete file-entry contract. Keep the canonical protocol1 setup check as
+  well; new metadata does not replace compatibility for existing clients.
 - Start the extracted app with a fresh isolated `--profile`, wait for the real
   process exit and retain startup evidence. Run the installer lifecycle and
   update-handoff tests with their separate smoke identity before handoff; do not
   use a player's installed app as the test destination.
+- Verify updater discovery, preparation and explicit restart from a genuine
+  installed or supported portable base. Test a failed patch's complete-package
+  fallback and retain the same-profile health acknowledgement. A standalone
+  command-line delta reconstruction does not prove the installed update flow.
 
 Retain the release URL, exact source SHA, workflow run, download hashes and test
 evidence together. If master advances during publication, verify which revision

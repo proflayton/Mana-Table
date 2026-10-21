@@ -53,6 +53,9 @@ larger text settings. Reading and paging do not answer the pending decision.
   Node is not needed to build or launch the MonoGame client itself.
 - Inno Setup 6 only when compiling an installer. A source run or portable preview
   does not need it.
+- The pinned Velopack **1.2.161** CLI requires a **.NET 10 runtime** when building
+  full/delta update bundles. The application and SDK integration remain .NET 9.
+  `ci/update-tools.ps1` verifies the official CLI archive before extraction.
 
 The first Maven/NuGet restore needs network access. Players using the installer
 need no separate Java or .NET installation. Non-Windows native runs and packages
@@ -142,8 +145,24 @@ Retain `native-error.log`, `client.log` and `engine.log` from the test profile w
 present, plus the exact revision, package/JAR, window size, cards and pending
 decision. A protocol mismatch requires a complete compatible client/engine build.
 Native previews have `release:false` metadata and do not join the stable update
-channel. Released packages can check/download updates; installation waits until
-the game and friends' table are closed and current work is complete.
+channel. Released packages check for updates without downloading application
+content. Download and preparation require an explicit click; restart waits until
+the game and friends' table are closed and current work is complete. Downloaded
+updates are never applied automatically on ordinary startup.
+
+The update adapter is in `Mana.Client/Updates`: it issues a sized plan, delegates
+native patching and full fallback to pinned Velopack, and verifies every package
+file against the published content manifest before calling it ready. ZIP layout
+differences are accepted only when all file contents match. The SDK cache retains
+a full base package and needs additional temporary preparation space; transfer
+savings do not imply equally small disk use. `Updates` can recover a verified
+prepared package after an ordinary restart without downloading it again.
+
+Flat Inno installations use the existing protocol1 installer path for their
+one-time migration; the canonical setup remains a genuine Inno bridge. Managed
+and flat portable copies have different update capabilities. See the
+[release guide](../docs/Development/Mana-Table-Releases.md) for layout, artifacts,
+migration and isolated lifecycle verification.
 
 ## Focused verification
 
