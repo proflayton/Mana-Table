@@ -80,6 +80,7 @@ internal sealed partial class TableApplication
     }
     private void Scroll(int direction)
     {
+        if (ScrollFocusedBattlefield(direction)) return;
         if (chatOpen && ChatBounds.Contains(pointer)) {
             if (chatPeople) return;
             if (chatPage == 0 && direction > 0) chatAnchor = conversation.State?.Revision ?? 0;

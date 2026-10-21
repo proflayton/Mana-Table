@@ -2,7 +2,8 @@
 param(
     [Parameter(Mandatory=$true)][string]$TestDirectory,
     [Parameter(Mandatory=$true)][string]$VpkDll,
-    [switch]$KeepInstalled
+    [switch]$KeepInstalled,
+    [switch]$ShutdownOnly
 )
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
@@ -55,11 +56,13 @@ function Wait-Healthy([string]$Version) {
 
 Write-Output "Publishing the isolated SDK probe for $appId."
 $published = Join-Path $TestDirectory 'published'
-& dotnet publish (Join-Path $nativeRoot 'Mana.Update.Lifecycle.Tests/Mana.Update.Lifecycle.Tests.csproj') -c Release -r win-x64 --self-contained true -p:NuGetAudit=false -p:RuntimeFrameworkVersion=9.0.13 -o $published *> (Join-Path $TestDirectory 'probe-publish.log')
+& dotnet publish (Join-Path $nativeRoot 'Mana.Update.Lifecycle.Tests/Mana.Update.Lifecycle.Tests.csproj') -c Release -r win-x64 --self-contained true --artifacts-path (Join-Path $TestDirectory 'build') -p:NuGetAudit=false -p:RuntimeFrameworkVersion=9.0.13 -o $published *> (Join-Path $TestDirectory 'probe-publish.log')
 if ($LASTEXITCODE -ne 0) { throw 'Lifecycle probe publish failed.' }
 $releases = @{}
 $previous = $null
-foreach ($version in @('0.2.701','0.2.702','0.2.703')) {
+$versions = @('0.2.701','0.2.702')
+if (-not $ShutdownOnly) { $versions += '0.2.703' }
+foreach ($version in $versions) {
     $payloadDirectory = Join-Path $TestDirectory ('input-' + $version)
     New-Item -ItemType Directory -Path $payloadDirectory | Out-Null
     Copy-Item -Path (Join-Path $published '*') -Destination $payloadDirectory -Recurse
@@ -86,9 +89,21 @@ if ($report.packageId -cne $appId -or $report.setupSha256 -ine (Get-FileHash -Li
 if (-not $install.StartsWith($TestDirectory + [IO.Path]::DirectorySeparatorChar, [StringComparison]::OrdinalIgnoreCase) -or $appId -notmatch '^ManaTableNative-Smoke-[a-f0-9]{32}$') { throw 'Isolated installation guard failed.' }
 Write-Output 'Installing only the unique SDK test identity into its isolated directory.'
 Run-Hidden $setup @('--silent','--installto',$install) 'install-sdk-base'
-Probe @('--stage','--source',$releases['0.2.702'],'--expect','0.2.702','--require-delta','--result','delta-result.json') 'prepare-delta'
+Probe @('--stage','--source',$releases['0.2.702'],'--expect','0.2.702','--dispose-preparation','--result','shutdown-result.json') 'dispose-native-patch'
+$shutdownResult = Get-Content -LiteralPath (Join-Path $profile 'shutdown-result.json') -Raw | ConvertFrom-Json
+if ($shutdownResult.disposedHelper -ne $true -or $shutdownResult.cancelled -ne $true) { throw 'SDK shutdown returned before the actual owned patch helper exited.' }
+Probe @('--stage','--source',$releases['0.2.702'],'--expect','0.2.702','--require-delta','--reject-contained-profile','--result','delta-result.json') 'prepare-delta'
 Probe @('--apply') 'apply-delta'
 Wait-Healthy '0.2.702'
+if ($ShutdownOnly) {
+    if (-not $KeepInstalled) { Run-Hidden (Join-Path $install 'Update.exe') @('uninstall','--silent') 'uninstall-sdk-test' }
+    $result = [ordered]@{passed=$true;verifiedAtUtc=[DateTime]::UtcNow.ToString('o');appId=$appId;installRoot=$install;profile=$profile;
+        realWindowsLocator=$true;genuineSetup=$true;ownedNativeHelperDisposed=$true;disposeMilliseconds=$shutdownResult.disposeMilliseconds;
+        containedProfilesRejected=$true;deltaRestart=$true;profilePreserved=$true}
+    [IO.File]::WriteAllText((Join-Path $TestDirectory 'shutdown-update-results.json'), ($result | ConvertTo-Json -Depth 8), $utf8)
+    Write-Output 'Installed SDK shutdown passed: Dispose reaped its owned native helper; contained profiles rejected; explicit delta restart preserved the external profile.'
+    return
+}
 Probe @('--stage','--source',$releases['0.2.703'],'--expect','0.2.703','--cancel-preparation','--result','cancel-result.json') 'cancel-native-patch'
 
 # The copied bad-patch feed retains the published hash so the real SDK must

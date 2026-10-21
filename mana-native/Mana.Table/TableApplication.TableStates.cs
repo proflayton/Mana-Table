@@ -7,15 +7,16 @@ namespace Mana.Table;
 
 internal sealed partial class TableApplication
 {
-    private void DrawTableStates(GameSnapshot state)
+    private void DrawTableStates(GameSnapshot state, Rectangle? area = null)
     {
         if (state.States.Length == 0) return;
-        int x = 840;
+        int end = area?.Right ?? (publicChanges.Groups.Count > 0 ? 1000 : 1180);
+        int x = area?.X ?? 840, top = area?.Y ?? 12, height = area?.Height ?? 33;
         foreach (var item in state.States) {
             string caption = PublicStatePresentation.Caption(item);
             int width = Math.Min(320, canvas.TextWidth(caption, .58f, true) + 20);
-            if (x + width > 1120) break;
-            var bounds = new Rectangle(x, 12, width, 33);
+            if (x + width > end - 60) break;
+            var bounds = new Rectangle(x, top, width, height);
             canvas.Panel(bounds, Panel, Gold, 5);
             canvas.CenterText(caption, bounds, Gold, .58f, true);
             hits.Add(new("table-state:" + item.Id, Scope, bounds, () => {
@@ -23,7 +24,7 @@ internal sealed partial class TableApplication
             }));
             x += width + 8;
         }
-        Button("table-states", "All", 1124, 12, 56, () => { tableStatePage = 0; overlay = "table-state"; }, height: 33);
+        Button("table-states", "All", end - 56, top, 56, () => { tableStatePage = 0; overlay = "table-state"; }, height: height);
     }
     private int tableStatePage;
     private void DrawTableStateDetails()

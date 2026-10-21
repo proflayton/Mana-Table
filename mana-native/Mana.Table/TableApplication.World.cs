@@ -190,7 +190,7 @@ internal sealed partial class TableApplication
             if (index != 1 && !hasCounters) canvas.CenterText(player.Zone("Hand").Count + " in hand", new((int)handCenter.X - 65, (int)handCenter.Y + 35, 130, 22), Muted, .48f);
         }
         canvas.Glow(center + new Vector2(0, 10), new(radius * 3.8f, radius * 2.5f), Color.Black * .9f);
-        if (target || player.Priority || active) canvas.Glow(center, new(radius * 4.7f), (target ? Blue : Gold) * .4f);
+        if (target || active) canvas.Glow(center, new(radius * 4.7f), (target ? Blue : Gold) * .4f);
         // Layered seat medallions sit on the table rim, like physical life counters.
         canvas.Circle(center + new Vector2(0, 6), radius + 7, new Color(11, 17, 20));
         canvas.Circle(center, radius + 5, target ? Blue : active ? Gold : new Color(119, 115, 100));
@@ -204,12 +204,12 @@ internal sealed partial class TableApplication
             canvas.Circle(center, radius, new Color(11, 20, 24) * .38f);
         }
         canvas.Glow(center - new Vector2(4, 13), new(radius * 2), new Color(169, 178, 159) * .25f);
-        if (player.Priority) canvas.Ring(center, radius + 10, target ? Blue : Gold * .8f, 2, -.6f, MathF.PI * 1.35f);
+        DrawPrioritySeat(player, center, radius);
         canvas.CenterText(player.Life.ToString(), new((int)(center.X - radius) + 1, (int)(center.Y - radius) + 2, (int)radius * 2, (int)radius * 2), Color.Black, own ? 1.65f : 1.35f, true);
         canvas.CenterText(player.Life.ToString(), new((int)(center.X - radius), (int)(center.Y - radius), (int)radius * 2, (int)radius * 2), player.Eliminated ? Muted : Ink, own ? 1.65f : 1.35f, true);
         var bounds = new Rectangle((int)center.X - (int)radius - 9, (int)center.Y - (int)radius - 9, (int)radius * 2 + 18, (int)radius * 2 + 18);
         hits.Add(new("player:" + player.Id, Scope, bounds, () => PlayerClick(player.Id), PlayerId: player.Id, Shape: p => Vector2.DistanceSquared(p.ToVector2(), center) <= (radius + 9) * (radius + 9)));
-        string name = own ? "YOU" : localMatch ? "AI " + (index + 1) + " · " + player.Name.Split('·')[0].Trim() : player.Name;
+        string name = own ? "YOU" : localMatch && !ExperienceLabOpen ? "AI " + (index + 1) + " · " + player.Name.Split('·')[0].Trim() : player.Name;
         int x = (int)center.X - 94, y = (int)center.Y + (own ? 44 : 41);
         if (own) { x = (int)center.X + 58; y = (int)center.Y - 22; }
         if (!own && index == 1) { x = (int)center.X + 50; y = (int)center.Y - 32; }

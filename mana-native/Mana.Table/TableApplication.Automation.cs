@@ -14,6 +14,15 @@ internal sealed partial class TableApplication
     internal Probe TestPort => new(this);
     internal class Probe(TableApplication game)
     {
+        internal Mana.Table.Presentation.PresentationFrame? Frame => game.Frame;
+        internal IReadOnlyList<Mana.Renderer.EffectChangeGroup> PublicChanges => game.publicChanges.Groups;
+        internal Rectangle? ChangeCalloutBounds => game.changeCalloutBounds;
+        internal IReadOnlySet<string> HighlightedChangeTargets => game.highlightedChangeTargets;
+        internal string? HighlightedChangeSource => game.highlightedChangeSource;
+        internal Mana.Renderer.EffectTransitionFrame EffectTransitions => game.effectTransitionFrame;
+        internal IReadOnlyList<StackRowPaint> StackRows => game.stackRows;
+        internal IReadOnlyDictionary<int, Rectangle> PrioritySeats => game.prioritySeats;
+        internal void OpenBattlefield(int owner) => game.OpenZone(owner, "Battlefield");
         internal string Profile => game.profile;
         internal GameSnapshot? Match => game.match;
         internal string Error => game.error;

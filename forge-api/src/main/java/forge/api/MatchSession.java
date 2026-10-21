@@ -10,6 +10,17 @@ import forge.card.mana.ManaAtom;
 import forge.deck.Deck;
 import forge.game.*;
 import forge.game.event.GameEventTurnPhase;
+import forge.game.event.GameEvent;
+import forge.game.event.GameEventManaPool;
+import forge.game.event.GameEventCardTapped;
+import forge.game.event.GameEventCardPhased;
+import forge.game.event.GameEventCardAttachment;
+import forge.game.event.GameEventPlayerCounters;
+import forge.game.event.GameEventSpeedChanged;
+import forge.game.event.GameEventDayTimeChanged;
+import forge.game.event.GameEventCardStatsChanged;
+import forge.game.event.GameEventPlayerStatsChanged;
+import forge.game.event.GameEventSnapshotRestored;
 import forge.game.card.CardView;
 import forge.game.card.Card;
 import forge.game.combat.CombatUtil;
@@ -45,6 +56,7 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
     private final PlayerControllerHuman human;
     private final PlayerView viewer;
     private final MatchActivity activity;
+    private final QuietYieldBaseline quietYield = new QuietYieldBaseline();
     private final CombatCardIds combatIds;
     private final IGuiGame gui;
     private final Object gate;
@@ -202,6 +214,37 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
         table.stopIfNoHumans();
     }
 
+    @Subscribe
+    public void onQuietYieldEvent(GameEvent event) {
+        // These public mutations need not create history entries and may be
+        // reversed before another snapshot. Never inspect a hidden card here.
+        boolean changed = event instanceof GameEventPlayerCounters
+                || event instanceof GameEventSpeedChanged || event instanceof GameEventDayTimeChanged
+                || event instanceof GameEventSnapshotRestored;
+        if (event instanceof GameEventManaPool e) quietYield.observeMana(e.player().getId(), publicMana(e.player()));
+        else if (event instanceof GameEventCardTapped e) changed = publicQuietCard(e.card());
+        else if (event instanceof GameEventCardPhased e) changed = publicQuietCard(e.card());
+        else if (event instanceof GameEventCardAttachment e) changed = publicQuietCard(e.equipment());
+        else if (event instanceof GameEventCardStatsChanged e) {
+            for (var card : e.cards()) if (publicQuietCard(card)) quietYield.observeCard(cardState(card, null));
+        } else if (event instanceof GameEventPlayerStatsChanged e) {
+            for (var player : e.players()) {
+                var actual = game.getRegisteredPlayers().stream().filter(p -> p.getId() == player.getId()).findFirst().orElse(null);
+                quietYield.observePlayer(player.getId(), map("life", player.getLife(),
+                        "maxHandSize", player.hasUnlimitedHandSize() ? null : player.getMaxHandSize(),
+                        "landPlaysUsed", player.getNumLandThisTurn(), "landPlayLimit", player.hasUnlimitedLandPlay() ? null : player.getMaxLandPlay(),
+                        "counters", publicCounters(player), "states", actual == null ? List.of() : PublicPlayerStates.of(actual)));
+            }
+        }
+        if (changed) quietYield.invalidate();
+    }
+
+    private boolean publicQuietCard(CardView card) {
+        return card != null && card.getZone() != null && card.canBeShownTo(viewer)
+                && (card.getZone() != ZoneType.Hand || viewer.equals(card.getController()))
+                && (!card.isFaceDown() || card.getZone() == ZoneType.Battlefield);
+    }
+
     public static List<Map<String, String>> opponents(String format) {
         if (format.equals("Commander")) {
             var opponents = new ArrayList<Map<String, String>>();
@@ -302,6 +345,19 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
                 && priority.canAutoPass();
     }
 
+    private boolean canQuietYield(Input input) {
+        var view = game.getView();
+        return input instanceof InputPassPriority priority && priority.isPriorityActive() && okEnabled
+                && !closed && error == null && !viewer.getHasLost() && !game.isGameOver()
+                && human.getInputQueue().getInput() == input && human.getInputProxy().getInput() == input
+                && view.getTurn() > 0 && view.getPlayerTurn() != null && !viewer.equals(view.getPlayerTurn())
+                && view.getStack().isEmpty() && game.getStack().isEmpty();
+    }
+
+    private boolean permitsQuietYield(Pending prompt, String token) {
+        return canQuietYield(prompt.input) && quietYield.permits(token, activity.sequence());
+    }
+
     public Map<String, Object> action(JsonObject request) {
         synchronized (gate) {
             requireSession(request);
@@ -311,6 +367,17 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
             if (next == null || !next.id.equals(string(request, "promptId"))) throw new IllegalArgumentException("That choice has changed. Use the current prompt.");
             if (action.equals("passIfNoResponse") && (!Boolean.TRUE.equals(next.prompt.get("canAutoPass")) || !canAutoPass(next.input)))
                 throw new IllegalArgumentException("This response window needs your decision");
+            String yieldToken = "";
+            if (action.equals("passUntilPublicAction")) {
+                var supplied = request.get("yieldToken");
+                if (supplied == null || !supplied.isJsonPrimitive() || !supplied.getAsJsonPrimitive().isString()
+                        || supplied.getAsString().isEmpty())
+                    throw new IllegalArgumentException("The table has changed. Review the current decision before passing for now.");
+                yieldToken = supplied.getAsString();
+            }
+            if (action.equals("passUntilPublicAction") && (!next.kind.equals("input")
+                    || !Objects.equals(next.prompt.get("quietYieldToken"), yieldToken) || !permitsQuietYield(next, yieldToken)))
+                throw new IllegalArgumentException("The table has changed. Review the current decision before passing for now.");
             if (!next.kind.equals("input")) {
                 validateDialog(next, request);
                 pending = null;
@@ -324,7 +391,7 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
             String placementAbility = null;
             Integer placementHandId = null;
             switch (action) {
-                case "ok", "passIfNoResponse" -> { if (!okEnabled) throw new IllegalArgumentException("Continue is not available"); }
+                case "ok", "passIfNoResponse", "passUntilPublicAction" -> { if (!okEnabled) throw new IllegalArgumentException("Continue is not available"); }
                 case "cancel" -> { if (!cancelEnabled) throw new IllegalArgumentException("Cancel is not available"); }
                 case "attackAll" -> { if (!(next.input instanceof InputAttack)) throw new IllegalArgumentException("Not declaring attackers"); }
                 case "card" -> { card = next.cards.get(string(request, "key")); if (card == null) throw new IllegalArgumentException("Card is not visible in this prompt"); }
@@ -377,6 +444,7 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
             PlayerView chosenPlayer = target;
             String chosenPlacementAbility = placementAbility;
             Integer chosenPlacementHandId = placementHandId;
+            String chosenYieldToken = yieldToken;
             pending = null;
             inputActionQueued = true;
             markBusy();
@@ -387,6 +455,14 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
                     switch (action) {
                         case "ok" -> human.selectButtonOk();
                         case "passIfNoResponse" -> ((InputPassPriority) next.input).passPriority();
+                        case "passUntilPublicAction" -> {
+                            synchronized (gate) {
+                                // Recheck on the owned input thread. A queued
+                                // permission must never consume a changed input.
+                                restorePriority = !permitsQuietYield(next, chosenYieldToken);
+                                if (!restorePriority) ((InputPassPriority) next.input).passPriority();
+                            }
+                        }
                         case "cancel" -> human.selectButtonCancel();
                         case "attackAll" -> human.alphaStrike();
                         case "card" -> human.selectCard(chosenCard, null, CARD_CLICK);
@@ -414,7 +490,9 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
                         if (restorePriority && !closed && !viewer.getHasLost() && !game.isGameOver()
                                 && human.getInputQueue().getInput() == next.input) {
                             pending = next;
-                            notices.add("That hand-placement option is no longer available. Use the current prompt.");
+                            notices.add(action.equals("passUntilPublicAction")
+                                    ? "The table changed. Passing for now stopped; review the current decision."
+                                    : "That hand-placement option is no longer available. Use the current prompt.");
                             while (notices.size() > 12) notices.remove(0);
                         }
                     }
@@ -522,6 +600,10 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
     }
 
     void updatePublicDecision(Integer owner, String actionClass) {
+        // Only ownership/class is public. A private required prompt invalidates
+        // permission without exposing its contents to another seat.
+        boolean requiredChoice = !actionClass.equals("priority") && !actionClass.equals("resolving");
+        if (requiredChoice) quietYield.invalidate();
         String status = (String) latest.get("status");
         if (status.equals("finished") || status.equals("error") || status.equals("starting")) { owner = null; actionClass = status; }
         boolean clearPriority = actionClass.equals("resolving") || actionClass.equals("finished") || actionClass.equals("error");
@@ -529,6 +611,15 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
                 && (!clearPriority || latest.get("priorityPlayerId") == null)) return;
         var next = new LinkedHashMap<>(latest);
         next.put("revision", ++revision); next.put("decisionOwnerId", owner); next.put("actionClass", actionClass);
+        if (!actionClass.equals("priority") || !Objects.equals(owner, viewer.getId())) {
+            var current = pending;
+            if (current != null && current.prompt != null && !Objects.equals(current.prompt.get("quietYieldToken"), "")) {
+                var prompt = new LinkedHashMap<>(current.prompt);
+                prompt.put("quietYieldToken", "");
+                current.prompt = prompt;
+                next.put("prompt", prompt);
+            }
+        }
         if (clearPriority) next.put("priorityPlayerId", null);
         latest = Collections.unmodifiableMap(next);
     }
@@ -568,11 +659,7 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
                 if (zone == ZoneType.Library) zoneState.put("topCard", topCard);
                 zones.add(zoneState);
             }
-            var mana = new LinkedHashMap<String, Integer>();
-            // Colorless mana has its own atom; the card-color absence mask is zero.
-            byte[] colors = ManaAtom.MANATYPES;
-            String[] labels = {"W", "U", "B", "R", "G", "C"};
-            for (int i = 0; i < colors.length; i++) mana.put(labels[i], player.getMana(colors[i]));
+            var mana = publicMana(player);
             var commanderDamage = new ArrayList<Object>();
             if (format.equals("Commander")) for (PlayerView owner : allPlayers) {
                 if (owner.getCommanders() == null) continue;
@@ -604,7 +691,7 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
             projectedPrompt.put("priorityAbilities", priorityAbilities(human.getPriorityAbilities(), prompt));
             prompt.prompt = projectedPrompt;
         }
-        latest = Collections.unmodifiableMap(map("id", id, "revision", ++revision, "boardRevision", boardRevision, "format", format, "status", error != null ? "error" : game.isGameOver() ? "finished" : "playing",
+        var snapshot = map("id", id, "revision", ++revision, "boardRevision", boardRevision, "format", format, "status", error != null ? "error" : game.isGameOver() ? "finished" : "playing",
                 "error", error, "playerCount", allPlayers.size(), "viewerId", viewer.getId(), "turn", view.getTurn(), "phase", view.getPhase() == null ? "Pregame" : view.getPhase().nameForUi,
                 "phaseKey", view.getPhase() == null ? "PREGAME" : view.getPhase().name(),
                 "activePlayerId", view.getPlayerTurn() == null ? null : view.getPlayerTurn().getId(), "players", players,
@@ -613,8 +700,25 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
                 "stack", stack, "combat", combatState(prompt), "prompt", prompt == null ? null : prompt.prompt,
                 "states", PublicStates.of(forge.game.PublicTableStates.snapshot(game)),
                 "ignoredPriorityAbilities", priorityAbilities(human.getIgnoredPriorityAbilities(), prompt),
-                "result", result, "notices", List.copyOf(notices), "activity", activityFrame.entries()));
+                "result", result, "notices", List.copyOf(notices), "activity", activityFrame.entries());
+        String quietToken = quietYield.observe(snapshot, activity.sequence());
+        if (prompt != null) {
+            var projectedPrompt = new LinkedHashMap<>(prompt.prompt);
+            projectedPrompt.put("quietYieldToken", canQuietYield(prompt.input) ? quietToken : "");
+            prompt.prompt = projectedPrompt;
+            snapshot.put("prompt", projectedPrompt);
+        }
+        latest = Collections.unmodifiableMap(snapshot);
         notifyPlaytest();
+    }
+
+    private static Map<String, Integer> publicMana(PlayerView player) {
+        var mana = new LinkedHashMap<String, Integer>();
+        // Colorless mana has its own atom; the card-color absence mask is zero.
+        byte[] colors = ManaAtom.MANATYPES;
+        String[] labels = {"W", "U", "B", "R", "G", "C"};
+        for (int i = 0; i < colors.length; i++) mana.put(labels[i], player.getMana(colors[i]));
+        return mana;
     }
 
     private List<Map<String, Object>> stackTargets(StackItemView root) {

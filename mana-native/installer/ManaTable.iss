@@ -417,6 +417,13 @@ begin
     RaiseException('Another Mana Table window opened. Close it and try Setup again.');
 end;
 
+procedure RequireExternalProfile(const Profile, InstallationRoot: String);
+begin
+  if (CompareText(Profile, InstallationRoot) = 0) or
+    (Pos(UpperCase(AddBackslash(InstallationRoot)), UpperCase(AddBackslash(Profile))) = 1) then
+    RaiseException('Choose a player profile outside the Mana Table installation before updating. Your current profile has not been moved.');
+end;
+
 procedure MigrateManagedInstallation;
 var
   ManagedRoot, Main, Setup, Profile, LegacyRoot, Uninstaller, RegisteredUninstaller, Args, Receipt: String;
@@ -430,10 +437,12 @@ begin
   Profile := UpdateProfile;
   if Profile = '' then Profile := ExpandConstant('{localappdata}\ManaTableNative');
   Profile := NormalizedPath(Profile);
+  RequireExternalProfile(Profile, ManagedRoot);
   HasLegacy := RegQueryStringValue(HKCU64, UpdateRegistryKey, 'InstallLocation', LegacyRoot);
   if HasLegacy then begin
     if not IsAbsoluteUnquotedPath(LegacyRoot) then RaiseException('The legacy install location is invalid.');
     LegacyRoot := NormalizedPath(LegacyRoot);
+    RequireExternalProfile(Profile, LegacyRoot);
     if (CompareText(LegacyRoot, ManagedRoot) = 0) or
       (Pos(UpperCase(AddBackslash(LegacyRoot)), UpperCase(AddBackslash(ManagedRoot))) = 1) or
       (Pos(UpperCase(AddBackslash(ManagedRoot)), UpperCase(AddBackslash(LegacyRoot))) = 1) then

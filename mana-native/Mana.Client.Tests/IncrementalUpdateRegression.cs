@@ -66,6 +66,29 @@ internal static class IncrementalUpdateRegression
         check(didCancel && File.Exists(cancelled.BasePath) && !File.Exists(Path.Combine(cancelled.Packages, cancelled.Asset.FileName)),
             "Cancelling preparation preserves the usable base package and cannot leave an unverified target ready");
 
+        using var shutdown = new Fixture(withBase: true);
+        var shuttingDown = shutdown.Updates();
+        var shutdownRelease = (await shuttingDown.CheckAsync())!;
+        shutdown.Source.Block = true;
+        var active = shuttingDown.DownloadAsync(shutdownRelease, shutdown.Root);
+        await shutdown.Source.Started.Task;
+        var waiting = shuttingDown.CheckAsync();
+        shuttingDown.Dispose();
+        bool activeCancelled = false, waitingCancelled = false, closed = false;
+        try { await active; } catch (OperationCanceledException) { activeCancelled = true; }
+        try { await waiting; } catch (OperationCanceledException) { waitingCancelled = true; }
+        try { await shuttingDown.CheckAsync(); } catch (ObjectDisposedException) { closed = true; }
+        shuttingDown.Dispose();
+        check(activeCancelled && waitingCancelled && closed && File.Exists(shutdown.BasePath) && shutdown.Source.Downloads == 1,
+            "Disposing the updater cancels and awaits active and queued work before returning, retains the base and rejects new operations");
+
+        bool containedProfilesRejected = true;
+        foreach (string profile in new[] { fixture.Root, Path.Combine(fixture.Root, "current", "my-profile"), Path.Combine(fixture.Root, "current", "..") }) {
+            try { updates.StartRestart(ready, profile); containedProfilesRejected = false; }
+            catch (InvalidOperationException error) when (error.Message.Contains("outside the application installation", StringComparison.Ordinal)) { }
+        }
+        check(containedProfilesRejected, "Restart refuses profiles at or inside the managed installation, including normalized parent traversal, before launching apply");
+
         using var delta = new Fixture(withBase: true, withDelta: true);
         using var deltaUpdates = delta.Updates();
         var deltaRelease = (await deltaUpdates.CheckAsync())!;

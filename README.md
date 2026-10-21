@@ -44,6 +44,7 @@ setup, portable limitations and update instructions.
 | Contribute a change | [Contributing](CONTRIBUTING.md) |
 | Understand the app and engine boundaries | [Architecture](docs/Development/Mana-Table-Architecture.md) |
 | Run checks or diagnose a regression | [Testing](docs/Development/Mana-Table-Testing.md) |
+| Reproduce edge cases and review the native experience | [Experience Lab and human review](docs/Development/Mana-Table-Experience-Review.md) |
 | Package a preview or understand publication | [Packaging and releases](docs/Development/Mana-Table-Releases.md) |
 | Extend projected state or game commands | [Engine API contract](forge-api/README.md) |
 | Maintain the Electron client | [Electron development](forge-desktop/README.md) |

@@ -21,7 +21,7 @@ internal sealed partial class TableApplication
         && match?.Decision?.Kind is "choice" or "reveal";
     private bool CompactCardDecision => TableChoice
         || match?.Decision?.Intent is DecisionIntent.Selection or DecisionIntent.Mana or DecisionIntent.Attack or DecisionIntent.Block;
-    private CardPresentationContext CardContext => new(match, Scope, OverlayOpen,
+    private CardPresentationContext CardContext => new(match, Scope, OverlayOpen && !BattlefieldFocused,
         ReadingGalleryOpen, dragging, CompactCardDecision);
     private string? readingId => cardPresentation.PinnedId;
     private Rectangle? hoverPreview => cardPresentation.ReaderBounds;
@@ -34,6 +34,8 @@ internal sealed partial class TableApplication
         if (ActivityOpen) return hits.LastOrDefault(hit => hit.Id.StartsWith("activity-") && hit.Contains(point) && CurrentHit(hit));
         if (updatesOpen) return hits.LastOrDefault(hit => hit.Id.StartsWith("updates-") && hit.Contains(point) && CurrentHit(hit));
         if (ExperienceOpen) return hits.LastOrDefault(hit => (hit.Id.StartsWith("experience-") || hit.Id.StartsWith("updates-") || hit.Id == "guidance-reset") && hit.Contains(point) && CurrentHit(hit));
+        if (BattlefieldFocused && hits.LastOrDefault(hit => hit.Contains(point)) is { } focusHit
+            && focusHit.Id.StartsWith("battlefield-focus-", StringComparison.Ordinal)) return focusHit;
         return cardPresentation.ResolveHit(point, hits, hits.LastOrDefault(hit => hit.Contains(point)), CardContext);
     }
 
@@ -97,7 +99,7 @@ internal sealed partial class TableApplication
             Button("read-card-action", label, x, y, 220, () => {
                 var current = VisibleCards().FirstOrDefault(card => SameVisibleCard(card, entry.Card));
                 if (current == null || !IsCardActionable(current)) return;
-                CollapseCardReading(); CardClick(current);
+                CollapseCardReading(); if (BattlefieldFocused) zoneName = null; CardClick(current);
             }, !busy, true, 40);
             y += 48;
         }

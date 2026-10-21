@@ -19,6 +19,8 @@ internal sealed partial class TableApplication
     private bool updateFullFallback;
     private int updateCheckGeneration, updateDownloadGeneration, updateModalGeneration;
     private CancellationTokenSource? updateCheckCancellation, updateDownloadCancellation;
+    private readonly CancellationTokenSource updateStopped = new();
+    private Task updateCheckRequest = Task.CompletedTask, updateDownloadRequest = Task.CompletedTask, updateValidationRequest = Task.CompletedTask;
     private readonly object updateCompletionGate = new();
     private bool updateRequestsClosed;
     private sealed record UpdatePreferences(bool CheckOnStartup = true);
@@ -37,7 +39,7 @@ internal sealed partial class TableApplication
     {
         if (updateInstallDeferred && UpdateInstallBlocker().Length == 0) { updateNotice = ""; updateInstallDeferred = false; }
         if (!updateAutoChecked && AutomaticUpdateCheckAllowed) { updateAutoChecked = true; CheckAppUpdates(); }
-        if (!updateRestartAcknowledged && ManagedInstallation.WasRestarted && loaded && !StartupVisible && appUpdates?.Build.CanCheck == true) {
+        if (!updateRestartAcknowledged && restartedAfterUpdate && loaded && !StartupVisible && appUpdates?.Build.CanCheck == true) {
             updateRestartAcknowledged = true;
             updateNotice = "Updated to " + CurrentAppVersion + ".";
         }
@@ -66,10 +68,10 @@ internal sealed partial class TableApplication
         if (appUpdates?.Build.CanCheck != true || updateChecking || updateDownloading || updateValidating || closing) return;
         var service = appUpdates;
         int generation = ++updateCheckGeneration;
-        updateCheckCancellation?.Dispose(); updateCheckCancellation = new();
+        updateCheckCancellation?.Dispose(); updateCheckCancellation = CancellationTokenSource.CreateLinkedTokenSource(updateStopped.Token);
         var token = updateCheckCancellation.Token;
         updateChecking = true; updateError = updateNotice = ""; updateModalGeneration++;
-        _ = Task.Run(async () => {
+        updateCheckRequest = Task.Run(async () => {
             try {
                 var release = await service.CheckAsync(token);
                 var recovered = release == null ? null : await service.GetPreparedAsync(release, token);
@@ -93,7 +95,7 @@ internal sealed partial class TableApplication
     {
         if (appUpdates is not { } service || availableUpdate is not { } release || updateDownloading || updateChecking || updateValidating || closing) return;
         int generation = ++updateDownloadGeneration;
-        updateDownloadCancellation?.Dispose(); updateDownloadCancellation = new();
+        updateDownloadCancellation?.Dispose(); updateDownloadCancellation = CancellationTokenSource.CreateLinkedTokenSource(updateStopped.Token);
         var token = updateDownloadCancellation.Token;
         updateDownloading = true; preparedUpdate = null; updateError = updateNotice = "";
         updateBytes = 0; updateTotal = release.SizeBytes; updateStage = UpdatePreparationStage.Downloading; updateFullFallback = false; updateModalGeneration++;
@@ -101,7 +103,7 @@ internal sealed partial class TableApplication
             if (closing || generation != updateDownloadGeneration || !updateDownloading) return;
             updateBytes = value.BytesReceived; updateTotal = value.TotalBytes; updateStage = value.Stage; updateFullFallback = value.FullFallback;
         }));
-        _ = Task.Run(async () => {
+        updateDownloadRequest = Task.Run(async () => {
             try {
                 var ready = await service.DownloadAsync(release, Path.Combine(profile, "updates"), progress, token);
                 token.ThrowIfCancellationRequested();
@@ -141,13 +143,13 @@ internal sealed partial class TableApplication
     }
     private void InstallAppUpdate()
     {
-        if (appUpdates is not { } service || preparedUpdate is not { } ready || installUpdate == null || updateValidating || closing) return;
+        if (appUpdates is not { } service || preparedUpdate is not { } ready || installUpdate == null || updateChecking || updateValidating || closing) return;
         string blocker = UpdateInstallBlocker();
         if (blocker.Length > 0) { updateError = blocker; return; }
         updateValidating = true; updateError = ""; updateModalGeneration++;
-        _ = Task.Run(async () => {
+        updateValidationRequest = Task.Run(async () => {
             try {
-                await service.ValidateAsync(ready);
+                await service.ValidateAsync(ready, updateStopped.Token);
                 PostUpdateCompletion(() => {
                     updateValidating = false; updateModalGeneration++;
                     if (closing || preparedUpdate != ready) return;
@@ -176,7 +178,10 @@ internal sealed partial class TableApplication
     private void CloseUpdateRequests()
     {
         lock (updateCompletionGate) updateRequestsClosed = true;
+        updateStopped.Cancel();
         updateCheckCancellation?.Cancel(); updateDownloadCancellation?.Cancel();
+        Task.WhenAll(updateCheckRequest, updateDownloadRequest, updateValidationRequest).GetAwaiter().GetResult();
         updateCheckCancellation?.Dispose(); updateDownloadCancellation?.Dispose();
+        updateStopped.Dispose();
     }
 }

@@ -41,6 +41,8 @@ public sealed class DrawList : IDisposable
     }
     public int TextWidth(string value, float size = 1, bool bold = false) => metrics.TextWidth(value, size, bold, TextScale);
     public Point TextSize(string value, float size, int width, int maxLines, bool bold = false) => metrics.TextSize(value, size, width, maxLines, bold, TextScale);
+    public string[] TextPages(string value, float size, int width, int height, int maxLines, bool bold = false) => TextPagination.Pages(value,
+        text => TextSize(text, size, width, 80, bold).Y <= Math.Min(height, TextSize(text, size, width, maxLines, bold).Y));
     public void Fill(Rectangle bounds, Color color) => Add(new DrawCommand.Fill(bounds, color));
     public void Rounded(Rectangle bounds, Color color, int radius = 10) => Add(new DrawCommand.Rounded(bounds, color, radius));
     public void Border(Rectangle bounds, Color color, int width = 1) => Add(new DrawCommand.Border(bounds, color, width));

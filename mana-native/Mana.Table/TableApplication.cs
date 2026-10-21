@@ -23,12 +23,14 @@ internal sealed partial class TableApplication : IDisposable
     private readonly string profile;
     private readonly string? fixture;
     private readonly bool allowAutomaticChecks;
+    private readonly bool restartedAfterUpdate;
     internal bool CaptureMode { get; set; }
     private readonly PresentationResources resources;
     internal bool Automated { get; set; }
     internal string? AcceptedHit { get; private set; }
     internal bool AcceptedDrag { get; private set; }
     internal event Action? ExitRequested;
+    internal PresentationFrame? Frame { get; private set; }
     private void RequestExit() => ExitRequested?.Invoke();
     private readonly GameSnapshot? initialState;
     private readonly ClientSession session;
@@ -83,16 +85,17 @@ internal sealed partial class TableApplication : IDisposable
     private bool OverlayOpen => updatesOpen || ActivityOpen || ExperienceOpen || workshopDialog.Length > 0 || overlay.Length > 0 || zoneName != null || DecisionModal;
     private string Scope => match == null ? deckEditor ? DeckScope : LobbyScope : session.Scope;
     private string ControlScope(string id) => id.StartsWith("updates-") ? UpdateScope : id.StartsWith("activity-") ? ActivityScope : id.StartsWith("experience-") || id == "guidance-reset" && ExperienceOpen ? ExperienceScope : id.StartsWith("chat-") ? ChatScope
-        : match != null && (id is "auto" or "hold" or "instructions" or "action-details" or "ability-auto-pass-open" or "ability-prev" or "ability-next" or "ability-text-prev" or "ability-text-next"
+        : match != null && (id is "auto" or "hold" or "instructions" or "action-details" or "battlefields" or "quiet-priority-stop" or "ability-auto-pass-open" or "ability-prev" or "ability-next" or "ability-text-prev" or "ability-text-next"
             || id.StartsWith("phase-stop:") || id.StartsWith("ability-undo:")) ? match.Id + ":playback" : Scope;
     private bool CurrentHit(Hit hit) => hit.Scope == ControlScope(hit.Id);
     private Hit? HitAt(Point at) => TableHitAt(at);
 
     public TableApplication(ICardEngine engine, string profile, string? fixture = null, GameSnapshot? initialState = null,
         PresentationResources? resources = null, IAppUpdates? appUpdates = null, Action<PreparedUpdate>? installUpdate = null,
-        bool allowAutomaticChecks = false, TimeProvider? clock = null)
+        bool allowAutomaticChecks = false, TimeProvider? clock = null, bool restartedAfterUpdate = false)
     {
         this.clock = clock ?? TimeProvider.System;
+        this.restartedAfterUpdate = restartedAfterUpdate;
         session = new(engine, engine, this.clock); updates = new(session);
         session.Changed += AcceptEffects;
         session.Completed += () => { FinishActivity(); FinishGuidanceAttempt(); nextPoll = 0; if (error.Length == 0) priority.Reset(); };
@@ -137,6 +140,8 @@ internal sealed partial class TableApplication : IDisposable
         if (state?.Status == "finished" && previous?.Status != "finished") tableGuideOpen = false;
         if (state != null) { effects.Observe(previous, state, now); presence.Observe(previous, state, now); playback.Observe(previous, state, now); }
         if (state != null) ObserveActionFeedback(previous, state);
+        if (state != null) publicChanges.Observe(previous, state, now);
+        if (state != null) priorityTransitions.Observe(previous, state, now);
         ObserveMana(previous, state);
         if (state != null && previous != null && state.Id == previous.Id) {
             if (state.Notices.LastOrDefault() is { } latest && latest != previous.Notices.LastOrDefault()) { notice = latest; noticeUntil = now + 8; }
@@ -166,6 +171,8 @@ internal sealed partial class TableApplication : IDisposable
         UpdateAppUpdates();
         var prompt = match?.Decision;
         if (decisionId != (prompt?.Id ?? "")) {
+            if (BattlefieldFocused && prompt != null && (prompt.Kind is "choice" or "reveal" or "number" or "text" or "allocate"
+                || prompt.Intent == DecisionIntent.Selection)) { zoneName = null; CollapseCardReading(); }
             decisionId = prompt?.Id ?? ""; selections.Clear(); choicePage = 0; choiceFilter = ""; selectedCombat = null; priority.Reset();
             dragging = false; dragSource = null; collapsedDecision = false; textFocus = false;
             if (!TableChoice && prompt is { Ordered: true } && prompt.Min == prompt.Choices.Length) selections.AddRange(prompt.Choices.Select(c => c.Index));
@@ -229,8 +236,9 @@ internal sealed partial class TableApplication : IDisposable
         // Give a ready pass precedence over starting another observation. Use this
         // update's pointer position so entering a card pauses Auto before Draw.
         bool autoBlocked = commandFailure && error.Length > 0 || OverlayOpen || chatFocus || dragging || pressed != null || readingId != null || selectedCombat != null;
-        if (!automatic || held || autoBlocked) session.CancelAdvance();
-        if (!session.NeedsRecovery && fixture == null && playback.Ready(now) && priority.Update(match, automatic, held, preferences.Stops,
+        bool quietReserved = UpdateQuietPriority(autoBlocked);
+        if (!quietReserved && (!automatic || held || autoBlocked)) session.CancelAdvance();
+        if (!quietReserved && !ExperienceLabOpen && !session.NeedsRecovery && fixture == null && playback.Ready(now) && priority.Update(match, automatic, held, preferences.Stops,
             autoBlocked, busy || polling) != null) {
             // Snapshot the policy: the worker never reads mutable UI preferences.
             var stops = preferences.Stops.ToHashSet();
@@ -238,17 +246,18 @@ internal sealed partial class TableApplication : IDisposable
             if (session.Advance(state => TurnGuide.CanAutoPass(state, true, false, stops, false), PresentationPacing.ShouldPresent))
                 pendingActionLabel = "Passing priority automatically.";
         }
-        if (loaded && fixture == null && !busy && !polling && now >= nextPoll && (localMatch || lobby != null)) {
+        if (!ExperienceLabOpen && loaded && fixture == null && !busy && !polling && now >= nextPoll && (localMatch || lobby != null)) {
             nextPoll = now + (session.NeedsRecovery ? 2 : match == null ? .6 : match.Decision == null ? .05 : .12);
             session.Poll(!localMatch, nextLobby => lobby = nextLobby);
         }
         feedback.RemoveAll(f => f.Until < now);
     }
     private void SetAutomatic(bool value) { automatic = value; preferences = preferences with { Automatic = value }; SavePreferences(); }
-    private void SavePreferences() { session.CancelAdvance(); priority.Reset(); try { preferences.Save(profile); } catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { error = "Could not save settings: " + ex.Message; } }
+    private void SavePreferences() { StopQuietPriority(); session.CancelAdvance(); priority.Reset(); try { preferences.Save(profile); } catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { error = "Could not save settings: " + ex.Message; } }
     private void Send(DecisionReply reply)
     {
         if (fixture != null || session.NeedsRecovery || match?.Id != reply.GameId || match.Decision?.Id != reply.DecisionId) return;
+        if (reply.Action != ReplyAction.PassUntilPublicAction) StopQuietPriority();
         string? key = GuidanceForReply(reply);
         var attempt = key == null ? null : new GuidanceAttempt(key, match.Id, match.Decision.Id, match.Revision);
         error = ""; commandFailure = false;
@@ -314,7 +323,7 @@ internal sealed partial class TableApplication : IDisposable
         EndCardReading();
         var drawing = canvas.Complete();
         hits.Publish();
-        return new(drawing, hits.Published, tableScene, cardPresentation.Cards, DesignHeight,
+        return Frame = new(drawing, hits.Published, tableScene, cardPresentation.Cards, DesignHeight,
             new(match?.Id, match?.Revision ?? 0, match?.Decision?.Id, Scope, time.TotalGameTime.TotalSeconds));
     }
     public void Dispose()

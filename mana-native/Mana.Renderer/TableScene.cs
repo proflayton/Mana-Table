@@ -90,7 +90,7 @@ public sealed class TableScene
         var orderedChoices = allowInlineOrdering && state.Decision is { Kind: "choice", Ordered: true } decision
             ? decision.Choices.Where(c => c.Card != null && !string.IsNullOrEmpty(c.CardId)).Select(c => c.CardId).ToHashSet(StringComparer.Ordinal) : null;
         var geometry = SeatGeometry.Build(state);
-        var layout = BattlefieldLayoutContext.Build(state, orderedChoices, geometry);
+        var layout = BattlefieldLayoutContext.Build(state, orderedChoices, geometry, isResource);
         var seats = new List<SceneSeat>();
         for (int index = 0; index < state.Players.Length; index++) {
             var player = state.Players[index];

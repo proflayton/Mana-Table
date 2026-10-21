@@ -33,5 +33,10 @@ internal static class DrawingFrameChecks
         catch (InvalidOperationException) { changed = true; }
         drawing.Complete();
         check(changed, "Font measurement and painting use one stable text scale throughout a frame");
+        string rows = string.Join("\n", Enumerable.Range(0, 82).Select(index => $"Creature {index} · +1/+1 counters 2 → 3"));
+        var pages = drawing.TextPages(rows, .84f, 1150, 460, 24);
+        check(string.Concat(pages) == rows && pages.Length > 1 && pages.All(page =>
+            drawing.TextSize(page, .84f, 1150, 80).Y <= Math.Min(460, drawing.TextSize(page, .84f, 1150, 24).Y)),
+            "Measured result pagination retains all 82 complete rows within the actual painted line and height limits");
     }
 }

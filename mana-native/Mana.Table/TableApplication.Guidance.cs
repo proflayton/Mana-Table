@@ -47,8 +47,8 @@ internal sealed partial class TableApplication
             && (state.Revision > attempt.Revision || state.Decision?.Id != attempt.DecisionId)) LearnControl(attempt.Key);
     }
 
-    private void UseAutomaticControl(bool value) { SetAutomatic(value); LearnControl("priority-controls"); }
-    private void ToggleHoldControl() { held = !held; priority.Reset(); LearnControl("priority-controls"); }
+    private void UseAutomaticControl(bool value) { StopQuietPriority(); SetAutomatic(value); LearnControl("priority-controls"); }
+    private void ToggleHoldControl() { StopQuietPriority(); held = !held; priority.Reset(); LearnControl("priority-controls"); }
     private bool Unlearned(ControlCue? cue) => cue != null && !experience.LearnedControls.Contains(cue.Key);
 
     private void DrawContextGuidance()

@@ -7,8 +7,10 @@ $suites = @(
   @{ Name='startup'; Mode='--smoke-engine-startup'; Result='engine-startup-regression.json' },
   @{ Name='adapter'; Mode='--smoke-workshop-adapter'; Result='workshop-adapter-results.json' },
   @{ Name='presentation'; Mode='--smoke-presentation'; Result='presentation-results.json' },
-  @{ Name='printings-1000'; Mode='--smoke-printings'; Result='printings-results.json'; Size='1000x740' },
-  @{ Name='printings-1540'; Mode='--smoke-printings'; Result='printings-results.json'; Size='1540x980' },
+  @{ Name='printings-1000'; Mode='--smoke-printings'; Result='printings-ui-results.json'; Size='1000x740' },
+  @{ Name='printings-1540'; Mode='--smoke-printings'; Result='printings-ui-results.json'; Size='1540x980' },
+  @{ Name='clutter-1000'; Mode='--smoke-cluttered-changes'; Result='cluttered-changes-results.json'; Size='1000x740' },
+  @{ Name='clutter-1540'; Mode='--smoke-cluttered-changes'; Result='cluttered-changes-results.json'; Size='1540x980' },
   @{ Name='onboarding'; Mode='--smoke-onboarding'; Result='onboarding-results.json' },
   @{ Name='loading'; Mode='--smoke-loading'; Result='loading-results.json' },
   @{ Name='recovery-1000'; Mode='--smoke-recovery'; Result='recovery-results.json'; Size='1000x740' },
@@ -52,8 +54,8 @@ $suites = @(
 )
 # Complete, explicit ownership keeps every prior suite/size exactly once.
 $partitions = @(
-    @('lobby-ai-1000','presentation','card-states-1000','equipment-1000'),
-    @('lobby-ai-1540','onboarding','card-states-1540','equipment-1540'),
+    @('lobby-ai-1000','presentation','card-states-1000','equipment-1000','clutter-1000'),
+    @('lobby-ai-1540','onboarding','card-states-1540','equipment-1540','clutter-1540'),
     @('lobby-three-1000','loading','card-reading-1000','compact-selection-1000'),
     @('lobby-three-1540','startup','card-reading-1540','compact-selection-1540'),
     @('adapter','priority-1280','recovery-1000','commander-tax-1000'),
@@ -67,11 +69,11 @@ $partitions = @(
 )
 $allNames = @($suites | ForEach-Object { $_.Name })
 $assigned = @($partitions | ForEach-Object { $_ })
-if ($suites.Count -ne 45 -or @($allNames | Sort-Object -Unique).Count -ne 45 -or $assigned.Count -ne 45 -or @($assigned | Sort-Object -Unique).Count -ne 45 -or @(Compare-Object $allNames $assigned).Count -ne 0) { throw 'Native UI partitions must cover all 45 suite/size cases exactly once.' }
+if ($suites.Count -ne 47 -or @($allNames | Sort-Object -Unique).Count -ne 47 -or $assigned.Count -ne 47 -or @($assigned | Sort-Object -Unique).Count -ne 47 -or @(Compare-Object $allNames $assigned).Count -ne 0) { throw 'Native UI partitions must cover all 47 suite/size cases exactly once.' }
 if (-not $Extended) {
     # Fast release gate; the complete inventory remains available on demand.
     $partitions = @(
-        @('startup','loading','analysis-1000'),
+        @('startup','loading','analysis-1000','clutter-1000'),
         @('deck-experience-1000','equipment-1000','card-states-1000','printings-1000'),
         @('lobby-ai-1000'),
         @('lobby-three-1000')

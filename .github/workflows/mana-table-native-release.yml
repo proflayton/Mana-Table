@@ -33,7 +33,7 @@ on:
   workflow_dispatch:
     inputs:
       extended:
-        description: 'Run all 43 native UI cases instead of the 8 critical release cases'
+        description: 'Run all 47 native UI cases instead of the 10 critical release cases'
         type: boolean
         default: false
 
@@ -161,6 +161,10 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Native presentation and public-feedback checks failed.' }
           dotnet ./dist/harness/Mana.Table.Tests.dll --smoke-headless-presentation --profile dist/headless-presentation-checks
           if ($LASTEXITCODE -ne 0) { throw 'Headless production composition and input checks failed.' }
+          dotnet ./dist/harness/Mana.Table.Tests.dll --smoke-headless-clutter --profile dist/headless-clutter-checks
+          if ($LASTEXITCODE -ne 0) { throw 'Cluttered battlefield and causal state presentation checks failed.' }
+          dotnet ./dist/harness/Mana.Table.Tests.dll --smoke-headless-priority-flow --profile dist/headless-priority-checks
+          if ($LASTEXITCODE -ne 0) { throw 'Priority and required-choice command handoff checks failed.' }
           $root = (Resolve-Path dist/harness).Path
           $files = @(Get-ChildItem -LiteralPath $root -File -Recurse | ForEach-Object {
             @{ path=$_.FullName.Substring($root.Length+1).Replace('\','/'); sha256=(Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash }

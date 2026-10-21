@@ -13,6 +13,7 @@ internal sealed partial class TableApplication
     private readonly Dictionary<string, DenseStatsPaint> denseStatsBounds = [];
     private void PaintDenseBattlefieldLabels(Card card, int owner, SceneCard node, int copies)
     {
+        if (BattlefieldFocused) return;
         var area = node.DenseLabels;
         if (area.IsEmpty) return;
         float scale = node.DenseScale;
@@ -45,7 +46,7 @@ internal sealed partial class TableApplication
             canvas.Panel(stateBounds, new(14, 24, 31), AbilityColor(states[0]), 2);
             // The same established rules icon stays visible without making every
             // crowded permanent grow another complete text row.
-            if (scale >= .8f) PaintAbilityIcon(states[0], new(stateBounds.Center.X, stateBounds.Center.Y));
+            if (scale >= .8f && pitch >= 22) PaintAbilityIcon(states[0], new(stateBounds.Center.X, stateBounds.Center.Y));
             else canvas.CenterText("+" + states.Count, stateBounds, AbilityColor(states[0]), .32f * scale, true);
             var descriptor = card.States?.FirstOrDefault(state => state.Id == states[0]);
             string stateLabel = descriptor == null ? CardPresentation.AbilityLabel(card, states[0]) : PublicStatePresentation.Caption(descriptor);
@@ -81,7 +82,7 @@ internal sealed partial class TableApplication
         } else if (copies > 1) Text("copies", copies + " copies", Row(next++), Gold);
         var counters = CardPresentation.Counters(card);
         if (counters.Length > 0) {
-            Text("counter", counters[0].Key + " ×" + counters[0].Value, Row(next++), new(168, 207, 200));
+            Text("counter", CounterLabel(card, counters[0].Key, counters[0].Value), Row(next++), new(168, 207, 200));
             if (counters.Length > 1) Text("counter-types", "+" + (counters.Length - 1) + " counter type" + (counters.Length > 2 ? "s" : ""), Row(next), new(168, 207, 200));
         }
     }

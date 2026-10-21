@@ -16,7 +16,10 @@ internal sealed partial class TableApplication
         attachmentBadges.Clear(); attachmentConnections.Clear();
         battlefieldLabels.Clear(); denseStatsBounds.Clear();
         choiceOrderBadges.Clear();
+        stackRows.Clear(); prioritySeats.Clear();
+        changeCalloutBounds = null; highlightedChangeTargets.Clear(); highlightedChangeSource = null;
         var state = match!;
+        priorityView = PriorityPresentation.From(state);
         DrawTableSurface();
         // Queue the player's faces first; slow remote downloads must not bury the hand.
         foreach (var card in state.Viewer?.Zone("Hand").Cards ?? []) resources.Card(card);
@@ -26,9 +29,13 @@ internal sealed partial class TableApplication
         if (state.Viewer is { } viewer) DrawLocal(viewer);
         for (int i = 0; i < opponents.Length && i < 3; i++) DrawHero(opponents[i], TableLayout.Hero(i), false, i);
         DrawCombatConnections(); DrawAttachmentConnections(); DrawStack(); DrawSeatTransfers();
-        DrawHand(); DrawCardEffects(); DrawDepartures(); DrawLiftedCards();
+        DrawChangeHighlights();
+        if (!BattlefieldFocused) DrawEffectTransitions();
+        DrawHand(); DrawCardEffects(); DrawDepartures();
+        if (!BattlefieldFocused) DrawLiftedCards();
         // Your seat stays in front of the fan and readable during card travel.
         if (state.Viewer is { } local) DrawHero(local, TableLayout.Hero(3), true, 3);
+        DrawPriorityHandoff();
         foreach (var item in feedback) {
             float age = (float)(1.5 - (item.Until - now));
             canvas.Text(item.Text, (int)item.Position.X + 35, (int)item.Position.Y - 20 - (int)(age * 30), item.Color * Math.Min(1, (float)(item.Until - now)), 1.6f, 100, 1, true);
@@ -59,23 +66,30 @@ internal sealed partial class TableApplication
         if (!OverlayOpen) DrawReaderControls();
         // Decision text and its controls have priority over card readers and
         // held cards. Their input regions are registered last for the same reason.
-        DrawDecisionDock();
+        if (!BattlefieldFocused) { DrawDecisionDock(); DrawQuietPriorityControl(); }
+        if (!BattlefieldFocused) DrawChangeCallout();
         DrawOverlays();
+        if (BattlefieldFocused) DrawEffectTransitions();
         DrawLiftedCards();
-        if (ReadingGalleryOpen) DrawReaderControls();
+        if (BattlefieldFocused) { DrawDecisionDock(); DrawQuietPriorityControl(); DrawChangeCallout(); }
+        if (ReadingGalleryOpen || BattlefieldFocused) DrawReaderControls();
         if (ReadingGalleryOpen) hovered = HitAt(pointer)?.Card;
+        DrawExperienceLabHeader();
     }
     private void DrawGameHeader()
     {
         var state = match!;
         canvas.Gradient(new(0, 0, 1600, 54), new Color(8, 12, 18) * .8f, Color.Transparent);
+        if (ExperienceLabOpen) return;
         canvas.Text("MANA TABLE", 24, 17, Gold, .9f, 180, 1, true);
 
         var active = state.Players.FirstOrDefault(p => p.Id == state.ActivePlayerId);
         string label = state.Turn == 0 ? "Opening hands" : state.ActivePlayerId == state.ViewerId ? "Your turn" : active?.Name ?? "Waiting";
-        canvas.Text(label, 220, 9, Ink, .85f, 600, 1, true);
-        canvas.Text($"Turn {state.Turn}  ·  {state.Phase}", 220, 32, Muted, .6f, 600, 1);
+        canvas.Text(label, 220, 9, Ink, .85f, 410, 1, true);
+        canvas.Text($"Turn {state.Turn}  ·  {state.Phase}", 220, 32, Muted, .6f, 410, 1);
+        Button("battlefields", "Battlefields", 650, 12, 178, () => OpenZone(state.ViewerId, "Battlefield"), height: 35);
         DrawTableStates(state);
+        DrawChangesControl();
         Button("history", "History", 1190, 12, 110, () => { overlay = "history"; historyPage = 0; }, height: 35);
         Button("settings", "Settings", 1310, 12, 112, () => overlay = "settings", height: 35);
         bool departure = session.NeedsRecovery || state.Viewer?.Eliminated == true || state.Status == "error";
@@ -252,14 +266,17 @@ internal sealed partial class TableApplication
         canvas.Glow(new(807, 485), new(430, 165), Blue * .17f);
         var resting = TableWorld.Card(new(6, 108), new(245, 126));
         canvas.CardFrame(resting, Gold * .12f, 1);
-        canvas.Text(state.Stack.Length > 0 ? "ON THE STACK  ·  " + state.Stack.Length : "CURRENT ACTION", 549, 379, Gold, .49f, 154, 1, true);
+        DrawStackFlow();
+        bool payingSource = state.Decision is { Intent: DecisionIntent.Mana, SourceCard: not null }
+            || state.Decision is { Intent: DecisionIntent.Selection, SourceCard: not null, PlayerChoices.Length: > 0 };
         var stackCards = state.Stack.Take(3).Select(s => s.Card ?? new Card { Name = s.Name, Text = s.Text, Type = s.Ability ? "Ability" : "Spell" }).ToArray();
+        if (payingSource) stackCards = [state.Decision!.SourceCard!];
         Pose? topPose = null;
         if (stackCards.Length == 0 && state.Decision?.SourceCard is { } source) stackCards = [source];
         for (int i = stackCards.Length - 1; i >= 0; i--) {
             var card = stackCards[i];
             bool alsoInZone = state.Players.Any(p => p.Zones.Any(z => z.Cards.Any(c => CardIdentity(c) == CardIdentity(card))));
-            string identity = alsoInZone ? "stack:" + (state.Stack.ElementAtOrDefault(i)?.Id ?? "source") : CardIdentity(card);
+            string identity = payingSource ? "payment:" + state.Decision!.Id : alsoInZone ? "stack:" + (state.Stack.ElementAtOrDefault(i)?.Id ?? "source") : CardIdentity(card);
             if (identity.Length == 0) identity = "stack:" + (state.Stack.ElementAtOrDefault(i)?.Id ?? card.Name);
             Vector2 entrance = new(800, 520);
             if (card.VisualId.Length > 0) {
@@ -268,16 +285,29 @@ internal sealed partial class TableApplication
                     entrance = TableLayout.SeatHand(actor == state.ViewerId ? 3 : TableLayout.SeatIndex(state, actor));
             }
             int stackIndex = i;
-            var stackPose = DrawTableCard(identity, card, TableWorld.Spell(i), "Stack", null, "stack-item:" + i, () => {
-                if (IsCardActionable(card)) CardClick(card);
+            var spellPose = TableWorld.Spell(i);
+            if (state.Stack.Length > 0 || payingSource) spellPose = spellPose with { Center = spellPose.Center + new Vector2(32, 14), Size = new(124, 174) };
+            var stackPose = DrawTableCard(identity, card, spellPose, "Stack", null, "stack-item:" + i, () => {
+                if (payingSource) Inspect(card);
+                else if (IsCardActionable(card)) CardClick(card);
                 else if (state.Stack.Length > stackIndex) OpenStack(stackIndex);
                 else Inspect(card);
             }, (displayed, focus) => PaintCard(card, displayed, stackIndex == 0, false, focus), entrance);
             if (i == 0) topPose = stackPose;
         }
-        if (topPose is { } origin && state.Stack.FirstOrDefault() is { } top) DrawStackTargets(top, origin);
-        canvas.Text(stackCards[0].Name, 549, 400, Ink, .62f, 154, 3, true);
-        Button("stack", state.Stack.Length > 0 ? "Inspect stack" : "Inspect source", 549, 462, 154, () => { if (state.Stack.Length > 0) OpenStack(); else if (state.Decision?.SourceCard is { } source) Inspect(source); }, height: 29);
+        if (!payingSource && topPose is { } origin && state.Stack.FirstOrDefault() is { } top) DrawStackTargets(top, origin);
+        if (state.Stack.Length == 0 && !payingSource) {
+            canvas.Text(stackCards[0].Name, 549, 400, Ink, .62f, 154, 3, true);
+            Button("stack", "Inspect source", 549, 462, 154, () => { if (state.Decision?.SourceCard is { } source) Inspect(source); }, height: 29);
+        } else if (!payingSource && topPose is { } topCard) {
+            var next = topCard.Point(.92f, .08f);
+            canvas.Circle(next, 15, Gold);
+            canvas.CenterText("1", new((int)next.X - 15, (int)next.Y - 15, 30, 30), new(16, 26, 31), .7f, true);
+        }
+        if (state.Stack.Length > 0) {
+            Button("action-details", "Details", 871, 465, 101, () => OpenStack(), height: 28);
+            canvas.Text("After everyone passes", 717, 520, Muted, .46f, 196, 1);
+        }
     }
     private void DrawDecisionDock()
     {
@@ -300,11 +330,13 @@ internal sealed partial class TableApplication
             return;
         }
         bool autoFollowing = TurnGuide.CanAutoPass(state, automatic, held, preferences.Stops, false);
+        bool recipientChoice = d?.Intent == DecisionIntent.Selection && StateClarity.Recipients(state).Length > 0;
         bool following = busy || d == null || autoFollowing;
-        string status = !busy && autoFollowing ? "AUTO · PASSING PRIORITY" : StateClarity.DecisionStatus(state, busy);
+        string status = !busy && autoFollowing ? "AUTO · PASSING PRIORITY" : !busy && recipientChoice ? "CHOOSE A PLAYER" : StateClarity.DecisionStatus(state, busy);
         var abilities = PriorityAbilityOptions();
-        string instruction = !busy && abilities.Length == 1 ? abilities[0].IgnoredUntilNextTurn
+        string instruction = !busy && recipientChoice ? "Choose a player beside the effect." : !busy && abilities.Length == 1 && state.Stack.Length == 0 ? abilities[0].IgnoredUntilNextTurn
             ? abilities[0].SourceName + (automatic ? ": passing this ability" : ": Auto may pass this ability") : abilities[0].SourceName + " can be activated."
+            : !busy && BattlefieldFocused && d?.Intent == DecisionIntent.Priority && state.Stack.Length == 0 ? "Click a permanent to inspect it."
             : StateClarity.DecisionInstruction(state, busy, pendingActionLabel);
         var textLayout = PlanDecisionText(status, instruction, abilities.Length > 0);
         canvas.Panel(new(1254, decisionPanelBounds.Top, 320, 795 - decisionPanelBounds.Top), new(12, 22, 30), new(57, 75, 88), 5);
@@ -316,6 +348,9 @@ internal sealed partial class TableApplication
         if (following) {
             canvas.Panel(new(1266, 799, 296, 47), new(22, 31, 39), new Color(66, 82, 94), 4);
             canvas.CenterText(busy ? "Waiting for confirmation…" : autoFollowing ? "Auto is passing priority" : StateClarity.WaitingTitle(state), new(1275, 800, 278, 45), Muted, .76f);
+        } else if (recipientChoice) {
+            canvas.Panel(new(1266, 799, 296, 47), new(22, 31, 39), ActionAccent * .5f, 4);
+            canvas.CenterText("Choose a player", new(1275, 800, 278, 45), ActionAccent, .76f);
         } else if (TableChoice) {
             Button("confirm", selections.Count == 0 && d!.Min == 0 ? "Choose none" : $"Confirm ({selections.Count}/{d!.Max})", 1266, 799, 296,
                 () => Send(new(state.Id, d.Id, ReplyAction.Choose, Choices: selections.ToArray())), !busy && TableChoices.CanConfirm(state, selections), true, 47);

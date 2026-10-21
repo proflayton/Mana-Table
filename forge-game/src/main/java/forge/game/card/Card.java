@@ -1789,7 +1789,7 @@ public class Card extends GameEntity implements Comparable<Card>, IHasSVars, ITr
             }
 
             // play the Add Counter sound
-            getGame().fireEvent(new GameEventCardCounters(this, counterType, oldValue, newValue));
+            getGame().fireEvent(new GameEventCardCounters(this, counterType, oldValue, newValue, cause));
 
             // Run triggers
             final Map<AbilityKey, Object> runParams = AbilityKey.mapFromCard(this);

@@ -19,6 +19,7 @@ internal sealed partial class TableApplication
 
     private void SetAbilityAutoPass(PriorityAbility ability, bool ignored)
     {
+        StopQuietPriority();
         if (match is not { } state || state.Status is not ("playing" or "resolving")) return;
         if (ignored) {
             if (state.Decision is not { Intent: DecisionIntent.Priority } prompt

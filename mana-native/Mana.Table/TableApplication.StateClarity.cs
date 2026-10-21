@@ -28,24 +28,39 @@ internal sealed partial class TableApplication
         var recipients = StateClarity.Recipients(state);
         if (session.NeedsRecovery || state.Status != "playing" || OverlayOpen || recipients.Length == 0 || state.Decision is not { Intent: DecisionIntent.Selection } decision)
             return false;
-        const int x = 20, y = 66, width = 510;
-        int line = (int)Math.Ceiling(24 * preferences.TextScale);
-        int rows = (recipients.Length + 1) / 2, purposeY = y + 45 + 3 * line, controlsY = y + 55 + 7 * line;
-        var bounds = new Rectangle(x, y, width, 65 + 7 * line + rows * 42);
+        const int x = 545, width = 206, bottom = 548;
+        const float consequenceSize = .56f;
+        int consequenceLines = (int)Math.Ceiling(4 * preferences.TextScale);
+        string consequence = string.IsNullOrWhiteSpace(decision.Message) ? "" :
+            canvas.TextPages(decision.Message, consequenceSize, width - 20, 72, consequenceLines)[0];
+        int consequenceHeight = consequence.Length == 0 ? 0 : canvas.TextSize(consequence, consequenceSize, width - 20, consequenceLines).Y;
+        int headingHeight = Math.Max(22, canvas.TextSize("CHOOSE A PLAYER", .57f, width - 20, 1, true).Y);
+        int controlsOffset = 11 + headingHeight + (consequenceHeight > 0 ? 8 + consequenceHeight : 0) + 12;
+        int controlHeight = recipients.Length > 4 ? 27 : 34;
+        int controlsHeight = recipients.Length * controlHeight + (recipients.Length - 1) * 4;
+        // Grow upward from the same lower edge so the engine's consequence and
+        // every named recipient retain space without touching the decision dock.
+        int height = Math.Max(263, controlsOffset + controlsHeight + 46);
+        int y = bottom - height;
+        var bounds = new Rectangle(x, y, width, height);
         canvas.Panel(bounds, new Color(15, 24, 32) * .98f, ActionAccent, 7);
         hits.Add(new("decision-context-panel", Scope, bounds, () => { }));
-        canvas.Text("CHOOSE A RECIPIENT", x + 14, y + 11, ActionAccent, .58f, width - 28, 1, true);
-        canvas.Text(StateClarity.Source(state), x + 14, y + 35, Ink, .85f, width - 28, (int)Math.Ceiling(3 * preferences.TextScale), true);
-        canvas.Text(StateClarity.Purpose(state), x + 14, purposeY, Ink, .85f, width - 28, (int)Math.Ceiling(4 * preferences.TextScale));
-        Button("decision-explanation", "Full decision", x + width - 151, y + 11, 135,
-            () => { overlay = "help"; inspectPage = 0; }, height: 25);
+        canvas.Text("CHOOSE A PLAYER", x + 10, y + 11, ActionAccent, .57f, width - 20, 1, true);
+        if (consequence.Length > 0)
+            canvas.Text(consequence, x + 10, y + 11 + headingHeight + 8, Ink, consequenceSize, width - 20, consequenceLines);
+        canvas.Text(state.Decision?.SourceCard?.Name ?? "Current effect", 760, 292, Ink, .65f, 212,
+            (int)Math.Ceiling(2 * preferences.TextScale), true);
         for (int i = 0; i < recipients.Length; i++) {
             var player = recipients[i]; string scope = Scope;
-            Button("recipient:" + player.Id, StateClarity.SeatName(state, player.Id), x + 14 + i % 2 * 246, controlsY + i / 2 * 42, 236,
+            string label = player.Id == state.ViewerId ? "You" : player.Name;
+            if (state.Players.Count(other => other.Name == player.Name) > 1 && player.Id != state.ViewerId) label += " · Seat " + (Array.IndexOf(state.Players, player) + 1);
+            Button("recipient:" + player.Id, label, x + 6, y + controlsOffset + i * (controlHeight + 4), width - 12,
                 () => {
                     if (Scope == scope && match is { } current && StateClarity.ChooseRecipient(current, player.Id) is { } reply) Send(reply);
-                }, !busy, true, 35);
+                }, !busy, true, controlHeight);
         }
+        Button("decision-explanation", "Effect details", x + 6, bottom - 34, width - 12,
+            () => { overlay = "help"; inspectPage = 0; }, height: 28);
         return true;
     }
 

@@ -7,6 +7,12 @@ separate client: run its npm commands from `forge-desktop` after `npm ci`.
 See the [native development guide](../../mana-native/README.md) for a working
 client/engine bundle and isolated source runs.
 
+For experience changes, follow [Experience review](Mana-Table-Experience-Review.md): open a
+canonical case, review actual screens and transitions, then perform the relevant
+manual play. Automated assertions cover command safety, projection and privacy;
+they are not UX acceptance. Preserve unreviewed questions and observed problems
+instead of treating a check count or screenshot count as a quality verdict.
+
 | Check | Command | What it covers |
 | --- | --- | --- |
 | Java compilation, style, tests and engine JAR | `mvn -pl forge-api -am verify` (root) | Adapter and required upstream modules |
@@ -59,6 +65,23 @@ physical hit regions instead of bypassing them with forced clicks.
 
 ## Run a focused regression
 
+### Canonical experience lab and human review
+
+Run `.\experience-lab.cmd` from the repository root to build and open the shared
+480-permanent case, or `.\experience-lab.cmd -Scenario trigger-search.v1` for the
+priority-to-library-choice trust case. The explicit lab uses the production
+`TableApplication`/`TableWindow` pipeline with versioned `Mana.Scenarios` data,
+an isolated temporary profile and cached-art fallback. It starts no Forge process
+and makes no real deck or network changes. The
+[review guide](Mana-Table-Experience-Review.md#open-a-canonical-case) lists all cases, compiled
+candidate launch commands, still/replay captures and the manual review record.
+
+For every change to priority or the stack, manually follow a pending search
+trigger through passing priority, another responder, the required recipient and
+library choices, and the searched card reaching hand. Passing priority must not
+silently answer those choices. Reproduce the corresponding behavior with the
+real Forge engine as well as the authored lab continuation.
+
 ### Headless production presentation
 
 After building `Mana.Table.Tests`, run:
@@ -82,6 +105,31 @@ Use an injected `TimeProvider` for deterministic connection-age scenarios.
 The package job runs this headless gate before distributing the GPU harness.
 Continue selected GPU journeys for clipping, actual art and physical-window
 readability; submitted commands alone cannot establish those visual properties.
+
+`--smoke-headless-engine --engine-resources <bundle>/engine --engine-jar <current.jar>`
+runs a real Forge Commander opening and operates land/commander readers and
+concession through those same production pointer controls. It saves public
+snapshot/frame pairs at opening, both battlefield transitions and the final
+result, checks exact revision stamps and private-hand filtering, and writes
+`headless-engine-results.json` plus its semantic trace. Engine startup and AI
+progress still take real time; the compositor does not wait for a GPU frame.
+This focused journey is not a complete game, rules oracle or pixel comparison.
+
+`--smoke-headless-clutter` uses the shared 480-permanent case and exact Toph/Felidar
+counter changes through the production application without a GPU. Its
+`--smoke-cluttered-changes --size 1000x740` counterpart supplies GPU/pointer
+evidence; repeat at `1540x980`. Both retain `cluttered-changes-results.json`.
+These assertions protect represented occurrences, visibility, exact commands
+and reported causes; review the actual battlefield and effect transitions yourself.
+
+`--smoke-headless-priority-flow` drives the same application through named stack
+paging and the required search handoff. `--smoke-priority-flow --size 1000x740`
+adds actual window captures and pointer input; repeat at `1540x980`. Preserve
+`priority-flow-results.json`. The scoped confirmation, recipient and library
+selection are authored interaction evidence, not a second Magic rules engine.
+These newer local modes need explicit entries in the CI inventory or a package
+gate before a run is claimed as automatic coverage; availability in the harness
+alone does not imply that CI ran it.
 
 ### Experience clarity and recovery
 
@@ -199,6 +247,24 @@ and permits manual activation of an ignored Mesa. `PriorityAbilityPassShould`
 covers exact instance and ability identity, conservative partial scans, extra
 turns, source/control changes and game cleanup. Run these with
 `AutomaticPriorityShould`, `EngineApiTest` and the normal rules regressions.
+
+**Pass for now** has a separate engine permission and `DecisionQuietAdvance`
+runner. It may ignore available-response stops only after explicit user choice
+on an opponent's empty-stack priority. Each pass carries the original opaque
+`quietYieldToken` plus the current game/prompt; it cannot adopt a new token or
+answer a required choice. Required/private choice notification revokes intent
+without disclosing another seat's options. It is not a persistent F6 or end-turn
+setting, and normal `canAutoPass` stays conservative.
+
+Java `QuietYieldTest` uses real available Arid Mesa and Forest activations,
+Upwelling's unchanged retained mana, stack responses and the mandatory library
+choice. It also checks copied generic state, transient mutation/reversion and a
+deterministic owned-input race: required-choice revocation after enqueue restores
+the exact unanswered priority. `Mana.Client.Tests/QuietPriorityRegression.cs`
+covers fixed-token batching, markBusy/other-responder waits, replacement tokens,
+required choices, cancellation reconciliation and serial command ownership.
+Use [manual review](Mana-Table-Experience-Review.md#human-acceptance) to assess the control's
+wording, visibility and behavior during real play.
 
 ### Native lobby and deck confirmation
 
@@ -502,8 +568,10 @@ results while the replacement engine grows. Render the same scenario through
 MonoGame separately from the headless rules comparison.
 
 Build `mana-native/Mana.Table.Tests/Mana.Table.Tests.csproj` for the separate
-native test executable. Test drivers and scenario engines are not in the shipped
-game. Run the adapter lifecycle check with
+native test executable. Automation drivers and test-only engines remain in that
+harness. The shipped app also includes `Mana.Scenarios` for its explicitly invoked,
+isolated Experience Lab; those authored continuations do not run live game rules.
+Run the adapter lifecycle check with
 `Mana.Table.Tests.exe --smoke --profile <new-test-directory>`. It starts four bundled
 engines, imports decks, hosts and joins, casts each commander, checks hidden
 hands and commander-damage totals, rejects a stale decision, then tests
@@ -789,9 +857,9 @@ the complete upstream Forge reactor (including separate upstream clients) remain
 available through manual `workflow_dispatch` with `extended=true`.
 
 Engine and UI tests run in isolated shards rather than one long serial job. Automatic
-PR/master gates run eight critical native journeys and eight critical desktop UI
+PR/master gates run ten critical native cases and eight critical desktop UI
 tests, each across four workers. Manual `workflow_dispatch` with `extended=true`
-retains all 43 native journeys and 23 desktop UI/encounter tests. The full shared
+retains all 47 native suite/size cases and 23 desktop UI/encounter tests. The full shared
 engine suite remains required across eight isolated workers. The
 Node shard planner covers every discovered engine file; Commander benchmark and
 pregame-concession suites run all three supported transports across their shards.
@@ -799,6 +867,14 @@ Each worker retains serial execution and its own profiles and ports. Shard
 coverage and artifact provenance have focused unit checks. The performance target
 is five minutes; record observed hosted timings instead of treating that target
 as an achieved guarantee.
+
+`mana-native/ci/native-ui.ps1 -ListOnly` lists the critical native inventory;
+add `-Extended` for the complete partition map. The script owns each named
+suite/size exactly once and rejects missing or duplicate assignments. Review
+the current workflow's package-time headless gates separately; a new command-line
+mode is not covered until one of those explicit paths invokes it. The inventory
+is mechanical regression coverage. Human screen/transition/manual-play review
+remains required for experience acceptance.
 
 Release resources store tracked card and token scripts in the engine's existing
 `cardsfolder.zip` format. This avoids installing tens of thousands of tiny files;

@@ -46,7 +46,7 @@ function Run([string]$File,[string[]]$Arguments,[int]$Timeout=120) {
         return $process.ExitCode
     } finally {$process.Dispose()}
 }
-function Bridge([string]$Name) {
+function Bridge([string]$Name,[string]$PlayerProfile=$profile) {
     $info=New-Object Diagnostics.ProcessStartInfo
     $info.FileName='powershell.exe'
     $info.Arguments='-NoProfile -NonInteractive -Command "Start-Sleep -Seconds 2"'
@@ -57,7 +57,7 @@ function Bridge([string]$Name) {
     try {
         if(-not $parent.Start()){throw 'Could not start isolated parent.'}
         return Run $bridge @('/VERYSILENT','/SUPPRESSMSGBOXES','/SP-','/NORESTART','/NOCLOSEAPPLICATIONS','/NOFORCECLOSEAPPLICATIONS','/NORESTARTAPPLICATIONS',
-            '/NORUN','/MANATABLETESTQUIET=1','/MANATABLEUPDATE=1',('/MANATABLEPID='+$parent.Id),('/MANATABLEPROFILE='+$profile),('/DIR='+$legacy),('/LOG='+(Join-Path $TestDirectory ($Name+'.log'))))
+            '/NORUN','/MANATABLETESTQUIET=1','/MANATABLEUPDATE=1',('/MANATABLEPID='+$parent.Id),('/MANATABLEPROFILE='+$PlayerProfile),('/DIR='+$legacy),('/LOG='+(Join-Path $TestDirectory ($Name+'.log'))))
     } finally {$parent.Dispose()}
 }
 try {
@@ -98,6 +98,20 @@ try {
     & $buildInstaller @bridgeOptions -OutputDirectory $bridgeOutput
     $bridge=Join-Path $bridgeOutput 'ManaTable-Setup.exe'
 
+    foreach($unsafeProfile in @(
+        @{Name='profile-is-legacy-root';Path=$legacy},
+        @{Name='profile-inside-legacy';Path=(Join-Path $legacy 'player profile')},
+        @{Name='profile-is-managed-root';Path=$managed},
+        @{Name='profile-inside-managed';Path=(Join-Path $managed 'current/player profile')}
+    )) {
+        Check ((Bridge $unsafeProfile.Name $unsafeProfile.Path) -ne 0) ('The bridge refuses '+$unsafeProfile.Name+' before running managed Setup')
+        $refusal=[IO.File]::ReadAllText((Join-Path $TestDirectory ($unsafeProfile.Name+'.log')))
+        Check ($refusal.Contains('Choose a player profile outside the Mana Table installation')) ('The '+$unsafeProfile.Name+' refusal explains how to choose a safe external profile')
+        Check (-not (Test-Path -LiteralPath $managed)) ('No managed installation was created for '+$unsafeProfile.Name)
+        Check ((Test-Path -LiteralPath $registry) -and (Get-FileHash -LiteralPath (Join-Path $legacy 'ManaTable.exe') -Algorithm SHA256).Hash -eq $oldHash) ('The legacy app is unchanged after '+$unsafeProfile.Name)
+    }
+    Check ([IO.File]::ReadAllText($sentinel) -eq $smokeId) 'Unsafe profile refusals preserve the existing external player profile'
+
     # The real new executable starts its bundled Forge; a fixture-only corrupt
     # recovery journal makes that health check fail before any legacy uninstall.
     $journals=Join-Path $profile 'decks/workshop'
@@ -112,6 +126,12 @@ try {
     Check $reachedHealth 'The failure actually reached the new product and real Forge startup health query'
     Check ((Test-Path -LiteralPath $registry) -and (Get-FileHash -LiteralPath (Join-Path $legacy 'ManaTable.exe') -Algorithm SHA256).Hash -eq $oldHash) 'Failed health retains the old registration and exact application bytes'
     Check ([IO.File]::ReadAllText($sentinel) -eq $smokeId) 'Failed health preserves the existing player profile'
+    $unsafeHealthProfile=Join-Path $managed 'current/unsafe health profile'
+    $unsafeHealthReceipt=Join-Path $profile 'unsafe-health-receipt.json'
+    Check ((Run (Join-Path $managed 'current/ManaTable.exe') @('--installation-health','--profile',$unsafeHealthProfile,
+        '--managed-root',$managed,'--expected-package-id',$smokeId,'--expected-version',$Version,'--expected-source',$metadata.sourceRevision,
+        '--health-receipt',$unsafeHealthReceipt)) -ne 0) 'The installed health process also refuses a profile inside its managed application tree'
+    Check (-not (Test-Path -LiteralPath $unsafeHealthReceipt) -and -not (Test-Path -LiteralPath (Join-Path $unsafeHealthProfile 'engine.log'))) 'An unsafe health profile is refused before Forge startup or a healthy receipt'
     $resolvedJournal=[IO.Path]::GetFullPath($brokenJournal)
     if(-not $resolvedJournal.StartsWith([IO.Path]::GetFullPath($journals)+'\',[StringComparison]::OrdinalIgnoreCase)){throw 'Unsafe fixture journal path.'}
     Remove-Item -LiteralPath $resolvedJournal

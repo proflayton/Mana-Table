@@ -19,7 +19,7 @@ internal sealed partial class TableApplication
             width = Math.Max(width, canvas.TextWidth($"{card.Power}/{card.Toughness}", size, true) + padding + CopyWidth());
         else width = Math.Max(width, CopyWidth());
         if (counters.Length > 0)
-            width = Math.Max(width, canvas.TextWidth(counters[0].Key + " ×" + counters[0].Value, size, true) + padding);
+            width = Math.Max(width, canvas.TextWidth(CounterLabel(card, counters[0].Key, counters[0].Value), size, true) + padding);
         if (counters.Length > 1)
             width = Math.Max(width, canvas.TextWidth("+" + (counters.Length - 1) + " counter type" + (counters.Length > 2 ? "s" : ""), size, true) + padding);
         int header = (card.States?.Length ?? card.CombatKeywords.Length) > 0 || card.PhasedOut || card.Sick && CardPresentation.HasCombatStats(card) ? 24 : 0;
@@ -28,7 +28,7 @@ internal sealed partial class TableApplication
         // State indicators share the identity row; reserve both their complete
         // values and a useful portion of the name when several apply together.
         if (header > 0) width = Math.Max(width, header + 32);
-        int rowHeight = Math.Max(18, canvas.TextSize("Ag 0123456789+/", size, 2000, 1, true).Y + 2);
-        return new(width, rowHeight);
+        int rowHeight = Math.Max(miniature ? 16 : 18, canvas.TextSize("Ag 0123456789+/", size, 2000, 1, true).Y + 2);
+        return new(width, rowHeight, header);
     }
 }

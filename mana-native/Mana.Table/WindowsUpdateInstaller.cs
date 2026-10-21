@@ -47,6 +47,8 @@ internal static class WindowsUpdateInstaller
 
     private static void Launch(PreparedUpdate update, string applicationDirectory, string profile)
     {
+        ManagedInstallation.RequireExternalProfile(profile, applicationDirectory,
+            Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "ManaTable"));
         if (!RegisteredHere(applicationDirectory))
             throw new IOException("This installation has changed. Open the release page to install the update.");
         var build = AppBuild.Load(applicationDirectory);

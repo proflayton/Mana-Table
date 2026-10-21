@@ -83,7 +83,7 @@ internal sealed partial class TableApplication
         var counters = CardPresentation.Counters(card);
         if (counters.Length > 0) {
             var counter = counters[0];
-            Chip("counter", "CTR " + counter.Key + " ×" + counter.Value, new(168, 207, 200), true);
+            Chip("counter", "CTR " + CounterLabel(card, counter.Key, counter.Value), new(168, 207, 200), true);
             if (counters.Length > 1) Chip("counter-types", "+" + (counters.Length - 1) + " counter type" + (counters.Length == 2 ? "" : "s"), new(168, 207, 200));
         }
         var states = CardPresentation.DescriptorLabels(card).ToList();

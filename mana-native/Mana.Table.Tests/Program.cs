@@ -24,6 +24,8 @@ internal static class Program
         testRun |= args.Contains("--smoke-printings");
         testRun |= args.Contains("--smoke-headless-presentation");
         testRun |= args.Contains("--smoke-headless-engine");
+        testRun |= args.Contains("--smoke-cluttered-changes") || args.Contains("--smoke-headless-clutter");
+        testRun |= args.Contains("--smoke-priority-flow") || args.Contains("--smoke-headless-priority-flow");
         var profile = Arg("--profile") ?? (testRun
             ? Path.Combine(Path.GetTempPath(), "ManaTableNative-tests", Guid.NewGuid().ToString())
             : Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "ManaTableNative"));
@@ -33,9 +35,13 @@ internal static class Program
             if (args.Contains("--smoke-social")) { SocialRegression.Run(profile); return 0; }
             if (args.Contains("--smoke-presentation")) { PresentationSmoke.Run(profile); return 0; }
             if (args.Contains("--smoke-headless-presentation")) { HeadlessPresentationSmoke.Run(profile); return 0; }
+            if (args.Contains("--smoke-headless-clutter")) { ClutteredChangesSmoke.RunHeadless(profile); return 0; }
+            if (args.Contains("--smoke-headless-priority-flow")) { PriorityFlowSmoke.RunHeadless(profile); return 0; }
             Microsoft.Xna.Framework.Point? size = null;
             if (Arg("--size")?.Split('x') is { Length: 2 } dimensions && int.TryParse(dimensions[0], out int width) && int.TryParse(dimensions[1], out int height)) size = new(Math.Clamp(width, 800, 3840), Math.Clamp(height, 450, 2160));
             if (args.Contains("--smoke-updates")) { UpdateSmoke.Run(profile, size); return 0; }
+            if (args.Contains("--smoke-cluttered-changes")) { ClutteredChangesSmoke.Run(profile, size); return 0; }
+            if (args.Contains("--smoke-priority-flow")) { PriorityFlowSmoke.Run(profile, size); return 0; }
             if (args.Contains("--smoke-recovery")) { RecoverySmoke.Run(profile, size); return 0; }
             if (args.Contains("--smoke-state-clarity")) { StateClaritySmoke.Run(profile, size); return 0; }
             if (args.Contains("--smoke-hand-placement")) { HandPlacementSmoke.Run(profile, size); return 0; }

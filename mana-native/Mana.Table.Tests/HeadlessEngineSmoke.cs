@@ -44,7 +44,7 @@ internal static class HeadlessEngineSmoke
             while (initial?.Players.Length != 4 || initial.Decision == null) {
                 Guard();
                 initial = await engine.ObserveAsync();
-                if (initial?.Status == "error") throw new InvalidOperationException(initial.Error);
+                if (initial?.Status is "error" or "finished") throw new InvalidOperationException(initial.Error ?? "Game ended before its opening decision.");
                 if (initial?.Decision == null) await Task.Delay(10);
             }
             Check(initial.Players.All(player => player.Life == 40), "A real four-player Commander game reaches its opening decision");
@@ -146,7 +146,8 @@ internal static class HeadlessEngineSmoke
                 if (composed.Stamp.Revision != (view.Match?.Revision ?? 0)) throw new InvalidOperationException("Composition stamp does not match the actual snapshot.");
                 if (view.Match is { } state && state.Players.Any(player => player.Id != state.ViewerId && player.Zone("Hand").Cards.Length > 0))
                     throw new InvalidOperationException("The adapter exposed a private AI hand.");
-                frames.Add(new { stage, frame = composed.Observe() });
+                frames.Add(new { stage, stamp = composed.Stamp, commandCount = composed.Drawing.Commands.Count,
+                    cardCount = composed.Cards.Count, hitCount = composed.Hits.Count });
                 return composed;
             }
             async Task Refresh(string stage)

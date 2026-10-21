@@ -10,6 +10,7 @@ internal sealed partial class TableApplication
 {
     private void ResetTableView()
     {
+        StopQuietPriority();
         selections.Clear(); zoneName = null; selectedCombat = null;
         effects.Clear(); presence.Clear(); playback.Reset(); combatPage = 0; combatCandidates = false; inspectedStack = null; reviewedAttacker = null;
         actionFeedback.Clear(); departures.Clear(); inspectedAction = null;

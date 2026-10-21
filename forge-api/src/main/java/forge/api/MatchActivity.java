@@ -11,7 +11,15 @@ import java.util.*;
 /** Copies an allowlist of events at emission time; never exports raw engine logs or views. */
 public final class MatchActivity {
     public record Entry(long id, int turn, String phaseKey, String kind, Integer playerId,
-                        String message, String cardId, String cardName, String detail, String outcome, int count) { }
+                        String message, String cardId, String cardName, String detail, String outcome, int count,
+                        PublicCardChange change, PublicEffectCause cause) {
+        public Entry(long id, int turn, String phaseKey, String kind, Integer playerId, String message,
+                     String cardId, String cardName, String detail, String outcome, int count) {
+            this(id, turn, phaseKey, kind, playerId, message, cardId, cardName, detail, outcome, count, null, null);
+        }
+    }
+    public record PublicCardChange(String kind, String property, int before, int after) { }
+    public record PublicEffectCause(String cardId, String name, String ability, Integer controllerId, String kind, String id) { }
     public record Frame(long revision, int turn, String phaseKey, String phase, Integer activePlayerId, List<Entry> entries) { }
     private final PlayerView viewer;
     private final MatchIdentities identities;
@@ -25,6 +33,8 @@ public final class MatchActivity {
     private String phaseName = "Pregame";
     private Integer activePlayerId;
     private long revision;
+    private String latestCounterCause;
+    private int entriesAfterLatestCounterCause;
     private int ownTurns, cardsDrawn, landsPlayed, spellsCast, mulligans, commanderCasts;
 
     MatchActivity(PlayerView viewer) { this(viewer, new MatchIdentities()); ownsIdentities = true; }
@@ -32,6 +42,9 @@ public final class MatchActivity {
 
     public synchronized List<Entry> snapshot() { return List.copyOf(entries); }
     public synchronized Frame frame() { return new Frame(revision, turn, phase, phaseName, activePlayerId, snapshot()); }
+
+    /** Monotonic public events, including ones that resolved between snapshots. */
+    synchronized long sequence() { return sequence; }
 
     /** Exact event totals for this viewer, independent of the bounded feed. */
     public synchronized Map<String, Integer> observations() {
@@ -55,6 +68,14 @@ public final class MatchActivity {
     }
 
     private String cardName(CardView card) { return visible(card) ? card.getCurrentState().getName() : "a face-down or hidden card"; }
+    private boolean publicFaceDown(CardView card) {
+        return card != null && card.isFaceDown() && card.getZone() == ZoneType.Battlefield && card.canBeShownTo(viewer);
+    }
+    private PublicEffectCause publicCause(GameEventCause cause) {
+        if (cause == null || !visible(cause.card())) return null;
+        return new PublicEffectCause(visualId(cause.card()), cause.card().getCurrentState().getName(), cause.ability(),
+                cause.controller() == null ? null : cause.controller().getId(), cause.kind(), identities.effect(cause.instanceId()));
+    }
     private String playerName(PlayerView player) { return player == null ? "A player" : player.equals(viewer) ? "You" : player.getName(); }
     private String possessive(PlayerView player) { return player != null && player.equals(viewer) ? "Your" : playerName(player) + "'s"; }
 
@@ -97,10 +118,31 @@ public final class MatchActivity {
         add(kind, player, message, card, detail, "", 0);
     }
     private void add(String kind, PlayerView player, String message, CardView card, String detail, String outcome, int count) {
+        add(kind, player, message, card, detail, outcome, count, null, null);
+    }
+    private void add(String kind, PlayerView player, String message, CardView card, String detail, String outcome, int count,
+                     PublicCardChange change, PublicEffectCause cause) {
         revision++;
+        boolean anonymousTarget = change != null && publicFaceDown(card);
         entries.addLast(new Entry(++sequence, turn, phase, kind, player == null ? null : player.getId(),
-                message, visualId(card), visible(card) ? card.getCurrentState().getName() : null, detail, outcome, count));
-        while (entries.size() > 120) entries.removeFirst();
+                message, anonymousTarget ? identities.concealed(card) : visualId(card),
+                anonymousTarget ? "Face-down card" : visible(card) ? card.getCurrentState().getName() : null,
+                detail, outcome, count, change, cause));
+        if (cause != null && change != null && change.kind().equals("counters")) {
+            latestCounterCause = cause.id();
+            entriesAfterLatestCounterCause = 0;
+        } else if (entriesAfterLatestCounterCause < 120) entriesAfterLatestCounterCause++;
+        // Never publish an arbitrary tail as if it were a whole multi-target
+        // effect. Keep the latest exact counter group through the following 119
+        // entries, or until another counter effect replaces it; evict groups
+        // atomically. This retains at most 120 entries plus that latest effect.
+        while (entries.size() > 120) {
+            var oldestCause = entries.peekFirst().cause();
+            if (oldestCause == null) { entries.removeFirst(); continue; }
+            String oldestId = oldestCause.id();
+            if (oldestId.equals(latestCounterCause) && entriesAfterLatestCounterCause < 120) break;
+            entries.removeIf(entry -> entry.cause() != null && entry.cause().id().equals(oldestId));
+        }
     }
 
     @Subscribe
@@ -182,8 +224,13 @@ public final class MatchActivity {
                 if (!pair.getKey().equals(pair.getValue())) blocks.add(cardName(pair.getValue()) + " blocked " + cardName(pair.getKey()));
             }
             add("combat", e.defendingPlayer(), blocks.isEmpty() ? playerName(e.defendingPlayer()) + " declared no blockers." : String.join("; ", blocks) + ".", null);
-        } else if (event instanceof GameEventCardCounters e && visible(e.card()) && e.oldValue() != e.newValue()) {
-            add("counters", e.card().getController(), cardName(e.card()) + ": " + e.type().getName() + " counters " + e.oldValue() + " → " + e.newValue() + ".", e.card());
+        } else if (event instanceof GameEventCardCounters e && (visible(e.card()) || publicFaceDown(e.card())) && e.oldValue() != e.newValue()) {
+            var cause = publicCause(e.cause());
+            String target = publicFaceDown(e.card()) ? "Face-down card" : cardName(e.card());
+            String message = target + ": " + e.type().getName() + " counters " + e.oldValue() + " → " + e.newValue()
+                    + (cause == null ? "." : " from " + cause.name() + ".");
+            add("counters", e.card().getController(), message, e.card(), "", "", 0,
+                    new PublicCardChange("counters", e.type().getName(), e.oldValue(), e.newValue()), cause);
         } else if (event instanceof GameEventShuffle e) {
             // A shuffle breaks identity correlation even when the new top is visible.
             visibleIds.keySet().removeIf(card -> card.getZone() == ZoneType.Library && e.player().equals(card.getController()));

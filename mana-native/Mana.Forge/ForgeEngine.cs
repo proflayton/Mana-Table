@@ -255,7 +255,7 @@ public sealed partial class ForgeEngine(ForgePaths paths) : ICardEngine, ITableS
         var action = reply.Action switch { ReplyAction.Confirm => "ok", ReplyAction.Cancel => "cancel", ReplyAction.SelectCard => "card",
             ReplyAction.SelectPlayer => "player", ReplyAction.AssignAttack => "attack", ReplyAction.AssignBlock => "block",
             ReplyAction.AutoPass => "passIfNoResponse", ReplyAction.Skip => "skip", ReplyAction.SetAbilityAutoPass => "setAbilityAutoPass",
-            ReplyAction.UseHandPlacement => "useHandPlacement", _ => null };
+            ReplyAction.UseHandPlacement => "useHandPlacement", ReplyAction.PassUntilPublicAction => "passUntilPublicAction", _ => null };
         if (action != null) args["action"] = action;
         if (reply.Card != null) args[reply.Action == ReplyAction.UseHandPlacement ? "handKey" : "key"] = reply.Card;
         if (reply.Player != null) args[reply.Action == ReplyAction.AssignAttack ? "defenderPlayerId" : "playerId"] = reply.Player;
@@ -267,6 +267,7 @@ public sealed partial class ForgeEngine(ForgePaths paths) : ICardEngine, ITableS
         if (reply.Amounts != null) args["values"] = reply.Amounts;
         if (reply.AbilityId != null) args["abilityId"] = reply.AbilityId;
         if (reply.Ignore != null) args["ignored"] = reply.Ignore;
+        if (reply.YieldToken != null) args["yieldToken"] = reply.YieldToken;
         await Request("matchAction", args);
     }
     public async ValueTask DisposeAsync()

@@ -69,7 +69,7 @@ internal sealed partial class TableApplication
         if (updateDownloading) Button("updates-cancel", updateDownloadCancellation?.IsCancellationRequested == true ? "Cancelling..." : PreparingUpdate ? "Cancel preparation" : "Cancel download", 228, buttons, 320,
             CancelAppUpdateDownload, updateDownloadCancellation?.IsCancellationRequested == false, height: 46);
         else if (preparedUpdate != null && installUpdate != null) Button("updates-install", updateValidating ? "Verifying update..." : "Restart to update", 228, buttons, 410,
-            InstallAppUpdate, !updateValidating && blocker.Length == 0, true, 46);
+            InstallAppUpdate, !updateChecking && !updateValidating && blocker.Length == 0, true, 46);
         else if (preparedUpdate != null) Button("updates-folder", "Open download folder", 228, buttons, 360, () => OpenUpdateLocation(true), height: 46);
         else if (availableUpdate != null) Button("updates-download", updateError.Length > 0 ? "Retry download" : "Download update", 228, buttons, 360,
             DownloadAppUpdate, !updateChecking && !updateValidating, true, 46);

@@ -116,6 +116,16 @@ internal static class GameplayFeedbackChecks
         feedback.Observe(unrelated, noEvent, 24);
         check(feedback.LastPublicOutcome?.Started == 22,
             "A changed snapshot alone does not invent or attribute a public state-change event");
+        check(Mana.Magic.PresentationPacing.ShouldPresent(unrelated, noEvent)
+            && Mana.Magic.PresentationPacing.ShouldPresent(state, state with { States = [new("day-night", "Night", "status", null, null, "It is night.")] }),
+            "Generic player and table state changes pause automatic passing without inventing an attributed effect");
+        var anonymous = new Card { CombatId = "anonymous-pacing", FaceDown = true, Name = "Face-down card", Type = "Creature", Power = 2, Toughness = 2 };
+        GameSnapshot Anonymous(Card card) => state with { Players = state.Players.Select(player => player.Id != state.ViewerId ? player : player with {
+            Zones = player.Zones.Select(zone => zone.Name != "Battlefield" ? zone : zone with { Cards = [card], Count = 1 }).ToArray()
+        }).ToArray() };
+        check(Mana.Magic.PresentationPacing.ShouldPresent(Anonymous(anonymous), Anonymous(anonymous with { PhasedOut = true }))
+            && Mana.Magic.PresentationPacing.ShouldPresent(Anonymous(anonymous), Anonymous(anonymous with { States = [new("ward", "Ward {3}", "ability", null, null, "A public effective ability.", "ward")] })),
+            "Anonymous public occurrences and typed effective abilities retain their presentation beat using public combat identity");
         feedback.Observe(noEvent, noEvent with { Id = "another-table" }, 25);
         check(feedback.Last == null && feedback.LastPublicOutcome == null,
             "Player-state cues from a previous table cannot leak into a new game");

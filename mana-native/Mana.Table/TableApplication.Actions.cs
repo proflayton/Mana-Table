@@ -57,6 +57,10 @@ internal sealed partial class TableApplication
     private void DrawActionCallout()
     {
         if (DrawDecisionClarity(match!)) return;
+        // Pending effects already have faces, ordered rows, targets and a
+        // responder on the table. Rules prose belongs behind their Details.
+        if (match!.Stack.Length > 0) return;
+        if (match!.Stack.Length == 0 && publicChanges.Latest is { } change && now - change.Updated < 8) return;
         var recent = actionFeedback.Last;
         if (match!.Stack.Length == 0 && actionFeedback.LastPublicOutcome is { } publicOutcome && now - publicOutcome.Started < 5
             && (recent == null || publicOutcome.Started > recent.Started)) { DrawPublicOutcome(); return; }

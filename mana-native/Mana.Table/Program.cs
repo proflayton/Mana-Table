@@ -12,6 +12,8 @@ internal static class Program
     {
         ManagedInstallation.Bootstrap(args);
         Application.SetHighDpiMode(HighDpiMode.PerMonitorV2);
+        if (args.Any(arg => arg == "--experience-lab" || arg.StartsWith("--experience-lab=", StringComparison.Ordinal)))
+            return ExperienceLabLauncher.Run(args);
         string? Arg(string name) { int index = Array.IndexOf(args, name); return index >= 0 && index + 1 < args.Length ? args[index + 1] : null; }
         var profile = Arg("--profile") ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "ManaTableNative");
         try {

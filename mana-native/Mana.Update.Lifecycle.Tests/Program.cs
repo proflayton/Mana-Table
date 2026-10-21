@@ -77,12 +77,15 @@ internal static class Program
             using var cancellation = new CancellationTokenSource();
             bool cancellationQueued = false;
             int? cancelledHelper = null;
+            Task? stopping = null;
+            bool disposeRequested = args.Contains("--dispose-preparation"), disposedHelper = false;
+            double disposeMilliseconds = 0;
             var stages = new List<UpdateDownloadProgress>();
             var progress = new CallbackProgress(value => {
                 stages.Add(value); Event("progress", value);
-                if (args.Contains("--cancel-preparation") && value.Stage == UpdatePreparationStage.Preparing && !cancellationQueued) {
+                if ((args.Contains("--cancel-preparation") || disposeRequested) && value.Stage == UpdatePreparationStage.Preparing && !cancellationQueued) {
                     cancellationQueued = true;
-                    _ = Task.Run(async () => {
+                    stopping = Task.Run(async () => {
                         for (int attempt = 0; attempt < 150 && cancelledHelper == null; attempt++) {
                             foreach (var process in Process.GetProcessesByName("Update")) using (process) {
                                 try {
@@ -93,17 +96,29 @@ internal static class Program
                             }
                             if (cancelledHelper == null) await Task.Delay(10);
                         }
-                        Event("cancelling-native-helper", new { processId = cancelledHelper });
-                        cancellation.Cancel();
+                        if (disposeRequested) {
+                            Event("disposing-with-native-helper", new { processId = cancelledHelper });
+                            var timer = Stopwatch.StartNew(); updates.Dispose(); disposeMilliseconds = timer.Elapsed.TotalMilliseconds;
+                            if (cancelledHelper is { } pid) {
+                                try { using var owned = Process.GetProcessById(pid); disposedHelper = owned.HasExited; }
+                                catch (ArgumentException) { disposedHelper = true; }
+                            }
+                            Event("disposed-native-helper", new { processId = cancelledHelper, disposedHelper, disposeMilliseconds });
+                        } else {
+                            Event("cancelling-native-helper", new { processId = cancelledHelper });
+                            cancellation.Cancel();
+                        }
                     });
                 }
             });
             bool cancelled = false;
             try { await updates.DownloadAsync(release, Path.Combine(profile, "unused-sdk-cache"), progress, cancellation.Token); }
-            catch (OperationCanceledException) when (cancellation.IsCancellationRequested) { cancelled = true; }
-            if (args.Contains("--cancel-preparation")) {
+            catch (OperationCanceledException) when (cancellation.IsCancellationRequested || disposeRequested) { cancelled = true; }
+            if (stopping != null) await stopping;
+            if (args.Contains("--cancel-preparation") || disposeRequested) {
                 if (!cancelled || cancelledHelper == null || !Directory.EnumerateFiles(locator.PackagesDir!, "*" + build.Version + "*full.nupkg").Any())
                     throw new InvalidOperationException("Cancelling native preparation did not retain its usable base.");
+                if (disposeRequested && !disposedHelper) throw new InvalidOperationException("Dispose returned before its native preparation helper exited.");
                 Event("cancelled-base-retained");
             } else {
                 var ready = await updates.GetPreparedAsync(release) ?? throw new InvalidDataException("Prepared contents did not validate.");
@@ -113,9 +128,18 @@ internal static class Program
                 if (args.Contains("--require-full-fallback") && (!stages.Any(stage => stage.FullFallback) || !source.Downloads.Any(file => file.Type == "Full")))
                     throw new InvalidDataException("A failed patch did not fall back to a full verified package.");
                 Event("prepared-verified", new { ready.InstallerPath });
+                if (args.Contains("--reject-contained-profile")) {
+                    int rejectedProfiles = 0;
+                    foreach (var contained in new[] { locator.RootAppDir, Path.Combine(locator.RootAppDir!, "current"), Path.Combine(locator.RootAppDir!, "current", ".."), Path.Combine(locator.RootAppDir!, "packages", "my-profile") }) {
+                        try { updates.StartRestart(ready, contained!); }
+                        catch (InvalidOperationException error) when (error.Message.Contains("outside the application installation", StringComparison.Ordinal)) { rejectedProfiles++; }
+                    }
+                    if (rejectedProfiles != 4) throw new InvalidOperationException("A contained profile was allowed to schedule apply.");
+                    Event("contained-profiles-rejected", new { rejectedProfiles });
+                }
             }
             Save(Path.Combine(profile, Arg("--result") ?? "stage-result.json"), new { passed = true, currentVersion = build.Version, target = settings.ExpectedVersion,
-                release.UsesDelta, release.SizeBytes, release.FullSizeBytes, cancelled, cancelledHelper, stages, source.Downloads, profile, locator.RootAppDir, locator.IsPortable });
+                release.UsesDelta, release.SizeBytes, release.FullSizeBytes, cancelled, cancelledHelper, disposedHelper, disposeMilliseconds, stages, source.Downloads, profile, locator.RootAppDir, locator.IsPortable });
             return 0;
         } catch (Exception error) {
             File.WriteAllText(Path.Combine(profile, "probe-error.log"), error.ToString());

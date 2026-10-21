@@ -52,7 +52,8 @@ internal sealed class TableWindow : Game
         this.capture = capture;
         art = new(artSource ?? new MagicArtSource(profile));
         resources.Card = art.Get;
-        application = new(engine, profile, fixture, initialState, resources, appUpdates, installUpdate, allowAutomaticChecks: capture == null);
+        application = new(engine, profile, fixture, initialState, resources, appUpdates, installUpdate, allowAutomaticChecks: capture == null,
+            restartedAfterUpdate: ManagedInstallation.WasRestarted);
         application.CaptureMode = capture != null;
         application.ExitRequested += Exit;
         graphics = new(this) { PreferredBackBufferWidth = size?.X ?? 1440, PreferredBackBufferHeight = size?.Y ?? 810, SynchronizeWithVerticalRetrace = true };
@@ -108,7 +109,14 @@ internal sealed class TableWindow : Game
             using var output = File.Create(windowPath); texture.SaveAsPng(output, view.Width, view.Height);
         }
         if (capture != null && application.TestPort.Loaded && ++frames >= 90) {
-            using var output = File.Create(capture); surface.SaveAsPng(output, surface.Width, surface.Height); Exit();
+            using (var output = File.Create(capture)) surface.SaveAsPng(output, surface.Width, surface.Height);
+            var capturedPixels = new Color[view.Width * view.Height]; GraphicsDevice.GetBackBufferData(capturedPixels);
+            using (var texture = new Texture2D(GraphicsDevice, view.Width, view.Height)) {
+                texture.SetData(capturedPixels);
+                using var output = File.Create(Path.Combine(Path.GetDirectoryName(capture)!, Path.GetFileNameWithoutExtension(capture) + "-window.png"));
+                texture.SaveAsPng(output, view.Width, view.Height);
+            }
+            Exit();
         }
         base.Draw(time);
     }

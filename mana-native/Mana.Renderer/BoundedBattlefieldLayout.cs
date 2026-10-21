@@ -1,5 +1,6 @@
 using Mana.Contracts;
 using Microsoft.Xna.Framework;
+using Point = Microsoft.Xna.Framework.Point;
 using Rectangle = Microsoft.Xna.Framework.Rectangle;
 
 namespace Mana.Renderer;
@@ -8,38 +9,63 @@ namespace Mana.Renderer;
 // seat's cards. Every source occurrence remains painted and independently hit.
 internal static class BoundedBattlefieldLayout
 {
-    private sealed record Group(string Role, Card[] Cards, bool Plain, bool Ordered, bool Miniature, int LabelWidth, int Rows, int RowHeight);
+    private sealed record Group(string Role, Card[] Cards, bool Plain, bool Ordered, bool Miniature,
+        int LabelWidth, int Rows, int RowHeight, CopyFan Fan);
+    // A two-dimensional fan gives every real copy a four-pixel corner. Fifty
+    // identical tokens need one state label, rather than a 200-pixel art strip.
+    // The final occurrence stays in front and owns that shared state label.
+    private readonly record struct CopyFan(int Columns, int Count)
+    {
+        internal Point Offset(int copy) => new(copy % Columns * 4, copy / Columns * 4);
+        internal Point Front => Offset(Count - 1);
+        internal int Width => (Math.Min(Columns, Count) - 1) * 4;
+        internal int Height => (Count - 1) / Columns * 4;
+        internal static CopyFan Create(int count, bool crowded) => new(crowded
+            ? Math.Max(1, (int)MathF.Ceiling(MathF.Sqrt(count))) : count, count);
+    }
     internal static Rectangle Territory(int seat) => seat switch {
-        0 => new(80, 130, 480, 440), 1 => new(560, 150, 480, 420),
-        2 => new(1040, 130, 480, 440), _ => new(330, 570, 900, 210)
+        0 => new(20, 110, 540, 410), 1 => new(560, 150, 480, 370),
+        2 => new(1040, 110, 540, 410), _ => new(300, 520, 940, 260)
     };
     internal static Rectangle[] Areas(int seat) => seat switch {
-        0 => [Territory(seat), new(80, 570, 250, 210)],
-        2 => [Territory(seat), new(1230, 570, 290, 210)],
+        0 => [Territory(seat), new(20, 520, 280, 260), new(20, 70, 540, 40)],
+        1 => [Territory(seat), new(860, 70, 180, 80)],
+        2 => [Territory(seat), new(1240, 520, 340, 260)],
         _ => [Territory(seat)]
     };
     private static List<Rectangle> FreeAreas(int seat) => Areas(seat).Select((area, index) => new Rectangle(
         area.X + 3, area.Y + (index == 0 ? 22 : 3), area.Width - 6, area.Height - (index == 0 ? 25 : 6))).ToList();
     internal static BattlefieldCluster[] Build(int seat, int owner, Card[] cards, IReadOnlyList<string> roleByCard,
-        IReadOnlySet<string>? separate, IReadOnlyList<Rectangle> obstacles, Func<Card, int, bool, BattlefieldLabelMetrics>? denseMeasure)
+        IReadOnlySet<string>? separate, IReadOnlyList<Rectangle> obstacles, Func<Card, int, bool, BattlefieldLabelMetrics>? denseMeasure,
+        bool compact = false)
     {
         string[] roles = ["Creatures", "Support", "Lands"];
-        var allGroups = BattlefieldLayout.Groups(cards, separate, 4);
-        var groups = roles.SelectMany(role => BattlefieldLayout.Groups(cards.Where((_, index) => roleByCard[index] == role).ToArray(), separate, 4)
+        // Public-state equality already separates different counters, combat,
+        // tapped state and attachments. Do not arbitrarily split identical
+        // tokens into repeated labels on a genuinely crowded field.
+        bool crowded = compact || cards.Length >= 80;
+        int maximumCopies = crowded ? int.MaxValue : 4;
+        var allGroups = BattlefieldLayout.Groups(cards, separate, maximumCopies);
+        var groups = roles.SelectMany(role => BattlefieldLayout.Groups(cards.Where((_, index) => roleByCard[index] == role).ToArray(), separate, maximumCopies)
             .Select(copies => {
-                var card = copies[0];
+                var card = copies[^1];
                 bool plain = !card.Type.Contains("Creature", StringComparison.Ordinal) && card.Power == null && card.Toughness == null
                     && !card.Counters.Any(counter => counter.Value > 0) && card.Damage == 0 && (card.States?.Length ?? card.CombatKeywords.Length) == 0 && !card.PhasedOut;
                 bool ordered = separate?.Contains(card.VisualId) == true;
-                bool miniature = allGroups.Length > 25 && !ordered && !card.Counters.Any(counter => counter.Value > 0)
-                    && card.Damage == 0 && (card.States?.Length ?? card.CombatKeywords.Length) == 0 && !card.PhasedOut && !card.Sick;
+                bool miniature = !ordered && (crowded || allGroups.Length > 25 && !card.Counters.Any(counter => counter.Value > 0)
+                    && card.Damage == 0 && (card.States?.Length ?? card.CombatKeywords.Length) == 0 && !card.PhasedOut && !card.Sick);
                 int label = plain ? 56 : miniature ? 48 : 96;
                 var metrics = denseMeasure?.Invoke(card, copies.Length, miniature) ?? new(label, miniature || plain ? 18 : 20);
                 label = Math.Max(label, metrics.Width);
+                // The measurement delegate reserves a 32-pixel name fragment
+                // beside header states. At the smallest supported viewport a
+                // useful name needs 48 logical pixels, without shrinking type.
+                if (crowded) label = Math.Max(label, metrics.HeaderWidth + 48);
                 if (ordered) label = Math.Max(96, label);
                 int rows = 1 + (card.Power != null && card.Toughness != null || copies.Length > 1 ? 1 : 0)
                     + (card.Counters.Any(counter => counter.Value > 0) ? 1 : 0) + (card.Counters.Count(counter => counter.Value > 0) > 1 ? 1 : 0);
-                return new Group(role, copies, plain, ordered, miniature, label, rows, Math.Max(18, metrics.RowHeight));
+                return new Group(role, copies, plain, ordered, miniature, label, rows, Math.Max(crowded && miniature ? 16 : 18, metrics.RowHeight),
+                    CopyFan.Create(copies.Length, crowded));
             })).ToArray();
         if (groups.Length == 0) return roles.Select(role => new BattlefieldCluster(role, [])).ToArray();
         var territory = Territory(seat);
@@ -51,17 +77,18 @@ internal static class BoundedBattlefieldLayout
             foreach (var obstacle in obstacles) Subtract(free, obstacle);
             var placed = new Rectangle[groups.Length]; int placedCount = 0;
             var workItems = groups.Select((group, index) => {
-                int fan = (group.Cards.Length - 1) * 4;
-                int width = Math.Max(group.Ordered ? 82 : 0, fan + group.LabelWidth + 2);
+                int faceWidth = (int)MathF.Ceiling((group.Plain ? 27 : group.Miniature ? 26 : 42) * scale);
+                int width = Math.Max(group.Ordered ? 82 : 0,
+                    Math.Max(group.Fan.Width + faceWidth, group.Fan.Front.X + group.LabelWidth) + 4);
                 int face = (int)MathF.Ceiling((group.Plain ? 28 : group.Miniature ? 34 : 60) * scale);
-                int height = Math.Max(group.Rows * group.RowHeight, face) + 4 + (group.Ordered ? 36 : 0);
+                int height = Math.Max(group.Fan.Front.Y + group.Rows * group.RowHeight, group.Fan.Height + face)
+                    + 4 + (group.Ordered ? 36 : 0);
                 return (group, index, width, height);
             });
             var work = attempt % 4 < 2 ? workItems.OrderByDescending(item => item.height).ThenByDescending(item => item.width).ThenBy(item => item.index)
                 : workItems.OrderBy(item => item.index);
             foreach (var item in work) {
                 var group = item.group;
-                int fan = (group.Cards.Length - 1) * 4;
                 int width = item.width, height = item.height;
                 var candidates = free.Where(rect => rect.Width >= width && rect.Height >= height);
                 var available = attempt % 2 == 0 ? candidates
@@ -77,21 +104,27 @@ internal static class BoundedBattlefieldLayout
             if (placedCount == groups.Length) { placements = placed; break; }
         }
         if (placements.Length != groups.Length) {
+            // Commander cards and state reservations can crowd a smaller field
+            // too. Retry the measured compact representation before abandoning
+            // every group's readable metadata for individual faces.
+            if (!crowded) return Build(seat, owner, cards, roleByCard, separate, obstacles, denseMeasure, compact: true);
             return PackFaces(seat, owner, cards, roleByCard, territory, obstacles);
         }
         var result = roles.ToDictionary(role => role, _ => new List<SceneCard>());
         for (int groupIndex = 0; groupIndex < groups.Length; groupIndex++) {
             var group = groups[groupIndex]; var cell = placements[groupIndex];
-            int fan = (group.Cards.Length - 1) * 4;
             int orderBand = group.Ordered ? 36 : 0;
-            var labels = new Rectangle(cell.X + fan + 2, cell.Y + 2 + orderBand, group.LabelWidth, Math.Max(1, cell.Height - 4 - orderBand));
+            var labels = new Rectangle(cell.X + group.Fan.Front.X + 2, cell.Y + group.Fan.Front.Y + 2 + orderBand,
+                group.LabelWidth, group.Rows * group.RowHeight);
             for (int copy = 0; copy < group.Cards.Length; copy++) {
                 var card = group.Cards[copy];
                 float width = (group.Plain ? 27 : group.Miniature ? 26 : 42) * scale, height = (group.Plain ? 28 : group.Miniature ? 34 : 60) * scale;
                 if (group.Ordered) width = Math.Max(78, width);
-                // The free left strip belongs to each real back copy; metadata
-                // begins at the front occurrence and cannot steal that strip.
-                var pose = new Pose(new(cell.X + 2 + copy * 4 + width / 2, cell.Y + 2 + height / 2), new(width, height));
+                // Earlier rows keep their top corner; earlier columns in the
+                // front row keep their left corner. Shared labels start at the
+                // front occurrence and cannot steal either physical target.
+                var offset = group.Fan.Offset(copy);
+                var pose = new Pose(new(cell.X + 2 + offset.X + width / 2, cell.Y + 2 + offset.Y + height / 2), new(width, height));
                 string id = CardViews.Identity(card);
                 if (id.Length == 0) id = $"anonymous:{owner}:Battlefield:{Array.FindIndex(cards, candidate => ReferenceEquals(candidate, card))}";
                 result[group.Role].Add(new(id, card, pose, "Battlefield", owner, TableLayout.SeatHand(seat)) {

@@ -105,11 +105,11 @@ public sealed record Lobby(string Mode, string Status, string? Error, bool CanSt
     public AiOpponent[] AiOpponents { get; init; } = [];
 }
 public enum DecisionIntent { General, Priority, Attack, Block, Mana, Selection }
-public enum ReplyAction { Confirm, Cancel, SelectCard, SelectPlayer, AssignAttack, AssignBlock, AutoPass, Skip, Choose, Value, Allocate, SetAbilityAutoPass, UseHandPlacement }
+public enum ReplyAction { Confirm, Cancel, SelectCard, SelectPlayer, AssignAttack, AssignBlock, AutoPass, Skip, Choose, Value, Allocate, SetAbilityAutoPass, UseHandPlacement, PassUntilPublicAction }
 public sealed record DecisionReply(string GameId, string DecisionId, ReplyAction Action,
     string? Card = null, int? Player = null, string? Attacker = null, string? Blocker = null,
     string? DefenderCard = null, int[]? Choices = null, string? Value = null, int[]? Amounts = null,
-    string? AbilityId = null, bool? Ignore = null)
+    string? AbilityId = null, bool? Ignore = null, string? YieldToken = null)
 {
     public void Validate()
     {
@@ -122,6 +122,7 @@ public sealed record DecisionReply(string GameId, string DecisionId, ReplyAction
             ReplyAction.Value => Value != null, ReplyAction.Allocate => Amounts != null && Amounts.All(i => i >= 0),
             ReplyAction.SetAbilityAutoPass => Present(AbilityId) && Ignore != null,
             ReplyAction.UseHandPlacement => Present(AbilityId) && Present(Card),
+            ReplyAction.PassUntilPublicAction => Present(YieldToken),
             ReplyAction.Confirm or ReplyAction.Cancel or ReplyAction.AutoPass or ReplyAction.Skip => true,
             _ => false
         };
@@ -230,6 +231,9 @@ public sealed record Decision
     public bool OkEnabled { get; init; }
     public bool CancelEnabled { get; init; }
     public bool CanAutoPass { get; init; }
+    // Separate, engine-owned permission for an explicitly chosen quiet-window yield.
+    // Empty on legacy engines, responses to a stack item, and required decisions.
+    public string QuietYieldToken { get; init; } = "";
     public PriorityAbility[] PriorityAbilities { get; init; } = [];
     public int[] PlayerChoices { get; init; } = [];
     public Choice[] Choices { get; init; } = [];
@@ -289,4 +293,8 @@ public sealed record ActivityEntry(long Id, int Turn, string PhaseKey, string Ki
     public string Detail { get; init; } = "";
     public string Outcome { get; init; } = "";
     public int Count { get; init; }
+    public PublicCardChange? Change { get; init; }
+    public PublicEffectCause? Cause { get; init; }
 }
+public sealed record PublicCardChange(string Kind, string Property, int Before, int After);
+public sealed record PublicEffectCause(string? CardId, string Name, string Ability, int? ControllerId, string Kind = "effect", string Id = "");

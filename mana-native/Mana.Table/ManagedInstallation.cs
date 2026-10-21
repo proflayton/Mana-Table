@@ -33,6 +33,17 @@ internal static class ManagedInstallation
 
     internal static bool IsMaintenance(string[] args) => args.Contains("--installation-health") || args.Contains("--installation-shortcuts");
 
+    internal static void RequireExternalProfile(string profile, params string[] installationRoots)
+    {
+        string playerProfile = Path.TrimEndingDirectorySeparator(Path.GetFullPath(profile));
+        foreach (string installation in installationRoots) {
+            string root = Path.TrimEndingDirectorySeparator(Path.GetFullPath(installation));
+            string prefix = Path.EndsInDirectorySeparator(root) ? root : root + Path.DirectorySeparatorChar;
+            if (playerProfile.Equals(root, StringComparison.OrdinalIgnoreCase) || playerProfile.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+                throw new IOException("Choose a player profile outside the Mana Table installation before updating. Your current profile has not been moved.");
+        }
+    }
+
     internal static async Task<int> MaintainAsync(string[] args, string profile)
     {
         string Arg(string name) { int index = Array.IndexOf(args, name); return index >= 0 && index + 1 < args.Length ? args[index + 1] : throw new ArgumentException("Missing installation argument: " + name); }
@@ -47,6 +58,7 @@ internal static class ManagedInstallation
             || locator.CurrentlyInstalledVersion?.ToString() != build.Version)
             throw new InvalidDataException("The new installation does not match the verified update.");
         profile = Path.GetFullPath(profile);
+        RequireExternalProfile(profile, root);
         if (args.Contains("--installation-shortcuts")) {
             CreateShortcuts(root, expectedId, profile, args.Contains("--desktop-shortcut"));
             return 0;

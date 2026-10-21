@@ -50,6 +50,8 @@ internal sealed partial class TableApplication
                 case "player": DrawPlayerDetails(); break;
                 case "mana": DrawManaDetails(); break;
                 case "table-state": DrawTableStateDetails(); break;
+                case "changes": DrawChangeDetails(); break;
+                case "experience-lab": DrawExperienceLabGallery(); break;
                 case "concede": DrawConcede(); break;
                 case "leave-table": DrawLeaveTable(); break;
                 case "help": DrawHelp(); break;
@@ -104,7 +106,7 @@ internal sealed partial class TableApplication
             canvas.Text($"{inspectPage + 1} / {paragraphs.Length}", 995, 738, Muted, .7f);
         }
         if (original.OtherFace != null) Button("other-face", inspectBack ? "View current face" : "View other face", 274, 737, 347, () => { inspectBack = !inspectBack; inspectPage = 0; }, accent: true);
-        if (onBattlefield) Button("activate-ability", "Activate ability", 1080, 727, 280, () => { overlay = ""; CardClick(original); }, !busy && CardActions.CanActivate(match, original), true);
+        if (onBattlefield) Button("activate-ability", "Activate ability", 1080, 727, 280, () => { overlay = ""; if (zoneName == "Battlefield") zoneName = null; CardClick(original); }, !busy && CardActions.CanActivate(match, original), true);
         else DrawInspectorPlacement(original);
     }
     private void DrawSettings()
@@ -199,6 +201,7 @@ internal sealed partial class TableApplication
     private void DrawZone()
     {
         if (zoneName == "Stack") { DrawStackDetails(); return; }
+        if (zoneName == "Battlefield") { DrawFocusedBattlefield(); return; }
         var player = match!.Players.FirstOrDefault(p => p.Id == zonePlayer);
         var zone = player?.Zone(zoneName!);
         var cards = zoneName == "Stack" ? match.Stack.Where(s => s.Card != null).Select(s => s.Card!).ToArray() : zone?.Cards ?? [];
@@ -285,9 +288,13 @@ internal sealed partial class TableApplication
         var filtered = items.Select((item, slot) => (Item: item, Slot: slot))
             .Where(c => c.Item.Label.Contains(choiceFilter, StringComparison.OrdinalIgnoreCase)).ToArray();
         bool portraits = items.Any(c => c.Card != null); int capacity = portraits ? 7 : 6;
+        bool cardChoices = items.Length > 0 && items.All(c => c.Card != null);
         choicePage = Math.Clamp(choicePage, 0, Math.Max(0, (filtered.Length - 1) / capacity));
         string instruction = d.Kind == "reveal" ? "Click a card to enlarge it, then continue." : d.Ordered
             ? $"Choose {d.Min}–{d.Max} in your chosen order: 1, 2, 3…  Selected: {selections.Count}. Clear selection to start again."
+            : d.Min == 1 && d.Max == 1 ? selections.Count == 0
+                ? cardChoices ? "Choose one card" : "Choose one option"
+                : cardChoices ? "One card selected" : "One option selected"
             : $"Choose {d.Min}–{d.Max}. Selected: {selections.Count}.";
         canvas.Text(instruction, 206, 251, Gold, .72f, 1160, 2);
         var pageItems = filtered.Skip(choicePage * capacity).Take(capacity).ToArray();
@@ -308,7 +315,12 @@ internal sealed partial class TableApplication
                 var pose = new Pose(new(x + column / 2, 408), new(faceWidth, faceWidth * 1.4f));
                 if (item.Card != null) DrawTableCard("choice-face:" + Scope + ":" + entry.Slot, item.Card, pose, "Choice", null,
                     buttonId, () => { if (available) ToggleChoice(d, captured.Index!.Value); },
-                    (displayed, focus) => PaintCard(item.Card, displayed, selected, available, focus),
+                    (displayed, focus) => {
+                        PaintCard(item.Card, displayed, selected, false, focus);
+                        // Availability stays visible, while the chosen face owns
+                        // the strong gold frame and glow instead of competing halos.
+                        if (available && !selected) canvas.CardFrame(displayed, ActionAccent * .65f, 1);
+                    },
                     choiceSlot: entry.Slot, activationBounds: new(x, 304, column, 329));
                 else canvas.Panel(new(x, 304, 148, 207), Panel, Muted);
                 canvas.Text(item.Label, x + 1, 526, Ink, .66f, column, 3, true);

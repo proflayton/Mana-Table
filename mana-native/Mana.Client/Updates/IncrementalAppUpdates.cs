@@ -20,6 +20,12 @@ public sealed class IncrementalAppUpdates : IAppUpdates, IDisposable
     private readonly ManagedGitHubSource? github;
     private readonly Dictionary<string, Plan> plans = new(StringComparer.Ordinal);
     private readonly SemaphoreSlim operations = new(1, 1);
+    private readonly object lifetimeGate = new();
+    private readonly CancellationTokenSource shutdown = new();
+    private readonly ManualResetEventSlim idle = new(true);
+    private readonly TaskCompletionSource disposed = new(TaskCreationOptions.RunContinuationsAsynchronously);
+    private bool closing;
+    private int activeOperations;
     public AppBuild Build { get; }
     public bool IsPortable => manager.IsPortable;
 
@@ -51,19 +57,16 @@ public sealed class IncrementalAppUpdates : IAppUpdates, IDisposable
         Func<VelopackAsset, CancellationToken, Task<byte[]>> contract, string testAppId) =>
         new(build, source, locator, contract, asset => new Uri("https://github.com/proflayton/Mana-Table/releases/download/mana-native-v" + asset.Version + "/" + asset.FileName), testAppId);
 
-    public async Task<AppRelease?> CheckAsync(CancellationToken cancellationToken = default)
-    {
-        await operations.WaitAsync(cancellationToken);
-        try {
-            if (github != null) github.OperationToken = cancellationToken;
+    public Task<AppRelease?> CheckAsync(CancellationToken cancellationToken = default) => RunOperation<AppRelease?>(async token => {
+            if (github != null) github.OperationToken = token;
             var info = await manager.CheckForUpdatesAsync();
-            cancellationToken.ThrowIfCancellationRequested();
+            token.ThrowIfCancellationRequested();
             if (info == null) return null;
             var target = info.TargetFullRelease;
             if (info.IsDowngrade || !AppBuild.TryVersion(target.Version.ToString(), out var version) || version <= System.Version.Parse(Build.Version)
                 || target.PackageId != manager.AppId || target.Type != VelopackAssetType.Full || !AppBuild.Hex(target.SHA256, 64)
                 || target.Size <= 0 || target.Size > UpdatePackageContract.MaximumPackageBytes) throw InvalidPlan();
-            var definition = UpdatePackageContract.Parse(await contract(target, cancellationToken), target, ManagedGitHubSource.Channel);
+            var definition = UpdatePackageContract.Parse(await contract(target, token), target, ManagedGitHubSource.Channel);
             long deltaBytes = info.DeltasToTarget.Sum(asset => asset.Size);
             bool useDelta = info.BaseRelease != null && info.DeltasToTarget.Length is > 0 and <= 10 && deltaBytes > 0 && deltaBytes < target.Size;
             // Record the exact strategy offered to the user, including a full
@@ -75,59 +78,64 @@ public sealed class IncrementalAppUpdates : IAppUpdates, IDisposable
             };
             plans.Clear(); plans.Add(release.PlanId, new(release, info, definition));
             return release;
-        } finally { operations.Release(); }
-    }
+    }, cancellationToken);
 
-    public async Task<PreparedUpdate> DownloadAsync(AppRelease release, string cacheDirectory,
-        IProgress<UpdateDownloadProgress>? progress = null, CancellationToken cancellationToken = default)
-    {
-        await operations.WaitAsync(cancellationToken);
+    public Task<PreparedUpdate> DownloadAsync(AppRelease release, string cacheDirectory,
+        IProgress<UpdateDownloadProgress>? progress = null, CancellationToken cancellationToken = default) => RunOperation<PreparedUpdate>(async token => {
         try {
             var plan = RequirePlan(release);
             var target = plan.Info.TargetFullRelease;
             string path = PackagePath(target);
-            source.Begin(release, progress, cancellationToken);
-            await manager.DownloadUpdatesAsync(plan.Info, _ => { }, cancellationToken);
-            cancellationToken.ThrowIfCancellationRequested();
+            source.Begin(release, progress, token);
+            await manager.DownloadUpdatesAsync(plan.Info, _ => { }, token);
+            token.ThrowIfCancellationRequested();
             source.Preparing();
-            try { await plan.Contract.ValidateAsync(path, cancellationToken); }
+            try { await plan.Contract.ValidateAsync(path, token); }
             catch (Exception error) when (error is InvalidDataException or IOException) {
                 // The SDK may reuse a damaged cache or produce an invalid
                 // reconstruction. A verified full package is the recovery path.
                 File.Delete(path);
                 source.FullFallback();
-                await manager.DownloadUpdatesAsync(new(target, false), _ => { }, cancellationToken);
-                cancellationToken.ThrowIfCancellationRequested();
+                await manager.DownloadUpdatesAsync(new(target, false), _ => { }, token);
+                token.ThrowIfCancellationRequested();
                 source.Preparing();
-                await plan.Contract.ValidateAsync(path, cancellationToken);
+                await plan.Contract.ValidateAsync(path, token);
             }
             progress?.Report(new(source.Received, source.Total) { Stage = UpdatePreparationStage.Ready, FullFallback = source.FellBack, PreparationPercent = 100 });
             return new(release, path);
-        } finally { source.End(); operations.Release(); }
-    }
+        } finally { source.End(); }
+    }, cancellationToken);
 
-    public Task ValidateAsync(PreparedUpdate update, CancellationToken cancellationToken = default)
-    {
+    public Task ValidateAsync(PreparedUpdate update, CancellationToken cancellationToken = default) => RunOperation(async token => {
         var plan = RequirePlan(update.Release);
         if (!Path.GetFullPath(update.InstallerPath).Equals(PackagePath(plan.Info.TargetFullRelease), StringComparison.OrdinalIgnoreCase)) throw InvalidPlan();
-        return plan.Contract.ValidateAsync(update.InstallerPath, cancellationToken);
-    }
+        await plan.Contract.ValidateAsync(update.InstallerPath, token).ConfigureAwait(false);
+        return true;
+    }, cancellationToken);
 
-    public async Task<PreparedUpdate?> GetPreparedAsync(AppRelease release, CancellationToken cancellationToken = default)
-    {
+    public Task<PreparedUpdate?> GetPreparedAsync(AppRelease release, CancellationToken cancellationToken = default) => RunOperation<PreparedUpdate?>(async token => {
         var plan = RequirePlan(release);
         string path = PackagePath(plan.Info.TargetFullRelease);
         if (!File.Exists(path)) return null;
-        try { await plan.Contract.ValidateAsync(path, cancellationToken); return new(release, path); }
+        try { await plan.Contract.ValidateAsync(path, token); return new(release, path); }
         catch (IOException) { return null; }
-    }
+    }, cancellationToken);
 
     public void StartRestart(PreparedUpdate update, string profile)
     {
-        var plan = RequirePlan(update.Release);
-        ValidateAsync(update).GetAwaiter().GetResult();
         string playerProfile = Path.GetFullPath(profile);
-        manager.WaitExitThenApplyUpdates(plan.Info.TargetFullRelease, silent: true, restart: true, restartArgs: ["--profile", playerProfile]);
+        string root = Path.TrimEndingDirectorySeparator(Path.GetFullPath(locator.RootAppDir ?? throw InvalidPlan()));
+        if (playerProfile.Equals(root, StringComparison.OrdinalIgnoreCase)
+            || playerProfile.StartsWith(root + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
+            throw new InvalidOperationException("Choose a profile folder outside the application installation before restarting to update. Your profile has not been moved.");
+        RunOperation(async token => {
+            var plan = RequirePlan(update.Release);
+            if (!Path.GetFullPath(update.InstallerPath).Equals(PackagePath(plan.Info.TargetFullRelease), StringComparison.OrdinalIgnoreCase)) throw InvalidPlan();
+            await plan.Contract.ValidateAsync(update.InstallerPath, token).ConfigureAwait(false);
+            token.ThrowIfCancellationRequested();
+            manager.WaitExitThenApplyUpdates(plan.Info.TargetFullRelease, silent: true, restart: true, restartArgs: ["--profile", playerProfile]);
+            return true;
+        }, CancellationToken.None).GetAwaiter().GetResult();
         // The table host now closes its client and Java engine normally. Never
         // call ApplyUpdatesAndRestart, which exits before that cleanup can run.
     }
@@ -140,7 +148,42 @@ public sealed class IncrementalAppUpdates : IAppUpdates, IDisposable
     private Plan RequirePlan(AppRelease release) => release.PayloadKind == UpdatePayloadKind.Incremental
         && plans.TryGetValue(release.PlanId, out var plan) && plan.Release == release ? plan : throw InvalidPlan();
     private static InvalidDataException InvalidPlan() => new("Check for updates again before preparing or restarting this update.");
-    public void Dispose() { ownedHttp?.Dispose(); operations.Dispose(); }
+    // Register work before scheduling it, including callers waiting for the
+    // serialized SDK. No continuation depends on a UI synchronization context.
+    private Task<T> RunOperation<T>(Func<CancellationToken, Task<T>> action, CancellationToken token)
+    {
+        CancellationTokenSource cancellation;
+        lock (lifetimeGate) {
+            ObjectDisposedException.ThrowIf(closing, this);
+            cancellation = CancellationTokenSource.CreateLinkedTokenSource(token, shutdown.Token);
+            activeOperations++; idle.Reset();
+        }
+        return Task.Run(async () => {
+            bool entered = false;
+            try {
+                await operations.WaitAsync(cancellation.Token).ConfigureAwait(false); entered = true;
+                return await action(cancellation.Token).ConfigureAwait(false);
+            } finally {
+                if (entered) operations.Release();
+                cancellation.Dispose();
+                lock (lifetimeGate) if (--activeOperations == 0) idle.Set();
+            }
+        });
+    }
+    public void Dispose()
+    {
+        bool owner;
+        lock (lifetimeGate) { owner = !closing; closing = true; }
+        if (!owner) { disposed.Task.GetAwaiter().GetResult(); return; }
+        try {
+            shutdown.Cancel();
+            // Cancellation kills and reaps only this adapter's native patcher.
+            // Wait before CLR shutdown or disposing resources it still needs.
+            idle.Wait();
+            lock (lifetimeGate) { ownedHttp?.Dispose(); operations.Dispose(); shutdown.Dispose(); idle.Dispose(); }
+            disposed.TrySetResult();
+        } catch (Exception error) { disposed.TrySetException(error); throw; }
+    }
 
     private sealed class PreservingUpdateManager(IUpdateSource source, IVelopackLocator locator)
         : UpdateManager(source, new() { AllowVersionDowngrade = false, MaximumDeltasBeforeFallback = 10 }, locator)
@@ -169,7 +212,8 @@ public sealed class IncrementalAppUpdates : IAppUpdates, IDisposable
             using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancelToken); timeout.CancelAfter(TimeSpan.FromMinutes(5));
             try { await process.WaitForExitAsync(timeout.Token).ConfigureAwait(false); }
             catch (OperationCanceledException) {
-                if (!process.HasExited) process.Kill();
+                try { if (!process.HasExited) process.Kill(); }
+                catch (InvalidOperationException) when (process.HasExited) { }
                 await process.WaitForExitAsync(CancellationToken.None).ConfigureAwait(false);
                 if (!cancelToken.IsCancellationRequested) throw new TimeoutException("Preparing the smaller update took too long.");
                 throw;

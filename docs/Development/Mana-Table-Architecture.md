@@ -78,7 +78,8 @@ original hand anchor.
 controls and scope into serializable records. It retains no action callbacks,
 engine connection or graphics resources. It describes submitted presentation
 data; pixel clipping, texture appearance and physical-window readability still
-need selected GPU captures. Frame publication does not answer the engine's pending
+need human review of actual screens, transitions and manual interaction.
+Frame publication does not answer the engine's pending
 decision. Every command still passes current game/decision scope checks.
 
 Simulations inject elapsed/total time and pointer/keyboard state into the same
@@ -86,8 +87,19 @@ application methods used by the window. Recovery checks and recovery text share
 an injectable `TimeProvider`; use a controlled provider when replaying connection
 failures. Background engine completion order and artwork availability are inputs,
 not promises of deterministic asynchronous scheduling. Controlled projection
-scenarios establish UI behavior; separate real-Forge journeys establish rules and
-transport behavior. Neither is a substitute for the other.
+scenarios check scoped input and projection behavior; separate real-Forge journeys
+check rules and transport behavior. Both support human review of the experience.
+
+`Mana.Scenarios` holds versioned authored projections shared by the explicit
+Experience Lab and regression drivers. The lab runs those snapshots through the
+same `TableApplication`, composition, hit testing and `TableWindow` as normal
+play. It starts without Forge, uses an isolated temporary profile and reads
+already-cached art without a network request. Its controls advance authored
+stages, not Magic rules. Reset/back creates a fresh scope and replays the baseline
+before later changes. See [Experience review](Mana-Table-Experience-Review.md) for one-click
+launching, transition captures and the required human review. Automated command,
+geometry and privacy checks cannot establish readability, clear causality or a
+comfortable interaction; those require actual screens, transitions and manual play.
 
 The normal native Commander setup defaults to four seats or starts one human with
 three Forge AI opponents. A friends' host can choose two, three or four seats;
@@ -141,6 +153,23 @@ beside Pass, explains the selected ability, and keeps an Undo indicator visible.
 `ClientSession` serializes Undo behind any in-flight pass and cancels further
 buffered passes. Full control, Hold and saved phase stops retain precedence.
 
+**Pass for now** is a separate explicit policy for empty-stack priority on an
+opponent's turn. The engine issues a private `quietYieldToken` for a copied public
+situation. Every `passUntilPublicAction` command supplies that original token and
+the current session/prompt scope. The engine rechecks both at acceptance and on
+the owned input thread; a revoked queued action restores the unanswered prompt.
+Public state changes, public events that happened between snapshots, a new turn
+or a required choice revoke the permission. Unchanged stat recomputation and
+retained-mana refreshes do not count as actions. Another seat's required choice
+revokes it through public decision ownership/class without disclosing the options.
+`DecisionQuietAdvance` observes ordinary priority handoffs but submits only against
+a current local priority prompt with that exact token. It never adopts a replacement
+token or consumes targets, payment, searches or other required decisions. Hold,
+Take control and manual game actions stop further quiet passes; an already submitted
+command is reconciled before the connection is reused. Inspection pauses passing.
+This policy is match-local intent, not a saved F6/end-turn preference, and does not
+broaden the existing `canAutoPass` availability permission.
+
 `TableApplication.Loading` tracks explicit operations separately from session polling and
 gameplay replies. Startup stages advance only after each awaited engine request.
 Setup commands acknowledge input immediately and own a scoped foreground surface;
@@ -169,6 +198,7 @@ its consequence; an eliminated seat can watch or leave.
 | `Mana.Forge` | Process lifetime, protocol negotiation and Forge-to-contract mapping |
 | `Mana.Renderer` | GPU replay, typed draw commands, CPU font metrics, immutable table layout, projection, motion and effects |
 | `Mana.Table` | Headless application, interaction publication, card presentation, screen composition and thin native window |
+| `Mana.Scenarios` | Versioned authored projections and isolated Experience Lab sessions shared with presentation checks; no Magic rules simulation |
 | `Mana.Conformance` | Test-only semantic scenarios, canonical full checkpoints and first-divergence reporting for two engine adapters |
 | `Mana.Client.Tests`, `Mana.Table.Tests` | Headless behavior checks and separate native test/automation executable |
 
@@ -339,8 +369,9 @@ declares typed public providers; the API forwards immutable snapshots and native
 rendering uses their kinds and declared progress maxima. Current coverage is
 positive counters, Speed, monarch, initiative and the city's blessing. New public
 mechanics require a descriptor and visibility/lifetime review; private fields are
-not discovered automatically. Table mechanics and card/player relations retain
-their own projection. Cached font metrics bound ribbons at 100%, 115% or 130% text.
+not discovered automatically. Generic `GameSnapshot.States` carries table-wide
+mechanics, currently Day/Night, to persistent header indicators and a complete
+detail view. Cached font metrics bound ribbons at 100%, 115% or 130% text.
 
 Decision instructions use the rendered font metrics to grow upward above their
 action buttons. Overflow exposes Read all for the exact current engine message.
@@ -353,7 +384,19 @@ and inspection show those relationships without treating attached cards as one
 occurrence or recalculating the host's current characteristics. Grouping preserves
 attachment differences so identical card names do not hide separate equipped
 states. Phasing retains the public relationship; leaving visible zones removes it.
-Current combat keywords drive distinct markers for flying, reach, trample,
+Cards publish typed `PublicState` descriptors from the engine's effective keyword
+view, including qualified costs, protection restrictions and repeated instances.
+The engine copies descriptors before keyword-set deduplication; older published
+snapshots cannot change when an ability changes. Native presentation recognizes
+some keys for familiar icons and uses the engine's label/detail for every other
+ability. No native keyword allowlist determines whether an ability exists.
+`Card.States = null` supports older adapters through `combatKeywords`; an empty
+typed array authoritatively means no current descriptors. Grouping includes the
+complete typed state, so different Ward costs or protection qualities do not
+collapse into the same fan. Long qualified labels keep a compact table marker
+and remain complete in inspection. Public face-down characteristics do not
+expose printed identity, text, artwork or hidden abilities.
+Familiar keys drive distinct markers for flying, reach, trample,
 first/double strike, deathtouch, lifelink, menace, vigilance and indestructible.
 Summoning sickness has an hourglass marker. On ordinary projected boards, flying
 raises the same card pose used for hit testing and combat arrows, with separated
@@ -427,13 +470,18 @@ immediately revoke it. No extra game rules or multiplayer-specific path is added
 sampling handles angled minification, and table surfaces request 4x MSAA.
 Full-resolution artwork and rendered rules text remain available for inspection.
 
-Native updates are separate from engine commands. `AppBuild` permits stable
-checks only for a versioned release package. `GitHubAppUpdates` validates the
-native release manifest, asset size and SHA256 before caching an installer;
-preview packages remain outside the stable update channel. The table can keep
-running during download. Installation revalidates the file and requires leaving
-the game and network table, completing current work and saving the deck before
-`WindowsUpdateInstaller` hands off to Setup. Profiles live outside the payload.
+Native updates are separate from engine commands. Supported managed installations
+use `IncrementalAppUpdates` and the pinned Velopack SDK for selected full/delta
+packages, verified preparation and explicit restart. The user chooses when to
+download. Older installer clients retain `GitHubAppUpdates` and the compatible
+Inno bridge through `WindowsUpdateInstaller`; the bridge establishes the managed
+layout before patch updates become available. Stable checks require a versioned
+release package. Preparation verifies exact source/artifact identity; restart
+requires leaving the game/friends table, completing work and saving the deck.
+Profiles remain outside installation roots. The
+[release guide](Mana-Table-Releases.md#compatible-migration-and-portable-copies)
+defines supported layouts, migration and update verification; a portable or
+legacy path must not be described as already using the managed SDK.
 
 `TablePresence` turns public hand/library counts and life changes into seat cues.
 Opponent draw cues contain no card identities; the local hand animates only its
@@ -593,6 +641,10 @@ serialize live Forge objects, raw logs, or mutable views directly to the rendere
 
 ## Extending the app
 
+The script/preload/package entries in this section apply to the retained
+Electron reference client. Native composition and commands use the project
+boundaries above and the shared contract; they do not load these renderer scripts.
+
 **New visual component:** add its script/styles to `renderer/index.html` and the
 static resource allowlist in `main.cjs`. Reuse projected state and the existing
 answer path. Check keyboard operation, minimum window size, and reduced motion.
@@ -619,17 +671,31 @@ explicit resource/profile paths, and reusing initialized `StaticData` through
 prompts while its default delegates to the existing picker for other clients.
 Keep further shared changes small and reviewable.
 
-Generic state coverage currently means the registered public player states in
-`PublicPlayerStateRegistry`, not every mechanic in the engine. Card state still
-uses `MatchSession.publicKeywords`, a seventeen-keyword presence filter; typed
-ward costs and protection/hexproof qualifiers are not carried by that list.
-An engine-owned immutable public-card descriptor collection is needed for fuller
-effective keyword coverage and repeated instances. Raw keyword strings or live
-views are not a safe replacement. Table facts such as day/night and storm, the
-Ring-bearer relation, and dungeon/room relations need their own typed, visibility-
-reviewed projections rather than entries invented in the player-state collection.
+Public state remains a reviewed engine projection, not serialization of every
+internal field. `PublicPlayerStateRegistry` supplies generic player mechanics.
+`CardView.getPublicStates` copies effective public keyword labels, reminders,
+qualifiers and repeated instances into immutable descriptors; `MatchSession`
+projects them as card `states`. Native `CardPresentation` uses that typed list,
+including Shroud, qualified Ward/Protection/Hexproof and unfamiliar keys. A null
+typed list supports an older adapter's `combatKeywords`; an empty typed list is
+authoritative. The former seventeen-keyword adapter filter has been removed.
+The compatibility `combatKeywords` array still carries presence keys only, so
+Electron or older consumers that read that field do not gain qualified rendering
+merely because the engine now exports the descriptors. Client paths must be
+reviewed separately.
 
-## 3D scene and interaction boundary
+Table-scoped `GameSnapshot.States` currently includes day/night. Storm,
+Ring-bearer and dungeon/room relationships need their own typed, visibility-
+reviewed projections rather than entries invented in the player-state collection.
+Public face-down characteristics remain available without printed identity, rules
+text, artwork or hidden faces. Raw keyword scripting strings and live mutable
+engine views are never a fallback for missing public coverage.
+
+## Electron 3D scene and interaction boundary
+
+This section describes `forge-desktop` only. Its DOM/WebGL rendering and crowded
+rank paging are separate from the native typed-frame pipeline and unpaged
+battlefield layout described above.
 
 The default table has authored world coordinates for two through six seats.
 `table-world-layout.mjs` arranges playmats, life medallions, hidden hand backs,
