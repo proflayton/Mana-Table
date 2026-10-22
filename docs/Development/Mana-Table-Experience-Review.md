@@ -37,6 +37,10 @@ does not establish that a person can understand or use the screen.
    interruption and result with realistic art and the relevant crowded state.
    Use existing canonical cases and focused checks; record human feedback and its
    scope separately from automated safety results.
+7. **Separate seating from attention.** At multiplayer tables, keep controller
+   territories and reading direction stable. Turn ownership, priority and required
+   decisions are different facts. Direct attention to the relevant source,
+   recipients and responder without rearranging everyone's battlefield.
 
 ### Accepted hand-play direction: 21 October 2026
 
@@ -54,7 +58,7 @@ retain their own review status. It does not establish release publication.
 
 ## MTGA references reviewed: 21 October 2026
 
-The user's three Arena screenshots make the battlefield/inspection hierarchy concrete:
+The user's four Arena screenshots make the battlefield/inspection hierarchy concrete:
 
 | Visible evidence | Mana Table design implication |
 | --- | --- |
@@ -63,6 +67,7 @@ The user's three Arena screenshots make the battlefield/inspection hierarchy con
 | Related cards sit behind the second Pridemate, with small icons on its frame | Keep attachments visibly associated with their host; retain inspectable identity, counter types and ability details. The still does not establish every icon/effect's meaning. |
 | The third screenshot's inspected Pridemate displays 9/8 in its own stat box, six +1/+1 counters, and gained Lifelink/Ward {2}; the detail blocks identify Sheltered by Ghosts as their source | Inspection should explain effective state and provenance while remaining recognizably the card. Keep these details available on demand, rather than displaying every explanation on the battlefield. |
 | Creature rows, rotated lands, the hand and the turn cue occupy distinct places | Establish a stable spatial hierarchy before adding labels. Test an equivalent hierarchy across four seats rather than copying two opposing halves. |
+| The fourth screenshot keeps Exemplar of Light recognizable as a full card, with a Flying explanation adjacent to it and the battlefield continuing behind | Treat the card and its contextual explanation as one inspection area. Its placement must preserve the current source, eligible targets, hand and decision; four seats make this a layout concern, not just a tooltip concern. |
 
 Also reviewed sampled frames from [LegenVD's earthbending/landfall match](https://www.youtube.com/watch?v=38QyBm7unec)
 (24 November 2025). Full video retrieval returned HTTP 403; public storyboard
@@ -101,6 +106,67 @@ The currently accepted reader retains its original image and places effective
 state alongside it. State-aware inspection is a follow-up design question, not
 a reason to restore the rejected generic rules panel. Missing modifier provenance
 requires an engine projection; the client must not guess it from printed text.
+
+### Four-player direction: stable table, selective attention
+
+**Proposed, not implemented or human accepted.** The
+[spatial study](images/four-player-attention-study.svg) separates controller
+territories from the current interaction. Its shapes illustrate relationships,
+not final card styling or proof that crowded boards are readable. The sketch
+omits the hand, zone piles and full-card inspector; fitting those while retaining
+the action context is part of the native prototype, not a solved claim here.
+
+Start with a shared table: the viewer below, with other seats clockwise at the
+left, top and right. Reconsider the current territory dimensions. Give every
+seat viewer-upright battlefield faces with identity, art and authoritative P/T;
+put creatures toward the shared action area and resources/support farther out.
+These are spatial relationships, not permanent role headings or four framed
+miniature screens. Place cards by current controller; retain original ownership
+in inspection. Cross-controller attachments still need their controller cue.
+
+The alternative of three opponent bands above one wide local field deserves a
+visual comparison, especially in a larger window. At a small window, its narrow
+opponent strips compete with full-card inspection and the pending-effect area.
+The shared-table direction is the first prototype, not an accepted final layout.
+
+Reserve action/inspection space before arranging fields. Currently
+`BattlefieldLayoutContext` switches the whole table to bounded packing when any
+seat exceeds seven public-state groups, and its conditional stack/source
+reservation intersects a battlefield territory. This can move unrelated cards
+when a new effect appears. Layout stability requires changing that composition,
+not merely repainting smaller card faces. Priority eligibility or an identical
+snapshot should not repack the table. P/T, counters or attachments can correctly
+split a copy group; preserve unrelated anchors while updating that membership.
+
+Plan against the actual viewport and text scale. The current fixed 1600x900
+game surface leaves unused height in a 1000x740 window while squeezing all four
+fields into the remaining band. A new composition should use that available
+space, with drawing, hit testing and inspection sharing the same geometry.
+
+The first complete journeys to prototype are:
+
+| Player intent | Source, target and gesture | Engine transition and visible result |
+| --- | --- | --- |
+| Read another player's modified creature | Click that exact public occurrence; inspect a counter or ability beside its full face | No game command. The source position stays identifiable; inspection shows current P/T, typed counters, gained abilities and any engine-projected modifier sources. The reading area stays fixed while used. |
+| Follow an off-turn response | Inspect the actual source or target of the pending effect | Reading does not pass priority. Turn owner, pending-effect controller and current responder retain distinct cues. Relevant occurrences highlight individually; the entire effect container does not behave as one card. |
+| Understand combat against two players | Select an attacker or defender and inspect its actual related blockers | Keep all seats present. Emphasize that combat relationship and its authoritative stats; do not permanently draw every possible connector across the table. |
+| Understand Toph followed by Felidar Retreat | Follow the reported source, changed land, then affected creatures | Brief source-to-result emphasis settles into current card state. A mass effect emphasizes its recipients together; it does not produce 82 simultaneous arrows or persistent explanatory panels. |
+| Read a very crowded seat | Deliberately inspect or focus the relevant region and exact occurrence | The proposed focus/zoom preserves a way back to the same whole-table location and keeps other seats locatable. Distinct state and eligible occurrences remain reachable; no hidden overflow page. This navigation has not been implemented. |
+
+Use a quiet persistent turn accent and a separate responder/decision cue, rather
+than moving the camera each time priority changes. Keep the hand anchored.
+Automatic turn-follow remains an optional experiment; never move the view during
+reading, dragging, targeting or a required choice. Pending characteristics stay
+pending: for example, a targeted 1/1 does not display Giant Growth's 4/4 result
+before resolution. Inspection and all compact views resolve the same current
+authorized occurrence without turning visual identity into an action handle.
+
+Compare the same ordinary table, one heavily crowded opponent, two defenders,
+an open full-card/ability explanation and the 480-permanent case at both small
+and large windows. Existing ordinary/crowded/priority canonical cases provide a
+starting point. A new asymmetric-density checkpoint is still needed. Review the
+actual gesture through its result with people; fitting every occurrence is not
+evidence that they can identify it or follow the action.
 
 ## Open a canonical case
 

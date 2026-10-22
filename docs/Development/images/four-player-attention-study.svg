@@ -1,0 +1,141 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="1000" viewBox="0 0 1600 1000" role="img" aria-labelledby="title description">
+  <title id="title">Four-player attention: a shared table with separate turn and response ownership</title>
+  <desc id="description">Proposed spatial diagram, not implemented engine geometry. You sit at the bottom, Rowan at left, Mira at top and Jules at right. Every card is upright to the viewer. Creatures sit inward, with support and resources toward their owner. Rowan owns the turn. Your Giant Growth is pending and targets Mira's Llanowar Elves, whose current power and toughness remain 1/1. Jules has priority. Only that pending card and its target are emphasized and connected. This small authored example does not establish crowded-board clarity or human UX acceptance.</desc>
+  <defs>
+    <style>
+      text { font-family: "Segoe UI", sans-serif; fill: #dce7e3; }
+      .muted { fill: #8daba3; }
+      .turn { fill: #e3b96d; }
+      .priority { fill: #75d4cf; }
+      .pending { fill: #c4ddba; }
+      .small { font-size: 19px; }
+      .name { font-size: 27px; font-weight: 600; }
+      .glyph { fill: #1b3534; stroke: #6b9186; stroke-width: 1.5; }
+      .glyph-line { fill: none; stroke: #8db0a0; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+      .owner-line { fill: none; stroke: #45665d; stroke-width: 1.5; }
+    </style>
+    <symbol id="creature" viewBox="0 0 64 90">
+      <rect class="glyph" x="1" y="1" width="62" height="88" rx="5"/>
+      <path class="glyph-line" opacity=".5" d="M10 13H44"/>
+      <circle class="glyph-line" cx="32" cy="38" r="9"/>
+      <path class="glyph-line" d="M18 64Q18 51 32 51Q46 51 46 64M17 76H47"/>
+    </symbol>
+    <symbol id="support" viewBox="0 0 64 90">
+      <rect class="glyph" x="1" y="1" width="62" height="88" rx="5"/>
+      <path class="glyph-line" opacity=".5" d="M10 13H44M12 76H52"/>
+      <path class="glyph-line" d="M32 28L37 40L50 45L37 50L32 63L27 50L14 45L27 40Z"/>
+    </symbol>
+    <symbol id="resource" viewBox="0 0 64 90">
+      <rect class="glyph" x="1" y="1" width="62" height="88" rx="5"/>
+      <path class="glyph-line" opacity=".5" d="M10 13H44M12 76H52"/>
+      <path class="glyph-line" d="M32 29L45 45L32 61L19 45Z"/>
+    </symbol>
+    <marker id="target-arrow" viewBox="0 0 12 12" refX="9" refY="6" markerWidth="9" markerHeight="9" orient="auto-start-reverse">
+      <path d="M2 2L10 6L2 10" fill="none" stroke="#e4f0dc" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+    </marker>
+  </defs>
+
+  <rect width="1600" height="1000" fill="#101f22"/>
+  <text x="56" y="49" font-size="30" font-weight="600">Four seats. One shared table.</text>
+  <text x="57" y="79" class="small muted">Spatial diagram · proposed direction</text>
+  <path d="M1165 34V58" stroke="#e3b96d" stroke-width="5" stroke-linecap="round"/>
+  <text x="1181" y="53" font-size="21">Turn owner</text>
+  <circle cx="1385" cy="46" r="13" fill="none" stroke="#75d4cf" stroke-width="3"/>
+  <text x="1408" y="53" font-size="21">Responder</text>
+
+  <!-- Stable shared surface; faint seams describe ownership, not UI panels. -->
+  <path d="M340 136H1260Q1534 136 1534 410V664Q1534 918 1260 918H340Q66 918 66 664V410Q66 136 340 136Z" fill="#19312f" stroke="#37574f" stroke-width="2"/>
+  <path d="M519 251L585 314M1081 251L1015 314M519 808L585 745M1081 808L1015 745" class="owner-line"/>
+
+  <!-- Mira, top: resources and support outside the creature front. -->
+  <circle cx="800" cy="166" r="29" fill="#24443d" stroke="#6d9585" stroke-width="2"/>
+  <text x="800" y="175" font-size="25" text-anchor="middle">M</text>
+  <text x="849" y="174" class="name">Mira</text>
+  <g opacity=".63">
+    <use href="#resource" x="690" y="222" width="46" height="65"/>
+    <use href="#resource" x="748" y="222" width="46" height="65"/>
+    <use href="#resource" x="806" y="222" width="46" height="65"/>
+    <use href="#resource" x="864" y="222" width="46" height="65"/>
+    <use href="#support" x="708" y="301" width="52" height="73"/>
+    <use href="#support" x="774" y="301" width="52" height="73"/>
+    <use href="#support" x="840" y="301" width="52" height="73"/>
+    <use href="#creature" x="652" y="389" width="64" height="90"/>
+    <use href="#creature" x="728" y="389" width="64" height="90"/>
+  </g>
+
+  <!-- One target is emphasized in place; pending Growth has not changed 1/1. -->
+  <rect x="802" y="383" width="86" height="108" rx="7" fill="#28483c" stroke="#e4f0dc" stroke-width="3"/>
+  <path d="M813 397H870" stroke="#bfd4b5" stroke-width="2"/>
+  <path d="M832 432L845 416L858 432M845 418V455M831 455Q832 442 845 442Q858 442 859 455" class="glyph-line" stroke="#d2e4c8"/>
+  <rect x="840" y="460" width="40" height="24" rx="3" fill="#13251f"/>
+  <text x="860" y="479" font-size="21" font-weight="600" text-anchor="middle">1/1</text>
+  <text x="909" y="419" font-size="23" font-weight="600">Llanowar Elves</text>
+  <text x="909" y="447" class="small muted">Mira · target</text>
+
+  <!-- Rowan, left. A turn accent does not imply priority. -->
+  <path d="M85 490V558" stroke="#e3b96d" stroke-width="5" stroke-linecap="round"/>
+  <circle cx="141" cy="523" r="31" fill="#3d3d2e" stroke="#ad9768" stroke-width="2"/>
+  <text x="141" y="532" font-size="26" text-anchor="middle">R</text>
+  <text x="98" y="590" class="name">Rowan</text>
+  <text x="98" y="620" font-size="21" class="turn">Their turn</text>
+  <g opacity=".65">
+    <use href="#resource" x="228" y="413" width="48" height="68"/>
+    <use href="#resource" x="228" y="493" width="48" height="68"/>
+    <use href="#resource" x="228" y="573" width="48" height="68"/>
+    <use href="#support" x="325" y="450" width="55" height="77"/>
+    <use href="#support" x="325" y="539" width="55" height="77"/>
+    <use href="#creature" x="426" y="416" width="67" height="94"/>
+    <use href="#creature" x="426" y="522" width="67" height="94"/>
+    <use href="#creature" x="426" y="628" width="67" height="94"/>
+  </g>
+
+  <!-- Jules, right. Priority is a distinct ring, not a camera move. -->
+  <circle cx="1459" cy="523" r="43" fill="none" stroke="#75d4cf" stroke-width="4"/>
+  <circle cx="1459" cy="523" r="31" fill="#254744" stroke="#557b72" stroke-width="1.5"/>
+  <text x="1459" y="532" font-size="26" text-anchor="middle">J</text>
+  <text x="1416" y="590" class="name">Jules</text>
+  <text x="1405" y="620" font-size="21" class="priority">Has priority</text>
+  <g opacity=".65">
+    <use href="#creature" x="1107" y="416" width="67" height="94"/>
+    <use href="#creature" x="1107" y="522" width="67" height="94"/>
+    <use href="#creature" x="1107" y="628" width="67" height="94"/>
+    <use href="#support" x="1220" y="450" width="55" height="77"/>
+    <use href="#support" x="1220" y="539" width="55" height="77"/>
+    <use href="#resource" x="1324" y="413" width="48" height="68"/>
+    <use href="#resource" x="1324" y="493" width="48" height="68"/>
+    <use href="#resource" x="1324" y="573" width="48" height="68"/>
+  </g>
+
+  <!-- Shared pending position: one short relationship, no cross-table web. -->
+  <path d="M845 529V500" fill="none" stroke="#e4f0dc" stroke-width="2.5" marker-end="url(#target-arrow)"/>
+  <rect x="802" y="535" width="86" height="112" rx="7" fill="#2c503b" stroke="#e4f0dc" stroke-width="2.5"/>
+  <path d="M814 548H875M814 632H875" stroke="#adcfa6" stroke-width="2" opacity=".8"/>
+  <path d="M825 607Q821 568 868 566Q869 604 833 614M829 612L860 577" fill="none" stroke="#c4e1b7" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+  <text x="909" y="573" font-size="25" font-weight="600">Giant Growth</text>
+  <text x="909" y="605" font-size="21" class="pending">You · pending</text>
+
+  <!-- You, bottom: the same inward / outward hierarchy, upright throughout. -->
+  <g opacity=".74">
+    <use href="#creature" x="661" y="666" width="64" height="90"/>
+    <use href="#creature" x="737" y="666" width="64" height="90"/>
+    <use href="#creature" x="813" y="666" width="64" height="90"/>
+    <use href="#creature" x="889" y="666" width="64" height="90"/>
+    <use href="#support" x="714" y="771" width="52" height="73"/>
+    <use href="#support" x="780" y="771" width="52" height="73"/>
+    <use href="#support" x="846" y="771" width="52" height="73"/>
+    <use href="#resource" x="670" y="855" width="44" height="62"/>
+    <use href="#resource" x="725" y="855" width="44" height="62"/>
+    <use href="#resource" x="780" y="855" width="44" height="62"/>
+    <use href="#resource" x="835" y="855" width="44" height="62"/>
+    <use href="#resource" x="890" y="855" width="44" height="62"/>
+  </g>
+  <text x="627" y="717" font-size="18" text-anchor="end" class="muted">Creatures</text>
+  <text x="684" y="813" font-size="18" text-anchor="end" class="muted">Support</text>
+  <text x="640" y="894" font-size="18" text-anchor="end" class="muted">Resources</text>
+  <circle cx="800" cy="955" r="25" fill="#2b4840" stroke="#88aa98" stroke-width="2"/>
+  <text x="800" y="963" font-size="23" text-anchor="middle">Y</text>
+  <text x="846" y="964" class="name">You</text>
+
+  <text x="56" y="965" class="small muted">Upright to the viewer · stable seats</text>
+  <text x="1544" y="965" font-size="18" class="muted" text-anchor="end">Authored positions · not engine geometry</text>
+</svg>
