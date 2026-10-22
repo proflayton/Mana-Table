@@ -11,22 +11,22 @@ public static class SharedTableStudy
     private static readonly string[] Roles = ["Creatures", "Support", "Lands"];
     public static Rectangle ActionArea => new(565, 390, 470, 165);
     public static Rectangle Territory(int seat) => seat switch {
-        0 => new(195, 160, 350, 470), 1 => new(510, 210, 580, 165),
-        2 => new(1055, 160, 350, 370), _ => new(320, 565, 915, 170)
+        0 => new(195, 160, 350, 470), 1 => new(510, 171, 580, 204),
+        2 => new(1055, 160, 350, 370), _ => new(320, 565, 915, 215)
     };
     public static Rectangle Lane(int seat, string role) => (seat, role) switch {
         (0, "Creatures") => new(300, 165, 195, 385),
         (0, "Support") => new(195, 165, 94, 210),
         (0, _) => new(195, 390, 94, 230),
         (1, "Creatures") => new(510, 270, 580, 105),
-        (1, "Support") => new(510, 210, 235, 52),
-        (1, _) => new(760, 210, 330, 52),
+        (1, "Support") => new(510, 171, 430, 94),
+        (1, _) => new(955, 171, 135, 94),
         (2, "Creatures") => new(1105, 165, 190, 355),
-        (2, "Support") => new(1310, 165, 94, 165),
-        (2, _) => new(1310, 345, 94, 175),
-        (_, "Creatures") => new(320, 565, 915, 104),
-        (_, "Support") => new(320, 682, 360, 53),
-        _ => new(885, 682, 350, 53)
+        (2, "Support") => new(1310, 165, 94, 218),
+        (2, _) => new(1310, 398, 94, 122),
+        (_, "Creatures") => new(590, 565, 645, 104),
+        (_, "Support") => new(320, 565, 260, 215),
+        _ => new(920, 682, 315, 94)
     };
 
     internal static BattlefieldCluster[] Arrange(int seat, int owner, Card[] cards,
@@ -42,7 +42,7 @@ public static class SharedTableStudy
             lane.Inflate(-2, -2);
             var nodes = new List<SceneCard>();
             if (groups.Length == 0) return new BattlefieldCluster(kind, []);
-            var desired = kind == "Creatures" ? new Vector2(112, 104) : new Vector2(88, 62);
+            var desired = kind == "Creatures" ? new Vector2(112, 104) : new Vector2(112, 92);
             var fans = groups.Select(group => Fan(group.Length)).ToArray();
             int fanWidth = fans.Max(fan => fan.Width), fanHeight = fans.Max(fan => fan.Height);
             float gap = Math.Min(9, MathF.Sqrt(lane.Width * lane.Height / (float)groups.Length) / 4);

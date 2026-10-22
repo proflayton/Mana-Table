@@ -72,7 +72,7 @@ internal sealed class TableWindow : Game
     {
         painter = new(GraphicsDevice); screen = new(GraphicsDevice);
         assets = new(GraphicsDevice, Path.Combine(AppContext.BaseDirectory, "Assets"));
-        resources.Arena = assets.Arena; resources.CardBack = assets.CardBack; resources.Play = assets.Play;
+        resources.Arena = assets.Arena; resources.CardBack = assets.CardBack; resources.ManaSymbols = assets.ManaSymbols; resources.Play = assets.Play;
         tableSurface = new(GraphicsDevice, 1600, 900, false, SurfaceFormat.Color, DepthFormat.None, 4, RenderTargetUsage.DiscardContents);
         setupSurface = new(GraphicsDevice, 1600, 1000, false, SurfaceFormat.Color, DepthFormat.None, 4, RenderTargetUsage.DiscardContents);
         surface = setupSurface;

@@ -68,6 +68,7 @@ internal sealed partial class TableApplication
         if (ReadingGalleryOpen || BattlefieldFocused || ZoneReadingOpen) DrawReaderControls();
         if (ReadingGalleryOpen) hovered = HitAt(pointer)?.Card;
         DrawPendingReferencePreview();
+        DrawStudyBattlefieldName();
         DrawExperienceLabHeader();
     }
     private void DrawGameHeader()

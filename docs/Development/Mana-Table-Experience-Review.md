@@ -19,6 +19,10 @@ does not establish that a person can understand or use the screen.
    for routine gestures. A live card face can integrate changed characteristics;
    replacing it with a cropped illustration, generic prose panel and rules pages
    loses its identity.
+   Card names are identity, not disposable summaries: never replace their endings
+   with ellipses or shrink the font to squeeze them in. Reserve room for complete,
+   wrapped names. A genuinely compact overview face needs a complete name on
+   inspection or a source-attached hover cue; a partial word is not a useful label.
 3. **Show state and causality where they happen.** Connect source, pending effect,
    affected objects and settled state. Current stats, counters, resources and
    gained abilities must remain inspectable after an animation, with their sources
@@ -44,6 +48,8 @@ does not establish that a person can understand or use the screen.
    territories and reading direction stable. Turn ownership, priority and required
    decisions are different facts. Direct attention to the relevant source,
    recipients and responder without rearranging everyone's battlefield.
+   Reserve room for portrait resources before packing cards. Mana quantities
+   must remain separate from both card faces and the life total.
 8. **Reduce repeated interaction through explicit, bounded intent.** A burst of
    equivalent choices should support assigning them together, followed by an
    interruptible continuation. Keep every underlying trigger, target restriction,
@@ -66,7 +72,7 @@ retain their own review status. It does not establish release publication.
 
 ## MTGA references reviewed: 21 October 2026
 
-The user's six Arena screenshots make the battlefield/inspection hierarchy concrete:
+The user's seven Arena screenshots make the battlefield/inspection hierarchy concrete:
 
 | Visible evidence | Mana Table design implication |
 | --- | --- |
@@ -78,6 +84,7 @@ The user's six Arena screenshots make the battlefield/inspection hierarchy concr
 | The fourth screenshot keeps Exemplar of Light recognizable as a full card, with a Flying explanation adjacent to it and the battlefield continuing behind | Treat the card and its contextual explanation as one inspection area. Its placement must preserve the current source, eligible targets, hand and decision; four seats make this a layout concern, not just a tooltip concern. |
 | The fifth screenshot inspects an opponent's Tidings of War with adjacent Cost Modified, entered-the-graveyard-this-turn, Flashback and Amass explanations; the card's rules include a different result when cast from a graveyard | Make public-zone capabilities and casting context discoverable. Keep printed cost, route-specific cost, conditional effect text, recent history and current legal permission distinct. The still does not establish that the opponent can cast it at that moment. |
 | The sixth screenshot presents three Ajani Resolute abilities as distinct faces with shared source artwork, individual effects and prominent loyalty costs of 0, -4 and -10; two have bright outlines and one is muted | A real ability choice can use readable game objects and engine-reported availability. Preserve exact costs, source identity and the continuing battlefield; a chosen ability begins its actual payment/target sequence. Do not infer a disabled reason from styling alone. |
+| The seventh screenshot places a small glowing mana symbol and quantity 4 beside the opponent's portrait | Keep actual unspent mana associated with its seat through recognizable symbols and exact quantities. Stable positions and brief change emphasis communicate the pool without rectangular letter labels. The still alone does not establish animation timing. |
 
 Also reviewed sampled frames from [LegenVD's earthbending/landfall match](https://www.youtube.com/watch?v=38QyBm7unec)
 (24 November 2025). Full video retrieval returned HTTP 403; public storyboard
@@ -186,13 +193,28 @@ layout for normal games or a released feature.
 
 `SharedTableStudy` arranges upright scan faces independently within fixed role
 lanes. A pending stack or another controller's density does not participate in
-packing. Battlefield faces prioritize real artwork, a narrow name, current P/T,
+packing. Battlefield faces prioritize real artwork, complete wrapped names, current P/T,
 small counters and state glyphs. Every occurrence remains represented; differing
 public states remain separate. Full inspection retains the battlefield anchor,
 keeps the original card readable, overlays authoritative P/T and attaches typed
 counter/damage/state chips below it. The pending effect uses a reserved area and
 can occupy its remaining space beside an opened reader. Hand play retains its
 existing scoped drag behavior.
+
+Names use measured space at a fixed font rather than ellipses or smaller type;
+copy quantities occupy a separate corner. Support lanes have more caption room.
+The local support cluster sits to the left of the creature row, with lands on
+the right, leaving the portrait's mana area clear.
+When an overview face cannot hold its complete name, it retains its art/state
+and exposes one complete source-attached name on hover without moving the card.
+That fallback does not settle dense-board readability.
+
+The native source also reuses Forge's bundled mana-symbol atlas for compact
+portrait pools: symbols and exact quantities with a quiet glow, using the
+existing gain/loss cues. Spending a color removes its number immediately while
+the symbol fades; reduced motion settles immediately. Pool inspection retains
+full color names, colorless and unfamiliar resources. This visual change remains
+source-only until included in a published build.
 
 Focused geometry, privacy and pointer checks protect these mechanics. Actual
 small/large-window review remains separate. The busy far seat and the extreme
