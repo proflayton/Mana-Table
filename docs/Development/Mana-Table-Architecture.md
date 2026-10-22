@@ -627,7 +627,7 @@ Source-aware readers use engine-owned action descriptions in the live card's
 adjacent action area. Neither path infers playability from rules text.
 Stack projections include viewer-safe card/player targets (including subabilities).
 `TableApplication.Priority` composes one effect surface per actual stack item.
-The expanded row leads with `StackItem.Text`, a source thumbnail, controller,
+The expanded row normally leads with `StackItem.Text`, a source thumbnail, controller,
 order and reported targets with direct arrows; later items retain ordered rows.
 The surface fits measured content. Its background has no hit or hover fill.
 Only overflow and secondary-effect summaries open complete effect inspection
@@ -643,6 +643,25 @@ shields the cards underneath and offers no actions; canonical card poses and hit
 regions never move. A player reference highlights the actual portrait instead.
 Auto pauses while a card reference is being read. Visibility and the current
 stack-item identity bound the reference's lifetime.
+
+Optional `Decision.Effect` and `StackItem.Effect` carry the same typed pending
+damage context. `forge.api.PendingEffects` copies only allowlisted constants,
+captured trigger amounts and paid-X bindings; target-dependent or unknown values
+remain null. Every amount precedes replacement and prevention. Captured counter
+context is omitted when its card recipient cannot be disclosed. Only standalone
+simple targeted damage replaces the full description; chained, conditional and
+unmodeled effects retain their existing presentation. Captured counter
+additions retain their authorized recipient and increment, independently of its
+current total; the renderer never evaluates rules strings or subtracts totals to
+recover them. Single, per-recipient and divided-total amounts stay distinct.
+`TableApplication.PendingValues` replaces the typed targeting prose with a
+source-linked value and full counter-origin context, plus an attached board
+receipt when space permits outside card faces. Required target limits and
+confirm/cancel permissions still come from the current prompt. The same value
+body appears in the existing stack face. Source/origin hover reuses read-only
+reference previews, bounded by the current decision or stack item and its
+disclosed faces. This context is not a game command or a resolved-damage event.
+
 The responder band states `Your priority` or names the actual priority holder;
 it does not frame holding priority after your own action as a reply to another
 player. `TableApplication.PendingConnections` binds a gold source → effect link

@@ -69,8 +69,10 @@ internal sealed partial class TableApplication
             string owner = entry.ControllerId is { } ownerId ? StateClarity.PlayerName(state, ownerId) : "Owner not reported";
             string effect = !string.IsNullOrWhiteSpace(entry.Text) ? entry.Text
                 : !entry.Ability && entry.Card is { Text.Length: > 0 } spell ? spell.Text : "Effect text not reported.";
+            int bodyHeight = entry.Effect is { Kind: "damage" } value
+                ? 62 + PendingDamageCounterHeight(value, 407) : canvas.TextSize(effect, .86f, 407, 80, true).Y;
             int height = expanded ? Math.Clamp(PendingEffectHeaderHeight(entry, owner)
-                + canvas.TextSize(effect, .86f, 407, 80, true).Y + (entry.Targets.Length > 0 ? 27 : 0) + 12, 134, 220) : 46;
+                + bodyHeight + (entry.Targets.Length > 0 ? 27 : 0) + 12, 134, 220) : 46;
             var bounds = new Rectangle(545, y, 435, height);
             canvas.Panel(bounds, new(17, 29, 36), index == 0 ? Gold * .7f : Muted * .45f, 4);
             if (expanded) PaintPendingEffect(entry, index, bounds, owner, effect);
@@ -136,8 +138,13 @@ internal sealed partial class TableApplication
         int bodyY = bounds.Y + PendingEffectHeaderHeight(entry, owner);
         int targetHeight = entry.Targets.Length > 0 ? 27 : 0;
         int bodyHeight = Math.Max(25, bounds.Bottom - bodyY - targetHeight - 12);
-        string[] pages = canvas.TextPages(effect, .86f, bounds.Width - 28, bodyHeight, 80, true);
-        canvas.Text(pages[0], bounds.X + 14, bodyY, Ink, .86f, bounds.Width - 28, 80, true);
+        string[] pages = [];
+        if (entry.Effect is { Kind: "damage" } value)
+            PaintPendingDamageValue(value, new(bounds.X + 14, bodyY, bounds.Width - 28, bodyHeight));
+        else {
+            pages = canvas.TextPages(effect, .86f, bounds.Width - 28, bodyHeight, 80, true);
+            canvas.Text(pages[0], bounds.X + 14, bodyY, Ink, .86f, bounds.Width - 28, 80, true);
+        }
         if (entry.Targets.Length > 0) {
             int targetY = bounds.Bottom - 27;
             canvas.Arrow(new(bounds.X + 14, targetY + 11), new(bounds.X + 31, targetY + 11), Red, 3);

@@ -44,6 +44,11 @@ public final class InputSelectTargets extends InputSyncronizedBase {
     public boolean hasCancelled() { return bCancel; }
     public boolean hasPressedOk() { return bOk; }
 
+    /** The exact ability whose current targets this input owns. */
+    public SpellAbility getSpellAbility() { return sa; }
+    public int getMinTargets() { return numTargets != null ? numTargets : sa.getMinTargets(); }
+    public int getMaxTargets() { return numTargets != null ? numTargets : sa.getMaxTargets(); }
+
     public InputSelectTargets(final PlayerControllerHuman controller, final List<Card> choices, final SpellAbility sa, final boolean mandatory, Integer numTargets, Collection<Integer> divisionValues, Predicate<GameObject> filter, boolean mustTargetFiltered) {
         super(controller);
         this.choices = choices;

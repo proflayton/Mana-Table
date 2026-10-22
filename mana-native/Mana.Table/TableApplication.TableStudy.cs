@@ -68,6 +68,15 @@ internal sealed partial class TableApplication
         canvas.Text(entry.Name, art.Right + 10, body.Y + 7, Ink, .67f, body.Width - 78, 1, true);
         canvas.Text(owner, art.Right + 10, body.Y + 29, Gold, .48f, body.Width - 78, 1);
         AddPendingSourceReference(entry, new(art.X, art.Y, body.Width - 20, 40));
+        if (entry.Effect is { Kind: "damage" } value) {
+            int targetHeight = entry.Targets.Length > 0 ? 28 : 0;
+            PaintPendingDamageValue(value, new(body.X + 12, body.Y + 51, body.Width - 24,
+                Math.Max(1, body.Height - 59 - targetHeight)));
+            if (entry.Targets.Length > 0)
+                DrawPendingTargetReferences(entry, new(body.X + 12, body.Bottom - 28, body.Width - 24, 24));
+            stackRows.Add(new(entry.Id, 1, body));
+            return;
+        }
         string effect = entry.Text.Length > 0 ? entry.Text
             : !entry.Ability && entry.Card is { Text.Length: > 0 } spell ? spell.Text : "Effect text not reported.";
         var effectArea = new Rectangle(body.X + 12, body.Y + 51, body.Width - 24, 52);

@@ -406,6 +406,27 @@ another seat's private prompt or legal options. Stack entries include
 `sourceControllerId`. The optional partner-search confirmation retains that source
 so clients can explain whose effect is asking, without choosing a recipient.
 
+Targeting prompts and stack entries may include an optional `effect` containing
+an opaque `id`, `kind: damage`, nullable `amount`, `amountBasis` (`base`, `trigger`
+or `dynamic`) and `distribution` (`single`, `each` or `divided`). The amount is a
+pre-replacement/pre-prevention value from allowlisted engine bindings, not a
+prediction of final damage. A divided amount is a total pool. Unknown amounts
+are null, distinct from a known zero. Unsupported effects omit the descriptor;
+clients must not reconstruct it from formatted rules or prompt text.
+Only standalone, simply targeted damage opts into this complete numeric summary.
+Chained, conditional, alternate-source or unmodeled effects retain their full
+existing description instead of losing follow-up results.
+
+Its optional `counterChange` captures the triggering additions: an authorized
+`card` or `playerId` when available, optional `actorPlayerId`, and `counters`
+entries with `type`, `label` and `added`. This increment is independent of the
+recipient's current counter total. Source/recipient faces remain viewer-filtered;
+an undisclosed card recipient omits the entire counter context. Read-only context
+cards have no action key or selection flags. The effect ID and counter context
+grant no input permission. Targeting `min` and
+`max` describe the current prompt's engine-owned target limits. Older payloads
+without `effect` keep the existing text presentation.
+
 Activity entries add `outcome` (`resolved` or `notResolved` for a resolution) and
 `count` (positive actual draw/shuffle events). Library-to-hand movement alone is
 `moved`, not proof of a draw. Clients must not guess a missing outcome from prose

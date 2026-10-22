@@ -72,6 +72,24 @@ public sealed partial class ExperienceLabSession
                 return UseSourceAction(reply);
             } else if (Scenario.Id == "ability-targeting.v1" && decision.Context == BallistaTargetContext) {
                 return ReplyBallistaTarget(reply);
+            } else if (Scenario.Id == CounterDamageScenario.Id && decision.Context == CounterDamageScenario.Context) {
+                StackTarget target;
+                if (reply.Action == ReplyAction.SelectPlayer && reply.Player is { } playerId && decision.PlayerChoices.Contains(playerId)) {
+                    var player = State.Players.Single(player => player.Id == playerId);
+                    target = new("player", playerId.ToString(System.Globalization.CultureInfo.InvariantCulture), player.Name, playerId);
+                } else if (reply.Action == ReplyAction.SelectCard) {
+                    var selected = State.Players.SelectMany(player => player.Zone("Battlefield").Cards.Select(card => (player, card)))
+                        .SingleOrDefault(item => item.card.Key == reply.Card && item.card.Selectable);
+                    if (selected.card == null) throw Unsupported();
+                    target = new("card", selected.card.VisualId, selected.card.Name, selected.player.Id);
+                } else throw Unsupported();
+                StageIndex++;
+                return State = Stamp(CounterDamageScenario.Snapshot(StageIndex, target));
+            } else if (Scenario.Id == CounterDamageScenario.Id && StageIndex % 3 == 1
+                && reply.Action == ReplyAction.Confirm && decision.Intent == DecisionIntent.Priority) {
+                var target = State.Stack.Single().Targets.Single();
+                StageIndex++;
+                return State = Stamp(CounterDamageScenario.Snapshot(StageIndex, target));
             } else if (Scenario.Id == "ability-targeting.v1" && StageIndex == 1
                 && reply.Action == ReplyAction.Confirm && decision.Intent == DecisionIntent.Priority) {
                 return AdvanceBallista(2);

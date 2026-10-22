@@ -228,6 +228,25 @@ public sealed record PriorityAbility(string Id, string SourceCardKey, string Sou
     public string[] EligibleHandKeys { get; init; } = [];
     public int HandPlacementLimit { get; init; } = 1;
 }
+// Planned effect facts copied by the engine before target selection. Amount is
+// the base effect value, never a prediction after prevention/replacement.
+public sealed record PendingEffect
+{
+    public string Id { get; init; } = "";
+    public string Kind { get; init; } = "";
+    public int? Amount { get; init; }
+    public string AmountBasis { get; init; } = "base";
+    public string Distribution { get; init; } = "single";
+    public CounterAddition? CounterChange { get; init; }
+}
+public sealed record CounterAddition
+{
+    public Card? Card { get; init; }
+    public int? PlayerId { get; init; }
+    public int? ActorPlayerId { get; init; }
+    public CounterIncrement[] Counters { get; init; } = [];
+}
+public sealed record CounterIncrement(string Type, string Label, int Added);
 public sealed record Decision
 {
     public string Id { get; init; } = "";
@@ -260,6 +279,7 @@ public sealed record Decision
     public bool OverrideOrder { get; init; }
     public string Initial { get; init; } = "";
     public Card? SourceCard { get; init; }
+    public PendingEffect? Effect { get; init; }
     public string SourceZone { get; init; } = "";
     public string Title { get; init; } = "";
     public string Context { get; init; } = "";
@@ -279,6 +299,7 @@ public sealed record StackItem(string Name, string Text, bool Ability, Card? Car
     public string Id { get; init; } = "";
     public int? ControllerId { get; init; }
     public StackTarget[] Targets { get; init; } = [];
+    public PendingEffect? Effect { get; init; }
 }
 public sealed record StackTarget(string Kind, string Id, string Name, int? PlayerId = null);
 public sealed record GameSnapshot(string Id, string Status, string? Error, string? Result, int ViewerId,

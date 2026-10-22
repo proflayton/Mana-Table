@@ -33,6 +33,11 @@ final class RulesScenario implements AutoCloseable {
     }
 
     RulesScenario(String name, Map<Integer, List<String>> battlefield, String mainCard, String commander) throws Exception {
+        this(name, battlefield, mainCard, commander, false);
+    }
+
+    RulesScenario(String name, Map<Integer, List<String>> battlefield, String mainCard, String commander,
+                  boolean enableEtbCounters) throws Exception {
         if (StaticData.instance() == null) EngineResources.load(RESOURCES);
         evidence = Path.of("target/rules-regressions", name);
         Files.createDirectories(evidence);
@@ -42,6 +47,7 @@ final class RulesScenario implements AutoCloseable {
             deck.getMain().add(StaticData.instance().getCommonCards().getCard(mainCard), 99);
             deck.getOrCreate(DeckSection.Commander).add(StaticData.instance().getCommonCards().getCard(commander));
             var player = MatchTable.human(deck, "Commander", "Seat " + seat);
+            player.setEnableETBCountersEffect(enableEtbCounters);
             List<IPaperCard> extras = new ArrayList<>();
             for (String card : battlefield.getOrDefault(seat, List.of())) {
                 var printing = StaticData.instance().getCommonCards().getCard(card);

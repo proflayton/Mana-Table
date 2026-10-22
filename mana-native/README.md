@@ -77,6 +77,15 @@ buttons. Read all opens the complete current message when it exceeds the dock;
 help pages are measured to fit above their navigation controls, including at
 larger text settings. Reading and paging do not answer the pending decision.
 
+When the engine supplies a typed pending damage effect, target selection instead
+shows its value beside the source and keeps the captured counter increment and
+full recipient name visible. The same context continues onto the stack. For All
+Will Be One, adding one loyalty gives a captured one-damage value even when that
+planeswalker now has four loyalty. These are values before replacement or prevention, not promised
+results; unknown amounts remain unknown. Source and counter-recipient hover
+previews are read-only. This source change is awaiting release and human review;
+`counter-damage.v1` in the Experience Lab is an authored reproduction, not a rules test.
+
 ## Prerequisites
 
 - Windows x64, Git, and the **.NET 9 SDK**. The projects target `net9.0` and
