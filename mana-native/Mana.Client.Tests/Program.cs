@@ -159,6 +159,8 @@ checks += await AppUpdateRegression.RunAsync();
 await IncrementalUpdateRegression.RunAsync(Check);
 HandPlacementRegression.Run(Check);
 await QuietPriorityRegression.RunAsync(Check);
+await SourceActionSessionRegression.RunAsync(Check);
+await InteractionContractMatrix.RunAsync(Check);
 AllocationRegression.Run(Check);
 await RecoveryRegression.RunAsync(Check);
 GameplayClarityChecks.Run(Check);

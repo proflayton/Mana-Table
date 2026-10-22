@@ -245,6 +245,13 @@ public sealed partial class ForgeEngine(ForgePaths paths) : ICardEngine, ITableS
                 "InputBlock" => DecisionIntent.Block, _ when input.StartsWith("InputPayMana") => DecisionIntent.Mana,
                 _ when input.Contains("Select") => DecisionIntent.Selection, _ => DecisionIntent.General };
             prompt["intent"] = (int)intent;
+            prompt["purpose"] = (int)(input switch {
+                "InputConfirmMulligan" => DecisionPurpose.OpeningHand,
+                "InputSelectTargets" => DecisionPurpose.TargetSelection,
+                _ when prompt["context"]?.GetValue<string>() == "playAbility" => DecisionPurpose.AbilitySelection,
+                _ => DecisionPurpose.Unspecified
+            });
+            prompt.AsObject().Remove("inputType");
         }
         node["decision"] = prompt;
         // Defender IDs are numeric for players and strings for cards in Forge.

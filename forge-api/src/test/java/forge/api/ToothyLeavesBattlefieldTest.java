@@ -18,7 +18,7 @@ import static org.testng.Assert.*;
 public class ToothyLeavesBattlefieldTest {
     private static final String TOOTHY = "Toothy, Imaginary Friend";
 
-    @Test(timeOut = 90000)
+    @Test(groups = "canonical-interaction", timeOut = 90000)
     public void returningToothyToHandDrawsForItsLastKnownCounters() throws Exception {
         try (var scenario = new RulesScenario("toothy-bounce-draw",
                 Map.of(0, List.of(TOOTHY, "Temple Bell", "Temple Bell", "Seal of Removal")))) {

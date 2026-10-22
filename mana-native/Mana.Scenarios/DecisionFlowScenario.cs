@@ -154,7 +154,7 @@ public static class DecisionFlowScenario
     }
 
     private static Decision Priority(bool canAutoPass) => new() {
-        Kind = "input", InputType = "InputPassPriority", Intent = DecisionIntent.Priority,
+        Kind = "input", Intent = DecisionIntent.Priority,
         OkEnabled = true, CanAutoPass = canAutoPass, Message = ""
     };
     private static Card Face(string id, string name, string type) => new() {

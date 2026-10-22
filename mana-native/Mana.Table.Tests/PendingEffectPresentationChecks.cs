@@ -33,7 +33,7 @@ internal static class PendingEffectPresentationChecks
                     Count = zone.Name == "Battlefield" ? player.Id == 0 ? 2 : player.Id == 1 ? 1 : 0 : zone.Count,
                     Cards = zone.Name == "Battlefield" ? player.Id == 0 ? [source, recipient] : player.Id == 1 ? [target] : [] : []
                 }).ToArray() }).ToArray(),
-                Decision = new() { Kind = "input", InputType = "InputSelectTargets", Intent = DecisionIntent.Selection,
+                Decision = new() { Kind = "input", Purpose = DecisionPurpose.TargetSelection, Intent = DecisionIntent.Selection,
                     Message = "GENERIC_RULES_WITH_INTERNAL_ID_4242: deal that much damage. Choose a target.",
                     SourceCard = source, SourceControllerId = 0, Effect = effect, Min = 1, Max = 1,
                     PlayerChoices = [1, 2, 3], CancelEnabled = true, Cancel = "Cancel" } };

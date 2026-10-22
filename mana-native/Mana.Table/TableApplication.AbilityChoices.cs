@@ -11,7 +11,7 @@ internal sealed partial class TableApplication
 {
     private sealed record AbilityActionText(Choice Choice, string Text, int Height);
 
-    private static bool IsAbilityActionChoice(Decision decision) => decision.Kind == "choice" && decision.Context == "playAbility"
+    private static bool IsAbilityActionChoice(Decision decision) => decision.Kind == "choice" && decision.Purpose == DecisionPurpose.AbilitySelection
         && !decision.Ordered && decision.Max == 1 && decision.Min is 0 or 1 && decision.Choices.Length > 0
         && decision.LibraryCards.Length == 0 && decision.PlayerChoices.Length == 0
         && decision.Choices.All(choice => choice.Card == null && choice.CardId.Length == 0 && choice.PlayerId == null);

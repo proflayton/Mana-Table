@@ -1,4 +1,5 @@
 using Mana.Contracts;
+using Mana.Client;
 using Mana.Magic;
 using Mana.Renderer;
 using Mana.Table.Presentation;
@@ -36,13 +37,13 @@ internal sealed partial class TableApplication
     {
         var options = new List<SourceReaderOption>();
         if (ReaderActionsMatch(card)) {
-            options.AddRange(readerActions!.Actions.Select(action => new SourceReaderOption(
+            options.AddRange(sourceActions.View.Actions.Select(action => new SourceReaderOption(
                 action.Kind == "cast" && !action.Text.StartsWith("Cast ", StringComparison.OrdinalIgnoreCase)
                     ? "Cast " + action.Text : action.Text, action)));
             if (match != null) options.AddRange(HandPlacements.Options(match, card)
                 .Select(placement => new SourceReaderOption(placement.Text, Placement: placement)));
-        } else if (readerActionsBinding.Length > 0 && readerActionsBinding == ReaderActionBinding(card)
-            && !readerActionsLoading && readerActionsError.Length > 0) {
+        } else if (sourceActions.View.Context is { } current && current == ReaderActionContext(card)
+            && sourceActions.View.Status is SourceActionStatus.Failed or SourceActionStatus.Stale) {
             options.Add(new("Retry actions", Retry: true));
         }
         return options;
@@ -68,9 +69,12 @@ internal sealed partial class TableApplication
         if (key != sourceReaderViewKey) { sourceReaderViewKey = key; sourceReaderScroll = 0; }
         var options = SourceReaderOptions(card);
         string state = IsStudyBattlefieldReader(entry) ? "" : SourceReaderState(card, entry.Zone);
+        if (sourceActions.View is { Context: { } current, Status: SourceActionStatus.Unsupported } unavailable
+            && current == ReaderActionContext(card))
+            state = string.Join(" · ", new[] { state, unavailable.Error }.Where(part => part.Length > 0));
         var face = entry.Display.Bounds;
         if (options.Count == 0 && state.Length == 0) {
-            if (readerActionsLoading) {
+            if (sourceActions.View.Status == SourceActionStatus.Loading) {
                 float start = preferences.ReducedMotion ? 0 : (float)now * 3;
                 canvas.Ring(new(face.Right + 10, face.Center.Y), 4, Blue * .7f, 1.5f, start, start + 4.5f);
             }
@@ -115,10 +119,10 @@ internal sealed partial class TableApplication
             var whole = new Rectangle(area.X, y, width, row.Height);
             var visible = Rectangle.Intersect(whole, sourceReaderActionsBounds);
             if (!visible.IsEmpty) {
-                bool firstPlacement = option.Placement != null && readerActions?.Actions.Length == 0
+                bool firstPlacement = option.Placement != null && sourceActions.View.Actions.Count == 0
                     && options.FindIndex(item => item.Placement != null) == index;
                 string id = option.Retry ? "source-actions-retry"
-                    : (option.Action != null && Array.IndexOf(readerActions!.Actions, option.Action) == 0 || firstPlacement) ? "read-card-action"
+                    : (option.Action != null && sourceActions.View.Actions.FirstOrDefault()?.Id == option.Action.Id || firstPlacement) ? "read-card-action"
                     : option.Placement != null ? "source-placement:" + option.Placement.Id : "source-action:" + option.Action!.Id;
                 bool hover = !busy && IsControlHovered(id);
                 if (row.Secondary) {

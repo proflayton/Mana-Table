@@ -106,7 +106,7 @@ internal sealed class PriorityAbilitySmoke(TableWindow.Probe view, InteractionSc
             case 15: Release(); Next(); break;
             case 16:
                 Check(scenario.Replies[^1] is { Action: ReplyAction.SelectCard } reply && reply.GameId == manualGame
-                    && reply.DecisionId == manualDecision && reply.Card == manualCard && state.Decision is { Context: "playAbility" },
+                    && reply.DecisionId == manualDecision && reply.Card == manualCard && state.Decision is { Purpose: DecisionPurpose.AbilitySelection },
                     "Explicit manual activation opens the normal ability chooser with the exact current game, decision and card scope");
                 var nextTurn = Example();
                 Publish(nextTurn with { Turn = nextTurn.Turn + 1, ActivePlayerId = nextTurn.ViewerId, IgnoredPriorityAbilities = [] }); Next(); break;

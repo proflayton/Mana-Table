@@ -170,7 +170,7 @@ internal sealed class LobbyThreePlayerSmoke : ITableAutomation, IDisposable
                 state.Id, state.ViewerId, state.Status, state.PhaseKey, state.Turn, state.ActivePlayerId,
                 state.PriorityPlayerId, state.DecisionOwnerId, state.ActionClass,
                 decision = state.Decision == null ? null : new { state.Decision.Id, state.Decision.Kind,
-                    state.Decision.InputType, state.Decision.Intent, state.Decision.OkEnabled }
+                    state.Decision.Purpose, state.Decision.Intent, state.Decision.OkEnabled }
             }) }));
     }
     private static bool UsableFirstMain(GameSnapshot[] states)
@@ -181,7 +181,7 @@ internal sealed class LobbyThreePlayerSmoke : ITableAutomation, IDisposable
             || state.PhaseKey != "MAIN1" || state.Id != first.Id || state.Turn != first.Turn || state.ActivePlayerId != first.ActivePlayerId)) return false;
         if (states.Count(state => state.Decision != null) != 1) return false;
         var owner = states.Single(state => state.Decision != null);
-        return owner is { Decision: { Id.Length: > 0, Kind: "input", InputType: "InputPassPriority", Intent: DecisionIntent.Priority, OkEnabled: true } }
+        return owner is { Decision: { Id.Length: > 0, Kind: "input", Intent: DecisionIntent.Priority, OkEnabled: true } }
             && states.All(state => state.ActionClass == "priority" && state.PriorityPlayerId == owner.ViewerId && state.DecisionOwnerId == owner.ViewerId);
     }
     private void Click(string id) { Step(.1, () => MoveHit(view.Hits.Single(h => h.Id == id))); Step(0, () => mouse = Mouse(ButtonState.Pressed)); Step(0, () => mouse = Mouse()); }

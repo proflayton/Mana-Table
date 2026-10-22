@@ -12,7 +12,7 @@ internal sealed record CardPresentationContext(GameSnapshot? State, string Scope
     bool OverlayOpen, bool GalleryOpen, bool Dragging, bool CompactDecision, bool AbilityChoice = false, bool SourceActions = false,
     bool KeepBattlefieldAnchor = false, Rectangle? BattlefieldReaderAvoid = null)
 {
-    public bool OpeningHandDecision => State?.Decision is { Kind: "input", InputType: "InputConfirmMulligan" };
+    public bool OpeningHandDecision => State?.Decision is { Kind: "input", Purpose: DecisionPurpose.OpeningHand };
 
     public bool CanBrowseOpeningHand(PresentedCard entry) => OpeningHandDecision && State?.Viewer is { } viewer
         && entry.Zone == "Hand" && entry.Request.Owner == viewer.Id

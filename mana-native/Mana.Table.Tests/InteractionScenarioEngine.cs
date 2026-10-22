@@ -97,12 +97,12 @@ internal sealed class InteractionScenarioEngine : ICardEngine, ISourceActions
             if (!card.Selectable || state.Decision?.Intent is not (DecisionIntent.Priority or DecisionIntent.Selection)) throw new InvalidOperationException("Illegal card selection escaped the UI");
             if (state.Decision.Intent == DecisionIntent.Priority) {
                 if (state.Viewer!.Zone("Battlefield").Cards.Contains(card)) {
-                    state = state with { Decision = new() { Kind = "choice", Title = "Activate " + card.Name, Context = "playAbility", SourceCard = card,
+                    state = state with { Decision = new() { Kind = "choice", Title = "Activate " + card.Name, Purpose = DecisionPurpose.AbilitySelection, SourceCard = card,
                         SourceZone = "Battlefield", Min = 0, Max = 1, Choices = [new(0, "Tap: Add one green mana", null)] } };
                 } else {
                     string source = new[] { "Hand", "Command", "Graveyard", "Exile" }.FirstOrDefault(zone => state.Viewer.Zone(zone).Cards.Contains(card))
                         ?? throw new InvalidOperationException("Unexpected scenario source " + card.VisualId);
-                    if (source is "Graveyard" or "Exile") state = state with { Decision = new() { Kind = "choice", Context = "playAbility", SourceCard = card,
+                    if (source is "Graveyard" or "Exile") state = state with { Decision = new() { Kind = "choice", Purpose = DecisionPurpose.AbilitySelection, SourceCard = card,
                         SourceZone = source, Min = 0, Max = 1, Choices = [new(0, source == "Graveyard" ? "Flashback — pay the ability's cost" : "Play from exile — pay the cost", null)] } };
                     else state = state with { Players = state.Players.Select(p => p.Id != state.ViewerId ? p : p with { Zones = p.Zones.Select(z =>
                     z.Name == source ? z with { Count = z.Count - 1, Cards = z.Cards.Where(c => c != card).ToArray() }

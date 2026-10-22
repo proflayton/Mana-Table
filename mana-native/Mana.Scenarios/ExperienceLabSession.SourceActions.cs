@@ -70,7 +70,7 @@ public sealed partial class ExperienceLabSession
                     }).ToArray()
                 }).ToArray(),
                 Decision = new() {
-                    Kind = "input", Intent = DecisionIntent.Selection, InputType = "InputSelectTargets", Context = BallistaTargetContext,
+                    Kind = "input", Intent = DecisionIntent.Selection, Purpose = DecisionPurpose.TargetSelection, Context = BallistaTargetContext,
                     Title = "Choose a target", Message = "Choose any target for Walking Ballista's 1 damage. Removing a +1/+1 counter is the cost.",
                     Min = 1, Max = 1, CancelEnabled = true, PlayerChoices = State.Players.Select(player => player.Id).ToArray(),
                     SourceCard = source, SourceCardId = source.VisualId, SourceZone = "Battlefield", SourceControllerId = State.ViewerId

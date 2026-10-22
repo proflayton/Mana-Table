@@ -153,7 +153,7 @@ internal static class CardPresentationChecks
     {
         var card = new Card { Key = "opening-card", VisualId = "opening-face", Name = "Forest", Type = "Basic Land" };
         var state = Snapshot(card) with { Turn = 0, Decision = new() { Id = "keep-hand", Kind = "input",
-            InputType = "InputConfirmMulligan", Intent = DecisionIntent.General, OkEnabled = true, CancelEnabled = true } };
+            Purpose = DecisionPurpose.OpeningHand, Intent = DecisionIntent.General, OkEnabled = true, CancelEnabled = true } };
         var context = new CardPresentationContext(state, "keep-hand", false, false, false, false);
         var owner = new CardPresentationController();
         int actions = 0;
@@ -172,7 +172,7 @@ internal static class CardPresentationChecks
 
         var bottomCard = card with { Key = "current-bottom-card", Selectable = true };
         var bottom = context with { Scope = "bottom-hand", State = state with { Players = Snapshot(bottomCard).Players,
-            Decision = state.Decision! with { Id = "bottom-hand", InputType = "InputLondonMulligan" } } };
+            Decision = state.Decision! with { Id = "bottom-hand", Purpose = DecisionPurpose.Unspecified } } };
         owner.BeginFrame(bottom, null, .016f, true);
         var candidate = owner.Prepare(request with { Card = bottomCard }); owner.EndFrame();
         var selection = new InteractionController().CardClick(bottom.State!, bottomCard);
@@ -184,7 +184,7 @@ internal static class CardPresentationChecks
         var otherZone = owner.Prepare(request with { Zone = "Command" }); owner.EndFrame();
         check(!owner.Toggle(otherZone.Hit, context),
             "The opening-hand reader exception does not extend to other zones during a general engine decision");
-        var unknown = context with { State = state with { Decision = state.Decision! with { InputType = "UnfamiliarGeneralInput" } } };
+        var unknown = context with { State = state with { Decision = state.Decision! with { Purpose = DecisionPurpose.Unspecified } } };
         owner.BeginFrame(unknown, null, .016f, true);
         var otherPrompt = owner.Prepare(request); owner.EndFrame();
         check(!owner.Toggle(otherPrompt.Hit, unknown) && actions == 0,

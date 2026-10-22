@@ -147,7 +147,7 @@ public class PendingEffectTest {
         }
     }
 
-    @Test(timeOut = 90000)
+    @Test(groups = "canonical-interaction", timeOut = 90000)
     public void preventionKeepsPendingThreeSeparateFromActualTwoDamage() throws Exception {
         try (var game = new RulesScenario("pending-effect-prevention",
                 Map.of(0, List.of(PAYOFF, "Mountain", "Mountain", "Mountain", "Mountain"),

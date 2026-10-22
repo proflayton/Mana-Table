@@ -119,7 +119,7 @@ internal static class BattlefieldFocusChecks
                 && engine.Replies.Count == 0,
             "A refreshed priority prompt keeps the same public card reader focused while rotating its actionable decision and card handles");
         Click("read-card-action");
-        Wait(() => !view.Busy && engine.Replies.Count == 1 && view.Match?.Decision?.Context == "playAbility");
+        Wait(() => !view.Busy && engine.Replies.Count == 1 && view.Match?.Decision?.Purpose == DecisionPurpose.AbilitySelection);
         check(engine.Replies.Single() is { Action: ReplyAction.SelectCard } reply
                 && reply.GameId == game && reply.DecisionId == decision && reply.Card == key
                 && view.Match!.Decision is { SourceCard.VisualId: ClutteredChangesScenario.ActionCardId },

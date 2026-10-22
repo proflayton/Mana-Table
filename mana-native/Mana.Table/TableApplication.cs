@@ -86,7 +86,7 @@ internal sealed partial class TableApplication : IDisposable
     private string Scope => match == null ? deckEditor ? DeckScope : LobbyScope : session.Scope;
     private string ControlScope(string id) => SourceActionsSupported && (id == "read-card-action" || id.StartsWith("source-action:", StringComparison.Ordinal)
         || id.StartsWith("source-placement:", StringComparison.Ordinal))
-        ? Scope + ":source:" + readerActionsGeneration + ":" + readerActionsBinding
+        ? Scope + ":source:" + sourceActions.View.Generation + ":" + sourceActions.View.Context
         : id.StartsWith("updates-") ? UpdateScope : id.StartsWith("activity-") ? ActivityScope : id.StartsWith("experience-") ? ExperienceScope : id.StartsWith("chat-") ? ChatScope
         : match != null && id == "resume-phase-stop" ? match.Id + ":playback:phase-stop:" + match.PhaseKey
         : match != null && (id is "auto" or "hold" or "instructions" or "action-details" or "battlefields" or "quiet-priority-stop" or "ability-auto-pass-open" or "ability-prev" or "ability-next" or "ability-text-prev" or "ability-text-next"
@@ -101,6 +101,7 @@ internal sealed partial class TableApplication : IDisposable
         this.clock = clock ?? TimeProvider.System;
         this.restartedAfterUpdate = restartedAfterUpdate;
         session = new(engine, engine, this.clock); updates = new(session);
+        sourceActions = new(engine as ISourceActions, session.Post);
         session.Changed += AcceptEffects;
         session.Completed += () => { FinishActivity(); nextPoll = 0; if (error.Length == 0) priority.Reset(); };
         session.Failed += ex => { error = ex.Message; commandFailure = session.LastFailureWasCommand; FailActivity(); try { File.AppendAllText(Path.Combine(profile, "client.log"), ex + "\n"); } catch (Exception logError) when (logError is IOException or UnauthorizedAccessException) { } };
@@ -342,7 +343,7 @@ internal sealed partial class TableApplication : IDisposable
     public void Dispose()
     {
         if (closing) return;
-        closing = true; CloseUpdateRequests(); session.Close();
+        closing = true; CloseUpdateRequests(); sourceActions.Close(); session.Close();
         engine.DisposeAsync().AsTask().GetAwaiter().GetResult();
         canvas.Dispose();
     }

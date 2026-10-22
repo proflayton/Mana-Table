@@ -19,7 +19,7 @@ import static org.testng.Assert.*;
 
 /** Allocation descriptions and answers at the actual Forge decision boundary. */
 public class AllocationProjectionTest {
-    @Test(timeOut = 90000)
+    @Test(groups = "canonical-interaction", timeOut = 90000)
     public void combatShowsCurrentDuplicateRecipientsAndUsesTheExistingSpillThresholds() throws Exception {
         try (var game = new RulesScenario("allocation-combat-stats", Map.of(
                 0, List.of("Groundbreaker", "Cunning Sparkmage", "Forest", "Forest"),

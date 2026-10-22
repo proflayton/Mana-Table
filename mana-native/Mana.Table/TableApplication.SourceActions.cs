@@ -1,15 +1,13 @@
 using Mana.Contracts;
 using Mana.Magic;
+using Mana.Client;
 
 namespace Mana.Table;
 
 internal sealed partial class TableApplication
 {
-    private SourceActionSet? readerActions;
-    private bool readerActionsLoading, readerActionsInFlight;
-    private string readerActionsError = "", readerActionsBinding = "";
-    private long readerActionsGeneration;
-    private bool SourceActionsSupported => engine is ISourceActions { SupportsSourceActions: true };
+    private readonly SourceActionSession sourceActions;
+    private bool SourceActionsSupported => sourceActions.Supported;
 
     private Card? ReaderActionSource()
     {
@@ -21,67 +19,30 @@ internal sealed partial class TableApplication
             .SelectMany(zone => zone.Cards).FirstOrDefault(card => !card.FaceDown && card.Key.Length > 0 && SameVisibleCard(card, entry.Card));
     }
 
-    private string ReaderActionBinding(Card card) => match is not { Decision: { } decision } state ? ""
-        : string.Join("\n", state.Id, decision.Id, state.Revision, card.Key, CardViews.Identity(card));
+    private SourceActionContext? ReaderActionContext(Card card) => match is not { Decision: { } decision } state ? null
+        : new(state.Id, decision.Id, state.Revision, state.ViewerId, card.Key, CardViews.Identity(card));
 
-    private bool ReaderActionsMatch(Card card) => readerActions is { } actions && match is { Decision: { } decision } state
-        && readerActionsBinding == ReaderActionBinding(card)
-        && actions.GameId == state.Id && actions.DecisionId == decision.Id && actions.SourceCardKey == card.Key
-        && (string.IsNullOrEmpty(actions.SourceCardId) || actions.SourceCardId == CardViews.Identity(card));
+    private bool ReaderActionsMatch(Card card) => sourceActions.View.Status == SourceActionStatus.Ready
+        && sourceActions.View.Context is { } current && current == ReaderActionContext(card);
 
-    private void ClearReaderActions()
-    {
-        if (readerActionsBinding.Length > 0) readerActionsGeneration++;
-        readerActionsBinding = ""; readerActions = null; readerActionsLoading = false; readerActionsError = "";
-    }
+    private void ClearReaderActions() => sourceActions.Clear();
 
     private void UpdateReaderActions()
     {
         var card = ReaderActionSource();
-        if (card == null) { ClearReaderActions(); return; }
-        string binding = ReaderActionBinding(card);
-        if (binding != readerActionsBinding) {
-            readerActionsGeneration++; readerActionsBinding = binding;
-            readerActions = null; readerActionsError = ""; readerActionsLoading = true;
-        }
-        // Coalesce rapid card changes. An obsolete read can finish, but never
-        // publish actions for another source or queue a chain of old selections.
-        if (!readerActionsLoading || readerActionsInFlight) return;
-        readerActionsInFlight = true;
-        long generation = readerActionsGeneration;
-        var state = match!; string decision = state.Decision!.Id;
-        var source = (ISourceActions)engine;
-        _ = Task.Run(async () => {
-            try {
-                var actions = await source.SourceActionsAsync(state.Id, decision, card.Key).WaitAsync(TimeSpan.FromSeconds(5));
-                session.Post(() => {
-                    if (generation != readerActionsGeneration || binding != readerActionsBinding) return;
-                    if (actions.GameId != state.Id || actions.DecisionId != decision || actions.SourceCardKey != card.Key
-                        || !string.IsNullOrEmpty(actions.SourceCardId) && actions.SourceCardId != CardViews.Identity(card)) {
-                        readerActionsError = "These actions changed. Try again.";
-                    } else readerActions = actions;
-                    readerActionsLoading = false;
-                });
-            } catch (Exception) {
-                session.Post(() => {
-                    if (generation != readerActionsGeneration || binding != readerActionsBinding) return;
-                    readerActionsError = "Couldn't load this card's actions."; readerActionsLoading = false;
-                });
-            } finally { session.Post(() => readerActionsInFlight = false); }
-        });
+        sourceActions.Observe(card == null ? null : ReaderActionContext(card));
     }
 
     private void RetryReaderActions()
     {
-        ClearReaderActions(); UpdateReaderActions();
+        UpdateReaderActions(); sourceActions.Retry();
     }
 
     private void UseReaderAction(SourceAction action)
     {
         var card = ReaderActionSource();
-        if (card == null || !ReaderActionsMatch(card) || readerActions!.Actions.All(current => current.Id != action.Id)) return;
-        var state = match!;
-        var reply = new DecisionReply(state.Id, state.Decision!.Id, ReplyAction.UseSourceAction, Card: card.Key, AbilityId: action.Id);
+        if (card == null || ReaderActionContext(card) is not { } context
+            || sourceActions.TryCreateReply(context, action.Id) is not { } reply) return;
         CollapseCardReading(); ClearReaderActions();
         if (zoneName != "Battlefield") zoneName = null;
         Send(reply);

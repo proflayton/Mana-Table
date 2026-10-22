@@ -83,11 +83,11 @@ internal sealed class FullBattlefieldSmoke : ITableAutomation
                 "The local tenth creature reads first and exposes its explicit current activation");
             MoveHit("read-card-action");
         }); Click();
-        Wait(() => scenario.Replies.Count == 1 && view.Match?.Decision?.Context == "playAbility", 3, () => {
+        Wait(() => scenario.Replies.Count == 1 && view.Match?.Decision?.Purpose == DecisionPurpose.AbilitySelection, 3, () => {
             Check(scenario.Replies.Count == 1 && scenario.Replies[0] is { Action: ReplyAction.SelectCard } reply
                 && reply.GameId == actionGame && reply.DecisionId == actionDecision && reply.Card == actionCard,
                 "The local tenth creature submits exactly one action scoped to its own game, decision and card handle");
-            Check(view.Match?.Decision is { Context: "playAbility", SourceCard.VisualId: "ten-0-9" },
+            Check(view.Match?.Decision is { Purpose: DecisionPurpose.AbilitySelection, SourceCard.VisualId: "ten-0-9" },
                 "The ability chooser belongs to the local tenth creature");
             Capture("04-own-tenth-action");
             Publish(Example("mixed")); MoveAway();

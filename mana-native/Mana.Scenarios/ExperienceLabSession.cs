@@ -106,7 +106,7 @@ public sealed partial class ExperienceLabSession
                 var source = cards.FirstOrDefault(card => card.Key == reply.Card && card.Selectable);
                 if (source?.VisualId is not (ClutteredChangesScenario.ActionCardId or "reader-elf" or "mana-elf")) throw Unsupported();
                 abilityParent = State;
-                State = Stamp(State with { ActionClass = "", PriorityPlayerId = null, Decision = new() { Kind = "choice", Context = "playAbility", SourceCard = source,
+                State = Stamp(State with { ActionClass = "", PriorityPlayerId = null, Decision = new() { Kind = "choice", Purpose = DecisionPurpose.AbilitySelection, SourceCard = source,
                     SourceCardId = source.VisualId, SourceControllerId = State.ViewerId, SourceZone = "Battlefield",
                     Title = "Activate " + source.Name, Message = "Choose an ability. Costs and any targets come next.",
                     Min = 0, Max = 1, Choices = [new(0, "{T}: Add {G}.", null)] } });
@@ -128,12 +128,12 @@ public sealed partial class ExperienceLabSession
                             VisualId = "searched-card", CombatId = "searched-card", Selectable = false
                         }] }).ToArray()
                     }).ToArray() });
-                } else if (decision.Context == "playAbility" && selected.Length == 0) {
+                } else if (decision.Purpose == DecisionPurpose.AbilitySelection && selected.Length == 0) {
                     var parent = abilityParent;
                     abilityParent = null;
                     State = Stamp(parent ?? State with { ActionClass = "", PriorityPlayerId = State.ViewerId,
                         DecisionOwnerId = State.ViewerId, Decision = PriorityDecision("") });
-                } else if (decision.Context == "playAbility" && selected.Length == 1 && decision.SourceCard is { } source
+                } else if (decision.Purpose == DecisionPurpose.AbilitySelection && selected.Length == 1 && decision.SourceCard is { } source
                     && source.VisualId is ClutteredChangesScenario.ActionCardId or "reader-elf" or "mana-elf") {
                     State = State with { Players = State.Players.Select(player => player.Id != State.ViewerId ? player : player with {
                         Mana = new(player.Mana) { ["G"] = player.Mana.GetValueOrDefault("G") + 1 },

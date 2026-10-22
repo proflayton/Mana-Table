@@ -73,7 +73,7 @@ public class SourceActionsTest {
         }
     }
 
-    @Test(timeOut = 90000)
+    @Test(groups = "canonical-interaction", timeOut = 90000)
     public void paymentUsesThePaymentInputsActualManaActionsWithoutASecondAbilityChooser() throws Exception {
         try (var game = new RulesScenario("source-actions-payment", Map.of(0, List.of("Forest")))) {
             var input = main(game);

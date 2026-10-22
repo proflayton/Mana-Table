@@ -144,7 +144,7 @@ internal sealed class ClutteredChangesSmoke : ITableAutomation
         Wait(() => !view.Busy && engine.Replies.Count == 1, () => {
             Check(engine.Replies.Single() is { Action: ReplyAction.SelectCard } reply && reply.GameId == gameId
                 && reply.DecisionId == decisionId && reply.Card == cardKey
-                && view.Match!.Decision is { Context: "playAbility", SourceCard.VisualId: ClutteredChangesScenario.ActionCardId },
+                && view.Match!.Decision is { Purpose: DecisionPurpose.AbilitySelection, SourceCard.VisualId: ClutteredChangesScenario.ActionCardId },
                 "Only the explicit activation submits one current game/decision/card command and opens that card's ability chooser");
             Capture("07-ability-chooser"); finished = true; Save(null); window?.Exit();
         });

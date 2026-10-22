@@ -193,7 +193,7 @@ internal static class HeadlessPresentationSmoke
                 var beforeSourceChoice = run.Engine.State;
                 var choiceSource = beforeSourceChoice.Viewer!.Zone("Battlefield").Cards.Single(card => card.VisualId == "public-ward");
                 run.Present(beforeSourceChoice with { Decision = new() {
-                    Kind = "choice", Context = "playAbility", Min = 1, Max = 1, SourceCard = choiceSource,
+                    Kind = "choice", Purpose = DecisionPurpose.AbilitySelection, Min = 1, Max = 1, SourceCard = choiceSource,
                     SourceCardId = choiceSource.VisualId, SourceZone = "Battlefield", SourceControllerId = 0,
                     Choices = [new(17, "First reported ability", null), new(42, "Second reported ability", null)]
                 } });

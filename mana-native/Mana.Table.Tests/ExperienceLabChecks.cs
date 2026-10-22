@@ -169,7 +169,7 @@ internal static class ExperienceLabChecks
                     "The direct on-card mana action did not publish its authored result");
                 check(lab.State.Id == game && lab.State.Viewer is { } viewer
                     && viewer.Zone("Battlefield").Cards.Single(card => card.VisualId == "reader-elf").Tapped
-                    && viewer.Mana.GetValueOrDefault("G") == 1 && lab.State.Decision?.Context != "playAbility"
+                    && viewer.Mana.GetValueOrDefault("G") == 1 && lab.State.Decision?.Purpose != DecisionPurpose.AbilitySelection
                     && !frame.Hits.Any(hit => hit.Id is "choice:0" or "choicesdone")
                     && engine.SourceActionsAsync(game, lab.State.Decision!.Id,
                         viewer.Zone("Battlefield").Cards.Single(card => card.VisualId == "reader-elf").Key).GetAwaiter().GetResult().Actions.Length == 0,

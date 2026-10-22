@@ -193,7 +193,7 @@ internal sealed class HandPlacementSmoke : ITableAutomation
         }); Click();
         Wait(ReplySettled, 3, () => {
             Check(scenario.Replies.Count == before + 1 && scenario.Replies[^1] is { Action: ReplyAction.SelectCard }
-                && view.Match?.Decision is { Context: "playAbility", SourceZone: "Graveyard" },
+                && view.Match?.Decision is { Purpose: DecisionPurpose.AbilitySelection, SourceZone: "Graveyard" },
                 "Use from graveyard opens the engine's current ability and cost choice");
             Check(view.Match!.Decision!.Choices.Any(c => c.Label.StartsWith("Flashback", StringComparison.Ordinal)),
                 "The engine-provided chooser supplies the actual Flashback label rather than guessing from printed text");
@@ -205,7 +205,7 @@ internal sealed class HandPlacementSmoke : ITableAutomation
             before = scenario.Replies.Count; MoveHit("zone-use:own-exile");
         }); Click();
         Wait(ReplySettled, 3, () => {
-            Check(scenario.Replies.Count == before + 1 && view.Match?.Decision is { Context: "playAbility", SourceZone: "Exile" },
+            Check(scenario.Replies.Count == before + 1 && view.Match?.Decision is { Purpose: DecisionPurpose.AbilitySelection, SourceZone: "Exile" },
                 "The exile action uses the normal engine route exactly once");
             Publish("zones"); MoveAway();
         });

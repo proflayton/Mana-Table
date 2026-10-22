@@ -117,6 +117,8 @@ public sealed record Lobby(string Mode, string Status, string? Error, bool CanSt
     public AiOpponent[] AiOpponents { get; init; } = [];
 }
 public enum DecisionIntent { General, Priority, Attack, Block, Mana, Selection }
+// Semantic tasks belong to the game boundary. Provider prompt/class names do not.
+public enum DecisionPurpose { Unspecified, OpeningHand, TargetSelection, AbilitySelection }
 public enum ReplyAction { Confirm, Cancel, SelectCard, SelectPlayer, AssignAttack, AssignBlock, AutoPass, Skip, Choose, Value, Allocate, SetAbilityAutoPass, UseHandPlacement, PassUntilPublicAction, UseSourceAction }
 public sealed record DecisionReply(string GameId, string DecisionId, ReplyAction Action,
     string? Card = null, int? Player = null, string? Attacker = null, string? Blocker = null,
@@ -255,8 +257,8 @@ public sealed record Decision
 {
     public string Id { get; init; } = "";
     public string Kind { get; init; } = "";
-    public string InputType { get; init; } = "";
     public DecisionIntent Intent { get; init; }
+    public DecisionPurpose Purpose { get; init; }
     public string Message { get; init; } = "";
     public string Ok { get; init; } = "Confirm";
     public string Cancel { get; init; } = "Cancel";

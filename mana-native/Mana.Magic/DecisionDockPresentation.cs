@@ -102,7 +102,7 @@ public static class DecisionDockPresentation
         var status = decision.Intent switch {
             DecisionIntent.Attack => DecisionDockStatus.Attack,
             DecisionIntent.Block => DecisionDockStatus.Block,
-            DecisionIntent.Selection when decision.InputType == "InputSelectTargets" => DecisionDockStatus.Target,
+            DecisionIntent.Selection when decision.Purpose == DecisionPurpose.TargetSelection => DecisionDockStatus.Target,
             _ when IsAbilityChoice(decision) => DecisionDockStatus.AbilityChoice,
             _ => DecisionDockStatus.Selection
         };
@@ -155,7 +155,7 @@ public static class DecisionDockPresentation
         _ => "Paused"
     };
 
-    private static bool IsAbilityChoice(Decision decision) => decision.Kind == "choice" && decision.Context == "playAbility"
+    private static bool IsAbilityChoice(Decision decision) => decision.Kind == "choice" && decision.Purpose == DecisionPurpose.AbilitySelection
         && !decision.Ordered && decision.Max == 1 && decision.Min is 0 or 1 && decision.Choices.Length > 0
         && decision.LibraryCards.Length == 0 && decision.PlayerChoices.Length == 0
         && decision.Choices.All(choice => choice.Card == null && choice.CardId.Length == 0 && choice.PlayerId == null);

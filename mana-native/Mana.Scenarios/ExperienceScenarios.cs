@@ -105,7 +105,7 @@ public static partial class ExperienceScenarios
                 Cards = zone.Cards.Select(card => card.VisualId != elf.VisualId ? card : card with { Power = 6, Toughness = 6 }).ToArray()
             }).ToArray()
         }).ToArray(), Decision = new() {
-            Kind = "choice", Context = "playAbility", Title = "Activate Llanowar Elves", Min = 0, Max = 1,
+            Kind = "choice", Purpose = DecisionPurpose.AbilitySelection, Title = "Activate Llanowar Elves", Min = 0, Max = 1,
             // Deliberately older, disclosed prompt face. The exact public source
             // occurrence must supply its current characteristics for display.
             SourceCard = elf, SourceCardId = elf.VisualId, SourceControllerId = 0, SourceZone = "Battlefield",

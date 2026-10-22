@@ -8,7 +8,7 @@ namespace Mana.Table;
 internal sealed partial class TableApplication
 {
     private bool SelectingActionTarget => (SourceActionsSupported || match?.Decision?.Effect is { Kind: "damage" }) && match?.Decision is {
-        Intent: DecisionIntent.Selection, InputType: "InputSelectTargets"
+        Intent: DecisionIntent.Selection, Purpose: DecisionPurpose.TargetSelection
     };
 
     private void DrawSourceTargeting()
