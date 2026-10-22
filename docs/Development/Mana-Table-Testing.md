@@ -54,6 +54,12 @@ application and typed-frame composition used by the real window. Preserve their
 result/trace JSON when diagnosing a failure; submitted drawing data does not
 prove that a physical window is clear or correctly clipped.
 
+The production headless run includes saved-deck deletion and Undo through the
+actual controls, delayed observations, restart recovery and stale-command guards.
+The existing `--smoke-deck-experience` window journey covers that same lifecycle
+against Forge, including restoring the original saved bytes and preserving an
+unrelated open deck. Deletion requires the optional `deck-library` capability.
+
 The existing presentation run includes `DecisionDockPresentationChecks` and the
 scoped authored `DecisionFlowLabChecks`. The production headless run includes
 `DecisionDockInteractionChecks`: an actual stop-removal gesture clears only that
@@ -128,8 +134,10 @@ protocol, and matching card resources:
 dotnet $driver --smoke-headless-engine --engine-resources '<package>/engine' --engine-jar '<verified-current.jar>' --profile '<fresh-profile>'
 ```
 
-`--smoke-headless-engine` operates a real Commander opening, land/commander actions
-and concession through production input without a GPU. Startup, workshop adapter
+`--smoke-headless-engine` operates a real Commander opening, a land play, a paid
+command-zone cast and concession through production input without a GPU. It
+opens the commander's current source actions, drags it into play and activates
+a Forest during its actual mana payment. Startup, workshop adapter
 and multiplayer modes cover their own boundaries; choose them when affected.
 Their entry points are in [Program.cs](../../mana-native/Mana.Table.Tests/Program.cs).
 

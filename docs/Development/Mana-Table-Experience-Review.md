@@ -55,6 +55,22 @@ does not establish that a person can understand or use the screen.
    interruptible continuation. Keep every underlying trigger, target restriction,
    response window and effect in the engine. Grouping presentation does not make
    separate effects simultaneous or authorize choosing for another player.
+9. **Finish the everyday lifecycle.** Deck management includes creating, naming,
+   editing, saving, importing, duplicating, exporting, deleting and recovering a
+   deck. Review these ordinary journeys before describing the experience as complete.
+
+## Partner commander casting: current source, not yet published
+
+A player reported no Cast action for Toothy alongside Pir, during their main
+phase with available mana; the installed version was unknown. The exact paired
+engine reproduction can cast both and recast Toothy with its own tax. That does
+not establish the cause of the player's missing action. The audit found two
+concrete client issues: command-zone dragging only supported hand cards, and an
+authorized spell action could display only the card name and creature stats.
+Commanders now share the deliberate play gesture, and actual engine cast actions
+say Cast. The opened source reader also retains the individual commander tax.
+Paired pointer checks and a real paid commander journey cover these paths;
+inspection alone and a zero-cost commander do not prove paid casting works.
 
 ### Accepted hand-play direction: 21 October 2026
 

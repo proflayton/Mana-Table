@@ -51,6 +51,12 @@ internal sealed partial class TableApplication
         if (InlineActivityVisible) DrawInlineActivity();
         else canvas.Text(status, 46, 963, deck.SaveError.Length > 0 ? Red : Muted, .68f, 1250, 1);
         if (deck.SaveError.Length > 0) Button("deck-retry-save", "Retry save", 1340, 955, 214, () => EditDeck(d => engine.SaveDeckAsync(d.Id, d.Revision), "Deck saved."), !busy, height: 33);
+        else if (DeckLibrary != null && deck.LibraryToken.Length > 0) {
+            int libraryGeneration = deckLibraryGeneration;
+            if (Connected) canvas.Text("Leave the lobby to delete decks.", 990, 966, Muted, .58f, 330, 2);
+            Button("deck-delete:" + deck.Id, "Delete deck", 1340, 955, 214,
+                () => DeleteSavedDeck(deck.Id, deck.LibraryToken, libraryGeneration), CanManageDeckLibrary, height: 33);
+        }
         if (deckMenu.Length > 0) DrawDeckMenu();
         DrawWorkshopStatus(); DrawWorkshopDialog();
     }

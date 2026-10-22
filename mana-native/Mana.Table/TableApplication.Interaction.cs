@@ -81,7 +81,7 @@ internal sealed partial class TableApplication
         if (match?.Decision == null || AbilityActionPending || dragSource?.Card is not { } card || dragSource.Scope != Scope || OverlayOpen || !CanCommitCardDrag) return null;
         return match.Decision.Intent is DecisionIntent.Attack or DecisionIntent.Block
             ? InteractionController.Assign(match, card.CombatId, target?.Card == null ? target?.PlayerId : null, target?.Card?.CombatId)
-            : dragSource.Zone == "Hand" && TableWorld.CanPlayAt(pointer) && (target == null || target.Card != null) ? InteractionController.Play(match, card) : null;
+            : (dragSource.Zone is "Hand" or "Command") && TableWorld.CanPlayAt(pointer) && (target == null || target.Card != null) ? InteractionController.Play(match, card, dragSource.Zone) : null;
     }
     private bool LegalDrop(Hit? target) => !AbilityActionPending && CanCommitCardDrag
         && (DropReply(target) != null || (target == null || target.Card != null) && PlacementDropChoice());
@@ -105,7 +105,7 @@ internal sealed partial class TableApplication
         }
         if (match == null && !deckEditor) {
             if (busy) return;
-            if (setupModal == "decks") deckPage = Math.Clamp(deckPage - direction, 0, Math.Max(0, (PickerChoices().Length - 1) / 6));
+            if (setupModal == "decks") deckPage = Math.Clamp(deckPage - direction, 0, Math.Max(0, (PickerChoices().Length - 1) / PickerPageSize));
             if (setupModal == "confirm" && reviewList) reviewPage = Math.Clamp(reviewPage - direction, 0, Math.Max(0, (ReviewRows().Length - 1) / ReviewRowsPerPage));
             if (setupModal == "connection") connectionPage = Math.Clamp(connectionPage - direction, 0, Math.Max(0, ((lobby?.Addresses.Length ?? 0) - 1) / 5));
             return;

@@ -29,7 +29,9 @@ internal static class HeadlessPresentationSmoke
             checks.Add(description);
         }
         try {
+            DeckLibraryPresentationChecks.Run(profile, Check);
             DecisionDockInteractionChecks.Run(profile, Check);
+            CommanderInteractionChecks.Run(profile, Check);
             QuietPriorityPresentationChecks.Run(profile, Check);
             PendingEffectPresentationChecks.Run(profile, Check);
             ImpactFeedbackChecks.RunPresentation(profile, Check);

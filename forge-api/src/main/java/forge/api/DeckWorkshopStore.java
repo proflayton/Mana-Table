@@ -588,9 +588,15 @@ final class DeckWorkshopStore {
         return document;
     }
     synchronized void assertWritable(String id) {
-        file(id);
+        assertNotRemoved(id);
         if (Files.exists(directory.resolve(id + ".journal"))) throw new IllegalStateException(
                 "An interrupted deck change is waiting to recover. Restart Mana Table before editing or saving this deck; the saved change is preserved.");
+    }
+    synchronized void assertNotRemoved(String id) {
+        file(id);
+        try {
+            if (DeckLibraryTrash.contains(decks, id)) throw new IllegalStateException("This deck was removed. Undo its deletion before opening or saving it.");
+        } catch (IOException error) { throw new IllegalStateException("Could not verify the saved deck's deletion state.", error); }
     }
     private void write(String id, Document document) throws IOException {
         Path target = file(id), temporary = directory.resolve(id + ".tmp");
@@ -626,14 +632,25 @@ final class DeckWorkshopStore {
             for (Path journal : paths.filter(path -> path.getFileName().toString().endsWith(".journal")).toList()) {
                 String id = journal.getFileName().toString().replace(".journal", "");
                 file(id);
-                var intent = com.google.gson.JsonParser.parseString(Files.readString(journal, StandardCharsets.UTF_8)).getAsJsonObject();
-                var document = JSON.fromJson(intent.get("workshop"), Document.class);
-                if (document == null || document.schema != 1 || !intent.has("deck")) throw new IOException("Cannot recover interrupted workshop change for " + id);
-                atomic(decks.resolve(id + ".json"), JSON.toJson(intent.get("deck")));
-                write(id, document);
-                Files.delete(journal);
+                if (!Files.exists(decks.resolve(id + ".json")) && DeckLibraryTrash.contains(decks, id)) continue;
+                recoverJournal(id, journal);
             }
         }
+    }
+
+    synchronized void recoverRestoredDeck(String id) throws IOException {
+        file(id);
+        Path journal = directory.resolve(id + ".journal");
+        if (Files.exists(journal)) recoverJournal(id, journal);
+    }
+
+    private void recoverJournal(String id, Path journal) throws IOException {
+        var intent = com.google.gson.JsonParser.parseString(Files.readString(journal, StandardCharsets.UTF_8)).getAsJsonObject();
+        var document = JSON.fromJson(intent.get("workshop"), Document.class);
+        if (document == null || document.schema != 1 || !intent.has("deck")) throw new IOException("Cannot recover interrupted workshop change for " + id);
+        atomic(decks.resolve(id + ".json"), JSON.toJson(intent.get("deck")));
+        write(id, document);
+        Files.delete(journal);
     }
 
     private static void atomic(Path target, String text) throws IOException {

@@ -352,7 +352,7 @@ bounded travel arc using the full finite elapsed interval.
 The native setup's **Deck builder** opens after file or clipboard import and is
 available for saved decks and new drafts. Its library, deck list and large face
 preview share one workspace. `IEngineCatalog` exposes paged name/rules/type search,
-color-identity and mana-value filters, deck CRUD, undo/redo, text export, and
+color-identity and mana-value filters, deck creation/editing, undo/redo, text export, and
 authoritative commander candidates/partner compatibility. Search is debounced
 and runs independently of deck edits; generation checks discard stale results.
 The contract preserves exact printing IDs, alternate faces, mana values and
@@ -372,6 +372,13 @@ Opening the builder refreshes its document after match setup has reopened it.
 Forge's `DeckCommanders` moves existing occurrences between Main, Sideboard and
 Commander in one `DeckEditor` batch; replacing a commander returns the old card
 to Main. Duplicating creates a separate persisted deck with identical printings.
+The optional `IDeckLibrary` handles saved-deck deletion and restoration. It binds
+deletion to the saved bytes through `LibraryToken`, independently of the currently
+open editor. The adapter negotiates `deck-library`; older engines hide these
+controls. Deleted files leave the active library while retaining the same ID and
+all workshop/analysis/test metadata. Restore receipts survive restart and never
+select a deck over the user's current choice. Delete/restore require an offline
+library with no active game; they do not silently leave a lobby or change readiness.
 The same saved list feeds solo and network setup. Validation remains authoritative
 in Forge, and invalid or unsaved decks cannot enter setup.
 

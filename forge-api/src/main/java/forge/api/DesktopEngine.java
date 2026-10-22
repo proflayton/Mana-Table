@@ -32,6 +32,7 @@ public final class DesktopEngine implements AutoCloseable {
     private final DeckAnalysisFormats analysisFormats;
     private final Path directory;
     private final DeckWorkshopStore workshop;
+    private final DeckLibraryTrash removedDecks;
     private final DeckPlaytests playtests;
     private String handTestId;
     private DeckEditor editor;
@@ -52,6 +53,7 @@ public final class DesktopEngine implements AutoCloseable {
         this.analysisFormats = new DeckAnalysisFormats(catalog);
         this.directory = directory.toAbsolutePath().normalize();
         Files.createDirectories(this.directory);
+        removedDecks = new DeckLibraryTrash(this.directory);
         workshop = new DeckWorkshopStore(this.directory, catalog);
         this.analysis = new DeckAnalysisStore(this.directory, catalog, workshop);
         playtests = new DeckPlaytests(this.directory);
@@ -66,7 +68,7 @@ public final class DesktopEngine implements AutoCloseable {
         var engine = new DesktopEngine(CardCatalog.fromDatabases(data.getAvailableDatabases().values()), Path.of(args[1]));
         engine.resources = Path.of(args[0]);
         engine.analysisFormats.load(engine.resources);
-        protocol.println(JSON.toJson(Map.of("event", "ready", "printings", engine.catalog.size(), "protocolVersion", 2, "capabilities", List.of("seat-sync", "snapshots", "command-receipts", "resume", "table-social", "deck-workshop", "deck-analysis", "source-actions"))));
+        protocol.println(JSON.toJson(Map.of("event", "ready", "printings", engine.catalog.size(), "protocolVersion", 2, "capabilities", List.of("seat-sync", "snapshots", "command-receipts", "resume", "table-social", "deck-workshop", "deck-analysis", "source-actions", "deck-library"))));
         try (engine; var input = new BufferedReader(new InputStreamReader(System.in, StandardCharsets.UTF_8))) {
             String line;
             while ((line = input.readLine()) != null) {
@@ -224,6 +226,9 @@ public final class DesktopEngine implements AutoCloseable {
                 yield playtests.get(deckId, record.id());
             }
             case "list" -> list();
+            case "deletedDecks" -> deletedDecks();
+            case "deleteDeck" -> deleteDeck(string(p, "deckId", ""), string(p, "libraryToken", ""));
+            case "restoreDeck" -> restoreDeck(string(p, "deckId", ""), string(p, "restoreToken", ""));
             case "new" -> create(string(p, "name", "Untitled deck"), string(p, "format", "Constructed"));
             case "open" -> open(string(p, "id", ""));
             case "duplicate" -> {
@@ -396,6 +401,46 @@ public final class DesktopEngine implements AutoCloseable {
 
     private record StoredDeck(int version, String name, String format, List<DeckEditor.Edit> cards, long updated) { }
     private record LoadedDeck(DeckEditor editor, String format) { }
+    private record DeletedDeck(String deckId, String name, String restoreToken, long deletedAt) { }
+
+    private Object deleteDeck(String id, String libraryToken) throws Exception {
+        requireIdleDeckLibrary();
+        file(id);
+        workshop.assertWritable(id);
+        if (id.equals(deckId)) ensureSaved();
+        var stored = JSON.fromJson(new String(removedDecks.readSaved(id), StandardCharsets.UTF_8), StoredDeck.class);
+        if (stored == null || stored.version() != 1) throw new IllegalArgumentException("Unsupported deck file version");
+        var removed = removedDecks.remove(id, libraryToken);
+        if (id.equals(deckId)) {
+            editor = null; deckId = null; saveError = null; format = "Constructed"; clearPractice();
+        }
+        return new DeletedDeck(id, stored.name(), removed.restoreToken(), removed.deletedAt());
+    }
+
+    private Object deletedDecks() throws Exception {
+        var result = new ArrayList<DeletedDeck>();
+        for (var entry : removedDecks.entries()) {
+            var stored = JSON.fromJson(Files.readString(entry.path(), StandardCharsets.UTF_8), StoredDeck.class);
+            if (stored == null || stored.version() != 1) throw new IllegalArgumentException("Unsupported removed deck file version");
+            result.add(new DeletedDeck(entry.deckId(), stored.name(), entry.restoreToken(), entry.deletedAt()));
+        }
+        return List.copyOf(result);
+    }
+
+    private Object restoreDeck(String id, String restoreToken) throws Exception {
+        requireIdleDeckLibrary();
+        removedDecks.restore(id, restoreToken);
+        workshop.recoverRestoredDeck(id);
+        byte[] bytes = removedDecks.readSaved(id);
+        return summary(id, JSON.fromJson(new String(bytes, StandardCharsets.UTF_8), StoredDeck.class), DeckLibraryTrash.token(bytes));
+    }
+
+    private void requireIdleDeckLibrary() {
+        if (multiplayer != null && multiplayer.connected() || localSeats.values().stream().anyMatch(SyncLobby::connected))
+            throw new IllegalStateException("Leave the current lobby before deleting or restoring a saved deck.");
+        if (match != null && !match.finished())
+            throw new IllegalStateException("Finish or concede the current game before deleting or restoring a saved deck.");
+    }
 
     private LoadedDeck loadStoredDeck(String id) throws Exception {
         var stored = JSON.fromJson(Files.readString(file(id)), StoredDeck.class);
@@ -412,18 +457,23 @@ public final class DesktopEngine implements AutoCloseable {
         try (var files = Files.list(directory)) {
             for (Path file : files.filter(path -> path.getFileName().toString().endsWith(".json")).toList()) {
                 try {
-                    var stored = JSON.fromJson(Files.readString(file), StoredDeck.class);
-                    if (stored.version() != 1) { throw new IllegalArgumentException("Unsupported version"); }
-                    int main = stored.cards().stream().filter(card -> card.section().equals("Main"))
-                            .mapToInt(DeckEditor.Edit::quantity).sum();
                     String id = file.getFileName().toString().replace(".json", "");
-                    decks.add(Map.of("id", id, "name", stored.name(), "format", stored.format(),
-                            "count", main, "updated", stored.updated()));
+                    byte[] bytes = removedDecks.readSaved(id);
+                    var stored = JSON.fromJson(new String(bytes, StandardCharsets.UTF_8), StoredDeck.class);
+                    if (stored.version() != 1) { throw new IllegalArgumentException("Unsupported version"); }
+                    decks.add(summary(id, stored, DeckLibraryTrash.token(bytes)));
                 } catch (Exception error) { problems.add(file.getFileName() + ": " + error.getMessage()); }
             }
         }
         decks.sort(Comparator.comparingLong((Map<String, Object> deck) -> (long) deck.get("updated")).reversed());
         return Map.of("decks", decks, "problems", problems);
+    }
+
+    private static Map<String, Object> summary(String id, StoredDeck stored, String libraryToken) {
+        if (stored == null || stored.version() != 1) throw new IllegalArgumentException("Unsupported deck file version");
+        int main = stored.cards().stream().filter(card -> card.section().equals("Main")).mapToInt(DeckEditor.Edit::quantity).sum();
+        return Map.of("id", id, "name", stored.name(), "format", stored.format(), "count", main,
+                "updated", stored.updated(), "libraryToken", libraryToken);
     }
 
     private Object save() {
@@ -448,6 +498,8 @@ public final class DesktopEngine implements AutoCloseable {
         requireDeck();
         var result = new LinkedHashMap<String, Object>();
         result.put("id", deckId);
+        try { result.put("libraryToken", DeckLibraryTrash.token(removedDecks.readSaved(deckId))); }
+        catch (java.io.IOException error) { result.put("libraryToken", ""); }
         result.put("format", format);
         result.put("deck", editor.snapshot());
         result.put("validation", editor.validate(DeckFormat.valueOf(format)));
@@ -569,7 +621,10 @@ public final class DesktopEngine implements AutoCloseable {
         return new MatchSetup.Prepared(prepared.deck(), new MatchSetup.Preview(preview.format(), preview.startingLife(),
                 preview.commanderId(), preview.commanders(), preview.needsCommander(), preview.commanderChoices(), problem));
     }
-    private void requireDeck() { if (editor == null) { throw new IllegalStateException("Open or create a deck first"); } }
+    private void requireDeck() {
+        if (editor == null) throw new IllegalStateException("Open or create a deck first");
+        workshop.assertNotRemoved(deckId);
+    }
     private void ensureSaved() {
         if (deckId != null) workshop.assertWritable(deckId);
         if (saveError != null) { throw new IllegalStateException("Save the current deck before switching: " + saveError); }

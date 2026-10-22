@@ -22,6 +22,7 @@ public sealed partial class ForgeEngine(ForgePaths paths) : ICardEngine, ITableS
         public Task? Diagnostics { get; set; }
         public Task? Stopped { get; set; }
         public bool SourceActionsAvailable { get; set; }
+        public bool DeckLibraryAvailable { get; set; }
         public volatile Exception? Failure;
     }
     private EngineProcess? current;
@@ -62,6 +63,7 @@ public sealed partial class ForgeEngine(ForgePaths paths) : ICardEngine, ITableS
                             var capabilities = message.GetProperty("capabilities").EnumerateArray().Select(c => c.GetString()).ToHashSet();
                             if (EngineProtocol.RequiredCapabilities.Any(c => !capabilities.Contains(c))) throw new IOException("The rules adapter is missing required synchronization capabilities.");
                             owner.SourceActionsAvailable = capabilities.Contains("source-actions");
+                            owner.DeckLibraryAvailable = capabilities.Contains("deck-library");
                             owner.Ready.TrySetResult();
                         }
                         else if (ev.GetString() == "error") throw new IOException(Text(message, "message"));
@@ -109,7 +111,9 @@ public sealed partial class ForgeEngine(ForgePaths paths) : ICardEngine, ITableS
     private static T Read<T>(JsonElement value) => value.Deserialize<T>(Json) ?? throw new IOException("Missing engine response");
     private DeckSummary Deck(JsonElement data) {
         activeDeckId = Text(data, "id");
-        return new(activeDeckId, data.TryGetProperty("deck", out var deck) ? Text(deck, "name") : Text(data, "name"));
+        return new(activeDeckId, data.TryGetProperty("deck", out var deck) ? Text(deck, "name") : Text(data, "name")) {
+            LibraryToken = Text(data, "libraryToken")
+        };
     }
     public async Task<IReadOnlyList<DeckSummary>> DecksAsync() => Read<DeckSummary[]>((await Request("list")).GetProperty("decks"));
     public async Task<IReadOnlyList<DeckPreset>> PresetsAsync() => Read<DeckPreset[]>(await Request("deckPresets"));
@@ -147,7 +151,8 @@ public sealed partial class ForgeEngine(ForgePaths paths) : ICardEngine, ITableS
                 Issues = validation.TryGetProperty("issues", out var issues) ? Read<DeckIssue[]>(issues) : [],
                 StructureValid = validation.TryGetProperty("structureValid", out var structural) ? structural.GetBoolean() : null,
                 Eligibility = Text(validation, "eligibility") is { Length: > 0 } eligibility ? eligibility : "unknown",
-                Format = Text(data, "format")
+                Format = Text(data, "format"),
+                LibraryToken = Text(data, "libraryToken")
             };
     }
     public async Task<DeckDetails> OpenDeckAsync(string id) => MapDeck(await Request("open", new { id }));

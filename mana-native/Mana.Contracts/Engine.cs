@@ -78,7 +78,10 @@ public interface ITableSocial
 public sealed record TableMember(string Id, int Seat, string Name);
 public sealed record TableMessage(long Id, string SenderId, int Seat, string Name, string Kind, string Text);
 public sealed record TableConversation(string TableId, long Revision, int LocalSeat, TableMember[] Members, TableMessage[] Messages);
-public sealed record DeckSummary(string Id, string Name);
+public sealed record DeckSummary(string Id, string Name)
+{
+    public string LibraryToken { get; init; } = "";
+}
 public sealed record DeckEntry(string Section, string Id, Card Card, int Quantity, int ManaValue = 0, int ColorIdentity = 0, string Edition = "");
 public sealed record DeckEdit(string Section, string CardId, int Quantity);
 public sealed record CatalogCard(string Id, Card Card, int ManaValue, int ColorIdentity, string Section, string Edition);
@@ -91,6 +94,7 @@ public sealed record DeckDetails(string Id, string Name, long Revision, DeckEntr
 {
     public DeckIssue[] Issues { get; init; } = [];
     public string Format { get; init; } = "Commander";
+    public string LibraryToken { get; init; } = "";
     public bool? StructureValid { get; init; }
     public string Eligibility { get; init; } = "unknown";
     public string[] CommanderIds => Entries.Where(e => e.Section == "Commander").Select(e => e.Id).ToArray();

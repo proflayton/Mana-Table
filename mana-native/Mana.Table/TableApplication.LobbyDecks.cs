@@ -13,7 +13,9 @@ internal sealed partial class TableApplication
     private bool reviewList, reviewBack;
     private DeckEntry? reviewCard;
     private const int ReviewRowsPerPage = 10;
-    private sealed record DeckChoice(string Id, string Name, string Description, bool Current);
+    private sealed record DeckChoice(string Id, string Name, string Description, bool Current, string LibraryToken = "", DeckLibraryDeletion? Deleted = null);
+    private int PickerTileHeight => Math.Max(113, PickerChoices().Select(choice => canvas.TextSize(choice.Name, .96f, 440, 80, true).Y + 50).DefaultIfEmpty(113).Max());
+    private int PickerPageSize => 2 * Math.Clamp(385 / (PickerTileHeight + 15), 1, 3);
     private bool SetupHasInput => setupModal is "join" or "decks" or "profile" || setupModal == "confirm" && reviewList;
     private string SetupInput => setupModal == "profile" ? nameDraft : setupModal == "join" ? joinAddress : setupModal == "decks" ? pickerSearch : reviewSearch;
     private void SetSetupInput(string value)
@@ -38,14 +40,17 @@ internal sealed partial class TableApplication
     {
         IEnumerable<DeckChoice> choices = pickerSeat >= 0 && soloSetup is { } setup
             ? setup.Opponents.Select((p, i) => new DeckChoice(p.Id, p.Name, p.Description, soloChoices[pickerSeat] == i))
+            : pickerDeleted ? deletedDecks.Select(d => new DeckChoice(d.DeckId, d.Name, "Deleted", false, Deleted: d))
             : pickerPresets ? presets.Select(p => new DeckChoice(p.Id, p.Name, p.Description, false))
-            : decks.Select(d => new DeckChoice(d.Id, d.Name, selectedDeck?.Id == d.Id ? "Your current deck" : "Saved deck", selectedDeck?.Id == d.Id));
+            : (deckDeletionNotice is { } removed && deletedDecks.Any(d => d.RestoreToken == removed.RestoreToken)
+                ? new[] { new DeckChoice(removed.DeckId, removed.Name, "Deleted", false, Deleted: removed) } : [])
+                .Concat(decks.Select(d => new DeckChoice(d.Id, d.Name, selectedDeck?.Id == d.Id ? "Your current deck" : "Saved deck", selectedDeck?.Id == d.Id, d.LibraryToken)));
         return choices.Where(d => (d.Name + " " + d.Description).Contains(pickerSearch.Trim(), StringComparison.OrdinalIgnoreCase)).ToArray();
     }
     private void OpenOpponentPicker(int seat)
     {
         if (soloSetup == null || busy) return;
-        pickerSeat = seat; pickerSearch = ""; deckPage = 0; setupModal = "decks"; textFocus = false;
+        pickerSeat = seat; pickerDeleted = false; pickerSearch = ""; deckPage = 0; setupModal = "decks"; textFocus = false;
     }
     private void ChoosePickerDeck(string id)
     {
@@ -54,7 +59,8 @@ internal sealed partial class TableApplication
             if (index < 0) return;
             soloChoices[pickerSeat] = index; CloseSetupModal();
             message = $"AI opponent {pickerSeat + 1} will play {setup.Opponents[index].Name}.";
-        } else if (pickerPresets) ChoosePreset(id);
+        } else if (pickerDeleted) return;
+        else if (pickerPresets) ChoosePreset(id);
         else if (decks.FirstOrDefault(d => d.Id == id) is { } deck) ChooseDeck(deck);
     }
     private void DrawDeckPicker()
@@ -62,33 +68,52 @@ internal sealed partial class TableApplication
         bool opponent = pickerSeat >= 0;
         canvas.Text(opponent ? $"Choose AI opponent {pickerSeat + 1}'s deck" : "Find your next deck", 202, 179, Ink, 1.4f, 1060, 1, true);
         string pickerHint = opponent ? "Choose this opponent's deck. The other seats stay the same."
+            : Connected && DeckLibrary != null ? "Leave the lobby to delete or restore saved decks."
+            : pickerDeleted ? "Deleted lists keep their cards and deck history. Undo returns a list to Your decks."
             : decks.Count == 0 ? "New here? Try a precon for a complete Commander deck."
             : pickerPresets ? "Choose a precon to review before confirming it for the table."
             : "Choose a saved list, or try a precon for a ready-made deck.";
         canvas.Text(pickerHint, 204, 234, Muted, .82f, 1110, 1);
         if (!opponent) {
-            Button("picker-saved", $"Your decks ({decks.Count})", 204, 278, 255, () => { pickerPresets = false; deckPage = 0; }, !busy, !pickerPresets, 40);
-            Button("picker-presets", "Try a precon", 471, 278, 220, () => { pickerPresets = true; deckPage = 0; }, !busy, pickerPresets, 40);
+            Button("picker-saved", $"Your decks ({decks.Count})", 204, 278, 255, () => { pickerPresets = pickerDeleted = false; deckPage = 0; }, !busy, !pickerPresets && !pickerDeleted, 40);
+            Button("picker-presets", "Try a precon", 471, 278, 220, () => { pickerPresets = true; pickerDeleted = false; deckPage = 0; }, !busy, pickerPresets && !pickerDeleted, 40);
+            if (DeckLibrary != null) Button("picker-deleted", "Deleted (" + deletedDecks.Count + ")", 703, 278, 202,
+                () => { pickerDeleted = true; pickerPresets = false; deckPage = 0; }, !busy, pickerDeleted, 40);
         } else LobbyPill("AI OPPONENT " + (pickerSeat + 1), 204, 284, 224, Blue);
-        SetupSearchBox("picker-search", "Search decks…", new(810, 278, 584, 40));
+        int searchX = !opponent && DeckLibrary != null ? 925 : 810;
+        SetupSearchBox("picker-search", "Search decks…", new(searchX, 278, 1394 - searchX, 40));
         var choices = PickerChoices(); int count = choices.Length;
-        deckPage = Math.Clamp(deckPage, 0, Math.Max(0, (count - 1) / 6));
-        for (int i = 0; i < Math.Min(6, count - deckPage * 6); i++) {
-            int at = deckPage * 6 + i, x = 204 + i % 2 * 602, y = 342 + i / 2 * 128;
+        int pageSize = PickerPageSize, tileHeight = PickerTileHeight;
+        deckPage = Math.Clamp(deckPage, 0, Math.Max(0, (count - 1) / pageSize));
+        for (int i = 0; i < Math.Min(pageSize, count - deckPage * pageSize); i++) {
+            int at = deckPage * pageSize + i, x = 204 + i % 2 * 602, y = 342 + i / 2 * (tileHeight + 15);
             var choice = choices[at];
-            canvas.Panel(new(x, y, 586, 113), choice.Current ? new(37, 59, 75) : new(29, 42, 56), choice.Current ? Blue : LobbyTrim, 10);
-            canvas.Text(choice.Name, x + 18, y + 15, Ink, .96f, 475, 1, true);
-            canvas.Text(choice.Description, x + 18, y + 52, Muted, .7f, 467, 2);
-            Button((opponent ? "opponent:" : pickerPresets ? "preset:" : "deck:") + choice.Id, choice.Current ? "✓" : ">", x + 514, y + 36, 52, () => ChoosePickerDeck(choice.Id), !busy, choice.Current, 42);
-            if (!busy) hits.Insert(Math.Max(0, hits.Count - 1), new("pick-tile:" + at, Scope, new(x, y, 586, 113), () => ChoosePickerDeck(choice.Id)));
+            canvas.Panel(new(x, y, 586, tileHeight), choice.Deleted != null ? new(21, 31, 39) : choice.Current ? new(37, 59, 75) : new(29, 42, 56), choice.Current ? Blue : LobbyTrim, 10);
+            int titleHeight = canvas.TextSize(choice.Name, .96f, 440, 80, true).Y;
+            canvas.Text(choice.Name, x + 18, y + 15, choice.Deleted == null ? Ink : Muted, .96f, 440, 80, true);
+            bool saveFailed = selectedDeckDetails is { SaveError.Length: > 0 } selected && selected.Id == choice.Id;
+            canvas.Text(deletingDeckId == choice.Id ? "Removing…" : saveFailed ? "Save failed; retry in builder." : choice.Description, x + 18, y + 20 + titleHeight, Muted, .7f, 440, 2);
+            if (choice.Deleted is { } removed) {
+                Button("deck-restore:" + removed.RestoreToken, "Undo", x + 462, y + tileHeight - 42, 104,
+                    () => RestoreSavedDeck(removed.DeckId, removed.RestoreToken), CanManageDeckLibrary, height: 32);
+                continue;
+            }
+            Button((opponent ? "opponent:" : pickerPresets ? "preset:" : "deck:") + choice.Id, choice.Current ? "✓" : ">", x + 514, y + 16, 52, () => ChoosePickerDeck(choice.Id), !busy, choice.Current, 42);
+            if (!busy) hits.Insert(Math.Max(0, hits.Count - 1), new("pick-tile:" + at, Scope, new(x, y, 586, tileHeight), () => ChoosePickerDeck(choice.Id)));
+            if (!opponent && !pickerPresets && DeckLibrary != null && choice.LibraryToken.Length > 0)
+            {
+                int libraryGeneration = deckLibraryGeneration;
+                Button("deck-delete:" + choice.Id, "Delete", x + 470, y + tileHeight - 37, 96,
+                    () => DeleteSavedDeck(choice.Id, choice.LibraryToken, libraryGeneration), CanManageDeckLibrary && !saveFailed, height: 28);
+            }
         }
         if (count == 0) {
-            canvas.Text(pickerSearch.Length > 0 ? "No decks match your search." : "Your next deck starts here.", 280, 456, Ink, 1.2f, 1020, 1, true);
-            canvas.Text(pickerSearch.Length > 0 ? "Try a different name or clear the search to see every deck." : "Import a list, try a precon, or build around your favorite commander.", 280, 511, Muted, .9f, 1020, 3);
+            canvas.Text(pickerSearch.Length > 0 ? "No decks match your search." : pickerDeleted ? "No deleted decks." : "Your next deck starts here.", 280, 456, Ink, 1.2f, 1020, 1, true);
+            canvas.Text(pickerSearch.Length > 0 ? "Try a different name or clear the search to see every deck." : pickerDeleted ? "Deleted saved lists appear here for Undo." : "Import a list, try a precon, or build around your favorite commander.", 280, 511, Muted, .9f, 1020, 3);
         }
         Button("decks-prev", "Previous", 204, 740, 135, () => deckPage--, !busy && deckPage > 0, height: 34);
-        Button("decks-next", "Next", 351, 740, 108, () => deckPage++, !busy && (deckPage + 1) * 6 < count, height: 34);
-        canvas.Text($"{count} {(count == 1 ? "deck" : "decks")}  ·  Page {deckPage + 1} / {Math.Max(1, (count + 5) / 6)}", 484, 749, Muted, .67f, 620, 1);
+        Button("decks-next", "Next", 351, 740, 108, () => deckPage++, !busy && (deckPage + 1) * pageSize < count, height: 34);
+        canvas.Text($"{count} {(count == 1 ? "list" : "lists")}  ·  Page {deckPage + 1} / {Math.Max(1, (count + pageSize - 1) / pageSize)}", 484, 749, Muted, .67f, 620, 1);
         canvas.Line(new(204, 795), new(1394, 795), LobbyTrim);
         if (opponent) canvas.Text("Your deck stays confirmed while you choose your opponents.", 208, 835, Muted, .82f, 1120, 1);
         else {

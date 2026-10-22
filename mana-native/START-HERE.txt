@@ -50,6 +50,12 @@ without a controls tour. Existing decks, names and play preferences are retained
 The deck builder checks every saved edit. Problem cards are highlighted and
 their reasons appear beside the selected card; deck-wide checks stay visible.
 Back to setup returns to the lobby. Deck checks and saving update automatically.
+Your decks offers Delete beside each saved list; the builder also has Delete deck.
+Deletion leaves a named Undo row and keeps the deck's cards and history available.
+Open Deleted to restore an earlier deleted list, including after restarting the app.
+Undo returns the list to Your decks without replacing your currently chosen deck.
+Leave a friends' lobby before deleting or restoring decks. Precons and AI deck
+choices are unaffected; deck management is unavailable during a game.
 
 REVIEW YOUR DECK
 Open Analyze in the deck workshop for an automatic review. Start with What to
@@ -228,8 +234,9 @@ abilities on the stack appear in the middle. Decks are physical piles near each
 seat. Life medallions use existing commander artwork, with a lit rim on the
 active seat. Hover highlights a card without moving or enlarging it.
 Click a card to enlarge it for reading; click it again or empty table to close.
-Use the opened card's Play card or Activate ability action, or drag a playable hand
-card onto the table. Required choices, targets and mana payments use their normal
+Use the opened card's current Play, Cast or ability action, or drag a playable hand
+card or your commander onto the table. Each partner commander has its own Cast
+action and commander tax. Required choices, targets and mana payments use their normal
 single click and stay compact. Right-click opens the complete card inspector.
 Zone piles open browsers containing only the cards your player can see. Your own
 graveyard, exile and command browsers can offer engine-authorized actions,

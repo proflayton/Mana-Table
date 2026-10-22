@@ -35,7 +35,7 @@ internal static class HeadlessEngineSmoke
         await using var engine = new ForgeEngine(paths);
         try {
             await engine.InitializeAsync();
-            var deck = await engine.ImportAsync("Headless production composition", "Deck\n99 Mountain\nCommander\n1 Rograkh, Son of Rohgahh");
+            var deck = await engine.ImportAsync("Headless production composition", "Deck\n99 Forest\nCommander\n1 Rhys the Redeemed");
             var setup = await engine.PrepareSoloAsync(deck.Id);
             Check(setup.Opponents.Any(opponent => opponent.Id == "green") && setup.Opponents.Any(opponent => opponent.Id == "red"),
                 "The real adapter imports the Commander deck and exposes bundled starter AI opponents");
@@ -59,7 +59,7 @@ internal static class HeadlessEngineSmoke
             PresentationFrame frame = Tick("opening");
             Save("opening");
             string? landId = null, commanderId = null;
-            bool landSaved = false, commanderSaved = false, openingHandRead = false;
+            bool landSaved = false, commanderSaved = false, openingHandRead = false, commanderPayment = false, paidWithForest = false;
             int decisions = 0;
 
             while (!landSaved || !commanderSaved) {
@@ -67,8 +67,8 @@ internal static class HeadlessEngineSmoke
                 await Refresh("observe");
                 var state = view.Match ?? throw new InvalidOperationException("The active Forge game disappeared.");
                 if (state.Status is "error" or "finished") throw new InvalidOperationException(state.Error ?? "Game ended before the focused scenario completed.");
-                var land = state.Viewer!.Zone("Battlefield").Cards.FirstOrDefault(card => card.Name == "Mountain");
-                var commander = state.Viewer.Zone("Battlefield").Cards.FirstOrDefault(card => card.Name == "Rograkh, Son of Rohgahh");
+                var land = state.Viewer!.Zone("Battlefield").Cards.FirstOrDefault(card => card.Name == "Forest");
+                var commander = state.Viewer.Zone("Battlefield").Cards.FirstOrDefault(card => card.Name == "Rhys the Redeemed");
                 if (land != null && !landSaved) {
                     landId = CardViews.Identity(land); landSaved = true; Save("land-on-battlefield");
                     Check(frame.Cards.Any(card => card.Id == landId && card.Zone == "Battlefield")
@@ -79,17 +79,35 @@ internal static class HeadlessEngineSmoke
                     commanderId = CardViews.Identity(commander); commanderSaved = true; Save("commander-on-battlefield");
                     var displayed = frame.Cards.Single(card => card.Id == commanderId && card.Zone == "Battlefield");
                     Check(displayed.Card.Power == commander.Power && displayed.Card.Toughness == commander.Toughness
-                        && commander.Power == 0 && commander.Toughness == 1,
-                        "The actual resolved commander displays the engine's current zero power and one toughness");
-                    Check(commander.States != null && new[] { "first strike", "menace", "trample" }
-                        .All(key => commander.States.Any(state => state.Kind == "ability" && state.Key == key))
-                        && CardPresentation.StateLabels(displayed.Card).Contains("Menace"),
-                        "Effective commander keywords travel from Forge's typed public descriptors into the actual prepared frame");
+                        && commander.Power == 1 && commander.Toughness == 1,
+                        "The actual paid commander resolves into the production scene with its current one power and one toughness");
+                    Check(commanderPayment && paidWithForest && state.Viewer.Zone("Battlefield").Cards.Any(card => card.Name == "Forest" && card.Tapped)
+                        && state.Viewer.Mana.Values.All(amount => amount == 0) && !state.Viewer.Zone("Command").Cards.Any(card => card.VisualId == commander.VisualId),
+                        "The real command-zone cast paid through its Forest source, spent its mana and left the command zone before resolving");
                 }
                 if (landSaved && commanderSaved) break;
                 if (view.Busy || view.Match?.Decision == null) { await Task.Delay(5); continue; }
                 if (++decisions > 80) throw new InvalidOperationException("The focused opening scenario required unexpectedly many decisions.");
                 var decision = view.Match.Decision;
+                if (decision is { Kind: "input", Intent: DecisionIntent.Mana } && !paidWithForest) {
+                    Check(decision.InputType.StartsWith("InputPayMana", StringComparison.Ordinal)
+                        && decision.SourceCard?.Name == "Rhys the Redeemed" && decision.Message.Length > 0,
+                        "Dragging the real paid commander opens its authoritative mana-payment input with the current source and cost instruction");
+                    commanderPayment = true; Save("commander-payment");
+                    var source = view.Match.Viewer!.Zone("Battlefield").Cards.First(card => card.Name == "Forest" && !card.Tapped);
+                    await PlayCard(source, "Battlefield");
+                    Save("after-forest-action-receipt");
+                    var paymentDeadline = Stopwatch.StartNew();
+                    while (!view.Match!.Viewer!.Zone("Battlefield").Cards.Any(card => card.VisualId == source.VisualId && card.Tapped)
+                        && paymentDeadline.Elapsed < TimeSpan.FromSeconds(5)) {
+                        Guard(); await Task.Delay(5); await Refresh("await-authoritative-forest-tap");
+                    }
+                    Save("forest-payment-observed");
+                    Check(view.Match!.Viewer!.Zone("Battlefield").Cards.Any(card => card.VisualId == source.VisualId && card.Tapped),
+                        "The actual Forest mana action taps its source while paying for the commander");
+                    paidWithForest = true;
+                    continue;
+                }
                 if (!openingHandRead && decision is { Kind: "input", InputType: "InputConfirmMulligan" }) {
                     var openingCard = view.Match.Viewer!.Zone("Hand").Cards.First();
                     string game = view.Match.Id, prompt = decision.Id;
@@ -111,7 +129,7 @@ internal static class HeadlessEngineSmoke
                     Card? playable = !landSaved ? view.Match.Viewer!.Zone("Hand").Cards.FirstOrDefault(card => card.Selectable && card.Type.Contains("Land", StringComparison.Ordinal))
                         : !commanderSaved ? view.Match.Viewer!.Zone("Command").Cards.FirstOrDefault(card => card.Selectable) : null;
                     if (playable != null) {
-                        await PlayCard(playable); continue;
+                        await PlayCard(playable, landSaved ? "Command" : "Hand"); continue;
                     }
                 }
                 if (decision.Kind is "choice" or "reveal") {
@@ -140,8 +158,9 @@ internal static class HeadlessEngineSmoke
 
             Check(actions.Any(action => JsonSerializer.Serialize(action).Contains("reader-face-drag"))
                 && actions.Any(action => JsonSerializer.Serialize(action).Contains("read-card-action"))
+                && actions.Any(action => JsonSerializer.Serialize(action).Contains("command-zone-drag"))
                 && landId != null && commanderId != null,
-                "The real land plays through a drag from its enlarged face, while the commander retains its explicit engine action");
+                "The real land reader drag, command-zone commander drag and Forest payment action all use production pointer controls");
             Check(openingHandRead, "The real Forge walkthrough exercised opening-hand browsing before explicitly keeping");
             Check(frame.Stamp.GameId == view.Match!.Id && frame.Stamp.Revision == view.Match.Revision
                 && frame.Stamp.DecisionId == view.Match.Decision?.Id,
@@ -200,7 +219,7 @@ internal static class HeadlessEngineSmoke
                     }
                 throw new InvalidOperationException("No exposed real pointer target for " + hit.Id);
             }
-            async Task PlayCard(Card card)
+            async Task PlayCard(Card card, string sourceZone)
             {
                 string occurrence = CardViews.Identity(card);
                 var beforeQuery = view.Match!;
@@ -209,7 +228,7 @@ internal static class HeadlessEngineSmoke
                 var sourceActions = await engine.SourceActionsAsync(beforeQuery.Id, prompt, card.Key);
                 var repeated = await engine.SourceActionsAsync(beforeQuery.Id, prompt, card.Key);
                 var afterQuery = await engine.ObserveAsync() ?? throw new InvalidOperationException("The source action read lost the game.");
-                string expectedKind = card.Type.Contains("Land", StringComparison.Ordinal) ? "play" : "cast";
+                string expectedKind = sourceZone == "Battlefield" ? "activate" : card.Type.Contains("Land", StringComparison.Ordinal) ? "play" : "cast";
                 Check(sourceActions.GameId == beforeQuery.Id && sourceActions.DecisionId == prompt
                     && sourceActions.SourceCardKey == card.Key && sourceActions.SourceCardId == card.VisualId
                     && sourceActions.Actions.Any(action => action.Kind == expectedKind && !string.IsNullOrWhiteSpace(action.Text))
@@ -231,6 +250,9 @@ internal static class HeadlessEngineSmoke
                     Guard(); await Task.Delay(1); frame = Tick("await-engine-source-actions");
                 }
                 string decisionId = view.Match!.Decision!.Id;
+                Check(view.Match.Id == beforeQuery.Id && decisionId == prompt && !view.Busy
+                    && frame.Hits.Any(hit => hit.Id == "read-card-action"),
+                    "The actual reader exposes its current " + expectedKind + " action without answering the decision: " + card.Name);
                 if (expectedKind == "play") {
                     var reader = frame.Cards.Single(item => item.Id == occurrence && item.Focused);
                     pointer = reader.Display.Center.ToPoint();
@@ -248,6 +270,18 @@ internal static class HeadlessEngineSmoke
                     frame = Tick("release-real-land-reader");
                     Check(app.AcceptedDrag, "Releasing the real land inside its old reader area commits the actual hand drag");
                     actions.Add(new { mode = "application-pointer", decision = decisionId, action = "reader-face-drag", card.Name, occurrence,
+                        sourceKey = card.Key, drop = pointer, offeredActions = sourceActions.Actions });
+                } else if (sourceZone == "Command") {
+                    Click("card:" + card.Key + ":" + card.VisualId);
+                    var command = frame.Cards.Single(item => item.Id == occurrence && item.Zone == "Command");
+                    pointer = Exposed(frame.Hits.Last(item => item.Id == command.Hit.Id && item.Scope == command.Hit.Scope));
+                    frame = Tick("press-real-command-zone", ButtonState.Pressed);
+                    pointer = new(800, 420); frame = Tick("drag-real-commander", ButtonState.Pressed);
+                    Check(view.Match!.Decision?.Id == decisionId && !view.Busy && view.DisplayedPose(occurrence) is { Size.X: 132 },
+                        "The real commander stays uncommitted while held from the command zone over the table");
+                    Save("commander-held-from-command"); frame = Tick("release-real-commander");
+                    Check(app.AcceptedDrag, "Releasing the real command-zone commander commits its current scoped drag");
+                    actions.Add(new { mode = "application-pointer", decision = decisionId, action = "command-zone-drag", card.Name, occurrence,
                         sourceKey = card.Key, drop = pointer, offeredActions = sourceActions.Actions });
                 } else {
                     Click("read-card-action");

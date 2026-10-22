@@ -41,11 +41,11 @@ public sealed class InteractionController
         if (LegalTargets.CanBlock(state, source, targetCard)) return new(state.Id, d.Id, ReplyAction.AssignBlock, Blocker: card.Key, Attacker: target.Key);
         return null;
     }
-    public static DecisionReply? Play(GameSnapshot state, Card clicked)
+    public static DecisionReply? Play(GameSnapshot state, Card clicked, string sourceZone = "Hand")
     {
-        if (state.Decision is not { Intent: DecisionIntent.Priority } d) return null;
-        var card = state.Viewer?.Zone("Hand").Cards.FirstOrDefault(c => CardViews.Same(c, clicked));
+        if (sourceZone is not ("Hand" or "Command") || state.Decision is not { Intent: DecisionIntent.Priority } d) return null;
+        var card = state.Viewer?.Zone(sourceZone).Cards.FirstOrDefault(c => CardViews.Same(c, clicked) && c.Key == clicked.Key);
         if (card is { Selectable: true } && !string.IsNullOrEmpty(card.Key)) return new(state.Id, d.Id, ReplyAction.SelectCard, Card: card.Key);
-        return card != null && HandPlacements.Options(state, card) is { Length: 1 } placements ? HandPlacements.Start(state, card, placements[0].Id) : null;
+        return sourceZone == "Hand" && card != null && HandPlacements.Options(state, card) is { Length: 1 } placements ? HandPlacements.Start(state, card, placements[0].Id) : null;
     }
 }

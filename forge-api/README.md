@@ -189,6 +189,9 @@ IDs and records diagnostics in the active profile's log.
 | `analysisReview` | `{deckId, revision, metadataRevision, fingerprint, recommendationId, decision, note}`; `consider`, `keep`, `dismiss`, `reopen`, `tested`, or a manual `observation` with no recommendation ID |
 | `analysisConsider` | Same version guards and recommendation fields as `analysisReview`; save the suggestion to Considering and return `{analysis, workshop}` together |
 | `list`, `open` | List saved decks; open by `{id}` |
+| `deleteDeck` | `{deckId, libraryToken}`; move the exact saved deck out of the active library; return `{deckId, name, restoreToken, deletedAt}` |
+| `deletedDecks` | List recoverable deleted decks, newest first; no implicit open or selection |
+| `restoreDeck` | `{deckId, restoreToken}`; restore the same deck ID without overwriting an existing deck or selecting it |
 | `new` | `{name, format}`; create a saved deck |
 | `snapshot` | Current deck, revision, validation, format and save state |
 | `edit` | `{revision, edits}`; absolute quantities using `DeckEditor.Edit` entries |
@@ -212,6 +215,16 @@ IDs and records diagnostics in the active profile's log.
 | `workshopPractice` | `{deckId, revision, action, index?, question?}`; `new`, `draw`, `mulligan` (redraw), `bottom`, `keep`; version-bound draw-only samples, not rules-aware London mulligans |
 | `workshopStartTest` | `{deckId, revision, opponents, question?}`; persist exact saved playable version before launching a real Forge solo match; Commander tests require explicit commander sections |
 | `workshopTests`, `workshopTestNote` | `{deckId}` or `{deckId, testId, note}`; durable observed facts and separate player notes, including interrupted tests |
+
+The optional `deck-library` ready capability enables these delete/restore commands.
+Saved summaries and deck details add `libraryToken`, a hash of the saved file's
+exact bytes. Deletion rejects a stale token rather than removing a newer saved
+list. These commands are available while offline and outside an active game;
+leave a connected lobby before changing the library this way. Deleted deck files
+remain recoverable across restart, and their workshop versions, notes, source
+links, analysis and test records retain their original deck ID. There is no
+automatic permanent purge. Existing version-1 deck files remain compatible and
+the synchronization protocol is unchanged.
 
 Workshop content IDs hash rules-card quantities, sections and format independently
 of the editor revision. Renaming, printing choices, tags and notes preserve test

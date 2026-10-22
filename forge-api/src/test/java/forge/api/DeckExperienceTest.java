@@ -8,7 +8,11 @@ import forge.item.PaperCard;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
+import com.google.gson.Gson;
+import com.google.gson.JsonObject;
+import forge.api.sync.SyncTransport;
 import org.testng.annotations.BeforeClass;
 import org.testng.annotations.Test;
 import static org.testng.Assert.*;
@@ -94,5 +98,44 @@ public class DeckExperienceTest {
         assertEquals(inspected.entries().get(0).quantity(), 60); assertEquals(inspected.differences().get(0).current(), 59);
         assertEquals(editor.snapshot(), before); assertEquals(Files.readAllBytes(metadata), bytes);
         assertThrows(IllegalArgumentException.class, () -> store.inspect(id, "unknown", before, "Constructed"));
+    }
+
+    @Test public void deckLibraryMutationsRefuseConnectedLobbyLocalSeatAndUnfinishedGame() throws Exception {
+        var json = new Gson(); var path = Files.createTempDirectory("deck-library-active-scope-");
+        var catalog = new CardCatalog(List.of(card("Forest")));
+        var status = new java.util.concurrent.atomic.AtomicReference<>("playing");
+        try (var engine = new DesktopEngine(catalog, path);
+             var server = new SyncTransport.Server((seat, method, arguments) -> Map.of("status", status.get()), () -> 0)) {
+            var resourceField = DesktopEngine.class.getDeclaredField("resources"); resourceField.setAccessible(true);
+            resourceField.set(engine, Path.of("../forge-gui/res"));
+            var removed = json.toJsonTree(engine.dispatch("new", json.toJsonTree(Map.of("name", "Removed", "format", "Constructed")).getAsJsonObject())).getAsJsonObject();
+            var deleteRemoved = json.toJsonTree(Map.of("deckId", removed.get("id").getAsString(), "libraryToken", removed.get("libraryToken").getAsString())).getAsJsonObject();
+            var receipt = json.toJsonTree(engine.dispatch("deleteDeck", deleteRemoved)).getAsJsonObject();
+            var undo = json.toJsonTree(Map.of("deckId", receipt.get("deckId").getAsString(), "restoreToken", receipt.get("restoreToken").getAsString())).getAsJsonObject();
+            var live = json.toJsonTree(engine.dispatch("new", json.toJsonTree(Map.of("name", "Live", "format", "Constructed")).getAsJsonObject())).getAsJsonObject();
+            var deleteLive = json.toJsonTree(Map.of("deckId", live.get("id").getAsString(), "libraryToken", live.get("libraryToken").getAsString())).getAsJsonObject();
+            engine.dispatch("multiplayerHost", json.toJsonTree(Map.of("format", "Constructed", "playerCount", 2, "transport", "local")).getAsJsonObject());
+            assertThrows(IllegalStateException.class, () -> engine.dispatch("deleteDeck", deleteLive));
+            assertThrows(IllegalStateException.class, () -> engine.dispatch("restoreDeck", undo));
+            var guest = json.toJsonTree(engine.dispatch("multiplayerLocalJoin", new JsonObject())).getAsJsonObject();
+            var privateCommand = deleteLive.deepCopy(); privateCommand.add("connectionId", guest.get("connectionId"));
+            assertThrows(IllegalArgumentException.class, () -> engine.dispatch("deleteDeck", privateCommand));
+            engine.dispatch("multiplayerClose", new JsonObject());
+            assertThrows(IllegalStateException.class, () -> engine.dispatch("deleteDeck", deleteLive));
+            assertThrows(IllegalStateException.class, () -> engine.dispatch("restoreDeck", undo));
+            engine.dispatch("multiplayerClose", guest);
+            // Exercise the current-match status guard through its real seat endpoint;
+            // no rules simulation is needed to establish a still-active game boundary.
+            var matchField = DesktopEngine.class.getDeclaredField("match"); matchField.setAccessible(true);
+            matchField.set(engine, new SeatConnection(server.local(0)));
+            assertThrows(IllegalStateException.class, () -> engine.dispatch("deleteDeck", deleteLive));
+            assertThrows(IllegalStateException.class, () -> engine.dispatch("restoreDeck", undo));
+            assertTrue(Files.exists(path.resolve(live.get("id").getAsString() + ".json")));
+            assertFalse(Files.exists(path.resolve(removed.get("id").getAsString() + ".json")));
+            status.set("finished");
+            engine.dispatch("restoreDeck", undo); engine.dispatch("deleteDeck", deleteLive);
+            assertTrue(Files.exists(path.resolve(removed.get("id").getAsString() + ".json")));
+            assertFalse(Files.exists(path.resolve(live.get("id").getAsString() + ".json")));
+        }
     }
 }

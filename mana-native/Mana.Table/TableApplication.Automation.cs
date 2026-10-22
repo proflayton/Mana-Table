@@ -48,6 +48,9 @@ internal sealed partial class TableApplication
         internal bool StartupFailed => game.startupFailed;
         internal IReadOnlyList<DeckPreset> Presets => game.presets;
         internal DeckSummary? SelectedDeck => game.selectedDeck;
+        internal IReadOnlyList<DeckSummary> SavedDecks => game.decks;
+        internal IReadOnlyList<DeckLibraryDeletion> DeletedDecks => game.deletedDecks;
+        internal void RefreshDeckLibrary() => game.RefreshDeletedDecks();
         internal DeckDetails? DeckDetails => game.selectedDeckDetails;
         internal bool DeckEditor => game.deckEditor;
         internal bool AnalysisOpen => game.analysisOpen;
