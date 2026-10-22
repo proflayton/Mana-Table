@@ -242,6 +242,30 @@ printing/face requests, replaces obsolete speculation and bounds pending image
 bytes and GPU uploads. Face-down objects and effect markers never request art;
 preloading never consults an opponent's deck or guesses hidden library order.
 
+Table entry uses `TableArtworkPreparation` as a central presentation handoff for
+solo, hosted/guest and workshop games. Engine starting is a separate waiting
+state: an empty snapshot or absent viewer cannot release the table on a zero-of-
+zero image count. After the first playable seat-filtered snapshot, the opening
+waits for actual GPU textures, not downloaded bytes queued for upload. Failed or
+missing faces settle to their readable fallback; the artwork wait is bounded to
+eight seconds per opening handoff. A required pre-deal choice can appear after
+its public cards prepare; when the player's first readable hand is dealt during
+pregame, that hand gets its own preparation. This neither waits for a future deal
+before answering its prerequisite nor consumes the hand's preparation on cached
+commanders alone. Fresh polls do not restart the budget, and ordinary later
+observations do not reopen loading. A changed game or
+viewer, or a reset, invalidates the previous handoff. The remaining known local
+deck continues warming the disk cache in the background.
+
+`PresentationResources.Artwork` reports device readiness from `CardArt` to the
+application. This progress belongs to rendering/presentation, independently of
+rules-provider command completion; it grants no action or access to hidden
+cards. `MagicArtSource` writes downloaded bytes to a unique temporary file and
+publishes the cache entry with a same-directory move only after the write
+completes. Cancellation removes that temporary file rather than leaving a
+partial payload at the trusted cache path. Decode/upload failure still uses the
+readable fallback.
+
 The production pipeline is:
 
 ```mermaid

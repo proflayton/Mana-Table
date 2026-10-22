@@ -1,6 +1,8 @@
 using Mana.Contracts;
 using Mana.Magic;
 using System.Net;
+using System.Security.Cryptography;
+using System.Text;
 
 internal static class PrintingArtRegression
 {
@@ -42,6 +44,41 @@ internal static class PrintingArtRegression
         handler.Missing = true;
         try { await art.LoadAsync(alternate with { CollectorNumber = "missing" }, default); throw new Exception("Missing printing accepted"); }
         catch (HttpRequestException) { check(handler.Urls.Count == 4, "Missing printing images do not fall back to unrelated named artwork"); }
+        handler.Missing = false;
+        string cache = Path.Combine(profile, "art");
+        var cachedFiles = Directory.GetFiles(cache).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var cancelled = original with { CollectorNumber = "cancelled" };
+        using (var cancellation = new CancellationTokenSource()) {
+            var pending = art.LoadAsync(cancelled, cancellation.Token);
+            cancellation.Cancel();
+            try { await pending; throw new Exception("Cancelled artwork request completed"); }
+            catch (OperationCanceledException) {
+                check(Directory.GetFiles(cache).ToHashSet(StringComparer.OrdinalIgnoreCase).SetEquals(cachedFiles),
+                    "Cancelling an uncached image leaves every existing cache entry intact and publishes no incomplete image");
+            }
+        }
+        int beforeRetry = handler.Urls.Count;
+        var retried = await art.LoadAsync(cancelled, default);
+        check(retried is { Length: > 0 } && handler.Urls.Count == beforeRetry + 1,
+            "A cancelled image remains fetchable and does not strand the source's request ownership");
+        using (var reopened = new MagicArtSource(profile, handler)) {
+            int beforeReopen = handler.Urls.Count;
+            check((await reopened.LoadAsync(cancelled, default))!.SequenceEqual(retried!) && handler.Urls.Count == beforeReopen,
+                "Only the completed retry becomes a reusable image cache entry after reopening");
+        }
+        var blocked = original with { CollectorNumber = "blocked-publication" };
+        string blockedPath = Path.Combine(cache, Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(blocked.Key))) + ".jpg");
+        Directory.CreateDirectory(blockedPath);
+        cachedFiles = Directory.GetFiles(cache).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        try { await art.LoadAsync(blocked, default); throw new Exception("Blocked image publication succeeded"); }
+        catch (Exception error) when (error is IOException or UnauthorizedAccessException) {
+            check(Directory.GetFiles(cache).ToHashSet(StringComparer.OrdinalIgnoreCase).SetEquals(cachedFiles),
+                "A failed cache publication removes its completed temporary image and preserves existing entries");
+        }
+        Directory.Delete(blockedPath);
+        beforeRetry = handler.Urls.Count;
+        check(await art.LoadAsync(blocked, default) is { Length: > 0 } && handler.Urls.Count == beforeRetry + 1,
+            "Clearing a cache publication failure permits a fresh exact-printing request");
         // Only this fixture-created directory is removed.
         Directory.Delete(profile, true);
     }

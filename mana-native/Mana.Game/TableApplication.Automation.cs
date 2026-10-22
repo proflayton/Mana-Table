@@ -43,6 +43,8 @@ internal sealed partial class TableApplication
         internal bool ActivityOpen => game.ActivityOpen;
         internal bool InlineActivityVisible => game.InlineActivityVisible;
         internal string ActivityTitle => game.activityTitle;
+        internal bool PreparingTableArtwork => game.tableArtwork.Waiting;
+        internal Mana.Table.Presentation.ArtworkReadiness TableArtworkProgress => game.tableArtwork.Progress;
         internal string ActivityDetail => game.activityDetail;
         internal string ActivityStage => game.activityStage.ToString() ?? "";
         internal bool StartupFailed => game.startupFailed;

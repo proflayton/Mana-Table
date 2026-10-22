@@ -20,6 +20,17 @@ internal sealed partial class SmokeAutomation
     private bool smokeClickAccepted;
     private int smokeRetryStage;
     private string? smokeLand;
+    private readonly HashSet<string> artworkOpenings = [];
+
+    private void RecordOpeningArtwork(string name)
+    {
+        var state = view.Match!;
+        File.WriteAllText(Path.Combine(view.Profile, name + ".json"), JsonSerializer.Serialize(new {
+            view.Now, state.Turn, state.PhaseKey, Progress = view.TableArtworkProgress,
+            Cards = CardViews.Visible(state).Where(card => Mana.Magic.CardPresentation.Artwork(card) != null)
+                .Select(card => new { card.Name, Artwork = Mana.Magic.CardPresentation.Artwork(card), Ready = view.Art(card) != null }).ToArray()
+        }, new JsonSerializerOptions { WriteIndented = true }));
+    }
 
     private void SmokeCheck(bool condition, string description)
     {
@@ -42,6 +53,10 @@ internal sealed partial class SmokeAutomation
         if (DateTime.UtcNow > smokeDeadline) throw new TimeoutException($"UI smoke timed out at stage {smokeStage}; decision {view.Match?.Decision?.Message}");
         if (view.Error.Length > 0) throw new InvalidOperationException("UI smoke: " + view.Error);
         if (!view.Loaded || view.Busy || view.ActivityOpen || view.Polling) return At(new(0, 0), ButtonState.Released);
+        if (view.Match is { } opening && opening.Viewer!.Zone("Hand").Cards.Length > 0 && artworkOpenings.Add(opening.Id)) {
+            string name = artworkOpenings.Count == 1 ? "solo-first-hand" : "solo-next-hand";
+            RecordOpeningArtwork(name); smokeScreenshot = name + ".png";
+        }
         if (smokeDecision != view.Match?.Decision?.Id) {
             smokeDecision = view.Match?.Decision?.Id;
             File.WriteAllText(Path.Combine(view.Profile, "ui-latest.json"), JsonSerializer.Serialize(view.Match));
@@ -66,6 +81,7 @@ internal sealed partial class SmokeAutomation
                 SmokeCheck(view.LocalMatch && view.Match.Players.Length == 4 && view.Match.Players.All(p => p.Life == 40)
                     && view.SoloSetup?.DeckId == view.SelectedDeck?.Id, "One Play action prepares and opens the selected deck's four-player AI table");
                 smokeFirstGame = view.Match.Id;
+                RecordOpeningArtwork("solo-opening-artwork");
                 smokeScreenshot = "solo-opening.png"; smokeStage++; break;
             case 6:
             case 11:

@@ -83,6 +83,9 @@ Final commit/build identity, actual-window evidence and human acceptance must be
 recorded in the PR. **Human review of this candidate is pending.** Older dated
 entries below record their own review scope and must not imply acceptance of
 these new journeys.
+The player's latest "looks a lot better" records positive feedback on the
+experience they viewed; it does not establish acceptance of the whole game or
+changes they have not reviewed.
 
 ### Findings, current slice and remaining scope
 
@@ -168,6 +171,18 @@ playing a card; closing Updates keeps a chosen transfer running. Updates still
 download only after explicit intent and recheck actual game/save blockers before
 an explicit restart. These are implemented interaction boundaries, not a claim
 that every system, history or auxiliary surface has been redesigned.
+
+Opening artwork now belongs to the table-entry transition. Engine starting and
+image preparation are separate: a missing opening seat view cannot appear ready
+because it has zero images, and downloaded bytes do not count as ready GPU
+textures. The central gate uses current seat-visible faces, lets failed images
+settle to readable fallback and bounds the artwork wait to eight seconds after
+the first playable snapshot. Other known local-deck art stays background work;
+ordinary same-game polls do not interrupt play with another loading screen.
+Cache publication uses completed temporary writes before replacing a trusted
+entry, so interrupted writes cannot become the next launch's cached image.
+Controlled loading checks protect that handoff; actual artwork, fallback and
+first interaction still need human review in their relevant window.
 
 ### Ownership and removal plan
 

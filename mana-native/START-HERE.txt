@@ -39,6 +39,12 @@ Back to play closes it without preparing a game or making you Ready.
 There is no required review or confirmation before Play.
 Opening a deck or connecting to a table shows visible progress.
 Entering a game uses the same table imagery before revealing the battlefield.
+Opening artwork loads before the table becomes playable, using only cards your
+seat can see. The app waits until those images are ready to draw, not just
+downloaded. Failed images keep readable card fallbacks. Artwork waits at most
+eight seconds once the engine supplies the opening table; engine startup is a
+separate stage. Other known cards in your deck warm in the background, and
+ordinary table updates do not reopen this loading screen.
 Deck edits show Saving/Changes saved beside the builder without covering it.
 Failed actions explain the problem and offer Back; startup failures offer Retry.
 An unreadable import or unavailable clipboard leaves your saved deck untouched.

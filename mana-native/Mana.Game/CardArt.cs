@@ -2,6 +2,7 @@ using System.Collections.Concurrent;
 using Mana.Renderer;
 using Microsoft.Xna.Framework.Graphics;
 using Mana.Contracts;
+using Mana.Table.Presentation;
 
 namespace Mana.Table;
 
@@ -48,6 +49,21 @@ internal sealed class CardArt : IDisposable
             if (requests.Count == limit) break;
         }
         return requests;
+    }
+
+    // Queued bytes are not ready art. Only the window's successful GPU upload
+    // counts; a failed face settles to its existing readable fallback.
+    internal ArtworkReadiness Readiness(Card[] cards)
+    {
+        var requests = Requests(cards, VisibleLimit);
+        int ready = 0, unavailable = 0;
+        lock (gate) {
+            foreach (var key in requests.Keys) {
+                if (textures.ContainsKey(key)) ready++;
+                else if (retryAfter.TryGetValue(key, out var retry) && retry > DateTime.UtcNow) unavailable++;
+            }
+        }
+        return new(requests.Count, ready, unavailable);
     }
 
     public void Update(GraphicsDevice graphics)

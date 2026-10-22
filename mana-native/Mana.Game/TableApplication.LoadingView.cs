@@ -45,7 +45,7 @@ internal sealed partial class TableApplication
     {
         hits.Clear(); hovered = null; ClearCardComposition();
         bool failed = !ActivityPending && ActivityFailed;
-        if (activityScene && !failed) { DrawTableTransition(); return; }
+        if (tableArtwork.Waiting || activityScene && !failed) { DrawTableTransition(); return; }
         int top = (DesignHeight - 344) / 2;
         canvas.Fill(new(0, 0, 1600, DesignHeight), Color.Black * .77f);
         canvas.Glow(new(800, top + 170), new(1020, 630), Teal * .24f);
@@ -76,9 +76,13 @@ internal sealed partial class TableApplication
         canvas.CenterText("MANA TABLE", new(100, 90, 1400, 88), Gold, 3.15f, true);
         DrawLoadingTable(new(800, height * .4f), 1);
         int titleTop = (int)(height * .645f);
-        DrawActivityHeading(activityTitle, new(250, titleTop, 1100, 80), 1.5f);
-        canvas.Text(activityDetail, 310, titleTop + 100, Muted, .94f, 980, 3);
-        if (ActivityPending && now - activityStarted >= 4) {
+        string title = tableArtwork.Waiting ? tableArtwork.WaitingForTable ? "Gathering your table" : "Preparing card images" : activityTitle;
+        DrawActivityHeading(title, new(250, titleTop, 1100, 80), 1.5f);
+        string detail = tableArtwork.Waiting ? tableArtwork.WaitingForTable ? "Dealing the opening hands."
+            : $"{tableArtwork.Progress.Ready + tableArtwork.Progress.Unavailable} / {tableArtwork.Progress.Total}" : activityDetail;
+        if (tableArtwork.Waiting) canvas.CenterText(detail, new(310, titleTop + 100, 980, 70), Muted, .94f);
+        else canvas.Text(detail, 310, titleTop + 100, Muted, .94f, 980, 3);
+        if (!tableArtwork.Waiting && ActivityPending && now - activityStarted >= 4) {
             string reassurance = now - activityStarted < 15 ? "Getting your table ready. Please keep Mana Table open."
                 : "This is taking a little longer. Your request is still in progress.";
             canvas.CenterText(reassurance, new(220, height - 86, 1160, 36), Muted, .77f);

@@ -1,7 +1,10 @@
+using Mana.Table.Presentation;
+
 namespace Mana.Table;
 
 internal sealed partial class TableApplication
 {
+    private readonly TableArtworkPreparation tableArtwork = new();
     private bool startupActivity, startupFailed, activityTracked, activityForeground, activityFailed, activityWasVisible, activityScene;
     private string activityTitle = "Opening Mana Table", activityDetail = "Preparing your next Commander game.", activityStage = "Card library";
     private double activityStarted, activityCompleted = -1, sceneRevealAt = -1;
@@ -10,7 +13,7 @@ internal sealed partial class TableApplication
     private bool ActivityFailed => activityFailed;
     private bool StartupVisible => initialState == null && fixture == null
         && (!loaded || startupActivity && (ActivityPending || now < activityStarted + .45));
-    private bool ActivityOpen => StartupVisible || activityTracked && activityForeground
+    private bool ActivityOpen => StartupVisible || tableArtwork.Waiting || activityTracked && activityForeground
         && (ActivityPending || activityFailed || now < activityStarted + .22);
     private bool InlineActivityVisible => activityTracked && !activityForeground && match == null && deckEditor
         && (ActivityPending || now < activityCompleted + 1.6);
@@ -71,6 +74,7 @@ internal sealed partial class TableApplication
 
     private void UpdateActivity()
     {
+        tableArtwork.Update(match, match == null ? [] : ArtPreloadCards().Visible, resources.Artwork, now);
         if (startupActivity && loaded && !ActivityPending && now >= activityStarted + .45) startupActivity = false;
         bool visible = ActivityOpen;
         if (activityWasVisible && !visible) { sceneRevealAt = now; ClearExperienceInput(); }
