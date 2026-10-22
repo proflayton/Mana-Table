@@ -62,6 +62,7 @@ import org.apache.commons.lang3.tuple.Pair;
 
 import java.util.*;
 import java.util.Map.Entry;
+import java.util.concurrent.ConcurrentSkipListMap;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
@@ -165,8 +166,10 @@ public class Player extends GameEntity implements Comparable<Player> {
     private CardCollection currentPlanes = new CardCollection();
     private CardCollection planeswalkedToThisTurn = new CardCollection();
 
-    private NavigableMap<Long, Pair<Player, PlayerController>> controlledBy = Maps.newTreeMap();
-    private NavigableMap<Long, Player> controlledWhileSearching = Maps.newTreeMap();
+    // Terminal cleanup can remove control while the game thread reads it.
+    private final NavigableMap<Long, Pair<Player, PlayerController>> controlledBy = new ConcurrentSkipListMap<>();
+    // Search effects may record a null player, which concurrent maps reject.
+    private final NavigableMap<Long, Player> controlledWhileSearching = Collections.synchronizedNavigableMap(new TreeMap<>());
 
     private int numManaShards;
 
@@ -2533,17 +2536,13 @@ public class Player extends GameEntity implements Comparable<Player> {
     }
 
     public final PlayerController getController() {
-        if (!controlledBy.isEmpty()) {
-            return controlledBy.lastEntry().getValue().getValue();
-        }
-        return controller;
+        final Entry<Long, Pair<Player, PlayerController>> control = controlledBy.lastEntry();
+        return control == null ? controller : control.getValue().getValue();
     }
 
     public final Player getControllingPlayer() {
-        if (!controlledBy.isEmpty()) {
-            return controlledBy.lastEntry().getValue().getKey();
-        }
-        return null;
+        final Entry<Long, Pair<Player, PlayerController>> control = controlledBy.lastEntry();
+        return control == null ? null : control.getValue().getKey();
     }
 
     public final boolean isControlled() {
@@ -2589,9 +2588,6 @@ public class Player extends GameEntity implements Comparable<Player> {
     }
 
     public Map.Entry<Long, Player> getControlledWhileSearching() {
-        if (controlledWhileSearching.isEmpty()) {
-            return null;
-        }
         return controlledWhileSearching.lastEntry();
     }
 
