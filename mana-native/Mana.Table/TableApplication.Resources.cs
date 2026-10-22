@@ -103,7 +103,8 @@ internal sealed partial class TableApplication
             foreach (var cue in manaPresence.ForPlayer(player.Id, now).Where(cue => cue.After == 0 && parts.All(part => part.Key != cue.Symbol)))
                 parts.Add(known.FirstOrDefault(part => part.Key == cue.Symbol) ?? new(cue.Symbol, cue.Symbol, "", 0));
         }
-        var hero = TableLayout.Hero(seat);
+        seat = SeatDisplayIndex(player.Id);
+        var hero = SeatHero(player.Id);
         string[] symbols = ["W", "U", "B", "R", "G", "C"];
         var ordered = parts.Select(part => (Part: part, Slot: Array.IndexOf(symbols, part.Key)))
             .Select((entry, index) => (entry.Part, Slot: entry.Slot >= 0 ? entry.Slot : 6 + parts.Take(index).Count(p => !symbols.Contains(p.Key))))

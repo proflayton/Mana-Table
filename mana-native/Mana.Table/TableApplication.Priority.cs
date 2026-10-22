@@ -35,10 +35,9 @@ internal sealed partial class TableApplication
             || now - cue.Started is < 0 or > .55 || priorityView?.ResponderId != current) return;
         var state = match!;
         if (!state.Players.Any(player => player.Id == previous) || !state.Players.Any(player => player.Id == current)) return;
-        Vector2 Center(int id) => TableLayout.Hero(id == state.ViewerId ? 3 : TableLayout.SeatIndex(state, id));
         float t = (float)((now - cue.Started) / .55);
         t = t * t * (3 - 2 * t);
-        var position = Vector2.Lerp(Center(previous), Center(current), t);
+        var position = Vector2.Lerp(SeatHero(previous), SeatHero(current), t);
         PaintPriorityToken(position, 9, 1);
     }
 

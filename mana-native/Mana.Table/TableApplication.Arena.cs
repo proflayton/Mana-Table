@@ -27,14 +27,14 @@ internal sealed partial class TableApplication
         var opponents = TableLayout.Opponents(state);
         foreach (int i in new[] { 1, 0, 2 }) if (i < opponents.Length) DrawOpponent(opponents[i], i);
         if (state.Viewer is { } viewer) DrawLocal(viewer);
-        for (int i = 0; i < opponents.Length && i < 3; i++) DrawHero(opponents[i], TableLayout.Hero(i), false, i);
+        for (int i = 0; i < opponents.Length && i < 3; i++) DrawHero(opponents[i], SeatHero(opponents[i].Id), false, SeatDisplayIndex(opponents[i].Id));
         DrawCombatConnections(); DrawAttachmentConnections(); DrawStack(); DrawSeatTransfers();
         DrawChangeHighlights();
         if (!BattlefieldFocused) DrawEffectTransitions();
         DrawHand(); DrawCardEffects(); DrawDepartures();
         if (!BattlefieldFocused) DrawLiftedCards();
         // Your seat stays in front of the fan and readable during card travel.
-        if (state.Viewer is { } local) DrawHero(local, TableLayout.Hero(3), true, 3);
+        if (state.Viewer is { } local) DrawHero(local, SeatHero(local.Id), true, 3);
         DrawPriorityHandoff();
         foreach (var item in feedback) {
             float age = (float)(1.5 - (item.Until - now));
@@ -69,6 +69,7 @@ internal sealed partial class TableApplication
         if (ReadingGalleryOpen) hovered = HitAt(pointer)?.Card;
         DrawPendingReferencePreview();
         DrawStudyBattlefieldName();
+        DrawStudyFocusNavigation();
         DrawExperienceLabHeader();
     }
     private void DrawGameHeader()
@@ -230,8 +231,9 @@ internal sealed partial class TableApplication
         foreach (var attack in combat.Attackers) {
             if (!cardPositions.TryGetValue(attack.CardId, out var attacker)) continue;
             Vector2? destination = null;
-            if (attack.Defender is { Kind: "card" } defender && cardPositions.TryGetValue(defender.Id, out var target)) destination = target.EdgeToward(attacker.Center, 6);
-            else if (heroPositions.TryGetValue(attack.DefendingPlayerId, out var player)) {
+            if (attack.Defender is { Kind: "card" } defender) {
+                if (cardPositions.TryGetValue(defender.Id, out var target)) destination = target.EdgeToward(attacker.Center, 6);
+            } else if (heroPositions.TryGetValue(attack.DefendingPlayerId, out var player)) {
                 var delta = attacker.Center - player;
                 destination = player + (delta.LengthSquared() > 0 ? Vector2.Normalize(delta) : Vector2.UnitY) * (attack.DefendingPlayerId == match.ViewerId ? 51 : 40);
             }
@@ -275,7 +277,7 @@ internal sealed partial class TableApplication
             if (card.VisualId.Length > 0) {
                 if (cardPresentation.TryGetPose(card.VisualId, out var sourcePose)) entrance = sourcePose.Center;
                 else if (state.Activity.LastOrDefault(a => a.CardId == card.VisualId && a.PlayerId != null) is { PlayerId: { } actor })
-                    entrance = TableLayout.SeatHand(actor == state.ViewerId ? 3 : TableLayout.SeatIndex(state, actor));
+                    entrance = SeatHand(actor);
             }
             int stackIndex = i;
             var spellPose = TableWorld.Spell(i);

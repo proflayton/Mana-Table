@@ -94,8 +94,19 @@ selects battlefield painting; full readers retain a canonical battlefield anchor
 and share its exact scoped hit geometry. Their current P/T and typed state come
 from the same authorized occurrence. The study's pending-effect area is reserved
 before packing and can use the remaining space beside a reader. This comparison
-does not enable camera movement, alter engine permissions or change the normal
-game's default layout. Crowded recognition and responsive viewport composition
+uses no automatic camera movement, alters no engine permissions and leaves the normal
+game's default layout unchanged. `StudyBattlefieldFamily` associates same-name
+public occurrences while preserving strict state/availability cohorts and exact
+member IDs; required candidates are separated before packing. A bounded copy fan
+does not grow with the number of matching tokens or lands.
+
+The study's manual focus uses `DuelTableStudy` lanes and `SeatGeometry` to enlarge
+the selected opponent above the actual viewer, with the other players on a rail.
+`SeatHero`, `SeatHand` and the display orientation keep mana, priority, targeting
+and draw effects aligned with those scene poses. Condensed fields publish no
+obsolete card hits; player targets still use actual player IDs before navigation.
+Focus is local presentation state and resets with the game or a removed player.
+Crowded recognition and responsive viewport composition
 remain open human-review/design work; see the
 [four-player study](Mana-Table-Experience-Review.md#four-player-direction-stable-table-selective-attention).
 

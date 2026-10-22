@@ -61,7 +61,13 @@ internal sealed partial class TableApplication
             counter.Value + " " + counter.Key + (counter.Value == 1 ? " counter" : " counters"), new(154, 224, 203))).ToList();
         if (card.Damage > 0) chips.Add(new(card.Damage + " damage marked", Red));
         if (card.PhasedOut) chips.Add(new("Phased out", AbilityColor("phased out")));
-        chips.AddRange(CardPresentation.AbilityLabels(card).Select(label => new BattlefieldReaderChip(label, Blue)));
+        var abilityLabels = CardPresentation.AbilityLabels(card);
+        if (card.Tapped && !abilityLabels.Contains("Tapped", StringComparer.OrdinalIgnoreCase))
+            chips.Add(new("Tapped", Gold));
+        if (card.Sick && CardPresentation.HasCombatStats(card)
+            && !abilityLabels.Contains("Summoning sick", StringComparer.OrdinalIgnoreCase))
+            chips.Add(new("Summoning sick", Blue));
+        chips.AddRange(abilityLabels.Select(label => new BattlefieldReaderChip(label, Blue)));
         if (chips.Count == 0) return;
 
         var face = entry.Display.Bounds;

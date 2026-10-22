@@ -241,6 +241,7 @@ internal sealed partial class TableApplication : IDisposable
                 selectedCombat = null; textFocus = false;
                 if (match == null && !busy) { if (workshopDialog == "printings") ClosePrintings(); else if (workshopDialog.Length > 0) workshopDialog = ""; else if (deckMenu.Length > 0) deckMenu = ""; else if (deckEditor) CloseDeckEditor(); else CloseSetupModal(); }
                 if (overlay.Length > 0) overlay = ""; else if (zoneName != null) zoneName = null;
+                else if (StudyFocusActive) SetStudyFocus(null);
                 else if (DecisionModal && match?.Decision?.Kind == "allocate" && allocationDetail >= -1) CloseAllocationDetail();
                 else if (DecisionModal) collapsedDecision = true;
             }
@@ -295,9 +296,11 @@ internal sealed partial class TableApplication : IDisposable
         float frameElapsed = (float)(time.TotalGameTime.TotalSeconds - lastDrawTime);
         lastDrawTime = time.TotalGameTime.TotalSeconds;
         canvas.TextScale = preferences.TextScale;
+        ValidateStudyFocus();
         tableScene = match == null ? null : TableScene.Build(match, handPage, pointer, null,
             dragging && dragSource?.Card is { } held ? CardViews.Identity(held) : null, false, CardPresentation.IsResource,
-            denseMeasure: MeasureDenseBattlefieldLabel, allowInlineOrdering: TableChoices.IsDirect(match), sharedTableStudy: TableStudyEnabled);
+            denseMeasure: MeasureDenseBattlefieldLabel, allowInlineOrdering: TableChoices.IsDirect(match), sharedTableStudy: TableStudyEnabled,
+            studyFocusedOpponent: StudyFocusActive ? studyFocusOpponent : null);
         UpdateBoardView();
         BeginCardReading(frameElapsed);
         hits.Begin();

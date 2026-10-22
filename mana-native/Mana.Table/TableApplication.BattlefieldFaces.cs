@@ -83,6 +83,7 @@ internal sealed partial class TableApplication
         // Never turn a card's identity into a fragment or shrink its font to fit.
         // Small overview faces retain art/state; pointing at one reveals its
         // complete name at the same source without moving the card's hit target.
+        if (tableScene?.BattlefieldCard(owner, CardViews.Identity(card))?.StudyFamily is { CohortCount: > 1 }) return 0;
         int height = BattlefieldScanNameHeight(card, face, copies);
         if (height == 0) return 0;
         var bounds = new Rectangle(face.X, face.Y, face.Width, height);
@@ -100,7 +101,8 @@ internal sealed partial class TableApplication
             || HitAt(pointer) is not { Card: { } card, Zone: "Battlefield", PlayerId: { } owner }
             || tableScene?.BattlefieldCard(owner, CardViews.Identity(card)) is not { ScanFace: true } node) return;
         var face = BattlefieldScanLabelArea(node.Pose);
-        if (BattlefieldScanNameHeight(card, face, node.GroupCount) > 0) return;
+        if (node.StudyFamily is { CohortCount: > 1 } family ? StudyFamilyNameVisible(family)
+            : BattlefieldScanNameHeight(card, face, node.GroupCount) > 0) return;
         string name = card.FaceDown ? "Face-down permanent" : card.Name;
         const float size = .7f;
         int width = Math.Min(380, canvas.TextWidth(name, size, true) + 16);
@@ -128,9 +130,9 @@ internal sealed partial class TableApplication
         bool creature = CardPresentation.HasCombatStats(card);
         float size = face.Width >= 100 ? .62f : .52f;
         string stats = creature ? CurrentStats(card) : "";
-        string damage = card.Damage > 0 ? "DMG " + card.Damage : "";
+        string damage = card.Damage > 0 ? card.Damage.ToString() : "";
         int Measure() => (creature ? canvas.TextWidth(stats, size, true) + 10 : 0)
-            + (damage.Length > 0 ? canvas.TextWidth(damage, size, true) + 8 : 0);
+            + (damage.Length > 0 ? canvas.TextWidth(damage, size, true) + 18 : 0);
         while (size > .375f && Measure() > face.Width) size = Math.Max(.375f, size - .025f);
         int height = Math.Min(22, face.Height / 3), right = face.Right;
         if (creature) {
@@ -144,11 +146,16 @@ internal sealed partial class TableApplication
             right = bounds.Left;
         }
         if (damage.Length > 0 && right > face.Left) {
-            int measured = canvas.TextWidth(damage, size, true), width = Math.Min(right - face.Left, measured + 8);
-            var bounds = new Rectangle(right - width, face.Bottom - height, width, height);
-            canvas.Fill(bounds, new(25, 23, 28));
-            canvas.CenterText(damage, bounds, Red, size, true);
-            RecordBattlefieldLabel(card, owner, "damage", damage, bounds, measured, width - 8);
+            int measured = canvas.TextWidth(damage, size, true), width = measured + 18;
+            if (width <= right - face.Left) {
+                var bounds = new Rectangle(right - width, face.Bottom - height, width, height);
+                canvas.Fill(bounds, new(25, 23, 28));
+                var center = new Vector2(bounds.Left + 6, bounds.Center.Y);
+                canvas.Line(center + new Vector2(-3, 4), center + new Vector2(3, -4), Red, 2);
+                canvas.Line(center + new Vector2(-3, -1), center + new Vector2(0, 2), Red, 1.5f);
+                canvas.CenterText(damage, new(bounds.Left + 12, bounds.Top, bounds.Width - 12, bounds.Height), Red, size, true);
+                RecordBattlefieldLabel(card, owner, "damage", damage, bounds, measured, width - 18);
+            }
         }
         bool badgeRoom = face.Top + nameHeight + 21 <= face.Bottom - (creature || damage.Length > 0 ? height : 0);
         int copyWidth = copies > 1 ? canvas.TextWidth("×" + copies, .44f, true) + 10 : 0;
@@ -164,6 +171,7 @@ internal sealed partial class TableApplication
             }
         }
         var abilities = CardPresentation.Abilities(card).ToList();
+        if (card.Tapped) abilities.Insert(0, "tapped");
         if (card.Sick && creature) abilities.Insert(0, "summoning sick");
         if (card.PhasedOut) abilities.Insert(0, "phased out");
         for (int index = 0; badgeRoom && index < Math.Min(2, abilities.Count)
@@ -177,6 +185,9 @@ internal sealed partial class TableApplication
         canvas.Circle(center, 6, new(15, 27, 32));
         void Line(float x1, float y1, float x2, float y2) => canvas.Line(center + new Vector2(x1, y1), center + new Vector2(x2, y2), color, 1.2f);
         switch (ability) {
+            case "tapped":
+                canvas.Ring(center, 3.5f, color, 1.3f, -MathF.PI * .85f, MathF.PI * .65f);
+                Line(3, 0, 1, -2); Line(3, 0, 4, -3); break;
             case "flying": Line(-4, -3, 0, 3); Line(0, 3, 4, -3); Line(-4, -3, -4, 1); Line(4, -3, 4, 1); break;
             case "reach": Line(0, 4, 0, -4); Line(0, -4, -3, -1); Line(0, -4, 3, -1); break;
             case "summoning sick": Line(-3, -4, 3, -4); Line(-3, 4, 3, 4); Line(-3, -3, 3, 3); Line(3, -3, -3, 3); break;

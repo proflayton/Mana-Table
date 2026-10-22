@@ -170,6 +170,14 @@ public static class FourPlayerTableScenario
     }
 
     private static Card[] BusyAdditions() => [
+        // Authored copies retain separate occurrence IDs and public state.
+        // They compare family grouping; no token creation or damage is simulated.
+        .. Enumerable.Range(0, 8).Select(index => Creature(2, "busy-scute-copy-" + index,
+            "Scute Swarm", "Insect", "{2}{G}", index < 6 ? 1 : 2, index < 6 ? 1 : 2) with {
+                Tapped = index is 4 or 5,
+                Counters = index < 6 ? [] : new() { ["+1/+1"] = 1 },
+                Damage = index == 7 ? 1 : 0
+            }),
         Creature(2, "busy-birds", "Birds of Paradise", "Bird", "{G}", 0, 1) with { CombatKeywords = ["flying"] },
         Creature(2, "busy-cobra", "Lotus Cobra", "Snake", "{1}{G}", 2, 1),
         Creature(2, "busy-provisioner", "Tireless Provisioner", "Elf Scout", "{2}{G}", 3, 2),

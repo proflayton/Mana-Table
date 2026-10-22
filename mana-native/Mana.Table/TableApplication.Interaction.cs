@@ -29,7 +29,11 @@ internal sealed partial class TableApplication
         CollapseCardReading();
         inspectBack = false; inspectPage = 0; overlay = "inspect";
     }
-    private void OpenZone(int player, string zone) { zonePlayer = player; zoneName = zone; zonePage = 0; overlay = ""; }
+    private void OpenZone(int player, string zone)
+    {
+        if (TableStudyEnabled && zone == "Battlefield") { SetStudyFocus(player); return; }
+        zonePlayer = player; zoneName = zone; zonePage = 0; overlay = "";
+    }
     private bool IsPlayerTarget(int player) => !AbilityActionPending && (match?.Decision?.PlayerChoices.Contains(player) == true
         || selectedCombat != null && match != null && LegalTargets.CanAttack(match, selectedCombat, player)
         || dragging && dragSource?.Card is { } card && match != null && LegalTargets.CanAttack(match, card.CombatId, player));
@@ -59,11 +63,18 @@ internal sealed partial class TableApplication
     }
     private void PlayerClick(int player)
     {
-        if (match == null || busy) return;
+        if (match == null) return;
+        if (TableStudyEnabled && !IsPlayerTarget(player) && (busy || session.NeedsRecovery || AbilityActionPending)) {
+            SetStudyFocus(player); return;
+        }
+        if (busy) return;
         if (session.NeedsRecovery || AbilityActionPending) { zonePlayer = player; overlay = "player"; return; }
         var result = interaction.PlayerClick(match, player);
         if (result.Reply != null) Send(result.Reply);
-        else if (result.Effect == InteractionEffect.InspectPlayer) { zonePlayer = player; overlay = "player"; }
+        else if (result.Effect == InteractionEffect.InspectPlayer) {
+            if (TableStudyEnabled) SetStudyFocus(StudyFocusActive && studyFocusOwner == player ? null : player);
+            else { zonePlayer = player; overlay = "player"; }
+        }
     }
     private DecisionReply? DropReply(Hit? target)
     {

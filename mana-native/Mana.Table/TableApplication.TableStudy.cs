@@ -14,6 +14,7 @@ internal sealed partial class TableApplication
     {
         if (!(ExperienceLabOpen || Automated) || dragging) return;
         tableStudy = enabled;
+        studyFocusOwner = studyFocusOpponent = null;
         ClearCardReading();
         SetTurnFollow(false);
         boardViewMotion.Reset();
@@ -24,7 +25,7 @@ internal sealed partial class TableApplication
     {
         var state = match!;
         var entry = state.Stack[0];
-        var area = SharedTableStudy.ActionArea;
+        var area = StudyActionArea;
         if (cardPresentation.Pinned?.ReaderTarget is { } reading && reading.Bounds.Intersects(area)) {
             var reader = reading.Bounds;
             int leftWidth = Math.Max(0, reader.Left - area.Left - 12);

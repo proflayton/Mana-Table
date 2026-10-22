@@ -41,6 +41,8 @@ internal static class SharedTableStudyChecks
             "The crowded study retains each projected occurrence and its exact current card for lookup and input");
 
         CopyStates(ordinary, check);
+        NameFamilies(ordinary, check);
+        FocusedRows(crowded, check);
         HiddenFace(check);
         check(TableScene.Build(ordinary, 0, new(-100, -100), null, null, false, CardPresentation.IsResource)
                 .Seats.All(seat => seat.Battlefield.SelectMany(cluster => cluster.Cards).All(card => !card.ScanFace)),
@@ -133,6 +135,109 @@ internal static class SharedTableStudyChecks
                 return SharedTableStudy.Lane(seat, BattlefieldLayout.Role(card.Card, CardPresentation.IsResource)).Contains(card.Rest.Bounds);
             }),
             "The composed study's actual resting card/input poses remain inside their role lanes, including flying and phased state presentation");
+    }
+
+    private static void NameFamilies(GameSnapshot baseline, Action<bool, string> check)
+    {
+        Card Land(string id) => new() { VisualId = id, CombatId = id, Key = "action:" + id,
+            Name = "Forest", Type = "Basic Land", Selectable = true };
+        Card[] cards = [Land("land-ready-a"), Land("land-ready-b"),
+            Land("land-tapped") with { Tapped = true },
+            Land("land-counter") with { Counters = new() { ["charge"] = 1 } },
+            Land("land-unavailable") with { Selectable = false },
+            Land("land-animated") with { Type = "Basic Land Creature", Power = 3, Toughness = 3, Counters = new() { ["+1/+1"] = 3 } },
+            Land("land-highlighted") with { Highlighted = true },
+            Land("hidden-land-a") with { FaceDown = true, Name = "Forest", Selectable = false },
+            Land("hidden-land-b") with { FaceDown = true, Name = "Forest", Selectable = false }];
+        var state = ReplaceField(baseline, 0, cards);
+        var scene = Build(state);
+        var forests = Cards(scene).Where(node => node.Owner == 0 && !node.Card.FaceDown).ToArray();
+        var family = forests[0].StudyFamily!;
+        check(family is { Name: "Forest", Role: "Creatures", TotalCount: 7, CohortCount: 6 }
+                && forests.All(node => ReferenceEquals(node.StudyFamily, family))
+                && !family.NameBounds.IsEmpty && family.Bounds.Contains(family.NameBounds) && family.Bounds.Contains(family.BodyBounds)
+                && family.Cohorts.All(cohort => family.BodyBounds.Contains(cohort.Bounds)
+                    && cohort.MemberIds.All(id => ReferenceEquals(scene.BattlefieldCard(0, id)!.StudyFamily, family)))
+                && family.Cohorts.SelectMany(cohort => cohort.MemberIds).Order().SequenceEqual(forests.Select(node => node.Id).Order())
+                && family.Cohorts.All(cohort => forests.Single(node => node.Id == cohort.FrontCardId).GroupFront),
+            "One public-name family contains every Forest, including its animated member, with a reserved shared caption and exact state-cohort occurrence links");
+        var ready = family.Cohorts.Single(cohort => cohort.MemberIds.Contains("land-ready-a"));
+        check(ready.MemberIds.SequenceEqual(["land-ready-a", "land-ready-b"])
+                && ready.FrontCardId == "land-ready-b" && scene.BattlefieldCard(0, ready.FrontCardId)!.Card.Key == "action:land-ready-b"
+                && family.Cohorts.Where(cohort => cohort != ready).All(cohort => cohort.MemberIds.Count == 1)
+                && family.Cohorts.All(cohort => !family.Cohorts.Any(other => other != cohort && cohort.Bounds.Intersects(other.Bounds))),
+            "Tapped, counter-bearing, animated, highlighted and differently available Forests retain distinct visible state faces; routine actions still belong to one exact current front key");
+        var hidden = Cards(scene).Where(node => node.Owner == 0 && node.Card.FaceDown).ToArray();
+        check(hidden.Length == 2 && hidden.All(node => node.StudyFamily is { Name: "Face-down permanent", TotalCount: 1, CohortCount: 1 })
+                && hidden.Select(node => node.StudyFamily!.Id).Distinct().Count() == 2
+                && hidden.All(node => node.StudyFamily!.Id != family.Id && CardPresentation.Artwork(node.Card) == null),
+            "Hidden same-name faces remain separate anonymous families and never inherit a visible Forest's caption or artwork");
+
+        var refreshed = Build(ReplaceField(state, 0, cards.Select(card => card with { Key = "new-prompt:" + card.VisualId }).ToArray()));
+        check(Cards(scene).All(node => refreshed.BattlefieldCard(node.Owner, node.Id)!.Pose == node.Pose)
+                && refreshed.BattlefieldCard(0, "land-ready-b")!.Card.Key == "new-prompt:land-ready-b",
+            "Refreshing exact decision keys preserves family geometry while each occurrence receives only its new current action key");
+        foreach (bool direct in new[] { false, true }) {
+            var choice = state with { Decision = direct ? new() { Id = "direct-land-choice", Kind = "choice", Min = 1, Max = 1,
+                Choices = cards.Take(2).Select((card, index) => new Choice(index, card.Name, card) { CardId = card.VisualId }).ToArray()
+            } : new() { Id = "land-target", Kind = "input", Intent = DecisionIntent.Selection } };
+            var individual = Build(choice);
+            var candidates = cards.Take(2).Select(card => individual.BattlefieldCard(0, card.VisualId)!).ToArray();
+            check(candidates.All(node => node.GroupFront && node.GroupCount == 1)
+                    && !candidates[0].Pose.Bounds.Intersects(candidates[1].Pose.Bounds),
+                direct ? "Direct same-name choices preserve each actual candidate as its own visible target"
+                    : "Required target selection expands individually eligible same-name instances instead of choosing through a shared front");
+        }
+
+        Card Token(int index) => new() { VisualId = "family-token-" + index, Key = "token-action-" + index,
+            Name = "Cat", Type = "Token Creature", Power = 2, Toughness = 2 };
+        var few = Build(ReplaceField(baseline, 0, Enumerable.Range(0, 2).Select(Token).ToArray()));
+        var many = Build(ReplaceField(baseline, 0, Enumerable.Range(0, 200).Select(Token).ToArray()));
+        var manyNodes = Cards(many).Where(node => node.Owner == 0).ToArray();
+        check(manyNodes.Length == 200 && manyNodes.All(node => node.GroupCount == 200)
+                && manyNodes.Count(node => node.GroupFront) == 1
+                && manyNodes[0].StudyFamily!.Bounds == few.BattlefieldCard(0, "family-token-0")!.StudyFamily!.Bounds
+                && manyNodes[0].StudyFamily!.Cohorts[0].MemberIds.Count == 200
+                && manyNodes.All(node => node.Card.Key == "token-action-" + node.Id["family-token-".Length..]),
+            "Two or two hundred equivalent copies occupy one bounded fan/count footprint while retaining every actual member and exact action key");
+
+        Card[] lands = [Land("compact-ready") with { Selectable = false }, Land("compact-tapped") with { Selectable = false, Tapped = true }];
+        var mixedLands = Build(ReplaceField(baseline, 0, lands));
+        var matchingLands = Build(ReplaceField(baseline, 0, lands.Select(card => card with { Tapped = false }).ToArray()));
+        var mixedNodes = Cards(mixedLands).Where(node => node.Owner == 0).ToArray();
+        var landFamily = mixedNodes[0].StudyFamily!;
+        check(landFamily is { Role: "Lands", CohortCount: 2, TotalCount: 2 } && landFamily.NameBounds.Height >= 23
+                && mixedNodes.All(node => node.Pose.Bounds.Width <= 57 && node.GroupFront && node.GroupCount == 1)
+                && !mixedNodes[0].Pose.Bounds.Intersects(mixedNodes[1].Pose.Bounds)
+                && landFamily.Bounds.Width <= matchingLands.BattlefieldCard(0, "compact-ready")!.StudyFamily!.Bounds.Width + 1
+                && landFamily.Cohorts.All(cohort => cohort.MemberIds.Count == 1
+                    && mixedLands.BattlefieldCard(0, cohort.FrontCardId)!.Card.Key == "action:" + cohort.FrontCardId),
+            "Tapped and untapped ordinary lands share one standard-width family with compact separate state faces, a real caption band, and each exact action key");
+    }
+
+    private static void FocusedRows(GameSnapshot snapshot, Action<bool, string> check)
+    {
+        var state = snapshot with { Players = snapshot.Players.Select(player => player with {
+            Zones = player.Zones.Select(zone => zone.Name != "Battlefield" ? zone : zone with {
+                Cards = zone.Cards.Select(card => card with { Key = "focus-action:" + card.VisualId }).ToArray()
+            }).ToArray()
+        }).ToArray() };
+        var scene = TableScene.Build(state, 0, new(-100, -100), null, null, false,
+            CardPresentation.IsResource, sharedTableStudy: true, studyFocusedOpponent: 2);
+        var scutes = Cards(scene).Where(node => node.Owner == 2 && node.Card.Name == "Scute Swarm").ToArray();
+        var family = scutes[0].StudyFamily!;
+        check(family is { TotalCount: 9, CohortCount: 4 } && family.BodyBounds.Width > family.BodyBounds.Height
+                && scutes.Count(node => node.GroupFront) == 4
+                && scutes.All(node => node.Card.Key == "focus-action:" + node.Id)
+                && family.Cohorts.SelectMany(cohort => cohort.MemberIds).Order().SequenceEqual(scutes.Select(node => node.Id).Order()),
+            "Focused rows keep all four Scute Swarm states in a compact horizontal family block without losing copies or exact action keys");
+        var families = scene.Seats.SelectMany(seat => seat.Battlefield.SelectMany(cluster => cluster.Cards
+            .Select(node => node.StudyFamily!).DistinctBy(item => item.Id).Select(item => new { Seat = seat.Index, Family = item }))).ToArray();
+        check(families.All(item => DuelTableStudy.Lane(item.Seat, item.Family.Role).Contains(item.Family.Bounds))
+                && families.All(item => !families.Any(other => other.Family.Id != item.Family.Id
+                    && item.Family.Bounds.Intersects(other.Family.Bounds)))
+                && Cards(scene).All(node => node.Pose.Contains(node.Pose.Center.ToPoint())),
+            "Focused row packing reserves every family's caption and body without overlapping another family, lane or actual card target");
     }
 
     private static GameSnapshot ReplaceField(GameSnapshot state, int owner, Card[] cards) => state with {

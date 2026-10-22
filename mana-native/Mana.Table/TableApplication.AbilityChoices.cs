@@ -106,7 +106,7 @@ internal sealed partial class TableApplication
         var source = anchor; source.Inflate(12, 12);
         var occupied = new List<Rectangle> { source, new(1240, 550, 350, 245) };
         occupied.AddRange(match!.Players.Select(player => {
-            var hero = TableLayout.Hero(player.Id == match.ViewerId ? 3 : TableLayout.SeatIndex(match, player.Id));
+            var hero = SeatHero(player.Id);
             return new Rectangle((int)hero.X - 55, (int)hero.Y - 55, 110, 110);
         }));
         occupied.AddRange(manaPoolBadges.Values.Select(badge => badge.Bounds).Where(bounds => !bounds.IsEmpty));

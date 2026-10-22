@@ -209,12 +209,35 @@ When an overview face cannot hold its complete name, it retains its art/state
 and exposes one complete source-attached name on hover without moving the card.
 That fallback does not settle dense-board readability.
 
+Same-named public permanents now share a family in the study, including lands.
+Matching copies use a bounded fan/count; tapped state, effective stats, counters,
+damage, attachments and current selectable/highlighted state retain separate
+subfaces within that family. The family grants no shared permission. Required
+target, combat and ordered choices expose their actual candidate occurrences.
+Face-down identities stay anonymous and separate.
+
+Clicking a player's portrait when it is not a legal player target opens a native
+two-field view: the chosen opponent above your battlefield, with the remaining
+players on a portrait/resource rail. Your hand, priority controls and pending
+effect remain available. Their nameplates allow read-only focus changes while
+portraits continue to answer actual player-target decisions. Whole table or
+Escape returns; a second portrait click also closes that focus. This changes
+presentation geometry without changing viewer identity, game state or action
+keys. The busy checkpoint includes matching Scute Swarms and tapped, counter
+and nonlethal-damage variants for reviewing that journey. Human review of this
+grouping/focus implementation remains pending.
+
+The focused layout gives the selected opponent more field space and packs state
+families horizontally before filling the remaining rows. It does not simply
+scale the four-seat layout. Tapped state remains visible in the full reader;
+marked damage uses a separate red mark and quantity beside current P/T.
+
 The native source also reuses Forge's bundled mana-symbol atlas for compact
 portrait pools: symbols and exact quantities with a quiet glow, using the
 existing gain/loss cues. Spending a color removes its number immediately while
 the symbol fades; reduced motion settles immediately. Pool inspection retains
 full color names, colorless and unfamiliar resources. This visual change remains
-source-only until included in a published build.
+available in the local study until included in a published build.
 
 Focused geometry, privacy and pointer checks protect these mechanics. Actual
 small/large-window review remains separate. The busy far seat and the extreme
@@ -258,7 +281,7 @@ The first complete journeys to prototype are:
 | Follow an off-turn response | Inspect the actual source or target of the pending effect | Reading does not pass priority. Turn owner, pending-effect controller and current responder retain distinct cues. Relevant occurrences highlight individually; the entire effect container does not behave as one card. |
 | Understand combat against two players | Select an attacker or defender and inspect its actual related blockers | Keep all seats present. Emphasize that combat relationship and its authoritative stats; do not permanently draw every possible connector across the table. |
 | Understand Toph followed by Felidar Retreat | Follow the reported source, changed land, then affected creatures | Brief source-to-result emphasis settles into current card state. A mass effect emphasizes its recipients together; it does not produce 82 simultaneous arrows or persistent explanatory panels. |
-| Read a very crowded seat | Deliberately inspect or focus the relevant region and exact occurrence | The proposed focus/zoom preserves a way back to the same whole-table location and keeps other seats locatable. Distinct state and eligible occurrences remain reachable; no hidden overflow page. This navigation has not been implemented. |
+| Read a very crowded seat | Deliberately inspect or focus the relevant region and exact occurrence | Focus/zoom preserves a way back to the same whole-table location and keeps other seats locatable. Distinct state and eligible occurrences remain reachable; no hidden overflow page. Native portrait focus is implemented in the optional Table study; adoption in ordinary gameplay awaits human review. |
 
 Use a quiet persistent turn accent and a separate responder/decision cue, rather
 than moving the camera each time priority changes. Keep the hand anchored.
