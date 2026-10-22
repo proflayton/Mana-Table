@@ -92,6 +92,7 @@ internal static class OnboardingSmoke
         File.WriteAllText(Path.Combine(tableProfile, "experience.json"), JsonSerializer.Serialize(new { WelcomeSeen = true, TableGuideSeen = false }));
         var scenario = new InteractionScenarioEngine(); scenario.Present(PresentationSmoke.Example());
         var initial = scenario.State;
+        string helpDecision = "";
         Scene(tableProfile, scenario, (s, view) => {
             s.Then(() => {
                 Check(!view.TableGuideOpen && !view.WelcomeOpen, "A first playable table opens directly without a forced controls panel");
@@ -125,11 +126,18 @@ internal static class OnboardingSmoke
                 Check(!view.TableGuideOpen && view.Overlay == "settings" && !view.Automatic && view.Held && scenario.Replies.Count == 0, "Escape returns to Settings without changing play policy or making a choice");
             });
             s.Click("close-overlay");
+            s.Then(() => {
+                Check(!view.Hits.Any(hit => hit.Id == "instructions"), "Ordinary priority has no repeated prose or invisible decision-help target");
+                scenario.Present(initial with { DecisionOwnerId = initial.ViewerId, ActionClass = "selection", Decision = new() {
+                    Kind = "input", InputType = "OnboardingRequiredChoice", Message = "Choose the required objects in the order reported by the engine.",
+                    Intent = DecisionIntent.Selection, Ok = "Confirm choice", OkEnabled = false } });
+                view.Accept(scenario.State); helpDecision = scenario.State.Decision!.Id;
+            });
             s.Click("instructions");
             s.Pulse(Keys.F1);
             s.Then(() => Check(view.TableGuideOpen && view.Overlay == "help", "The current-decision help can also replay table controls"));
             s.Click("experience-guide-close");
-            s.Then(() => Check(view.Overlay == "help" && view.Match?.Decision?.Id == initial.Decision!.Id && scenario.Replies.Count == 0, "Closing replay returns to current-decision help with the same pending choice"));
+            s.Then(() => Check(view.Overlay == "help" && view.Match?.Decision?.Id == helpDecision && helpDecision != initial.Decision!.Id && scenario.Replies.Count == 0, "Closing replay returns to the actual required prompt's help with its new scope and no submitted choice"));
             s.Then(() => { scenario.Finish(); view.Accept(scenario.State); });
             s.Then(view.OpenTableGuide);
             s.Then(() => { view.Accept(scenario.State); view.Accept(scenario.State); });

@@ -53,13 +53,11 @@ internal sealed partial class TableApplication
         var state = match!;
         if (state.Stack.Length == 0) return;
         if (TableStudyEnabled) { DrawStudyStackFlow(); return; }
-        var view = priorityView!;
         string topId = state.Stack[0].Id;
         if (stackQueueTop != topId) { stackQueueTop = topId; stackQueuePage = 0; }
         const int capacity = 3;
         stackQueuePage = Math.Clamp(stackQueuePage, 0, (state.Stack.Length - 1) / capacity);
-        string status = view.ResponderId is { } responder ? responder == state.ViewerId ? "Your priority" : view.ResponderName + " has priority"
-            : view.Phase == PriorityPhase.Payment ? "Paying a cost" : view.Phase == PriorityPhase.Decision ? "Choice in progress" : "Processing";
+        const string status = "Pending effects";
         int y = 319;
         for (int slot = 0; slot < capacity; slot++) {
             int index = stackQueuePage * capacity + slot;
@@ -90,8 +88,7 @@ internal sealed partial class TableApplication
             y = bounds.Bottom + 5;
         }
         canvas.Rounded(new(545, 285, 435, 34), new(11, 22, 28), 5);
-        PaintPriorityToken(new(562, 304), 8, 1);
-        canvas.Text(status, 578, 293, PriorityAccent, .56f, 388, 1, true);
+        canvas.Text(status, 557, 293, Gold, .56f, 411, 1, true);
         if (state.Stack.Length > capacity) {
             Button("stack-queue-prev", "‹", 905, y + 1, 32, () => stackQueuePage--, stackQueuePage > 0, height: 28);
             Button("stack-queue-next", "›", 945, y + 1, 32, () => stackQueuePage++, (stackQueuePage + 1) * capacity < state.Stack.Length, height: 28);

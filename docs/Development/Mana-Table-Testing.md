@@ -54,6 +54,14 @@ application and typed-frame composition used by the real window. Preserve their
 result/trace JSON when diagnosing a failure; submitted drawing data does not
 prove that a physical window is clear or correctly clipped.
 
+The existing presentation run includes `DecisionDockPresentationChecks` and the
+scoped authored `DecisionFlowLabChecks`. The production headless run includes
+`DecisionDockInteractionChecks`: an actual stop-removal gesture clears only that
+saved stop, dispatches an authorized Auto pass and leaves another player's
+required choice unanswered. Reading a current card must pause both Auto and its
+visible status. `decision-flow.v1` supplies the corresponding window-review
+sequence; authored replies and passing checks do not supply rules or UX proof.
+
 The pending-effect journey in `--smoke-headless-presentation` distinguishes a
 captured `+3` counter addition/three damage from a current total of twenty, keeps
 unknown damage unknown, preserves the context on the stack, and checks read-only

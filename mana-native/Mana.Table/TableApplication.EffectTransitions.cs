@@ -36,8 +36,6 @@ internal sealed partial class TableApplication
                     : new Vector2(tile.Details.Right - 16, tile.Details.Y + counter.Y + counter.Height / 2);
                 groups.Add(new(tile.Group.Id, Array.AsReadOnly(ids), pose, landing) { ReceiptExclusion = tile.Bounds });
             }
-            if (publicChanges.Latest is { } latest && latest.Cause?.CardId is { } sourceId && !visible.ContainsKey(sourceId)
-                && ChangeSourcePreview(latest) is { } sourcePreview) visible[sourceId] = sourcePreview.Pose;
         } else foreach (var seat in tableScene.Seats) foreach (var cluster in seat.Battlefield) {
             var copies = new List<SceneCard>();
             foreach (var node in cluster.Cards) {
@@ -48,9 +46,11 @@ internal sealed partial class TableApplication
                 copies.Clear();
             }
         }
+        if (publicChanges.Latest is { } latest && latest.Cause?.CardId is { } sourceId
+            && ChangeSourcePreview(latest) is { } sourcePreview) visible[sourceId] = sourcePreview.Pose;
         // Protect the actual decision controls. A source preview above them
         // remains a visible, reported origin when its physical card is offscreen.
-        int protectedTop = Math.Max(550, (QuietPriorityControlVisible ? QuietPriorityControlTop : decisionPanelBounds.Top) - 8);
+        int protectedTop = Math.Max(550, decisionPanelBounds.Top - 8);
         effectTransitionFrame = EffectTransitionPresentation.Compose(publicChanges.Groups, groups, visible,
             now, preferences.ReducedMotion, new(1240, protectedTop, 350, 900 - protectedTop));
         foreach (var source in effectTransitionFrame.Sources) {
@@ -110,9 +110,8 @@ internal sealed partial class TableApplication
         if (!decisionPanelBounds.IsEmpty) occupied.Add(decisionPanelBounds);
         if (!targetingEffectBounds.IsEmpty) occupied.Add(targetingEffectBounds);
         if (pendingPreviewBounds is { } preview) occupied.Add(preview);
-        if (publicChanges.Latest is { } latest && now - latest.Updated < 8 && match?.Stack.Length == 0
-            && readingId == null && (!OverlayOpen || BattlefieldFocused))
-            occupied.Add(new(1240, 550, 350, 350));
+        if (publicChanges.Latest is { } latest && ChangeSourcePreview(latest) != null)
+            occupied.Add(ChangeBridgeBounds);
         foreach (var hero in heroPositions) {
             int radius = hero.Key == match?.ViewerId ? 58 : 48;
             occupied.Add(new((int)hero.Value.X - radius, (int)hero.Value.Y - radius, radius * 2, radius * 2));

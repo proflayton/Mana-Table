@@ -88,6 +88,7 @@ internal sealed partial class TableApplication : IDisposable
         || id.StartsWith("source-placement:", StringComparison.Ordinal))
         ? Scope + ":source:" + readerActionsGeneration + ":" + readerActionsBinding
         : id.StartsWith("updates-") ? UpdateScope : id.StartsWith("activity-") ? ActivityScope : id.StartsWith("experience-") ? ExperienceScope : id.StartsWith("chat-") ? ChatScope
+        : match != null && id == "resume-phase-stop" ? match.Id + ":playback:phase-stop:" + match.PhaseKey
         : match != null && (id is "auto" or "hold" or "instructions" or "action-details" or "battlefields" or "quiet-priority-stop" or "ability-auto-pass-open" or "ability-prev" or "ability-next" or "ability-text-prev" or "ability-text-next"
             || id.StartsWith("phase-stop:") || id.StartsWith("ability-undo:")) ? match.Id + ":playback" : Scope;
     private bool CurrentHit(Hit hit) => hit.Scope == ControlScope(hit.Id);
@@ -256,7 +257,7 @@ internal sealed partial class TableApplication : IDisposable
         previousMouse = mouse; previousKeys = keys;
         // Give a ready pass precedence over starting another observation. Use this
         // update's pointer position so entering a card pauses Auto before Draw.
-        bool autoBlocked = commandFailure && error.Length > 0 || OverlayOpen || AbilityActionPending || chatFocus || dragging || pressed != null || readingId != null || selectedCombat != null || HoveredPendingReference() != null;
+        bool autoBlocked = AutomaticInteractionPause() != DecisionDockPauseReason.None;
         bool quietReserved = UpdateQuietPriority(autoBlocked);
         if (!quietReserved && (!automatic || held || autoBlocked)) session.CancelAdvance();
         if (!quietReserved && !ExperienceLabOpen && !session.NeedsRecovery && fixture == null && playback.Ready(now) && priority.Update(match, automatic, held, preferences.Stops,

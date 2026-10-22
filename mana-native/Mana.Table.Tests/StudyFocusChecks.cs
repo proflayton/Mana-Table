@@ -87,7 +87,9 @@ internal static class StudyFocusChecks
         check(ReferenceEquals(view.Match, original) && frame.Stamp.Scope == originalScope
                 && view.Match!.ViewerId == original.ViewerId && view.Match.Players.Select(player => player.Id).SequenceEqual(playerOrder)
                 && frame.Scene!.Hand.Cards.Select(card => (card.Id, card.Card.Key, card.Pose)).SequenceEqual(hand)
-                && view.Match.Stack.SequenceEqual(original.Stack) && frame.Hits.Any(hit => hit.Id == "instructions")
+                && view.Match.Stack.SequenceEqual(original.Stack)
+                && view.DecisionDock?.GameId == original.Id && view.DecisionDock.DecisionId == original.Decision?.Id
+                && frame.Hits.Any(hit => hit.Id == "confirm") == original.Decision!.OkEnabled
                 && engine.Replies.Count == 0,
             "Native focus preserves the exact snapshot, viewer, player order, hand geometry, action keys, stack and decision scope without a command");
         var focused = Battlefield(frame.Scene!).Where(card => card.Owner == 3).ToArray();

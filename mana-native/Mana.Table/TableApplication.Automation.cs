@@ -131,6 +131,7 @@ internal sealed partial class TableApplication
         internal Rectangle DecisionPanelBounds => game.decisionPanelBounds;
         internal string DecisionText => game.decisionText;
         internal bool DecisionTextOverflow => game.decisionTextOverflow;
+        internal Mana.Magic.DecisionDockView? DecisionDock => game.decisionDock;
         internal string HelpPageText => game.helpPageText;
         internal IReadOnlyList<BattlefieldLabelPaint> BattlefieldLabels(string id) => game.battlefieldLabels.TryGetValue(id, out var labels) ? labels : [];
         internal Mana.Renderer.TableScene? TableScene => game.tableScene;

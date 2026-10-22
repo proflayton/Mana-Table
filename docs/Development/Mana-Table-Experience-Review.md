@@ -87,6 +87,35 @@ Real-engine checks and actual application input cover these transitions and the
 next spell's unanswered response. Human review of the corrected behavior remains
 pending. This fix shipped in 0.2.69.
 
+## Decision area iteration: current source, not yet published
+
+The player could not tell why Auto stopped or what had just happened. The lower
+right mixed policy settings, required input, repeated effect prose, waiting and
+an additional result plaque. A saved stop looked like an ordinary priority
+window; the display could even claim Auto was passing while reading paused it.
+
+The current gesture belongs in one action row. Public actor ownership and the
+actual local Auto gate supply its status; background polling supplies neither a
+new action nor a new pause. A saved phase stop has a visible pause mark and an
+explicit removal control. During empty opponent priority, Pass for now arms the
+existing bounded policy in that row; Pass once stays a smaller alternative and
+Take control occupies the same row while armed. Required choices remain separate
+engine decisions. Pending effects retain source, target and amount together;
+their heading identifies resolution order rather than repeating the responder.
+
+Current results remain at the affected objects. The separate Why/Show cards
+plaque is removed when the source is visible. A currently public offscreen cause
+can use a compact source-to-increment-to-recipient bridge; it never adds changes
+across recipients into one apparent creature's total. Retained details stay in
+Recent changes. This is implemented presentation, not human UX acceptance.
+
+`decision-flow.v1` is the authored four-player review journey: last land, saved
+stop, public responder/choice ownership, damage targeting, a response, priority
+and the actual-result payload. Land, target and pass gestures use current scoped
+handles; external checkpoints still use Next. It does not simulate Magic rules.
+Review the complete window at small and large sizes, with text at 130%, focused
+fields and reduced motion. Human review of this iteration remains pending.
+
 ## Results stay with their recipients: 22 October 2026
 
 The player's intent is to understand what an action actually changed. The journey

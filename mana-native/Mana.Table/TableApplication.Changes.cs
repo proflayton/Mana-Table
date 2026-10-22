@@ -14,6 +14,11 @@ internal sealed partial class TableApplication
     private Rectangle? changeCalloutBounds;
     private readonly HashSet<string> highlightedChangeTargets = [];
     private string? highlightedChangeSource;
+    private static readonly Rectangle ChangeBridgeBounds = new(1254, 550, 320, 104);
+    private static readonly Rectangle ChangeRecipientsBounds = new(1464, 554, 106, 96);
+    private string? changeReadPreviewGroup;
+    private Rectangle? changeReadPreviewBounds;
+    private sealed record ChangeIncrement(string Property, long Amount, int Recipients);
     private EffectChangeGroup? CurrentChange => selectedChangeId == null ? publicChanges.Latest
         : publicChanges.Groups.FirstOrDefault(group => group.Id == selectedChangeId) ?? publicChanges.Latest;
     private void OpenChanges(string? id = null)
@@ -27,47 +32,109 @@ internal sealed partial class TableApplication
     }
     private bool DrawChangeCallout()
     {
-        if (OverlayOpen && !BattlefieldFocused || readingId != null || match!.Stack.Length > 0 || publicChanges.Latest is not { } group || now - group.Updated > 8) return false;
-        // This area is already reserved from battlefield packing. Measured
-        // instructions retain their full space above the decision controls.
-        int top = Math.Min(676, (QuietPriorityControlVisible ? QuietPriorityControlTop : decisionPanelBounds.Top) - 36);
-        if (top < 550) return false;
-        changeCalloutBounds = new(1492, top, 70, 28);
-        int bottom = Math.Min(710, (QuietPriorityControlVisible ? QuietPriorityControlTop : decisionPanelBounds.Top) - 8);
-        if (now - group.Updated < 4 && bottom - 550 >= 110) {
-            var preview = ChangeSourcePreview(group);
-            var bounds = new Rectangle(1254, 550, 320, bottom - 550);
-            canvas.Panel(bounds, new(14, 27, 32), Gold * .7f, 7);
-            if (preview is { } source) {
-                PaintCard(source.Card, source.Pose, false, false);
-                if (effectTransitionFrame.Sources.FirstOrDefault(pulse => pulse.CardId == CardViews.Identity(source.Card)
-                        && Vector2.DistanceSquared(pulse.Pose.Center, source.Pose.Center) < 1) is { } pulse) {
-                    canvas.CardFrame(source.Pose with { Size = source.Pose.Size + new Vector2(7) }, Gold * pulse.Strength, 3);
-                    PaintEffectSpark(source.Pose.Point(1, 0), 7, Gold);
-                }
-                hits.Add(new("change-source:" + CardViews.Identity(source.Card), Scope, source.Pose.Bounds, () => Inspect(source.Card), source.Card));
-            } else PaintEffectSpark(new(1301, 592), 19, Gold);
-            canvas.Text("LAST CHANGE", 1355, 554, Muted, .43f, 204, 1, true);
-            canvas.Text(group.Title, 1355, 573, Ink, .67f, 204, (int)Math.Ceiling(2 * preferences.TextScale), true);
-            var deltas = group.Changes.Select(change => (long)change.Change.After - change.Change.Before).Distinct().ToArray();
-            string amount = deltas.Length == 1 ? (deltas[0] > 0 ? "+" : "") + deltas[0] : "Δ";
-            int counterY = bottom - 57;
-            PaintEffectSpark(new(1372, counterY + 7), 11, Gold);
-            canvas.Text(amount, 1390, counterY - 9, new(103, 228, 200), 1.0f, 70, 1, true);
-            canvas.Text(group.Changes.Select(change => change.TargetId).Distinct().Count() + " affected", 1443, counterY + 2, Muted, .48f, 119, 1);
-            Button("change-locate", "Show cards", 1355, bottom - 28, 132, () => FocusAffectedChange(group), height: 25);
-            changeCalloutBounds = bounds;
+        if (publicChanges.Latest is not { } group || ChangeSourcePreview(group) is not { } source) {
+            changeReadPreviewGroup = null; changeReadPreviewBounds = null;
+            return false;
         }
-        Button("change-details", "Why?", 1492, top, 70, () => OpenChanges(group.Id), height: 28);
+        var recipients = CurrentChangeRecipients(group);
+        if (recipients.Length == 0) return false;
+        changeCalloutBounds = ChangeBridgeBounds;
+        var accent = new Color(103, 228, 200);
+        // A current offscreen source is the only reason to repeat a face here.
+        // The battlefield itself already carries the result when that source is visible.
+        PaintInteractionCard(source.Card, source.Pose, false, false);
+        bool sourceOver = source.Pose.Bounds.Contains(pointer);
+        canvas.CardFrame(source.Pose, sourceOver ? HoverAccent : Gold * .8f, sourceOver ? 3 : 2);
+        hits.Add(new("change-source:" + CardViews.Identity(source.Card), Scope, source.Pose.Bounds,
+            () => { }, source.Card, "ChangeReference"));
+        canvas.Arrow(new(1330, 602), new(1349, 602), Gold, 3);
+        DrawChangeIncrements(group, recipients.Select(CardViews.Identity).ToHashSet(StringComparer.Ordinal), accent);
+        canvas.Arrow(new(1444, 602), new(1460, 602), accent, 3);
+        var fan = recipients.Take(3).Reverse().ToArray();
+        for (int index = 0; index < fan.Length; index++) {
+            bool front = index == fan.Length - 1;
+            // Rear faces only suggest the recipient group. The readable front
+            // uses authoritative current state, with its count below the face.
+            var pose = front ? new Pose(new(1532, 590), new(54, 76))
+                : new Pose(new(1486 + index * 15, 580 + index * 4), new(38, 53), (index - 1) * .06f);
+            if (front) PaintInteractionCard(fan[index], pose, false, false);
+            else PaintCard(fan[index], pose, false, false);
+            canvas.CardFrame(pose, ChangeRecipientsBounds.Contains(pointer) ? HoverAccent : accent * .8f, 2);
+        }
+        int total = group.Changes.Select(change => change.TargetId).Distinct(StringComparer.Ordinal).Count();
+        string count = recipients.Length == total ? "×" + total : recipients.Length + "/" + total;
+        canvas.CenterText(count, new(1464, 630, 106, 23), accent, .72f, true);
+        // The fan is an observation/navigation gesture, never a game-card action.
+        hits.Add(new("change-locate", Scope, new(1352, 554, 218, 96), () => FocusAffectedChange(group)));
+        if (new Rectangle(1352, 554, 218, 96).Contains(pointer)) DrawChangeRecipientFocus(group);
+        DrawChangeSourceReading(group, source.Card, sourceOver);
         return true;
+    }
+    private void DrawChangeIncrements(EffectChangeGroup group, IReadOnlySet<string> recipients, Color accent)
+    {
+        var increments = group.Changes.Where(change => recipients.Contains(change.TargetId))
+            .GroupBy(change => (change.TargetId, change.Change.Property))
+            .Select(changes => (changes.Key.Property, Amount: changes.Sum(change => (long)change.Change.After - change.Change.Before)))
+            .Where(change => change.Amount != 0).GroupBy(change => (change.Property, change.Amount))
+            .Select(changes => new ChangeIncrement(changes.Key.Property, changes.Key.Amount, changes.Count())).ToArray();
+        string Label(ChangeIncrement increment) => (increment.Amount > 0 ? "+" : "") + increment.Amount
+            + (increment.Recipients == recipients.Count ? "" : " ·" + increment.Recipients + "/" + recipients.Count);
+        bool simple = increments.Length is > 0 and <= 2 && increments.All(increment =>
+            canvas.TextSize(Label(increment), .72f, 72, 80, true).Y <= 28
+            && (increment.Property == "+1/+1" || canvas.TextSize(increment.Property, .55f, 88, 80).Y <= 25));
+        if (!simple) {
+            // Different properties/amounts are never collapsed into a false total.
+            PaintCounterGlyph(new(1384, 568, 17, 17), accent);
+            canvas.CenterText("Mixed counters", new(1354, 592, 88, 54), accent, .6f, true);
+            return;
+        }
+        for (int index = 0; index < increments.Length; index++) {
+            var increment = increments[index];
+            int y = increments.Length == 1 ? 579 : 555 + index * 46;
+            PaintCounterGlyph(new(1354, y + 6, 14, 14), accent);
+            canvas.Text(Label(increment), 1374, y, accent, .72f, 70, 80, true);
+            if (increment.Property != "+1/+1") canvas.Text(increment.Property, 1354, y + 24, accent, .55f, 88, 80);
+        }
+    }
+    private Card[] CurrentChangeRecipients(EffectChangeGroup group)
+    {
+        var ids = group.Changes.Select(change => change.TargetId).ToHashSet(StringComparer.Ordinal);
+        return match?.Players.SelectMany(player => player.Zone("Battlefield").Cards)
+            .Where(card => !card.FaceDown && ids.Contains(CardViews.Identity(card)))
+            .DistinctBy(CardViews.Identity).ToArray() ?? [];
+    }
+    private void DrawChangeRecipientFocus(EffectChangeGroup group)
+    {
+        foreach (string id in CurrentChangeRecipients(group).Select(CardViews.Identity)) {
+            if (DisplayedChangeCardPose(id) is not { } pose) continue;
+            highlightedChangeTargets.Add(id);
+            canvas.CardFrame(pose with { Size = pose.Size + new Vector2(6) }, HoverAccent, 3);
+        }
+    }
+    private void DrawChangeSourceReading(EffectChangeGroup group, Card source, bool hoveredSource)
+    {
+        bool held = changeReadPreviewGroup == group.Id && changeReadPreviewBounds is { } previous && previous.Contains(pointer);
+        if (!hoveredSource && !held) { changeReadPreviewGroup = null; changeReadPreviewBounds = null; return; }
+        var bounds = new Rectangle(824, 100, 410, 574);
+        if (bounds.Intersects(decisionPanelBounds) || !targetingEffectBounds.IsEmpty && bounds.Intersects(targetingEffectBounds)) return;
+        changeReadPreviewGroup = group.Id; changeReadPreviewBounds = bounds;
+        PaintReferencePreview(source, new(bounds.Center.ToVector2(), bounds.Size.ToVector2()));
+        hits.Add(new("change-card-preview", Scope, bounds, () => { }));
     }
     private void FocusAffectedChange(EffectChangeGroup effect)
     {
         if (match == null) return;
         var affected = effect.Changes.Select(change => change.TargetId).ToHashSet(StringComparer.Ordinal);
-        var owner = match.Players.FirstOrDefault(player => player.Zone("Battlefield").Cards.Any(card => affected.Contains(CardViews.Identity(card))));
-        if (owner == null) { OpenChanges(effect.Id); return; }
+        var owners = match.Players.Where(player => player.Zone("Battlefield").Cards.Any(card => affected.Contains(CardViews.Identity(card)))).ToArray();
+        if (owners.Length == 0) return;
+        if (owners.Length > 1) {
+            CollapseCardReading(); zoneName = null;
+            if (TableStudyEnabled) SetStudyFocus(null);
+            return;
+        }
+        var owner = owners[0];
         CollapseCardReading(); OpenZone(owner.Id, "Battlefield");
+        if (TableStudyEnabled) return;
         var groups = FocusedBattlefieldGroups(owner);
         var plan = FocusedBattlefieldLayout.Arrange(groups, BattlefieldFocusViewport, 0,
             (group, width) => MeasureBattlefieldFocusDetails(group.Front, width).Height);
@@ -77,13 +144,27 @@ internal sealed partial class TableApplication
     }
     private (Card Card, Pose Pose)? ChangeSourcePreview(EffectChangeGroup group)
     {
-        if (match == null || now - group.Updated >= 4 || readingId != null || match.Stack.Length > 0 || OverlayOpen && !BattlefieldFocused) return null;
-        int bottom = Math.Min(710, (QuietPriorityControlVisible ? QuietPriorityControlTop : decisionPanelBounds.Top) - 8);
-        if (bottom - 550 < 110) return null;
-        var card = CardViews.Visible(match).FirstOrDefault(card => CardViews.Identity(card) == group.Cause?.CardId && !card.FaceDown);
-        if (card == null) return null;
-        int height = Math.Min(114, bottom - 550 - 16), width = (int)(height / 1.4f);
-        return (card, new(new(1266 + width / 2, 558 + height / 2), new(width, height)));
+        if (match == null || now - group.Updated >= 4 || readingId != null || match.Stack.Length > 0 || OverlayOpen && !BattlefieldFocused
+            || ChangeBridgeBounds.Intersects(decisionPanelBounds) || !targetingEffectBounds.IsEmpty && ChangeBridgeBounds.Intersects(targetingEffectBounds)
+            || group.Cause?.CardId is not { Length: > 0 } sourceId || DisplayedChangeCardPose(sourceId) != null) return null;
+        var card = CardViews.Located(match).Where(item => item.Zone is "Battlefield" or "Command" or "Graveyard" or "Exile" or "Stack")
+            .Select(item => item.Card).FirstOrDefault(card => CardViews.Identity(card) == sourceId && !card.FaceDown);
+        if (card == null || CurrentChangeRecipients(group).Length == 0) return null;
+        return (card, new(new(1292, 602), new(64, 90)));
+    }
+    private Pose? DisplayedChangeCardPose(string id)
+    {
+        if (BattlefieldFocused && battlefieldFocusPlan is { } focus) {
+            var tile = focus.Tiles.FirstOrDefault(tile => CardViews.Identity(tile.Group.Front) == id && focus.Viewport.Contains(tile.Art));
+            if (tile != null) return new(tile.Art.Center.ToVector2(), tile.Art.Size.ToVector2());
+        }
+        var entry = cardPresentation.Cards.FirstOrDefault(card => card.Id == id
+            && card.Zone is "Battlefield" or "Command" or "Graveyard" or "Exile" or "Stack");
+        if (entry == null || BattlefieldFocused && entry.Display.Bounds.Intersects(BattlefieldFocusBounds)
+            || entry.Display.Bounds.Intersects(decisionPanelBounds)) return null;
+        if (entry.Zone == "Battlefield" && tableScene?.Seats.SelectMany(seat => seat.Battlefield).SelectMany(cluster => cluster.Cards)
+            .Any(card => card.Id == id && !card.GroupFront) == true) return null;
+        return entry.Display;
     }
     private void DrawChangeHighlights()
     {

@@ -30,7 +30,7 @@ internal sealed partial class TableApplication
         AddTargetingSourceReference(decision, new(art.X, area.Y + 7, area.Width - 24, headerHeight - 7));
         if (IsControlHovered("targeting-source:" + decision.Id)) canvas.CardFrame(new(art.Center.ToVector2(), art.Size.ToVector2()), HoverAccent, 2);
         PaintPendingDamageValue(decision.Effect!, new(area.X + 12, area.Y + headerHeight,
-            area.Width - 24, Math.Max(1, area.Height - headerHeight - 8)), PendingTargetInstruction(decision), decision);
+            area.Width - 24, Math.Max(1, area.Height - headerHeight - 8)), decision: decision);
         if (source != null && PendingConnectionCard(CardViews.Identity(source)) is { } board) {
             var end = new Pose(area.Center.ToVector2(), area.Size.ToVector2()).EdgeToward(board.Display.Center, 4);
             var start = board.Display.EdgeToward(end, 4);
@@ -98,11 +98,6 @@ internal sealed partial class TableApplication
     private static string CounterReceiptLabel(CounterAddition addition) => string.Join(" · ", addition.Counters
         .Where(counter => counter.Added > 0).Select(counter => "+" + counter.Added.ToString(CultureInfo.InvariantCulture)
             + " " + (counter.Label.Length > 0 ? counter.Label : counter.Type)));
-
-    private static string PendingTargetInstruction(Decision decision) => decision.Max > 1
-        ? decision.Min == decision.Max ? "Choose " + decision.Max + " targets"
-            : decision.Min > 0 ? "Choose " + decision.Min + "–" + decision.Max + " targets" : "Choose up to " + decision.Max + " targets"
-        : decision.Max == 1 && decision.Min == 0 ? "Choose up to 1 target" : "Choose a target";
 
     private string CounterRecipientName(CounterAddition addition) => addition.Card is { FaceDown: false } card
         ? InteractionCards.Current(match, card).Name

@@ -306,8 +306,8 @@ Auto starts enabled and passes priority when there is no playable response to
 stop for. Settings include saved own-turn phase stops and reduced motion.
 Empty priority windows pass quietly until your next action or a visible game event.
 The bottom-right dock stays steady while the table advances. Hold remains clickable.
-Battlefield cards with available actions show ACTIVATE. Hover for guidance, click
-to use an ability, or right-click and select Activate ability in the inspector.
+Click a card to read its full face. Its concrete legal actions appear beside it;
+drag a playable hand card onto the table to begin playing it.
 An available activation can be set to "Pass until my next turn" beside Pass.
 This keeps Auto moving when that ability is your only play. The ability remains
 usable; other available plays still pause the game. The indicator offers Undo,
@@ -317,10 +317,14 @@ For a player choice, a named recipient panel keeps the source, controller and
 purpose visible. Choose an offered name or highlighted portrait. The decision
 dock distinguishes your choice, your priority, another player's action and
 resolution; a submitted action remains acknowledged while the engine responds.
-Spells show their targets with arrows and a source/effect callout. After resolution,
-the callout shows recent changes; Details keeps the explanation available to read.
-New permanents and tokens show ENTERED; exiled or graveyard-bound cards leave a
-brief labelled outline. Match history retains the public events.
+Spells keep their source, pending effect and recipients together. Match history
+retains the public events.
+The current source version (not yet published) names the acting player in the
+decision dock and shows why Auto is paused. A saved phase pause has a visible
+pause mark; its stop chip can remove that saved stop. Pass for now and Take control
+share the main action row; Pass once answers only the current priority window.
+Results and exact counter increments appear beside their recipients. Public
+departures move toward the actual pile; Recent changes retains further details.
 Resolution feedback distinguishes resolved and did not resolve. Draw and shuffle
 cues report actual public events, without revealing hidden card identities.
 Inspecting a card, opening a panel or dragging suspends Auto. Use Full control to

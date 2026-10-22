@@ -50,6 +50,13 @@ the same scoped player handles as portraits; the client never chooses one itself
 The window and application have separate lifetimes. `TableWindow : Game` owns
 MonoGame, GPU textures, sound, input sampling, letterboxing and captures.
 `TableApplication` owns the shared client session, screen state and input policy.
+
+`DecisionDockPresentation` projects the current decision and public acting seat
+with explicit local control facts. The application shares its inspection/chat/
+interaction gate between Auto dispatch and the dock; a background observation
+does not become an action or pause. `ClientSession.IsAdvancing` distinguishes an
+automatic batch from an ordinary in-flight command. These presentation facts
+grant no permission: replies still require the current engine decision and token.
 It can initialize, update and compose with no `Game`, window or graphics device.
 Its optional `PresentationResources` supplies textures and sound for a real window;
 an empty resource set uses the production rules-text and neutral-surface fallbacks.
