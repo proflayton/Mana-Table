@@ -22,7 +22,7 @@ internal static class BattlefieldFocusChecks
         new PlayPreferences { Automatic = false, Sounds = false, ReducedMotion = true, TextScale = 1.3f }.Save(profile);
         var engine = new InteractionScenarioEngine();
         engine.Present(ClutteredChangesScenario.Initial());
-        using var app = new TableApplication(engine, profile, initialState: engine.State) { Automated = true };
+        using var app = new TableApplication(TestTableServices.For(engine), profile, initialState: engine.State) { Automated = true };
         app.Initialize();
         var view = app.TestPort;
         PresentationFrame frame = null!;
@@ -119,8 +119,8 @@ internal static class BattlefieldFocusChecks
                 && engine.Replies.Count == 0,
             "A refreshed priority prompt keeps the same public card reader focused while rotating its actionable decision and card handles");
         Click("read-card-action");
-        Wait(() => !view.Busy && engine.Replies.Count == 1 && view.Match?.Decision?.Context == "playAbility");
-        check(engine.Replies.Single() is { Action: ReplyAction.SelectCard } reply
+        Wait(() => !view.Busy && engine.Replies.Count == 1 && view.Match?.Decision?.Purpose == DecisionPurpose.AbilitySelection);
+        check(engine.Replies.Single() is ActivateCard reply
                 && reply.GameId == game && reply.DecisionId == decision && reply.Card == key
                 && view.Match!.Decision is { SourceCard.VisualId: ClutteredChangesScenario.ActionCardId },
             "Only explicit activation submits the refreshed game/decision/card handles for the currently read Llanowar Elves");

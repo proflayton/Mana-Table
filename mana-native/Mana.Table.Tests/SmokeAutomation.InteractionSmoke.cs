@@ -32,7 +32,7 @@ internal sealed partial class SmokeAutomation
         if (DateTime.UtcNow > smokeDeadline) throw new TimeoutException("Interaction test at step " + interactionStep);
         if (view.Error.Length > 0) throw new InvalidOperationException(view.Error);
         if (!view.Loaded || view.Busy || view.Polling || ++interactionFrame % 5 != 0) return idle;
-        var scenario = (InteractionScenarioEngine)view.Engine;
+        var scenario = (InteractionScenarioEngine)view.Services.Match;
         string CardHit(string id) { var card = CombatGuide.Find(view.Match!, id)!; return "card:" + card.Key + ":" + card.VisualId; }
         void State(Action action) { action(); view.Accept(scenario.State); interactionStep++; }
         string? click = null, target = null; bool expect = true;
@@ -127,19 +127,19 @@ internal sealed partial class SmokeAutomation
                 click = "close-overlay"; break;
             case 31: click = "player:1"; break;
             case 32:
-                InteractionCheck(scenario.Replies.Count == 8 && scenario.Replies[^1] is { Action: ReplyAction.SelectPlayer, Player: 1 } && view.Overlay == "", "Clicking a legal opponent portrait submits the scoped player target");
+                InteractionCheck(scenario.Replies.Count == 8 && scenario.Replies[^1] is SelectPlayer { Player: 1 } && view.Overlay == "", "Clicking a legal opponent portrait submits the scoped player target");
                 State(() => scenario.ChoosePlayer(0, 1, 2, 3)); return idle;
             case 33: click = "player:0"; break;
             case 34:
-                InteractionCheck(scenario.Replies.Count == 9 && scenario.Replies[^1].Player == 0, "The local portrait can select yourself when the engine permits it");
+                InteractionCheck(scenario.Replies.Count == 9 && scenario.Replies[^1] is SelectPlayer { Player: 0 }, "The local portrait can select yourself when the engine permits it");
                 State(() => scenario.ChoosePlayer(0, 1, 2, 3)); return idle;
             case 35: click = "player:2"; break;
             case 36:
-                InteractionCheck(scenario.Replies.Count == 10 && scenario.Replies[^1].Player == 2, "The second opponent portrait can submit a player target");
+                InteractionCheck(scenario.Replies.Count == 10 && scenario.Replies[^1] is SelectPlayer { Player: 2 }, "The second opponent portrait can submit a player target");
                 State(() => scenario.ChoosePlayer(0, 1, 2, 3)); return idle;
             case 37: click = "player:3"; break;
             case 38:
-                InteractionCheck(scenario.Replies.Count == 11 && scenario.Replies[^1].Player == 3, "The third opponent becomes selectable after a fresh legal-target projection");
+                InteractionCheck(scenario.Replies.Count == 11 && scenario.Replies[^1] is SelectPlayer { Player: 3 }, "The third opponent becomes selectable after a fresh legal-target projection");
                 State(() => scenario.ChooseCards(2, 2)); return idle;
             case 39:
                 InteractionCheck(!view.Hits.Any(h => h.Id is "close-overlay" or "open-decision" or "confirm"), "A required battlefield card choice leaves the table open and cannot confirm too few cards");
@@ -157,7 +157,7 @@ internal sealed partial class SmokeAutomation
                 File.WriteAllText(Path.Combine(view.Profile, "table-choice.json"), JsonSerializer.Serialize(view.Match, new JsonSerializerOptions { WriteIndented = true }));
                 click = "confirm"; break;
             case 44:
-                InteractionCheck(scenario.Replies.Count == 12 && scenario.Replies[^1].Choices!.SequenceEqual([1, 2]), "The ordinary action button submits the staged authoritative choice indices");
+                InteractionCheck(scenario.Replies.Count == 12 && scenario.Replies[^1] is ChooseOptions chosen && chosen.Choices.SequenceEqual([1, 2]), "The ordinary action button submits the staged authoritative choice indices");
                 State(() => scenario.ChooseCards(3, 3, true)); return idle;
             case 45:
                 InteractionCheck(view.Selections.Count == 0 && !view.Hits.Any(h => h.Id == "confirm"), "An ordered table choice starts empty so click order is explicit");
@@ -166,11 +166,11 @@ internal sealed partial class SmokeAutomation
             case 47: click = CardHit("own-9"); break;
             case 48: click = "confirm"; break;
             case 49:
-                InteractionCheck(scenario.Replies.Count == 13 && scenario.Replies[^1].Choices!.SequenceEqual([2, 1, 0]), "Ordered choices preserve the sequence of clicks across seats");
+                InteractionCheck(scenario.Replies.Count == 13 && scenario.Replies[^1] is OrderOptions ordered && ordered.Choices.SequenceEqual([2, 1, 0]), "Ordered choices preserve the sequence of clicks across seats");
                 State(() => scenario.ChooseCards(0, 1)); return idle;
             case 50: click = "confirm"; break;
             case 51:
-                InteractionCheck(scenario.Replies.Count == 14 && scenario.Replies[^1].Choices!.Length == 0, "An optional table choice can explicitly choose none");
+                InteractionCheck(scenario.Replies.Count == 14 && scenario.Replies[^1] is ChooseOptions { Choices.Length: 0 }, "An optional table choice can explicitly choose none");
                 State(scenario.Finish); return idle;
             case 52:
                 InteractionCheck(view.Overlay == "result" && view.Hits.Any(h => h.Id == "return"), "Terminal state opens a complete game result with return controls");

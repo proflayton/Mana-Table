@@ -14,7 +14,7 @@ internal static class RecoveryRegression
         client.Poll(false, _ => { }); await Drain(client);
         check(client.NeedsRecovery && !client.UncertainCommand && client.LastSynchronizedAt == synchronized && client.State == state,
             "Failed observation retains inspectable state and its synchronization timestamp, marked stale");
-        var reply = new DecisionReply(state.Id, "before", ReplyAction.Confirm);
+        var reply = new PassPriority(state.Id, "before");
         check(!client.Submit(reply) && !client.Advance(_ => true, (_, _) => false) && connection.Replies == 0,
             "Stale decisions cannot be submitted manually or automatically");
         connection.FailReads = false;
@@ -68,7 +68,7 @@ internal static class RecoveryRegression
         var queuedConnection = new FailingConnection(state with { IgnoredPriorityAbilities = [ignored] }) { FailReply = true };
         var queued = new ClientSession(queuedConnection); queued.Accept(queuedConnection.State);
         queued.Submit(reply);
-        check(queued.SubmitSetting(new(state.Id, "", ReplyAction.SetAbilityAutoPass, AbilityId: ignored.Id, Ignore: false)),
+        check(queued.SubmitSetting(new RestorePriorityAbility(state.Id, AbilityId: ignored.Id)),
             "Undo can queue behind an in-flight command before its acknowledgement fails");
         await Drain(queued);
         check(queued.NeedsRecovery && queuedConnection.Replies == 1, "Queued Undo waits for recovery rather than being lost or sent on stale state");
@@ -90,11 +90,11 @@ internal static class RecoveryRegression
         internal bool FailReads, FailReply, RejectReply;
         internal int Replies;
         public Task<GameSnapshot?> ObserveAsync() => FailReads ? Task.FromException<GameSnapshot?>(new IOException("Connection interrupted")) : Task.FromResult<GameSnapshot?>(State);
-        public Task ReplyAsync(DecisionReply reply) {
+        public Task ExecuteAsync(GameCommand reply) {
             Replies++;
             if (FailReply) return Task.FromException(new IOException("Acknowledgement lost"));
             if (RejectReply) return Task.FromException(new EngineCommandRejectedException("That choice has changed. Use the current prompt."));
-            if (reply.Action == ReplyAction.SetAbilityAutoPass) State = State with { Revision = State.Revision + 1, IgnoredPriorityAbilities = [] };
+            if (reply is RestorePriorityAbility) State = State with { Revision = State.Revision + 1, IgnoredPriorityAbilities = [] };
             return Task.CompletedTask;
         }
         public Task ConcedeAsync(string gameId) => Task.CompletedTask;
@@ -109,7 +109,7 @@ internal static class RecoveryRegression
         internal TaskCompletionSource Started = new(TaskCreationOptions.RunContinuationsAsynchronously);
         internal TaskCompletionSource<GameSnapshot?> Snapshot = new(TaskCreationOptions.RunContinuationsAsynchronously);
         public Task<GameSnapshot?> ObserveAsync() { Started.TrySetResult(); return Snapshot.Task; }
-        public Task ReplyAsync(DecisionReply reply) => throw new InvalidOperationException("Stale state must not submit a command");
+        public Task ExecuteAsync(GameCommand reply) => throw new InvalidOperationException("Stale state must not submit a command");
         public Task ConcedeAsync(string gameId) => Task.CompletedTask;
     }
 }

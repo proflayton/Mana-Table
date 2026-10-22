@@ -17,12 +17,19 @@ import static org.testng.Assert.*;
 public class SourceActionsTest {
     private static final Gson JSON = new Gson();
 
-    @Test(timeOut = 90000)
+    @Test(groups = "canonical-interaction", timeOut = 90000)
     public void readingRealManaActionsDoesNotAnswerPriorityAndAnExplicitActionUsesItsExactSource() throws Exception {
         try (var game = new RulesScenario("source-actions-mana", Map.of(0, List.of("Concordant Crossroads", "Llanowar Elves", "Llanowar Elves")))) {
             var input = main(game);
             HeadlessPlatform.query(() -> null);
             var before = game.state(0);
+            assertThrows(IllegalArgumentException.class, () -> game.table.seat(0).action(request(input,
+                    Map.of("action", "ok", "expectedTask", "openingHand"))));
+            assertEquals(game.state(0), before, "A typed opening-hand answer cannot become a priority pass");
+            assertEquals(text(input.prompt(), "priorityAlternative"), "passTurn");
+            assertThrows(IllegalArgumentException.class, () -> game.table.seat(0).action(request(input,
+                    Map.of("action", "priorityUndo"))));
+            assertEquals(game.state(0), before, "An unavailable undo must not fall through to passing the turn");
             var elves = zone(viewer(before), "Battlefield").getAsJsonArray("cards").asList().stream()
                     .map(value -> value.getAsJsonObject()).filter(card -> text(card, "name").equals("Llanowar Elves")).toList();
             var first = query(game, input, elves.get(0));
@@ -50,6 +57,21 @@ public class SourceActionsTest {
                     .findFirst().orElseThrow().get("tapped").getAsBoolean());
             assertTrue(after.state().getAsJsonArray("stack").isEmpty(), "A real mana ability does not create a fabricated ability chooser or stack item");
             assertThrows(IllegalArgumentException.class, () -> game.table.seat(0).action(request(input, invoke(first, action))));
+            assertEquals(text(after.prompt(), "priorityAlternative"), "undo");
+            assertThrows(IllegalArgumentException.class, () -> game.table.seat(0).action(request(after,
+                    Map.of("action", "priorityPassTurn"))));
+            assertTrue(game.answer(after, Map.of("action", "priorityUndo")));
+            var undone = game.until(next -> next.seat() == 0 && priority(next)
+                    && viewer(next.state()).getAsJsonObject("mana").get("G").getAsInt() == 0
+                    && !text(next.prompt(), "id").equals(text(after.prompt(), "id")));
+            assertFalse(card(undone.state(), "Battlefield", "Llanowar Elves").get("tapped").getAsBoolean(),
+                    "Explicit undo reverses the mana action through the engine");
+            assertEquals(text(undone.prompt(), "priorityAlternative"), "passTurn");
+            assertThrows(IllegalArgumentException.class, () -> game.table.seat(0).action(request(after,
+                    Map.of("action", "priorityUndo"))));
+            assertTrue(game.answer(undone, Map.of("action", "priorityPassTurn", "expectedTask", "priority")));
+            var yielded = game.until(next -> next.seat() != 0 && priority(next));
+            assertNotEquals(yielded.seat(), 0, "Explicit pass-turn advances without substituting an undo");
         }
     }
 
@@ -73,7 +95,7 @@ public class SourceActionsTest {
         }
     }
 
-    @Test(timeOut = 90000)
+    @Test(groups = "canonical-interaction", timeOut = 90000)
     public void paymentUsesThePaymentInputsActualManaActionsWithoutASecondAbilityChooser() throws Exception {
         try (var game = new RulesScenario("source-actions-payment", Map.of(0, List.of("Forest")))) {
             var input = main(game);

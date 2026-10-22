@@ -1,3 +1,4 @@
+using System.Collections.Immutable;
 using Mana.Contracts;
 using Mana.Magic;
 using Mana.Renderer;
@@ -27,8 +28,8 @@ internal static class CommanderInteractionChecks
                             Name = player.Id == 0 ? "Toothy, Imaginary Friend" : "Commander " + player.Id,
                             Type = "Legendary Creature", Selectable = true, Power = 1, Toughness = 1, CommanderTax = player.Id == 0 ? 2 : 0
                         } }).Concat(player.Id == 0 ? new Card[] { new() { VisualId = "partner-0", CombatId = "partner-0",
-                            Name = "Pir, Imaginative Rascal", Type = "Legendary Creature", Selectable = true, Power = 1, Toughness = 1 } } : []).ToArray() } : zone).ToArray()
-                }).ToArray() });
+                            Name = "Pir, Imaginative Rascal", Type = "Legendary Creature", Selectable = true, Power = 1, Toughness = 1 } } : []).ToImmutableArray() } : zone).ToImmutableArray()
+                }).ToImmutableArray() });
             var sourceReads = new System.Collections.Concurrent.ConcurrentQueue<string>();
             engine.SourceActionRead = (game, decision, key) => {
                 var source = engine.State.Players.SelectMany(player => player.Zones).SelectMany(zone => zone.Cards).Single(card => card.Key == key);
@@ -37,7 +38,7 @@ internal static class CommanderInteractionChecks
                     engine.State.Viewer!.Zone("Command").Cards.Any(card => card.Key == key && card.Selectable)
                         ? [new("cast-" + source.VisualId, "cast", source.Name + " - Creature 1 / 1")] : []);
             };
-            using var app = new TableApplication(engine, directory, initialState: engine.State) { Automated = true };
+            using var app = new TableApplication(TestTableServices.For(engine), directory, initialState: engine.State) { Automated = true };
             app.Initialize(); var view = app.TestPort;
             double seconds = 0;
             PresentationFrame frame = Tick(new(20, 60));
@@ -107,7 +108,7 @@ internal static class CommanderInteractionChecks
             }
             var own = engine.State.Viewer!.Zone("Command").Cards.Single(card => card.VisualId == "command-0");
             var opponent = engine.State.Players.Single(player => player.Id == 1).Zone("Command").Cards.Single();
-            check(InteractionController.Play(engine.State, own, "Command") is { Action: ReplyAction.SelectCard } allowed && allowed.Card == own.Key
+            check(InteractionController.Play(engine.State, own, "Command") is PlayCard allowed && allowed.Card == own.Key
                 && InteractionController.Play(engine.State, opponent, "Command") == null
                 && InteractionController.Play(engine.State, own) == null
                 && InteractionController.Play(engine.State, own, "Graveyard") == null
@@ -118,9 +119,9 @@ internal static class CommanderInteractionChecks
                 "Dragging an opponent's selectable commander cannot submit a local cast at " + size);
             Publish(engine.State with { Players = engine.State.Players.Select(player => player.Id != 0 ? player : player with {
                 Zones = player.Zones.Select(zone => zone.Name != "Command" ? zone : zone with {
-                    Cards = zone.Cards.Select(card => card with { Selectable = false }).ToArray()
-                }).ToArray()
-            }).ToArray() });
+                    Cards = zone.Cards.Select(card => card with { Selectable = false }).ToImmutableArray()
+                }).ToImmutableArray()
+            }).ToImmutableArray() });
             check(InteractionController.Play(engine.State, engine.State.Viewer!.Zone("Command").Cards.Single(card => card.VisualId == "command-0"), "Command") == null,
                 "An unselectable commander has no drag command despite having a visible public face at " + size);
             Drag("command-0");
@@ -128,9 +129,9 @@ internal static class CommanderInteractionChecks
                 "Dragging an unselectable local commander leaves its zone and current decision unchanged at " + size);
             Publish(engine.State with { Players = engine.State.Players.Select(player => player.Id != 0 ? player : player with {
                 Zones = player.Zones.Select(zone => zone.Name != "Command" ? zone : zone with {
-                    Cards = zone.Cards.Select(card => card with { Selectable = true }).ToArray()
-                }).ToArray()
-            }).ToArray() });
+                    Cards = zone.Cards.Select(card => card with { Selectable = true }).ToImmutableArray()
+                }).ToImmutableArray()
+            }).ToImmutableArray() });
             var staleSource = engine.State.Viewer!.Zone("Command").Cards.Single(card => card.VisualId == "command-0");
             string staleDecision = engine.State.Decision!.Id;
             frame = Tick(Source("command-0"), ButtonState.Pressed); frame = Tick(new(800, 420), ButtonState.Pressed);
@@ -144,7 +145,7 @@ internal static class CommanderInteractionChecks
             Drag("command-0");
             var deadline = DateTime.UtcNow.AddSeconds(5);
             while ((view.Busy || engine.Replies.Count == 0) && DateTime.UtcNow < deadline) { frame = Tick(new(20, 60)); Thread.Yield(); }
-            check(view.Error.Length == 0 && engine.Replies.Single() is { Action: ReplyAction.SelectCard } cast
+            check(view.Error.Length == 0 && engine.Replies.Single() is PlayCard cast
                     && cast.GameId == currentGame && cast.DecisionId == currentDecision && cast.Card == currentKey
                     && view.Match!.Viewer!.Zone("Command").Cards.Single().VisualId == "partner-0"
                     && view.Match.Viewer.Zone("Battlefield").Cards.Single().VisualId == "command-0",

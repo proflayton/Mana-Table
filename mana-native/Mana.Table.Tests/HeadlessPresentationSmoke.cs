@@ -1,3 +1,4 @@
+using System.Collections.Immutable;
 using System.Diagnostics;
 using System.Text.Json;
 using Mana.Contracts;
@@ -29,9 +30,12 @@ internal static class HeadlessPresentationSmoke
             checks.Add(description);
         }
         try {
+            ProviderIsolationChecks.Run(Check);
             DeckLibraryPresentationChecks.Run(profile, Check);
             DecisionDockInteractionChecks.Run(profile, Check);
+            SemanticCommandPresentationChecks.Run(profile, Check);
             CommanderInteractionChecks.Run(profile, Check);
+            DisclosedSourceInteractionChecks.Run(profile, Check);
             QuietPriorityPresentationChecks.Run(profile, Check);
             PendingEffectPresentationChecks.Run(profile, Check);
             ImpactFeedbackChecks.RunPresentation(profile, Check);
@@ -88,7 +92,7 @@ internal static class HeadlessPresentationSmoke
                 run.Input(playAction.Bounds.Center, label: "reader-action-release");
                 run.Until(() => !run.View.Busy && run.Engine.Replies.Count == 1, "play-confirmed");
                 var reply = run.Engine.Replies.Single();
-                Check(reply is { Action: ReplyAction.SelectCard } && reply.DecisionId == decision && reply.Card == key
+                Check(reply is PlayCard played && played.DecisionId == decision && played.Card == key
                     && run.View.Match!.Viewer!.Zone("Battlefield").Cards.Any(card => card.VisualId == "hand-a"),
                     "The explicit reader action sends exactly the current scoped card command through ClientSession");
                 Check(pinnedA.Cards.Single(card => card.Id == "hand-a").Focused
@@ -119,7 +123,7 @@ internal static class HeadlessPresentationSmoke
                     "A deliberate reader-face drag becomes a compact held card above the pointer while remaining inside its former reader area");
                 run.Input(drag.Drop, label: "release-reader-face-on-board");
                 run.Until(() => !run.View.Busy && run.Engine.Replies.Count == 1, "reader-drag-play-confirmed");
-                Check(run.Engine.Replies.Single() is { Action: ReplyAction.SelectCard } reply
+                Check(run.Engine.Replies.Single() is PlayCard reply
                     && reply.DecisionId == decision && reply.Card == key
                     && run.View.Match!.Viewer!.Zone("Battlefield").Cards.Any(card => card.VisualId == "hand-a"),
                     "Releasing a deliberate reader-face drag on the board submits exactly the current scoped hand play without crossing the old reader boundary");
@@ -128,8 +132,8 @@ internal static class HeadlessPresentationSmoke
             foreach (string condition in new[] { "escape", "escape-on-release", "right-click", "outside-board", "over-control", "hand-anchor", "new-prompt", "new-key", "permission-revoked", "visibility-revoked" }) {
                 var state = Example();
                 if (condition == "hand-anchor") state = state with { Players = state.Players.Select(player => player.Id != state.ViewerId ? player : player with {
-                    Zones = player.Zones.Select(zone => zone.Name != "Hand" ? zone : zone with { Count = 1, Cards = zone.Cards.Take(1).ToArray() }).ToArray()
-                }).ToArray() };
+                    Zones = player.Zones.Select(zone => zone.Name != "Hand" ? zone : zone with { Count = 1, Cards = zone.Cards.Take(1).ToImmutableArray() }).ToImmutableArray()
+                }).ToImmutableArray() };
                 using var run = new Runner(profile, "reader-drag-" + condition, state, trace, performance);
                 run.Tick("initial");
                 var drag = run.DragReaderCard("hand-a");
@@ -158,9 +162,9 @@ internal static class HeadlessPresentationSmoke
                             Count = zone.Count - (condition == "visibility-revoked" ? 1 : 0),
                             Cards = zone.Cards.Where(card => condition != "visibility-revoked" || card.VisualId != "hand-a")
                                 .Select(card => card.VisualId != "hand-a" ? card : condition == "new-key"
-                                    ? card with { Key = card.Key + ":replacement" } : card with { Selectable = false }).ToArray()
-                        }).ToArray()
-                    }).ToArray() });
+                                    ? card with { Key = card.Key + ":replacement" } : card with { Selectable = false }).ToImmutableArray()
+                        }).ToImmutableArray()
+                    }).ToImmutableArray() });
                 }
                 run.Input(release, label: "release-after-" + condition, keys: releaseKeys);
                 run.Settle("reader-drag-rejected-" + condition);
@@ -193,7 +197,7 @@ internal static class HeadlessPresentationSmoke
                 var beforeSourceChoice = run.Engine.State;
                 var choiceSource = beforeSourceChoice.Viewer!.Zone("Battlefield").Cards.Single(card => card.VisualId == "public-ward");
                 run.Present(beforeSourceChoice with { Decision = new() {
-                    Kind = "choice", Context = "playAbility", Min = 1, Max = 1, SourceCard = choiceSource,
+                    Kind = "choice", Purpose = DecisionPurpose.AbilitySelection, Min = 1, Max = 1, SourceCard = choiceSource,
                     SourceCardId = choiceSource.VisualId, SourceZone = "Battlefield", SourceControllerId = 0,
                     Choices = [new(17, "First reported ability", null), new(42, "Second reported ability", null)]
                 } });
@@ -242,7 +246,7 @@ internal static class HeadlessPresentationSmoke
                     "Dragging an unrelated hand card cannot bypass the pending ability choice or move that card out of hand");
                 run.ClickHit("choice:17");
                 run.Until(() => !run.View.Busy && run.Engine.Replies.Count == 1, "inline-ability-choice-accepted");
-                Check(run.Engine.Replies.Single() is { Action: ReplyAction.Choose } compactReply
+                Check(run.Engine.Replies.Single() is ChooseOptions compactReply
                     && compactReply.GameId == sourceGame && compactReply.DecisionId == sourceDecision && compactReply.Choices!.SequenceEqual([17]),
                     "One explicit inline ability action submits exactly its original index in the current scope without a separate confirmation");
                 run.Present(sourceChoice with { Decision = sourcePrompt with { Ordered = true } });
@@ -255,7 +259,7 @@ internal static class HeadlessPresentationSmoke
                 run.Present(sourceChoice with { Decision = sourcePrompt with {
                     Choices = sourcePrompt.Choices.Select(choice => choice with {
                         Detail = string.Join(" ", Enumerable.Repeat("This authoritative ability detail must remain available without being discarded to fit a compact panel.", 40))
-                    }).ToArray()
+                    }).ToImmutableArray()
                 } });
                 run.Tick("long-ability-detail-inline");
                 Check(!run.Frame.Hits.Any(hit => hit.Id is "close-overlay" or "choicesfilter" or "choicesclear" or "choicesdone")
@@ -270,7 +274,7 @@ internal static class HeadlessPresentationSmoke
                 }
                 run.ClickHit("choice:42");
                 run.Until(() => !run.View.Busy && run.Engine.Replies.Count == 2, "expanded-ability-choice-accepted");
-                Check(run.Engine.Replies.Count == 2 && run.Engine.Replies[^1] is { Action: ReplyAction.Choose } expandedReply
+                Check(run.Engine.Replies.Count == 2 && run.Engine.Replies[^1] is ChooseOptions expandedReply
                     && expandedReply.GameId == sourceGame && expandedReply.DecisionId == longDecision && expandedReply.Choices!.SequenceEqual([42]),
                     "A long-detail ability row keeps the same direct action intent and submits its exact original index once");
                 int privacyReplies = run.Engine.Replies.Count;
@@ -280,10 +284,10 @@ internal static class HeadlessPresentationSmoke
                 run.Present(snapshot with {
                     States = [new("day-night", "Night", "status", null, null, "It is night for the whole table.", "day-night")],
                     Players = snapshot.Players.Select(player => player.Id != 0 ? player : player with {
-                        Mana = new() { ["U"] = 3 }, Zones = player.Zones.Select(zone => zone.Name != "Hand" ? zone : zone with {
-                            Cards = zone.Cards.Where(card => card.VisualId != "hand-a").ToArray(), Count = zone.Count - 1
-                        }).ToArray()
-                    }).ToArray()
+                        Mana = ImmutableDictionary<string, int>.Empty.Add("U", 3), Zones = player.Zones.Select(zone => zone.Name != "Hand" ? zone : zone with {
+                            Cards = zone.Cards.Where(card => card.VisualId != "hand-a").ToImmutableArray(), Count = zone.Count - 1
+                        }).ToImmutableArray()
+                    }).ToImmutableArray()
                 });
                 run.Settle("night-and-revoked-face");
                 Check(Text(run.Frame).Contains("Night") && !Text(run.Frame).Contains("Day")
@@ -359,7 +363,7 @@ internal static class HeadlessPresentationSmoke
             new PlayPreferences { Automatic = false, ReducedMotion = true, Sounds = false, TextScale = 1.3f,
                 Stops = scenario == "reader-drag-over-control" ? ["MAIN1"] : [] }.Save(directory);
             Engine.Present(state);
-            application = new(Engine, directory, initialState: Engine.State);
+            application = new(TestTableServices.For(Engine), directory, initialState: Engine.State);
             application.Automated = true; application.Initialize();
         }
         internal PresentationFrame Tick(string label) => Input(pointer, label: label);
@@ -453,12 +457,12 @@ internal static class HeadlessPresentationSmoke
             new("protection-blue", "Protection from blue", "ability", 1, null, "A public qualified protection ability.", "protection")
         ] };
         var players = Enumerable.Range(0, 4).Select(seat => new Player(seat, seat == 0 ? "You" : "Opponent " + seat,
-            40, seat == 0, false, seat == 0 ? new() { ["C"] = 2 } : [], [
-                new("Hand", seat == 0 ? 2 : 7, seat == 0 ? hand : [], null),
+            40, seat == 0, false, seat == 0 ? ImmutableDictionary<string, int>.Empty.Add("C", 2) : ImmutableDictionary<string, int>.Empty, [
+                new("Hand", seat == 0 ? 2 : 7, seat == 0 ? hand.ToImmutableArray() : [], null),
                 new("Battlefield", seat == 0 ? 1 : 0, seat == 0 ? [ward] : [], null),
                 new("Command", 0, [], null), new("Library", 80, [], null), new("Graveyard", 0, [], null), new("Exile", 0, [], null)
             ]) { States = seat == 0 ? [new("future-track", "Momentum", "progress", 6, 6, "An unfamiliar public track.")] : [] }).ToArray();
-        return new("headless-production", "playing", null, null, 0, 4, "Main phase", "MAIN1", 0, players, [], null,
+        return new("headless-production", "playing", null, null, 0, 4, "Main phase", "MAIN1", 0, players.ToImmutableArray(), [], null,
             new() { Kind = "input", Intent = DecisionIntent.Priority, OkEnabled = true, Message = "You have priority." }) {
                 States = [new("day-night", "Day", "status", null, null, "It is day for the whole table.", "day-night")]
             };
@@ -470,8 +474,8 @@ internal static class HeadlessPresentationSmoke
             Zones = player.Zones.Select(zone => zone.Name != "Battlefield" ? zone : zone with { Count = 20,
                 Cards = Enumerable.Range(0, 20).Select(index => new Card { VisualId = player.Id == 1 && index == 19 ? "" : $"dense-{player.Id}-{index}", CombatId = $"dense-{player.Id}-{index}",
                     Name = player.Id == 1 && index == 19 ? "Face-down card" : $"Public creature {player.Id}/{index}",
-                    FaceDown = player.Id == 1 && index == 19, Type = "Creature", Power = 2 + index, Toughness = 3 + index }).ToArray()
-            }).ToArray()
-        }).ToArray() };
+                    FaceDown = player.Id == 1 && index == 19, Type = "Creature", Power = 2 + index, Toughness = 3 + index }).ToImmutableArray()
+            }).ToImmutableArray()
+        }).ToImmutableArray() };
     }
 }

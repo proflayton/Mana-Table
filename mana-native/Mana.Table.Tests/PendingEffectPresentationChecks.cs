@@ -1,3 +1,4 @@
+using System.Collections.Immutable;
 using Mana.Contracts;
 using Mana.Renderer;
 using Mana.Table.Interaction;
@@ -20,11 +21,11 @@ internal static class PendingEffectPresentationChecks
             var source = new Card { VisualId = "pending-source", CombatId = "pending-source", Name = "All Will Be One", Type = "Enchantment",
                 Text = "Whenever you put counters on a permanent or player, this enchantment deals that much damage to a target." };
             var recipient = new Card { VisualId = "counter-recipient", CombatId = "counter-recipient", Name = "Chandra, Torch of Defiance",
-                Type = "Legendary Planeswalker — Chandra", Counters = new() { ["Loyalty"] = 20 } };
+                Type = "Legendary Planeswalker — Chandra", Counters = ImmutableDictionary<string, int>.Empty.Add("Loyalty", 20) };
             var target = new Card { VisualId = "damage-target", CombatId = "damage-target", Name = "Grizzly Bears",
-                Type = "Creature — Bear", Power = 7, Toughness = 8, Selectable = true, Counters = new() { ["+1/+1"] = 5 } };
+                Type = "Creature — Bear", Power = 7, Toughness = 8, Selectable = true, Counters = ImmutableDictionary<string, int>.Empty.Add("+1/+1", 5) };
             var effect = new PendingEffect { Id = "exact-trigger", Kind = "damage", Amount = 3, AmountBasis = "trigger",
-                CounterChange = new() { Card = recipient with { Counters = new() { ["Loyalty"] = 999 } }, ActorPlayerId = 0,
+                CounterChange = new() { Card = recipient with { Counters = ImmutableDictionary<string, int>.Empty.Add("Loyalty", 999) }, ActorPlayerId = 0,
                     Counters = [new("LOYALTY", "loyalty", 3)] } };
             var baseline = PresentationSmoke.Example();
             var state = baseline with { Id = "pending-value-journey", ActivePlayerId = 0, PriorityPlayerId = null,
@@ -32,13 +33,13 @@ internal static class PendingEffectPresentationChecks
                 Players = baseline.Players.Select(player => player with { Zones = player.Zones.Select(zone => zone with {
                     Count = zone.Name == "Battlefield" ? player.Id == 0 ? 2 : player.Id == 1 ? 1 : 0 : zone.Count,
                     Cards = zone.Name == "Battlefield" ? player.Id == 0 ? [source, recipient] : player.Id == 1 ? [target] : [] : []
-                }).ToArray() }).ToArray(),
-                Decision = new() { Kind = "input", InputType = "InputSelectTargets", Intent = DecisionIntent.Selection,
+                }).ToImmutableArray() }).ToImmutableArray(),
+                Decision = new() { Kind = "input", Purpose = DecisionPurpose.TargetSelection, Intent = DecisionIntent.Selection,
                     Message = "GENERIC_RULES_WITH_INTERNAL_ID_4242: deal that much damage. Choose a target.",
                     SourceCard = source, SourceControllerId = 0, Effect = effect, Min = 1, Max = 1,
                     PlayerChoices = [1, 2, 3], CancelEnabled = true, Cancel = "Cancel" } };
             var engine = new InteractionScenarioEngine(); engine.Present(state);
-            using var app = new TableApplication(engine, directory, initialState: engine.State) { Automated = true };
+            using var app = new TableApplication(TestTableServices.For(engine), directory, initialState: engine.State) { Automated = true };
             app.Initialize(); app.SetTableStudy(study);
             var view = app.TestPort;
             double seconds = 0;
@@ -80,8 +81,8 @@ internal static class PendingEffectPresentationChecks
                 && view.Overlay.Length == 0, "Hovering the targeting source uses the existing full-card preview and clicking that reference neither targets nor activates it");
 
             Present(engine.State with { Players = engine.State.Players.Select(player => player with { Zones = player.Zones.Select(zone => zone with {
-                Cards = zone.Cards.Where(card => card.VisualId != source.VisualId).ToArray()
-            }).ToArray() }).ToArray() });
+                Cards = zone.Cards.Where(card => card.VisualId != source.VisualId).ToImmutableArray()
+            }).ToImmutableArray() }).ToImmutableArray() });
             check(Number("3") && SourceHit().Card?.Name == source.Name && frame.Observe().Text.Any(text => text.Value == recipient.Name),
                 "A currently disclosed prompt source retains its effect and exact counter-origin context after leaving the visible battlefield");
             Present(engine.State with { Decision = engine.State.Decision! with { Effect = effect with { Amount = null, AmountBasis = "dynamic" } } });
@@ -128,7 +129,7 @@ internal static class PendingEffectPresentationChecks
             Tick(point, ButtonState.Pressed); Tick(point);
             var deadline = DateTime.UtcNow.AddSeconds(5);
             while (view.Busy && DateTime.UtcNow < deadline) { Tick(); Thread.Yield(); }
-            check(!view.Busy && engine.Replies.Count == 1 && engine.Replies[0] is { Action: ReplyAction.SelectCard } reply
+            check(!view.Busy && engine.Replies.Count == 1 && engine.Replies[0] is SelectCard reply
                 && reply.DecisionId == decisionId && reply.Card == key,
                 "Choosing the visible highlighted recipient submits exactly its current engine-issued card key and decision scope");
         }

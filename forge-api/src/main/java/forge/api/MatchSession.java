@@ -336,6 +336,7 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
                     "message", message, "ok", ok, "cancel", cancel, "okEnabled", okEnabled, "cancelEnabled", cancelEnabled,
                     "canAttackAll", current instanceof InputAttack, "playerChoices", playerChoices,
                     "canAutoPass", canAutoPass(current));
+            next.prompt.put("priorityAlternative", priorityAlternative(current));
             if (current instanceof InputSelectTargets targeting) {
                 next.prompt.put("min", targeting.getMinTargets());
                 next.prompt.put("max", targeting.getMaxTargets());
@@ -456,6 +457,8 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
             if (action.equals("setAbilityAutoPass")) return setAbilityAutoPass(request);
             Pending next = pending;
             if (next == null || !next.id.equals(string(request, "promptId"))) throw new IllegalArgumentException("That choice has changed. Use the current prompt.");
+            if (request.has("expectedTask") && !semanticTask(next).equals(string(request, "expectedTask")))
+                throw new IllegalArgumentException("That command does not answer the current decision.");
             if (action.equals("passIfNoResponse") && (!Boolean.TRUE.equals(next.prompt.get("canAutoPass")) || !canAutoPass(next.input)))
                 throw new IllegalArgumentException("This response window needs your decision");
             String yieldToken = "";
@@ -485,6 +488,16 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
             SourceActions.Action sourceAction = null;
             switch (action) {
                 case "ok", "passIfNoResponse", "passUntilPublicAction" -> { if (!okEnabled) throw new IllegalArgumentException("Continue is not available"); }
+                case "passPriority" -> {
+                    if (!(next.input instanceof InputPassPriority priority) || !priority.isPriorityActive() || !okEnabled)
+                        throw new IllegalArgumentException("Passing priority is not available");
+                }
+                case "priorityUndo", "priorityPassTurn" -> {
+                    String alternative = action.equals("priorityUndo") ? "undo" : "passTurn";
+                    if (!cancelEnabled || !Objects.equals(next.prompt.get("priorityAlternative"), alternative)
+                            || !priorityAlternative(next.input).equals(alternative))
+                        throw new IllegalArgumentException("That priority action changed. Use the current decision.");
+                }
                 case "cancel" -> { if (!cancelEnabled) throw new IllegalArgumentException("Cancel is not available"); }
                 case "attackAll" -> { if (!(next.input instanceof InputAttack)) throw new IllegalArgumentException("Not declaring attackers"); }
                 case "card" -> { card = next.cards.get(string(request, "key")); if (card == null) throw new IllegalArgumentException("Card is not visible in this prompt"); }
@@ -560,7 +573,9 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
                     if (closed || viewer.getHasLost() || game.isGameOver() || human.getInputQueue().getInput() != next.input) return;
                     switch (action) {
                         case "ok" -> human.selectButtonOk();
-                        case "passIfNoResponse" -> ((InputPassPriority) next.input).passPriority();
+                        case "passPriority", "passIfNoResponse" -> ((InputPassPriority) next.input).passPriority();
+                        case "priorityUndo" -> restorePriority = !((InputPassPriority) next.input).undoPriorityAction();
+                        case "priorityPassTurn" -> restorePriority = !((InputPassPriority) next.input).passTurn();
                         case "passUntilPublicAction" -> {
                             synchronized (gate) {
                                 // Recheck on the owned input thread. A queued
@@ -605,6 +620,7 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
                             notices.add(action.equals("passUntilPublicAction")
                                     ? "The table changed. Passing for now stopped; review the current decision."
                                     : action.equals("useSourceAction") ? "That source action changed. Read the current card again."
+                                    : action.startsWith("priority") ? "That priority action changed. Use the current decision."
                                     : "That hand-placement option is no longer available. Use the current prompt.");
                             while (notices.size() > 12) notices.remove(0);
                         }
@@ -614,6 +630,25 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
             });
             return latest;
         }
+    }
+
+    private static String priorityAlternative(Input input) {
+        if (!(input instanceof InputPassPriority priority)) return "none";
+        return priority.canUndoPriorityAction() ? "undo" : priority.canPassTurn() ? "passTurn" : "none";
+    }
+
+    private static String semanticTask(Pending prompt) {
+        if (!prompt.kind.equals("input"))
+            return prompt.kind.equals("text") && Boolean.TRUE.equals(prompt.prompt.get("numeric")) ? "number" : prompt.kind;
+        Input input = prompt.input;
+        if (input instanceof InputConfirmMulligan) return "openingHand";
+        if (input instanceof InputPassPriority) return "priority";
+        if (input instanceof InputPayMana) return "mana";
+        if (input instanceof InputAttack) return "attack";
+        if (input instanceof InputBlock) return "block";
+        if (input instanceof InputSelectTargets || input instanceof InputSelectManyBase<?> || input instanceof InputLondonMulligan)
+            return "selection";
+        return "confirmation";
     }
 
     /** Priority preferences never consume an input, activate an ability, or traverse a running board. */
@@ -807,9 +842,16 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
         String result = gameResult();
         var activityFrame = activity.frame();
         activityRevision = activityFrame.revision();
-        if (prompt != null && prompt.input instanceof InputPassPriority) {
+        if (prompt != null) {
             var projectedPrompt = new LinkedHashMap<>(prompt.prompt);
-            projectedPrompt.put("priorityAbilities", priorityAbilities(human.getPriorityAbilities(), prompt));
+            projectedPrompt.put("task", semanticTask(prompt));
+            projectedPrompt.put("purpose", prompt.input instanceof InputConfirmMulligan ? "openingHand"
+                    : prompt.input instanceof InputSelectTargets ? "targets"
+                    : Objects.equals(prompt.prompt.get("context"), "playAbility") ? "abilities" : "");
+            if (prompt.input instanceof InputPassPriority) {
+                projectedPrompt.put("priorityAbilities", priorityAbilities(human.getPriorityAbilities(), prompt));
+                projectedPrompt.put("priorityAlternative", priorityAlternative(prompt.input));
+            }
             prompt.prompt = projectedPrompt;
         }
         var snapshot = map("id", id, "revision", ++revision, "boardRevision", boardRevision, "format", format, "status", error != null ? "error" : game.isGameOver() ? "finished" : "playing",

@@ -15,17 +15,16 @@ public static class HandPlacements
             || decision.Id.Length == 0 || state.Viewer is not { } viewer) return [];
         var card = viewer.Zone("Hand").Cards.FirstOrDefault(c => CardViews.Same(c, clicked));
         if (card is not { FaceDown: false, Key.Length: > 0 }) return [];
-        return decision.PriorityAbilities.Where(a => a.Id.Length > 0 && a.HandPlacementLimit > 0
-            && a.EligibleHandKeys.Contains(card.Key, StringComparer.Ordinal)
-            && viewer.Zone("Battlefield").Cards.Any(source => source.Key == a.SourceCardKey && !source.FaceDown && !source.PhasedOut))
+        return decision.PriorityAbilities.Where(a => GameCommandPermissions.Allows(state,
+                new PlaceFromHand(state.Id, decision.Id, card.Key, a.Id)))
             .DistinctBy(a => a.Id).ToArray();
     }
 
-    public static DecisionReply? Start(GameSnapshot state, Card card, string abilityId)
+    public static PlaceFromHand? Start(GameSnapshot state, Card card, string abilityId)
     {
         var current = state.Viewer?.Zone("Hand").Cards.FirstOrDefault(c => CardViews.Same(c, card));
         return current != null && Options(state, current).Any(a => a.Id == abilityId)
-            ? new(state.Id, state.Decision!.Id, ReplyAction.UseHandPlacement, Card: current.Key, AbilityId: abilityId) : null;
+            ? new(state.Id, state.Decision!.Id, current.Key, abilityId) : null;
     }
 
     public static string Availability(GameSnapshot state, Card card)

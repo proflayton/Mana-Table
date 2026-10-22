@@ -39,9 +39,16 @@ internal static class Program
                     var entries = JsonSerializer.Deserialize<Dictionary<string, string>>(File.ReadAllText(manifest)) ?? throw new IOException("Invalid art manifest");
                     art = new LocalArtSource(Path.GetDirectoryName(manifest)!, entries);
                 }
-                using var game = new TableWindow(engine, profile, Arg("--capture"), Arg("--fixture"), size, artSource: art,
+                var services = new TableServices(engine, engine, engine, engine.InitializeAsync) {
+                    SourceActions = engine as ISourceActions, Printings = engine as ICardPrintings,
+                    Library = engine as IDeckLibrary, Workshop = engine as IDeckWorkshop,
+                    Analysis = engine as IDeckAnalysis, Seats = engine as ITableSeatSetup,
+                    Social = engine as ITableSocial, Versions = engine as IDeckVersionHistory
+                };
+                using var game = new TableWindow(services, profile, Arg("--capture"), Arg("--fixture"), size, artSource: art,
                     appUpdates: appUpdates, installUpdate: incremental != null ? update => incremental.StartRestart(update, profile)
-                        : WindowsUpdateInstaller.TryCreate(AppContext.BaseDirectory, profile), enableLiveTableStudy: !args.Contains("--classic-table"));
+                        : WindowsUpdateInstaller.TryCreate(AppContext.BaseDirectory, profile), enableLiveTableStudy: !args.Contains("--classic-table"),
+                    restartedAfterUpdate: ManagedInstallation.WasRestarted);
                 game.Run();
             } finally { engine.DisposeAsync().AsTask().GetAwaiter().GetResult(); }
             return 0;

@@ -1,3 +1,4 @@
+using System.Collections.Immutable;
 using Mana.Contracts;
 
 namespace Mana.Scenarios;
@@ -24,13 +25,13 @@ public static class FourPlayerTableScenario
             Players = ordinary.Players.Select(player => player.Id != 2 ? player : player with {
                 Zones = player.Zones.Select(zone => zone.Name != "Battlefield" ? zone : zone with {
                     Cards = [.. zone.Cards, .. additions], Count = zone.Cards.Length + additions.Length
-                }).ToArray()
-            }).ToArray()
+                }).ToImmutableArray()
+            }).ToImmutableArray()
         };
         // The cost has already been paid in this checkpoint. These explicit
         // characteristics are not derived again from the displayed counters.
         var pending = MapBattlefield(crowded, card => card.VisualId != SourceId ? card : card with {
-            Counters = new() { ["+1/+1"] = 2 }, Power = 2, Toughness = 2
+            Counters = ImmutableDictionary<string, int>.Empty.Add("+1/+1", 2), Power = 2, Toughness = 2
         });
         var source = pending.Players[1].Zone("Battlefield").Cards.Single(card => card.VisualId == SourceId);
         var target = pending.Viewer!.Zone("Battlefield").Cards.Single(card => card.VisualId == TargetId);
@@ -97,16 +98,16 @@ public static class FourPlayerTableScenario
         var players = Enumerable.Range(0, 4).Select(seat => {
             var field = OrdinaryField(seat);
             return new Player(seat, Names[seat], life[seat], seat == 0, false,
-                seat == 0 ? new() { ["G"] = 1, ["U"] = 2 } : [], [
-                    new("Battlefield", field.Length, field, null),
-                    new("Hand", seat == 0 ? hand.Length : 5, seat == 0 ? hand : [], null),
+                seat == 0 ? ImmutableDictionary<string, int>.Empty.Add("G", 1).Add("U", 2) : ImmutableDictionary<string, int>.Empty, [
+                    new("Battlefield", field.Length, field.ToImmutableArray(), null),
+                    new("Hand", seat == 0 ? hand.Length : 5, (seat == 0 ? hand : []).ToImmutableArray(), null),
                     new("Command", 1, [commanders[seat]], null),
                     new("Library", 72, [], null),
                     new("Graveyard", 1, [graveyard[seat]], graveyard[seat]),
                     new("Exile", 0, [], null)
                 ]);
         }).ToArray();
-        return new(Id, "playing", null, null, 0, 8, "Main phase", "MAIN1", 1, players, [], null, new() {
+        return new(Id, "playing", null, null, 0, 8, "Main phase", "MAIN1", 1, players.ToImmutableArray(), [], null, new() {
             Kind = "input", Intent = DecisionIntent.Priority, OkEnabled = false, CanAutoPass = false,
             Message = "Authored snapshot. Inspect cards; use the stage controls to compare checkpoints."
         }) { PriorityPlayerId = 0, DecisionOwnerId = 0, ActionClass = "priority" };
@@ -117,7 +118,7 @@ public static class FourPlayerTableScenario
         Card[] cards = seat switch {
             0 => [
                 Face(TargetId, "Tireless Tracker", "Creature — Human Scout", "{2}{G}") with {
-                    Power = 5, Toughness = 4, Counters = new() { ["+1/+1"] = 1 },
+                    Power = 5, Toughness = 4, Counters = ImmutableDictionary<string, int>.Empty.Add("+1/+1", 1),
                     Attachments = [new(EquipmentId, "Sword of the Animist", "Legendary Artifact — Equipment")]
                 },
                 Face(EquipmentId, "Sword of the Animist", "Legendary Artifact — Equipment", "{2}", "Equipped creature gets +1/+1.\nEquip {2}") with {
@@ -132,7 +133,7 @@ public static class FourPlayerTableScenario
             1 => [
                 Face(SourceId, "Walking Ballista", "Artifact Creature — Construct", "{X}{X}",
                     "Walking Ballista enters with X +1/+1 counters on it.\n{4}: Put a +1/+1 counter on Walking Ballista.\n" + DamageAbility) with {
-                    Power = 3, Toughness = 3, Counters = new() { ["+1/+1"] = 3 }
+                    Power = 3, Toughness = 3, Counters = ImmutableDictionary<string, int>.Empty.Add("+1/+1", 3)
                 },
                 Creature(1, "angel", "Serra Angel", "Angel", "{3}{W}{W}", 4, 4) with { CombatKeywords = ["flying", "vigilance"] },
                 Face("four-player-1-solemn", "Solemn Simulacrum", "Artifact Creature — Golem", "{4}") with { Power = 2, Toughness = 2 },
@@ -145,7 +146,7 @@ public static class FourPlayerTableScenario
                 Face("four-player-2-courser", "Courser of Kruphix", "Enchantment Creature — Centaur", "{1}{G}{G}") with { Power = 2, Toughness = 4 },
                 Creature(2, "scute", "Scute Swarm", "Insect", "{2}{G}", 1, 1),
                 Creature(2, "krasis", "Hydroid Krasis", "Jellyfish Hydra Beast", "{X}{G}{U}", 4, 4) with {
-                    Counters = new() { ["+1/+1"] = 4 }, CombatKeywords = ["flying", "trample"]
+                    Counters = ImmutableDictionary<string, int>.Empty.Add("+1/+1", 4), CombatKeywords = ["flying", "trample"]
                 },
                 Support(2, "ring", "Sol Ring", "Artifact", "{1}"),
                 Support(2, "signet", "Simic Signet", "Artifact", "{2}"),
@@ -153,7 +154,7 @@ public static class FourPlayerTableScenario
                 Support(2, "retreat", "Retreat to Coralhelm", "Enchantment", "{2}{U}")
             ],
             _ => [
-                Creature(3, "aspirant", "Luminarch Aspirant", "Human Cleric", "{1}{W}", 3, 3) with { Counters = new() { ["+1/+1"] = 2 } },
+                Creature(3, "aspirant", "Luminarch Aspirant", "Human Cleric", "{1}{W}", 3, 3) with { Counters = ImmutableDictionary<string, int>.Empty.Add("+1/+1", 2) },
                 Creature(3, "pridemage", "Qasali Pridemage", "Cat Wizard", "{G}{W}", 2, 2),
                 Creature(3, "voice", "Voice of Resurgence", "Elemental", "{G}{W}", 2, 2),
                 Support(3, "ring", "Sol Ring", "Artifact", "{1}"),
@@ -175,13 +176,13 @@ public static class FourPlayerTableScenario
         .. Enumerable.Range(0, 8).Select(index => Creature(2, "busy-scute-copy-" + index,
             "Scute Swarm", "Insect", "{2}{G}", index < 6 ? 1 : 2, index < 6 ? 1 : 2) with {
                 Tapped = index is 4 or 5,
-                Counters = index < 6 ? [] : new() { ["+1/+1"] = 1 },
+                Counters = index < 6 ? ImmutableDictionary<string, int>.Empty : ImmutableDictionary<string, int>.Empty.Add("+1/+1", 1),
                 Damage = index == 7 ? 1 : 0
             }),
         Creature(2, "busy-birds", "Birds of Paradise", "Bird", "{G}", 0, 1) with { CombatKeywords = ["flying"] },
         Creature(2, "busy-cobra", "Lotus Cobra", "Snake", "{1}{G}", 2, 1),
         Creature(2, "busy-provisioner", "Tireless Provisioner", "Elf Scout", "{2}{G}", 3, 2),
-        Creature(2, "busy-ooze", "Scavenging Ooze", "Ooze", "{1}{G}", 4, 4) with { Counters = new() { ["+1/+1"] = 2 } },
+        Creature(2, "busy-ooze", "Scavenging Ooze", "Ooze", "{1}{G}", 4, 4) with { Counters = ImmutableDictionary<string, int>.Empty.Add("+1/+1", 2) },
         Creature(2, "busy-witness", "Eternal Witness", "Human Shaman", "{1}{G}{G}", 2, 1),
         Creature(2, "busy-sage", "Reclamation Sage", "Elf Shaman", "{2}{G}", 2, 1),
         Face("four-player-2-busy-solemn", "Solemn Simulacrum", "Artifact Creature — Golem", "{4}") with { Power = 2, Toughness = 2 },
@@ -213,7 +214,7 @@ public static class FourPlayerTableScenario
     };
     private static GameSnapshot MapBattlefield(GameSnapshot state, Func<Card, Card> map) => state with {
         Players = state.Players.Select(player => player with {
-            Zones = player.Zones.Select(zone => zone.Name != "Battlefield" ? zone : zone with { Cards = zone.Cards.Select(map).ToArray() }).ToArray()
-        }).ToArray()
+            Zones = player.Zones.Select(zone => zone.Name != "Battlefield" ? zone : zone with { Cards = zone.Cards.Select(map).ToImmutableArray() }).ToImmutableArray()
+        }).ToImmutableArray()
     };
 }

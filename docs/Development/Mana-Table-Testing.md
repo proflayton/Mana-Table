@@ -9,6 +9,36 @@ SDK; engine work requires JDK 17+ and Maven 3.8.1+. Node is only for dependency-
 documentation and CI tools. See [native setup](../../mana-native/README.md) for
 a complete engine/runtime/resource bundle.
 
+## Canonical interaction coverage
+
+The shared client check runs `InteractionContractMatrix`: named cases cover every
+concrete `GameCommand` variant, `DecisionIntent` and `DecisionPurpose`, with a
+closed-command/enum coverage guard, fixed-seed permission/visibility transitions, authority rejection and
+required continuations. It uses production command builders and `ClientSession`
+with a finite scripted authority. Its two-provider alias case verifies that
+provider handles cannot be replayed as semantic commands. It is interaction-contract
+coverage, not a Magic rules simulator or proof of every possible card combination.
+The matrix uses no JVM, graphics device or network; it prints its measured runtime.
+
+Real Forge goldens use the existing `canonical-interaction` TestNG group: paid
+casting/payment, private partner search, Toothy's last-known counters and draws,
+pending versus prevented damage, combat allocation and persistent Speed. The
+partner search retains four recipient variants. These methods already run once
+in normal Java CI; grouping them adds no duplicate engine startups. The focused
+command selects their classes as well as the group so upstream modules do not
+start empty TestNG processes:
+
+```powershell
+mvn -pl forge-api -am test '-Dgroups=canonical-interaction' '-Dtest=SourceActionsTest,PartnerChoiceExperienceTest,ToothyLeavesBattlefieldTest,PendingEffectTest,AllocationProjectionTest,PlayerStatesExperienceTest' '-Dsurefire.failIfNoSpecifiedTests=false'
+```
+
+This is a representative real-rules lane alongside enumerated coverage of the
+current interaction command variants. Neither replaces visual review of the corresponding
+window journeys, nor supplies the complete authoritative Forge oracle needed to
+establish another rules provider's equivalence. Record the case, seed, provider
+and first differing boundary when diagnosing a failure; use existing scenario
+evidence rather than starting a JVM for each generated contract row.
+
 ## Choose the relevant check
 
 | Change | Starting point |
@@ -53,6 +83,19 @@ These modes create no game window or graphics device. They exercise the same
 application and typed-frame composition used by the real window. Preserve their
 result/trace JSON when diagnosing a failure; submitted drawing data does not
 prove that a physical window is clear or correctly clipped.
+
+Shared client checks also run `SourceActionSessionRegression`: delayed provider
+reads, seat/source/revision revocation, explicit unsupported versus empty results,
+timeouts, manual retry and shutdown use one scoped action-query lifecycle. Native
+journeys consume semantic `DecisionPurpose` values; Forge prompt class names stay
+inside the adapter. The real-engine opening/payment journey verifies that mapping.
+
+`ImmutableStateChecks` traverses the entire match graph, rejects writable nested
+collections/properties, and verifies that provider construction buffers or
+consumer casts cannot change an accepted revision. It retains the preceding
+frame while publishing updated counters and checks JSON round trips. The native
+presentation lane inspects the emitted UI dependency closure and rejects a
+provider/host reference or use of the aggregate engine by `Mana.Game`.
 
 The production headless run includes saved-deck deletion and Undo through the
 actual controls, delayed observations, restart recovery and stale-command guards.

@@ -104,7 +104,7 @@ public class PlayerStatesExperienceTest {
         }
     }
 
-    @Test(timeOut = 90000)
+    @Test(groups = "canonical-interaction", timeOut = 90000)
     public void vnwxtStartsSpeedWithoutCastingASorceryAndSpeedPersistsToMax() throws Exception {
         var field = new LinkedHashMap<Integer, List<String>>();
         field.put(0, List.of("Reliquary Tower", "Island", "Island", "Prodigal Pyromancer", "Prodigal Pyromancer", "Thousand-Year Elixir",

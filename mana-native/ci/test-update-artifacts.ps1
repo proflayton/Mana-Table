@@ -15,11 +15,17 @@ function Fixture([string]$Mutation){
     $directory=Join-Path $TestDirectory $Mutation
     $payload=Join-Path $directory 'payload/lib/app'
     New-Item -ItemType Directory -Path $payload | Out-Null
-    $build=@{version=$version;sourceRevision=$source;release=$true}
+    [IO.File]::WriteAllText((Join-Path $payload 'ManaTable.dll'),'verified launcher bytes',$utf8)
+    $clientHashes=@{}
+    if($Mutation -ne 'missing-game'){
+        [IO.File]::WriteAllText((Join-Path $payload 'Mana.Game.dll'),'verified game UI bytes',$utf8)
+        if($Mutation -ne 'unbound-game'){$clientHashes['Mana.Game.dll']=Hash (Join-Path $payload 'Mana.Game.dll')}
+    }
+    if($Mutation -eq 'game-binding'){$clientHashes['Mana.Game.dll']='0'*64}
+    $build=@{version=$version;sourceRevision=$source;release=$true;clientFilesSha256=$clientHashes}
     if($Mutation -eq 'smoke'){$build.smokeOnly=$true}
     Json (Join-Path $directory 'build.json') $build
     Copy-Item -LiteralPath (Join-Path $directory 'build.json') -Destination $payload
-    [IO.File]::WriteAllText((Join-Path $payload 'ManaTable.dll'),'verified product bytes',$utf8)
     $entries=@(Get-ChildItem -LiteralPath $payload -File | ForEach-Object {@{path=('lib/app/'+$_.Name);sizeBytes=$_.Length;sha256=(Hash $_.FullName)}})
     $fullName='ManaTable-'+$version+'-win-x64-full.nupkg'
     $fullPath=Join-Path $directory $fullName
@@ -62,7 +68,7 @@ $valid=Fixture 'valid'
 $names=@(& (Join-Path $PSScriptRoot 'validate-update-artifacts.ps1') -Directory $valid -Version $version -SourceRevision $source)
 if($names.Count -ne 10 -or @($names|Sort-Object -Unique).Count -ne 10 -or $names -contains 'build.json'){throw 'Publication inventory omitted or exposed an asset.'}
 $checks++
-foreach($mutation in @('smoke','source','identity','channel','framework','installer','hash','length','traversal','duplicate','entry-hash','missing-entry','build-binding')){
+foreach($mutation in @('smoke','source','identity','channel','framework','installer','hash','length','traversal','duplicate','entry-hash','missing-entry','build-binding','missing-game','unbound-game','game-binding')){
     $fixture=Fixture $mutation
     $rejected=$false
     try{& (Join-Path $PSScriptRoot 'validate-update-artifacts.ps1') -Directory $fixture -Version $version -SourceRevision $source | Out-Null}

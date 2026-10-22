@@ -38,7 +38,7 @@ internal static class BoundedBattlefieldLayout
     };
     private static List<Rectangle> FreeAreas(int seat) => Areas(seat).Select((area, index) => new Rectangle(
         area.X + 3, area.Y + (index == 0 ? 22 : 3), area.Width - 6, area.Height - (index == 0 ? 25 : 6))).ToList();
-    internal static BattlefieldCluster[] Build(int seat, int owner, Card[] cards, IReadOnlyList<string> roleByCard,
+    internal static BattlefieldCluster[] Build(int seat, int owner, IReadOnlyList<Card> cards, IReadOnlyList<string> roleByCard,
         IReadOnlySet<string>? separate, IReadOnlyList<Rectangle> obstacles, Func<Card, int, bool, BattlefieldLabelMetrics>? denseMeasure,
         bool compact = false)
     {
@@ -46,7 +46,7 @@ internal static class BoundedBattlefieldLayout
         // Public-state equality already separates different counters, combat,
         // tapped state and attachments. Do not arbitrarily split identical
         // tokens into repeated labels on a genuinely crowded field.
-        bool crowded = compact || cards.Length >= 80;
+        bool crowded = compact || cards.Count >= 80;
         int maximumCopies = crowded ? int.MaxValue : 4;
         var allGroups = BattlefieldLayout.Groups(cards, separate, maximumCopies);
         var groups = roles.SelectMany(role => BattlefieldLayout.Groups(cards.Where((_, index) => roleByCard[index] == role).ToArray(), separate, maximumCopies)
@@ -137,7 +137,7 @@ internal static class BoundedBattlefieldLayout
                 var offset = group.Fan.Offset(copy);
                 var pose = new Pose(new(cell.X + 2 + offset.X + faceSize.X / 2, cell.Y + 2 + offset.Y + faceSize.Y / 2), faceSize);
                 string id = CardViews.Identity(card);
-                if (id.Length == 0) id = $"anonymous:{owner}:Battlefield:{Array.FindIndex(cards, candidate => ReferenceEquals(candidate, card))}";
+                if (id.Length == 0) id = $"anonymous:{owner}:Battlefield:{Enumerable.Range(0, cards.Count).First(index => ReferenceEquals(cards[index], card))}";
                 result[group.Role].Add(new(id, card, pose, "Battlefield", owner, TableLayout.SeatHand(seat)) {
                     Compact = true, Dense = true, DenseLabels = labels, DenseScale = scale,
                     DenseRowHeight = group.RowHeight, DenseMiniature = group.Miniature,
@@ -147,7 +147,7 @@ internal static class BoundedBattlefieldLayout
         }
         return roles.Select(role => new BattlefieldCluster(role, result[role].ToArray())).ToArray();
     }
-    private static BattlefieldCluster[] PackFaces(int seat, int owner, Card[] cards, IReadOnlyList<string> roleByCard, Rectangle area, IReadOnlyList<Rectangle> obstacles)
+    private static BattlefieldCluster[] PackFaces(int seat, int owner, IReadOnlyList<Card> cards, IReadOnlyList<string> roleByCard, Rectangle area, IReadOnlyList<Rectangle> obstacles)
     {
         // Beyond the readable label budget, retain actual individual faces and
         // their explicit reader instead of covering another seat or a control.
@@ -165,16 +165,16 @@ internal static class BoundedBattlefieldLayout
                 var bounds = new Rectangle(slot.X, slot.Y, width, height);
                 positions.Add(bounds); Subtract(free, bounds);
             }
-            if (positions.Count == cards.Length) break;
+            if (positions.Count == cards.Count) break;
         }
         // A subpixel board cannot offer independent physical targets. Keep even
         // that extreme input contained instead of indexing a partial placement
         // array or spilling over another seat. Ordinary dense fields stay on
         // the measured, labeled path above.
-        if (positions.Count < cards.Length) {
+        if (positions.Count < cards.Count) {
             var safe = remaining.OrderByDescending(rectangle => rectangle.Width * rectangle.Height).FirstOrDefault();
             if (safe.IsEmpty) safe = new(area.X + 3, area.Y + 22, 1, 1);
-            while (positions.Count < cards.Length) positions.Add(new(safe.X, safe.Y, 1, 1));
+            while (positions.Count < cards.Count) positions.Add(new(safe.X, safe.Y, 1, 1));
         }
         return new[] { "Creatures", "Support", "Lands" }.Select(role => new BattlefieldCluster(role,
             cards.Select((card, index) => (card, index)).Where(entry => roleByCard[entry.index] == role).Select(entry => {

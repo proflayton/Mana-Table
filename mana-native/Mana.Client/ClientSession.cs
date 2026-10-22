@@ -4,18 +4,30 @@ using Mana.Contracts;
 namespace Mana.Client;
 
 /// <summary>Serial commands and ordered snapshots for every connection, without a graphics dependency.</summary>
-public sealed class ClientSession(IMatchConnection connection, ITableSetup? setup = null, TimeProvider? clock = null)
+public sealed class ClientSession
 {
-    public ClientSession(ICardEngine engine) : this(engine, engine) { }
+    private readonly IMatchConnection connection;
+    private readonly ITableSetup? setup;
     private readonly ConcurrentQueue<Action> completions = new();
     private readonly SessionReplica<GameSnapshot> replica = new(s => s.Id, s => s.Revision);
-    private readonly DecisionAdvance advance = new(connection);
-    private readonly DecisionQuietAdvance quietAdvance = new(connection);
-    private readonly TimeProvider time = clock ?? TimeProvider.System;
+    private readonly DecisionAdvance advance;
+    private readonly DecisionQuietAdvance quietAdvance;
+    private readonly TimeProvider time;
     private bool recoveryRequired;
     private CancellationTokenSource? advancing;
-    private readonly Queue<DecisionReply> pendingSettings = [];
-    private DecisionReply? activeSetting;
+    private readonly Queue<RestorePriorityAbility> pendingSettings = [];
+    private RestorePriorityAbility? activeSetting;
+    public ClientSession(IMatchConnection connection, ITableSetup? setup = null, TimeProvider? clock = null,
+        ISourceActions? sourceActions = null)
+    {
+        this.connection = connection;
+        this.setup = setup;
+        time = clock ?? TimeProvider.System;
+        advance = new(connection);
+        quietAdvance = new(connection);
+        SourceActions = new(sourceActions, Post);
+    }
+    public SourceActionSession SourceActions { get; }
     public GameSnapshot? State => replica.Current;
     public string Scope => (State?.Id ?? "lobby") + ":" + (State?.Decision?.Id ?? "");
     public bool Busy { get; private set; }
@@ -39,11 +51,13 @@ public sealed class ClientSession(IMatchConnection connection, ITableSetup? setu
         while (!Busy && !NeedsRecovery && pendingSettings.TryDequeue(out var setting)) Submit(setting);
     }
     public bool Accept(GameSnapshot? state) => Accept(state, replica.Epoch);
-    public void Reset() { CancelAdvance(); pendingSettings.Clear(); LastFailureWasCommand = false; replica.BeginCommand(); Accept(null); }
+    public void Reset() { CancelAdvance(); SourceActions.Clear(); pendingSettings.Clear(); LastFailureWasCommand = false; replica.BeginCommand(); Accept(null); }
     private bool Accept(GameSnapshot? state, long epoch)
     {
         var previous = State;
-        if (!replica.Accept(state, epoch)) return false;
+        if (Closed || !replica.Accept(state, epoch)) return false;
+        if (SourceActions.View.Context is { } context && CurrentSourceContext(state, context.SourceCardKey) != context)
+            SourceActions.Clear();
         bool recovered = NeedsRecovery;
         LastSynchronizedAt = time.GetUtcNow();
         recoveryRequired = UncertainCommand = false; LastConnectionError = "";
@@ -75,26 +89,25 @@ public sealed class ClientSession(IMatchConnection connection, ITableSetup? setu
             finally { Post(() => Polling = false); }
         });
     }
-    public bool Submit(DecisionReply reply)
+    public bool Submit(GameCommand command)
     {
-        bool undoSetting = reply is { Action: ReplyAction.SetAbilityAutoPass, Ignore: false, DecisionId.Length: 0 };
-        if (Busy || Closed || NeedsRecovery || State?.Id != reply.GameId || !undoSetting && State.Decision?.Id != reply.DecisionId) return false;
-        if (undoSetting && !State.IgnoredPriorityAbilities.Any(a => a.Id == reply.AbilityId)) return false;
-        reply.Validate();
-        if (undoSetting) activeSetting = reply;
-        Run(async epoch => { await connection.ReplyAsync(reply); var state = await connection.ObserveAsync(); Post(() => Accept(state, epoch)); });
+        if (Busy || Closed || NeedsRecovery || State == null || !GameCommandPermissions.Allows(State, command)) return false;
+        if (command is UseOfferedAction offered && (CurrentSourceContext(State, offered.Card) is not { } context
+            || SourceActions.TryCreateCommand(context, offered.ActionId) != offered)) return false;
+        command.Validate();
+        if (command is RestorePriorityAbility restore) activeSetting = restore;
+        Run(async epoch => { await connection.ExecuteAsync(command); var state = await connection.ObserveAsync(); Post(() => Accept(state, epoch)); });
         return true;
     }
     // Undo is a match preference, so it can be submitted while another player
     // has priority. Finish any in-flight command before sending the setting.
-    public bool SubmitSetting(DecisionReply reply)
+    public bool SubmitSetting(RestorePriorityAbility command)
     {
-        if (Closed || NeedsRecovery || State?.Id != reply.GameId || reply is not { Action: ReplyAction.SetAbilityAutoPass, Ignore: false, DecisionId.Length: 0 }) return false;
-        if (!State.IgnoredPriorityAbilities.Any(a => a.Id == reply.AbilityId)) return false;
-        reply.Validate(); CancelAdvance();
-        if (activeSetting == reply || pendingSettings.Contains(reply)) return false;
-        if (!Busy) return Submit(reply);
-        pendingSettings.Enqueue(reply); return true;
+        if (Closed || NeedsRecovery || State == null || !GameCommandPermissions.Allows(State, command)) return false;
+        command.Validate(); CancelAdvance();
+        if (activeSetting == command || pendingSettings.Contains(command)) return false;
+        if (!Busy) return Submit(command);
+        pendingSettings.Enqueue(command); return true;
     }
     public bool Advance(Func<GameSnapshot, bool> canPass, Func<GameSnapshot, GameSnapshot, bool> shouldPresent)
     {
@@ -139,5 +152,15 @@ public sealed class ClientSession(IMatchConnection connection, ITableSetup? setu
         }
         Failed?.Invoke(error);
     }
-    public void Close() { CancelAdvance(); pendingSettings.Clear(); Closed = true; replica.BeginCommand(); }
+    private static SourceActionContext? CurrentSourceContext(GameSnapshot? state, string key)
+    {
+        if (state is not { Decision: { } decision } || key.Length == 0) return null;
+        // Embedded decision/choice faces can describe history. Only a currently
+        // disclosed physical occurrence can carry authority to act on a source.
+        var card = state.Players.SelectMany(player => player.Zones)
+            .SelectMany(zone => zone.TopCard is { } top ? zone.Cards.Append(top) : zone.Cards)
+            .FirstOrDefault(card => card.Key == key && !card.FaceDown);
+        return card == null ? null : new(state.Id, decision.Id, state.Revision, state.ViewerId, card.Key, CardViews.Identity(card));
+    }
+    public void Close() { CancelAdvance(); SourceActions.Close(); pendingSettings.Clear(); Closed = true; replica.BeginCommand(); }
 }

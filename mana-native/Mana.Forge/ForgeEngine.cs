@@ -23,6 +23,7 @@ public sealed partial class ForgeEngine(ForgePaths paths) : ICardEngine, ITableS
         public Task? Stopped { get; set; }
         public bool SourceActionsAvailable { get; set; }
         public bool DeckLibraryAvailable { get; set; }
+        public ForgeCommandScope Commands { get; } = new();
         public volatile Exception? Failure;
     }
     private EngineProcess? current;
@@ -58,10 +59,10 @@ public sealed partial class ForgeEngine(ForgePaths paths) : ICardEngine, ITableS
                     var message = document.RootElement;
                     if (message.TryGetProperty("event", out var ev)) {
                         if (ev.GetString() == "ready") {
-                            if (!message.TryGetProperty("protocolVersion", out var version) || version.GetInt32() != EngineProtocol.Version)
+                            if (!message.TryGetProperty("protocolVersion", out var version) || version.GetInt32() != ForgeProtocol.Version)
                                 throw new IOException("The client and rules adapter use different protocol versions. Install the complete matching build.");
                             var capabilities = message.GetProperty("capabilities").EnumerateArray().Select(c => c.GetString()).ToHashSet();
-                            if (EngineProtocol.RequiredCapabilities.Any(c => !capabilities.Contains(c))) throw new IOException("The rules adapter is missing required synchronization capabilities.");
+                            if (ForgeProtocol.RequiredCapabilities.Any(c => !capabilities.Contains(c))) throw new IOException("The rules adapter is missing required synchronization capabilities.");
                             owner.SourceActionsAvailable = capabilities.Contains("source-actions");
                             owner.DeckLibraryAvailable = capabilities.Contains("deck-library");
                             owner.Ready.TrySetResult();
@@ -86,6 +87,7 @@ public sealed partial class ForgeEngine(ForgePaths paths) : ICardEngine, ITableS
     }
     private void Fail(EngineProcess owner, Exception ex)
     {
+        owner.Commands.Clear();
         owner.Failure = ex;
         owner.Ready.TrySetException(ex);
         if (current != owner) return;
@@ -95,6 +97,8 @@ public sealed partial class ForgeEngine(ForgePaths paths) : ICardEngine, ITableS
     {
         ObjectDisposedException.ThrowIf(disposed, this);
         var owner = current ?? throw new IOException("The engine is not running");
+        if (method is "matchStart" or "workshopStartTest" or "multiplayerHost" or "multiplayerJoin"
+            or "multiplayerStart" or "multiplayerReturn" or "multiplayerClose" or "matchConcede") owner.Commands.Clear();
         await owner.Ready.Task;
         if (current != owner || owner.Failure != null || owner.Process.HasExited) throw new IOException("The engine is not running");
         long id = Interlocked.Increment(ref sequence);
@@ -229,8 +233,10 @@ public sealed partial class ForgeEngine(ForgePaths paths) : ICardEngine, ITableS
     public async Task ConcedeAsync(string gameId) => await Request("matchConcede", new { sessionId = gameId });
     public async Task<GameSnapshot?> ObserveAsync()
     {
+        var owner = current ?? throw new IOException("The engine is not running");
         var raw = await Request("matchState");
-        if (raw.ValueKind == JsonValueKind.Null) return null;
+        if (current != owner || owner.Failure != null) throw new IOException("The engine is not running");
+        if (raw.ValueKind == JsonValueKind.Null) { owner.Commands.Clear(); sourceActionsGame = ""; return null; }
         var node = JsonNode.Parse(raw.GetRawText())!.AsObject();
         // Local games first publish a starting frame before the board exists.
         node["players"] ??= new JsonArray();
@@ -239,13 +245,7 @@ public sealed partial class ForgeEngine(ForgePaths paths) : ICardEngine, ITableS
         node["phase"] ??= "Starting game";
         node["phaseKey"] ??= "PREGAME";
         var prompt = node["prompt"]?.DeepClone();
-        if (prompt is not null) {
-            var input = prompt["inputType"]?.GetValue<string>() ?? "";
-            var intent = input switch { "InputPassPriority" => DecisionIntent.Priority, "InputAttack" => DecisionIntent.Attack,
-                "InputBlock" => DecisionIntent.Block, _ when input.StartsWith("InputPayMana") => DecisionIntent.Mana,
-                _ when input.Contains("Select") => DecisionIntent.Selection, _ => DecisionIntent.General };
-            prompt["intent"] = (int)intent;
-        }
+        if (prompt is not null) ForgeDecisionDecoder.Normalize(prompt);
         node["decision"] = prompt;
         // Defender IDs are numeric for players and strings for cards in Forge.
         if (node["combat"]?["attackOptions"] is JsonArray options)
@@ -254,30 +254,16 @@ public sealed partial class ForgeEngine(ForgePaths paths) : ICardEngine, ITableS
         if (node["combat"]?["attackers"] is JsonArray attackers)
             foreach (var attacker in attackers) if (attacker?["defender"] is JsonObject defender) defender["id"] = defender["id"]?.ToString() ?? "";
         var snapshot = node.Deserialize<GameSnapshot>(Json);
+        owner.Commands.Observe(snapshot);
         sourceActionsGame = snapshot?.Id ?? "";
         return snapshot;
     }
-    public async Task ReplyAsync(DecisionReply reply)
+    public async Task ExecuteAsync(GameCommand command)
     {
-        reply.Validate();
-        var args = new Dictionary<string, object?> { ["sessionId"] = reply.GameId, ["promptId"] = reply.DecisionId };
-        var action = reply.Action switch { ReplyAction.Confirm => "ok", ReplyAction.Cancel => "cancel", ReplyAction.SelectCard => "card",
-            ReplyAction.SelectPlayer => "player", ReplyAction.AssignAttack => "attack", ReplyAction.AssignBlock => "block",
-            ReplyAction.AutoPass => "passIfNoResponse", ReplyAction.Skip => "skip", ReplyAction.SetAbilityAutoPass => "setAbilityAutoPass",
-            ReplyAction.UseHandPlacement => "useHandPlacement", ReplyAction.PassUntilPublicAction => "passUntilPublicAction",
-            ReplyAction.UseSourceAction => "useSourceAction", _ => null };
-        if (action != null) args["action"] = action;
-        if (reply.Card != null) args[reply.Action == ReplyAction.UseHandPlacement ? "handKey" : "key"] = reply.Card;
-        if (reply.Player != null) args[reply.Action == ReplyAction.AssignAttack ? "defenderPlayerId" : "playerId"] = reply.Player;
-        if (reply.Attacker != null) args["attackerKey"] = reply.Attacker;
-        if (reply.Blocker != null) args["blockerKey"] = reply.Blocker;
-        if (reply.DefenderCard != null) args["defenderKey"] = reply.DefenderCard;
-        if (reply.Choices != null) args["choices"] = reply.Choices;
-        if (reply.Value != null) args["value"] = reply.Value;
-        if (reply.Amounts != null) args["values"] = reply.Amounts;
-        if (reply.AbilityId != null) args[reply.Action == ReplyAction.UseSourceAction ? "actionId" : "abilityId"] = reply.AbilityId;
-        if (reply.Ignore != null) args["ignored"] = reply.Ignore;
-        if (reply.YieldToken != null) args["yieldToken"] = reply.YieldToken;
+        ObjectDisposedException.ThrowIf(disposed, this);
+        var owner = current ?? throw new IOException("The engine is not running");
+        var args = owner.Commands.Encode(command);
+        if (current != owner || owner.Failure != null) throw new IOException("The engine is not running");
         await Request("matchAction", args);
     }
     public async ValueTask DisposeAsync()
@@ -285,6 +271,7 @@ public sealed partial class ForgeEngine(ForgePaths paths) : ICardEngine, ITableS
         if (disposed) return;
         disposed = true;
         if (current is not { } owner) return;
+        owner.Commands.Clear();
         Fail(owner, new ObjectDisposedException(nameof(ForgeEngine)));
         try { await StopAsync(owner); }
         finally { if (current == owner) current = null; }

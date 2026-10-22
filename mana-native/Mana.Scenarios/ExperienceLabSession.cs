@@ -1,3 +1,4 @@
+using System.Collections.Immutable;
 using Mana.Contracts;
 
 namespace Mana.Scenarios;
@@ -56,91 +57,93 @@ public sealed partial class ExperienceLabSession
                 ? decision.Intent switch { DecisionIntent.Priority => "priority", DecisionIntent.Mana => "mana", DecisionIntent.Selection => "selection", _ => "input" }
                 : state.Decision?.Kind ?? "",
             Players = state.Players.Select(player => player with { Priority = priorityPlayer == player.Id, Zones = player.Zones.Select(zone => zone with {
-                Cards = zone.Cards.Select(card => card with { Key = prompt + ":" + (card.VisualId.Length > 0 ? card.VisualId : card.CombatId) }).ToArray()
-            }).ToArray() }).ToArray()
+                Cards = zone.Cards.Select(card => card with { Key = prompt + ":" + (card.VisualId.Length > 0 ? card.VisualId : card.CombatId) }).ToImmutableArray()
+            }).ToImmutableArray() }).ToImmutableArray()
         };
     }
-    public GameSnapshot Reply(DecisionReply reply)
+    public GameSnapshot Reply(GameCommand command)
     {
         lock (gate) {
-            if (reply.GameId != State.Id || reply.DecisionId != State.Decision?.Id)
+            if (command is not DecisionCommand reply || reply.GameId != State.Id || reply.DecisionId != State.Decision?.Id)
                 throw new EngineCommandRejectedException("This scripted snapshot changed. Use its current controls.");
             if (Scenario.Id == DecisionFlowScenario.Id) return ReplyDecisionFlow(reply);
             var decision = State.Decision!;
             var cards = State.Viewer!.Zones.SelectMany(zone => zone.Cards).ToArray();
-            if (reply.Action == ReplyAction.UseSourceAction) {
+            if (reply is UseOfferedAction) {
                 reply.Validate();
-                return UseSourceAction(reply);
-            } else if (Scenario.Id == "ability-targeting.v1" && decision.Context == BallistaTargetContext) {
+                return UseSourceAction((UseOfferedAction)reply);
+            } else if (Scenario.Id == "ability-targeting.v1" && sourceActionParent != null
+                && decision is { Kind: "input", Intent: DecisionIntent.Selection, Purpose: DecisionPurpose.TargetSelection }) {
                 return ReplyBallistaTarget(reply);
-            } else if (Scenario.Id == CounterDamageScenario.Id && decision.Context == CounterDamageScenario.Context) {
+            } else if (Scenario.Id == CounterDamageScenario.Id && StageIndex % 3 == 0
+                && decision is { Kind: "input", Intent: DecisionIntent.Selection, Purpose: DecisionPurpose.TargetSelection }) {
                 StackTarget target;
-                if (reply.Action == ReplyAction.SelectPlayer && reply.Player is { } playerId && decision.PlayerChoices.Contains(playerId)) {
+                if (reply is SelectPlayer { Player: var playerId } && decision.PlayerChoices.Contains(playerId)) {
                     var player = State.Players.Single(player => player.Id == playerId);
                     target = new("player", playerId.ToString(System.Globalization.CultureInfo.InvariantCulture), player.Name, playerId);
-                } else if (reply.Action == ReplyAction.SelectCard) {
+                } else if (reply is SelectCard targetCard) {
                     var selected = State.Players.SelectMany(player => player.Zone("Battlefield").Cards.Select(card => (player, card)))
-                        .SingleOrDefault(item => item.card.Key == reply.Card && item.card.Selectable);
+                        .SingleOrDefault(item => item.card.Key == targetCard.Card && item.card.Selectable);
                     if (selected.card == null) throw Unsupported();
                     target = new("card", selected.card.VisualId, selected.card.Name, selected.player.Id);
                 } else throw Unsupported();
                 StageIndex++;
                 return State = Stamp(CounterDamageScenario.Snapshot(StageIndex, target));
             } else if (Scenario.Id == CounterDamageScenario.Id && StageIndex % 3 == 1
-                && reply.Action == ReplyAction.Confirm && decision.Intent == DecisionIntent.Priority) {
+                && reply is PassPriority && decision.Intent == DecisionIntent.Priority) {
                 var target = State.Stack.Single().Targets.Single();
                 StageIndex++;
                 return State = Stamp(CounterDamageScenario.Snapshot(StageIndex, target));
             } else if (Scenario.Id == "ability-targeting.v1" && StageIndex == 1
-                && reply.Action == ReplyAction.Confirm && decision.Intent == DecisionIntent.Priority) {
+                && reply is PassPriority && decision.Intent == DecisionIntent.Priority) {
                 return AdvanceBallista(2);
-            } else if (reply.Action == ReplyAction.SelectCard && decision.Intent == DecisionIntent.Selection) {
-                var chosen = cards.FirstOrDefault(card => card.Key == reply.Card && card.Selectable)
+            } else if (reply is SelectCard selection && decision.Intent == DecisionIntent.Selection) {
+                var chosen = cards.FirstOrDefault(card => card.Key == selection.Card && card.Selectable)
                     ?? throw Unsupported();
                 State = Stamp(State with { Players = State.Players.Select(player => player.Id != State.ViewerId ? player : player with {
                     Zones = player.Zones.Select(zone => zone with { Cards = zone.Cards.Select(card => card.Key != chosen.Key ? card : card with {
                         Highlighted = !card.Highlighted
-                    }).ToArray() }).ToArray()
-                }).ToArray() });
-            } else if (reply.Action == ReplyAction.SelectCard && decision.Intent is DecisionIntent.Priority or DecisionIntent.Mana) {
-                var source = cards.FirstOrDefault(card => card.Key == reply.Card && card.Selectable);
+                    }).ToImmutableArray() }).ToImmutableArray()
+                }).ToImmutableArray() });
+            } else if (reply is ActivateCard or UseManaSource && decision.Intent is DecisionIntent.Priority or DecisionIntent.Mana) {
+                var sourceKey = reply switch { ActivateCard activation => activation.Card, UseManaSource mana => mana.Card, _ => "" };
+                var source = cards.FirstOrDefault(card => card.Key == sourceKey && card.Selectable);
                 if (source?.VisualId is not (ClutteredChangesScenario.ActionCardId or "reader-elf" or "mana-elf")) throw Unsupported();
                 abilityParent = State;
-                State = Stamp(State with { ActionClass = "", PriorityPlayerId = null, Decision = new() { Kind = "choice", Context = "playAbility", SourceCard = source,
+                State = Stamp(State with { ActionClass = "", PriorityPlayerId = null, Decision = new() { Kind = "choice", Purpose = DecisionPurpose.AbilitySelection, SourceCard = source,
                     SourceCardId = source.VisualId, SourceControllerId = State.ViewerId, SourceZone = "Battlefield",
                     Title = "Activate " + source.Name, Message = "Choose an ability. Costs and any targets come next.",
                     Min = 0, Max = 1, Choices = [new(0, "{T}: Add {G}.", null)] } });
-            } else if (reply.Action == ReplyAction.SelectPlayer && decision.Intent == DecisionIntent.Selection
-                && reply.Player is { } recipient && decision.PlayerChoices.Contains(recipient) && Scenario.Id == "trigger-search.v1") {
+            } else if (reply is SelectPlayer { Player: var recipient } && decision.Intent == DecisionIntent.Selection && decision.PlayerChoices.Contains(recipient) && Scenario.Id == "trigger-search.v1") {
                 if (recipient == State.ViewerId) { StageIndex = 3; State = Stamp(Stages[3].Snapshot); }
                 else State = Stamp(State with { Decision = null, DecisionOwnerId = recipient, PriorityPlayerId = null, ActionClass = "choice",
                     Notices = ["Scripted recipient: Opponent " + recipient + ". Their private search choices are not supplied to this view."] });
-            } else if (reply.Action == ReplyAction.Choose && decision.Kind == "choice") {
-                var selected = reply.Choices ?? [];
+            } else if (reply is ChooseOptions or OrderOptions && decision.Kind == "choice" && decision.Ordered == (reply is OrderOptions)) {
+                var selected = reply switch { ChooseOptions choose => choose.Choices, OrderOptions order => order.Choices, _ => [] };
                 if (selected.Length < decision.Min || selected.Length > decision.Max || selected.Distinct().Count() != selected.Length
                     || selected.Any(index => !decision.Choices.Any(choice => choice.Index == index)
                         && !decision.LibraryCards.Any(choice => choice.Index == index))) throw Unsupported();
-                if (Scenario.Id == "trigger-search.v1" && decision.Context == "librarySearch" && selected.Length == 1) {
+                if (Scenario.Id == "trigger-search.v1" && StageIndex == 3 && decision.LibraryCards.Length > 0 && selected.Length == 1) {
                     var selectedCard = decision.LibraryCards.Single(card => card.Index == selected[0]).Card;
                     StageIndex = 4;
                     State = Stamp(Stages[4].Snapshot with { Players = Stages[4].Snapshot.Players.Select(player => player.Id != State.ViewerId ? player : player with {
                         Zones = player.Zones.Select(zone => zone.Name != "Hand" ? zone : zone with { Cards = [selectedCard with {
                             VisualId = "searched-card", CombatId = "searched-card", Selectable = false
-                        }] }).ToArray()
-                    }).ToArray() });
-                } else if (decision.Context == "playAbility" && selected.Length == 0) {
+                        }] }).ToImmutableArray()
+                    }).ToImmutableArray() });
+                } else if (decision.Purpose == DecisionPurpose.AbilitySelection && selected.Length == 0) {
                     var parent = abilityParent;
                     abilityParent = null;
                     State = Stamp(parent ?? State with { ActionClass = "", PriorityPlayerId = State.ViewerId,
                         DecisionOwnerId = State.ViewerId, Decision = PriorityDecision("") });
-                } else if (decision.Context == "playAbility" && selected.Length == 1 && decision.SourceCard is { } source
+                } else if (decision.Purpose == DecisionPurpose.AbilitySelection && selected.Length == 1 && decision.SourceCard is { } source
                     && source.VisualId is ClutteredChangesScenario.ActionCardId or "reader-elf" or "mana-elf") {
                     State = State with { Players = State.Players.Select(player => player.Id != State.ViewerId ? player : player with {
-                        Mana = new(player.Mana) { ["G"] = player.Mana.GetValueOrDefault("G") + 1 },
+                        Mana = (new Dictionary<string, int>(player.Mana) { ["G"] = player.Mana.GetValueOrDefault("G") + 1 }).ToImmutableDictionary(),
                         Zones = player.Zones.Select(zone => zone with { Cards = zone.Cards.Select(card => card.VisualId != source.VisualId ? card : card with {
                             Tapped = true, Selectable = false
-                        }).ToArray() }).ToArray()
-                    }).ToArray() };
+                        }).ToImmutableArray() }).ToImmutableArray()
+                    }).ToImmutableArray() };
                     abilityParent = null;
                     if (Scenario.Id == "ability-choice.v1") {
                         StageIndex = 1;
@@ -148,8 +151,8 @@ public sealed partial class ExperienceLabSession
                             Decision = PriorityDecision("One green mana is in your pool.") });
                     } else Complete("Added one green mana.");
                 } else Complete("Scripted order recorded: " + string.Join(" → ", selected.Select(index => decision.Choices.Single(choice => choice.Index == index).Label)) + ". Reset to repeat.");
-            } else if (reply.Action == ReplyAction.Allocate && decision.Kind == "allocate") {
-                var amounts = reply.Amounts ?? [];
+            } else if (reply is AllocateAmounts allocation && decision.Kind == "allocate") {
+                var amounts = allocation.Amounts;
                 bool valid = amounts.Length == decision.Choices.Length && amounts.Select(value => (long)value).Sum() == decision.Amount;
                 for (int index = 0; valid && index < amounts.Length; index++) {
                     var choice = decision.Choices[index];
@@ -159,16 +162,16 @@ public sealed partial class ExperienceLabSession
                     valid = decision.Choices.Select((choice, index) => amounts[index] >= (choice.Lethal ?? 0)).All(value => value);
                 if (!valid) throw new EngineCommandRejectedException("The scripted allocation must satisfy the displayed total and recipient thresholds.");
                 Complete("Scripted allocation recorded: " + string.Join(", ", amounts) + ". No combat rules were simulated. Reset to repeat.");
-            } else if (reply.Action == ReplyAction.Confirm && decision.Intent == DecisionIntent.Selection) {
+            } else if (reply is CompleteSelection && decision.Intent == DecisionIntent.Selection) {
                 int selected = cards.Count(card => card.Highlighted);
                 if (selected < decision.Min || selected > decision.Max) throw new EngineCommandRejectedException("Choose one or two cards in this scripted selection.");
                 Complete("Scripted selection recorded: " + selected + " cards. No cards were discarded. Reset to repeat.");
-            } else if (reply.Action == ReplyAction.Confirm && decision.Intent == DecisionIntent.Priority
+            } else if (reply is PassPriority && decision.Intent == DecisionIntent.Priority
                 && (Scenario.Id is "trigger-search.v1" or "stack-priority.v1") && (StageIndex == 0 || Scenario.Id == "stack-priority.v1" && StageIndex == 2)) {
                 StageIndex++; State = Stamp(Stages[StageIndex].Snapshot);
-            } else if (reply.Action == ReplyAction.Confirm && decision.Intent == DecisionIntent.Mana && Scenario.Id == "mana-payment.v1" && StageIndex == 0) {
+            } else if (reply is PayMana && decision.Intent == DecisionIntent.Mana && Scenario.Id == "mana-payment.v1" && StageIndex == 0) {
                 StageIndex = 1; State = Stamp(Stages[1].Snapshot);
-            } else if (reply.Action == ReplyAction.Cancel) { abilityParent = null; State = Stamp(Stage.Snapshot); }
+            } else if (reply is CancelSelection or CancelPayment or DeclineConfirmation or UndoLastAction or MulliganOpeningHand) { abilityParent = null; State = Stamp(Stage.Snapshot); }
             else throw Unsupported();
             return State;
         }
@@ -181,23 +184,23 @@ public sealed partial class ExperienceLabSession
     } });
     private static EngineCommandRejectedException Unsupported() => new("This is a scripted presentation snapshot. Inspect cards or use Previous, Next, Reset and Scenarios; start a real game for rules-driven play.");
 
-    private GameSnapshot ReplyDecisionFlow(DecisionReply reply)
+    private GameSnapshot ReplyDecisionFlow(DecisionCommand reply)
     {
         reply.Validate();
         var decision = State.Decision ?? throw Unsupported();
         if (State.DecisionOwnerId != State.ViewerId) throw Unsupported();
         if (StageIndex == 0 && decision.Intent == DecisionIntent.Priority) {
-            if (reply.Action == ReplyAction.UseSourceAction) return UseSourceAction(reply);
-            if (reply.Action == ReplyAction.SelectCard && State.Viewer!.Zone("Hand").Cards.Any(card =>
-                card.VisualId == DecisionFlowScenario.LandId && card.Selectable && card.Key == reply.Card))
+            if (reply is UseOfferedAction) return UseSourceAction((UseOfferedAction)reply);
+            if (reply is PlayCard play && State.Viewer!.Zone("Hand").Cards.Any(card =>
+                card.VisualId == DecisionFlowScenario.LandId && card.Selectable && card.Key == play.Card))
                 return AdvanceTo(1);
         }
-        if (StageIndex == 4 && decision is { Intent: DecisionIntent.Selection, Context: DecisionFlowScenario.TargetContext }
-            && reply.Action == ReplyAction.SelectCard && State.Players.Where(player => player.Id != State.ViewerId)
+        if (StageIndex == 4 && decision is { Kind: "input", Intent: DecisionIntent.Selection, Purpose: DecisionPurpose.TargetSelection }
+            && reply is SelectCard target && State.Players.Where(player => player.Id != State.ViewerId)
                 .SelectMany(player => player.Zone("Battlefield").Cards).Any(card =>
-                    card.VisualId == CounterDamageScenario.TargetId && card.Selectable && card.Key == reply.Card))
+                    card.VisualId == CounterDamageScenario.TargetId && card.Selectable && card.Key == target.Card))
             return AdvanceTo(5);
-        if (StageIndex is 1 or 5 or 7 && reply.Action == ReplyAction.Confirm
+        if (StageIndex is 1 or 5 or 7 && reply is PassPriority
             && decision is { Intent: DecisionIntent.Priority, OkEnabled: true })
             // Acknowledges only the next authored checkpoint. Other seats'
             // subsequent actions/choices still require explicit lab Next.

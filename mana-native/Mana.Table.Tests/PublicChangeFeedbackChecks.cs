@@ -1,3 +1,4 @@
+using System.Collections.Immutable;
 using Mana.Contracts;
 using Mana.Renderer;
 
@@ -33,8 +34,8 @@ internal static class PublicChangeFeedbackChecks
         check(feedback.Groups.Count == 4 && feedback.Groups.TakeLast(2).All(group => group.Cause == null && group.Changes.Count == 1),
             "Unknown sources remain unknown rather than being attributed to a nearby resolution or matching card name");
         var hidden = unreported with { Players = unreported.Players.Select(player => player.Id != initial.ViewerId ? player : player with {
-            Zones = player.Zones.Select(zone => zone with { Cards = zone.Cards.Where(card => card.VisualId != targets[0].VisualId).ToArray() }).ToArray()
-        }).ToArray() };
+            Zones = player.Zones.Select(zone => zone with { Cards = zone.Cards.Where(card => card.VisualId != targets[0].VisualId).ToImmutableArray() }).ToImmutableArray()
+        }).ToImmutableArray() };
         feedback.Observe(unreported, hidden, 5);
         check(feedback.Groups.First().Changes.Count == 2 && feedback.Groups.First().Summary.Contains("each of 2 permanents"),
             "A later departure does not rewrite the affected count of a completed public effect");

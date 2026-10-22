@@ -1,3 +1,4 @@
+using System.Collections.Immutable;
 using Mana.Contracts;
 using Mana.Magic;
 
@@ -68,7 +69,7 @@ internal static class DecisionDockPresentationChecks
             "An explicit quiet pass needs its current engine-token permission and pauses for reading without turning ordinary legal responses into auto permission");
 
         var namedPlayers = priority.Players.Select(player => player.Id == 1 ? player with { Name = "Mira, Weaver of Very Long Names" } : player).ToArray();
-        var other = priority with { Players = namedPlayers, Decision = null, PriorityPlayerId = 2, DecisionOwnerId = 1, ActionClass = "mana" };
+        var other = priority with { Players = namedPlayers.ToImmutableArray(), Decision = null, PriorityPlayerId = 2, DecisionOwnerId = 1, ActionClass = "mana" };
         var payment = DecisionDockPresentation.From(other, auto);
         var choosing = DecisionDockPresentation.From(other with { ActionClass = "choice" }, auto);
         check(payment is { Status: DecisionDockStatus.Payment, ActorRole: DecisionDockActorRole.Paying, ActorId: 1,
@@ -84,10 +85,10 @@ internal static class DecisionDockPresentationChecks
 
         var currentSource = new Card { VisualId = "source-occurrence", Name = "Nicanzil, Current Conductor", Power = 7, Toughness = 8 };
         var sourcePlayers = priority.Players.Select(player => player.Id != 0 ? player : player with {
-            Zones = player.Zones.Select(zone => zone.Name != "Battlefield" ? zone : zone with { Count = 1, Cards = [currentSource] }).ToArray()
+            Zones = player.Zones.Select(zone => zone.Name != "Battlefield" ? zone : zone with { Count = 1, Cards = [currentSource] }).ToImmutableArray()
         }).ToArray();
-        var target = priority with { Players = sourcePlayers, ActionClass = "selection", Decision = new() {
-            Id = "target-after-priority", Kind = "input", InputType = "InputSelectTargets", Intent = DecisionIntent.Selection,
+        var target = priority with { Players = sourcePlayers.ToImmutableArray(), ActionClass = "selection", Decision = new() {
+            Id = "target-after-priority", Kind = "input", Purpose = DecisionPurpose.TargetSelection, Intent = DecisionIntent.Selection,
             Message = "Select a legal target reported by the engine.", Min = 1, Max = 1, SourceCardId = currentSource.VisualId,
             SourceControllerId = 0, SourceCard = currentSource with { Power = 2, Toughness = 3 }, Ok = "Confirm target",
             OkEnabled = false, QuietYieldToken = "must-not-answer-a-target" } };
@@ -101,7 +102,7 @@ internal static class DecisionDockPresentationChecks
                 Status: DecisionDockStatus.Waiting, SourceCard: null, Instruction: "", DecisionId: "", ActionLabel: "" },
             "A different reported decision owner prevents a stale local source or private instruction from becoming that player's choice");
 
-        var unknown = target with { Decision = new() { Id = "unfamiliar-required", Kind = "input", InputType = "FutureRequiredInput",
+        var unknown = target with { Decision = new() { Id = "unfamiliar-required", Kind = "input",
             Message = "Choose a target-looking option, then place the remaining objects in a special order.\nThe engine owns these unfamiliar constraints." } };
         var fallback = DecisionDockPresentation.From(unknown, auto);
         check(fallback is { Status: DecisionDockStatus.Selection, Headline: "Make a choice", Caption: "", SourceCard: null }
@@ -115,7 +116,7 @@ internal static class DecisionDockPresentationChecks
             "The task preserves exact and optional target counts from the engine without repeating or parsing its effect prose");
 
         var ability = target with { ActionClass = "choice", Decision = target.Decision! with {
-            Id = "choose-source-ability", Kind = "choice", Intent = DecisionIntent.General, InputType = "", Context = "playAbility",
+            Id = "choose-source-ability", Kind = "choice", Intent = DecisionIntent.General, Purpose = DecisionPurpose.AbilitySelection,
             Min = 1, Max = 1, Choices = [new(4, "Pay the reported cost: do the first action.", null), new(9, "Do the second action.", null)] } };
         check(DecisionDockPresentation.From(ability, quiet) is { Status: DecisionDockStatus.AbilityChoice, Headline: "Choose an ability", DecisionId: "choose-source-ability" }
             && DecisionDockPresentation.From(target with { Decision = target.Decision! with { Intent = DecisionIntent.Mana }, ActionClass = "mana" }, auto) is {

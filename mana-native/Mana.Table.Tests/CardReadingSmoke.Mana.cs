@@ -1,3 +1,4 @@
+using System.Collections.Immutable;
 using Mana.Contracts;
 using Mana.Magic;
 using Mana.Renderer;
@@ -12,15 +13,15 @@ internal sealed partial class CardReadingSmoke
     {
         int replies = 0;
         double? lossStarted = null;
-        Dictionary<string, int> Pool(int colorless) => new() { ["W"] = 1, ["U"] = 2, ["B"] = 3, ["R"] = 4, ["G"] = 5, ["C"] = colorless };
+        ImmutableDictionary<string, int> Pool(int colorless) => ImmutableDictionary<string, int>.Empty.Add("W", 1).Add("U", 2).Add("B", 3).Add("R", 4).Add("G", 5).Add("C", colorless);
         Step(0, () => {
             replies = scenario.Replies.Count; Move(new(10, 70));
             Publish(scenario.State with { Decision = new() { Kind = "input", Intent = DecisionIntent.Priority, OkEnabled = true },
-                Players = scenario.State.Players.Select(player => player with { Mana = Pool(2), Counters = new() { ["Poison"] = 3 }, States = [
+                Players = scenario.State.Players.Select(player => player with { Mana = Pool(2).ToImmutableDictionary(), Counters = ImmutableDictionary<string, int>.Empty.Add("Poison", 3), States = [
                     new("speed", "Speed", "progress", 2, 4, "Public progress supplied by the game."),
                     new("counter:poison", "Poison", "counter", 3, null, "Public poison counters."),
                     new("monarch", "Monarch", "status", null, null, "The current monarch.")
-                ] }).ToArray() });
+                ] }).ToImmutableArray() });
         });
         Prepared(() => view.Match!.Players.All(player => view.ManaPoolBadge(player.Id)?.Parts.Length == 6), 2, () => {
             Check(view.TextScale == 1.3f && ManaGeometryReady(), "All four icon halos expose six exact readable color totals beside life and public state at130%");
@@ -38,7 +39,7 @@ internal sealed partial class CardReadingSmoke
             MoveHit("close-overlay");
         }, "The read-only mana detail must show the current complete pool"); Click();
         Step(0, () => Publish(scenario.State with { Decision = new() { Kind = "input", Intent = DecisionIntent.Mana, OkEnabled = true },
-            Players = scenario.State.Players.Select(player => player with { Mana = Pool(1) }).ToArray() }));
+            Players = scenario.State.Players.Select(player => player with { Mana = Pool(1).ToImmutableDictionary() }).ToImmutableArray() }));
         Prepared(() => view.ManaPoolBadge(0)?.Parts.SingleOrDefault(part => part.Key == "C") is { Amount: "1", Delta: -1 }, 2, () => {
             lossStarted = view.ManaPoolBadge(0)!.Parts.Single(part => part.Key == "C").AnimationStarted;
             Check(ManaGeometryReady() && view.Match?.Decision?.Intent == DecisionIntent.Mana,
@@ -49,7 +50,7 @@ internal sealed partial class CardReadingSmoke
             Check(view.ManaPoolBadge(0)!.Parts.Single(part => part.Key == "C").AnimationStarted == lossStarted,
                 "A repeated snapshot does not restart a mana transition");
             Publish(scenario.State with { PhaseKey = "COMBAT_BEGIN", Decision = new() { Kind = "input", Intent = DecisionIntent.Priority, OkEnabled = true },
-                Players = scenario.State.Players.Select(player => player with { Mana = Pool(0) }).ToArray() });
+                Players = scenario.State.Players.Select(player => player with { Mana = Pool(0).ToImmutableDictionary() }).ToImmutableArray() });
         });
         Prepared(() => view.ManaPoolBadge(0)?.Parts.SingleOrDefault(part => part.Key == "C") is { Amount: "0", Delta: -1, Opacity: < 1 }, 2, () =>
             Check(view.ManaPoolBadge(0)!.Parts.Single(part => part.Key == "C") is { Amount: "0", Opacity: > 0 and < 1 },
@@ -57,10 +58,10 @@ internal sealed partial class CardReadingSmoke
             "A zeroed color needs its brief loss feedback");
         Prepared(() => view.ManaPoolBadge(0)?.Parts.All(part => part.Key != "C") == true, 2, () => {
             Check(view.ManaPoolBadge(0)!.Total == 15, "After its fade, only the removed color disappears; retained colors remain exact");
-            Publish(scenario.State with { Combat = new(Enumerable.Range(0, 10).Select(index => new Attack("incoming-fixture-" + index, 0, [], [])).ToArray(), [], null),
+            Publish(scenario.State with { Combat = new(Enumerable.Range(0, 10).Select(index => new Attack("incoming-fixture-" + index, 0, [], [])).ToImmutableArray(), [], null),
                 Players = scenario.State.Players.Select(player => player with {
-                Mana = new Dictionary<string, int>(new[] { "W", "U", "B", "R", "G", "C" }.ToDictionary(symbol => symbol, _ => int.MaxValue))
-            }).ToArray() });
+                Mana = (new Dictionary<string, int>(new[] { "W", "U", "B", "R", "G", "C" }.ToDictionary(symbol => symbol, _ => int.MaxValue))).ToImmutableDictionary()
+            }).ToImmutableArray() });
         }, "The loss indicator must expire without changing retained mana");
         Prepared(() => view.Match!.Players.All(player => view.ManaPoolBadge(player.Id)?.Total == 6L * int.MaxValue), 2, () => {
             Check(ManaGeometryReady() && view.Match!.Players.All(player => view.ManaPoolBadge(player.Id)!.Parts.All(part => part.Amount == int.MaxValue.ToString())),
@@ -70,7 +71,7 @@ internal sealed partial class CardReadingSmoke
         }, "Large authoritative color amounts must remain readable"); Click();
         Prepared(() => view.Hits.Any(hit => hit.Id == "motion"), 2, () => MoveHit("motion"), "Reduced motion is changed through the real setting"); Click();
         Step(0, () => MoveHit("close-overlay")); Click();
-        Step(0, () => Publish(scenario.State with { Players = scenario.State.Players.Select(player => player with { Mana = [] }).ToArray() }));
+        Step(0, () => Publish(scenario.State with { Players = scenario.State.Players.Select(player => player with { Mana = ImmutableDictionary<string, int>.Empty }).ToImmutableArray() }));
         Prepared(() => view.Match!.Players.All(player => view.ManaPoolBadge(player.Id)?.Parts.Length == 0), 2, () => {
             Check(PlayPreferences.Load(view.Profile).ReducedMotion && view.ManaPoolBadge(0) is { Total: 0, Parts.Length: 0 }
                 && view.Match!.Players.All(player => view.ManaPoolBadge(player.Id)!.Bounds.IsEmpty)

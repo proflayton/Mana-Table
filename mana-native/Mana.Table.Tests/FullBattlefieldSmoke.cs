@@ -1,3 +1,4 @@
+using System.Collections.Immutable;
 using System.Text.Json;
 using Mana.Contracts;
 using Mana.Magic;
@@ -39,7 +40,7 @@ internal sealed class FullBattlefieldSmoke : ITableAutomation
             }
             images.Dispose(); images = source;
         }
-        using var game = new TableWindow(scenario, profile, null, null, size, initialState: scenario.State, artSource: images);
+        using var game = new TableWindow(TestTableServices.For(scenario), profile, null, null, size, initialState: scenario.State, artSource: images);
         game.Automation = new FullBattlefieldSmoke(game.TestPort, scenario, readableCrowd);
         game.Run();
     }
@@ -83,11 +84,11 @@ internal sealed class FullBattlefieldSmoke : ITableAutomation
                 "The local tenth creature reads first and exposes its explicit current activation");
             MoveHit("read-card-action");
         }); Click();
-        Wait(() => scenario.Replies.Count == 1 && view.Match?.Decision?.Context == "playAbility", 3, () => {
-            Check(scenario.Replies.Count == 1 && scenario.Replies[0] is { Action: ReplyAction.SelectCard } reply
+        Wait(() => scenario.Replies.Count == 1 && view.Match?.Decision?.Purpose == DecisionPurpose.AbilitySelection, 3, () => {
+            Check(scenario.Replies.Count == 1 && scenario.Replies[0] is ActivateCard reply
                 && reply.GameId == actionGame && reply.DecisionId == actionDecision && reply.Card == actionCard,
                 "The local tenth creature submits exactly one action scoped to its own game, decision and card handle");
-            Check(view.Match?.Decision is { Context: "playAbility", SourceCard.VisualId: "ten-0-9" },
+            Check(view.Match?.Decision is { Purpose: DecisionPurpose.AbilitySelection, SourceCard.VisualId: "ten-0-9" },
                 "The ability chooser belongs to the local tenth creature");
             Capture("04-own-tenth-action");
             Publish(Example("mixed")); MoveAway();
@@ -216,7 +217,7 @@ internal sealed class FullBattlefieldSmoke : ITableAutomation
             var cards = new[] { 0, 1, 4 }.Select(index => state.Viewer!.Zone("Battlefield").Cards.Single(card => card.VisualId == "mixed-0-" + index)).ToArray();
             Publish(state with { Id = "full-battlefield-dense-order", Decision = new() { Kind = "choice", Ordered = true, Min = 3, Max = 3,
                 Message = "Choose these creatures in order.", Choices = cards.Select((card, index) => new Choice(index, card.Name,
-                    card with { Key = "", VisualId = "", CombatId = "" }) { CardId = card.VisualId }).ToArray() } });
+                    card with { Key = "", VisualId = "", CombatId = "" }) { CardId = card.VisualId }).ToImmutableArray() } });
             MoveAway();
         });
         Wait(() => view.Match?.Decision is { Ordered: true } && TableChoices.IsDirect(view.Match) && BattlefieldReady(20), 4, () => {
@@ -242,7 +243,7 @@ internal sealed class FullBattlefieldSmoke : ITableAutomation
         Step(0, () => view.CaptureWindow(Path.Combine(view.Profile, "13-dense-order-three-window.png")));
         Click();
         Wait(() => !view.Busy && scenario.Replies.Count == 2, 2, () => {
-            Check(scenario.Replies[^1] is { Action: ReplyAction.Choose } reply && reply.GameId == gameId
+            Check(scenario.Replies[^1] is OrderOptions reply && reply.GameId == gameId
                 && reply.DecisionId == decisionId && reply.Choices!.SequenceEqual(order),
                 "Only explicit confirmation submits dense order [2,0,1] with its exact current game and decision scope");
             Finish();
@@ -436,14 +437,14 @@ internal sealed class FullBattlefieldSmoke : ITableAutomation
         int count = mode == "ten" ? 10 : mode == "mixed" ? 20 : 50;
         var state = PresentationSmoke.Example();
         var players = state.Players.Select(p => p with { Zones = p.Zones.Select(z => z.Name == "Battlefield"
-            ? z with { Count = count, Cards = Enumerable.Range(0, count).Select(i => Permanent(mode, p.Id, i)).ToArray() }
+            ? z with { Count = count, Cards = Enumerable.Range(0, count).Select(i => Permanent(mode, p.Id, i)).ToImmutableArray() }
             : z.Name == "Hand" && p.Id == 0 && mode != "ten" ? z with { Count = 12, Cards = Enumerable.Range(0, 12).Select(i => new Card {
                 VisualId = "full-hand-" + i, CombatId = "full-hand-" + i, Name = "Forest", Type = "Basic Land — Forest"
-            }).ToArray() } : z).ToArray() }).ToArray();
+            }).ToImmutableArray() } : z).ToImmutableArray() }).ToArray();
         Combat? combat = mode == "mixed" ? new([new("mixed-1-17", 0, ["mixed-0-18"], []) {
             Defender = new("player", "0", 0, "You"), Blocked = true
         }], [], null) : null;
-        return state with { Id = "full-battlefield-" + mode, Players = players, Combat = combat, Stack = [], Activity = [],
+        return state with { Id = "full-battlefield-" + mode, Players = players.ToImmutableArray(), Combat = combat, Stack = [], Activity = [],
             ActivePlayerId = mode == "mixed" ? 1 : 0, Decision = new() { Kind = "input", Intent = DecisionIntent.Priority,
                 Message = "You have priority.", Ok = "OK", OkEnabled = true, CanAutoPass = false } };
     }
@@ -453,7 +454,7 @@ internal sealed class FullBattlefieldSmoke : ITableAutomation
         Card Creature(int seat, int group, int copy) => new() {
             VisualId = $"readable-{seat}-{group}-{copy}", CombatId = $"readable-{seat}-{group}-{copy}",
             Name = DistinctNames[group], Type = "Creature", Power = 13 + group, Toughness = 13 + group,
-            Counters = group == 1 ? new() { ["+1/+1"] = 10 + group, ["Shield"] = 2 } : new() { ["+1/+1"] = 10 + group },
+            Counters = group == 1 ? ImmutableDictionary<string, int>.Empty.Add("+1/+1", 10 + group).Add("Shield", 2) : ImmutableDictionary<string, int>.Empty.Add("+1/+1", 10 + group),
             Damage = group == 2 ? 2 : 0, Sick = group % 4 == 0,
             CombatKeywords = group % 3 == 0 ? ["flying"] : group % 3 == 1 ? ["trample"] : []
         };
@@ -466,7 +467,7 @@ internal sealed class FullBattlefieldSmoke : ITableAutomation
                     new() { VisualId = $"readable-land-{player.Id}-0", Name = "Forest", Type = "Basic Land — Forest", Tapped = true },
                     new() { VisualId = $"readable-land-{player.Id}-1", Name = "Island", Type = "Basic Land — Island", Tapped = true },
                     new() { VisualId = $"readable-land-{player.Id}-2", Name = "Wastes", Type = "Basic Land", Tapped = true }]
-            }).ToArray() }).ToArray() };
+            }).ToImmutableArray() }).ToImmutableArray() };
     }
     private static Card Permanent(string mode, int seat, int index)
     {
@@ -480,7 +481,7 @@ internal sealed class FullBattlefieldSmoke : ITableAutomation
             0 => card with { Name = "Treetop Village", Type = "Land Creature — Ape", Power = 3, Toughness = 3, CombatKeywords = ["trample"] },
             2 => card with { Tapped = true },
             3 => card with { Damage = 1 },
-            4 => card with { Power = 3, Toughness = 3, Counters = new() { ["+1/+1"] = 1 } },
+            4 => card with { Power = 3, Toughness = 3, Counters = ImmutableDictionary<string, int>.Empty.Add("+1/+1", 1) },
             5 => card with { CombatKeywords = ["flying"] },
             6 => card with { CombatKeywords = ["vigilance"] },
             7 => card with { PhasedOut = true },

@@ -9,6 +9,121 @@ Use the package's `SOURCE.txt`/`build.json` and release notes to identify its be
 The [native development guide](../../mana-native/README.md) is the build/run entry
 point for the Windows client.
 
+## Rules-provider boundary
+
+Forge is the installed rules provider; replacing it later must not require a new
+renderer, interaction policy or multiplayer client. The shipping `Mana.Table`
+executable owns provider construction, startup and disposal. `Mana.Game` contains
+the application and window and cannot reference `Mana.Forge` or the executable,
+directly or transitively. A build target checks resolved dependencies, and native
+checks inspect emitted assemblies. `TableServices` supplies separate catalog,
+table-setup and match ports plus explicitly named optional services. Gameplay
+never receives `ICardEngine` or discovers capabilities through provider casts.
+
+`IMatchConnection` publishes deeply immutable `GameSnapshot` values and accepts a
+closed family of semantic `GameCommand` variants. Arrays and dictionaries in the
+entire match graph, including nested decision previews and event causes, use
+standard immutable collections. A provider's construction buffers and a
+consumer's inspection cannot rewrite a published revision. New observations may
+share unchanged values while preserving the preceding frame for transitions.
+
+Commands carry only their variant's required payload: keeping an opening hand,
+paying mana and passing priority are different types. Combat pair commands
+explicitly describe toggles. `GameCommandPermissions` checks current scope,
+semantic task, disclosed candidates and supplied constraints before dispatch;
+the provider remains authoritative and revalidates at execution. `Mana.Forge`
+alone translates these meanings into its private wire actions. There is no
+public nullable reply bag. This does not provide live engine migration or an
+installed second rules engine.
+
+Replacing a provider also requires resolving deck contents and printings into
+that provider's catalog. Catalog identifiers, match occurrences and current
+action handles are different identities; copying opaque saved/provider IDs is
+not a migration strategy. Match handles expire at their declared scope and are
+never cross-provider replay commands.
+
+| Layer | Owns |
+| --- | --- |
+| Rules provider and adapter | Legal actions, decision constraints, costs, targets, resolution, effective state, event-time results and viewer filtering. `forge-api` and `Mana.Forge` translate Forge into the shared contracts. |
+| `Mana.Contracts` and `Mana.Client` | Provider-neutral state, scoped actions/decisions, command scheduling, observation ordering and stale-result rejection. Opaque handles grant only their declared current authority. |
+| `Mana.Magic`, `Mana.Game` and `Mana.Renderer` | Magic presentation language, local inspection/focus, gestures, grouping, layout and visual timing. These layers consume permissions; they do not establish rules legality. |
+| `Mana.Table` | Shipping composition, provider lifetime, installation health and update bootstrap. |
+
+`Decision.Purpose` describes semantic choices such as opening hands, targets and
+abilities. The Java provider classifies its actual input once and publishes its
+semantic task/purpose; the native adapter validates that combination. Unknown or
+contradictory tasks fail explicitly. Forge input-class names and context remain
+private diagnostics and never become shared decision types. A provider supplies explicit candidates,
+limits and permissions rather than asking the client to recognize card names or
+reconstruct a rule from prose.
+
+The current source-action slice moves asynchronous catalog reads into
+`Mana.Client.ClientSession.SourceActions`: it coalesces source changes, publishes explicit
+loading/ready/unsupported/stale/failed states, freezes accepted catalogs and checks
+game, decision, revision, viewer and source context before creating a command for a
+catalog member. The UI supplies its currently inspected source; the client session
+owns the catalog lifetime and independently checks membership, revision, viewer
+and current physical disclosure at submission. Accepting a changed/revoked frame,
+resetting or closing revokes that authority. The adapter revalidates every command.
+Timeout ends the client's wait, not the underlying provider operation; late
+completions are discarded. Query capability does not determine whether a card
+can be inspected. Current disclosed locations include a revealed library top;
+an embedded historical decision face cannot retain action authority after the
+occurrence disappears. Cross-zone play gestures use a current offered cast/play
+action rather than a UI list of permitted zones. Hand-placement and Auto still
+consume their separate explicit provider permissions.
+
+Forge priority alternatives are explicit state: Undo, pass turn or none. Native
+Undo and pass-turn commands never emulate Forge's overloaded Cancel button.
+The Java adapter validates their current meaning both before queueing and on the
+input thread; a changed Undo cannot fall through to yielding the turn. Ordinary
+priority passing also invokes the explicit pass operation, independently of a
+Forge yield-suggestion button. The private IPC remains version 2 and adds the
+required `semantic-priority-actions` capability; new clients reject older jars.
+An `expectedTask` discriminator prevents a typed answer being interpreted as a
+different task by the private wire's generic confirmation operation. Persisted
+decks and profiles do not change.
+
+Keep three kinds of data separate. **Current state** describes the viewer's
+authorized present board, effective P/T, resources and mechanics. **Event-time
+facts** describe what actually changed, with event identity, affected occurrences
+and a reported cause when available; they must not be reconstructed by looking up
+an object's later state. Pending base damage remains distinct from actual damage
+after prevention or replacement. **Presentation state** describes hover, focus,
+travel, receipts and timing. It cannot mutate the board, grant a target or delay
+the authority's next state. All three obey current visibility: historical facts,
+cached readers, art preloading and debug output cannot restore a face or private
+choice the viewer is no longer entitled to inspect.
+
+Projection playback and rules resimulation are different capabilities. Existing
+authored scenarios replay projected observations through the production client;
+they do not execute Magic rules. A future recorded projection needs ordered,
+viewer-filtered observations, event/decision scope and schema/provider versions.
+Running those actions through a rules provider again additionally needs a valid
+initial rules state, controlled random outcomes and fresh action capabilities;
+recorded prompt handles are not portable commands. The existing conformance
+runner can compare canonical checkpoints, but current Forge journeys do not
+establish another provider's rules equivalence or a complete Forge state oracle.
+
+The boundary is informed by inspected primary material; the mapping above is our
+design inference, not a claim about complete proprietary implementations:
+
+- [WotC's rules-engine account](https://magic.wizards.com/en/news/mtg-arena/on-whiteboards-naps-and-living-breakthrough)
+  describes finalized legal-action lists, explicit client decision constraints,
+  headless scripted rules tests and the need to retain historical values.
+- [Blizzard's VFX account](https://news.blizzard.com/en-us/article/22552047/developer-insights-the-art-behind-the-science)
+  separates supplied results from mostly client-side visuals and shows how
+  targets, gestures and persistent effects require readable visual feedback.
+- [HearthSim's protocol documentation](https://hearthsim.info/docs/gamestate-protocol/)
+  documents entity state, private options and nested causal blocks. This is the
+  maintainers' reverse engineering, not Blizzard-confirmed internal design.
+- [HSReplay's maintained format](https://github.com/HearthSim/hsreplay-xml/blob/master/hsreplay.dtd)
+  preserves state changes, nested effects, choices, submitted input and build/schema
+  identity; replay is more than a prose activity log.
+- [SabberStone's public game implementation](https://github.com/HearthSim/SabberStone/blob/master/SabberStoneCore/src/Model/Game.cs)
+  supplies a comparable headless input/state loop and explicit cloning/RNG policy.
+  It is an independent simulator, not Hearthstone's proprietary engine.
+
 ## Shared match and synchronization
 
 `MatchTable` owns one Forge game and one `MatchSession` per human controller.
@@ -314,7 +429,7 @@ its consequence; an eliminated seat can watch or leave.
 | `Mana.Magic` | Phase language, legal-target interpretation, click/drag command construction, Auto priority, Magic card classification and Magic art provider |
 | `Mana.Forge` | Process lifetime, protocol negotiation and Forge-to-contract mapping |
 | `Mana.Renderer` | GPU replay, typed draw commands, CPU font metrics, immutable table layout, projection, motion and effects |
-| `Mana.Table` | Headless application, interaction publication, card presentation, screen composition and thin native window |
+| `Mana.Game` | Headless application, interaction publication, card presentation, screen composition and thin native window |
 | `Mana.Scenarios` | Versioned authored projections and isolated Experience Lab sessions shared with presentation checks; no Magic rules simulation |
 | `Mana.Conformance` | Test-only semantic scenarios, canonical full checkpoints and first-divergence reporting for two engine adapters |
 | `Mana.Client.Tests`, `Mana.Table.Tests` | Headless behavior checks and separate native test/automation executable |
@@ -596,8 +711,9 @@ exact input, source instance, game version and handle before calling the engine'
 existing priority or mana-payment ability path. Costs, targets and resolution
 continue through Forge. No native rules-text parser determines legal actions.
 
-`TableApplication.SourceActions` coalesces read queries and rejects results after
-source, snapshot, visibility or decision changes. Action hits include their query
+`Mana.Client.SourceActionSession` owns read-query coalescing, catalog freshness and
+scoped reply creation; `TableApplication.SourceActions` supplies the current
+readable occurrence and presents that session's state. Action hits include their query
 generation and binding so a held press cannot activate a refreshed first option.
 The selected canonical occurrence is composed by `SourceActions.View` using its
 complete original face, with current counters, P/T, damage and authorized action
@@ -610,13 +726,13 @@ reading preserves the browser until an explicit use action. Eligible hand-card
 placement options, including Gaea's Touch, retain the existing `HandPlacements`
 and `UseHandPlacement` route, followed by Forge's required card selection.
 
-Actual `InputSelectTargets` decisions retain their semantic input type. Their
+Target choices use the provider-neutral `DecisionPurpose.TargetSelection`. Their
 source is highlighted on the table, pointer aiming links it to legal cards or
 portraits, and the dock retains engine-permitted cancellation without calling a
 mixed card/player decision "Choose a player" or synthesizing a stack card.
 
 `TableApplication.AbilityChoices` handles genuine later single-select
-`playAbility` choices beside the actual source occurrence. This context includes abilities and
+`DecisionPurpose.AbilitySelection` choices beside the actual source occurrence. This task includes abilities and
 casting modes. Pending engine input is separate from visual overlays: the table
 and source reader stay available while unrelated gameplay commands are blocked.
 An explicit action click submits its original index; optional Cancel submits an
@@ -788,15 +904,11 @@ Spells rise into the central response area before settling onto the battlefield.
 These effects never submit input, postpone snapshots, or hold game priority.
 Reduced motion skips travel, entrance delays, anonymous draws and impact rings.
 
-`ICardEngine` composes narrower catalog, setup and match connection interfaces.
-This supports selecting another backend without adding a renderer or multiplayer
-implementation. It does not imply live engine migration. A native rules engine is
-not installed yet. The conformance runner requires canonical occurrence aliases,
-controlled random outcomes and complete rules/seat checkpoints from each adapter;
-Java synchronization checks and native real-engine journeys exercise the current
-Forge boundary; they do not establish cross-engine rules equivalence. A complete
-Forge rules-state oracle remains separate work from
-the existing test-only seat-view audit.
+The [rules-provider boundary](#rules-provider-boundary) supports selecting another
+backend while retaining the native client. The conformance runner requires
+canonical occurrence aliases, controlled random outcomes and complete rules/seat
+checkpoints from each adapter. A complete Forge rules-state oracle remains
+separate work from the existing test-only seat-view audit.
 
 ```mermaid
 flowchart LR
@@ -815,7 +927,7 @@ flowchart LR
 
 | Area | Owner |
 | --- | --- |
-| Window, GPU, input sampling and captures | `mana-native/Mana.Table/TableWindow.cs` |
+| Window, GPU, input sampling and captures | `mana-native/Mana.Game/TableWindow.cs` |
 | Application composition and interaction | `TableApplication` and its feature partials |
 | Snapshot ordering, commands, assets and updates | `mana-native/Mana.Client` |
 | Typed DTOs and capabilities | `mana-native/Mana.Contracts` |

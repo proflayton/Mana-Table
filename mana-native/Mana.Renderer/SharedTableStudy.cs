@@ -29,13 +29,13 @@ public static class SharedTableStudy
         _ => new(920, 682, 315, 94)
     };
 
-    internal static BattlefieldCluster[] Arrange(int seat, int owner, Card[] cards,
+    internal static BattlefieldCluster[] Arrange(int seat, int owner, IReadOnlyList<Card> cards,
         Func<Card, bool> isResource, IReadOnlySet<string>? separate,
         Func<string, Rectangle>? lanes = null, float faceScale = 1, bool horizontalRows = false)
     {
         faceScale = float.IsFinite(faceScale) && faceScale > 0 ? faceScale : 1;
         string Identity(Card card) => CardViews.Identity(card) is { Length: > 0 } id ? id
-            : "anonymous:" + Array.FindIndex(cards, candidate => ReferenceEquals(candidate, card));
+            : "anonymous:" + Enumerable.Range(0, cards.Count).First(index => ReferenceEquals(cards[index], card));
         // A family joins public names, not mutable characteristics. Hidden and
         // anonymous identities never acquire a family through their printed face.
         var families = cards.GroupBy(card => card.FaceDown || string.IsNullOrWhiteSpace(card.Name)
@@ -82,7 +82,7 @@ public static class SharedTableStudy
                         var center = position + size / 2 + new Vector2(advance);
                         var pose = new Pose(center, card.Tapped ? new(size.Y, size.X) : size, card.Tapped ? MathF.PI / 2 : 0);
                         int ordinal = CardViews.Identity(card).Length == 0
-                            ? Array.FindIndex(cards, candidate => ReferenceEquals(candidate, card)) : 0;
+                            ? Enumerable.Range(0, cards.Count).First(index => ReferenceEquals(cards[index], card)) : 0;
                         var node = SceneCard.Create(card, pose, "Battlefield", owner, ordinal, TableLayout.Hero(seat)) with {
                             ScanFace = true, Compact = true, GroupFront = copy == copies.Length - 1, GroupCount = copies.Length
                         };

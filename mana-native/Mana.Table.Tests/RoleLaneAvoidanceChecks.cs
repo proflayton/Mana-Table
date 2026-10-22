@@ -1,3 +1,4 @@
+using System.Collections.Immutable;
 using Mana.Contracts;
 using Mana.Magic;
 using Mana.Renderer;
@@ -50,7 +51,7 @@ internal static class RoleLaneAvoidanceChecks
         // checking that the pass leaves genuinely unobstructed lanes alone.
         var unobstructed = noStack with { Players = noStack.Players.Select(player => player.Id == noStack.ViewerId ? player
             : player with { Zones = player.Zones.Select(zone => zone.Name != "Battlefield" ? zone
-                : zone with { Count = 0, Cards = [] }).ToArray() }).ToArray() };
+                : zone with { Count = 0, Cards = [] }).ToImmutableArray() }).ToImmutableArray() };
         var clearScene = Build(unobstructed);
         check(clearScene.Seats.All(seat => seat.Battlefield.SelectMany(cluster => cluster.Cards).All(card =>
                 BattlefieldLayout.Build(seat.Index, seat.PlayerId, unobstructed.Players.Single(player => player.Id == seat.PlayerId)
@@ -63,7 +64,7 @@ internal static class RoleLaneAvoidanceChecks
         }).ToArray();
         var withCopies = initial with { Players = initial.Players.Select(player => player.Id != initial.ViewerId ? player
             : player with { Zones = player.Zones.Select(zone => zone.Name != "Battlefield" ? zone
-                : zone with { Count = copies.Length, Cards = copies }).ToArray() }).ToArray() };
+                : zone with { Count = copies.Length, Cards = copies.ToImmutableArray() }).ToImmutableArray() }).ToImmutableArray() };
         var fan = Build(withCopies).Battlefield(initial.ViewerId).SelectMany(cluster => cluster.Cards).Where(card => card.Card.Name == "Cat").ToArray();
         var rawFan = BattlefieldLayout.Build(3, initial.ViewerId, copies, CardPresentation.IsResource).SelectMany(cluster => cluster.Cards).ToArray();
         check(fan.Length == copies.Length && fan.All(card => !card.Dense && !card.Pose.Bounds.Intersects(protectedStack))

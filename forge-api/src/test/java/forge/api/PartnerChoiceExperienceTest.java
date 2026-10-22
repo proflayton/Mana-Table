@@ -18,7 +18,7 @@ public class PartnerChoiceExperienceTest {
         return new Object[][] {{0, true, true}, {1, true, true}, {1, false, true}, {1, true, false}};
     }
 
-    @Test(dataProvider = "partnerChoices", timeOut = 90000)
+    @Test(groups = "canonical-interaction", dataProvider = "partnerChoices", timeOut = 90000)
     public void partnerTargetsAndSearchBelongToTheActualChosenPlayer(int targetSeat, boolean accept, boolean pirInLibrary) throws Exception {
         // All-Toothy or all-Pir libraries remove random opening-hand availability.
         // An absent Pir is a real commander, not a pretend library candidate.

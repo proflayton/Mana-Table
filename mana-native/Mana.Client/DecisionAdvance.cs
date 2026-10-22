@@ -21,10 +21,11 @@ public sealed class DecisionAdvance(IMatchConnection connection)
             bool waiting = state.Decision == null || submitted == scope;
             if (!waiting) {
                 // An application policy may restrict Auto, but can never broaden the engine's permission.
-                if (state.Status != "playing" || state.Decision is not { Kind: "input", Intent: DecisionIntent.Priority, CanAutoPass: true, OkEnabled: true }
-                    || !canPass(state)) return state;
+                if (state.Decision is not { } decision || !canPass(state)) return state;
+                var command = new AutoPassPriority(state.Id, decision.Id);
+                if (!GameCommandPermissions.Allows(state, command)) return state;
                 if (cancellation.IsCancellationRequested) return state;
-                await connection.ReplyAsync(new(state.Id, state.Decision.Id, ReplyAction.AutoPass));
+                await connection.ExecuteAsync(command);
                 submitted = scope; passes++;
             }
             // Always reconcile an already submitted command, even if Hold was pressed in flight.

@@ -12,10 +12,13 @@ interaction; moving or restyling a rejected control does not settle it.
 
 ## Pick the right layer
 
-- **Native UI and interaction:** `mana-native/Mana.Table`, `Mana.Magic`, and
+- **Native UI and interaction:** `mana-native/Mana.Game`, `Mana.Magic`, and
   `Mana.Renderer`. Keep rules decisions in Forge; display authorized snapshots
   and answer the current prompt. Shared client/session logic is in `Mana.Client`.
-- **Native engine boundary:** `Mana.Contracts` contains typed state and commands;
+- **Native composition:** `Mana.Table` owns provider startup, lifetime and
+  installation bootstrap. `Mana.Game` receives explicit service ports and cannot
+  reference the provider or shipping host.
+- **Native engine boundary:** `Mana.Contracts` contains immutable match state and a closed family of semantic commands;
   `Mana.Forge` maps the Java process protocol. Keep Java projection, mapping and
   native contracts aligned when changing an API field.
 - **API and visibility:** `forge-api/src/main/java/forge/api`. Extend the adapter

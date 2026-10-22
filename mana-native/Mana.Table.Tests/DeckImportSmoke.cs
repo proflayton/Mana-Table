@@ -38,7 +38,7 @@ internal static class DeckImportSmoke
         {
             var engine = new ForgeEngine(working);
             try {
-                using var game = new TableWindow(engine, working.Profile, null, null, size, artSource: new EmptyArt());
+                using var game = new TableWindow(TestTableServices.For(engine), working.Profile, null, null, size, artSource: new EmptyArt());
                 var script = new Script(game.TestPort); arrange(script, game.TestPort);
                 game.Automation = script; game.TestPort.DismissWelcome(); game.Run();
             } finally { engine.DisposeAsync().AsTask().GetAwaiter().GetResult(); }
@@ -72,7 +72,7 @@ internal static class DeckImportSmoke
             s.Then(() => {
                 Check(view.Error.Length == 0 && view.DeckEditor && view.SelectedDeck?.Id == deckId && Contents(view.DeckDetails!) == contents, "Back returns to the unchanged imported deck after the failed request");
                 s.AllowError = false;
-                inspected = Inspect(view.Engine, deckId, view.DeckDetails!.Revision);
+                inspected = Inspect(view.Services.Catalog, deckId, view.DeckDetails!.Revision);
             });
             s.Until(() => inspected!.IsCompleted);
             s.Then(() => {
@@ -98,7 +98,7 @@ internal static class DeckImportSmoke
         File.WriteAllText(Path.Combine(paths.Profile, "deck-import-results.json"), JsonSerializer.Serialize(checks, new JsonSerializerOptions { WriteIndented = true }));
     }
 
-    private static async Task<(string Export, IReadOnlyList<DeckSummary> Decks)> Inspect(ICardEngine engine, string id, long revision)
+    private static async Task<(string Export, IReadOnlyList<DeckSummary> Decks)> Inspect(IEngineCatalog engine, string id, long revision)
         => (await engine.ExportDeckAsync(id, revision), await engine.DecksAsync());
 
     private sealed class EmptyArt : ICardArtSource

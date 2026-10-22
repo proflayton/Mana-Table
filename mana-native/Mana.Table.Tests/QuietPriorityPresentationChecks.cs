@@ -1,3 +1,4 @@
+using System.Collections.Immutable;
 using System.Collections.Concurrent;
 using Mana.Contracts;
 using Mana.Magic;
@@ -23,7 +24,7 @@ internal static class QuietPriorityPresentationChecks
         var example = PriorityAbilitySmoke.Example();
         engine.Present(example with { Id = "quiet-priority-polling", PriorityPlayerId = 0, DecisionOwnerId = 0,
             ActionClass = "priority", Decision = example.Decision! with { QuietYieldToken = "original-token" } });
-        using var app = new TableApplication(engine, directory, initialState: engine.State) { Automated = true };
+        using var app = new TableApplication(TestTableServices.For(engine), directory, initialState: engine.State) { Automated = true };
         app.Initialize();
         var view = app.TestPort;
         double seconds = 0;
@@ -116,10 +117,10 @@ internal static class QuietPriorityPresentationChecks
         engine.Present(example with { Id = "quiet-priority-continuation", PriorityPlayerId = 0, DecisionOwnerId = 0, ActionClass = "priority",
             Phase = "Upkeep", PhaseKey = "UPKEEP",
             Players = example.Players.Select(player => player.Id != example.ViewerId ? player : player with {
-                Zones = player.Zones.Select(zone => zone.Name == "Hand" ? zone with { Count = 1, Cards = [instant] } : zone).ToArray()
-            }).ToArray(), Decision = example.Decision! with { QuietYieldToken = "continuation-token", PriorityAbilities = [] } });
+                Zones = player.Zones.Select(zone => zone.Name == "Hand" ? zone with { Count = 1, Cards = [instant] } : zone).ToImmutableArray()
+            }).ToImmutableArray(), Decision = example.Decision! with { QuietYieldToken = "continuation-token", PriorityAbilities = [] } });
         var initial = engine.State;
-        var replies = new ConcurrentQueue<DecisionReply>();
+        var replies = new ConcurrentQueue<GameCommand>();
         var firstStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var firstRelease = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var secondStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -127,7 +128,7 @@ internal static class QuietPriorityPresentationChecks
         int replying = 0, observationsAtReply = 0;
         engine.ReplyOverride = async reply => {
             reply.Validate();
-            if (reply.Action != ReplyAction.PassUntilPublicAction || reply.YieldToken != "continuation-token")
+            if (reply is not PassForNow pass || pass.YieldToken != "continuation-token")
                 throw new InvalidOperationException("Quiet intent submitted a different action or permission: " + reply);
             if (Interlocked.Increment(ref replying) != 1) throw new InvalidOperationException("Quiet commands overlapped");
             try {
@@ -137,7 +138,7 @@ internal static class QuietPriorityPresentationChecks
                 else throw new InvalidOperationException("Quiet intent submitted an unexpected extra pass");
             } finally { Interlocked.Decrement(ref replying); }
         };
-        using var app = new TableApplication(engine, directory, initialState: initial) { Automated = true };
+        using var app = new TableApplication(TestTableServices.For(engine), directory, initialState: initial) { Automated = true };
         app.Initialize();
         var view = app.TestPort;
         view.PresentLobby(new("local", "Controlled continuation", null, false, null, true, "", null, [], []), true);
@@ -164,7 +165,8 @@ internal static class QuietPriorityPresentationChecks
             Until(() => firstStarted.Task.IsCompleted, "Clicking Pass for now submits a real quiet pass despite an available instant");
             for (int index = 0; index < 4; index++) Tick();
             check(view.Busy && !view.Polling && replies.Count == 1 && engine.Observations == observationsAtReply
-                && replies.Single().DecisionId == initial.Decision!.Id && frame.Hits.Any(hit => hit.Id == "quiet-priority-stop"),
+                && replies.Single() is PassForNow { DecisionId: var submittedDecision } && submittedDecision == initial.Decision!.Id
+                && frame.Hits.Any(hit => hit.Id == "quiet-priority-stop"),
                 "The first quiet reply owns the serialized connection until it finishes, without duplicate passes or interleaved polls");
 
             ActivityEntry[] routineDraw = [
@@ -172,7 +174,7 @@ internal static class QuietPriorityPresentationChecks
                 new(2, initial.Turn, "DRAW", "draw", 1, "An opponent drew for the turn.", null, null) { InterruptsQuietYield = false }
             ];
             engine.Present(initial with { Status = "resolving", Decision = null, PriorityPlayerId = 2, DecisionOwnerId = 2, ActionClass = "priority",
-                Phase = "Draw", PhaseKey = "DRAW", Activity = routineDraw });
+                Phase = "Draw", PhaseKey = "DRAW", Activity = routineDraw.ToImmutableArray() });
             firstRelease.SetResult();
             Until(() => !view.Busy && view.Match is { Decision: null, DecisionOwnerId: 2 },
                 "The actual application reconciles the first pass into another seat's priority");
@@ -187,13 +189,12 @@ internal static class QuietPriorityPresentationChecks
             check(replies.Count == 1 && frame.Hits.Any(hit => hit.Id == "quiet-priority-stop"),
                 "An opponent's attacker selection retains quiet intent without answering the opponent's required decision");
 
-            engine.Present(initial with { Phase = "Main phase", PhaseKey = "MAIN2", Activity = routineDraw });
+            engine.Present(initial with { Phase = "Main phase", PhaseKey = "MAIN2", Activity = routineDraw.ToImmutableArray() });
             string nextPrompt = engine.State.Decision!.Id;
             Until(() => secondStarted.Task.IsCompleted, "The next empty local priority passes automatically without another click");
-            var sent = replies.ToArray();
+            var sent = replies.OfType<PassForNow>().ToArray();
             check(sent.Length == 2 && sent[1].DecisionId == nextPrompt && sent[0].DecisionId != sent[1].DecisionId
-                && sent.All(reply => reply.GameId == initial.Id && reply.Action == ReplyAction.PassUntilPublicAction
-                    && reply.YieldToken == "continuation-token") && view.Busy && !view.Polling,
+                && sent.All(reply => reply.GameId == initial.Id && reply is PassForNow { YieldToken: "continuation-token" }) && view.Busy && !view.Polling,
                 "Both scoped local windows use the same explicitly armed engine token despite retained routine draw history");
 
             engine.Present(engine.State with { Stack = [new("Opponent spell", "An opponent cast a spell.", false, null) { Id = "new-public-spell" }],

@@ -197,7 +197,7 @@ internal sealed class DeckExperienceSmoke(TableWindow.Probe view) : ITableAutoma
                 SourceUnchanged("Canceling source confirmation"); Click("workshop-dialog-close", 33); break;
             case 33:
                 SourceUnchanged("Closing source review");
-                Check(view.Engine is IDeckLibrary { SupportsDeckLibrary: true } && Deck.LibraryToken.Length > 0,
+                Check(view.Services.Library is IDeckLibrary { SupportsDeckLibrary: true } && Deck.LibraryToken.Length > 0,
                     "The real Forge adapter negotiates reversible saved-deck operations and an exact saved-content token");
                 Click("workshop-build", 34); break;
             case 34:
@@ -220,7 +220,7 @@ internal sealed class DeckExperienceSmoke(TableWindow.Probe view) : ITableAutoma
                     "Bundled precons remain separate from saved-list deletion controls");
                 Click("picker-deleted", 37); break;
             case 37:
-                removedRead = ((IDeckLibrary)view.Engine).DeletedDecksAsync(); view.RefreshDeckLibrary(); stage++; break;
+                removedRead = view.Services.Library!.DeletedDecksAsync(); view.RefreshDeckLibrary(); stage++; break;
             case 38:
                 if (!removedRead!.IsCompleted) return;
                 Check(removedRead.GetAwaiter().GetResult().Any(deck => deck == removedReceipt)

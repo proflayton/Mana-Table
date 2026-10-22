@@ -1,3 +1,4 @@
+using System.Collections.Immutable;
 using System.Text.Json;
 using Mana.Contracts;
 using Mana.Magic;
@@ -7,11 +8,11 @@ internal static class GameplayClarityChecks
     internal static void Run(Action<bool, string> check)
     {
         var players = new[] {
-            new Player(10, "You", 40, false, false, [], []),
-            new Player(20, "Alex", 40, true, false, [], []),
-            new Player(30, "Alex", 40, false, false, [], [])
+            new Player(10, "You", 40, false, false, ImmutableDictionary<string, int>.Empty, []),
+            new Player(20, "Alex", 40, true, false, ImmutableDictionary<string, int>.Empty, []),
+            new Player(30, "Alex", 40, false, false, ImmutableDictionary<string, int>.Empty, [])
         };
-        var state = new GameSnapshot("clarity", "playing", null, null, 10, 3, "Main phase", "MAIN1", 10, players, [], null, null) {
+        var state = new GameSnapshot("clarity", "playing", null, null, 10, 3, "Main phase", "MAIN1", 10, players.ToImmutableArray(), [], null, null) {
             PriorityPlayerId = 20, DecisionOwnerId = 30, ActionClass = "choice"
         };
         check(StateClarity.WaitingTitle(state).Contains("Alex · Seat 3") && state.ActivePlayerId == 10 && state.PriorityPlayerId == 20,
@@ -30,7 +31,7 @@ internal static class GameplayClarityChecks
             "Required-choice purpose and source controller come from the engine rather than printed Oracle text");
         check(StateClarity.Recipients(choice).Select(p => p.Id).SequenceEqual([10, 30]),
             "Named recipients retain legal self and other-player choices without adding another seat");
-        check(StateClarity.ChooseRecipient(choice, 10) is { Action: ReplyAction.SelectPlayer, GameId: "clarity", DecisionId: "choose-1", Player: 10 },
+        check(StateClarity.ChooseRecipient(choice, 10) is SelectPlayer { GameId: "clarity", DecisionId: "choose-1", Player: 10 },
             "The explicit You recipient sends the same scoped player-selection action as a portrait");
         check(StateClarity.ChooseRecipient(choice, 20) == null && StateClarity.ChooseRecipient(choice with { Decision = null }, 10) == null,
             "No player command is constructed for an unprojected recipient or retired prompt");
@@ -42,11 +43,11 @@ internal static class GameplayClarityChecks
         var stack = new StackItem("Same source", "Public trigger", true, source) { Id = "stack-2", ControllerId = 30 };
         check(StateClarity.StackController(state, stack).Contains("Seat 3") && StateClarity.StackController(state, stack with { ControllerId = 20 }).Contains("Seat 2"),
             "Identically named stack sources retain their separate controlling seats");
-        var counters = players[0] with { Counters = new() { ["Energy"] = 3, ["Poison"] = 9, ["Experience"] = 2, ["Gone"] = 0 } };
+        var counters = players[0] with { Counters = ImmutableDictionary<string, int>.Empty.Add("Energy", 3).Add("Poison", 9).Add("Experience", 2).Add("Gone", 0) };
         check(StateClarity.PlayerCounters(counters).Select(c => c.Key).SequenceEqual(["Poison", "Energy", "Experience"])
             && StateClarity.CounterSummary(counters).Contains("Poison 9"),
             "Public player resources retain their exact types/totals and suppress zero values");
-        check(StateClarity.CounterSummary(counters with { Counters = [] }) == "",
+        check(StateClarity.CounterSummary(counters with { Counters = ImmutableDictionary<string, int>.Empty }) == "",
             "Removing a public counter removes its persistent summary rather than retaining a stale value");
         var speed = new PlayerState("speed", "Speed", "progress", 1, 4, "The engine's public progress explanation.");
         var generic = counters with { States = [new("counter:energy", "Energy", "counter", 3, null, "Public energy."), speed,
@@ -62,10 +63,10 @@ internal static class GameplayClarityChecks
             && !StateClarity.StateAtMaximum(new("counter:limited", "Counter", "counter", 4, 4, "")),
             "Statuses and unseen future progress render generically while counter limits are never called max progress");
         check(StateClarity.PlayerStates(counters).Select(s => s.Label).SequenceEqual(["Poison", "Energy", "Experience"])
-            && StateClarity.PlayerStates(counters with { Counters = [] }).Length == 0,
+            && StateClarity.PlayerStates(counters with { Counters = ImmutableDictionary<string, int>.Empty }).Length == 0,
             "Older engine counters remain an honest positive-value fallback without inventing progress or roles");
         var anonymous = new Card { Name = "Face-down card", FaceDown = true, Type = "Creature", Power = 3, Toughness = 3,
-            Damage = 1, CombatKeywords = ["flying"], Counters = new() { ["+1/+1"] = 1 } };
+            Damage = 1, CombatKeywords = ["flying"], Counters = ImmutableDictionary<string, int>.Empty.Add("+1/+1", 1) };
         check(CardPresentation.HasCombatStats(anonymous) && CardPresentation.HasAbility(anonymous, "flying")
             && CardPresentation.StateLabels(anonymous).Contains("Flying") && anonymous.Text == "" && anonymous.ArtName == "" && anonymous.OtherFace == null,
             "Authoritative anonymous public combat state is readable while identity/text/art/alternate faces remain absent");
@@ -73,7 +74,7 @@ internal static class GameplayClarityChecks
             "A hidden-zone object without public characteristics does not receive inferred keyword presentation");
         var parsed = JsonSerializer.Deserialize<Player>("{\"id\":10,\"name\":\"You\",\"life\":40,\"priority\":false,\"eliminated\":false,\"mana\":{},\"zones\":[],\"counters\":{\"Poison\":9}}", new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
         check(parsed?.Counters["Poison"] == 9, "Public resource JSON survives the native snapshot contract");
-        check(StateClarity.PendingActionLabel(choice, new("clarity", "choose-1", ReplyAction.SelectPlayer, Player: 30)).Contains("Seat 3"),
+        check(StateClarity.PendingActionLabel(choice, new SelectPlayer("clarity", "choose-1", Player: 30)).Contains("Seat 3"),
             "Immediate target feedback identifies the exact submitted recipient");
     }
 }

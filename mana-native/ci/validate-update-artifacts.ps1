@@ -18,6 +18,9 @@ function Verify-File([string]$Name,[string]$Hash,[long]$Size=-1) {
 $build = Read-Json 'build.json'
 $smoke = $build.PSObject.Properties['smokeOnly']
 if ($build.version -cne $Version -or $build.sourceRevision -cne $SourceRevision -or $build.release -ne $true -or ($smoke -and $smoke.Value)) { throw 'Only this exact production build can be published.' }
+$clientFiles = $build.PSObject.Properties['clientFilesSha256']
+$gameHash = if ($clientFiles) { $clientFiles.Value.PSObject.Properties['Mana.Game.dll'] } else { $null }
+if ($null -eq $gameHash -or [string]$gameHash.Value -notmatch '^[a-fA-F0-9]{64}$') { throw 'The release must bind its game UI assembly in build metadata.' }
 $legacy = Read-Json 'installer-manifest.json'
 if ($legacy.installerProtocol -ne 1 -or $legacy.smokeOnly -ne $false -or $legacy.architecture -cne 'win-x64' -or
     $legacy.installationFramework -cne 'velopack-bridge' -or $legacy.managedPackageId -cne 'ManaTable' -or
@@ -52,6 +55,8 @@ foreach ($asset in $assets) {
 }
 if ($contract.fullPackage.fileName -cne $full[0].FileName -or $contract.fullPackage.sha256 -ine $full[0].SHA256 -or
     $contract.fullPackage.sizeBytes -ne $full[0].Size) { throw 'The update contract and SDK index disagree about the full package.' }
+$gameEntry = @($contract.entries | Where-Object { $_.path -ceq 'lib/app/Mana.Game.dll' })
+if ($gameEntry.Count -ne 1 -or $gameEntry[0].sha256 -ine $gameHash.Value) { throw 'The update payload must contain the game UI assembly bound by this build.' }
 
 # Validate the complete published contract against the actual package, including
 # metadata/engine bytes. Index and payload are verified again by the client.

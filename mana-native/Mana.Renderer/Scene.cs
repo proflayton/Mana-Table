@@ -115,8 +115,8 @@ public static class TableLayout
     }
     public static Player[] Opponents(GameSnapshot state)
     {
-        int viewer = Array.FindIndex(state.Players, p => p.Id == state.ViewerId);
-        if (viewer < 0) return state.Players;
+        int viewer = state.Players.IndexOf(state.Viewer!);
+        if (viewer < 0) return state.Players.ToArray();
         return Enumerable.Range(1, state.Players.Length - 1).Select(offset => state.Players[(viewer + offset) % state.Players.Length]).ToArray();
     }
     public static int SeatIndex(GameSnapshot state, int playerId) => Array.FindIndex(Opponents(state), p => p.Id == playerId);

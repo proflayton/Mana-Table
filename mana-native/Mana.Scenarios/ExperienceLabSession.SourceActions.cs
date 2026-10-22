@@ -1,10 +1,10 @@
+using System.Collections.Immutable;
 using Mana.Contracts;
 
 namespace Mana.Scenarios;
 
 public sealed partial class ExperienceLabSession
 {
-    private const string BallistaTargetContext = "lab-ballista-target";
     private GameSnapshot? sourceActionParent;
     private string ballistaMode = ExperienceScenarios.BallistaDamageAction;
     private StackTarget? ballistaTarget;
@@ -43,14 +43,14 @@ public sealed partial class ExperienceLabSession
                     actions = available.ToArray();
                 }
             }
-            return new(State.Id, decisionId, source.Key, source.VisualId, actions);
+            return new(State.Id, decisionId, source.Key, source.VisualId, actions.ToImmutableArray());
         }
     }
 
-    private GameSnapshot UseSourceAction(DecisionReply reply)
+    private GameSnapshot UseSourceAction(UseOfferedAction reply)
     {
         var offered = SourceActions(reply.GameId, reply.DecisionId, reply.Card!);
-        var selected = offered.Actions.SingleOrDefault(action => action.Id == reply.AbilityId) ?? throw Unsupported();
+        var selected = offered.Actions.SingleOrDefault(action => action.Id == reply.ActionId) ?? throw Unsupported();
         if (Scenario.Id == DecisionFlowScenario.Id && StageIndex == 0 && offered.SourceCardId == DecisionFlowScenario.LandId)
             return AdvanceTo(1);
         if (offered.SourceCardId == ExperienceScenarios.BallistaId) {
@@ -66,43 +66,43 @@ public sealed partial class ExperienceLabSession
                     Priority = false, Zones = player.Zones.Select(zone => zone with {
                         Cards = zone.Cards.Select(card => card with {
                             Selectable = zone.Name == "Battlefield" && card.VisualId is ExperienceScenarios.BallistaId or ExperienceScenarios.BallistaTargetId
-                        }).ToArray()
-                    }).ToArray()
-                }).ToArray(),
+                        }).ToImmutableArray()
+                    }).ToImmutableArray()
+                }).ToImmutableArray(),
                 Decision = new() {
-                    Kind = "input", Intent = DecisionIntent.Selection, InputType = "InputSelectTargets", Context = BallistaTargetContext,
+                    Kind = "input", Intent = DecisionIntent.Selection, Purpose = DecisionPurpose.TargetSelection,
                     Title = "Choose a target", Message = "Choose any target for Walking Ballista's 1 damage. Removing a +1/+1 counter is the cost.",
-                    Min = 1, Max = 1, CancelEnabled = true, PlayerChoices = State.Players.Select(player => player.Id).ToArray(),
+                    Min = 1, Max = 1, CancelEnabled = true, PlayerChoices = State.Players.Select(player => player.Id).ToImmutableArray(),
                     SourceCard = source, SourceCardId = source.VisualId, SourceZone = "Battlefield", SourceControllerId = State.ViewerId
                 }
             });
         }
         State = State with { Players = State.Players.Select(player => player.Id != State.ViewerId ? player : player with {
-            Mana = new(player.Mana) { ["G"] = player.Mana.GetValueOrDefault("G") + 1 },
+            Mana = (new Dictionary<string, int>(player.Mana) { ["G"] = player.Mana.GetValueOrDefault("G") + 1 }).ToImmutableDictionary(),
             Zones = player.Zones.Select(zone => zone with {
-                Cards = zone.Cards.Select(card => card.VisualId == offered.SourceCardId ? card with { Tapped = true, Selectable = false } : card).ToArray()
-            }).ToArray()
-        }).ToArray() };
+                Cards = zone.Cards.Select(card => card.VisualId == offered.SourceCardId ? card with { Tapped = true, Selectable = false } : card).ToImmutableArray()
+            }).ToImmutableArray()
+        }).ToImmutableArray() };
         abilityParent = null;
         if (Scenario.Id == "ability-choice.v1") StageIndex = 1;
         return State = Stamp(State with { PriorityPlayerId = State.ViewerId, DecisionOwnerId = State.ViewerId,
             ActionClass = "priority", Decision = PriorityDecision("One green mana is in your pool.") });
     }
 
-    private GameSnapshot ReplyBallistaTarget(DecisionReply reply)
+    private GameSnapshot ReplyBallistaTarget(DecisionCommand reply)
     {
         if (sourceActionParent == null) throw Unsupported();
-        if (reply.Action == ReplyAction.Cancel && State.Decision!.CancelEnabled) {
+        if (reply is CancelSelection && State.Decision!.CancelEnabled) {
             var parent = sourceActionParent;
             sourceActionParent = null; ballistaTarget = null;
             return State = Stamp(parent);
         }
-        if (reply.Action == ReplyAction.SelectPlayer && reply.Player is { } playerId && State.Decision!.PlayerChoices.Contains(playerId)) {
+        if (reply is SelectPlayer { Player: var playerId } && State.Decision!.PlayerChoices.Contains(playerId)) {
             var player = State.Players.Single(player => player.Id == playerId);
             ballistaTarget = new("player", playerId.ToString(System.Globalization.CultureInfo.InvariantCulture), player.Name, playerId);
-        } else if (reply.Action == ReplyAction.SelectCard) {
+        } else if (reply is SelectCard selected) {
             var target = State.Players.SelectMany(player => player.Zone("Battlefield").Cards.Select(card => new { Player = player, Card = card }))
-                .SingleOrDefault(item => item.Card.Key == reply.Card && item.Card.Selectable) ?? throw Unsupported();
+                .SingleOrDefault(item => item.Card.Key == selected.Card && item.Card.Selectable) ?? throw Unsupported();
             ballistaTarget = new("card", target.Card.VisualId, target.Card.Name, target.Player.Id);
         } else throw Unsupported();
         sourceActionParent = null;

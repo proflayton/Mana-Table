@@ -1,10 +1,6 @@
-namespace Mana.Contracts;
+using System.Collections.Immutable;
 
-public static class EngineProtocol
-{
-    public const int Version = 2;
-    public static readonly string[] RequiredCapabilities = ["seat-sync", "snapshots", "command-receipts", "resume", "table-social", "deck-workshop", "deck-analysis"];
-}
+namespace Mana.Contracts;
 
 // The aggregate is for application composition. Consumers can depend on the
 // narrower catalog, setup or connection contracts without implementing all three.
@@ -57,7 +53,7 @@ public interface ITableSeatSetup
 public interface IMatchConnection
 {
     Task<GameSnapshot?> ObserveAsync();
-    Task ReplyAsync(DecisionReply reply);
+    Task ExecuteAsync(GameCommand command);
     Task ConcedeAsync(string gameId);
 }
 // Reading a source's current engine-owned actions does not answer its decision.
@@ -66,7 +62,7 @@ public interface ISourceActions
     bool SupportsSourceActions => true;
     Task<SourceActionSet> SourceActionsAsync(string gameId, string decisionId, string sourceCardKey);
 }
-public sealed record SourceActionSet(string GameId, string DecisionId, string SourceCardKey, string SourceCardId, SourceAction[] Actions);
+public sealed record SourceActionSet(string GameId, string DecisionId, string SourceCardKey, string SourceCardId, ImmutableArray<SourceAction> Actions);
 public sealed record SourceAction(string Id, string Kind, string Text);
 // Social commands have their own ordering and never advance a game decision.
 public interface ITableSocial
@@ -117,37 +113,16 @@ public sealed record Lobby(string Mode, string Status, string? Error, bool CanSt
     public AiOpponent[] AiOpponents { get; init; } = [];
 }
 public enum DecisionIntent { General, Priority, Attack, Block, Mana, Selection }
-public enum ReplyAction { Confirm, Cancel, SelectCard, SelectPlayer, AssignAttack, AssignBlock, AutoPass, Skip, Choose, Value, Allocate, SetAbilityAutoPass, UseHandPlacement, PassUntilPublicAction, UseSourceAction }
-public sealed record DecisionReply(string GameId, string DecisionId, ReplyAction Action,
-    string? Card = null, int? Player = null, string? Attacker = null, string? Blocker = null,
-    string? DefenderCard = null, int[]? Choices = null, string? Value = null, int[]? Amounts = null,
-    string? AbilityId = null, bool? Ignore = null, string? YieldToken = null)
-{
-    public void Validate()
-    {
-        bool Present(string? value) => !string.IsNullOrWhiteSpace(value);
-        bool valid = Present(GameId) && (Present(DecisionId) || Action == ReplyAction.SetAbilityAutoPass && Ignore == false) && Action switch {
-            ReplyAction.SelectCard => Present(Card), ReplyAction.SelectPlayer => Player != null,
-            ReplyAction.AssignAttack => Present(Attacker) && ((Player != null) != Present(DefenderCard)),
-            ReplyAction.AssignBlock => Present(Attacker) && Present(Blocker),
-            ReplyAction.Choose => Choices != null && Choices.All(i => i >= 0) && Choices.Distinct().Count() == Choices.Length,
-            ReplyAction.Value => Value != null, ReplyAction.Allocate => Amounts != null && Amounts.All(i => i >= 0),
-            ReplyAction.SetAbilityAutoPass => Present(AbilityId) && Ignore != null,
-            ReplyAction.UseHandPlacement or ReplyAction.UseSourceAction => Present(AbilityId) && Present(Card),
-            ReplyAction.PassUntilPublicAction => Present(YieldToken),
-            ReplyAction.Confirm or ReplyAction.Cancel or ReplyAction.AutoPass or ReplyAction.Skip => true,
-            _ => false
-        };
-        if (!valid) throw new ArgumentException("Incomplete or invalid decision reply");
-    }
-}
+// Semantic tasks belong to the game boundary. Provider prompt/class names do not.
+public enum DecisionPurpose { Unspecified, OpeningHand, TargetSelection, AbilitySelection }
+public enum PriorityAlternative { None, UndoLastAction, PassTurn }
 public sealed record Card
 {
     public string Key { get; init; } = "";
     public string VisualId { get; init; } = "";
     public string CombatId { get; init; } = "";
     public CardAttachment? AttachedTo { get; init; }
-    public CardAttachment[] Attachments { get; init; } = [];
+    public ImmutableArray<CardAttachment> Attachments { get; init; } = [];
     public string Name { get; init; } = "";
     // Engine helpers and emblems are effect objects, not printed card identities.
     public string GamePieceType { get; init; } = "card";
@@ -159,10 +134,10 @@ public sealed record Card
     public int ArtIndex { get; init; }
     public bool Foil { get; init; }
     public CardFace? OtherFace { get; init; }
-    public string[] CombatKeywords { get; init; } = [];
+    public ImmutableArray<string> CombatKeywords { get; init; } = [];
     // Null means a legacy engine. A present empty list authoritatively clears
     // effective abilities rather than falling back to older keyword hints.
-    public PublicState[]? States { get; init; }
+    public ImmutableArray<PublicState>? States { get; init; }
     public int? DefenderId { get; init; }
     public string? Defender { get; init; }
     public string Type { get; init; } = "";
@@ -181,29 +156,29 @@ public sealed record Card
     public bool Highlighted { get; init; }
     public bool Attacking { get; init; }
     public bool Blocking { get; init; }
-    public Dictionary<string, int> Counters { get; init; } = [];
+    public ImmutableDictionary<string, int> Counters { get; init; } = ImmutableDictionary<string, int>.Empty;
 }
 public sealed record CardAttachment(string Id, string Name, string Type);
 public sealed record CardFace(string Name, string Type, string ManaCost, string OracleText, int? Power, int? Toughness, string ArtName, string ArtFace);
-public sealed record Zone(string Name, int Count, Card[] Cards, Card? TopCard);
+public sealed record Zone(string Name, int Count, ImmutableArray<Card> Cards, Card? TopCard);
 // Public player mechanics share one presentation contract. Values and rules
 // descriptions come from the engine; the client does not inspect card names.
 public sealed record PlayerState(string Id, string Label, string Kind, int? Value, int? Maximum, string Detail);
 // Human-readable engine descriptors shared by public card and table mechanics.
 // Key selects a familiar icon; Label/Detail preserve qualifiers and unknown mechanics.
 public sealed record PublicState(string Id, string Label, string Kind, int? Value, int? Maximum, string Detail, string Key = "");
-public sealed record Player(int Id, string Name, int Life, bool Priority, bool Eliminated, Dictionary<string, int> Mana, Zone[] Zones)
+public sealed record Player(int Id, string Name, int Life, bool Priority, bool Eliminated, ImmutableDictionary<string, int> Mana, ImmutableArray<Zone> Zones)
 {
-    public PlayerState[] States { get; init; } = [];
+    public ImmutableArray<PlayerState> States { get; init; } = [];
     // Public engine-owned player resources; card counters live on Card separately.
-    public Dictionary<string, int> Counters { get; init; } = [];
+    public ImmutableDictionary<string, int> Counters { get; init; } = ImmutableDictionary<string, int>.Empty;
     // Missing used count means an older engine did not project this state.
     // A null limit with a present used count means unlimited land plays.
     public int? LandPlaysUsed { get; init; }
     public int? LandPlayLimit { get; init; }
     // The rules engine's current limit; null means no maximum hand size.
     public int? MaxHandSize { get; init; } = 7;
-    public CommanderDamage[] CommanderDamage { get; init; } = [];
+    public ImmutableArray<CommanderDamage> CommanderDamage { get; init; } = [];
     public Zone Zone(string name) => Zones.FirstOrDefault(z => z.Name == name) ?? new(name, 0, [], null);
 }
 public sealed record CommanderDamage(string Name, int OwnerId, string Owner, int Damage);
@@ -229,7 +204,7 @@ public sealed record LibraryChoice(int? Index, string Label, Card Card);
 public sealed record PriorityAbility(string Id, string SourceCardKey, string SourceName, string Text, bool IgnoredUntilNextTurn)
 {
     // Exact current-prompt handles from the actor's hand, supplied by Forge.
-    public string[] EligibleHandKeys { get; init; } = [];
+    public ImmutableArray<string> EligibleHandKeys { get; init; } = [];
     public int HandPlacementLimit { get; init; } = 1;
 }
 // Planned effect facts copied by the engine before target selection. Amount is
@@ -248,15 +223,16 @@ public sealed record CounterAddition
     public Card? Card { get; init; }
     public int? PlayerId { get; init; }
     public int? ActorPlayerId { get; init; }
-    public CounterIncrement[] Counters { get; init; } = [];
+    public ImmutableArray<CounterIncrement> Counters { get; init; } = [];
 }
 public sealed record CounterIncrement(string Type, string Label, int Added);
 public sealed record Decision
 {
     public string Id { get; init; } = "";
     public string Kind { get; init; } = "";
-    public string InputType { get; init; } = "";
     public DecisionIntent Intent { get; init; }
+    public DecisionPurpose Purpose { get; init; }
+    public PriorityAlternative PriorityAlternative { get; init; }
     public string Message { get; init; } = "";
     public string Ok { get; init; } = "Confirm";
     public string Cancel { get; init; } = "Cancel";
@@ -266,16 +242,16 @@ public sealed record Decision
     // Separate, engine-owned permission for an explicitly chosen quiet-window yield.
     // Empty on legacy engines, responses to a stack item, and required decisions.
     public string QuietYieldToken { get; init; } = "";
-    public PriorityAbility[] PriorityAbilities { get; init; } = [];
-    public int[] PlayerChoices { get; init; } = [];
-    public Choice[] Choices { get; init; } = [];
+    public ImmutableArray<PriorityAbility> PriorityAbilities { get; init; } = [];
+    public ImmutableArray<int> PlayerChoices { get; init; } = [];
+    public ImmutableArray<Choice> Choices { get; init; } = [];
     public int Min { get; init; }
     public int Max { get; init; }
     public bool Ordered { get; init; }
     public bool AtLeastOne { get; init; }
     public bool MaySkip { get; init; }
     public int Amount { get; init; }
-    public int[] Limits { get; init; } = [];
+    public ImmutableArray<int> Limits { get; init; } = [];
     public string AllocationKind { get; init; } = "";
     public string AmountLabel { get; init; } = "";
     public string SourceCardId { get; init; } = "";
@@ -286,40 +262,39 @@ public sealed record Decision
     public PendingEffect? Effect { get; init; }
     public string SourceZone { get; init; } = "";
     public string Title { get; init; } = "";
-    public string Context { get; init; } = "";
     public bool Numeric { get; init; }
-    public LibraryChoice[] LibraryCards { get; init; } = [];
+    public ImmutableArray<LibraryChoice> LibraryCards { get; init; } = [];
 }
 public sealed record Defender(string Kind, string Id, int PlayerId, string Name);
-public sealed record AttackOption(string CardId, Defender[] Defenders);
-public sealed record Attack(string CardId, int DefendingPlayerId, string[] BlockerIds, string[] EligibleBlockerIds)
+public sealed record AttackOption(string CardId, ImmutableArray<Defender> Defenders);
+public sealed record Attack(string CardId, int DefendingPlayerId, ImmutableArray<string> BlockerIds, ImmutableArray<string> EligibleBlockerIds)
 {
     public Defender? Defender { get; init; }
     public bool Blocked { get; init; }
 }
-public sealed record Combat(Attack[] Attackers, AttackOption[] AttackOptions, string? BlockProblem);
+public sealed record Combat(ImmutableArray<Attack> Attackers, ImmutableArray<AttackOption> AttackOptions, string? BlockProblem);
 public sealed record StackItem(string Name, string Text, bool Ability, Card? Card)
 {
     public string Id { get; init; } = "";
     public int? ControllerId { get; init; }
-    public StackTarget[] Targets { get; init; } = [];
+    public ImmutableArray<StackTarget> Targets { get; init; } = [];
     public PendingEffect? Effect { get; init; }
 }
 public sealed record StackTarget(string Kind, string Id, string Name, int? PlayerId = null);
 public sealed record GameSnapshot(string Id, string Status, string? Error, string? Result, int ViewerId,
-    int Turn, string Phase, string PhaseKey, int? ActivePlayerId, Player[] Players,
-    StackItem[] Stack, Combat? Combat, Decision? Decision)
+    int Turn, string Phase, string PhaseKey, int? ActivePlayerId, ImmutableArray<Player> Players,
+    ImmutableArray<StackItem> Stack, Combat? Combat, Decision? Decision)
 {
-    public PublicState[] States { get; init; } = [];
+    public ImmutableArray<PublicState> States { get; init; } = [];
     public long Revision { get; init; }
     public long BoardRevision { get; init; }
     public int? PriorityPlayerId { get; init; }
     // Public acting seat only. Another seat's private prompt/options are never copied here.
     public int? DecisionOwnerId { get; init; }
     public string ActionClass { get; init; } = "";
-    public ActivityEntry[] Activity { get; init; } = [];
-    public string[] Notices { get; init; } = [];
-    public PriorityAbility[] IgnoredPriorityAbilities { get; init; } = [];
+    public ImmutableArray<ActivityEntry> Activity { get; init; } = [];
+    public ImmutableArray<string> Notices { get; init; } = [];
+    public ImmutableArray<PriorityAbility> IgnoredPriorityAbilities { get; init; } = [];
     public Player? Viewer => Players.FirstOrDefault(p => p.Id == ViewerId);
 }
 public sealed record ActivityEntry(long Id, int Turn, string PhaseKey, string Kind, int? PlayerId, string Message, string? CardId, string? CardName)

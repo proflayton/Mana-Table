@@ -41,7 +41,7 @@ internal sealed class PriorityFlowSmoke : ITableAutomation
         foreach (var size in new[] { new Point(1000, 740), new Point(1540, 980) }) {
             string directory = Path.Combine(profile, $"{size.X}x{size.Y}"); Prepare(directory);
             var engine = new RecordingLabEngine();
-            using var application = new TableApplication(engine, directory, initialState: engine.State);
+            using var application = new TableApplication(TestTableServices.For(engine), directory, initialState: engine.State);
             application.Automated = true; application.Initialize();
             var driver = new PriorityFlowSmoke(application.TestPort, engine, size);
             var watch = Stopwatch.StartNew(); double now = 0;
@@ -61,7 +61,7 @@ internal sealed class PriorityFlowSmoke : ITableAutomation
     {
         var viewport = size ?? new Point(1000, 740); Prepare(profile);
         var engine = new RecordingLabEngine();
-        using var window = new TableWindow(engine, profile, null, null, viewport, initialState: engine.State, artSource: new CardReadingArtFixture());
+        using var window = new TableWindow(TestTableServices.For(engine), profile, null, null, viewport, initialState: engine.State, artSource: new CardReadingArtFixture());
         window.Automation = new PriorityFlowSmoke(window.TestPort, engine, viewport, window.TestPort);
         window.Run();
     }
@@ -113,8 +113,8 @@ internal sealed class PriorityFlowSmoke : ITableAutomation
             MoveHit("confirm");
         }); Click();
         Wait(() => !view.Busy && engine.Replies.Count == 1 && view.Match?.PriorityPlayerId == 1, () => {
-            Check(engine.Replies.Single() is { Action: ReplyAction.Confirm } pass && pass.GameId == passGame && pass.DecisionId == passDecision
-                && pass.Choices == null && pass.Player == null && pass.Card == null,
+            Check(engine.Replies.Single() is PassPriority pass && pass.GameId == passGame && pass.DecisionId == passDecision
+               ,
                 "Pass priority submits exactly one current scoped Confirm, with no library selection or recipient command");
             Check(view.Match!.Decision == null && view.Match.ActivePlayerId == 2 && view.PrioritySeats.Keys.SequenceEqual([1])
                 && view.Match.Stack.Any(item => item.Id == "search-pending-trigger")
@@ -135,8 +135,8 @@ internal sealed class PriorityFlowSmoke : ITableAutomation
             recipientDecision = view.Match!.Decision!.Id;
             Observe("required-recipient"); Capture("05-required-recipient"); MoveHit("recipient:0");
         }); Click();
-        Wait(() => !view.Busy && engine.Replies.Count == 2 && view.Match?.Decision?.Context == "librarySearch", () => {
-            Check(engine.Replies[1] is { Action: ReplyAction.SelectPlayer, Player: 0 } recipient
+        Wait(() => !view.Busy && engine.Replies.Count == 2 && view.Match?.Decision is { Kind: "choice", LibraryCards.Length: > 0 }, () => {
+            Check(engine.Replies[1] is SelectPlayer { Player: 0 } recipient
                 && recipient.DecisionId == recipientDecision && recipient.GameId == passGame,
                 "Only clicking You submits the current required recipient choice in the same game epoch");
             Check(view.Match!.Decision is { Min: 1, Max: 1 } && view.Match.Decision.LibraryCards.Length == 3
@@ -152,7 +152,7 @@ internal sealed class PriorityFlowSmoke : ITableAutomation
             Capture("07-staged-search-result"); MoveHit("choicesdone");
         }); Click();
         Wait(() => !view.Busy && engine.Replies.Count == 3 && view.Match?.Viewer?.Zone("Hand").Cards.Length == 1, () => {
-            Check(engine.Replies[2] is { Action: ReplyAction.Choose } choice && choice.GameId == passGame
+            Check(engine.Replies[2] is ChooseOptions choice && choice.GameId == passGame
                 && choice.DecisionId == libraryDecision && choice.Choices!.SequenceEqual([0])
                 && view.Match!.Viewer!.Zone("Hand").Cards.Single().Name == "Forest",
                 "Only explicit search confirmation sends the current scoped Choose and shows the authored chosen card in hand");
@@ -234,7 +234,7 @@ internal sealed class PriorityFlowSmoke : ITableAutomation
         private readonly ExperienceLabSession session = new("trigger-search.v1");
         private readonly ExperienceLabEngine inner;
         private GameSnapshot? projection;
-        internal List<DecisionReply> Replies { get; } = [];
+        internal List<GameCommand> Replies { get; } = [];
         internal GameSnapshot State => projection ?? session.State;
         internal RecordingLabEngine()
         {
@@ -249,7 +249,7 @@ internal sealed class PriorityFlowSmoke : ITableAutomation
         public string Name => inner.Name;
         public Task InitializeAsync() => inner.InitializeAsync();
         public Task<GameSnapshot?> ObserveAsync() => Task.FromResult<GameSnapshot?>(State);
-        public async Task ReplyAsync(DecisionReply reply) { await inner.ReplyAsync(reply); Replies.Add(reply); projection = null; }
+        public async Task ExecuteAsync(GameCommand reply) { await inner.ExecuteAsync(reply); Replies.Add(reply); projection = null; }
         public ValueTask DisposeAsync() => inner.DisposeAsync();
         private static Task<T> Unavailable<T>() => Task.FromException<T>(new NotSupportedException("Priority flow uses only its canonical authored match."));
         private static Task Unavailable() => Task.FromException(new NotSupportedException("Priority flow uses only its canonical authored match."));

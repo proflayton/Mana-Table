@@ -49,7 +49,7 @@ internal static class HeadlessEngineSmoke
             }
             Check(initial.Players.All(player => player.Life == 40), "A real four-player Commander game reaches its opening decision");
             new PlayPreferences { Automatic = false, ReducedMotion = true, Sounds = false, TextScale = 1.3f }.Save(paths.Profile);
-            using var app = new TableApplication(engine, paths.Profile, initialState: initial);
+            using var app = new TableApplication(TestTableServices.For(engine), paths.Profile, initialState: initial);
             app.Automated = true; app.Initialize();
             var view = app.TestPort;
             view.SetTableStudy(true);
@@ -90,8 +90,7 @@ internal static class HeadlessEngineSmoke
                 if (++decisions > 80) throw new InvalidOperationException("The focused opening scenario required unexpectedly many decisions.");
                 var decision = view.Match.Decision;
                 if (decision is { Kind: "input", Intent: DecisionIntent.Mana } && !paidWithForest) {
-                    Check(decision.InputType.StartsWith("InputPayMana", StringComparison.Ordinal)
-                        && decision.SourceCard?.Name == "Rhys the Redeemed" && decision.Message.Length > 0,
+                    Check(decision.SourceCard?.Name == "Rhys the Redeemed" && decision.Message.Length > 0,
                         "Dragging the real paid commander opens its authoritative mana-payment input with the current source and cost instruction");
                     commanderPayment = true; Save("commander-payment");
                     var source = view.Match.Viewer!.Zone("Battlefield").Cards.First(card => card.Name == "Forest" && !card.Tapped);
@@ -108,7 +107,7 @@ internal static class HeadlessEngineSmoke
                     paidWithForest = true;
                     continue;
                 }
-                if (!openingHandRead && decision is { Kind: "input", InputType: "InputConfirmMulligan" }) {
+                if (!openingHandRead && decision is { Kind: "input", Purpose: DecisionPurpose.OpeningHand }) {
                     var openingCard = view.Match.Viewer!.Zone("Hand").Cards.First();
                     string game = view.Match.Id, prompt = decision.Id;
                     Click("card:" + openingCard.Key + ":" + openingCard.VisualId);
@@ -289,7 +288,7 @@ internal static class HeadlessEngineSmoke
                         offeredActions = sourceActions.Actions });
                 }
                 await Idle();
-                Check(view.Match?.Decision?.Context != "playAbility",
+                Check(view.Match?.Decision?.Purpose != DecisionPurpose.AbilitySelection,
                     "The real card gesture proceeds directly without a second generic ability choice: " + card.Name);
             }
         } catch (Exception exception) {

@@ -1,3 +1,4 @@
+using System.Collections.Immutable;
 using Mana.Contracts;
 using Mana.Renderer;
 using Mana.Table.Presentation;
@@ -135,7 +136,7 @@ internal static class DeckLibraryPresentationChecks
         {
             string directory = Path.Combine(profile, name); Directory.CreateDirectory(directory);
             new PlayPreferences { Automatic = false, ReducedMotion = true, Sounds = false, TextScale = 1.3f }.Save(directory);
-            this.check = check; app = new(engine, directory) { Automated = true }; app.Initialize(); View.DismissWelcome();
+            this.check = check; app = new(TestTableServices.For(engine), directory) { Automated = true }; app.Initialize(); View.DismissWelcome();
             Until(() => View.Loaded && !View.Busy && !View.StartupVisible && !View.ActivityOpen, "The controlled deck library opens through normal startup");
         }
         internal void Tick(Point? pointer = null, ButtonState left = ButtonState.Released)
@@ -231,7 +232,7 @@ internal static class DeckLibraryPresentationChecks
         public Task StartAsync() => Unsupported();
         public Task ReturnToLobbyAsync() => Unsupported();
         public Task LeaveAsync() => Unsupported();
-        public Task ReplyAsync(DecisionReply reply) => Unsupported();
+        public Task ExecuteAsync(GameCommand reply) => Unsupported();
         public Task ConcedeAsync(string id) => Unsupported();
     }
 }

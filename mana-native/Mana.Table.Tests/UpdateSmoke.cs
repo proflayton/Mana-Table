@@ -23,7 +23,7 @@ internal static class UpdateSmoke
         TableWindow.Probe Scene(string path, FakeUpdates? service, Action<Script, TableWindow.Probe, StartupEngine> arrange, Action<PreparedUpdate>? install = null)
         {
             var engine = new StartupEngine();
-            using var game = new TableWindow(engine, path, null, null, size, artSource: new EmptyArt(), appUpdates: service, installUpdate: install);
+            using var game = new TableWindow(TestTableServices.For(engine), path, null, null, size, artSource: new EmptyArt(), appUpdates: service, installUpdate: install);
             var view = game.TestPort; var script = new Script(view); game.Automation = script;
             arrange(script, view, engine); game.Run(); return view;
         }
@@ -252,7 +252,7 @@ internal static class UpdateSmoke
         public Task StartAsync() => Reject();
         public Task ReturnToLobbyAsync() => Reject();
         public Task LeaveAsync() => Reject();
-        public Task ReplyAsync(DecisionReply reply) => Reject();
+        public Task ExecuteAsync(GameCommand reply) => Reject();
         public Task ConcedeAsync(string id) => Reject();
     }
 }

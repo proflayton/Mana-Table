@@ -12,7 +12,7 @@ public static class StateClarity
     {
         var player = state.Players.FirstOrDefault(p => p.Id == id);
         if (player == null) return "Another player";
-        int index = Array.FindIndex(state.Players, p => p.Id == player.Id);
+        int index = state.Players.IndexOf(player);
         return PlayerName(state, id) + " · Seat " + (index + 1);
     }
 
@@ -46,9 +46,9 @@ public static class StateClarity
     public static Player[] Recipients(GameSnapshot state) => state.Status == "playing" && state.Decision is { } decision
         ? state.Players.Where(p => !p.Eliminated && decision.PlayerChoices.Contains(p.Id)).ToArray() : [];
 
-    public static DecisionReply? ChooseRecipient(GameSnapshot state, int player) => state.Decision is { Id.Length: > 0 } decision
+    public static SelectPlayer? ChooseRecipient(GameSnapshot state, int player) => state.Decision is { Id.Length: > 0 } decision
         && Recipients(state).Any(p => p.Id == player)
-            ? new(state.Id, decision.Id, ReplyAction.SelectPlayer, Player: player) : null;
+            ? new(state.Id, decision.Id, player) : null;
 
     public static string Source(GameSnapshot state) => state.Decision?.SourceCard is { } source
         ? source.Name + (state.Decision.SourceControllerId is { } controller ? " · " + SeatName(state, controller) : "") : "Current choice";
@@ -86,20 +86,24 @@ public static class StateClarity
         return state.Label + value + (StateAtMaximum(state) ? " MAX" : "");
     }
 
-    public static string PendingActionLabel(GameSnapshot state, DecisionReply reply)
+    public static string PendingActionLabel(GameSnapshot state, GameCommand command)
     {
-        string card = CardViews.Visible(state).FirstOrDefault(c => c.Key == reply.Card)?.Name ?? "Card";
-        return reply.Action switch {
-            ReplyAction.SelectPlayer => "Chose " + SeatName(state, reply.Player) + ".",
-            ReplyAction.SelectCard => "Submitted " + card + ".",
-            ReplyAction.UseHandPlacement => "Submitted placement ability.",
-            ReplyAction.AssignAttack => "Submitted attacker assignment.",
-            ReplyAction.AssignBlock => "Submitted blocker assignment.",
-            ReplyAction.Allocate => "Submitted assignment.",
-            ReplyAction.Choose => "Submitted selection.",
-            ReplyAction.Value => "Submitted answer.",
-            ReplyAction.Cancel => "Submitted " + (state.Decision?.Cancel ?? "cancel") + ".",
-            ReplyAction.Confirm or ReplyAction.AutoPass => "Submitted " + TurnGuide.Confirm(state) + ".",
+        string key = command switch { SelectCard value => value.Card, PlayCard value => value.Card,
+            ActivateCard value => value.Card, UseManaSource value => value.Card, _ => "" };
+        string card = CardViews.Visible(state).FirstOrDefault(c => c.Key == key)?.Name ?? "Card";
+        return command switch {
+            SelectPlayer value => "Chose " + SeatName(state, value.Player) + ".",
+            SelectCard or PlayCard or ActivateCard or UseManaSource => "Submitted " + card + ".",
+            PlaceFromHand => "Submitted placement ability.",
+            ToggleAttackPlayer or ToggleAttackPermanent => "Submitted attacker assignment.",
+            ToggleBlock => "Submitted blocker assignment.",
+            AllocateAmounts => "Submitted assignment.",
+            ChooseOptions or OrderOptions => "Submitted selection.",
+            ChooseNumber or EnterText => "Submitted answer.",
+            CancelPayment or CancelSelection or DeclineConfirmation or MulliganOpeningHand or UndoLastAction
+                => "Submitted " + (state.Decision?.Cancel ?? "cancel") + ".",
+            PassPriority or AutoPassPriority or KeepOpeningHand or PayMana or CompleteAttackers or CompleteBlockers
+                or CompleteSelection or AcceptConfirmation or AcknowledgeDecision => "Submitted " + TurnGuide.Confirm(state) + ".",
             _ => "Action submitted."
         };
     }

@@ -13,7 +13,7 @@ public static class CombatGuide
     });
     public static bool CanConfirm(GameSnapshot state) => state.Decision is { Kind: "input", OkEnabled: true }
         && !(state.Decision.Intent == DecisionIntent.Block && !string.IsNullOrWhiteSpace(state.Combat?.BlockProblem));
-    public static DecisionReply? Remove(GameSnapshot state, string source, string? attackerId = null)
+    public static DecisionCommand? Remove(GameSnapshot state, string source, string? attackerId = null)
     {
         var d = state.Decision; var card = Find(state, source);
         if (d == null || card == null || !CanSelect(state, card)) return null;
@@ -21,15 +21,15 @@ public static class CombatGuide
             if (attack.Defender is { Kind: "card" } defender) {
                 var target = Find(state, defender.Id);
                 return target != null && LegalTargets.CanAttackCard(state, source, defender.Id)
-                    ? new(state.Id, d.Id, ReplyAction.AssignAttack, Attacker: card.Key, DefenderCard: target.Key) : null;
+                    ? new ToggleAttackPermanent(state.Id, d.Id, card.Key, target.Key) : null;
             }
             return LegalTargets.CanAttack(state, source, attack.DefendingPlayerId)
-                ? new(state.Id, d.Id, ReplyAction.AssignAttack, Attacker: card.Key, Player: attack.DefendingPlayerId) : null;
+                ? new ToggleAttackPlayer(state.Id, d.Id, card.Key, attack.DefendingPlayerId) : null;
         }
         if (d.Intent == DecisionIntent.Block && state.Combat?.Attackers.FirstOrDefault(a => a.BlockerIds.Contains(source) && (attackerId == null || a.CardId == attackerId)) is { } blocked) {
             var attacker = Find(state, blocked.CardId);
             return attacker != null && LegalTargets.CanBlock(state, source, blocked.CardId)
-                ? new(state.Id, d.Id, ReplyAction.AssignBlock, Attacker: attacker.Key, Blocker: card.Key) : null;
+                ? new ToggleBlock(state.Id, d.Id, attacker.Key, card.Key) : null;
         }
         return null;
     }

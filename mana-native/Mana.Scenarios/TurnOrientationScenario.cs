@@ -1,3 +1,4 @@
+using System.Collections.Immutable;
 using Mana.Contracts;
 
 namespace Mana.Scenarios;
@@ -26,17 +27,17 @@ public static class TurnOrientationScenario
         var baseline = source with {
             Id = crowded ? "turn-orientation-crowded" : "turn-orientation",
             Players = source.Players.Select(player => player with {
-                Name = Names[player.Id], Mana = [], States = [],
+                Name = Names[player.Id], Mana = ImmutableDictionary<string, int>.Empty, States = [],
                 Zones = player.Zones.Select(zone => zone.Name switch {
                     "Battlefield" => zone with {
                         Count = crowded ? zone.Count : 5,
-                        Cards = crowded ? zone.Cards.Select(card => card with { Selectable = false, Highlighted = false }).ToArray()
-                            : OrdinaryField(player.Id)
+                        Cards = (crowded ? zone.Cards.Select(card => card with { Selectable = false, Highlighted = false }).ToArray()
+                            : OrdinaryField(player.Id)).ToImmutableArray()
                     },
-                    "Hand" => zone with { Count = player.Id == 0 ? hand.Length : 5, Cards = player.Id == 0 ? hand : [] },
+                    "Hand" => zone with { Count = player.Id == 0 ? hand.Length : 5, Cards = (player.Id == 0 ? hand : []).ToImmutableArray() },
                     _ => zone
-                }).ToArray()
-            }).ToArray()
+                }).ToImmutableArray()
+            }).ToImmutableArray()
         };
         var yours = Priority(baseline, 8, 0, 0);
         var rowans = Priority(yours, 9, 1, 1);
@@ -45,8 +46,8 @@ public static class TurnOrientationScenario
         var response = Priority(rowans, 9, 1, 2);
         response = response with {
             Players = response.Players.Select(player => player.Id is not (1 or 2) ? player : player with {
-                Zones = player.Zones.Select(zone => zone.Name == "Hand" ? zone with { Count = 4 } : zone).ToArray()
-            }).ToArray(),
+                Zones = player.Zones.Select(zone => zone.Name == "Hand" ? zone with { Count = 4 } : zone).ToImmutableArray()
+            }).ToImmutableArray(),
             Stack = [
                 new("Counterspell", counterspell.Text, false, counterspell) {
                     Id = "orientation-counterspell", ControllerId = 2,
@@ -73,15 +74,15 @@ public static class TurnOrientationScenario
             .Where(card => card.VisualId is MiraTargetId or JulesTargetId).ToArray();
         var choosing = combat with {
             ActionClass = "selection", PriorityPlayerId = null, DecisionOwnerId = 0,
-            Players = combat.Players.Select(player => player with { Priority = false }).ToArray(),
+            Players = combat.Players.Select(player => player with { Priority = false }).ToImmutableArray(),
             Decision = new() {
-                Kind = "choice", Intent = DecisionIntent.Selection, Context = "turn-orientation-targets",
+                Kind = "choice", Intent = DecisionIntent.Selection,
                 Title = "Choose a creature", Message = "Choose one of the shown creatures in this scripted target preview.",
                 Min = 1, Max = 1, SourceCard = growth, SourceCardId = growth.VisualId, SourceZone = "Hand", SourceControllerId = 0,
                 Choices = targetCards.Select((card, index) => new Choice(index, card.Name, card) {
                     Id = "orientation-target-" + index, CardId = card.VisualId,
                     ControllerId = card.VisualId == MiraTargetId ? 2 : 3, OwnerId = card.VisualId == MiraTargetId ? 2 : 3
-                }).ToArray()
+                }).ToImmutableArray()
             }
         };
         var quiet = Priority(MapBattlefield(combat, card => card with {
@@ -104,7 +105,7 @@ public static class TurnOrientationScenario
     private static GameSnapshot Priority(GameSnapshot basis, int turn, int active, int responder) => basis with {
         Turn = turn, Phase = "Main phase", PhaseKey = "MAIN1", ActivePlayerId = active,
         PriorityPlayerId = responder, DecisionOwnerId = responder, ActionClass = "priority", Stack = [], Combat = null,
-        Players = basis.Players.Select(player => player with { Priority = player.Id == responder }).ToArray(),
+        Players = basis.Players.Select(player => player with { Priority = player.Id == responder }).ToImmutableArray(),
         Decision = responder == basis.ViewerId ? new() {
             Kind = "input", Intent = DecisionIntent.Priority, OkEnabled = true, CanAutoPass = false,
             Message = "You have priority. Use Next to continue this scripted sequence."
@@ -112,8 +113,8 @@ public static class TurnOrientationScenario
     };
     private static GameSnapshot MapBattlefield(GameSnapshot state, Func<Card, Card> map) => state with {
         Players = state.Players.Select(player => player with {
-            Zones = player.Zones.Select(zone => zone.Name == "Battlefield" ? zone with { Cards = zone.Cards.Select(map).ToArray() } : zone).ToArray()
-        }).ToArray()
+            Zones = player.Zones.Select(zone => zone.Name == "Battlefield" ? zone with { Cards = zone.Cards.Select(map).ToImmutableArray() } : zone).ToImmutableArray()
+        }).ToImmutableArray()
     };
     private static Card[] OrdinaryField(int seat) => [
         Face($"crowd-{seat}-creature-0", "Llanowar Elves", "Creature — Elf Druid", "{G}", "{T}: Add {G}.") with { Power = 1, Toughness = 1 },

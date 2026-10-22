@@ -1,3 +1,4 @@
+using System.Collections.Immutable;
 using System.Text.Json;
 using Mana.Contracts;
 using Mana.Magic;
@@ -29,7 +30,7 @@ internal sealed class AllocationSmoke : ITableAutomation
         new PlayPreferences { Automatic = false, Sounds = false }.Save(profile);
         var scenario = new InteractionScenarioEngine();
         scenario.Present(Example(scenario.State, true));
-        using var game = new TableWindow(scenario, profile, null, null, size, initialState: scenario.State, artSource: new CardReadingArtFixture());
+        using var game = new TableWindow(TestTableServices.For(scenario), profile, null, null, size, initialState: scenario.State, artSource: new CardReadingArtFixture());
         game.Automation = new AllocationSmoke(game.TestPort, scenario);
         game.Run();
     }
@@ -102,7 +103,7 @@ internal sealed class AllocationSmoke : ITableAutomation
             Expect(); MoveHit("allocate");
         }); Click();
         Wait(ReplySettled, 3, () => {
-            CheckReply(ReplyAction.Allocate, [2, 1, 2, 0, 0, 0, 5], "Confirm sends one exact scoped allocation in original recipient order");
+            CheckReply([2, 1, 2, 0, 0, 0, 5], "Confirm sends one exact scoped allocation in original recipient order");
             Publish(false); MoveAway();
         });
         Wait(() => Has("alloc-fill:1"), 3, () => {
@@ -135,12 +136,12 @@ internal sealed class AllocationSmoke : ITableAutomation
         Step(.12, () => MoveHit("alloc-fill:1")); Click();
         Step(.12, () => { Expect(); MoveHit("allocate"); }); Click();
         Wait(ReplySettled, 3, () => {
-            CheckReply(ReplyAction.Allocate, [2, 1], "The fresh generic assignment retains its exact game, decision and values");
+            CheckReply([2, 1], "The fresh generic assignment retains its exact game, decision and values");
             Publish(false, true); MoveAway();
         });
         Wait(() => Has("skip"), 3, () => { Expect(); MoveHit("skip"); }); Click();
         Wait(ReplySettled, 3, () => {
-            CheckReply(ReplyAction.Skip, null, "Assign later is available only when the engine permits it and submits the current scope");
+            CheckReply(null, "Assign later is available only when the engine permits it and submits the current scope");
             File.WriteAllText(Path.Combine(view.Profile, "allocation-ui-results.json"), JsonSerializer.Serialize(checks, new JsonSerializerOptions { WriteIndented = true }));
             view.Exit();
         });
@@ -157,25 +158,25 @@ internal sealed class AllocationSmoke : ITableAutomation
             Id = "recipient-" + index, CardId = card.VisualId, ControllerId = controller, OwnerId = controller, Minimum = 0, Maximum = combat ? 10 : 3, Lethal = lethal
         };
         Choice[] choices = combat ? [
-            Recipient(0, Body("soldier-a", "Soldier", 2, 5) with { Damage = 3, CombatKeywords = ["Indestructible"], Counters = new() { ["+1/+1"] = 1 } }, 1, 2),
+            Recipient(0, Body("soldier-a", "Soldier", 2, 5) with { Damage = 3, CombatKeywords = ["Indestructible"], Counters = ImmutableDictionary<string, int>.Empty.Add("+1/+1", 1) }, 1, 2),
             Recipient(1, Body("soldier-b", "Soldier", 1, 1) with { CombatKeywords = ["Deathtouch"] }, 2, 1),
             Recipient(2, Body("anonymous-public", "Face-down card", 2, 2) with { FaceDown = true, Text = "", CombatKeywords = ["Ward 2"] }, 1, 2),
-            Recipient(3, new() { VisualId = "walker", Name = "Wandering Adept", Type = "Planeswalker", Counters = new() { ["LOYALTY"] = 4 } }, 2),
+            Recipient(3, new() { VisualId = "walker", Name = "Wandering Adept", Type = "Planeswalker", Counters = ImmutableDictionary<string, int>.Empty.Add("LOYALTY", 4) }, 2),
             Recipient(4, Body("angel", "Serra Angel", 4, 4) with { CombatKeywords = ["Flying", "Vigilance"] }, 3),
             Recipient(5, Body("elf", "Llanowar Elves", 1, 1) with { Tapped = true }, 3),
             new(83, "Opponent 1", null) { Id = "defending-player", PlayerId = 1, IsDefender = true, Minimum = 0, Maximum = 10 }
         ] : [
-            Recipient(0, Body("counter-body", "Llanowar Elves", 3, 3) with { Damage = 1, Counters = new() { ["+1/+1"] = 2 } }, 0) with { Minimum = 1, Maximum = 2 },
-            Recipient(1, new() { VisualId = "counter-walker", Name = "Wandering Adept", Type = "Planeswalker", Counters = new() { ["LOYALTY"] = 5 } }, 0)
+            Recipient(0, Body("counter-body", "Llanowar Elves", 3, 3) with { Damage = 1, Counters = ImmutableDictionary<string, int>.Empty.Add("+1/+1", 2) }, 0) with { Minimum = 1, Maximum = 2 },
+            Recipient(1, new() { VisualId = "counter-walker", Name = "Wandering Adept", Type = "Planeswalker", Counters = ImmutableDictionary<string, int>.Empty.Add("LOYALTY", 5) }, 0)
         ];
         return state with {
             Phase = combat ? "Combat damage" : "Main phase", PhaseKey = combat ? "COMBAT_DAMAGE" : "MAIN2", Combat = null, Stack = [],
-            Players = state.Players.Select(p => p with { Priority = false, Zones = p.Zones.Select(z => z.Name == "Battlefield" ? z with { Cards = [], Count = 0 } : z).ToArray() }).ToArray(),
+            Players = state.Players.Select(p => p with { Priority = false, Zones = p.Zones.Select(z => z.Name == "Battlefield" ? z with { Cards = [], Count = 0 } : z).ToImmutableArray() }).ToImmutableArray(),
             Decision = new() {
                 Kind = "allocate", Title = combat ? "Assign combat damage" : "Distribute +1/+1 counters", AllocationKind = combat ? "combat" : "generic",
                 Message = combat ? "Ancient Stoneguard assigns damage using toughness. Choose the amount for each recipient." : "Choose where these counters go. Current power and toughness already include existing counters.",
                 AmountLabel = combat ? "combat damage" : "+1/+1 counters", Amount = combat ? 10 : 3,
-                SourceCard = source, SourceCardId = source.VisualId, SourceControllerId = 0, OverrideOrder = true, MaySkip = maySkip, Choices = choices
+                SourceCard = source, SourceCardId = source.VisualId, SourceControllerId = 0, OverrideOrder = true, MaySkip = maySkip, Choices = choices.ToImmutableArray()
             }
         };
     }
@@ -184,11 +185,11 @@ internal sealed class AllocationSmoke : ITableAutomation
     private bool Has(string id) => view.Hits.Any(h => h.Id == id);
     private void Expect() { before = scenario.Replies.Count; expectedScope = view.Scope; expectedGame = view.Match!.Id; expectedDecision = view.Match.Decision!.Id; }
     private bool ReplySettled() => scenario.Replies.Count > before && !view.Busy;
-    private void CheckReply(ReplyAction action, int[]? amounts, string description)
+    private void CheckReply(int[]? amounts, string description)
     {
         var reply = scenario.Replies.LastOrDefault();
-        Check(scenario.Replies.Count == before + 1 && reply?.Action == action && reply.GameId == expectedGame && reply.DecisionId == expectedDecision
-            && (amounts == null || reply.Amounts?.SequenceEqual(amounts) == true), description);
+        Check(scenario.Replies.Count == before + 1 && reply is DecisionCommand scoped && scoped.GameId == expectedGame && scoped.DecisionId == expectedDecision
+            && (amounts == null ? reply is SkipAllocation : reply is AllocateAmounts allocation && allocation.Amounts.SequenceEqual(amounts)), description);
     }
     private void MoveHit(string id)
     {

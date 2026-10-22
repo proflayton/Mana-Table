@@ -3,7 +3,10 @@
     <OutputType>WinExe</OutputType><TargetFramework>net9.0-windows</TargetFramework><UseWindowsForms>true</UseWindowsForms>
     <ImplicitUsings>enable</ImplicitUsings><Nullable>enable</Nullable><AssemblyName>Mana.Table.Tests</AssemblyName>
   </PropertyGroup>
-  <ItemGroup><ProjectReference Include="../Mana.Table/Mana.Table.csproj" /></ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="../Mana.Game/Mana.Game.csproj" />
+    <ProjectReference Include="../Mana.Forge/Mana.Forge.csproj" />
+  </ItemGroup>
   <ItemGroup>
     <Content Include="../../forge-api/src/test/resources/forge/api/annotated-toph.txt" Link="Fixtures/annotated-toph.txt" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>

@@ -1,3 +1,4 @@
+using System.Collections.Immutable;
 using Mana.Contracts;
 using Mana.Magic;
 using Mana.Renderer;
@@ -24,8 +25,8 @@ internal static class PresentationSceneChecks
         Players = state.Players.Select(player => {
             var field = cards(player);
             return player with { Zones = player.Zones.Select(zone => zone.Name != "Battlefield" ? zone
-                : zone with { Cards = field, Count = field.Length }).ToArray() };
-        }).ToArray()
+                : zone with { Cards = field.ToImmutableArray(), Count = field.Length }).ToImmutableArray() };
+        }).ToImmutableArray()
     };
 
     private static void CheckSeatPlans(Action<bool, string> check)
@@ -109,8 +110,8 @@ internal static class PresentationSceneChecks
             VisualId = "paged-" + index, Name = "Hand card " + index, Type = "Artifact"
         }).ToArray();
         state = state with { Players = state.Players.Select(player => player.Id != state.ViewerId ? player : player with {
-            Zones = player.Zones.Select(zone => zone.Name != "Hand" ? zone : zone with { Count = hand.Length, Cards = hand }).ToArray()
-        }).ToArray() };
+            Zones = player.Zones.Select(zone => zone.Name != "Hand" ? zone : zone with { Count = hand.Length, Cards = hand.ToImmutableArray() }).ToImmutableArray()
+        }).ToImmutableArray() };
         var page = TableScene.Build(state, 1, new(-100, -100), null, "paged-13", false, CardPresentation.IsResource).Hand;
         check(page is { Page: 1, Total: 24, Raised: null } && page.Cards.Length == 10
                 && page.Cards.All(node => node.Pose == TableLayout.Hand(Array.IndexOf(hand, node.Card) - 11, 11)

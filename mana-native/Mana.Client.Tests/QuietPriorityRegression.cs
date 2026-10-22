@@ -1,3 +1,4 @@
+using System.Collections.Immutable;
 using System.Text.Json;
 using Mana.Client;
 using Mana.Contracts;
@@ -21,10 +22,10 @@ internal static class QuietPriorityRegression
         check(new[] { legacyDraw, effectDraw, unknown }.All(entry => DecisionQuietAdvance.HasInterruption(initial with { Activity = [entry] }, 0)),
             "Unmarked legacy draws, effect draws and unfamiliar public events all interrupt quiet passing");
         try {
-            new DecisionReply(initial.Id, initial.Decision!.Id, ReplyAction.PassUntilPublicAction).Validate();
+            new PassForNow(initial.Id, initial.Decision!.Id, "").Validate();
             throw new InvalidOperationException("An empty quiet-yield token was accepted.");
         } catch (ArgumentException) { check(true, "Explicit quiet passing requires a nonempty engine token and current decision scope"); }
-        new DecisionReply(initial.Id, initial.Decision!.Id, ReplyAction.PassUntilPublicAction, YieldToken: "armed-token").Validate();
+        new PassForNow(initial.Id, initial.Decision!.Id, YieldToken: "armed-token").Validate();
         var ordinary = new SequenceConnection(initial);
         await new DecisionAdvance(ordinary).RunAsync(initial, _ => true, (_, _) => false);
         check(ordinary.Replies.Count == 0 && !initial.Decision!.CanAutoPass && DecisionQuietAdvance.CanPass(initial, "armed-token"),
@@ -36,8 +37,8 @@ internal static class QuietPriorityRegression
         var windows = new SequenceConnection(refreshed, cast);
         var observed = await new DecisionQuietAdvance(windows).RunAsync(initial, "armed-token", _ => true, (_, _) => false);
         check(observed == cast && windows.Replies.Count == 2
-            && windows.Replies.All(reply => reply.Action == ReplyAction.PassUntilPublicAction && reply.YieldToken == "armed-token")
-            && windows.Replies.Select(reply => reply.DecisionId).SequenceEqual(["first", "second"]),
+            && windows.Replies.All(reply => reply is PassForNow { YieldToken: "armed-token" })
+            && windows.Replies.OfType<PassForNow>().Select(reply => reply.DecisionId).SequenceEqual(["first", "second"]),
             "Quiet phase and prompt refreshes reuse the explicitly armed token, then stop before the new opponent-stack response");
 
         var busy = initial with { Revision = 2, Status = "resolving", Decision = null, DecisionOwnerId = null,
@@ -68,8 +69,8 @@ internal static class QuietPriorityRegression
         var drawConnection = new SequenceConnection(drawHandoff, afterDraw, afterDrawCast);
         observed = await new DecisionQuietAdvance(drawConnection).RunAsync(initial, "armed-token", _ => true, (_, _) => false);
         check(observed == afterDrawCast && drawConnection.Replies.Count == 2
-            && drawConnection.Replies.Select(reply => reply.DecisionId).SequenceEqual(["first", "second"])
-            && drawConnection.Replies.All(reply => reply.Action == ReplyAction.PassUntilPublicAction && reply.YieldToken == "armed-token"),
+            && drawConnection.Replies.OfType<PassForNow>().Select(reply => reply.DecisionId).SequenceEqual(["first", "second"])
+            && drawConnection.Replies.All(reply => reply is PassForNow { YieldToken: "armed-token" }),
             "Engine-marked routine moved and draw history survives an opponent handoff and the next same-token local pass");
         var effectDrawState = busy with { Activity = [effectDraw] };
         var effectDrawConnection = new SequenceConnection(effectDrawState, laterPriority);
@@ -104,7 +105,7 @@ internal static class QuietPriorityRegression
         bool started = session.AdvanceQuietly("armed-token", _ => true, (_, _) => false);
         await serialConnection.Started.Task.WaitAsync(TimeSpan.FromSeconds(5));
         bool duplicate = session.AdvanceQuietly("armed-token", _ => true, (_, _) => false);
-        bool interleaved = session.Submit(new(initial.Id, initial.Decision!.Id, ReplyAction.Confirm));
+        bool interleaved = session.Submit(new PassPriority(initial.Id, initial.Decision!.Id));
         session.CancelAdvance(); serialConnection.Release.SetResult();
         var deadline = DateTime.UtcNow.AddSeconds(5);
         while (session.Busy && DateTime.UtcNow < deadline) { session.Pump(); await Task.Delay(2); }
@@ -114,16 +115,16 @@ internal static class QuietPriorityRegression
     }
 
     private static GameSnapshot State(string decision, string token) => new("quiet-game", "playing", null, null, 0, 7, "Main phase", "MAIN1", 1,
-        [new(0, "You", 40, true, false, [], []), new(1, "Opponent", 40, false, false, [], [])], [], null,
+        [new(0, "You", 40, true, false, ImmutableDictionary<string, int>.Empty, []), new(1, "Opponent", 40, false, false, ImmutableDictionary<string, int>.Empty, [])], [], null,
         new() { Id = decision, Kind = "input", Intent = DecisionIntent.Priority, OkEnabled = true, CanAutoPass = false, QuietYieldToken = token })
         { Revision = 1, PriorityPlayerId = 0, DecisionOwnerId = 0, ActionClass = "priority" };
 
     private sealed class SequenceConnection(params GameSnapshot[] snapshots) : IMatchConnection
     {
         private int index;
-        internal List<DecisionReply> Replies { get; } = [];
+        internal List<GameCommand> Replies { get; } = [];
         public Task<GameSnapshot?> ObserveAsync() => Task.FromResult<GameSnapshot?>(snapshots[Math.Min(index++, snapshots.Length - 1)]);
-        public Task ReplyAsync(DecisionReply reply) { reply.Validate(); Replies.Add(reply); return Task.CompletedTask; }
+        public Task ExecuteAsync(GameCommand reply) { reply.Validate(); Replies.Add(reply); return Task.CompletedTask; }
         public Task ConcedeAsync(string gameId) => Task.CompletedTask;
     }
     private sealed class HeldConnection(GameSnapshot after) : IMatchConnection
@@ -131,7 +132,7 @@ internal static class QuietPriorityRegression
         internal TaskCompletionSource Started { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
         internal TaskCompletionSource Release { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
         internal int Replies, Observations;
-        public async Task ReplyAsync(DecisionReply reply) { reply.Validate(); Replies++; Started.SetResult(); await Release.Task; }
+        public async Task ExecuteAsync(GameCommand reply) { reply.Validate(); Replies++; Started.SetResult(); await Release.Task; }
         public Task<GameSnapshot?> ObserveAsync() { Observations++; return Task.FromResult<GameSnapshot?>(after); }
         public Task ConcedeAsync(string gameId) => Task.CompletedTask;
     }

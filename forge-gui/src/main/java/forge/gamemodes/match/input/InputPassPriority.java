@@ -72,6 +72,31 @@ public class InputPassPriority extends InputSyncronizedBase {
         return !isFinished();
     }
 
+    /** Explicit operations for clients that do not emulate the overloaded Cancel button. */
+    public boolean canUndoPriorityAction() {
+        return isPriorityActive() && pendingSuggestion == null && getController().canUndoLastAction();
+    }
+
+    public boolean undoPriorityAction() {
+        return canUndoPriorityAction() && getController().tryUndoLastAction();
+    }
+
+    public boolean canPassTurn() {
+        return isPriorityActive() && pendingSuggestion == null && !getController().canUndoLastAction();
+    }
+
+    public boolean passTurn() {
+        if (!canPassTurn()) return false;
+        passPriority(() -> {
+            // A mana-loss confirmation can delay this continuation. It still
+            // means pass turn, and must never fall back to undoing an action.
+            if (!canPassTurn()) return;
+            getController().autoPassUntilEndOfTurn();
+            stop();
+        });
+        return true;
+    }
+
     private SuggestionType pendingSuggestion = null;
     private String pendingSuggestionMessage = null;
 

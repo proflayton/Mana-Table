@@ -1,0 +1,29 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net9.0-windows</TargetFramework><UseWindowsForms>true</UseWindowsForms>
+    <ImplicitUsings>enable</ImplicitUsings><Nullable>enable</Nullable>
+    <AssemblyName>Mana.Game</AssemblyName>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="MonoGame.Framework.DesktopGL" Version="3.8.5.1" />
+    <ProjectReference Include="../Mana.Contracts/Mana.Contracts.csproj" />
+    <ProjectReference Include="../Mana.Client/Mana.Client.csproj" />
+    <ProjectReference Include="../Mana.Magic/Mana.Magic.csproj" />
+    <ProjectReference Include="../Mana.Renderer/Mana.Renderer.csproj" />
+    <ProjectReference Include="../Mana.Scenarios/Mana.Scenarios.csproj" />
+    <Content Include="Assets/**" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <Content Include="../../forge-gui/res/skins/default/sprite_manaicons.png" Link="Assets/mana-symbols.png" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+  </ItemGroup>
+  <!-- ResolveReferences includes unused/transitive project references too.
+       The UI must fail compilation if a provider or the shipping host enters it. -->
+  <Target Name="EnforceProviderIsolation" AfterTargets="ResolveReferences" BeforeTargets="CoreCompile">
+    <ItemGroup>
+      <ProviderIsolationViolation Include="@(ProjectReference)"
+        Condition="'%(ProjectReference.Filename)' != 'Mana.Contracts' And '%(ProjectReference.Filename)' != 'Mana.Client' And '%(ProjectReference.Filename)' != 'Mana.Magic' And '%(ProjectReference.Filename)' != 'Mana.Renderer' And '%(ProjectReference.Filename)' != 'Mana.Scenarios'" />
+      <ProviderIsolationViolation Include="@(ReferencePath)"
+        Condition="'%(ReferencePath.ReferenceSourceTarget)' == 'ProjectReference' And '%(ReferencePath.Filename)' != 'Mana.Contracts' And '%(ReferencePath.Filename)' != 'Mana.Client' And '%(ReferencePath.Filename)' != 'Mana.Magic' And '%(ReferencePath.Filename)' != 'Mana.Renderer' And '%(ReferencePath.Filename)' != 'Mana.Scenarios'" />
+    </ItemGroup>
+    <Error Condition="'@(ProviderIsolationViolation)' != ''"
+      Text="Mana.Game resolved an unreviewed project dependency outside its neutral port/client/presentation allowlist: @(ProviderIsolationViolation)" />
+  </Target>
+</Project>

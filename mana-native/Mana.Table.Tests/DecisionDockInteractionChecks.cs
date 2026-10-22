@@ -19,11 +19,11 @@ internal static class DecisionDockInteractionChecks
         Directory.CreateDirectory(directory);
         new PlayPreferences { Automatic = true, ReducedMotion = true, Sounds = false, Stops = ["MAIN1", "COMBAT_BEGIN"] }.Save(directory);
         var engine = new InteractionScenarioEngine(); engine.Present(initial);
-        var replies = new ConcurrentQueue<DecisionReply>();
+        var replies = new ConcurrentQueue<GameCommand>();
         var started = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         engine.ReplyOverride = async reply => { replies.Enqueue(reply); started.TrySetResult(); await release.Task; };
-        using var app = new TableApplication(engine, directory, initialState: engine.State) { Automated = true };
+        using var app = new TableApplication(TestTableServices.For(engine), directory, initialState: engine.State) { Automated = true };
         app.Initialize(); var view = app.TestPort;
         view.PresentLobby(new("local", "Controlled decision policy", null, false, null, true, "", null, [], []), true);
         view.SetAutomatic(true);
@@ -53,7 +53,7 @@ internal static class DecisionDockInteractionChecks
             Until(() => started.Task.IsCompleted, "Removing the current stop allows a real engine-authorized Auto reply through the application");
             var saved = PlayPreferences.Load(directory);
             check(!saved.Stops.Contains("MAIN1") && saved.Stops.Contains("COMBAT_BEGIN")
-                    && replies.Single() is { Action: ReplyAction.AutoPass } pass && pass.GameId == game && pass.DecisionId == decision
+                    && replies.Single() is AutoPassPriority pass && pass.GameId == game && pass.DecisionId == decision
                     && view.DecisionDock is { Status: DecisionDockStatus.AutoPassing, PauseReason: DecisionDockPauseReason.None },
                 "The explicit stop-removal gesture changes only that preference; Auto uses the original authorized decision rather than confirming a phase or choosing an attack");
             engine.Present(engine.State with { Decision = null, DecisionOwnerId = 1, PriorityPlayerId = null, ActionClass = "selection", Status = "resolving" });
@@ -74,7 +74,7 @@ internal static class DecisionDockInteractionChecks
         new PlayPreferences { Automatic = true, ReducedMotion = true, Sounds = false, Stops = ["MAIN1", "MAIN2", "COMBAT_BEGIN"] }.Save(directory);
         var engine = new InteractionScenarioEngine(); engine.Present(initial);
         engine.ReplyOverride = _ => throw new InvalidOperationException("Both authored phases retain their saved stop");
-        using var app = new TableApplication(engine, directory, initialState: engine.State) { Automated = true };
+        using var app = new TableApplication(TestTableServices.For(engine), directory, initialState: engine.State) { Automated = true };
         app.Initialize(); var view = app.TestPort;
         view.PresentLobby(new("local", "Controlled stop refresh", null, false, null, true, "", null, [], []), true);
         double seconds = 0;
@@ -106,7 +106,7 @@ internal static class DecisionDockInteractionChecks
         new PlayPreferences { Automatic = false, ReducedMotion = true, Sounds = false }.Save(directory);
         var engine = new InteractionScenarioEngine(); engine.Present(initial);
         engine.ReplyOverride = _ => throw new InvalidOperationException("Inspection must suspend automatic game commands");
-        using var app = new TableApplication(engine, directory, initialState: engine.State) { Automated = true };
+        using var app = new TableApplication(TestTableServices.For(engine), directory, initialState: engine.State) { Automated = true };
         app.Initialize(); var view = app.TestPort;
         view.PresentLobby(new("local", "Controlled inspection", null, false, null, true, "", null, [], []), true);
         double seconds = 0;

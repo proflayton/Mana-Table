@@ -38,7 +38,7 @@ internal sealed class LobbyThreePlayerSmoke : ITableAutomation, IDisposable
         try {
             engine.InitializeAsync().GetAwaiter().GetResult();
             engine.ImportAsync("Three-player host", "Commander\n1 Rograkh, Son of Rohgahh\nDeck\n99 Mountain").GetAwaiter().GetResult();
-            using var game = new TableWindow(engine, paths.Profile, null, null, size, artSource: new CardReadingArtFixture());
+            using var game = new TableWindow(TestTableServices.For(engine), paths.Profile, null, null, size, artSource: new CardReadingArtFixture());
             using var smoke = new LobbyThreePlayerSmoke(game.TestPort, paths);
             game.Automation = smoke; game.TestPort.DismissWelcome(); game.Run();
         } finally { engine.DisposeAsync().AsTask().GetAwaiter().GetResult(); }
@@ -135,7 +135,7 @@ internal sealed class LobbyThreePlayerSmoke : ITableAutomation, IDisposable
     private async Task FinishOpening()
     {
         var until = DateTime.UtcNow.AddSeconds(45);
-        ICardEngine[] seats = [view.Engine, .. guests];
+        IMatchConnection[] seats = [view.Services.Match, .. guests];
         while (DateTime.UtcNow < until) {
             openingViews = await Task.WhenAll(seats.Select(seat => seat.ObserveAsync()));
             if (openingViews.FirstOrDefault(state => state?.Status == "error") is { } failed)
@@ -153,14 +153,14 @@ internal sealed class LobbyThreePlayerSmoke : ITableAutomation, IDisposable
             } else for (int index = 0; index < seats.Length; index++) {
                 var state = openingViews[index];
                 if (state?.Decision is not { } d) continue;
-                DecisionReply? reply = d.Kind switch {
-                    "choice" => new(state.Id, d.Id, ReplyAction.Choose, Choices: d.Choices.Take(Math.Max(d.Min, Math.Min(1, d.Max))).Select(c => c.Index).ToArray()),
-                    "reveal" => new(state.Id, d.Id, ReplyAction.Choose, Choices: []),
-                    _ when d.PlayerChoices.Length > 0 => new(state.Id, d.Id, ReplyAction.SelectPlayer, Player: d.PlayerChoices[0]),
-                    _ when d.OkEnabled => new(state.Id, d.Id, ReplyAction.Confirm),
+                DecisionCommand? reply = d.Kind switch {
+                    "choice" => DecisionCommands.Choose(state, d.Choices.Take(Math.Max(d.Min, Math.Min(1, d.Max))).Select(c => c.Index)),
+                    "reveal" => new AcknowledgeReveal(state.Id, d.Id),
+                    _ when d.PlayerChoices.Length > 0 => new SelectPlayer(state.Id, d.Id, Player: d.PlayerChoices[0]),
+                    _ when d.OkEnabled => DecisionCommands.Confirm(state),
                     _ => null
                 };
-                if (reply != null) try { await seats[index].ReplyAsync(reply); }
+                if (reply != null) try { await seats[index].ExecuteAsync(reply); }
                     catch (InvalidOperationException ex) when (ex.Message.Contains("choice has changed", StringComparison.Ordinal)) { }
             }
             await Task.Delay(30);
@@ -170,7 +170,7 @@ internal sealed class LobbyThreePlayerSmoke : ITableAutomation, IDisposable
                 state.Id, state.ViewerId, state.Status, state.PhaseKey, state.Turn, state.ActivePlayerId,
                 state.PriorityPlayerId, state.DecisionOwnerId, state.ActionClass,
                 decision = state.Decision == null ? null : new { state.Decision.Id, state.Decision.Kind,
-                    state.Decision.InputType, state.Decision.Intent, state.Decision.OkEnabled }
+                    state.Decision.Purpose, state.Decision.Intent, state.Decision.OkEnabled }
             }) }));
     }
     private static bool UsableFirstMain(GameSnapshot[] states)
@@ -181,7 +181,7 @@ internal sealed class LobbyThreePlayerSmoke : ITableAutomation, IDisposable
             || state.PhaseKey != "MAIN1" || state.Id != first.Id || state.Turn != first.Turn || state.ActivePlayerId != first.ActivePlayerId)) return false;
         if (states.Count(state => state.Decision != null) != 1) return false;
         var owner = states.Single(state => state.Decision != null);
-        return owner is { Decision: { Id.Length: > 0, Kind: "input", InputType: "InputPassPriority", Intent: DecisionIntent.Priority, OkEnabled: true } }
+        return owner is { Decision: { Id.Length: > 0, Kind: "input", Intent: DecisionIntent.Priority, OkEnabled: true } }
             && states.All(state => state.ActionClass == "priority" && state.PriorityPlayerId == owner.ViewerId && state.DecisionOwnerId == owner.ViewerId);
     }
     private void Click(string id) { Step(.1, () => MoveHit(view.Hits.Single(h => h.Id == id))); Step(0, () => mouse = Mouse(ButtonState.Pressed)); Step(0, () => mouse = Mouse()); }

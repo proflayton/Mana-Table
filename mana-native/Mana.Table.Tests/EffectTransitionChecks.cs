@@ -1,3 +1,4 @@
+using System.Collections.Immutable;
 using Mana.Contracts;
 using Mana.Renderer;
 using Microsoft.Xna.Framework;
@@ -74,7 +75,7 @@ internal static class EffectTransitionChecks
             new PlayPreferences { ReducedMotion = true, Automatic = false, Sounds = false, TextScale = 1.3f }.Save(profile);
             var baseline = ClutteredChangesScenario.Earthbend(ClutteredChangesScenario.Initial());
             var engine = new InteractionScenarioEngine(); engine.Present(baseline);
-            using var app = new TableApplication(engine, profile, initialState: engine.State) { Automated = true };
+            using var app = new TableApplication(TestTableServices.For(engine), profile, initialState: engine.State) { Automated = true };
             app.Initialize(); app.SetTableStudy(true);
             if (focused) app.TestPort.OpenBattlefield(1);
             Mana.Table.Presentation.PresentationFrame Tick(double seconds)
@@ -134,14 +135,14 @@ internal static class EffectTransitionChecks
             new PlayPreferences { ReducedMotion = reduced, Automatic = false, Sounds = false }.Save(profile);
             var source = new Card { VisualId = "receipt-source", CombatId = "receipt-source", Name = "Reported counter source", Type = "Enchantment" };
             var recipient = new Card { VisualId = "receipt-target", CombatId = "receipt-target", Name = "Counter recipient", Type = "Artifact Creature",
-                Power = 6, Toughness = 7, Counters = new() { ["Charge"] = 4 } };
+                Power = 6, Toughness = 7, Counters = ImmutableDictionary<string, int>.Empty.Add("Charge", 4) };
             var baseline = PresentationSmoke.Example() with { Id = "receipt-drawing", Stack = [], Activity = [], Combat = null };
             baseline = baseline with { Players = baseline.Players.Select(player => player with { Zones = player.Zones.Select(zone => zone with {
                 Count = zone.Name == "Battlefield" ? player.Id == 0 ? 2 : 0 : zone.Count,
                 Cards = zone.Name == "Battlefield" ? player.Id == 0 ? [source, recipient] : [] : []
-            }).ToArray() }).ToArray() };
+            }).ToImmutableArray() }).ToImmutableArray() };
             var engine = new InteractionScenarioEngine(); engine.Present(baseline);
-            using var app = new TableApplication(engine, profile, initialState: engine.State) { Automated = true };
+            using var app = new TableApplication(TestTableServices.For(engine), profile, initialState: engine.State) { Automated = true };
             app.Initialize(); app.SetTableStudy(true);
             Mana.Table.Presentation.PresentationFrame Tick(double seconds)
             {
@@ -152,8 +153,8 @@ internal static class EffectTransitionChecks
             Tick(10);
             var changed = baseline with {
                 Players = baseline.Players.Select(player => player with { Zones = player.Zones.Select(zone => zone with {
-                    Cards = zone.Cards.Select(card => card.VisualId == recipient.VisualId ? card with { Counters = new() { ["Charge"] = 6 } } : card).ToArray()
-                }).ToArray() }).ToArray(),
+                    Cards = zone.Cards.Select(card => card.VisualId == recipient.VisualId ? card with { Counters = ImmutableDictionary<string, int>.Empty.Add("Charge", 6) } : card).ToImmutableArray()
+                }).ToImmutableArray() }).ToImmutableArray(),
                 Activity = [new(1, baseline.Turn, baseline.PhaseKey, "counters", 0, "Two charge counters added.", recipient.VisualId, recipient.Name) {
                     Change = new("counters", "Charge", 4, 6), Cause = new(source.VisualId, source.Name, "Put two charge counters on the artifact.", 0, "ability", "receipt-effect")
                 }]

@@ -1,3 +1,4 @@
+using System.Collections.Immutable;
 using Mana.Contracts;
 using Mana.Renderer;
 
@@ -11,8 +12,8 @@ internal static class ManaPoolFeedbackChecks
         int player = original.ViewerId;
         GameSnapshot Pool(long revision, params (string Symbol, int Amount)[] parts) => original with {
             Revision = revision, Players = original.Players.Select(p => p.Id == player
-                ? p with { Mana = parts.ToDictionary(part => part.Symbol, part => part.Amount) }
-                : p with { Mana = [] }).ToArray()
+                ? p with { Mana = parts.ToDictionary(part => part.Symbol, part => part.Amount).ToImmutableDictionary() }
+                : p with { Mana = ImmutableDictionary<string, int>.Empty }).ToImmutableArray()
         };
         var presence = new ManaPoolPresence();
         var empty = Pool(1);
@@ -48,12 +49,13 @@ internal static class ManaPoolFeedbackChecks
         presence.Observe(converted, nextPhase, 5.2);
         check(presence.For(player, "C", 5.2)?.Started == 5,
             "A step transition does not empty retained mana or replay its animation");
-        converted.Viewer!.Mana["C"] = 999;
+        converted = converted with { Players = converted.Players.SetItem(0,
+            converted.Viewer! with { Mana = converted.Viewer!.Mana.SetItem("C", 999) }) };
         presence.Observe(nextPhase, Pool(8, ("C", 2)), 5.3);
         check(presence.For(player, "C", 5.3) is { After: 2, Started: 5 },
-            "Stored public amounts are copied so later snapshot mutation cannot change comparison history");
+            "A later pool revision cannot change the preceding immutable frame's comparison history");
         var eliminated = Pool(9, ("C", 2));
-        eliminated = eliminated with { Players = eliminated.Players.Select(p => p.Id == player ? p with { Eliminated = true } : p).ToArray() };
+        eliminated = eliminated with { Players = eliminated.Players.Select(p => p.Id == player ? p with { Eliminated = true } : p).ToImmutableArray() };
         presence.Observe(nextPhase, eliminated, 5.4);
         check(presence.ForPlayer(player, 5.4).Count == 0, "An eliminated seat cannot retain mana cues");
         presence.Observe(eliminated, Pool(10, ("U", 4)) with { Id = "new-table" }, 6);

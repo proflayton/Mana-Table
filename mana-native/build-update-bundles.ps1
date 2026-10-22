@@ -22,7 +22,9 @@ if ((Test-Path -LiteralPath $OutputDirectory) -or $OutputDirectory.StartsWith($I
 }
 $appId = if ($PSCmdlet.ParameterSetName -eq 'SmokeTest') { $SmokeTestAppId } else { 'ManaTable' }
 $mainExe = if ($PSCmdlet.ParameterSetName -eq 'SmokeTest') { $SmokeTestMainExecutable } else { 'ManaTable.exe' }
-foreach ($file in @($mainExe,[IO.Path]::ChangeExtension($mainExe,'.dll'),'Mana.Client.dll','Velopack.dll','build.json')) {
+$requiredFiles = @($mainExe,[IO.Path]::ChangeExtension($mainExe,'.dll'),'Mana.Client.dll','Velopack.dll','build.json')
+if ($mainExe -ceq 'ManaTable.exe') { $requiredFiles += 'Mana.Game.dll' }
+foreach ($file in $requiredFiles) {
     if (-not (Test-Path -LiteralPath (Join-Path $InputPackageDirectory $file) -PathType Leaf)) { throw "Missing update package file: $file" }
 }
 $metadata = Get-Content -LiteralPath (Join-Path $InputPackageDirectory 'build.json') -Raw | ConvertFrom-Json

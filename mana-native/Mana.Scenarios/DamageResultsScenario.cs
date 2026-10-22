@@ -1,3 +1,4 @@
+using System.Collections.Immutable;
 using Mana.Contracts;
 
 namespace Mana.Scenarios;
@@ -12,8 +13,8 @@ public static class DamageResultsScenario
         var first = CounterDamageScenario.Snapshot(2) with { Id = Id };
         var victim = first.Players[1].Zone("Battlefield").Cards.Single(c => c.VisualId == CounterDamageScenario.TargetId);
         var dead = first with { Players = first.Players.Select(p => p.Id != 1 ? p : p with { Zones = p.Zones.Select(z =>
-            z.Name == "Battlefield" ? z with { Count = z.Count - 1, Cards = z.Cards.Where(c => c.VisualId != victim.VisualId).ToArray() }
-            : z.Name == "Graveyard" ? z with { Count = z.Count + 1, Cards = [victim with { Damage = 0 }] } : z).ToArray() }).ToArray(),
+            z.Name == "Battlefield" ? z with { Count = z.Count - 1, Cards = z.Cards.Where(c => c.VisualId != victim.VisualId).ToImmutableArray() }
+            : z.Name == "Graveyard" ? z with { Count = z.Count + 1, Cards = [victim with { Damage = 0 }] } : z).ToImmutableArray() }).ToImmutableArray(),
             Activity = [.. first.Activity,
                 new(10, 8, "MAIN1", "damage", 1, "All Will Be One dealt 3 damage to Colossal Dreadmaw.", victim.VisualId, victim.Name) {
                     Impact = new("damage", 3, victim.VisualId, victim.Name, SourceCardId: CounterDamageScenario.SourceId, SourceName: "All Will Be One", DamageType: "normal") },
@@ -24,8 +25,8 @@ public static class DamageResultsScenario
         var armor = new Card { VisualId = "damage-results-armor", CombatId = "damage-results-armor", Name = "Urza's Armor", Type = "Artifact",
             Text = "If a source would deal damage to you, prevent 1 of that damage." };
         playerPending = playerPending with { Players = playerPending.Players.Select(p => p.Id != 1 ? p : p with {
-            Zones = p.Zones.Select(z => z.Name != "Battlefield" ? z : z with { Count = z.Count + 1, Cards = [.. z.Cards, armor] }).ToArray() }).ToArray() };
-        var prevented = playerPending with { Stack = [], Players = playerPending.Players.Select(p => p.Id == 1 ? p with { Life = 38 } : p).ToArray(),
+            Zones = p.Zones.Select(z => z.Name != "Battlefield" ? z : z with { Count = z.Count + 1, Cards = [.. z.Cards, armor] }).ToImmutableArray() }).ToImmutableArray() };
+        var prevented = playerPending with { Stack = [], Players = playerPending.Players.Select(p => p.Id == 1 ? p with { Life = 38 } : p).ToImmutableArray(),
             Activity = [.. playerPending.Activity,
                 new(20, 8, "MAIN1", "damage", 1, "All Will Be One dealt 2 damage.", CounterDamageScenario.SourceId, "All Will Be One") {
                     Impact = new("damage", 2, PlayerId: 1, SourceCardId: CounterDamageScenario.SourceId, SourceName: "All Will Be One", Combat: false, Infect: false) },
@@ -36,11 +37,11 @@ public static class DamageResultsScenario
             CombatId = "damage-results-bear-" + index, Name = "Grizzly Bears", Type = "Creature — Bear", Power = 2, Toughness = 2,
             Damage = index == 2 ? 1 : 0 }).ToArray();
         var groupBefore = prevented with { Players = prevented.Players.Select(p => p.Id != 1 ? p : p with {
-            Zones = p.Zones.Select(z => z.Name != "Battlefield" ? z : z with { Count = bears.Length, Cards = bears }).ToArray()
-        }).ToArray() };
+            Zones = p.Zones.Select(z => z.Name != "Battlefield" ? z : z with { Count = bears.Length, Cards = bears.ToImmutableArray() }).ToImmutableArray()
+        }).ToImmutableArray() };
         var groupAfter = groupBefore with { Players = groupBefore.Players.Select(p => p.Id != 1 ? p : p with {
-            Zones = p.Zones.Select(z => z.Name != "Battlefield" ? z : z with { Cards = bears.Select(card => card with { Damage = 1 }).ToArray() }).ToArray()
-        }).ToArray(), Activity = [.. groupBefore.Activity, .. bears.Take(2).Select((card, index) =>
+            Zones = p.Zones.Select(z => z.Name != "Battlefield" ? z : z with { Cards = bears.Select(card => card with { Damage = 1 }).ToImmutableArray() }).ToImmutableArray()
+        }).ToImmutableArray(), Activity = [.. groupBefore.Activity, .. bears.Take(2).Select((card, index) =>
             new ActivityEntry(30 + index, 8, "MAIN1", "damage", 1, "All Will Be One dealt 1 damage to Grizzly Bears.", card.VisualId, card.Name) {
                 Impact = new("damage", 1, card.VisualId, card.Name, SourceCardId: CounterDamageScenario.SourceId, SourceName: "All Will Be One", DamageType: "normal")
             })] };

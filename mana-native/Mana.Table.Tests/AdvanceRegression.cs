@@ -1,3 +1,4 @@
+using System.Collections.Immutable;
 using System.Text.Json;
 using Mana.Client;
 using Mana.Contracts;
@@ -20,7 +21,7 @@ internal static class AdvanceRegression
         var wire = new Scripted(initial, Next(1, "COMBAT_BEGIN"), Next(2, "COMBAT_END"), Next(3, "MAIN2"), response);
         var result = await new DecisionAdvance(wire).RunAsync(initial, CanPass, PresentationPacing.ShouldPresent);
         Check(result == response && wire.Replies.Count == 4, "One advance drains empty phases and returns the next playable response");
-        Check(wire.Replies.All(r => r.Action == ReplyAction.AutoPass) && wire.Replies.Select(r => r.DecisionId).Distinct().Count() == 4,
+        Check(wire.Replies.All(r => r is AutoPassPriority) && wire.Replies.OfType<AutoPassPriority>().Select(r => r.DecisionId).Distinct().Count() == 4,
             "Every consumed window uses a distinct, engine-validated AutoPass receipt");
 
         foreach (var intent in new[] { DecisionIntent.Attack, DecisionIntent.Block, DecisionIntent.Mana, DecisionIntent.Selection }) {
@@ -43,8 +44,8 @@ internal static class AdvanceRegression
         var checkpoints = new Dictionary<string, GameSnapshot> {
             ["turn"] = Next(1) with { Turn = initial.Turn + 1 },
             ["cast"] = Next(1) with { Stack = [new("Spell", "", false, null) { Id = "spell" }] },
-            ["life"] = Next(1) with { Players = initial.Players.Select(p => p.Id == 1 ? p with { Life = 37 } : p).ToArray() },
-            ["draw"] = Next(1) with { Players = initial.Players.Select(p => p.Id == 1 ? p with { Zones = p.Zones.Select(z => z.Name == "Hand" ? z with { Count = 8 } : z).ToArray() } : p).ToArray() },
+            ["life"] = Next(1) with { Players = initial.Players.Select(p => p.Id == 1 ? p with { Life = 37 } : p).ToImmutableArray() },
+            ["draw"] = Next(1) with { Players = initial.Players.Select(p => p.Id == 1 ? p with { Zones = p.Zones.Select(z => z.Name == "Hand" ? z with { Count = 8 } : z).ToImmutableArray() } : p).ToImmutableArray() },
             ["combat"] = Next(1) with { Combat = new([new("attacker", 0, [], [])], [], null) },
             ["notice"] = Next(1) with { Notices = ["A replacement effect occurred."] },
             ["activity"] = Next(1) with { Activity = [new(1, initial.Turn, "MAIN1", "resolved", 1, "Spell resolved", null, null)] }
@@ -112,7 +113,7 @@ internal static class AdvanceRegression
     {
         private readonly Queue<GameSnapshot> snapshots = new(observations);
         private GameSnapshot state = initial;
-        public readonly List<DecisionReply> Replies = [];
+        public readonly List<GameCommand> Replies = [];
         public Action? OnReply;
         public Func<Task>? BeforeObserve;
         public async Task<GameSnapshot?> ObserveAsync() {
@@ -120,7 +121,7 @@ internal static class AdvanceRegression
             if (snapshots.TryDequeue(out var next)) state = next;
             return state;
         }
-        public Task ReplyAsync(DecisionReply reply) { Replies.Add(reply); OnReply?.Invoke(); return Task.CompletedTask; }
+        public Task ExecuteAsync(GameCommand reply) { Replies.Add(reply); OnReply?.Invoke(); return Task.CompletedTask; }
         public Task ConcedeAsync(string id) => throw new NotSupportedException();
     }
 }

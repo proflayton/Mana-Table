@@ -1,3 +1,4 @@
+using System.Collections.Immutable;
 using System.Threading.Channels;
 using Mana.Contracts;
 
@@ -79,12 +80,12 @@ internal static class CardArtPreloadChecks
         var hidden = Face("Hidden identity") with { FaceDown = true, ArtName = "Private artwork", OtherFace = publicCard.OtherFace };
         var marker = Face("A rules effect") with { GamePieceType = "effect" };
         var state = sample with { Players = sample.Players.Select(player => player.Id != sample.ViewerId ? player : player with {
-            Zones = player.Zones.Select(zone => zone.Name == "Battlefield" ? zone with { Cards = [publicCard, hidden, marker], Count = 3 } : zone).ToArray()
-        }).ToArray() };
+            Zones = player.Zones.Select(zone => zone.Name == "Battlefield" ? zone with { Cards = [publicCard, hidden, marker], Count = 3 } : zone).ToImmutableArray()
+        }).ToImmutableArray() };
         var engine = new InteractionScenarioEngine(); engine.Present(state);
         string profile = Path.Combine(Path.GetTempPath(), "ManaTableNative-tests", "art-preload-" + Guid.NewGuid());
         Directory.CreateDirectory(profile);
-        using var app = new TableApplication(engine, profile, initialState: state);
+        using var app = new TableApplication(TestTableServices.For(engine), profile, initialState: state);
         app.Initialize();
         var plan = app.ArtPreloadCards();
         check(plan.Visible.Any(card => card.Name == publicCard.Name) && plan.Visible.Any(card => card.ArtFace == "back" && card.ArtName == "Exposed card")

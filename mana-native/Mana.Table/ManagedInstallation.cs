@@ -84,6 +84,7 @@ internal static class ManagedInstallation
             applicationDirectory = AppContext.BaseDirectory, profile, engineSha256 = engineHash,
             processPath = Environment.ProcessPath,
             clientSha256 = Convert.ToHexString(SHA256.HashData(await File.ReadAllBytesAsync(Path.Combine(AppContext.BaseDirectory, "ManaTable.dll")))),
+            gameSha256 = Convert.ToHexString(SHA256.HashData(await File.ReadAllBytesAsync(Path.Combine(AppContext.BaseDirectory, "Mana.Game.dll")))),
             catalogQuery = "Forest", catalogMatches = catalog.Cards.Length, checkedAt = DateTime.UtcNow
         }));
         return 0;
