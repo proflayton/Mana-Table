@@ -142,7 +142,6 @@ internal sealed partial class TableApplication
                 canvas.Panel(badge, new Color(30, 31, 22) * alpha, Gold * alpha, 4);
                 canvas.CenterText("ENTERED", badge, Gold * alpha, .5f, true);
             }
-            if (cue.Kind == CueKind.Damage) canvas.Text("−" + cue.Amount, (int)pose.Center.X + 25, (int)pose.Center.Y - 30 - (int)(age * 30), Red * alpha, 1.4f, 100, 1, true);
         }
     }
     private void DrawResult()

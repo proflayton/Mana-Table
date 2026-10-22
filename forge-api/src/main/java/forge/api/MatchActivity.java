@@ -12,7 +12,12 @@ import java.util.*;
 public final class MatchActivity {
     public record Entry(long id, int turn, String phaseKey, String kind, Integer playerId,
                         String message, String cardId, String cardName, String detail, String outcome, int count,
-                        PublicCardChange change, PublicEffectCause cause, boolean interruptsQuietYield) {
+                        PublicCardChange change, PublicEffectCause cause, boolean interruptsQuietYield, PublicImpact impact) {
+        public Entry(long id, int turn, String phaseKey, String kind, Integer playerId, String message,
+                     String cardId, String cardName, String detail, String outcome, int count,
+                     PublicCardChange change, PublicEffectCause cause, boolean interruptsQuietYield) {
+            this(id, turn, phaseKey, kind, playerId, message, cardId, cardName, detail, outcome, count, change, cause, interruptsQuietYield, null);
+        }
         public Entry(long id, int turn, String phaseKey, String kind, Integer playerId, String message,
                      String cardId, String cardName, String detail, String outcome, int count,
                      PublicCardChange change, PublicEffectCause cause) {
@@ -25,6 +30,11 @@ public final class MatchActivity {
     }
     public record PublicCardChange(String kind, String property, int before, int after) { }
     public record PublicEffectCause(String cardId, String name, String ability, Integer controllerId, String kind, String id) { }
+    /** Actual event-time results, distinct from planned damage and from one another.
+     * Card references are public opaque occurrences, never retained faces or actions. */
+    public record PublicImpact(String kind, long amount, String cardId, String cardName, Integer playerId,
+                               String sourceCardId, String sourceName, Integer before, Integer after,
+                               String damageType, Boolean combat, Boolean infect) { }
     public record Frame(long revision, int turn, String phaseKey, String phase, Integer activePlayerId, List<Entry> entries) { }
     private final PlayerView viewer;
     private final MatchIdentities identities;
@@ -85,6 +95,25 @@ public final class MatchActivity {
         return new PublicEffectCause(visualId(cause.card()), cause.card().getCurrentState().getName(), cause.ability(),
                 cause.controller() == null ? null : cause.controller().getId(), cause.kind(), identities.effect(cause.instanceId()));
     }
+    private boolean publicOccurrence(CardView card) {
+        return card != null && card.getZone() != null && switch (card.getZone()) {
+            case Battlefield, Stack, Graveyard, Exile, Command -> true;
+            default -> false;
+        };
+    }
+    private PublicImpact damageImpact(CardView card, PlayerView player, CardView source, int amount,
+                                      String damageType, Boolean combat, Boolean infect) {
+        boolean anonymous = publicFaceDown(card);
+        if (card != null && !(anonymous || publicOccurrence(card) && visible(card))) return null;
+        boolean disclosedSource = publicOccurrence(source) && visible(source);
+        return new PublicImpact("damage", amount,
+                card == null ? null : anonymous ? identities.concealed(card) : visualId(card),
+                card == null ? null : anonymous ? "Face-down card" : card.getCurrentState().getName(),
+                player == null ? null : player.getId(),
+                disclosedSource ? visualId(source) : null,
+                disclosedSource ? source.getCurrentState().getName() : null,
+                null, null, damageType, combat, infect);
+    }
     private String playerName(PlayerView player) { return player == null ? "A player" : player.equals(viewer) ? "You" : player.getName(); }
     private String possessive(PlayerView player) { return player != null && player.equals(viewer) ? "Your" : playerName(player) + "'s"; }
 
@@ -135,13 +164,17 @@ public final class MatchActivity {
     }
     private void add(String kind, PlayerView player, String message, CardView card, String detail, String outcome, int count,
                      PublicCardChange change, PublicEffectCause cause, boolean interruptsQuietYield) {
+        add(kind, player, message, card, detail, outcome, count, change, cause, interruptsQuietYield, null);
+    }
+    private void add(String kind, PlayerView player, String message, CardView card, String detail, String outcome, int count,
+                     PublicCardChange change, PublicEffectCause cause, boolean interruptsQuietYield, PublicImpact impact) {
         revision++;
         if (interruptsQuietYield) quietSequence++;
         boolean anonymousTarget = change != null && publicFaceDown(card);
         entries.addLast(new Entry(++sequence, turn, phase, kind, player == null ? null : player.getId(),
                 message, anonymousTarget ? identities.concealed(card) : visualId(card),
                 anonymousTarget ? "Face-down card" : visible(card) ? card.getCurrentState().getName() : null,
-                detail, outcome, count, change, cause, interruptsQuietYield));
+                detail, outcome, count, change, cause, interruptsQuietYield, impact));
         if (cause != null && change != null && change.kind().equals("counters")) {
             latestCounterCause = cause.id();
             entriesAfterLatestCounterCause = 0;
@@ -223,14 +256,26 @@ public final class MatchActivity {
                         + "to " + to.name().toLowerCase(Locale.ROOT) + ".", publicCard);
             }
         } else if (event instanceof GameEventPlayerLivesChanged e && turn > 0 && e.oldLives() != e.newLives()) {
-            int change = e.newLives() - e.oldLives();
+            long change = (long)e.newLives() - e.oldLives();
             add("life", e.player(), playerName(e.player()) + (change < 0 ? " lost " : " gained ") + Math.abs(change)
-                    + " life (" + e.newLives() + " remaining).", null);
+                    + " life (" + e.newLives() + " remaining).", null, "", "", 0, null, null, true,
+                    new PublicImpact("life", change, null, null, e.player().getId(), null, null,
+                            e.oldLives(), e.newLives(), null, null, null));
         } else if (event instanceof GameEventPlayerDamaged e) {
             add("damage", e.target(), cardName(e.source()) + " dealt " + e.amount() + (e.combat() ? " combat" : "")
-                    + " damage to " + playerName(e.target()) + (e.infect() ? " as poison counters." : "."), e.source());
+                    + " damage to " + playerName(e.target()) + (e.infect() ? " as poison counters." : "."), e.source(),
+                    "", "", 0, null, null, true,
+                    damageImpact(null, e.target(), e.source(), e.amount(), null, e.combat(), e.infect()));
         } else if (event instanceof GameEventCardDamaged e) {
-            add("damage", e.card().getController(), cardName(e.source()) + " dealt " + e.amount() + " damage to " + cardName(e.card()) + ".", e.card());
+            String damageType = switch (e.type()) {
+                case Normal -> "normal";
+                case M1M1Counters -> "m1m1Counters";
+                case Deathtouch -> "deathtouch";
+                case LoyaltyLoss -> "loyaltyLoss";
+            };
+            add("damage", e.card().getController(), cardName(e.source()) + " dealt " + e.amount() + " damage to " + cardName(e.card()) + ".", e.card(),
+                    "", "", 0, null, null, true,
+                    damageImpact(e.card(), null, e.source(), e.amount(), damageType, null, null));
         } else if (event instanceof GameEventAttackersDeclared e && !e.attackersMap().isEmpty()) {
             var names = e.attackersMap().values().stream().map(this::cardName).toList();
             add("combat", e.player(), playerName(e.player()) + " attacked with " + String.join(", ", names) + ".", null);

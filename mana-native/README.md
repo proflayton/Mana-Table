@@ -83,8 +83,19 @@ full recipient name visible. The same context continues onto the stack. For All
 Will Be One, adding one loyalty gives a captured one-damage value even when that
 planeswalker now has four loyalty. These are values before replacement or prevention, not promised
 results; unknown amounts remain unknown. Source and counter-recipient hover
-previews are read-only. This source change is awaiting release and human review;
+previews are read-only. Pending-value presentation shipped in 0.2.69; human review remains pending.
 `counter-damage.v1` in the Experience Lab is an authored reproduction, not a rules test.
+
+The next source iteration carries results onto the affected card or portrait:
+reported damage has a brief red amount, life changes have a separate signed
+amount, and counter additions briefly show their exact increment beside the
+counter badge. Current P/T, marked damage, counters and life remain authoritative
+after those cues expire. Ordinary successful resolutions and draws keep their
+prose in History instead of opening panels over the battlefield. A failed
+resolution still receives a notice. The `damage-results.v1` lab case covers
+surviving and dying recipients and prevention; its checkpoints are authored.
+These result cues and the crisp rendering integration are source-only until the
+next verified release; human review is pending.
 
 ## Prerequisites
 

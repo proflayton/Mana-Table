@@ -85,7 +85,34 @@ remain available; public actions, actual combat, other required choices and a
 turn change return control. Reading pauses passing without committing a command.
 Real-engine checks and actual application input cover these transitions and the
 next spell's unanswered response. Human review of the corrected behavior remains
-pending; the existing 0.2.61 installer does not contain this fix.
+pending. This fix shipped in 0.2.69.
+
+## Results stay with their recipients: 22 October 2026
+
+The player's intent is to understand what an action actually changed. The journey
+is source and base amount → chosen recipient → pending priority → reported impact
+→ settled state. Target selection and priority still use their exact engine
+permissions; result cues are noninteractive observations. A pending value is
+never evidence of the amount dealt. For example, Urza's Armor can turn three
+base damage into two actual damage and a separate two-life loss.
+
+The next source iteration adds typed actual damage/life events, brief amounts
+beside their recipient, and exact counter increments beside counter badges.
+Current P/T, marked damage, counters and life stay visible after a cue expires.
+Amounts use public event recipients; neighbouring resolution events are not
+treated as proof of cause. A public departure can retain its impact briefly;
+hidden-zone revocation immediately removes its card cue and retained face.
+Routine success and draw prose stays in History instead of opening another
+panel over the table. A reported failure to resolve still receives notice.
+
+Review `damage-results.v1` through surviving, dying and prevented-damage
+checkpoints, and `crowded-counters.v1` through earthbending and the landfall
+burst. These are authored presentation cases. Separate real Forge checks
+establish the prevention result across four seats. Inspect the actual window,
+including a focused seat, 130% text, reduced motion and resize/fullscreen.
+Collision and event tests protect data and input; they do not establish visual
+clarity. This iteration is source-only until its next verified release. Human
+review remains pending.
 
 ## Resolution follow-up: 21 October 2026
 

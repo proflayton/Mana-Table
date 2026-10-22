@@ -1,10 +1,15 @@
 using System.Globalization;
 using Microsoft.Xna.Framework;
+using Point = Microsoft.Xna.Framework.Point;
 using Rectangle = Microsoft.Xna.Framework.Rectangle;
 
 namespace Mana.Renderer;
 
-public sealed record EffectPermanentGroup(string FrontId, IReadOnlyList<string> CardIds, Pose Pose, Vector2 CounterLanding);
+public sealed record EffectPermanentGroup(string FrontId, IReadOnlyList<string> CardIds, Pose Pose, Vector2 CounterLanding)
+{
+    // Focused tiles keep their name, stats and state alongside the artwork.
+    public Rectangle ReceiptExclusion { get; init; }
+}
 public sealed record EffectCounterDelta(string Property, long? PerPermanent, long Total, int AffectedCount)
 {
     public string Label => PerPermanent is { } amount ? (amount > 0 ? "+" : "") + amount.ToString(CultureInfo.InvariantCulture) : "Δ";
@@ -33,8 +38,8 @@ public sealed record EffectTransitionFrame(IReadOnlyList<EffectSourcePulse> Sour
 public static class EffectTransitionPresentation
 {
     public const int MaximumFlights = 6;
-    private const double SourceLead = .25, HoldSeconds = 1.35;
-    private const double MaximumSeconds = 4.5;
+    private const double SourceLead = .25, HoldSeconds = 2.1;
+    private const double MaximumSeconds = 6;
     private const int TravellingGroups = 48;
 
     public static EffectTransitionFrame Compose(IReadOnlyList<EffectChangeGroup> effects,
@@ -99,6 +104,41 @@ public static class EffectTransitionPresentation
         }
         return new(Array.AsReadOnly(sources.ToArray()), Array.AsReadOnly(targets.ToArray()),
             Array.AsReadOnly(flights.Take(MaximumFlights).ToArray()));
+    }
+
+    /// <summary>Place a brief state receipt beside its recipient, never over a face or control.</summary>
+    public static Rectangle ReceiptBounds(Rectangle recipient, Vector2 anchor, Point size,
+        Rectangle viewport, IReadOnlyList<Rectangle> occupied)
+    {
+        if (recipient.IsEmpty || size.X <= 0 || size.Y <= 0) return Rectangle.Empty;
+        var candidates = new List<Rectangle>();
+        foreach (int gap in new[] { 6, 18, 30 }) {
+            int y = (int)anchor.Y - size.Y / 2, x = (int)anchor.X - size.X / 2;
+            candidates.Add(new(recipient.Right + gap, y, size.X, size.Y));
+            candidates.Add(new(recipient.Left - gap - size.X, y, size.X, size.Y));
+            candidates.Add(new(x, recipient.Bottom + gap, size.X, size.Y));
+            candidates.Add(new(x, recipient.Top - gap - size.Y, size.X, size.Y));
+        }
+        return candidates.FirstOrDefault(candidate => viewport.Contains(candidate)
+            && !candidate.Intersects(recipient) && occupied.All(bounds => !candidate.Intersects(bounds)));
+    }
+
+    /// <summary>A pending amount follows its arrow through a free gap instead of disappearing at a blocked midpoint.</summary>
+    public static Rectangle PendingMarkerBounds(Vector2 start, Vector2 target, Point size,
+        Rectangle viewport, IReadOnlyList<Rectangle> occupied)
+    {
+        if (size.X <= 0 || size.Y <= 0) return Rectangle.Empty;
+        var direction = target - start;
+        var normal = direction.LengthSquared() > 0 ? Vector2.Normalize(new(-direction.Y, direction.X)) : Vector2.UnitX;
+        foreach (float fraction in new[] { .55f, .4f, .7f, .25f, .85f }) {
+            var center = Vector2.Lerp(start, target, fraction);
+            foreach (float offset in new[] { 0f, size.Y * .75f + 5, -size.Y * .75f - 5 }) {
+                var point = center + normal * offset;
+                var candidate = new Rectangle((int)point.X - size.X / 2, (int)point.Y - size.Y / 2, size.X, size.Y);
+                if (viewport.Contains(candidate) && occupied.All(bounds => !candidate.Intersects(bounds))) return candidate;
+            }
+        }
+        return Rectangle.Empty;
     }
 
     private static Vector2? FlightPoint(Vector2 start, Vector2 finish, float progress, Rectangle controls)

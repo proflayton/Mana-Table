@@ -77,7 +77,6 @@ internal sealed partial class TableApplication : IDisposable
     private double nextPoll, now, turnBannerUntil;
     private double lastDrawTime;
     private readonly AutoPriority priority = new();
-    private readonly List<(Vector2 Position, string Text, Color Color, double Until)> feedback = [];
     private static readonly Color Ink = new(236, 236, 230), Muted = new(161, 173, 182), Gold = new(226, 190, 120), Teal = new(45, 94, 115), Panel = new(24, 30, 38), Blue = new(91, 184, 228), Red = new(235, 117, 105);
     private int DesignHeight => match == null ? 1000 : TableLayout.Height;
     private bool TableChoice => match != null && TableChoices.IsDirect(match);
@@ -152,8 +151,7 @@ internal sealed partial class TableApplication : IDisposable
             foreach (var player in state.Players) {
                 var old = previous.Players.FirstOrDefault(p => p.Id == player.Id);
                 if (old != null && old.Life != player.Life) {
-                    int difference = player.Life - old.Life;
-                    feedback.Add((heroPositions.GetValueOrDefault(player.Id, new(800, 420)), difference > 0 ? "+" + difference : difference.ToString(), difference > 0 ? Blue : Red, now + 1.5));
+                    long difference = (long)player.Life - old.Life;
                     if (difference < 0 && preferences.Sounds) resources.Play("life-loss", .45f);
                 }
             }
@@ -273,7 +271,6 @@ internal sealed partial class TableApplication : IDisposable
             nextPoll = now + (session.NeedsRecovery ? 2 : match == null ? .6 : match.Decision == null ? .05 : .12);
             session.Poll(!localMatch, nextLobby => lobby = nextLobby);
         }
-        feedback.RemoveAll(f => f.Until < now);
     }
     private void SetAutomatic(bool value) { automatic = value; preferences = preferences with { Automatic = value }; SavePreferences(); }
     private void SavePreferences() { StopQuietPriority(); session.CancelAdvance(); priority.Reset(); try { preferences.Save(profile); } catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { error = "Could not save settings: " + ex.Message; } }

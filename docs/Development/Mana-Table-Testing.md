@@ -60,6 +60,20 @@ unknown damage unknown, preserves the context on the stack, and checks read-only
 source inspection and exact target-key/prompt submission. These use controlled
 snapshots, not the rules engine.
 
+The source-only actual-result checks reuse these modes rather than adding a
+separate runner. `ImpactFeedbackChecks` in `--smoke-presentation` covers explicit
+damage recipients, damage versus life loss, activity-ID deduplication, public
+departures, concealment, anonymous recipients, older payloads and JSON round trips.
+`EffectTransitionChecks` also composes the actual application to distinguish a
+`+2 Charge` increment from six settled counters and unchanged current 6/7. It
+checks receipt collision handling, blocked marker gaps, reduced motion and expiry.
+`--smoke-headless-presentation` invokes `ImpactFeedbackChecks.RunPresentation`
+for recipient-attached damage/life results, death between observations and the
+absence of routine success/public-outcome panels. Grouped-recipient checks cover
+uniform per-copy amounts, exact subsets, different amounts, repeated hits,
+latest-burst replacement and offscreen focused recipients. These assertions protect
+state and drawing relationships; they do not establish visual clarity.
+
 ## Real Forge coverage
 
 Java API, rules and synchronization regressions live in
@@ -85,8 +99,19 @@ approval of the presentation.
 `PendingEffectTest` exercises All Will Be One with Chandra entering at three
 loyalty, then adding one to reach four, and a nonloyalty counter case. Projection
 checks cover unknown amounts, known zero, divided totals and concealed sources.
-The corresponding native lab case remains authored; it cannot establish these
-rules results.
+Its prevention regression casts Chandra normally into All Will Be One while an
+opponent controls Urza's Armor: the captured trigger and pending stack report
+base three, then the real engine reports actual two damage and life `40 → 38`,
+including the other seats' public projections. `MatchActivityTest` covers the
+typed event payload and visibility boundaries separately. Run this focused
+selection when modifying the base/actual contract:
+
+```powershell
+mvn -pl forge-api -am verify '-Dtest=PendingEffectTest,MatchActivityTest' '-Dsurefire.failIfNoSpecifiedTests=false'
+```
+
+The corresponding native lab cases remain authored; they cannot establish these
+rules results or replace this real-engine regression.
 
 Native real-engine journeys use the bundled Java runtime, the actual adapter
 protocol, and matching card resources:
@@ -117,6 +142,20 @@ Use [Experience review](Mana-Table-Experience-Review.md) to open the shared,
 versioned Experience Lab cases and review actual screens and transitions.
 The lab uses authored projections, cached art and an isolated profile. It does
 not run Magic rules or mutate real decks.
+
+The source-only `damage-results.v1` case follows a surviving creature's reported
+three damage, another damage event with a public departure between observations,
+then a pending base-three player target and authored actual-two result at 38 life.
+Its final pair makes two Bears take one damage each and merge with an already
+damaged third Bear; the shared face must show one per-copy amount and two-of-three
+membership rather than an invented two-damage hit.
+`counter-damage.v1` retains the separate captured increment versus current loyalty
+journey. Review their actual target gesture, pending state, impact and settled
+current values at small and large windows, with realistic artwork and reduced
+motion. Confirm that increment receipts leave names, counter totals and P/T
+uncovered, and that a crowded field does not become overlapping transient labels.
+Record graphical and human review for the exact candidate; these new journeys
+remain pending human review and release verification until that evidence exists.
 
 For a relevant graphical regression, use the same test driver, for example:
 

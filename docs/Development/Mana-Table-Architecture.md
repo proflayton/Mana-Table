@@ -680,6 +680,8 @@ confirm/cancel permissions still come from the current prompt. The same value
 body appears in the existing stack face. Source/origin hover reuses read-only
 reference previews, bounded by the current decision or stack item and its
 disclosed faces. This context is not a game command or a resolved-damage event.
+The smaller target-adjacent marker retains the `base` qualifier and tries free
+recipient gutters, then arrow gaps, without covering card faces or controls.
 
 The responder band states `Your priority` or names the actual priority holder;
 it does not frame holding priority after your own action as a reply to another
@@ -690,23 +692,63 @@ vertical order; adjacent cards move a port to a feasible edge position without
 reversing that order. `PanelConnection` routes stay outside the complete panel,
 including its responder band and later rows. Missing live source occurrences are not
 reconstructed from the stack's retained source face.
-`MatchActivity` retains public resolution descriptions and
-spell rules, plus token arrival names; `ActionFeedback` exposes a timed summary
-and reviewable details. Recent changes are reported without inferring causality.
+`MatchActivity` retains public resolution descriptions and spell rules, plus
+token arrival names. Routine successful resolutions and draw/shuffle outcomes
+remain in History rather than opening a detached result panel over the table.
+`ActionFeedback` still retains resolution details, and an engine-reported failure
+can produce a timed notice. Recent changes are reported without inferring causality.
 Typed resolution outcomes distinguish resolved from not resolved. Actual public
 draw/shuffle events supply counts; a library-to-hand movement alone does not
 produce a draw cue. Repeated snapshots do not replay those event IDs, and absent
 legacy outcome data remains unspecified rather than inferred from message text.
+
+The optional `ActivityEntry.Impact` (`impact` in JSON) carries actual event-time
+damage or a signed life change. It is separate from `Decision.Effect` and
+`StackItem.Effect`: base damage can be three while the engine reports two dealt
+after prevention. Damage identifies its recipient explicitly; the legacy
+activity-level card ID is not a reliable recipient. Source references are
+optional disclosed occurrence IDs, not a resolution/ability identity. No client
+joins an impact to a pending effect by its name, amount or neighbouring event.
+Damage, life loss and marked damage remain distinct; infect and loyalty loss do
+not authorize the renderer to subtract from life or current P/T.
+
+`ImpactFeedback` consumes new activity IDs once, treats an initial observation
+as a baseline and expires its short cues without extending them on polls.
+It revalidates recipient visibility against the current snapshot. Public
+graveyard/exile departures retain an occurrence; a hidden transition revokes its
+anchor, and an anonymous battlefield recipient acquires no disclosed face.
+Older hosts can retain an observed life-total transition without an invented
+damage amount or source. Typed impacts suppress the duplicate marked-damage
+cue; formatted activity text is never a numeric fallback.
+`TableApplication.Impacts` places actual damage/life receipts beside the current
+recipient or its brief public departure, preserving current characteristics and
+life totals. Same-observation receipts can aggregate actual amounts for the same
+recipient/kind, without attributing the aggregate to one inferred source.
+Equal per-copy amounts across a displayed group share an `each` receipt with
+exact affected-subset membership; different amounts remain separate, never
+summed into one hit on the front card. A newer observed burst replaces that
+recipient's older transient cue while retaining both in History. Covered or
+offscreen focus occurrences cannot reuse their old whole-table positions.
+Retained public event text and details remain available in History. This damage-result path is
+source-only pending release verification and human review.
+
 New public battlefield occurrences receive arrival cues. Departures to public
-graveyard/exile retain a brief ghost at the former position; hidden transitions
+graveyard/exile travel briefly from the former position to their actual public
+pile; reduced motion places the cue at that pile. Hidden transitions
 immediately revoke it. No extra game rules or multiplayer-specific path is added.
 Reported counter changes use their engine-supplied cause and exact affected
-occurrences. Feedback travels from the source as a small spark and pulses the
-owning card's actual counter marker; floating delta tiles no longer cover current
-values. This presentation does not infer a cause from neighboring timestamps or
-add the reported delta to a card's authoritative current stats. Its clarity and
-comfort still need human review; the crowded whole-table layout remains an open
-design problem.
+occurrences. Feedback travels from the source as a small spark and lands at the
+owning card's actual counter marker. Brief signed increment receipts include the
+counter property (the familiar +1/+1 type uses the settled badge's counter glyph),
+retain per-copy versus affected-subset meaning, and reserve
+free space outside faces, current totals, P/T, focused tile details and decision
+controls. Hovered recipients and local fronts take precedence when space is
+limited; a blocked receipt never hides a permanent or its settled state. Reduced
+motion keeps static increments without travelling sparks. This presentation does
+not infer a cause from neighbouring timestamps or add the reported delta to a
+card's authoritative current stats. The new receipts are source-only; their
+clarity and comfort still need human review, and the crowded whole-table layout
+remains an open design problem.
 `TextureFiltering` builds GPU mipmaps once per loaded image; anisotropic card
 sampling handles angled minification, and table surfaces request 4x MSAA.
 Full-resolution artwork and rendered rules text remain available for inspection.

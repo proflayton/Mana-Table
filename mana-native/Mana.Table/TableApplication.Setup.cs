@@ -19,7 +19,7 @@ internal sealed partial class TableApplication
         ClearCardReading(); ClearReaderActions();
         pendingPreviewReference = null; pendingPreviewBounds = null; pendingPreviewCardId = null;
         seatPortraits.Clear(); overlay = ""; inspected = null; held = false; dragging = false; dragSource = null;
-        collapsedDecision = false; textFocus = false; feedback.Clear(); previousTurn = ""; notice = ""; noticeUntil = 0;
+        collapsedDecision = false; textFocus = false; previousTurn = ""; notice = ""; noticeUntil = 0;
     }
     private void ReturnFromMatch()
     {

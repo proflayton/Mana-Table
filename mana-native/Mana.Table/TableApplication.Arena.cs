@@ -36,10 +36,6 @@ internal sealed partial class TableApplication
         // Your seat stays in front of the fan and readable during card travel.
         if (state.Viewer is { } local) DrawHero(local, SeatHero(local.Id), true, 3);
         DrawPriorityHandoff();
-        foreach (var item in feedback) {
-            float age = (float)(1.5 - (item.Until - now));
-            canvas.Text(item.Text, (int)item.Position.X + 35, (int)item.Position.Y - 20 - (int)(age * 30), item.Color * Math.Min(1, (float)(item.Until - now)), 1.6f, 100, 1, true);
-        }
         DrawGameHeader(); DrawCombatBar(); DrawActionCallout();
         DrawTurnCallout();
         if (dragging && dragSource?.Card is { } heldCard) {
@@ -63,6 +59,7 @@ internal sealed partial class TableApplication
         DrawOverlays();
         if (BattlefieldFocused) DrawEffectTransitions();
         DrawLiftedCards();
+        DrawActualImpacts();
         if (BattlefieldFocused && !DecisionModal && !AbilityActionPending) { DrawDecisionDock(); DrawQuietPriorityControl(); DrawChangeCallout(); }
         if (BattlefieldFocused) { DrawAbilityActions(); DrawSourceTargeting(); }
         if (ReadingGalleryOpen || BattlefieldFocused || ZoneReadingOpen) DrawReaderControls();

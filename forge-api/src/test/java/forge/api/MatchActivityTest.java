@@ -14,6 +14,93 @@ import org.testng.annotations.Test;
 import static org.testng.Assert.*;
 
 public class MatchActivityTest {
+    @Test public void actualDamageKeepsItsOwnRecipientAndPublicOccurrenceAcrossDeparture() {
+        var viewer = new PlayerView(1, null); var opponent = new PlayerView(2, null);
+        var source = publicCard(201, "Damage source", viewer);
+        var recipient = publicCard(202, "Damage recipient", opponent);
+        var activity = new MatchActivity(viewer);
+        String recipientId = activity.visualId(recipient), sourceId = activity.visualId(source);
+        activity.onGameEvent(new GameEventCardDamaged(recipient, source, 2, GameEventCardDamaged.DamageType.Normal));
+        var recorded = activity.snapshot();
+        var damage = recorded.get(0).impact();
+        assertEquals(damage.kind(), "damage"); assertEquals(damage.amount(), 2L);
+        assertEquals(damage.cardId(), recipientId); assertEquals(damage.cardName(), "Damage recipient");
+        assertEquals(damage.sourceCardId(), sourceId); assertNotEquals(damage.cardId(), damage.sourceCardId());
+        assertNull(damage.playerId()); assertEquals(damage.damageType(), "normal");
+        assertNull(damage.before()); assertNull(damage.after()); assertNull(damage.combat());
+        assertNull(recorded.get(0).cause(), "The event supplies no resolving ability identity");
+        recipient.set(TrackableProperty.Zone, ZoneType.Graveyard);
+        activity.onGameEvent(new GameEventCardChangeZone(recipient,
+                new ZoneView(opponent, ZoneType.Battlefield), new ZoneView(opponent, ZoneType.Graveyard)));
+        assertEquals(activity.visualId(recipient), recipientId, "A public death keeps the impact anchor resolvable");
+        assertEquals(recorded.get(0).impact(), damage, "A published impact is detached event-time data");
+        activity.onGameEvent(new GameEventCardChangeZone(recipient,
+                new ZoneView(opponent, ZoneType.Graveyard), new ZoneView(opponent, ZoneType.Hand)));
+        recipient.set(TrackableProperty.Zone, ZoneType.Hand);
+        assertNull(activity.visualId(recipient));
+        recipient.set(TrackableProperty.Zone, ZoneType.Battlefield);
+        assertNotEquals(activity.visualId(recipient), recipientId, "A later public occurrence cannot inherit an old impact");
+    }
+
+    @Test public void damageProjectionMasksAnonymousRecipientsAndHiddenSources() {
+        var viewer = new PlayerView(1, null); var opponent = new PlayerView(2, null);
+        var source = publicCard(203, "Secret source", opponent);
+        source.set(TrackableProperty.Zone, ZoneType.Hand);
+        var target = publicCard(204, "Secret recipient", opponent);
+        target.set(TrackableProperty.Facedown, true);
+        var identities = new MatchIdentities(); var activity = new MatchActivity(viewer, identities);
+        var positions = new CombatCardIds(viewer, activity, identities);
+        String anonymousId = positions.id(target);
+        activity.onGameEvent(new GameEventCardDamaged(target, source, 3, GameEventCardDamaged.DamageType.Normal));
+        var entry = activity.snapshot().get(0);
+        assertEquals(entry.impact().cardId(), anonymousId);
+        assertEquals(entry.impact().cardName(), "Face-down card");
+        assertNull(entry.impact().sourceCardId()); assertNull(entry.impact().sourceName());
+        assertFalse(entry.toString().contains("Secret source")); assertFalse(entry.toString().contains("Secret recipient"));
+        target.set(TrackableProperty.Zone, ZoneType.Hand);
+        activity.onGameEvent(new GameEventCardDamaged(target, source, 1, GameEventCardDamaged.DamageType.Normal));
+        assertNull(activity.snapshot().get(1).impact(), "A private recipient cannot acquire a public damage anchor");
+    }
+
+    @Test public void damageAndLifeChangesRemainDifferentFactsWithExactEngineMetadata() {
+        var viewer = new PlayerView(1, null); var opponent = new PlayerView(2, null);
+        var source = publicCard(205, "Public source", viewer);
+        var activity = new MatchActivity(viewer);
+        activity.onGameEvent(new GameEventTurnBegan(viewer, 1));
+        activity.onGameEvent(new GameEventPlayerDamaged(opponent, source, 4, true, true));
+        var damage = activity.snapshot().get(1);
+        assertEquals(damage.impact().amount(), 4L); assertEquals(damage.impact().playerId(), Integer.valueOf(2));
+        assertNull(damage.impact().cardId(), "A player damage recipient is not the source card");
+        assertEquals(damage.impact().sourceCardId(), activity.visualId(source));
+        assertEquals(damage.impact().combat(), Boolean.TRUE); assertEquals(damage.impact().infect(), Boolean.TRUE);
+        assertNull(damage.impact().before()); assertNull(damage.impact().after());
+        activity.onGameEvent(new GameEventPlayerLivesChanged(opponent, 20, 13));
+        var life = activity.snapshot().get(2).impact();
+        assertEquals(life.kind(), "life"); assertEquals(life.amount(), -7L);
+        assertEquals(life.before(), Integer.valueOf(20)); assertEquals(life.after(), Integer.valueOf(13));
+        assertNull(life.sourceCardId()); assertNull(life.sourceName()); assertNull(life.damageType());
+        assertNull(life.combat()); assertNull(life.infect());
+        activity.onGameEvent(new GameEventPlayerLivesChanged(opponent, Integer.MIN_VALUE, Integer.MAX_VALUE));
+        assertEquals(activity.snapshot().get(3).impact().amount(), 4294967295L, "Life deltas must not overflow or become damage");
+        var target = publicCard(206, "Public target", opponent);
+        var types = GameEventCardDamaged.DamageType.values();
+        var names = new String[] { "normal", "m1m1Counters", "deathtouch", "loyaltyLoss" };
+        for (int i = 0; i < types.length; i++) {
+            activity.onGameEvent(new GameEventCardDamaged(target, source, 1, types[i]));
+            var impact = activity.snapshot().get(activity.snapshot().size() - 1).impact();
+            assertEquals(impact.damageType(), names[i]); assertEquals(impact.amount(), 1L);
+            assertNull(impact.combat(), "Card damage does not report combat in this event");
+        }
+        var legacy = new MatchActivity.Entry(1, 1, "MAIN1", "damage", 2, "Legacy damage", null, null, "", "", 0);
+        assertNull(legacy.impact(), "An old entry must not invent a typed result");
+    }
+
+    private static CardView publicCard(int id, String name, PlayerView controller) {
+        var card = new CardView(id, null, name);
+        card.set(TrackableProperty.Controller, controller); card.set(TrackableProperty.Zone, ZoneType.Battlefield);
+        return card;
+    }
+
     @Test public void authorizedTopCardKeepsItsIdentityThroughDrawingAndCasting() {
         var viewer = new PlayerView(1, null); var opponent = new PlayerView(2, null);
         var card = new CardView(102, null, "Known top card");

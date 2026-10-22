@@ -114,35 +114,58 @@ internal sealed class StateClaritySmoke : ITableAutomation
                 Stack = [new("Same source", "First public trigger.", true, source) { Id = "trigger-a", ControllerId = 1 },
                     new("Same source", "Second public trigger.", true, source) { Id = "trigger-b", ControllerId = 2 }] });
         });
-        Wait(() => view.Hits.Any(h => h.Id == "stack"), 3, () => {
+        Wait(() => view.Hits.Any(h => h.Id == "stack-source:trigger-a")
+            && view.Hits.Any(h => h.Id == "stack-effect:trigger-b"), 3, () => {
             Check(StateClarity.StackController(view.Match!, view.Match!.Stack[0]).Contains("Seat 2")
                 && StateClarity.StackController(view.Match, view.Match.Stack[1]).Contains("Seat 3"),
                 "Identically named stack occurrences retain different controlling seats");
         });
-        ClickHit("stack");
-        Wait(() => view.ZoneName == "Stack", 3, () => {
-            Check(view.ZoneName == "Stack" && view.InspectedStack == "trigger-a", "Stack inspection retains the selected occurrence and its controller");
+        ClickHit("stack-effect:trigger-b");
+        Wait(() => view.ZoneName == "Stack" && view.InspectedStack == "trigger-b", 3, () => {
+            Check(view.InspectedStack == "trigger-b"
+                && StateClarity.StackController(view.Match!, view.Match!.Stack.Single(entry => entry.Id == view.InspectedStack)).Contains("Seat 3")
+                && scenario.Replies.Count == 1,
+                "The current collapsed effect opens its exact stack occurrence and controller without submitting a game action");
+        });
+        ClickHit("stack-newer");
+        Wait(() => view.ZoneName == "Stack" && view.InspectedStack == "trigger-a", 3, () => {
+            Check(view.ZoneName == "Stack" && view.InspectedStack == "trigger-a"
+                && StateClarity.StackController(view.Match!, view.Match!.Stack.Single(entry => entry.Id == view.InspectedStack)).Contains("Seat 2")
+                && scenario.Replies.Count == 1,
+                "Stack inspection follows Above to the other identically named occurrence while preserving its distinct controller");
             Capture("04-stack-controller");
         });
         ClickHit("close-overlay");
         Step(.1, () => Publish(view.Match! with { Stack = [], Activity = [new(1, 5, "MAIN1", "resolved", 1,
             "Same source's ability did not resolve.", "clarity-source", "Same source") { Outcome = "notResolved", Detail = "The engine reported that this ability did not resolve." }] }));
         Wait(() => view.LastResolution?.Outcome == "notResolved", 3, () => {
-            Check(view.LastResolution?.Heading == "DID NOT RESOLVE", "A non-resolution is visibly headed DID NOT RESOLVE instead of JUST RESOLVED");
+            Check(view.LastResolution?.Heading == "DID NOT RESOLVE"
+                && view.Frame!.Observe().Text.Any(text => text.Value == "DID NOT RESOLVE")
+                && view.Hits.Any(hit => hit.Id == "action-details"),
+                "An engine-reported failed resolution retains its DID NOT RESOLVE notice and review control");
             Capture("05-did-not-resolve");
             Publish(view.Match! with { Activity = [.. view.Match!.Activity,
                 new(2, 5, "MAIN1", "draw", 2, "Alex drew 9 cards.", null, null) { Count = 9 },
                 new(3, 5, "MAIN1", "shuffle", 2, "Alex shuffled their library.", null, null) { Count = 1 }] });
         });
-        Wait(() => view.Hits.Any(h => h.Id == "public-outcome-history"), 3, () => {
-            Check(view.Hits.Any(h => h.Id == "public-outcome-panel"), "Real draw and shuffle outcomes have a visible reviewable public callout");
+        Wait(() => view.Match!.Activity.Any(entry => entry.Id == 2 && entry.Kind == "draw" && entry.Count == 9)
+            && view.Match.Activity.Any(entry => entry.Id == 3 && entry.Kind == "shuffle" && entry.Count == 1), 3, () => {
+            Check(view.Match!.Activity.Any(entry => entry.Kind == "draw" && entry.Count == 9)
+                && view.Match.Activity.Any(entry => entry.Kind == "shuffle" && entry.Count == 1)
+                && view.Hits.All(hit => hit.Id is not ("public-outcome-panel" or "public-outcome-history"))
+                && view.Hits.Any(hit => hit.Id == "history"),
+                "Authoritative draw and shuffle outcomes remain available in history without adding a detached prose panel");
             Check(view.Match!.Activity.Where(e => e.Kind is "draw" or "shuffle").All(e => e.CardId == null && e.CardName == null),
                 "Public draw and shuffle outcomes carry no private card identities");
+            expectedDecision = view.Match.Decision!.Id;
             Capture("06-draw-and-shuffle");
         });
-        ClickHit("public-outcome-history");
+        ClickHit("history");
         Wait(() => view.Overlay == "history", 3, () => {
-            Check(view.Overlay == "history" && scenario.Replies.Count == 1, "Outcome history remains recoverable without another game reply");
+            Check(view.Overlay == "history" && scenario.Replies.Count == 1 && view.Match!.Decision!.Id == expectedDecision
+                && view.Frame!.Observe().Text.Any(text => text.Value.Contains("Alex drew 9 cards.", StringComparison.Ordinal))
+                && view.Frame.Observe().Text.Any(text => text.Value.Contains("Alex shuffled their library.", StringComparison.Ordinal)),
+                "The existing header history exposes both public outcomes without another reply or a decision change");
             Capture("07-public-outcome-history");
         });
         ClickHit("close-overlay");
@@ -222,7 +245,14 @@ internal sealed class StateClaritySmoke : ITableAutomation
             if (view.Error.Length > 0) throw new InvalidOperationException(view.Error);
             if (steps.Count == 0) return;
             var next = steps.Peek();
-            if (view.Now - lastStep < next.Delay && (next.Ready == null || !next.Ready())) return;
+            double elapsed = view.Now - lastStep;
+            if (next.Ready != null) {
+                if (!next.Ready()) {
+                    if (elapsed >= next.Delay)
+                        throw new TimeoutException($"State clarity step {step + 1} did not become ready within {next.Delay}s (overlay '{view.Overlay}', zone '{view.ZoneName}', scope '{view.Scope}').");
+                    return;
+                }
+            } else if (elapsed < next.Delay) return;
             steps.Dequeue(); step++; next.Action(); lastStep = view.Now;
         } catch {
             File.WriteAllText(Path.Combine(view.Profile, "state-clarity-failure.json"), JsonSerializer.Serialize(new { step, view.Now, checks,

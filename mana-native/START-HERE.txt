@@ -264,6 +264,12 @@ use the offered action and any required source choice shown by the game.
 Cards deal from their library piles. Opponents draw anonymous card backs into
 their hands; visible spells rise into the center while you decide how to respond.
 Turn callouts and life-counter impacts mark changes without blocking controls.
+When the host supplies actual damage results, a brief red damage amount appears
+beside the affected card or player. Signed life changes are separate. Counter
+additions briefly show their increment beside the counter badge; the card's
+current stats and counter total remain after the cue fades. Pending base damage
+can change through prevention. History retains the public event details without
+opening a result panel over the battlefield after every successful action.
 Reduced motion skips these animations and immediately shows the current state.
 Click the current decision's instructions to read the full message.
 For attacks, select your creature then the defending player (or defending card).

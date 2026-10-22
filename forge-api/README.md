@@ -438,6 +438,31 @@ without replaying past changes, and unchanged publications produce no event.
 These summaries do not infer a cause or claim to record intermediate values
 within one uninterrupted resolution.
 
+Damage and life activity may additionally contain an `impact` with typed actual
+event-time results. `kind: damage` carries the engine's actual `amount`, separate
+from a pending effect's base amount. Its recipient is either `playerId` or a
+public `cardId`/`cardName`; the activity entry's older top-level `cardId` may refer
+to the source and must not be used as the damage recipient. Optional
+`sourceCardId`/`sourceName` identify only a disclosed public source. Card damage
+reports `damageType` as `normal`, `m1m1Counters`, `deathtouch` or `loyaltyLoss`.
+Player damage instead reports the event's `combat` and `infect` booleans.
+Damage is not necessarily life loss or marked damage; clients must not subtract
+it from a life total or reconstruct counters from these descriptors.
+
+`kind: life` contains the signed 64-bit `amount` (`after - before`), exact integer
+`before`/`after` totals and recipient `playerId`. It has no inferred source or
+damage metadata. A life change and a damage event remain separate facts even
+when observed together. Neither impact kind supplies an ability/resolution ID;
+clients must not join it to pending effects by proximity, card name or amount.
+
+Impact card references copy only public opaque occurrence IDs and authorized
+names, never card faces or action keys. A public face-down battlefield recipient
+uses its anonymous occurrence ID and `Face-down card`; a private recipient omits
+the impact. A public battlefield-to-graveyard/exile transition retains the
+occurrence, while concealment revokes it. Retained historical names do not grant
+permission to inspect a now-hidden face. Missing `impact` on older payloads
+remains unknown; formatted messages are not a numeric fallback.
+
 Battlefield cards include `attachedTo` (a card reference or null) and `attachments`
 (an array of card references). Each reference has `id`, `name`, and `type`; `id`
 matches the referenced card's opaque `combatId`, including face-down permanents.

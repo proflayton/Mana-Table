@@ -27,6 +27,7 @@ internal sealed partial class TableApplication
         internal IReadOnlySet<string> HighlightedChangeTargets => game.highlightedChangeTargets;
         internal string? HighlightedChangeSource => game.highlightedChangeSource;
         internal Mana.Renderer.EffectTransitionFrame EffectTransitions => game.effectTransitionFrame;
+        internal IReadOnlyList<CounterReceiptPaint> CounterReceipts => game.counterReceiptPaint;
         internal IReadOnlyList<StackRowPaint> StackRows => game.stackRows;
         internal string? ReferencePreviewCardId => game.pendingPreviewCardId;
         internal Rectangle? ReferencePreviewBounds => game.pendingPreviewBounds;
@@ -149,6 +150,9 @@ internal sealed partial class TableApplication
         internal void OpenTableGuide() => game.OpenTableGuide();
         internal void SetHeld(bool value) { game.held = value; game.priority.Reset(); }
         internal Mana.Renderer.ResolutionCue? LastResolution => game.actionFeedback.Last;
+        internal IReadOnlyList<ImpactPaint> Impacts => game.impactPaint;
+        internal IReadOnlyList<(string CardId, string Destination, Mana.Renderer.Pose Pose)> PublicDepartures => game.departures
+            .Where(d => game.now - d.Started <= 1.5).Select(d => (d.Card.VisualId, d.Destination, game.DeparturePose(d))).ToArray();
         internal void SetAutomatic(bool value) => game.SetAutomatic(value);
         internal List<int> Selections => game.selections;
         internal IReadOnlyDictionary<int, ChoiceOrderBadge> ChoiceOrderBadges => game.choiceOrderBadges;
