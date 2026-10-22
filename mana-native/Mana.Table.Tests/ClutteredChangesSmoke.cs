@@ -96,12 +96,12 @@ internal sealed class ClutteredChangesSmoke : ITableAutomation
                 "Felidar's engine-issued result highlights all 82 affected creatures, including thirteen earthbent lands, and its own source");
             Check(targets.All(id => FrameData.Cards.Single(card => card.Id == id).Card.CombatKeywords.Contains("vigilance")),
                 "The current card views retain vigilance on every affected creature");
-            Capture("03-felidar-result"); MoveHit("change-details");
+            Capture("03-felidar-result"); MoveHit("recent-changes");
         }); Click();
         Step(() => {
             Check(view.Overlay == "changes" && Text().Any(text => text.Contains("Felidar Retreat"))
                 && Text().Any(text => text.Contains("vigilance", StringComparison.OrdinalIgnoreCase)),
-                "Why composes the named trigger explanation including the vigilance result");
+                "Recent changes opens the retained named trigger and vigilance result when requested");
             Check(!view.HighlightedChangeTargets.Any() && view.ChangeCalloutBounds == null,
                 "The result reader owns its reserved space without leaving battlefield effect highlights above it");
             Capture("04-result-details"); ReadResultPages();
@@ -194,9 +194,9 @@ internal sealed class ClutteredChangesSmoke : ITableAutomation
             && view.EffectTransitions.Sources.Any(source => source.CardId == group.Cause?.CardId)
             && view.EffectTransitions.Targets.Where(target => target.EffectId == group.Id).SelectMany(target => target.AffectedIds).Distinct().Count() == affected,
             $"Reported {name} events feed the on-card source and affected-occurrence drawing commands");
-        Check(view.ChangeCalloutBounds is { } bounds && !bounds.Intersects(view.DecisionPanelBounds)
-            && !view.DecisionTextOverflow && view.Hits.Any(hit => hit.Id == "change-details"),
-            "The result control bounds do not intersect the decision bounds, and its instruction composition reports no overflow");
+        Check(view.ChangeCalloutBounds == null && !view.Hits.Any(hit => hit.Id is "change-details" or "change-locate")
+            && !view.DecisionTextOverflow && view.Hits.Any(hit => hit.Id == "recent-changes"),
+            "An already visible cause leaves its counter changes on the field, with retained details only in Recent changes");
         var targets = view.EffectTransitions.Targets.Where(target => target.EffectId == group.Id).ToArray();
         Check(group.Changes.All(change => change.Change.Property == "+1/+1" && change.Change.After - change.Change.Before == delta)
             && targets.All(target => target.Delta.Property == "+1/+1" && target.Delta.PerPermanent == delta

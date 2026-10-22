@@ -13,8 +13,8 @@ public sealed class Canvas : IDisposable
     private readonly SpriteBatch batch;
     private readonly Texture2D pixel, disk, halo;
     private readonly BasicEffect surfaceEffect;
-    private float scale = 1;
-    private readonly Dictionary<TextLayout, (Texture2D Texture, long Used)> text = [];
+    private Vector2 scale = Vector2.One;
+    private readonly Dictionary<(TextLayout Layout, Vector2 Density), (Texture2D Texture, long Used)> text = [];
     private readonly TextMetrics metrics = new();
     private long frame;
     public float TextScale { get; set; } = 1;
@@ -35,14 +35,17 @@ public sealed class Canvas : IDisposable
         }
         var result = new Texture2D(device, size, size); result.SetData(values); return result;
     }
-    public void Begin(float scale = 1)
+    public void Begin(float scale = 1) => Begin(new Vector2(scale));
+    private void Begin(Vector2 scale)
     {
+        if (!float.IsFinite(scale.X) || !float.IsFinite(scale.Y) || scale.X <= 0 || scale.Y <= 0)
+            throw new ArgumentOutOfRangeException(nameof(scale));
         frame++; this.scale = scale;
         Resume();
     }
     private void Resume()
     {
-        batch.Begin(SpriteSortMode.Deferred, BlendState.AlphaBlend, SamplerState.LinearClamp, null, null, null, Matrix.CreateScale(scale));
+        batch.Begin(SpriteSortMode.Deferred, BlendState.AlphaBlend, SamplerState.LinearClamp, null, null, null, Matrix.CreateScale(scale.X, scale.Y, 1));
     }
     public void End()
     {
@@ -50,10 +53,11 @@ public sealed class Canvas : IDisposable
         if (text.Count > 600) foreach (var key in text.OrderBy(p => p.Value.Used).Take(text.Count - 450).Select(p => p.Key).ToArray()) { text[key].Texture.Dispose(); text.Remove(key); }
         metrics.Trim();
     }
-    public void Draw(DrawingFrame drawing)
+    public void Draw(DrawingFrame drawing) => Draw(drawing, Vector2.One);
+    public void Draw(DrawingFrame drawing, Vector2 outputScale)
     {
         TextScale = drawing.TextScale;
-        Begin(drawing.Scale);
+        Begin(outputScale * drawing.Scale);
         foreach (var command in drawing.Commands) command.Paint(this);
         End();
     }
@@ -206,7 +210,7 @@ public sealed class Canvas : IDisposable
     private void Triangles(VertexPositionColorTexture[] vertices, Texture2D texture)
     {
         batch.End();
-        surfaceEffect.World = Matrix.CreateScale(scale);
+        surfaceEffect.World = Matrix.CreateScale(scale.X, scale.Y, 1);
         surfaceEffect.Projection = Matrix.CreateOrthographicOffCenter(0, device.Viewport.Width, device.Viewport.Height, 0, -1, 1);
         surfaceEffect.Texture = texture;
         device.BlendState = BlendState.AlphaBlend; device.DepthStencilState = DepthStencilState.None;
@@ -263,25 +267,32 @@ public sealed class Canvas : IDisposable
     public void Text(string? value, int x, int y, Color color, float size = 1, int width = 2000, int maxLines = 100, bool bold = false, bool serif = false)
     {
         if (string.IsNullOrEmpty(value) || width <= 0 || maxLines <= 0) return;
-        var key = TextLayout.Block(value, size, width, maxLines, bold, serif, TextScale);
-        if (!text.TryGetValue(key, out var cached)) cached = (RenderText(key), frame);
-        text[key] = (cached.Texture, frame);
-        batch.Draw(cached.Texture, new Vector2(x, y), color);
+        var layout = TextLayout.Block(value, size, width, maxLines, bold, serif, TextScale);
+        PaintText(layout, new(x, y), color);
     }
     public void CenterText(string? value, Rectangle r, Color color, float size = 1, bool bold = false, bool serif = false)
     {
         if (string.IsNullOrEmpty(value)) return;
-        var key = TextLayout.Centered(value, size, r, bold, serif, TextScale);
+        var layout = TextLayout.Centered(value, size, r, bold, serif, TextScale);
+        var logical = metrics.Measure(layout);
+        PaintText(layout, new(r.X + Math.Max(0, (r.Width - logical.X) / 2), r.Y + Math.Max(0, (r.Height - logical.Y) / 2)), color);
+    }
+    private void PaintText(TextLayout layout, Vector2 position, Color color)
+    {
+        var key = (Layout: layout, Density: scale);
         if (!text.TryGetValue(key, out var cached)) cached = (RenderText(key), frame);
         text[key] = (cached.Texture, frame);
-        batch.Draw(cached.Texture, new Vector2(r.X + Math.Max(0, (r.Width - cached.Texture.Width) / 2), r.Y + Math.Max(0, (r.Height - cached.Texture.Height) / 2)), color);
+        // The bitmap already has one texel per target pixel. Cancel the canvas
+        // transform for its quad and align its origin without changing layout.
+        position = new(MathF.Round(position.X * scale.X) / scale.X, MathF.Round(position.Y * scale.Y) / scale.Y);
+        batch.Draw(cached.Texture, position, null, color, 0, Vector2.Zero, Vector2.One / scale, SpriteEffects.None, 0);
     }
-    private Texture2D RenderText(TextLayout key)
+    private Texture2D RenderText((TextLayout Layout, Vector2 Density) key)
     {
-        var size = metrics.Measure(key);
-        using var bitmap = TextRasterizer.Rasterize(key, size);
+        var size = metrics.Measure(key.Layout);
+        using var bitmap = TextRasterizer.Rasterize(key.Layout, size, key.Density);
         var data = BitmapPixels.ReadArgb32(bitmap);
-        var texture = new Texture2D(device, size.X, size.Y, false, SurfaceFormat.Color);
+        var texture = new Texture2D(device, bitmap.Width, bitmap.Height, false, SurfaceFormat.Color);
         try { texture.SetData(data); return texture; }
         catch { texture.Dispose(); throw; }
     }

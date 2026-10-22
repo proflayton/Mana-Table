@@ -60,6 +60,7 @@ internal sealed partial class TableApplication
             await engine.InitializeAsync();
             StartupStage("Your decks", "Finding your decks", "Opening the decks saved for this player.");
             var saved = await engine.DecksAsync(); updates.Enqueue(() => decks = saved);
+            await ReadDeletedDecks();
             StartupStage("Commander presets", "Preparing Commander", "Gathering the precons available at your table.");
             var available = await engine.PresetsAsync(); updates.Enqueue(() => presets = available);
             StartupStage("Your table", "Setting your place", "Getting your deck and table ready.");

@@ -8,39 +8,40 @@ namespace Mana.Table;
 
 internal sealed partial class TableApplication
 {
-    private sealed record HandDragOrigin(string Scope, string HitId, Pose HandAnchor, bool ExpandedFace);
-    private HandDragOrigin? handDragOrigin;
-    private int CardDragThreshold => handDragOrigin is { ExpandedFace: true } ? 32 : 9;
+    private sealed record CardPlayDragOrigin(string Scope, string HitId, Pose Anchor, bool ExpandedFace);
+    private CardPlayDragOrigin? cardPlayDragOrigin;
+    private int CardDragThreshold => cardPlayDragOrigin is { ExpandedFace: true } ? 32 : 9;
 
     private void BeginCardDrag(Hit? source)
     {
         ClearCardDrag();
-        if (source is not { Zone: "Hand" } || source.Scope != Scope
-            || cardPresentation.Cards.LastOrDefault(candidate => candidate.Zone == "Hand"
+        if (source is not { Zone: "Hand" or "Command" } || source.Scope != Scope
+            || cardPresentation.Cards.LastOrDefault(candidate => candidate.Zone == source.Zone
                 && source.Id == candidate.Hit.Id && source.Scope == candidate.Hit.Scope) is not { } entry) return;
         // The reader is already above the table. Require deliberate movement,
         // then allow its card to land without escaping an invisible old face.
         bool expanded = entry.Focused && entry.Display.Contains(pressPoint) && !entry.Rest.Contains(pressPoint);
-        handDragOrigin = new(source.Scope, source.Id, entry.Rest, expanded);
+        cardPlayDragOrigin = new(source.Scope, source.Id, entry.Rest, expanded);
     }
 
-    private bool HandDragMatches(HandDragOrigin origin)
+    private bool CardPlayDragMatches(CardPlayDragOrigin origin)
         => origin.Scope == Scope && dragSource?.Scope == origin.Scope && dragSource.Id == origin.HitId;
 
     private bool CanCommitCardDrag => dragSource?.Card is { Key.Length: > 0 } source
         && VisibleCards().Any(card => card.Key == source.Key && SameVisibleCard(card, source))
-        && (handDragOrigin is not { } origin
-            || HandDragMatches(origin) && !origin.HandAnchor.Contains(pointer)
+        && (cardPlayDragOrigin is not { } origin
+            || CardPlayDragMatches(origin) && !origin.Anchor.Contains(pointer)
                 && Vector2.Distance(pressPoint.ToVector2(), pointer.ToVector2()) > CardDragThreshold);
 
-    private void ClearCardDrag() => handDragOrigin = null;
+    private void ClearCardDrag() => cardPlayDragOrigin = null;
 
     private void DrawHandPlayArea()
     {
         if (!dragging || busy || session.NeedsRecovery || OverlayOpen || match is not { Decision.Intent: DecisionIntent.Priority } state
-            || dragSource is not { Zone: "Hand", Card: { } source } || dragSource.Scope != Scope) return;
-        var card = state.Viewer?.Zone("Hand").Cards.FirstOrDefault(card => CardViews.Same(card, source));
-        if (card == null || InteractionController.Play(state, card) == null && HandPlacements.Options(state, card).Length < 2) return;
+            || dragSource is not { Zone: "Hand" or "Command", Card: { } source } || dragSource.Scope != Scope) return;
+        var card = state.Viewer?.Zone(dragSource.Zone).Cards.FirstOrDefault(card => CardViews.Same(card, source));
+        if (card == null || InteractionController.Play(state, card, dragSource.Zone) == null
+            && (dragSource.Zone != "Hand" || HandPlacements.Options(state, card).Length < 2)) return;
         var area = TableWorld.HandPlayArea;
         var color = ActionAccent * .35f;
         const int length = 28;

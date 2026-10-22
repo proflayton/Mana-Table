@@ -32,7 +32,7 @@ internal sealed class TableWindow : Game
     private readonly string? capture;
     private Canvas? painter;
     private TableAssets? assets;
-    private RenderTarget2D? tableSurface, setupSurface, surface;
+    private RenderTarget2D? surface;
     private SpriteBatch? screen;
     private bool resizing;
     private KeyboardState previousKeys;
@@ -74,9 +74,6 @@ internal sealed class TableWindow : Game
         painter = new(GraphicsDevice); screen = new(GraphicsDevice);
         assets = new(GraphicsDevice, Path.Combine(AppContext.BaseDirectory, "Assets"));
         resources.Arena = assets.Arena; resources.CardBack = assets.CardBack; resources.ManaSymbols = assets.ManaSymbols; resources.Play = assets.Play;
-        tableSurface = new(GraphicsDevice, 1600, 900, false, SurfaceFormat.Color, DepthFormat.None, 4, RenderTargetUsage.DiscardContents);
-        setupSurface = new(GraphicsDevice, 1600, 1000, false, SurfaceFormat.Color, DepthFormat.None, 4, RenderTargetUsage.DiscardContents);
-        surface = setupSurface;
         application.Initialize();
     }
     protected override void Update(GameTime time)
@@ -84,8 +81,8 @@ internal sealed class TableWindow : Game
         art.Update(GraphicsDevice);
         var mouse = Automation?.ReadMouse() ?? Mouse.GetState();
         var keys = Automation?.ReadKeyboard() ?? Keyboard.GetState();
-        var viewport = GraphicsDevice.Viewport;
-        application.Update(time, mouse, keys, new(viewport.Width, viewport.Height));
+        var backbuffer = GraphicsDevice.PresentationParameters;
+        application.Update(time, mouse, keys, new(backbuffer.BackBufferWidth, backbuffer.BackBufferHeight));
         var preload = application.ArtPreloadCards();
         art.Preload(preload.Visible, preload.Anticipated);
         bool cardPointer = application.InteractivePointer;
@@ -101,16 +98,21 @@ internal sealed class TableWindow : Game
     protected override void Draw(GameTime time)
     {
         var frame = application.ComposePresentation(time);
-        surface = frame.DesignHeight == TableLayout.Height ? tableSurface! : setupSurface!;
+        var backbuffer = GraphicsDevice.PresentationParameters;
+        var renderView = RenderViewport.Fit(new(backbuffer.BackBufferWidth, backbuffer.BackBufferHeight), frame.DesignHeight);
+        if (surface == null || surface.Width != renderView.Bounds.Width || surface.Height != renderView.Bounds.Height) {
+            surface?.Dispose();
+            surface = new(GraphicsDevice, renderView.Bounds.Width, renderView.Bounds.Height, false,
+                SurfaceFormat.Color, DepthFormat.None, 4, RenderTargetUsage.DiscardContents);
+        }
         GraphicsDevice.SetRenderTarget(surface);
         GraphicsDevice.Clear(new Color(17, 22, 29));
-        painter!.Draw(frame.Drawing);
+        painter!.Draw(frame.Drawing, renderView.Scale);
         GraphicsDevice.SetRenderTarget(null); GraphicsDevice.Clear(Color.Black);
         Automation?.Frame(surface);
         var view = GraphicsDevice.Viewport;
-        float scale = Math.Min(view.Width / 1600f, view.Height / (float)frame.DesignHeight);
-        screen!.Begin(SpriteSortMode.Deferred, BlendState.Opaque, SamplerState.LinearClamp);
-        screen.Draw(surface, new Rectangle((int)((view.Width - 1600 * scale) / 2), (int)((view.Height - frame.DesignHeight * scale) / 2), (int)(1600 * scale), (int)(frame.DesignHeight * scale)), Color.White); screen.End();
+        screen!.Begin(SpriteSortMode.Deferred, BlendState.Opaque, SamplerState.PointClamp);
+        screen.Draw(surface, renderView.Bounds, Color.White); screen.End();
         if (windowCapture is { } windowPath) {
             windowCapture = null;
             var pixels = new Color[view.Width * view.Height]; GraphicsDevice.GetBackBufferData(pixels);
@@ -138,7 +140,7 @@ internal sealed class TableWindow : Game
     {
         if (disposing) {
             application.Dispose(); art.Dispose(); assets?.Dispose(); painter?.Dispose(); screen?.Dispose();
-            tableSurface?.Dispose(); setupSurface?.Dispose();
+            surface?.Dispose();
         }
         base.Dispose(disposing);
     }

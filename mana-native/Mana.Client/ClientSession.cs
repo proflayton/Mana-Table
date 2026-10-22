@@ -19,6 +19,7 @@ public sealed class ClientSession(IMatchConnection connection, ITableSetup? setu
     public GameSnapshot? State => replica.Current;
     public string Scope => (State?.Id ?? "lobby") + ":" + (State?.Decision?.Id ?? "");
     public bool Busy { get; private set; }
+    public bool IsAdvancing => advancing is { IsCancellationRequested: false };
     public bool Polling { get; private set; }
     public bool Closed { get; private set; }
     public DateTimeOffset? LastSynchronizedAt { get; private set; }

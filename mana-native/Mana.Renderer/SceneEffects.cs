@@ -17,13 +17,21 @@ public sealed class SceneEffects
         cards.RemoveAll(c => now - c.Started > 1.1 || !visible.ContainsKey(c.VisualId));
         if (previous == null || previous.Id != current.Id) { cards.Clear(); return; }
         var before = Visible(previous).ToDictionary(p => p.Card.VisualId, p => p);
+        long priorActivity = previous.Activity.Select(a => a.Id).DefaultIfEmpty().Max();
+        var reportedDamage = current.Activity.Where(e => e.Id > priorActivity && e.Impact is { Kind: "damage", CardId: not null })
+            .Select(e => e.Impact!.CardId!).ToHashSet(StringComparer.Ordinal);
+        cards.RemoveAll(c => c.Kind == CueKind.Damage && reportedDamage.Contains(c.VisualId));
         foreach (var item in visible.Values) {
             if (!before.TryGetValue(item.Card.VisualId, out var old)) {
                 if (item.Zone == "Battlefield") Add(CueKind.Arrive, 0);
                 continue;
             }
             if (old.Zone != item.Zone) Add(CueKind.Arrive, 0);
-            if (item.Card.Damage > old.Card.Damage) Add(CueKind.Damage, item.Card.Damage - old.Card.Damage);
+            // Damage is an event-time result. A marked-damage delta cannot
+            // represent infect, prevention or a recipient dying between polls.
+            // Hosts without typed impacts retain the quieter legacy cue only.
+            if (item.Card.Damage > old.Card.Damage && !reportedDamage.Contains(item.Card.VisualId))
+                Add(CueKind.Damage, item.Card.Damage - old.Card.Damage);
             if (item.Card.Tapped != old.Card.Tapped) Add(CueKind.Tap, 0);
             void Add(CueKind kind, int amount) { cards.RemoveAll(c => c.VisualId == item.Card.VisualId && c.Kind == kind); cards.Add(new(item.Card.VisualId, kind, amount, now)); }
         }

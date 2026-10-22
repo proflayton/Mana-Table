@@ -77,7 +77,6 @@ internal sealed partial class TableApplication : IDisposable
     private double nextPoll, now, turnBannerUntil;
     private double lastDrawTime;
     private readonly AutoPriority priority = new();
-    private readonly List<(Vector2 Position, string Text, Color Color, double Until)> feedback = [];
     private static readonly Color Ink = new(236, 236, 230), Muted = new(161, 173, 182), Gold = new(226, 190, 120), Teal = new(45, 94, 115), Panel = new(24, 30, 38), Blue = new(91, 184, 228), Red = new(235, 117, 105);
     private int DesignHeight => match == null ? 1000 : TableLayout.Height;
     private bool TableChoice => match != null && TableChoices.IsDirect(match);
@@ -89,6 +88,7 @@ internal sealed partial class TableApplication : IDisposable
         || id.StartsWith("source-placement:", StringComparison.Ordinal))
         ? Scope + ":source:" + readerActionsGeneration + ":" + readerActionsBinding
         : id.StartsWith("updates-") ? UpdateScope : id.StartsWith("activity-") ? ActivityScope : id.StartsWith("experience-") ? ExperienceScope : id.StartsWith("chat-") ? ChatScope
+        : match != null && id == "resume-phase-stop" ? match.Id + ":playback:phase-stop:" + match.PhaseKey
         : match != null && (id is "auto" or "hold" or "instructions" or "action-details" or "battlefields" or "quiet-priority-stop" or "ability-auto-pass-open" or "ability-prev" or "ability-next" or "ability-text-prev" or "ability-text-next"
             || id.StartsWith("phase-stop:") || id.StartsWith("ability-undo:")) ? match.Id + ":playback" : Scope;
     private bool CurrentHit(Hit hit) => hit.Scope == ControlScope(hit.Id);
@@ -152,8 +152,7 @@ internal sealed partial class TableApplication : IDisposable
             foreach (var player in state.Players) {
                 var old = previous.Players.FirstOrDefault(p => p.Id == player.Id);
                 if (old != null && old.Life != player.Life) {
-                    int difference = player.Life - old.Life;
-                    feedback.Add((heroPositions.GetValueOrDefault(player.Id, new(800, 420)), difference > 0 ? "+" + difference : difference.ToString(), difference > 0 ? Blue : Red, now + 1.5));
+                    long difference = (long)player.Life - old.Life;
                     if (difference < 0 && preferences.Sounds) resources.Play("life-loss", .45f);
                 }
             }
@@ -195,8 +194,7 @@ internal sealed partial class TableApplication : IDisposable
         bool blockedInput = ActivityOpen || experienceInput || updatesOpen;
         bool chatKeys = blockedInput || ChatKeys(keys);
         if (!chatKeys) { DeckKeys(keys); SetupKeys(keys); }
-        var view = new Rectangle(0, 0, viewport.X, viewport.Y); float scale = Math.Min(view.Width / 1600f, view.Height / (float)DesignHeight);
-        pointer = new((int)((mouse.X - (view.Width - 1600 * scale) / 2) / scale), (int)((mouse.Y - (view.Height - DesignHeight * scale) / 2) / scale));
+        pointer = RenderViewport.Fit(viewport, DesignHeight).ToLogical(new(mouse.X, mouse.Y));
         boardPointerActivity = mouse.X != previousMouse.X || mouse.Y != previousMouse.Y
             || mouse.ScrollWheelValue != previousMouse.ScrollWheelValue || mouse.LeftButton != previousMouse.LeftButton;
         boardViewportChanged = boardViewport != viewport; boardViewport = viewport;
@@ -259,7 +257,7 @@ internal sealed partial class TableApplication : IDisposable
         previousMouse = mouse; previousKeys = keys;
         // Give a ready pass precedence over starting another observation. Use this
         // update's pointer position so entering a card pauses Auto before Draw.
-        bool autoBlocked = commandFailure && error.Length > 0 || OverlayOpen || AbilityActionPending || chatFocus || dragging || pressed != null || readingId != null || selectedCombat != null || HoveredPendingReference() != null;
+        bool autoBlocked = AutomaticInteractionPause() != DecisionDockPauseReason.None;
         bool quietReserved = UpdateQuietPriority(autoBlocked);
         if (!quietReserved && (!automatic || held || autoBlocked)) session.CancelAdvance();
         if (!quietReserved && !ExperienceLabOpen && !session.NeedsRecovery && fixture == null && playback.Ready(now) && priority.Update(match, automatic, held, preferences.Stops,
@@ -274,7 +272,6 @@ internal sealed partial class TableApplication : IDisposable
             nextPoll = now + (session.NeedsRecovery ? 2 : match == null ? .6 : match.Decision == null ? .05 : .12);
             session.Poll(!localMatch, nextLobby => lobby = nextLobby);
         }
-        feedback.RemoveAll(f => f.Until < now);
     }
     private void SetAutomatic(bool value) { automatic = value; preferences = preferences with { Automatic = value }; SavePreferences(); }
     private void SavePreferences() { StopQuietPriority(); session.CancelAdvance(); priority.Reset(); try { preferences.Save(profile); } catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { error = "Could not save settings: " + ex.Message; } }

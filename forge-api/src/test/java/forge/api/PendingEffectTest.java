@@ -142,7 +142,33 @@ public class PendingEffectTest {
             assertEquals(player(resolved.state(), otherVictim).get("life").getAsInt(), 37,
                     "Chandra's original one-damage ability remains pending below the trigger");
             assertEquals(counter(card(resolved.state(), owner, "Battlefield", CHANDRA), "Loyalty"), 4);
+            assertPlayerImpact(resolved.state(), victim, 1, 40, 39);
             save(game, "04-added-loyalty-result", resolved.state());
+        }
+    }
+
+    @Test(timeOut = 90000)
+    public void preventionKeepsPendingThreeSeparateFromActualTwoDamage() throws Exception {
+        try (var game = new RulesScenario("pending-effect-prevention",
+                Map.of(0, List.of(PAYOFF, "Mountain", "Mountain", "Mountain", "Mountain"),
+                        1, List.of("Urza's Armor")), CHANDRA, "Progenitus")) {
+            var main = main(game);
+            int owner = main.state().get("viewerId").getAsInt();
+            int victim = game.table.game.getPlayers().get(1).getId();
+            var floating = floatMana(game, main, "Mountain", "R", 4);
+            activate(game, floating, card(floating.state(), owner, "Hand", CHANDRA), action -> text(action, "kind").equals("cast"));
+            var entering = target(game, PAYOFF);
+            assertCounterTrigger(game, entering, CHANDRA, "Loyalty", 3, 3);
+            save(game, "01-base-three-target", entering.state());
+            var stacked = chooseAndStack(game, entering, victim);
+            assertEquals(payoff(stacked.state()).getAsJsonObject("effect").get("amount").getAsInt(), 3);
+            save(game, "02-base-three-stack", stacked.state());
+            var resolved = game.until(input -> input.seat() == 0 && priority(input)
+                    && input.state().getAsJsonArray("stack").isEmpty());
+            assertEquals(player(resolved.state(), victim).get("life").getAsInt(), 38);
+            assertPlayerImpact(resolved.state(), victim, 2, 40, 38);
+            for (int seat = 0; seat < 4; seat++) assertPlayerImpact(game.state(seat), victim, 2, 40, 38);
+            save(game, "03-actual-two-result", resolved.state());
         }
     }
 
@@ -181,8 +207,28 @@ public class PendingEffectTest {
                     && input.state().getAsJsonArray("stack").isEmpty());
             assertEquals(player(resolved.state(), victim).get("life").getAsInt(), 39);
             assertEquals(counter(card(resolved.state(), owner, "Battlefield", "Triskelion"), "+1/+1"), 4);
+            assertPlayerImpact(resolved.state(), victim, 1, 40, 39);
             save(game, "03-proliferate-result", resolved.state());
         }
+    }
+
+    private static void assertPlayerImpact(JsonObject state, int victim, int amount, int before, int after) {
+        var impacts = state.getAsJsonArray("activity").asList().stream().map(value -> value.getAsJsonObject())
+                .filter(entry -> entry.has("impact") && !entry.get("impact").isJsonNull())
+                .map(entry -> entry.getAsJsonObject("impact")).toList();
+        var damage = impacts.stream().filter(impact -> text(impact, "kind").equals("damage")
+                && impact.get("playerId").getAsInt() == victim && text(impact, "sourceName").equals(PAYOFF))
+                .findFirst().orElseThrow(() -> new AssertionError("Missing actual damage event: " + state));
+        assertEquals(damage.get("amount").getAsLong(), (long)amount);
+        assertTrue(damage.get("cardId").isJsonNull(), "The player recipient must not be replaced by its damage source");
+        assertFalse(text(damage, "sourceCardId").isEmpty());
+        assertTrue(damage.get("before").isJsonNull()); assertTrue(damage.get("after").isJsonNull());
+        assertFalse(damage.get("combat").getAsBoolean()); assertFalse(damage.get("infect").getAsBoolean());
+        var life = impacts.stream().filter(impact -> text(impact, "kind").equals("life")
+                && impact.get("playerId").getAsInt() == victim).findFirst().orElseThrow();
+        assertEquals(life.get("amount").getAsLong(), (long)after - before);
+        assertEquals(life.get("before").getAsInt(), before); assertEquals(life.get("after").getAsInt(), after);
+        assertTrue(life.get("sourceCardId").isJsonNull(), "A life event does not acquire an inferred damage cause");
     }
 
     private static void assertCounterTrigger(RulesScenario game, Input input, String recipient,
@@ -311,7 +357,10 @@ public class PendingEffectTest {
             var input = game.until(next -> next.seat() == 0 && (text(next.prompt(), "inputType").startsWith("InputPayMana") || ready.test(next)));
             if (!text(input.prompt(), "inputType").startsWith("InputPayMana")) return input;
             assertTrue(input.prompt().get("okEnabled").getAsBoolean(), "The deliberately floated pool must pay the real cost");
-            assertTrue(game.answer(input, Map.of("action", "ok")));
+            // A completed payment may republish while this captured input is
+            // being inspected. A stale-only rejection must reobserve through
+            // until(), never replay OK against a replacement prompt.
+            game.answer(input, Map.of("action", "ok"));
         }
     }
 

@@ -30,7 +30,7 @@ internal sealed partial class TableApplication
         AddTargetingSourceReference(decision, new(art.X, area.Y + 7, area.Width - 24, headerHeight - 7));
         if (IsControlHovered("targeting-source:" + decision.Id)) canvas.CardFrame(new(art.Center.ToVector2(), art.Size.ToVector2()), HoverAccent, 2);
         PaintPendingDamageValue(decision.Effect!, new(area.X + 12, area.Y + headerHeight,
-            area.Width - 24, Math.Max(1, area.Height - headerHeight - 8)), PendingTargetInstruction(decision), decision);
+            area.Width - 24, Math.Max(1, area.Height - headerHeight - 8)), decision: decision);
         if (source != null && PendingConnectionCard(CardViews.Identity(source)) is { } board) {
             var end = new Pose(area.Center.ToVector2(), area.Size.ToVector2()).EdgeToward(board.Display.Center, 4);
             var start = board.Display.EdgeToward(end, 4);
@@ -99,11 +99,6 @@ internal sealed partial class TableApplication
         .Where(counter => counter.Added > 0).Select(counter => "+" + counter.Added.ToString(CultureInfo.InvariantCulture)
             + " " + (counter.Label.Length > 0 ? counter.Label : counter.Type)));
 
-    private static string PendingTargetInstruction(Decision decision) => decision.Max > 1
-        ? decision.Min == decision.Max ? "Choose " + decision.Max + " targets"
-            : decision.Min > 0 ? "Choose " + decision.Min + "–" + decision.Max + " targets" : "Choose up to " + decision.Max + " targets"
-        : decision.Max == 1 && decision.Min == 0 ? "Choose up to 1 target" : "Choose a target";
-
     private string CounterRecipientName(CounterAddition addition) => addition.Card is { FaceDown: false } card
         ? InteractionCards.Current(match, card).Name
         : addition.PlayerId is { } player ? StateClarity.PlayerName(match!, player) : "Counter recipient";
@@ -149,14 +144,29 @@ internal sealed partial class TableApplication
         canvas.Text(label, chosen.X + 7, chosen.Y + 3, CounterReceiptAccent, .66f, chosen.Width - 14, 80, true);
     }
 
-    private void PaintPendingDamageMarker(int amount, Vector2 point)
+    private void PaintPendingDamageMarker(int amount, Vector2 start, Vector2 target, Rectangle? recipient)
     {
-        string text = amount.ToString(CultureInfo.InvariantCulture);
-        int width = Math.Max(28, canvas.TextWidth(text, .74f, true) + 12);
-        var bounds = new Rectangle((int)point.X - width / 2, (int)point.Y - 15, width, 30);
-        if (cardPresentation.Cards.Any(card => card.Display.Bounds.Intersects(bounds)) || bounds.Intersects(decisionPanelBounds)) return;
+        string text = amount.ToString(CultureInfo.InvariantCulture) + " base";
+        int width = Math.Max(28, canvas.TextWidth(text, .66f, true) + 12);
+        var occupied = cardPresentation.Cards.Select(card => card.Display.Bounds)
+            .Append(decisionPanelBounds).Append(targetingEffectBounds).Concat(stackRows.Select(row => row.Bounds))
+            .Concat(pendingCounterReceiptBounds).Where(bounds => !bounds.IsEmpty).ToList();
+        foreach (var hero in heroPositions) {
+            int radius = hero.Key == match?.ViewerId ? 56 : 44;
+            occupied.Add(new((int)hero.Value.X - radius, (int)hero.Value.Y - radius, radius * 2, radius * 2));
+        }
+        var viewport = new Rectangle(10, 60, 1580, 720);
+        var bounds = recipient is { } face ? EffectTransitionPresentation.ReceiptBounds(face, target, new(width, 30), viewport, occupied)
+            : Rectangle.Empty;
+        bool atRecipient = !bounds.IsEmpty;
+        if (bounds.IsEmpty) bounds = EffectTransitionPresentation.PendingMarkerBounds(start, target, new(width, 30), viewport, occupied);
+        if (bounds.IsEmpty) return; // The primary effect face still reports the exact pending base amount.
+        if (atRecipient) {
+            var edge = new Pose(bounds.Center.ToVector2(), bounds.Size.ToVector2()).EdgeToward(target);
+            canvas.Line(edge, target, Red * .65f, 1.5f);
+        }
         canvas.Rounded(bounds, new(38, 20, 24), 8);
-        canvas.CenterText(text, bounds, Red, .74f, true);
+        canvas.CenterText(text, bounds, Red, .66f, true);
     }
 
     private void AddTargetingSourceReference(Decision decision, Rectangle bounds, Card? reported = null, string prefix = "targeting-source:")

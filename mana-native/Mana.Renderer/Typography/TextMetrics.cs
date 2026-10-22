@@ -46,14 +46,21 @@ internal static class TextRasterizer
         int width = Math.Max(1, Math.Min(layout.Width, (int)Math.Ceiling(measured.Width) + 6));
         return new(width, height);
     }
-    internal static Gdi.Bitmap Rasterize(TextLayout layout, Point size)
+    internal static Gdi.Bitmap Rasterize(TextLayout layout, Point size) => Rasterize(layout, size, Vector2.One);
+    internal static Gdi.Bitmap Rasterize(TextLayout layout, Point size, Vector2 density)
     {
+        if (!float.IsFinite(density.X) || !float.IsFinite(density.Y) || density.X <= 0 || density.Y <= 0)
+            throw new ArgumentOutOfRangeException(nameof(density));
         using var font = Font(layout);
         using var format = Format();
-        var bitmap = new Gdi.Bitmap(size.X, size.Y, Gdi.Imaging.PixelFormat.Format32bppArgb);
+        var bitmap = new Gdi.Bitmap(Math.Max(1, checked((int)Math.Ceiling(size.X * (double)density.X))),
+            Math.Max(1, checked((int)Math.Ceiling(size.Y * (double)density.Y))), Gdi.Imaging.PixelFormat.Format32bppArgb);
         try {
             using var graphics = Gdi.Graphics.FromImage(bitmap);
             graphics.Clear(Gdi.Color.Transparent);
+            // Keep font selection and wrapping in logical units; only glyph
+            // coverage is rasterized at the destination's actual pixel density.
+            graphics.ScaleTransform(density.X, density.Y);
             graphics.TextRenderingHint = Gdi.Text.TextRenderingHint.AntiAliasGridFit;
             graphics.DrawString(layout.Value, font, Gdi.Brushes.White, new Gdi.RectangleF(0, 0, size.X, size.Y), format);
             return bitmap;

@@ -36,7 +36,9 @@ internal sealed partial class TableApplication
     {
         var options = new List<SourceReaderOption>();
         if (ReaderActionsMatch(card)) {
-            options.AddRange(readerActions!.Actions.Select(action => new SourceReaderOption(action.Text, action)));
+            options.AddRange(readerActions!.Actions.Select(action => new SourceReaderOption(
+                action.Kind == "cast" && !action.Text.StartsWith("Cast ", StringComparison.OrdinalIgnoreCase)
+                    ? "Cast " + action.Text : action.Text, action)));
             if (match != null) options.AddRange(HandPlacements.Options(match, card)
                 .Select(placement => new SourceReaderOption(placement.Text, Placement: placement)));
         } else if (readerActionsBinding.Length > 0 && readerActionsBinding == ReaderActionBinding(card)
@@ -46,13 +48,15 @@ internal sealed partial class TableApplication
         return options;
     }
 
-    private static string SourceReaderState(Card card)
+    private static string SourceReaderState(Card card, string zone)
     {
         var parts = new List<string>();
         if (CardPresentation.HasCombatStats(card)) parts.Add(CurrentStats(card));
         if (card.Damage > 0) parts.Add(card.Damage + " damage");
         parts.AddRange(CardPresentation.Counters(card).Select(counter => counter.Key + " ×" + counter.Value));
         if (card.PhasedOut) parts.Add("Phased out");
+        if (zone == "Command" && CardPresentation.CommanderTax(card) is > 0 and var tax)
+            parts.Add("Commander tax +" + tax);
         return string.Join(" · ", parts);
     }
 
@@ -63,7 +67,7 @@ internal sealed partial class TableApplication
         string key = string.Join("\n", match?.Id, match?.Decision?.Id, entry.Id, entry.Zone, card.Key);
         if (key != sourceReaderViewKey) { sourceReaderViewKey = key; sourceReaderScroll = 0; }
         var options = SourceReaderOptions(card);
-        string state = IsStudyBattlefieldReader(entry) ? "" : SourceReaderState(card);
+        string state = IsStudyBattlefieldReader(entry) ? "" : SourceReaderState(card, entry.Zone);
         var face = entry.Display.Bounds;
         if (options.Count == 0 && state.Length == 0) {
             if (readerActionsLoading) {

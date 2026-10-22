@@ -65,6 +65,7 @@ public sealed partial class ExperienceLabSession
         lock (gate) {
             if (reply.GameId != State.Id || reply.DecisionId != State.Decision?.Id)
                 throw new EngineCommandRejectedException("This scripted snapshot changed. Use its current controls.");
+            if (Scenario.Id == DecisionFlowScenario.Id) return ReplyDecisionFlow(reply);
             var decision = State.Decision!;
             var cards = State.Viewer!.Zones.SelectMany(zone => zone.Cards).ToArray();
             if (reply.Action == ReplyAction.UseSourceAction) {
@@ -179,4 +180,28 @@ public sealed partial class ExperienceLabSession
         Kind = "input", Intent = DecisionIntent.General, Message = message, OkEnabled = false
     } });
     private static EngineCommandRejectedException Unsupported() => new("This is a scripted presentation snapshot. Inspect cards or use Previous, Next, Reset and Scenarios; start a real game for rules-driven play.");
+
+    private GameSnapshot ReplyDecisionFlow(DecisionReply reply)
+    {
+        reply.Validate();
+        var decision = State.Decision ?? throw Unsupported();
+        if (State.DecisionOwnerId != State.ViewerId) throw Unsupported();
+        if (StageIndex == 0 && decision.Intent == DecisionIntent.Priority) {
+            if (reply.Action == ReplyAction.UseSourceAction) return UseSourceAction(reply);
+            if (reply.Action == ReplyAction.SelectCard && State.Viewer!.Zone("Hand").Cards.Any(card =>
+                card.VisualId == DecisionFlowScenario.LandId && card.Selectable && card.Key == reply.Card))
+                return AdvanceTo(1);
+        }
+        if (StageIndex == 4 && decision is { Intent: DecisionIntent.Selection, Context: DecisionFlowScenario.TargetContext }
+            && reply.Action == ReplyAction.SelectCard && State.Players.Where(player => player.Id != State.ViewerId)
+                .SelectMany(player => player.Zone("Battlefield").Cards).Any(card =>
+                    card.VisualId == CounterDamageScenario.TargetId && card.Selectable && card.Key == reply.Card))
+            return AdvanceTo(5);
+        if (StageIndex is 1 or 5 or 7 && reply.Action == ReplyAction.Confirm
+            && decision is { Intent: DecisionIntent.Priority, OkEnabled: true })
+            // Acknowledges only the next authored checkpoint. Other seats'
+            // subsequent actions/choices still require explicit lab Next.
+            return AdvanceTo(StageIndex + 1);
+        throw Unsupported();
+    }
 }

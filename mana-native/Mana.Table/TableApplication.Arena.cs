@@ -36,10 +36,6 @@ internal sealed partial class TableApplication
         // Your seat stays in front of the fan and readable during card travel.
         if (state.Viewer is { } local) DrawHero(local, SeatHero(local.Id), true, 3);
         DrawPriorityHandoff();
-        foreach (var item in feedback) {
-            float age = (float)(1.5 - (item.Until - now));
-            canvas.Text(item.Text, (int)item.Position.X + 35, (int)item.Position.Y - 20 - (int)(age * 30), item.Color * Math.Min(1, (float)(item.Until - now)), 1.6f, 100, 1, true);
-        }
         DrawGameHeader(); DrawCombatBar(); DrawActionCallout();
         DrawTurnCallout();
         if (dragging && dragSource?.Card is { } heldCard) {
@@ -57,13 +53,14 @@ internal sealed partial class TableApplication
         if (!OverlayOpen) DrawReaderControls();
         // Decision text and its controls have priority over card readers and
         // held cards. Their input regions are registered last for the same reason.
-        if (!BattlefieldFocused && !OverlayOpen && !AbilityActionPending) { DrawDecisionDock(); DrawQuietPriorityControl(); }
+        if (!BattlefieldFocused && !OverlayOpen && !AbilityActionPending) { DrawDecisionDock(); }
         if (!BattlefieldFocused) DrawChangeCallout();
         if (!BattlefieldFocused) { DrawAbilityActions(); DrawSourceTargeting(); }
         DrawOverlays();
         if (BattlefieldFocused) DrawEffectTransitions();
         DrawLiftedCards();
-        if (BattlefieldFocused && !DecisionModal && !AbilityActionPending) { DrawDecisionDock(); DrawQuietPriorityControl(); DrawChangeCallout(); }
+        DrawActualImpacts();
+        if (BattlefieldFocused && !DecisionModal && !AbilityActionPending) { DrawDecisionDock(); DrawChangeCallout(); }
         if (BattlefieldFocused) { DrawAbilityActions(); DrawSourceTargeting(); }
         if (ReadingGalleryOpen || BattlefieldFocused || ZoneReadingOpen) DrawReaderControls();
         if (ReadingGalleryOpen) hovered = HitAt(pointer)?.Card;
@@ -295,80 +292,28 @@ internal sealed partial class TableApplication
             Button("stack", "Inspect source", 549, 462, 154, () => { if (state.Decision?.SourceCard is { } source) Inspect(source); }, height: 29);
         }
     }
-    private void DrawDecisionDock()
-    {
-        var state = match!; var d = state.Decision;
-        decisionTextBounds = Rectangle.Empty; decisionText = ""; decisionTextOverflow = false;
-        decisionPanelBounds = new(1240, 712, 360, 188);
-        canvas.Gradient(new(1240, 712, 360, 188), Color.Transparent, new Color(10, 16, 21) * .95f);
-        if (DrawRecoveryDock(state)) return;
-        if (state.Status is "finished" or "error") {
-            canvas.Text(state.Result ?? "Game stopped", 1267, 730, Gold, 1.17f, 295, 1, true);
-            canvas.Text(state.Error ?? "You can still inspect the final battlefield.", 1267, 767, Muted, .63f, 294, 2);
-            if (localMatch || state.Status == "finished") Button("return", IsWorkshopMatch ? "Return to tune" : localMatch ? "Return to setup" : "Return to lobby", 1266, 828, 296, ReturnFromMatch, !busy, true, 47);
-            else Button("error-leave", "Leave table", 1266, 828, 296, () => overlay = "leave-table", !busy, true, 47);
-            return;
-        }
-        if (state.Viewer?.Eliminated == true) {
-            canvas.Text("WATCHING THE TABLE", 1266, 727, Gold, .69f, 298, 1, true);
-            canvas.Text("You have been eliminated. You can inspect the table while the remaining players finish.", 1266, 754, Ink, .78f, 295, 3);
-            Button("eliminated-leave", "Leave table", 1266, 828, 296, () => overlay = "leave-table", !busy, height: 47);
-            return;
-        }
-        bool autoFollowing = TurnGuide.CanAutoPass(state, automatic, held, preferences.Stops, false);
-        bool recipientChoice = !SelectingActionTarget && d?.Intent == DecisionIntent.Selection && StateClarity.Recipients(state).Length > 0;
-        bool following = busy || d == null || autoFollowing;
-        bool valuedTarget = !busy && ValuedTargetDecision;
-        string status = !busy && SelectingActionTarget ? "CHOOSE A TARGET" : !busy && autoFollowing ? "AUTO · PASSING PRIORITY" : !busy && recipientChoice ? "CHOOSE A PLAYER" : StateClarity.DecisionStatus(state, busy);
-        var abilities = PriorityAbilityOptions();
-        string instruction = valuedTarget || !busy && (recipientChoice || d?.Intent == DecisionIntent.Priority && state.Stack.Length == 0)
-            ? "" : StateClarity.DecisionInstruction(state, busy, pendingActionLabel);
-        var textLayout = PlanDecisionText(status, instruction, abilities.Length > 0);
-        if (valuedTarget) {
-            decisionPanelBounds = new(1240, 795, 360, 105);
-        } else if (!recipientChoice) {
-            canvas.Panel(new(1254, decisionPanelBounds.Top, 320, 795 - decisionPanelBounds.Top), new(12, 22, 30), new(57, 75, 88), 5);
-            canvas.Text(status, 1266, textLayout.StatusY, following ? Muted : Gold, .7f, decisionTextOverflow ? 180 : 298, 1, true);
-            canvas.Text(instruction, 1266, textLayout.TextY, Ink, .75f, 295, textLayout.Lines);
-            hits.Add(new("instructions", ControlScope("instructions"), new(1262, textLayout.StatusY, 304, 789 - textLayout.StatusY), () => { overlay = "help"; inspectPage = 0; }));
-            if (decisionTextOverflow) Button("decision-read-all", "Read all", 1456, textLayout.StatusY - 1, 106, () => { overlay = "help"; inspectPage = 0; }, height: 23);
-        } else decisionPanelBounds = new(1240, 852, 360, 48);
-        if (abilities.Length > 0) DrawPriorityAbilityControl(abilities);
-        if (following) {
-            canvas.Panel(new(1266, 799, 296, 47), new(22, 31, 39), new Color(66, 82, 94), 4);
-            canvas.CenterText(busy ? "Waiting for confirmation…" : autoFollowing ? "Auto is passing priority" : StateClarity.WaitingTitle(state), new(1275, 800, 278, 45), Muted, .76f);
-        } else if (SelectingActionTarget) {
-            if (d!.OkEnabled) Button("confirm", d.Ok, 1266, 799, 296, () => Send(new(state.Id, d.Id, ReplyAction.Confirm)), !busy, true, 47);
-            if (d.CancelEnabled) Button("cancel", d.Cancel, 1459, d.OkEnabled ? 852 : 799, 103, () => Send(new(state.Id, d.Id, ReplyAction.Cancel)), !busy, height: 32);
-        } else if (recipientChoice) {
-            // The named recipient controls beside the source own this choice.
-        } else if (TableChoice) {
-            Button("confirm", selections.Count == 0 && d!.Min == 0 ? "Choose none" : $"Confirm ({selections.Count}/{d!.Max})", 1266, 799, 296,
-                () => Send(new(state.Id, d.Id, ReplyAction.Choose, Choices: selections.ToArray())), !busy && TableChoices.CanConfirm(state, selections), true, 47);
-            Button("choicesclear", "Clear", 1459, 852, 103, () => selections.Clear(), !busy && selections.Count > 0, height: 27);
-        } else if (d?.Kind == "input") {
-            Button("confirm", TurnGuide.Confirm(state), 1266, 799, 296, () => Send(new(state.Id, d.Id, ReplyAction.Confirm)), CombatGuide.CanConfirm(state) && !busy, true, 47);
-            Button("cancel", d.Intent == DecisionIntent.Priority && d.Cancel == "End Turn" ? "Pass turn" : d.Cancel, 1459, 852, 103, () => Send(new(state.Id, d.Id, ReplyAction.Cancel)), d.CancelEnabled && !busy, height: 27);
-        } else if (d != null) Button("open-decision", "Make a choice", 1266, 799, 296, () => collapsedDecision = false, !busy, true, 47);
-        else { canvas.CenterText(state.Status == "starting" ? "Starting game…" : "Resolving…", new(1266, 797, 296, 45), Muted, .9f); }
-        if (!SelectingActionTarget) {
-            Button("auto", automatic ? "Auto" : preferences.TextScale > 1.1f ? "Manual" : "Full control", 1266, 852, 111, () => UseAutomaticControl(!automatic), true, automatic, 27);
-            Button("hold", held ? "Held" : "Hold", 1383, 852, 70, ToggleHoldControl, true, held, 27);
-        }
-        DrawPhaseStrip();
-    }
     private void DrawPhaseStrip()
     {
         int x = 27;
         foreach (var phase in TurnGuide.Stops) {
             bool current = phase.Key == match!.PhaseKey || phase.Key == "COMBAT_BEGIN" && match.PhaseKey.StartsWith("COMBAT");
+            bool stopped = preferences.Stops.Contains(phase.Key);
             string key = phase.Key, id = "phase-stop:" + key;
-            var bounds = new Rectangle(x, 863, 36, 32);
+            var bounds = new Rectangle(x, 855, 36, 40);
             var r = new Rectangle(x, 870, 36, 25);
-            PaintControlSurface(id, bounds, current ? new Color(80, 78, 62) : new Color(25, 33, 44),
-                current ? Gold * .6f : new Color(51, 64, 75));
+            PaintControlSurface(id, bounds, stopped ? new Color(24, 53, 66) : current ? new Color(80, 78, 62) : new Color(25, 33, 44),
+                stopped ? Blue : current ? Gold * .6f : new Color(51, 64, 75));
             canvas.CenterText(phase.Label switch { "Upkeep" => "UP", "Draw" => "DR", "Main 1" => "M1", "Combat" => "ATK", "Main 2" => "M2", _ => "END" }, r, current ? Gold : Muted, .43f, true);
-            if (preferences.Stops.Contains(phase.Key)) canvas.Circle(new(x + 18, 866), 2.5f, Blue);
+            if (stopped) {
+                canvas.Rounded(new(x + 12, 858, 4, 9), Blue, 1);
+                canvas.Rounded(new(x + 20, 858, 4, 9), Blue, 1);
+            }
+            if (IsControlHovered(id)) {
+                string label = phase.Label + (stopped ? " · Always pause" : " · No saved pause");
+                int width = canvas.TextWidth(label, .6f, true) + 16;
+                canvas.Rounded(new(27, 824, width, 25), new(12, 24, 30), 4);
+                canvas.Text(label, 35, 828, stopped ? Blue : Muted, .6f, width - 16, 1, true);
+            }
             hits.Add(new(id, ControlScope(id), bounds, () => { if (!preferences.Stops.Remove(key)) preferences.Stops.Add(key); SavePreferences(); }));
             x += 38;
         }

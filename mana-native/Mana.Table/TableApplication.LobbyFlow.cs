@@ -14,10 +14,10 @@ internal sealed partial class TableApplication
     private bool Connected => lobby is { Mode: not "idle" };
     private Seat? LocalSeat => lobby?.Seats.FirstOrDefault(s => s.Local);
     private bool DeckConfirmed => DeckReady && confirmedDeckId == selectedDeckDetails?.Id;
-    private string LobbyScope => $"{DeckScope}:{setupModal}:{soloTab}:{pickerPresets}:{deckPage}:{pickerSearch}:{pickerSeat}:{reviewList}:{reviewSearch}:{reviewSection}:{reviewPage}:{reviewCard?.Section}:{reviewCard?.Id}:{connectionPage}:{confirmedDeckId}:{friendPlayerCount}:{lobby?.TableId}:{lobby?.Mode}:{LocalSeat?.Ready}:{lobby?.CanStart}:{string.Join(',', soloChoices)}:{lobbyAiSeat}:{lobbyAiPage}:{string.Join(';', lobby?.Seats.Select(s => $"{s.Index}:{s.Type}:{s.OpponentId}:{s.Ready}") ?? [])}";
+    private string LobbyScope => $"{DeckScope}:{DeckLibraryScope}:{setupModal}:{soloTab}:{pickerPresets}:{deckPage}:{pickerSearch}:{pickerSeat}:{reviewList}:{reviewSearch}:{reviewSection}:{reviewPage}:{reviewCard?.Section}:{reviewCard?.Id}:{connectionPage}:{confirmedDeckId}:{friendPlayerCount}:{lobby?.TableId}:{lobby?.Mode}:{LocalSeat?.Ready}:{lobby?.CanStart}:{string.Join(',', soloChoices)}:{lobbyAiSeat}:{lobbyAiPage}:{string.Join(';', lobby?.Seats.Select(s => $"{s.Index}:{s.Type}:{s.OpponentId}:{s.Ready}") ?? [])}";
     private void InvalidateDeckConfirmation() { confirmedDeckId = null; }
     private void SetupMode(bool solo) { if (soloTab != solo) InvalidateDeckConfirmation(); soloTab = solo; setupModal = ""; }
-    private void OpenDeckPicker() { pickerPresets = decks.Count == 0; pickerSeat = -1; pickerSearch = ""; deckPage = 0; setupModal = "decks"; textFocus = false; }
+    private void OpenDeckPicker() { pickerPresets = decks.Count == 0; pickerDeleted = false; pickerSeat = -1; pickerSearch = ""; deckPage = 0; setupModal = "decks"; textFocus = false; RefreshDeletedDecks(); }
     private void ReviewDeck() {
         if (selectedDeckDetails == null) return;
         reviewList = false; reviewSearch = reviewSection = ""; reviewPage = 0; reviewBack = false;

@@ -84,10 +84,11 @@ internal sealed class PriorityFlowSmoke : ITableAutomation
             Check(Text().Contains("Pass priority") && view.Hits.Any(hit => hit.Id == "confirm")
                 && !Text().Any(value => value.Contains("Let it resolve", StringComparison.OrdinalIgnoreCase)),
                 "The enabled primary action says Pass priority without promising that an effect will resolve");
-            Check(view.DecisionText.Contains("pass priority", StringComparison.OrdinalIgnoreCase)
-                && !view.DecisionText.Contains("Arid Mesa", StringComparison.Ordinal)
+            Check(view.DecisionDock is { Status: DecisionDockStatus.Priority, ActorRole: DecisionDockActorRole.Priority,
+                    ActorId: 0, ActionLabel: "Pass priority" } && view.DecisionText.Length == 0
+                && !view.Hits.Any(hit => hit.Id == "instructions")
                 && view.Hits.Any(hit => hit.Id == "ability-pass:optional-mesa"),
-                "An optional activation retains its own pass control without replacing the pending effect's response instruction");
+                "The current role and real pass action explain priority without repeated prose, while an optional activation retains its own pass control");
             AssertQueue(1, 2, 3); MoveHit("stack-queue-next");
         }); Click();
         Step(() => {

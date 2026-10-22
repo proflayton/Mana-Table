@@ -73,7 +73,17 @@ public static class CounterDamageScenario
             Stack = pending ? [new(source.Name, $"All Will Be One deals {added} damage to {chosen.Name}.", true, source) {
                 Id = effect.Id, ControllerId = 0, Targets = [chosen], Effect = effect
             }] : [],
-            Activity = resolved ? [activity, new(2, 8, "MAIN1", "resolved", 0, "All Will Be One's ability resolved.", SourceId, source.Name) {
+            Activity = resolved ? [activity,
+                new(2, 8, "MAIN1", "damage", chosen.PlayerId, $"All Will Be One dealt {added} damage to {chosen.Name}.", chosen.Kind == "card" ? chosen.Id : SourceId, chosen.Kind == "card" ? chosen.Name : source.Name) {
+                    Impact = new("damage", added, CardId: chosen.Kind == "card" ? chosen.Id : null,
+                        CardName: chosen.Kind == "card" ? chosen.Name : null, PlayerId: chosen.Kind == "player" ? chosen.PlayerId : null,
+                        SourceCardId: SourceId, SourceName: source.Name, DamageType: chosen.Kind == "card" ? "normal" : null,
+                        Combat: chosen.Kind == "player" ? false : null, Infect: chosen.Kind == "player" ? false : null)
+                },
+                .. chosen.Kind == "player" ? new ActivityEntry[] { new(3, 8, "MAIN1", "life", chosen.PlayerId, $"{chosen.Name} lost {added} life.", null, null) {
+                    Impact = new("life", -added, PlayerId: chosen.PlayerId, Before: 40, After: 40 - added)
+                } } : [],
+                new(4, 8, "MAIN1", "resolved", 0, "All Will Be One's ability resolved.", SourceId, source.Name) {
                 Outcome = "resolved", Count = added, Cause = new(SourceId, source.Name, $"Deal {added} damage.", 0, "ability", effect.Id)
             }] : [activity],
             Decision = choosing ? new() {

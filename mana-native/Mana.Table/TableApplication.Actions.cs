@@ -10,6 +10,7 @@ namespace Mana.Table;
 internal sealed partial class TableApplication
 {
     private readonly ActionFeedback actionFeedback = new();
+    private readonly ImpactFeedback impactFeedback = new();
     private ResolutionCue? inspectedAction;
     private sealed record Departure(Card Card, Pose Pose, string Destination, double Started);
     private readonly List<Departure> departures = [];
@@ -17,6 +18,7 @@ internal sealed partial class TableApplication
     private void ObserveActionFeedback(GameSnapshot? before, GameSnapshot after)
     {
         actionFeedback.Observe(before, after, now);
+        impactFeedback.Observe(before, after, now);
         departures.RemoveAll(d => now - d.Started > 1.5 || !CardViews.Located(after).Any(c => c.Card.VisualId == d.Card.VisualId && !c.Card.FaceDown && c.Zone is "Graveyard" or "Exile"));
         if (before == null || before.Id != after.Id) { departures.Clear(); return; }
         foreach (var card in before.Players.SelectMany(p => p.Zone("Battlefield").Cards).Where(c => !c.FaceDown && c.VisualId.Length > 0)) {
@@ -35,13 +37,29 @@ internal sealed partial class TableApplication
             double age = now - departure.Started;
             if (age > 1.5) continue;
             float alpha = preferences.ReducedMotion ? .6f : (float)(1 - age / 1.5);
-            var pose = boardView.Apply(departure.Pose);
-            if (resources.Card(departure.Card) is { } image) canvas.Surface(image, pose, Color.White * (.55f * alpha));
+            var pose = DeparturePose(departure);
+            if (resources.Card(departure.Card) is { } image) canvas.Surface(image, pose, Color.White * (.8f * alpha));
+            else {
+                canvas.Surface(null, pose, new Color(22, 34, 40) * alpha);
+                int width = Math.Max(1, pose.Bounds.Width - 6);
+                if (departure.Card.Name.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries).All(word => canvas.TextWidth(word, .5f, true) <= width)
+                    && canvas.TextSize(departure.Card.Name, .5f, width, 80, true).Y <= pose.Bounds.Height - 6)
+                    canvas.Text(departure.Card.Name, pose.Bounds.X + 3, pose.Bounds.Y + 3, Ink * alpha, .5f, width, 80, true);
+            }
             canvas.CardFrame(pose, Red * alpha, 3);
-            var label = new Rectangle((int)pose.Center.X - 82, (int)pose.Center.Y - 15, 164, 30);
-            canvas.Panel(label, new Color(34, 19, 23) * alpha, Red * alpha, 4);
-            canvas.CenterText(departure.Destination == "Exile" ? "EXILED" : "TO GRAVEYARD", label, Ink * alpha, .61f, true);
         }
+    }
+    private Pose DeparturePose(Departure departure)
+    {
+        var origin = boardView.Apply(departure.Pose);
+        var owner = match?.Players.FirstOrDefault(player => player.Zone(departure.Destination).Cards.Any(card => card.VisualId == departure.Card.VisualId));
+        var pile = tableScene?.Seats.FirstOrDefault(seat => seat.PlayerId == owner?.Id)?.Geometry.Piles.FirstOrDefault(pile => pile.Zone == departure.Destination);
+        if (pile == null) return origin;
+        var destination = pile.Pose;
+        float progress = preferences.ReducedMotion ? 1 : Math.Clamp((float)((now - departure.Started) / .65), 0, 1);
+        progress = progress * progress * (3 - 2 * progress);
+        return origin with { Center = Vector2.Lerp(origin.Center, destination.Center, progress),
+            Size = Vector2.Lerp(origin.Size, destination.Size, progress), Angle = MathHelper.Lerp(origin.Angle, destination.Angle, progress) };
     }
     private void DrawActionCallout()
     {
@@ -52,11 +70,13 @@ internal sealed partial class TableApplication
         if (match!.Stack.Length > 0) return;
         if (match!.Stack.Length == 0 && publicChanges.Latest is { } change && now - change.Updated < 8) return;
         var recent = actionFeedback.Last;
-        if (match!.Stack.Length == 0 && actionFeedback.LastPublicOutcome is { } publicOutcome && now - publicOutcome.Started < 5
-            && (recent == null || publicOutcome.Started > recent.Started)) { DrawPublicOutcome(); return; }
+        // Ordinary success is visible at the recipients and in their settled
+        // state. Keep prose in History instead of covering the table with a
+        // second, detached result panel. A failed resolution still needs notice.
+        if (recent?.Outcome != "notResolved") return;
         bool resolving = recent != null && now - recent.Started < 5 && (match!.Stack.Length == 0 || now - recent.Started < 2.6);
         var next = match!.Stack.FirstOrDefault();
-        if (!resolving && next == null) { DrawPublicOutcome(); return; }
+        if (!resolving && next == null) return;
         string title = resolving ? recent!.Title : next!.Name;
         string detail = resolving ? recent!.Changes.FirstOrDefault() ?? recent.Detail
             : !next!.Ability && next.Card is { Text.Length: > 0 } spell ? spell.Text : next.Text;

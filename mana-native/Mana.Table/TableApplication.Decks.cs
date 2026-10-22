@@ -37,10 +37,11 @@ internal sealed partial class TableApplication
     }
     private void ApplyDeck(DeckDetails details, bool open = false)
     {
+        Interlocked.Increment(ref deckSelectionGeneration);
         bool changed = selectedDeckDetails?.Id != details.Id;
         string? previousFormat = selectedDeckDetails?.Format;
         int? identity = CommanderIdentity;
-        selectedDeck = new(details.Id, details.Name); selectedDeckDetails = details; InvalidateDeckConfirmation();
+        selectedDeck = new(details.Id, details.Name) { LibraryToken = details.LibraryToken }; selectedDeckDetails = details; InvalidateDeckConfirmation();
         analysisError = "";
         if (previousFormat != details.Format) { workshopSetup = null; workshopPlayers = details.Format == "Commander" ? Math.Min(4, workshopPlayers) : 2; }
         RequestWorkshopRefresh(changed);
@@ -61,8 +62,12 @@ internal sealed partial class TableApplication
     }
     private async Task ReadSelectedDeck(DeckSummary deck, bool edit = false)
     {
+        int generation = Interlocked.Increment(ref deckSelectionGeneration);
         var details = await engine.OpenDeckAsync(deck.Id);
         updates.Enqueue(() => {
+            if (generation != deckSelectionGeneration || match != null || deletingDeckId == deck.Id
+                || deletedDecks.Any(removed => removed.DeckId == deck.Id)
+                    && !decks.Any(current => current.Id == details.Id && current.LibraryToken == details.LibraryToken)) return;
             ApplyDeck(details); deckEditor = edit; setupModal = "";
             message = details.CommanderIds.Length == 0 ? "Choose a commander for your deck." : "Deck selected.";
         });

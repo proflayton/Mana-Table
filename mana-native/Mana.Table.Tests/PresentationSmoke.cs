@@ -16,6 +16,7 @@ internal static class PresentationSmoke
         void Check(bool condition, string message) { if (!condition) throw new InvalidOperationException(message); results.Add(message); }
         BitmapPixelSmoke.Run(Check);
         GameplayFeedbackChecks.Run(Check);
+        ImpactFeedbackChecks.Run(Check);
         CardArtPreloadChecks.Run(Check);
         ManaPoolFeedbackChecks.Run(Check);
         InteractionFrameChecks.Run(Check);
@@ -24,6 +25,7 @@ internal static class PresentationSmoke
         DrawingFrameChecks.Run(Check);
         PublicChangeFeedbackChecks.Run(Check);
         PriorityPresentationChecks.Run(Check);
+        DecisionDockPresentationChecks.Run(Check);
         ExperienceLabChecks.Run(Check);
         EffectTransitionChecks.Run(Check);
         RoleLaneAvoidanceChecks.Run(Check);

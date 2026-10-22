@@ -38,14 +38,24 @@ final class RulesScenario implements AutoCloseable {
 
     RulesScenario(String name, Map<Integer, List<String>> battlefield, String mainCard, String commander,
                   boolean enableEtbCounters) throws Exception {
+        this(name, battlefield, mainCard, List.of(commander), enableEtbCounters);
+    }
+
+    RulesScenario(String name, Map<Integer, List<String>> battlefield, String mainCard, List<String> commanders) throws Exception {
+        this(name, battlefield, mainCard, commanders, false);
+    }
+
+    private RulesScenario(String name, Map<Integer, List<String>> battlefield, String mainCard, List<String> commanders,
+                          boolean enableEtbCounters) throws Exception {
         if (StaticData.instance() == null) EngineResources.load(RESOURCES);
         evidence = Path.of("target/rules-regressions", name);
         Files.createDirectories(evidence);
         var players = new ArrayList<RegisteredPlayer>();
         for (int seat = 0; seat < 4; seat++) {
             var deck = new Deck("Rules seat " + seat);
-            deck.getMain().add(StaticData.instance().getCommonCards().getCard(mainCard), 99);
-            deck.getOrCreate(DeckSection.Commander).add(StaticData.instance().getCommonCards().getCard(commander));
+            deck.getMain().add(StaticData.instance().getCommonCards().getCard(mainCard), 100 - commanders.size());
+            for (String commander : commanders)
+                deck.getOrCreate(DeckSection.Commander).add(StaticData.instance().getCommonCards().getCard(commander));
             var player = MatchTable.human(deck, "Commander", "Seat " + seat);
             player.setEnableETBCountersEffect(enableEtbCounters);
             List<IPaperCard> extras = new ArrayList<>();

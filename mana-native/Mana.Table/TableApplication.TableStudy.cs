@@ -44,14 +44,11 @@ internal sealed partial class TableApplication
                 : new(reader.Right + 12, area.Y, Math.Max(1, rightWidth), area.Height);
         }
         string owner = entry.ControllerId is { } controller ? StateClarity.PlayerName(state, controller) : "Controller not reported";
-        string status = priorityView?.ResponderId is { } responder
-            ? responder == state.ViewerId ? "Your priority" : priorityView.ResponderName + " has priority"
-            : "Pending";
+        const string status = "Next to resolve";
         var header = new Rectangle(area.X, area.Y, area.Width, 23);
         canvas.Rounded(header, new(11, 22, 28), 4);
-        PaintPriorityToken(new(header.X + 12, header.Center.Y), 6, 1);
-        canvas.Text(status, header.X + 25, header.Y + 3, PriorityAccent, .52f,
-            header.Width - (state.Stack.Length > 1 ? 160 : 35), 1, true);
+        canvas.Text(status, header.X + 10, header.Y + 3, Gold, .52f,
+            header.Width - (state.Stack.Length > 1 ? 145 : 20), 1, true);
         if (state.Stack.Length > 1) {
             var count = new Rectangle(header.Right - 125, header.Y, 119, 23);
             canvas.CenterText(state.Stack.Length + " pending", count, Muted, .5f, true);
@@ -65,13 +62,16 @@ internal sealed partial class TableApplication
                 (int)(image.Width * .76f), (int)(image.Height * .38f));
             canvas.Sprite(image, art.Center.ToVector2(), art.Size.ToVector2(), 0, Color.White, crop);
         } else canvas.Fill(art, new(43, 58, 64));
-        canvas.Text(entry.Name, art.Right + 10, body.Y + 7, Ink, .67f, body.Width - 78, 1, true);
-        canvas.Text(owner, art.Right + 10, body.Y + 29, Gold, .48f, body.Width - 78, 1);
-        AddPendingSourceReference(entry, new(art.X, art.Y, body.Width - 20, 40));
+        int nameHeight = canvas.TextSize(entry.Name, .67f, body.Width - 78, 80, true).Y;
+        int ownerHeight = canvas.TextSize(owner, .48f, body.Width - 78, 80).Y;
+        int sourceHeight = Math.Max(51, 14 + nameHeight + ownerHeight);
+        canvas.Text(entry.Name, art.Right + 10, body.Y + 7, Ink, .67f, body.Width - 78, 80, true);
+        canvas.Text(owner, art.Right + 10, body.Y + 10 + nameHeight, Gold, .48f, body.Width - 78, 80);
+        AddPendingSourceReference(entry, new(art.X, art.Y, body.Width - 20, sourceHeight - 8));
         if (entry.Effect is { Kind: "damage" } value) {
             int targetHeight = entry.Targets.Length > 0 ? 28 : 0;
-            PaintPendingDamageValue(value, new(body.X + 12, body.Y + 51, body.Width - 24,
-                Math.Max(1, body.Height - 59 - targetHeight)));
+            PaintPendingDamageValue(value, new(body.X + 12, body.Y + sourceHeight, body.Width - 24,
+                Math.Max(1, body.Height - sourceHeight - 8 - targetHeight)));
             if (entry.Targets.Length > 0)
                 DrawPendingTargetReferences(entry, new(body.X + 12, body.Bottom - 28, body.Width - 24, 24));
             stackRows.Add(new(entry.Id, 1, body));
@@ -79,7 +79,8 @@ internal sealed partial class TableApplication
         }
         string effect = entry.Text.Length > 0 ? entry.Text
             : !entry.Ability && entry.Card is { Text.Length: > 0 } spell ? spell.Text : "Effect text not reported.";
-        var effectArea = new Rectangle(body.X + 12, body.Y + 51, body.Width - 24, 52);
+        var effectArea = new Rectangle(body.X + 12, body.Y + sourceHeight, body.Width - 24,
+            Math.Max(25, body.Height - sourceHeight - (entry.Targets.Length > 0 ? 28 : 0) - 8));
         float effectSize = .66f;
         while (effectSize > .5f && canvas.TextSize(effect, effectSize, effectArea.Width, 80, true).Y > effectArea.Height)
             effectSize = Math.Max(.5f, effectSize - .025f);

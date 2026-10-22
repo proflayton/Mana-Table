@@ -189,6 +189,9 @@ IDs and records diagnostics in the active profile's log.
 | `analysisReview` | `{deckId, revision, metadataRevision, fingerprint, recommendationId, decision, note}`; `consider`, `keep`, `dismiss`, `reopen`, `tested`, or a manual `observation` with no recommendation ID |
 | `analysisConsider` | Same version guards and recommendation fields as `analysisReview`; save the suggestion to Considering and return `{analysis, workshop}` together |
 | `list`, `open` | List saved decks; open by `{id}` |
+| `deleteDeck` | `{deckId, libraryToken}`; move the exact saved deck out of the active library; return `{deckId, name, restoreToken, deletedAt}` |
+| `deletedDecks` | List recoverable deleted decks, newest first; no implicit open or selection |
+| `restoreDeck` | `{deckId, restoreToken}`; restore the same deck ID without overwriting an existing deck or selecting it |
 | `new` | `{name, format}`; create a saved deck |
 | `snapshot` | Current deck, revision, validation, format and save state |
 | `edit` | `{revision, edits}`; absolute quantities using `DeckEditor.Edit` entries |
@@ -212,6 +215,16 @@ IDs and records diagnostics in the active profile's log.
 | `workshopPractice` | `{deckId, revision, action, index?, question?}`; `new`, `draw`, `mulligan` (redraw), `bottom`, `keep`; version-bound draw-only samples, not rules-aware London mulligans |
 | `workshopStartTest` | `{deckId, revision, opponents, question?}`; persist exact saved playable version before launching a real Forge solo match; Commander tests require explicit commander sections |
 | `workshopTests`, `workshopTestNote` | `{deckId}` or `{deckId, testId, note}`; durable observed facts and separate player notes, including interrupted tests |
+
+The optional `deck-library` ready capability enables these delete/restore commands.
+Saved summaries and deck details add `libraryToken`, a hash of the saved file's
+exact bytes. Deletion rejects a stale token rather than removing a newer saved
+list. These commands are available while offline and outside an active game;
+leave a connected lobby before changing the library this way. Deleted deck files
+remain recoverable across restart, and their workshop versions, notes, source
+links, analysis and test records retain their original deck ID. There is no
+automatic permanent purge. Existing version-1 deck files remain compatible and
+the synchronization protocol is unchanged.
 
 Workshop content IDs hash rules-card quantities, sections and format independently
 of the editor revision. Renaming, printing choices, tags and notes preserve test
@@ -437,6 +450,31 @@ states, including additions and removals. Initial state establishes a baseline
 without replaying past changes, and unchanged publications produce no event.
 These summaries do not infer a cause or claim to record intermediate values
 within one uninterrupted resolution.
+
+Damage and life activity may additionally contain an `impact` with typed actual
+event-time results. `kind: damage` carries the engine's actual `amount`, separate
+from a pending effect's base amount. Its recipient is either `playerId` or a
+public `cardId`/`cardName`; the activity entry's older top-level `cardId` may refer
+to the source and must not be used as the damage recipient. Optional
+`sourceCardId`/`sourceName` identify only a disclosed public source. Card damage
+reports `damageType` as `normal`, `m1m1Counters`, `deathtouch` or `loyaltyLoss`.
+Player damage instead reports the event's `combat` and `infect` booleans.
+Damage is not necessarily life loss or marked damage; clients must not subtract
+it from a life total or reconstruct counters from these descriptors.
+
+`kind: life` contains the signed 64-bit `amount` (`after - before`), exact integer
+`before`/`after` totals and recipient `playerId`. It has no inferred source or
+damage metadata. A life change and a damage event remain separate facts even
+when observed together. Neither impact kind supplies an ability/resolution ID;
+clients must not join it to pending effects by proximity, card name or amount.
+
+Impact card references copy only public opaque occurrence IDs and authorized
+names, never card faces or action keys. A public face-down battlefield recipient
+uses its anonymous occurrence ID and `Face-down card`; a private recipient omits
+the impact. A public battlefield-to-graveyard/exile transition retains the
+occurrence, while concealment revokes it. Retained historical names do not grant
+permission to inspect a now-hidden face. Missing `impact` on older payloads
+remains unknown; formatted messages are not a numeric fallback.
 
 Battlefield cards include `attachedTo` (a card reference or null) and `attachments`
 (an array of card references). Each reference has `id`, `name`, and `type`; `id`

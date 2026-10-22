@@ -1,4 +1,5 @@
 using Mana.Contracts;
+using Mana.Renderer;
 using Mana.Scenarios;
 using Mana.Table.Presentation;
 using Microsoft.Xna.Framework;
@@ -12,6 +13,8 @@ internal static class ExperienceLabChecks
 {
     internal static void Run(Action<bool, string> check)
     {
+        CheckHighScaleCounterBridge(check);
+        DecisionFlowLabChecks.Run(check);
         check(ExperienceScenarios.All.Count > 0 && ExperienceScenarios.All.Select(item => item.Id).Distinct().Count() == ExperienceScenarios.All.Count
             && ExperienceScenarios.All.All(item => item.Id.EndsWith(".v1", StringComparison.Ordinal)),
             "Named, versioned canonical experiences are shared by the production lab and scoped composition/input checks");
@@ -78,10 +81,40 @@ internal static class ExperienceLabChecks
         check(lab.StageIndex == 1 && lab.State.Id == initialGame && app.TestPort.PublicChanges is { Count: 1 }
             && app.TestPort.PublicChanges[0].Cause?.Name == ClutteredChangesScenario.TophName && app.TestPort.ZoneName == "Battlefield",
             "Actual Next input preserves the response epoch and presents the reported Toph transition");
+        check(app.TestPort.ChangeCalloutBounds is { X: 1254, Y: 550, Width: 320, Height: 104 } bridge
+                && !bridge.Intersects(app.TestPort.DecisionPanelBounds)
+                && frame.Drawing.Commands.OfType<DrawCommand.Text>().Any(text => text.X == 1374 && text.Value == "+2")
+                && !frame.Hits.Any(hit => hit.Id == "change-details"),
+            "An offscreen current cause uses a source-to-recipient bridge with the exact two-counter increment and yields to the actual decision dock");
+        var bridgeRecipient = lab.State.Viewer!.Zone("Battlefield").Cards.Single(card => card.VisualId == ClutteredChangesScenario.AnimatedLandId);
+        check(frame.Drawing.Commands.OfType<DrawCommand.CenterText>().Any(text => text.Value == $"{bridgeRecipient.Power}/{bridgeRecipient.Toughness}"
+                && text.Bounds.Left >= 1464 && text.Bounds.Right <= 1570 && text.Bounds.Top >= 550 && text.Bounds.Bottom <= 630),
+            "The recipient front shows its actual current power/toughness above the group count, including an animated printed land");
+        var bridgeSourceReference = frame.Hits.Single(hit => hit.Id == "change-source:" + ClutteredChangesScenario.TophId(0));
+        var unchanged = lab.State;
+        Tick(bridgeSourceReference.Bounds.Center);
+        check(frame.Hits.Any(hit => hit.Id == "change-card-preview") && app.TestPort.Overlay.Length == 0
+                && ReferenceEquals(unchanged, lab.State),
+            "Hovering the offscreen source reads its current full face within the table without a game action or detail dialog");
+        Click(bridgeSourceReference.Id);
+        check(frame.Hits.Any(hit => hit.Id == "change-card-preview") && app.TestPort.Overlay.Length == 0
+                && ReferenceEquals(unchanged, lab.State),
+            "Clicking the source reference absorbs input and keeps its noncommitting reader without activating its underlying card");
+        var revoked = unchanged with { Players = unchanged.Players.Select(player => player.Id != unchanged.ViewerId ? player : player with {
+            Zones = player.Zones.Select(zone => zone.Name == "Battlefield" ? zone with {
+                Cards = zone.Cards.Where(card => card.VisualId != ClutteredChangesScenario.TophId(0)).ToArray(), Count = zone.Count - 1
+            } : zone.Name == "Hand" ? zone with { Cards = [bridgeSourceReference.Card!], Count = zone.Count + 1 } : zone).ToArray()
+        }).ToArray() };
+        app.TestPort.Accept(revoked); Tick();
+        check(app.TestPort.ChangeCalloutBounds == null && !frame.Hits.Any(hit => hit.Id.StartsWith("change-source:", StringComparison.Ordinal)
+                || hit.Id == "change-card-preview"),
+            "A cause entering a private zone immediately revokes its recap and hover face, even when that hand is visible to this seat");
+        app.TestPort.Accept(unchanged);
+        Tick();
         Click("change-locate");
         check(app.TestPort.ZoneName == "Battlefield" && app.TestPort.EffectTransitions.Targets
                 .SelectMany(target => target.AffectedIds).Contains(ClutteredChangesScenario.AnimatedLandId),
-            "The source cue's Show cards input brings its current affected public occurrence into focus without a game action");
+            "The recipient fan brings its current affected public occurrence into focus without a game action");
         Click("lab-next");
         check(lab.StageIndex == 2 && app.TestPort.PublicChanges.Last().Changes.Count == 82
             && app.TestPort.PublicChanges.Last().Cause?.Name == ClutteredChangesScenario.RetreatName,
@@ -297,5 +330,29 @@ internal static class ExperienceLabChecks
                 && !frame.Hits.Any(hit => hit.Id is "source-reader-next" or "source-reader-prev"),
                 "The original full-size card keeps its whole reading surface while its concrete actions remain simultaneously reachable outside the face without reader pages: " + sourceId);
         }
+    }
+    private static void CheckHighScaleCounterBridge(Action<bool, string> check)
+    {
+        string profile = Path.Combine(Path.GetTempPath(), "ManaTableCounterBridgeChecks", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(profile);
+        new PlayPreferences { Automatic = false, ReducedMotion = true, Sounds = false, TextScale = 1.3f }.Save(profile);
+        var lab = new ExperienceLabSession();
+        using var app = new TableApplication(new ExperienceLabEngine(lab), profile, initialState: lab.State) { Automated = true };
+        app.Initialize();
+        PresentationFrame Tick(double seconds)
+        {
+            var time = new GameTime(TimeSpan.FromSeconds(seconds), TimeSpan.FromSeconds(.05));
+            app.Update(time, new(), new(), new(1000, 740));
+            return app.ComposePresentation(time);
+        }
+        Tick(10); app.TestPort.OpenBattlefield(0); Tick(10.1);
+        app.TestPort.Accept(lab.AdvanceTo(1));
+        var frame = Tick(10.2);
+        var delta = frame.Drawing.Commands.OfType<DrawCommand.Text>().SingleOrDefault(text => text.X == 1374 && text.Value == "+2");
+        var measured = delta == null ? Point.Zero : new TextMetrics().TextSize(delta.Value!, delta.Size, delta.Width, 80, delta.Bold, 1.3f);
+        check(app.TestPort.TextScale == 1.3f && app.TestPort.ChangeCalloutBounds is { } bridge
+                && delta != null && delta.Y >= bridge.Top && delta.Y + measured.Y <= bridge.Bottom
+                && !frame.Drawing.Commands.OfType<DrawCommand.Text>().Any(text => text.Value?.StartsWith("Mixed", StringComparison.Ordinal) == true),
+            "At 130% text and a 1000px window the offscreen-source bridge paints the exact +2 within its measured reserve rather than misclassifying the taller numeral as mixed counters");
     }
 }

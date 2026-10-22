@@ -14,8 +14,9 @@ internal sealed class ActionFeedbackSmoke(TableWindow.Probe view, InteractionSce
     private double changed;
     private readonly List<string> checks = [];
     private readonly GameSnapshot original = scenario.State;
+    private string resultScope = "";
     private MouseState mouse = new(0, 0, 0, ButtonState.Released, ButtonState.Released, ButtonState.Released, ButtonState.Released, ButtonState.Released);
-    public string? ExpectedClick => stage is 9 or 10 ? "read-card-action" : stage is 5 or 6 ? "close-overlay" : "action-details";
+    public string? ExpectedClick => stage is 9 or 10 ? "read-card-action" : stage is 5 or 6 ? "close-overlay" : stage >= 13 ? "history" : null;
     public bool ClickAccepted { get; set; }
     public MouseState ReadMouse() => mouse;
     private void Check(bool value, string message) { if (!value) throw new InvalidOperationException(message); checks.Add(message); }
@@ -25,8 +26,8 @@ internal sealed class ActionFeedbackSmoke(TableWindow.Probe view, InteractionSce
         using var file = File.Create(Path.Combine(view.Profile, name + ".png")); surface.SaveAsPng(file, surface.Width, surface.Height);
     }
     private void MouseAt(Point point, ButtonState left = ButtonState.Released, ButtonState right = ButtonState.Released) {
-        var viewport = view.GraphicsDevice.Viewport; float scale = Math.Min(viewport.Width / 1600f, viewport.Height / 900f);
-        mouse = new((int)(point.X * scale + (viewport.Width - 1600 * scale) / 2), (int)(point.Y * scale + (viewport.Height - 900 * scale) / 2), 0,
+        var physical = SmokePointer.Screen(view, point);
+        mouse = new(physical.X, physical.Y, 0,
             left, ButtonState.Released, right, ButtonState.Released, ButtonState.Released);
     }
     private void MouseAtAbility(ButtonState left = ButtonState.Released) {
@@ -88,7 +89,11 @@ internal sealed class ActionFeedbackSmoke(TableWindow.Probe view, InteractionSce
                 Publish(original with { Stack = [new("Ravenform", "Exile Llanowar Elves. Its controller creates a 1/1 blue Bird creature token with flying.", false, raven) {
                     Id = "raven-cast", Targets = [new("card", victim.VisualId, victim.Name, 0)] }] }); MouseAt(new(0, 0)); Next(); break;
             case 12:
-                Check(view.Hits.Any(h => h.Id == "action-details") && view.Match!.Stack[0].Targets[0].Id == "seat-0-1", "Pending removal presents its source, explanation and exact targeted occurrence");
+                Check(view.StackRows.Any(row => row.Id == "raven-cast")
+                    && view.Hits.Any(h => h.Id == "stack-source:raven-cast" && h.Card?.VisualId == "raven")
+                    && view.Hits.Any(h => h.Id == "stack-target:raven-cast:card:seat-0-1")
+                    && view.Match!.Stack[0].Targets[0].Id == "seat-0-1",
+                    "Pending removal keeps its source and exact target on the existing effect surface");
                 Capture(surface, "04-removal-target");
                 var removed = state.Viewer!.Zone("Battlefield").Cards.Single(c => c.VisualId == "seat-0-1");
                 var bird = new Card { VisualId = "new-bird", CombatId = "new-bird", Name = "Bird", Type = "Token Creature - Bird", Power = 1, Toughness = 1, CombatKeywords = ["flying"], Text = "Flying" };
@@ -97,19 +102,33 @@ internal sealed class ActionFeedbackSmoke(TableWindow.Probe view, InteractionSce
                     : z.Name == "Exile" ? z with { Count = 1, Cards = [removed] } : z).ToArray() } : p).ToArray(),
                     Activity = [new(1, state.Turn, state.PhaseKey, "moved", 0, "Llanowar Elves moved from battlefield to exile.", removed.VisualId, removed.Name),
                         new(2, state.Turn, state.PhaseKey, "arrived", 0, "Bird token entered the battlefield under your control.", bird.VisualId, bird.Name),
-                        new(3, state.Turn, state.PhaseKey, "resolved", 1, "Ravenform resolved.", "raven", "Ravenform") { Detail = state.Stack[0].Text }] });
+                        new(3, state.Turn, state.PhaseKey, "resolved", 1, "Ravenform resolved.", "raven", "Ravenform") { Detail = state.Stack[0].Text, Outcome = "resolved" }] });
                 Next(); break;
             case 13:
                 Check(view.LastResolution is { Title: "Ravenform resolved.", Changes.Length: 2 }, "Resolution feedback keeps both the removal and newly created token visible as recent changes");
                 Check(view.LastResolution!.Detail.Contains("1/1 blue Bird"), "The resolved effect retains its public explanation for review");
+                Check(view.Match!.Viewer!.Zone("Battlefield").Cards.All(card => card.VisualId != "seat-0-1")
+                    && view.Match.Viewer.Zone("Battlefield").Cards.Any(card => card.VisualId == "new-bird" && card.Power == 1 && card.Toughness == 1)
+                    && view.Match.Viewer.Zone("Exile").Cards.Any(card => card.VisualId == "seat-0-1")
+                    && view.PublicDepartures.Any(cue => cue.CardId == "seat-0-1" && cue.Destination == "Exile"),
+                    "The reported permanent leaves its battlefield occurrence toward its actual public exile pile while the actual Bird token remains");
+                Check(view.Hits.All(hit => hit.Id is not ("action-details" or "public-outcome-panel"))
+                    && view.Hits.Any(hit => hit.Id == "history"),
+                    "Successful resolution retains the normal history entry without adding a detached result panel");
+                resultScope = view.Scope;
                 Capture(surface, "05-removal-result");
-                MouseAt(view.Hits.Single(h => h.Id == "action-details").Bounds.Center, ButtonState.Pressed); Next(); break;
+                MouseAt(view.Hits.Single(h => h.Id == "history").Bounds.Center, ButtonState.Pressed); Next(); break;
             case 14:
-                MouseAt(view.Hits.Single(h => h.Id == "action-details").Bounds.Center); Next(); break;
+                MouseAt(view.Hits.Single(h => h.Id == "history").Bounds.Center); Next(); break;
             case 15:
-                Check(view.Overlay == "action" && view.Hits.Any(h => h.Id == "action-history"), "Resolution details remain reviewable after the spell leaves the stack");
-                Capture(surface, "06-resolution-details");
-                Check(scenario.Replies.Count == 1, "Inspecting cause and result never submits another game action");
+                Check(view.Overlay == "history"
+                    && view.Frame!.Observe().Text.Any(text => text.Value.Contains("Ravenform resolved.", StringComparison.Ordinal))
+                    && view.Frame.Observe().Text.Any(text => text.Value.Contains("Llanowar Elves moved from battlefield to exile.", StringComparison.Ordinal))
+                    && view.Frame.Observe().Text.Any(text => text.Value.Contains("Bird token entered", StringComparison.Ordinal)),
+                    "The existing history entry preserves the resolved spell, public departure and token arrival after the stack clears");
+                Capture(surface, "06-resolution-history");
+                Check(scenario.Replies.Count == 1 && view.Scope == resultScope,
+                    "Reviewing the result history sends no additional game action and preserves the current decision scope");
                 File.WriteAllText(Path.Combine(view.Profile, "action-feedback-results.json"), JsonSerializer.Serialize(checks, new JsonSerializerOptions { WriteIndented = true }));
                 view.Exit(); break;
         }

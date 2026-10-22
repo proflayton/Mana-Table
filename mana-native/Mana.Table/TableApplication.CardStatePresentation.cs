@@ -37,15 +37,20 @@ internal sealed partial class TableApplication
         var accent = new Color(154, 224, 203);
         int side = Math.Min(11, Math.Max(6, bounds.Height - 5));
         int y = bounds.Center.Y - side / 2;
-        canvas.Rounded(new(bounds.X + 3, y - 2, side, side), new(62, 104, 100), 2);
-        canvas.Panel(new(bounds.X + 1, y, side, side), new(31, 65, 64), accent * .8f, 2);
-        canvas.Circle(new(bounds.X + 1 + side / 2f, y + side / 2f), 1.2f, accent);
+        PaintCounterGlyph(new(bounds.X + 1, y, side, side), accent);
         canvas.Text(value, bounds.X + side + 5, bounds.Y + Math.Max(0, (bounds.Height - canvas.TextSize(value, size, 1000, 1, true).Y) / 2),
             accent, size, Math.Max(1, bounds.Width - side - 5), 1, true);
         string id = CardViews.Identity(card);
         if (owner != null && id.Length > 0) counterAnchors[id] = bounds.Center.ToVector2();
         if (owner is { } player)
             RecordBattlefieldLabel(card, player, "counter", value, bounds, canvas.TextWidth(value, size, true), bounds.Width - side - 5);
+    }
+
+    private void PaintCounterGlyph(Rectangle bounds, Color accent)
+    {
+        canvas.Rounded(new(bounds.X + 2, bounds.Y - 2, bounds.Width, bounds.Height), new(62, 104, 100), 2);
+        canvas.Panel(bounds, new(31, 65, 64), accent * .8f, 2);
+        canvas.Circle(bounds.Center.ToVector2(), 1.2f, accent);
     }
 
     // One ribbon overlaps the face. P/T is authoritative, never derived by

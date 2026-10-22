@@ -50,6 +50,12 @@ without a controls tour. Existing decks, names and play preferences are retained
 The deck builder checks every saved edit. Problem cards are highlighted and
 their reasons appear beside the selected card; deck-wide checks stay visible.
 Back to setup returns to the lobby. Deck checks and saving update automatically.
+Your decks offers Delete beside each saved list; the builder also has Delete deck.
+Deletion leaves a named Undo row and keeps the deck's cards and history available.
+Open Deleted to restore an earlier deleted list, including after restarting the app.
+Undo returns the list to Your decks without replacing your currently chosen deck.
+Leave a friends' lobby before deleting or restoring decks. Precons and AI deck
+choices are unaffected; deck management is unavailable during a game.
 
 REVIEW YOUR DECK
 Open Analyze in the deck workshop for an automatic review. Start with What to
@@ -228,8 +234,9 @@ abilities on the stack appear in the middle. Decks are physical piles near each
 seat. Life medallions use existing commander artwork, with a lit rim on the
 active seat. Hover highlights a card without moving or enlarging it.
 Click a card to enlarge it for reading; click it again or empty table to close.
-Use the opened card's Play card or Activate ability action, or drag a playable hand
-card onto the table. Required choices, targets and mana payments use their normal
+Use the opened card's current Play, Cast or ability action, or drag a playable hand
+card or your commander onto the table. Each partner commander has its own Cast
+action and commander tax. Required choices, targets and mana payments use their normal
 single click and stay compact. Right-click opens the complete card inspector.
 Zone piles open browsers containing only the cards your player can see. Your own
 graveyard, exile and command browsers can offer engine-authorized actions,
@@ -264,6 +271,12 @@ use the offered action and any required source choice shown by the game.
 Cards deal from their library piles. Opponents draw anonymous card backs into
 their hands; visible spells rise into the center while you decide how to respond.
 Turn callouts and life-counter impacts mark changes without blocking controls.
+When the host supplies actual damage results, a brief red damage amount appears
+beside the affected card or player. Signed life changes are separate. Counter
+additions briefly show their increment beside the counter badge; the card's
+current stats and counter total remain after the cue fades. Pending base damage
+can change through prevention. History retains the public event details without
+opening a result panel over the battlefield after every successful action.
 Reduced motion skips these animations and immediately shows the current state.
 Click the current decision's instructions to read the full message.
 For attacks, select your creature then the defending player (or defending card).
@@ -300,8 +313,8 @@ Auto starts enabled and passes priority when there is no playable response to
 stop for. Settings include saved own-turn phase stops and reduced motion.
 Empty priority windows pass quietly until your next action or a visible game event.
 The bottom-right dock stays steady while the table advances. Hold remains clickable.
-Battlefield cards with available actions show ACTIVATE. Hover for guidance, click
-to use an ability, or right-click and select Activate ability in the inspector.
+Click a card to read its full face. Its concrete legal actions appear beside it;
+drag a playable hand card onto the table to begin playing it.
 An available activation can be set to "Pass until my next turn" beside Pass.
 This keeps Auto moving when that ability is your only play. The ability remains
 usable; other available plays still pause the game. The indicator offers Undo,
@@ -311,10 +324,14 @@ For a player choice, a named recipient panel keeps the source, controller and
 purpose visible. Choose an offered name or highlighted portrait. The decision
 dock distinguishes your choice, your priority, another player's action and
 resolution; a submitted action remains acknowledged while the engine responds.
-Spells show their targets with arrows and a source/effect callout. After resolution,
-the callout shows recent changes; Details keeps the explanation available to read.
-New permanents and tokens show ENTERED; exiled or graveyard-bound cards leave a
-brief labelled outline. Match history retains the public events.
+Spells keep their source, pending effect and recipients together. Match history
+retains the public events.
+The current source version (not yet published) names the acting player in the
+decision dock and shows why Auto is paused. A saved phase pause has a visible
+pause mark; its stop chip can remove that saved stop. Pass for now and Take control
+share the main action row; Pass once answers only the current priority window.
+Results and exact counter increments appear beside their recipients. Public
+departures move toward the actual pile; Recent changes retains further details.
 Resolution feedback distinguishes resolved and did not resolve. Draw and shuffle
 cues report actual public events, without revealing hidden card identities.
 Inspecting a card, opening a panel or dragging suspends Auto. Use Full control to

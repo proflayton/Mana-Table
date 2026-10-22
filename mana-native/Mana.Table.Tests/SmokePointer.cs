@@ -1,4 +1,6 @@
 using System.Text.Json;
+using Mana.Renderer;
+using Microsoft.Xna.Framework;
 using Point = Microsoft.Xna.Framework.Point;
 
 namespace Mana.Table;
@@ -10,17 +12,13 @@ internal static class SmokePointer
     internal static Point Screen(TableWindow.Probe view, Point logical)
     {
         var viewport = view.GraphicsDevice.Viewport;
-        float scale = Math.Min(viewport.Width / 1600f, viewport.Height / (float)view.DesignHeight);
-        return new((int)((viewport.Width - 1600 * scale) / 2 + logical.X * scale),
-            (int)((viewport.Height - view.DesignHeight * scale) / 2 + logical.Y * scale));
+        return RenderViewport.Fit(new(viewport.Width, viewport.Height), view.DesignHeight).ToPhysical(logical.ToVector2()).ToPoint();
     }
 
     internal static Point Table(TableWindow.Probe view, Point physical)
     {
         var viewport = view.GraphicsDevice.Viewport;
-        float scale = Math.Min(viewport.Width / 1600f, viewport.Height / (float)view.DesignHeight);
-        return new((int)((physical.X - (viewport.Width - 1600 * scale) / 2) / scale),
-            (int)((physical.Y - (viewport.Height - view.DesignHeight * scale) / 2) / scale));
+        return RenderViewport.Fit(new(viewport.Width, viewport.Height), view.DesignHeight).ToLogical(physical);
     }
 
     internal static bool TryPoint(TableWindow.Probe view, Mana.Table.Interaction.TableHit hit, Point logical, out Point physical)
@@ -41,12 +39,12 @@ internal static class SmokePointer
     {
         if (!view.CurrentHit(hit)) throw new InvalidOperationException("Stale pointer target: " + hit.Id);
         var viewport = view.GraphicsDevice.Viewport;
-        float scale = Math.Min(viewport.Width / 1600f, viewport.Height / (float)view.DesignHeight);
-        float left = (viewport.Width - 1600 * scale) / 2, top = (viewport.Height - view.DesignHeight * scale) / 2;
-        int minX = Math.Max(0, (int)Math.Floor(left + hit.Bounds.Left * scale));
-        int maxX = Math.Min(viewport.Width - 1, (int)Math.Ceiling(left + hit.Bounds.Right * scale));
-        int minY = Math.Max(0, (int)Math.Floor(top + hit.Bounds.Top * scale));
-        int maxY = Math.Min(viewport.Height - 1, (int)Math.Ceiling(top + hit.Bounds.Bottom * scale));
+        var mapping = RenderViewport.Fit(new(viewport.Width, viewport.Height), view.DesignHeight);
+        var pixels = mapping.ToSurface(hit.Bounds);
+        int minX = Math.Max(0, pixels.Left + mapping.Bounds.Left);
+        int maxX = Math.Min(viewport.Width - 1, pixels.Right + mapping.Bounds.Left);
+        int minY = Math.Max(0, pixels.Top + mapping.Bounds.Top);
+        int maxY = Math.Min(viewport.Height - 1, pixels.Bottom + mapping.Bounds.Top);
         var center = Screen(view, hit.Bounds.Center);
         bool Reachable(Point point, bool interior) => Matches(view, hit, point) && (!interior
             || Matches(view, hit, new(point.X - 1, point.Y)) && Matches(view, hit, new(point.X + 1, point.Y))

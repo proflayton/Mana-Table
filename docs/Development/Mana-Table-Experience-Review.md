@@ -55,6 +55,22 @@ does not establish that a person can understand or use the screen.
    interruptible continuation. Keep every underlying trigger, target restriction,
    response window and effect in the engine. Grouping presentation does not make
    separate effects simultaneous or authorize choosing for another player.
+9. **Finish the everyday lifecycle.** Deck management includes creating, naming,
+   editing, saving, importing, duplicating, exporting, deleting and recovering a
+   deck. Review these ordinary journeys before describing the experience as complete.
+
+## Partner commander casting: current source, not yet published
+
+A player reported no Cast action for Toothy alongside Pir, during their main
+phase with available mana; the installed version was unknown. The exact paired
+engine reproduction can cast both and recast Toothy with its own tax. That does
+not establish the cause of the player's missing action. The audit found two
+concrete client issues: command-zone dragging only supported hand cards, and an
+authorized spell action could display only the card name and creature stats.
+Commanders now share the deliberate play gesture, and actual engine cast actions
+say Cast. The opened source reader also retains the individual commander tax.
+Paired pointer checks and a real paid commander journey cover these paths;
+inspection alone and a zero-cost commander do not prove paid casting works.
 
 ### Accepted hand-play direction: 21 October 2026
 
@@ -85,7 +101,90 @@ remain available; public actions, actual combat, other required choices and a
 turn change return control. Reading pauses passing without committing a command.
 Real-engine checks and actual application input cover these transitions and the
 next spell's unanswered response. Human review of the corrected behavior remains
-pending; the existing 0.2.61 installer does not contain this fix.
+pending. This fix shipped in 0.2.69.
+
+## Decision area iteration: current source, not yet published
+
+The player could not tell why Auto stopped or what had just happened. The lower
+right mixed policy settings, required input, repeated effect prose, waiting and
+an additional result plaque. A saved stop looked like an ordinary priority
+window; the display could even claim Auto was passing while reading paused it.
+
+The current gesture belongs in one action row. Public actor ownership and the
+actual local Auto gate supply its status; background polling supplies neither a
+new action nor a new pause. A saved phase stop has a visible pause mark and an
+explicit removal control. During empty opponent priority, Pass for now arms the
+existing bounded policy in that row; Pass once stays a smaller alternative and
+Take control occupies the same row while armed. Required choices remain separate
+engine decisions. Pending effects retain source, target and amount together;
+their heading identifies resolution order rather than repeating the responder.
+
+Current results remain at the affected objects. The separate Why/Show cards
+plaque is removed when the source is visible. A currently public offscreen cause
+can use a compact source-to-increment-to-recipient bridge; it never adds changes
+across recipients into one apparent creature's total. Retained details stay in
+Recent changes. This is implemented presentation, not human UX acceptance.
+
+`decision-flow.v1` is the authored four-player review journey: last land, saved
+stop, public responder/choice ownership, damage targeting, a response, priority
+and the actual-result payload. Land, target and pass gestures use current scoped
+handles; external checkpoints still use Next. It does not simulate Magic rules.
+Review the complete window at small and large sizes, with text at 130%, focused
+fields and reduced motion. Human review of this iteration remains pending.
+
+## Results stay with their recipients: 22 October 2026
+
+The player's intent is to understand what an action actually changed. The journey
+is source and base amount → chosen recipient → pending priority → reported impact
+→ settled state. Target selection and priority still use their exact engine
+permissions; result cues are noninteractive observations. A pending value is
+never evidence of the amount dealt. For example, Urza's Armor can turn three
+base damage into two actual damage and a separate two-life loss.
+
+The next source iteration adds typed actual damage/life events, brief amounts
+beside their recipient, and exact counter increments beside counter badges.
+Current P/T, marked damage, counters and life stay visible after a cue expires.
+Amounts use public event recipients; neighbouring resolution events are not
+treated as proof of cause. A public departure can retain its impact briefly;
+hidden-zone revocation immediately removes its card cue and retained face.
+Routine success and draw prose stays in History instead of opening another
+panel over the table. A reported failure to resolve still receives notice.
+
+Review `damage-results.v1` through surviving, dying and prevented-damage
+checkpoints, and `crowded-counters.v1` through earthbending and the landfall
+burst. These are authored presentation cases. Separate real Forge checks
+establish the prevention result across four seats. Inspect the actual window,
+including a focused seat, 130% text, reduced motion and resize/fullscreen.
+Collision and event tests protect data and input; they do not establish visual
+clarity. This iteration is source-only until its next verified release. Human
+review remains pending.
+
+## Resolution follow-up: 21 October 2026
+
+The user reports that the game does not feel crisp. The previous window path
+rasterizes a fixed-size scene and logical-resolution glyph textures, then
+bilinearly scales the completed frame. The next rendering revision instead
+paints at the fitted backbuffer's pixel dimensions, with separately rasterized
+glyphs at that density and a 1:1 final copy. This preserves logical layout and
+shared pointer geometry. It is separate from the tested playable release.
+Compare actual small/large-window text, fine edges, full-card inspection and
+pointer gestures; density/alpha checks do not approve perceived sharpness.
+Card-image source resolution and very small overview labels remain separate
+constraints. Human review of this revision remains pending.
+
+Agent review compared unscaled window captures at 1000x740, 1540x980 and
+1920x1080, including the actual setup controls, a busy focused battlefield and
+the full reader with its state column. Menu and reader text are visibly cleaner
+at the larger sizes; small overview labels remain intrinsically small. Reviewed
+pointer gestures remained aligned, and no new clipping appeared in these
+captures. These findings apply to candidate `crisp-r2`, separate from the
+published gameplay candidate; they do not establish human acceptance.
+
+The ordinary cached card face is 488x680 pixels. At the current full-reader
+size it is slightly enlarged at 1920x1080 and approximately doubled at 4K, so
+the printed card text still has a source-image limit. A later higher-resolution
+reader cache must preserve printing and face identity, show the existing image
+while loading, and bound GPU memory independently of ordinary thumbnails.
 
 ## MTGA references reviewed: 21 October 2026
 

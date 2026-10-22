@@ -208,13 +208,4 @@ internal sealed partial class TableApplication
         return 80;
     }
 
-    private void DrawPublicOutcome()
-    {
-        if (actionFeedback.LastPublicOutcome is not { } outcome || now - outcome.Started > 5) return;
-        canvas.Panel(new(20, 66, 379, 130), new Color(15, 24, 32) * .97f, Gold, 7);
-        hits.Add(new("public-outcome-panel", Scope, new(20, 66, 379, 130), () => { }));
-        canvas.Text("PUBLIC OUTCOME", 34, 78, Gold, .55f, 345, 1, true);
-        canvas.Text(string.Join("\n", outcome.Messages), 34, 105, Ink, .77f, 345, 4);
-        Button("public-outcome-history", "History", 292, 157, 92, () => { overlay = "history"; historyPage = 0; }, height: 26);
-    }
 }

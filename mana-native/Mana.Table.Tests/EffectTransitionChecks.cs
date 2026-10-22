@@ -1,6 +1,7 @@
 using Mana.Contracts;
 using Mana.Renderer;
 using Microsoft.Xna.Framework;
+using Point = Microsoft.Xna.Framework.Point;
 using Rectangle = Microsoft.Xna.Framework.Rectangle;
 
 namespace Mana.Table;
@@ -57,9 +58,124 @@ internal static class EffectTransitionChecks
         check(EffectTransitionPresentation.Compose([removed], groups, sources, 10.2, true, controls).Targets.Single() is { Label: "-2", Delta.Total: -2 },
             "Counter removal preserves its signed amount rather than turning it into a gain");
         CheckProtectedRoute(check, cause);
+        CheckReceiptPlacement(check);
+        CheckCounterDrawing(check);
+        CheckFamilyCaptionDrawing(check);
         catIds.Clear();
         check(cats.Target.CardIds.Count == 50 && cats.AffectedIds.Count == 50,
             "A composed effect frame freezes occurrence membership independently of later caller mutations");
+    }
+
+    private static void CheckFamilyCaptionDrawing(Action<bool, string> check)
+    {
+        foreach (bool focused in new[] { false, true }) {
+            string profile = Path.Combine(Path.GetTempPath(), "ManaTableCounterFamilyChecks", Guid.NewGuid().ToString("N"));
+            Directory.CreateDirectory(profile);
+            new PlayPreferences { ReducedMotion = true, Automatic = false, Sounds = false, TextScale = 1.3f }.Save(profile);
+            var baseline = ClutteredChangesScenario.Earthbend(ClutteredChangesScenario.Initial());
+            var engine = new InteractionScenarioEngine(); engine.Present(baseline);
+            using var app = new TableApplication(engine, profile, initialState: engine.State) { Automated = true };
+            app.Initialize(); app.SetTableStudy(true);
+            if (focused) app.TestPort.OpenBattlefield(1);
+            Mana.Table.Presentation.PresentationFrame Tick(double seconds)
+            {
+                var time = new GameTime(TimeSpan.FromSeconds(seconds), TimeSpan.FromSeconds(.01));
+                app.Update(time, new(), new(), new(1600, 900));
+                return app.ComposePresentation(time);
+            }
+            var initial = Tick(10);
+            var represented = initial.Cards.Where(card => card.Zone == "Battlefield").Select(card => card.Id).ToHashSet(StringComparer.Ordinal);
+            engine.Present(ClutteredChangesScenario.Retreat(baseline)); app.TestPort.Accept(engine.State);
+            var frame = Tick(10.9);
+            var paintedNames = frame.Drawing.Commands.OfType<DrawCommand.Text>().ToArray();
+            var families = frame.Scene!.Seats.SelectMany(seat => seat.Battlefield).SelectMany(cluster => cluster.Cards)
+                .Select(card => card.StudyFamily).OfType<StudyBattlefieldFamily>().DistinctBy(family => family.Id)
+                .Where(family => family.CohortCount > 1 && paintedNames.Any(text => text.Value == family.Name
+                    && text.X == family.NameBounds.X + 4 && text.Y == family.NameBounds.Y)).ToArray();
+            check(families.Any(family => family.Name == "Forest") && app.TestPort.CounterReceipts.Count > 0
+                && app.TestPort.CounterReceipts.All(receipt => families.All(family => !receipt.Bounds.Intersects(family.NameBounds)))
+                && represented.SetEquals(frame.Cards.Where(card => card.Zone == "Battlefield").Select(card => card.Id))
+                && (!focused || app.TestPort.StudyFocusOwner == 1),
+                "The actual 480-permanent " + (focused ? "focused table" : "whole table")
+                    + " keeps visible Forest/Plains/Island family captions outside the new counter receipts while retaining the cards and localized increments");
+        }
+    }
+
+    private static void CheckReceiptPlacement(Action<bool, string> check)
+    {
+        var face = new Rectangle(300, 250, 100, 120);
+        var viewport = new Rectangle(10, 60, 1580, 720);
+        var blockedRight = new Rectangle(400, 230, 140, 150);
+        var obstacles = new[] { face, blockedRight };
+        var receipt = EffectTransitionPresentation.ReceiptBounds(face, new(390, 350), new(85, 28), viewport, obstacles);
+        check(!receipt.IsEmpty && viewport.Contains(receipt) && obstacles.All(bounds => !bounds.Intersects(receipt))
+            && receipt.Right < face.Left,
+            "A counter increment moves beside its actual recipient when the counter side is blocked without covering its current total, name or stats");
+        var second = EffectTransitionPresentation.ReceiptBounds(face, new(390, 350), new(85, 28), viewport, [.. obstacles, receipt]);
+        check(!second.IsEmpty && !second.Intersects(receipt),
+            "Distinct counter-property receipts reserve their space instead of painting over an earlier increment");
+        check(EffectTransitionPresentation.ReceiptBounds(face, new(390, 350), new(85, 28), viewport, [viewport]).IsEmpty,
+            "A completely crowded recipient keeps its actual card state rather than forcing a transient counter receipt over other permanents");
+        var midpointBlock = new Rectangle(440, 240, 200, 120);
+        var marker = EffectTransitionPresentation.PendingMarkerBounds(new(300, 300), new(800, 300), new(70, 30),
+            viewport, [midpointBlock]);
+        check(!marker.IsEmpty && !marker.Intersects(midpointBlock) && viewport.Contains(marker),
+            "A blocked arrow midpoint can use another free gap for its pending base-damage marker");
+        check(EffectTransitionPresentation.PendingMarkerBounds(new(300, 300), new(800, 300), new(70, 30),
+            viewport, [viewport]).IsEmpty,
+            "A pending marker never covers cards or answer controls when its whole arrow corridor is occupied");
+    }
+
+    private static void CheckCounterDrawing(Action<bool, string> check)
+    {
+        foreach (bool reduced in new[] { false, true }) {
+            string profile = Path.Combine(Path.GetTempPath(), "ManaTableCounterReceiptChecks", Guid.NewGuid().ToString("N"));
+            Directory.CreateDirectory(profile);
+            new PlayPreferences { ReducedMotion = reduced, Automatic = false, Sounds = false }.Save(profile);
+            var source = new Card { VisualId = "receipt-source", CombatId = "receipt-source", Name = "Reported counter source", Type = "Enchantment" };
+            var recipient = new Card { VisualId = "receipt-target", CombatId = "receipt-target", Name = "Counter recipient", Type = "Artifact Creature",
+                Power = 6, Toughness = 7, Counters = new() { ["Charge"] = 4 } };
+            var baseline = PresentationSmoke.Example() with { Id = "receipt-drawing", Stack = [], Activity = [], Combat = null };
+            baseline = baseline with { Players = baseline.Players.Select(player => player with { Zones = player.Zones.Select(zone => zone with {
+                Count = zone.Name == "Battlefield" ? player.Id == 0 ? 2 : 0 : zone.Count,
+                Cards = zone.Name == "Battlefield" ? player.Id == 0 ? [source, recipient] : [] : []
+            }).ToArray() }).ToArray() };
+            var engine = new InteractionScenarioEngine(); engine.Present(baseline);
+            using var app = new TableApplication(engine, profile, initialState: engine.State) { Automated = true };
+            app.Initialize(); app.SetTableStudy(true);
+            Mana.Table.Presentation.PresentationFrame Tick(double seconds)
+            {
+                var time = new GameTime(TimeSpan.FromSeconds(seconds), TimeSpan.FromSeconds(.01));
+                app.Update(time, new(), new(), new(1600, 900));
+                return app.ComposePresentation(time);
+            }
+            Tick(10);
+            var changed = baseline with {
+                Players = baseline.Players.Select(player => player with { Zones = player.Zones.Select(zone => zone with {
+                    Cards = zone.Cards.Select(card => card.VisualId == recipient.VisualId ? card with { Counters = new() { ["Charge"] = 6 } } : card).ToArray()
+                }).ToArray() }).ToArray(),
+                Activity = [new(1, baseline.Turn, baseline.PhaseKey, "counters", 0, "Two charge counters added.", recipient.VisualId, recipient.Name) {
+                    Change = new("counters", "Charge", 4, 6), Cause = new(source.VisualId, source.Name, "Put two charge counters on the artifact.", 0, "ability", "receipt-effect")
+                }]
+            };
+            engine.Present(changed); app.TestPort.Accept(engine.State);
+            var frame = Tick(10.9);
+            var receipt = frame.Drawing.Commands.OfType<DrawCommand.Text>().SingleOrDefault(text => text.Value == "+2 Charge");
+            var painted = app.TestPort.CounterReceipts.SingleOrDefault(item => item.FrontId == recipient.VisualId);
+            var card = frame.Cards.Single(card => card.Id == recipient.VisualId && card.Zone == "Battlefield");
+            check(receipt != null && painted is { Label: "+2 Charge", Property: "Charge" }
+                && painted.AffectedIds.SequenceEqual([recipient.VisualId]) && card.Card is { Power: 6, Toughness: 7 }
+                && card.Card.Counters["Charge"] == 6 && frame.Cards.All(entry => !entry.Display.Bounds.Intersects(painted.Bounds))
+                && engine.Replies.Count == 0,
+                "The actual " + (reduced ? "reduced-motion" : "animated") + " composition paints +2 Charge outside the card while retaining six current counters, authoritative 6/7 and no game action");
+            frame = Tick(11.8);
+            check(frame.Drawing.Commands.OfType<DrawCommand.Text>().Any(text => text.Value == "+2 Charge"),
+                "The counter increment remains readable after landing instead of existing only as an unlabelled moving spark");
+            frame = Tick(15);
+            check(!frame.Drawing.Commands.OfType<DrawCommand.Text>().Any(text => text.Value == "+2 Charge")
+                && frame.Cards.Single(card => card.Id == recipient.VisualId && card.Zone == "Battlefield").Card.Counters["Charge"] == 6,
+                "The transient increment expires while the authoritative settled counter total remains available");
+        }
     }
 
     private static void CheckProtectedRoute(Action<bool, string> check, PublicEffectCause cause)

@@ -21,6 +21,11 @@ internal sealed class DeckExperienceSmoke(TableWindow.Probe view) : ITableAutoma
     private long sourceMetadataRevision;
     private DeckSourcePreview? sourcePreview;
     private long revision;
+    private DeckDetails? removedDeck;
+    private DeckLibraryDeletion? removedReceipt;
+    private Task<IReadOnlyList<DeckLibraryDeletion>>? removedRead;
+    private readonly Dictionary<string, byte[]> savedEvidence = [];
+    private string independentBefore = "";
     public string? ExpectedClick { get; private set; }
     public bool ClickAccepted { get; set; }
     private DeckDetails Deck => view.DeckDetails!;
@@ -37,7 +42,8 @@ internal sealed class DeckExperienceSmoke(TableWindow.Probe view) : ITableAutoma
         view.Surface.SaveAsPng(output, view.Surface.Width, view.Surface.Height);
         File.WriteAllText(Path.Combine(view.Profile, "deck-experience-" + name + ".json"), JsonSerializer.Serialize(new {
             view.DeckDetails, view.Workshop, view.WorkshopTests, view.Analysis, view.WorkshopVersion, view.WorkshopDialog,
-            ControlledSourcePreview = sourcePreview
+            view.SavedDecks, view.DeletedDecks, view.SelectedDeck, view.DeckEditor, view.SetupModal,
+            ControlledSourcePreview = sourcePreview, RemovedReceipt = removedReceipt
         }, new JsonSerializerOptions { WriteIndented = true }));
     }
     private void Click(string id, int target)
@@ -67,6 +73,9 @@ internal sealed class DeckExperienceSmoke(TableWindow.Probe view) : ITableAutoma
     private void SourceUnchanged(string action) => Check(JsonSerializer.Serialize(Deck) == sourceBefore
         && view.Workshop!.VersionId == sourceVersion && view.Workshop.MetadataRevision == sourceMetadataRevision,
         action + " leaves the deck ID, revision, cards, saved version and source metadata unchanged before explicit confirmation");
+    private void PreservedLibraryEvidence() => Check(savedEvidence.All(file => File.Exists(file.Key)
+        && File.ReadAllBytes(file.Key).SequenceEqual(file.Value)),
+        "Undo restores the exact saved list and preserves its versions, analysis decisions, question and sampled-hand evidence");
     public MouseState ReadMouse()
     {
         bool down = mousePhase == 1; if (mousePhase is 1 or 2) mousePhase++;
@@ -188,6 +197,73 @@ internal sealed class DeckExperienceSmoke(TableWindow.Probe view) : ITableAutoma
                 SourceUnchanged("Canceling source confirmation"); Click("workshop-dialog-close", 33); break;
             case 33:
                 SourceUnchanged("Closing source review");
+                Check(view.Engine is IDeckLibrary { SupportsDeckLibrary: true } && Deck.LibraryToken.Length > 0,
+                    "The real Forge adapter negotiates reversible saved-deck operations and an exact saved-content token");
+                Click("workshop-build", 34); break;
+            case 34:
+                removedDeck = Deck;
+                foreach (string relative in new[] { Deck.Id + ".json", "workshop/" + Deck.Id + ".json", "workshop-tests/" + sample + ".json" }) {
+                    string path = Path.Combine(view.Profile, "decks", relative); savedEvidence.Add(path, File.ReadAllBytes(path));
+                }
+                Capture("09-before-delete"); Click("deck-delete:" + Deck.Id, 35); break;
+            case 35:
+                Check(!view.DeckEditor && view.DeckDetails == null && view.SelectedDeck == null && view.SetupModal == "decks"
+                    && view.SavedDecks.All(deck => deck.Id != removedDeck!.Id),
+                    "The real Delete gesture removes the saved tile and closes its editor without keeping a selected or confirmed list");
+                removedReceipt = view.DeletedDecks.Single(deck => deck.DeckId == removedDeck!.Id);
+                Check(removedReceipt.Name == removedDeck!.Name && view.Hits.Any(hit => hit.Id == "deck-restore:" + removedReceipt.RestoreToken)
+                    && !view.Hits.Any(hit => hit.Id == "deck:" + removedDeck.Id),
+                    "The deleted list keeps its complete name beside one visible Undo action");
+                Capture("10-deleted-notice"); Click("picker-presets", 36); break;
+            case 36:
+                Check(!view.Hits.Any(hit => hit.Id.StartsWith("deck-delete:") || hit.Id.StartsWith("deck-restore:")),
+                    "Bundled precons remain separate from saved-list deletion controls");
+                Click("picker-deleted", 37); break;
+            case 37:
+                removedRead = ((IDeckLibrary)view.Engine).DeletedDecksAsync(); view.RefreshDeckLibrary(); stage++; break;
+            case 38:
+                if (!removedRead!.IsCompleted) return;
+                Check(removedRead.GetAwaiter().GetResult().Any(deck => deck == removedReceipt)
+                    && view.Hits.Any(hit => hit.Id == "deck-restore:" + removedReceipt!.RestoreToken),
+                    "The Deleted tab and a fresh real-backend observation retain the same durable Undo receipt");
+                Capture("11-deleted-library"); Click("deck-restore:" + removedReceipt!.RestoreToken, 39); break;
+            case 39:
+                Check(view.SavedDecks.Any(deck => deck.Id == removedDeck!.Id && deck.LibraryToken == removedDeck.LibraryToken)
+                    && view.DeletedDecks.All(deck => deck.DeckId != removedDeck!.Id)
+                    && view.SelectedDeck == null && view.DeckDetails == null && !view.DeckEditor,
+                    "Undo returns the same saved tile and content token without implicitly selecting or opening it");
+                PreservedLibraryEvidence(); Capture("12-restored-unselected"); Click("deck:" + removedDeck!.Id, 40); break;
+            case 40: Click("confirm-edit", 41); break;
+            case 41:
+                Check(Deck.Id == removedDeck!.Id && Deck.Name == removedDeck.Name && Deck.LibraryToken == removedDeck.LibraryToken
+                    && JsonSerializer.Serialize(Deck.Entries) == JsonSerializer.Serialize(removedDeck.Entries)
+                    && view.Workshop!.VersionId == sourceVersion && view.Workshop.Question == experimentQuestion
+                    && view.WorkshopTests.Any(test => test.Id == sample && test.VersionId == version),
+                    "Reopening the restored list retains its exact cards, current version, tuning question and earlier sample");
+                Capture("13-restored-editor");
+                view.ImportDeck("Independent saved list", AnalysisRegression.List); stage++; break;
+            case 42:
+                Check(Deck.Id != removedDeck!.Id, "An independent imported document becomes the current editor");
+                independentBefore = JsonSerializer.Serialize(Deck); Click("deck-done", 43); break;
+            case 43: Click("change-deck", 44); break;
+            case 44: Click("picker-saved", 45); break;
+            case 45: Click("deck-delete:" + removedDeck!.Id, 46); break;
+            case 46:
+                Check(JsonSerializer.Serialize(Deck) == independentBefore && view.SelectedDeck?.Id == Deck.Id
+                    && view.SavedDecks.All(deck => deck.Id != removedDeck!.Id),
+                    "Deleting another saved tile preserves the current independent document and revision");
+                var laterReceipt = view.DeletedDecks.Single(deck => deck.DeckId == removedDeck!.Id);
+                Check(laterReceipt.RestoreToken != removedReceipt!.RestoreToken, "A later deletion receives a new scoped Undo token");
+                removedReceipt = laterReceipt;
+                Capture("14-unrelated-deleted"); Click("picker-deleted", 47); break;
+            case 47:
+                Capture("15-unrelated-undo"); Click("deck-restore:" + removedReceipt!.RestoreToken, 48); break;
+            case 48:
+                Check(JsonSerializer.Serialize(Deck) == independentBefore && view.SelectedDeck?.Id == Deck.Id
+                    && view.SavedDecks.Any(deck => deck.Id == removedDeck!.Id)
+                    && view.DeletedDecks.All(deck => deck.DeckId != removedDeck!.Id),
+                    "Undoing another saved tile preserves the independent selection and its exact editor revision");
+                PreservedLibraryEvidence(); Capture("16-library-restored");
                 File.WriteAllText(Path.Combine(view.Profile, "deck-experience-results.json"), JsonSerializer.Serialize(checks, new JsonSerializerOptions { WriteIndented = true }));
                 view.Exit(); stage++; break;
         }

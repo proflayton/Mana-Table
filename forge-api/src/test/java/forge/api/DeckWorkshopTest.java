@@ -8,6 +8,7 @@ import forge.card.CardRules;
 import forge.deck.Deck;
 import forge.item.PaperCard;
 import org.testng.annotations.Test;
+import org.testng.annotations.BeforeClass;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -20,6 +21,7 @@ import static org.testng.Assert.*;
 /** Real durable storage and offline source fixtures, including concurrent edits and interrupted writes. */
 public class DeckWorkshopTest {
     private static final Gson JSON = new Gson();
+    @BeforeClass public void language() { forge.util.Localizer.getInstance().initialize("en-US", "../forge-gui/res/languages"); }
     private static PaperCard card(String name, String edition, String mana, String type, String oracle) {
         return new PaperCard(new CardRules.Reader().readCard(List.of("Name:" + name, "ManaCost:" + mana,
                 "Types:" + type, "PT:1/1", "Oracle:" + oracle)), edition, CardRarity.Common);
@@ -38,6 +40,18 @@ public class DeckWorkshopTest {
                 new DeckEditor(catalog, new Deck("My plan")), CardCatalog.describe(a), CardCatalog.describe(b), CardCatalog.describe(c), CardCatalog.describe(forest));
     }
     private static JsonObject patch(Object value) { return JSON.toJsonTree(value).getAsJsonObject(); }
+    private static JsonObject command(DesktopEngine engine, String method, Object value) throws Exception {
+        return patch(engine.dispatch(method, patch(value)));
+    }
+    private static JsonObject create(DesktopEngine engine, String name) throws Exception {
+        return command(engine, "new", Map.of("name", name, "format", "Constructed"));
+    }
+    private static JsonObject remove(DesktopEngine engine, JsonObject deck) throws Exception {
+        return command(engine, "deleteDeck", Map.of("deckId", deck.get("id").getAsString(), "libraryToken", deck.get("libraryToken").getAsString()));
+    }
+    private static JsonObject restore(DesktopEngine engine, JsonObject receipt) throws Exception {
+        return command(engine, "restoreDeck", Map.of("deckId", receipt.get("deckId").getAsString(), "restoreToken", receipt.get("restoreToken").getAsString()));
+    }
     private static int count(DeckEditor editor, String name, String section) {
         return editor.snapshot().entries().stream().filter(row -> row.card().name().equals(name) && row.section().equals(section)).mapToInt(DeckEditor.Entry::quantity).sum();
     }
@@ -207,6 +221,147 @@ public class DeckWorkshopTest {
         assertNotNull(recovered.view(id, result.editor().snapshot(), "Commander").source());
         assertTrue(JsonParser.parseString(Files.readString(f.path().resolve(id + ".json"))).getAsJsonObject().has("cards"));
         assertFalse(Files.exists(f.path().resolve("workshop").resolve(id + ".journal")));
+    }
+
+    @Test public void removedDeckSurvivesRestartAndUndoRetainsContentsAndWorkspaceEvidence() throws Exception {
+        var f = fixture(); var imported = imported(f); String id = imported.deckId();
+        var before = f.store().view(id, imported.editor().snapshot(), "Commander");
+        f.store().metadata(id, imported.editor().snapshot(), "Commander", patch(Map.of("plan", "Tokens and cards", "question", "Enough ramp?")));
+        f.store().move(id, imported.editor(), "Commander", before.metadataRevision() + 1, f.c().id(), "Main", f.a().id());
+        var analysis = new DeckAnalysisStore(f.path(), f.catalog());
+        var report = analysis.view(id, imported.editor().snapshot(), "Commander", null);
+        analysis.review(id, imported.editor().snapshot(), "Commander", report.metadataRevision(), report.report().fingerprint(), "", "observation", "Try another land", null);
+        var playtests = new DeckPlaytests(f.path());
+        var played = playtests.begin(id, f.store().view(id, imported.editor().snapshot(), "Commander").versionId(), "Linked elves", "Commander",
+                imported.editor().snapshot().entries(), "game", "Enough ramp?", List.of("green"));
+        playtests.finish(played.id(), "conceded", "Defeat");
+        var deckFile = f.path().resolve(id + ".json"); var deckBytes = Files.readAllBytes(deckFile);
+        var workshopFile = f.path().resolve("workshop/" + id + ".json"); var workshopBytes = Files.readAllBytes(workshopFile);
+        var analysisFile = f.path().resolve("analysis/" + id + ".json"); var analysisBytes = Files.readAllBytes(analysisFile);
+        var testFile = f.path().resolve("workshop-tests/" + played.id() + ".json"); var testBytes = Files.readAllBytes(testFile);
+        JsonObject receipt;
+        try (var engine = new DesktopEngine(f.catalog(), f.path()); var stale = new DesktopEngine(f.catalog(), f.path())) {
+            var opened = command(engine, "open", Map.of("id", id));
+            command(stale, "open", Map.of("id", id));
+            receipt = remove(engine, opened);
+            assertEquals(receipt.get("deckId").getAsString(), id); assertEquals(receipt.get("name").getAsString(), "Linked elves");
+            assertFalse(Files.exists(deckFile));
+            assertTrue(command(engine, "list", Map.of()).getAsJsonArray("decks").isEmpty());
+            assertThrows(IllegalStateException.class, () -> engine.dispatch("save", patch(Map.of("deckId", id, "revision", 0))));
+            assertThrows(IllegalStateException.class, () -> stale.dispatch("edit", patch(Map.of("deckId", id, "revision", 0,
+                    "edits", List.of(new DeckEditor.Edit("Main", f.forest().id(), 99))))));
+            assertThrows(IllegalStateException.class, () -> f.store().metadata(id, imported.editor().snapshot(), "Commander", patch(Map.of("plan", "Must not resurrect"))));
+            assertFalse(Files.exists(deckFile));
+        }
+        try (var engine = new DesktopEngine(f.catalog(), f.path())) {
+            var removed = JSON.toJsonTree(engine.dispatch("deletedDecks", new JsonObject())).getAsJsonArray();
+            assertEquals(removed.size(), 1); assertEquals(removed.get(0), receipt);
+            var restored = restore(engine, receipt);
+            assertEquals(restored.get("id").getAsString(), id);
+            assertEquals(restored.get("libraryToken").getAsString(), DeckLibraryTrash.token(deckBytes));
+            assertThrows(IllegalStateException.class, () -> engine.dispatch("snapshot", new JsonObject()));
+            assertEquals(Files.readAllBytes(deckFile), deckBytes); assertEquals(Files.readAllBytes(workshopFile), workshopBytes);
+            assertEquals(Files.readAllBytes(analysisFile), analysisBytes); assertEquals(Files.readAllBytes(testFile), testBytes);
+            assertEquals(JSON.toJsonTree(engine.dispatch("deletedDecks", new JsonObject())).getAsJsonArray().size(), 0);
+            command(engine, "open", Map.of("id", id));
+            assertEquals(f.store().view(id, imported.editor().snapshot(), "Commander").versions().size(), 2);
+            assertEquals(f.store().view(id, imported.editor().snapshot(), "Commander").plan(), "Tokens and cards");
+            assertEquals(new DeckAnalysisStore(f.path(), f.catalog()).view(id, imported.editor().snapshot(), "Commander", null).history().get(0).note(), "Try another land");
+            assertEquals(new DeckPlaytests(f.path()).get(id, played.id()).status(), "conceded");
+        }
+    }
+
+    @Test public void deletingAnotherTilePreservesAnUnsavedOpenDocumentAndCurrentDeleteRefusesIt() throws Exception {
+        var f = fixture();
+        try (var engine = new DesktopEngine(f.catalog(), f.path())) {
+            var other = create(engine, "Other saved deck"); var current = create(engine, "Current document");
+            String id = current.get("id").getAsString();
+            Path blocker = f.path().resolve(id + ".tmp"); Files.createDirectory(blocker);
+            var unsaved = command(engine, "rename", Map.of("deckId", id, "revision", 0, "name", "Unsaved new name"));
+            assertTrue(unsaved.has("saveError"));
+            assertThrows(IllegalStateException.class, () -> remove(engine, unsaved));
+            assertTrue(Files.exists(f.path().resolve(id + ".json")));
+            var receipt = remove(engine, other);
+            assertEquals(command(engine, "snapshot", Map.of()), unsaved);
+            restore(engine, receipt);
+            assertEquals(command(engine, "snapshot", Map.of()), unsaved, "Undo must not switch editors or discard an unsaved document");
+            Files.delete(blocker);
+            var saved = command(engine, "save", Map.of("deckId", id, "revision", 1));
+            assertFalse(saved.has("saveError"));
+            assertEquals(saved.getAsJsonObject("deck").get("name").getAsString(), "Unsaved new name");
+            assertTrue(Files.exists(f.path().resolve(other.get("id").getAsString() + ".json")));
+        }
+    }
+
+    @Test public void removedTilesRemainOrderedAndOldDeleteAndUndoTokensCannotAffectNewerCopies() throws Exception {
+        var f = fixture(); JsonObject first, second, firstReceipt, secondReceipt;
+        try (var engine = new DesktopEngine(f.catalog(), f.path())) {
+            first = create(engine, "First deck"); second = create(engine, "Second deck");
+            firstReceipt = remove(engine, first); secondReceipt = remove(engine, second);
+            assertTrue(secondReceipt.get("deletedAt").getAsLong() > firstReceipt.get("deletedAt").getAsLong());
+        }
+        try (var engine = new DesktopEngine(f.catalog(), f.path())) {
+            var receipts = JSON.toJsonTree(engine.dispatch("deletedDecks", new JsonObject())).getAsJsonArray();
+            assertEquals(receipts.get(0), secondReceipt); assertEquals(receipts.get(1), firstReceipt);
+            restore(engine, secondReceipt); restore(engine, firstReceipt);
+            assertThrows(IllegalArgumentException.class, () -> restore(engine, firstReceipt));
+            String id = first.get("id").getAsString(); command(engine, "open", Map.of("id", id));
+            var renamed = command(engine, "rename", Map.of("deckId", id, "revision", 0, "name", "Newer name"));
+            var bytes = Files.readAllBytes(f.path().resolve(id + ".json"));
+            assertThrows(IllegalArgumentException.class, () -> remove(engine, first));
+            assertEquals(Files.readAllBytes(f.path().resolve(id + ".json")), bytes);
+            var newerReceipt = remove(engine, renamed);
+            assertThrows(IllegalArgumentException.class, () -> restore(engine, firstReceipt));
+            assertFalse(Files.exists(f.path().resolve(id + ".json")));
+            restore(engine, newerReceipt);
+            assertEquals(Files.readAllBytes(f.path().resolve(id + ".json")), bytes);
+        }
+    }
+
+    @Test public void invalidMissingAndCollidingDeckLibraryRequestsNeverOverwriteFiles() throws Exception {
+        var f = fixture();
+        try (var engine = new DesktopEngine(f.catalog(), f.path())) {
+            var deck = create(engine, "Safe contents"); String id = deck.get("id").getAsString();
+            for (String bad : List.of("../outside", "", id.toUpperCase(java.util.Locale.ROOT), "1-1-1-1-1")) {
+                assertThrows(IllegalArgumentException.class, () -> engine.dispatch("deleteDeck", patch(Map.of("deckId", bad, "libraryToken", ""))));
+                assertThrows(IllegalArgumentException.class, () -> engine.dispatch("restoreDeck", patch(Map.of("deckId", bad, "restoreToken", UUID.randomUUID().toString()))));
+            }
+            assertThrows(java.io.IOException.class, () -> engine.dispatch("deleteDeck", patch(Map.of("deckId", UUID.randomUUID().toString(), "libraryToken", "missing"))));
+            assertThrows(IllegalArgumentException.class, () -> engine.dispatch("deleteDeck", patch(Map.of("deckId", id, "libraryToken", "wrong"))));
+            var receipt = remove(engine, deck);
+            assertThrows(IllegalStateException.class, () -> remove(engine, deck));
+            var path = f.path().resolve(id + ".json"); Files.writeString(path, "A newer file must survive Undo");
+            assertThrows(IllegalStateException.class, () -> restore(engine, receipt));
+            assertEquals(Files.readString(path), "A newer file must survive Undo");
+            assertEquals(JSON.toJsonTree(engine.dispatch("deletedDecks", new JsonObject())).getAsJsonArray().size(), 1);
+            Files.delete(path); restore(engine, receipt);
+            assertEquals(JsonParser.parseString(Files.readString(path)).getAsJsonObject().get("name").getAsString(), "Safe contents");
+        }
+    }
+
+    @Test public void removalRefusesPendingIntentAndRecoveryCannotResurrectAnExplicitlyRemovedDeck() throws Exception {
+        var f = fixture(); var imported = imported(f); String id = imported.deckId();
+        Path deck = f.path().resolve(id + ".json"), journal = f.path().resolve("workshop/" + id + ".journal");
+        var intent = new JsonObject(); intent.add("deck", JsonParser.parseString(Files.readString(deck)));
+        intent.add("workshop", JsonParser.parseString(Files.readString(f.path().resolve("workshop/" + id + ".json"))));
+        JsonObject receipt;
+        try (var engine = new DesktopEngine(f.catalog(), f.path())) {
+            var opened = command(engine, "open", Map.of("id", id)); Files.writeString(journal, JSON.toJson(intent));
+            assertThrows(IllegalStateException.class, () -> remove(engine, opened)); assertTrue(Files.exists(deck));
+            Files.delete(journal); receipt = remove(engine, opened);
+        }
+        // An already-running stale writer may leave an intent after deletion. Keep it,
+        // but recovery must wait for the player's explicit Undo before restoring files.
+        intent.getAsJsonObject("deck").addProperty("name", "Recovered pending change");
+        Files.writeString(journal, JSON.toJson(intent));
+        try (var engine = new DesktopEngine(f.catalog(), f.path())) {
+            assertFalse(Files.exists(deck)); assertTrue(Files.exists(journal));
+            assertTrue(command(engine, "list", Map.of()).getAsJsonArray("decks").isEmpty());
+            var restored = restore(engine, receipt);
+            assertEquals(restored.get("name").getAsString(), "Recovered pending change");
+            assertFalse(Files.exists(journal)); assertTrue(Files.exists(deck));
+            assertNotNull(new DeckWorkshopStore(f.path(), f.catalog()).view(id, imported.editor().snapshot(), "Commander").source());
+        }
     }
 
     @Test public void duplicateCopiesTheWholeWorkspaceWithIndependentHistoryAndSourceBaseline() throws Exception {

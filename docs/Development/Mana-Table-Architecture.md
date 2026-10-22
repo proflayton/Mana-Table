@@ -50,6 +50,13 @@ the same scoped player handles as portraits; the client never chooses one itself
 The window and application have separate lifetimes. `TableWindow : Game` owns
 MonoGame, GPU textures, sound, input sampling, letterboxing and captures.
 `TableApplication` owns the shared client session, screen state and input policy.
+
+`DecisionDockPresentation` projects the current decision and public acting seat
+with explicit local control facts. The application shares its inspection/chat/
+interaction gate between Auto dispatch and the dock; a background observation
+does not become an action or pause. `ClientSession.IsAdvancing` distinguishes an
+automatic batch from an ordinary in-flight command. These presentation facts
+grant no permission: replies still require the current engine decision and token.
 It can initialize, update and compose with no `Game`, window or graphics device.
 Its optional `PresentationResources` supplies textures and sound for a real window;
 an empty resource set uses the production rules-text and neutral-surface fallbacks.
@@ -84,6 +91,19 @@ travel belong to `CardPresentationController`, and indexed scene seats and
 occurrences avoid rebuilding layouts or scanning the whole battlefield per card.
 Hit regions use those same displayed poses, including connected metadata and the
 original hand anchor.
+
+`RenderViewport` maps logical composition to the integer fitted backbuffer area
+and maps mouse pixels back through the same transform. `TableWindow` keeps one
+MSAA surface at that area's actual pixel dimensions, recreates it on size or
+scene-aspect changes, and copies it to the backbuffer at 1:1. Logical coordinates
+remain 1600x900 for games and 1600x1000 for setup. Sprite and triangle painting
+share the same output transform.
+
+Text measurement and wrapping remain logical. `Canvas` includes output density
+in its glyph-cache keys, rasterizes at destination density, and paints each text
+texture with inverse scaling at a snapped physical origin. Accessibility
+`TextScale` stays independent. Physical surface readback must map logical crops
+with `RenderViewport.ForSurface`; it must not fit an already fitted surface.
 
 `FrameObservation` copies public text commands, card values, full projected poses,
 controls and scope into serializable records. It retains no action callbacks,
@@ -332,7 +352,7 @@ bounded travel arc using the full finite elapsed interval.
 The native setup's **Deck builder** opens after file or clipboard import and is
 available for saved decks and new drafts. Its library, deck list and large face
 preview share one workspace. `IEngineCatalog` exposes paged name/rules/type search,
-color-identity and mana-value filters, deck CRUD, undo/redo, text export, and
+color-identity and mana-value filters, deck creation/editing, undo/redo, text export, and
 authoritative commander candidates/partner compatibility. Search is debounced
 and runs independently of deck edits; generation checks discard stale results.
 The contract preserves exact printing IDs, alternate faces, mana values and
@@ -352,6 +372,13 @@ Opening the builder refreshes its document after match setup has reopened it.
 Forge's `DeckCommanders` moves existing occurrences between Main, Sideboard and
 Commander in one `DeckEditor` batch; replacing a commander returns the old card
 to Main. Duplicating creates a separate persisted deck with identical printings.
+The optional `IDeckLibrary` handles saved-deck deletion and restoration. It binds
+deletion to the saved bytes through `LibraryToken`, independently of the currently
+open editor. The adapter negotiates `deck-library`; older engines hide these
+controls. Deleted files leave the active library while retaining the same ID and
+all workshop/analysis/test metadata. Restore receipts survive restart and never
+select a deck over the user's current choice. Delete/restore require an offline
+library with no active game; they do not silently leave a lobby or change readiness.
 The same saved list feeds solo and network setup. Validation remains authoritative
 in Forge, and invalid or unsaved decks cannot enter setup.
 
@@ -667,6 +694,8 @@ confirm/cancel permissions still come from the current prompt. The same value
 body appears in the existing stack face. Source/origin hover reuses read-only
 reference previews, bounded by the current decision or stack item and its
 disclosed faces. This context is not a game command or a resolved-damage event.
+The smaller target-adjacent marker retains the `base` qualifier and tries free
+recipient gutters, then arrow gaps, without covering card faces or controls.
 
 The responder band states `Your priority` or names the actual priority holder;
 it does not frame holding priority after your own action as a reply to another
@@ -677,23 +706,63 @@ vertical order; adjacent cards move a port to a feasible edge position without
 reversing that order. `PanelConnection` routes stay outside the complete panel,
 including its responder band and later rows. Missing live source occurrences are not
 reconstructed from the stack's retained source face.
-`MatchActivity` retains public resolution descriptions and
-spell rules, plus token arrival names; `ActionFeedback` exposes a timed summary
-and reviewable details. Recent changes are reported without inferring causality.
+`MatchActivity` retains public resolution descriptions and spell rules, plus
+token arrival names. Routine successful resolutions and draw/shuffle outcomes
+remain in History rather than opening a detached result panel over the table.
+`ActionFeedback` still retains resolution details, and an engine-reported failure
+can produce a timed notice. Recent changes are reported without inferring causality.
 Typed resolution outcomes distinguish resolved from not resolved. Actual public
 draw/shuffle events supply counts; a library-to-hand movement alone does not
 produce a draw cue. Repeated snapshots do not replay those event IDs, and absent
 legacy outcome data remains unspecified rather than inferred from message text.
+
+The optional `ActivityEntry.Impact` (`impact` in JSON) carries actual event-time
+damage or a signed life change. It is separate from `Decision.Effect` and
+`StackItem.Effect`: base damage can be three while the engine reports two dealt
+after prevention. Damage identifies its recipient explicitly; the legacy
+activity-level card ID is not a reliable recipient. Source references are
+optional disclosed occurrence IDs, not a resolution/ability identity. No client
+joins an impact to a pending effect by its name, amount or neighbouring event.
+Damage, life loss and marked damage remain distinct; infect and loyalty loss do
+not authorize the renderer to subtract from life or current P/T.
+
+`ImpactFeedback` consumes new activity IDs once, treats an initial observation
+as a baseline and expires its short cues without extending them on polls.
+It revalidates recipient visibility against the current snapshot. Public
+graveyard/exile departures retain an occurrence; a hidden transition revokes its
+anchor, and an anonymous battlefield recipient acquires no disclosed face.
+Older hosts can retain an observed life-total transition without an invented
+damage amount or source. Typed impacts suppress the duplicate marked-damage
+cue; formatted activity text is never a numeric fallback.
+`TableApplication.Impacts` places actual damage/life receipts beside the current
+recipient or its brief public departure, preserving current characteristics and
+life totals. Same-observation receipts can aggregate actual amounts for the same
+recipient/kind, without attributing the aggregate to one inferred source.
+Equal per-copy amounts across a displayed group share an `each` receipt with
+exact affected-subset membership; different amounts remain separate, never
+summed into one hit on the front card. A newer observed burst replaces that
+recipient's older transient cue while retaining both in History. Covered or
+offscreen focus occurrences cannot reuse their old whole-table positions.
+Retained public event text and details remain available in History. This damage-result path is
+source-only pending release verification and human review.
+
 New public battlefield occurrences receive arrival cues. Departures to public
-graveyard/exile retain a brief ghost at the former position; hidden transitions
+graveyard/exile travel briefly from the former position to their actual public
+pile; reduced motion places the cue at that pile. Hidden transitions
 immediately revoke it. No extra game rules or multiplayer-specific path is added.
 Reported counter changes use their engine-supplied cause and exact affected
-occurrences. Feedback travels from the source as a small spark and pulses the
-owning card's actual counter marker; floating delta tiles no longer cover current
-values. This presentation does not infer a cause from neighboring timestamps or
-add the reported delta to a card's authoritative current stats. Its clarity and
-comfort still need human review; the crowded whole-table layout remains an open
-design problem.
+occurrences. Feedback travels from the source as a small spark and lands at the
+owning card's actual counter marker. Brief signed increment receipts include the
+counter property (the familiar +1/+1 type uses the settled badge's counter glyph),
+retain per-copy versus affected-subset meaning, and reserve
+free space outside faces, current totals, P/T, focused tile details and decision
+controls. Hovered recipients and local fronts take precedence when space is
+limited; a blocked receipt never hides a permanent or its settled state. Reduced
+motion keeps static increments without travelling sparks. This presentation does
+not infer a cause from neighbouring timestamps or add the reported delta to a
+card's authoritative current stats. The new receipts are source-only; their
+clarity and comfort still need human review, and the crowded whole-table layout
+remains an open design problem.
 `TextureFiltering` builds GPU mipmaps once per loaded image; anisotropic card
 sampling handles angled minification, and table surfaces request 4x MSAA.
 Full-resolution artwork and rendered rules text remain available for inspection.

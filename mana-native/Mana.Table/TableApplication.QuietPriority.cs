@@ -1,7 +1,5 @@
 using Mana.Client;
 using Mana.Contracts;
-using Microsoft.Xna.Framework;
-using Rectangle = Microsoft.Xna.Framework.Rectangle;
 
 namespace Mana.Table;
 
@@ -15,10 +13,6 @@ internal sealed partial class TableApplication
     private bool CanOfferQuietPriority => !ExperienceLabOpen && fixture == null && !session.NeedsRecovery && !held
         && match is { } state && !(state.ActivePlayerId == state.ViewerId && preferences.Stops.Contains(state.PhaseKey))
         && DecisionQuietAdvance.CanPass(state, state.Decision?.QuietYieldToken ?? "");
-    private bool QuietPriorityControlVisible => !OverlayOpen && readingId == null && match != null
-        && (QuietPriorityArmed && DecisionQuietAdvance.CanWait(match, quietYieldGame, quietYieldTurn, quietYieldActivePlayer, quietYieldToken)
-            || CanOfferQuietPriority);
-    private int QuietPriorityControlTop => decisionPanelBounds.Top - 66;
 
     private void ArmQuietPriority()
     {
@@ -66,18 +60,4 @@ internal sealed partial class TableApplication
         return true;
     }
 
-    private void DrawQuietPriorityControl()
-    {
-        if (!QuietPriorityControlVisible) return;
-        int top = QuietPriorityControlTop;
-        if (QuietPriorityArmed) {
-            canvas.Text("Passing quiet windows", 1266, top + 1, Blue, .54f, 296, 1, true);
-            PriorityAbilityButton("quiet-priority-stop", "Take control", new Rectangle(1266, top + 26, 296, 28), StopQuietPriority, active: true);
-        } else {
-            // Keep the control and its pointer state steady during routine
-            // observations of the same decision; only commands disable it.
-            PriorityAbilityButton("quiet-priority-arm", "Pass for now", new Rectangle(1266, top, 296, 30), ArmQuietPriority, !busy);
-            canvas.Text("Stops on the next action", 1266, top + 35, Muted, .49f, 296, 1);
-        }
-    }
 }

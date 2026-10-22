@@ -26,7 +26,11 @@ public sealed partial class ExperienceLabSession
             var viewer = State.Viewer ?? throw Unsupported();
             SourceAction Action(string id, string text) => new(decisionId + ":" + sourceCardKey + ":" + id, "activate", text);
             SourceAction[] actions = [];
-            if (State.Decision is { Kind: "input", Intent: DecisionIntent.Priority or DecisionIntent.Mana }
+            if (Scenario.Id == DecisionFlowScenario.Id && StageIndex == 0
+                && State.Decision is { Kind: "input", Intent: DecisionIntent.Priority }
+                && viewer.Zone("Hand").Cards.Contains(source) && source.Selectable && source.VisualId == DecisionFlowScenario.LandId)
+                actions = [new(decisionId + ":" + sourceCardKey + ":play-forest", "play", "Play land")];
+            else if (State.Decision is { Kind: "input", Intent: DecisionIntent.Priority or DecisionIntent.Mana }
                 && viewer.Zone("Battlefield").Cards.Contains(source) && source.Selectable && !source.FaceDown && !source.PhasedOut) {
                 if (source.VisualId is ClutteredChangesScenario.ActionCardId or "reader-elf" or "mana-elf" && !source.Tapped)
                     actions = [Action("green-mana", "{T}: Add {G}.")];
@@ -47,6 +51,8 @@ public sealed partial class ExperienceLabSession
     {
         var offered = SourceActions(reply.GameId, reply.DecisionId, reply.Card!);
         var selected = offered.Actions.SingleOrDefault(action => action.Id == reply.AbilityId) ?? throw Unsupported();
+        if (Scenario.Id == DecisionFlowScenario.Id && StageIndex == 0 && offered.SourceCardId == DecisionFlowScenario.LandId)
+            return AdvanceTo(1);
         if (offered.SourceCardId == ExperienceScenarios.BallistaId) {
             ballistaMode = selected.Id.EndsWith(":" + ExperienceScenarios.BallistaCounterAction, StringComparison.Ordinal)
                 ? ExperienceScenarios.BallistaCounterAction : ExperienceScenarios.BallistaDamageAction;

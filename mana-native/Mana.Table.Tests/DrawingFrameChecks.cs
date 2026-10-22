@@ -1,6 +1,8 @@
 using Mana.Renderer;
 using Microsoft.Xna.Framework;
 using Color = Microsoft.Xna.Framework.Color;
+using Point = Microsoft.Xna.Framework.Point;
+using Rectangle = Microsoft.Xna.Framework.Rectangle;
 
 namespace Mana.Table;
 
@@ -8,6 +10,20 @@ internal static class DrawingFrameChecks
 {
     internal static void Run(Action<bool, string> check)
     {
+        foreach (var pixels in new[] { new Point(1000, 740), new Point(1540, 980), new Point(1920, 1080), new Point(3840, 2160) }) {
+            foreach (int height in new[] { 900, 1000 }) {
+                var mapping = RenderViewport.Fit(pixels, height);
+                var logical = new Rectangle(0, 0, 1600, height);
+                var surface = mapping.ToSurface(logical);
+                check(mapping.Bounds.Width <= pixels.X && mapping.Bounds.Height <= pixels.Y
+                        && mapping.Bounds.Left >= 0 && mapping.Bounds.Top >= 0
+                        && surface.Location == Point.Zero && Math.Abs(surface.Width - mapping.Bounds.Width) <= 1
+                        && Math.Abs(surface.Height - mapping.Bounds.Height) <= 1
+                        && mapping.ToLogical(mapping.Bounds.Location) == Point.Zero
+                        && mapping.ToLogical(new(mapping.Bounds.Left - 1, mapping.Bounds.Top - 1)).X < 0,
+                    $"Physical target and pointer mapping share the same fitted pixel bounds at {pixels.X}x{pixels.Y} / {height}");
+            }
+        }
         using var drawing = new DrawList();
         Vector2[] polygon = [new(1, 2), new(3, 4), new(5, 6)];
         drawing.TextScale = 1.25f;

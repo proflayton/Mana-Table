@@ -29,8 +29,12 @@ internal static class HeadlessPresentationSmoke
             checks.Add(description);
         }
         try {
+            DeckLibraryPresentationChecks.Run(profile, Check);
+            DecisionDockInteractionChecks.Run(profile, Check);
+            CommanderInteractionChecks.Run(profile, Check);
             QuietPriorityPresentationChecks.Run(profile, Check);
             PendingEffectPresentationChecks.Run(profile, Check);
+            ImpactFeedbackChecks.RunPresentation(profile, Check);
             using (var run = new Runner(profile, "reading-and-scope", Example(), trace, performance)) {
                 var first = run.Tick("initial");
                 var second = run.Compose("same-time");
@@ -136,7 +140,7 @@ internal static class HeadlessPresentationSmoke
                 else if (condition == "right-click") run.Input(release, left: ButtonState.Pressed, right: ButtonState.Pressed, label: "cancel-held-card-with-right-click");
                 else if (condition == "outside-board") release = new(20, 60);
                 else if (condition == "over-control") {
-                    var control = run.Hit("instructions");
+                    var control = run.Hit("resume-phase-stop");
                     release = new(control.Bounds.Left + 8, control.Bounds.Top + 5);
                     Check(TableWorld.CanPlayAt(release) && run.View.HitAt(release)?.Id == control.Id,
                         "The invalid control destination lies inside the generic play area and has actual UI hit precedence");
@@ -352,7 +356,8 @@ internal static class HeadlessPresentationSmoke
         {
             this.scenario = scenario; this.trace = trace; this.performance = performance;
             string directory = Path.Combine(profile, scenario); Directory.CreateDirectory(directory);
-            new PlayPreferences { Automatic = false, ReducedMotion = true, Sounds = false, TextScale = 1.3f }.Save(directory);
+            new PlayPreferences { Automatic = false, ReducedMotion = true, Sounds = false, TextScale = 1.3f,
+                Stops = scenario == "reader-drag-over-control" ? ["MAIN1"] : [] }.Save(directory);
             Engine.Present(state);
             application = new(Engine, directory, initialState: Engine.State);
             application.Automated = true; application.Initialize();

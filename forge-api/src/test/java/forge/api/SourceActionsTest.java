@@ -8,6 +8,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
+import java.nio.file.Files;
 
 import static forge.api.RulesScenario.*;
 import static org.testng.Assert.*;
@@ -96,6 +97,112 @@ public class SourceActionsTest {
             assertTrue(card(paid.state(), "Battlefield", "Forest").get("tapped").getAsBoolean());
             assertEquals(text(paid.state().getAsJsonArray("stack").get(0).getAsJsonObject(), "name"), "Rhys the Redeemed");
         }
+    }
+
+    @Test(timeOut = 90000)
+    public void bothRealPartnerCommandersExposeIndependentCastsAndToothyCanRecastWithItsOwnTax() throws Exception {
+        String toothy = "Toothy, Imaginary Friend", pir = "Pir, Imaginative Rascal";
+        try (var game = new RulesScenario("source-actions-toothy-partners",
+                Map.of(0, List.of("Island", "Island", "Island", "Island", "Forest", "Forest", "Forest", "Forest", "Seal of Removal")),
+                "Island", List.of(toothy, pir))) {
+            var input = main(game);
+            assertEquals(zone(viewer(input.state()), "Command").getAsJsonArray("cards").size(), 2);
+            assertEquals(zone(viewer(input.state()), "Battlefield").getAsJsonArray("cards").asList().stream()
+                    .map(c -> c.getAsJsonObject()).filter(c -> text(c, "name").equals("Island") && !c.get("tapped").getAsBoolean()).count(), 4L);
+            var toothyActions = query(game, input, card(input.state(), "Command", toothy));
+            var pirActions = query(game, input, card(input.state(), "Command", pir));
+            Files.writeString(game.evidence.resolve("before-first-cast.json"), JSON.toJson(input.state()));
+            Files.writeString(game.evidence.resolve("partner-source-actions.json"), JSON.toJson(Map.of("toothy", toothyActions, "pir", pirActions)));
+            var toothyCast = castAction(toothyActions);
+            var pirCast = castAction(pirActions);
+            assertNotEquals(text(toothyActions, "sourceCardKey"), text(pirActions, "sourceCardKey"));
+            assertNotEquals(text(toothyCast, "id"), text(pirCast, "id"));
+            var wrongPartner = invoke(pirActions, toothyCast);
+            var unchanged = game.state(0);
+            var initialInput = input;
+            assertThrows(IllegalArgumentException.class, () -> game.table.seat(0).action(request(initialInput, wrongPartner)));
+            assertEquals(game.state(0), unchanged, "One partner's opaque action cannot cast the other commander");
+
+            castAndPay(game, input, toothyActions, toothy, "first-toothy");
+            input = finishPartnerSearch(game);
+            assertEquals(card(input.state(), "Battlefield", toothy).get("commanderTax").getAsInt(), 2);
+            assertEquals(card(input.state(), "Command", pir).get("commanderTax").getAsInt(), 0);
+            pirActions = query(game, input, card(input.state(), "Command", pir));
+            castAndPay(game, input, pirActions, pir, "first-pir");
+            input = finishPartnerSearch(game);
+            assertEquals(card(input.state(), "Battlefield", pir).get("commanderTax").getAsInt(), 2);
+            assertEquals(card(input.state(), "Battlefield", toothy).get("commanderTax").getAsInt(), 2);
+
+            var seal = card(input.state(), "Battlefield", "Seal of Removal");
+            var removal = query(game, input, seal);
+            assertTrue(game.answer(input, invoke(removal, removal.getAsJsonArray("actions").get(0).getAsJsonObject())));
+            var target = game.until(next -> next.seat() == 0 && text(next.prompt(), "inputType").equals("InputSelectTargets"));
+            assertTrue(game.answer(target, Map.of("action", "card", "key", text(card(target.state(), "Battlefield", toothy), "key"))));
+            var replacement = game.until(next -> next.seat() == 0 && text(next.prompt(), "inputType").equals("InputConfirm")
+                    && text(next.prompt(), "message").toLowerCase(java.util.Locale.ROOT).contains("command"));
+            assertTrue(game.answer(replacement, Map.of("action", "ok")));
+            input = game.until(next -> next.seat() == 0 && priority(next) && text(next.state(), "phaseKey").equals("MAIN1")
+                    && next.state().getAsJsonArray("stack").isEmpty() && card(next.state(), "Command", toothy) != null);
+            assertEquals(card(input.state(), "Command", toothy).get("commanderTax").getAsInt(), 2);
+            var land = query(game, input, card(input.state(), "Hand", "Island"));
+            assertTrue(game.answer(input, invoke(land, land.getAsJsonArray("actions").get(0).getAsJsonObject())));
+            input = game.until(next -> next.seat() == 0 && priority(next) && text(next.state(), "phaseKey").equals("MAIN1")
+                    && next.state().getAsJsonArray("stack").isEmpty());
+            int previousTurn = input.state().get("turn").getAsInt();
+            assertTrue(game.answer(input, Map.of("action", "ok")));
+            boolean nextTurn = false;
+            for (int step = 0; step < 8; step++) {
+                input = game.until(next -> next.seat() == 0 && priority(next) && text(next.state(), "phaseKey").equals("MAIN1")
+                        && next.state().get("activePlayerId").getAsInt() == next.state().get("viewerId").getAsInt()
+                        && next.state().get("turn").getAsInt() > previousTurn && next.state().getAsJsonArray("stack").isEmpty()
+                        || text(next.state(), "phaseKey").equals("CLEANUP") && text(next.prompt(), "inputType").equals("InputSelectCardsFromList"));
+                if (priority(input)) { nextTurn = true; break; }
+                var discard = zone(viewer(input.state()), "Hand").getAsJsonArray("cards").asList().stream()
+                        .map(value -> value.getAsJsonObject()).filter(value -> value.get("selectable").getAsBoolean()).findFirst().orElseThrow();
+                assertTrue(game.answer(input, Map.of("action", "card", "key", text(discard, "key"))));
+            }
+            assertTrue(nextTurn, "The four-seat fixture reaches the caster's next main phase after explicit cleanup discards");
+            toothyActions = query(game, input, card(input.state(), "Command", toothy));
+            Files.writeString(game.evidence.resolve("before-taxed-recast.json"), JSON.toJson(input.state()));
+            Files.writeString(game.evidence.resolve("taxed-toothy-source-actions.json"), JSON.toJson(toothyActions));
+            castAndPay(game, input, toothyActions, toothy, "taxed-toothy");
+            input = finishPartnerSearch(game);
+            assertEquals(card(input.state(), "Battlefield", toothy).get("commanderTax").getAsInt(), 4);
+            assertEquals(card(input.state(), "Battlefield", pir).get("commanderTax").getAsInt(), 2,
+                    "Toothy's recast increments only Toothy's own cast count, including with its partner on the battlefield");
+            Files.writeString(game.evidence.resolve("both-partners-after-taxed-cast.json"), JSON.toJson(input.state()));
+        }
+    }
+
+    private static JsonObject castAction(JsonObject actions) {
+        return actions.getAsJsonArray("actions").asList().stream().map(value -> value.getAsJsonObject())
+                .filter(action -> text(action, "kind").equals("cast")).findFirst()
+                .orElseThrow(() -> new AssertionError("A real current cast action is required: " + actions));
+    }
+
+    private static void castAndPay(RulesScenario game, Input input, JsonObject actions, String name, String evidence) throws Exception {
+        assertTrue(game.answer(input, invoke(actions, castAction(actions))));
+        var payment = game.until(next -> next.seat() == 0 && text(next.prompt(), "inputType").startsWith("InputPayMana"));
+        Files.writeString(game.evidence.resolve(evidence + "-payment.json"), JSON.toJson(payment.state()));
+        assertTrue(payment.prompt().get("okEnabled").getAsBoolean(), "The supplied untapped mana sources make Auto payment available");
+        assertTrue(game.answer(payment, Map.of("action", "ok")));
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
+        while (game.state(0).getAsJsonArray("stack").isEmpty() && System.nanoTime() < deadline) Thread.sleep(5);
+        var pending = game.until(next -> next.seat() == 0 && priority(next) && next.state().getAsJsonArray("stack").asList().stream()
+                .map(item -> item.getAsJsonObject()).anyMatch(item -> text(item, "name").equals(name)));
+        Files.writeString(game.evidence.resolve(evidence + "-on-stack.json"), JSON.toJson(pending.state()));
+        assertTrue(viewer(pending.state()).getAsJsonObject("mana").entrySet().stream().allMatch(entry -> entry.getValue().getAsInt() == 0),
+                "The real payment spends all mana produced for this commander");
+    }
+
+    private static Input finishPartnerSearch(RulesScenario game) throws Exception {
+        var target = game.until(next -> next.seat() == 0 && text(next.prompt(), "inputType").equals("InputSelectTargets"));
+        assertTrue(game.answer(target, Map.of("action", "player", "playerId", target.state().get("viewerId").getAsInt())));
+        var search = game.until(next -> next.seat() == 0 && text(next.prompt(), "inputType").equals("InputConfirm"));
+        assertTrue(text(search.prompt(), "message").toLowerCase(java.util.Locale.ROOT).contains("library"));
+        assertTrue(game.answer(search, Map.of("action", "cancel")));
+        return game.until(next -> next.seat() == 0 && priority(next) && text(next.state(), "phaseKey").equals("MAIN1")
+                && next.state().getAsJsonArray("stack").isEmpty());
     }
 
     @Test(timeOut = 90000)

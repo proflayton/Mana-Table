@@ -54,11 +54,39 @@ application and typed-frame composition used by the real window. Preserve their
 result/trace JSON when diagnosing a failure; submitted drawing data does not
 prove that a physical window is clear or correctly clipped.
 
+The production headless run includes saved-deck deletion and Undo through the
+actual controls, delayed observations, restart recovery and stale-command guards.
+The existing `--smoke-deck-experience` window journey covers that same lifecycle
+against Forge, including restoring the original saved bytes and preserving an
+unrelated open deck. Deletion requires the optional `deck-library` capability.
+
+The existing presentation run includes `DecisionDockPresentationChecks` and the
+scoped authored `DecisionFlowLabChecks`. The production headless run includes
+`DecisionDockInteractionChecks`: an actual stop-removal gesture clears only that
+saved stop, dispatches an authorized Auto pass and leaves another player's
+required choice unanswered. Reading a current card must pause both Auto and its
+visible status. `decision-flow.v1` supplies the corresponding window-review
+sequence; authored replies and passing checks do not supply rules or UX proof.
+
 The pending-effect journey in `--smoke-headless-presentation` distinguishes a
 captured `+3` counter addition/three damage from a current total of twenty, keeps
 unknown damage unknown, preserves the context on the stack, and checks read-only
 source inspection and exact target-key/prompt submission. These use controlled
 snapshots, not the rules engine.
+
+The source-only actual-result checks reuse these modes rather than adding a
+separate runner. `ImpactFeedbackChecks` in `--smoke-presentation` covers explicit
+damage recipients, damage versus life loss, activity-ID deduplication, public
+departures, concealment, anonymous recipients, older payloads and JSON round trips.
+`EffectTransitionChecks` also composes the actual application to distinguish a
+`+2 Charge` increment from six settled counters and unchanged current 6/7. It
+checks receipt collision handling, blocked marker gaps, reduced motion and expiry.
+`--smoke-headless-presentation` invokes `ImpactFeedbackChecks.RunPresentation`
+for recipient-attached damage/life results, death between observations and the
+absence of routine success/public-outcome panels. Grouped-recipient checks cover
+uniform per-copy amounts, exact subsets, different amounts, repeated hits,
+latest-burst replacement and offscreen focused recipients. These assertions protect
+state and drawing relationships; they do not establish visual clarity.
 
 ## Real Forge coverage
 
@@ -85,8 +113,19 @@ approval of the presentation.
 `PendingEffectTest` exercises All Will Be One with Chandra entering at three
 loyalty, then adding one to reach four, and a nonloyalty counter case. Projection
 checks cover unknown amounts, known zero, divided totals and concealed sources.
-The corresponding native lab case remains authored; it cannot establish these
-rules results.
+Its prevention regression casts Chandra normally into All Will Be One while an
+opponent controls Urza's Armor: the captured trigger and pending stack report
+base three, then the real engine reports actual two damage and life `40 → 38`,
+including the other seats' public projections. `MatchActivityTest` covers the
+typed event payload and visibility boundaries separately. Run this focused
+selection when modifying the base/actual contract:
+
+```powershell
+mvn -pl forge-api -am verify '-Dtest=PendingEffectTest,MatchActivityTest' '-Dsurefire.failIfNoSpecifiedTests=false'
+```
+
+The corresponding native lab cases remain authored; they cannot establish these
+rules results or replace this real-engine regression.
 
 Native real-engine journeys use the bundled Java runtime, the actual adapter
 protocol, and matching card resources:
@@ -95,8 +134,10 @@ protocol, and matching card resources:
 dotnet $driver --smoke-headless-engine --engine-resources '<package>/engine' --engine-jar '<verified-current.jar>' --profile '<fresh-profile>'
 ```
 
-`--smoke-headless-engine` operates a real Commander opening, land/commander actions
-and concession through production input without a GPU. Startup, workshop adapter
+`--smoke-headless-engine` operates a real Commander opening, a land play, a paid
+command-zone cast and concession through production input without a GPU. It
+opens the commander's current source actions, drags it into play and activates
+a Forest during its actual mana payment. Startup, workshop adapter
 and multiplayer modes cover their own boundaries; choose them when affected.
 Their entry points are in [Program.cs](../../mana-native/Mana.Table.Tests/Program.cs).
 
@@ -117,6 +158,26 @@ Use [Experience review](Mana-Table-Experience-Review.md) to open the shared,
 versioned Experience Lab cases and review actual screens and transitions.
 The lab uses authored projections, cached art and an isolated profile. It does
 not run Magic rules or mutate real decks.
+
+The source-only `damage-results.v1` case follows a surviving creature's reported
+three damage, another damage event with a public departure between observations,
+then a pending base-three player target and authored actual-two result at 38 life.
+Its final pair makes two Bears take one damage each and merge with an already
+damaged third Bear; the shared face must show one per-copy amount and two-of-three
+membership rather than an invented two-damage hit.
+`counter-damage.v1` retains the separate captured increment versus current loyalty
+journey. Review their actual target gesture, pending state, impact and settled
+current values at small and large windows, with realistic artwork and reduced
+motion. Confirm that increment receipts leave names, counter totals and P/T
+uncovered, and that a crowded field does not become overlapping transient labels.
+Record graphical and human review for the exact candidate; these new journeys
+remain pending human review and release verification until that evidence exists.
+
+The equipment journey checks its attachment border at the destination pixel
+density with antialiasing coverage, alongside exact current stats, occurrence
+relationships and scoped pointer targets. A thin logical stroke need not contain
+an opaque texel of its original RGB color after MSAA. These checks establish
+rendering and input behavior, not perceived visual clarity.
 
 For a relevant graphical regression, use the same test driver, for example:
 
