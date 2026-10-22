@@ -48,13 +48,14 @@ internal sealed class TableWindow : Game
 
     public TableWindow(ICardEngine engine, string profile, string? capture, string? fixture, Point? size = null,
         GameSnapshot? initialState = null, ICardArtSource? artSource = null,
-        IAppUpdates? appUpdates = null, Action<PreparedUpdate>? installUpdate = null)
+        IAppUpdates? appUpdates = null, Action<PreparedUpdate>? installUpdate = null, bool enableLiveTableStudy = false)
     {
         this.capture = capture;
         art = new(artSource ?? new MagicArtSource(profile));
         resources.Card = art.Get;
         application = new(engine, profile, fixture, initialState, resources, appUpdates, installUpdate, allowAutomaticChecks: capture == null,
             restartedAfterUpdate: ManagedInstallation.WasRestarted);
+        if (enableLiveTableStudy) application.EnableLiveTableStudy();
         application.CaptureMode = capture != null;
         application.ExitRequested += Exit;
         graphics = new(this) { PreferredBackBufferWidth = size?.X ?? 1440, PreferredBackBufferHeight = size?.Y ?? 810, SynchronizeWithVerticalRetrace = true };
@@ -72,7 +73,7 @@ internal sealed class TableWindow : Game
     {
         painter = new(GraphicsDevice); screen = new(GraphicsDevice);
         assets = new(GraphicsDevice, Path.Combine(AppContext.BaseDirectory, "Assets"));
-        resources.Arena = assets.Arena; resources.CardBack = assets.CardBack; resources.Play = assets.Play;
+        resources.Arena = assets.Arena; resources.CardBack = assets.CardBack; resources.ManaSymbols = assets.ManaSymbols; resources.Play = assets.Play;
         tableSurface = new(GraphicsDevice, 1600, 900, false, SurfaceFormat.Color, DepthFormat.None, 4, RenderTargetUsage.DiscardContents);
         setupSurface = new(GraphicsDevice, 1600, 1000, false, SurfaceFormat.Color, DepthFormat.None, 4, RenderTargetUsage.DiscardContents);
         surface = setupSurface;
@@ -85,6 +86,8 @@ internal sealed class TableWindow : Game
         var keys = Automation?.ReadKeyboard() ?? Keyboard.GetState();
         var viewport = GraphicsDevice.Viewport;
         application.Update(time, mouse, keys, new(viewport.Width, viewport.Height));
+        var preload = application.ArtPreloadCards();
+        art.Preload(preload.Visible, preload.Anticipated);
         bool cardPointer = application.InteractivePointer;
         if (handCursor != cardPointer) {
             Mouse.SetCursor(cardPointer ? MouseCursor.Hand : MouseCursor.Arrow);

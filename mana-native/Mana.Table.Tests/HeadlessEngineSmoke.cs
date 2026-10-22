@@ -52,13 +52,14 @@ internal static class HeadlessEngineSmoke
             using var app = new TableApplication(engine, paths.Profile, initialState: initial);
             app.Automated = true; app.Initialize();
             var view = app.TestPort;
+            view.SetTableStudy(true);
             var viewport = new Point(1600, 900);
             Point pointer = new(20, 60);
             double seconds = 0;
             PresentationFrame frame = Tick("opening");
             Save("opening");
             string? landId = null, commanderId = null;
-            bool landSaved = false, commanderSaved = false;
+            bool landSaved = false, commanderSaved = false, openingHandRead = false;
             int decisions = 0;
 
             while (!landSaved || !commanderSaved) {
@@ -89,6 +90,22 @@ internal static class HeadlessEngineSmoke
                 if (view.Busy || view.Match?.Decision == null) { await Task.Delay(5); continue; }
                 if (++decisions > 80) throw new InvalidOperationException("The focused opening scenario required unexpectedly many decisions.");
                 var decision = view.Match.Decision;
+                if (!openingHandRead && decision is { Kind: "input", InputType: "InputConfirmMulligan" }) {
+                    var openingCard = view.Match.Viewer!.Zone("Hand").Cards.First();
+                    string game = view.Match.Id, prompt = decision.Id;
+                    Click("card:" + openingCard.Key + ":" + openingCard.VisualId);
+                    frame = Tick("opening-hand-reader"); frame = Tick("opening-hand-reader-settled");
+                    Check(view.Overlay.Length == 0 && frame.Cards.Any(card => card.Id == CardViews.Identity(openingCard)
+                            && card.Zone == "Hand" && card.Focused)
+                            && frame.Hits.Any(hit => hit.Id == "confirm") && frame.Hits.Any(hit => hit.Id == "cancel")
+                            && view.Match.Id == game && view.Match.Decision?.Id == prompt && !view.Busy,
+                        "A real Forge keep/mulligan hand card opens the normal reader while both decision controls remain available and no command is sent");
+                    Save("keep-hand-reader");
+                    Click("card:" + openingCard.Key + ":" + openingCard.VisualId);
+                    Check(!frame.Cards.Any(card => card.Focused) && view.Overlay.Length == 0 && view.Match.Decision?.Id == prompt,
+                        "A second opening-card click collapses reading without keeping or redrawing the real hand");
+                    openingHandRead = true;
+                }
                 if (decision is { Kind: "input", Intent: DecisionIntent.Priority }
                     && view.Match.ActivePlayerId == view.Match.ViewerId && view.Match.PhaseKey is "MAIN1" or "MAIN2") {
                     Card? playable = !landSaved ? view.Match.Viewer!.Zone("Hand").Cards.FirstOrDefault(card => card.Selectable && card.Type.Contains("Land", StringComparison.Ordinal))
@@ -121,9 +138,11 @@ internal static class HeadlessEngineSmoke
                 await Idle();
             }
 
-            Check(actions.Any(action => JsonSerializer.Serialize(action).Contains("read-card-action"))
+            Check(actions.Any(action => JsonSerializer.Serialize(action).Contains("reader-face-drag"))
+                && actions.Any(action => JsonSerializer.Serialize(action).Contains("read-card-action"))
                 && landId != null && commanderId != null,
-                "Real land and commander plays both use the production card reader's explicit action control");
+                "The real land plays through a drag from its enlarged face, while the commander retains its explicit engine action");
+            Check(openingHandRead, "The real Forge walkthrough exercised opening-hand browsing before explicitly keeping");
             Check(frame.Stamp.GameId == view.Match!.Id && frame.Stamp.Revision == view.Match.Revision
                 && frame.Stamp.DecisionId == view.Match.Decision?.Id,
                 "The published frame is stamped with the exact authoritative game, revision and decision being displayed");
@@ -212,12 +231,32 @@ internal static class HeadlessEngineSmoke
                     Guard(); await Task.Delay(1); frame = Tick("await-engine-source-actions");
                 }
                 string decisionId = view.Match!.Decision!.Id;
-                Click("read-card-action");
-                actions.Add(new { mode = "application-pointer", decision = decisionId, action = "read-card-action", card.Name, occurrence,
-                    offeredActions = sourceActions.Actions });
+                if (expectedKind == "play") {
+                    var reader = frame.Cards.Single(item => item.Id == occurrence && item.Focused);
+                    pointer = reader.Display.Center.ToPoint();
+                    Check(view.HitAt(pointer)?.Id == reader.Hit.Id,
+                        "The real land's enlarged face is directly available as the drag source");
+                    frame = Tick("press-real-land-reader", ButtonState.Pressed);
+                    pointer += new Point(80, 0);
+                    Check(reader.Display.Contains(pointer), "The intended land drop remains inside the old enlarged reader bounds");
+                    frame = Tick("drag-real-land-reader", ButtonState.Pressed);
+                    Check(!frame.Cards.Any(item => item.Focused) && view.DisplayedPose(occurrence) is { } held
+                        && held.Size == new Vector2(132, 185) && held.Center == pointer.ToVector2() + new Vector2(0, -72)
+                        && view.Match!.Decision?.Id == decisionId,
+                        "Dragging the real land shrinks it into a held card above the pointer without answering the decision before release");
+                    Save("land-held-from-reader");
+                    frame = Tick("release-real-land-reader");
+                    Check(app.AcceptedDrag, "Releasing the real land inside its old reader area commits the actual hand drag");
+                    actions.Add(new { mode = "application-pointer", decision = decisionId, action = "reader-face-drag", card.Name, occurrence,
+                        sourceKey = card.Key, drop = pointer, offeredActions = sourceActions.Actions });
+                } else {
+                    Click("read-card-action");
+                    actions.Add(new { mode = "application-pointer", decision = decisionId, action = "read-card-action", card.Name, occurrence,
+                        offeredActions = sourceActions.Actions });
+                }
                 await Idle();
                 Check(view.Match?.Decision?.Context != "playAbility",
-                    "The real on-card source action proceeds directly without a second generic ability choice: " + card.Name);
+                    "The real card gesture proceeds directly without a second generic ability choice: " + card.Name);
             }
         } catch (Exception exception) {
             error = exception.ToString(); throw;

@@ -62,7 +62,7 @@ internal sealed partial class TableApplication
                 $"{card.Power}/{card.Toughness}", denseStats.Bounds, denseStats.MeasuredWidth, true, true);
             return;
         }
-        int seat = owner == match!.ViewerId ? 3 : TableLayout.SeatIndex(match, owner);
+        int seat = SeatDisplayIndex(owner);
         int available = Math.Max(8, Math.Min(105, pose.Bounds.Width - 4));
         int measured = canvas.TextWidth(label, .48f, true);
         compact |= measured + 8 > available;

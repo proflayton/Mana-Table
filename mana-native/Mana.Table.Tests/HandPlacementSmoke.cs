@@ -236,7 +236,7 @@ internal sealed class HandPlacementSmoke : ITableAutomation
         Step(.7, () => { Expect("placement-a"); MoveCard("hand-forest"); }); Click();
         Wait(() => Reading("hand-forest") && view.Hits.Any(hit => hit.Id == "read-card-action"), 3, () => {
             Check(scenario.Replies.Count == before && sourceRead == (expectedGame, expectedDecision, expectedCard)
-                && view.Frame!.Observe().Text.Any(text => text.Value == HandPlacements.Options(view.Match!, Forest()).Single().Text),
+                && ReaderActionText() == HandPlacements.Options(view.Match!, Forest()).Single().Text,
                 "A valid empty source-action read preserves the hand card's concrete engine-reported placement action without submitting anything");
             Capture("09-source-aware-hand-placement"); MoveHit("read-card-action");
         }); Click();
@@ -268,7 +268,7 @@ internal sealed class HandPlacementSmoke : ITableAutomation
             var current = view.Match!.Viewer!.Zone("Graveyard").Cards.Single(card => card.VisualId == "own-grave");
             Check(scenario.Replies.Count == before && view.ZoneName == "Graveyard" && view.Overlay.Length == 0
                 && sourceRead == (view.Match.Id, view.Match.Decision!.Id, current.Key)
-                && view.Frame!.Observe().Text.Any(text => text.Value == "Flashback {1}{U}, Pay 3 life: Target player draws two cards.")
+                && ReaderActionText() == "Flashback {1}{U}, Pay 3 life: Target player draws two cards."
                 && !view.Hits.Any(hit => hit.Id is "zone-use:own-grave" or "inspect-zone-use"),
                 "A source-aware graveyard card opens its actual live reader and current-key cast action without an inspector detour or a game reply");
             Capture("10-source-aware-grave-reader");
@@ -279,6 +279,13 @@ internal sealed class HandPlacementSmoke : ITableAutomation
             File.WriteAllText(Path.Combine(view.Profile, "hand-placement-results.json"), JsonSerializer.Serialize(checks, new JsonSerializerOptions { WriteIndented = true }));
             view.Exit();
         });
+    }
+    private string ReaderActionText()
+    {
+        var bounds = view.Hits.Single(hit => hit.Id == "read-card-action").Bounds;
+        // Wrapping preserves every character, including boundary whitespace.
+        return string.Concat(view.Frame!.Observe().Text.Where(text => bounds.Contains(new Point(text.Bounds.X, text.Bounds.Y)))
+            .Select(text => text.Value));
     }
     private bool ReplySettled() => scenario.Replies.Count == before + 1 && !view.Busy && view.Match?.Revision == scenario.State.Revision;
     private Card Forest() => view.Match!.Viewer!.Zone("Hand").Cards.Single(c => c.VisualId == "hand-forest");

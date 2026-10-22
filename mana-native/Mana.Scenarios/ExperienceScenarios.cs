@@ -21,7 +21,8 @@ public static partial class ExperienceScenarios
         new("stack-priority.v1", "Stack and priority", "A trigger, another player's response, your response, resolution and the resulting battlefield.", StackPriority),
         new("trigger-search.v1", "Trigger and library search", "Public priority hands off to required recipient and private library choices, then the local hand.", TriggerSearch),
         new("turn-orientation.v1", "Turn orientation · ordinary table", "A turn handoff, off-turn response, multiple defenders, target choice and extra turn.", TurnOrientationScenario.Ordinary),
-        new("turn-orientation-crowded.v1", "Turn orientation · crowded table", "The same authored turn sequence over four crowded battlefields; compare stationary context.", TurnOrientationScenario.Crowded)
+        new("turn-orientation-crowded.v1", "Turn orientation · crowded table", "The same authored turn sequence over four crowded battlefields; compare stationary context.", TurnOrientationScenario.Crowded),
+        new(FourPlayerTableScenario.Id, "Four players · asymmetric table", "Ordinary boards, one crowded opponent, then a cross-seat ability and its authored current result.", FourPlayerTableScenario.Create)
     });
 
     public static ExperienceScenario Find(string id) => All.FirstOrDefault(item => item.Id == id)

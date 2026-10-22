@@ -31,10 +31,10 @@ internal sealed partial class TableApplication
         foreach (var part in parts) {
             string text = part.Amount.ToString();
             float size = .65f;
-            int labelWidth = part.Symbol.Length > 0 ? 23 : canvas.TextWidth(part.Name + " ", size, true);
+            int labelWidth = (part.Symbol.Length > 0 ? 23 : 0) + canvas.TextWidth(part.Name + " ", size, true);
             while (size > .45f && labelWidth + canvas.TextWidth(text, size, true) > available) {
                 size = Math.Max(.45f, size - .025f);
-                labelWidth = part.Symbol.Length > 0 ? 23 : canvas.TextWidth(part.Name + " ", size, true);
+                labelWidth = (part.Symbol.Length > 0 ? 23 : 0) + canvas.TextWidth(part.Name + " ", size, true);
             }
             int partWidth = labelWidth + canvas.TextWidth(text, size, true);
             if (x > 0 && x + partWidth > available) { row++; x = 0; }
@@ -59,9 +59,8 @@ internal sealed partial class TableApplication
         foreach (var item in layout.Parts) {
             int px = x + item.X, py = y + layout.HeaderHeight - 1 + item.Row * 25;
             if (item.Part.Symbol.Length > 0) {
-                var color = ResourceColor(item.Part.Symbol);
-                canvas.Circle(new(px + 8, py + 10), 9, color);
-                canvas.CenterText(item.Part.Symbol, new(px - 1, py, 19, 20), new(20, 26, 34), .5f, true);
+                PaintManaSymbol(item.Part.Symbol, new(px + 8, py + 10), 18);
+                canvas.Text(item.Part.Name, px + 23, py, Ink, item.Size, item.LabelWidth - 23, 1, true);
             } else canvas.Text(item.Part.Name, px, py, Ink, item.Size, item.LabelWidth, 1, true);
             string amount = item.Part.Amount.ToString();
             int amountWidth = item.Width - item.LabelWidth;
@@ -77,6 +76,25 @@ internal sealed partial class TableApplication
         "R" => new(224, 130, 101), "G" => new(134, 186, 142), _ => new(191, 197, 203)
     };
 
+    private void PaintManaSymbol(string symbol, Vector2 center, int side, float opacity = 1)
+    {
+        // Coordinates belong to Forge's existing FSkinProp mana atlas. These
+        // are printed mana symbols, not color initials styled as UI buttons.
+        Rectangle crop = symbol switch {
+            "W" => new(412, 84, 80, 80), "U" => new(330, 84, 80, 80),
+            "B" => new(166, 2, 80, 80), "R" => new(330, 2, 80, 80),
+            "G" => new(166, 84, 80, 80), "C" => new(248, 2, 80, 80), _ => Rectangle.Empty
+        };
+        if (resources.ManaSymbols is { } image && !crop.IsEmpty && crop.Right <= image.Width && crop.Bottom <= image.Height)
+            canvas.Sprite(image, center, new(side), 0, Color.White * opacity, crop);
+        else {
+            // Headless and missing-asset paths retain an unambiguous fallback.
+            canvas.Circle(center, side / 2f, ResourceColor(symbol) * opacity);
+            canvas.CenterText(symbol, new((int)center.X - side / 2, (int)center.Y - side / 2, side, side),
+                new Color(20, 26, 34) * opacity, .48f, true);
+        }
+    }
+
     private ManaHaloPlan PlanManaHalo(Player player, int seat)
     {
         var parts = PublicResources.Mana(player).ToList();
@@ -85,7 +103,8 @@ internal sealed partial class TableApplication
             foreach (var cue in manaPresence.ForPlayer(player.Id, now).Where(cue => cue.After == 0 && parts.All(part => part.Key != cue.Symbol)))
                 parts.Add(known.FirstOrDefault(part => part.Key == cue.Symbol) ?? new(cue.Symbol, cue.Symbol, "", 0));
         }
-        var hero = TableLayout.Hero(seat);
+        seat = SeatDisplayIndex(player.Id);
+        var hero = SeatHero(player.Id);
         string[] symbols = ["W", "U", "B", "R", "G", "C"];
         var ordered = parts.Select(part => (Part: part, Slot: Array.IndexOf(symbols, part.Key)))
             .Select((entry, index) => (entry.Part, Slot: entry.Slot >= 0 ? entry.Slot : 6 + parts.Take(index).Count(p => !symbols.Contains(p.Key))))
@@ -127,22 +146,29 @@ internal sealed partial class TableApplication
             var cue = preferences.ReducedMotion ? null : manaPresence.For(player.Id, item.Part.Key, now);
             float progress = (float)(cue?.Progress(now) ?? 1);
             float opacity = cue is { After: 0 } ? 1 - progress : 1;
+            string hitId = "mana-pool:" + player.Id + ":" + item.Part.Key;
+            bool hover = IsControlHovered(hitId), down = hover && pressed?.Id == hitId && CurrentHit(pressed);
+            var symbol = new Vector2(bounds.X + 11, bounds.Center.Y);
+            float emphasis = hover ? down ? .34f : .24f : .11f;
+            if (item.Part.Symbol.Length > 0)
+                canvas.Glow(symbol, new(35, 35), color * (emphasis * opacity));
             if (cue != null) {
                 float pulse = MathF.Sin(progress * MathF.PI);
-                canvas.Glow(bounds.Center.ToVector2(), new(bounds.Width + 18 + pulse * 15, bounds.Height + 18 + pulse * 10),
+                canvas.Glow(symbol, new(37 + pulse * 13, 37 + pulse * 13),
                     color * ((cue.Delta > 0 ? .48f : .22f) * (1 - progress)));
-                var rim = bounds; rim.Inflate(2 + (int)(pulse * 3), 2 + (int)(pulse * 3));
-                canvas.Panel(rim, Color.Transparent, color * ((1 - progress) * .9f), 12);
             }
-            string hitId = "mana-pool:" + player.Id + ":" + item.Part.Key;
-            PaintControlSurface(hitId, bounds, new(17, 28, 35), color, opacity: opacity);
-            if (item.Part.Symbol.Length > 0) {
-                canvas.Circle(new(bounds.X + 12, bounds.Center.Y), 8, color * opacity);
-                canvas.CenterText(item.Part.Symbol, new(bounds.X + 3, bounds.Y + 2, 18, 20), new Color(20, 26, 34) * opacity, .48f, true);
-            } else canvas.Text(item.Part.Name, bounds.X + 5, bounds.Y + 2, Ink * opacity, item.Size, item.LabelWidth, 1, true);
+            if (item.Part.Symbol.Length > 0) PaintManaSymbol(item.Part.Symbol, symbol, 22, opacity);
+            else canvas.Text(item.Part.Name, bounds.X + 5, bounds.Y + 2, Ink * opacity, item.Size, item.LabelWidth, 1, true);
             string amount = item.Part.Amount.ToString();
             int available = bounds.Width - item.LabelWidth - 10;
-            canvas.Text(amount, bounds.X + item.LabelWidth + 5, bounds.Y + 1, Ink * opacity, item.Size, available, 1, true);
+            // A spent color loses its number immediately while its orb fades.
+            // Never flash a zero caption or retain an old positive count.
+            if (item.Part.Amount > 0) {
+                int x = bounds.X + item.LabelWidth + 5, y = bounds.Y + 1;
+                canvas.Text(amount, x + 1, y + 1, Color.Black * (.8f * opacity), item.Size, available, 1, true);
+                canvas.Text(amount, x, y, (hover ? Color.White : Ink) * opacity, item.Size, available, 1, true);
+            }
+            if (hover && item.Part.Symbol.Length > 0) canvas.Ring(symbol, down ? 10 : 12, Blue * opacity, down ? 2 : 1);
             painted.Add(new(item.Part.Key, item.Part.Name, amount, bounds, canvas.TextWidth(amount, item.Size, true), available)
                 { Delta = cue?.Delta, AnimationStarted = cue?.Started, Opacity = opacity });
             hits.Add(new(hitId, Scope, bounds, () => OpenManaPool(player.Id)));

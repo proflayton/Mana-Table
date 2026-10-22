@@ -15,6 +15,21 @@ count. For packaged or engine changes: identify the tested artifact/source and
 engine hash, plus installer/updater evidence when affected. Retain failure evidence
 and explain the cause/fix instead of treating a retry as validation. -->
 
+## Human review
+
+**Status:** pending
+<!-- Use pending, issues, accepted or N/A. Explain N/A. Automated checks and agent
+inspection do not establish human approval. -->
+
+**Candidate:** <!-- Exact reviewed commit/artifact; for a dirty build include assembly
+hash, base commit and diff identity. -->
+
+**Journey and scope:** <!-- What the reviewer actually did, including affected
+states/transitions, window settings and any parts left unreviewed. -->
+
+**Reviewer feedback:** <!-- Identify the human reviewer and their observations,
+remaining issues or explicit acceptance. Leave pending when not reviewed. -->
+
 ## Compatibility and documentation
 
 <!-- When relevant, describe saved-data/schema migration, prompt/hidden-information

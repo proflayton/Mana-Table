@@ -10,9 +10,16 @@ internal sealed partial class TableApplication
     {
         if (preferences.ReducedMotion) return;
         foreach (var cue in presence.Cues.Where(c => c.Kind == SeatCueKind.Draw)) {
-            int seat = TableLayout.SeatIndex(match!, cue.PlayerId);
             var player = match!.Players.FirstOrDefault(p => p.Id == cue.PlayerId);
-            if (seat is < 0 or > 2 || player == null) continue;
+            if (player == null || player.Id == match.ViewerId) continue;
+            int seat = SeatDisplayIndex(player.Id);
+            if (seat is < 0 or > 2) continue;
+            var library = tableScene?.Seats.FirstOrDefault(candidate => candidate.PlayerId == player.Id)
+                ?.Geometry.Piles.FirstOrDefault(pile => pile.Zone == "Library");
+            // Condensed seats without a library representation have no transfer
+            // origin. Never animate from their former overview location.
+            if (tableScene != null && library == null) continue;
+            var origin = library?.Pose ?? TableWorld.Pile(seat, 0);
             int count = Math.Min(7, player.Zone("Hand").Count);
             // Large real draw batches retain their full count in event feedback;
             // only a bounded handful of anonymous backs travel at once.
@@ -21,7 +28,8 @@ internal sealed partial class TableApplication
                 double age = now - cue.Started - i * TablePresence.DrawStagger;
                 if (age < 0 || age >= TablePresence.DrawDuration) continue;
                 var destination = TableLayout.HiddenHand(seat, Math.Max(0, count - animated + i), count);
-                var pose = TablePresence.DrawPose(TableWorld.Pile(seat, 0), destination, age);
+                destination = destination with { Center = destination.Center + SeatHand(player.Id) - TableLayout.SeatHand(seat) };
+                var pose = TablePresence.DrawPose(origin, destination, age);
                 canvas.Surface(null, pose with { Center = pose.Center + new Vector2(4, 5 + pose.Elevation), Size = pose.Size + new Vector2(5) }, Color.Black * .26f);
                 PaintBack(pose);
                 canvas.Line(pose.Point(0, 0), pose.Point(1, 0), Ink * .45f);

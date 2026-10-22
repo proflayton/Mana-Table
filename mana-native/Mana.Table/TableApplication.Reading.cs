@@ -28,11 +28,12 @@ internal sealed partial class TableApplication
         || match?.Decision?.Intent is DecisionIntent.Selection or DecisionIntent.Attack or DecisionIntent.Block
         || !SourceActionsSupported && match?.Decision?.Intent == DecisionIntent.Mana);
     private CardPresentationContext CardContext => new(match, Scope, OverlayOpen && !BattlefieldFocused && !ZoneReadingOpen,
-        ReadingGalleryOpen, dragging, CompactCardDecision, AbilityActionPending, SourceActionsSupported, SourceReaderHeight);
+        ReadingGalleryOpen, dragging, CompactCardDecision, AbilityActionPending, SourceActionsSupported, TableStudyEnabled,
+        TableStudyEnabled ? StudyActionArea : null);
     private string? readingId => cardPresentation.PinnedId;
     private Rectangle? hoverPreview => cardPresentation.ReaderBounds;
     internal bool InteractivePointer => !dragging && HitAt(pointer) is { } hit
-        && hit.Id is not ("battlefield-focus-surface" or "decision-context-panel" or "public-outcome-panel" or "stack-card-preview")
+        && hit.Id is not ("battlefield-focus-surface" or "decision-context-panel" or "public-outcome-panel" or "stack-card-preview" or "source-actions-surface" or "battlefield-reader-state")
         && (hit.Card is not { } card || !card.FaceDown || IsCardActionable(card));
 
     private void ExtendCardHit(Card card, Rectangle bounds) => hits.ExtendCanonical(
@@ -56,7 +57,8 @@ internal sealed partial class TableApplication
         string? hover = pointerSurface?.Id;
         cardPresentation.BeginFrame(CardContext, hover, frameElapsed, preferences.ReducedMotion, boardView);
         deferredCardComposition.Clear();
-        sourceReaderControls.Clear(); sourceReaderPages = 0;
+        sourceReaderControls.Clear(); sourceReaderActionsBounds = Rectangle.Empty; sourceReaderScrollMax = 0;
+        battlefieldReaderStateBounds = Rectangle.Empty;
     }
     private void EndCardReading() => cardPresentation.EndFrame();
     private bool ToggleCardReader(Hit hit) => cardPresentation.Toggle(hit, CardContext);
@@ -112,6 +114,7 @@ internal sealed partial class TableApplication
         var target = (entry.ReaderTarget ?? CardPresentationController.ReaderPose(entry.Rest, entry.Zone)).Bounds;
         if (Vector2.Distance(entry.Display.Size, target.Size.ToVector2()) > 2
             || Vector2.Distance(entry.Display.Center, target.Center.ToVector2()) > 2) return;
+        if (CardContext.CanBrowseOpeningHand(entry)) return;
         if (SourceActionsSupported) { DrawSourceReaderControls(entry); return; }
         if (match?.Decision?.Intent == DecisionIntent.Priority && IsCardActionable(entry.Card)) {
             string label = entry.Zone == "Battlefield" ? "Abilities"

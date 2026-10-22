@@ -1,5 +1,6 @@
 using Microsoft.Xna.Framework;
 using Point = Microsoft.Xna.Framework.Point;
+using Rectangle = Microsoft.Xna.Framework.Rectangle;
 
 namespace Mana.Renderer;
 
@@ -42,11 +43,12 @@ public static class TableWorld
         var size = lands ? new Vector2(62, 87) : new Vector2(own ? 94 : side ? 74 : 88, own ? 132 : side ? 104 : 123);
         return Card(SeatPoint(seat, across, outward), size, SeatAngle(seat) + (tapped ? MathF.PI / 2 : 0));
     }
+    public static Rectangle HandPlayArea => new(281, 161, 1039, 624);
     public static bool CanPlayAt(Point pointer)
     {
         // Playing a hand card begins its normal engine action; this area does
         // not choose spell targets or imply ownership of the space underneath.
-        return pointer.X is > 280 and < 1320 && pointer.Y is > 160 and < 785;
+        return HandPlayArea.Contains(pointer);
     }
     public static Pose Pile(int seat, int index)
     {

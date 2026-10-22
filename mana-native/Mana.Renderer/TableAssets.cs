@@ -9,6 +9,7 @@ public sealed class TableAssets : IDisposable
 {
     public Texture2D? Arena { get; }
     public Texture2D? CardBack { get; }
+    public Texture2D? ManaSymbols { get; }
     private readonly Dictionary<string, SoundEffect> sounds = [];
     public TableAssets(GraphicsDevice device, string directory)
     {
@@ -18,7 +19,7 @@ public sealed class TableAssets : IDisposable
             try { using var file = File.OpenRead(path); return Texture2D.FromStream(device, file); }
             catch (Exception ex) when (ex is IOException or InvalidOperationException) { return null; }
         }
-        Arena = Load("arena.png"); CardBack = Load("card-back.png");
+        Arena = Load("arena.png"); CardBack = Load("card-back.png"); ManaSymbols = Load("mana-symbols.png");
         foreach (string name in new[] { "card-play", "your-priority", "combat", "life-loss", "game-end" }) {
             string path = Path.Combine(directory, name + ".wav");
             if (!File.Exists(path)) continue;
@@ -27,5 +28,5 @@ public sealed class TableAssets : IDisposable
         }
     }
     public void Play(string name, float volume) { if (sounds.TryGetValue(name, out var sound)) try { sound.Play(Math.Clamp(volume, 0, 1), 0, 0); } catch (NoAudioHardwareException) { } }
-    public void Dispose() { Arena?.Dispose(); CardBack?.Dispose(); foreach (var sound in sounds.Values) sound.Dispose(); }
+    public void Dispose() { Arena?.Dispose(); CardBack?.Dispose(); ManaSymbols?.Dispose(); foreach (var sound in sounds.Values) sound.Dispose(); }
 }

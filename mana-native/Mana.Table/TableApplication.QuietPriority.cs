@@ -22,7 +22,9 @@ internal sealed partial class TableApplication
 
     private void ArmQuietPriority()
     {
-        if (!CanOfferQuietPriority || busy || polling || match is not { } state) return;
+        // Observation does not change this local intent. The worker waits for
+        // its result and rechecks this exact token before submitting any pass.
+        if (!CanOfferQuietPriority || busy || match is not { } state) return;
         session.CancelAdvance(); priority.Reset();
         quietYieldGame = state.Id; quietYieldTurn = state.Turn; quietYieldActivePlayer = state.ActivePlayerId;
         quietYieldToken = state.Decision!.QuietYieldToken;
@@ -72,7 +74,9 @@ internal sealed partial class TableApplication
             canvas.Text("Passing quiet windows", 1266, top + 1, Blue, .54f, 296, 1, true);
             PriorityAbilityButton("quiet-priority-stop", "Take control", new Rectangle(1266, top + 26, 296, 28), StopQuietPriority, active: true);
         } else {
-            PriorityAbilityButton("quiet-priority-arm", "Pass for now", new Rectangle(1266, top, 296, 30), ArmQuietPriority, !busy && !polling);
+            // Keep the control and its pointer state steady during routine
+            // observations of the same decision; only commands disable it.
+            PriorityAbilityButton("quiet-priority-arm", "Pass for now", new Rectangle(1266, top, 296, 30), ArmQuietPriority, !busy);
             canvas.Text("Stops on the next action", 1266, top + 35, Muted, .49f, 296, 1);
         }
     }

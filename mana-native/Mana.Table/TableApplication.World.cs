@@ -44,16 +44,17 @@ internal sealed partial class TableApplication
             float a = i * MathF.Tau / 64, b = (i + 1) * MathF.Tau / 64;
             canvas.Line(boardView.Apply(TableWorld.Project(new(MathF.Cos(a) * 136, MathF.Sin(a) * 136))), boardView.Apply(TableWorld.Project(new(MathF.Cos(b) * 136, MathF.Sin(b) * 136))), Gold * .055f, 1);
         }
-        foreach (int seat in new[] { 0, 1, 2, 3 }) {
+        foreach (int seat in StudyFocusActive ? Array.Empty<int>() : new[] { 0, 1, 2, 3 }) {
             var p = boardView.Apply(TableWorld.Project(TableWorld.SeatPoint(seat, 0, seat is 0 or 2 ? 690 : 421)));
             var player = seat == 3 ? match!.Viewer : TableLayout.Opponents(match!).ElementAtOrDefault(seat);
             bool active = player?.Id == match!.ActivePlayerId;
             canvas.Glow(p, seat is 0 or 2 ? new(245, 370) : new(620, 230), (active ? Gold : Blue) * (active ? .16f : .035f));
         }
-        if (dragging && dragSource?.Zone == "Hand" && match!.Decision?.Intent == DecisionIntent.Priority) {
-            var drop = TableWorld.Card(new(0, 230), new(835, 278));
-            canvas.Surface(null, drop, Blue * .045f); canvas.CardFrame(drop, Blue * .4f, 2);
+        if (StudyFocusActive) {
+            canvas.Glow(new(740, 330), new(1100, 400), Blue * .08f);
+            canvas.Glow(new(740, 590), new(1100, 260), Gold * .04f);
         }
+        DrawHandPlayArea();
     }
     private void DrawOpponent(Player player, int seat)
     {
@@ -64,7 +65,7 @@ internal sealed partial class TableApplication
     {
         DrawWorldBattlefield(player);
         DrawSeatObjects(player);
-        heroPositions[player.Id] = TableLayout.Hero(3);
+        heroPositions[player.Id] = SeatHero(player.Id);
     }
     private void DrawWorldBattlefield(Player player)
     {
@@ -72,6 +73,9 @@ internal sealed partial class TableApplication
         int seat = plan.Index;
         var clusters = plan.Battlefield;
         bool dense = plan.IsDense;
+        if (TableStudyEnabled) foreach (var family in clusters.SelectMany(cluster => cluster.Cards)
+            .Select(node => node.StudyFamily).OfType<StudyBattlefieldFamily>().DistinctBy(family => family.Id))
+                DrawStudyFamily(family);
         if (dense) {
             var area = BattlefieldLayout.DenseTerritory(seat);
             int right = area.Right - 4;
@@ -96,6 +100,7 @@ internal sealed partial class TableApplication
     }
     private void DrawSeatObjects(Player player)
     {
+        if (StudyRail(player.Id)) return;
         var geometry = tableScene!.Seat(player.Id).Geometry;
         foreach (var node in geometry.Commanders) {
             canvas.CardFrame(node.Pose with { Size = node.Pose.Size + new Vector2(13) }, Gold * .35f, 1);
@@ -141,12 +146,13 @@ internal sealed partial class TableApplication
         bool target = IsPlayerTarget(player.Id), active = match!.ActivePlayerId == player.Id;
         bool hasCounters = StateClarity.PlayerStates(player).Length > 0;
         float radius = own ? 40 : 34;
-        if (!own) {
+        if (!own && !StudyRail(player.Id)) {
             int count = Math.Min(7, player.Zone("Hand").Count);
             int arriving = preferences.ReducedMotion ? 0 : presence.PendingDraws(player.Id, now);
-            var handCenter = TableLayout.SeatHand(index);
+            var handCenter = SeatHand(player.Id);
             for (int i = 0; i < Math.Max(0, count - arriving); i++) {
                 var back = TableLayout.HiddenHand(index, i, count);
+                back = back with { Center = back.Center + handCenter - TableLayout.SeatHand(index) };
                 canvas.Surface(null, back with { Center = back.Center + new Vector2(3, 6) }, Color.Black * .45f);
                 PaintBack(back);
             }
@@ -174,7 +180,8 @@ internal sealed partial class TableApplication
         canvas.CenterText(player.Life.ToString(), new((int)(center.X - radius), (int)(center.Y - radius), (int)radius * 2, (int)radius * 2), player.Eliminated ? Muted : Ink, own ? 1.65f : 1.35f, true);
         var bounds = new Rectangle((int)center.X - (int)radius - 9, (int)center.Y - (int)radius - 9, (int)radius * 2 + 18, (int)radius * 2 + 18);
         hits.Add(new("player:" + player.Id, Scope, bounds, () => PlayerClick(player.Id), PlayerId: player.Id, Shape: p => Vector2.DistanceSquared(p.ToVector2(), center) <= (radius + 9) * (radius + 9)));
-        string name = own ? "YOU" : localMatch && !ExperienceLabOpen ? "AI " + (index + 1) + " · " + player.Name.Split('·')[0].Trim() : player.Name;
+        string name = own ? "YOU" : localMatch && !ExperienceLabOpen
+            ? "AI " + (TableLayout.SeatIndex(match, player.Id) + 1) + " · " + player.Name.Split('·')[0].Trim() : player.Name;
         int x = (int)center.X - 94, y = (int)center.Y + (own ? 44 : 41);
         if (own) { x = (int)center.X + 58; y = (int)center.Y - 22; }
         if (!own && index == 1) { x = (int)center.X + 50; y = (int)center.Y - 32; }
@@ -183,14 +190,16 @@ internal sealed partial class TableApplication
         if (own) { x = Math.Max((int)center.X + 58, manaHalo.Bounds.Right) + 8; nameplate = new(x, y, 100, 24); }
         else if (index == 1) { x = Math.Max((int)center.X + 50, manaHalo.Bounds.Right) + 8; y = 64; nameplate = new(x, y, 188, 24); }
         bool dense = tableScene!.Seat(player.Id).IsDense;
-        if (!dense) canvas.CenterText(own ? name : name + " ↗", nameplate, !own && nameplate.Contains(pointer) ? Blue : Ink, .6f, true);
+        if (!dense && !(own && TableStudyEnabled)) canvas.CenterText(own ? name : name + " ↗", nameplate, !own && nameplate.Contains(pointer) ? Blue : Ink, .6f, true);
         int incoming = match.Combat?.Attackers.Count(a => a.DefendingPlayerId == player.Id) ?? 0;
         string status = player.Eliminated ? "ELIMINATED" : incoming > 0 ? incoming + (own ? " ATTACKING YOU" : " INCOMING") : player.Priority ? "PRIORITY" : active ? "ACTIVE TURN" : "";
         if (!own && index != 1 && hasCounters) status += (status.Length > 0 ? " · " : "") + player.Zone("Hand").Count + " in hand";
-        if (!dense) {
+        if (!dense && !(own && TableStudyEnabled)) {
             if (own) canvas.Text(status, x, y + 23, incoming > 0 ? Red : Gold, .43f, 100, (int)Math.Ceiling(2 * preferences.TextScale), true);
             else canvas.CenterText(status, new(x, y + 23, 188, 19), incoming > 0 ? Red : Gold, .43f, true);
         }
+        if (own && TableStudyEnabled && (incoming > 0 || player.Eliminated))
+            canvas.CenterText(status, new((int)center.X - 94, (int)center.Y - 64, 188, 19), Red, .5f, true);
         if (hasCounters) {
             int counterX = own ? (int)center.X - 240 : (int)center.X - 94;
             int counterY = own ? (int)center.Y - 22 : index == 1 ? (int)center.Y + 35 : (int)center.Y - 64;
@@ -200,5 +209,6 @@ internal sealed partial class TableApplication
         }
         DrawPlayerMana(player, manaHalo);
         if (!own && !dense) hits.Add(new("focus:" + player.Id, Scope, nameplate, () => OpenZone(player.Id, "Battlefield")));
+        DrawStudyRailCount(player);
     }
 }

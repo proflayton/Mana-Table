@@ -23,10 +23,35 @@ For playing instructions, use [START-HERE.txt](START-HERE.txt).
 
 Hover highlights a card without enlarging it. During ordinary priority, clicking
 a hand, battlefield or command-zone card opens its reader; clicking that card
-again, empty space or Close card dismisses it. Play card and Activate ability are
-explicit reader actions; dragging a playable hand card onto the table also plays
-it. Required selections, mana payment and combat retain their direct clicks and
+again, empty space or Escape dismisses it. The full original face stays visible,
+with concrete engine-authorized actions, effective P/T, damage and typed counters
+beside it. Actions have no previous/next pages; unusually long lists scroll.
+Dragging a playable hand card onto the table also plays it. A deliberate drag
+from an enlarged reader shrinks the held card above the pointer; it can be dropped
+inside the former reader area after leaving its original hand slot. Corner marks
+show the legal region and the held card lights on a legal drop. Escape or
+right-click cancels. An available hand land's secondary Play land shortcut uses
+quiet text with hover feedback.
+Required selections, mana payment and combat retain their direct clicks and
 compact faces. Right-click inspects a currently visible face without choosing it.
+
+The opening Keep/Mulligan decision also uses the normal hand reader. Reading
+never keeps, redraws or plays a card. Required London mulligan bottom-card clicks
+continue to select the actual cards, and entering that choice closes the reader.
+
+Live three/four-player games use the reviewed shared-table layout by default.
+The Experience Lab also offers it through `--table-study`. Same-name
+permanents share state-specific groups, tapped faces carry a prominent curved
+arrow, and clicking a non-target player portrait opens the two-field view.
+Whole table or Escape returns. Full readers keep current P/T on the card with
+larger live details on the right. `--classic-table` starts the previous layout
+when comparing behavior or troubleshooting. Two-player tables are unchanged.
+
+Visible faces preload, and the selected local deck warms the artwork cache before
+and during play. Reading takes precedence over background downloads; hidden
+opponent cards are never requested. A first uncached image can still need network.
+Pass for now remains steady during background observations; arming it waits for
+the current observation before validating and submitting a quiet pass.
 
 The battlefield groups Creatures, Support and Lands. Sparse boards keep projected
 lanes; crowded boards switch together to upright cells within separate player

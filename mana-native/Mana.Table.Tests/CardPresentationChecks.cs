@@ -13,6 +13,7 @@ internal static class CardPresentationChecks
     internal static void Run(Action<bool, string> check)
     {
         CurrentInteractionState(check);
+        OpeningHandReading(check);
         var first = new Card { Key = "first-key", VisualId = "first", Name = "First" };
         var second = new Card { Key = "second-key", VisualId = "second", Name = "Second" };
         var state = Snapshot(first, second);
@@ -122,6 +123,72 @@ internal static class CardPresentationChecks
         var fresh = owner.Prepare(Request(first, firstRest)); owner.EndFrame();
         check(!owner.HasPinnedCard && fresh.Display == firstRest && actions == 0,
             "Changing games clears presentation identity, pinned readers, and motion without executing a card action");
+
+        // The layout study reads a copy while keeping the controller's actual
+        // occurrence clickable. The space between those faces is not a card.
+        owner.Reset();
+        var study = context with { KeepBattlefieldAnchor = true,
+            State = state with { Players = [state.Viewer! with { Zones = [new("Battlefield", 1, [first], null)] }] } };
+        var battlefieldRest = new Pose(new(400, 300), new(112, 104));
+        owner.BeginFrame(study, null, .016f, true);
+        var battlefield = owner.Prepare(Request(first, battlefieldRest, "Battlefield")); owner.EndFrame();
+        bool opened = owner.Toggle(battlefield.Hit, study);
+        for (int frame = 0; frame < 2; frame++) {
+            owner.BeginFrame(study, null, .016f, true);
+            battlefield = owner.Prepare(Request(first, battlefieldRest, "Battlefield")); owner.EndFrame();
+        }
+        var betweenFaces = Vector2.Lerp(battlefieldRest.Center, battlefield.Display.Center, .5f).ToPoint();
+        check(opened && battlefield.Focused && battlefield.Display.Size == new Vector2(410, 574)
+            && battlefield.Display.Center.X > 800 && battlefield.Rest == battlefieldRest
+            && battlefield.Hit.Contains(battlefieldRest.Center.ToPoint()) && battlefield.Hit.Contains(battlefield.Display.Center.ToPoint())
+            && battlefield.Hit.Bounds.Contains(betweenFaces) && !battlefield.Hit.Contains(betweenFaces) && actions == 0,
+            "Study inspection keeps its original battlefield anchor and opposite-side full reader clickable, leaves their intervening space clear, and submits no game action");
+        var anchorHit = owner.ResolveHit(battlefieldRest.Center.ToPoint(), [battlefield.Hit], battlefield.Hit, study);
+        check(anchorHit is { } currentAnchor && currentAnchor.Id == battlefield.Hit.Id
+            && owner.Toggle(currentAnchor, study) && !owner.HasPinnedCard && actions == 0,
+            "A second click on the study's actual battlefield occurrence closes reading without activating its underlying action");
+    }
+
+    private static void OpeningHandReading(Action<bool, string> check)
+    {
+        var card = new Card { Key = "opening-card", VisualId = "opening-face", Name = "Forest", Type = "Basic Land" };
+        var state = Snapshot(card) with { Turn = 0, Decision = new() { Id = "keep-hand", Kind = "input",
+            InputType = "InputConfirmMulligan", Intent = DecisionIntent.General, OkEnabled = true, CancelEnabled = true } };
+        var context = new CardPresentationContext(state, "keep-hand", false, false, false, false);
+        var owner = new CardPresentationController();
+        int actions = 0;
+        var request = new CardPresentationRequest(card.VisualId, card, new(new(700, 825), new(137, 192)),
+            "Hand", state.ViewerId, "opening-hit", () => actions++);
+        owner.BeginFrame(context, null, .016f, true);
+        var hand = owner.Prepare(request); owner.EndFrame();
+        check(owner.Toggle(hand.Hit, context) && owner.HasPinnedCard && actions == 0,
+            "The engine's exact keep/mulligan prompt permits read-only browsing of the viewer's authorized hand without an action");
+        for (int frame = 0; frame < 2; frame++) {
+            owner.BeginFrame(context, null, .016f, true);
+            hand = owner.Prepare(request); owner.EndFrame();
+        }
+        check(hand.Focused && hand.Display.Size == new Vector2(410, 574) && hand.Hit.Contains(hand.Rest.Center.ToPoint()) && actions == 0,
+            "Opening-hand inspection uses the normal full-card reader and preserves the original hand anchor without keeping, redrawing or playing");
+
+        var bottomCard = card with { Key = "current-bottom-card", Selectable = true };
+        var bottom = context with { Scope = "bottom-hand", State = state with { Players = Snapshot(bottomCard).Players,
+            Decision = state.Decision! with { Id = "bottom-hand", InputType = "InputLondonMulligan" } } };
+        owner.BeginFrame(bottom, null, .016f, true);
+        var candidate = owner.Prepare(request with { Card = bottomCard }); owner.EndFrame();
+        var selection = new InteractionController().CardClick(bottom.State!, bottomCard);
+        check(!owner.HasPinnedCard && !candidate.Focused && !owner.Toggle(candidate.Hit, bottom)
+                && selection.Reply is { Action: ReplyAction.SelectCard, DecisionId: "bottom-hand", Card: "current-bottom-card" },
+            "Entering London bottom-card selection closes the opening reader and preserves the actual current card-selection command");
+
+        owner.BeginFrame(context, null, .016f, true);
+        var otherZone = owner.Prepare(request with { Zone = "Command" }); owner.EndFrame();
+        check(!owner.Toggle(otherZone.Hit, context),
+            "The opening-hand reader exception does not extend to other zones during a general engine decision");
+        var unknown = context with { State = state with { Decision = state.Decision! with { InputType = "UnfamiliarGeneralInput" } } };
+        owner.BeginFrame(unknown, null, .016f, true);
+        var otherPrompt = owner.Prepare(request); owner.EndFrame();
+        check(!owner.Toggle(otherPrompt.Hit, unknown) && actions == 0,
+            "An unrelated general decision does not inherit keep/mulligan hand-browsing permissions");
     }
 
     private static void CurrentInteractionState(Action<bool, string> check)

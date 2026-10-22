@@ -1,4 +1,6 @@
 using Mana.Renderer;
+using Mana.Magic;
+using Mana.Contracts;
 using Microsoft.Xna.Framework;
 using Point = Microsoft.Xna.Framework.Point;
 
@@ -6,35 +8,47 @@ namespace Mana.Table;
 
 internal sealed partial class TableApplication
 {
-    private sealed record ReaderDragOrigin(string Scope, string HitId, Pose Reader, Pose HandAnchor);
-    private ReaderDragOrigin? readerDragOrigin;
-    private bool readerDragExited;
+    private sealed record HandDragOrigin(string Scope, string HitId, Pose HandAnchor, bool ExpandedFace);
+    private HandDragOrigin? handDragOrigin;
+    private int CardDragThreshold => handDragOrigin is { ExpandedFace: true } ? 32 : 9;
 
-    private void BeginReaderDrag(Hit? source)
+    private void BeginCardDrag(Hit? source)
     {
-        ClearReaderDrag();
+        ClearCardDrag();
         if (source is not { Zone: "Hand" } || source.Scope != Scope
-            || cardPresentation.Pinned is not { Focused: true, Zone: "Hand" } entry
-            || source.Id != entry.Hit.Id || source.Scope != entry.Hit.Scope) return;
-        // Capture what was actually published, not a reader pose that may still
-        // be animating. The original hand anchor remains an inspection hit too.
-        readerDragOrigin = new(source.Scope, source.Id, entry.Display, entry.Rest);
+            || cardPresentation.Cards.LastOrDefault(candidate => candidate.Zone == "Hand"
+                && source.Id == candidate.Hit.Id && source.Scope == candidate.Hit.Scope) is not { } entry) return;
+        // The reader is already above the table. Require deliberate movement,
+        // then allow its card to land without escaping an invisible old face.
+        bool expanded = entry.Focused && entry.Display.Contains(pressPoint) && !entry.Rest.Contains(pressPoint);
+        handDragOrigin = new(source.Scope, source.Id, entry.Rest, expanded);
     }
 
-    private void ObserveReaderDrag(Point point)
-    {
-        if (readerDragOrigin is { } origin && ReaderDragMatches(origin)
-            && !origin.Reader.Contains(point) && !origin.HandAnchor.Contains(point)) readerDragExited = true;
-    }
-
-    private bool ReaderDragMatches(ReaderDragOrigin origin)
+    private bool HandDragMatches(HandDragOrigin origin)
         => origin.Scope == Scope && dragSource?.Scope == origin.Scope && dragSource.Id == origin.HitId;
 
-    // Being inside the generic battlefield rectangle is insufficient for a
-    // reader that started there. An explicit drag must first leave its reader
-    // and original hand faces; an ordinary hand drag keeps its existing policy.
-    private bool ReaderDragCanCommit => readerDragOrigin is not { } origin
-        || ReaderDragMatches(origin) && readerDragExited;
+    private bool CanCommitCardDrag => dragSource?.Card is { Key.Length: > 0 } source
+        && VisibleCards().Any(card => card.Key == source.Key && SameVisibleCard(card, source))
+        && (handDragOrigin is not { } origin
+            || HandDragMatches(origin) && !origin.HandAnchor.Contains(pointer)
+                && Vector2.Distance(pressPoint.ToVector2(), pointer.ToVector2()) > CardDragThreshold);
 
-    private void ClearReaderDrag() { readerDragOrigin = null; readerDragExited = false; }
+    private void ClearCardDrag() => handDragOrigin = null;
+
+    private void DrawHandPlayArea()
+    {
+        if (!dragging || busy || session.NeedsRecovery || OverlayOpen || match is not { Decision.Intent: DecisionIntent.Priority } state
+            || dragSource is not { Zone: "Hand", Card: { } source } || dragSource.Scope != Scope) return;
+        var card = state.Viewer?.Zone("Hand").Cards.FirstOrDefault(card => CardViews.Same(card, source));
+        if (card == null || InteractionController.Play(state, card) == null && HandPlacements.Options(state, card).Length < 2) return;
+        var area = TableWorld.HandPlayArea;
+        var color = ActionAccent * .35f;
+        const int length = 28;
+        foreach (var (x, y, dx, dy) in new[] {
+            (area.Left, area.Top, 1, 1), (area.Right, area.Top, -1, 1),
+            (area.Left, area.Bottom, 1, -1), (area.Right, area.Bottom, -1, -1) }) {
+            canvas.Line(new(x, y), new(x + dx * length, y), color, 2);
+            canvas.Line(new(x, y), new(x, y + dy * length), color, 2);
+        }
+    }
 }

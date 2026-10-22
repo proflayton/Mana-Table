@@ -12,6 +12,7 @@ namespace Mana.Table.Presentation;
 /// </summary>
 internal sealed class CardPresentationController
 {
+    internal const int StudyDetailsWidth = 280, StudyDetailsGap = 18;
     private readonly SceneMotion motion = new();
     private readonly List<PresentedCard> cards = [];
     private readonly List<PresentedCard> deferred = [];
@@ -39,13 +40,14 @@ internal sealed class CardPresentationController
         float elapsedSeconds, bool reducedMotion, BoardView view = default)
     {
         if (context.State?.Id != current.State?.Id) Reset();
+        bool leavingOpeningHand = context.OpeningHandDecision && !current.OpeningHandDecision;
         context = current;
         var hovered = cards.LastOrDefault(card => card.Hit.Id == hoveredHitId && card.Hit.Scope == current.Scope && !card.Card.FaceDown);
         hoveredId = hovered?.Id ?? "";
         hoveredHit = hovered?.Hit.Id ?? "";
         // A reader survives pointer movement, but never lost visibility or a
         // required compact interaction. Reconciliation uses the current snapshot.
-        if (pinnedId != null && (current.Dragging || current.CompactDecision
+        if (pinnedId != null && (current.Dragging || current.CompactDecision || leavingOpeningHand
             || Pinned is not { } pinned || !current.CanRead(pinned))) Collapse(hoveredHitId);
         previousDisplayedPoses.Clear();
         foreach (var item in displayedPoses) previousDisplayedPoses.Add(item.Key, item.Value);
@@ -64,9 +66,9 @@ internal sealed class CardPresentationController
         var view = request.ChoiceSlot < 0 && BoardView.AffectsZone(request.Zone) ? boardView : BoardView.Identity;
         var rest = view.Apply(request.Rest);
         if (focused) {
-            readerTarget ??= ReaderPose(rest, request.Zone);
-            if (context.SourceActions && context.ReaderHeight is { } height)
-                readerTarget = readerTarget.Value with { Size = new(readerTarget.Value.Size.X, Math.Clamp(height, 350, 574)) };
+            readerTarget ??= context.KeepBattlefieldAnchor && request.Zone == "Battlefield"
+                ? StudyReaderPose(rest, context.BattlefieldReaderAvoid)
+                : ReaderPose(rest, request.Zone);
         }
         bool useBoardMotion = !focused && BoardView.AffectsZone(request.Zone) && request.ChoiceSlot < 0;
         bool collapse = pendingCollapses.Remove(request.Id);
@@ -86,7 +88,8 @@ internal sealed class CardPresentationController
         displayedPoses[request.Id] = pose;
         if (!focused && Vector2.Distance(pose.Size, rest.Size) < 2
             && Vector2.Distance(pose.Center, rest.Center) < 2) transitions.Remove(request.Id);
-        bool anchored = request.Zone == "Hand" && (focused || transitions.Contains(request.Id));
+        bool anchored = request.Zone == "Hand" && (focused || transitions.Contains(request.Id))
+            || context.KeepBattlefieldAnchor && request.Zone == "Battlefield" && focused;
         var geometry = new CardHitGeometry(pose, anchored ? rest : null,
             request.ActivationBounds is { } activation ? view.Apply(activation) : null);
         var hit = new Hit(request.HitId, context.Scope, geometry.Bounds, request.Activate, request.Card,
@@ -124,7 +127,8 @@ internal sealed class CardPresentationController
         } else if (current.OverlayOpen || !(hit.Zone is "Hand" or "Battlefield" or "Command"
                 || current.SourceActions && hit.Zone is ("Graveyard" or "Exile"))
             || !current.AbilityChoice && current.State?.Decision is { Intent: not DecisionIntent.Priority }
-                && !(current.SourceActions && current.State?.Decision?.Intent == DecisionIntent.Mana)) return false;
+                && !(current.SourceActions && current.State?.Decision?.Intent == DecisionIntent.Mana)
+                && !current.CanBrowseOpeningHand(entry)) return false;
         bool close = pinnedId == entry.Id && pinnedZone == entry.Zone;
         Collapse(hit.Id);
         if (!close) {
@@ -201,5 +205,22 @@ internal sealed class CardPresentationController
         var seat = TableLayout.LocalSeatBounds;
         if (x + 205 > seat.Left && x - 205 < seat.Right) y = Math.Min(y, seat.Top - 12 - 287);
         return new(new(x, y), new(410, 574), Elevation: 22);
+    }
+
+    private static Pose StudyReaderPose(Pose rest, Rectangle? avoid)
+    {
+        // Keep the complete card and its right-hand state column on screen.
+        var right = new Pose(new(1600 - 20 - StudyDetailsWidth - StudyDetailsGap - 205, 385), new(410, 574), Elevation: 22);
+        var left = right with { Center = new(510, 385) };
+        var preferred = rest.Center.X < 800 ? right : left;
+        var alternate = rest.Center.X < 800 ? left : right;
+        int Overlap(Pose pose) {
+            if (avoid == null) return 0;
+            var bounds = pose.Bounds;
+            bounds.Width += StudyDetailsGap + StudyDetailsWidth;
+            var overlap = Rectangle.Intersect(bounds, avoid.Value);
+            return overlap.Width * overlap.Height;
+        }
+        return Overlap(preferred) <= Overlap(alternate) ? preferred : alternate;
     }
 }

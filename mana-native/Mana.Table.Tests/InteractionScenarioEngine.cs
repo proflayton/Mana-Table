@@ -164,7 +164,8 @@ internal sealed class InteractionScenarioEngine : ICardEngine, ISourceActions
     private int observations;
     internal int Observations => Volatile.Read(ref observations);
     internal int ObservationsAtRejection { get; private set; }
-    public Task<GameSnapshot?> ObserveAsync() { Interlocked.Increment(ref observations); return Task.FromResult<GameSnapshot?>(state); }
+    internal Func<Task<GameSnapshot?>>? ObserveOverride { get; set; }
+    public Task<GameSnapshot?> ObserveAsync() { Interlocked.Increment(ref observations); return ObserveOverride?.Invoke() ?? Task.FromResult<GameSnapshot?>(state); }
     public ValueTask DisposeAsync() => ValueTask.CompletedTask;
     public Task<IReadOnlyList<DeckSummary>> DecksAsync() => throw new NotSupportedException();
     public Task<DeckDetails> OpenDeckAsync(string id) => throw new NotSupportedException();

@@ -10,4 +10,5 @@ internal sealed class PresentationResources
     internal Action<string, float> Play { get; set; } = (_, _) => { };
     internal Texture2D? Arena { get; set; }
     internal Texture2D? CardBack { get; set; }
+    internal Texture2D? ManaSymbols { get; set; }
 }

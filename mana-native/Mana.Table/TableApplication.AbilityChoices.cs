@@ -105,12 +105,15 @@ internal sealed partial class TableApplication
         var free = new List<Rectangle> { new(20, 64, 1560, 696) };
         var source = anchor; source.Inflate(12, 12);
         var occupied = new List<Rectangle> { source, new(1240, 550, 350, 245) };
+        if (!battlefieldReaderStateBounds.IsEmpty) occupied.Add(battlefieldReaderStateBounds);
         occupied.AddRange(match!.Players.Select(player => {
-            var hero = TableLayout.Hero(player.Id == match.ViewerId ? 3 : TableLayout.SeatIndex(match, player.Id));
+            var hero = SeatHero(player.Id);
             return new Rectangle((int)hero.X - 55, (int)hero.Y - 55, 110, 110);
         }));
         occupied.AddRange(manaPoolBadges.Values.Select(badge => badge.Bounds).Where(bounds => !bounds.IsEmpty));
         occupied.AddRange(publicCounterBadges.Values.Select(badge => badge.Bounds).Where(bounds => !bounds.IsEmpty));
+        occupied.AddRange(hits.Where(hit => hit.Id.StartsWith("focus:", StringComparison.Ordinal))
+            .Select(hit => { var bounds = hit.Bounds; bounds.Inflate(8, 8); return bounds; }));
         foreach (var obstacle in occupied) {
             for (int index = free.Count - 1; index >= 0; index--) {
                 var area = free[index]; var overlap = Rectangle.Intersect(area, obstacle);
@@ -129,8 +132,15 @@ internal sealed partial class TableApplication
             int x = Math.Clamp(anchor.Right + 12, area.Left, area.Right - width);
             return new Rectangle(x, area.Top, width, height);
         }).OrderBy(area => area.Height >= requestedHeight ? 0 : 1)
-            .ThenBy(area => area.Left >= anchor.Right || area.Right <= anchor.Left ? 0 : 1)
-            .ThenBy(area => Vector2.DistanceSquared(area.Center.ToVector2(), anchor.Center.ToVector2()))
+            .ThenBy(area => area.Width >= requestedWidth ? 0 : 1)
+            .ThenBy(area => area.Left >= anchor.Right ? 0 : area.Right <= anchor.Left ? 1 : 2)
+            .ThenBy(area => {
+                // Score where the content will actually sit beside the card,
+                // rather than the unused top of its available vertical strip.
+                int height = Math.Min(requestedHeight, area.Height);
+                int top = Math.Clamp(anchor.Center.Y - height / 2, area.Top, area.Bottom - height);
+                return Vector2.DistanceSquared(new Vector2(area.Center.X, top + height / 2), anchor.Center.ToVector2());
+            })
             .ThenByDescending(area => area.Width * area.Height).FirstOrDefault();
     }
 }

@@ -29,7 +29,11 @@ internal sealed partial class TableApplication
         CollapseCardReading();
         inspectBack = false; inspectPage = 0; overlay = "inspect";
     }
-    private void OpenZone(int player, string zone) { zonePlayer = player; zoneName = zone; zonePage = 0; overlay = ""; }
+    private void OpenZone(int player, string zone)
+    {
+        if (TableStudyEnabled && zone == "Battlefield") { SetStudyFocus(player); return; }
+        zonePlayer = player; zoneName = zone; zonePage = 0; overlay = "";
+    }
     private bool IsPlayerTarget(int player) => !AbilityActionPending && (match?.Decision?.PlayerChoices.Contains(player) == true
         || selectedCombat != null && match != null && LegalTargets.CanAttack(match, selectedCombat, player)
         || dragging && dragSource?.Card is { } card && match != null && LegalTargets.CanAttack(match, card.CombatId, player));
@@ -59,30 +63,38 @@ internal sealed partial class TableApplication
     }
     private void PlayerClick(int player)
     {
-        if (match == null || busy) return;
+        if (match == null) return;
+        if (TableStudyEnabled && !IsPlayerTarget(player) && (busy || session.NeedsRecovery || AbilityActionPending)) {
+            SetStudyFocus(player); return;
+        }
+        if (busy) return;
         if (session.NeedsRecovery || AbilityActionPending) { zonePlayer = player; overlay = "player"; return; }
         var result = interaction.PlayerClick(match, player);
         if (result.Reply != null) Send(result.Reply);
-        else if (result.Effect == InteractionEffect.InspectPlayer) { zonePlayer = player; overlay = "player"; }
+        else if (result.Effect == InteractionEffect.InspectPlayer) {
+            if (TableStudyEnabled) SetStudyFocus(StudyFocusActive && studyFocusOwner == player ? null : player);
+            else { zonePlayer = player; overlay = "player"; }
+        }
     }
     private DecisionReply? DropReply(Hit? target)
     {
-        if (match?.Decision == null || AbilityActionPending || dragSource?.Card is not { } card || dragSource.Scope != Scope || OverlayOpen || !ReaderDragCanCommit) return null;
+        if (match?.Decision == null || AbilityActionPending || dragSource?.Card is not { } card || dragSource.Scope != Scope || OverlayOpen || !CanCommitCardDrag) return null;
         return match.Decision.Intent is DecisionIntent.Attack or DecisionIntent.Block
             ? InteractionController.Assign(match, card.CombatId, target?.Card == null ? target?.PlayerId : null, target?.Card?.CombatId)
             : dragSource.Zone == "Hand" && TableWorld.CanPlayAt(pointer) && (target == null || target.Card != null) ? InteractionController.Play(match, card) : null;
     }
-    private bool LegalDrop(Hit? target) => !AbilityActionPending && ReaderDragCanCommit
+    private bool LegalDrop(Hit? target) => !AbilityActionPending && CanCommitCardDrag
         && (DropReply(target) != null || (target == null || target.Card != null) && PlacementDropChoice());
     private bool DropCard(Hit? target)
     {
-        if (busy || AbilityActionPending || !ReaderDragCanCommit) return false;
+        if (busy || AbilityActionPending || !CanCommitCardDrag) return false;
         if ((target == null || target.Card != null) && PlacementDropChoice()) { OpenHandPlacement(dragSource!.Card!); return true; }
         if (DropReply(target) is not { } reply) return false;
         Send(reply); return true;
     }
     private void Scroll(int direction)
     {
+        if (ScrollSourceReader(direction)) return;
         if (ScrollFocusedBattlefield(direction)) return;
         if (chatOpen && ChatBounds.Contains(pointer)) {
             if (chatPeople) return;

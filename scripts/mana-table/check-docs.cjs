@@ -83,7 +83,7 @@ function checkDocuments(documents, lookup) {
   return errors;
 }
 function maintainedPaths(root) {
-  const files = ['README.md', 'CONTRIBUTING.md', 'mana-native/README.md', 'mana-native/START-HERE.txt',
+  const files = ['README.md', 'AGENTS.md', 'CONTRIBUTING.md', 'mana-native/README.md', 'mana-native/START-HERE.txt',
     'forge-api/README.md', 'scripts/mana-table/README.md'];
   function walk(directory) {
     if (!fs.existsSync(path.join(root, directory))) return;

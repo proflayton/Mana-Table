@@ -130,6 +130,7 @@ internal static class ExperienceLabChecks
                 Until(() => CardSettled("reader-elf"), "The current Elf must finish entering before its initial card click");
                 Click(frame.Cards.Single(card => card.Id == "reader-elf" && card.Zone == "Battlefield").Hit.Id);
                 Until(() => frame.Hits.Any(hit => hit.Id == "read-card-action"), "The Elf reader did not expose its explicit action");
+                CheckUncoveredReader("reader-elf", ["read-card-action"]);
                 Click("read-card-action");
                 Until(() => !app.TestPort.Busy && lab.StageIndex == 1 && frame.Stamp.Revision == lab.State.Revision,
                     "The direct on-card mana action did not publish its authored result");
@@ -157,13 +158,9 @@ internal static class ExperienceLabChecks
                     var currentActions = engine.SourceActionsAsync(lab.State.Id, lab.State.Decision!.Id, current.Key).GetAwaiter().GetResult();
                     string damageHit = "source-action:" + currentActions.Actions[1].Id;
                     Click(frame.Cards.Single(card => card.Id == ExperienceScenarios.BallistaId && card.Zone == "Battlefield").Hit.Id);
-                    Until(() => frame.Hits.Any(hit => hit.Id == "read-card-action") || frame.Hits.Any(hit => hit.Id == damageHit),
-                        "The original Ballista actions must load on its reader");
-                    var pageDeadline = System.Diagnostics.Stopwatch.StartNew();
-                    while (!frame.Hits.Any(hit => hit.Id == damageHit)) {
-                        if (pageDeadline.Elapsed > TimeSpan.FromSeconds(5)) throw new TimeoutException("The Ballista damage action was not reachable on its reader pages");
-                        Click("source-reader-next");
-                    }
+                    Until(() => frame.Hits.Any(hit => hit.Id == "read-card-action") && frame.Hits.Any(hit => hit.Id == damageHit),
+                        "Both original Ballista actions must be available beside its uninterrupted reader together");
+                    CheckUncoveredReader(ExperienceScenarios.BallistaId, ["read-card-action", damageHit]);
                     Click(damageHit);
                     Until(() => !app.TestPort.Busy && lab.State.Decision is { Intent: DecisionIntent.Selection, CancelEnabled: true }
                         && frame.Stamp.Revision == lab.State.Revision, "The damage action must enter its authored target decision");
@@ -290,5 +287,15 @@ internal static class ExperienceLabChecks
         try { engine.CreateDeckAsync("Never write real decks").GetAwaiter().GetResult(); }
         catch (EngineCommandRejectedException) { refusedWrite = true; }
         check(refusedWrite, "The lab connection explicitly refuses real deck writes");
+
+        void CheckUncoveredReader(string sourceId, string[] actionIds)
+        {
+            var source = frame.Cards.Single(card => card.Id == sourceId && card.Focused);
+            var actions = frame.Hits.Where(hit => actionIds.Contains(hit.Id)).ToArray();
+            check(Vector2.Distance(source.Display.Size, new Vector2(410, 574)) < 2 && actions.Length == actionIds.Length
+                && actions.All(hit => !hit.Bounds.Intersects(source.Display.Bounds))
+                && !frame.Hits.Any(hit => hit.Id is "source-reader-next" or "source-reader-prev"),
+                "The original full-size card keeps its whole reading surface while its concrete actions remain simultaneously reachable outside the face without reader pages: " + sourceId);
+        }
     }
 }

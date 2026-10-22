@@ -12,5 +12,6 @@
     <ProjectReference Include="../Mana.Renderer/Mana.Renderer.csproj" />
     <ProjectReference Include="../Mana.Scenarios/Mana.Scenarios.csproj" />
     <Content Include="Assets/**" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <Content Include="../../forge-gui/res/skins/default/sprite_manaicons.png" Link="Assets/mana-symbols.png" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>

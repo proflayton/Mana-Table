@@ -19,6 +19,9 @@ internal sealed partial class TableApplication
         internal bool FollowTurnEnabled => game.followTurnEnabled;
         internal bool BoardViewLimitedByLayout => game.boardViewMotion.LimitedByLayout;
         internal void SetTurnFollow(bool enabled) => game.SetTurnFollow(enabled);
+        internal void SetTableStudy(bool enabled) => game.SetTableStudy(enabled);
+        internal bool TableStudyEnabled => game.TableStudyEnabled;
+        internal int? StudyFocusOwner => game.StudyFocusActive ? game.studyFocusOwner : null;
         internal IReadOnlyList<Mana.Renderer.EffectChangeGroup> PublicChanges => game.publicChanges.Groups;
         internal Rectangle? ChangeCalloutBounds => game.changeCalloutBounds;
         internal IReadOnlySet<string> HighlightedChangeTargets => game.highlightedChangeTargets;
