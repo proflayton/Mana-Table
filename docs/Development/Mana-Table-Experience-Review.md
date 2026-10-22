@@ -41,6 +41,11 @@ does not establish that a person can understand or use the screen.
    territories and reading direction stable. Turn ownership, priority and required
    decisions are different facts. Direct attention to the relevant source,
    recipients and responder without rearranging everyone's battlefield.
+8. **Reduce repeated interaction through explicit, bounded intent.** A burst of
+   equivalent choices should support assigning them together, followed by an
+   interruptible continuation. Keep every underlying trigger, target restriction,
+   response window and effect in the engine. Grouping presentation does not make
+   separate effects simultaneous or authorize choosing for another player.
 
 ### Accepted hand-play direction: 21 October 2026
 
@@ -167,6 +172,58 @@ and large windows. Existing ordinary/crowded/priority canonical cases provide a
 starting point. A new asymmetric-density checkpoint is still needed. Review the
 actual gesture through its result with people; fitting every occurrence is not
 evidence that they can identify it or follow the action.
+
+### Repeated targeted triggers: 37 draws
+
+The user reported 37 draws causing 37 one-creature targeting interactions and
+repeated manual resolution. This is a generic interaction requirement; the card
+name is not needed to define the design. This section specifies a required
+canonical journey for the refactor, not an implemented shortcut or loadable lab
+case.
+
+Two independent intents are needed:
+
+- **Assign targets together.** Present the equivalent trigger group beside its
+  source. Choosing a creature can assign it to the group with an explicit
+  same-target action; distributing assignments remains available on the actual
+  eligible creatures. Show pending assignment quantities on those creatures.
+  Those quantities count triggers, not promised counters, damage or final P/T.
+- **Continue through this group.** After assignments, let the player yield their
+  own priority for the captured group. Keep Take control available, show the
+  remaining group and update actual card state as effects resolve. Do not require
+  another click or a full animation pause for each equivalent resolution.
+
+Normal targeted triggers choose their targets while entering the stack, before
+resolution. Other players still receive their response opportunities between
+resolutions; a local continuation cannot resolve on their behalf. These are
+separate stages under [rules 115.1d, 603.3d and 117.4](https://media.wizards.com/2026/downloads/MagicCompRules%2020260925.pdf).
+
+The engine must identify the finite group and supported choice equivalence,
+including controller, source occurrence, ability/mode and targeting constraints.
+Each target assignment uses current legal candidates and the current prompt.
+Never reuse an old card key, infer equivalence from matching names/text, or
+automatically choose a replacement when a target becomes unavailable. Required
+payments, optional decisions, changed constraints, an intervening action, a new
+trigger outside the group, cancellation or uncertain connection return control.
+Expected effects from the group can continue; stopping on every counter change
+would recreate the original problem. New triggers never silently extend the
+player's authorization.
+
+Current Pass for now only covers empty-stack windows. Ordinary Auto requires
+the engine's no-response permission. Neither covers this intent. Forge's existing
+stack yields and optional-trigger acceptance provide useful primitives but do
+not batch target selections. Forge already skips some target prompts when a
+mandatory trigger has only one legal card, so repeated Resolve clicks must be
+distinguished from actual repeated target choices. The native boundary still needs group identity,
+current assignment permissions and bounded continuation; exposing a broad
+persistent yield preference is not the specified behavior.
+
+The canonical journey must include all choices aimed at one creature, choices
+split between creatures, target loss, an opponent response during resolution,
+a new mandatory decision and new triggers created by a group member. Review how
+people assign, inspect, interrupt and understand the resulting state on a crowded
+four-player table. Separate the mechanical preservation of 37 triggers from
+human review of the grouped presentation and pacing.
 
 ## Open a canonical case
 
