@@ -70,6 +70,23 @@ This acceptance covers that reader/hand-play direction. Crowded multiplayer
 clarity, other ability decisions, artwork latency and quiet-priority behavior
 retain their own review status. It does not establish release publication.
 
+## Pass for now regression: 21 October 2026
+
+Player intent is to stop acknowledging empty opponent priority windows despite
+having an instant available. The existing one-click control arms that bounded
+intent; the engine still owns each pass. Empty combat setup was replacing its
+permission before anyone attacked, and normal draws independently cancelled it
+through state and history checks. The user reported that it effectively did
+nothing. Tests previously started after combat, missing this ordinary journey.
+
+The revised journey keeps the original permission through the exact normal draw
+and another seat choosing no attackers. The armed indicator and Take control
+remain available; public actions, actual combat, other required choices and a
+turn change return control. Reading pauses passing without committing a command.
+Real-engine checks and actual application input cover these transitions and the
+next spell's unanswered response. Human review of the corrected behavior remains
+pending; the existing 0.2.61 installer does not contain this fix.
+
 ## MTGA references reviewed: 21 October 2026
 
 The user's seven Arena screenshots make the battlefield/inspection hierarchy concrete:

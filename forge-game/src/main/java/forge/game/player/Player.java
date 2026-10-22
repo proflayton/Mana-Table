@@ -33,6 +33,7 @@ import forge.game.ability.effects.DetachedCardEffect;
 import forge.game.ability.effects.RollDiceEffect;
 import forge.game.card.*;
 import forge.game.event.*;
+import forge.game.event.GameEventCardChangeZone.Origin;
 import forge.game.keyword.*;
 import forge.game.mana.ManaPool;
 import forge.game.phase.PhaseHandler;
@@ -1117,6 +1118,11 @@ public class Player extends GameEntity implements Comparable<Player> {
     public final CardCollectionView drawCard() {
         return drawCards(1);
     }
+
+    /** The draw step's turn-based action; effect draws use the ordinary draw methods. */
+    public final CardCollectionView drawCardForTurn() {
+        return drawCards(1, null, AbilityKey.newMap(), this.getZone(ZoneType.Hand), Origin.TURN_BASED_DRAW);
+    }
     public final CardCollectionView drawCards(final int n) {
         return drawCards(n, null, AbilityKey.newMap(), this.getZone(ZoneType.Hand));
     }
@@ -1127,6 +1133,10 @@ public class Player extends GameEntity implements Comparable<Player> {
         return drawCards(n, cause, params, this.getZone(ZoneType.Hand));
     }
     public final CardCollectionView drawCards(final int n, SpellAbility cause, Map<AbilityKey, Object> params, PlayerZone zone) {
+        return drawCards(n, cause, params, zone, Origin.OTHER);
+    }
+
+    private CardCollectionView drawCards(final int n, SpellAbility cause, Map<AbilityKey, Object> params, PlayerZone zone, Origin origin) {
         final CardCollection drawn = new CardCollection();
         if (n <= 0) {
             return drawn;
@@ -1152,7 +1162,7 @@ public class Player extends GameEntity implements Comparable<Player> {
             if (gameStarted && !canDraw()) {
                 return drawn;
             }
-            CardCollectionView cards = doDraw(toReveal, cause, params, zone);
+            CardCollectionView cards = doDraw(toReveal, cause, params, zone, origin);
             if (cards == null) {
                 break;
             }
@@ -1172,7 +1182,7 @@ public class Player extends GameEntity implements Comparable<Player> {
      * @return a CardCollectionView of cards actually drawn, or null if the library is empty and no
      *         replacement effect applies, since every further draw of the same batch would do the same
      */
-    private CardCollectionView doDraw(Map<Player, CardCollection> revealed, SpellAbility sa, Map<AbilityKey, Object> params, PlayerZone hand) {
+    private CardCollectionView doDraw(Map<Player, CardCollection> revealed, SpellAbility sa, Map<AbilityKey, Object> params, PlayerZone hand, Origin origin) {
         CardCollection drawn = new CardCollection();
         final PlayerZone library = getZone(ZoneType.Library);
 
@@ -1212,7 +1222,7 @@ public class Player extends GameEntity implements Comparable<Player> {
                 }
             }
 
-            c = game.getAction().moveTo(hand, c, cause, params);
+            c = game.getAction().moveTo(hand, c, cause, params, origin);
             drawn.add(c);
 
             // CR 121.6c additional actions can't be performed when draw gets replaced
@@ -1243,7 +1253,7 @@ public class Player extends GameEntity implements Comparable<Player> {
 
                 // A library-to-hand movement can also be a tutor. Emit the
                 // successful draw itself so consumers need not infer rules.
-                game.fireEvent(new GameEventCardDrawn(getView()));
+                game.fireEvent(new GameEventCardDrawn(getView(), origin));
 
                 final Map<AbilityKey, Object> runParams = AbilityKey.mapFromPlayer(this);
                 if (params != null) {

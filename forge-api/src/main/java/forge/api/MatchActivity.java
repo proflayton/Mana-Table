@@ -12,7 +12,12 @@ import java.util.*;
 public final class MatchActivity {
     public record Entry(long id, int turn, String phaseKey, String kind, Integer playerId,
                         String message, String cardId, String cardName, String detail, String outcome, int count,
-                        PublicCardChange change, PublicEffectCause cause) {
+                        PublicCardChange change, PublicEffectCause cause, boolean interruptsQuietYield) {
+        public Entry(long id, int turn, String phaseKey, String kind, Integer playerId, String message,
+                     String cardId, String cardName, String detail, String outcome, int count,
+                     PublicCardChange change, PublicEffectCause cause) {
+            this(id, turn, phaseKey, kind, playerId, message, cardId, cardName, detail, outcome, count, change, cause, true);
+        }
         public Entry(long id, int turn, String phaseKey, String kind, Integer playerId, String message,
                      String cardId, String cardName, String detail, String outcome, int count) {
             this(id, turn, phaseKey, kind, playerId, message, cardId, cardName, detail, outcome, count, null, null);
@@ -28,6 +33,7 @@ public final class MatchActivity {
     private final Map<CardView, String> visibleIds = new HashMap<>();
     private final Map<Integer, Map<String, PublicPlayerStates.State>> playerStates = new HashMap<>();
     private long sequence;
+    private long quietSequence;
     private int turn;
     private String phase = "PREGAME";
     private String phaseName = "Pregame";
@@ -45,6 +51,9 @@ public final class MatchActivity {
 
     /** Monotonic public events, including ones that resolved between snapshots. */
     synchronized long sequence() { return sequence; }
+
+    /** Turn-based hidden draws stay in history without ending an explicit yield. */
+    synchronized long quietSequence() { return quietSequence; }
 
     /** Exact event totals for this viewer, independent of the bounded feed. */
     public synchronized Map<String, Integer> observations() {
@@ -122,12 +131,17 @@ public final class MatchActivity {
     }
     private void add(String kind, PlayerView player, String message, CardView card, String detail, String outcome, int count,
                      PublicCardChange change, PublicEffectCause cause) {
+        add(kind, player, message, card, detail, outcome, count, change, cause, true);
+    }
+    private void add(String kind, PlayerView player, String message, CardView card, String detail, String outcome, int count,
+                     PublicCardChange change, PublicEffectCause cause, boolean interruptsQuietYield) {
         revision++;
+        if (interruptsQuietYield) quietSequence++;
         boolean anonymousTarget = change != null && publicFaceDown(card);
         entries.addLast(new Entry(++sequence, turn, phase, kind, player == null ? null : player.getId(),
                 message, anonymousTarget ? identities.concealed(card) : visualId(card),
                 anonymousTarget ? "Face-down card" : visible(card) ? card.getCurrentState().getName() : null,
-                detail, outcome, count, change, cause));
+                detail, outcome, count, change, cause, interruptsQuietYield));
         if (cause != null && change != null && change.kind().equals("counters")) {
             latestCounterCause = cause.id();
             entriesAfterLatestCounterCause = 0;
@@ -193,7 +207,9 @@ public final class MatchActivity {
             if (turn == 0 || from == to || to == null) return;
             var player = e.to().player();
             if (from == ZoneType.Library && to == ZoneType.Hand) {
-                add("moved", player, playerName(player) + " moved a card from library to hand.", null);
+                add("moved", player, playerName(player) + " moved a card from library to hand.", null,
+                        "", "", 0, null, null,
+                        e.origin() != GameEventCardChangeZone.Origin.TURN_BASED_DRAW || viewer.equals(player));
             } else if (to == ZoneType.Battlefield) {
                 // Ordinary land plays have their own event.
                 if (from != ZoneType.Hand || !e.card().getCurrentState().getType().isLand() || !visible(e.card()))
@@ -240,7 +256,8 @@ public final class MatchActivity {
             add("mulligan", e.player(), playerName(e.player()) + " took a mulligan.", null);
         } else if (event instanceof GameEventCardDrawn e) {
             if (viewer.equals(e.player())) cardsDrawn++;
-            add("draw", e.player(), playerName(e.player()) + " drew a card.", null, "", "", 1);
+            add("draw", e.player(), playerName(e.player()) + " drew a card.", null, "", "", 1, null, null,
+                    e.origin() != GameEventCardChangeZone.Origin.TURN_BASED_DRAW || viewer.equals(e.player()));
         }
     }
 }

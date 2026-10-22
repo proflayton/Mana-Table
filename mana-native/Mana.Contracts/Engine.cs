@@ -299,6 +299,8 @@ public sealed record GameSnapshot(string Id, string Status, string? Error, strin
 }
 public sealed record ActivityEntry(long Id, int Turn, string PhaseKey, string Kind, int? PlayerId, string Message, string? CardId, string? CardName)
 {
+    // Older engines omit this field and remain conservatively interrupting.
+    public bool InterruptsQuietYield { get; init; } = true;
     public string Detail { get; init; } = "";
     public string Outcome { get; init; } = "";
     public int Count { get; init; }

@@ -18,6 +18,7 @@ internal sealed class InteractionScenarioEngine : ICardEngine, ISourceActions
         SourceActionRead is { } read ? Task.FromResult(read(gameId, decisionId, sourceCardKey))
             : Task.FromException<SourceActionSet>(new NotSupportedException("This presentation fixture has no source-action reader."));
     internal bool RejectNextReply { get; set; }
+    internal Func<DecisionReply, Task>? ReplyOverride { get; set; }
     internal int RejectedReplies { get; private set; }
     internal bool PriorityHasOtherResponse { get; set; }
     public InteractionScenarioEngine()
@@ -52,6 +53,7 @@ internal sealed class InteractionScenarioEngine : ICardEngine, ISourceActions
         bool undoSetting = reply is { Action: ReplyAction.SetAbilityAutoPass, Ignore: false, DecisionId.Length: 0 };
         if (reply.GameId != state.Id || !undoSetting && reply.DecisionId != state.Decision?.Id)
             throw new InvalidOperationException($"Scenario received stale {reply.Action}: {reply.DecisionId}, current {state.Decision?.Id}");
+        if (ReplyOverride is { } replyOverride) return replyOverride(reply);
         if (RejectNextReply) { RejectNextReply = false; RejectedReplies++; ObservationsAtRejection = Observations; throw new EngineCommandRejectedException("Controlled rejected play"); }
         Card Find(string? key) => state.Players.SelectMany(p => p.Zones).SelectMany(z => z.Cards).Single(c => c.Key == key);
         if (reply.Action == ReplyAction.SetAbilityAutoPass) {

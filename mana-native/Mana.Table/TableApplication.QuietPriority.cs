@@ -47,7 +47,7 @@ internal sealed partial class TableApplication
         if (held || ExperienceLabOpen || fixture != null || session.NeedsRecovery || commandFailure
             || match is not { } state || state.ActivePlayerId == state.ViewerId && preferences.Stops.Contains(state.PhaseKey)
             || !DecisionQuietAdvance.CanWait(state, quietYieldGame, quietYieldTurn, quietYieldActivePlayer, quietYieldToken)
-            || state.Activity.Any(entry => entry.Id > quietYieldActivity && entry.Kind is not ("priority" or "phase"))) {
+            || DecisionQuietAdvance.HasInterruption(state, quietYieldActivity)) {
             StopQuietPriority(); return false;
         }
         if (interactionBlocked) { session.CancelAdvance(); return true; }
@@ -59,7 +59,7 @@ internal sealed partial class TableApplication
             long activity = quietYieldActivity; var stops = preferences.Stops.ToHashSet();
             bool Continue(GameSnapshot next) => !(next.ActivePlayerId == next.ViewerId && stops.Contains(next.PhaseKey))
                 && DecisionQuietAdvance.CanWait(next, game, turn, active, token)
-                && !next.Activity.Any(entry => entry.Id > activity && entry.Kind is not ("priority" or "phase"));
+                && !DecisionQuietAdvance.HasInterruption(next, activity);
             if (session.AdvanceQuietly(token, Continue, Mana.Magic.PresentationPacing.ShouldPresent))
                 pendingActionLabel = "Passing quiet priority windows.";
         }

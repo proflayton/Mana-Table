@@ -510,6 +510,19 @@ eligible pass but never authorize one the engine has rejected.
 This is an additive protocol change: existing manual actions remain valid, and
 clients must treat a missing `canAutoPass` field as false.
 
+An eligible empty-stack priority prompt on an opponent's turn also exposes an
+opaque `quietYieldToken`. Explicit
+`matchAction {action: "passUntilPublicAction", sessionId, promptId, yieldToken}`
+requires that original token at both acceptance and execution. This permission
+is independent of available instants and never broadens ordinary Auto. Quiet
+phase changes, the opponent's exact turn-based draw and empty attacker selection
+retain it; actual attacks, public actions/state changes, other required choices
+and turn changes revoke it. Clients never adopt a replacement token or answer
+another seat's input. Revocation after enqueue restores the unanswered prompt.
+Activity entries retain their normal content and add `interruptsQuietYield`:
+only explicitly tagged routine opponent draw entries use false. A missing flag
+means true; clients must not infer an exemption from `kind`, phase or message.
+
 Priority prompts also expose `priorityAbilities`, with opaque ability `id`,
 prompt-scoped `sourceCardKey`, `sourceName`, `text`, and `ignoredUntilNextTurn`.
 `matchAction {action: "setAbilityAutoPass", sessionId, promptId, abilityId,
