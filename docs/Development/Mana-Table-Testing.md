@@ -103,6 +103,13 @@ larger window, including affected text-size and motion settings. Look at actual
 surface. Preserve the observed problem and manual follow-up; test totals,
 screenshots, and timing measurements are not human acceptance.
 
+For gesture changes, retain the actual before, held, release and result states.
+Exercise cancellation arriving with release, and changes to the exact action key,
+permission or visibility during the gesture. Slow background observations must
+not flicker controls or retarget a held press or armed intent. Check cold and
+warm image caches when image loading affects the journey. Use the relevant
+existing harness and record human feedback separately from these assertions.
+
 ## Profiles and artifacts
 
 The normal app profile is `%LOCALAPPDATA%\ManaTableNative`. Development and test
@@ -110,7 +117,9 @@ runs use `--profile <fresh-directory>`; never use a player's installed profile
 or production installation for lifecycle tests.
 
 Retain the exact source revision, package/build metadata and engine hash with
-reproduction steps. Useful artifacts include:
+reproduction steps. A dirty candidate also needs the reviewed assembly hash,
+base commit and retained diff identity; the base commit alone cannot identify
+the tested binary. Useful artifacts include:
 
 - `native-error.log`, `client.log`, and `engine.log` in the selected profile;
 - the journey's result, observation or semantic-trace JSON;

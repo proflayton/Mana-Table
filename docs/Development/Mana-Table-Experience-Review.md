@@ -6,6 +6,102 @@ command safety, state projection, privacy and geometry invariants. They do not
 approve the UX. A count of passing checks, represented cards or captured frames
 does not establish that a person can understand or use the screen.
 
+## Design rules learned from player feedback
+
+1. **Design the journey before its controls.** Identify the player's intent,
+   source, target, gesture and visible result. Moving the same generic Activate
+   button from a dialog to a corner or over the artwork does not fix its purpose.
+2. **Use the right detail for the task.** Battlefield faces prioritize identity,
+   art and current characteristics; inspection preserves a recognizable full card
+   with complete rules and authoritative live state.
+   Keep the battlefield context. Reading is noncommitting; hand play uses the card itself.
+   Concrete engine actions belong beside their source, with quieter alternatives
+   for routine gestures. A live card face can integrate changed characteristics;
+   replacing it with a cropped illustration, generic prose panel and rules pages
+   loses its identity.
+3. **Show state and causality where they happen.** Connect source, pending effect,
+   affected objects and settled state. Current stats, counters, resources and
+   gained abilities must remain inspectable after an animation, with their sources
+   where the engine reports them. Repeated labels and a paragraph of
+   changes cannot substitute for that relationship.
+4. **Keep asynchronous work from disrupting interaction.** Preload authorized
+   likely artwork; prioritize visible and inspected cards. A background observation
+   should not flicker, disable or move an unchanged control. Retain local intent
+   and revalidate its exact engine permission before commitment.
+5. **Let the engine describe the game.** Use authoritative current characteristics,
+   action handles and decision constraints. A list intended for auto-pass is not
+   a complete action catalog. Simplify presentation without inventing availability,
+   skipping required choices or hardcoding a mechanic's maximum.
+6. **Treat rejection as design evidence.** Revisit the interaction and information
+   hierarchy before polishing its container. Review the actual entry, gesture,
+   interruption and result with realistic art and the relevant crowded state.
+   Use existing canonical cases and focused checks; record human feedback and its
+   scope separately from automated safety results.
+
+### Accepted hand-play direction: 21 October 2026
+
+The user accepted the linked Adagia preview after reviewing the intact card
+reader and then the drag interaction: click to read, drag from the hand or enlarged
+face, a compact held card, and a quiet Play land fallback. The hand-play source
+was committed as `ab0affd0715`; the reviewed application SHA-256 is
+`E261E4540CDC610D5A67057A2F0C207A9E021959E2D5BE4F5A540D64FDC7863D`.
+The scripted preview defaults to a `1200x800` window with genuine cached artwork.
+Its authored land result and separate real-Forge checks provide different evidence.
+
+This acceptance covers that reader/hand-play direction. Crowded multiplayer
+clarity, other ability decisions, artwork latency and quiet-priority behavior
+retain their own review status. It does not establish release publication.
+
+## MTGA references reviewed: 21 October 2026
+
+The user's three Arena screenshots make the battlefield/inspection hierarchy concrete:
+
+| Visible evidence | Mana Table design implication |
+| --- | --- |
+| Battlefield faces emphasize artwork, a narrow name strip and current P/T; full rules are absent at this scale | Give battlefield, inspection and pending effects distinct presentations of the same occurrence. Preserve full card identity and rules when reading. |
+| The first local Pridemate is 3/3 beside a small counter badge showing 1; the second is 7/6 beside a badge showing 4 | Make authoritative effective stats primary. A counter quantity is supporting state, not a formula for current P/T. |
+| Related cards sit behind the second Pridemate, with small icons on its frame | Keep attachments visibly associated with their host; retain inspectable identity, counter types and ability details. The still does not establish every icon/effect's meaning. |
+| The third screenshot's inspected Pridemate displays 9/8 in its own stat box, six +1/+1 counters, and gained Lifelink/Ward {2}; the detail blocks identify Sheltered by Ghosts as their source | Inspection should explain effective state and provenance while remaining recognizably the card. Keep these details available on demand, rather than displaying every explanation on the battlefield. |
+| Creature rows, rotated lands, the hand and the turn cue occupy distinct places | Establish a stable spatial hierarchy before adding labels. Test an equivalent hierarchy across four seats rather than copying two opposing halves. |
+
+Also reviewed sampled frames from [LegenVD's earthbending/landfall match](https://www.youtube.com/watch?v=38QyBm7unec)
+(24 November 2025). Full video retrieval returned HTTP 403; public storyboard
+samples cover roughly 6:20–13:15 at about ten-second intervals, at 320x180 per
+sample. Times below are approximate. These establish visible layout and overlap,
+not continuous motion, exact gesture timing or hard-to-read effect semantics.
+
+| Sample | Observation | Apply or avoid |
+| --- | --- | --- |
+| [About 7:48](https://www.youtube.com/watch?v=38QyBm7unec&t=468s) | An enlarged original face sits beside the continuing hand and battlefield | Preserve identity and context during inspection. |
+| [About 8:48](https://www.youtube.com/watch?v=38QyBm7unec&t=528s) | Trigger ordering presents the actual cards between explicit Last/First endpoints | Show order spatially, with its direction clear. A dedicated ordering workspace does not justify a dialog for every activation. |
+| [About 10:57](https://www.youtube.com/watch?v=38QyBm7unec&t=657s) | Battlefield/portrait emphasis coexists with pending cards at the side | Direct attention to affected objects while retaining the pending source. |
+| [About 11:27](https://www.youtube.com/watch?v=38QyBm7unec&t=687s) | Large links, outlined cards and an enlarged face compete across the board | Show relevant relationships selectively; multiplying every connector across four seats would amplify clutter. |
+
+Wizards' [Sylvan Library design account](https://magic.wizards.com/en/news/mtg-arena/dev-diary-sylvan-library)
+and its three UI images show eligibility on actual hand cards, a **Pay 8 Life**
+commit action, and a separate ordering step when needed. Our inference: name the
+actual command/consequence and preserve source context. Compress repetitive
+decisions only through engine-authorized equivalence; their sequential fallback
+handles interactions that change what the player can learn or choose.
+
+The official [Smart Priority guide](https://magic.wizards.com/en/news/mtg-arena/announcements-october-27-2025#a-quick-guide-to-smart-priority-for-powered-cube)
+documents automatic skips and card-specific exceptions. Our inference: learn
+from the pacing goal, while making our yield intent visible and revocable.
+Current responder, active turn and required decision ownership need independent
+representation at a multiplayer table.
+
+Next comparisons should reuse `crowded-counters.v1` for board hierarchy and
+selective cause/recipient feedback, `stack-priority.v1` for response ownership,
+`card-reading.v1` for authoritative stats/abilities across board and inspection,
+and `ordered-choice.v1`/`trigger-search.v1` for meaningful choices. Compare actual
+screens and complete journeys with people. These references propose design
+directions; they neither implement nor accept new Mana Table behavior.
+
+The currently accepted reader retains its original image and places effective
+state alongside it. State-aware inspection is a follow-up design question, not
+a reason to restore the rejected generic rules panel. Missing modifier provenance
+requires an engine projection; the client must not guess it from printed text.
+
 ## Open a canonical case
 
 From the repository root on Windows:
@@ -129,14 +225,14 @@ acceptance.
 | Every combat row repeated Back to table without locating that attacker | Removed the row copies; the panel exit and actual assign, remove and recall actions remain | Implemented |
 | Text-choice source art looked like other inspectable card art but had no interaction | A currently visible source preview now has an inspect-only target and hover feedback; original option indexes and action handles remain unchanged | Implemented |
 | Choice cards repeated SELECT / SELECTED / VIEW ONLY captions alongside their frames and task constraints | Replaced repeated captions with selection marks; the shortened ordered-choice task keeps counts and order, with each selected position still numbered | Implemented |
-| Small drags inside an enlarged hand card could be mistaken for a play, while requiring an exit from its full face made deliberate drags awkward | Require deliberate movement, then shrink the held card above the pointer. Permit legal drops inside the former reader area after leaving the original hand slot; Escape or right-click cancels | Reworked; human review pending |
-| A narrative panel and duplicate drop lane competed with the dragged card | Use subtle corner marks from the actual legal-drop geometry and light the held card on a legal drop; retain combat aim | Reworked; human review pending |
-| A boxed Play land shortcut competed with reading and dragging | Keep the available secondary shortcut as quiet text with hover feedback; clicking the card still reads | Implemented; human review pending |
+| Small drags inside an enlarged hand card could be mistaken for a play, while requiring an exit from its full face made deliberate drags awkward | Require deliberate movement, then shrink the held card above the pointer. Permit legal drops inside the former reader area after leaving the original hand slot; Escape or right-click cancels | Accepted for the Adagia hand-play preview, 21 October |
+| A narrative panel and duplicate drop lane competed with the dragged card | Use subtle corner marks from the actual legal-drop geometry and light the held card on a legal drop; retain combat aim | Accepted for the Adagia hand-play preview, 21 October |
+| A boxed Play land shortcut competed with reading and dragging | Keep the available secondary shortcut as quiet text with hover feedback; clicking the card still reads | Accepted for the Adagia hand-play preview, 21 October |
 | The hand cursor also appeared over input-shield panel backgrounds | Shield-only battlefield, recipient and public-outcome panel backgrounds no longer advertise an action | Implemented |
 | Error or notice banners could cover the reader's former top action tab | Keep the full original face visible, with authorized actions and effective state beside it | Reworked after the reconstructed reader was rejected; human review pending |
 | A single text ability option opened a gallery; the smaller dialog still obscured the game's purpose | Attach engine-reported actions to the actual source occurrence on the table. Keep the board visible, choose the action directly, and show its resulting state transition | Reworked after negative human feedback; review pending |
 | A pending ability repeated its source card, source-name row, Details button and stack count while its actual effect was not visible | Show its actual effect, controller, targets and order together; hover source/target references to read their cards, with exact-effect inspection only for overflow and secondary summaries | Reworked after screenshot rejection; human review pending |
-| Reconstructed art/rules panels and continuation pages obscured the actual card | Restore the complete original face; show concrete actions together beside it, with wheel scrolling only for rare overflow | Reworked after screenshot rejection; human review pending |
+| Reconstructed art/rules panels and continuation pages obscured the actual card | Restore the complete original face; show concrete actions together beside it, with wheel scrolling only for rare overflow | Intact reader accepted in the Adagia preview; other source-action contexts remain open |
 | Card images appeared only after the player opened them | Preload exposed faces and warm the selected local deck; prioritize the card being read and discard obsolete speculative work | Implemented; human review pending |
 | Pass for now flickered during background observations | Keep its input state stable while polling; arming records intent and revalidates the original token after observation | Implemented; human review pending |
 | Card gestures vary between the board reader, zone inspection, choices and allocation details | Review these contexts together before changing the common gesture policy; a hand cursor alone does not explain whether a click reads, selects or acts | Open |
@@ -172,7 +268,7 @@ simulation. GPU captures under `inline-actions-r3-*` retain the actual source an
 remove the false stack copy. These checks establish input and rendering behavior,
 not human acceptance of the experience.
 
-The edge tab was subsequently found too easy to miss. The current candidate puts
+The edge tab was subsequently found too easy to miss. That rejected candidate put
 the entry over the selected card's illustration, then replaces it with the actual
 engine-reported ability cost/effect when the complete options fit there. Longer
 choices keep the adjacent layout. Missing-art faces reserve that same action
@@ -242,7 +338,8 @@ are insufficient. No additional CI suite is introduced for this review.
 The current candidate keeps the complete original card image at 410x574. Concrete
 actions and effective P/T, damage and typed counters sit alongside it without
 reconstructing its illustration or rules. Actions have no previous/next pages;
-rare overflow uses wheel scrolling. Human acceptance remains open. Source reads are coalesced and
+rare overflow uses wheel scrolling. The intact reader and hand-play direction were
+accepted for the Adagia preview above; other action contexts remain open. Source reads are coalesced and
 bound to the current source/decision/revision. Explicit selection, cost/target
 continuations and cancellation keep their engine authority. Actual target-input
 semantics prevent a mixed card/player prompt from being labeled Choose a player,

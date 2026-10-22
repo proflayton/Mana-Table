@@ -4,6 +4,12 @@ Start with the [native setup guide](mana-native/README.md), then read the
 [architecture map](docs/Development/Mana-Table-Architecture.md). The working
 integration branch is **`master`**; base feature branches and pull requests on it.
 
+Before implementing player-facing changes, read
+[Design rules learned from player feedback](docs/Development/Mana-Table-Experience-Review.md#design-rules-learned-from-player-feedback).
+Define the player intent, source, target, gesture, engine transition and visible
+result before adding controls. Negative feedback calls for reconsidering that
+interaction; moving or restyling a rejected control does not settle it.
+
 ## Pick the right layer
 
 - **Native UI and interaction:** `mana-native/Mana.Table`, `Mana.Magic`, and
@@ -52,6 +58,9 @@ manual runs. See the testing guide's
 
 A PR should explain the concrete problem, resulting behavior, and checks run.
 Include screenshots for visible changes and mention remaining limitations.
+Record human review separately as pending, issues, accepted or not applicable,
+identifying the exact candidate, reviewed journey and scope, and reviewer feedback.
+Passing automation and agent inspection do not supply human approval.
 Open PRs as drafts and keep them there until the final commit has passed Windows native,
 repository tools (`desktop`), Java 17, and Java 21 checks, plus any applicable iOS checks. Record that
 commit and links to the completed runs in the validation notes, then mark it
