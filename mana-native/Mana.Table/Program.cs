@@ -41,7 +41,7 @@ internal static class Program
                 }
                 using var game = new TableWindow(engine, profile, Arg("--capture"), Arg("--fixture"), size, artSource: art,
                     appUpdates: appUpdates, installUpdate: incremental != null ? update => incremental.StartRestart(update, profile)
-                        : WindowsUpdateInstaller.TryCreate(AppContext.BaseDirectory, profile), enableLiveTableStudy: args.Contains("--table-study"));
+                        : WindowsUpdateInstaller.TryCreate(AppContext.BaseDirectory, profile), enableLiveTableStudy: !args.Contains("--classic-table"));
                 game.Run();
             } finally { engine.DisposeAsync().AsTask().GetAwaiter().GetResult(); }
             return 0;

@@ -87,16 +87,17 @@ need human review of actual screens, transitions and manual interaction.
 Frame publication does not answer the engine's pending
 decision. Every command still passes current game/decision scope checks.
 
-The explicit `--table-study` startup option selects `SharedTableStudy` when
-building `TableScene` for three/four seats. It uses fixed controller role lanes
+The native launcher selects `SharedTableStudy` by default when building
+`TableScene` for three/four seats. `--classic-table` retains the previous layout,
+and the Experience Lab offers the study through `--table-study`. It uses fixed controller role lanes
 and flat scan faces without global density/stack repacking. `SceneCard.ScanFace`
 selects battlefield painting; full readers retain a canonical battlefield anchor
 and share its exact scoped hit geometry. Their current P/T and typed state come
 from the same authorized occurrence. The study's pending-effect area is reserved
 before packing and can use the remaining space beside a reader. This comparison
-uses no automatic camera movement, alters no engine permissions and leaves the normal
-game's default layout unchanged. The same explicit option enables this layout
-for live games through `TableWindow`; it does not enable automation or inject
+uses no automatic camera movement and alters no engine permissions.
+The native launcher enables this layout for live games through `TableWindow`;
+it does not enable automation or inject
 authored state. `StudyBattlefieldFamily` associates same-name
 public occurrences while preserving strict state/availability cohorts and exact
 member IDs; required candidates are separated before packing. A bounded copy fan

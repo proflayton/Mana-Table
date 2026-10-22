@@ -250,10 +250,11 @@ behind names, current stats and badges, replacing the tiny tapped glyph wherever
 the larger cue fits. The full reader retains its separate Tapped detail.
 Both changes need human review on their own exact candidate.
 
-The explicit `--table-study` startup option now also enables this layout in live
-three/four-player games using the normal engine and setup. It does not enable
-automation or replace the game's snapshots with authored scenarios. Ordinary
-launches retain the default layout; the option is not in the published release.
+Live three/four-player launches now enable this layout by default, matching the
+reviewed playable build. `--classic-table` retains the previous layout for
+comparison. The normal engine and setup remain in use; this does not enable
+automation or replace snapshots with authored scenarios. This launcher default
+is awaiting publication in the next update.
 
 The native source also reuses Forge's bundled mana-symbol atlas for compact
 portrait pools: symbols and exact quantities with a quiet glow, using the
