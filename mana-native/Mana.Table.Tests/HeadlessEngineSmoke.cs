@@ -52,13 +52,14 @@ internal static class HeadlessEngineSmoke
             using var app = new TableApplication(engine, paths.Profile, initialState: initial);
             app.Automated = true; app.Initialize();
             var view = app.TestPort;
+            view.SetTableStudy(true);
             var viewport = new Point(1600, 900);
             Point pointer = new(20, 60);
             double seconds = 0;
             PresentationFrame frame = Tick("opening");
             Save("opening");
             string? landId = null, commanderId = null;
-            bool landSaved = false, commanderSaved = false;
+            bool landSaved = false, commanderSaved = false, openingHandRead = false;
             int decisions = 0;
 
             while (!landSaved || !commanderSaved) {
@@ -89,6 +90,22 @@ internal static class HeadlessEngineSmoke
                 if (view.Busy || view.Match?.Decision == null) { await Task.Delay(5); continue; }
                 if (++decisions > 80) throw new InvalidOperationException("The focused opening scenario required unexpectedly many decisions.");
                 var decision = view.Match.Decision;
+                if (!openingHandRead && decision is { Kind: "input", InputType: "InputConfirmMulligan" }) {
+                    var openingCard = view.Match.Viewer!.Zone("Hand").Cards.First();
+                    string game = view.Match.Id, prompt = decision.Id;
+                    Click("card:" + openingCard.Key + ":" + openingCard.VisualId);
+                    frame = Tick("opening-hand-reader"); frame = Tick("opening-hand-reader-settled");
+                    Check(view.Overlay.Length == 0 && frame.Cards.Any(card => card.Id == CardViews.Identity(openingCard)
+                            && card.Zone == "Hand" && card.Focused)
+                            && frame.Hits.Any(hit => hit.Id == "confirm") && frame.Hits.Any(hit => hit.Id == "cancel")
+                            && view.Match.Id == game && view.Match.Decision?.Id == prompt && !view.Busy,
+                        "A real Forge keep/mulligan hand card opens the normal reader while both decision controls remain available and no command is sent");
+                    Save("keep-hand-reader");
+                    Click("card:" + openingCard.Key + ":" + openingCard.VisualId);
+                    Check(!frame.Cards.Any(card => card.Focused) && view.Overlay.Length == 0 && view.Match.Decision?.Id == prompt,
+                        "A second opening-card click collapses reading without keeping or redrawing the real hand");
+                    openingHandRead = true;
+                }
                 if (decision is { Kind: "input", Intent: DecisionIntent.Priority }
                     && view.Match.ActivePlayerId == view.Match.ViewerId && view.Match.PhaseKey is "MAIN1" or "MAIN2") {
                     Card? playable = !landSaved ? view.Match.Viewer!.Zone("Hand").Cards.FirstOrDefault(card => card.Selectable && card.Type.Contains("Land", StringComparison.Ordinal))
@@ -125,6 +142,7 @@ internal static class HeadlessEngineSmoke
                 && actions.Any(action => JsonSerializer.Serialize(action).Contains("read-card-action"))
                 && landId != null && commanderId != null,
                 "The real land plays through a drag from its enlarged face, while the commander retains its explicit engine action");
+            Check(openingHandRead, "The real Forge walkthrough exercised opening-hand browsing before explicitly keeping");
             Check(frame.Stamp.GameId == view.Match!.Id && frame.Stamp.Revision == view.Match.Revision
                 && frame.Stamp.DecisionId == view.Match.Decision?.Id,
                 "The published frame is stamped with the exact authoritative game, revision and decision being displayed");

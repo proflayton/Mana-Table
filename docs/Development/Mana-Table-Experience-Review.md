@@ -240,6 +240,21 @@ and details reserve space together, keeping pending effects and current actions
 separate; the column absorbs clicks without activating a battlefield card.
 Human review of this revision remains pending.
 
+Opening-hand reading uses the same full-card reader during the engine's exact
+`InputConfirmMulligan` prompt, retaining both Keep and Mulligan controls. This
+exception applies only to the viewer's visible hand. Entering the distinct
+`InputLondonMulligan` bottom-card selection closes reading and preserves required
+card clicks; neither general intent nor prompt text grants browsing permission.
+Tapped scan faces now use a prominent curved arrow within their illustration,
+behind names, current stats and badges, replacing the tiny tapped glyph wherever
+the larger cue fits. The full reader retains its separate Tapped detail.
+Both changes need human review on their own exact candidate.
+
+The explicit `--table-study` startup option now also enables this layout in live
+three/four-player games using the normal engine and setup. It does not enable
+automation or replace the game's snapshots with authored scenarios. Ordinary
+launches retain the default layout; the option is not in the published release.
+
 The native source also reuses Forge's bundled mana-symbol atlas for compact
 portrait pools: symbols and exact quantities with a quiet glow, using the
 existing gain/loss cues. Spending a color removes its number immediately while

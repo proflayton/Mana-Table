@@ -114,6 +114,7 @@ internal sealed partial class TableApplication
         var target = (entry.ReaderTarget ?? CardPresentationController.ReaderPose(entry.Rest, entry.Zone)).Bounds;
         if (Vector2.Distance(entry.Display.Size, target.Size.ToVector2()) > 2
             || Vector2.Distance(entry.Display.Center, target.Center.ToVector2()) > 2) return;
+        if (CardContext.CanBrowseOpeningHand(entry)) return;
         if (SourceActionsSupported) { DrawSourceReaderControls(entry); return; }
         if (match?.Decision?.Intent == DecisionIntent.Priority && IsCardActionable(entry.Card)) {
             string label = entry.Zone == "Battlefield" ? "Abilities"

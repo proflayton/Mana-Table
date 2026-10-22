@@ -48,13 +48,14 @@ internal sealed class TableWindow : Game
 
     public TableWindow(ICardEngine engine, string profile, string? capture, string? fixture, Point? size = null,
         GameSnapshot? initialState = null, ICardArtSource? artSource = null,
-        IAppUpdates? appUpdates = null, Action<PreparedUpdate>? installUpdate = null)
+        IAppUpdates? appUpdates = null, Action<PreparedUpdate>? installUpdate = null, bool enableLiveTableStudy = false)
     {
         this.capture = capture;
         art = new(artSource ?? new MagicArtSource(profile));
         resources.Card = art.Get;
         application = new(engine, profile, fixture, initialState, resources, appUpdates, installUpdate, allowAutomaticChecks: capture == null,
             restartedAfterUpdate: ManagedInstallation.WasRestarted);
+        if (enableLiveTableStudy) application.EnableLiveTableStudy();
         application.CaptureMode = capture != null;
         application.ExitRequested += Exit;
         graphics = new(this) { PreferredBackBufferWidth = size?.X ?? 1440, PreferredBackBufferHeight = size?.Y ?? 810, SynchronizeWithVerticalRetrace = true };

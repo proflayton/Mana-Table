@@ -35,6 +35,17 @@ quiet text with hover feedback.
 Required selections, mana payment and combat retain their direct clicks and
 compact faces. Right-click inspects a currently visible face without choosing it.
 
+The opening Keep/Mulligan decision also uses the normal hand reader. Reading
+never keeps, redraws or plays a card. Required London mulligan bottom-card clicks
+continue to select the actual cards, and entering that choice closes the reader.
+
+The source-only `--table-study` startup option enables the reviewed four-player
+layout in live three/four-player games as well as the Experience Lab. Same-name
+permanents share state-specific groups, tapped faces carry a prominent curved
+arrow, and clicking a non-target player portrait opens the two-field view.
+Whole table or Escape returns. Full readers keep current P/T on the card with
+larger live details on the right. Ordinary launches retain their default layout.
+
 Visible faces preload, and the selected local deck warms the artwork cache before
 and during play. Reading takes precedence over background downloads; hidden
 opponent cards are never requested. A first uncached image can still need network.

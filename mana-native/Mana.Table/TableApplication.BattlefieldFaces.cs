@@ -34,13 +34,14 @@ internal sealed partial class TableApplication
         }
         canvas.CardFrame(pose, new Color(98, 122, 126) * opacity, 1);
 
+        var face = BattlefieldScanLabelArea(pose);
+        bool tappedCue = stateVisible && card.Tapped && PaintBattlefieldTapCue(card, owner, face, copies, opacity);
         if (stateVisible) {
             // Upright labels remain inside the rotating face, including during
             // the tap animation, rather than enlarging its rectangular hit area.
-            var face = BattlefieldScanLabelArea(pose);
             if (face.Width >= 36 && face.Height >= 32) {
                 int nameHeight = PaintBattlefieldScanName(card, owner, face, copies);
-                PaintBattlefieldScanState(card, owner, face, nameHeight, copies);
+                PaintBattlefieldScanState(card, owner, face, nameHeight, copies, tappedCue);
                 int statsHeight = CardPresentation.HasCombatStats(card) || card.Damage > 0 ? Math.Min(22, face.Height / 3) : 0;
                 if (copies > 1 && face.Top + nameHeight + 21 <= face.Bottom - statsHeight) {
                     string count = "×" + copies;
@@ -61,6 +62,53 @@ internal sealed partial class TableApplication
         if (card.Attacking || card.Blocking)
             canvas.CardFrame(pose with { Size = pose.Size + new Vector2(3) }, card.Attacking ? Red : Blue, 2);
         if (focus) canvas.CardFrame(pose with { Size = pose.Size + new Vector2(3) }, Ink * .5f, 2);
+    }
+
+    private bool PaintBattlefieldTapCue(Card card, int owner, Rectangle face, int copies, float opacity)
+    {
+        // Use the remaining illustration, rather than a tiny metadata glyph.
+        // Labels are painted afterward so current stats, counters and the full
+        // name remain unobscured. This treatment never expands an input region.
+        bool labels = face.Width >= 36 && face.Height >= 32;
+        bool sharedName = tableScene?.BattlefieldCard(owner, CardViews.Identity(card))?.StudyFamily is { CohortCount: > 1 };
+        int caption = labels && !sharedName ? BattlefieldScanNameHeight(card, face, copies) : 0;
+        int stats = labels && (CardPresentation.HasCombatStats(card) || card.Damage > 0) ? Math.Min(22, face.Height / 3) : 0;
+        bool badges = copies > 1 || CounterMarker(card).Length > 0 || card.Sick || card.PhasedOut
+            || CardPresentation.Abilities(card).Any(ability => ability != "tapped");
+        int top = face.Top + caption + (labels && badges ? 21 : 0) + 2;
+        var art = new Rectangle(face.Left + 2, top, face.Width - 4, face.Bottom - stats - top - 2);
+        if (art.Width < 18 || art.Height < 14) return false;
+
+        var center = art.Center.ToVector2();
+        float width = Math.Min(64, art.Width - 4f), height = Math.Min(48, art.Height - 4f);
+        float stroke = Math.Clamp(Math.Min(art.Width, art.Height) * .09f, 1.9f, 3.2f);
+        float headHeight = Math.Clamp(height * .45f, 5, 16), headHalfWidth = Math.Clamp(width * .2f, 4, 10);
+        float left = center.X - width / 2, topY = center.Y - height / 2;
+        var tip = new Vector2(center.X + width / 2 - headHalfWidth, center.Y + height / 2);
+        var neck = tip - new Vector2(0, headHeight);
+        float radius = Math.Min(width * .22f, height * .25f);
+        var bend = new Vector2(tip.X - radius, topY + radius);
+        Vector2 At(float angle) => bend + new Vector2(MathF.Cos(angle), MathF.Sin(angle)) * radius;
+        var outline = new Color(9, 18, 22) * (.93f * opacity);
+        var ink = new Color(242, 231, 196) * (.9f * opacity);
+        void Arm(Color color, float lineWidth)
+        {
+            // An open right-angle arrow reads as tapping even on a narrow land
+            // cohort; a nearly complete loop reads as another circular badge.
+            const int segments = 6;
+            var previous = At(-MathF.PI / 2);
+            canvas.Line(new(left, topY), previous, color, lineWidth);
+            for (int index = 1; index <= segments; index++) {
+                var next = At(-MathF.PI / 2 + MathF.PI / 2 * index / segments);
+                canvas.Line(previous, next, color, lineWidth); previous = next;
+            }
+            canvas.Line(previous, neck + new Vector2(0, 1), color, lineWidth);
+        }
+        Arm(outline, stroke + 2.6f);
+        canvas.Polygon([tip + new Vector2(0, 1.3f), neck + new Vector2(-headHalfWidth - 1.3f, -1), neck + new Vector2(headHalfWidth + 1.3f, -1)], outline);
+        Arm(ink, stroke);
+        canvas.Polygon([tip, neck - new Vector2(headHalfWidth, 0), neck + new Vector2(headHalfWidth, 0)], ink);
+        return true;
     }
 
     private const float BattlefieldNameSize = .5f;
@@ -125,7 +173,7 @@ internal sealed partial class TableApplication
         return new((int)pose.Center.X - width / 2, (int)pose.Center.Y - height / 2, width, height);
     }
 
-    private void PaintBattlefieldScanState(Card card, int owner, Rectangle face, int nameHeight, int copies)
+    private void PaintBattlefieldScanState(Card card, int owner, Rectangle face, int nameHeight, int copies, bool tappedCue)
     {
         bool creature = CardPresentation.HasCombatStats(card);
         float size = face.Width >= 100 ? .62f : .52f;
@@ -170,8 +218,8 @@ internal sealed partial class TableApplication
                 counterWidth = width;
             }
         }
-        var abilities = CardPresentation.Abilities(card).ToList();
-        if (card.Tapped) abilities.Insert(0, "tapped");
+        var abilities = CardPresentation.Abilities(card).Where(ability => ability != "tapped" || !tappedCue).ToList();
+        if (card.Tapped && !tappedCue && !abilities.Contains("tapped")) abilities.Insert(0, "tapped");
         if (card.Sick && creature) abilities.Insert(0, "summoning sick");
         if (card.PhasedOut) abilities.Insert(0, "phased out");
         for (int index = 0; badgeRoom && index < Math.Min(2, abilities.Count)
