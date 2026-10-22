@@ -24,6 +24,9 @@ does not establish that a person can understand or use the screen.
    gained abilities must remain inspectable after an animation, with their sources
    where the engine reports them. Repeated labels and a paragraph of
    changes cannot substitute for that relationship.
+   Public-zone inspection also needs the relevant casting route, its cost and
+   conditions, and reliable recent zone history. A public capability is distinct
+   from a current legal action, especially when inspecting an opponent's card.
 4. **Keep asynchronous work from disrupting interaction.** Preload authorized
    likely artwork; prioritize visible and inspected cards. A background observation
    should not flicker, disable or move an unchanged control. Retain local intent
@@ -63,7 +66,7 @@ retain their own review status. It does not establish release publication.
 
 ## MTGA references reviewed: 21 October 2026
 
-The user's four Arena screenshots make the battlefield/inspection hierarchy concrete:
+The user's five Arena screenshots make the battlefield/inspection hierarchy concrete:
 
 | Visible evidence | Mana Table design implication |
 | --- | --- |
@@ -73,6 +76,7 @@ The user's four Arena screenshots make the battlefield/inspection hierarchy conc
 | The third screenshot's inspected Pridemate displays 9/8 in its own stat box, six +1/+1 counters, and gained Lifelink/Ward {2}; the detail blocks identify Sheltered by Ghosts as their source | Inspection should explain effective state and provenance while remaining recognizably the card. Keep these details available on demand, rather than displaying every explanation on the battlefield. |
 | Creature rows, rotated lands, the hand and the turn cue occupy distinct places | Establish a stable spatial hierarchy before adding labels. Test an equivalent hierarchy across four seats rather than copying two opposing halves. |
 | The fourth screenshot keeps Exemplar of Light recognizable as a full card, with a Flying explanation adjacent to it and the battlefield continuing behind | Treat the card and its contextual explanation as one inspection area. Its placement must preserve the current source, eligible targets, hand and decision; four seats make this a layout concern, not just a tooltip concern. |
+| The fifth screenshot inspects an opponent's Tidings of War with adjacent Cost Modified, entered-the-graveyard-this-turn, Flashback and Amass explanations; the card's rules include a different result when cast from a graveyard | Make public-zone capabilities and casting context discoverable. Keep printed cost, route-specific cost, conditional effect text, recent history and current legal permission distinct. The still does not establish that the opponent can cast it at that moment. |
 
 Also reviewed sampled frames from [LegenVD's earthbending/landfall match](https://www.youtube.com/watch?v=38QyBm7unec)
 (24 November 2025). Full video retrieval returned HTTP 403; public storyboard
@@ -111,6 +115,32 @@ The currently accepted reader retains its original image and places effective
 state alongside it. State-aware inspection is a follow-up design question, not
 a reason to restore the rejected generic rules panel. Missing modifier provenance
 requires an engine projection; the client must not guess it from printed text.
+
+### Public-zone capabilities and contextual inspection
+
+The opponent-graveyard reference extends the same design beyond battlefield
+stats. The player's intent is to understand a public card that may matter again.
+A quiet cue on its public zone leads to that exact card's inspection; reading
+sends no game command. Preserve its full face and explain the relevant ability,
+casting route, known cost/conditions and reliably reported recent zone transition
+beside it. Keep that zone associated with the correct seat at a four-player table.
+
+Use a generic engine projection for public abilities and casting context across
+zones. A printed mana cost, an alternative cost, a conditional result and legal
+availability now are different facts. A route-sensitive spell can have a different
+result from its ordinary cast; retain that conditional rule without presenting
+it as an already resolved outcome. Show effective costs or modifier sources only
+when the engine can authoritatively report them; some costs remain dependent on
+choices. The viewer's private action catalog cannot describe an opponent's options.
+
+Keep the normal table quiet: expose concise public-zone cues, with explanations
+on inspection rather than a permanent rules panel for every graveyard. Relevant
+zone history must come from durable, scoped engine facts, not an assumption that
+the retained activity tail is complete. Clear stale card details on visibility
+revocation. A face-down or otherwise private occurrence never acquires a visible
+identity, cost or ability merely because another card uses a familiar mechanic.
+This is a design requirement; generic casting-route/cost and recent-zone
+inspection have not been implemented by recording this reference.
 
 ### Four-player direction: stable table, selective attention
 
