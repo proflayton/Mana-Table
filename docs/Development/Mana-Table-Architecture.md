@@ -394,11 +394,15 @@ another card. The reader retains the complete original card image. Source-aware
 hosts expose concrete authorized actions beside the face, together with current
 effective P/T, damage and typed counters. Reading has no previous/next pages;
 unusually long action lists scroll in their adjacent area. There is no separate
-Close card control. A drag begun with a hand reader pinned must
-leave both the captured reader face and its original hand slot before a legal
-drop can commit; moving within the enlarged face cannot cast the card. Dragging
-uses the held card, legal-drop outline and combat aim without a narrative hint
-panel.
+Close card control. A hand drag begun on the enlarged reader requires 32 logical
+pixels of deliberate movement, then shrinks the held face to 132x185 at pointer
+offset `(0, -72)`. The former reader area permits a legal drop; the original hand
+slot must still be left. Ordinary hand and combat drags retain their 9-pixel
+threshold. Current UI/control scopes and engine permissions gate every drop.
+Escape or right-click cancels a drag. Subtle corner marks share the legal-drop
+geometry, and the held card lights when its drop is legal; there is no duplicate
+narrow lane or large drop panel. Clicking still reads. An available hand land's
+secondary Play land shortcut uses quiet text with hover feedback.
 The local portrait and life total sit at the center above the hand, using the
 same seat anchor as incoming combat lines, commander entrances and life effects.
 The fan sits behind the portrait, with local battlefield ranks shifted forward

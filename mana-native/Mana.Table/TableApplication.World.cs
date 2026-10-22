@@ -50,10 +50,7 @@ internal sealed partial class TableApplication
             bool active = player?.Id == match!.ActivePlayerId;
             canvas.Glow(p, seat is 0 or 2 ? new(245, 370) : new(620, 230), (active ? Gold : Blue) * (active ? .16f : .035f));
         }
-        if (dragging && dragSource?.Zone == "Hand" && match!.Decision?.Intent == DecisionIntent.Priority) {
-            var drop = TableWorld.Card(new(0, 230), new(835, 278));
-            canvas.Surface(null, drop, Blue * .045f); canvas.CardFrame(drop, Blue * .4f, 2);
-        }
+        DrawHandPlayArea();
     }
     private void DrawOpponent(Player player, int seat)
     {

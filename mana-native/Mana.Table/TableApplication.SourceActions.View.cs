@@ -81,11 +81,15 @@ internal sealed partial class TableApplication
         var area = AbilityActionArea(face, desiredWidth, Math.Min(face.Height, desiredHeight));
         if (area.IsEmpty) return;
         int width = area.Width;
-        int lineHeight = canvas.TextSize("Ag", size, width - padding * 2, 80, true).Y;
         var rows = options.Select(option => {
+            bool secondary = entry.Zone == "Hand" && option.Action is { Kind: "play" };
+            float font = secondary ? .62f : size;
+            int inset = secondary ? 6 : padding;
+            int lineHeight = canvas.TextSize("Ag", font, width - inset * 2, 80, !secondary).Y;
             string text = option.Text.Replace('\r', ' ').Replace('\n', ' ');
-            var lines = canvas.TextPages(text, size, width - padding * 2, lineHeight, 80, true);
-            return (Option: option, Lines: lines, Height: Math.Max(38, lines.Length * lineHeight + padding * 2));
+            var lines = canvas.TextPages(text, font, width - inset * 2, lineHeight, 80, !secondary);
+            return (Option: option, Lines: lines, Height: Math.Max(secondary ? 30 : 38, lines.Length * lineHeight + inset * 2),
+                Secondary: secondary, Font: font, Inset: inset, LineHeight: lineHeight);
         }).ToArray();
         int stateHeight = state.Length == 0 ? 0 : canvas.TextSize(state, .63f, width - 8, 80, true).Y + 12;
         int contentHeight = stateHeight + rows.Sum(row => row.Height + gap) - (rows.Length > 0 ? gap : 0);
@@ -111,11 +115,15 @@ internal sealed partial class TableApplication
                 string id = option.Retry ? "source-actions-retry"
                     : (option.Action != null && Array.IndexOf(readerActions!.Actions, option.Action) == 0 || firstPlacement) ? "read-card-action"
                     : option.Placement != null ? "source-placement:" + option.Placement.Id : "source-action:" + option.Action!.Id;
-                PaintControlSurface(id, visible, new(19, 34, 41), Blue * .6f, !busy);
+                bool hover = !busy && IsControlHovered(id);
+                if (row.Secondary) {
+                    if (hover) canvas.Rounded(visible, Blue * (pressed?.Id == id && CurrentHit(pressed) ? .22f : .10f), 4);
+                } else PaintControlSurface(id, visible, new(19, 34, 41), Blue * .6f, !busy);
                 for (int line = 0; line < row.Lines.Length; line++) {
-                    int lineY = y + padding + line * lineHeight;
-                    if (lineY >= top && lineY + lineHeight <= top + height)
-                        canvas.Text(row.Lines[line], area.X + padding, lineY, Ink, size, width - padding * 2, 1, true);
+                    int lineY = y + row.Inset + line * row.LineHeight;
+                    if (lineY >= top && lineY + row.LineHeight <= top + height)
+                        canvas.Text(row.Lines[line], area.X + row.Inset, lineY,
+                            row.Secondary ? hover ? Blue : Muted : Ink, row.Font, width - row.Inset * 2, 1, !row.Secondary);
                 }
                 sourceReaderControls.Add(new(id, visible, option.Action, option.Retry, option.Placement));
             }

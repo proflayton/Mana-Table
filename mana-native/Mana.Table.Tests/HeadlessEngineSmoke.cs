@@ -121,9 +121,10 @@ internal static class HeadlessEngineSmoke
                 await Idle();
             }
 
-            Check(actions.Any(action => JsonSerializer.Serialize(action).Contains("read-card-action"))
+            Check(actions.Any(action => JsonSerializer.Serialize(action).Contains("reader-face-drag"))
+                && actions.Any(action => JsonSerializer.Serialize(action).Contains("read-card-action"))
                 && landId != null && commanderId != null,
-                "Real land and commander plays both use the production card reader's explicit action control");
+                "The real land plays through a drag from its enlarged face, while the commander retains its explicit engine action");
             Check(frame.Stamp.GameId == view.Match!.Id && frame.Stamp.Revision == view.Match.Revision
                 && frame.Stamp.DecisionId == view.Match.Decision?.Id,
                 "The published frame is stamped with the exact authoritative game, revision and decision being displayed");
@@ -212,12 +213,32 @@ internal static class HeadlessEngineSmoke
                     Guard(); await Task.Delay(1); frame = Tick("await-engine-source-actions");
                 }
                 string decisionId = view.Match!.Decision!.Id;
-                Click("read-card-action");
-                actions.Add(new { mode = "application-pointer", decision = decisionId, action = "read-card-action", card.Name, occurrence,
-                    offeredActions = sourceActions.Actions });
+                if (expectedKind == "play") {
+                    var reader = frame.Cards.Single(item => item.Id == occurrence && item.Focused);
+                    pointer = reader.Display.Center.ToPoint();
+                    Check(view.HitAt(pointer)?.Id == reader.Hit.Id,
+                        "The real land's enlarged face is directly available as the drag source");
+                    frame = Tick("press-real-land-reader", ButtonState.Pressed);
+                    pointer += new Point(80, 0);
+                    Check(reader.Display.Contains(pointer), "The intended land drop remains inside the old enlarged reader bounds");
+                    frame = Tick("drag-real-land-reader", ButtonState.Pressed);
+                    Check(!frame.Cards.Any(item => item.Focused) && view.DisplayedPose(occurrence) is { } held
+                        && held.Size == new Vector2(132, 185) && held.Center == pointer.ToVector2() + new Vector2(0, -72)
+                        && view.Match!.Decision?.Id == decisionId,
+                        "Dragging the real land shrinks it into a held card above the pointer without answering the decision before release");
+                    Save("land-held-from-reader");
+                    frame = Tick("release-real-land-reader");
+                    Check(app.AcceptedDrag, "Releasing the real land inside its old reader area commits the actual hand drag");
+                    actions.Add(new { mode = "application-pointer", decision = decisionId, action = "reader-face-drag", card.Name, occurrence,
+                        sourceKey = card.Key, drop = pointer, offeredActions = sourceActions.Actions });
+                } else {
+                    Click("read-card-action");
+                    actions.Add(new { mode = "application-pointer", decision = decisionId, action = "read-card-action", card.Name, occurrence,
+                        offeredActions = sourceActions.Actions });
+                }
                 await Idle();
                 Check(view.Match?.Decision?.Context != "playAbility",
-                    "The real on-card source action proceeds directly without a second generic ability choice: " + card.Name);
+                    "The real card gesture proceeds directly without a second generic ability choice: " + card.Name);
             }
         } catch (Exception exception) {
             error = exception.ToString(); throw;

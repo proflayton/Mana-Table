@@ -26,7 +26,12 @@ a hand, battlefield or command-zone card opens its reader; clicking that card
 again, empty space or Escape dismisses it. The full original face stays visible,
 with concrete engine-authorized actions, effective P/T, damage and typed counters
 beside it. Actions have no previous/next pages; unusually long lists scroll.
-Dragging a playable hand card onto the table also plays it.
+Dragging a playable hand card onto the table also plays it. A deliberate drag
+from an enlarged reader shrinks the held card above the pointer; it can be dropped
+inside the former reader area after leaving its original hand slot. Corner marks
+show the legal region and the held card lights on a legal drop. Escape or
+right-click cancels. An available hand land's secondary Play land shortcut uses
+quiet text with hover feedback.
 Required selections, mana payment and combat retain their direct clicks and
 compact faces. Right-click inspects a currently visible face without choosing it.
 

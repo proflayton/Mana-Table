@@ -44,16 +44,13 @@ internal sealed partial class TableApplication
         DrawTurnCallout();
         if (dragging && dragSource?.Card is { } heldCard) {
             bool legal = LegalDrop(HitAt(pointer));
-            if (dragSource.Zone == "Hand" && state.Decision?.Intent == DecisionIntent.Priority) {
-                canvas.Panel(new(286, 166, 1028, 609), Color.Transparent, (legal ? Blue : Muted) * .45f, 12);
-            }
             if (state.Decision?.Intent is DecisionIntent.Attack or DecisionIntent.Block && cardPositions.TryGetValue(heldCard.CombatId, out var origin))
                 DrawCombatAim(origin, legal ? Blue : Muted);
             else {
                 // Keep the held occurrence in the scene, so release continues
                 // from the pointer instead of respawning it at the library.
-                var heldPose = cardPresentation.Hold(CardIdentity(heldCard), new(pointer.ToVector2(), new(154, 216), -.04f, Elevation: 46));
-                PaintInteractionCard(heldCard, heldPose, true, false);
+                var heldPose = cardPresentation.Hold(CardIdentity(heldCard), new(pointer.ToVector2() + new Vector2(0, -72), new(132, 185), -.025f, Elevation: 18));
+                PaintInteractionCard(heldCard, heldPose, false, legal);
             }
         }
         hovered = !dragging ? HitAt(pointer)?.Card : null;

@@ -57,7 +57,7 @@ internal static class HeadlessPresentationSmoke
                 run.Settle("uncommitted-reader-drag");
                 Check(run.Engine.Replies.Count == 0 && !run.View.Busy
                     && run.View.Match!.Viewer!.Zone("Hand").Cards.Any(card => card.VisualId == "hand-a"),
-                    "Dragging within the original expanded hand reader cannot arm or submit a card play");
+                    "Twenty pixels of movement on an expanded hand card is insufficient deliberate displacement to submit a play");
                 run.ClickCard("hand-a"); run.Settle("reader-a-restored");
                 run.ClickCard("hand-b", originalHandSlot: true); run.Settle("reader-b");
                 Check(run.Frame.Cards.Single(card => card.Id == "hand-b").Focused
@@ -99,6 +99,69 @@ internal static class HeadlessPresentationSmoke
                     "Changing the authoritative decision between press and release rejects the obsolete input scope");
                 Check(Fingerprint(first.Drawing).SequenceEqual(Fingerprint(second.Drawing)) && first.Hits.Count == second.Hits.Count,
                     "Old drawing commands and interaction snapshots remain detached from subsequent frames");
+            }
+
+            using (var run = new Runner(profile, "reader-drag-to-play", Example(), trace, performance)) {
+                run.Tick("initial");
+                string decision = run.View.Match!.Decision!.Id;
+                string key = run.View.Match.Viewer!.Zone("Hand").Cards.Single(card => card.VisualId == "hand-a").Key;
+                var drag = run.DragReaderCard("hand-a");
+                var held = run.View.DisplayedPose("hand-a");
+                Check(drag.Reader.Contains(drag.Drop) && !drag.Anchor.Contains(drag.Drop) && TableWorld.CanPlayAt(drag.Drop)
+                    && held is { } pose && pose.Size == new Vector2(132, 185)
+                    && pose.Center == drag.Drop.ToVector2() + new Vector2(0, -72)
+                    && !run.Frame.Cards.Any(card => card.Id == "hand-a" && card.Focused) && run.Engine.Replies.Count == 0,
+                    "A deliberate reader-face drag becomes a compact held card above the pointer while remaining inside its former reader area");
+                run.Input(drag.Drop, label: "release-reader-face-on-board");
+                run.Until(() => !run.View.Busy && run.Engine.Replies.Count == 1, "reader-drag-play-confirmed");
+                Check(run.Engine.Replies.Single() is { Action: ReplyAction.SelectCard } reply
+                    && reply.DecisionId == decision && reply.Card == key
+                    && run.View.Match!.Viewer!.Zone("Battlefield").Cards.Any(card => card.VisualId == "hand-a"),
+                    "Releasing a deliberate reader-face drag on the board submits exactly the current scoped hand play without crossing the old reader boundary");
+            }
+
+            foreach (string condition in new[] { "escape", "escape-on-release", "right-click", "outside-board", "over-control", "hand-anchor", "new-prompt", "new-key", "permission-revoked", "visibility-revoked" }) {
+                var state = Example();
+                if (condition == "hand-anchor") state = state with { Players = state.Players.Select(player => player.Id != state.ViewerId ? player : player with {
+                    Zones = player.Zones.Select(zone => zone.Name != "Hand" ? zone : zone with { Count = 1, Cards = zone.Cards.Take(1).ToArray() }).ToArray()
+                }).ToArray() };
+                using var run = new Runner(profile, "reader-drag-" + condition, state, trace, performance);
+                run.Tick("initial");
+                var drag = run.DragReaderCard("hand-a");
+                var release = drag.Drop;
+                KeyboardState? releaseKeys = null;
+                if (condition == "escape") run.Input(release, left: ButtonState.Pressed, label: "cancel-held-card-with-escape", keys: new(Keys.Escape));
+                else if (condition == "escape-on-release") releaseKeys = new(Keys.Escape);
+                else if (condition == "right-click") run.Input(release, left: ButtonState.Pressed, right: ButtonState.Pressed, label: "cancel-held-card-with-right-click");
+                else if (condition == "outside-board") release = new(20, 60);
+                else if (condition == "over-control") {
+                    var control = run.Hit("instructions");
+                    release = new(control.Bounds.Left + 8, control.Bounds.Top + 5);
+                    Check(TableWorld.CanPlayAt(release) && run.View.HitAt(release)?.Id == control.Id,
+                        "The invalid control destination lies inside the generic play area and has actual UI hit precedence");
+                } else if (condition == "hand-anchor") {
+                    release = drag.Anchor.Point(.5f, .01f).ToPoint();
+                    Check(drag.Anchor.Contains(release) && TableWorld.CanPlayAt(release),
+                        "The one-card hand anchor overlaps the generic play area, so its actual pose must prevent a drop");
+                } else if (condition == "new-prompt") run.Present(run.Engine.State with {
+                    Decision = run.Engine.State.Decision! with { Message = "A replacement priority window." }
+                });
+                else {
+                    var current = run.View.Match!;
+                    run.View.Accept(current with { Revision = current.Revision + 1, Players = current.Players.Select(player => player.Id != current.ViewerId ? player : player with {
+                        Zones = player.Zones.Select(zone => zone.Name != "Hand" ? zone : zone with {
+                            Count = zone.Count - (condition == "visibility-revoked" ? 1 : 0),
+                            Cards = zone.Cards.Where(card => condition != "visibility-revoked" || card.VisualId != "hand-a")
+                                .Select(card => card.VisualId != "hand-a" ? card : condition == "new-key"
+                                    ? card with { Key = card.Key + ":replacement" } : card with { Selectable = false }).ToArray()
+                        }).ToArray()
+                    }).ToArray() });
+                }
+                run.Input(release, label: "release-after-" + condition, keys: releaseKeys);
+                run.Settle("reader-drag-rejected-" + condition);
+                Check(run.Engine.Replies.Count == 0 && !run.View.Busy
+                    && (condition != "visibility-revoked" || !run.Frame.Cards.Any(card => card.Id == "hand-a")),
+                    $"A reader-origin hand drag cannot submit a play after {condition} and cannot retain a revoked card face");
             }
 
             using (var run = new Runner(profile, "generic-state-and-privacy", Example(), trace, performance)) {
@@ -326,6 +389,18 @@ internal static class HeadlessPresentationSmoke
             Input(point, left: right ? ButtonState.Released : ButtonState.Pressed,
                 right: right ? ButtonState.Pressed : ButtonState.Released, label: "press-card-" + id);
             Input(point, label: "release-card-" + id);
+        }
+        internal (Pose Reader, Pose Anchor, Point Drop) DragReaderCard(string id)
+        {
+            ClickCard(id); Settle("reader-before-drag");
+            var card = Frame.Cards.Single(card => card.Id == id);
+            var start = card.Display.Center.ToPoint();
+            if (!card.Focused || View.HitAt(start)?.Card?.VisualId != id)
+                throw new InvalidOperationException("The expanded card face is not exposed for a reader-origin drag: " + id);
+            var drop = start + new Point(80, -20);
+            Input(start, left: ButtonState.Pressed, label: "press-reader-face-" + id);
+            Input(drop, left: ButtonState.Pressed, label: "deliberate-reader-drag-" + id);
+            return (card.Display, card.Rest, drop);
         }
         internal Point PointFor(TableHit hit) => TryPointFor(hit, out var point) ? point
             : throw new InvalidOperationException("No exposed production pointer point for " + hit.Id);
