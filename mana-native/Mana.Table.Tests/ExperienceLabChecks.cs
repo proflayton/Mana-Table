@@ -13,6 +13,7 @@ internal static class ExperienceLabChecks
 {
     internal static void Run(Action<bool, string> check)
     {
+        CheckHighScaleCounterBridge(check);
         DecisionFlowLabChecks.Run(check);
         check(ExperienceScenarios.All.Count > 0 && ExperienceScenarios.All.Select(item => item.Id).Distinct().Count() == ExperienceScenarios.All.Count
             && ExperienceScenarios.All.All(item => item.Id.EndsWith(".v1", StringComparison.Ordinal)),
@@ -329,5 +330,29 @@ internal static class ExperienceLabChecks
                 && !frame.Hits.Any(hit => hit.Id is "source-reader-next" or "source-reader-prev"),
                 "The original full-size card keeps its whole reading surface while its concrete actions remain simultaneously reachable outside the face without reader pages: " + sourceId);
         }
+    }
+    private static void CheckHighScaleCounterBridge(Action<bool, string> check)
+    {
+        string profile = Path.Combine(Path.GetTempPath(), "ManaTableCounterBridgeChecks", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(profile);
+        new PlayPreferences { Automatic = false, ReducedMotion = true, Sounds = false, TextScale = 1.3f }.Save(profile);
+        var lab = new ExperienceLabSession();
+        using var app = new TableApplication(new ExperienceLabEngine(lab), profile, initialState: lab.State) { Automated = true };
+        app.Initialize();
+        PresentationFrame Tick(double seconds)
+        {
+            var time = new GameTime(TimeSpan.FromSeconds(seconds), TimeSpan.FromSeconds(.05));
+            app.Update(time, new(), new(), new(1000, 740));
+            return app.ComposePresentation(time);
+        }
+        Tick(10); app.TestPort.OpenBattlefield(0); Tick(10.1);
+        app.TestPort.Accept(lab.AdvanceTo(1));
+        var frame = Tick(10.2);
+        var delta = frame.Drawing.Commands.OfType<DrawCommand.Text>().SingleOrDefault(text => text.X == 1374 && text.Value == "+2");
+        var measured = delta == null ? Point.Zero : new TextMetrics().TextSize(delta.Value!, delta.Size, delta.Width, 80, delta.Bold, 1.3f);
+        check(app.TestPort.TextScale == 1.3f && app.TestPort.ChangeCalloutBounds is { } bridge
+                && delta != null && delta.Y >= bridge.Top && delta.Y + measured.Y <= bridge.Bottom
+                && !frame.Drawing.Commands.OfType<DrawCommand.Text>().Any(text => text.Value?.StartsWith("Mixed", StringComparison.Ordinal) == true),
+            "At 130% text and a 1000px window the offscreen-source bridge paints the exact +2 within its measured reserve rather than misclassifying the taller numeral as mixed counters");
     }
 }

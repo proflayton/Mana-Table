@@ -13,7 +13,7 @@ internal sealed partial class TableApplication
 
     private (int StatusY, int StatusHeight, int CaptionY, int CaptionHeight, int TextY, int Lines) PlanDecisionDock(DecisionDockView view, string instruction, bool abilityControls)
     {
-        const int lines = 8;
+        int lines = (int)Math.Ceiling(8 * preferences.TextScale);
         var shown = canvas.TextSize(instruction, .75f, 295, lines);
         var complete = canvas.TextSize(instruction, .75f, 295, 80);
         int textBottom = abilityControls ? 764 : 789;

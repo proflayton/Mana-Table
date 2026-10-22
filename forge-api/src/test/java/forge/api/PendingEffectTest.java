@@ -357,7 +357,10 @@ public class PendingEffectTest {
             var input = game.until(next -> next.seat() == 0 && (text(next.prompt(), "inputType").startsWith("InputPayMana") || ready.test(next)));
             if (!text(input.prompt(), "inputType").startsWith("InputPayMana")) return input;
             assertTrue(input.prompt().get("okEnabled").getAsBoolean(), "The deliberately floated pool must pay the real cost");
-            assertTrue(game.answer(input, Map.of("action", "ok")));
+            // A completed payment may republish while this captured input is
+            // being inspected. A stale-only rejection must reobserve through
+            // until(), never replay OK against a replacement prompt.
+            game.answer(input, Map.of("action", "ok"));
         }
     }
 

@@ -79,21 +79,25 @@ internal sealed partial class TableApplication
             .Select(changes => new ChangeIncrement(changes.Key.Property, changes.Key.Amount, changes.Count())).ToArray();
         string Label(ChangeIncrement increment) => (increment.Amount > 0 ? "+" : "") + increment.Amount
             + (increment.Recipients == recipients.Count ? "" : " ·" + increment.Recipients + "/" + recipients.Count);
-        bool simple = increments.Length is > 0 and <= 2 && increments.All(increment =>
-            canvas.TextSize(Label(increment), .72f, 72, 80, true).Y <= 28
-            && (increment.Property == "+1/+1" || canvas.TextSize(increment.Property, .55f, 88, 80).Y <= 25));
+        int rowHeight = increments.Length == 1 ? 96 : 46;
+        var heights = increments.Select(increment => (
+            Amount: canvas.TextSize(Label(increment), .72f, 70, 80, true).Y,
+            Property: increment.Property == "+1/+1" ? 0 : canvas.TextSize(increment.Property, .55f, 88, 80).Y)).ToArray();
+        bool simple = increments.Length is > 0 and <= 2 && heights.All(height =>
+            height.Amount + (height.Property > 0 ? height.Property + 2 : 0) <= rowHeight);
         if (!simple) {
             // Different properties/amounts are never collapsed into a false total.
             PaintCounterGlyph(new(1384, 568, 17, 17), accent);
-            canvas.CenterText("Mixed counters", new(1354, 592, 88, 54), accent, .6f, true);
+            canvas.Text("Mixed\ncounters", 1354, 590, accent, .6f, 88, 80, true);
             return;
         }
         for (int index = 0; index < increments.Length; index++) {
             var increment = increments[index];
-            int y = increments.Length == 1 ? 579 : 555 + index * 46;
-            PaintCounterGlyph(new(1354, y + 6, 14, 14), accent);
+            int height = heights[index].Amount + (heights[index].Property > 0 ? heights[index].Property + 2 : 0);
+            int y = 554 + index * 48 + (rowHeight - height) / 2;
+            PaintCounterGlyph(new(1354, y + Math.Max(0, (heights[index].Amount - 14) / 2), 14, 14), accent);
             canvas.Text(Label(increment), 1374, y, accent, .72f, 70, 80, true);
-            if (increment.Property != "+1/+1") canvas.Text(increment.Property, 1354, y + 24, accent, .55f, 88, 80);
+            if (increment.Property != "+1/+1") canvas.Text(increment.Property, 1354, y + heights[index].Amount + 2, accent, .55f, 88, 80);
         }
     }
     private Card[] CurrentChangeRecipients(EffectChangeGroup group)
