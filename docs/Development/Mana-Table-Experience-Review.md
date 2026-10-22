@@ -132,10 +132,12 @@ acceptance.
 | Small drags inside an enlarged hand card could be mistaken for a play | A drag begun with a pinned hand reader must leave both its captured reader face and original hand slot before a legal drop can commit | Implemented |
 | A narrative panel followed each drag | Removed the generic drag prose; the held card, legal-drop outline and combat aim remain | Implemented |
 | The hand cursor also appeared over input-shield panel backgrounds | Shield-only battlefield, recipient and public-outcome panel backgrounds no longer advertise an action | Implemented |
-| Error or notice banners could cover the reader's former top action tab | Concrete actions now have a measured rules area in the card reader; the illustration remains clear | Reworked after the illustration-overlay iteration was rejected |
+| Error or notice banners could cover the reader's former top action tab | Keep the full original face visible, with authorized actions and effective state beside it | Reworked after the reconstructed reader was rejected; human review pending |
 | A single text ability option opened a gallery; the smaller dialog still obscured the game's purpose | Attach engine-reported actions to the actual source occurrence on the table. Keep the board visible, choose the action directly, and show its resulting state transition | Reworked after negative human feedback; review pending |
 | A pending ability repeated its source card, source-name row, Details button and stack count while its actual effect was not visible | Show its actual effect, controller, targets and order together; hover source/target references to read their cards, with exact-effect inspection only for overflow and secondary summaries | Reworked after screenshot rejection; human review pending |
-| Long ability text needs readable context through continuation pages | Complete text is preserved, but its continuation still needs a visual review of action identity and cost | Open |
+| Reconstructed art/rules panels and continuation pages obscured the actual card | Restore the complete original face; show concrete actions together beside it, with wheel scrolling only for rare overflow | Reworked after screenshot rejection; human review pending |
+| Card images appeared only after the player opened them | Preload exposed faces and warm the selected local deck; prioritize the card being read and discard obsolete speculative work | Implemented; human review pending |
+| Pass for now flickered during background observations | Keep its input state stable while polling; arming records intent and revalidates the original token after observation | Implemented; human review pending |
 | Card gestures vary between the board reader, zone inspection, choices and allocation details | Review these contexts together before changing the common gesture policy; a hand cursor alone does not explain whether a click reads, selects or acts | Open |
 
 Candidate verification: the Release build completed with no warnings or errors;
@@ -190,16 +192,15 @@ navigation it adds. The proposed interaction is:
 | Player intent | Visible behavior |
 | --- | --- |
 | Read or select a card | Promote the exact current occurrence into a stable, readable card. Keep the illustration clear; show current stats and counters with the card. Reading alone must not pay a cost or begin an activation. |
-| Use a card | Show concrete engine-reported cost/effect actions within its rules area. One ability gives one action; multiple abilities or casting alternatives use the same structure. Passive text remains text. No generic Abilities step. |
+| Use a card | Show concrete engine-reported cost/effect actions beside its complete face. One ability gives one action; multiple abilities or casting alternatives use the same structure. Passive text remains text. No generic Abilities step. |
 | Complete an action | Keep the chosen source identifiable while the engine requests modes, targets or payment in its actual order. Highlight legal battlefield targets and relevant resources in place. A short current task can accompany those objects. |
 | Back out | Offer cancellation only where the engine permits it. Preserve already-committed costs; do not imply a universal undo. Before commitment, selection and inspection leave game state unchanged. |
 | Understand the result | Return attention to the affected card, target or resource. Show the actual tap, movement, damage, counter or mana change; retain the source relationship through the transition. |
 
-The rules area must be composed deliberately. A rectangle at a percentage of a
-card image is not a mapping from its printed rules to a live action. The engine
-must supply action identity and presentation data. When it cannot identify the
-corresponding rules segment, explicit action text belongs in a distinct portion
-of the card reading surface; unrelated printed text must not appear clickable.
+The printed face remains intact. A rectangle at a percentage of a card image is
+not a mapping from its printed rules to a live action. The engine supplies action
+identity and presentation data for explicit cost/effect controls beside the face;
+unrelated printed text must not appear clickable.
 Availability and unavailable reasons must be engine-reported, never inferred
 from Oracle prose. Unknown availability must remain unknown.
 
@@ -211,7 +212,7 @@ Selecting a card needs a noncommitting, prompt-scoped projection of its real
 actions before a separate explicit action can invoke one. Both priority and
 mana-payment contexts need this contract, with stale-source validation and the
 viewer's existing visibility limits. The new candidate implements that optional
-source-action boundary and uses it in the selected card's rules area. Its
+source-action boundary and presents it beside the selected card's complete face. Its
 engine-owned handles stay separate from Auto-pass policies.
 
 This follows the useful separation described by Wizards' rules/client teams:
@@ -237,16 +238,16 @@ for commitment and cancellation; keep visual review separate from command
 assertions. The existing fake second-option labels and generic scripted result
 are insufficient. No additional CI suite is introduced for this review.
 
-The current candidate keeps the illustration clear and typesets concrete actions
-with the card's public rules, current counters and stats. Its height follows
-measured content; exact repeated Oracle/action lines display once while the full
-original rules remain available for inspection. Source reads are coalesced and
+The current candidate keeps the complete original card image at 410x574. Concrete
+actions and effective P/T, damage and typed counters sit alongside it without
+reconstructing its illustration or rules. Actions have no previous/next pages;
+rare overflow uses wheel scrolling. Human acceptance remains open. Source reads are coalesced and
 bound to the current source/decision/revision. Explicit selection, cost/target
 continuations and cancellation keep their engine authority. Actual target-input
 semantics prevent a mixed card/player prompt from being labeled Choose a player,
 and keep the permitted Cancel available.
 
-Agent GPU review used genuine art at `1000x740`. Evidence under
+The earlier reconstructed reader's agent GPU review used genuine art at `1000x740`. Evidence under
 `source-actions-review-harness/elf-1000-r2` and `ballista-1000-r2` records the full
 authored physical-pointer journeys, state/frame JSON and candidate assembly
 hash. The single source shows tap and green mana; the multi-ability source covers
@@ -361,7 +362,9 @@ rules nor actual library searching.
 In a real game with an available instant/activation, review **Pass for now** on
 an opponent's empty-stack priority. Quiet windows may pass, but a new action,
 turn or required choice must return control. Activate a mana source, respond to
-a spell, and try Hold/Take control and inspection. The feature retains one
+a spell, and try Hold/Take control and inspection. Hover and arm it during a
+background poll: its appearance should remain steady and passing must wait for
+fresh-state validation. The feature retains one
 engine-issued token, never silently adopts a new one, never consumes search or
 payment choices, and is not a persistent F6/end-turn setting. Existing Auto has
 its separate conservative availability permission. A command already submitted

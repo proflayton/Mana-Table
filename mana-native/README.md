@@ -23,10 +23,18 @@ For playing instructions, use [START-HERE.txt](START-HERE.txt).
 
 Hover highlights a card without enlarging it. During ordinary priority, clicking
 a hand, battlefield or command-zone card opens its reader; clicking that card
-again, empty space or Close card dismisses it. Play card and Activate ability are
-explicit reader actions; dragging a playable hand card onto the table also plays
-it. Required selections, mana payment and combat retain their direct clicks and
+again, empty space or Escape dismisses it. The full original face stays visible,
+with concrete engine-authorized actions, effective P/T, damage and typed counters
+beside it. Actions have no previous/next pages; unusually long lists scroll.
+Dragging a playable hand card onto the table also plays it.
+Required selections, mana payment and combat retain their direct clicks and
 compact faces. Right-click inspects a currently visible face without choosing it.
+
+Visible faces preload, and the selected local deck warms the artwork cache before
+and during play. Reading takes precedence over background downloads; hidden
+opponent cards are never requested. A first uncached image can still need network.
+Pass for now remains steady during background observations; arming it waits for
+the current observation before validating and submitting a quiet pass.
 
 The battlefield groups Creatures, Support and Lands. Sparse boards keep projected
 lanes; crowded boards switch together to upright cells within separate player

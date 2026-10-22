@@ -9,8 +9,7 @@ namespace Mana.Table.Presentation;
 
 /// <summary>The current authority and interaction policy used to prepare cards.</summary>
 internal sealed record CardPresentationContext(GameSnapshot? State, string Scope,
-    bool OverlayOpen, bool GalleryOpen, bool Dragging, bool CompactDecision, bool AbilityChoice = false, bool SourceActions = false,
-    float? ReaderHeight = null)
+    bool OverlayOpen, bool GalleryOpen, bool Dragging, bool CompactDecision, bool AbilityChoice = false, bool SourceActions = false)
 {
     public Card? ChoiceFace(int slot) => State?.Decision is { } decision
         ? decision.LibraryCards.Length > 0 ? decision.LibraryCards.ElementAtOrDefault(slot)?.Card

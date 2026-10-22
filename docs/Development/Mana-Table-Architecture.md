@@ -48,6 +48,13 @@ It can initialize, update and compose with no `Game`, window or graphics device.
 Its optional `PresentationResources` supplies textures and sound for a real window;
 an empty resource set uses the production rules-text and neutral-surface fallbacks.
 
+`TableApplication.ArtPreload` prepares exposed snapshot faces and the selected
+local deck before their first paint. `CardArt` prioritizes reading over visible
+faces, then warms the selected deck's disk cache. One worker deduplicates exact
+printing/face requests, replaces obsolete speculation and bounds pending image
+bytes and GPU uploads. Face-down objects and effect markers never request art;
+preloading never consults an opponent's deck or guesses hidden library order.
+
 The production pipeline is:
 
 ```mermaid
@@ -211,6 +218,9 @@ a current local priority prompt with that exact token. It never adopts a replace
 token or consumes targets, payment, searches or other required decisions. Hold,
 Take control and manual game actions stop further quiet passes; an already submitted
 command is reconciled before the connection is reused. Inspection pauses passing.
+Routine background observations leave the control enabled and its pointer state
+stable. Arming during a poll records local intent; submission waits for the poll
+and revalidates the original token against the accepted state.
 This policy is match-local intent, not a saved F6/end-turn preference, and does not
 broaden the existing `canAutoPass` availability permission.
 
@@ -380,9 +390,11 @@ its displayed pose supplies its hit region, while original hand slots remain
 available for browsing. Clicking the same card or empty space, pressing Escape
 or starting a drag dismisses the reader. Escape dismisses the reader before its
 parent workspace. Pointer exit alone does not dismiss it or replace it with
-another card. Once the reader settles, an available engine action appears in a
-quiet, short tab attached to its bottom-left edge: Cast, Play, Activate or Place.
-There is no separate Close card control. A drag begun with a hand reader pinned must
+another card. The reader retains the complete original card image. Source-aware
+hosts expose concrete authorized actions beside the face, together with current
+effective P/T, damage and typed counters. Reading has no previous/next pages;
+unusually long action lists scroll in their adjacent area. There is no separate
+Close card control. A drag begun with a hand reader pinned must
 leave both the captured reader face and its original hand slot before a legal
 drop can commit; moving within the enlarged face cannot cast the card. Dragging
 uses the held card, legal-drop outline and combat aim without a narrative hint
@@ -406,8 +418,8 @@ pointer hover. `TableApplication.Controls` shares the button and custom-surface
 painting used by text choices, pass policies and phase stops. Resting
 importance or selection stays separate from hover and pressed feedback.
 Shield-only panel backgrounds do not advertise a clickable action. Source-aware
-readers show concrete engine actions in a deliberately composed rules area below
-the illustration. Reading and choosing an action remain separate. Human
+readers keep printed rules intact and place concrete engine actions outside the
+card image. Reading and choosing an action remain separate. Human
 acceptance remains open; see [Experience review](Mana-Table-Experience-Review.md).
 Combat connections and pointer aiming share a straight, filled arrow in the
 renderer: a tapered shaft, broad directional head and dark separation from card
@@ -513,9 +525,10 @@ continue through Forge. No native rules-text parser determines legal actions.
 `TableApplication.SourceActions` coalesces read queries and rejects results after
 source, snapshot, visibility or decision changes. Action hits include their query
 generation and binding so a held press cannot activate a refreshed first option.
-The selected canonical occurrence is composed by `SourceActions.View` as a live
-card: clear illustration, readable concrete action rows, full public rules,
-current counters and P/T, with local overflow pages. A genuine empty result gives
+The selected canonical occurrence is composed by `SourceActions.View` using its
+complete original face, with current counters, P/T, damage and authorized action
+rows alongside it. Rare overflow scrolls without replacing the face or paging
+through rules and actions. A genuine empty result gives
 no invented action. Only an explicit unsupported-method response from an older
 table host disables the optional capability; stale queries do not.
 Graveyard and Exile zone browsers support the same current-occurrence reader;
@@ -570,7 +583,7 @@ identity so prompt churn cannot cancel those clicks.
 
 `CardActions` retains availability highlighting and legacy inspection routes.
 Source-aware readers use engine-owned action descriptions in the live card's
-rules area. Neither path infers playability from rules text.
+adjacent action area. Neither path infers playability from rules text.
 Stack projections include viewer-safe card/player targets (including subabilities).
 `TableApplication.Priority` composes one effect surface per actual stack item.
 The expanded row leads with `StackItem.Text`, a source thumbnail, controller,

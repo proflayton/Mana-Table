@@ -65,8 +65,6 @@ internal sealed class CardPresentationController
         var rest = view.Apply(request.Rest);
         if (focused) {
             readerTarget ??= ReaderPose(rest, request.Zone);
-            if (context.SourceActions && context.ReaderHeight is { } height)
-                readerTarget = readerTarget.Value with { Size = new(readerTarget.Value.Size.X, Math.Clamp(height, 350, 574)) };
         }
         bool useBoardMotion = !focused && BoardView.AffectsZone(request.Zone) && request.ChoiceSlot < 0;
         bool collapse = pendingCollapses.Remove(request.Id);

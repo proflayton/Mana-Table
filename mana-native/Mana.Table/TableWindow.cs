@@ -85,6 +85,8 @@ internal sealed class TableWindow : Game
         var keys = Automation?.ReadKeyboard() ?? Keyboard.GetState();
         var viewport = GraphicsDevice.Viewport;
         application.Update(time, mouse, keys, new(viewport.Width, viewport.Height));
+        var preload = application.ArtPreloadCards();
+        art.Preload(preload.Visible, preload.Anticipated);
         bool cardPointer = application.InteractivePointer;
         if (handCursor != cardPointer) {
             Mouse.SetCursor(cardPointer ? MouseCursor.Hand : MouseCursor.Arrow);

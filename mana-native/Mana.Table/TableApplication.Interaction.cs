@@ -83,6 +83,7 @@ internal sealed partial class TableApplication
     }
     private void Scroll(int direction)
     {
+        if (ScrollSourceReader(direction)) return;
         if (ScrollFocusedBattlefield(direction)) return;
         if (chatOpen && ChatBounds.Contains(pointer)) {
             if (chatPeople) return;

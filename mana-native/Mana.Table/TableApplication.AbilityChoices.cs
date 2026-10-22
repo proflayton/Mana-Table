@@ -111,6 +111,8 @@ internal sealed partial class TableApplication
         }));
         occupied.AddRange(manaPoolBadges.Values.Select(badge => badge.Bounds).Where(bounds => !bounds.IsEmpty));
         occupied.AddRange(publicCounterBadges.Values.Select(badge => badge.Bounds).Where(bounds => !bounds.IsEmpty));
+        occupied.AddRange(hits.Where(hit => hit.Id.StartsWith("focus:", StringComparison.Ordinal))
+            .Select(hit => { var bounds = hit.Bounds; bounds.Inflate(8, 8); return bounds; }));
         foreach (var obstacle in occupied) {
             for (int index = free.Count - 1; index >= 0; index--) {
                 var area = free[index]; var overlap = Rectangle.Intersect(area, obstacle);
@@ -129,8 +131,15 @@ internal sealed partial class TableApplication
             int x = Math.Clamp(anchor.Right + 12, area.Left, area.Right - width);
             return new Rectangle(x, area.Top, width, height);
         }).OrderBy(area => area.Height >= requestedHeight ? 0 : 1)
-            .ThenBy(area => area.Left >= anchor.Right || area.Right <= anchor.Left ? 0 : 1)
-            .ThenBy(area => Vector2.DistanceSquared(area.Center.ToVector2(), anchor.Center.ToVector2()))
+            .ThenBy(area => area.Width >= requestedWidth ? 0 : 1)
+            .ThenBy(area => area.Left >= anchor.Right ? 0 : area.Right <= anchor.Left ? 1 : 2)
+            .ThenBy(area => {
+                // Score where the content will actually sit beside the card,
+                // rather than the unused top of its available vertical strip.
+                int height = Math.Min(requestedHeight, area.Height);
+                int top = Math.Clamp(anchor.Center.Y - height / 2, area.Top, area.Bottom - height);
+                return Vector2.DistanceSquared(new Vector2(area.Center.X, top + height / 2), anchor.Center.ToVector2());
+            })
             .ThenByDescending(area => area.Width * area.Height).FirstOrDefault();
     }
 }

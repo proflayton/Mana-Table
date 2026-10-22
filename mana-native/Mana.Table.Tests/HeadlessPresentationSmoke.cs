@@ -29,6 +29,7 @@ internal static class HeadlessPresentationSmoke
             checks.Add(description);
         }
         try {
+            QuietPriorityPresentationChecks.Run(profile, Check);
             using (var run = new Runner(profile, "reading-and-scope", Example(), trace, performance)) {
                 var first = run.Tick("initial");
                 var second = run.Compose("same-time");
