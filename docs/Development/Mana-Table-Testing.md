@@ -95,6 +95,12 @@ and concession through production input without a GPU. Startup, workshop adapter
 and multiplayer modes cover their own boundaries; choose them when affected.
 Their entry points are in [Program.cs](../../mana-native/Mana.Table.Tests/Program.cs).
 
+`--smoke-lobby-three-player` stops opening replies when any seat first observes
+`MAIN1`, then waits for all three private views to agree on the playing game,
+turn, active seat and usable priority owner. A transient phase label alone is
+not readiness. Its existing 45-second opening deadline retains the latest views
+on failure; it does not pass the first main phase while gathering them.
+
 Use an immutable engine JAR whose source/hash is known. Rebuilding
 `forge-api/target/forge-engine.jar` does not refresh an existing package. Do not
 replace a JAR or package while another process uses it. A controlled UI fixture
