@@ -253,6 +253,7 @@ internal sealed partial class TableApplication
     private void DrawStack()
     {
         var state = match!;
+        if (ValuedTargetDecision) return;
         // Choosing an ability has not put it on the stack. Its current card
         // remains the source on the table; do not manufacture a stack copy.
         if (state.Stack.Length == 0 && (AbilityActionPending || SelectingActionTarget)) return;
@@ -317,12 +318,15 @@ internal sealed partial class TableApplication
         bool autoFollowing = TurnGuide.CanAutoPass(state, automatic, held, preferences.Stops, false);
         bool recipientChoice = !SelectingActionTarget && d?.Intent == DecisionIntent.Selection && StateClarity.Recipients(state).Length > 0;
         bool following = busy || d == null || autoFollowing;
+        bool valuedTarget = !busy && ValuedTargetDecision;
         string status = !busy && SelectingActionTarget ? "CHOOSE A TARGET" : !busy && autoFollowing ? "AUTO · PASSING PRIORITY" : !busy && recipientChoice ? "CHOOSE A PLAYER" : StateClarity.DecisionStatus(state, busy);
         var abilities = PriorityAbilityOptions();
-        string instruction = !busy && (recipientChoice || d?.Intent == DecisionIntent.Priority && state.Stack.Length == 0)
+        string instruction = valuedTarget || !busy && (recipientChoice || d?.Intent == DecisionIntent.Priority && state.Stack.Length == 0)
             ? "" : StateClarity.DecisionInstruction(state, busy, pendingActionLabel);
         var textLayout = PlanDecisionText(status, instruction, abilities.Length > 0);
-        if (!recipientChoice) {
+        if (valuedTarget) {
+            decisionPanelBounds = new(1240, 795, 360, 105);
+        } else if (!recipientChoice) {
             canvas.Panel(new(1254, decisionPanelBounds.Top, 320, 795 - decisionPanelBounds.Top), new(12, 22, 30), new(57, 75, 88), 5);
             canvas.Text(status, 1266, textLayout.StatusY, following ? Muted : Gold, .7f, decisionTextOverflow ? 180 : 298, 1, true);
             canvas.Text(instruction, 1266, textLayout.TextY, Ink, .75f, 295, textLayout.Lines);

@@ -4,6 +4,7 @@ import com.google.common.eventbus.Subscribe;
 import forge.game.card.CardView;
 import forge.game.event.GameEventCardChangeZone;
 import forge.game.event.GameEventShuffle;
+import forge.game.spellability.SpellAbility;
 import forge.game.zone.ZoneType;
 import java.util.*;
 
@@ -12,9 +13,15 @@ final class MatchIdentities {
     private final Map<CardView, String> ids = new HashMap<>();
     private final Map<CardView, String> concealed = new HashMap<>();
     private final Map<String, String> effects = new LinkedHashMap<>();
+    private final Map<SpellAbility, String> pendingEffects = new WeakHashMap<>();
     synchronized String id(CardView card) { return ids.computeIfAbsent(card, ignored -> UUID.randomUUID().toString()); }
     synchronized void forget(CardView card) { ids.remove(card); }
     synchronized String concealed(CardView card) { return concealed.computeIfAbsent(card, ignored -> UUID.randomUUID().toString()); }
+    // The engine owns these abilities through targeting and stacking. Weak keys
+    // preserve the same opaque identity without retaining finished abilities.
+    synchronized String pendingEffect(SpellAbility ability) {
+        return pendingEffects.computeIfAbsent(ability, ignored -> UUID.randomUUID().toString());
+    }
     synchronized String effect(String instanceId) {
         String id = effects.computeIfAbsent(instanceId, ignored -> UUID.randomUUID().toString());
         // The feed retains 120 entries. Keep a larger bounded correlation window,

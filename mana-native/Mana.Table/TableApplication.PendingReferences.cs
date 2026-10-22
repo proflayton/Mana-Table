@@ -9,7 +9,7 @@ namespace Mana.Table;
 
 internal sealed partial class TableApplication
 {
-    private sealed record PendingCardReference(string StackId, string CardId);
+    private sealed record PendingCardReference(string StackId, string CardId, string DecisionId = "");
     private PendingCardReference? pendingPreviewReference;
     private Rectangle? pendingPreviewBounds;
     private string? pendingPreviewCardId;
@@ -17,14 +17,20 @@ internal sealed partial class TableApplication
     private Card? ResolvePendingReference(PendingCardReference reference)
     {
         if (reference.CardId.Length == 0) return null;
-        var item = match?.Stack.FirstOrDefault(item => item.Id == reference.StackId);
-        if (item == null) return null;
+        var decision = reference.DecisionId.Length > 0 && match?.Decision?.Id == reference.DecisionId
+            && ValuedTargetDecision ? match.Decision : null;
+        var item = reference.DecisionId.Length == 0 ? match?.Stack.FirstOrDefault(item => item.Id == reference.StackId) : null;
+        if (item == null && decision == null) return null;
         bool Matches(Card card, string id) => card.VisualId == id || card.CombatId == id || CardViews.Identity(card) == id;
+        var source = decision == null ? item?.Card : InteractionCards.Source(match, decision);
+        var counter = (decision?.Effect ?? item?.Effect)?.CounterChange?.Card;
         var card = AllCards().FirstOrDefault(card => !card.FaceDown && Matches(card, reference.CardId))
-            ?? (item.Card is { FaceDown: false } source && Matches(source, reference.CardId) ? source : null);
+            ?? (source is { FaceDown: false } && Matches(source, reference.CardId) ? source : null)
+            ?? (counter is { FaceDown: false } && Matches(counter, reference.CardId) ? counter : null);
         if (card == null) return null;
-        bool sourceMatch = item.Card is { FaceDown: false } currentSource && SameVisibleCard(currentSource, card);
-        return sourceMatch || item.Targets.Any(target => target.Kind == "card" && Matches(card, target.Id)) ? card : null;
+        bool sourceMatch = source is { FaceDown: false } currentSource && SameVisibleCard(currentSource, card);
+        bool counterMatch = counter is { FaceDown: false } currentCounter && SameVisibleCard(currentCounter, card);
+        return sourceMatch || counterMatch || item?.Targets.Any(target => target.Kind == "card" && Matches(card, target.Id)) == true ? card : null;
     }
 
     private void AddPendingSourceReference(StackItem item, Rectangle bounds)
@@ -33,6 +39,13 @@ internal sealed partial class TableApplication
         var reference = new PendingCardReference(item.Id, CardViews.Identity(source));
         if (ResolvePendingReference(reference) is not { } current) return;
         hits.Add(new("stack-source:" + item.Id, Scope, bounds, () => ReadPendingReference(reference, !item.Ability), current, "StackReference"));
+    }
+
+    private void AddPendingCounterReference(StackItem item, Card card, Rectangle bounds)
+    {
+        var reference = new PendingCardReference(item.Id, CardViews.Identity(card));
+        if (ResolvePendingReference(reference) is not { } current) return;
+        hits.Add(new("stack-counter:" + item.Id, Scope, bounds, () => { }, current, "StackReference"));
     }
 
     private void DrawPendingTargetReferences(StackItem item, Rectangle bounds)
@@ -69,14 +82,19 @@ internal sealed partial class TableApplication
 
     private PendingCardReference? HoveredPendingReference()
     {
-        if (match is not { Stack.Length: > 0 } || OverlayOpen || dragging || cardPresentation.HasPinnedCard) return null;
+        if (match == null || match.Stack.Length == 0 && !ValuedTargetDecision || OverlayOpen || dragging || cardPresentation.HasPinnedCard) return null;
         var hit = HitAt(pointer);
         if (pendingPreviewBounds is { } preview && preview.Contains(pointer) && pendingPreviewReference is { } held
             && ResolvePendingReference(held) != null) return held;
         if (hit is { Id: "stack-card-preview" } && pendingPreviewReference is { } retained
             && ResolvePendingReference(retained) != null) return retained;
         if (hit?.Card is not { FaceDown: false } card || !CurrentHit(hit)
-            || !(hit.Id.StartsWith("stack-source:", StringComparison.Ordinal) || hit.Id.StartsWith("stack-target:", StringComparison.Ordinal) || hit.Zone == "Battlefield")) return null;
+            || !(hit.Id.StartsWith("stack-source:", StringComparison.Ordinal) || hit.Id.StartsWith("stack-target:", StringComparison.Ordinal)
+                || hit.Id.StartsWith("stack-counter:", StringComparison.Ordinal) || hit.Id.StartsWith("targeting-", StringComparison.Ordinal) || hit.Zone == "Battlefield")) return null;
+        if (ValuedTargetDecision && match.Decision is { } decision) {
+            var reference = new PendingCardReference("", CardViews.Identity(card), decision.Id);
+            if (ResolvePendingReference(reference) != null) return reference;
+        }
         foreach (var item in match.Stack) {
             var reference = new PendingCardReference(item.Id, CardViews.Identity(card));
             if (ResolvePendingReference(reference) != null) return reference;
@@ -97,11 +115,21 @@ internal sealed partial class TableApplication
         if (reference == null || ResolvePendingReference(reference) is not { } card) { pendingPreviewBounds = null; return; }
         var boardCard = PendingConnectionCard(CardViews.Identity(card));
         if (boardCard != null) canvas.CardFocus(boardCard.Display, HoverAccent);
-        if (reference != previous || pendingPreviewBounds == null) {
+        bool CoversPendingContext(Rectangle candidate) => candidate.Intersects(decisionPanelBounds)
+            || !targetingEffectBounds.IsEmpty && candidate.Intersects(targetingEffectBounds)
+            || stackRows.Any(row => candidate.Intersects(row.Bounds));
+        if (reference != previous || pendingPreviewBounds == null || CoversPendingContext(pendingPreviewBounds.Value)) {
             var size = new Point(410, 574);
-            var candidates = new[] { new Rectangle(1008, 82, size.X, size.Y), new Rectangle(12, 82, size.X, size.Y) };
+            var candidates = new[] { 1008, 12, 545, 1180 }.Select(x => new Rectangle(x, 82, size.X, size.Y)).ToArray();
             int Score(Rectangle candidate) {
-                int score = candidate.Intersects(decisionPanelBounds) ? 1000 : 0;
+                // Instructions, pending values and actual answer controls take
+                // precedence over incidental battlefield overlap. Focus moves
+                // the effect workspace, so its current rows own this reserve.
+                int score = candidate.Intersects(decisionPanelBounds) ? 100_000 : 0;
+                if (!targetingEffectBounds.IsEmpty && candidate.Intersects(targetingEffectBounds)) score += 100_000;
+                score += stackRows.Count(row => candidate.Intersects(row.Bounds)) * 100_000;
+                if (ValuedTargetDecision) foreach (var target in cardPresentation.Cards.Where(card => card.Card.Selectable))
+                    if (candidate.Intersects(target.Display.Bounds)) score += 100;
                 foreach (var item in match!.Stack.Take(3)) {
                     if (item.Card != null && PendingConnectionCard(CardViews.Identity(item.Card)) is { } source && candidate.Intersects(source.Display.Bounds)) score += 100;
                     foreach (var target in item.Targets.Where(target => target.Kind == "card"))
@@ -110,7 +138,8 @@ internal sealed partial class TableApplication
                 if (boardCard != null && candidate.Intersects(boardCard.Display.Bounds)) score += 1000;
                 return score;
             }
-            pendingPreviewBounds = candidates.OrderBy(Score).First();
+            var clear = candidates.Where(candidate => !CoversPendingContext(candidate)).ToArray();
+            pendingPreviewBounds = (clear.Length > 0 ? clear : candidates).OrderBy(Score).First();
         }
         var bounds = pendingPreviewBounds.Value;
         PaintReferencePreview(card, new(bounds.Center.ToVector2(), bounds.Size.ToVector2()));

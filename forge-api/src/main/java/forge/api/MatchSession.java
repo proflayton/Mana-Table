@@ -28,6 +28,7 @@ import forge.game.card.Card;
 import forge.game.combat.CombatUtil;
 import forge.game.player.*;
 import forge.game.spellability.SpellAbilityView;
+import forge.game.spellability.SpellAbility;
 import forge.game.spellability.StackItemView;
 import forge.game.zone.ZoneType;
 import forge.gamemodes.match.input.*;
@@ -335,6 +336,12 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
                     "message", message, "ok", ok, "cancel", cancel, "okEnabled", okEnabled, "cancelEnabled", cancelEnabled,
                     "canAttackAll", current instanceof InputAttack, "playerChoices", playerChoices,
                     "canAutoPass", canAutoPass(current));
+            if (current instanceof InputSelectTargets targeting) {
+                next.prompt.put("min", targeting.getMinTargets());
+                next.prompt.put("max", targeting.getMaxTargets());
+                var effect = pendingEffect(targeting.getSpellAbility());
+                if (effect != null) next.prompt.put("effect", effect);
+            }
             if (promptSource != null && promptSource.canBeShownTo(viewer)) {
                 next.prompt.put("sourceCard", cardState(promptSource, null));
                 next.prompt.put("sourceZone", promptSource.getZone() == null ? "" : promptSource.getZone().name());
@@ -355,6 +362,19 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
         // Never infer this permission from card highlighting in the renderer.
         return input instanceof InputPassPriority priority && okEnabled && view.getTurn() > 0
                 && priority.canAutoPass();
+    }
+
+    private Map<String, Object> pendingEffect(SpellAbility ability) {
+        return PendingEffects.project(ability, viewer, table.identities, card -> {
+            if (!publicQuietCard(card)) return null;
+            var context = cardState(card, null);
+            // This explains a captured mutation; it is never a new action or
+            // selection handle, even when the same permanent is actionable.
+            context.put("key", "");
+            context.put("selectable", false);
+            context.put("highlighted", false);
+            return context;
+        });
     }
 
     private boolean canQuietYield(Input input) {
@@ -768,12 +788,18 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
                     "priority", player.getHasPriority(), "mana", mana, "counters", publicCounters(player), "states", states, "zones", zones, "commanderDamage", commanderDamage));
         }
         var stack = new ArrayList<Object>();
+        var pendingEffects = new HashMap<Integer, Map<String, Object>>();
+        for (var instance : game.getStack()) {
+            var effect = pendingEffect(instance.getSpellAbility());
+            if (effect != null) pendingEffects.put(instance.getId(), effect);
+        }
         for (var item : view.getStack()) {
             CardView source = item.getSourceCard();
             boolean visible = source != null && source.canBeShownTo(viewer) && !source.isFaceDown();
             stack.add(map("id", item.getId(), "name", visible ? source.getCurrentState().getName() : "Face-down spell", "text", visible ? item.getText() : "",
                     "card", source != null && source.canBeShownTo(viewer) ? cardState(source, null) : null,
                     "ability", item.isAbility(),
+                    "effect", visible ? pendingEffects.get(item.getId()) : null,
                     "targets", visible ? stackTargets(item) : List.of(),
                     "controller", item.getActivatingPlayer() == null ? "" : item.getActivatingPlayer().getName(),
                     "controllerId", item.getActivatingPlayer() == null ? null : item.getActivatingPlayer().getId()));

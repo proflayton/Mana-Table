@@ -14,6 +14,7 @@ public static partial class ExperienceScenarios
         new("card-reading.v1", "Card reading and selection", "Stable hand slots, inspectable battlefield cards and a hand selection.", Reading),
         new("ability-choice.v1", "Llanowar Elves · make green mana", "Start before an activation, choose its ability, and see the tapped source and green mana.", AbilityFlow),
         new("ability-targeting.v1", "Walking Ballista · costs and targets", "Two on-card abilities, cancellable targeting, a pending stack ability and its authored result.", BallistaFlow),
+        new(CounterDamageScenario.Id, "Counters → damage", "Chandra's counter increment, a numbered damage choice, its pending effect and an authored result.", CounterDamageScenario.Create),
         new("ordered-choice.v1", "Ordered card choices", "Same-name cards, explicit selection numbers and a complete ordered draft.", Ordered),
         new("mana-payment.v1", "Mana and payment", "Colored unspent mana, a payment decision and a scripted pool transition.", Mana),
         new("combat-allocation.v1", "Combat damage allocation", "Current stats, marked damage, anonymous blockers and defender thresholds.", Allocation),

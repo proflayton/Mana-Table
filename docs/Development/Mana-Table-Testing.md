@@ -49,6 +49,12 @@ application and typed-frame composition used by the real window. Preserve their
 result/trace JSON when diagnosing a failure; submitted drawing data does not
 prove that a physical window is clear or correctly clipped.
 
+The pending-effect journey in `--smoke-headless-presentation` distinguishes a
+captured `+3` counter addition/three damage from a current total of twenty, keeps
+unknown damage unknown, preserves the context on the stack, and checks read-only
+source inspection and exact target-key/prompt submission. These use controlled
+snapshots, not the rules engine.
+
 ## Real Forge coverage
 
 Java API, rules and synchronization regressions live in
@@ -70,6 +76,12 @@ observes other seats without answering them, submits the next same-token pass,
 and leaves a new stack response unanswered. Client checks cover older activity
 payloads and conservative defaults. These establish command behavior, not human
 approval of the presentation.
+
+`PendingEffectTest` exercises All Will Be One with Chandra entering at three
+loyalty, then adding one to reach four, and a nonloyalty counter case. Projection
+checks cover unknown amounts, known zero, divided totals and concealed sources.
+The corresponding native lab case remains authored; it cannot establish these
+rules results.
 
 Native real-engine journeys use the bundled Java runtime, the actual adapter
 protocol, and matching card resources:

@@ -391,6 +391,41 @@ people assign, inspect, interrupt and understand the resulting state on a crowde
 four-player table. Separate the mechanical preservation of 37 triggers from
 human review of the grouped presentation and pacing.
 
+### Counter-triggered damage: 22 October 2026
+
+The reported All Will Be One targeting prompt showed generic "that much damage"
+rules and internal identifiers instead of the actual amount or the counters
+added to Chandra. The revised journey keeps the source, captured increment and
+full recipient name together while choosing a target, then carries that same
+context onto the stack. A board receipt attaches to the recipient's counter
+anchor outside its face when space permits; settled counters and P/T remain
+authoritative. Source/origin hover reads the disclosed card without choosing it.
+
+An increment is not a current total: adding one loyalty to reach four produces
+a captured one-counter context. Pending damage is reported before replacement
+or prevention, with single/per-recipient/divided-total meaning preserved; an
+unknown amount remains unknown. Actual resolved results come from the engine.
+The UI does not derive these values from rules strings, current counters or the
+most recent unrelated event.
+
+Open `counter-damage.v1` for the three-counter targeting/stack/result sequence,
+then the separate `+1` sequence with four settled loyalty. Its six checkpoints
+and acknowledged actions are authored presentation evidence, not rules proof.
+Review the source, counter receipt, target gesture and pending/resolved distinction
+at small and large physical windows. Agent GPU review of local `candidate-r4`
+(`ManaTable.dll` SHA256 `E0D2913550F5B20CC3688E33B8F6C6A9EBED0F4EE6C32AA7656AA2E9CD406A50`)
+covered shared-table targeting and focused-field targeting, source/origin hover,
+target selection, pending stack and authored result at `1000x740` and `1540x980`
+with 130% text. The first focused stack capture exposed a card preview covering
+the numeric face; preview placement now protects the effect and decision controls.
+Final captures remain under `.tools/pending-effect-review-20261022/gpu-r4`.
+These include cached-art source inspection and unavailable-art readable fallback;
+the separate recorded real-engine targeting view preserves its exact printings.
+Real-engine tests cover Chandra's loyalty `3 → 4` and Triskelion's counters
+`3 → 4`, each followed by actual one-damage resolution. The authored lab does
+not establish those rules results. Human acceptance remains pending and this
+candidate is not yet in a published installer.
+
 ## Open a canonical case
 
 From the repository root on Windows:
@@ -431,6 +466,7 @@ native renderer and input pipeline with controlled state, not a rules simulator.
 | `card-reading.v1` | Hand slots, reading/collapse and required selection; current P/T/counters in card and ability-source previews despite an older embedded source face |
 | `ability-choice.v1` | Select the Elf, read its concrete mana action without changing the prompt, then explicitly activate and see the authored tapped source and green mana; no extra one-option chooser |
 | `ability-targeting.v1` | Walking Ballista's distinct costs/effects, card/player targets, cancellation, paid counter cost, pending stack, another player's response window, and authored result |
+| `counter-damage.v1` | All Will Be One: captured three-counter damage, then one added loyalty with four settled counters; target, pending stack and authored result |
 | `ordered-choice.v1` | Visible position numbers, same-name occurrences, selection order and confirmation |
 | `mana-payment.v1` | Unspent colored mana, payment instructions and pool transitions |
 | `combat-allocation.v1` | Attacker/blocker identity, current P/T, marked damage and assignment thresholds, including anonymous cards |
