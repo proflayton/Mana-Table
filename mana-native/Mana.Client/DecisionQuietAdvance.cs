@@ -9,6 +9,9 @@ public sealed class DecisionQuietAdvance(IMatchConnection connection)
 {
     private string? submitted;
 
+    public static bool HasInterruption(GameSnapshot state, long afterActivity) => state.Activity.Any(entry =>
+        entry.Id > afterActivity && entry.InterruptsQuietYield && entry.Kind is not ("priority" or "phase"));
+
     public static bool CanPass(GameSnapshot state, string token) => !string.IsNullOrWhiteSpace(token)
         && state.Status == "playing" && state.Turn > 0 && state.Stack.Length == 0
         && state.ActivePlayerId is { } active && active != state.ViewerId && state.Viewer?.Eliminated != true
@@ -26,6 +29,10 @@ public sealed class DecisionQuietAdvance(IMatchConnection connection)
             || state.Status == "resolving" && state.ActionClass == "priority"
                 && state.DecisionOwnerId is { } responder && responder != state.ViewerId
                 && (state.PriorityPlayerId == null || state.PriorityPlayerId == responder)
+            // Another player opening attacker selection is not an attack. Wait
+            // without answering it; declared attackers revoke the engine token.
+            || state.Status is "playing" or "resolving" && state.ActionClass == "attack"
+                && state.DecisionOwnerId is { } attacker && attacker != state.ViewerId
             // MatchSession.markBusy clears the private prompt, then publishes a
             // no-owner resolving transition. This authorizes observation only.
             || state.Status is "playing" or "resolving" && state.ActionClass == "resolving"
@@ -39,7 +46,7 @@ public sealed class DecisionQuietAdvance(IMatchConnection connection)
         long activity = initial.Activity.Select(entry => entry.Id).DefaultIfEmpty().Max();
         while (!cancellation.IsCancellationRequested) {
             if (!CanWait(state, initial.Id, initial.Turn, initial.ActivePlayerId, token)
-                || state.Activity.Any(entry => entry.Id > activity && entry.Kind is not ("priority" or "phase"))
+                || HasInterruption(state, activity)
                 || !canContinue(state) || shouldPresent(initial, state)) return state;
             string scope = state.Id + ":" + state.Decision?.Id;
             if (state.Decision != null && submitted != scope) {

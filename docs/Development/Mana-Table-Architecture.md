@@ -235,10 +235,21 @@ opponent's turn. The engine issues a private `quietYieldToken` for a copied publ
 situation. Every `passUntilPublicAction` command supplies that original token and
 the current session/prompt scope. The engine rechecks both at acceptance and on
 the owned input thread; a revoked queued action restores the unanswered prompt.
-Public state changes, public events that happened between snapshots, a new turn
-or a required choice revoke the permission. Unchanged stat recomputation and
-retained-mana refreshes do not count as actions. Another seat's required choice
-revokes it through public decision ownership/class without disclosing the options.
+Public state changes, interrupting events between snapshots, a new turn or a
+required choice revoke the permission. Empty combat setup and another seat
+choosing no attackers retain it; actual attackers, defenders and blocks remain
+part of the baseline. Other required choices still revoke through public
+decision ownership/class without disclosing their options.
+
+The draw step marks its exact turn-based draw in engine movement/draw events.
+An opponent's normal draw advances only the expected Hand/Library counts in
+the copied baseline; visible faces, revealed library tops and all other state
+remain compared. Effect and replacement draws retain ordinary interruption
+behavior. History retains both movement and draw entries, with an additive
+`interruptsQuietYield` flag (missing means true). A separate monotonic history
+sequence and the shared native interruption predicate use that classification.
+Draw triggers and their required choices still stop passing. Unchanged stat
+recomputation and retained-mana refreshes do not count as actions.
 `DecisionQuietAdvance` observes ordinary priority handoffs but submits only against
 a current local priority prompt with that exact token. It never adopts a replacement
 token or consumes targets, payment, searches or other required decisions. Hold,

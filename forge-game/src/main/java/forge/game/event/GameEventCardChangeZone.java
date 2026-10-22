@@ -6,12 +6,27 @@ import forge.game.zone.Zone;
 import forge.game.zone.ZoneView;
 import forge.util.TextUtil;
 
-public record GameEventCardChangeZone(CardView card, ZoneView from, ZoneView to) implements GameEvent {
+public record GameEventCardChangeZone(CardView card, ZoneView from, ZoneView to, Origin origin) implements GameEvent {
+
+    /** Rules provenance for this exact movement, never inherited by nested effects. */
+    public enum Origin { OTHER, TURN_BASED_DRAW }
+
+    public GameEventCardChangeZone {
+        if (origin == null) origin = Origin.OTHER;
+    }
+
+    public GameEventCardChangeZone(CardView card, ZoneView from, ZoneView to) {
+        this(card, from, to, Origin.OTHER);
+    }
 
     public GameEventCardChangeZone(Card card, Zone zoneFrom, Zone zoneTo) {
+        this(card, zoneFrom, zoneTo, Origin.OTHER);
+    }
+
+    public GameEventCardChangeZone(Card card, Zone zoneFrom, Zone zoneTo, Origin origin) {
         this(CardView.get(card),
              zoneFrom == null ? null : zoneFrom.getView(),
-             zoneTo == null ? null : zoneTo.getView());
+             zoneTo == null ? null : zoneTo.getView(), origin);
     }
 
     @Override

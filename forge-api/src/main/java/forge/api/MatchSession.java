@@ -15,6 +15,8 @@ import forge.game.event.GameEventManaPool;
 import forge.game.event.GameEventCardTapped;
 import forge.game.event.GameEventCardPhased;
 import forge.game.event.GameEventCardAttachment;
+import forge.game.event.GameEventCardChangeZone;
+import forge.game.event.GameEventCardDrawn;
 import forge.game.event.GameEventPlayerCounters;
 import forge.game.event.GameEventSpeedChanged;
 import forge.game.event.GameEventDayTimeChanged;
@@ -228,6 +230,9 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
         boolean changed = event instanceof GameEventPlayerCounters
                 || event instanceof GameEventSpeedChanged || event instanceof GameEventDayTimeChanged
                 || event instanceof GameEventSnapshotRestored;
+        if (event instanceof GameEventCardDrawn e && !viewer.equals(e.player())
+                && e.origin() == GameEventCardChangeZone.Origin.TURN_BASED_DRAW)
+            quietYield.observeTurnBasedDraw(e.player().getId());
         if (event instanceof GameEventManaPool e) quietYield.observeMana(e.player().getId(), publicMana(e.player()));
         else if (event instanceof GameEventCardTapped e) changed = publicQuietCard(e.card());
         else if (event instanceof GameEventCardPhased e) changed = publicQuietCard(e.card());
@@ -362,7 +367,7 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
     }
 
     private boolean permitsQuietYield(Pending prompt, String token) {
-        return canQuietYield(prompt.input) && quietYield.permits(token, activity.sequence());
+        return canQuietYield(prompt.input) && quietYield.permits(token, activity.quietSequence());
     }
 
     @Override
@@ -688,9 +693,11 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
     }
 
     void updatePublicDecision(Integer owner, String actionClass) {
-        // Only ownership/class is public. A private required prompt invalidates
-        // permission without exposing its contents to another seat.
-        boolean requiredChoice = !actionClass.equals("priority") && !actionClass.equals("resolving");
+        // Only ownership/class is public. Another seat choosing attackers is
+        // observed until an attack actually exists; choosing none stays quiet.
+        // Other required prompts still revoke without exposing private options.
+        boolean otherAttackChoice = actionClass.equals("attack") && owner != null && owner != viewer.getId();
+        boolean requiredChoice = !actionClass.equals("priority") && !actionClass.equals("resolving") && !otherAttackChoice;
         if (requiredChoice) quietYield.invalidate();
         String status = (String) latest.get("status");
         if (status.equals("finished") || status.equals("error") || status.equals("starting")) { owner = null; actionClass = status; }
@@ -789,7 +796,7 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
                 "states", PublicStates.of(forge.game.PublicTableStates.snapshot(game)),
                 "ignoredPriorityAbilities", priorityAbilities(human.getIgnoredPriorityAbilities(), prompt),
                 "result", result, "notices", List.copyOf(notices), "activity", activityFrame.entries());
-        String quietToken = quietYield.observe(snapshot, activity.sequence());
+        String quietToken = quietYield.observe(snapshot, activity.quietSequence());
         if (prompt != null) {
             var projectedPrompt = new LinkedHashMap<>(prompt.prompt);
             projectedPrompt.put("quietYieldToken", canQuietYield(prompt.input) ? quietToken : "");

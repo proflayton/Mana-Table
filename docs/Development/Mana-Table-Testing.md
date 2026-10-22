@@ -61,6 +61,16 @@ modules without that test do not fail:
 mvn -pl forge-api -am verify '-Dtest=ToothyLeavesBattlefieldTest,SyncTransportTest' '-Dsurefire.failIfNoSpecifiedTests=false'
 ```
 
+`QuietYieldTest` reproduces explicit passing with an affordable Lightning Bolt
+through upkeep, the normal draw and empty combat, including another seat
+choosing no attackers. It also checks interruption by draw triggers, effect
+draws, land plays, actual combat and queued required choices. The native
+`--smoke-headless-presentation` journey clicks the real Pass for now control,
+observes other seats without answering them, submits the next same-token pass,
+and leaves a new stack response unanswered. Client checks cover older activity
+payloads and conservative defaults. These establish command behavior, not human
+approval of the presentation.
+
 Native real-engine journeys use the bundled Java runtime, the actual adapter
 protocol, and matching card resources:
 

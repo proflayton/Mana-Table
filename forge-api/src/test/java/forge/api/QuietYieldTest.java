@@ -1,9 +1,12 @@
 package forge.api;
 
 import com.google.gson.JsonObject;
+import org.testng.annotations.DataProvider;
 import org.testng.annotations.Test;
 
+import java.nio.file.Files;
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -55,6 +58,57 @@ public class QuietYieldTest {
         assertFalse(baseline.permits(next, 10), "Mana added and spent before the next poll cannot preserve permission");
     }
 
+    @Test public void combatPermissionTracksDeclaredRelationshipsInsteadOfInputOptions() {
+        var baseline = new QuietYieldBaseline();
+        var state = new LinkedHashMap<String, Object>(Map.of("turn", 2, "activePlayerId", 1,
+                "players", List.of(), "stack", List.of()));
+        String quiet = baseline.observe(state, 10);
+        var combat = new LinkedHashMap<String, Object>(Map.of("attackingPlayerId", 1, "attackers", List.of(),
+                "defenders", List.of(Map.of("kind", "player", "id", 0)),
+                "attackerCandidates", List.of("attacker"), "selectedDefender", Map.of("kind", "player", "id", 0),
+                "attackOptions", List.of(Map.of("cardId", "attacker"))));
+        state.put("combat", combat);
+        assertEquals(baseline.observe(state, 10), quiet, "An empty combat shell and attack choices are not an attack");
+        var attacker = new LinkedHashMap<String, Object>(Map.of("cardId", "attacker", "defender", Map.of("kind", "player", "id", 0),
+                "blockerIds", List.of(), "blocked", false, "eligibleBlockerIds", List.of("first-option")));
+        combat.put("attackers", List.of(attacker));
+        String declared = baseline.observe(state, 10);
+        assertNotEquals(declared, quiet, "An actual attacker interrupts even without a new activity entry");
+        attacker.put("eligibleBlockerIds", List.of("different-option"));
+        combat.put("blockerCandidates", List.of("different-option"));
+        assertEquals(baseline.observe(state, 10), declared, "Legal block options alone cannot replace declared combat");
+        attacker.put("blockerIds", List.of("actual-blocker"));
+        attacker.put("blocked", true);
+        String blocked = baseline.observe(state, 10);
+        assertNotEquals(blocked, declared, "Assigning an actual blocker interrupts");
+        attacker.put("defender", Map.of("kind", "player", "id", 2));
+        assertNotEquals(baseline.observe(state, 10), blocked, "Changing the actual defender interrupts");
+    }
+
+    @Test public void turnDrawAdvancesOnlyTheExactExpectedOpponentZoneCounts() {
+        var baseline = new QuietYieldBaseline();
+        var hand = new LinkedHashMap<String, Object>(Map.of("name", "Hand", "count", 7, "cards", List.of()));
+        var library = new LinkedHashMap<String, Object>(Map.of("name", "Library", "count", 20, "cards", List.of()));
+        var state = Map.<String, Object>of("turn", 2, "activePlayerId", 1, "players", List.of(Map.of("id", 1,
+                "zones", List.of(hand, library))), "stack", List.of());
+        String original = baseline.observe(state, 10);
+        baseline.observeTurnBasedDraw(1);
+        hand.put("count", 8); library.put("count", 19);
+        assertEquals(baseline.observe(state, 10), original, "Only the tagged opponent turn draw advances expected counts");
+        hand.put("count", 9); library.put("count", 18);
+        assertNotEquals(baseline.observe(state, 10), original, "An uncredited effect draw remains a meaningful zone change");
+
+        original = baseline.observe(state, 10);
+        baseline.observeTurnBasedDraw(0);
+        hand.put("count", 10); library.put("count", 17);
+        assertNotEquals(baseline.observe(state, 10), original, "A draw for another player cannot credit these zone counts");
+        original = baseline.observe(state, 10);
+        baseline.observeTurnBasedDraw(1);
+        hand.put("count", 11); library.put("count", 16);
+        library.put("topCard", Map.of("name", "A newly revealed card"));
+        assertNotEquals(baseline.observe(state, 10), original, "A turn draw cannot hide new public library information");
+    }
+
     @Test public void transientPublicEventsAndRequiredPromptsRevokeEvenWhenTheBoardEndsIdentically() {
         var baseline = new QuietYieldBaseline();
         var state = Map.<String, Object>of("turn", 2, "activePlayerId", 1, "players", List.of(), "stack", List.of());
@@ -97,6 +151,123 @@ public class QuietYieldTest {
                     && i.state().get("turn").getAsInt() > input.state().get("turn").getAsInt());
             assertNotEquals(token(nextTurn), token, "The same policy must never silently cross a turn");
             game.rejected(nextTurn, Map.of("action", "passUntilPublicAction", "yieldToken", token), REVOKED);
+        }
+    }
+
+    @DataProvider public Object[][] emptyCombats() { return new Object[][] {{false}, {true}}; }
+
+    @Test(dataProvider = "emptyCombats", timeOut = 90000)
+    public void availableInstantKeepsExplicitPermissionAcrossEmptyCombat(boolean chooseNoAttackers) throws Exception {
+        try (var game = new RulesScenario("quiet-yield-instant-empty-combat-" + chooseNoAttackers,
+                Map.of(0, List.of("Mountain", "Spellbook"),
+                        1, chooseNoAttackers ? List.of("Raging Goblin", "Spellbook") : List.of("Spellbook"),
+                        2, List.of("Spellbook"), 3, List.of("Spellbook")), "Lightning Bolt", "Progenitus")) {
+            int opponent = game.table.game.getPlayers().get(1).getId();
+            var input = game.until(i -> eligible(i) && i.state().get("activePlayerId").getAsInt() == opponent
+                    && text(i.state(), "phaseKey").equals("UPKEEP"));
+            String original = token(input);
+            int turn = input.state().get("turn").getAsInt();
+            var checkpoints = new ArrayList<JsonObject>();
+            boolean choseNone = false;
+            boolean sawDraw = false, sawMain = false;
+            try {
+                assertTrue(zone(viewer(input.state()), "Hand").getAsJsonArray("cards").asList().stream()
+                        .anyMatch(card -> text(card.getAsJsonObject(), "name").equals("Lightning Bolt")),
+                        "The viewer has a real instant in hand and an untapped Mountain to cast it");
+                for (int windows = 0; windows < 10; windows++) {
+                    checkpoints.add(input.state().deepCopy());
+                    sawDraw |= text(input.state(), "phaseKey").equals("DRAW");
+                    sawMain |= text(input.state(), "phaseKey").equals("MAIN1");
+                    assertEquals(input.state().get("turn").getAsInt(), turn);
+                    assertTrue(input.state().getAsJsonArray("stack").isEmpty());
+                    var combat = input.state().get("combat");
+                    assertTrue(combat == null || combat.isJsonNull() || combat.getAsJsonObject().getAsJsonArray("attackers").isEmpty(),
+                            "Nobody has declared an attacker; this is an empty combat, not an ignored attack");
+                    assertFalse(input.prompt().get("canAutoPass").getAsBoolean(),
+                            "The affordable instant must keep ordinary Auto conservative in every window");
+                    assertEquals(token(input), original,
+                            "Explicit permission must survive quiet UPKEEP -> DRAW -> MAIN1 -> COMBAT_BEGIN -> MAIN2: "
+                                    + text(input.state(), "phaseKey") + "; attacker selection completed=" + choseNone);
+                    if (text(input.state(), "phaseKey").equals("MAIN2")) {
+                        assertEquals(choseNone, chooseNoAttackers, "A real opponent attack selection must explicitly choose none");
+                        assertTrue(sawDraw && sawMain, "The same permission must cross the actual turn draw and first main phase");
+                        var turnDraw = input.state().getAsJsonArray("activity").asList().stream()
+                                .map(entry -> entry.getAsJsonObject()).filter(entry -> entry.get("turn").getAsInt() == turn
+                                        && text(entry, "phaseKey").equals("DRAW") && entry.has("playerId") && !entry.get("playerId").isJsonNull()
+                                        && entry.get("playerId").getAsInt() == opponent && List.of("moved", "draw").contains(text(entry, "kind"))).toList();
+                        assertEquals(turnDraw.size(), 2, "Both the routine library-to-hand move and draw remain in history");
+                        assertTrue(turnDraw.stream().allMatch(entry -> !entry.get("interruptsQuietYield").getAsBoolean()),
+                                "Exact scheduled draw history is retained without revoking the explicit yield");
+                        return;
+                    }
+                    assertTrue(game.answer(input, Map.of("action", "passUntilPublicAction", "yieldToken", original)));
+                    input = game.until(i -> i.seat() == 0 && priority(i)
+                            || i.seat() == 1 && text(i.prompt(), "inputType").equals("InputAttack"));
+                    if (text(input.prompt(), "inputType").equals("InputAttack")) {
+                        checkpoints.add(input.state().deepCopy());
+                        assertTrue(chooseNoAttackers);
+                        assertTrue(game.answer(input, Map.of("action", "ok")), "The opponent deliberately declares no attackers");
+                        choseNone = true;
+                        input = game.until(i -> i.seat() == 0 && priority(i));
+                    }
+                }
+                fail("The quiet draw and combat did not reach the second main phase within ten local priority windows");
+            } finally {
+                Files.writeString(game.evidence.resolve("empty-combat-boundaries.json"),
+                        new com.google.gson.GsonBuilder().setPrettyPrinting().serializeNulls().create().toJson(checkpoints));
+            }
+        }
+    }
+
+    @DataProvider public Object[][] drawInterruptions() { return new Object[][] {{false}, {true}}; }
+
+    @Test(dataProvider = "drawInterruptions", timeOut = 90000)
+    public void routineTurnDrawDoesNotHideATriggerOrLandPlay(boolean drawTrigger) throws Exception {
+        try (var game = new RulesScenario("quiet-yield-draw-interruption-" + drawTrigger,
+                Map.of(0, List.of("Arid Mesa", "Mountain", "Spellbook"),
+                        1, drawTrigger ? List.of("Howling Mine", "Spellbook") : List.of("Spellbook"),
+                        2, List.of("Spellbook"), 3, List.of("Spellbook")),
+                drawTrigger ? "Lightning Bolt" : "Mountain", "Progenitus")) {
+            int opponent = game.table.game.getPlayers().get(1).getId();
+            var input = game.until(i -> eligible(i) && i.state().get("activePlayerId").getAsInt() == opponent
+                    && text(i.state(), "phaseKey").equals("UPKEEP"));
+            String original = token(input);
+            assertFalse(input.prompt().get("canAutoPass").getAsBoolean());
+            assertTrue(game.answer(input, Map.of("action", "passUntilPublicAction", "yieldToken", original)));
+            if (drawTrigger) {
+                input = game.until(i -> i.seat() == 0 && priority(i));
+                assertFalse(input.state().getAsJsonArray("stack").isEmpty(), "Howling Mine's draw-step trigger must have a response window");
+                assertEquals(token(input), "", "The routine draw must not authorize passing the new trigger");
+                assertTrue(input.state().getAsJsonArray("activity").asList().stream().map(entry -> entry.getAsJsonObject())
+                        .anyMatch(entry -> text(entry, "kind").equals("ability") && text(entry, "cardName").equals("Howling Mine")
+                                && entry.get("interruptsQuietYield").getAsBoolean()), "The real draw-step trigger is an interrupting public event");
+            } else {
+                for (int windows = 0; windows < 4; windows++) {
+                    input = game.until(i -> i.seat() == 0 && priority(i)
+                            || i.seat() == 1 && priority(i) && text(i.state(), "phaseKey").equals("MAIN1"));
+                    if (input.seat() == 1) break;
+                    assertEquals(token(input), original, "The scheduled turn draw preserves the original permission");
+                    assertTrue(game.answer(input, Map.of("action", "passUntilPublicAction", "yieldToken", original)));
+                }
+                assertEquals(input.seat(), 1, "The active opponent reaches their main phase before the land play");
+                var land = zone(viewer(input.state()), "Hand").getAsJsonArray("cards").asList().stream()
+                        .map(card -> card.getAsJsonObject()).filter(card -> text(card, "name").equals("Mountain")).findFirst().orElseThrow();
+                assertTrue(game.answer(input, Map.of("action", "card", "key", text(land, "key"))));
+                input = game.until(i -> i.seat() == 0 && priority(i));
+                assertTrue(input.state().getAsJsonArray("stack").isEmpty(), "Playing a land interrupts without using the stack");
+                assertNotEquals(token(input), original, "A real land play remains a new public action after the routine draw");
+                assertTrue(input.state().getAsJsonArray("activity").asList().stream().map(entry -> entry.getAsJsonObject())
+                        .anyMatch(entry -> text(entry, "kind").equals("land") && entry.get("interruptsQuietYield").getAsBoolean()),
+                        "The land play remains an interrupting public history entry");
+            }
+            game.rejected(input, Map.of("action", "passUntilPublicAction", "yieldToken", original), REVOKED);
+            if (drawTrigger) {
+                input = game.until(i -> i.seat() == 0 && priority(i) && i.state().getAsJsonArray("stack").isEmpty());
+                assertTrue(input.state().getAsJsonArray("activity").asList().stream().map(entry -> entry.getAsJsonObject())
+                        .anyMatch(entry -> text(entry, "kind").equals("draw") && text(entry, "phaseKey").equals("DRAW")
+                                && !entry.get("playerId").isJsonNull() && entry.get("playerId").getAsInt() == opponent
+                                && entry.get("interruptsQuietYield").getAsBoolean()), "The additional effect draw is interrupting, unlike the scheduled draw");
+            }
         }
     }
 

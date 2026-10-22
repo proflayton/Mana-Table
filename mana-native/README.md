@@ -52,6 +52,10 @@ and during play. Reading takes precedence over background downloads; hidden
 opponent cards are never requested. A first uncached image can still need network.
 Pass for now remains steady during background observations; arming it waits for
 the current observation before validating and submitting a quiet pass.
+It continues through an opponent's normal draw and empty combat, including
+their choosing no attackers. A spell, ability, land play, actual attack, other
+required choice or turn change returns control. Available instants still stop
+ordinary Auto; this explicit policy applies only to the current opponent turn.
 
 The battlefield groups Creatures, Support and Lands. Sparse boards keep projected
 lanes; crowded boards switch together to upright cells within separate player

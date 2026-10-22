@@ -33,6 +33,7 @@ import forge.game.ability.ApiType;
 import forge.game.ability.SpellAbilityEffect;
 import forge.game.card.*;
 import forge.game.event.*;
+import forge.game.event.GameEventCardChangeZone.Origin;
 import forge.game.extrahands.BackupPlanService;
 import forge.game.keyword.Keyword;
 import forge.game.keyword.KeywordInterface;
@@ -88,9 +89,9 @@ public class GameAction {
     }
 
     public Card changeZone(final Zone zoneFrom, Zone zoneTo, final Card c, Integer position, SpellAbility cause) {
-        return changeZone(zoneFrom, zoneTo, c, position, cause, null);
+        return changeZone(zoneFrom, zoneTo, c, position, cause, null, Origin.OTHER);
     }
-    private Card changeZone(final Zone zoneFrom, Zone zoneTo, final Card c, Integer position, SpellAbility cause, Map<AbilityKey, Object> params) {
+    private Card changeZone(final Zone zoneFrom, Zone zoneTo, final Card c, Integer position, SpellAbility cause, Map<AbilityKey, Object> params, Origin origin) {
         // 111.11. A copy of a permanent spell becomes a token as it resolves.
         // The token has the characteristics of the spell that became that token.
         // The token is not “created” for the purposes of any replacement effects or triggered abilities that refer to creating a token.
@@ -112,7 +113,7 @@ public class GameAction {
             zoneTo.add(c, position, CardCopyService.getLKICopy(c));
             checkStaticAbilities();
             game.getTriggerHandler().registerActiveTrigger(c, true);
-            game.fireEvent(new GameEventCardChangeZone(c, zoneFrom, zoneTo));
+            game.fireEvent(new GameEventCardChangeZone(c, zoneFrom, zoneTo, origin));
             return c;
         }
 
@@ -580,7 +581,7 @@ public class GameAction {
         }
 
         // play the change zone sound
-        game.fireEvent(new GameEventCardChangeZone(c, zoneFrom, zoneTo));
+        game.fireEvent(new GameEventCardChangeZone(c, zoneFrom, zoneTo, origin));
 
         game.getTriggerHandler().clearActiveTriggers(copied, null);
         game.getTriggerHandler().registerActiveTrigger(copied, false);
@@ -638,7 +639,7 @@ public class GameAction {
                     // Ask controller if it wants to be on top or bottom of other meld.
                     unmeldPosition++;
                 }
-                unmeld = changeZone(null, zoneTo, unmeld, position, cause, params);
+                unmeld = changeZone(null, zoneTo, unmeld, position, cause, params, Origin.OTHER);
                 storeChangesZoneAll(unmeld, zoneFrom, zoneTo, params);
             }
         } else if (toBattlefield) {
@@ -738,9 +739,13 @@ public class GameAction {
         return moveTo(zoneTo, c, cause, AbilityKey.newMap());
     }
     public final Card moveTo(final Zone zoneTo, Card c, SpellAbility cause, Map<AbilityKey, Object> params) {
+        return moveTo(zoneTo, c, cause, params, Origin.OTHER);
+    }
+
+    public final Card moveTo(final Zone zoneTo, Card c, SpellAbility cause, Map<AbilityKey, Object> params, Origin origin) {
         // FThreads.assertExecutedByEdt(false); // This code must never be executed from EDT,
         // use FThreads.invokeInNewThread to run code in a pooled thread
-        return moveTo(zoneTo, c, null, cause, params);
+        return moveTo(zoneTo, c, null, cause, params, origin);
     }
 
     public final Card moveTo(final ZoneType name, final Card c, SpellAbility cause, Map<AbilityKey, Object> params) {
@@ -776,7 +781,7 @@ public class GameAction {
         }
     }
 
-    private Card moveTo(final Zone zoneTo, Card c, Integer position, SpellAbility cause, Map<AbilityKey, Object> params) {
+    private Card moveTo(final Zone zoneTo, Card c, Integer position, SpellAbility cause, Map<AbilityKey, Object> params, Origin origin) {
         // Ideally move to should never be called without a prevZone
         // Remove card from Current Zone, if it has one
         final Zone zoneFrom = game.getZoneOf(c);
@@ -787,7 +792,7 @@ public class GameAction {
             c.moveMergedToSubgame(cause);
         }
 
-        c = changeZone(zoneFrom, zoneTo, c, position, cause, params);
+        c = changeZone(zoneFrom, zoneTo, c, position, cause, params, origin);
 
         // need to refresh ability text for affected cards
         for (final StaticAbility stAb : c.getStaticAbilities()) {
@@ -889,7 +894,7 @@ public class GameAction {
         if (libPosition == -1 || libPosition > library.size()) {
             libPosition = library.size();
         }
-        return changeZone(game.getZoneOf(c), library, c, libPosition, cause, params);
+        return changeZone(game.getZoneOf(c), library, c, libPosition, cause, params, Origin.OTHER);
     }
 
     public final Card moveToVariantDeck(Card c, ZoneType zone, int deckPosition, SpellAbility cause, Map<AbilityKey, Object> params) {
@@ -897,7 +902,7 @@ public class GameAction {
         if (deckPosition == -1 || deckPosition > deck.size()) {
             deckPosition = deck.size();
         }
-        return changeZone(game.getZoneOf(c), deck, c, deckPosition, cause, params);
+        return changeZone(game.getZoneOf(c), deck, c, deckPosition, cause, params, Origin.OTHER);
     }
 
     public final Card moveToJunkyard(Card c, SpellAbility cause, Map<AbilityKey, Object> params) {

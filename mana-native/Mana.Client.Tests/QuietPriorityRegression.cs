@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Mana.Client;
 using Mana.Contracts;
 
@@ -6,6 +7,19 @@ internal static class QuietPriorityRegression
     internal static async Task RunAsync(Action<bool, string> check)
     {
         var initial = State("first", "armed-token");
+        var json = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
+        var legacyDraw = JsonSerializer.Deserialize<ActivityEntry>("""
+            {"id":1,"turn":7,"phaseKey":"DRAW","kind":"draw","playerId":1,"message":"Opponent drew a card.","cardId":null,"cardName":null}
+            """, json)!;
+        var routineDraw = JsonSerializer.Deserialize<ActivityEntry>("""
+            {"id":2,"turn":7,"phaseKey":"DRAW","kind":"draw","playerId":1,"message":"Opponent drew for the turn.","cardId":null,"cardName":null,"interruptsQuietYield":false}
+            """, json)!;
+        check(legacyDraw.InterruptsQuietYield && !routineDraw.InterruptsQuietYield,
+            "Old activity JSON remains interrupting by default; an explicit engine false flag permits a routine draw");
+        var effectDraw = new ActivityEntry(3, 7, "MAIN1", "draw", 1, "Opponent drew from an effect.", null, null);
+        var unknown = new ActivityEntry(4, 7, "MAIN1", "future-public-event", 1, "A newly supported event occurred.", null, null);
+        check(new[] { legacyDraw, effectDraw, unknown }.All(entry => DecisionQuietAdvance.HasInterruption(initial with { Activity = [entry] }, 0)),
+            "Unmarked legacy draws, effect draws and unfamiliar public events all interrupt quiet passing");
         try {
             new DecisionReply(initial.Id, initial.Decision!.Id, ReplyAction.PassUntilPublicAction).Validate();
             throw new InvalidOperationException("An empty quiet-yield token was accepted.");
@@ -31,7 +45,8 @@ internal static class QuietPriorityRegression
         var laterPriority = refreshed with { Revision = 3 };
         var laterCast = cast with { Revision = 4 };
         var otherResponder = busy with { DecisionOwnerId = 1, PriorityPlayerId = 1, ActionClass = "priority" };
-        var transitions = new SequenceConnection(busy, otherResponder, laterPriority, laterCast);
+        var otherAttack = busy with { DecisionOwnerId = 1, ActionClass = "attack" };
+        var transitions = new SequenceConnection(busy, otherResponder, otherAttack, laterPriority, laterCast);
         observed = await new DecisionQuietAdvance(transitions).RunAsync(initial, "armed-token", _ => true, (_, _) => false);
         var otherChoice = busy with { DecisionOwnerId = 1, ActionClass = "choice" };
         var publicAction = busy with { Activity = [new(1, 7, "MAIN1", "ability", 1, "Opponent activated an ability", null, null)] };
@@ -39,9 +54,28 @@ internal static class QuietPriorityRegression
         var stoppedOnAction = await new DecisionQuietAdvance(actionConnection).RunAsync(initial, "armed-token", _ => true, (_, _) => false);
         check(observed == laterCast && transitions.Replies.Count == 2
             && !DecisionQuietAdvance.CanPass(busy, "armed-token")
+            && !DecisionQuietAdvance.CanPass(otherAttack, "armed-token")
+            && DecisionQuietAdvance.CanWait(otherAttack, initial.Id, initial.Turn, initial.ActivePlayerId, "armed-token")
+            && !DecisionQuietAdvance.CanWait(otherAttack with { DecisionOwnerId = 0 }, initial.Id, initial.Turn, initial.ActivePlayerId, "armed-token")
             && !DecisionQuietAdvance.CanWait(otherChoice, initial.Id, initial.Turn, initial.ActivePlayerId, "armed-token")
             && stoppedOnAction == publicAction && actionConnection.Replies.Count == 1,
-            "The no-owner markBusy resolving transition only waits, then resumes the same-token prompt; private required choices and intervening public actions stop it");
+            "Busy, other-seat priority and empty attacker selection only wait, then resume the same-token prompt; local attacks, private required choices and public actions stop it");
+
+        var routineMove = new ActivityEntry(1, 7, "DRAW", "moved", 1, "Opponent moved a card from library to hand.", null, null) { InterruptsQuietYield = false };
+        var drawHandoff = otherResponder with { PhaseKey = "DRAW", Activity = [routineMove, routineDraw] };
+        var afterDraw = laterPriority with { Revision = 4, Activity = drawHandoff.Activity };
+        var afterDrawCast = laterCast with { Revision = 5, Activity = drawHandoff.Activity };
+        var drawConnection = new SequenceConnection(drawHandoff, afterDraw, afterDrawCast);
+        observed = await new DecisionQuietAdvance(drawConnection).RunAsync(initial, "armed-token", _ => true, (_, _) => false);
+        check(observed == afterDrawCast && drawConnection.Replies.Count == 2
+            && drawConnection.Replies.Select(reply => reply.DecisionId).SequenceEqual(["first", "second"])
+            && drawConnection.Replies.All(reply => reply.Action == ReplyAction.PassUntilPublicAction && reply.YieldToken == "armed-token"),
+            "Engine-marked routine moved and draw history survives an opponent handoff and the next same-token local pass");
+        var effectDrawState = busy with { Activity = [effectDraw] };
+        var effectDrawConnection = new SequenceConnection(effectDrawState, laterPriority);
+        observed = await new DecisionQuietAdvance(effectDrawConnection).RunAsync(initial, "armed-token", _ => true, (_, _) => false);
+        check(observed == effectDrawState && effectDrawConnection.Replies.Count == 1,
+            "An ordinary effect draw interrupts the worker before it can pass another empty local window");
 
         var replacement = refreshed with { Decision = refreshed.Decision! with { QuietYieldToken = "replacement-token" } };
         var revoked = new SequenceConnection(replacement);
