@@ -27,6 +27,7 @@ internal static class PresentationSmoke
         ExperienceLabChecks.Run(Check);
         EffectTransitionChecks.Run(Check);
         RoleLaneAvoidanceChecks.Run(Check);
+        SharedTableStudyChecks.Run(Check);
         BattlefieldFocusChecks.Run(Check);
         FocusedBattlefieldGroupingChecks.Run(Check);
         BoardViewChecks.Run(Check);

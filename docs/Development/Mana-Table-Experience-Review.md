@@ -66,7 +66,7 @@ retain their own review status. It does not establish release publication.
 
 ## MTGA references reviewed: 21 October 2026
 
-The user's five Arena screenshots make the battlefield/inspection hierarchy concrete:
+The user's six Arena screenshots make the battlefield/inspection hierarchy concrete:
 
 | Visible evidence | Mana Table design implication |
 | --- | --- |
@@ -77,6 +77,7 @@ The user's five Arena screenshots make the battlefield/inspection hierarchy conc
 | Creature rows, rotated lands, the hand and the turn cue occupy distinct places | Establish a stable spatial hierarchy before adding labels. Test an equivalent hierarchy across four seats rather than copying two opposing halves. |
 | The fourth screenshot keeps Exemplar of Light recognizable as a full card, with a Flying explanation adjacent to it and the battlefield continuing behind | Treat the card and its contextual explanation as one inspection area. Its placement must preserve the current source, eligible targets, hand and decision; four seats make this a layout concern, not just a tooltip concern. |
 | The fifth screenshot inspects an opponent's Tidings of War with adjacent Cost Modified, entered-the-graveyard-this-turn, Flashback and Amass explanations; the card's rules include a different result when cast from a graveyard | Make public-zone capabilities and casting context discoverable. Keep printed cost, route-specific cost, conditional effect text, recent history and current legal permission distinct. The still does not establish that the opponent can cast it at that moment. |
+| The sixth screenshot presents three Ajani Resolute abilities as distinct faces with shared source artwork, individual effects and prominent loyalty costs of 0, -4 and -10; two have bright outlines and one is muted | A real ability choice can use readable game objects and engine-reported availability. Preserve exact costs, source identity and the continuing battlefield; a chosen ability begins its actual payment/target sequence. Do not infer a disabled reason from styling alone. |
 
 Also reviewed sampled frames from [LegenVD's earthbending/landfall match](https://www.youtube.com/watch?v=38QyBm7unec)
 (24 November 2025). Full video retrieval returned HTTP 403; public storyboard
@@ -142,14 +143,62 @@ identity, cost or ability merely because another card uses a familiar mechanic.
 This is a design requirement; generic casting-route/cost and recent-zone
 inspection have not been implemented by recording this reference.
 
+### Ability choices as readable game objects
+
+The Ajani reference supports a deliberate choice between concrete abilities:
+each face shares the source identity/artwork, states one effect, and makes its
+own cost easy to compare. Selecting a face starts that exact engine ability;
+subsequent payments and targets retain their normal rules. Keep cancellation
+and access to the battlefield available. A source with one concrete action
+retains its direct route instead of adding an unnecessary choice step.
+
+This requires a richer engine projection than today's source-action Id/Kind/Text.
+Forge has typed cost parts and availability, but the current catalog filters out
+unavailable abilities and combines costs/effects in its display text. The next
+projection needs separate engine-formatted cost and effect information, ordered
+option identity and availability. Only legal current options receive action
+handles. Preserve zero/variable/modified costs and unknown availability reasons;
+the UI must not split a string at a colon or invent why an option is disabled.
+This ability-choice presentation is a follow-up to the table study, not a feature
+implemented by adding this reference.
+
 ### Four-player direction: stable table, selective attention
 
-**Proposed, not implemented or human accepted.** The
+**Native lab prototype; human review pending.** The
 [spatial study](images/four-player-attention-study.svg) separates controller
 territories from the current interaction. Its shapes illustrate relationships,
 not final card styling or proof that crowded boards are readable. The sketch
 omits the hand, zone piles and full-card inspector; fitting those while retaining
-the action context is part of the native prototype, not a solved claim here.
+the action context is part of the native comparison below.
+
+The source now includes an explicit **Table study** mode in the Experience Lab:
+
+```powershell
+& 'C:\candidate\ManaTable.exe' --experience-lab four-player-table.v1 --table-study
+```
+
+The header toggles the study for that same snapshot. It uses the production card,
+presentation and input pipeline over authored projections. The four checkpoints
+include ordinary boards, only one crowded opponent, a cross-seat Ballista ability
+and its damage result. The hand, public command/zone piles, attached equipment and
+counter-bearing creatures are present together. The study is not the default
+layout for normal games or a released feature.
+
+`SharedTableStudy` arranges upright scan faces independently within fixed role
+lanes. A pending stack or another controller's density does not participate in
+packing. Battlefield faces prioritize real artwork, a narrow name, current P/T,
+small counters and state glyphs. Every occurrence remains represented; differing
+public states remain separate. Full inspection retains the battlefield anchor,
+keeps the original card readable, overlays authoritative P/T and attaches typed
+counter/damage/state chips below it. The pending effect uses a reserved area and
+can occupy its remaining space beside an opened reader. Hand play retains its
+existing scoped drag behavior.
+
+Focused geometry, privacy and pointer checks protect these mechanics. Actual
+small/large-window review remains separate. The busy far seat and the extreme
+480-permanent overview still become too small for comfortable card recognition.
+They need a better density/focus design; retaining the occurrences does not settle
+that issue. The prototype still uses the existing letterboxed game surface.
 
 Start with a shared table: the viewer below, with other seats clockwise at the
 left, top and right. Reconsider the current territory dimensions. Give every
@@ -162,14 +211,15 @@ in inspection. Cross-controller attachments still need their controller cue.
 The alternative of three opponent bands above one wide local field deserves a
 visual comparison, especially in a larger window. At a small window, its narrow
 opponent strips compete with full-card inspection and the pending-effect area.
-The shared-table direction is the first prototype, not an accepted final layout.
+The shared-table study is the first prototype, not an accepted final layout.
 
-Reserve action/inspection space before arranging fields. Currently
+Reserve action/inspection space before arranging fields. The default
 `BattlefieldLayoutContext` switches the whole table to bounded packing when any
 seat exceeds seven public-state groups, and its conditional stack/source
 reservation intersects a battlefield territory. This can move unrelated cards
 when a new effect appears. Layout stability requires changing that composition,
-not merely repainting smaller card faces. Priority eligibility or an identical
+not merely repainting smaller card faces. The study bypasses that global packing.
+Priority eligibility or an identical
 snapshot should not repack the table. P/T, counters or attachments can correctly
 split a copy group; preserve unrelated anchors while updating that membership.
 
@@ -199,7 +249,7 @@ authorized occurrence without turning visual identity into an action handle.
 Compare the same ordinary table, one heavily crowded opponent, two defenders,
 an open full-card/ability explanation and the 480-permanent case at both small
 and large windows. Existing ordinary/crowded/priority canonical cases provide a
-starting point. A new asymmetric-density checkpoint is still needed. Review the
+starting point; `four-player-table.v1` adds the asymmetric checkpoint. Review the
 actual gesture through its result with people; fitting every occurrence is not
 evidence that they can identify it or follow the action.
 
@@ -290,6 +340,7 @@ native renderer and input pipeline with controlled state, not a rules simulator.
 
 | Scenario ID | Review focus |
 | --- | --- |
+| `four-player-table.v1` | Ordinary and asymmetric four-seat fields, a seven-card local hand, commanders, public zones, current stats/counters/attachments and a cross-seat ability/result; optional `--table-study` comparison |
 | `crowded-counters.v1` | 480 permanents, Toph earthbend 2, then one Felidar Retreat effect with 82 recipients; source, changed land and complete affected set |
 | `card-reading.v1` | Hand slots, reading/collapse and required selection; current P/T/counters in card and ability-source previews despite an older embedded source face |
 | `ability-choice.v1` | Select the Elf, read its concrete mana action without changing the prompt, then explicitly activate and see the authored tapped source and green mana; no extra one-option chooser |

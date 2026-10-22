@@ -14,7 +14,7 @@ public sealed class SeatGeometry
     public IReadOnlyList<SceneCard> Commanders { get; }
     public IReadOnlyList<PilePlan> Piles { get; }
 
-    private SeatGeometry(Player player, int seat)
+    private SeatGeometry(Player player, int seat, bool study)
     {
         PlayerId = player.Id;
         Index = seat;
@@ -33,8 +33,21 @@ public sealed class SeatGeometry
         }).ToArray());
         Piles = Array.AsReadOnly(new[] { "Library", "Graveyard", "Exile" }
             .Select((zone, index) => new PilePlan(zone, TableWorld.Pile(seat, index), side)).ToArray());
+        if (study) {
+            CommandLink = own ? new(260, 720) : seat == 1 ? new(1180, 174) : new(seat == 0 ? 125 : 1490, 513);
+            Commanders = Array.AsReadOnly(leaders.Select((card, index) => {
+                var center = own ? new Vector2(230 + index * 60, 682) : seat == 1 ? new Vector2(1140 + index * 80, 118)
+                    : new Vector2((seat == 0 ? 75 : 1450) + index * 75, 462);
+                return SceneCard.Create(card, new(center, own ? new(48, 67) : new(58, 81)), "Command", player.Id, index, Hero);
+            }).ToArray());
+            Piles = Array.AsReadOnly(new[] { "Library", "Graveyard", "Exile" }.Select((zone, index) => {
+                var center = own ? new Vector2(42 + index * 60, 736) : seat == 1 ? new Vector2(1320 + index * 70, 110)
+                    : new Vector2((seat == 0 ? 42 : 1400) + index * (seat == 0 ? 56 : 65), 565);
+                return new PilePlan(zone, new(center, new(39, 55)), true);
+            }).ToArray());
+        }
     }
 
-    internal static SeatGeometry[] Build(GameSnapshot state) => state.Players.Select(player => new SeatGeometry(player,
-        player.Id == state.ViewerId ? 3 : TableLayout.SeatIndex(state, player.Id))).ToArray();
+    internal static SeatGeometry[] Build(GameSnapshot state, bool study = false) => state.Players.Select(player => new SeatGeometry(player,
+        player.Id == state.ViewerId ? 3 : TableLayout.SeatIndex(state, player.Id), study)).ToArray();
 }

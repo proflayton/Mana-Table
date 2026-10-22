@@ -118,20 +118,31 @@ internal sealed partial class TableApplication
     private void DrawSceneCard(SceneCard node)
     {
         var card = node.Card;
-        var rest = node.Zone == "Battlefield" && !node.Dense && (card.PhasedOut || CardPresentation.HasAbility(card, "flying"))
+        // The study reads a copy while the current battlefield occurrence stays
+        // in place. The presentation controller includes this same anchor in
+        // its scoped hit geometry, so a second click can close inspection.
+        if (node.ScanFace && readingId == node.Id && !card.FaceDown) {
+            PaintBattlefieldScanFace(card, node.Pose, node.Owner, false, false, false, node.GroupFront, node.GroupCount);
+            canvas.CardFrame(node.Pose, HoverAccent * .85f, 2);
+        }
+        var rest = node.Zone == "Battlefield" && !node.Dense && !node.ScanFace && (card.PhasedOut || CardPresentation.HasAbility(card, "flying"))
             ? CardMotion.Airborne(node.Pose, now, preferences.ReducedMotion, node.Id) : node.Pose;
         var pose = DrawTableCard(node.Id, card, rest, node.Zone, node.Owner,
             "card:" + card.Key + ":" + card.VisualId, () => CardClick(card),
             (displayed, focus) => PaintSceneCard(card, displayed, node.Zone, node.Owner, focus, node.Compact, node.GroupFront, node.GroupCount, node.Dense), node.Entrance, node.EntranceDelay);
-        if (!string.IsNullOrEmpty(card.CombatId)) cardPositions[card.CombatId] = pose;
+        if (!string.IsNullOrEmpty(card.CombatId)) cardPositions[card.CombatId]
+            = node.ScanFace && readingId == node.Id ? node.Pose : pose;
     }
     private void PaintSceneCard(Card card, Pose pose, string zone, int owner, bool focus, bool compact = false, bool groupFront = true, int groupCount = 1, bool dense = false)
     {
         int? choice = match == null ? null : TableChoices.Index(match, card);
         bool selected = choice is { } index ? selections.Contains(index) : card.Highlighted || card.CombatId.Length > 0 && selectedCombat == card.CombatId;
         bool legal = IsCardActionable(card);
+        bool scanFace = zone == "Battlefield" && !focus && !dense && !pose.IsProjected && pose.Size.X < 300
+            && tableScene?.BattlefieldCard(owner, CardViews.Identity(card)) is { ScanFace: true };
         if (zone == "Battlefield") PaintAbilityEffects(card, pose);
-        PaintCard(card, pose, selected, legal, focus, zone == "Battlefield" && card.PhasedOut && !focus ? .42f : 1);
+        if (scanFace) PaintBattlefieldScanFace(card, pose, owner, selected, legal, focus, groupFront || focus, groupCount);
+        else PaintCard(card, pose, selected, legal, focus, zone == "Battlefield" && card.PhasedOut && !focus ? .42f : 1);
         if (zone == "Battlefield" && card.PhasedOut) PaintPhasedOutline(pose);
         if (zone == "Command") {
             PaintCommanderTax(card, pose);
@@ -149,7 +160,7 @@ internal sealed partial class TableApplication
             }
         }
         if (CombatTarget(card)) canvas.CardFrame(pose with { Size = pose.Size + new Vector2(10) }, Blue, 4);
-        if (zone == "Battlefield" && (groupFront || focus)) {
+        if (zone == "Battlefield" && (groupFront || focus) && !scanFace) {
             if (pose.Size.X < 300) PaintBattlefieldLabels(card, pose, owner, groupCount);
             else {
                 PaintAttachedCardState(card, pose, owner);

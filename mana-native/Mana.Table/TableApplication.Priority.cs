@@ -53,6 +53,7 @@ internal sealed partial class TableApplication
     {
         var state = match!;
         if (state.Stack.Length == 0) return;
+        if (TableStudyEnabled) { DrawStudyStackFlow(); return; }
         var view = priorityView!;
         string topId = state.Stack[0].Id;
         if (stackQueueTop != topId) { stackQueueTop = topId; stackQueuePage = 0; }

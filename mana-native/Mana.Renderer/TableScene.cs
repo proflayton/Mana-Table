@@ -16,6 +16,7 @@ public sealed record SceneCard(string Id, Card Card, Pose Pose, string Zone, int
     public float DenseScale { get; init; } = 1;
     public int DenseRowHeight { get; init; } = 20;
     public bool DenseMiniature { get; init; }
+    public bool ScanFace { get; init; }
 
     internal static SceneCard Create(Card card, Pose pose, string zone, int owner, int index, Vector2? entrance)
     {
@@ -84,20 +85,23 @@ public sealed class TableScene
 
     public static TableScene Build(GameSnapshot state, int handPage,
         Point pointer, string? previouslyRaised, string? dragged, bool allowHover, Func<Card, bool> isResource,
-        Func<Card, int, bool, BattlefieldLabelMetrics>? denseMeasure = null, bool allowInlineOrdering = true)
+        Func<Card, int, bool, BattlefieldLabelMetrics>? denseMeasure = null, bool allowInlineOrdering = true,
+        bool sharedTableStudy = false)
     {
         var hand = HandLayout.Build(state, handPage, pointer, previouslyRaised, dragged, allowHover);
         var orderedChoices = allowInlineOrdering && state.Decision is { Kind: "choice", Ordered: true } decision
             ? decision.Choices.Where(c => c.Card != null && !string.IsNullOrEmpty(c.CardId)).Select(c => c.CardId).ToHashSet(StringComparer.Ordinal) : null;
-        var geometry = SeatGeometry.Build(state);
-        var layout = BattlefieldLayoutContext.Build(state, orderedChoices, geometry, isResource);
+        var geometry = SeatGeometry.Build(state, sharedTableStudy);
+        var layout = sharedTableStudy ? null : BattlefieldLayoutContext.Build(state, orderedChoices, geometry, isResource);
         var seats = new List<SceneSeat>();
         for (int index = 0; index < state.Players.Length; index++) {
             var player = state.Players[index];
             var seat = geometry[index];
             if (seat.Index is < 0 or > 3) continue;
-            var clusters = BattlefieldLayout.Arrange(layout, seat.Index, player.Id,
-                player.Zone("Battlefield").Cards, isResource, orderedChoices, denseMeasure);
+            var clusters = sharedTableStudy
+                ? SharedTableStudy.Arrange(seat.Index, player.Id, player.Zone("Battlefield").Cards, isResource, orderedChoices)
+                : BattlefieldLayout.Arrange(layout!, seat.Index, player.Id,
+                    player.Zone("Battlefield").Cards, isResource, orderedChoices, denseMeasure);
             seats.Add(new(seat, clusters));
         }
         return new(hand, seats.ToArray());

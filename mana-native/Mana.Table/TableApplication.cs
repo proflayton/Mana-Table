@@ -297,7 +297,7 @@ internal sealed partial class TableApplication : IDisposable
         canvas.TextScale = preferences.TextScale;
         tableScene = match == null ? null : TableScene.Build(match, handPage, pointer, null,
             dragging && dragSource?.Card is { } held ? CardViews.Identity(held) : null, false, CardPresentation.IsResource,
-            denseMeasure: MeasureDenseBattlefieldLabel, allowInlineOrdering: TableChoices.IsDirect(match));
+            denseMeasure: MeasureDenseBattlefieldLabel, allowInlineOrdering: TableChoices.IsDirect(match), sharedTableStudy: TableStudyEnabled);
         UpdateBoardView();
         BeginCardReading(frameElapsed);
         hits.Begin();

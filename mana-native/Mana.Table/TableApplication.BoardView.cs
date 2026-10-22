@@ -28,7 +28,7 @@ internal sealed partial class TableApplication
             boardViewMotion.Reset(); boardView = BoardView.Identity; return;
         }
         bool dense = tableScene.Seats.Any(seat => seat.IsDense);
-        bool enabled = followTurnEnabled && !dense && state.Players.Length is 3 or 4;
+        bool enabled = followTurnEnabled && !TableStudyEnabled && !dense && state.Players.Length is 3 or 4;
         bool blocked = OverlayOpen || readingId != null || cardPresentation.HasReaderTransition
             || pressed != null || dragging || previousMouse.LeftButton == ButtonState.Pressed
             || boardViewportChanged || boardPointerActivity && pointer.Y is >= 54 and < 778

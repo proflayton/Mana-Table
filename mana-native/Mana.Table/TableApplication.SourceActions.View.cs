@@ -21,13 +21,14 @@ internal sealed partial class TableApplication
 
     private bool DrawSourceActionReader(PresentedCard entry)
     {
-        if (!SourceActionsSupported || !entry.Focused || entry.ChoiceSlot >= 0 || entry.Card.FaceDown
+        if ((!SourceActionsSupported && !IsStudyBattlefieldReader(entry)) || !entry.Focused || entry.ChoiceSlot >= 0 || entry.Card.FaceDown
             || entry.Display.Size.X < 300 || !CardContext.CanRead(entry)) return false;
         var card = VisibleCards().FirstOrDefault(current => SameVisibleCard(current, entry.Card));
         if (card == null) return false;
         // Reading always paints the complete original face. Action discovery,
         // effective stats and controls never replace or cover its printed rules.
-        PaintCard(card, entry.Display, false, IsCardActionable(card), true);
+        if (IsStudyBattlefieldReader(entry)) PaintStudyBattlefieldReader(card, entry);
+        else PaintCard(card, entry.Display, false, IsCardActionable(card), true);
         return true;
     }
 
@@ -62,7 +63,7 @@ internal sealed partial class TableApplication
         string key = string.Join("\n", match?.Id, match?.Decision?.Id, entry.Id, entry.Zone, card.Key);
         if (key != sourceReaderViewKey) { sourceReaderViewKey = key; sourceReaderScroll = 0; }
         var options = SourceReaderOptions(card);
-        string state = SourceReaderState(card);
+        string state = IsStudyBattlefieldReader(entry) ? "" : SourceReaderState(card);
         var face = entry.Display.Bounds;
         if (options.Count == 0 && state.Length == 0) {
             if (readerActionsLoading) {
@@ -149,6 +150,7 @@ internal sealed partial class TableApplication
 
     private bool ScrollSourceReader(int direction)
     {
+        if (ScrollBattlefieldReaderState(direction)) return true;
         if (!SourceActionsSupported || readingId == null || !sourceReaderActionsBounds.Contains(pointer)) return false;
         sourceReaderScroll = Math.Clamp(sourceReaderScroll - direction * 36, 0, sourceReaderScrollMax);
         return true;

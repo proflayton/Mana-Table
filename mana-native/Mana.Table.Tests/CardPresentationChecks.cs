@@ -122,6 +122,30 @@ internal static class CardPresentationChecks
         var fresh = owner.Prepare(Request(first, firstRest)); owner.EndFrame();
         check(!owner.HasPinnedCard && fresh.Display == firstRest && actions == 0,
             "Changing games clears presentation identity, pinned readers, and motion without executing a card action");
+
+        // The layout study reads a copy while keeping the controller's actual
+        // occurrence clickable. The space between those faces is not a card.
+        owner.Reset();
+        var study = context with { KeepBattlefieldAnchor = true,
+            State = state with { Players = [state.Viewer! with { Zones = [new("Battlefield", 1, [first], null)] }] } };
+        var battlefieldRest = new Pose(new(400, 300), new(112, 104));
+        owner.BeginFrame(study, null, .016f, true);
+        var battlefield = owner.Prepare(Request(first, battlefieldRest, "Battlefield")); owner.EndFrame();
+        bool opened = owner.Toggle(battlefield.Hit, study);
+        for (int frame = 0; frame < 2; frame++) {
+            owner.BeginFrame(study, null, .016f, true);
+            battlefield = owner.Prepare(Request(first, battlefieldRest, "Battlefield")); owner.EndFrame();
+        }
+        var betweenFaces = Vector2.Lerp(battlefieldRest.Center, battlefield.Display.Center, .5f).ToPoint();
+        check(opened && battlefield.Focused && battlefield.Display.Size == new Vector2(410, 574)
+            && battlefield.Display.Center.X > 800 && battlefield.Rest == battlefieldRest
+            && battlefield.Hit.Contains(battlefieldRest.Center.ToPoint()) && battlefield.Hit.Contains(battlefield.Display.Center.ToPoint())
+            && battlefield.Hit.Bounds.Contains(betweenFaces) && !battlefield.Hit.Contains(betweenFaces) && actions == 0,
+            "Study inspection keeps its original battlefield anchor and opposite-side full reader clickable, leaves their intervening space clear, and submits no game action");
+        var anchorHit = owner.ResolveHit(battlefieldRest.Center.ToPoint(), [battlefield.Hit], battlefield.Hit, study);
+        check(anchorHit is { } currentAnchor && currentAnchor.Id == battlefield.Hit.Id
+            && owner.Toggle(currentAnchor, study) && !owner.HasPinnedCard && actions == 0,
+            "A second click on the study's actual battlefield occurrence closes reading without activating its underlying action");
     }
 
     private static void CurrentInteractionState(Action<bool, string> check)

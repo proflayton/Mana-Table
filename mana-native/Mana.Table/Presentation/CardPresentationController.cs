@@ -64,7 +64,9 @@ internal sealed class CardPresentationController
         var view = request.ChoiceSlot < 0 && BoardView.AffectsZone(request.Zone) ? boardView : BoardView.Identity;
         var rest = view.Apply(request.Rest);
         if (focused) {
-            readerTarget ??= ReaderPose(rest, request.Zone);
+            readerTarget ??= context.KeepBattlefieldAnchor && request.Zone == "Battlefield"
+                ? new Pose(new(rest.Center.X < 800 ? 1090 : 510, 385), new(410, 574), Elevation: 22)
+                : ReaderPose(rest, request.Zone);
         }
         bool useBoardMotion = !focused && BoardView.AffectsZone(request.Zone) && request.ChoiceSlot < 0;
         bool collapse = pendingCollapses.Remove(request.Id);
@@ -84,7 +86,8 @@ internal sealed class CardPresentationController
         displayedPoses[request.Id] = pose;
         if (!focused && Vector2.Distance(pose.Size, rest.Size) < 2
             && Vector2.Distance(pose.Center, rest.Center) < 2) transitions.Remove(request.Id);
-        bool anchored = request.Zone == "Hand" && (focused || transitions.Contains(request.Id));
+        bool anchored = request.Zone == "Hand" && (focused || transitions.Contains(request.Id))
+            || context.KeepBattlefieldAnchor && request.Zone == "Battlefield" && focused;
         var geometry = new CardHitGeometry(pose, anchored ? rest : null,
             request.ActivationBounds is { } activation ? view.Apply(activation) : null);
         var hit = new Hit(request.HitId, context.Scope, geometry.Bounds, request.Activate, request.Card,

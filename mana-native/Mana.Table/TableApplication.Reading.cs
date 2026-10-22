@@ -28,11 +28,11 @@ internal sealed partial class TableApplication
         || match?.Decision?.Intent is DecisionIntent.Selection or DecisionIntent.Attack or DecisionIntent.Block
         || !SourceActionsSupported && match?.Decision?.Intent == DecisionIntent.Mana);
     private CardPresentationContext CardContext => new(match, Scope, OverlayOpen && !BattlefieldFocused && !ZoneReadingOpen,
-        ReadingGalleryOpen, dragging, CompactCardDecision, AbilityActionPending, SourceActionsSupported);
+        ReadingGalleryOpen, dragging, CompactCardDecision, AbilityActionPending, SourceActionsSupported, TableStudyEnabled);
     private string? readingId => cardPresentation.PinnedId;
     private Rectangle? hoverPreview => cardPresentation.ReaderBounds;
     internal bool InteractivePointer => !dragging && HitAt(pointer) is { } hit
-        && hit.Id is not ("battlefield-focus-surface" or "decision-context-panel" or "public-outcome-panel" or "stack-card-preview" or "source-actions-surface")
+        && hit.Id is not ("battlefield-focus-surface" or "decision-context-panel" or "public-outcome-panel" or "stack-card-preview" or "source-actions-surface" or "battlefield-reader-state")
         && (hit.Card is not { } card || !card.FaceDown || IsCardActionable(card));
 
     private void ExtendCardHit(Card card, Rectangle bounds) => hits.ExtendCanonical(

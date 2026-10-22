@@ -19,7 +19,9 @@ internal sealed partial class TableApplication
     {
         if (!ExperienceLabOpen) return;
         canvas.Panel(new(0, 0, 1600, 54), new Color(12, 25, 33), new Color(70, 108, 119), 0);
-        canvas.Text(TurnOrientationLab ? "LAB · SCRIPTED SNAPSHOT" : "EXPERIENCE LAB · SCRIPTED SNAPSHOT", 18, 7, Gold, .5f, TurnOrientationLab ? 180 : 750, 1, true);
+        canvas.Text("SCRIPTED LAB", 18, 7, Gold, .5f, 180, 1, true);
+        if (!TurnOrientationLab) Button("lab-table-study", TableStudyEnabled ? "Table study: On" : "Table study: Off", 210, 3, 210,
+            () => SetTableStudy(!TableStudyEnabled), accent: TableStudyEnabled, height: 22);
         if (TurnOrientationLab) {
             string followLabel = !followTurnEnabled ? "Try turn follow"
                 : preferences.ReducedMotion ? "Follow: reduced motion"
@@ -121,6 +123,7 @@ internal static class ExperienceLabLauncher
             using var window = new TableWindow(engine, profile, capture, null, size, initialState: lab.State, artSource: new OfflineArt(artCache));
             window.Window.Title = "Mana Table — Experience Lab";
             if (args.Contains("--follow-turn")) window.TestPort.Post(() => window.TestPort.SetTurnFollow(true));
+            if (args.Contains("--table-study")) window.TestPort.Post(() => window.TestPort.SetTableStudy(true));
             if (Arg("--focus-player") is { } requestedOwner) {
                 if (!int.TryParse(requestedOwner, out int owner) || !lab.State.Players.Any(player => player.Id == owner))
                     throw new ArgumentException("Choose a public player ID for --focus-player.");

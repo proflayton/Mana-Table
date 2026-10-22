@@ -87,6 +87,18 @@ need human review of actual screens, transitions and manual interaction.
 Frame publication does not answer the engine's pending
 decision. Every command still passes current game/decision scope checks.
 
+The Experience Lab's explicit `--table-study` selects `SharedTableStudy` when
+building `TableScene` for three/four seats. It uses fixed controller role lanes
+and flat scan faces without global density/stack repacking. `SceneCard.ScanFace`
+selects battlefield painting; full readers retain a canonical battlefield anchor
+and share its exact scoped hit geometry. Their current P/T and typed state come
+from the same authorized occurrence. The study's pending-effect area is reserved
+before packing and can use the remaining space beside a reader. This comparison
+does not enable camera movement, alter engine permissions or change the normal
+game's default layout. Crowded recognition and responsive viewport composition
+remain open human-review/design work; see the
+[four-player study](Mana-Table-Experience-Review.md#four-player-direction-stable-table-selective-attention).
+
 Simulations inject elapsed/total time and pointer/keyboard state into the same
 application methods used by the window. Recovery checks and recovery text share
 an injectable `TimeProvider`; use a controlled provider when replaying connection
