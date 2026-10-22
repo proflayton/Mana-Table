@@ -23,6 +23,8 @@ internal sealed class LobbyThreePlayerSmoke : ITableAutomation, IDisposable
     private int step;
     private string tableId = "", deckId = "";
     private GameSnapshot[] privateViews = [];
+    private GameSnapshot?[] openingViews = [];
+    private bool firstMainObserved;
     private readonly DateTime deadline = DateTime.UtcNow.AddMinutes(5);
     public string? ExpectedClick => null;
     public bool ClickAccepted { get; set; }
@@ -102,7 +104,7 @@ internal sealed class LobbyThreePlayerSmoke : ITableAutomation, IDisposable
             Check(privateViews.All(s => s.Players.Length == 3 && s.Players.All(p => p.Life == 40)
                 && s.Players.All(p => p.Id == s.ViewerId ? p.Zone("Hand").Cards.Length == p.Zone("Hand").Count : p.Zone("Hand").Cards.Length == 0)),
                 "All three clients retain their own complete hand while every opponent hand remains private");
-            Check(privateViews.Any(s => s.PhaseKey == "MAIN1") && privateViews.All(s => s.Status == "playing"),
+            Check(UsableFirstMain(privateViews),
                 "Three-human opening decisions finish and reach a usable first main phase");
             Capture("06-three-player-game");
             File.WriteAllText(Path.Combine(view.Profile, "lobby-three-player-results.json"), JsonSerializer.Serialize(checks, new JsonSerializerOptions { WriteIndented = true }));
@@ -135,13 +137,21 @@ internal sealed class LobbyThreePlayerSmoke : ITableAutomation, IDisposable
         var until = DateTime.UtcNow.AddSeconds(45);
         ICardEngine[] seats = [view.Engine, .. guests];
         while (DateTime.UtcNow < until) {
-            foreach (var seat in seats) {
-                var state = await seat.ObserveAsync();
-                if (state?.Status == "error") throw new InvalidOperationException(state.Error);
-                if (state?.PhaseKey == "MAIN1") {
-                    privateViews = (await Task.WhenAll(seats.Select(s => s.ObserveAsync()))).Select(s => s ?? throw new InvalidOperationException("Missing human view")).ToArray();
+            openingViews = await Task.WhenAll(seats.Select(seat => seat.ObserveAsync()));
+            if (openingViews.FirstOrDefault(state => state?.Status == "error") is { } failed)
+                throw new InvalidOperationException(failed.Error);
+            firstMainObserved |= openingViews.Any(state => state?.PhaseKey == "MAIN1");
+            if (firstMainObserved) {
+                // A phase can publish before all private views and its input.
+                // Stop sending passes as soon as any seat reaches main; retain
+                // that first usable priority decision while the views settle.
+                var states = openingViews.OfType<GameSnapshot>().ToArray();
+                if (UsableFirstMain(states)) {
+                    privateViews = states;
                     return;
                 }
+            } else for (int index = 0; index < seats.Length; index++) {
+                var state = openingViews[index];
                 if (state?.Decision is not { } d) continue;
                 DecisionReply? reply = d.Kind switch {
                     "choice" => new(state.Id, d.Id, ReplyAction.Choose, Choices: d.Choices.Take(Math.Max(d.Min, Math.Min(1, d.Max))).Select(c => c.Index).ToArray()),
@@ -150,12 +160,29 @@ internal sealed class LobbyThreePlayerSmoke : ITableAutomation, IDisposable
                     _ when d.OkEnabled => new(state.Id, d.Id, ReplyAction.Confirm),
                     _ => null
                 };
-                if (reply != null) try { await seat.ReplyAsync(reply); }
+                if (reply != null) try { await seats[index].ReplyAsync(reply); }
                     catch (InvalidOperationException ex) when (ex.Message.Contains("choice has changed", StringComparison.Ordinal)) { }
             }
             await Task.Delay(30);
         }
-        throw new TimeoutException("Three-player opening decisions did not reach the first main phase");
+        throw new TimeoutException("Three-player opening decisions did not settle at usable first-main priority within 45 seconds. "
+            + JsonSerializer.Serialize(new { firstMainObserved, latest = openingViews.Select(state => state == null ? null : new {
+                state.Id, state.ViewerId, state.Status, state.PhaseKey, state.Turn, state.ActivePlayerId,
+                state.PriorityPlayerId, state.DecisionOwnerId, state.ActionClass,
+                decision = state.Decision == null ? null : new { state.Decision.Id, state.Decision.Kind,
+                    state.Decision.InputType, state.Decision.Intent, state.Decision.OkEnabled }
+            }) }));
+    }
+    private static bool UsableFirstMain(GameSnapshot[] states)
+    {
+        if (states.Length != 3 || states.Select(state => state.ViewerId).Distinct().Count() != 3) return false;
+        var first = states[0];
+        if (first.Id.Length == 0 || first.Turn <= 0 || first.ActivePlayerId == null || states.Any(state => state.Status != "playing"
+            || state.PhaseKey != "MAIN1" || state.Id != first.Id || state.Turn != first.Turn || state.ActivePlayerId != first.ActivePlayerId)) return false;
+        if (states.Count(state => state.Decision != null) != 1) return false;
+        var owner = states.Single(state => state.Decision != null);
+        return owner is { Decision: { Id.Length: > 0, Kind: "input", InputType: "InputPassPriority", Intent: DecisionIntent.Priority, OkEnabled: true } }
+            && states.All(state => state.ActionClass == "priority" && state.PriorityPlayerId == owner.ViewerId && state.DecisionOwnerId == owner.ViewerId);
     }
     private void Click(string id) { Step(.1, () => MoveHit(view.Hits.Single(h => h.Id == id))); Step(0, () => mouse = Mouse(ButtonState.Pressed)); Step(0, () => mouse = Mouse()); }
     private void MoveHit(Mana.Table.Interaction.TableHit hit) { var p = SmokePointer.Hit(view, hit); mouse = new(p.X, p.Y, 0, ButtonState.Released, ButtonState.Released, ButtonState.Released, ButtonState.Released, ButtonState.Released); }
@@ -185,7 +212,7 @@ internal sealed class LobbyThreePlayerSmoke : ITableAutomation, IDisposable
             steps.Dequeue(); step++; next.Action(); lastStep = view.Now;
         } catch {
             File.WriteAllText(Path.Combine(view.Profile, "lobby-three-player-failure.json"), JsonSerializer.Serialize(new { step, view.Now, checks,
-                view.Scope, view.SetupModal, view.Lobby, view.Match, privateViews,
+                view.Scope, view.SetupModal, view.Lobby, view.Match, privateViews, firstMainObserved, openingViews,
                 hits = view.Hits.Select(h => new { h.Id, h.Bounds }) }, new JsonSerializerOptions { WriteIndented = true, IncludeFields = true }));
             Capture("failure"); throw;
         }
