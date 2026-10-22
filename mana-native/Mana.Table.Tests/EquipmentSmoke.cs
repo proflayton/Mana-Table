@@ -183,7 +183,8 @@ internal sealed class EquipmentSmoke : ITableAutomation
     }
     private int BadgePixels(Rectangle bounds, bool sharedStats)
     {
-        var region = Rectangle.Intersect(bounds, new(0, 0, view.Surface.Width, view.Surface.Height));
+        var physical = RenderViewport.ForSurface(new(view.Surface.Width, view.Surface.Height), view.DesignHeight).ToSurface(bounds);
+        var region = Rectangle.Intersect(physical, new(0, 0, view.Surface.Width, view.Surface.Height));
         if (region.Width <= 0 || region.Height <= 0) return 0;
         var pixels = new Color[region.Width * region.Height];
         view.Surface.GetData(0, region, pixels, 0, pixels.Length);

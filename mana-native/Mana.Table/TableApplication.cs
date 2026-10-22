@@ -195,8 +195,7 @@ internal sealed partial class TableApplication : IDisposable
         bool blockedInput = ActivityOpen || experienceInput || updatesOpen;
         bool chatKeys = blockedInput || ChatKeys(keys);
         if (!chatKeys) { DeckKeys(keys); SetupKeys(keys); }
-        var view = new Rectangle(0, 0, viewport.X, viewport.Y); float scale = Math.Min(view.Width / 1600f, view.Height / (float)DesignHeight);
-        pointer = new((int)((mouse.X - (view.Width - 1600 * scale) / 2) / scale), (int)((mouse.Y - (view.Height - DesignHeight * scale) / 2) / scale));
+        pointer = RenderViewport.Fit(viewport, DesignHeight).ToLogical(new(mouse.X, mouse.Y));
         boardPointerActivity = mouse.X != previousMouse.X || mouse.Y != previousMouse.Y
             || mouse.ScrollWheelValue != previousMouse.ScrollWheelValue || mouse.LeftButton != previousMouse.LeftButton;
         boardViewportChanged = boardViewport != viewport; boardViewport = viewport;

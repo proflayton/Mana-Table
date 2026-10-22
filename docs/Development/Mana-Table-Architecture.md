@@ -85,6 +85,19 @@ occurrences avoid rebuilding layouts or scanning the whole battlefield per card.
 Hit regions use those same displayed poses, including connected metadata and the
 original hand anchor.
 
+`RenderViewport` maps logical composition to the integer fitted backbuffer area
+and maps mouse pixels back through the same transform. `TableWindow` keeps one
+MSAA surface at that area's actual pixel dimensions, recreates it on size or
+scene-aspect changes, and copies it to the backbuffer at 1:1. Logical coordinates
+remain 1600x900 for games and 1600x1000 for setup. Sprite and triangle painting
+share the same output transform.
+
+Text measurement and wrapping remain logical. `Canvas` includes output density
+in its glyph-cache keys, rasterizes at destination density, and paints each text
+texture with inverse scaling at a snapped physical origin. Accessibility
+`TextScale` stays independent. Physical surface readback must map logical crops
+with `RenderViewport.ForSurface`; it must not fit an already fitted surface.
+
 `FrameObservation` copies public text commands, card values, full projected poses,
 controls and scope into serializable records. It retains no action callbacks,
 engine connection or graphics resources. It describes submitted presentation

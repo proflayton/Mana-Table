@@ -87,6 +87,33 @@ Real-engine checks and actual application input cover these transitions and the
 next spell's unanswered response. Human review of the corrected behavior remains
 pending; the existing 0.2.61 installer does not contain this fix.
 
+## Resolution follow-up: 21 October 2026
+
+The user reports that the game does not feel crisp. The previous window path
+rasterizes a fixed-size scene and logical-resolution glyph textures, then
+bilinearly scales the completed frame. The next rendering revision instead
+paints at the fitted backbuffer's pixel dimensions, with separately rasterized
+glyphs at that density and a 1:1 final copy. This preserves logical layout and
+shared pointer geometry. It is separate from the tested playable release.
+Compare actual small/large-window text, fine edges, full-card inspection and
+pointer gestures; density/alpha checks do not approve perceived sharpness.
+Card-image source resolution and very small overview labels remain separate
+constraints. Human review of this revision remains pending.
+
+Agent review compared unscaled window captures at 1000x740, 1540x980 and
+1920x1080, including the actual setup controls, a busy focused battlefield and
+the full reader with its state column. Menu and reader text are visibly cleaner
+at the larger sizes; small overview labels remain intrinsically small. Reviewed
+pointer gestures remained aligned, and no new clipping appeared in these
+captures. These findings apply to candidate `crisp-r2`, separate from the
+published gameplay candidate; they do not establish human acceptance.
+
+The ordinary cached card face is 488x680 pixels. At the current full-reader
+size it is slightly enlarged at 1920x1080 and approximately doubled at 4K, so
+the printed card text still has a source-image limit. A later higher-resolution
+reader cache must preserve printing and face identity, show the existing image
+while loading, and bound GPU memory independently of ordinary thumbnails.
+
 ## MTGA references reviewed: 21 October 2026
 
 The user's seven Arena screenshots make the battlefield/inspection hierarchy concrete:

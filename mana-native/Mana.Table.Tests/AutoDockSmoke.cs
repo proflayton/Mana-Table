@@ -1,5 +1,6 @@
 using System.Text.Json;
 using Mana.Contracts;
+using Mana.Renderer;
 using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Graphics;
 using Microsoft.Xna.Framework.Input;
@@ -26,7 +27,8 @@ internal sealed class AutoDockSmoke(TableWindow.Probe view, InteractionScenarioE
     private void Publish(GameSnapshot state) { scenario.Present(state); view.Accept(scenario.State); }
     private void Next() { stage++; changed = view.Now; }
     private static Color[] Dock(Texture2D surface) {
-        var area = new Rectangle(1266, 726, 296, 120); var pixels = new Color[area.Width * area.Height];
+        var area = RenderViewport.ForSurface(new(surface.Width, surface.Height), 900).ToSurface(new(1266, 726, 296, 120));
+        var pixels = new Color[area.Width * area.Height];
         surface.GetData(0, area, pixels, 0, pixels.Length); return pixels;
     }
     private void Capture(Texture2D surface, string name) {
