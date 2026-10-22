@@ -87,6 +87,27 @@ The player's latest "looks a lot better" records positive feedback on the
 experience they viewed; it does not establish acceptance of the whole game or
 changes they have not reviewed.
 
+### Preview acceptance and review captures
+
+On 22 October 2026 the user accepted the linked native preview with "lgtm"
+after the opening-artwork update. The reviewed product candidate is
+`4f2a6a002c02e53b9f27970f94be879c3bc6ac8b`, with `Mana.Game.dll` SHA-256
+`1C101B421FBBCFED426C5191D9CEE3AACCFF82A3B4562B700636D094AB3CE364`.
+This accepts the presented preview; it does not establish review of every audit
+scenario or remote CI. The user's individual window settings were not recorded.
+
+These agent captures use the bundled Explorers of the Deep precon and a
+controlled loading fixture, rather than a user's saved deck list. Home is shown
+at 1540 x 1000; loading is an actual 1000 x 740 window; the opening hand is the
+1000 x 625 rendered table within that window. They illustrate the implemented
+journeys, rather than supplying human acceptance by themselves.
+
+![Selected precon and direct Play](images/native-home-2026-10-22.png)
+
+![Opening artwork preparation](images/native-artwork-loading-2026-10-22.png)
+
+![Real four-seat opening hand after artwork preparation](images/native-opening-hand-2026-10-22.png)
+
 ### Findings, current slice and remaining scope
 
 | Area | Audit finding | Candidate work or remaining design |
