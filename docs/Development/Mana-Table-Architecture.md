@@ -23,6 +23,12 @@ complete seat-filtered snapshots from the authority. Networking contains no card
 combat or decision interpretation. `SyncLobby` manages deck selection, readiness
 and seat ownership. `PortForwarding` is an independent reachability service.
 
+Concession cleanup can remove a player-control override while the game thread
+reads it. `Player` keeps those overrides in timestamp order in a concurrent map
+and reads one entry snapshot, falling back to the base controller when empty.
+Search-control entries use a synchronized ordered map because a latest entry
+with a null player is meaningful and must keep masking older entries.
+
 Sync protocol 3 negotiates its version before joining. Ordered sequence numbers
 and cached command receipts prevent replay after a lost response. A resume token
 restores the existing seat, followed by a complete snapshot; leaving revokes the

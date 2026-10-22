@@ -26,6 +26,11 @@ another run. Controlled projections verify presentation and commands; they do
 not prove Magic rules. Mechanical results do not establish visual clarity or a
 comfortable interaction.
 
+`StateEffectsConcessionTest` covers real concession during participant traversal
+and terminal cleanup. Its focused controller regression also checks timestamp
+ordering, removal fallback and nullable search overrides through public APIs on
+an unstarted table, including bounded concurrent reads while overrides change.
+
 ## Native headless checks
 
 Build the separate test executable once:

@@ -4,11 +4,14 @@ import com.google.common.eventbus.Subscribe;
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import com.google.gson.JsonObject;
+import forge.StaticData;
+import forge.deck.Deck;
 import forge.game.Game;
 import forge.game.GameAction;
 import forge.game.card.CardCollectionView;
 import forge.game.event.GameEventGameFinished;
 import forge.game.player.Player;
+import forge.game.player.RegisteredPlayer;
 import forge.game.zone.PlayerZone;
 import forge.game.zone.ZoneType;
 import org.testng.annotations.DataProvider;
@@ -16,17 +19,115 @@ import org.testng.annotations.Test;
 
 import java.lang.reflect.Field;
 import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.CyclicBarrier;
+import java.util.concurrent.ExecutorCompletionService;
+import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 
 import static forge.api.RulesScenario.*;
 import static org.testng.Assert.*;
 
 public class StateEffectsConcessionTest {
+    @Test(timeOut = 90000)
+    public void controllerReadsRemainValidWhilePublicControlOverridesAreRemoved() throws Exception {
+        if (StaticData.instance() == null) EngineResources.load(Path.of("../forge-gui/res"));
+        var players = new ArrayList<RegisteredPlayer>();
+        for (int seat = 0; seat < 3; seat++) players.add(MatchTable.human(new Deck(), "Constructed", "Controller seat " + seat));
+        // No rules loop is started. Exercise the actual public control APIs on
+        // registered players without modifying a running game's state.
+        try (var table = new MatchTable("Constructed", players, Path.of("../forge-gui/res"), Files.createTempDirectory("controller-snapshot"))) {
+            var subject = table.game.getPlayers().get(0);
+            var older = table.game.getPlayers().get(1);
+            var newer = table.game.getPlayers().get(2);
+            var baseController = subject.getController();
+            var olderController = older.getController();
+            var newerController = newer.getController();
+            subject.addController(20, newer, newerController, false);
+            subject.addController(10, older, olderController, false);
+            assertSame(subject.getController(), newerController, "Latest timestamp wins regardless of insertion order");
+            assertSame(subject.getControllingPlayer(), newer);
+            subject.removeController(20, false);
+            assertSame(subject.getController(), olderController);
+            assertSame(subject.getControllingPlayer(), older);
+            subject.removeController(older);
+            assertSame(subject.getController(), baseController);
+            assertNull(subject.getControllingPlayer());
+
+            subject.addControlledWhileSearching(20, newer);
+            subject.addControlledWhileSearching(10, older);
+            var retained = subject.getControlledWhileSearching();
+            assertNotNull(retained);
+            assertEquals(retained.getKey(), Long.valueOf(20));
+            assertSame(retained.getValue(), newer);
+            subject.addControlledWhileSearching(30, null);
+            var nullable = subject.getControlledWhileSearching();
+            assertNotNull(nullable, "A latest entry with a null player still exists and masks older entries");
+            assertEquals(nullable.getKey(), Long.valueOf(30));
+            assertNull(nullable.getValue());
+            subject.removeControlledWhileSearching(30);
+            assertSame(subject.getControlledWhileSearching().getValue(), newer);
+            subject.removeControlledWhileSearching(20);
+            assertSame(subject.getControlledWhileSearching().getValue(), older);
+            subject.removeControlledWhileSearching(10);
+            assertNull(subject.getControlledWhileSearching());
+            assertSame(retained.getValue(), newer, "A previously returned entry remains a snapshot after removal");
+
+            var barrier = new CyclicBarrier(2);
+            var workers = Executors.newFixedThreadPool(2);
+            var completed = new ExecutorCompletionService<Void>(workers);
+            try {
+                completed.submit(() -> {
+                    for (int batch = 0; batch < 64; batch++) {
+                        barrier.await();
+                        for (int index = 0; index < 8; index++) {
+                            subject.addController(100, older, olderController, false);
+                            subject.addController(200, newer, newerController, false);
+                            subject.removeController(200, false);
+                            subject.clearController();
+                            subject.addControlledWhileSearching(100, older);
+                            subject.addControlledWhileSearching(200, index % 2 == 0 ? newer : null);
+                            subject.removeControlledWhileSearching(200);
+                            subject.removeControlledWhileSearching(100);
+                        }
+                    }
+                    return null;
+                });
+                completed.submit(() -> {
+                    for (int batch = 0; batch < 64; batch++) {
+                        barrier.await();
+                        for (int index = 0; index < 128; index++) {
+                            var control = subject.getController();
+                            assertTrue(control == baseController || control == olderController || control == newerController);
+                            var owner = subject.getControllingPlayer();
+                            assertTrue(owner == null || owner == older || owner == newer);
+                            var search = subject.getControlledWhileSearching();
+                            assertTrue(search == null || search.getKey() == 100 && search.getValue() == older
+                                    || search.getKey() == 200 && (search.getValue() == newer || search.getValue() == null));
+                        }
+                    }
+                    return null;
+                });
+                for (int index = 0; index < 2; index++) {
+                    var result = completed.poll(5, TimeUnit.SECONDS);
+                    assertNotNull(result, "Bounded public controller reads/writes must complete without deadlock");
+                    result.get();
+                }
+            } finally {
+                workers.shutdownNow();
+                assertTrue(workers.awaitTermination(5, TimeUnit.SECONDS), "Controller workers must stop before closing the unstarted table");
+            }
+            assertSame(subject.getController(), baseController);
+            assertNull(subject.getControllingPlayer());
+            assertNull(subject.getControlledWhileSearching());
+        }
+    }
+
     @DataProvider(name = "traversals")
     public Object[][] traversals() {
         return new Object[][]{{"other-zones", 1}, {"player-rules", 2}, {"static-layer", 1}};
