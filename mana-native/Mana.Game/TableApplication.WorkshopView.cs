@@ -42,7 +42,7 @@ internal sealed partial class TableApplication
     {
         canvas.Line(new(1076, 250), new(1076, 936), LobbyTrim * .55f);
         canvas.Text("YOUR QUESTION", 52, 255, Gold, .74f, 855, 1, true);
-        canvas.Text(workshop?.Question is { Length: > 0 } question ? question : "Can I make my first three land drops?", 54, 294, Ink, .85f, 980, 2);
+        canvas.Text(workshop?.Question is { Length: > 0 } question ? question : "No question set", 54, 294, Ink, .85f, 980, 2);
         canvas.Text("Record your answer in Results.", 54, 332, Muted, .61f, 980, 1);
         MenuAction("workshop-question", "Set test question", new(54, 365, 224, 33), () => EditWorkshopPlan(true), !busy && WorkshopCurrent, size: .76f);
         MenuAction("workshop-plan", "Deck plan", new(288, 365, 180, 33), () => EditWorkshopPlan(false), !busy && WorkshopCurrent, size: .76f);

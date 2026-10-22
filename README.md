@@ -11,7 +11,9 @@ run it, and open Mana Table. The installer includes Java and .NET and installs
 for your Windows account. A portable Windows x64 ZIP is also available on the
 [Releases page](https://github.com/proflayton/Mana-Table/releases/latest).
 
-The app opens with **Play with AI**, **Play with friends**, and **Your decks**.
+The current source opens on your selected deck and commander, with **Play with AI**
+and **With friends** in the same Home. **Decks** opens saved lists, precons and
+imports; a valid saved list can **Play** without a separate confirmation step.
 Build or import a Commander list, try a bundled precon, practice opening hands,
 and test changes against Forge AI. Tables default to four seats; a host can choose
 two, three or four total seats. Friends can join a directly hosted table

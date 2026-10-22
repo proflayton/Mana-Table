@@ -85,7 +85,7 @@ internal sealed partial class TableApplication
             : Connected && DeckLibrary != null ? "Leave the lobby to delete or restore saved decks."
             : pickerDeleted ? "Deleted lists keep their cards and deck history. Undo returns a list to Your decks."
             : decks.Count == 0 ? "New here? Try a precon for a complete Commander deck."
-            : pickerPresets ? "Choose a precon to review before confirming it for the table."
+            : pickerPresets ? "Choose a precon to play or edit."
             : "Choose a saved list, or try a precon for a ready-made deck.";
         canvas.Text(pickerHint, 204, 234, Muted, .82f, 1110, 1);
         if (!opponent) {
@@ -129,8 +129,7 @@ internal sealed partial class TableApplication
         Button("decks-next", "Next", 351, 740, 108, () => deckPage++, !busy && (deckPage + 1) * pageSize < count, height: 34);
         canvas.Text($"{count} {(count == 1 ? "list" : "lists")}  ·  Page {deckPage + 1} / {Math.Max(1, (count + pageSize - 1) / pageSize)}", 484, 749, Muted, .67f, 620, 1);
         canvas.Line(new(204, 795), new(1394, 795), LobbyTrim);
-        if (opponent) canvas.Text("Your deck stays confirmed while you choose your opponents.", 208, 835, Muted, .82f, 1120, 1);
-        else {
+        if (!opponent) {
             Button("import", "Import deck file", 204, 820, 247, ImportFile, !busy, height: 44);
             Button("paste", "Paste deck list", 463, 820, 247, ImportClipboard, !busy, height: 44);
             if (WorkshopEngine != null) Button("picker-archidekt", "Link Archidekt", 722, 820, 310, () => ImportArchidekt(), !busy, height: 44);
