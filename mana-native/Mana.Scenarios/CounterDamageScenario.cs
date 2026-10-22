@@ -1,3 +1,4 @@
+using System.Collections.Immutable;
 using Mana.Contracts;
 
 namespace Mana.Scenarios;
@@ -6,7 +7,6 @@ namespace Mana.Scenarios;
 public static class CounterDamageScenario
 {
     public const string Id = "counter-damage.v1";
-    public const string Context = "lab-counter-damage-target";
     public const string SourceId = "counter-damage-source";
     public const string CounterCardId = "counter-damage-chandra";
     public const string TargetId = "counter-damage-target";
@@ -31,7 +31,7 @@ public static class CounterDamageScenario
         };
         var chandra = new Card {
             VisualId = CounterCardId, CombatId = CounterCardId, Name = "Chandra, the Firebrand", Type = "Legendary Planeswalker — Chandra",
-            ManaCost = "{3}{R}", Counters = new() { ["Loyalty"] = loyalty },
+            ManaCost = "{3}{R}", Counters = ImmutableDictionary<string, int>.Empty.Add("Loyalty", loyalty),
             Text = "[+1]: Chandra, the Firebrand deals 1 damage to any target.\n[-2]: When you cast your next instant or sorcery spell this turn, copy that spell. You may choose new targets for the copy.\n[-6]: Chandra, the Firebrand deals 6 damage to each of up to six targets."
         };
         var target = new Card {
@@ -62,14 +62,14 @@ public static class CounterDamageScenario
             PriorityPlayerId = choosing ? null : 0, DecisionOwnerId = 0, ActionClass = choosing ? "selection" : "priority",
             Players = state.Players.Select(player => player with {
                 Life = player.Id == 0 ? 19 : resolved && chosen.Kind == "player" && chosen.PlayerId == player.Id ? 40 - added : 40,
-                Mana = [], Zones = player.Zones.Select(zone => zone.Name != "Battlefield" ? zone : zone with {
-                    Cards = player.Id == 0 ? viewerCards : player.Id == 1
+                Mana = ImmutableDictionary<string, int>.Empty, Zones = player.Zones.Select(zone => zone.Name != "Battlefield" ? zone : zone with {
+                    Cards = (player.Id == 0 ? viewerCards : player.Id == 1
                         ? new[] { target with { Damage = resolved && chosen.Kind == "card" && chosen.Id == TargetId ? added : 0 } }
                             .Concat(zone.Cards.Take(6).Select(card => card with { Selectable = false })).ToArray()
-                        : zone.Cards.Select(card => card with { Selectable = false }).ToArray(),
+                        : zone.Cards.Select(card => card with { Selectable = false }).ToArray()).ToImmutableArray(),
                     Count = player.Id == 0 ? viewerCards.Length : player.Id == 1 ? 1 + Math.Min(6, zone.Cards.Length) : zone.Count
-                }).ToArray()
-            }).ToArray(),
+                }).ToImmutableArray()
+            }).ToImmutableArray(),
             Stack = pending ? [new(source.Name, $"All Will Be One deals {added} damage to {chosen.Name}.", true, source) {
                 Id = effect.Id, ControllerId = 0, Targets = [chosen], Effect = effect
             }] : [],
@@ -87,7 +87,7 @@ public static class CounterDamageScenario
                 Outcome = "resolved", Count = added, Cause = new(SourceId, source.Name, $"Deal {added} damage.", 0, "ability", effect.Id)
             }] : [activity],
             Decision = choosing ? new() {
-                Kind = "input", Purpose = DecisionPurpose.TargetSelection, Intent = DecisionIntent.Selection, Context = Context,
+                Kind = "input", Purpose = DecisionPurpose.TargetSelection, Intent = DecisionIntent.Selection,
                 SourceCard = source, SourceCardId = SourceId, SourceZone = "Battlefield", SourceControllerId = 0, Effect = effect,
                 Min = 1, Max = 1, PlayerChoices = [1, 2, 3],
                 Message = "All Will Be One (62) — Whenever you put one or more counters on a permanent or player, All Will Be One deals that much damage. [Added once: You; Chandra, the Firebrand (96)]"

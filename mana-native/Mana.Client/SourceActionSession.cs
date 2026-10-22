@@ -50,12 +50,11 @@ public sealed class SourceActionSession(ISourceActions? source, Action<Action> p
         Clear(); Observe(context);
     }
 
-    public DecisionReply? TryCreateReply(SourceActionContext current, string actionId)
+    public UseOfferedAction? TryCreateCommand(SourceActionContext current, string actionId)
     {
         if (!Supported || View.Status != SourceActionStatus.Ready || View.Context != current
             || !View.Actions.Any(action => action.Id == actionId)) return null;
-        return new(current.GameId, current.DecisionId, ReplyAction.UseSourceAction,
-            Card: current.SourceCardKey, AbilityId: actionId);
+        return new(current.GameId, current.DecisionId, current.SourceCardKey, actionId);
     }
 
     public void Close()
@@ -104,7 +103,7 @@ public sealed class SourceActionSession(ISourceActions? source, Action<Action> p
                 || result.SourceCardKey != context.SourceCardKey
                 || !string.IsNullOrEmpty(result.SourceCardId) && result.SourceCardId != context.SourceCardId
                 ? SourceActionStatus.Stale : SourceActionStatus.Ready;
-        if (status == SourceActionStatus.Ready && (result!.Actions == null
+        if (status == SourceActionStatus.Ready && (result!.Actions.IsDefault
             || result.Actions.Any(action => action == null || string.IsNullOrWhiteSpace(action.Id) || string.IsNullOrWhiteSpace(action.Text))
             || result.Actions.Select(action => action.Id).Distinct(StringComparer.Ordinal).Count() != result.Actions.Length))
             status = SourceActionStatus.Failed;

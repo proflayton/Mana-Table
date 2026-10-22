@@ -1,3 +1,4 @@
+using System.Collections.Immutable;
 using Mana.Contracts;
 using Mana.Renderer;
 using Mana.Scenarios;
@@ -55,7 +56,7 @@ internal static class BoardViewChecks
         Card Card(string id) => new() { VisualId = id, CombatId = id, Key = "prompt:" + id, Name = "Same printed name", Type = "Creature", Power = 2, Toughness = 2 };
         var body = Card("board-view-body"); var hand = Card("board-view-hand"); var commander = Card("board-view-command");
         var state = new GameSnapshot("board-reader", "playing", null, null, 0, 8, "Main phase", "MAIN1", 0,
-            [new(0, "You", 40, true, false, [], [new("Battlefield", 1, [body], null), new("Hand", 1, [hand], null), new("Command", 1, [commander], null)])],
+            [new(0, "You", 40, true, false, ImmutableDictionary<string, int>.Empty, [new("Battlefield", 1, [body], null), new("Hand", 1, [hand], null), new("Command", 1, [commander], null)])],
             [], null, new() { Id = "prompt", Kind = "input", Intent = DecisionIntent.Priority, OkEnabled = true });
         var context = new CardPresentationContext(state, "board-reader:prompt", false, false, false, false);
         var owner = new CardPresentationController(); int actions = 0;
@@ -183,7 +184,7 @@ internal static class BoardViewChecks
         new PlayPreferences { Automatic = false, ReducedMotion = false, Sounds = false }.Save(profile);
         var stages = TurnOrientationScenario.Ordinary();
         var engine = new InteractionScenarioEngine(); engine.Present(stages[0].Snapshot);
-        using var app = new TableApplication(engine, profile, initialState: engine.State);
+        using var app = new TableApplication(TestTableServices.For(engine), profile, initialState: engine.State);
         app.Automated = true; app.Initialize(); var view = app.TestPort;
         double seconds = 0;
         PresentationFrame Tick()

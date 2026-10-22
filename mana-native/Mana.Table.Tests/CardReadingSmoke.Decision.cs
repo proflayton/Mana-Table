@@ -111,7 +111,7 @@ internal sealed partial class CardReadingSmoke
             MoveHit("choice-cancel");
         }, "Source inspection must return to the original inline optional ability action"); Click();
         Prepared(() => !view.Busy && scenario.Replies.Count == replies + 1, 2, () => {
-            Check(scenario.Replies[^1] is { Action: ReplyAction.Choose, Choices.Length: 0 } reply
+            Check(scenario.Replies[^1] is ChooseOptions { Choices.Length: 0 } reply
                 && reply.GameId == sourceGame && reply.DecisionId == sourceDecision
                 && view.Match is { } current && current.Id == sourceGame && current.PhaseKey == sourcePhase
                 && current.Viewer!.Zone("Battlefield").Cards.Single(card => card.VisualId == sourceId) is { Tapped: false, Power: 6, Toughness: 6 },
@@ -123,7 +123,7 @@ internal sealed partial class CardReadingSmoke
             && !view.Hits.Any(hit => hit.Id == "choicesdone"), 2, () => MoveHit("choice:0"),
             "The fresh canonical ability prompt must expose its direct original option before activation"); Click();
         Prepared(() => !view.Busy && scenario.Replies.Count == replies + 2, 2, () => {
-            Check(scenario.Replies[^1] is { Action: ReplyAction.Choose } reply && reply.Choices!.SequenceEqual([0])
+            Check(scenario.Replies[^1] is ChooseOptions reply && reply.Choices!.SequenceEqual([0])
                 && reply.GameId == sourceGame && reply.DecisionId == sourceDecision,
                 "One inline ability action submits exactly original index zero in the fresh scope without an additional confirmation or simulated mana result");
             Publish(previousState!); Move(new(10, 70));

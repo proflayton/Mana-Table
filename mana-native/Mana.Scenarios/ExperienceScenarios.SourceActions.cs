@@ -1,3 +1,4 @@
+using System.Collections.Immutable;
 using Mana.Contracts;
 
 namespace Mana.Scenarios;
@@ -26,7 +27,7 @@ public static partial class ExperienceScenarios
         var target = chosenTarget ?? new StackTarget("card", BallistaTargetId, "Grizzly Bears", 1);
         int counters = stage == 0 ? 3 : adding ? stage == 3 ? 4 : 3 : 2;
         var source = Body(BallistaId, "Walking Ballista", "Artifact Creature — Construct", counters, counters) with {
-            Selectable = stage == 0, Counters = new() { ["+1/+1"] = counters },
+            Selectable = stage == 0, Counters = ImmutableDictionary<string, int>.Empty.Add("+1/+1", counters),
             Text = "Walking Ballista enters with X +1/+1 counters on it.\n" + BallistaCounterText + "\n" + BallistaDamageText,
             Damage = stage == 3 && !adding && target.Kind == "card" && target.Id == BallistaId ? 1 : 0
         };
@@ -37,8 +38,8 @@ public static partial class ExperienceScenarios
         return state with {
             Players = state.Players.Select(player => player with {
                 Life = stage == 3 && !adding && target.Kind == "player" && target.PlayerId == player.Id ? 39 : 40,
-                Mana = player.Id == state.ViewerId && (stage == 0 || !adding) ? new() { ["C"] = 4 } : []
-            }).ToArray(),
+                Mana = player.Id == state.ViewerId && (stage == 0 || !adding) ? ImmutableDictionary<string, int>.Empty.Add("C", 4) : ImmutableDictionary<string, int>.Empty
+            }).ToImmutableArray(),
             Stack = stage is 1 or 2 ? [new("Walking Ballista", adding ? BallistaCounterText : "Walking Ballista deals 1 damage to " + target.Name + ".", true, source) {
                 Id = "ballista-pending-ability", ControllerId = state.ViewerId, Targets = adding ? [] : [target]
             }] : [],

@@ -12,8 +12,8 @@ a complete engine/runtime/resource bundle.
 ## Canonical interaction coverage
 
 The shared client check runs `InteractionContractMatrix`: named cases cover every
-current `ReplyAction`, `DecisionIntent` and `DecisionPurpose`, with an enum coverage
-guard, fixed-seed permission/visibility transitions, authority rejection and
+concrete `GameCommand` variant, `DecisionIntent` and `DecisionPurpose`, with a
+closed-command/enum coverage guard, fixed-seed permission/visibility transitions, authority rejection and
 required continuations. It uses production command builders and `ClientSession`
 with a finite scripted authority. Its two-provider alias case verifies that
 provider handles cannot be replayed as semantic commands. It is interaction-contract
@@ -32,8 +32,8 @@ start empty TestNG processes:
 mvn -pl forge-api -am test '-Dgroups=canonical-interaction' '-Dtest=SourceActionsTest,PartnerChoiceExperienceTest,ToothyLeavesBattlefieldTest,PendingEffectTest,AllocationProjectionTest,PlayerStatesExperienceTest' '-Dsurefire.failIfNoSpecifiedTests=false'
 ```
 
-This is a representative real-rules lane alongside exhaustive coverage of the
-current interaction enums. Neither replaces visual review of the corresponding
+This is a representative real-rules lane alongside enumerated coverage of the
+current interaction command variants. Neither replaces visual review of the corresponding
 window journeys, nor supplies the complete authoritative Forge oracle needed to
 establish another rules provider's equivalence. Record the case, seed, provider
 and first differing boundary when diagnosing a failure; use existing scenario
@@ -89,6 +89,13 @@ reads, seat/source/revision revocation, explicit unsupported versus empty result
 timeouts, manual retry and shutdown use one scoped action-query lifecycle. Native
 journeys consume semantic `DecisionPurpose` values; Forge prompt class names stay
 inside the adapter. The real-engine opening/payment journey verifies that mapping.
+
+`ImmutableStateChecks` traverses the entire match graph, rejects writable nested
+collections/properties, and verifies that provider construction buffers or
+consumer casts cannot change an accepted revision. It retains the preceding
+frame while publishing updated counters and checks JSON round trips. The native
+presentation lane inspects the emitted UI dependency closure and rejects a
+provider/host reference or use of the aggregate engine by `Mana.Game`.
 
 The production headless run includes saved-deck deletion and Undo through the
 actual controls, delayed observations, restart recovery and stale-command guards.

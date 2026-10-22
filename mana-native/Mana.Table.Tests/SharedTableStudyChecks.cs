@@ -1,3 +1,4 @@
+using System.Collections.Immutable;
 using Mana.Contracts;
 using Mana.Magic;
 using Mana.Renderer;
@@ -82,7 +83,7 @@ internal static class SharedTableStudyChecks
     {
         Card Copy(string id) => new() { VisualId = id, CombatId = id, Name = "Cat", Type = "Token Creature — Cat", Power = 2, Toughness = 2 };
         Card[] copies = [Copy("copy-a"), Copy("copy-b"), Copy("copy-c"),
-            Copy("counter-copy") with { Power = 3, Toughness = 3, Counters = new() { ["+1/+1"] = 1 } },
+            Copy("counter-copy") with { Power = 3, Toughness = 3, Counters = ImmutableDictionary<string, int>.Empty.Add("+1/+1", 1) },
             Copy("tapped-copy") with { Tapped = true }, Copy("damaged-copy") with { Damage = 1 },
             Copy("phased-copy") with { PhasedOut = true }, Copy("flying-copy") with { CombatKeywords = ["flying"] },
             Copy("attached-copy") with { Attachments = [new("sword", "Sword of the Animist", "Equipment")] },
@@ -99,7 +100,7 @@ internal static class SharedTableStudyChecks
                 && placed.Where(card => !card.Id.StartsWith("copy-", StringComparison.Ordinal)).All(card => card.GroupCount == 1 && card.GroupFront),
             "The study fans equivalent copies without losing occurrences, while counters, tap, damage, phase, abilities, attachments and hidden identities retain separate current-state faces");
         var ordered = state with { Decision = new() { Id = "order-copies", Kind = "choice", Ordered = true,
-            Choices = copies.Take(3).Select((card, index) => new Choice(index, card.Name, card) { CardId = card.VisualId }).ToArray() } };
+            Choices = copies.Take(3).Select((card, index) => new Choice(index, card.Name, card) { CardId = card.VisualId }).ToImmutableArray() } };
         var choices = Cards(Build(ordered)).Where(card => card.Owner == 0 && card.Id.StartsWith("copy-", StringComparison.Ordinal)).ToArray();
         check(choices.Length == 3 && choices.All(card => card.GroupCount == 1 && card.GroupFront)
                 && choices.Select(card => card.Pose.Center).Distinct().Count() == 3,
@@ -118,7 +119,7 @@ internal static class SharedTableStudyChecks
         string profile = Path.Combine(Path.GetTempPath(), "ManaTableSharedTableStudyChecks", Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(profile);
         new PlayPreferences { Automatic = false, Sounds = false, ReducedMotion = true }.Save(profile);
-        using var app = new TableApplication(engine, profile, initialState: lab.State) { Automated = true };
+        using var app = new TableApplication(TestTableServices.For(engine), profile, initialState: lab.State) { Automated = true };
         app.Initialize();
         app.TestPort.SetTableStudy(true);
         app.TestPort.Accept(ReplaceField(lab.State, 2, [hidden]));
@@ -143,9 +144,9 @@ internal static class SharedTableStudyChecks
             Name = "Forest", Type = "Basic Land", Selectable = true };
         Card[] cards = [Land("land-ready-a"), Land("land-ready-b"),
             Land("land-tapped") with { Tapped = true },
-            Land("land-counter") with { Counters = new() { ["charge"] = 1 } },
+            Land("land-counter") with { Counters = ImmutableDictionary<string, int>.Empty.Add("charge", 1) },
             Land("land-unavailable") with { Selectable = false },
-            Land("land-animated") with { Type = "Basic Land Creature", Power = 3, Toughness = 3, Counters = new() { ["+1/+1"] = 3 } },
+            Land("land-animated") with { Type = "Basic Land Creature", Power = 3, Toughness = 3, Counters = ImmutableDictionary<string, int>.Empty.Add("+1/+1", 3) },
             Land("land-highlighted") with { Highlighted = true },
             Land("hidden-land-a") with { FaceDown = true, Name = "Forest", Selectable = false },
             Land("hidden-land-b") with { FaceDown = true, Name = "Forest", Selectable = false }];
@@ -179,7 +180,7 @@ internal static class SharedTableStudyChecks
             "Refreshing exact decision keys preserves family geometry while each occurrence receives only its new current action key");
         foreach (bool direct in new[] { false, true }) {
             var choice = state with { Decision = direct ? new() { Id = "direct-land-choice", Kind = "choice", Min = 1, Max = 1,
-                Choices = cards.Take(2).Select((card, index) => new Choice(index, card.Name, card) { CardId = card.VisualId }).ToArray()
+                Choices = cards.Take(2).Select((card, index) => new Choice(index, card.Name, card) { CardId = card.VisualId }).ToImmutableArray()
             } : new() { Id = "land-target", Kind = "input", Intent = DecisionIntent.Selection } };
             var individual = Build(choice);
             var candidates = cards.Take(2).Select(card => individual.BattlefieldCard(0, card.VisualId)!).ToArray();
@@ -219,9 +220,9 @@ internal static class SharedTableStudyChecks
     {
         var state = snapshot with { Players = snapshot.Players.Select(player => player with {
             Zones = player.Zones.Select(zone => zone.Name != "Battlefield" ? zone : zone with {
-                Cards = zone.Cards.Select(card => card with { Key = "focus-action:" + card.VisualId }).ToArray()
-            }).ToArray()
-        }).ToArray() };
+                Cards = zone.Cards.Select(card => card with { Key = "focus-action:" + card.VisualId }).ToImmutableArray()
+            }).ToImmutableArray()
+        }).ToImmutableArray() };
         var scene = TableScene.Build(state, 0, new(-100, -100), null, null, false,
             CardPresentation.IsResource, sharedTableStudy: true, studyFocusedOpponent: 2);
         var scutes = Cards(scene).Where(node => node.Owner == 2 && node.Card.Name == "Scute Swarm").ToArray();
@@ -242,8 +243,8 @@ internal static class SharedTableStudyChecks
 
     private static GameSnapshot ReplaceField(GameSnapshot state, int owner, Card[] cards) => state with {
         Players = state.Players.Select(player => player.Id != owner ? player : player with {
-            Zones = player.Zones.Select(zone => zone.Name != "Battlefield" ? zone : zone with { Count = cards.Length, Cards = cards }).ToArray()
-        }).ToArray()
+            Zones = player.Zones.Select(zone => zone.Name != "Battlefield" ? zone : zone with { Count = cards.Length, Cards = cards.ToImmutableArray() }).ToImmutableArray()
+        }).ToImmutableArray()
     };
     private static IEnumerable<SceneCard> Cards(TableScene scene) => scene.Seats.SelectMany(seat => seat.Battlefield).SelectMany(cluster => cluster.Cards);
     private static TableScene Build(GameSnapshot state) => TableScene.Build(state, 0, new(-100, -100), null, null,

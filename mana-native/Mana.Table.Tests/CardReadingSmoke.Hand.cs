@@ -48,7 +48,7 @@ internal sealed partial class CardReadingSmoke
             Buttons();
         });
         Prepared(() => !view.Busy && scenario.Replies.Count == replies + 1, 2, () => {
-            Check(scenario.Replies[^1] is { Action: ReplyAction.SelectCard } reply && reply.Card == key
+            Check(scenario.Replies[^1] is PlayCard reply && reply.Card == key
                     && reply.GameId == gameId && reply.DecisionId == decisionId
                     && view.Match!.Viewer!.Zone("Battlefield").Cards.Any(card => card.VisualId == id) && view.HoverPreview == null,
                 "Dropping above the old narrow play lane submits exactly the grabbed card in its original scope");

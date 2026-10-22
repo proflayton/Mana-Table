@@ -1,3 +1,4 @@
+using System.Collections.Immutable;
 using Mana.Contracts;
 using Mana.Renderer;
 using Mana.Scenarios;
@@ -24,7 +25,7 @@ internal static class ExperienceLabChecks
         var engine = new ExperienceLabEngine(lab);
         string profile = Path.Combine(Path.GetTempPath(), "ManaTableExperienceLabChecks", Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(profile);
-        using var app = new TableApplication(engine, profile, initialState: lab.State) { Automated = true };
+        using var app = new TableApplication(TestTableServices.For(engine), profile, initialState: lab.State) { Automated = true };
         app.Initialize();
         PresentationFrame frame = null!;
         double seconds = 0;
@@ -102,9 +103,9 @@ internal static class ExperienceLabChecks
             "Clicking the source reference absorbs input and keeps its noncommitting reader without activating its underlying card");
         var revoked = unchanged with { Players = unchanged.Players.Select(player => player.Id != unchanged.ViewerId ? player : player with {
             Zones = player.Zones.Select(zone => zone.Name == "Battlefield" ? zone with {
-                Cards = zone.Cards.Where(card => card.VisualId != ClutteredChangesScenario.TophId(0)).ToArray(), Count = zone.Count - 1
-            } : zone.Name == "Hand" ? zone with { Cards = [bridgeSourceReference.Card!], Count = zone.Count + 1 } : zone).ToArray()
-        }).ToArray() };
+                Cards = zone.Cards.Where(card => card.VisualId != ClutteredChangesScenario.TophId(0)).ToImmutableArray(), Count = zone.Count - 1
+            } : zone.Name == "Hand" ? zone with { Cards = [bridgeSourceReference.Card!], Count = zone.Count + 1 } : zone).ToImmutableArray()
+        }).ToImmutableArray() };
         app.TestPort.Accept(revoked); Tick();
         check(app.TestPort.ChangeCalloutBounds == null && !frame.Hits.Any(hit => hit.Id.StartsWith("change-source:", StringComparison.Ordinal)
                 || hit.Id == "change-card-preview"),
@@ -304,16 +305,16 @@ internal static class ExperienceLabChecks
         LoadScenario("trigger-search.v1");
         // Select the required-choice scenario explicitly. Its private
         // library uses prompt indices, then issues a new visible hand occurrence.
-        lab.Reply(new(lab.State.Id, lab.State.Decision!.Id, ReplyAction.Confirm));
+        lab.Reply(new PassPriority(lab.State.Id, lab.State.Decision!.Id));
         check(lab.State.PriorityPlayerId == 1 && lab.State.DecisionOwnerId == 1 && lab.State.Decision == null
             && lab.State.Stack.Length == 1 && lab.State.Players.Single(player => player.Priority).Id == 1,
             "Passing this viewer's priority retains the pending trigger and exposes only the next responder's public identity");
         lab.AdvanceTo(2);
-        lab.Reply(new(lab.State.Id, lab.State.Decision!.Id, ReplyAction.SelectPlayer, Player: 0));
-        check(lab.State.Decision is { Context: "librarySearch", LibraryCards.Length: 3 }
+        lab.Reply(new SelectPlayer(lab.State.Id, lab.State.Decision!.Id, Player: 0));
+        check(lab.State.Decision is { Kind: "choice", LibraryCards.Length: 3 }
             && lab.State.Decision.LibraryCards.All(choice => choice.Card.VisualId.Length == 0 && choice.Card.CombatId.Length == 0),
             "Required recipient selection opens the real library-choice shape without persistent hidden-library identities");
-        lab.Reply(new(lab.State.Id, lab.State.Decision!.Id, ReplyAction.Choose, Choices: [1]));
+        lab.Reply(new ChooseOptions(lab.State.Id, lab.State.Decision!.Id, Choices: [1]));
         check(lab.StageIndex == 4 && lab.State.Viewer!.Zone("Hand").Cards.Single() is { Name: "Island", VisualId: "searched-card" },
             "The scoped library choice preserves the selected face in the authored local hand result");
         bool refusedWrite = false;
@@ -337,7 +338,7 @@ internal static class ExperienceLabChecks
         Directory.CreateDirectory(profile);
         new PlayPreferences { Automatic = false, ReducedMotion = true, Sounds = false, TextScale = 1.3f }.Save(profile);
         var lab = new ExperienceLabSession();
-        using var app = new TableApplication(new ExperienceLabEngine(lab), profile, initialState: lab.State) { Automated = true };
+        using var app = new TableApplication(TestTableServices.For(new ExperienceLabEngine(lab)), profile, initialState: lab.State) { Automated = true };
         app.Initialize();
         PresentationFrame Tick(double seconds)
         {

@@ -1,3 +1,4 @@
+using System.Collections.Immutable;
 using Mana.Contracts;
 using Mana.Renderer;
 using Mana.Scenarios;
@@ -18,8 +19,8 @@ internal static class ImpactFeedbackChecks
         feedback.Observe(result, result, 1.5);
         check(feedback.Cues.Count == 1 && feedback.Cues[0].Started == 1, "Polling a consumed damage event neither repeats nor prolongs its impact");
         var death = result with { Players = result.Players.Select(p => p.Id != 1 ? p : p with { Zones = p.Zones.Select(z =>
-            z.Name == "Battlefield" ? z with { Cards = z.Cards.Where(c => c.VisualId != CounterDamageScenario.TargetId).ToArray() }
-            : z.Name == "Graveyard" ? z with { Count = 1, Cards = [result.Players[1].Zone("Battlefield").Cards[0]] } : z).ToArray() }).ToArray() };
+            z.Name == "Battlefield" ? z with { Cards = z.Cards.Where(c => c.VisualId != CounterDamageScenario.TargetId).ToImmutableArray() }
+            : z.Name == "Graveyard" ? z with { Count = 1, Cards = [result.Players[1].Zone("Battlefield").Cards[0]] } : z).ToImmutableArray() }).ToImmutableArray() };
         feedback.Observe(result, death, 1.6);
         check(feedback.Cues.Count == 1, "An actual damaged recipient remains identifiable through a public graveyard departure between snapshots");
         var nextBurst = death with { Activity = [.. death.Activity,
@@ -30,13 +31,13 @@ internal static class ImpactFeedbackChecks
         check(feedback.Cues is [{ ActivityId: 10, Started: 1.65 }],
             "A later observed burst replaces the recipient's earlier transient amount instead of leaving two indistinguishable damage receipts around its departure");
         var hidden = death with { Players = death.Players.Select(p => p.Id != 1 ? p : p with { Zones = p.Zones.Select(z =>
-            z.Name == "Graveyard" ? z with { Cards = [], Count = 0 } : z.Name == "Hand" ? z with { Count = z.Count + 1 } : z).ToArray() }).ToArray() };
+            z.Name == "Graveyard" ? z with { Cards = [], Count = 0 } : z.Name == "Hand" ? z with { Count = z.Count + 1 } : z).ToImmutableArray() }).ToImmutableArray() };
         feedback.Observe(death, hidden, 1.7);
         check(feedback.Cues.Count == 0, "A damage cue immediately drops a recipient whose occurrence is no longer public; it never preserves a hidden face");
 
         var returned = result with { Players = result.Players.Select(p => p.Id != 1 ? p : p with { Zones = p.Zones.Select(z =>
             z.Name != "Battlefield" ? z : z with { Cards = z.Cards.Select(card => card.VisualId != CounterDamageScenario.TargetId
-                ? card : card with { Damage = 0 }).ToArray() }).ToArray() }).ToArray(),
+                ? card : card with { Damage = 0 }).ToImmutableArray() }).ToImmutableArray() }).ToImmutableArray(),
             Activity = [.. result.Activity,
                 new(20, 8, "MAIN1", "moved", 1, "Localized departure", CounterDamageScenario.TargetId, "Colossal Dreadmaw"),
                 new(21, 8, "MAIN1", "arrived", 1, "Localized arrival", CounterDamageScenario.TargetId, "Colossal Dreadmaw")]
@@ -60,7 +61,7 @@ internal static class ImpactFeedbackChecks
         check(feedback.Cues is [{ ActivityId: 22, Impact: { Amount: 1 } }],
             "When damage, exile/return and fresh damage arrive in one observation only the fresh occurrence's hit is represented");
 
-        var beforeGap = result with { Players = result.Players.Select(player => player.Id == 1 ? player with { Life = 38 } : player).ToArray(),
+        var beforeGap = result with { Players = result.Players.Select(player => player.Id == 1 ? player with { Life = 38 } : player).ToImmutableArray(),
             Activity = [.. result.Activity,
                 new(4, 8, "MAIN1", "life", 1, "Previous public life change", null, null) {
                     Impact = new("life", -2, PlayerId: 1, Before: 40, After: 38)
@@ -68,8 +69,8 @@ internal static class ImpactFeedbackChecks
         string otherRecipient = result.Viewer!.Zone("Battlefield").Cards.First(card => card.Type.Contains("Creature", StringComparison.Ordinal)).VisualId;
         var afterGap = beforeGap with { Players = beforeGap.Players.Select(player => player with {
             Life = player.Id == 2 ? 39 : player.Life,
-            Zones = player.Zones.Select(zone => zone with { Cards = zone.Cards.Select(card => card.VisualId == otherRecipient ? card with { Damage = 1 } : card).ToArray() }).ToArray()
-        }).ToArray(), Activity = [
+            Zones = player.Zones.Select(zone => zone with { Cards = zone.Cards.Select(card => card.VisualId == otherRecipient ? card with { Damage = 1 } : card).ToImmutableArray() }).ToImmutableArray()
+        }).ToImmutableArray(), Activity = [
             new(100, 8, "MAIN1", "damage", 0, "Fresh typed hit after truncated history", otherRecipient, "Another creature") {
                 Impact = new("damage", 1, otherRecipient, "Another creature", DamageType: "normal") },
             new(101, 8, "MAIN1", "life", 2, "Fresh typed life change", null, null) {
@@ -82,7 +83,7 @@ internal static class ImpactFeedbackChecks
             && feedback.Cues.Any(cue => cue is { ActivityId: 101, Impact: { Kind: "life", Amount: -1, PlayerId: 2 } }),
             "A nonoverlapping history gap conservatively clears old card anchors that may have missed a public reentry, while retaining prior player life and accepting fresh typed damage and life facts");
 
-        var prevented = baseline with { Players = baseline.Players.Select(p => p.Id == 1 ? p with { Life = 38 } : p).ToArray(), Stack = [], Activity = [
+        var prevented = baseline with { Players = baseline.Players.Select(p => p.Id == 1 ? p with { Life = 38 } : p).ToImmutableArray(), Stack = [], Activity = [
             new(10, 8, "MAIN1", "damage", 1, "Localized prose is not parsed", CounterDamageScenario.SourceId, "All Will Be One") {
                 Impact = new("damage", 2, PlayerId: 1, SourceCardId: CounterDamageScenario.SourceId, SourceName: "All Will Be One", Combat: false, Infect: false) },
             new(11, 8, "MAIN1", "life", 1, "Life changed", null, null) { Impact = new("life", -2, PlayerId: 1, Before: 40, After: 38) }
@@ -91,7 +92,7 @@ internal static class ImpactFeedbackChecks
         check(feedback.Cues.Count == 2 && feedback.Cues.Any(c => c.Impact is { Kind: "damage", Amount: 2, CardId: null, PlayerId: 1 })
             && feedback.Cues.Any(c => c.Impact is { Kind: "life", Amount: -2, Before: 40, After: 38 }),
             "Pending base three becomes reported actual two; player damage and signed life change remain separate facts without duplicate life feedback");
-        var oldHost = prevented with { Activity = prevented.Activity.Select(e => e with { Impact = null }).ToArray() };
+        var oldHost = prevented with { Activity = prevented.Activity.Select(e => e with { Impact = null }).ToImmutableArray() };
         feedback.Observe(null, baseline, 0); feedback.Observe(baseline, oldHost, 3);
         check(feedback.Cues is [{ Impact: { Kind: "life", Amount: -2, SourceCardId: null } }],
             "Older engines retain an observed life transition but never invent actual damage from old prose, pending values or life loss");
@@ -107,8 +108,8 @@ internal static class ImpactFeedbackChecks
             && roundtrip.Activity[1].Impact is { Kind: "life", Amount: -2 },
             "Additive impact contracts survive a native JSON round trip with their recipient and damage/life distinction intact");
         var anonymous = result with { Players = result.Players.Select(p => p.Id != 1 ? p : p with { Zones = p.Zones.Select(z => z.Name != "Battlefield" ? z : z with {
-            Cards = z.Cards.Select(c => c.VisualId != CounterDamageScenario.TargetId ? c : c with { VisualId = "", CombatId = "anonymous-recipient", FaceDown = true, Name = "Face-down card", Text = "" }).ToArray()
-        }).ToArray() }).ToArray(), Activity = [new(100, 8, "MAIN1", "damage", 1, "Anonymous damage", null, null) { Impact = new("damage", 3, "anonymous-recipient", "Face-down card") }] };
+            Cards = z.Cards.Select(c => c.VisualId != CounterDamageScenario.TargetId ? c : c with { VisualId = "", CombatId = "anonymous-recipient", FaceDown = true, Name = "Face-down card", Text = "" }).ToImmutableArray()
+        }).ToImmutableArray() }).ToImmutableArray(), Activity = [new(100, 8, "MAIN1", "damage", 1, "Anonymous damage", null, null) { Impact = new("damage", 3, "anonymous-recipient", "Face-down card") }] };
         feedback.Observe(null, baseline, 0); feedback.Observe(baseline, anonymous, 8);
         check(feedback.Cues is [{ Impact: { Amount: 3, CardId: "anonymous-recipient" } }],
             "A public anonymous recipient retains its opaque combat occurrence without acquiring a disclosed face");
@@ -122,7 +123,7 @@ internal static class ImpactFeedbackChecks
             new PlayPreferences { Automatic = false, ReducedMotion = reduced, Sounds = false, TextScale = 1.3f }.Save(directory);
             var stages = DamageResultsScenario.Create();
             var engine = new InteractionScenarioEngine(); engine.Present(stages[0].Snapshot);
-            using var app = new TableApplication(engine, directory, initialState: engine.State) { Automated = true };
+            using var app = new TableApplication(TestTableServices.For(engine), directory, initialState: engine.State) { Automated = true };
             app.Initialize(); app.SetTableStudy(true);
             Mana.Table.Presentation.PresentationFrame Tick(double seconds) {
                 var time = new Microsoft.Xna.Framework.GameTime(TimeSpan.FromSeconds(seconds), TimeSpan.FromSeconds(.01));
@@ -166,25 +167,25 @@ internal static class ImpactFeedbackChecks
             Decision = new() { Kind = "input", Intent = DecisionIntent.Priority },
             Players = template.Players.Select(player => player with { Zones = player.Zones.Select(zone => zone.Name != "Battlefield" ? zone : zone with {
                 Count = player.Id == 1 ? 3 : 0,
-                Cards = player.Id != 1 ? [] : ids.Select((id, index) => new Card {
+                Cards = (player.Id != 1 ? [] : ids.Select((id, index) => new Card {
                     VisualId = id, CombatId = id, Name = "Cat Token", Type = "Token Creature — Cat", Power = 3, Toughness = 5, Damage = marked[index]
-                }).ToArray()
-            }).ToArray() }).ToArray()
+                }).ToArray()).ToImmutableArray()
+            }).ToImmutableArray() }).ToImmutableArray()
         };
         GameSnapshot After(GameSnapshot before, int marked, params (int Card, int Amount)[] hits) => before with {
             Players = before.Players.Select(player => player with { Zones = player.Zones.Select(zone => zone.Name != "Battlefield" ? zone : zone with {
-                Cards = zone.Cards.Select(card => card with { Damage = marked }).ToArray()
-            }).ToArray() }).ToArray(),
+                Cards = zone.Cards.Select(card => card with { Damage = marked }).ToImmutableArray()
+            }).ToImmutableArray() }).ToImmutableArray(),
             Activity = hits.Select((hit, index) => new ActivityEntry(index + 1, 8, "MAIN1", "damage", 1, "Typed actual damage", ids[hit.Card], "Cat Token") {
                 Impact = new("damage", hit.Amount, ids[hit.Card], "Cat Token", DamageType: "normal")
-            }).ToArray()
+            }).ToImmutableArray()
         };
         var uniform = Before("uniform", [0, 0, 1]);
         engine.Present(uniform);
         string directory = Path.Combine(profile, "grouped-recipients");
         Directory.CreateDirectory(directory);
         new PlayPreferences { Automatic = false, ReducedMotion = reduced, Sounds = false, TextScale = 1.3f }.Save(directory);
-        using var app = new TableApplication(engine, directory, initialState: engine.State) { Automated = true };
+        using var app = new TableApplication(TestTableServices.For(engine), directory, initialState: engine.State) { Automated = true };
         app.Initialize(); app.SetTableStudy(true);
         Mana.Table.Presentation.PresentationFrame Tick(double seconds) {
             var time = new Microsoft.Xna.Framework.GameTime(TimeSpan.FromSeconds(seconds), TimeSpan.FromSeconds(.01));
@@ -221,8 +222,8 @@ internal static class ImpactFeedbackChecks
 
         var concealed = app.TestPort.Match! with { Players = app.TestPort.Match!.Players.Select(player => player.Id != 1 ? player : player with {
             Eliminated = true,
-            Zones = player.Zones.Select(zone => zone.Name != "Battlefield" ? zone : zone with { Count = 0, Cards = [] }).ToArray()
-        }).ToArray() };
+            Zones = player.Zones.Select(zone => zone.Name != "Battlefield" ? zone : zone with { Count = 0, Cards = [] }).ToImmutableArray()
+        }).ToImmutableArray() };
         Present(concealed); Tick(30.4);
         check(app.TestPort.Impacts.Count == 0 && engine.Replies.Count == 0,
             "Grouped impact receipts disappear with a conceded seat's removed public battlefield without retaining a face or issuing commands");
@@ -230,9 +231,9 @@ internal static class ImpactFeedbackChecks
         var focus = Before("focused-offscreen", [0, 0, 0]) with { Players = Before("focused-offscreen", [0, 0, 0]).Players.Select(player => player.Id != 1 ? player : player with {
             Zones = player.Zones.Select(zone => zone.Name != "Battlefield" ? zone : zone with {
                 Count = 15, Cards = Enumerable.Range(0, 15).Select(index => new Card { VisualId = "focus-impact-" + index,
-                    CombatId = "focus-impact-" + index, Name = "Distinct creature " + index, Type = "Creature", Power = 3, Toughness = 5 }).ToArray()
-            }).ToArray()
-        }).ToArray() };
+                    CombatId = "focus-impact-" + index, Name = "Distinct creature " + index, Type = "Creature", Power = 3, Toughness = 5 }).ToImmutableArray()
+            }).ToImmutableArray()
+        }).ToImmutableArray() };
         // The shared-table focus fits a duel-like field; it does not open the
         // scrollable battlefield workspace whose offscreen aliases this case
         // exercises. Select that actual workspace explicitly.

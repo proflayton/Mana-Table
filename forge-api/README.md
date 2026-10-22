@@ -43,7 +43,8 @@ The records contain values rather than live engine objects. The desktop serializ
 them through its private transport. Explicit multiplayer hosting starts the seat
 synchronization listener; the desktop command API remains on private stdin/stdout pipes.
 The ready message advertises `protocolVersion: 2` and the `seat-sync`, `snapshots`,
-`command-receipts`, `resume`, `table-social`, `deck-workshop`, and `deck-analysis` capabilities. All connected players
+`command-receipts`, `resume`, `table-social`, `deck-workshop`, `deck-analysis`, and
+`semantic-priority-actions` capabilities. All connected players
 need this build; the seat synchronization handshake now uses version 3.
 Printing IDs are opaque, case-sensitive identifiers; clients must round-trip them.
 `cardPrintings` takes `{cardId, offset, limit, text, finish}` (limit 1–200, default 6) and returns
@@ -515,8 +516,29 @@ need only the two IDs. The prompt supplies cardinality and range constraints;
 the host validates them before dispatch. Combat allocations may allow `action:
 skip`. Old session IDs and prompt IDs fail rather than being replayed.
 
+The native adapter also sends `expectedTask` (`openingHand`, `priority`, `mana`,
+`attack`, `block`, `selection`, `confirmation`, `choice`, `reveal`, `number`,
+`text` or `allocate`). The host checks the actual pending task before accepting
+an answer. This prevents a typed Keep-hand or Pay-mana operation from becoming
+a different operation through the private protocol's generic `ok` action.
+Legacy protocol-2 callers may omit this discriminator; the new native client
+requires the `semantic-priority-actions` capability and validates its immutable
+last observation before encoding any command.
+
+Priority prompts project `priorityAlternative: "undo" / "passTurn" / "none"`.
+Native priority operations use `passPriority`, `priorityUndo` and
+`priorityPassTurn`. Undo and pass-turn recheck their exact meaning on the owned
+input thread; they never fall through to one another. `passPriority` invokes
+the pass operation directly, independently of a pending Forge yield suggestion.
+These changes do not alter saved decks, profiles or the seat-sync protocol.
+
 An input prompt's `inputType` uses its nearest named input class, including for
 anonymous subclasses such as cleanup discards (`InputSelectCardsFromList`).
+That field is private provider diagnostics. Every published prompt also carries
+an engine-classified `task` and `purpose`; native code consumes and validates
+these semantic fields instead of classifying Java names itself. Unknown tasks,
+task/kind contradictions and invalid purpose/alternative combinations fail at
+the native boundary rather than falling back to a generic confirmation.
 `InputPassPriority` means an optional opportunity to act, not a required payment
 or selection. Clients can explain the current `phaseKey`, but must retain the
 prompt's actual message and enabled actions for costs, discards, and combat.

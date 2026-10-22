@@ -39,7 +39,7 @@ internal static class AiSmoke
             "Solo start uses the selected deck even after another import");
         Check(opening.Players.All(p => p.Zone("Command").Count > 0), "All four precon commanders are present");
         Check(opening.Players.Where(p => p.Id != opening.ViewerId).All(p => p.Zone("Hand").Cards.Length == 0), "Opening AI hands stay hidden");
-        var oldReply = new DecisionReply(opening.Id, opening.Decision!.Id, ReplyAction.Confirm);
+        var oldReply = new KeepOpeningHand(opening.Id, opening.Decision!.Id);
         await engine.ConcedeAsync(opening.Id);
         Check((await engine.ObserveAsync()) is { Status: "finished", Result: "Defeat" }, "Conceding ends the solo table");
 
@@ -50,7 +50,7 @@ internal static class AiSmoke
         var state = await WaitForDecision(engine);
         Check(state.Id != opening.Id, "A second solo game starts in the same engine process");
         bool rejectedSession = false;
-        try { await engine.ReplyAsync(oldReply); }
+        try { await engine.ExecuteAsync(oldReply); }
         catch (InvalidOperationException ex) when (ex.Message.Contains("no longer active")) { rejectedSession = true; }
         Check(rejectedSession, "Previous game's decision cannot affect the rematch");
 
@@ -62,7 +62,7 @@ internal static class AiSmoke
         int humanAttackStage = 0; string? humanAttacker = null;
         var developed = new HashSet<int>();
         string? previous = null;
-        DecisionReply? stale = null;
+        DecisionCommand? stale = null;
         while (DateTime.UtcNow < deadline) {
             state = await engine.ObserveAsync() ?? throw new InvalidOperationException("Solo game disappeared");
             await File.WriteAllTextAsync(Path.Combine(paths.Profile, "latest.json"), JsonSerializer.Serialize(state));
@@ -77,36 +77,36 @@ internal static class AiSmoke
             if (developed.Count == 3 && commanderSeen && battleSeen && humanAttackStage == 3 && state.Decision != null) break;
             var d = state.Decision;
             if (d == null || d.Id == previous) { await Task.Delay(25); continue; }
-            DecisionReply? reply = null;
+            DecisionCommand? reply = null;
             bool playingLand = false, playingCommander = false;
             bool assigningHuman = false, recallingHuman = false;
-            if (d.Kind == "choice") reply = new(state.Id, d.Id, ReplyAction.Choose, Choices: d.Choices.Take(Math.Max(d.Min, Math.Min(1, d.Max))).Select(c => c.Index).ToArray());
-            else if (d.Kind == "reveal") reply = new(state.Id, d.Id, ReplyAction.Choose, Choices: []);
+            if (d.Kind == "choice") reply = DecisionCommands.Choose(state, d.Choices.Take(Math.Max(d.Min, Math.Min(1, d.Max))).Select(c => c.Index));
+            else if (d.Kind == "reveal") reply = new AcknowledgeReveal(state.Id, d.Id);
             else if (d.Kind == "input") {
                 var commander = state.Viewer.Zone("Command").Cards.FirstOrDefault(c => c.Selectable);
                 var land = state.Viewer.Zone("Hand").Cards.FirstOrDefault(c => c.Selectable && c.Type.Contains("Land"));
-                if (!commanderCast && d.Intent == DecisionIntent.Priority && commander != null) { reply = new(state.Id, d.Id, ReplyAction.SelectCard, Card: commander.Key); playingCommander = true; }
-                else if (d.Intent == DecisionIntent.Priority && state.ActivePlayerId == state.ViewerId && state.PhaseKey == "MAIN1" && landTurn != state.Turn && land != null) { reply = new(state.Id, d.Id, ReplyAction.SelectCard, Card: land.Key); playingLand = true; }
+                if (!commanderCast && d.Intent == DecisionIntent.Priority && commander != null) { reply = new PlayCard(state.Id, d.Id, Card: commander.Key); playingCommander = true; }
+                else if (d.Intent == DecisionIntent.Priority && state.ActivePlayerId == state.ViewerId && state.PhaseKey == "MAIN1" && landTurn != state.Turn && land != null) { reply = new PlayCard(state.Id, d.Id, Card: land.Key); playingLand = true; }
                 else if (d.Intent == DecisionIntent.Attack && humanAttackStage == 0 && state.Combat?.AttackOptions.FirstOrDefault(a => a.Defenders.Any(t => t.Kind == "player")) is { } option) {
                     var attacker = CombatGuide.Find(state, option.CardId)!; var defender = option.Defenders.First(t => t.Kind == "player");
                     humanAttacker = option.CardId; assigningHuman = true;
-                    reply = new(state.Id, d.Id, ReplyAction.AssignAttack, Attacker: attacker.Key, Player: defender.PlayerId);
+                    reply = new ToggleAttackPlayer(state.Id, d.Id, Attacker: attacker.Key, Player: defender.PlayerId);
                 } else if (d.Intent == DecisionIntent.Attack && humanAttackStage == 1) {
                     Check(state.Combat!.Attackers.Any(a => a.CardId == humanAttacker), "Human attack assignment appears in the real Forge projection");
                     reply = CombatGuide.Remove(state, humanAttacker!) ?? throw new InvalidOperationException("The assigned attacker cannot be recalled"); recallingHuman = true;
                 } else if (d.Intent == DecisionIntent.Attack && humanAttackStage == 2) {
                     Check(state.Combat!.Attackers.All(a => a.CardId != humanAttacker), "Renderer recall command removes the attack through Forge with fresh handles");
-                    humanAttackStage = 3; reply = new(state.Id, d.Id, ReplyAction.Confirm);
+                    humanAttackStage = 3; reply = DecisionCommands.Confirm(state);
                 } else if (priority.Update(state, true, false, noStops, false, false) != null) {
                     await advance.RunAsync(state, s => TurnGuide.CanAutoPass(s, true, false, noStops, false), PresentationPacing.ShouldPresent);
                     previous = d.Id; automaticPasses++; continue;
                 }
-                else if (d.OkEnabled) reply = new(state.Id, d.Id, ReplyAction.Confirm);
-                else if (d.PlayerChoices.Length > 0) reply = new(state.Id, d.Id, ReplyAction.SelectPlayer, Player: d.PlayerChoices.Contains(state.ViewerId) ? state.ViewerId : d.PlayerChoices[0]);
-                else if (d.Intent == DecisionIntent.Selection && state.Viewer.Zone("Hand").Cards.FirstOrDefault(c => c.Selectable && !c.Highlighted) is { } card) reply = new(state.Id, d.Id, ReplyAction.SelectCard, Card: card.Key);
+                else if (d.OkEnabled) reply = DecisionCommands.Confirm(state);
+                else if (d.PlayerChoices.Length > 0) reply = new SelectPlayer(state.Id, d.Id, Player: d.PlayerChoices.Contains(state.ViewerId) ? state.ViewerId : d.PlayerChoices[0]);
+                else if (d.Intent == DecisionIntent.Selection && state.Viewer.Zone("Hand").Cards.FirstOrDefault(c => c.Selectable && !c.Highlighted) is { } card) reply = new SelectCard(state.Id, d.Id, Card: card.Key);
             }
             if (reply == null) throw new InvalidOperationException("Unhandled benchmark decision: " + JsonSerializer.Serialize(d));
-            await engine.ReplyAsync(reply);
+            await engine.ExecuteAsync(reply);
             previous = d.Id; stale ??= reply; decisions++;
             if (playingLand) landTurn = state.Turn;
             if (playingCommander) commanderCast = true;
@@ -122,7 +122,7 @@ internal static class AiSmoke
         Check(state.Players.All(p => p.CommanderDamage.Select(c => c.OwnerId).Order().SequenceEqual(commanderOwners)),
             "Commander damage includes every owner's commander, including your own under another player's control");
         bool rejectedDecision = false;
-        try { await engine.ReplyAsync(stale!); }
+        try { await engine.ExecuteAsync(stale!); }
         catch (InvalidOperationException ex) when (ex.Message.Contains("choice has changed")) { rejectedDecision = true; }
         Check(rejectedDecision, "Stale decisions are rejected in a local game");
         await File.WriteAllTextAsync(Path.Combine(paths.Profile, "table-fixture.json"), JsonSerializer.Serialize(state, new JsonSerializerOptions { WriteIndented = true }));

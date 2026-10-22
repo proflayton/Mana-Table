@@ -12,14 +12,8 @@ public sealed class DecisionQuietAdvance(IMatchConnection connection)
     public static bool HasInterruption(GameSnapshot state, long afterActivity) => state.Activity.Any(entry =>
         entry.Id > afterActivity && entry.InterruptsQuietYield && entry.Kind is not ("priority" or "phase"));
 
-    public static bool CanPass(GameSnapshot state, string token) => !string.IsNullOrWhiteSpace(token)
-        && state.Status == "playing" && state.Turn > 0 && state.Stack.Length == 0
-        && state.ActivePlayerId is { } active && active != state.ViewerId && state.Viewer?.Eliminated != true
-        && state.ActionClass is "" or "priority"
-        && (state.PriorityPlayerId == null || state.PriorityPlayerId == state.ViewerId)
-        && (state.DecisionOwnerId == null || state.DecisionOwnerId == state.ViewerId)
-        && state.Decision is { Kind: "input", Intent: DecisionIntent.Priority, OkEnabled: true } decision
-        && decision.QuietYieldToken == token;
+    public static bool CanPass(GameSnapshot state, string token) => state.Decision is { } decision
+        && GameCommandPermissions.Allows(state, new PassForNow(state.Id, decision.Id, token));
 
     public static bool CanWait(GameSnapshot state, string game, int turn, int? activePlayer, string token) =>
         state.Id == game && state.Turn == turn && state.ActivePlayerId == activePlayer
@@ -53,10 +47,10 @@ public sealed class DecisionQuietAdvance(IMatchConnection connection)
                 // Availability of an instant does not authorize normal Auto. This
                 // distinct action is accepted only by the engine's atomic token gate.
                 if (!CanPass(state, token) || cancellation.IsCancellationRequested) return state;
-                await connection.ReplyAsync(new(state.Id, state.Decision.Id, ReplyAction.PassUntilPublicAction, YieldToken: token));
+                await connection.ExecuteAsync(new PassForNow(state.Id, state.Decision.Id, token));
                 submitted = scope; passes++;
             }
-            // Even if Take control was pressed during ReplyAsync, publish the outcome
+            // Even if Take control was pressed during ExecuteAsync, publish the outcome
             // of the submitted command before releasing the serial connection.
             var next = await connection.ObserveAsync();
             if (next == null || next.Id != state.Id) return next;

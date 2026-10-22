@@ -49,7 +49,7 @@ internal static class HeadlessEngineSmoke
             }
             Check(initial.Players.All(player => player.Life == 40), "A real four-player Commander game reaches its opening decision");
             new PlayPreferences { Automatic = false, ReducedMotion = true, Sounds = false, TextScale = 1.3f }.Save(paths.Profile);
-            using var app = new TableApplication(engine, paths.Profile, initialState: initial);
+            using var app = new TableApplication(TestTableServices.For(engine), paths.Profile, initialState: initial);
             app.Automated = true; app.Initialize();
             var view = app.TestPort;
             view.SetTableStudy(true);

@@ -22,7 +22,7 @@ public sealed record FocusedBattlefieldPlan(Rectangle Viewport, IReadOnlyList<Fo
 public static class FocusedBattlefieldLayout
 {
     private static readonly string[] Roles = ["Creatures", "Support", "Lands"];
-    public static IReadOnlyList<FocusedBattlefieldGroup> Group(Card[] cards, Func<Card, bool> isResource,
+    public static IReadOnlyList<FocusedBattlefieldGroup> Group(IReadOnlyList<Card> cards, Func<Card, bool> isResource,
         IReadOnlyList<EffectChangeGroup>? reportedChanges = null)
     {
         // Equal final state does not mean these occurrences underwent the same

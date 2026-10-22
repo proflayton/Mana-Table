@@ -1,3 +1,4 @@
+using System.Collections.Immutable;
 using Mana.Contracts;
 using Mana.Renderer;
 
@@ -10,7 +11,7 @@ internal static class GameplayFeedbackChecks
         var state = PresentationSmoke.Example();
         var presence = new TablePresence();
         var tutor = state with { Players = state.Players.Select(p => p.Id == 1 ? p with { Zones = p.Zones.Select(z => z.Name == "Hand"
-            ? z with { Count = z.Count + 1 } : z.Name == "Library" ? z with { Count = z.Count - 1 } : z).ToArray() } : p).ToArray(),
+            ? z with { Count = z.Count + 1 } : z.Name == "Library" ? z with { Count = z.Count - 1 } : z).ToImmutableArray() } : p).ToImmutableArray(),
             Activity = [new(1, state.Turn, state.PhaseKey, "moved", 1, "A card moved from library to hand.", null, null)] };
         presence.Observe(state, tutor, 1);
         check(presence.Cues.All(c => c.Kind != SeatCueKind.Draw), "A tutor's matching library/hand deltas never invent a draw animation");
@@ -112,7 +113,7 @@ internal static class GameplayFeedbackChecks
         check(feedback.Last is { Changes.Length: 0 } && feedback.LastPublicOutcome?.Started == 22,
             "A later unrelated resolution does not inherit an earlier player-state transition");
         var noEvent = unrelated with { Players = unrelated.Players.Select(p => p.Id == state.ViewerId
-            ? p with { States = [new("speed", "Speed", "progress", 4, 4, "Max speed.")] } : p).ToArray() };
+            ? p with { States = [new("speed", "Speed", "progress", 4, 4, "Max speed.")] } : p).ToImmutableArray() };
         feedback.Observe(unrelated, noEvent, 24);
         check(feedback.LastPublicOutcome?.Started == 22,
             "A changed snapshot alone does not invent or attribute a public state-change event");
@@ -121,8 +122,8 @@ internal static class GameplayFeedbackChecks
             "Generic player and table state changes pause automatic passing without inventing an attributed effect");
         var anonymous = new Card { CombatId = "anonymous-pacing", FaceDown = true, Name = "Face-down card", Type = "Creature", Power = 2, Toughness = 2 };
         GameSnapshot Anonymous(Card card) => state with { Players = state.Players.Select(player => player.Id != state.ViewerId ? player : player with {
-            Zones = player.Zones.Select(zone => zone.Name != "Battlefield" ? zone : zone with { Cards = [card], Count = 1 }).ToArray()
-        }).ToArray() };
+            Zones = player.Zones.Select(zone => zone.Name != "Battlefield" ? zone : zone with { Cards = [card], Count = 1 }).ToImmutableArray()
+        }).ToImmutableArray() };
         check(Mana.Magic.PresentationPacing.ShouldPresent(Anonymous(anonymous), Anonymous(anonymous with { PhasedOut = true }))
             && Mana.Magic.PresentationPacing.ShouldPresent(Anonymous(anonymous), Anonymous(anonymous with { States = [new("ward", "Ward {3}", "ability", null, null, "A public effective ability.", "ward")] })),
             "Anonymous public occurrences and typed effective abilities retain their presentation beat using public combat identity");

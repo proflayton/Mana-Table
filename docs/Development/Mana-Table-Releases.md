@@ -100,6 +100,12 @@ first-install health retains the old installation. This migration gate differs
 from the SDK's recovery when an update cannot replace a locked application;
 there is no claim of automatic rollback for arbitrary later application failures.
 
+The shipping composition assembly remains `ManaTable.dll`; the application and
+window are in `Mana.Game.dll`. Both participate in package content hashes,
+installer/update validation and migration health evidence. A launcher-only
+hash cannot establish which game UI was installed. The entry point remains
+`ManaTable.exe`, and existing profiles require no migration for this split.
+
 Managed portable layouts can use the SDK update path from their writable root.
 Older flat portable ZIPs keep the manual download/extract route; extract a newer
 complete ZIP into a separate directory or install the app. Development builds

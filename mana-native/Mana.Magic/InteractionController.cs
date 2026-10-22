@@ -3,7 +3,7 @@ using Mana.Contracts;
 namespace Mana.Magic;
 
 public enum InteractionEffect { None, Select, Inspect, Submit, InspectPlayer, SelectChoice, ChooseHandPlacement }
-public sealed record InteractionResult(InteractionEffect Effect, DecisionReply? Reply = null, int? ChoiceIndex = null);
+public sealed record InteractionResult(InteractionEffect Effect, DecisionCommand? Reply = null, int? ChoiceIndex = null);
 
 /// <summary>Interprets gestures against engine-provided choices. It does not infer Magic legality.</summary>
 public sealed class InteractionController
@@ -22,30 +22,31 @@ public sealed class InteractionController
             return placements.Length == 1 ? new(InteractionEffect.Submit, HandPlacements.Start(state, card, placements[0].Id))
                 : new(InteractionEffect.ChooseHandPlacement);
         else if (state.Decision is { } d && card.Selectable && !string.IsNullOrEmpty(card.Key))
-            return new(InteractionEffect.Submit, new(state.Id, d.Id, ReplyAction.SelectCard, Card: card.Key));
+            return DecisionCommands.Card(state, card.Key) is { } command
+                ? new(InteractionEffect.Submit, command) : new(InteractionEffect.None);
         return new(InteractionEffect.Inspect);
     }
     public InteractionResult PlayerClick(GameSnapshot state, int player)
     {
         if (SelectedCombat != null && Assign(state, SelectedCombat, player) is { } attack) return new(InteractionEffect.Submit, attack);
-        if (state.Decision is { } d && d.PlayerChoices.Contains(player)) return new(InteractionEffect.Submit, new(state.Id, d.Id, ReplyAction.SelectPlayer, Player: player));
+        if (state.Decision is { } d && d.PlayerChoices.Contains(player)) return new(InteractionEffect.Submit, new SelectPlayer(state.Id, d.Id, player));
         return new(InteractionEffect.InspectPlayer);
     }
-    public static DecisionReply? Assign(GameSnapshot state, string source, int? player = null, string? targetCard = null)
+    public static DecisionCommand? Assign(GameSnapshot state, string source, int? player = null, string? targetCard = null)
     {
         var d = state.Decision; var card = CombatGuide.Find(state, source);
         if (d == null || card == null || string.IsNullOrEmpty(card.Key)) return null;
-        if (player is { } defender && LegalTargets.CanAttack(state, source, defender)) return new(state.Id, d.Id, ReplyAction.AssignAttack, Attacker: card.Key, Player: defender);
+        if (player is { } defender && LegalTargets.CanAttack(state, source, defender)) return new ToggleAttackPlayer(state.Id, d.Id, card.Key, defender);
         if (targetCard == null || CombatGuide.Find(state, targetCard) is not { } target || string.IsNullOrEmpty(target.Key)) return null;
-        if (LegalTargets.CanAttackCard(state, source, targetCard)) return new(state.Id, d.Id, ReplyAction.AssignAttack, Attacker: card.Key, DefenderCard: target.Key);
-        if (LegalTargets.CanBlock(state, source, targetCard)) return new(state.Id, d.Id, ReplyAction.AssignBlock, Blocker: card.Key, Attacker: target.Key);
+        if (LegalTargets.CanAttackCard(state, source, targetCard)) return new ToggleAttackPermanent(state.Id, d.Id, card.Key, target.Key);
+        if (LegalTargets.CanBlock(state, source, targetCard)) return new ToggleBlock(state.Id, d.Id, target.Key, card.Key);
         return null;
     }
-    public static DecisionReply? Play(GameSnapshot state, Card clicked, string sourceZone = "Hand")
+    public static DecisionCommand? Play(GameSnapshot state, Card clicked, string sourceZone = "Hand")
     {
         if (sourceZone is not ("Hand" or "Command") || state.Decision is not { Intent: DecisionIntent.Priority } d) return null;
         var card = state.Viewer?.Zone(sourceZone).Cards.FirstOrDefault(c => CardViews.Same(c, clicked) && c.Key == clicked.Key);
-        if (card is { Selectable: true } && !string.IsNullOrEmpty(card.Key)) return new(state.Id, d.Id, ReplyAction.SelectCard, Card: card.Key);
+        if (card is { Selectable: true } && !string.IsNullOrEmpty(card.Key)) return new PlayCard(state.Id, d.Id, card.Key);
         return sourceZone == "Hand" && card != null && HandPlacements.Options(state, card) is { Length: 1 } placements ? HandPlacements.Start(state, card, placements[0].Id) : null;
     }
 }

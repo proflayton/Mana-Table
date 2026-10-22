@@ -13,7 +13,7 @@ public static class BattlefieldLayout
 {
     public static Rectangle DenseTerritory(int seat) => BoundedBattlefieldLayout.Territory(seat);
     public static IReadOnlyList<Rectangle> DenseAreas(int seat) => BoundedBattlefieldLayout.Areas(seat);
-    public static BattlefieldCluster[] Build(int seat, int owner, Card[] cards, Func<Card, bool> isResource, IReadOnlySet<string>? separateOccurrences = null, GameSnapshot? state = null,
+    public static BattlefieldCluster[] Build(int seat, int owner, IReadOnlyList<Card> cards, Func<Card, bool> isResource, IReadOnlySet<string>? separateOccurrences = null, GameSnapshot? state = null,
         Func<Card, int, bool, BattlefieldLabelMetrics>? denseMeasure = null)
     {
         var context = state == null ? BattlefieldLayoutContext.RoleLanes
@@ -21,7 +21,7 @@ public static class BattlefieldLayout
         return Arrange(context, seat, owner, cards, isResource, separateOccurrences, denseMeasure);
     }
 
-    internal static BattlefieldCluster[] Arrange(BattlefieldLayoutContext context, int seat, int owner, Card[] cards,
+    internal static BattlefieldCluster[] Arrange(BattlefieldLayoutContext context, int seat, int owner, IReadOnlyList<Card> cards,
         Func<Card, bool> isResource, IReadOnlySet<string>? separateOccurrences,
         Func<Card, int, bool, BattlefieldLabelMetrics>? denseMeasure)
     {
@@ -104,7 +104,7 @@ public static class BattlefieldLayout
                     var pose = TableWorld.Card(TableWorld.SeatPoint(seat, across + copy * fanStep, outward - advance),
                         size, TableWorld.SeatAngle(seat) + (card.Tapped ? MathF.PI / 2 : 0));
                     string id = CardViews.Identity(card);
-                    if (id.Length == 0) id = $"anonymous:{owner}:Battlefield:{Array.FindIndex(cards, c => ReferenceEquals(c, card))}";
+                    if (id.Length == 0) id = $"anonymous:{owner}:Battlefield:{Enumerable.Range(0, cards.Count).First(index => ReferenceEquals(cards[index], card))}";
                     nodes.Add(new(id, card, pose, "Battlefield", owner, TableLayout.SeatHand(seat)) {
                         Compact = rows > 1 || copies.Length > 1 || width < 60, GroupFront = !matchingState || copy == copies.Length - 1, GroupCount = matchingState ? copies.Length : 1
                     });
@@ -115,7 +115,7 @@ public static class BattlefieldLayout
     }
     public static string Role(Card card, Func<Card, bool> isResource) => card.Type.Contains("Creature", StringComparison.Ordinal)
         ? "Creatures" : isResource(card) ? "Lands" : "Support";
-    internal static Card[][] Groups(Card[] cards, IReadOnlySet<string>? separate, int maximumCopies) => cards
+    internal static Card[][] Groups(IReadOnlyList<Card> cards, IReadOnlySet<string>? separate, int maximumCopies) => cards
         .GroupBy(card => separate?.Contains(card.VisualId) == true ? "ordered:" + card.VisualId : "family:" + FamilyKey(card))
         .SelectMany(family => family.GroupBy(StateKey).SelectMany(group => group.Chunk(maximumCopies))).ToArray();
     // Decision handles, Selectable and Highlighted deliberately do not participate.
@@ -125,6 +125,6 @@ public static class BattlefieldLayout
     private static string StateKey(Card c) => string.Join("\u001f", c.Name, c.ArtFace, c.Type, c.ManaCost, c.Text, c.Power, c.Toughness, c.Damage,
         c.Tapped, c.PhasedOut, c.Sick, c.FaceDown, c.Attacking, c.Blocking, c.DefenderId, c.Defender,
         string.Join(',', c.CombatKeywords.Order(StringComparer.Ordinal)), string.Join(',', c.Counters.OrderBy(v => v.Key, StringComparer.Ordinal)),
-        c.States == null ? "legacy" : System.Text.Json.JsonSerializer.Serialize(c.States.OrderBy(state => state.Id, StringComparer.Ordinal)),
+        c.States == null ? "legacy" : System.Text.Json.JsonSerializer.Serialize(c.States.Value.OrderBy(state => state.Id, StringComparer.Ordinal)),
         c.AttachedTo?.Id, string.Join(',', c.Attachments.Select(a => a.Id).Order(StringComparer.Ordinal)));
 }

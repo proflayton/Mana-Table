@@ -47,7 +47,7 @@ internal static class CleanupSmoke
             }
             var decision = state.Decision;
             if (decision is null || decision.Id == previous) { await Task.Delay(20); continue; }
-            DecisionReply? reply;
+            DecisionCommand? reply;
             if (state.ActivePlayerId == state.ViewerId && state.PhaseKey == "END_OF_TURN" && !endStep) {
                 Check(state.Viewer!.Zone("Hand").Count == 8, "Eight cards remain legal during the end step");
                 endStep = true;
@@ -61,24 +61,24 @@ internal static class CleanupSmoke
                 await File.WriteAllTextAsync(Path.Combine(paths.Profile, "cleanup-fixture.json"), JsonSerializer.Serialize(state));
                 var card = state.Viewer.Zone("Hand").Cards.First(c => c.Selectable && !c.Highlighted);
                 reply = interactions.CardClick(state, card).Reply;
-                Check(reply?.Action == ReplyAction.SelectCard, "Shared card click selects a discard without a play gesture");
+                Check(reply is SelectCard, "Shared card click selects a discard without a play gesture");
                 cleanup = true;
                 discardedTurn = state.Turn;
             } else if (decision.Kind == "choice") {
-                reply = new(state.Id, decision.Id, ReplyAction.Choose, Choices: decision.Choices.Take(Math.Max(decision.Min, Math.Min(1, decision.Max))).Select(c => c.Index).ToArray());
+                reply = DecisionCommands.Choose(state, decision.Choices.Take(Math.Max(decision.Min, Math.Min(1, decision.Max))).Select(c => c.Index));
             } else if (decision.Kind == "reveal") {
-                reply = new(state.Id, decision.Id, ReplyAction.Choose, Choices: []);
+                reply = new AcknowledgeReveal(state.Id, decision.Id);
             } else if (state.Turn == 0 && decision.PlayerChoices.Length > 0) {
-                reply = new(state.Id, decision.Id, ReplyAction.SelectPlayer, Player: state.ViewerId);
+                reply = new SelectPlayer(state.Id, decision.Id, Player: state.ViewerId);
             } else {
                 reply = auto.Update(state, true, false, noStops, false, false)
-                    ?? (decision.OkEnabled ? new(state.Id, decision.Id, ReplyAction.Confirm) : null);
+                    ?? (decision.OkEnabled ? DecisionCommands.Confirm(state) : null);
             }
             if (reply is null) throw new InvalidOperationException("Unhandled cleanup scenario decision: " + JsonSerializer.Serialize(decision));
             try {
-                if (reply.Action == ReplyAction.AutoPass)
+                if (reply is AutoPassPriority)
                     await advance.RunAsync(state, s => TurnGuide.CanAutoPass(s, true, false, noStops, false), PresentationPacing.ShouldPresent);
-                else await engine.ReplyAsync(reply);
+                else await engine.ExecuteAsync(reply);
                 previous = decision.Id;
             }
             catch (InvalidOperationException error) when (error.Message.Contains("choice has changed")) { }

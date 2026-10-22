@@ -1,3 +1,4 @@
+using System.Collections.Immutable;
 using Mana.Contracts;
 using Mana.Magic;
 
@@ -15,11 +16,11 @@ internal sealed partial class CardReadingSmoke
             repliesBefore = scenario.Replies.Count;
             Move(new(10, 70));
             Publish(scenario.State with { Decision = new() { Kind = "input", Intent = DecisionIntent.Priority, OkEnabled = true },
-                Players = scenario.State.Players.Select(p => p with { Counters = new() { ["Energy"] = 2 }, States = [
+                Players = scenario.State.Players.Select(p => p with { Counters = ImmutableDictionary<string, int>.Empty.Add("Energy", 2), States = [
                     new("counter:energy", "Energy", "counter", 2, null, "Energy counters belong to this player."),
                     new("speed", "Speed", "progress", 1, 4, speedDetail),
                     new("monarch", "Monarch", "status", null, null, "At this player's end step, they draw a card. Combat damage can transfer the monarchy.")
-                ] }).ToArray() });
+                ] }).ToImmutableArray() });
         });
         StepWhen(() => view.Match!.Players.All(p => view.CounterBadge(p.Id)?.Chips.Any(c => c.Id == "speed" && c.Text == "Speed 1/4") == true), 2, () => {
             Check(view.TextScale == 1.3f, "Public player-state inspection uses real 130% text settings");
@@ -51,8 +52,8 @@ internal sealed partial class CardReadingSmoke
             MoveHit("close-overlay");
         }); Click();
         Step(.1, () => Publish(scenario.State with { Players = scenario.State.Players.Select(p => p with {
-            States = p.States.Select(s => s.Id == "speed" ? s with { Value = 4 } : s).ToArray()
-        }).ToArray() }));
+            States = p.States.Select(s => s.Id == "speed" ? s with { Value = 4 } : s).ToImmutableArray()
+        }).ToImmutableArray() }));
         StepWhen(() => view.Match!.Players.All(p => view.CounterBadge(p.Id)?.Chips.Any(c => c.Text == "Speed 4/4 MAX") == true), 2, () => {
             Check(view.Match!.Players.All(p => view.CounterBadge(p.Id)?.Chips.Any(c => c.Text == "Speed 4/4 MAX") == true),
                 "An authoritative progress transition to its maximum updates every seat with an explicit MAX label");
@@ -61,7 +62,7 @@ internal sealed partial class CardReadingSmoke
                 new("future-track", "Momentum", "progress", 6, 6, "An unfamiliar public progress track supplied by the engine."),
                 .. p.States.Where(s => s.Id != "speed"),
                 .. Enumerable.Range(0, 6).Select(i => new PlayerState("future-status-" + i, "Public status " + (i + 1), "status", null, null, "An unfamiliar public status supplied by the engine."))
-            ] }).ToArray() });
+            ] }).ToImmutableArray() });
         });
         StepWhen(() => view.CounterBadge(0) is { HiddenTypes: > 0 } badge && badge.Chips.Any(c => c.Text == "Momentum 6/6 MAX"), 2, () => {
             Check(view.CounterBadge(0) is { HiddenTypes: > 0 } badge && badge.Chips.Any(c => c.Text == "Momentum 6/6 MAX")
@@ -75,7 +76,7 @@ internal sealed partial class CardReadingSmoke
                 "Overflow opens the current complete state list without sending a choice");
             MoveHit("close-overlay");
         }); Click();
-        Step(.1, () => Publish(scenario.State with { Players = scenario.State.Players.Select(p => p with { States = [], Counters = [] }).ToArray() }));
+        Step(.1, () => Publish(scenario.State with { Players = scenario.State.Players.Select(p => p with { States = [], Counters = ImmutableDictionary<string, int>.Empty }).ToImmutableArray() }));
         StepWhen(() => view.Match!.Players.All(p => view.CounterBadge(p.Id) == null), 2, () => {
             Check(view.Match!.Players.All(p => view.CounterBadge(p.Id) == null) && scenario.Replies.Count == repliesBefore,
                 "Removing authoritative player state clears all stale ribbons and never submits an action");

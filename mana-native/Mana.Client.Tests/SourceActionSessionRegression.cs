@@ -1,3 +1,4 @@
+using System.Collections.Immutable;
 using System.Collections.Concurrent;
 using Mana.Client;
 using Mana.Contracts;
@@ -10,7 +11,7 @@ internal static class SourceActionSessionRegression
         var action = new SourceAction("opaque-action", "cast", "Cast Toothy, Imaginary Friend");
         var missing = new SourceActionSession(null, _ => throw new Exception("Unsupported provider queued work."));
         missing.Observe(first);
-        check(missing.View.Status == SourceActionStatus.Unsupported && missing.TryCreateReply(first, action.Id) == null,
+        check(missing.View.Status == SourceActionStatus.Unsupported && missing.TryCreateCommand(first, action.Id) == null,
             "An absent source-action capability stays explicitly unsupported and cannot create a command");
 
         var lifecycle = new Driver();
@@ -26,7 +27,7 @@ internal static class SourceActionSessionRegression
         long stableGeneration = lifecycle.Session.View.Generation;
         lifecycle.Session.Observe(first);
         check(lifecycle.Session.View.Actions.Count == 0 && lifecycle.Session.View.Generation == stableGeneration
-            && lifecycle.Provider.Requests.Length == 1 && lifecycle.Session.TryCreateReply(first, action.Id) == null,
+            && lifecycle.Provider.Requests.Length == 1 && lifecycle.Session.TryCreateCommand(first, action.Id) == null,
             "Negotiated support can become ready with an empty authoritative catalog; unchanged observations do not restart it");
 
         var switching = new Driver();
@@ -41,24 +42,23 @@ internal static class SourceActionSessionRegression
         originalRead.Result.SetResult(Catalog(first, action));
         var currentRead = await switching.Request(2);
         check(currentRead.Key == current.SourceCardKey && switching.Session.View.Actions.Count == 0
-            && switching.Session.TryCreateReply(first, action.Id) == null,
+            && switching.Session.TryCreateCommand(first, action.Id) == null,
             "A delayed old catalog cannot publish; only the latest disclosed source is queried next");
         var returnedActions = new[] { action };
         currentRead.Result.SetResult(Catalog(current, returnedActions));
         await switching.Until(() => switching.Session.View.Status == SourceActionStatus.Ready);
         returnedActions[0] = action with { Id = "mutated-provider-array" };
-        var reply = switching.Session.TryCreateReply(current, action.Id);
-        check(reply == new DecisionReply(current.GameId, current.DecisionId, ReplyAction.UseSourceAction,
-                Card: current.SourceCardKey, AbilityId: action.Id)
-            && switching.Session.View.Actions[0] == action && switching.Session.TryCreateReply(current, "unknown-action") == null,
+        var reply = switching.Session.TryCreateCommand(current, action.Id);
+        check(reply == new UseOfferedAction(current.GameId, current.DecisionId, Card: current.SourceCardKey, ActionId: action.Id)
+            && switching.Session.View.Actions[0] == action && switching.Session.TryCreateCommand(current, "unknown-action") == null,
             "Only a copied current catalog's exact opaque action creates the scoped source command");
         var changedContexts = new[] { current with { GameId = "another-game" }, current with { DecisionId = "payment" },
             current with { Revision = current.Revision + 1 }, current with { ViewerId = 1 },
             current with { SourceCardKey = "new-key" }, current with { SourceCardId = "new-occurrence" } };
-        check(changedContexts.All(changed => switching.Session.TryCreateReply(changed, action.Id) == null),
+        check(changedContexts.All(changed => switching.Session.TryCreateCommand(changed, action.Id) == null),
             "Game, decision, publication, viewer, source handle and occurrence changes all revoke an old action");
         switching.Provider.Supported = false;
-        check(switching.Session.TryCreateReply(current, action.Id) == null,
+        check(switching.Session.TryCreateCommand(current, action.Id) == null,
             "Capability revocation prevents dispatch even before the next reader observation");
 
         var revoked = new Driver();
@@ -68,7 +68,7 @@ internal static class SourceActionSessionRegression
         revokedRead.Result.SetResult(Catalog(first, action));
         await revoked.Until(() => revoked.Applied > 0);
         check(revoked.Session.View is { Context: null, Status: SourceActionStatus.Idle, Actions.Count: 0 }
-            && revoked.Session.TryCreateReply(first, action.Id) == null && revoked.Provider.Requests.Length == 1,
+            && revoked.Session.TryCreateCommand(first, action.Id) == null && revoked.Provider.Requests.Length == 1,
             "Closing or losing visibility of a source discards its late private catalog without issuing a command");
 
         var viewerChange = new Driver();
@@ -78,7 +78,7 @@ internal static class SourceActionSessionRegression
         viewerChange.Session.Observe(otherViewer);
         oldViewerRead.Result.SetResult(Catalog(first, action));
         var newViewerRead = await viewerChange.Request(2);
-        check(viewerChange.Session.View.Actions.Count == 0 && viewerChange.Session.TryCreateReply(otherViewer, action.Id) == null,
+        check(viewerChange.Session.View.Actions.Count == 0 && viewerChange.Session.TryCreateCommand(otherViewer, action.Id) == null,
             "A seat change invalidates a private read even when the provider's game, decision and source strings are identical");
         newViewerRead.Result.SetResult(Catalog(otherViewer));
         await viewerChange.Until(() => viewerChange.Session.View.Status == SourceActionStatus.Ready);
@@ -90,13 +90,13 @@ internal static class SourceActionSessionRegression
         await invalid.Until(() => invalid.Session.View.Status == SourceActionStatus.Stale);
         invalid.Session.Observe(first);
         check(invalid.Session.View.Actions.Count == 0 && invalid.Provider.Requests.Length == 1
-            && invalid.Session.TryCreateReply(first, action.Id) == null,
+            && invalid.Session.TryCreateCommand(first, action.Id) == null,
             "A mismatched provider catalog is explicitly stale and cannot trigger an automatic retry loop");
         invalid.Session.Retry();
         var retry = await invalid.Request(2);
         retry.Result.SetResult(Catalog(first, action));
         await invalid.Until(() => invalid.Session.View.Status == SourceActionStatus.Ready);
-        check(invalid.Session.TryCreateReply(first, action.Id) != null,
+        check(invalid.Session.TryCreateCommand(first, action.Id) != null,
             "Explicit Retry can replace a stale catalog with a fresh scoped action");
 
         var unsupported = new Driver();
@@ -115,7 +115,7 @@ internal static class SourceActionSessionRegression
         beforeRevocation.Result.SetException(new NotSupportedException("Host revoked its advertised capability."));
         await revoking.Until(() => revoking.Session.View.Status == SourceActionStatus.Unsupported);
         check(revoking.Session.View.Context == current && revoking.Provider.Requests.Length == 1
-            && revoking.Session.TryCreateReply(current, action.Id) == null,
+            && revoking.Session.TryCreateCommand(current, action.Id) == null,
             "Capability loss during an obsolete read blocks the queued current-source query without requiring another UI observation");
         revoking.Provider.Supported = true;
         revoking.Session.Observe(current);
@@ -129,7 +129,7 @@ internal static class SourceActionSessionRegression
         malformed.Session.Observe(first);
         (await malformed.Request(1)).Result.SetResult(Catalog(first, action, action));
         await malformed.Until(() => malformed.Session.View.Status == SourceActionStatus.Failed);
-        check(malformed.Session.View.Actions.Count == 0 && malformed.Session.TryCreateReply(first, action.Id) == null,
+        check(malformed.Session.View.Actions.Count == 0 && malformed.Session.TryCreateCommand(first, action.Id) == null,
             "Ambiguous duplicate action handles fail the read without widening command authority");
 
         var timed = new Driver(TimeSpan.FromMilliseconds(250));
@@ -144,8 +144,8 @@ internal static class SourceActionSessionRegression
         timedRetry.Result.SetResult(Catalog(first, action));
         await timed.Until(() => timed.Session.View.Status == SourceActionStatus.Ready);
         timedOutRead.Result.SetResult(Catalog(first, action with { Id = "late-timed-out-action" }));
-        check(timed.Session.TryCreateReply(first, action.Id) != null
-            && timed.Session.TryCreateReply(first, "late-timed-out-action") == null,
+        check(timed.Session.TryCreateCommand(first, action.Id) != null
+            && timed.Session.TryCreateCommand(first, "late-timed-out-action") == null,
             "An underlying provider finishing after timeout cannot replace the successful explicit retry");
 
         var closing = new Driver();
@@ -159,12 +159,12 @@ internal static class SourceActionSessionRegression
         await closing.Until(() => closing.Applied > 0);
         check(closing.Session.View is { Context: null, Status: SourceActionStatus.Idle, Actions.Count: 0 }
             && closing.Session.View.Generation == closedGeneration && closing.Provider.Requests.Length == 1
-            && closing.Session.TryCreateReply(first, action.Id) == null,
+            && closing.Session.TryCreateCommand(first, action.Id) == null,
             "A closed action session rejects future observations and late completions without resurrecting authority");
     }
 
     private static SourceActionSet Catalog(SourceActionContext context, params SourceAction[] actions)
-        => new(context.GameId, context.DecisionId, context.SourceCardKey, context.SourceCardId, actions);
+        => new(context.GameId, context.DecisionId, context.SourceCardKey, context.SourceCardId, actions.ToImmutableArray());
 
     private sealed class Driver
     {

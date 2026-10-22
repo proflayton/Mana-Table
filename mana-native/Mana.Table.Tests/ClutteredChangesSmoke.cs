@@ -41,7 +41,7 @@ internal sealed class ClutteredChangesSmoke : ITableAutomation
         foreach (var size in new[] { new Point(1000, 740), new Point(1540, 980) }) {
             string directory = Path.Combine(profile, $"{size.X}x{size.Y}"); Prepare(directory);
             var engine = new InteractionScenarioEngine(); engine.Present(ClutteredChangesScenario.Initial());
-            using var application = new TableApplication(engine, directory, initialState: engine.State);
+            using var application = new TableApplication(TestTableServices.For(engine), directory, initialState: engine.State);
             application.Automated = true; application.Initialize();
             var driver = new ClutteredChangesSmoke(application.TestPort, engine, size);
             var wall = Stopwatch.StartNew(); double time = 0;
@@ -61,7 +61,7 @@ internal sealed class ClutteredChangesSmoke : ITableAutomation
     {
         var dimensions = size ?? new Point(1000, 740); Prepare(profile);
         var engine = new InteractionScenarioEngine(); engine.Present(ClutteredChangesScenario.Initial());
-        using var game = new TableWindow(engine, profile, null, null, dimensions, initialState: engine.State, artSource: new CardReadingArtFixture());
+        using var game = new TableWindow(TestTableServices.For(engine), profile, null, null, dimensions, initialState: engine.State, artSource: new CardReadingArtFixture());
         game.Automation = new ClutteredChangesSmoke(game.TestPort, engine, dimensions, game.TestPort);
         game.Run();
     }
@@ -142,7 +142,7 @@ internal sealed class ClutteredChangesSmoke : ITableAutomation
             MoveHit("read-card-action");
         }); Click();
         Wait(() => !view.Busy && engine.Replies.Count == 1, () => {
-            Check(engine.Replies.Single() is { Action: ReplyAction.SelectCard } reply && reply.GameId == gameId
+            Check(engine.Replies.Single() is ActivateCard reply && reply.GameId == gameId
                 && reply.DecisionId == decisionId && reply.Card == cardKey
                 && view.Match!.Decision is { Purpose: DecisionPurpose.AbilitySelection, SourceCard.VisualId: ClutteredChangesScenario.ActionCardId },
                 "Only the explicit activation submits one current game/decision/card command and opens that card's ability chooser");

@@ -30,7 +30,7 @@ internal static class NativeSmoke
             await Wait(async () => (await engines[0].LobbyAsync()).CanStart);
             await engines[0].StartAsync();
             var previous = new Dictionary<int, string>();
-            DecisionReply? staleReply = null;
+            DecisionCommand? staleReply = null;
             int staleSeat = 0;
             var deadline = DateTime.UtcNow.AddMinutes(4);
             GameSnapshot? fixture = null;
@@ -47,18 +47,18 @@ internal static class NativeSmoke
                     if (state.Viewer!.Zone("Battlefield").Cards.Any(c => c.Name == "Rograkh, Son of Rohgahh")) seen.Add(i);
                     fixture = state;
                     if (d == null || previous.GetValueOrDefault(i) == d.Id) continue;
-                    DecisionReply? reply = null;
-                    if (d.Kind == "choice") reply = new(state.Id, d.Id, ReplyAction.Choose, Choices: d.Choices.Take(Math.Max(d.Min, Math.Min(1, d.Max))).Select(c => c.Index).ToArray());
-                    else if (d.Kind == "reveal") reply = new(state.Id, d.Id, ReplyAction.Choose, Choices: []);
+                    DecisionCommand? reply = null;
+                    if (d.Kind == "choice") reply = DecisionCommands.Choose(state, d.Choices.Take(Math.Max(d.Min, Math.Min(1, d.Max))).Select(c => c.Index));
+                    else if (d.Kind == "reveal") reply = new AcknowledgeReveal(state.Id, d.Id);
                     else if (d.Kind == "input") {
                         var commander = state.Viewer.Zone("Command").Cards.FirstOrDefault(c => c.Selectable);
-                        if (d.Intent == DecisionIntent.Priority && commander != null) reply = new(state.Id, d.Id, ReplyAction.SelectCard, Card: commander.Key);
-                        else if (d.OkEnabled) reply = new(state.Id, d.Id, ReplyAction.Confirm);
-                        else if (d.PlayerChoices.Length > 0) reply = new(state.Id, d.Id, ReplyAction.SelectPlayer, Player: d.PlayerChoices[0]);
-                        else if (d.Intent == DecisionIntent.Selection && state.Viewer.Zone("Hand").Cards.FirstOrDefault(c => c.Selectable && !c.Highlighted) is { } card) reply = new(state.Id, d.Id, ReplyAction.SelectCard, Card: card.Key);
+                        if (d.Intent == DecisionIntent.Priority && commander != null) reply = new PlayCard(state.Id, d.Id, Card: commander.Key);
+                        else if (d.OkEnabled) reply = DecisionCommands.Confirm(state);
+                        else if (d.PlayerChoices.Length > 0) reply = new SelectPlayer(state.Id, d.Id, Player: d.PlayerChoices[0]);
+                        else if (d.Intent == DecisionIntent.Selection && state.Viewer.Zone("Hand").Cards.FirstOrDefault(c => c.Selectable && !c.Highlighted) is { } card) reply = new SelectCard(state.Id, d.Id, Card: card.Key);
                     }
                     if (reply != null) {
-                        try { await engines[i].ReplyAsync(reply); previous[i] = d.Id; if (staleReply == null) { staleReply = reply; staleSeat = i; } }
+                        try { await engines[i].ExecuteAsync(reply); previous[i] = d.Id; if (staleReply == null) { staleReply = reply; staleSeat = i; } }
                         catch (InvalidOperationException ex) when (ex.Message.Contains("choice has changed")) { }
                     }
                 }
@@ -68,7 +68,7 @@ internal static class NativeSmoke
             Check(fixture!.Players.All(p => p.Life == 40), "Four players at 40 life");
             Check(fixture.Players.All(p => p.CommanderDamage.Length == 4), "Each player sees all four commander-damage totals");
             bool rejected = false;
-            try { await engines[staleSeat].ReplyAsync(staleReply!); }
+            try { await engines[staleSeat].ExecuteAsync(staleReply!); }
             catch (InvalidOperationException ex) when (ex.Message.Contains("choice has changed")) { rejected = true; }
             Check(rejected, "Stale decision rejected through the typed adapter");
             await File.WriteAllTextAsync(Path.Combine(paths.Profile, "table-fixture.json"), JsonSerializer.Serialize(fixture, new JsonSerializerOptions { WriteIndented = true }));

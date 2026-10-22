@@ -18,11 +18,12 @@ function New-PackageFixture([string]$Name, [string]$Mutation) {
     [IO.File]::WriteAllText($jar, 'verified shared engine', $utf8)
     $jarHash = (Get-FileHash -LiteralPath $jar -Algorithm SHA256).Hash
     $hashes = [ordered]@{}
-    foreach ($name in @('ManaTable.dll','Mana.Client.dll','Mana.Contracts.dll','Mana.Magic.dll','Mana.Forge.dll','Mana.Renderer.dll','Mana.Scenarios.dll')) {
+    foreach ($name in @('ManaTable.dll','Mana.Game.dll','Mana.Client.dll','Mana.Contracts.dll','Mana.Magic.dll','Mana.Forge.dll','Mana.Renderer.dll','Mana.Scenarios.dll')) {
         $file = Join-Path $package $name
         [IO.File]::WriteAllText($file, ('verified bytes ' + $name), $utf8)
         $hashes[$name] = (Get-FileHash -LiteralPath $file -Algorithm SHA256).Hash
     }
+    if ($Mutation -eq 'unbound-game') { $hashes.Remove('Mana.Game.dll') }
     $source = if ($Mutation -eq 'source') { 'b' * 40 } else { $env:GITHUB_SHA }
     Write-Json (Join-Path $package 'build.json') @{sourceRevision=$source; engineBaseRevision=$env:GITHUB_SHA; version=$env:MANA_RELEASE_VERSION; release=$true; engineSha256=$jarHash; clientFilesSha256=$hashes}
     Write-Json (Join-Path $directory 'ci-engine-manifest.json') @{schemaVersion=1; sourceRevision=$env:GITHUB_SHA; engine=@{sha256=$jarHash; bytes=(Get-Item -LiteralPath $jar).Length}}
@@ -31,6 +32,8 @@ function New-PackageFixture([string]$Name, [string]$Mutation) {
     Write-Json (Join-Path $directory 'ci-harness-manifest.json') @{sourceRevision=$env:GITHUB_SHA; files=@(@{path='Mana.Table.Tests.exe'; sha256=(Get-FileHash -LiteralPath $harness -Algorithm SHA256).Hash})}
     if ($Mutation -eq 'engine') { [IO.File]::AppendAllText($jar, 'changed bytes', $utf8) }
     if ($Mutation -eq 'client') { [IO.File]::AppendAllText((Join-Path $package 'Mana.Client.dll'), 'changed bytes', $utf8) }
+    if ($Mutation -eq 'game') { [IO.File]::AppendAllText((Join-Path $package 'Mana.Game.dll'), 'changed bytes', $utf8) }
+    if ($Mutation -eq 'missing-game') { Remove-Item -LiteralPath (Join-Path $package 'Mana.Game.dll') }
     if ($Mutation -eq 'renderer') { [IO.File]::AppendAllText((Join-Path $package 'Mana.Renderer.dll'), 'changed bytes', $utf8) }
     if ($Mutation -eq 'scenarios') { [IO.File]::AppendAllText((Join-Path $package 'Mana.Scenarios.dll'), 'changed bytes', $utf8) }
     if ($Mutation -eq 'harness') { [IO.File]::AppendAllText($harness, 'changed bytes', $utf8) }
@@ -53,7 +56,7 @@ try {
     $valid = New-PackageFixture 'valid' ''
     & (Join-Path $PSScriptRoot 'restore-package.ps1') -Directory $valid -RequireHarness
     $checks++
-    foreach ($mutation in @('source','engine','client','renderer','scenarios','harness','archive')) {
+    foreach ($mutation in @('source','engine','client','game','missing-game','unbound-game','renderer','scenarios','harness','archive')) {
         $fixture = New-PackageFixture $mutation $mutation
         $rejected = $false
         try { & (Join-Path $PSScriptRoot 'restore-package.ps1') -Directory $fixture -RequireHarness }

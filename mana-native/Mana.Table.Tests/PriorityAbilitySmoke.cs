@@ -1,3 +1,4 @@
+using System.Collections.Immutable;
 using System.Text.Json;
 using Mana.Contracts;
 using Mana.Magic;
@@ -40,7 +41,7 @@ internal sealed class PriorityAbilitySmoke(TableWindow.Probe view, InteractionSc
             Text = "{T}, Pay 1 life, Sacrifice Arid Mesa: Search your library for a Mountain or Plains card, put it onto the battlefield, then shuffle." };
         return state with { ActivePlayerId = 1, Phase = "Main phase", PhaseKey = "MAIN1", Combat = null, Stack = [],
             Players = state.Players.Select(p => p.Id != state.ViewerId ? p : p with { Zones = p.Zones.Select(z => z.Name == "Battlefield" ? z with { Count = 1, Cards = [mesa] }
-                : z.Name is "Hand" or "Command" ? z with { Count = 0, Cards = [] } : z).ToArray() }).ToArray(),
+                : z.Name is "Hand" or "Command" ? z with { Count = 0, Cards = [] } : z).ToImmutableArray() }).ToImmutableArray(),
             Decision = new() { Kind = "input", Intent = DecisionIntent.Priority, OkEnabled = true, CanAutoPass = false, Cancel = "End Turn", CancelEnabled = true,
                 PriorityAbilities = [new("mesa-fetch", "mesa", "Arid Mesa", mesa.Text, false)] } };
     }
@@ -59,7 +60,7 @@ internal sealed class PriorityAbilitySmoke(TableWindow.Probe view, InteractionSc
                 Press("ability-pass:mesa-fetch"); Next(); break;
             case 1: Capture(surface, "01-ability-available"); Release(); Next(); break;
             case 2:
-                Check(ClickAccepted && scenario.Replies is [{ Action: ReplyAction.SetAbilityAutoPass, AbilityId: "mesa-fetch", Ignore: true }], "The contextual control submits only the selected ability preference");
+                Check(ClickAccepted && scenario.Replies is [IgnorePriorityAbility { AbilityId: "mesa-fetch" }], "The contextual control submits only the selected ability preference");
                 Check(state.Decision!.CanAutoPass && state.IgnoredPriorityAbilities is [{ Id: "mesa-fetch", IgnoredUntilNextTurn: true }], "Engine-authorized Auto becomes eligible after ignoring the sole response");
                 Check(view.Automatic && view.Held && view.Hits.Any(h => h.Id == "confirm"), "Hold continues to expose manual priority after an ability is ignored");
                 Check(view.Hits.Any(h => h.Id == "ability-undo:mesa-fetch"), "The temporary preference has a visible Undo control");
@@ -72,7 +73,7 @@ internal sealed class PriorityAbilitySmoke(TableWindow.Probe view, InteractionSc
             case 4: Release(); Next(); break;
             case 5:
                 Check(ClickAccepted && state.IgnoredPriorityAbilities.Length == 0, "Undo clears the preference without waiting for local priority");
-                Check(scenario.Replies[^1] is { Action: ReplyAction.SetAbilityAutoPass, DecisionId: "", Ignore: false }, "Undo uses the match preference command rather than a gameplay decision");
+                Check(scenario.Replies[^1] is RestorePriorityAbility, "Undo uses the match preference command rather than a gameplay decision");
                 Check(scenario.Replies.Count == 2 && state.Decision == null, "Changing the preference never activates the card or advances a decision");
                 var example = Example();
                 Publish(example with { Decision = example.Decision! with { PriorityAbilities = [example.Decision.PriorityAbilities[0], new("mesa-second", "mesa", "Arid Mesa", "A second independent ability on the same card.", false)] } });
@@ -105,7 +106,7 @@ internal sealed class PriorityAbilitySmoke(TableWindow.Probe view, InteractionSc
                 Press("read-card-action"); Next(); break;
             case 15: Release(); Next(); break;
             case 16:
-                Check(scenario.Replies[^1] is { Action: ReplyAction.SelectCard } reply && reply.GameId == manualGame
+                Check(scenario.Replies[^1] is ActivateCard reply && reply.GameId == manualGame
                     && reply.DecisionId == manualDecision && reply.Card == manualCard && state.Decision is { Purpose: DecisionPurpose.AbilitySelection },
                     "Explicit manual activation opens the normal ability chooser with the exact current game, decision and card scope");
                 var nextTurn = Example();
@@ -115,7 +116,7 @@ internal sealed class PriorityAbilitySmoke(TableWindow.Probe view, InteractionSc
                 Check(!view.Busy && scenario.Replies.Count == 4, "An Undo captured before expiry quietly does nothing after that preference has cleared");
                 Check(view.Hits.Any(h => h.Id == "ability-pass:mesa-fetch") && !view.Hits.Any(h => h.Id.StartsWith("ability-undo:")), "The viewer's next turn shows the ability available again after engine expiry");
                 Check(!TurnGuide.CanAutoPass(state, true, false, new HashSet<string>(), false), "After expiry the available ability once again stops Auto");
-                Check(scenario.Replies.Count == 4 && scenario.Replies.All(r => r.Action is ReplyAction.SetAbilityAutoPass or ReplyAction.SelectCard), "Preference and inspection flows never submit an automatic activation or extra pass");
+                Check(scenario.Replies.Count == 4 && scenario.Replies.All(r => r is IgnorePriorityAbility or RestorePriorityAbility or ActivateCard), "Preference and inspection flows never submit an automatic activation or extra pass");
                 Capture(surface, "05-ability-next-turn");
                 File.WriteAllText(Path.Combine(view.Profile, "priority-ability-results.json"), JsonSerializer.Serialize(checks, new JsonSerializerOptions { WriteIndented = true }));
                 view.Exit(); break;

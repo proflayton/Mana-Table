@@ -1,3 +1,4 @@
+using System.Collections.Immutable;
 using Mana.Contracts;
 
 namespace Mana.Scenarios;
@@ -30,23 +31,23 @@ public static class ClutteredChangesScenario
                 int counters = animated ? 1 + index % 4 : 0;
                 return New($"crowd-{seat}-land-{index}", index % 3 == 0 ? "Forest" : index % 3 == 1 ? "Plains" : "Island",
                     animated ? "Basic Land Creature — Elemental" : "Basic Land", animated ? counters : null, animated ? counters : null) with {
-                        Counters = animated ? new() { ["+1/+1"] = counters } : [],
+                        Counters = animated ? ImmutableDictionary<string, int>.Empty.Add("+1/+1", counters) : ImmutableDictionary<string, int>.Empty,
                         CombatKeywords = animated ? ["haste"] : [], Tapped = index is >= 12 and < 24
                     };
             }),
             .. CreatureNames.Select((name, index) => New($"crowd-{seat}-creature-{index}", name, "Creature", 2 + index % 5, 3 + index % 4) with {
                 Selectable = seat == 0 && index == 0, Text = index == 0 ? "{T}: Add {G}." : "",
-                Counters = index % 3 == 0 ? new() { ["+1/+1"] = index + 1 } : []
+                Counters = index % 3 == 0 ? ImmutableDictionary<string, int>.Empty.Add("+1/+1", index + 1) : ImmutableDictionary<string, int>.Empty
             }),
             New(TophId(seat), TophName, "Legendary Creature — Human Warrior Ally", 3, 3),
             New(RetreatId(seat), RetreatName, "Enchantment"),
             .. SupportNames.Select((name, index) => New($"crowd-{seat}-support-{index}", name, index < 7 ? "Artifact Land" : "Enchantment"))
         ];
-        var players = Enumerable.Range(0, 4).Select(seat => new Player(seat, seat == 0 ? "You" : "Opponent " + seat, 40, seat == 0, false, [], [
-            new("Battlefield", 120, Battlefield(seat), null), new("Hand", seat == 0 ? 0 : 7, [], null),
+        var players = Enumerable.Range(0, 4).Select(seat => new Player(seat, seat == 0 ? "You" : "Opponent " + seat, 40, seat == 0, false, ImmutableDictionary<string, int>.Empty, [
+            new("Battlefield", 120, Battlefield(seat).ToImmutableArray(), null), new("Hand", seat == 0 ? 0 : 7, [], null),
             new("Command", 0, [], null), new("Library", 60, [], null), new("Graveyard", 0, [], null), new("Exile", 0, [], null)
         ])).ToArray();
-        return new("cluttered-causal-changes", "playing", null, null, 0, 8, "Main phase", "MAIN1", 0, players, [], null,
+        return new("cluttered-causal-changes", "playing", null, null, 0, 8, "Main phase", "MAIN1", 0, players.ToImmutableArray(), [], null,
             new() { Kind = "input", Intent = DecisionIntent.Priority, OkEnabled = true, CanAutoPass = false,
                 Message = "You have priority. Inspect any permanent, or activate Llanowar Elves to add mana." });
     }
@@ -59,7 +60,7 @@ public static class ClutteredChangesScenario
             "At the beginning of your end step, earthbend 2. Target land you control becomes a 0/0 creature with haste that's still a land. Put two +1/+1 counters on it.", 0, "trigger", "toph-earthbend-8");
         return Change(before, card => card.VisualId != AnimatedLandId ? card : card with {
             Type = "Basic Land Creature — Elemental", Tapped = false, CombatKeywords = ["haste"],
-            Counters = new(card.Counters) { ["+1/+1"] = previous + 2 }, Power = previous + 2, Toughness = previous + 2
+            Counters = (new Dictionary<string, int>(card.Counters) { ["+1/+1"] = previous + 2 }).ToImmutableDictionary(), Power = previous + 2, Toughness = previous + 2
         }, [new(1, 8, "END_OF_TURN", "counters", 0, "Added two +1/+1 counters.", land.VisualId, land.Name) {
             Change = new("counters", "+1/+1", previous, previous + 2), Cause = cause
         }]);
@@ -76,15 +77,15 @@ public static class ClutteredChangesScenario
                 Change = new("counters", "+1/+1", card.Counters.GetValueOrDefault("+1/+1"), card.Counters.GetValueOrDefault("+1/+1") + 1), Cause = cause
             }).ToArray();
         return Change(before, card => !IsCreature(card) ? card : card with {
-            Counters = new(card.Counters) { ["+1/+1"] = card.Counters.GetValueOrDefault("+1/+1") + 1 },
+            Counters = (new Dictionary<string, int>(card.Counters) { ["+1/+1"] = card.Counters.GetValueOrDefault("+1/+1") + 1 }).ToImmutableDictionary(),
             Power = card.Power + 1, Toughness = card.Toughness + 1,
-            CombatKeywords = card.CombatKeywords.Append("vigilance").Distinct().ToArray()
+            CombatKeywords = card.CombatKeywords.Append("vigilance").Distinct().ToImmutableArray()
         }, entries);
     }
     private static bool IsCreature(Card card) => card.Type.Contains("Creature", StringComparison.Ordinal);
     private static GameSnapshot Change(GameSnapshot before, Func<Card, Card> change, ActivityEntry[] entries) => before with {
         Players = before.Players.Select(player => player.Id != 0 ? player : player with {
-            Zones = player.Zones.Select(zone => zone.Name != "Battlefield" ? zone : zone with { Cards = zone.Cards.Select(change).ToArray() }).ToArray()
-        }).ToArray(), Activity = [.. before.Activity, .. entries]
+            Zones = player.Zones.Select(zone => zone.Name != "Battlefield" ? zone : zone with { Cards = zone.Cards.Select(change).ToImmutableArray() }).ToImmutableArray()
+        }).ToImmutableArray(), Activity = [.. before.Activity, .. entries]
     };
 }

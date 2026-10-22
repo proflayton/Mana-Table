@@ -38,7 +38,7 @@ internal sealed class LobbyAiSeatSmoke : ITableAutomation, IDisposable
         try {
             engine.InitializeAsync().GetAwaiter().GetResult();
             engine.ImportAsync("Mixed table host", "Commander\n1 Rograkh, Son of Rohgahh\nDeck\n99 Mountain").GetAwaiter().GetResult();
-            using var game = new TableWindow(engine, paths.Profile, null, null, size, artSource: new CardReadingArtFixture());
+            using var game = new TableWindow(TestTableServices.For(engine), paths.Profile, null, null, size, artSource: new CardReadingArtFixture());
             using var smoke = new LobbyAiSeatSmoke(game.TestPort, paths);
             game.Automation = smoke; game.TestPort.DismissWelcome(); game.Run();
         } finally { engine.DisposeAsync().AsTask().GetAwaiter().GetResult(); }
@@ -134,7 +134,7 @@ internal sealed class LobbyAiSeatSmoke : ITableAutomation, IDisposable
         try { await ((ITableSeatSetup)guests[0]).SetSeatAsync(guestView.TableId, 1, "OPEN"); }
         catch (Exception ex) when (ex.Message.Contains("Only the host can change this table", StringComparison.Ordinal)) { guestRejected = true; }
         if (!guestRejected) throw new InvalidOperationException("A guest unexpectedly changed the host's AI seat");
-        hostView = await view.Engine.LobbyAsync();
+        hostView = await view.Services.Tables.LobbyAsync();
     }
     private bool HostReady() => view.Lobby?.Seats.FirstOrDefault(s => s.Index == 0) is { Ready: true, Deck: "Mixed table host" };
     private Seat? Seat(int index) => view.Lobby?.Seats.FirstOrDefault(s => s.Index == index);

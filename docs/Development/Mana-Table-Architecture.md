@@ -12,11 +12,29 @@ point for the Windows client.
 ## Rules-provider boundary
 
 Forge is the installed rules provider; replacing it later must not require a new
-renderer, interaction policy or multiplayer client. `ICardEngine` composes the
-narrower catalog, setup and match interfaces. `IMatchConnection` and the typed
-`Mana.Contracts` observations/replies are the current match boundary, not Forge's
-classes or private wire messages. This does not provide live engine migration or
-an installed second rules engine.
+renderer, interaction policy or multiplayer client. The shipping `Mana.Table`
+executable owns provider construction, startup and disposal. `Mana.Game` contains
+the application and window and cannot reference `Mana.Forge` or the executable,
+directly or transitively. A build target checks resolved dependencies, and native
+checks inspect emitted assemblies. `TableServices` supplies separate catalog,
+table-setup and match ports plus explicitly named optional services. Gameplay
+never receives `ICardEngine` or discovers capabilities through provider casts.
+
+`IMatchConnection` publishes deeply immutable `GameSnapshot` values and accepts a
+closed family of semantic `GameCommand` variants. Arrays and dictionaries in the
+entire match graph, including nested decision previews and event causes, use
+standard immutable collections. A provider's construction buffers and a
+consumer's inspection cannot rewrite a published revision. New observations may
+share unchanged values while preserving the preceding frame for transitions.
+
+Commands carry only their variant's required payload: keeping an opening hand,
+paying mana and passing priority are different types. Combat pair commands
+explicitly describe toggles. `GameCommandPermissions` checks current scope,
+semantic task, disclosed candidates and supplied constraints before dispatch;
+the provider remains authoritative and revalidates at execution. `Mana.Forge`
+alone translates these meanings into its private wire actions. There is no
+public nullable reply bag. This does not provide live engine migration or an
+installed second rules engine.
 
 Replacing a provider also requires resolving deck contents and printings into
 that provider's catalog. Catalog identifiers, match occurrences and current
@@ -28,24 +46,43 @@ never cross-provider replay commands.
 | --- | --- |
 | Rules provider and adapter | Legal actions, decision constraints, costs, targets, resolution, effective state, event-time results and viewer filtering. `forge-api` and `Mana.Forge` translate Forge into the shared contracts. |
 | `Mana.Contracts` and `Mana.Client` | Provider-neutral state, scoped actions/decisions, command scheduling, observation ordering and stale-result rejection. Opaque handles grant only their declared current authority. |
-| `Mana.Magic`, `Mana.Table` and `Mana.Renderer` | Magic presentation language, local inspection/focus, gestures, grouping, layout and visual timing. These layers consume permissions; they do not establish rules legality. |
+| `Mana.Magic`, `Mana.Game` and `Mana.Renderer` | Magic presentation language, local inspection/focus, gestures, grouping, layout and visual timing. These layers consume permissions; they do not establish rules legality. |
+| `Mana.Table` | Shipping composition, provider lifetime, installation health and update bootstrap. |
 
 `Decision.Purpose` describes semantic choices such as opening hands, targets and
-abilities. Forge input-class names remain private to the adapter's wire decoding;
-they are not shared decision types. A provider supplies explicit candidates,
+abilities. The Java provider classifies its actual input once and publishes its
+semantic task/purpose; the native adapter validates that combination. Unknown or
+contradictory tasks fail explicitly. Forge input-class names and context remain
+private diagnostics and never become shared decision types. A provider supplies explicit candidates,
 limits and permissions rather than asking the client to recognize card names or
 reconstruct a rule from prose.
 
 The current source-action slice moves asynchronous catalog reads into
-`Mana.Client.SourceActionSession`: it coalesces source changes, publishes explicit
-loading/ready/unsupported/stale/failed states, copies accepted catalogs and checks
-game, decision, revision, viewer and source context before creating a reply for a
-catalog member. The UI still supplies the currently disclosed source and clears
-that context when reading permission ends. The adapter revalidates every command.
+`Mana.Client.ClientSession.SourceActions`: it coalesces source changes, publishes explicit
+loading/ready/unsupported/stale/failed states, freezes accepted catalogs and checks
+game, decision, revision, viewer and source context before creating a command for a
+catalog member. The UI supplies its currently inspected source; the client session
+owns the catalog lifetime and independently checks membership, revision, viewer
+and current physical disclosure at submission. Accepting a changed/revoked frame,
+resetting or closing revokes that authority. The adapter revalidates every command.
 Timeout ends the client's wait, not the underlying provider operation; late
-completions are discarded. This slice does not yet unify card glow, drag, hand
-placement and Auto into one availability model. That shared model and broader
-typed decision/transition coverage are subsequent slices, not completed work.
+completions are discarded. Query capability does not determine whether a card
+can be inspected. Current disclosed locations include a revealed library top;
+an embedded historical decision face cannot retain action authority after the
+occurrence disappears. Cross-zone play gestures use a current offered cast/play
+action rather than a UI list of permitted zones. Hand-placement and Auto still
+consume their separate explicit provider permissions.
+
+Forge priority alternatives are explicit state: Undo, pass turn or none. Native
+Undo and pass-turn commands never emulate Forge's overloaded Cancel button.
+The Java adapter validates their current meaning both before queueing and on the
+input thread; a changed Undo cannot fall through to yielding the turn. Ordinary
+priority passing also invokes the explicit pass operation, independently of a
+Forge yield-suggestion button. The private IPC remains version 2 and adds the
+required `semantic-priority-actions` capability; new clients reject older jars.
+An `expectedTask` discriminator prevents a typed answer being interpreted as a
+different task by the private wire's generic confirmation operation. Persisted
+decks and profiles do not change.
 
 Keep three kinds of data separate. **Current state** describes the viewer's
 authorized present board, effective P/T, resources and mechanics. **Event-time
@@ -392,7 +429,7 @@ its consequence; an eliminated seat can watch or leave.
 | `Mana.Magic` | Phase language, legal-target interpretation, click/drag command construction, Auto priority, Magic card classification and Magic art provider |
 | `Mana.Forge` | Process lifetime, protocol negotiation and Forge-to-contract mapping |
 | `Mana.Renderer` | GPU replay, typed draw commands, CPU font metrics, immutable table layout, projection, motion and effects |
-| `Mana.Table` | Headless application, interaction publication, card presentation, screen composition and thin native window |
+| `Mana.Game` | Headless application, interaction publication, card presentation, screen composition and thin native window |
 | `Mana.Scenarios` | Versioned authored projections and isolated Experience Lab sessions shared with presentation checks; no Magic rules simulation |
 | `Mana.Conformance` | Test-only semantic scenarios, canonical full checkpoints and first-divergence reporting for two engine adapters |
 | `Mana.Client.Tests`, `Mana.Table.Tests` | Headless behavior checks and separate native test/automation executable |
@@ -890,7 +927,7 @@ flowchart LR
 
 | Area | Owner |
 | --- | --- |
-| Window, GPU, input sampling and captures | `mana-native/Mana.Table/TableWindow.cs` |
+| Window, GPU, input sampling and captures | `mana-native/Mana.Game/TableWindow.cs` |
 | Application composition and interaction | `TableApplication` and its feature partials |
 | Snapshot ordering, commands, assets and updates | `mana-native/Mana.Client` |
 | Typed DTOs and capabilities | `mana-native/Mana.Contracts` |

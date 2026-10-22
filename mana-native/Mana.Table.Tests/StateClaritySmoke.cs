@@ -1,3 +1,4 @@
+using System.Collections.Immutable;
 using System.Text.Json;
 using Mana.Contracts;
 using Mana.Magic;
@@ -28,7 +29,7 @@ internal sealed class StateClaritySmoke : ITableAutomation
     {
         new PlayPreferences { Automatic = false, Sounds = false }.Save(profile);
         var scenario = new InteractionScenarioEngine(); scenario.Present(Example());
-        using var game = new TableWindow(scenario, profile, null, null, size, initialState: scenario.State, artSource: new CardReadingArtFixture());
+        using var game = new TableWindow(TestTableServices.For(scenario), profile, null, null, size, initialState: scenario.State, artSource: new CardReadingArtFixture());
         game.Automation = new StateClaritySmoke(game.TestPort, scenario); game.Run();
     }
 
@@ -61,9 +62,8 @@ internal sealed class StateClaritySmoke : ITableAutomation
                 "Larger decision text preserves an exposed physical target for every legal named recipient");
             Capture("01b-larger-decision-text");
             Publish(view.Match! with { Players = view.Match!.Players.Select(p => p.Id != 0 ? p : p with {
-                Counters = new() { ["Poison"] = 9, ["Energy"] = 2, ["Experience"] = 3, ["Rad"] = 4, ["Ticket"] = 5,
-                    ["Acorn"] = 6, ["Shield"] = 7, ["Time"] = 8, ["Quest"] = 9 }
-            }).ToArray() });
+                Counters = ImmutableDictionary<string, int>.Empty.Add("Poison", 9).Add("Energy", 2).Add("Experience", 3).Add("Rad", 4).Add("Ticket", 5).Add("Acorn", 6).Add("Shield", 7).Add("Time", 8).Add("Quest", 9)
+            }).ToImmutableArray() });
         });
         Wait(() => view.CounterBadge(0) is { HiddenTypes: 8 }, 3, () => {
             Check(view.CounterBadge(0) is { Text: "Poison 9 +8 types", HiddenTypes: 8 } badge
@@ -88,7 +88,7 @@ internal sealed class StateClaritySmoke : ITableAutomation
             Check(view.Hits.Any(h => h.Id == "counter-details-prev") && scenario.Replies.Count == 0,
                 "Browsing another counter page changes no game decision or current public totals");
             Capture("02b-counter-next-page");
-            Publish(view.Match! with { Players = view.Match!.Players.Select(p => p.Id != 0 ? p : p with { Counters = new() { ["Poison"] = 9, ["Energy"] = 2 } }).ToArray() });
+            Publish(view.Match! with { Players = view.Match!.Players.Select(p => p.Id != 0 ? p : p with { Counters = ImmutableDictionary<string, int>.Empty.Add("Poison", 9).Add("Energy", 2) }).ToImmutableArray() });
         });
         ClickHit("close-overlay");
         Wait(() => RecipientHits() == 3, 3, () => Move(new(35, 105))); Click();
@@ -98,7 +98,7 @@ internal sealed class StateClaritySmoke : ITableAutomation
         });
         ClickHit("recipient:2");
         Wait(() => !view.Busy && scenario.Replies.Count == 1, 3, () => {
-            Check(scenario.Replies.Single() is { Action: ReplyAction.SelectPlayer, Player: 2 } reply && reply.DecisionId == expectedDecision,
+            Check(scenario.Replies.Single() is SelectPlayer { Player: 2 } reply && reply.DecisionId == expectedDecision,
                 "The named other-player recipient sends the exact current scoped player choice");
             Publish(view.Match! with { Decision = null, DecisionOwnerId = 2, PriorityPlayerId = 1, ActionClass = "choice" });
         });
@@ -170,7 +170,7 @@ internal sealed class StateClaritySmoke : ITableAutomation
         });
         ClickHit("close-overlay");
         Step(.1, () => {
-            Publish(view.Match! with { Players = view.Match!.Players.Select(p => p.Id == 0 ? p with { Counters = [] } : p).ToArray() });
+            Publish(view.Match! with { Players = view.Match!.Players.Select(p => p.Id == 0 ? p with { Counters = ImmutableDictionary<string, int>.Empty } : p).ToImmutableArray() });
             Move(new(1500, 70));
         });
         Wait(() => view.Hits.All(h => h.Id != "player-counters:0"), 3, () => {
@@ -199,7 +199,7 @@ internal sealed class StateClaritySmoke : ITableAutomation
         });
         ClickHit("recipient:0");
         Wait(() => !view.Busy && scenario.Replies.Count == 2, 3, () => {
-            Check(scenario.Replies.Last() is { Action: ReplyAction.SelectPlayer, Player: 0 } reply && reply.DecisionId == expectedDecision,
+            Check(scenario.Replies.Last() is SelectPlayer { Player: 0 } reply && reply.DecisionId == expectedDecision,
                 "Choosing You remains an explicit scoped action after another recipient was revoked");
             Capture("09-explicit-self-choice");
         });
@@ -212,12 +212,12 @@ internal sealed class StateClaritySmoke : ITableAutomation
     private static GameSnapshot Example()
     {
         var source = new Card { VisualId = "clarity-source", CombatId = "clarity-source", Name = "Toothy, Imaginary Friend", Type = "Legendary Creature — Illusion", Power = 1, Toughness = 1 };
-        var players = Enumerable.Range(0, 4).Select(id => new Player(id, id == 0 ? "You" : "Alex", 40, id == 0, false, [], [
+        var players = Enumerable.Range(0, 4).Select(id => new Player(id, id == 0 ? "You" : "Alex", 40, id == 0, false, ImmutableDictionary<string, int>.Empty, [
             new("Battlefield", id is 0 or 1 ? 1 : 0, id == 0 ? [source] : id == 1 ? [new() { VisualId = "anonymous-public", CombatId = "anonymous-public", Name = "Face-down card",
-                FaceDown = true, Type = "Creature", Power = 3, Toughness = 3, Damage = 1, CombatKeywords = ["flying"], Counters = new() { ["+1/+1"] = 1 } }] : [], null),
+                FaceDown = true, Type = "Creature", Power = 3, Toughness = 3, Damage = 1, CombatKeywords = ["flying"], Counters = ImmutableDictionary<string, int>.Empty.Add("+1/+1", 1) }] : [], null),
             new("Hand", id == 0 ? 0 : 7, [], null), new("Library", 70, [], null), new("Graveyard", 0, [], null), new("Exile", 0, [], null), new("Command", 0, [], null)
-        ]) { Counters = id == 0 ? new() { ["Poison"] = 9, ["Energy"] = 2 } : id == 1 ? new() { ["Experience"] = 3 } : id == 2 ? new() { ["Poison"] = 1 } : [] }).ToArray();
-        return new("clarity-scenario", "playing", null, null, 0, 5, "Main phase", "MAIN1", 0, players, [], null,
+        ]) { Counters = id == 0 ? ImmutableDictionary<string, int>.Empty.Add("Poison", 9).Add("Energy", 2) : id == 1 ? ImmutableDictionary<string, int>.Empty.Add("Experience", 3) : id == 2 ? ImmutableDictionary<string, int>.Empty.Add("Poison", 1) : ImmutableDictionary<string, int>.Empty }).ToArray();
+        return new("clarity-scenario", "playing", null, null, 0, 5, "Main phase", "MAIN1", 0, players.ToImmutableArray(), [], null,
             new() { Kind = "input", Intent = DecisionIntent.Selection, PlayerChoices = [0, 1, 2], SourceCard = source, SourceControllerId = 0,
                 Message = "Partner with Pir — target player may put Pir into their hand from their library, then shuffle. Choose the recipient." }) {
             DecisionOwnerId = 0, PriorityPlayerId = 0, ActionClass = "selection"

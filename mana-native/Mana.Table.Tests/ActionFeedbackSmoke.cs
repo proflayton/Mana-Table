@@ -1,3 +1,4 @@
+using System.Collections.Immutable;
 using System.Text.Json;
 using Mana.Contracts;
 using Mana.Magic;
@@ -81,7 +82,7 @@ internal sealed class ActionFeedbackSmoke(TableWindow.Probe view, InteractionSce
             case 10:
                 MouseAt(view.Hits.Single(h => h.Id == "read-card-action").Bounds.Center); Next(); break;
             case 11:
-                Check(scenario.Replies.Count == 1 && scenario.Replies[0].Action == ReplyAction.SelectCard && state.Decision?.Title.StartsWith("Activate ") == true,
+                Check(scenario.Replies.Count == 1 && scenario.Replies[0] is ActivateCard && state.Decision?.Title.StartsWith("Activate ") == true,
                     "The reader's explicit activation routes through the scoped card command into the engine's ability chooser");
                 Capture(surface, "03-ability-choice");
                 var victim = original.Viewer!.Zone("Battlefield").Cards.Single(c => c.VisualId == "seat-0-1");
@@ -98,8 +99,8 @@ internal sealed class ActionFeedbackSmoke(TableWindow.Probe view, InteractionSce
                 var removed = state.Viewer!.Zone("Battlefield").Cards.Single(c => c.VisualId == "seat-0-1");
                 var bird = new Card { VisualId = "new-bird", CombatId = "new-bird", Name = "Bird", Type = "Token Creature - Bird", Power = 1, Toughness = 1, CombatKeywords = ["flying"], Text = "Flying" };
                 Publish(state with { Stack = [], Players = state.Players.Select(p => p.Id == 0 ? p with { Zones = p.Zones.Select(z =>
-                    z.Name == "Battlefield" ? z with { Cards = z.Cards.Where(c => c.VisualId != removed.VisualId).Append(bird).ToArray() }
-                    : z.Name == "Exile" ? z with { Count = 1, Cards = [removed] } : z).ToArray() } : p).ToArray(),
+                    z.Name == "Battlefield" ? z with { Cards = z.Cards.Where(c => c.VisualId != removed.VisualId).Append(bird).ToImmutableArray() }
+                    : z.Name == "Exile" ? z with { Count = 1, Cards = [removed] } : z).ToImmutableArray() } : p).ToImmutableArray(),
                     Activity = [new(1, state.Turn, state.PhaseKey, "moved", 0, "Llanowar Elves moved from battlefield to exile.", removed.VisualId, removed.Name),
                         new(2, state.Turn, state.PhaseKey, "arrived", 0, "Bird token entered the battlefield under your control.", bird.VisualId, bird.Name),
                         new(3, state.Turn, state.PhaseKey, "resolved", 1, "Ravenform resolved.", "raven", "Ravenform") { Detail = state.Stack[0].Text, Outcome = "resolved" }] });

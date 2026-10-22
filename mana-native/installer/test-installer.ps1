@@ -79,7 +79,7 @@ try {
     }
     Assert-Installer ($null -ne $registration) 'separate per-user uninstall entry exists'
     Assert-Installer ($registration.InstallLocation.TrimEnd('\') -eq $installDirectory) 'uninstall entry points only to isolated install'
-    foreach ($relative in @('ManaTable.exe', 'ManaTable.dll', 'build.json', 'SOURCE.txt', 'engine/forge-engine.jar', 'engine/runtime/bin/java.exe')) {
+    foreach ($relative in @('ManaTable.exe', 'ManaTable.dll', 'Mana.Game.dll', 'build.json', 'SOURCE.txt', 'engine/forge-engine.jar', 'engine/runtime/bin/java.exe')) {
         $expected = (Get-FileHash -LiteralPath (Join-Path $InputPackageDirectory $relative) -Algorithm SHA256).Hash
         $actual = (Get-FileHash -LiteralPath (Join-Path $installDirectory $relative) -Algorithm SHA256).Hash
         Assert-Installer ($expected -eq $actual) ("installed bytes match: $relative")

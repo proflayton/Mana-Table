@@ -157,8 +157,7 @@ public static class DecisionDockPresentation
 
     private static bool IsAbilityChoice(Decision decision) => decision.Kind == "choice" && decision.Purpose == DecisionPurpose.AbilitySelection
         && !decision.Ordered && decision.Max == 1 && decision.Min is 0 or 1 && decision.Choices.Length > 0
-        && decision.LibraryCards.Length == 0 && decision.PlayerChoices.Length == 0
-        && decision.Choices.All(choice => choice.Card == null && choice.CardId.Length == 0 && choice.PlayerId == null);
+        && decision.LibraryCards.Length == 0;
 
     private static string TargetHeading(Decision decision) => decision.Max > 1
         ? decision.Min == decision.Max ? "Choose " + decision.Max + " targets"

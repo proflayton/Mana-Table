@@ -1,3 +1,4 @@
+using System.Collections.Immutable;
 using System.Text.Json;
 using Mana.Contracts;
 using Microsoft.Xna.Framework;
@@ -28,7 +29,7 @@ internal sealed class RecoverySmoke : ITableAutomation
             string path = Path.Combine(profile, mode); Directory.CreateDirectory(path);
             new PlayPreferences { Automatic = false, Sounds = false }.Save(path);
             var engine = new RecoveryEngine(mode);
-            using var game = new TableWindow(engine, path, null, null, size, artSource: new CardReadingArtFixture());
+            using var game = new TableWindow(TestTableServices.For(engine), path, null, null, size, artSource: new CardReadingArtFixture());
             game.Automation = new RecoverySmoke(game.TestPort, engine, checks); game.Run();
         }
         File.WriteAllText(Path.Combine(profile, "recovery-results.json"), JsonSerializer.Serialize(new { passed = true, checks }, new JsonSerializerOptions { WriteIndented = true }));
@@ -72,7 +73,7 @@ internal sealed class RecoverySmoke : ITableAutomation
         Wait(() => !view.NeedsRecovery && view.Error.Length == 0 && view.Hits.Any(h => h.Id == "confirm"), () => {
             Check(engine.Replies == 0, "Reconnection reconciles the table without submitting a decision");
             engine.State = engine.State with { Revision = engine.State.Revision + 1, Decision = null,
-                Players = engine.State.Players.Select(p => p with { Eliminated = p.Id == 0 }).ToArray() };
+                Players = engine.State.Players.Select(p => p with { Eliminated = p.Id == 0 }).ToImmutableArray() };
         });
         Wait(() => view.Match?.Viewer?.Eliminated == true && view.Hits.Any(h => h.Id == "eliminated-leave"), () => {
             Check(!view.Hits.Any(h => h.Id == "concede"), "An eliminated player watches and can leave without conceding again");
@@ -139,7 +140,7 @@ internal sealed class RecoverySmoke : ITableAutomation
              new("Commander", "saved-commander", new() { Name = "Rhys the Redeemed", Type = "Legendary Creature — Elf Warrior", Power = 1, Toughness = 1 }, 1)], [], "", ""));
         public Task<GameSnapshot?> ObserveAsync() => FailReads ? Task.FromException<GameSnapshot?>(new IOException("Controlled connection interruption")) : Task.FromResult<GameSnapshot?>(State);
         public Task<Lobby> LobbyAsync() => FailReads ? Task.FromException<Lobby>(new IOException("Controlled connection interruption")) : Task.FromResult(Lobby);
-        public Task ReplyAsync(DecisionReply reply) { Replies++; return Task.CompletedTask; }
+        public Task ExecuteAsync(GameCommand reply) { Replies++; return Task.CompletedTask; }
         public Task LeaveAsync() { Leaves++; Active = false; return Task.CompletedTask; }
         public ValueTask DisposeAsync() => ValueTask.CompletedTask;
         public Task<DeckSummary> ImportAsync(string name, string text) { Imports++; throw new InvalidOperationException("Unreadable files must not reach the parser"); }

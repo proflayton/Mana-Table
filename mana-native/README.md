@@ -1,6 +1,6 @@
 # Native Windows client development
 
-`Mana.Table` is the MonoGame client shipped in the Windows installer. Forge runs
+`Mana.Table` is the shipping launcher; `Mana.Game` contains the MonoGame application and window. Forge runs
 as a separate Java process and owns the rules, AI, legal actions and private
 information. MonoGame is the sole Mana Table client.
 
@@ -273,12 +273,13 @@ passes and earlier-head CI do not establish readiness.
 
 | Layer | Owns |
 | --- | --- |
-| `Mana.Contracts` | Additive catalog/setup/match DTOs, scoped replies and visibility contracts |
+| `Mana.Contracts` | Catalog/setup ports, deeply immutable match state, semantic commands and visibility contracts |
 | `Mana.Client` | Snapshot ordering, serial commands, Auto advancement, assets and updates |
 | `Mana.Magic` | Card classification, projected legal actions, combat/assignment guides and Magic art |
 | `Mana.Forge` | Java process/protocol lifetime and mapping between Forge JSON and typed contracts |
 | `Mana.Renderer` | Canvas/text/pixel upload, poses, layouts, geometry, motion and effects |
-| `Mana.Table` | Composition, native controls, setup, builder, overlays and table input/rendering |
+| `Mana.Game` | Native controls, setup, builder, overlays and table input/rendering; no provider dependency |
+| `Mana.Table` | Shipping composition, provider lifetime, installation and update bootstrap |
 | `Mana.Client.Tests` / `Mana.Table.Tests` | Headless checks and isolated native/adapter journeys |
 | `forge-api` and shared Forge modules | Authoritative rules, public/private projection, actions and persistence |
 

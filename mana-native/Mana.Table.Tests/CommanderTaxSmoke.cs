@@ -1,3 +1,4 @@
+using System.Collections.Immutable;
 using System.Text.Json;
 using Mana.Contracts;
 using Mana.Magic;
@@ -69,16 +70,16 @@ internal sealed class CommanderTaxSmoke(TableWindow.Probe view, InteractionScena
                 Check(view.Overlay.Length == 0, "Inspector closes through its normal control");
                 Move(0, 0);
                 Publish(scenario.State with { Players = scenario.State.Players.Select(p => p with { Zones = p.Zones.Select(z => z with {
-                    Cards = z.Cards.Select(c => c.VisualId == "commander-0" ? c with { CommanderTax = 6 } : c).ToArray()
-                }).ToArray() }).ToArray() });
+                    Cards = z.Cards.Select(c => c.VisualId == "commander-0" ? c with { CommanderTax = 6 } : c).ToImmutableArray()
+                }).ToImmutableArray() }).ToImmutableArray() });
                 break;
             case 8:
                 Check(view.Match!.Viewer!.Zone("Command").Cards[0].CommanderTax == 6 && view.Match.Viewer.Zone("Command").Cards[1].CommanderTax == 4,
                     "A later engine snapshot updates only the commander whose tax changed");
                 Capture(surface, "04-tax-updated");
                 Publish(scenario.State with { Id = "new-commander-game", Players = scenario.State.Players.Select(p => p with { Zones = p.Zones.Select(z => z with {
-                    Cards = z.Cards.Select(c => c with { CommanderTax = 0 }).ToArray()
-                }).ToArray() }).ToArray() });
+                    Cards = z.Cards.Select(c => c with { CommanderTax = 0 }).ToImmutableArray()
+                }).ToImmutableArray() }).ToImmutableArray() });
                 break;
             case 9:
                 Check(view.Match!.Players.SelectMany(p => p.Zone("Command").Cards).All(c => CardPresentation.CommanderTax(c) == 0), "A new game clears all previous commander taxes");

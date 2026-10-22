@@ -139,7 +139,9 @@ try {
     $receipt=Get-Content -LiteralPath (Join-Path $profile ('updates/migration-health-'+$Version+'.json')) -Raw | ConvertFrom-Json
     Check ($receipt.healthy -eq $true -and $receipt.packageId -ceq $smokeId -and $receipt.version -ceq $Version -and $receipt.sourceRevision -ceq $metadata.sourceRevision) 'The actual installed product acknowledges the exact managed identity, version and source'
     Check ($receipt.profile -ieq $profile -and $receipt.managedRoot -ieq $managed -and $receipt.catalogMatches -gt 0 -and $receipt.catalogQuery -ceq 'Forest') 'The new app starts its bundled Forge and retains the same custom player profile'
-    Check ($receipt.clientSha256 -ieq (Get-FileHash -LiteralPath (Join-Path $InputPackageDirectory 'ManaTable.dll') -Algorithm SHA256).Hash -and $receipt.engineSha256 -ieq $metadata.engineSha256) 'Health proof binds the running product and engine to the exact input bytes'
+    Check ($receipt.clientSha256 -ieq (Get-FileHash -LiteralPath (Join-Path $InputPackageDirectory 'ManaTable.dll') -Algorithm SHA256).Hash -and
+        $receipt.gameSha256 -ieq (Get-FileHash -LiteralPath (Join-Path $InputPackageDirectory 'Mana.Game.dll') -Algorithm SHA256).Hash -and
+        $receipt.engineSha256 -ieq $metadata.engineSha256) 'Health proof binds the running launcher, game and engine to the exact input bytes'
     Check (-not (Test-Path -LiteralPath $registry) -and -not (Test-Path -LiteralPath (Join-Path $legacy 'ManaTable.exe'))) 'Only after health passes does the real legacy uninstaller remove its registration and files'
     Check ((Test-Path -LiteralPath (Join-Path $managed 'Update.exe')) -and (Test-Path -LiteralPath (Join-Path $managed 'current/sq.version'))) 'The result is a genuine managed installation with updater and version manifest'
     Check ([IO.File]::ReadAllText($sentinel) -eq $smokeId) 'Successful migration and legacy uninstall preserve the original player profile'

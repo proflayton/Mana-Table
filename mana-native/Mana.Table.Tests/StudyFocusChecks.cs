@@ -21,7 +21,7 @@ internal static class StudyFocusChecks
         new PlayPreferences { Automatic = false, Sounds = false, ReducedMotion = true }.Save(profile);
         var engine = new InteractionScenarioEngine();
         engine.Present(FourPlayerTableScenario.Create()[2].Snapshot);
-        using var app = new TableApplication(engine, profile, initialState: engine.State) { Automated = true };
+        using var app = new TableApplication(TestTableServices.For(engine), profile, initialState: engine.State) { Automated = true };
         app.Initialize();
         var view = app.TestPort;
         view.SetTableStudy(true);
@@ -133,7 +133,7 @@ internal static class StudyFocusChecks
             "A legal player-selection prompt retains the existing framing and the actual condensed target portrait");
         Click("player:3");
         Wait(() => !view.Busy && engine.Replies.Count == 1);
-        check(engine.Replies.Single() is { Action: ReplyAction.SelectPlayer, Player: 3 } reply
+        check(engine.Replies.Single() is SelectPlayer { Player: 3 } reply
                 && reply.GameId == gameId && reply.DecisionId == decisionId && view.StudyFocusOwner == 1,
             "Clicking a legal condensed player target submits its exact current game, decision and player reply instead of navigating");
         CheckPortraits("After player selection");

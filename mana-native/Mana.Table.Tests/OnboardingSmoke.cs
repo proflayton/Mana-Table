@@ -25,7 +25,7 @@ internal static class OnboardingSmoke
         }
         void Scene(string path, ICardEngine engine, Action<Script, TableWindow.Probe> arrange, GameSnapshot? state = null, string? fixture = null)
         {
-            using var game = new TableWindow(engine, path, null, fixture, size, initialState: state, artSource: new EmptyArt());
+            using var game = new TableWindow(TestTableServices.For(engine), path, null, fixture, size, initialState: state, artSource: new EmptyArt());
             var script = new Script(game.TestPort);
             arrange(script, game.TestPort); game.Automation = script; game.Run();
         }
@@ -257,7 +257,7 @@ internal static class OnboardingSmoke
         public Task StartAsync() => Reject("start");
         public Task ReturnToLobbyAsync() => Reject("return-to-lobby");
         public Task LeaveAsync() => Reject("leave");
-        public Task ReplyAsync(DecisionReply reply) => Reject("reply");
+        public Task ExecuteAsync(GameCommand reply) => Reject("reply");
         public Task ConcedeAsync(string gameId) => Reject("concede");
     }
 }

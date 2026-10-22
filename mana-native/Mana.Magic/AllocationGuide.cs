@@ -1,4 +1,5 @@
 using Mana.Contracts;
+using System.Collections.Immutable;
 
 namespace Mana.Magic;
 
@@ -36,9 +37,9 @@ public static class AllocationGuide
         return null;
     }
 
-    public static DecisionReply? Reply(GameSnapshot state, IReadOnlyList<int> amounts)
+    public static AllocateAmounts? Reply(GameSnapshot state, IReadOnlyList<int> amounts)
         => state.Status == "playing" && state.Decision is { Id.Length: > 0 } decision && Problem(decision, amounts) == null
-            ? new(state.Id, decision.Id, ReplyAction.Allocate, Amounts: amounts.ToArray()) : null;
+            ? new(state.Id, decision.Id, amounts.ToImmutableArray()) : null;
 
     public static string Name(Choice choice, int index) => !string.IsNullOrWhiteSpace(choice.Label)
         ? choice.Label : "Recipient " + (index + 1);
@@ -48,7 +49,7 @@ public static class AllocationGuide
     public static string Seat(GameSnapshot state, Choice choice)
     {
         int? id = choice.PlayerId ?? choice.ControllerId;
-        int seat = Array.FindIndex(state.Players, player => player.Id == id);
+        int seat = state.Players.IndexOf(state.Players.FirstOrDefault(player => player.Id == id)!);
         return seat < 0 ? "" : (state.Players[seat].Id == state.ViewerId ? "You" : state.Players[seat].Name) + " · Seat " + (seat + 1);
     }
 

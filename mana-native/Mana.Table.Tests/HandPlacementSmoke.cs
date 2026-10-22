@@ -1,3 +1,4 @@
+using System.Collections.Immutable;
 using System.Text.Json;
 using Mana.Contracts;
 using Mana.Magic;
@@ -57,7 +58,7 @@ internal sealed class HandPlacementSmoke : ITableAutomation
         new PlayPreferences { Automatic = false, Sounds = false }.Save(profile);
         var scenario = new InteractionScenarioEngine();
         scenario.Present(Example(scenario.State, "single"));
-        using var game = new TableWindow(scenario, profile, null, null, size, initialState: scenario.State, artSource: new CardReadingArtFixture());
+        using var game = new TableWindow(TestTableServices.For(scenario), profile, null, null, size, initialState: scenario.State, artSource: new CardReadingArtFixture());
         game.Automation = new HandPlacementSmoke(game.TestPort, scenario);
         game.Run();
     }
@@ -85,12 +86,12 @@ internal sealed class HandPlacementSmoke : ITableAutomation
                 "The exact placement ability enters the stack while the hand card remains uncommitted for the response window");
             Capture("02-placement-response-window");
             var state = scenario.State;
-            scenario.Present(state with { Stack = [], Decision = new() { Kind = "choice", Context = "hand-placement", Min = 0, Max = 1,
+            scenario.PresentHandPlacement(state with { Stack = [], Decision = new() { Kind = "choice", Min = 0, Max = 1,
                 Message = "Choose a basic Forest card from your hand, or choose none.", Choices = [new(0, "Forest", Forest())] } });
             view.Accept(scenario.State); before = scenario.Replies.Count; MoveAway();
         });
         Step(.3, () => {
-            Check(view.Match?.Decision is { Kind: "choice", Min: 0, Context: "hand-placement" },
+            Check(view.Match?.Decision is { Kind: "choice", Min: 0, Max: 1, Choices.Length: 1 },
                 "When the ability resolves, the engine presents the optional hand-card decision");
             MoveHit("choice:0");
         }); Click();
@@ -134,7 +135,7 @@ internal sealed class HandPlacementSmoke : ITableAutomation
         });
         Step(.7, () => { before = scenario.Replies.Count; MoveCard("hand-forest"); }); ReadAndUse();
         Wait(ReplySettled, 3, () => {
-            Check(scenario.Replies.Count == before + 1 && scenario.Replies[^1].Action == ReplyAction.SelectCard,
+            Check(scenario.Replies.Count == before + 1 && scenario.Replies[^1] is PlayCard,
                 "When ordinary play is legal, the reader's Play card action keeps the ordinary engine route");
             Publish("normal"); MoveAway();
         });
@@ -161,7 +162,7 @@ internal sealed class HandPlacementSmoke : ITableAutomation
         Wait(ReplySettled, 3, () => {
             CheckPlacement("An optional placement begins through the same exact source route");
             var state = scenario.State;
-            scenario.Present(state with { Stack = [], Decision = new() { Kind = "choice", Context = "hand-placement", Min = 0, Max = 1,
+            scenario.PresentHandPlacement(state with { Stack = [], Decision = new() { Kind = "choice", Min = 0, Max = 1,
                 Message = "Choose a basic Forest card from your hand, or choose none.", Choices = [new(0, "Forest", Forest())] } });
             view.Accept(scenario.State); before = scenario.Replies.Count; MoveAway();
         });
@@ -170,7 +171,7 @@ internal sealed class HandPlacementSmoke : ITableAutomation
             MoveHit("choice-cancel");
         }); Click();
         Wait(ReplySettled, 3, () => {
-            Check(scenario.Replies[^1] is { Action: ReplyAction.Choose, Choices.Length: 0 } && view.Match!.Viewer!.Zone("Hand").Cards.Any(c => c.VisualId == "hand-forest")
+            Check(scenario.Replies[^1] is ChooseOptions { Choices.Length: 0 } && view.Match!.Viewer!.Zone("Hand").Cards.Any(c => c.VisualId == "hand-forest")
                 && view.Match.Viewer.LandPlaysUsed == 1, "Choosing none leaves the Forest in hand and never consumes an ordinary land play");
             Publish("zones"); MoveAway();
         });
@@ -192,8 +193,7 @@ internal sealed class HandPlacementSmoke : ITableAutomation
             Capture("07-graveyard-inspector"); MoveHit("inspect-zone-use");
         }); Click();
         Wait(ReplySettled, 3, () => {
-            Check(scenario.Replies.Count == before + 1 && scenario.Replies[^1] is { Action: ReplyAction.SelectCard }
-                && view.Match?.Decision is { Purpose: DecisionPurpose.AbilitySelection, SourceZone: "Graveyard" },
+            Check(scenario.Replies.Count == before + 1 && scenario.Replies[^1] is PlayCard && view.Match?.Decision is { Purpose: DecisionPurpose.AbilitySelection, SourceZone: "Graveyard" },
                 "Use from graveyard opens the engine's current ability and cost choice");
             Check(view.Match!.Decision!.Choices.Any(c => c.Label.StartsWith("Flashback", StringComparison.Ordinal)),
                 "The engine-provided chooser supplies the actual Flashback label rather than guessing from printed text");
@@ -242,7 +242,7 @@ internal sealed class HandPlacementSmoke : ITableAutomation
         }); Click();
         Wait(ReplySettled, 3, () => {
             CheckPlacement("The source-aware reader submits the existing exact hand-placement permission even when the source-action list is empty");
-            scenario.Present(scenario.State with { Stack = [], Decision = new() { Kind = "choice", Context = "hand-placement", Min = 0, Max = 1,
+            scenario.PresentHandPlacement(scenario.State with { Stack = [], Decision = new() { Kind = "choice", Min = 0, Max = 1,
                 Choices = [new(0, "Forest", Forest())] } });
             view.Accept(scenario.State); before = scenario.Replies.Count; MoveAway();
         });
@@ -294,8 +294,7 @@ internal sealed class HandPlacementSmoke : ITableAutomation
         before = scenario.Replies.Count; expectedGame = view.Match!.Id; expectedDecision = view.Match.Decision!.Id;
         expectedCard = Forest().Key; expectedAbility = ability;
     }
-    private void CheckPlacement(string description) => Check(scenario.Replies.Count == before + 1 && scenario.Replies[^1] is {
-        Action: ReplyAction.UseHandPlacement } reply && reply.GameId == expectedGame && reply.DecisionId == expectedDecision
+    private void CheckPlacement(string description) => Check(scenario.Replies.Count == before + 1 && scenario.Replies[^1] is PlaceFromHand reply && reply.GameId == expectedGame && reply.DecisionId == expectedDecision
         && reply.Card == expectedCard && reply.AbilityId == expectedAbility, description);
     private void Publish(string mode) { scenario.Present(Example(scenario.State, mode)); view.Accept(scenario.State); }
     private static GameSnapshot Example(GameSnapshot previous, string mode)
@@ -309,17 +308,17 @@ internal sealed class HandPlacementSmoke : ITableAutomation
         var players = state.Players.Select(p => p with { LandPlaysUsed = p.Id == 0 ? mode == "normal" ? 0 : 1 : null, LandPlayLimit = p.Id == 0 ? 1 : null,
             Zones = p.Zones.Select(z => z.Name switch {
                 "Hand" => z with { Count = p.Id == 0 ? 2 : 7, Cards = p.Id == 0 ? [forest, Card("hand-island", "Island", "Basic Land — Island")] : [] },
-                "Battlefield" => z with { Count = p.Id == 0 ? 2 : 0, Cards = p.Id == 0 ? sources : [] },
+                "Battlefield" => z with { Count = p.Id == 0 ? 2 : 0, Cards = (p.Id == 0 ? sources : []).ToImmutableArray() },
                 "Command" => z with { Count = p.Id == 0 && mode == "zones" ? 1 : 0, Cards = p.Id == 0 && mode == "zones" ? [Card("own-command", "Commander", "Legendary Creature", true)] : [] },
                 "Graveyard" => z with { Count = mode == "zones" && p.Id is 0 or 1 ? 1 : 0, Cards = mode == "zones" && p.Id is 0 or 1
                     ? [Card(p.Id == 0 ? "own-grave" : "other-grave", "Deep Analysis", "Sorcery", true) with { Text = "Draw two cards. Flashback — pay its cost." }] : [] },
                 "Exile" => z with { Count = mode == "zones" && p.Id == 0 ? 1 : 0, Cards = mode == "zones" && p.Id == 0 ? [Card("own-exile", "Suspended spell", "Sorcery", true)] : [] },
                 _ => z
-            }).ToArray() }).ToArray();
+            }).ToImmutableArray() }).ToArray();
         PriorityAbility Option(string id, string sourceId, string name) => new(id, prefix + sourceId, name, "Put a basic Forest card from your hand onto the battlefield.", false) {
             EligibleHandKeys = [prefix + "hand-forest"], HandPlacementLimit = 1
         };
-        return state with { Id = "hand-placement-scenario", Players = players, Stack = [], Combat = null, Activity = [], ActivePlayerId = 0,
+        return state with { Id = "hand-placement-scenario", Players = players.ToImmutableArray(), Stack = [], Combat = null, Activity = [], ActivePlayerId = 0,
             Decision = new() { Kind = "input", Intent = DecisionIntent.Priority, OkEnabled = true, CanAutoPass = false,
                 PriorityAbilities = mode is "zones" or "revoked" ? [] : mode == "multi"
                     ? [Option("placement-a", "source-a", "Gaea's Touch"), Option("placement-b", "source-b", "Second test source")]

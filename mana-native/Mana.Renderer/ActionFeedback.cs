@@ -29,7 +29,7 @@ public sealed class ActionFeedback
         var countedMessages = publicEvents.GroupBy(e => (e.PlayerId, e.Kind)).Select(group => {
             int count = (int)Math.Min(int.MaxValue, group.Sum(e => (long)e.Count));
             var actor = after.Players.FirstOrDefault(p => p.Id == group.Key.PlayerId);
-            int seat = actor == null ? -1 : Array.FindIndex(after.Players, p => p.Id == actor.Id);
+            int seat = actor == null ? -1 : after.Players.IndexOf(actor);
             string player = group.Key.PlayerId == after.ViewerId ? "You" : actor == null ? "A player" : actor.Name + " · Seat " + (seat + 1);
             return group.Key.Kind == "draw" ? player + " drew " + count + (count == 1 ? " card." : " cards.")
                 : player + (group.Key.PlayerId == after.ViewerId ? " shuffled your library." : " shuffled their library.") + (count > 1 ? " (" + count + " times)" : "");

@@ -79,20 +79,20 @@ internal sealed class LobbySmoke(TableWindow.Probe view, ForgePaths paths) : ITa
         // ending the game. Concession during Forge's pregame setup is not a stable
         // lifecycle boundary for this lobby regression.
         var openingDeadline = DateTime.UtcNow.AddSeconds(45);
-        ICardEngine[] seats = [view.Engine, .. guests];
+        IMatchConnection[] seats = [view.Services.Match, .. guests];
         while (DateTime.UtcNow < openingDeadline) {
             foreach (var seat in seats) {
                 var state = await seat.ObserveAsync();
                 if (state?.PhaseKey == "MAIN1") return;
                 if (state?.Decision is not { } decision) continue;
-                DecisionReply? reply = decision.Kind switch {
-                    "choice" => new(state.Id, decision.Id, ReplyAction.Choose, Choices: decision.Choices.Take(Math.Max(decision.Min, Math.Min(1, decision.Max))).Select(c => c.Index).ToArray()),
-                    "reveal" => new(state.Id, decision.Id, ReplyAction.Choose, Choices: []),
-                    _ when decision.PlayerChoices.Length > 0 => new(state.Id, decision.Id, ReplyAction.SelectPlayer, Player: decision.PlayerChoices[0]),
-                    _ when decision.OkEnabled => new(state.Id, decision.Id, ReplyAction.Confirm),
+                DecisionCommand? reply = decision.Kind switch {
+                    "choice" => DecisionCommands.Choose(state, decision.Choices.Take(Math.Max(decision.Min, Math.Min(1, decision.Max))).Select(c => c.Index)),
+                    "reveal" => new AcknowledgeReveal(state.Id, decision.Id),
+                    _ when decision.PlayerChoices.Length > 0 => new SelectPlayer(state.Id, decision.Id, Player: decision.PlayerChoices[0]),
+                    _ when decision.OkEnabled => DecisionCommands.Confirm(state),
                     _ => null
                 };
-                if (reply != null) try { await seat.ReplyAsync(reply); }
+                if (reply != null) try { await seat.ExecuteAsync(reply); }
                     catch (InvalidOperationException ex) when (ex.Message.Contains("choice has changed")) { }
             }
             await Task.Delay(30);

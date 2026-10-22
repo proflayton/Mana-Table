@@ -1,3 +1,4 @@
+using System.Collections.Immutable;
 using Mana.Contracts;
 using Mana.Magic;
 
@@ -35,7 +36,7 @@ internal static class PriorityPresentationChecks
             "Another player's public payment role does not become a response window or copy their private prompt");
 
         var legacy = initial with { PriorityPlayerId = null, DecisionOwnerId = null, ActionClass = "",
-            Players = initial.Players.Select(player => player with { Priority = false }).ToArray() };
+            Players = initial.Players.Select(player => player with { Priority = false }).ToImmutableArray() };
         check(PriorityPresentation.From(legacy).CanPass
             && !PriorityPresentation.From(initial with { PriorityPlayerId = 1 }).CanPass
             && !PriorityPresentation.From(initial with { Decision = initial.Decision! with { OkEnabled = false } }).CanPass
@@ -51,7 +52,8 @@ internal static class PriorityPresentationChecks
             "One optional activation cannot replace the current pending effect and response-window context");
 
         var entries = plain.Stack;
-        initial.Stack[0].Targets[0] = new("player", "3", "Changed external array", 3);
+        initial = initial with { Stack = initial.Stack.SetItem(0, initial.Stack[0] with {
+            Targets = initial.Stack[0].Targets.SetItem(0, new("player", "3", "Changed later revision", 3)) }) };
         check(entries.Count == 4 && entries.Select(entry => entry.Position).SequenceEqual([1, 2, 3, 4])
             && entries[0].IsNext && entries[0].Id != entries[1].Id && entries[0].ControllerId == 1
             && entries[0].Targets.Single() == target && entries[3].Name == "Lightning Bolt",

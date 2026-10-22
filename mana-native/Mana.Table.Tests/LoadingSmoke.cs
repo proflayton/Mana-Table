@@ -24,7 +24,7 @@ internal static class LoadingSmoke
         }
         void Scene(string path, GatedEngine engine, Action<Script, TableWindow.Probe> arrange, GameSnapshot? state = null)
         {
-            using var game = new TableWindow(engine, path, null, null, size, initialState: state, artSource: new EmptyArt());
+            using var game = new TableWindow(TestTableServices.For(engine), path, null, null, size, initialState: state, artSource: new EmptyArt());
             var script = new Script(game.TestPort); arrange(script, game.TestPort); game.Automation = script; game.Run();
         }
 
@@ -279,12 +279,12 @@ internal static class LoadingSmoke
                     new("Main", "forest", new() { Name = "Forest", Type = "Basic Land — Forest" }, forestQuantity)], [], "", "");
         public async Task<DeckSummary> ImportPresetAsync(string id) { Interlocked.Increment(ref imports); await Importing.Task; imported = true; return new("imported", "Imported commander deck"); }
         public async Task<GameSnapshot?> ObserveAsync() { if (Interlocked.Increment(ref observations) == 1) await Observing.Task; return Scenario.State; }
-        public async Task ReplyAsync(DecisionReply reply)
+        public async Task ExecuteAsync(GameCommand reply)
         {
             Interlocked.Increment(ref replies);
-            if (reply.Action == ReplyAction.AutoPass) { Interlocked.Increment(ref autoReplies); await AutomaticPassing.Task; }
+            if (reply is AutoPassPriority) { Interlocked.Increment(ref autoReplies); await AutomaticPassing.Task; }
             else await Replying.Task;
-            await Scenario.ReplyAsync(reply);
+            await Scenario.ExecuteAsync(reply);
         }
         public ValueTask DisposeAsync() => ValueTask.CompletedTask;
         private Task Reject(string operation) { Interlocked.Increment(ref otherWrites); throw new InvalidOperationException("Unexpected loading scenario mutation: " + operation); }

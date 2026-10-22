@@ -1,3 +1,4 @@
+using System.Collections.Immutable;
 using System.Text.Json;
 using Mana.Contracts;
 using Mana.Magic;
@@ -31,7 +32,7 @@ internal sealed class EquipmentSmoke : ITableAutomation
     {
         new PlayPreferences { Automatic = false, Sounds = false, ReducedMotion = true, TextScale = 1.3f }.Save(profile);
         var scenario = new InteractionScenarioEngine(); scenario.Present(Example());
-        using var game = new TableWindow(scenario, profile, null, null, size, initialState: scenario.State, artSource: new CardReadingArtFixture());
+        using var game = new TableWindow(TestTableServices.For(scenario), profile, null, null, size, initialState: scenario.State, artSource: new CardReadingArtFixture());
         game.Automation = new EquipmentSmoke(game.TestPort, scenario); game.Run();
     }
 
@@ -133,22 +134,22 @@ internal sealed class EquipmentSmoke : ITableAutomation
                 Card(p.Id, "sword", "Shuko", "Artifact — Equipment") with { AttachedTo = new($"elf-1-{p.Id}", "Llanowar Elves", "Creature — Elf Druid") },
                 Card(p.Id, "boots-1", "Swiftfoot Boots", "Artifact — Equipment") with { AttachedTo = new($"elf-1-{p.Id}", "Llanowar Elves", "Creature — Elf Druid") },
                 Card(p.Id, "boots-2", "Swiftfoot Boots", "Artifact — Equipment") with { AttachedTo = new($"elf-2-{p.Id}", "Llanowar Elves", "Creature — Elf Druid") }
-            ] }).ToArray() }).ToArray() };
+            ] }).ToImmutableArray() }).ToImmutableArray() };
     }
     private static GameSnapshot Crowded()
     {
         var state = Example();
         return state with { Players = state.Players.Select(p => p with { Zones = p.Zones.Select(z => z.Name != "Battlefield" ? z : z with {
             Count = 50, Cards = [.. z.Cards, .. Enumerable.Range(0, 44).Select(i => Card(p.Id, "crowded-" + i, "Construct " + i, "Artifact Creature — Construct") with { Power = 1, Toughness = 1 })]
-        }).ToArray() }).ToArray() };
+        }).ToImmutableArray() }).ToImmutableArray() };
     }
     private static Card Card(int seat, string id, string name, string type) => new() {
         Key = $"p:{id}-{seat}", VisualId = $"{id}-{seat}", CombatId = $"{id}-{seat}", Name = name, Type = type
     };
     private Card Local(string id) => view.Match!.Viewer!.Zone("Battlefield").Cards.Single(c => c.VisualId == id);
     private GameSnapshot ChangeCards(Func<Card, Card> edit) => view.Match! with { Players = view.Match!.Players.Select(p => p with {
-        Zones = p.Zones.Select(z => z with { Cards = z.Cards.Select(edit).ToArray() }).ToArray()
-    }).ToArray() };
+        Zones = p.Zones.Select(z => z with { Cards = z.Cards.Select(edit).ToImmutableArray() }).ToImmutableArray()
+    }).ToImmutableArray() };
     private TableScene Scene() => TableScene.Build(view.Match!, 0, new(-100, -100), null, null, false, CardPresentation.IsResource);
     private void AssertDistinctRelationships()
     {

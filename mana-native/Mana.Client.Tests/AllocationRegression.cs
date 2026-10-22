@@ -1,3 +1,4 @@
+using System.Collections.Immutable;
 using System.Text.Json;
 using Mana.Contracts;
 using Mana.Magic;
@@ -16,7 +17,7 @@ internal static class AllocationRegression
                 new(2, "Alex", null) { Id = "target-player", PlayerId = 1, IsDefender = true, Minimum = 0, Maximum = 7 }
             ] };
         var state = new GameSnapshot("allocation-game", "playing", null, null, 0, 1, "Combat damage", "COMBAT_DAMAGE", 0,
-            [new(0, "You", 40, false, false, [], []), new(1, "Alex", 37, false, false, [], [])], [], null, decision);
+            [new(0, "You", 40, false, false, ImmutableDictionary<string, int>.Empty, []), new(1, "Alex", 37, false, false, ImmutableDictionary<string, int>.Empty, [])], [], null, decision);
 
         check(AllocationGuide.Stats(first) == "3/4" && AllocationGuide.MarkedDamage(first) == "2 damage marked",
             "Current power/toughness stays separate from marked damage rather than subtracting it from toughness");
@@ -33,7 +34,7 @@ internal static class AllocationRegression
             "An assignment to the defender stays invalid until every supplied blocker threshold is satisfied");
         check(AllocationGuide.Problem(decision, [0, 7, 0]) == null,
             "Without assigning to the defender, no blocker ordering or inferred kill-first rule is imposed");
-        check(AllocationGuide.Problem(decision with { Choices = decision.Choices.Select(c => c with { IsDefender = false }).ToArray() }, [0, 1, 6]) == null,
+        check(AllocationGuide.Problem(decision with { Choices = decision.Choices.Select(c => c with { IsDefender = false }).ToImmutableArray() }, [0, 1, 6]) == null,
             "An unrestricted engine assignment does not gain a defender restriction from text or source keywords");
         check(AllocationGuide.Problem(decision, [1, 1, 4]) == "1 left to assign."
             && AllocationGuide.Problem(decision, [1, 1, 6]) == "1 too many assigned.",
@@ -43,7 +44,7 @@ internal static class AllocationRegression
         int[] staged = [1, 1, 5];
         var reply = AllocationGuide.Reply(state, staged);
         staged[0] = 7;
-        check(reply is { Action: ReplyAction.Allocate, GameId: "allocation-game", DecisionId: "allocation-prompt" }
+        check(reply is AllocateAmounts { GameId: "allocation-game", DecisionId: "allocation-prompt" }
             && reply.Amounts!.SequenceEqual([1, 1, 5]), "Confirmation snapshots the exact ordered recipient amounts with the current game and prompt scope");
         check(AllocationGuide.Reply(state, [0, 1, 6]) == null && AllocationGuide.Reply(state with { Status = "finished" }, [1, 1, 5]) == null
             && AllocationGuide.Reply(state with { Decision = decision with { Id = "" } }, [1, 1, 5]) == null,
@@ -66,10 +67,10 @@ internal static class AllocationRegression
         check(AllocationGuide.Stats(new Card { FaceDown = true }) == ""
             && AllocationGuide.Stats(new Card { Name = "Face-down permanent", FaceDown = true, Power = 2, Toughness = 3 }) == "2/3",
             "Anonymous cards show only supplied public stats and never assume a default hidden creature size");
-        var planeswalker = new Card { Type = "Legendary Planeswalker", Power = 0, Toughness = 0, Counters = new() { ["loyalty"] = 5 } };
+        var planeswalker = new Card { Type = "Legendary Planeswalker", Power = 0, Toughness = 0, Counters = ImmutableDictionary<string, int>.Empty.Add("loyalty", 5) };
         check(AllocationGuide.Stats(planeswalker) == "" && AllocationGuide.Counters(planeswalker) == "loyalty: 5",
             "Noncreature recipients show their public counters instead of incidental zero power/toughness fields");
-        check(AllocationGuide.Counters(first with { Counters = new() { ["+1/+1"] = 2, ["shield"] = 1 } }).Contains("shield: 1", StringComparison.Ordinal)
+        check(AllocationGuide.Counters(first with { Counters = ImmutableDictionary<string, int>.Empty.Add("+1/+1", 2).Add("shield", 1) }).Contains("shield: 1", StringComparison.Ordinal)
             && AllocationGuide.Abilities(source).Contains("Deathtouch", StringComparison.Ordinal), "Relevant public counters and source abilities remain visible without predicting outcomes");
         var decoded = JsonSerializer.Deserialize<Decision>("""
             {"id":"wire","kind":"allocate","allocationKind":"combat","amountLabel":"combat damage","amount":3,

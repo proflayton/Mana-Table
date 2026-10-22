@@ -1,3 +1,4 @@
+using System.Collections.Immutable;
 using Mana.Contracts;
 using Mana.Magic;
 
@@ -68,7 +69,7 @@ internal static class DecisionDockPresentationChecks
             "An explicit quiet pass needs its current engine-token permission and pauses for reading without turning ordinary legal responses into auto permission");
 
         var namedPlayers = priority.Players.Select(player => player.Id == 1 ? player with { Name = "Mira, Weaver of Very Long Names" } : player).ToArray();
-        var other = priority with { Players = namedPlayers, Decision = null, PriorityPlayerId = 2, DecisionOwnerId = 1, ActionClass = "mana" };
+        var other = priority with { Players = namedPlayers.ToImmutableArray(), Decision = null, PriorityPlayerId = 2, DecisionOwnerId = 1, ActionClass = "mana" };
         var payment = DecisionDockPresentation.From(other, auto);
         var choosing = DecisionDockPresentation.From(other with { ActionClass = "choice" }, auto);
         check(payment is { Status: DecisionDockStatus.Payment, ActorRole: DecisionDockActorRole.Paying, ActorId: 1,
@@ -84,9 +85,9 @@ internal static class DecisionDockPresentationChecks
 
         var currentSource = new Card { VisualId = "source-occurrence", Name = "Nicanzil, Current Conductor", Power = 7, Toughness = 8 };
         var sourcePlayers = priority.Players.Select(player => player.Id != 0 ? player : player with {
-            Zones = player.Zones.Select(zone => zone.Name != "Battlefield" ? zone : zone with { Count = 1, Cards = [currentSource] }).ToArray()
+            Zones = player.Zones.Select(zone => zone.Name != "Battlefield" ? zone : zone with { Count = 1, Cards = [currentSource] }).ToImmutableArray()
         }).ToArray();
-        var target = priority with { Players = sourcePlayers, ActionClass = "selection", Decision = new() {
+        var target = priority with { Players = sourcePlayers.ToImmutableArray(), ActionClass = "selection", Decision = new() {
             Id = "target-after-priority", Kind = "input", Purpose = DecisionPurpose.TargetSelection, Intent = DecisionIntent.Selection,
             Message = "Select a legal target reported by the engine.", Min = 1, Max = 1, SourceCardId = currentSource.VisualId,
             SourceControllerId = 0, SourceCard = currentSource with { Power = 2, Toughness = 3 }, Ok = "Confirm target",

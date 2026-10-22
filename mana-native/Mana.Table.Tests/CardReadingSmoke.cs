@@ -1,3 +1,4 @@
+using System.Collections.Immutable;
 using System.Text.Json;
 using Mana.Contracts;
 using Mana.Renderer;
@@ -122,7 +123,7 @@ internal sealed partial class CardReadingSmoke : ITableAutomation
             Buttons();
         });
         Prepared(() => view.Match?.Viewer?.Zone("Battlefield").Cards.Any(c => c.VisualId == "hand-2") == true, 2, () => {
-            Check(scenario.Replies.Count == 1 && scenario.Replies[0].Action == ReplyAction.SelectCard, "The explicit reader action submits exactly one card command");
+            Check(scenario.Replies.Count == 1 && scenario.Replies[0] is PlayCard, "The explicit reader action submits exactly one card command");
             Check(view.Match!.Viewer!.Zone("Battlefield").Cards.Any(c => c.VisualId == "hand-2"), "The played card follows the resulting engine projection onto the battlefield");
         }, "The accepted reader action must reconcile its resulting battlefield projection");
         Step(.5, () => MoveCard("hand-4"));
@@ -138,7 +139,7 @@ internal sealed partial class CardReadingSmoke : ITableAutomation
         Step(0, () => {
             var state = scenario.State;
             Publish(state with { Decision = null, Players = state.Players.Select(p => p.Id != 0 ? p : p with { Zones = p.Zones.Select(z => z.Name != "Hand" ? z : z with {
-                Cards = z.Cards.Select(c => c with { FaceDown = true, Selectable = false }).ToArray() }).ToArray() }).ToArray() });
+                Cards = z.Cards.Select(c => c with { FaceDown = true, Selectable = false }).ToImmutableArray() }).ToImmutableArray() }).ToImmutableArray() });
             Move(new(0, 0));
         });
         Prepared(() => FreshHand("hand-4", c => c.FaceDown && !c.Selectable), .6, () => MoveCard("hand-4"), "The concealed hand occurrence must be visible before the privacy dwell");
@@ -147,7 +148,7 @@ internal sealed partial class CardReadingSmoke : ITableAutomation
             var state = FocusedSeed(PresentationSmoke.Example(), readingOnly: true);
             Publish(state with { Players = state.Players.Select(p => p.Id != 0 ? p : p with { Zones = p.Zones.Select(z => z.Name != "Hand" ? z : z with { Cards = z.Cards.Select(c => c.VisualId != "hand-3" ? c : c with {
                 Name = "No-art readability fixture", ArtName = "No-art readability fixture", Text = "Vigilance\nWhenever this creature attacks, draw a card.\nYou may play an additional land on each of your turns."
-            }).ToArray() }).ToArray() }).ToArray() });
+            }).ToImmutableArray() }).ToImmutableArray() }).ToImmutableArray() });
             Move(new(0, 0));
         });
         Prepared(() => FreshHand("hand-3", c => c.Name == "No-art readability fixture"), .6, () => MoveCard("hand-3"), "The fresh no-art hand fixture must be visible before its reading click"); Click();
@@ -180,7 +181,7 @@ internal sealed partial class CardReadingSmoke : ITableAutomation
             MoveReaderFace();
         }); Click();
         Step(.3, () => {
-            Check(scenario.Replies.Count == 3 && scenario.Replies[^1].Action == ReplyAction.AutoPass && (view.Match?.Decision == null || view.Busy),
+            Check(scenario.Replies.Count == 3 && scenario.Replies[^1] is AutoPassPriority && (view.Match?.Decision == null || view.Busy),
                 "Dismissing the reader resumes automatic priority exactly once");
         });
         Step(0, () => Publish(scenario.State with {
@@ -191,7 +192,7 @@ internal sealed partial class CardReadingSmoke : ITableAutomation
             Check(scenario.Replies.Count == 3 && view.Match?.Stack.Length == 1, "Auto keeps a new spell visible while its presentation beat plays");
             Publish(scenario.State); // A refreshed decision must not restart playback.
         });
-        Step(.9, () => Check(scenario.Replies.Count == 4 && scenario.Replies[^1].Action == ReplyAction.AutoPass,
+        Step(.9, () => Check(scenario.Replies.Count == 4 && scenario.Replies[^1] is AutoPassPriority,
             "Auto resumes after the visible action despite intervening snapshot refreshes"));
         QueueRevealChecks();
 
@@ -229,9 +230,9 @@ internal sealed partial class CardReadingSmoke : ITableAutomation
             MoveHit("choicesdone");
         }); Click();
         Step(.15, () => {
-            Check(scenario.Replies.Count == repliesBeforeReveal + 1 && scenario.Replies[^1].Action == ReplyAction.Choose && view.HoverPreview == null,
+            Check(scenario.Replies.Count == repliesBeforeReveal + 1 && scenario.Replies[^1] is AcknowledgeReveal && view.HoverPreview == null,
                 "Only Continue acknowledges the reveal and removes its readable faces");
-            Publish(scenario.State with { Decision = new() { Kind = "reveal", LibraryCards = Enumerable.Range(0, 8).Select(i => new LibraryChoice(null, card.Name, card with { })).ToArray() } });
+            Publish(scenario.State with { Decision = new() { Kind = "reveal", LibraryCards = Enumerable.Range(0, 8).Select(i => new LibraryChoice(null, card.Name, card with { })).ToImmutableArray() } });
         });
         Step(.15, () => MoveHit("reveal:0")); Click();
         StepWhen(() => GalleryReadingReady(0), 3, () => {
@@ -272,7 +273,7 @@ internal sealed partial class CardReadingSmoke : ITableAutomation
         });
         Prepared(() => view.Match?.Decision?.Kind == "reveal" && view.Hits.Any(h => h.Id == "choicesdone" && view.CurrentHit(h)),
             2, () => MoveHit("choicesdone"), "The real reveal acknowledgement must be visible before its click"); Click();
-        Prepared(() => scenario.Replies.Count == repliesBeforeReveal + 1 && scenario.Replies[^1].Action == ReplyAction.Choose
+        Prepared(() => scenario.Replies.Count == repliesBeforeReveal + 1 && scenario.Replies[^1] is AcknowledgeReveal
             && view.Match?.Decision?.Kind != "reveal" && !view.Busy, 2, () => {
                 Move(new(10, 70));
                 Publish(scenario.State with { Decision = new() { Kind = "choice", Min = 1, Max = 3,
@@ -424,7 +425,7 @@ internal sealed partial class CardReadingSmoke : ITableAutomation
             expectedGame = view.Match!.Id; expectedDecision = view.Match.Decision!.Id; MoveHit("confirm");
         }); Click();
         StepWhen(() => scenario.Replies.Count == repliesBefore + 1, 2, () =>
-            Check(scenario.Replies.Count == repliesBefore + 1 && scenario.Replies[^1] is { Action: ReplyAction.Choose } reply
+            Check(scenario.Replies.Count == repliesBefore + 1 && scenario.Replies[^1] is ChooseOptions reply
                 && reply.GameId == expectedGame && reply.DecisionId == expectedDecision && reply.Choices!.SequenceEqual([4]),
                 "Only explicit confirmation submits the remaining exact selection with its current game and decision scope"));
     }
@@ -504,7 +505,7 @@ internal sealed partial class CardReadingSmoke : ITableAutomation
             Move(new(10, 70));
             var state = scenario.State;
             Publish(state with { Players = state.Players.Select(p => p with { Zones = p.Zones.Select(z => z with { Cards = z.Cards.Select(c => c.VisualId == "seat-0-1"
-                ? c with { CombatKeywords = [], Counters = [], Power = 1, Toughness = 1 } : c).ToArray() }).ToArray() }).ToArray() });
+                ? c with { CombatKeywords = [], Counters = ImmutableDictionary<string, int>.Empty, Power = 1, Toughness = 1 } : c).ToImmutableArray() }).ToImmutableArray() }).ToImmutableArray() });
         });
         StepWhen(() => FreshOwnCard("seat-0-1", "Battlefield", c => c.CombatKeywords.Length == 0 && c.Counters.Count == 0 && c.Power == 1)
             && view.DisplayedPose("seat-0-1") is { Elevation: < 1 } grounded
@@ -544,8 +545,8 @@ internal sealed partial class CardReadingSmoke : ITableAutomation
             Move(new(10, 70));
             var state = scenario.State;
             Publish(state with { Players = state.Players.Select(p => p with { Zones = p.Zones.Select(z => z with {
-                Cards = z.Cards.Select(c => c.PhasedOut ? c with { PhasedOut = false, Tapped = false } : c).ToArray()
-            }).ToArray() }).ToArray() });
+                Cards = z.Cards.Select(c => c.PhasedOut ? c with { PhasedOut = false, Tapped = false } : c).ToImmutableArray()
+            }).ToImmutableArray() }).ToImmutableArray() });
             // Derive the target from the new untapped projection, never the old tapped cell.
             phaseInRest = TableScene.Build(view.Match!, 0, new(-1, -1), null, null, false, CardPresentation.IsResource)
                 .Rank(0, true).Cards.Single(c => c.Id == "seat-0-0").Pose;
@@ -577,7 +578,7 @@ internal sealed partial class CardReadingSmoke : ITableAutomation
                 var choices = Enumerable.Range(0, 3).Select(i => new Choice(i,
                     context == "text-rows" ? "Effect " + (char)('A' + i) : cards[i].Name,
                     context == "text-rows" ? null : cards[i]) { CardId = direct ? cards[i].VisualId : "" }).ToArray();
-                Publish(state with { Decision = new() { Kind = "choice", Title = "Choose an order", Ordered = true, Min = 3, Max = 3, Choices = choices } });
+                Publish(state with { Decision = new() { Kind = "choice", Title = "Choose an order", Ordered = true, Min = 3, Max = 3, Choices = choices.ToImmutableArray() } });
                 repliesBefore = scenario.Replies.Count;
                 scope = view.Scope; gameId = view.Match!.Id; decisionId = view.Match.Decision!.Id;
             });
@@ -626,7 +627,7 @@ internal sealed partial class CardReadingSmoke : ITableAutomation
             });
             Click();
             Prepared(() => !view.Busy && scenario.Replies.Count == repliesBefore + 1, 2, () => {
-                Check(scenario.Replies[^1] is { Action: ReplyAction.Choose } reply && reply.GameId == gameId
+                Check(scenario.Replies[^1] is OrderOptions reply && reply.GameId == gameId
                     && reply.DecisionId == decisionId && reply.Choices!.SequenceEqual(order),
                     context + ": explicit confirmation submits exact [2,0,1] with the current game and decision scope");
                 if (context == "text-rows") Publish(scenario.State with { Decision = new() { Kind = "choice", Ordered = true, Min = 0, Max = 3,
@@ -638,7 +639,7 @@ internal sealed partial class CardReadingSmoke : ITableAutomation
         }
         Step(0, () => {
             Publish(scenario.State with { Decision = new() { Kind = "choice", Ordered = true, Min = 99, Max = 99,
-                Choices = Enumerable.Range(0, 99).Select(i => new Choice(i, "Ordered item " + (i + 1), null)).ToArray() } });
+                Choices = Enumerable.Range(0, 99).Select(i => new Choice(i, "Ordered item " + (i + 1), null)).ToImmutableArray() } });
         });
         Prepared(() => view.Selections.Count == 99 && view.Hits.Any(h => h.Id == "choicesfilter"), 2,
             () => MoveHit("choicesfilter"), "The long ordered list must render before filtering"); Click();
@@ -693,9 +694,9 @@ internal sealed partial class CardReadingSmoke : ITableAutomation
                 if (zone.Name != "Battlefield") return zone;
                 int keep = player.Id == state.ViewerId ? (readingOnly ? 2 : 8) : player.Id == 2 ? 2 : 1;
                 var cards = zone.Cards.Take(keep).ToArray();
-                return zone with { Count = cards.Length, Cards = cards };
-            }).ToArray()
-        }).ToArray()
+                return zone with { Count = cards.Length, Cards = cards.ToImmutableArray() };
+            }).ToImmutableArray()
+        }).ToImmutableArray()
     };
     // These positive setup waits retain their old maximums. The next gesture still
     // crosses its own Update/Draw boundary; negative dwell and click timings do not change.
@@ -715,7 +716,7 @@ internal sealed partial class CardReadingSmoke : ITableAutomation
     {
         if (!FreshOwnCard(id, "Hand", condition)) return false;
         var hand = view.Match!.Viewer!.Zone("Hand").Cards;
-        int index = Array.FindIndex(hand, c => c.VisualId == id);
+        int index = hand.IndexOf(hand.FirstOrDefault(c => c.VisualId == id)!);
         if (index < 0) return false;
         var hit = view.Hits.Last(h => h.Zone == "Hand" && h.Card?.VisualId == id);
         var rest = TableLayout.Hand(index % 11, Math.Min(11, hand.Length));
@@ -728,7 +729,7 @@ internal sealed partial class CardReadingSmoke : ITableAutomation
     {
         if (!FreshHand("hand-3", c => !c.FaceDown)) return false;
         var hand = view.Match!.Viewer!.Zone("Hand").Cards;
-        int index = Array.FindIndex(hand, c => c.VisualId == "hand-3");
+        int index = hand.IndexOf(hand.FirstOrDefault(c => c.VisualId == "hand-3")!);
         return view.Art(hand[index]) is { LevelCount: > 1, Width: >= 4, Height: >= 4 };
     }
     private bool ReadingReady(string id) => view.HoverPreview is { Width: >= 400, Height: >= 560 }
@@ -762,7 +763,7 @@ internal sealed partial class CardReadingSmoke : ITableAutomation
             // Approach the fan through its exposed strip, as a player does.
             // A face still returning from hover has a moving center over the table.
             var hand = view.Match!.Viewer!.Zone("Hand").Cards;
-            int index = Array.FindIndex(hand, c => c.VisualId == id);
+            int index = hand.IndexOf(hand.FirstOrDefault(c => c.VisualId == id)!);
             var rest = TableLayout.Hand(index % 11, Math.Min(11, hand.Length));
             for (int y = 890; y >= Math.Max(810, rest.Bounds.Top + 8); y -= 5)
                 for (int x = rest.Bounds.Left + 8; x < rest.Bounds.Right; x += 5)
