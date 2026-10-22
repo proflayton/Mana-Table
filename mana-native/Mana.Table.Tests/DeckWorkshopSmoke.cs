@@ -190,8 +190,7 @@ internal sealed class DeckWorkshopSmoke(TableWindow.Probe view) : ITableAutomati
                 Click("change-deck", 136); break;
             case 136: Click("deck:" + Deck.Id, 36); break;
             case 36:
-                Check(Valid && Entry("Forest").Quantity == 98, "Reopening the deck preserves the built list"); Click("confirm-deck", 37); break;
-            case 37: Click("edit-deck", 38); break;
+                Check(Valid && Entry("Forest").Quantity == 98 && view.SetupModal.Length == 0, "Reopening the deck preserves the built list without a confirmation step"); Click("edit-deck", 38); break;
             case 38: Row("Sol Ring", 39); break;
             case 39: Click("deck-remove", 40); break;
             case 40:

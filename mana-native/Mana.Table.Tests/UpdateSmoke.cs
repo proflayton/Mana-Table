@@ -44,7 +44,7 @@ internal static class UpdateSmoke
         Scene(preferencesPath, manual, (s, v, engine) => {
             s.Then(() => Check(manual.CheckCalls == 0 && v.UpdateCheckOnStartup && !v.UpdatesOpen, "Automation does not initiate network update checks; startup checks default on"));
             s.Click("updates-open");
-            s.Then(() => Check(v.UpdatesOpen && v.Hits.All(h => h.Id.StartsWith("updates-")), "Home opens a modal with only scoped update controls"));
+            s.Then(() => Check(v.UpdatesOpen && v.Hits.All(h => h.Id.StartsWith("updates-")), "Home opens a drawer with only scoped update controls"));
             s.Click("updates-check"); s.Until(() => manual.CheckCalls == 1);
             s.Then(() => { Check(!v.Busy && !v.ActivityOpen && v.UpdateChecking, "An update check leaves the engine and activity overlay idle"); s.Capture("01-checking"); manual.CheckGate.SetException(new HttpRequestException("Controlled offline response.")); });
             s.Until(() => !v.UpdateChecking);
@@ -55,13 +55,13 @@ internal static class UpdateSmoke
             s.Click("updates-startup");
             s.Then(() => Check(!v.UpdateCheckOnStartup && File.Exists(Path.Combine(preferencesPath, "update-preferences.json")), "The startup-check choice is persisted"));
             s.Pulse(Keys.Escape);
-            s.Then(() => Check(!v.UpdatesOpen && v.WelcomeOpen && engine.Writes == 0, "Escape closes Updates without dismissing Home or writing to the engine"));
+            s.Then(() => Check(!v.UpdatesOpen && v.HomeVisible && engine.Writes == 0, "Escape closes Updates and leaves Home usable without writing to the engine"));
         });
         var optOut = new FakeUpdates(preferencesPath);
         Scene(preferencesPath, optOut, (s, v, _) => {
             s.Then(() => Check(!v.UpdateCheckOnStartup, "The saved startup opt-out survives a new app session"));
             QuietFrames(s, v, optOut, false);
-            s.Then(() => Check(optOut.CheckCalls == 0 && !v.UpdatesOpen && v.WelcomeOpen, "Actual startup eligibility respects opt-out while Automation is absent"));
+            s.Then(() => Check(optOut.CheckCalls == 0 && !v.UpdatesOpen && v.HomeVisible, "Actual startup eligibility respects opt-out while Automation is absent"));
             s.Click("updates-open"); s.Click("updates-check"); s.Until(() => optOut.CheckCalls == 1);
             s.Then(() => optOut.CheckGate.SetResult(null)); s.Until(() => !v.UpdateChecking);
             s.Then(() => { Check(v.AvailableUpdate == null && v.UpdateError.Length == 0 && !v.UpdateCheckOnStartup, "Manual checks remain available with startup checks off"); s.Capture("04-current"); });
@@ -69,16 +69,16 @@ internal static class UpdateSmoke
         string quietPath = Case("quiet-startup"); var quiet = new FakeUpdates(quietPath);
         Scene(quietPath, quiet, (s, v, _) => {
             QuietFrames(s, v, quiet, true); s.Until(() => quiet.CheckCalls == 1);
-            s.Then(() => { Check(!v.UpdatesOpen && v.WelcomeOpen && !v.Busy && !v.ActivityOpen, "The actual automatic check stays quiet and leaves Home usable"); quiet.CheckGate.SetResult(quiet.Release); });
+            s.Then(() => { Check(!v.UpdatesOpen && v.HomeVisible && !v.Busy && !v.ActivityOpen, "The actual automatic check stays quiet and leaves Home usable"); quiet.CheckGate.SetResult(quiet.Release); });
             s.Until(() => v.AvailableUpdate != null); s.Wait(.25);
-            s.Then(() => { Check(quiet.CheckCalls == 1 && !v.UpdatesOpen && v.Hits.Any(h => h.Id == "experience-ai"), "The startup check runs once and availability adds no forced modal"); s.Capture("05-home-badge"); });
+            s.Then(() => { Check(quiet.CheckCalls == 1 && !v.UpdatesOpen && v.HomeVisible && v.Hits.Any(h => h.Id == "change-deck"), "The startup check runs once and availability leaves ordinary deck navigation usable"); s.Capture("05-home-badge"); });
         });
         string quietFailurePath = Case("quiet-check-failure"); var quietFailure = new FakeUpdates(quietFailurePath);
         Scene(quietFailurePath, quietFailure, (s, v, _) => {
             QuietFrames(s, v, quietFailure, true); s.Until(() => quietFailure.CheckCalls == 1);
             s.Then(() => quietFailure.CheckGate.SetException(new HttpRequestException("Controlled release check failure.")));
             s.Until(() => !v.UpdateChecking);
-            s.Then(() => { Check(!v.UpdatesOpen && v.WelcomeOpen && !v.ActivityOpen && v.Error.Length == 0 && v.UpdateError.Contains("Couldn't check"), "A failed quiet startup check changes only update status and leaves Home uninterrupted"); s.Capture("05-home-check-failure"); });
+            s.Then(() => { Check(!v.UpdatesOpen && v.HomeVisible && !v.ActivityOpen && v.Error.Length == 0 && v.UpdateError.Contains("Couldn't check"), "A failed quiet startup check changes only update status and leaves Home uninterrupted"); s.Capture("05-home-check-failure"); });
         });
         string path = Case("download-and-install"); var service = new FakeUpdates(path);
         int launches = 0; bool failLaunch = true;

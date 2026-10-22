@@ -49,7 +49,21 @@ internal sealed partial class TableApplication
     }
     private void OpenOpponentPicker(int seat)
     {
-        if (soloSetup == null || busy) return;
+        if (busy || Connected || !DeckReady || selectedDeckDetails is not { } deck || seat < 0 || seat >= (CommanderDeck ? 3 : 1)) return;
+        ClearExperienceInput();
+        if (soloSetup?.DeckId != deck.Id) {
+            int generation = deckSelectionGeneration;
+            string[] previous = CurrentSoloOpponents();
+            Work(async () => {
+                var prepared = await PrepareSoloDeck(deck.Id, previous);
+                updates.Enqueue(() => {
+                    if (generation != deckSelectionGeneration) return;
+                    ApplySoloPreparation(prepared); confirmedDeckId = deck.Id;
+                    pickerSeat = seat; pickerDeleted = false; pickerSearch = ""; deckPage = 0; setupModal = "decks"; textFocus = false;
+                });
+            }, "Choosing opponents", "Finding compatible AI decks.");
+            return;
+        }
         pickerSeat = seat; pickerDeleted = false; pickerSearch = ""; deckPage = 0; setupModal = "decks"; textFocus = false;
     }
     private void ChoosePickerDeck(string id)

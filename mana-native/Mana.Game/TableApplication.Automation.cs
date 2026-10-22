@@ -147,10 +147,10 @@ internal sealed partial class TableApplication
         internal PublicResourcePaint? ManaPoolDetail => game.overlay == "mana" ? game.manaPoolDetail : null;
         internal AttachmentBadgePaint? AttachmentBadge(string id) => game.attachmentBadges.TryGetValue(id, out var badge) ? badge : null;
         internal IReadOnlyList<AttachmentConnection> AttachmentConnections => game.attachmentConnections;
-        internal bool WelcomeOpen => game.welcomeOpen;
+        internal bool HomeVisible => game.match == null && !game.deckEditor && game.setupModal.Length == 0
+            && !game.tableGuideOpen && !game.StartupVisible;
         internal bool TableGuideOpen => game.tableGuideOpen;
         internal bool ExperienceOpen => game.ExperienceOpen;
-        internal void DismissWelcome() => game.DismissWelcome();
         internal void OpenTableGuide() => game.OpenTableGuide();
         internal void SetHeld(bool value) { game.held = value; game.priority.Reset(); }
         internal Mana.Renderer.ResolutionCue? LastResolution => game.actionFeedback.Last;

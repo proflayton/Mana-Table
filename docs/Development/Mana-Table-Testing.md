@@ -240,6 +240,32 @@ larger window, including affected text-size and motion settings. Look at actual
 surface. Preserve the observed problem and manual follow-up; test totals,
 screenshots, and timing measurements are not human acceptance.
 
+### Capture a real saved deck workspace
+
+The existing native driver also supports `--capture-deck-workspace`. Prepare an
+isolated seed profile using the app: import and select a realistic saved deck,
+set text size to 130%, and let its authorized artwork populate that profile's
+`art` cache. Close the app, then copy that isolated seed to a separate profile
+for each window size. Do not point this journey at a player's installed profile.
+It requires a saved selected document and a complete real Forge engine bundle;
+it does not create the synthetic analysis fixture used by other regressions.
+
+After building the same driver above, run:
+
+```powershell
+dotnet $driver --capture-deck-workspace --profile '<isolated-seeded-profile-1000>' --engine-resources '<package-engine-directory>' --size 1000x740
+dotnet $driver --capture-deck-workspace --profile '<isolated-seeded-profile-1540>' --engine-resources '<package-engine-directory>' --size 1540x1000
+```
+
+The journey follows actual pointer targets through Home, Build, Tune, an engine
+relationship (or a card-linked finding when available), full-card reading, Test,
+a draw-only sample and Home again. It saves `workspace-*-window.png` native-window
+captures, matching design surfaces/state JSON and `workspace-capture-results.json`
+in the chosen profile. Missing optional analysis content is not invented. It can
+save a practice sample, so use a fresh copy of the seed for another capture.
+Its bounded wait and accepted-pointer checks are capture safety only; inspect
+the native windows and interact manually before recording human acceptance.
+
 For gesture changes, retain the actual before, held, release and result states.
 Exercise cancellation arriving with release, and changes to the exact action key,
 permission or visibility during the gesture. Slow background observations must

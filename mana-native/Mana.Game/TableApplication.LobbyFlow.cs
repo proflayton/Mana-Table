@@ -27,62 +27,80 @@ internal sealed partial class TableApplication
     private void ChooseDeck(DeckSummary deck) {
         // Inspecting the document already at this table is read-only. Reopening it
         // in the engine would unnecessarily withdraw the player's ready seat.
-        if (selectedDeckDetails?.Id == deck.Id) { ReviewDeck(); return; }
-        Work(async () => { await UnreadyForDeckEdit(); await ReadSelectedDeck(deck); updates.Enqueue(ReviewDeck); }, "Opening " + deck.Name, "Getting your commander and deck ready to review.");
+        if (selectedDeckDetails?.Id == deck.Id) { setupModal = ""; textFocus = false; return; }
+        Work(async () => { await UnreadyForDeckEdit(); await ReadSelectedDeck(deck); }, "Opening " + deck.Name, "Getting your commander and deck ready.");
     }
     private void ChoosePreset(string id) => ImportDeck(() => catalog.ImportPresetAsync(id), false,
         "Preparing " + (presets.FirstOrDefault(p => p.Id == id)?.Name ?? "your precon"), "Making a saved copy for you to review and play.");
-    private void ConfirmDeck()
+    private sealed record SoloPreparation(SoloSetup Setup, int[] Choices);
+    private string[] CurrentSoloOpponents() => soloSetup is not { } setup ? []
+        : soloChoices.Select(index => index >= 0 && index < setup.Opponents.Length ? setup.Opponents[index].Id : "").ToArray();
+    private async Task<SoloPreparation> PrepareSoloDeck(string deckId, string[] previous)
     {
-        if (!DeckReady || selectedDeck is not { } deck || busy) return;
-        if (DeckConfirmed) { setupModal = ""; message = "Your deck is still confirmed."; return; }
-        Work(async () => {
-            if (Connected) {
-                await tables.SelectDeckAsync(deck.Id);
-                var state = await tables.LobbyAsync(); updates.Enqueue(() => lobby = state);
-            } else if (soloTab) {
-                var setup = await tables.PrepareSoloAsync(deck.Id);
-                if (setup.Opponents.Length == 0) throw new InvalidOperationException("This engine has no AI opponents available.");
-                updates.Enqueue(() => {
-                    var previous = soloSetup == null ? [] : soloChoices.Select(i => soloSetup.Opponents[i].Id).ToArray();
-                    var defaults = setup.Opponents.Select((p, i) => (p, i)).Where(o => o.p.Name != setup.DeckName).Select(o => o.i).ToArray();
-                    for (int i = 0; i < 3; i++) {
-                        int kept = i < previous.Length ? Array.FindIndex(setup.Opponents, o => o.Id == previous[i]) : -1;
-                        soloChoices[i] = kept >= 0 ? kept : defaults.Length > 0 ? defaults[i % defaults.Length] : 0;
-                    }
-                    soloSetup = setup;
-                });
-            }
-            updates.Enqueue(() => { confirmedDeckId = deck.Id; setupModal = ""; message = Connected ? "Deck confirmed. Ready up when you are." : "Deck confirmed for this table."; });
-        }, "Confirming your deck", soloTab && !Connected ? "Preparing your list and three AI opponents." : "Setting this deck at your seat.");
+        var setup = await tables.PrepareSoloAsync(deckId);
+        if (setup.DeckId != deckId) throw new InvalidOperationException("The prepared table belongs to another deck. Try Play again.");
+        if (setup.Opponents.Length == 0 || setup.MaxPlayers < 2) throw new InvalidOperationException("This engine has no compatible AI opponents available.");
+        var defaults = setup.Opponents.Select((opponent, index) => (opponent, index))
+            .Where(option => option.opponent.Name != setup.DeckName).Select(option => option.index).ToArray();
+        int[] choices = Enumerable.Range(0, soloChoices.Length).Select(index => {
+            int kept = index < previous.Length ? Array.FindIndex(setup.Opponents, opponent => opponent.Id == previous[index]) : -1;
+            return kept >= 0 ? kept : defaults.Length > 0 ? defaults[index % defaults.Length] : 0;
+        }).ToArray();
+        return new(setup, choices);
+    }
+    private void ApplySoloPreparation(SoloPreparation prepared)
+    {
+        soloSetup = prepared.Setup;
+        Array.Copy(prepared.Choices, soloChoices, soloChoices.Length);
     }
     private void SetLobbyReady(bool ready)
     {
-        if (ready && !DeckConfirmed) return;
+        if (!Connected || match != null || ready && !DeckReady) return;
+        string? deckId = ready ? selectedDeckDetails?.Id : null;
+        if (ready && deckId == null) return;
+        bool select = ready && !DeckConfirmed;
+        int generation = deckSelectionGeneration;
         Work(async () => {
+            if (select) await tables.SelectDeckAsync(deckId!);
+            if (ready && generation != Volatile.Read(ref deckSelectionGeneration))
+                throw new InvalidOperationException("Your selected deck changed. Ready again with the current list.");
             await tables.SetReadyAsync(ready); var state = await tables.LobbyAsync();
-            updates.Enqueue(() => { lobby = state; message = ready ? "You are ready. Waiting for the table." : "You are no longer ready."; });
+            updates.Enqueue(() => { lobby = state;
+                if (ready && generation == deckSelectionGeneration) confirmedDeckId = deckId;
+                message = ready ? "You are ready. Waiting for the table." : "You are no longer ready."; });
         }, ready ? "Taking your seat" : "Updating your seat", ready ? "Letting the table know you are ready." : "Letting the table know you need a moment.");
     }
     private void StartSolo()
     {
-        if (!DeckConfirmed || soloSetup is not { } setup || setup.DeckId != selectedDeck?.Id) return;
-        var opponents = soloChoices.Take(Math.Min(3, setup.MaxPlayers - 1)).Select(i => setup.Opponents[i].Id).ToArray();
+        if (Connected || match != null || !DeckReady || selectedDeckDetails is not { } deck || selectedDeck?.Id != deck.Id) return;
+        int generation = deckSelectionGeneration;
+        var existing = DeckConfirmed && soloSetup is { } setup && setup.DeckId == deck.Id
+            ? new SoloPreparation(setup, soloChoices.ToArray()) : null;
+        string[] previous = CurrentSoloOpponents();
         Work(async () => {
-            await tables.StartSoloAsync(setup.DeckId, opponents); var state = await matchConnection.ObserveAsync();
-            updates.Enqueue(() => { setupModal = ""; ResetTableView(); lobby = null; localMatch = true; Accept(state); message = "Starting your AI table..."; });
-        }, "Gathering your AI table", $"Preparing your deck, {opponents.Length} AI opponent{(opponents.Length == 1 ? "" : "s")}, and the opening hand.", scene: true);
+            var prepared = existing ?? await PrepareSoloDeck(deck.Id, previous);
+            if (generation != Volatile.Read(ref deckSelectionGeneration))
+                throw new InvalidOperationException("Your selected deck changed. Play again with the current list.");
+            var opponents = prepared.Choices.Take(Math.Min(3, prepared.Setup.MaxPlayers - 1)).Select(index => prepared.Setup.Opponents[index].Id).ToArray();
+            await tables.StartSoloAsync(deck.Id, opponents); var state = await matchConnection.ObserveAsync();
+            updates.Enqueue(() => {
+                if (generation == deckSelectionGeneration) { ApplySoloPreparation(prepared); confirmedDeckId = deck.Id; }
+                setupModal = ""; ResetTableView(); lobby = null; localMatch = true; Accept(state); message = "Starting your AI table...";
+            });
+        }, "Gathering your AI table", "Preparing your deck, AI opponents, and the opening hand.", scene: true);
     }
     private void StartFriends()
     {
-        if (!DeckConfirmed || LocalSeat?.Ready != true || lobby?.CanStart != true) return;
+        if (!DeckConfirmed || LocalSeat?.Ready != true || lobby is not { Mode: "hosting", CanStart: true }) return;
         Work(async () => { await tables.StartAsync(); var state = await matchConnection.ObserveAsync(); updates.Enqueue(() => { setupModal = ""; Accept(state); }); }, "Starting Commander", $"Bringing all {lobby.Seats.Length} players to the table.", scene: true);
     }
     private void ConnectLobby(bool hosting)
     {
+        if (Connected || match != null) return;
         string address = joinAddress.Trim();
         if (!hosting && address.Length == 0) return;
-        string? deckId = DeckConfirmed ? selectedDeck?.Id : null;
+        string? deckId = DeckReady ? selectedDeckDetails?.Id : null;
+        int generation = deckSelectionGeneration;
         Work(async () => {
             var state = hosting ? await tables.HostAsync(friendPlayerCount, forward) : await tables.JoinAsync(address);
             // Publish a successful connection even if submitting its deck later fails.
@@ -91,11 +109,11 @@ internal sealed partial class TableApplication
                 await social.SetPlayerNameAsync(state.TableId, preferences.PlayerName);
                 var named = await tables.LobbyAsync(); updates.Enqueue(() => lobby = named);
             }
-            if (deckId != null) {
+            if (deckId != null && generation == Volatile.Read(ref deckSelectionGeneration)) {
                 await tables.SelectDeckAsync(deckId); var selected = await tables.LobbyAsync();
-                updates.Enqueue(() => { lobby = selected; confirmedDeckId = deckId; });
+                updates.Enqueue(() => { lobby = selected; if (generation == deckSelectionGeneration) confirmedDeckId = deckId; });
             }
-            updates.Enqueue(() => message = hosting ? "Table open. Invite your friends." : "You joined the table. Confirm your deck and ready up.");
+            updates.Enqueue(() => message = hosting ? "Table open. Invite your friends." : "You joined the table. Ready when you are.");
         }, hosting ? "Opening your table" : "Joining your friends", hosting ? $"Preparing {friendPlayerCount} seats and your table connection." : "Connecting to the table from your invite.", scene: true);
     }
     private void LeaveLobby() => Work(async () => {

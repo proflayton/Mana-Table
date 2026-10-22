@@ -35,7 +35,7 @@ internal static class LoadingSmoke
             s.Then(() => {
                 Check(view.StartupVisible && view.ActivityOpen && view.Busy && !view.Loaded, "A pending first initialization shows startup activity before setup is ready");
                 Check(view.ActivityStage == "Card library" && startup.DeckReads == 0 && startup.PresetReads == 0, "Startup identifies the pending card library without claiming later stages have started");
-                Check(!view.Hits.Any(h => h.Id.StartsWith("experience-") || h.Id is "host" or "change-deck" or "start-solo"), "Startup exposes no welcome, table, or deck actions behind loading");
+                Check(!view.Hits.Any(h => h.Id.StartsWith("experience-") || h.Id is "host" or "change-deck" or "start-solo"), "Startup exposes no home, table, or deck actions behind loading");
                 s.Capture("01-starting-library");
             });
             s.Pulse(Keys.Escape, Keys.Enter, Keys.Space, Keys.F, Keys.LeftControl, Keys.F1);
@@ -61,8 +61,8 @@ internal static class LoadingSmoke
                 s.Capture("02-preparing-table"); startup.OpeningSaved.SetResult();
             });
             s.Until(() => view.Loaded && !view.ActivityOpen && !view.Busy);
-            s.Then(() => Check(view.WelcomeOpen && view.SelectedDeck?.Id == "saved" && view.Hits.Any(h => h.Id == "experience-ai"), "A completed startup hands off to the welcome with the selected deck ready"));
-            s.Click("experience-skip");
+            s.Then(() => Check(view.SelectedDeck?.Id == "saved" && view.Hits.Any(h => h.Id == "change-deck")
+                    && view.Hits.Any(h => h.Id == "start-solo"), "A completed startup exposes the real saved deck and its direct Play action"));
             s.Click("change-deck");
             s.Click("picker-presets");
             Point presetPoint = default;
@@ -89,11 +89,12 @@ internal static class LoadingSmoke
             });
             s.Until(() => !view.ActivityOpen && !view.Busy);
             s.Then(() => {
-                Check(view.SelectedDeck?.Id == "imported" && view.SetupModal == "confirm" && !view.DeckConfirmed, "Finished deck loading hands off to the imported deck review without confirming play");
+                Check(view.SelectedDeck?.Id == "imported" && view.SetupModal.Length == 0 && !view.DeckConfirmed
+                    && view.Hits.Any(h => h.Id == "start-solo"), "Finished deck loading returns to the selected deck's direct Play action without forcing review or starting anything");
                 Check(startup.Imports == 1 && startup.OtherWrites == 0 && view.Error.Length == 0, "Loading feedback completes exactly one intended mutation with no extra engine writes");
                 s.Capture("04-deck-ready");
             });
-            s.Click("confirm-edit");
+            s.Click("edit-deck");
             s.Until(() => view.DeckEditor && !view.Busy && !view.ActivityOpen);
             s.Click("deck-main");
             s.Click("deck-card:Main:forest");
@@ -129,14 +130,14 @@ internal static class LoadingSmoke
             });
             s.Until(() => view.Loaded && !view.ActivityOpen && !view.Busy);
             s.Then(() => {
-                Check(retry.InitializeCalls == 2 && view.Error.Length == 0 && view.WelcomeOpen && view.SelectedDeck?.Id == "saved", "A successful retry reaches the fully loaded welcome without restarting the application");
+                Check(retry.InitializeCalls == 2 && view.Error.Length == 0 && view.HomeVisible && view.SelectedDeck?.Id == "saved"
+                    && view.Hits.Any(h => h.Id == "change-deck") && view.Hits.Any(h => h.Id == "start-solo"), "A successful retry reaches the fully loaded deck home without restarting the application");
                 s.AllowError = false;
             });
         });
 
         var table = new GatedEngine(); table.Scenario.Present(PresentationSmoke.Example());
         string tablePath = Case("table-background");
-        File.WriteAllText(Path.Combine(tablePath, "experience.json"), JsonSerializer.Serialize(new { WelcomeSeen = true, TableGuideSeen = true }));
         Scene(tablePath, table, (s, view) => {
             s.Until(() => table.Observations > 0 && view.Polling);
             s.Then(() => Check(!view.ActivityOpen && !view.StartupVisible && view.Hits.Any(h => h.Id == "settings"), "Background table observation leaves the scene interactive without a loading overlay"));

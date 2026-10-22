@@ -124,6 +124,65 @@ design inference, not a claim about complete proprietary implementations:
   supplies a comparable headless input/state loop and explicit cloning/RNG policy.
   It is an independent simulator, not Hearthstone's proprietary engine.
 
+## Deck and pregame journey ownership
+
+Home and pregame share a deck stage rather than a welcome page followed by a
+separate setup workflow. Catalog services own the saved document and its
+revision, validity and save result. Local selection determines which actual
+commander(s), complete names and known art to present; it does not grant a match
+action. `DeckSummary` currently contains identity/name/library token, so browsing
+the library cannot manufacture commander metadata or open every document just
+to paint a thumbnail. Opening another saved document can affect provider deck
+selection and connected readiness. Home is ordinary app navigation, with no
+separate welcome state or persisted first-run flags to block its controls. The
+optional table guide owns only its explicitly opened local overlay state;
+opening or closing it writes no completion preference.
+
+One solo Play intent captures the selected saved document and selection
+generation, obtains compatible AI setup when needed and starts the exact list.
+The shared preparation helper is also used when the player explicitly customizes
+an AI seat. It retains compatible chosen opponent IDs and validates the returned
+deck association. A later selection cannot silently replace an in-flight Play;
+stale completion is rejected. The provider revalidates the actual start.
+
+Host/Join connects the table and brings a valid current list without setting
+Ready. A successful connection remains visible if a later deck assignment fails.
+Explicit Ready selects the current list if needed, sets readiness and consumes
+the returned roster. Start still requires the current host, local readiness and
+the provider's CanStart. Choosing another list or editing withdraws readiness;
+reading the same list preserves it. The old `confirmedDeckId` name remains an
+internal preparation/synchronized-selection cache, never a player role or an
+additional confirmation stage. The optional deck-list reader and its Back action
+perform no setup mutation.
+
+Build/Tune/Test presentation consumes the same selected document and versioned
+workshop/analysis services. Recommendations, questions, manual notes, draw-only
+samples and actual rules-game records retain their distinct meaning and exact
+version association. Reading a sampled card is presentation state, not a cast,
+test outcome or another game decision. Tune keeps its list, selected relationship
+and scrollable evidence in place beside a separate full-card reading region.
+The read-only card retains the relationship/sample context and cannot edit,
+cast or start a game. Persisting a note is not evidence that the engine measured
+that outcome.
+
+Start test game captures the selected saved revision, workshop version/question,
+seat count and opponent choices in one operation. It prepares compatible defaults
+if no current setup exists, checks the captured intent again, starts the versioned
+test and observes the opening state. Choosing AI opponents prepares the same
+compatible setup for optional customization; it is not a required earlier step.
+Draw-only sampling remains separate from this actual rules-game path.
+
+Play controls and Updates share `SystemDrawer` composition. It retains the game
+visually, replaces underlying hit targets, and owns backdrop/close input without
+committing the underlying game gesture. Update work retains its separate lifecycle:
+closing a drawer does not cancel a chosen download, authorize installation or
+bypass the actual game/save/input blockers before an explicit restart.
+
+These source changes and their remaining interaction/visual review are mapped in
+the [whole-game experience audit](Mana-Table-Experience-Review.md#whole-game-audit-and-redesign-22-october-2026).
+The established session/provider/rendering boundaries remain in use; this does
+not introduce a second scene framework or give UI layouts rules authority.
+
 ## Shared match and synchronization
 
 `MatchTable` owns one Forge game and one `MatchSession` per human controller.
@@ -342,17 +401,14 @@ does not renumber connected seats to fill a gap.
 The Java API supports broader format/seat configuration, including two through
 six Commander seats. The Mana Table lobby's size controls stop at four.
 
-Every native launch moves from startup into a main menu with AI, friends and deck entry points.
-These routes reuse the existing deck picker, review and readiness gates; choosing
-a route never imports a deck, hosts a table or readies a seat. `experience.json`
-remembers menu and explicit help visits independently of play preferences.
-Games open directly at their current decision. Setup captions sit beside their
-actions, while gameplay presents actual engine messages, costs, restrictions and
-action controls without unsolicited card/target/priority coaching overlays.
-The former learned-control bookkeeping, hint-reset controls and dedicated coaching
-UI suite have been removed. `ControlGuidance` remains available to the explicitly
-opened F1 reference, with its own modal scope; opening it preserves the underlying
-decision and play policy. Setup and deck guidance retain their existing behavior.
+In the game-home source candidate, native startup opens the ordinary shared deck
+stage, with Solo/Friends modes and library navigation. Choosing a mode or browsing
+the library never imports a deck, hosts a table or readies a seat. The obsolete
+welcome state, invisible input gate and `experience.json` loader/writer are
+removed; existing files are ignored. Games open directly at their current
+decision. `ControlGuidance` remains available to the explicitly opened F1
+reference, with its own input scope; opening it preserves the underlying
+decision and play policy and writes no first-run/completion flag.
 
 Native priority controls offer a per-ability pass preference until the player's
 next turn. `AvailableActions` produces a complete legal activation list alongside
@@ -504,7 +560,7 @@ playable sections. Considering is outside the playable list. Missing format data
 stays unknown, and a successful bundled check does not assert live tournament
 legality.
 
-The native Build, Analyze, Test and Results tabs share one saved deck and workshop
+The native Build, Tune, Test and Results tabs share one saved deck and workshop
 metadata. Analysis starts with useful defaults and exposes optional preferences
 as questions. Its automatic land target uses the highest positive commander
 mana value or turn three; an explicit player target takes precedence. Limited
@@ -521,23 +577,24 @@ Archidekt import/manual refresh requires a whole-list confirmation of quantities
 and source-baseline effects before an existing token-guarded application. It
 does not authenticate, continuously synchronize or write back to Archidekt.
 
-`TableApplication.LobbyFlow` separates selecting, confirming, readying and starting.
-The deck chooser and the builder return to a shared review of commander faces,
-counts, validation and save status. Confirm prepares the solo setup or submits
-the saved deck through `SelectDeckAsync`; multiplayer readiness is a separate
-explicit operation. A confirmation belongs to the selected saved document and
-current setup mode. Opening a different deck, any edit, entering the builder,
-switching modes, or leaving a table invalidates it. Selection and builder entry
-await the ordinary `SetReadyAsync(false)` before opening or changing a document.
-Browsing the chooser alone preserves readiness. These are client workflow states;
-rules and the synchronized seat roster remain authoritative in the existing engine.
+`TableApplication.LobbyFlow` separates selecting, playing, readying and starting.
+The deck chooser and builder return to the shared deck stage. Optional Deck list
+reading is noncommitting; there is no Review/Confirm preparation gate. One solo
+Play prepares the captured valid deck if needed, then starts it. In multiplayer,
+Host/Join can bring that list but only explicit Ready submits any needed
+`SelectDeckAsync` before setting readiness. Selection and builder entry await
+ordinary `SetReadyAsync(false)` before opening or changing a document. Browsing
+the chooser or reselecting the current document preserves readiness. The internal
+confirmed ID is only a setup/assignment cache; rules and the synchronized roster
+remain authoritative.
 
 `TableApplication.LobbyView` renders the four-seat roster, commander preview, saved/precon
-chooser, review, native invite entry, and connection details. Its hit scopes include
-the active modal, selected deck, confirmation, mode, readiness and start permission.
-Modal input cannot reach controls behind it. Start requires current confirmation
-plus the engine's readiness/start state. Builder edits preserve the selected AI
-opponent IDs when the updated deck is reconfirmed. Returning from a network game
+chooser, optional Deck list, native invite entry, and connection details. Its hit
+scopes include the active reader, selected deck, setup cache, mode, readiness and
+start permission. Scoped input cannot reach controls behind it. Friends Start
+requires the local host's readiness and the engine's CanStart state. Builder edits
+retain compatible selected AI opponent IDs when the updated deck is prepared.
+Returning from a network game
 refreshes the lobby before showing its controls; readiness must be declared again.
 
 `TableApplication.LobbyDecks` shares the searchable chooser between saved/precon lists

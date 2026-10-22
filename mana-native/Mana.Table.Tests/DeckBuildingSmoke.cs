@@ -77,8 +77,10 @@ internal sealed class DeckBuildingSmoke(TableWindow.Probe view) : ITableAutomati
                 Click("change-deck", 105); break;
             case 105: Click("deck:" + Deck.Id, 5); break;
             case 5:
-                Check(Deck.CommanderIds.SequenceEqual([Entry("Rhys the Redeemed").Id]) && Deck.SaveError.Length == 0, "Reopening the saved deck preserves its commander");
-                Click("confirm-edit", 6); break;
+                Check(view.HomeVisible && view.SelectedDeck?.Id == Deck.Id && !view.DeckConfirmed
+                    && Deck.CommanderIds.SequenceEqual([Entry("Rhys the Redeemed").Id]) && Deck.SaveError.Length == 0,
+                    "Choosing the saved deck preserves its commander on Home without a forced review or confirmation");
+                Click("edit-deck", 6); break;
             case 6: Card("Selvala, Explorer Returned", 7); break;
             case 7: Click("deck-set-commander", 8); break;
             case 8:
@@ -106,8 +108,7 @@ internal sealed class DeckBuildingSmoke(TableWindow.Probe view) : ITableAutomati
             case 118: Click("deck:" + Deck.Id, 18); break;
             case 18:
                 Check(Deck.CommanderIds.Length == 2 && Deck.SaveError.Length == 0, "Both partner commanders survive reopening from disk");
-                Click("setup-close", 119); break;
-            case 119: Click("friends-tab", 19); break;
+                Click("friends-tab", 19); break;
             case 19: Click("connection-options", 132); break;
             case 132: Click("forward", 32); break;
             case 32: Click("setup-close", 133); break;
@@ -126,14 +127,11 @@ internal sealed class DeckBuildingSmoke(TableWindow.Probe view) : ITableAutomati
             case 25: Click("deck-add-partner", 26); break;
             case 26: Click("deck-done", 27); break;
             case 27:
-                Check(!view.DeckEditor && view.SetupModal.Length == 0 && !view.DeckConfirmed, "Returning from a multiplayer deck edit leaves confirmation explicit");
+                Check(!view.DeckEditor && view.SetupModal.Length == 0 && !view.DeckConfirmed,
+                    "Returning from a multiplayer deck edit goes directly Home without marking the changed list ready");
                 Click("leave", 28); break;
             case 28: Click("solo-tab", 29); break;
-            case 29: Click("review-deck", 129); break;
-            case 129: Click("confirm-deck", 30); break;
-            case 30:
-                Check(view.SoloSetup != null, "The same saved deck prepares a three-opponent AI game");
-                Click("start-solo", 31); break;
+            case 29: Click("start-solo", 31); break;
             case 31:
                 if (view.Match?.Decision == null) break;
                 Check(view.Match.Players.Length == 4 && view.Match.Players.All(p => p.Life == 40), "The deck starts a real four-player Commander game");

@@ -78,11 +78,13 @@ internal sealed class DeckTuningSmoke(TableWindow.Probe view) : ITableAutomation
                 Click("workshop-card-consider", 7); break;
             case 7:
                 Check(Deck.Problem.Length > 0 && Workshop.Considering.Any(c => c.Card.Card.Name == "Sol Ring") && Deck.Entries.All(e => e.Card.Name != "Sol Ring"), "Moving a card to Considering excludes it from the played list and updates deck checks");
-                Check(view.DeckIssueBounds != null && view.Hits.Any(h => h.Id == "workshop-insights"), "A draft keeps its live deck checks and tuning insights available");
-                Capture("tuning-01-invalid-draft"); Click("workshop-insights", 8); break;
+                Check(view.DeckIssueBounds != null && view.Hits.Any(h => h.Id == "deck-analysis"), "A draft keeps its live deck checks and tuning insights available");
+                Capture("tuning-01-invalid-draft"); Click("deck-analysis", 8); break;
             case 8:
-                Check(view.WorkshopDialog == "insights" && Workshop.Insights.RoleCounts.Count > 0, "Composition and role counts remain available while a deck is invalid");
-                Click("workshop-dialog-close", 9); break;
+                Check(view.AnalysisOpen && view.WorkshopDialog.Length == 0 && Workshop.Insights.RoleCounts.Count > 0
+                    && view.Hits.Any(hit => hit.Id == "analysis-model"),
+                    "A draft keeps Tune and its optional full resource evidence available without a separate Insights dialog");
+                Click("workshop-build", 9); break;
             case 9: Click("deck-considering", 10); break;
             case 10:
                 var option = Workshop.Considering.Single(c => c.Card.Card.Name == "Sol Ring");
@@ -153,7 +155,8 @@ internal sealed class DeckTuningSmoke(TableWindow.Probe view) : ITableAutomation
                 Check(!view.Hits.Any(h => h.Id == "workshop-players:6"), "The native workspace offers only table sizes supported by its renderer");
                 Click("workshop-players:2", 34); break;
             case 34:
-                Check(view.Hits.Any(h => h.Id == "workshop-start-game"), "A complete tuned list can launch a two-player real AI test");
+                Check(view.Hits.Any(h => h.Id == "workshop-start-game") && view.Hits.Any(h => h.Id == "workshop-prepare"),
+                    "An unprepared complete list can start its real AI test directly without first choosing an opponent-setup gate");
                 Capture("tuning-04-table-setup"); Click("workshop-start-game", 35); break;
             case 35:
                 if (view.Match == null || view.Match.Status == "starting" || view.Match.Players.Length == 0) break;

@@ -104,7 +104,7 @@ internal sealed partial class TableApplication
             canvas.Rounded(new(x + width + 3, thumbTop, 3, thumbHeight), Blue * .7f, 1);
         }
         // Read-only state must not click a different battlefield beneath it.
-        hits.Add(new("battlefield-reader-state", Scope, battlefieldReaderStateBounds, () => { }));
+        hits.Add(new("battlefield-reader-state", Scope, battlefieldReaderStateBounds, () => { }, ShowPointer: false));
     }
 
     private bool ScrollBattlefieldReaderState(int direction)

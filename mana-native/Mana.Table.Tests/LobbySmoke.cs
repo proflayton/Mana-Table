@@ -122,7 +122,7 @@ internal sealed class LobbySmoke(TableWindow.Probe view, ForgePaths paths) : ITa
         if (!view.Loaded || view.Busy || view.ActivityOpen && stage != 36) return;
         switch (stage) {
             case 0:
-                Check(!view.DeckConfirmed && !view.Hits.Any(h => h.Id == "start-solo"), "An unconfirmed deck cannot start a solo table");
+                Check(view.SelectedDeck == null && !view.Hits.Any(h => h.Id == "start-solo"), "An empty home cannot start a game before a playable deck is selected");
                 Click("player-name", 400); break;
             case 400: view.TypeText("Table Host"); stage++; break;
             case 401: Click("player-name-save", 402); break;
@@ -144,17 +144,20 @@ internal sealed class LobbySmoke(TableWindow.Probe view, ForgePaths paths) : ITa
             case 3:
                 if (previewAfter == 0) { previewAfter = view.Now + 1; break; }
                 if (view.Now < previewAfter) break;
-                Check(view.SetupModal == "confirm" && !view.DeckConfirmed && Deck.Problem.Length == 0, "Selecting a precon opens a review without implicitly confirming it");
-                Capture("02-deck-confirmation"); Click("setup-close", 4); break;
+                Check(view.SetupModal.Length == 0 && !view.DeckConfirmed && Deck.Problem.Length == 0
+                    && view.Hits.Any(h => h.Id == "start-solo"), "Selecting a valid precon returns directly to Play without requiring review or starting a game");
+                Capture("02-selected-deck-home"); Click("review-deck", 4); break;
             case 4:
-                Check(!view.DeckConfirmed && !view.Hits.Any(h => h.Id == "start-solo"), "Dismissing the review does not confirm the deck");
-                Click("review-deck", 5); break;
-            case 5: Click("confirm-deck", 6); break;
+                Check(view.SetupModal == "confirm" && !view.DeckConfirmed, "Deck review opens only after the player explicitly asks to inspect the list");
+                reviewRevision = Deck.Revision;
+                Click("confirm-deck", 6); break;
             case 6:
-                Check(view.DeckConfirmed && view.SoloSetup != null && view.Hits.Any(h => h.Id == "start-solo"), "Explicit confirmation prepares a playable four-seat AI lobby");
-                Click("ai-next:0", 7); break;
-            case 7: choices = Opponents(); Click("choose-ai:1", 210); break;
+                Check(!view.DeckConfirmed && view.SoloSetup == null && Deck.Revision == reviewRevision && view.Hits.Any(h => h.Id == "start-solo"),
+                    "Closing optional deck reading preserves the saved document and Play action without preparing or confirming anything");
+                Click("choose-ai:1", 210); break;
             case 210:
+                Check(view.SoloSetup?.DeckId == Deck.Id, "Opening an AI seat prepares compatible opponents for the actual selected list");
+                choices = Opponents();
                 Check(!view.Hits.Any(h => h.Id is "import" or "picker-saved"), "AI deck selection exposes only supported opponent decks");
                 Click("picker-search", 211); break;
             case 211:
@@ -162,7 +165,7 @@ internal sealed class LobbySmoke(TableWindow.Probe view, ForgePaths paths) : ITa
                 view.TypeSetupText(opponent.Name); stage++; break;
             case 212: Capture("08-ai-deck-picker"); Click("opponent:" + opponentId, 213); break;
             case 213:
-                Check(view.DeckConfirmed && Opponents()[1] == opponentId && Opponents()[0] == choices[0] && Opponents()[2] == choices[2], "Choosing an AI deck changes only that seat and preserves the confirmed player deck");
+                Check(view.SoloSetup?.DeckId == Deck.Id && Opponents()[1] == opponentId && Opponents()[0] == choices[0] && Opponents()[2] == choices[2], "Choosing an AI deck changes only that seat and keeps its preparation associated with the selected player deck");
                 choices = Opponents(); Capture("03-solo-lobby"); Click("edit-deck", 8); break;
             case 8:
                 Check(view.DeckEditor && !view.DeckConfirmed, "Opening the builder unlocks the confirmed deck");
@@ -171,23 +174,27 @@ internal sealed class LobbySmoke(TableWindow.Probe view, ForgePaths paths) : ITa
             case 109: Click("deck-done", 10); break;
             case 10:
                 Check(view.SetupModal.Length == 0 && !view.DeckEditor && Deck.Name == "My merfolk table copy" && !view.DeckConfirmed, "Returning from the builder keeps the saved changes in setup without forcing confirmation");
+                reviewRevision = Deck.Revision;
                 Click("review-deck", 1010); break;
             case 1010: Click("confirm-deck", 11); break;
             case 11:
-                Check(view.DeckConfirmed && Opponents().SequenceEqual(choices), "Reconfirming an edited deck preserves all three AI choices");
-                Click("friends-tab", 12); break;
+                Check(!view.DeckConfirmed && Deck.Revision == reviewRevision && Opponents().SequenceEqual(choices),
+                    "Optional reading after edits leaves the document unchanged and does not prepare a table or discard the retained AI preferences");
+                Click("choose-ai:1", 1011); break;
+            case 1011:
+                Check(view.SoloSetup?.DeckId == Deck.Id && Opponents().SequenceEqual(choices), "Preparing the edited list on demand preserves all three compatible AI preferences");
+                Click("setup-close", 1012); break;
+            case 1012: Click("friends-tab", 12); break;
             case 12:
-                Check(!view.DeckConfirmed, "Switching between AI and friend tables requires a fresh confirmation");
+                Check(!view.DeckConfirmed && view.Lobby == null && view.Hits.Any(h => h.Id == "host"), "Changing play modes keeps game entry explicit and reveals host controls in place");
                 Click("connection-options", 13); break;
             case 13: Click("forward", 14); break;
             case 14: Click("setup-close", 15); break;
             case 15: Click("host", 16); break;
             case 16:
-                Check(view.Lobby is { Mode: "hosting", Seats.Length: 4, CanStart: false, PortMapping: "disabled" } && Local?.Ready == false, "Hosting opens four synchronized seats with no implicit readiness or router mapping");
-                Click("review-deck", 17); break;
-            case 17: Click("confirm-deck", 18); break;
-            case 18:
-                Check(view.DeckConfirmed && Local is { Ready: false } && Local.Deck == Deck.Name, "Confirming submits the exact saved deck but leaves readiness explicit");
+                Check(view.Lobby is { Mode: "hosting", Seats.Length: 4, CanStart: false, PortMapping: "disabled" }
+                    && view.DeckConfirmed && Local is { Ready: false } && Local.Deck == Deck.Name,
+                    "Hosting brings the valid selected list to four synchronized seats without an extra confirmation, implicit readiness or router mapping");
                 Click("ready", 19); break;
             case 19:
                 Check(Local?.Ready == true && view.Lobby?.CanStart == false, "A ready host still waits for the other three seats");
@@ -231,14 +238,13 @@ internal sealed class LobbySmoke(TableWindow.Probe view, ForgePaths paths) : ITa
                 Click("change-deck", 121); break;
             case 121: Click("deck:" + Deck.Id, 221); break;
             case 221:
-                Check(view.SetupModal == "confirm" && view.DeckConfirmed && Local?.Ready == true, "Selecting the current saved deck is read-only and keeps its seat ready");
-                Click("setup-close", 222); break;
-            case 222: Click("change-deck", 223); break;
+                Check(view.SetupModal.Length == 0 && view.DeckConfirmed && Local?.Ready == true, "Rechoosing the current saved deck returns to the table without reopening it or withdrawing readiness");
+                Click("change-deck", 223); break;
             case 223: Click("deck:" + otherDeckId, 122); break;
             case 122:
-                Check(Deck.Id == otherDeckId && view.SetupModal == "confirm" && !view.DeckConfirmed && Local?.Ready == false, "Choosing another saved deck clears confirmation and readiness before its review");
-                Click("confirm-deck", 123); break;
-            case 123: Click("ready", 124); break;
+                Check(Deck.Id == otherDeckId && view.SetupModal.Length == 0 && !view.DeckConfirmed && Local?.Ready == false,
+                    "Choosing another saved list returns to the same table, clears readiness and requires no review");
+                Click("ready", 124); break;
             case 124: Click("review-deck", 250); break;
             case 250: Click("review-list", 251); break;
             case 251: Click("review-search", 252); break;
@@ -251,9 +257,9 @@ internal sealed class LobbySmoke(TableWindow.Probe view, ForgePaths paths) : ITa
                 Check(view.DeckEditor && !view.DeckConfirmed && Local?.Ready == false, "Entering the builder clears synchronized readiness before any editing begins");
                 Check(view.DeckSelection?.Id == editCardId && view.Hits.Any(h => h.Id == "deck-card:Main:" + editCardId), "Opening the builder from review selects and reveals the exact card printing for editing");
                 Click("deck-done", 23); break;
-            case 23: Click("review-deck", 1023); break;
-            case 1023: Click("confirm-deck", 24); break;
-            case 24: Click("ready", 25); break;
+            case 23:
+                Check(!view.DeckConfirmed && Local?.Ready == false, "Closing the builder leaves readiness explicit without another confirmation screen");
+                Click("ready", 25); break;
             case 25: background = JoinGuests(); stage++; break;
             case 26:
                 if (view.Lobby?.CanStart != true) break;
@@ -369,10 +375,10 @@ internal sealed class LobbySmoke(TableWindow.Probe view, ForgePaths paths) : ITa
                 view.TypeSetupText(new string('\b', 220) + joinTo); stage++; break;
             case 38: Click("join-confirm", 39); break;
             case 39:
-                Check(view.SetupModal.Length == 0 && view.Lobby?.Mode == "joined" && !view.DeckConfirmed, "Native invite entry joins the remote host and asks for deck confirmation");
-                Click("review-deck", 40); break;
-            case 40: Click("confirm-deck", 41); break;
-            case 41: Click("ready", 42); break;
+                Check(view.SetupModal.Length == 0 && view.Lobby?.Mode == "joined" && view.DeckConfirmed
+                    && Local is { Ready: false } && Local.Deck == Deck.Name,
+                    "Joining brings the selected saved deck to the remote table while leaving Ready explicit");
+                Click("ready", 42); break;
             case 42:
                 Check(Local?.Ready == true && !view.Hits.Any(h => h.Id == "start"), "A guest can ready its confirmed deck but cannot start the host's table");
                 Capture("06-guest-lobby"); Click("edit-deck", 43); break;
@@ -382,10 +388,10 @@ internal sealed class LobbySmoke(TableWindow.Probe view, ForgePaths paths) : ITa
             case 44:
                 Check(peerLobby!.Seats.Any(s => s.Type == "REMOTE" && !s.Ready && s.Deck == Deck.Name), "The host observes the guest becoming unready through ordinary synchronization");
                 Click("deck-done", 45); break;
-            case 45: Click("review-deck", 1045); break;
-            case 1045: Click("confirm-deck", 46); break;
-            case 46:
-                Check(view.DeckConfirmed && Local?.Ready == false, "Reconfirmation does not silently ready the guest"); Click("ready", 47); break;
+            case 45:
+                Check(!view.DeckConfirmed && Local?.Ready == false && view.SetupModal.Length == 0,
+                    "Returning from guest deck editing preserves the table and leaves the next Ready intent explicit");
+                Click("ready", 47); break;
             case 47: Click("leave", 48); break;
             case 48:
                 Check(view.Lobby == null && !view.DeckConfirmed, "Leaving a joined table clears its seat and confirmation");
@@ -396,8 +402,13 @@ internal sealed class LobbySmoke(TableWindow.Probe view, ForgePaths paths) : ITa
                 Check(!view.DeckEditor && view.SetupModal.Length == 0 && !view.DeckConfirmed && !view.Hits.Any(h => h.Id == "start-solo") && view.Hits.Any(h => h.Id == "edit-deck"), "Incomplete drafts return to setup and remain editable without becoming playable");
                 Click("review-deck", 1050); break;
             case 1050:
-                Check(view.SetupModal == "confirm" && !view.Hits.Any(h => h.Id == "confirm-deck") && view.Hits.Any(h => h.Id == "confirm-edit"), "Explicitly reviewing an incomplete draft still cannot confirm it for play");
+                Check(view.SetupModal == "confirm" && !view.DeckConfirmed && Deck.Problem.Length > 0 && view.Hits.Any(h => h.Id == "confirm-edit"),
+                    "Optional reading of an incomplete draft retains its actual problem and route to edit without authorizing play");
                 Capture("07-incomplete-deck");
+                Click("confirm-deck", 1051); break;
+            case 1051:
+                Check(view.SetupModal.Length == 0 && !view.DeckConfirmed && !view.Hits.Any(hit => hit.Id == "start-solo"),
+                    "Back to play closes the invalid list reader without preparing, confirming or starting it");
                 File.WriteAllText(Path.Combine(view.Profile, "lobby-results.json"), JsonSerializer.Serialize(checks, new JsonSerializerOptions { WriteIndented = true }));
                 view.Exit(); stage++; break;
         }

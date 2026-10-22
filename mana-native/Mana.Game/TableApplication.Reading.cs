@@ -32,7 +32,7 @@ internal sealed partial class TableApplication
     private string? readingId => cardPresentation.PinnedId;
     private Rectangle? hoverPreview => cardPresentation.ReaderBounds;
     internal bool InteractivePointer => !dragging && HitAt(pointer) is { } hit
-        && hit.Id is not ("battlefield-focus-surface" or "decision-context-panel" or "public-outcome-panel" or "stack-card-preview" or "source-actions-surface" or "battlefield-reader-state")
+        && hit.ShowPointer
         && (hit.Card is not { } card || !card.FaceDown || IsCardActionable(card));
 
     private void ExtendCardHit(Card card, Rectangle bounds) => hits.ExtendCanonical(

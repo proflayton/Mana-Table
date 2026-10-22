@@ -40,7 +40,7 @@ internal static class DeckImportSmoke
             try {
                 using var game = new TableWindow(TestTableServices.For(engine), working.Profile, null, null, size, artSource: new EmptyArt());
                 var script = new Script(game.TestPort); arrange(script, game.TestPort);
-                game.Automation = script; game.TestPort.DismissWelcome(); game.Run();
+                game.Automation = script;  game.Run();
             } finally { engine.DisposeAsync().AsTask().GetAwaiter().GetResult(); }
         }
         Scene((s, view) => {
@@ -59,8 +59,9 @@ internal static class DeckImportSmoke
             s.Click("deck-done");
             s.Then(() => Check(view.SetupModal.Length == 0 && !view.DeckEditor && !view.DeckConfirmed && view.SelectedDeck?.Id == deckId, "Leaving the imported builder returns to setup with the same saved deck and no forced review"));
             s.Click("change-deck"); s.Click(() => "deck:" + deckId);
-            s.Then(() => Check(view.SetupModal == "confirm" && Contents(view.DeckDetails!) == contents, "The real deck picker reopens the imported list with its quantities and commander intact"));
-            s.Click("confirm-edit"); s.Ready();
+            s.Then(() => Check(view.HomeVisible && !view.DeckConfirmed && view.SelectedDeck?.Id == deckId
+                && Contents(view.DeckDetails!) == contents, "The real deck picker returns the exact imported list to Home with its quantities and commander intact and no forced review"));
+            s.Click("edit-deck"); s.Ready();
             s.Then(() => Check(view.DeckEditor && Contents(view.DeckDetails!) == contents, "Reopening the native builder refreshes the exact imported document"));
             s.Then(() => { s.AllowError = true; view.ImportDeck("Rejected annotated list", text + "\n1x " + invalidCard + " (zzz) 999 [Removal]\n"); });
             s.Until(() => !view.Busy && view.Error.Length > 0);

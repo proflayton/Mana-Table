@@ -26,6 +26,7 @@ internal static class Program
         testRun |= args.Contains("--smoke-headless-engine");
         testRun |= args.Contains("--smoke-cluttered-changes") || args.Contains("--smoke-headless-clutter");
         testRun |= args.Contains("--smoke-priority-flow") || args.Contains("--smoke-headless-priority-flow");
+        testRun |= args.Contains("--capture-deck-workspace");
         var profile = Arg("--profile") ?? (testRun
             ? Path.Combine(Path.GetTempPath(), "ManaTableNative-tests", Guid.NewGuid().ToString())
             : Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "ManaTableNative"));
@@ -56,12 +57,6 @@ internal static class Program
                 test.Run(); return 0;
             }
             if (args.Contains("--smoke-equipment")) { EquipmentSmoke.Run(profile, size); return 0; }
-            // Existing UI regressions start directly at their subject. Onboarding
-            // has its own fresh-profile and persistence coverage above.
-            if (args.Any(a => a is "--smoke-ui-ai" or "--smoke-ui-interactions" or "--smoke-table-feel" or "--smoke-card-reading" or "--smoke-card-states" or "--smoke-compact-selection" or "--smoke-deck-building" or "--smoke-workshop" or "--smoke-analysis" or "--smoke-lobby" or "--smoke-auto-dock" or "--smoke-action-feedback" or "--smoke-priority-abilities"))
-                File.WriteAllText(Path.Combine(profile, "experience.json"), JsonSerializer.Serialize(new { WelcomeSeen = true, TableGuideSeen = true }));
-            if (args.Contains("--smoke-deck-experience"))
-                File.WriteAllText(Path.Combine(profile, "experience.json"), JsonSerializer.Serialize(new { WelcomeSeen = true, TableGuideSeen = true }));
             if (args.Contains("--smoke-auto-dock")) {
                 var scenario = new InteractionScenarioEngine(); scenario.Present(PresentationSmoke.Example());
                 using var test = new TableWindow(TestTableServices.For(scenario), profile, null, "controlled-frames", size, initialState: scenario.State);
@@ -129,7 +124,7 @@ internal static class Program
                 if (args.Contains("--smoke-printings")) game.Automation = new PrintingsSmoke(game.TestPort);
                 if (args.Contains("--smoke-deck-tuning")) game.Automation = new DeckTuningSmoke(game.TestPort);
                 if (args.Contains("--smoke-deck-experience")) game.Automation = new DeckExperienceSmoke(game.TestPort);
-                if (game.Automation != null) game.TestPort.DismissWelcome();
+                if (args.Contains("--capture-deck-workspace")) game.Automation = new DeckWorkspaceCapture(game.TestPort);
                 game.Run();
             } finally { engine.DisposeAsync().AsTask().GetAwaiter().GetResult(); }
             return 0;

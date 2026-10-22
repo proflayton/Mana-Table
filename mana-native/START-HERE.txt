@@ -237,7 +237,10 @@ Click a card to enlarge it for reading; click it again or empty table to close.
 Use the opened card's current Play, Cast or ability action, or drag a playable hand
 card or your commander onto the table. Each partner commander has its own Cast
 action and commander tax. Required choices, targets and mana payments use their normal
-single click and stay compact. Right-click opens the complete card inspector.
+single click and stay compact. Right-click uses the same full-card reader.
+Required selections, auxiliary views and alternate faces retain a read-only
+inspector when the table reader is unavailable. Actions stay beside the live
+card; inspecting never activates an ability or casts from a public zone.
 Zone piles open browsers containing only the cards your player can see. Your own
 graveyard, exile and command browsers can offer engine-authorized actions,
 including Flashback when available. Hidden hands show anonymous backs.

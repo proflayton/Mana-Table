@@ -7,7 +7,7 @@ namespace Mana.Table.Interaction;
 // Input geometry belongs to the displayed occurrence. The table host still
 // owns actions and checks their current game/decision scope before dispatch.
 internal sealed record TableHit(string Id, string Scope, Rectangle Bounds, Action Action,
-    Card? Card = null, string? Zone = null, int? PlayerId = null, Func<Point, bool>? Shape = null)
+    Card? Card = null, string? Zone = null, int? PlayerId = null, Func<Point, bool>? Shape = null, bool ShowPointer = true)
 {
     public bool Contains(Point point) => Bounds.Contains(point) && (Shape?.Invoke(point) ?? true);
 }

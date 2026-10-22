@@ -88,8 +88,9 @@ internal sealed partial class CardReadingSmoke : ITableAutomation
             MoveCard("hand-3");
         });
         RightClick();
-        Step(.1, () => Check(view.Overlay == "inspect" && scenario.Replies.Count == 0, "Right-click inspects a playable card without playing it"));
-        Step(0, () => MoveHit("close-overlay")); Click();
+        StepWhen(() => ReadingReady("hand-3"), 3, () => Check(view.Overlay.Length == 0 && scenario.Replies.Count == 0,
+            "Right-click uses the same full-card reader without opening another inspector or playing the card"));
+        Step(0, () => MoveCard("hand-3")); Click();
         Step(.1, () => MoveCard("hand-0")); Click();
         Step(.02, () => MoveCard("hand-2")); Click();
         Step(.08, () => Check(scenario.Replies.Count == 0, "Fast clicks on different cards only change the reader and never play a card"));
@@ -533,11 +534,11 @@ internal sealed partial class CardReadingSmoke : ITableAutomation
         });
         RightClick();
         Step(.1, () => {
-            Check(view.Overlay == "inspect" && scenario.Replies.Count == repliesBeforePhasedClick,
-                "Right-clicking a phased-out land inspects it without submitting a game action");
-            Check(!view.Hits.Any(h => h.Id == "activate-ability"), "A phased-out land's inspector exposes no enabled ability action");
-            Capture("09b-phased-out-inspector");
-            MoveHit("close-overlay");
+            Check(view.Overlay.Length == 0 && IsleReadable() && scenario.Replies.Count == repliesBeforePhasedClick,
+                "Right-clicking a phased-out land keeps its canonical reader without submitting a game action");
+            Check(!view.Hits.Any(h => h.Id is "activate-ability" or "read-card-action"), "A phased-out land's reader exposes no enabled ability action");
+            Capture("09b-phased-out-reader");
+            MoveCard("seat-0-0");
         }); Click();
         Step(.1, () => {
             Check(view.Overlay.Length == 0 && scenario.Replies.Count == repliesBeforePhasedClick,

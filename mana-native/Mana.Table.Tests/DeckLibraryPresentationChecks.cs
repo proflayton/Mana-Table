@@ -17,10 +17,9 @@ internal static class DeckLibraryPresentationChecks
     {
         var engine = new LibraryEngine();
         using (var run = new Runner(profile, "deck-library-input", engine, check)) {
-            run.Click("review-deck"); run.Click("confirm-deck");
-            run.Until(() => run.View.DeckConfirmed && !run.View.Busy, "The controlled current deck confirms through its real setup action");
-            string current = run.View.SelectedDeck!.Id;
             run.Click("choose-ai:0");
+            run.Until(() => run.View.DeckConfirmed && !run.View.Busy && run.View.SetupModal == "decks", "Explicit opponent selection prepares the current deck and opens its compatible choices");
+            string current = run.View.SelectedDeck!.Id;
             check(!run.Frame.Hits.Any(hit => hit.Id == "picker-deleted" || hit.Id.StartsWith("deck-delete:", StringComparison.Ordinal)
                     || hit.Id.StartsWith("deck-restore:", StringComparison.Ordinal)) && run.View.DeckConfirmed,
                 "An AI opponent's deck choices keep the player's confirmation and expose no saved-library removal controls");
@@ -136,7 +135,7 @@ internal static class DeckLibraryPresentationChecks
         {
             string directory = Path.Combine(profile, name); Directory.CreateDirectory(directory);
             new PlayPreferences { Automatic = false, ReducedMotion = true, Sounds = false, TextScale = 1.3f }.Save(directory);
-            this.check = check; app = new(TestTableServices.For(engine), directory) { Automated = true }; app.Initialize(); View.DismissWelcome();
+            this.check = check; app = new(TestTableServices.For(engine), directory) { Automated = true }; app.Initialize();
             Until(() => View.Loaded && !View.Busy && !View.StartupVisible && !View.ActivityOpen, "The controlled deck library opens through normal startup");
         }
         internal void Tick(Point? pointer = null, ButtonState left = ButtonState.Released)

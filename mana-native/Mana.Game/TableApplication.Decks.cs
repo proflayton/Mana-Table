@@ -11,7 +11,8 @@ internal sealed partial class TableApplication
     private string deckSection = "", deckCardSection = "Main", deckFilter = "";
     private CatalogCard? librarySelection;
     private string? deckBackId;
-    private const int DeckRows = 9;
+    private int DeckRowHeight => Math.Max(32, DeckRowsToShow().Select(entry => canvas.TextSize(entry.Card.Name, .66f, 378, 80, true).Y + 12).DefaultIfEmpty(32).Max());
+    private int DeckRows => Math.Max(1, 288 / DeckRowHeight);
     private bool CommanderDeck => selectedDeckDetails?.Format is null or "Commander";
     private bool DeckReady => selectedDeckDetails is { Problem.Length: 0, SaveError.Length: 0 } && (!CommanderDeck || selectedDeckDetails.CommanderIds.Length > 0);
     private bool DeckCanCopy => selectedDeckDetails?.Entries.Any(e => e.Quantity > 0) == true;
@@ -79,7 +80,6 @@ internal sealed partial class TableApplication
             var deck = await import(); var saved = await catalog.DecksAsync();
             updates.Enqueue(() => decks = saved);
             await ReadSelectedDeck(deck, edit);
-            if (!edit) updates.Enqueue(ReviewDeck);
         }, title, detail);
     }
     private async Task UnreadyForDeckEdit()

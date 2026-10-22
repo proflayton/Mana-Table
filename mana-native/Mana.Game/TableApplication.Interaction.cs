@@ -10,6 +10,13 @@ internal sealed partial class TableApplication
 {
     private void ActivateHit(Hit hit)
     {
+        // A pile face represents its zone on ordinary click. Explicit inspection
+        // can still read that disclosed occurrence without opening the browser.
+        if (cardPresentation.Cards.Any(entry => entry.Hit.Id == hit.Id && entry.Hit.Scope == hit.Scope && entry.Request.OpensZone)) {
+            CollapseCardReading();
+            hit.Action();
+            return;
+        }
         if (ToggleCardReader(hit)) return;
         if (OverlayOpen && match?.Decision?.Intent == DecisionIntent.Priority && hit.Card is { } card
                 && hit.Zone is "Hand" or "Command" or "Graveyard" or "Exile" or "Library") { Inspect(card); return; }
@@ -21,6 +28,18 @@ internal sealed partial class TableApplication
     private void Inspect(Card card)
     {
         if (InspectAllocationAtPointer()) return;
+        // Ordinary inspection stays on the actual scene occurrence and shares
+        // its reader/action catalog. Auxiliary required views and reverse faces
+        // retain the noncommitting fallback until they use that same owner.
+        var canonical = cardPresentation.Cards.LastOrDefault(entry => entry.ChoiceSlot < 0
+            && CardViews.Same(entry.Card, card) && CardContext.CanRead(entry));
+        bool needsStateDetails = canonical?.Zone == "Battlefield" && !TableStudyEnabled
+            && card.States is { } states && states.Length > 0;
+        if (card.OtherFace == null && !needsStateDetails && !AbilityActionPending && !CompactCardDecision && !dragging && canonical != null
+            && (canonical.Focused || ToggleCardReader(canonical.Hit))) {
+            inspected = null; inspectedChoice = null;
+            return;
+        }
         // A poll may have revoked visibility since the last rendered hit region.
         var choice = cardPresentation.RevealedEntry(card, CardContext);
         inspectedChoice = choice == null ? null : (Scope, choice.ChoiceSlot);
@@ -115,6 +134,7 @@ internal sealed partial class TableApplication
             return;
         }
         if (match == null && deckEditor) {
+            if (ScrollDeckWorkspace(direction)) return;
             if (workshopDialog.Length > 0) return;
             if (deckMenu.Length > 0) return;
             if (pointer.X < 580 && catalogPage is { } page) {

@@ -66,12 +66,6 @@ internal sealed partial class TableApplication
     }
     private int AvailableZoneCount(Player player, string zone) => match != null && player.Id == match.ViewerId
         ? player.Zone(zone).Cards.Count(c => AvailableZone(c) == zone) : 0;
-    private static string ZoneUseLabel(string zone) => "Use from " + zone.ToLowerInvariant();
-    private void UseZoneCard(Card card, string zone, string scope)
-    {
-        if (busy || Scope != scope || AvailableZone(card) != zone) return;
-        overlay = ""; zoneName = null; CardClick(card);
-    }
     private void DrawZoneActionBadge(Player player, string zone, Pose pose)
     {
         int count = AvailableZoneCount(player, zone);
@@ -80,20 +74,5 @@ internal sealed partial class TableApplication
         canvas.Panel(badge, new(15, 41, 54), ActionAccent, 4);
         canvas.CenterText(count + " available", badge, ActionAccent, .49f, true);
         hits.Add(new("zone-actions:" + player.Id + ":" + zone, Scope, badge, () => OpenZone(player.Id, zone)));
-    }
-    private void DrawInspectorPlacement(Card original)
-    {
-        if (match == null) return;
-        var options = HandPlacements.Options(match, original);
-        if (options.Length > 0) {
-            canvas.Text(HandPlacements.Availability(match, original) + (options.Length == 1 ? " · " + options[0].SourceName : " · choose a source"), 686, 335, ActionAccent, .75f, 670, 2, true);
-            string scope = Scope;
-            Button("inspect-placement", options.Length == 1 ? "Place using " + options[0].SourceName : "Choose placement source", 1000, 727, 360,
-                () => { if (options.Length == 1) UseHandPlacement(original, options[0].Id, scope); else if (Scope == scope) OpenHandPlacement(original); }, !busy, true);
-        } else if (AvailableZone(original) is { } zone) {
-            canvas.Text("An action is available from your " + zone.ToLowerInvariant() + ". The game will show the available play and costs.", 686, 335, ActionAccent, .75f, 670, 2);
-            string scope = Scope;
-            Button("inspect-zone-use", ZoneUseLabel(zone), 1000, 727, 360, () => UseZoneCard(original, zone, scope), !busy, true);
-        }
     }
 }

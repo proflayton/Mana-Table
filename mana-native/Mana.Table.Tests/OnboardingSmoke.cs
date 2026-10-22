@@ -29,73 +29,78 @@ internal static class OnboardingSmoke
             var script = new Script(game.TestPort);
             arrange(script, game.TestPort); game.Automation = script; game.Run();
         }
-        bool Seen(string path, string key)
-        {
-            using var json = JsonDocument.Parse(File.ReadAllText(Path.Combine(path, "experience.json")));
-            return json.RootElement.GetProperty(key).GetBoolean();
-        }
-
-        string fresh = Case("fresh-skip");
+        string fresh = Case("fresh-home");
         Directory.CreateDirectory(Path.Combine(fresh, "decks"));
         var startup = new StartupEngine();
+        bool homeAutomatic = false, homeHeld = false;
         Scene(fresh, startup, (s, view) => {
             s.Then(() => {
-                Check(view.WelcomeOpen && !view.TableGuideOpen, "Fresh profiles start with a welcome rather than an active table");
-                Check(view.Hits.Any(h => h.Id == "experience-ai") && !view.Hits.Any(h => h.Id is "host" or "change-deck" or "start-solo"), "Welcome exposes play paths and isolates underlying setup controls");
-                s.Capture("01-welcome");
+                Check(view.Match == null && !view.TableGuideOpen, "Fresh profiles open their deck home without an active game or forced controls tour");
+                Check(view.Hits.Any(h => h.Id == "change-deck") && view.Hits.Any(h => h.Id == "friends-tab")
+                    && !view.Hits.Any(h => h.Id == "start-solo"), "A fresh home exposes real deck and table choices while an empty library cannot start a game");
+                homeAutomatic = view.Automatic; homeHeld = view.Held;
+                s.Capture("01-deck-home");
             });
             s.Pulse(Keys.Space, Keys.F, Keys.C, Keys.LeftControl, Keys.Enter);
-            s.Then(() => Check(view.WelcomeOpen && view.SetupModal.Length == 0 && !view.ChatOpen, "Gameplay and chat shortcuts do not escape the welcome"));
-            s.Click("experience-skip");
+            s.Then(() => Check(view.Match == null && view.SetupModal.Length == 0 && !view.ChatOpen
+                    && view.Automatic == homeAutomatic && view.Held == homeHeld && startup.Mutations.Count == 0,
+                "Gameplay shortcuts at home neither change play policy nor import, connect, ready or start anything"));
+            s.Click("friends-tab");
             s.Then(() => {
-                Check(!view.ExperienceOpen && view.Match == null, "Skipping welcome returns to setup without starting a match");
-                Check(Seen(fresh, "WelcomeSeen") && !Seen(fresh, "TableGuideSeen"), "Welcome dismissal persists independently of first-table controls");
-                Check(startup.Mutations.Count == 0, "Welcome and dismissal never import, connect, ready, or start through the engine");
+                Check(!view.SoloTab && view.Hits.Any(h => h.Id == "host") && view.Hits.Any(h => h.Id == "join")
+                    && view.Match == null && startup.Mutations.Count == 0, "Choosing Friends reveals host and invite actions in place without opening a table");
+                Check(!File.Exists(Path.Combine(fresh, "experience.json")), "Ordinary home navigation does not write an introduction or guide-completion state");
             });
+            s.Click("solo-tab");
+            s.Click("change-deck");
+            s.Then(() => Check(view.SetupModal == "decks" && startup.Mutations.Count == 0,
+                "Opening the deck library is browsing, without an implicit import or game"));
+            s.Click("setup-close");
             s.Click("experience-home");
-            s.Then(() => Check(view.WelcomeOpen, "The setup screen can reopen the welcome after dismissal"));
-            s.Then(() => Check(!view.Hits.Any(h => h.Id is "experience-guide" or "experience-guide-open"), "The main menu offers play paths without sending players through a controls panel"));
-            s.Click("experience-friends");
-            s.Then(() => Check(!view.ExperienceOpen && !view.SoloTab && view.Hits.Any(h => h.Id == "host") && view.Hits.Any(h => h.Id == "join"), "Choosing friends places the player at the relevant host and join controls"));
+            s.Then(() => Check(view.Match == null && view.Hits.Any(h => h.Id == "change-deck") && !view.TableGuideOpen
+                    && startup.Mutations.Count == 0, "Play returns to the same usable deck home without a marketing page or controls tour"));
             s.Pulse(Keys.F1);
             s.Then(() => { view.Accept(null); view.Accept(null); });
-            s.Then(() => Check(view.TableGuideOpen && !view.WelcomeOpen, "Repeated idle-lobby observations do not dismiss an optional F1 controls reference"));
+            s.Then(() => Check(view.TableGuideOpen, "Repeated idle observations do not dismiss an explicitly requested F1 controls reference"));
             s.Click("experience-guide-close");
         });
         Scene(fresh, new StartupEngine(), (s, view) => s.Then(() => {
-            Check(view.WelcomeOpen && !view.TableGuideOpen && Seen(fresh, "WelcomeSeen") && view.Hits.Any(h => h.Id == "experience-ai"), "Every application launch returns to the main menu while remembering introductory guidance");
-            s.Capture("02-returning-main-menu");
+            Check(view.HomeVisible && !view.TableGuideOpen && view.Hits.Any(h => h.Id == "change-deck")
+                    && view.Hits.Any(h => h.Id == "friends-tab") && !File.Exists(Path.Combine(fresh, "experience.json")),
+                "A later launch opens ordinary deck navigation without creating or consulting introduction flags");
+            s.Capture("02-returning-deck-home");
         }));
 
         string escape = Case("fresh-escape");
         Scene(escape, new StartupEngine(), (s, view) => {
             s.Pulse(Keys.Escape);
-            s.Then(() => Check(!view.WelcomeOpen && Seen(escape, "WelcomeSeen"), "Escape dismisses and remembers the welcome"));
+            s.Then(() => Check(view.Match == null && view.SetupModal.Length == 0 && !view.TableGuideOpen
+                    && view.Hits.Any(h => h.Id == "change-deck"), "Escape at home leaves the real deck/play choices usable instead of dismissing into another setup page"));
         });
 
         foreach (string route in new[] { "ai", "friends", "decks" }) {
             string path = Case("route-" + route); var engine = new StartupEngine();
             Scene(path, engine, (s, view) => {
-                s.Click("experience-" + route);
+                s.Click(route == "ai" ? "solo-tab" : route == "friends" ? "friends-tab" : "change-deck");
                 s.Then(() => {
-                    Check(!view.WelcomeOpen && view.Match == null && !view.DeckConfirmed, $"The {route} welcome path leaves play and deck confirmation explicit");
+                    Check(!view.TableGuideOpen && view.Match == null && !view.DeckConfirmed, $"The {route} home action leaves game entry and readiness explicit");
                     Check(route == "friends" ? !view.SoloTab && view.SetupModal.Length == 0 && view.Hits.Any(h => h.Id == "host") && view.Hits.Any(h => h.Id == "join")
-                        : view.SetupModal == "decks" && (route != "ai" || view.SoloTab), $"The {route} welcome path opens its intended setup view");
+                        : route == "decks" ? view.SetupModal == "decks" : view.SoloTab && view.SetupModal.Length == 0,
+                        $"The {route} action changes only its intended mode or library context");
                     Check(engine.Mutations.Count == 0, $"Choosing the {route} path sends no implicit engine writes");
-                    Check(Seen(path, "WelcomeSeen") && !Seen(path, "TableGuideSeen"), $"Choosing the {route} path does not mark optional controls as reviewed");
+                    Check(!File.Exists(Path.Combine(path, "experience.json")), $"Choosing the {route} path requires no persisted introduction or guide state");
                     if (route == "friends") s.Capture("02-friends-path");
                 });
             });
         }
 
         string tableProfile = Case("first-table");
-        File.WriteAllText(Path.Combine(tableProfile, "experience.json"), JsonSerializer.Serialize(new { WelcomeSeen = true, TableGuideSeen = false }));
         var scenario = new InteractionScenarioEngine(); scenario.Present(PresentationSmoke.Example());
         var initial = scenario.State;
         string helpDecision = "";
         Scene(tableProfile, scenario, (s, view) => {
             s.Then(() => {
-                Check(!view.TableGuideOpen && !view.WelcomeOpen, "A first playable table opens directly without a forced controls panel");
+                Check(!view.TableGuideOpen && view.Match?.Id == initial.Id, "A first playable table opens directly without a forced controls panel");
                 Check(view.Hits.Any(h => h.Card != null) && view.Hits.Any(h => h.Id == "confirm") && view.Hits.Any(h => h.Id == "settings"), "A fresh player can use the actual cards and current game decision immediately");
                 Check(scenario.Replies.Count == 0 && view.Match?.Decision?.Id == initial.Decision!.Id, "Entering the table never answers the player's pending decision");
                 s.Capture("03-first-table-playable");
@@ -116,7 +121,8 @@ internal static class OnboardingSmoke
             s.Click("experience-guide-close");
             s.Then(() => {
                 Check(!view.TableGuideOpen && view.Automatic && view.Held, "Completing the guide preserves Auto and the current-turn hold");
-                Check(Seen(tableProfile, "TableGuideSeen") && view.Match?.Decision?.Id == initial.Decision!.Id, "Guide completion persists without answering the waiting game choice");
+                Check(!File.Exists(Path.Combine(tableProfile, "experience.json")) && view.Match?.Decision?.Id == initial.Decision!.Id,
+                    "Closing an optional controls reference writes no completion flag and leaves the waiting game choice unanswered");
                 view.SetAutomatic(false);
             });
             s.Pulse(Keys.F1);
@@ -154,7 +160,7 @@ internal static class OnboardingSmoke
             if (savedDeck) { Directory.CreateDirectory(Path.Combine(path, "decks")); File.WriteAllText(Path.Combine(path, "decks", "existing.dck"), "Existing saved deck"); }
             else new PlayPreferences { Automatic = false, PlayerName = "Returning player" }.Save(path);
             Scene(path, new StartupEngine(), (s, view) => s.Then(() => {
-                Check(view.WelcomeOpen && !view.TableGuideOpen && view.Hits.Any(h => h.Id == "experience-ai"), $"A returning profile with {(savedDeck ? "saved decks" : "play preferences")} opens the main menu without a forced controls tour");
+                Check(!view.TableGuideOpen && view.Hits.Any(h => h.Id == "change-deck") && view.Hits.Any(h => h.Id == "friends-tab"), $"A returning profile with {(savedDeck ? "saved decks" : "play preferences")} opens usable deck/play choices without a forced controls tour");
                 if (!savedDeck) Check(view.PlayerName == "Returning player" && PlayPreferences.Load(path).PlayerName == "Returning player", "The main menu preserves an existing player's display name");
             }));
             var legacy = new InteractionScenarioEngine(); legacy.Present(PresentationSmoke.Example());

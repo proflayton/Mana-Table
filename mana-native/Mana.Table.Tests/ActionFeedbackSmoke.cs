@@ -17,7 +17,7 @@ internal sealed class ActionFeedbackSmoke(TableWindow.Probe view, InteractionSce
     private readonly GameSnapshot original = scenario.State;
     private string resultScope = "";
     private MouseState mouse = new(0, 0, 0, ButtonState.Released, ButtonState.Released, ButtonState.Released, ButtonState.Released, ButtonState.Released);
-    public string? ExpectedClick => stage is 9 or 10 ? "read-card-action" : stage is 5 or 6 ? "close-overlay" : stage >= 13 ? "history" : null;
+    public string? ExpectedClick => stage is 9 or 10 ? "read-card-action" : stage >= 13 ? "history" : null;
     public bool ClickAccepted { get; set; }
     public MouseState ReadMouse() => mouse;
     private void Check(bool value, string message) { if (!value) throw new InvalidOperationException(message); checks.Add(message); }
@@ -65,13 +65,16 @@ internal sealed class ActionFeedbackSmoke(TableWindow.Probe view, InteractionSce
             case 4:
                 MouseAt(new(0, 0)); Next(); break;
             case 5:
-                Check(view.Overlay == "inspect" && view.Hits.Any(h => h.Id == "activate-ability"), "Inspector exposes an explicit Activate ability control");
-                Capture(surface, "02-ability-inspector");
-                MouseAt(view.Hits.Single(h => h.Id == "close-overlay").Bounds.Center, ButtonState.Pressed); Next(); break;
+                Check(view.Overlay.Length == 0 && view.DisplayedPose("seat-0-1") is { Size.X: >= 400 }
+                    && view.Hits.Any(h => h.Id == "read-card-action") && !view.Hits.Any(h => h.Id == "activate-ability"),
+                    "Right-click keeps the same source reader and one activation route");
+                Capture(surface, "02-ability-reader");
+                MouseAtAbility(ButtonState.Pressed); Next(); break;
             case 6:
-                MouseAt(view.Hits.Single(h => h.Id == "close-overlay").Bounds.Center); Next(); break;
+                MouseAtAbility(); Next(); break;
             case 7:
-                Check(view.Overlay.Length == 0 && scenario.Replies.Count == 0, "Reviewing the activation in the inspector sends no engine command");
+                Check(view.Overlay.Length == 0 && view.HoverPreview == null && scenario.Replies.Count == 0,
+                    "Closing the source reader sends no engine command");
                 MouseAtAbility(ButtonState.Pressed); Next(); break;
             case 8:
                 mouse = new(mouse.X, mouse.Y, 0, ButtonState.Released, ButtonState.Released, ButtonState.Released, ButtonState.Released, ButtonState.Released); Next(); break;
