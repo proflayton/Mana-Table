@@ -175,24 +175,61 @@ internal sealed class EquipmentSmoke : ITableAutomation
                 && statsHit.Scope == view.Scope && CardViews.Identity(hitCard) == id
             : pose.Value.Bounds.Contains(badge.Bounds));
         int pixels = badge == null ? 0 : BadgePixels(badge.Bounds, badge.IncludesCombatStats);
-        if (badge != null && pose != null && (pixels <= 8 || !fits))
-            throw new InvalidOperationException($"{id}: badge={badge}; face={pose.Value.Bounds}; stats={stats}; hit={statsHit?.Id}; pixels={pixels}");
+        var physicalBadge = badge == null ? Rectangle.Empty
+            : RenderViewport.ForSurface(new(view.Surface.Width, view.Surface.Height), view.DesignHeight).ToSurface(badge.Bounds);
+        // A tiny ten-unit cue has only about six pixels per side at 1000px.
+        // Keep an actual coverage requirement proportional to that footprint.
+        int requiredPixels = Math.Clamp(physicalBadge.Width * physicalBadge.Height / 8, 1, 9);
+        if (badge != null && pose != null && (pixels < requiredPixels || !fits))
+            throw new InvalidOperationException($"{id}: badge={badge}; face={pose.Value.Bounds}; stats={stats}; hit={statsHit?.Id}; pixels={pixels}/{requiredPixels}");
         Check(fits && badge != null
-            && badge.MeasuredWidth <= badge.Bounds.Width && pixels > 8,
+            && badge.MeasuredWidth <= badge.Bounds.Width && pixels >= requiredPixels,
             $"{id}'s painted attachment cue fits its own face or gold-outlined current P/T ribbon, retains full current stats and owns its physical target at130% text");
     }
     private int BadgePixels(Rectangle bounds, bool sharedStats)
     {
-        var physical = RenderViewport.ForSurface(new(view.Surface.Width, view.Surface.Height), view.DesignHeight).ToSurface(bounds);
+        var gold = new Color(226, 190, 120);
+        var panel = view.Frame!.Drawing.Commands.OfType<DrawCommand.Panel>()
+            .Where(command => command.Trim == gold && (sharedStats ? command.Bounds.Contains(bounds) : command.Bounds == bounds))
+            .OrderBy(command => (long)command.Bounds.Width * command.Bounds.Height).FirstOrDefault();
+        // The actual command must identify this exact attachment ribbon. Art
+        // behind an absent cue cannot satisfy the color readback by coincidence.
+        if (panel == null || !sharedStats && panel.FillColor != new Color(48, 39, 22)) return 0;
+        var mapping = RenderViewport.ForSurface(new(view.Surface.Width, view.Surface.Height), view.DesignHeight);
+        // The P/T hit can occupy one cell of a larger state ribbon. Inspect its
+        // actual containing frame, including the ribbon's surrounding padding.
+        var paintedBounds = panel.Bounds;
+        var physical = mapping.ToSurface(paintedBounds);
         var region = Rectangle.Intersect(physical, new(0, 0, view.Surface.Width, view.Surface.Height));
         if (region.Width <= 0 || region.Height <= 0) return 0;
         var pixels = new Color[region.Width * region.Height];
         view.Surface.GetData(0, region, pixels, 0, pixels.Length);
-        // Creature attachments share the P/T ribbon's gold relationship outline;
-        // only separate Equipment badges retain the older brown backing.
-        return sharedStats
-            ? pixels.Count(c => c.R == 226 && c.G == 190 && c.B == 120)
-            : pixels.Count(c => c.R == 48 && c.G == 39 && c.B == 22);
+        if (!sharedStats) return pixels.Count(c => c.R == 48 && c.G == 39 && c.B == 22);
+        int painted = 0;
+        for (int y = 0; y < region.Height; y++) for (int x = 0; x < region.Width; x++) {
+            float logicalX = (region.X + x + .5f) / mapping.Scale.X;
+            float logicalY = (region.Y + y + .5f) / mapping.Scale.Y;
+            // Sample the straight edges of the actual transformed gold border,
+            // away from rounded corners and the white P/T glyphs inside it.
+            bool horizontal = logicalX >= paintedBounds.Left + panel.Radius && logicalX <= paintedBounds.Right - panel.Radius
+                && (Math.Abs(logicalY - paintedBounds.Top) <= 1.5f || Math.Abs(logicalY - paintedBounds.Bottom) <= 1.5f);
+            bool vertical = logicalY >= paintedBounds.Top + panel.Radius && logicalY <= paintedBounds.Bottom - panel.Radius
+                && (Math.Abs(logicalX - paintedBounds.Left) <= 1.5f || Math.Abs(logicalX - paintedBounds.Right) <= 1.5f);
+            if ((horizontal || vertical) && GoldCoverage(pixels[y * region.Width + x], panel.FillColor, gold)) painted++;
+        }
+        return painted;
+    }
+    private static bool GoldCoverage(Color pixel, Color backing, Color gold)
+    {
+        // A one-logical-pixel border is subpixel at 1000px. MSAA blends its
+        // gold with the backing, so an exact opaque RGB match is not promised.
+        float r = gold.R - backing.R, g = gold.G - backing.G, b = gold.B - backing.B;
+        float coverage = ((pixel.R - backing.R) * r + (pixel.G - backing.G) * g + (pixel.B - backing.B) * b)
+            / (r * r + g * g + b * b);
+        float errorR = pixel.R - (backing.R + coverage * r);
+        float errorG = pixel.G - (backing.G + coverage * g);
+        float errorB = pixel.B - (backing.B + coverage * b);
+        return coverage is >= .15f and <= 1.05f && errorR * errorR + errorG * errorG + errorB * errorB <= 20 * 20;
     }
     private void AssertConnection(string source, string target)
     {

@@ -157,6 +157,12 @@ uncovered, and that a crowded field does not become overlapping transient labels
 Record graphical and human review for the exact candidate; these new journeys
 remain pending human review and release verification until that evidence exists.
 
+The equipment journey checks its attachment border at the destination pixel
+density with antialiasing coverage, alongside exact current stats, occurrence
+relationships and scoped pointer targets. A thin logical stroke need not contain
+an opaque texel of its original RGB color after MSAA. These checks establish
+rendering and input behavior, not perceived visual clarity.
+
 For a relevant graphical regression, use the same test driver, for example:
 
 ```powershell

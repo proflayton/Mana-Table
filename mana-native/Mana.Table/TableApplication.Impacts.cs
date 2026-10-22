@@ -91,7 +91,7 @@ internal sealed partial class TableApplication
     private IEnumerable<AnchoredImpact> AnchoredActualImpacts()
     {
         foreach (var events in impactFeedback.Cues.Where(c => now - c.Started < ImpactFeedback.Duration
-                && ImpactFeedback.RecipientVisible(match!, c.Impact))
+                && ImpactFeedback.RecipientVisible(match!, c.Impact, c.ActivityId))
             .GroupBy(c => (c.Started, c.Impact.Kind, c.Impact.CardId, c.Impact.PlayerId,
                 c.Impact.DamageType, c.Impact.Combat, c.Impact.Infect))) {
             var first = events.First();

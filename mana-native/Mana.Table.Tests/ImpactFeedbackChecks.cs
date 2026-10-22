@@ -34,6 +34,54 @@ internal static class ImpactFeedbackChecks
         feedback.Observe(death, hidden, 1.7);
         check(feedback.Cues.Count == 0, "A damage cue immediately drops a recipient whose occurrence is no longer public; it never preserves a hidden face");
 
+        var returned = result with { Players = result.Players.Select(p => p.Id != 1 ? p : p with { Zones = p.Zones.Select(z =>
+            z.Name != "Battlefield" ? z : z with { Cards = z.Cards.Select(card => card.VisualId != CounterDamageScenario.TargetId
+                ? card : card with { Damage = 0 }).ToArray() }).ToArray() }).ToArray(),
+            Activity = [.. result.Activity,
+                new(20, 8, "MAIN1", "moved", 1, "Localized departure", CounterDamageScenario.TargetId, "Colossal Dreadmaw"),
+                new(21, 8, "MAIN1", "arrived", 1, "Localized arrival", CounterDamageScenario.TargetId, "Colossal Dreadmaw")]
+        };
+        feedback.Observe(null, baseline, 0); feedback.Observe(baseline, returned, 1);
+        check(feedback.Cues.Count == 0 && !ImpactFeedback.RecipientVisible(returned,
+                result.Activity.Single(entry => entry.Impact is { Kind: "damage" }).Impact!,
+                result.Activity.Single(entry => entry.Impact is { Kind: "damage" }).Id),
+            "A damage event followed by an explicit exile/return arrival in one observation never anchors old damage to the returned permanent despite its unchanged public visual ID");
+        feedback.Observe(null, baseline, 0); feedback.Observe(baseline, result, 1); feedback.Observe(result, returned, 1.2);
+        check(feedback.Cues.Count == 0,
+            "A later explicit arrival immediately invalidates an already displayed damage cue on the previous battlefield occurrence");
+        var freshHit = returned with { Activity = [.. returned.Activity,
+            new(22, 8, "MAIN1", "damage", 1, "Fresh damage after return", CounterDamageScenario.TargetId, "Colossal Dreadmaw") {
+                Impact = new("damage", 1, CounterDamageScenario.TargetId, "Colossal Dreadmaw", DamageType: "normal")
+            }] };
+        feedback.Observe(returned, freshHit, 1.3);
+        check(feedback.Cues is [{ ActivityId: 22, Impact: { Amount: 1, CardId: CounterDamageScenario.TargetId } }],
+            "A new damage event ordered after the return remains visible; a public ID's historical arrival does not suppress later hits");
+        feedback.Observe(null, baseline, 0); feedback.Observe(baseline, freshHit, 1.4);
+        check(feedback.Cues is [{ ActivityId: 22, Impact: { Amount: 1 } }],
+            "When damage, exile/return and fresh damage arrive in one observation only the fresh occurrence's hit is represented");
+
+        var beforeGap = result with { Players = result.Players.Select(player => player.Id == 1 ? player with { Life = 38 } : player).ToArray(),
+            Activity = [.. result.Activity,
+                new(4, 8, "MAIN1", "life", 1, "Previous public life change", null, null) {
+                    Impact = new("life", -2, PlayerId: 1, Before: 40, After: 38)
+                }] };
+        string otherRecipient = result.Viewer!.Zone("Battlefield").Cards.First(card => card.Type.Contains("Creature", StringComparison.Ordinal)).VisualId;
+        var afterGap = beforeGap with { Players = beforeGap.Players.Select(player => player with {
+            Life = player.Id == 2 ? 39 : player.Life,
+            Zones = player.Zones.Select(zone => zone with { Cards = zone.Cards.Select(card => card.VisualId == otherRecipient ? card with { Damage = 1 } : card).ToArray() }).ToArray()
+        }).ToArray(), Activity = [
+            new(100, 8, "MAIN1", "damage", 0, "Fresh typed hit after truncated history", otherRecipient, "Another creature") {
+                Impact = new("damage", 1, otherRecipient, "Another creature", DamageType: "normal") },
+            new(101, 8, "MAIN1", "life", 2, "Fresh typed life change", null, null) {
+                Impact = new("life", -1, PlayerId: 2, Before: 40, After: 39) }
+        ] };
+        feedback.Observe(null, baseline, 0); feedback.Observe(baseline, beforeGap, 1); feedback.Observe(beforeGap, afterGap, 1.2);
+        check(feedback.Cues.Count == 3 && feedback.Cues.All(cue => cue.Impact.CardId != CounterDamageScenario.TargetId)
+            && feedback.Cues.Any(cue => cue is { ActivityId: 4, Impact: { Kind: "life", Amount: -2, PlayerId: 1 } })
+            && feedback.Cues.Any(cue => cue.ActivityId == 100 && cue.Impact is { Kind: "damage", Amount: 1 } && cue.Impact.CardId == otherRecipient)
+            && feedback.Cues.Any(cue => cue is { ActivityId: 101, Impact: { Kind: "life", Amount: -1, PlayerId: 2 } }),
+            "A nonoverlapping history gap conservatively clears old card anchors that may have missed a public reentry, while retaining prior player life and accepting fresh typed damage and life facts");
+
         var prevented = baseline with { Players = baseline.Players.Select(p => p.Id == 1 ? p with { Life = 38 } : p).ToArray(), Stack = [], Activity = [
             new(10, 8, "MAIN1", "damage", 1, "Localized prose is not parsed", CounterDamageScenario.SourceId, "All Will Be One") {
                 Impact = new("damage", 2, PlayerId: 1, SourceCardId: CounterDamageScenario.SourceId, SourceName: "All Will Be One", Combat: false, Infect: false) },
