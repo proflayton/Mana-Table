@@ -105,6 +105,7 @@ internal sealed partial class TableApplication
         var free = new List<Rectangle> { new(20, 64, 1560, 696) };
         var source = anchor; source.Inflate(12, 12);
         var occupied = new List<Rectangle> { source, new(1240, 550, 350, 245) };
+        if (!battlefieldReaderStateBounds.IsEmpty) occupied.Add(battlefieldReaderStateBounds);
         occupied.AddRange(match!.Players.Select(player => {
             var hero = SeatHero(player.Id);
             return new Rectangle((int)hero.X - 55, (int)hero.Y - 55, 110, 110);

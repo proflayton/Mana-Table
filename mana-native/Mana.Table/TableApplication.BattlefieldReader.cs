@@ -24,7 +24,6 @@ internal sealed partial class TableApplication
     private void PaintStudyBattlefieldReader(Card card, PresentedCard entry)
     {
         PaintCard(card, entry.Display, false, IsCardActionable(card), true);
-        var face = entry.Display.Bounds;
         if (CardPresentation.HasCombatStats(card)) {
             // Cover the printed stat box, keeping the complete art and rules.
             // Current P/T is supplied by the engine; counters are not added here.
@@ -37,13 +36,6 @@ internal sealed partial class TableApplication
             canvas.Surface(null, statPose, new(16, 36, 36));
             canvas.CardFrame(statPose, new(172, 209, 193), 1);
             canvas.CenterText(stats, bounds, Ink, size, true);
-        }
-        if (CounterMarker(card).Length > 0) {
-            int width = CounterMarkerWidth(card, .6f) + 2;
-            var badge = new Rectangle(face.Left + 12, face.Bottom - 12, width, 24);
-            canvas.Panel(badge, new(16, 36, 36), new(118, 174, 158), 4);
-            PaintCounterMarker(card, badge, .6f);
-            ExtendCardHit(card, badge);
         }
         PaintBattlefieldReaderState(card, entry);
     }
@@ -71,35 +63,45 @@ internal sealed partial class TableApplication
         if (chips.Count == 0) return;
 
         var face = entry.Display.Bounds;
-        int top = face.Bottom + 16, available = Math.Min(84, 766 - top);
-        if (available < 24) return;
-        const float size = .62f;
-        const int rowPitch = 28, chipHeight = 24;
-        int x = 0, row = 0;
-        var positions = new List<(BattlefieldReaderChip Chip, int X, int Row, int Width)>();
+        int x = face.Right + CardPresentationController.StudyDetailsGap;
+        int width = CardPresentationController.StudyDetailsWidth;
+        int top = face.Top + 16, bottom = Math.Min(face.Bottom, x >= 1240 ? 538 : 760);
+        int available = bottom - top;
+        if (available < 44) return;
+        const float size = .86f;
+        const int inset = 14, gap = 5;
+        int textWidth = width - inset * 2;
+        int lineHeight = canvas.TextSize("Ag", size, textWidth, 80, true).Y;
+        int contentHeight = 0;
+        var positions = new List<(BattlefieldReaderChip Chip, string[] Lines, int Y, int Height)>();
         foreach (var chip in chips) {
-            int width = Math.Min(face.Width, canvas.TextWidth(chip.Text, size, true) + 18);
-            if (x > 0 && x + width > face.Width) { x = 0; row++; }
-            positions.Add((chip, x, row, width)); x += width + 6;
+            var lines = canvas.TextPages(chip.Text, size, textWidth, lineHeight, 80, true);
+            int rowHeight = Math.Max(48, lines.Length * lineHeight + inset * 2);
+            positions.Add((chip, lines, contentHeight, rowHeight));
+            contentHeight += rowHeight + gap;
         }
-        int contentHeight = (row + 1) * rowPitch - 4;
+        contentHeight -= gap;
         int height = Math.Min(available, contentHeight);
-        battlefieldReaderStateBounds = new(face.Left, top, face.Width, height);
+        battlefieldReaderStateBounds = new(x, top, width, height);
         battlefieldReaderStateScrollMax = Math.Max(0, contentHeight - height);
         battlefieldReaderStateScroll = Math.Clamp(battlefieldReaderStateScroll, 0, battlefieldReaderStateScrollMax);
-        canvas.Line(new(face.Left + 20, face.Bottom + 2), new(face.Left + 20, top), new Color(118, 174, 158) * .65f, 1.5f);
         foreach (var item in positions) {
-            int y = top + item.Row * rowPitch - battlefieldReaderStateScroll;
-            if (y < top || y + chipHeight > top + height) continue;
-            var bounds = new Rectangle(face.Left + item.X, y, item.Width, chipHeight);
-            canvas.Panel(bounds, new(15, 30, 34), item.Chip.Accent * .55f, 4);
-            canvas.CenterText(item.Chip.Text, bounds, item.Chip.Accent, size, true);
+            int y = top + item.Y - battlefieldReaderStateScroll;
+            var bounds = Rectangle.Intersect(new(x, y, width, item.Height), battlefieldReaderStateBounds);
+            if (bounds.IsEmpty) continue;
+            canvas.Rounded(bounds, new(13, 25, 31), 5);
+            if (bounds.Height > 16) canvas.Fill(new(bounds.Left, bounds.Top + 8, 3, bounds.Height - 16), item.Chip.Accent * .75f);
+            for (int line = 0; line < item.Lines.Length; line++) {
+                int lineY = y + inset + line * lineHeight;
+                if (lineY >= top && lineY + lineHeight <= top + height)
+                    canvas.Text(item.Lines[line], x + inset, lineY, item.Chip.Accent, size, textWidth, 1, true);
+            }
         }
         if (battlefieldReaderStateScrollMax > 0) {
             int thumbHeight = Math.Max(16, height * height / contentHeight);
             int thumbTop = top + (height - thumbHeight) * battlefieldReaderStateScroll / battlefieldReaderStateScrollMax;
-            canvas.Rounded(new(face.Right + 3, top, 3, height), Muted * .18f, 1);
-            canvas.Rounded(new(face.Right + 3, thumbTop, 3, thumbHeight), Blue * .7f, 1);
+            canvas.Rounded(new(x + width + 3, top, 3, height), Muted * .18f, 1);
+            canvas.Rounded(new(x + width + 3, thumbTop, 3, thumbHeight), Blue * .7f, 1);
         }
         // Read-only state must not click a different battlefield beneath it.
         hits.Add(new("battlefield-reader-state", Scope, battlefieldReaderStateBounds, () => { }));

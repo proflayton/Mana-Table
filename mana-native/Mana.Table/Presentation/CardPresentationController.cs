@@ -12,6 +12,7 @@ namespace Mana.Table.Presentation;
 /// </summary>
 internal sealed class CardPresentationController
 {
+    internal const int StudyDetailsWidth = 280, StudyDetailsGap = 18;
     private readonly SceneMotion motion = new();
     private readonly List<PresentedCard> cards = [];
     private readonly List<PresentedCard> deferred = [];
@@ -65,7 +66,7 @@ internal sealed class CardPresentationController
         var rest = view.Apply(request.Rest);
         if (focused) {
             readerTarget ??= context.KeepBattlefieldAnchor && request.Zone == "Battlefield"
-                ? new Pose(new(rest.Center.X < 800 ? 1090 : 510, 385), new(410, 574), Elevation: 22)
+                ? StudyReaderPose(rest, context.BattlefieldReaderAvoid)
                 : ReaderPose(rest, request.Zone);
         }
         bool useBoardMotion = !focused && BoardView.AffectsZone(request.Zone) && request.ChoiceSlot < 0;
@@ -202,5 +203,22 @@ internal sealed class CardPresentationController
         var seat = TableLayout.LocalSeatBounds;
         if (x + 205 > seat.Left && x - 205 < seat.Right) y = Math.Min(y, seat.Top - 12 - 287);
         return new(new(x, y), new(410, 574), Elevation: 22);
+    }
+
+    private static Pose StudyReaderPose(Pose rest, Rectangle? avoid)
+    {
+        // Keep the complete card and its right-hand state column on screen.
+        var right = new Pose(new(1600 - 20 - StudyDetailsWidth - StudyDetailsGap - 205, 385), new(410, 574), Elevation: 22);
+        var left = right with { Center = new(510, 385) };
+        var preferred = rest.Center.X < 800 ? right : left;
+        var alternate = rest.Center.X < 800 ? left : right;
+        int Overlap(Pose pose) {
+            if (avoid == null) return 0;
+            var bounds = pose.Bounds;
+            bounds.Width += StudyDetailsGap + StudyDetailsWidth;
+            var overlap = Rectangle.Intersect(bounds, avoid.Value);
+            return overlap.Width * overlap.Height;
+        }
+        return Overlap(preferred) <= Overlap(alternate) ? preferred : alternate;
     }
 }

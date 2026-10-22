@@ -1,5 +1,6 @@
 using Mana.Magic;
 using Mana.Renderer;
+using Mana.Table.Presentation;
 using Microsoft.Xna.Framework;
 using Color = Microsoft.Xna.Framework.Color;
 using Rectangle = Microsoft.Xna.Framework.Rectangle;
@@ -28,6 +29,7 @@ internal sealed partial class TableApplication
         var area = StudyActionArea;
         if (cardPresentation.Pinned?.ReaderTarget is { } reading && reading.Bounds.Intersects(area)) {
             var reader = reading.Bounds;
+            reader.Width += CardPresentationController.StudyDetailsGap + CardPresentationController.StudyDetailsWidth;
             int leftWidth = Math.Max(0, reader.Left - area.Left - 12);
             int rightWidth = Math.Max(0, area.Right - reader.Right - 12);
             area = leftWidth >= rightWidth

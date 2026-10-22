@@ -28,7 +28,8 @@ internal sealed partial class TableApplication
         || match?.Decision?.Intent is DecisionIntent.Selection or DecisionIntent.Attack or DecisionIntent.Block
         || !SourceActionsSupported && match?.Decision?.Intent == DecisionIntent.Mana);
     private CardPresentationContext CardContext => new(match, Scope, OverlayOpen && !BattlefieldFocused && !ZoneReadingOpen,
-        ReadingGalleryOpen, dragging, CompactCardDecision, AbilityActionPending, SourceActionsSupported, TableStudyEnabled);
+        ReadingGalleryOpen, dragging, CompactCardDecision, AbilityActionPending, SourceActionsSupported, TableStudyEnabled,
+        TableStudyEnabled ? StudyActionArea : null);
     private string? readingId => cardPresentation.PinnedId;
     private Rectangle? hoverPreview => cardPresentation.ReaderBounds;
     internal bool InteractivePointer => !dragging && HitAt(pointer) is { } hit
@@ -57,6 +58,7 @@ internal sealed partial class TableApplication
         cardPresentation.BeginFrame(CardContext, hover, frameElapsed, preferences.ReducedMotion, boardView);
         deferredCardComposition.Clear();
         sourceReaderControls.Clear(); sourceReaderActionsBounds = Rectangle.Empty; sourceReaderScrollMax = 0;
+        battlefieldReaderStateBounds = Rectangle.Empty;
     }
     private void EndCardReading() => cardPresentation.EndFrame();
     private bool ToggleCardReader(Hit hit) => cardPresentation.Toggle(hit, CardContext);

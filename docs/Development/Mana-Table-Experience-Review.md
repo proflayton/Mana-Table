@@ -224,13 +224,21 @@ portraits continue to answer actual player-target decisions. Whole table or
 Escape returns; a second portrait click also closes that focus. This changes
 presentation geometry without changing viewer identity, game state or action
 keys. The busy checkpoint includes matching Scute Swarms and tapped, counter
-and nonlethal-damage variants for reviewing that journey. Human review of this
-grouping/focus implementation remains pending.
+and nonlethal-damage variants for reviewing that journey. The user's feedback
+supports this grouping/focus direction and asks for larger reader details beside
+the card; that revision has its own review status below.
 
 The focused layout gives the selected opponent more field space and packs state
 families horizontally before filling the remaining rows. It does not simply
 scale the four-seat layout. Tapped state remains visible in the full reader;
 marked damage uses a separate red mark and quantity beside current P/T.
+
+The next reader revision follows feedback on Hydroid Krasis: live counters and
+abilities sit in a larger, vertically stacked column to the right of the full
+card. The small duplicate counter badge below the reader is removed. The card
+and details reserve space together, keeping pending effects and current actions
+separate; the column absorbs clicks without activating a battlefield card.
+Human review of this revision remains pending.
 
 The native source also reuses Forge's bundled mana-symbol atlas for compact
 portrait pools: symbols and exact quantities with a quiet glow, using the
