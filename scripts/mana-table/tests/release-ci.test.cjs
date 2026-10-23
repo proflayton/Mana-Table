@@ -223,6 +223,34 @@ test('private staging runs during verification with release access confined to t
   assert.doesNotMatch(publish, /mana-native-windows-x64-|gh release upload|path: downloads/);
 });
 
+test('publication follows a successful aggregate despite its intentionally skipped installer ancestor', () => {
+  const jobs = nativeJobs(), publish = jobs.get('publish');
+  const expression = publish.match(/^    if:\s*(.+)$/m)[1].replace(/^\$\{\{\s*|\s*\}\}$/g, '');
+  const ancestors = new Set();
+  function visit(name) {
+    if (ancestors.has(name)) return;
+    ancestors.add(name);
+    if (/^    needs:/m.test(jobs.get(name))) for (const dependency of dependencies(jobs.get(name))) visit(dependency);
+  }
+  for (const dependency of dependencies(publish)) visit(dependency);
+  assert.ok(ancestors.has('installer') && ancestors.has('installer-release'), 'Exercise the actual mutually exclusive installer graph.');
+  const master = { repository: REPO, ref: 'refs/heads/master', event_name: 'push' };
+  function selected(github = master, aggregate = 'success', inputs = {}) {
+    const results = Object.fromEntries([...ancestors].map(name => [name, name === 'installer' ? 'skipped' : name === 'windows' ? aggregate : 'success']));
+    const success = () => Object.values(results).every(result => result === 'success');
+    // Actions implicitly applies success() when a condition has no status
+    // function, including skipped ancestors behind an always-running gate.
+    if (!/\b(always|success|failure|cancelled)\s*\(/.test(expression) && !success()) return false;
+    return Boolean(vm.runInNewContext(expression, { github, inputs, needs: { windows: { result: aggregate } }, always: () => true, success }, { timeout: 1000 }));
+  }
+  assert.equal(selected(), true, 'A successful master aggregate must promote its staged draft.');
+  assert.equal(selected({ ...master, event_name: 'workflow_dispatch' }, 'success', { benchmark_transport: false }), true);
+  for (const result of ['failure', 'cancelled', 'skipped', null]) assert.equal(selected(master, result), false, `Aggregate ${result} must block publication.`);
+  for (const github of [{ ...master, repository: 'fork/repo' }, { ...master, ref: 'refs/heads/feature' }, { ...master, event_name: 'pull_request' }])
+    assert.equal(selected(github), false);
+  assert.equal(selected({ ...master, event_name: 'workflow_dispatch' }, 'success', { benchmark_transport: true }), false);
+});
+
 test('installer smoke inputs omit source bytes while production still consumes the actual raw source ZIP', () => {
   const jobs = nativeJobs(), producer = jobs.get('package');
   const metadata = producer.slice(producer.indexOf('name: mana-native-installer-inputs-'));

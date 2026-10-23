@@ -47,6 +47,8 @@ Final publication downloads only a small staging receipt, then checks the exact
 remote asset inventory, sizes, SHA256 digests, source/version/run identity and
 current master. It also requires the same-source Java, repository, native and
 applicable iOS checks. Only then is the draft made public and marked Latest.
+The publication job explicitly requires a successful Windows aggregate while
+allowing the intentional skip of the inactive installer caller upstream.
 The [release helper](../../scripts/mana-table/release-assets.cjs) checks master
 before staging and immediately before promotion. Failed gates leave a private
 draft; an advanced master cannot publish it. Existing public assets are never

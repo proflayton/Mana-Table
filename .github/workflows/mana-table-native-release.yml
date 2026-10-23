@@ -611,7 +611,9 @@ jobs:
   publish:
     name: Publish the tested Windows release
     needs: windows
-    if: github.repository == 'proflayton/Mana-Table' && github.ref == 'refs/heads/master' && github.event_name != 'pull_request' && !(github.event_name == 'workflow_dispatch' && inputs.benchmark_transport)
+    # The inactive installer caller is intentionally skipped upstream. Override
+    # implicit status propagation, then require the successful native aggregate.
+    if: ${{ always() && needs.windows.result == 'success' && github.repository == 'proflayton/Mana-Table' && github.ref == 'refs/heads/master' && github.event_name != 'pull_request' && !(github.event_name == 'workflow_dispatch' && inputs.benchmark_transport) }}
     runs-on: ubuntu-latest
     timeout-minutes: 90
     permissions:
