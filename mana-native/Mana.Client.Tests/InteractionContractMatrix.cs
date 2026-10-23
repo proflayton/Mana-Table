@@ -59,6 +59,7 @@ internal static class InteractionContractMatrix
             "The finite interaction-contract matrix names every closed command variant, intent and purpose; it is not exhaustive rules coverage");
         foreach (var row in Cases) await RunCase(row, check);
         SeededPermissions(check);
+        CurrentZoneAuthority(check);
         await SourceAuthorityLifetime(check);
         await SemanticAliases(check);
         Console.WriteLine($"Interaction-contract matrix: {Cases.Length} named cases, 48 seeded transitions; {timer.Elapsed.TotalMilliseconds:F1} ms (no JVM/GPU; not exhaustive Magic rules coverage).");
@@ -66,6 +67,33 @@ internal static class InteractionContractMatrix
 
     private static bool Covers<T>(IEnumerable<T> covered) where T : struct, Enum =>
         covered.Distinct().Order().SequenceEqual(Enum.GetValues<T>().Distinct().Order());
+
+    private static void CurrentZoneAuthority(Action<bool, string> check)
+    {
+        var fixture = Fixture.Create(Cases.Single(item => item.CommandType == typeof(UseOfferedAction)), "zone-authority");
+        var reported = fixture.Focus;
+        var current = reported with { Key = "refreshed-source-key", CombatId = "alternate-occurrence", Power = 7 };
+        var state = fixture.Before with {
+            Players = [fixture.Before.Viewer! with { Zones = [new("Library", 20, [], current)] }],
+            Decision = fixture.Before.Decision! with { SourceCard = reported, SourceCardId = current.CombatId },
+            Stack = [new(reported.Name, "A source face is not a current location", true, reported)]
+        };
+        var source = (UseOfferedAction)fixture.Expected;
+        check(CardViews.Source(state, state.Decision!) == current && CardViews.InZones(state).Single() is { PlayerId: 0, Zone: "Library" }
+            && GameCommandPermissions.Allows(state, source with { Card = current.Key })
+            && !GameCommandPermissions.Allows(state, source),
+            "A disclosed library top supplies current state and source authority through its exact new key; a retained stack source cannot revive the old key");
+        check(CardViews.Current(state, reported) == current
+            && CardViews.Current(state, reported with { VisualId = "", CombatId = "", Key = current.Key }) != current
+            && CardViews.Current(state, reported, reported.Key) == reported,
+            "Occurrence links refresh reported faces independently of action keys; matching a key or name cannot refresh an anonymous or explicit unrelated occurrence");
+        var masked = current with { FaceDown = true, Name = "Face-down card", Text = "", ArtName = "", OtherFace = null };
+        var hidden = state with { Players = [state.Viewer! with { Zones = [new("Library", 20, [], masked)] }] };
+        check(CardViews.Source(hidden, hidden.Decision!) == masked
+            && !GameCommandPermissions.Allows(hidden, source with { Card = masked.Key })
+            && CardViews.Source(state, state.Decision!) == current,
+            "A masked current envelope replaces historical identity and revokes source authority without rewriting the earlier snapshot");
+    }
 
     private static async Task SourceAuthorityLifetime(Action<bool, string> check)
     {
@@ -93,6 +121,7 @@ internal static class InteractionContractMatrix
             ("local seat", baseline.Before with { ViewerId = 1 }),
             ("physical occurrence", changedOccurrence),
             ("historical face only", historicalOnly),
+            ("stack source face only", historicalOnly with { Stack = [new(baseline.Focus.Name, "Retained ability source", true, baseline.Focus)] }),
             ("revoked face", ChangeCard(baseline.Before, baseline.Focus.VisualId, card => card with { FaceDown = true })),
             ("decision", baseline.Before with { Decision = baseline.Before.Decision! with { Id = "later-decision" } }),
             ("game", baseline.Before with { Id = "later-game" }) }) {

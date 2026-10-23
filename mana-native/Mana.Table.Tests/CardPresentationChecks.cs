@@ -238,7 +238,7 @@ internal static class CardPresentationChecks
         var otherCopy = reported with { VisualId = "other-body", CombatId = "other-combat", Power = 10, Toughness = 10,
             Counters = ImmutableDictionary<string, int>.Empty.Add("+1/+1", 9) };
         var state = Snapshot(current, otherCopy);
-        var resolved = InteractionCards.Current(state, reported);
+        var resolved = CardViews.Current(state, reported);
         check(ReferenceEquals(resolved, current) && AllocationGuide.Stats(resolved) == "6/6"
             && resolved.Counters["+1/+1"] == 2 && AllocationGuide.MarkedDamage(resolved) == "1 damage marked"
             && reported.Power == 1 && reported.Key == "old-action-key",
@@ -252,8 +252,8 @@ internal static class CardPresentationChecks
             SourceCardId = current.CombatId, SourceCard = reported, Choices = [choice] };
         var prompt = state with { Decision = decision };
         var reply = AllocationGuide.Reply(prompt, [7]);
-        check(ReferenceEquals(InteractionCards.Choice(prompt, choice), current)
-            && ReferenceEquals(InteractionCards.Source(prompt, decision), current)
+        check(ReferenceEquals(CardViews.Choice(prompt, choice), current)
+            && ReferenceEquals(CardViews.Source(prompt, decision), current)
             && ReferenceEquals(choice.Card, reported) && ReferenceEquals(decision.SourceCard, reported)
             && choice is { Index: 37, Id: "recipient-7", Minimum: 1, Maximum: 7, Lethal: 4 }
             && reply is AllocateAmounts { DecisionId: "allocation-current" } && reply.Amounts!.SequenceEqual([7]),
@@ -261,16 +261,16 @@ internal static class CardPresentationChecks
 
         var anonymous = new Card { Name = reported.Name, Type = "Creature", Power = 3, Toughness = 3 };
         var removed = reported with { VisualId = "reported-only", CombatId = "reported-combat" };
-        check(ReferenceEquals(InteractionCards.Current(state, anonymous), anonymous)
-            && ReferenceEquals(InteractionCards.Current(state, removed), removed)
-            && ReferenceEquals(InteractionCards.Choice(state, choice with { Card = null }), current),
+        check(ReferenceEquals(CardViews.Current(state, anonymous), anonymous)
+            && ReferenceEquals(CardViews.Current(state, removed), removed)
+            && ReferenceEquals(CardViews.Choice(state, choice with { Card = null }), current),
             "Same-name and anonymous reported faces are never rebound by name, while an explicit engine occurrence link can supply a currently disclosed face");
 
         var masked = current with { FaceDown = true, Name = "Face-down card", ArtName = "", Text = "", OtherFace = null,
             Power = 2, Toughness = 2, Counters = ImmutableDictionary<string, int>.Empty.Add("stun", 1) };
         var hidden = prompt with { Players = Snapshot(masked, otherCopy).Players,
             Decision = decision with { Kind = "reveal", Choices = [choice] } };
-        var hiddenDisplay = InteractionCards.Choice(hidden, choice)!;
+        var hiddenDisplay = CardViews.Choice(hidden, choice)!;
         var context = new CardPresentationContext(hidden, "current:reveal", true, true, false, false);
         check(ReferenceEquals(hiddenDisplay, masked) && context.ChoiceFace(0) is { FaceDown: true }
             && CardPresentation.Artwork(hiddenDisplay) == null && hiddenDisplay.Power == 2

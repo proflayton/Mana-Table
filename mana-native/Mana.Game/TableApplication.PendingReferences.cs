@@ -22,7 +22,7 @@ internal sealed partial class TableApplication
         var item = reference.DecisionId.Length == 0 ? match?.Stack.FirstOrDefault(item => item.Id == reference.StackId) : null;
         if (item == null && decision == null) return null;
         bool Matches(Card card, string id) => card.VisualId == id || card.CombatId == id || CardViews.Identity(card) == id;
-        var source = decision == null ? item?.Card : InteractionCards.Source(match, decision);
+        var source = decision == null ? item?.Card : CardViews.Source(match, decision);
         var counter = (decision?.Effect ?? item?.Effect)?.CounterChange?.Card;
         var card = AllCards().FirstOrDefault(card => !card.FaceDown && Matches(card, reference.CardId))
             ?? (source is { FaceDown: false } && Matches(source, reference.CardId) ? source : null)

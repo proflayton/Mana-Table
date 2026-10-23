@@ -15,7 +15,7 @@ internal sealed partial class TableApplication
     // continues to use PaintCard directly.
     private void PaintInteractionCard(Card card, Pose pose, bool selected, bool legal, bool focus = false, float opacity = 1)
     {
-        var current = InteractionCards.Current(match, card);
+        var current = CardViews.Current(match, card);
         PaintCard(current, pose, selected, legal, focus, opacity);
         PaintAttachedCardState(current, pose);
     }

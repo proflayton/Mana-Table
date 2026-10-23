@@ -26,26 +26,19 @@ internal sealed partial class TableApplication
         var groups = new List<EffectPermanentGroup>();
         if (BattlefieldFocused && battlefieldFocusPlan is { } focus) {
             foreach (string id in visible.Where(entry => entry.Value.Bounds.Intersects(BattlefieldFocusBounds)).Select(entry => entry.Key).ToArray()) visible.Remove(id);
-            foreach (var tile in focus.Tiles.Where(tile => focus.Viewport.Contains(tile.Art))) {
-                var pose = new Pose(tile.Art.Center.ToVector2(), tile.Art.Size.ToVector2());
-                var ids = tile.Group.Cards.Select(CardViews.Identity).Where(id => id.Length > 0).ToArray();
+            foreach (var tile in focus.VisibleTiles) {
+                var pose = tile.ArtPose;
+                var ids = tile.Group.MemberIds;
                 foreach (string id in ids) visible[id] = pose;
                 var details = MeasureBattlefieldFocusDetails(tile.Group.Front, tile.Details.Width);
                 var counter = details.Lines.FirstOrDefault(line => line.Chip);
                 var landing = counter == null ? pose.Point(.8f, .82f)
                     : new Vector2(tile.Details.Right - 16, tile.Details.Y + counter.Y + counter.Height / 2);
-                groups.Add(new(tile.Group.Id, Array.AsReadOnly(ids), pose, landing) { ReceiptExclusion = tile.Bounds });
+                groups.Add(new(tile.Group.Id, ids, pose, landing) { ReceiptExclusion = tile.Bounds });
             }
-        } else foreach (var seat in tableScene.Seats) foreach (var cluster in seat.Battlefield) {
-            var copies = new List<SceneCard>();
-            foreach (var node in cluster.Cards) {
-                copies.Add(node);
-                if (!node.GroupFront) continue;
-                if (visible.TryGetValue(node.Id, out var pose)) groups.Add(new(node.Id,
-                    Array.AsReadOnly(copies.Select(copy => copy.Id).Where(visible.ContainsKey).ToArray()), pose, CounterLanding(node, pose)));
-                copies.Clear();
-            }
-        }
+        } else foreach (var cohort in tableScene.Seats.SelectMany(seat => seat.Cohorts))
+            if (visible.TryGetValue(cohort.Front.Id, out var pose)) groups.Add(new(cohort.Front.Id,
+                Array.AsReadOnly(cohort.MemberIds.Where(visible.ContainsKey).ToArray()), pose, CounterLanding(cohort.Front, pose)));
         if (publicChanges.Latest is { } latest && latest.Cause?.CardId is { } sourceId
             && ChangeSourcePreview(latest) is { } sourcePreview) visible[sourceId] = sourcePreview.Pose;
         // Protect the actual decision controls. A source preview above them
@@ -102,7 +95,7 @@ internal sealed partial class TableApplication
             }
         }
         if (BattlefieldFocused && battlefieldFocusPlan is { } focus) {
-            occupied.AddRange(focus.Tiles.Where(tile => focus.Viewport.Contains(tile.Art)).Select(tile => tile.Bounds));
+            occupied.AddRange(focus.VisibleTiles.Select(tile => tile.Bounds));
             occupied.AddRange(focus.Headings.Select(heading => Rectangle.Intersect(heading.Bounds, focus.Viewport)).Where(bounds => !bounds.IsEmpty));
             occupied.Add(new(160, 120, 1080, 100));
             occupied.Add(new(160, 730, 1080, 70));

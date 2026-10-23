@@ -26,17 +26,17 @@ internal sealed partial class TableApplication
     {
         if (match is not { Decision: { } decision } state || !IsAbilityActionChoice(decision) || session.NeedsRecovery
             || ActivityOpen || updatesOpen || ExperienceOpen || overlay.Length > 0 || zoneName != null && !BattlefieldFocused) return;
-        var reported = InteractionCards.Source(state, decision);
-        var source = reported == null ? null : VisibleCards().FirstOrDefault(card => SameVisibleCard(card, reported));
-        var location = source == null ? null : state.Players.SelectMany(player => player.Zones.Select(zone => new { Player = player, Zone = zone }))
-            .FirstOrDefault(item => item.Zone.Cards.Any(card => SameVisibleCard(card, source))
-                || item.Zone.TopCard is { } top && SameVisibleCard(top, source));
+        var reported = CardViews.Source(state, decision);
+        var location = reported == null ? null : CardViews.InZones(state)
+            .Where(occurrence => SameVisibleCard(occurrence.Card, reported)).Select(occurrence => (ZoneCardOccurrence?)occurrence).FirstOrDefault();
+        var source = location?.Card;
         string identity = source == null ? "" : CardViews.Identity(source);
         var entry = identity.Length == 0 || location == null ? null : cardPresentation.Cards.LastOrDefault(card =>
-            card.ChoiceSlot < 0 && card.Zone == location.Zone.Name && CardViews.Identity(card.Card) == identity);
-        var owner = location?.Player ?? state.Players.FirstOrDefault(player => player.Id == decision.SourceControllerId) ?? state.Viewer;
+            card.ChoiceSlot < 0 && card.Zone == location.Value.Zone && CardViews.Identity(card.Card) == identity);
+        var owner = state.Players.FirstOrDefault(player => player.Id == location?.PlayerId)
+            ?? state.Players.FirstOrDefault(player => player.Id == decision.SourceControllerId) ?? state.Viewer;
         var geometry = owner == null ? null : tableScene?.Seat(owner.Id).Geometry;
-        string zone = location?.Zone.Name ?? decision.SourceZone;
+        string zone = location?.Zone ?? decision.SourceZone;
         var pile = geometry?.Piles.FirstOrDefault(candidate => candidate.Zone == zone);
         var anchor = (entry?.ReaderTarget ?? entry?.Rest)?.Bounds ?? pile?.Pose.Bounds
             ?? new Rectangle((int)(geometry?.Hero.X ?? 800) - 55, (int)(geometry?.Hero.Y ?? 744) - 55, 110, 110);

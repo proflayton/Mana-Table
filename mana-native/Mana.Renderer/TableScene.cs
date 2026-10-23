@@ -27,19 +27,23 @@ public sealed record SceneCard(string Id, Card Card, Pose Pose, string Zone, int
         return new(id, card, pose, zone, owner, entrance);
     }
 }
-public sealed record RankPlan(string Key, int Total, SceneCard[] Cards);
 public sealed record PilePlan(string Zone, Pose Pose, bool Compact);
 public sealed record HandPlan(int Page, int Total, string? Raised, SceneCard[] Cards);
+
+/// <summary>A painted front and the exact public occurrences represented behind it.
+/// Membership is presentation geometry, never permission to act on a group.</summary>
+public sealed record BattlefieldCohort(SceneCard Front, IReadOnlyList<string> MemberIds);
 
 /// <summary>One player's prepared geometry and complete public battlefield.</summary>
 public sealed class SceneSeat
 {
     private readonly Dictionary<string, SceneCard> occurrences = new(StringComparer.Ordinal);
-    private readonly RankPlan lands, permanents;
+    private readonly Dictionary<string, BattlefieldCohort> cohortsByOccurrence = new(StringComparer.Ordinal);
     public int PlayerId => Geometry.PlayerId;
     public int Index => Geometry.Index;
     public SeatGeometry Geometry { get; }
     public IReadOnlyList<BattlefieldCluster> Battlefield { get; }
+    public IReadOnlyList<BattlefieldCohort> Cohorts { get; }
     public bool IsDense { get; }
 
     internal SceneSeat(SeatGeometry geometry, BattlefieldCluster[] battlefield)
@@ -47,19 +51,24 @@ public sealed class SceneSeat
         Geometry = geometry;
         Battlefield = Array.AsReadOnly(battlefield);
         IsDense = battlefield.Any(cluster => cluster.Cards.Any(card => card.Dense));
-        foreach (var card in battlefield.SelectMany(cluster => cluster.Cards)) occurrences.TryAdd(card.Id, card);
-        lands = BuildRank(true);
-        permanents = BuildRank(false);
-
-        RankPlan BuildRank(bool resources)
-        {
-            var cards = battlefield.Where(cluster => (cluster.Kind == "Lands") == resources).SelectMany(cluster => cluster.Cards).ToArray();
-            return new(PlayerId + (resources ? ":lands" : ":permanents"), cards.Length, cards);
+        var cohorts = new List<BattlefieldCohort>();
+        foreach (var cluster in battlefield) {
+            var members = new List<string>();
+            foreach (var card in cluster.Cards) {
+                occurrences.TryAdd(card.Id, card);
+                members.Add(card.Id);
+                if (!card.GroupFront) continue;
+                var cohort = new BattlefieldCohort(card, Array.AsReadOnly(members.ToArray()));
+                cohorts.Add(cohort);
+                foreach (string id in members) cohortsByOccurrence.TryAdd(id, cohort);
+                members.Clear();
+            }
         }
+        Cohorts = cohorts.AsReadOnly();
     }
 
     public SceneCard? BattlefieldCard(string occurrenceId) => occurrences.GetValueOrDefault(occurrenceId);
-    internal RankPlan Rank(bool resources) => resources ? lands : permanents;
+    public BattlefieldCohort? Cohort(string occurrenceId) => cohortsByOccurrence.GetValueOrDefault(occurrenceId);
 }
 
 /// <summary>Prepared table layout shared by painting, hit testing and layout checks.</summary>
@@ -78,8 +87,8 @@ public sealed class TableScene
 
     public SceneSeat Seat(int player) => seats[player];
     public SceneCard? BattlefieldCard(int player, string occurrenceId) => seats.GetValueOrDefault(player)?.BattlefieldCard(occurrenceId);
-    // Compatibility views keep existing pose consumers on the same seat plan.
-    public RankPlan Rank(int player, bool resources) => Seat(player).Rank(resources);
+    public BattlefieldCohort? Cohort(string occurrenceId) => Seats.Select(seat => seat.Cohort(occurrenceId)).FirstOrDefault(cohort => cohort != null);
+    // These views expose the same prepared seat collections.
     public IReadOnlyList<SceneCard> Commanders(int player) => Seat(player).Geometry.Commanders;
     public IReadOnlyList<PilePlan> Piles(int player) => Seat(player).Geometry.Piles;
     public IReadOnlyList<BattlefieldCluster> Battlefield(int player) => Seat(player).Battlefield;

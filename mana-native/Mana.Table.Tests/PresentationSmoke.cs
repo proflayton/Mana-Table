@@ -53,7 +53,8 @@ internal static class PresentationSmoke
             "An unfamiliar positive public resource is retained by name rather than silently dropped");
         var scene = TableScene.Build(state, 0, new(-100, -100), null, null, false, CardPresentation.IsResource);
         Check(state.Players.All(p => scene.Battlefield(p.Id).Sum(c => c.Cards.Length) == p.Zone("Battlefield").Cards.Length), "Every seat's complete public battlefield is represented without paging");
-        Check(scene.Rank(1, false).Cards.Select(c => c.Id).Distinct().Count() == 8, "Every crowded battlefield occurrence remains represented even with duplicate card names");
+        Check(scene.Battlefield(1).Where(cluster => cluster.Kind != "Lands").SelectMany(cluster => cluster.Cards)
+            .Select(c => c.Id).Distinct().Count() == 8, "Every crowded battlefield occurrence remains represented even with duplicate card names");
         var stableBoard = state with { Players = state.Players.Select(p => p with { Zones = p.Zones.Select(z => z.Name != "Battlefield" ? z : z with {
             Count = 5, Cards = Enumerable.Range(0, 5).Select(i => new Card { VisualId = $"stable-{p.Id}-{i}", Name = i < 3 ? "Llanowar Elves" : "Forest",
                 Type = i < 3 ? "Creature" : "Basic Land", Power = i < 3 ? 2 : null, Toughness = i < 3 ? 2 : null }).ToImmutableArray()

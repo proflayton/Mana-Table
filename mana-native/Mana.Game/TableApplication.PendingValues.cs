@@ -100,7 +100,7 @@ internal sealed partial class TableApplication
             + " " + (counter.Label.Length > 0 ? counter.Label : counter.Type)));
 
     private string CounterRecipientName(CounterAddition addition) => addition.Card is { FaceDown: false } card
-        ? InteractionCards.Current(match, card).Name
+        ? CardViews.Current(match, card).Name
         : addition.PlayerId is { } player ? StateClarity.PlayerName(match!, player) : "Counter recipient";
 
     private void DrawPendingCounterReceipt(PendingEffect effect)
@@ -171,7 +171,7 @@ internal sealed partial class TableApplication
 
     private void AddTargetingSourceReference(Decision decision, Rectangle bounds, Card? reported = null, string prefix = "targeting-source:")
     {
-        var card = reported ?? InteractionCards.Source(match, decision);
+        var card = reported ?? CardViews.Source(match, decision);
         if (card is not { FaceDown: false }) return;
         var reference = new PendingCardReference("", CardViews.Identity(card), decision.Id);
         if (ResolvePendingReference(reference) is not { } current) return;

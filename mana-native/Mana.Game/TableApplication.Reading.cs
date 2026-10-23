@@ -66,8 +66,8 @@ internal sealed partial class TableApplication
         if (!AbilityActionPending || match == null || cardPresentation.Pinned is not { Zone: "Battlefield" } entry) return false;
         string id = decision.SourceCardId.Length > 0 ? decision.SourceCardId
             : decision.SourceCard is { VisualId.Length: > 0 } source ? source.VisualId : decision.SourceCard?.CombatId ?? "";
-        return id.Length > 0 && match.Players.SelectMany(player => player.Zone("Battlefield").Cards)
-            .Any(card => !card.FaceDown && (card.VisualId == id || card.CombatId == id) && SameVisibleCard(card, entry.Card));
+        return CardViews.FindZoneOccurrence(match, id) is { Zone: "Battlefield", Card: { FaceDown: false } card }
+            && SameVisibleCard(card, entry.Card);
     }
     private Card? ChoiceFace(int slot) => CardContext.ChoiceFace(slot);
     private Card? RefreshInspectedCard()

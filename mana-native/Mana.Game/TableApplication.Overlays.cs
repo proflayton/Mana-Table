@@ -87,7 +87,7 @@ internal sealed partial class TableApplication
         ModalFrame(card.Name, () => { overlay = ""; inspected = null; });
         var inspectedPose = new Pose(new(447, 460), new(380, 532));
         PaintCard(card, inspectedPose, false, false);
-        if (!inspectBack) PaintAttachedCardState(InteractionCards.Current(match, original), inspectedPose);
+        if (!inspectBack) PaintAttachedCardState(CardViews.Current(match, original), inspectedPose);
         canvas.Text(card.Type, 686, 191, Gold, .9f, 690, 2, true);
         canvas.Text(card.ManaCost == "no cost" ? "" : card.ManaCost, 686, 248, Ink, 1, 675, 1);
         string values = card.Type.Contains("Creature") ? $"Power / toughness: {card.Power}/{card.Toughness}" : "";
@@ -288,12 +288,12 @@ internal sealed partial class TableApplication
     {
         var items = d.LibraryCards.Length > 0
             ? d.LibraryCards.Select(c => (c.Index, c.Label, Card: (Card?)c.Card, Detail: "", Mana: "")).ToArray()
-            : d.Choices.Select(c => (Index: (int?)c.Index, c.Label, Card: InteractionCards.Choice(state, c), c.Detail, c.Mana)).ToArray();
+            : d.Choices.Select(c => (Index: (int?)c.Index, c.Label, Card: CardViews.Choice(state, c), c.Detail, c.Mana)).ToArray();
         var filtered = items.Select((item, slot) => (Item: item, Slot: slot))
             .Where(c => c.Item.Label.Contains(choiceFilter, StringComparison.OrdinalIgnoreCase)).ToArray();
         bool portraits = items.Any(c => c.Card != null); int capacity = portraits ? 7 : 6;
         bool sparseSource = portraits && items.Length <= 4;
-        var sourcePreview = !portraits || sparseSource ? InteractionCards.Source(state, d) : null;
+        var sourcePreview = !portraits || sparseSource ? CardViews.Source(state, d) : null;
         if (sourcePreview != null) {
             int sourceX = sparseSource ? 199 : 1185;
             var sourcePose = new Pose(new(sourceX + 83, 435), new(166, 232));

@@ -73,6 +73,15 @@ occurrence disappears. Cross-zone play gestures use a current offered cast/play
 action rather than a UI list of permitted zones. Hand-placement and Auto still
 consume their separate explicit provider permissions.
 
+`CardViews.InZones` enumerates current player-zone occurrences with their owner
+and zone, including a disclosed top and masked card envelopes. Occurrence-ID
+lookup and current action-key lookup are separate queries. Source authorization,
+reader reconciliation and ability placement share this traversal; historical
+stack and decision faces remain explicit reference views. They cannot restore a
+departed source's action authority. Display reconciliation keeps a current masked
+face rather than falling back to an older revealed report. None of these queries
+cache a previous snapshot or match a printed name.
+
 Forge priority alternatives are explicit state: Undo, pass turn or none. Native
 Undo and pass-turn commands never emulate Forge's overloaded Cancel button.
 The Java adapter validates their current meaning both before queueing and on the
@@ -524,7 +533,7 @@ its consequence; an eliminated seat can watch or leave.
 | `Mana.Conformance` | Test-only semantic scenarios, canonical full checkpoints and first-divergence reporting for two engine adapters |
 | `Mana.Client.Tests`, `Mana.Table.Tests` | Headless behavior checks and separate native test/automation executable |
 
-`TableScene` describes visible ranks, command cards, piles and hand placement.
+`TableScene` describes battlefield groups, command cards, piles and hand placement.
 Current native source uses `BattlefieldLayout` to include every projected
 battlefield occurrence, with ordered groups and exposed individual hit regions.
 Sparse boards keep projected role lanes. When crowding requires bounded packing,
@@ -534,7 +543,11 @@ controls. Dense headers carry owner/status while life, mana and player-state
 ribbons remain at their player icons. Redundant role and hero creature counts
 have been removed. Matching public-state
 copies share small fans; every occurrence stays rendered and independently hit.
-Its compatibility rank views do not page the battlefield. Long hands and
+Each scene seat prepares group membership and occurrence lookup once. Effect
+transitions and impacts use the same group front and members instead of rebuilding
+groups from paint order. Focused tiles expose their displayed membership and art
+pose through the same layout owner. Event attribution, departure visibility and
+counter landing remain with their existing consumers. Long hands and
 selection/inspection galleries still page. Release 0.2.39 introduced unpaged
 battlefields at revision `c11a3094be6c95ba1bddbafbe54aa7ad8fe3a7db`; current packing
 includes later changes. Inspect package metadata before attributing source
@@ -716,7 +729,7 @@ matching public states share a fan. Connected metadata extends the same
 occurrence's hit region rather than clicking through to a neighbor.
 
 `PaintInteractionCard` shares this current-state presentation across source,
-choice, stack, combat and allocation previews. `InteractionCards` resolves exact
+choice, stack, combat and allocation previews. `CardViews` resolves exact
 public occurrence IDs against the current snapshot for display, including a
 current face-down projection. It never matches printed names or changes the
 original choice index, action handle, allocation threshold or reply. If an

@@ -157,10 +157,8 @@ public sealed class ClientSession
         if (state is not { Decision: { } decision } || key.Length == 0) return null;
         // Embedded decision/choice faces can describe history. Only a currently
         // disclosed physical occurrence can carry authority to act on a source.
-        var card = state.Players.SelectMany(player => player.Zones)
-            .SelectMany(zone => zone.TopCard is { } top ? zone.Cards.Append(top) : zone.Cards)
-            .FirstOrDefault(card => card.Key == key && !card.FaceDown);
-        return card == null ? null : new(state.Id, decision.Id, state.Revision, state.ViewerId, card.Key, CardViews.Identity(card));
+        var card = CardViews.FindZoneActionSource(state, key)?.Card;
+        return card is not { FaceDown: false } ? null : new(state.Id, decision.Id, state.Revision, state.ViewerId, card.Key, CardViews.Identity(card));
     }
     public void Close() { CancelAdvance(); SourceActions.Close(); pendingSettings.Clear(); Closed = true; replica.BeginCommand(); }
 }

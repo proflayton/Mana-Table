@@ -16,7 +16,7 @@ internal sealed partial class TableApplication
         public int GroupMembers { get; init; } = 1;
         public string Caption { get; init; } = "";
     }
-    private sealed record ImpactRecipient(string Id, string[] Members, Pose Pose, Rectangle Footprint);
+    private sealed record ImpactRecipient(string Id, IReadOnlyList<string> Members, Pose Pose, Rectangle Footprint);
     private sealed record AnchoredImpact(double Started, PublicImpact Impact, long Amount, ImpactRecipient Recipient);
     private readonly List<ImpactPaint> impactPaint = [];
     private void DrawActualImpacts()
@@ -42,7 +42,7 @@ internal sealed partial class TableApplication
             var recipient = group.First().Recipient;
             var pose = recipient.Pose;
             var affected = group.Select(c => c.Impact.CardId).OfType<string>().Distinct(StringComparer.Ordinal).ToArray();
-            int members = Math.Max(1, recipient.Members.Length);
+            int members = Math.Max(1, recipient.Members.Count);
             bool subset = affected.Length > 0 && affected.Length < members;
             string caption = (damage ? "damage" : "life") + (affected.Length > 1 ? " each" : "")
                 + (subset ? " ·" + affected.Length + "/" + members : "");
@@ -107,10 +107,9 @@ internal sealed partial class TableApplication
 
     private ImpactRecipient? DisplayedImpactRecipient(string id)
     {
-        if (BattlefieldFocused && battlefieldFocusPlan?.Tiles.FirstOrDefault(tile => tile.Group.Cards.Any(card => CardViews.Identity(card) == id)) is { } tile) {
+        if (BattlefieldFocused && battlefieldFocusPlan?.Tile(id) is { } tile) {
             if (!battlefieldFocusPlan.Viewport.Contains(tile.Art)) return null;
-            var pose = new Pose(tile.Art.Center.ToVector2(), tile.Art.Size.ToVector2());
-            return new(tile.Group.Id, tile.Group.Cards.Select(CardViews.Identity).Distinct(StringComparer.Ordinal).ToArray(), pose, tile.Bounds);
+            return new(tile.Group.Id, tile.Group.MemberIds, tile.ArtPose, tile.Bounds);
         }
         if (departures.LastOrDefault(d => d.Card.VisualId == id && now - d.Started <= 1.5) is { } departure) {
             var pose = DeparturePose(departure);
@@ -119,16 +118,9 @@ internal sealed partial class TableApplication
         }
         // A collapsed stack still identifies every occurrence. Attach the result
         // to its visible front rather than drawing at a covered copy's centre.
-        if (!BattlefieldFocused && tableScene != null) foreach (var seat in tableScene.Seats) foreach (var cluster in seat.Battlefield) {
-            var members = new List<string>();
-            foreach (var node in cluster.Cards) {
-                members.Add(node.Id);
-                if (!node.GroupFront) continue;
-                if (members.Contains(id) && cardPresentation.TryGetPose(node.Id, out var pose))
-                    return new(node.Id, members.ToArray(), pose, pose.Bounds);
-                members.Clear();
-            }
-        }
+        if (!BattlefieldFocused && tableScene?.Cohort(id) is { } cohort
+            && cardPresentation.TryGetPose(cohort.Front.Id, out var front))
+            return new(cohort.Front.Id, cohort.MemberIds, front, front.Bounds);
         var entry = cardPresentation.Cards.LastOrDefault(card => (card.Id == id || CardViews.Identity(card.Card) == id)
             && card.Zone is "Battlefield" or "Command" or "Stack" or "Graveyard" or "Exile");
         if (entry == null || BattlefieldFocused && entry.Display.Bounds.Intersects(BattlefieldFocusBounds)) return null;

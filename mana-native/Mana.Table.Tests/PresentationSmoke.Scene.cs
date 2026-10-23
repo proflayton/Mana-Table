@@ -47,9 +47,14 @@ internal static class PresentationSceneChecks
                 && scene.Seats.All(seat => seat.BattlefieldCard("absent") == null),
             "Occurrence lookup returns the exact prepared node for its owner and safely rejects missing owners or identities");
         check(scene.Seats.All(seat => seat.IsDense == seat.Battlefield.SelectMany(cluster => cluster.Cards).Any(node => node.Dense)
-                && scene.Rank(seat.PlayerId, true).Cards.Concat(scene.Rank(seat.PlayerId, false).Cards).Count()
+                && seat.Cohorts.SelectMany(cohort => cohort.MemberIds).Count()
                     == state.Players.Single(player => player.Id == seat.PlayerId).Zone("Battlefield").Cards.Length),
-            "Seat density and compatibility rank totals describe the complete prepared public battlefield");
+            "Seat density and prepared cohort membership describe the complete public battlefield");
+        check(scene.Seats.All(seat => seat.Cohorts.All(cohort => cohort.Front.GroupFront
+                && cohort.MemberIds.Contains(cohort.Front.Id)
+                && cohort.MemberIds.All(id => ReferenceEquals(cohort, seat.Cohort(id)) && ReferenceEquals(cohort, scene.Cohort(id))))
+                && seat.Cohort("absent") == null) && scene.Cohort("absent") == null,
+            "Every prepared public occurrence resolves to its exact painted front and immutable cohort rather than a name-matched copy");
 
         var denseState = Field(state, player => Enumerable.Range(0, 9).Select(index => new Card {
             VisualId = $"obstacle-{player.Id}-{index}", Name = "Creature " + index,

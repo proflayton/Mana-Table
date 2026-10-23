@@ -89,7 +89,7 @@ internal sealed partial class TableApplication
 
     private void DrawAllocationHeader(GameSnapshot state, Decision d)
     {
-        var source = InteractionCards.Source(state, d);
+        var source = CardViews.Source(state, d);
         if (source != null) {
             var pose = new Pose(new(250, 242), new(83, 116));
             PaintInteractionCard(source, pose, false, false);
@@ -120,7 +120,7 @@ internal sealed partial class TableApplication
     private void DrawAllocationRecipient(GameSnapshot state, Decision d, int index, int x, int y)
     {
         var choice = d.Choices[index];
-        var card = InteractionCards.Choice(state, choice);
+        var card = CardViews.Choice(state, choice);
         int value = allocations[index], minimum = AllocationGuide.Minimum(d, index), maximum = AllocationGuide.Maximum(d, index);
         long remaining = d.Amount - AllocationGuide.Total(allocations);
         canvas.Panel(new(x, y, 588, 143), value > 0 ? new Color(29, 47, 59) : Panel,
@@ -173,7 +173,7 @@ internal sealed partial class TableApplication
     {
         int index = allocationDetail;
         Choice? choice = index >= 0 ? d.Choices[index] : null;
-        Card? card = choice != null ? InteractionCards.Choice(state, choice) : InteractionCards.Source(state, d);
+        Card? card = choice != null ? CardViews.Choice(state, choice) : CardViews.Source(state, d);
         string name = choice == null ? card?.Name ?? "Source" : AllocationGuide.Name(choice, index);
         ModalFrame(name, CloseAllocationDetail, "Back", 790);
         // Current characteristics use an exact engine occurrence link. Amounts,
