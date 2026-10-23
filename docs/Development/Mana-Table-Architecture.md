@@ -304,7 +304,10 @@ flowchart LR
 `ComposePresentation` publishes ordered typed `DrawCommand` data through
 `DrawList`, a frozen `InteractionFrame`, prepared card occurrences, a scene and
 the exact game/revision/decision stamp. GPU replay does not run application
-callbacks or decide card layout. CPU font geometry and GPU text rasterization use
+callbacks or decide card layout. Application composition owns one deferred list
+pairing each lifted card with its painter; it drains in stable layer order before
+frame publication. The card controller owns poses, reading and layers, without a
+second queue or sequence-key join. CPU font geometry and GPU text rasterization use
 the same `TextLayout`; measuring a label creates no texture. Card readers and
 travel belong to `CardPresentationController`, and indexed scene seats and
 occurrences avoid rebuilding layouts or scanning the whole battlefield per card.
@@ -492,7 +495,7 @@ behavior. History retains both movement and draw entries, with an additive
 sequence and the shared native interruption predicate use that classification.
 Draw triggers and their required choices still stop passing. Unchanged stat
 recomputation and retained-mana refreshes do not count as actions.
-`DecisionQuietAdvance` observes ordinary priority handoffs but submits only against
+`DecisionAdvance.RunQuietlyAsync` observes ordinary priority handoffs but submits only against
 a current local priority prompt with that exact token. It never adopts a replacement
 token or consumes targets, payment, searches or other required decisions. Hold,
 Take control and manual game actions stop further quiet passes; an already submitted
@@ -868,6 +871,14 @@ prompts are not resubmitted; stale revisions and retired-session results are rej
 Hold, Full control, changed stops, typing, inspection and pointer gestures cancel
 further passes; an already submitted command is reconciled. Required decisions,
 including blocks, payment and cleanup, are never consumed by Auto.
+
+Auto and explicit quiet yield use one bounded executor and one `ClientSession`
+cancellation/acceptance lifecycle. Their entry points construct only their own
+command variant and retain separate submitted-prompt histories. The unchanged
+`QuietPriorityPolicy` owns quiet token, turn and interruption gates; it cannot
+authorize ordinary Auto. The application checks eligibility and presentation
+pauses without keeping another submitted-prompt cache or constructing a discarded
+pass command. The session owns submission and reconciliation.
 
 `PresentationPacing` pauses for visible events, not empty phase changes. Board
 changes get 1.1 seconds, ordinary stack changes 1.25, targeted spells or retargets

@@ -54,9 +54,8 @@ internal static class CardPresentationChecks
         var browsing = owner.ResolveHit(secondRest.Center.ToPoint(), new[] { adjacent.Hit, pinned.Hit }, pinned.Hit, context);
         check(browsing?.Id == adjacent.Hit.Id,
             "The original adjacent hand slot stays reachable underneath a pinned reader");
-        check(owner.TakeDeferred().Select(card => card.Id).SequenceEqual([first.VisualId])
-            && owner.TakeDeferred().Count == 0,
-            "A prepared lifted card is emitted once and draining its layer cannot repaint it");
+        check(pinned.Layer == CardPresentationLayer.Reader && adjacent.Layer == CardPresentationLayer.Table,
+            "A prepared reader retains its lifted layer while the adjacent hand card stays on the table");
 
         owner.BeginFrame(context, pinned.Hit.Id, .016f, true);
         var hoveredReader = owner.Prepare(Request(first, firstRest));

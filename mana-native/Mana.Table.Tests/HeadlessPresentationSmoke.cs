@@ -56,8 +56,9 @@ internal static class HeadlessPresentationSmoke
                 var actionBounds = readerAction.Bounds;
                 Check(readerA.Focused && readerA.Display.Size.X == 410
                     && run.View.HitAt(actionBounds.Center) is { } actionHit && actionHit.Id == readerAction.Id && actionHit.Scope == readerAction.Scope
+                    && run.View.CardPaintCount("hand-a") == 1
                     && run.Engine.Replies.Count == 0,
-                    "Legacy engine card clicks retain an exposed current action hit without submitting a game action while reading");
+                    "Legacy engine card clicks paint the lifted face once and retain an exposed current action hit without submitting a game action while reading");
                 var pinnedA = run.Frame;
                 var readerStart = pinnedA.Cards.Single(card => card.Id == "hand-a").Display.Center.ToPoint();
                 var readerDrag = readerStart + new Point(20, 0);
@@ -71,7 +72,8 @@ internal static class HeadlessPresentationSmoke
                 run.ClickCard("hand-a"); run.Settle("reader-a-restored");
                 run.ClickCard("hand-b", originalHandSlot: true); run.Settle("reader-b");
                 Check(run.Frame.Cards.Single(card => card.Id == "hand-b").Focused
-                    && !run.Frame.Cards.Single(card => card.Id == "hand-a").Focused && run.Engine.Replies.Count == 0,
+                    && !run.Frame.Cards.Single(card => card.Id == "hand-a").Focused
+                    && run.View.CardPaintCount("hand-a") == 1 && run.View.CardPaintCount("hand-b") == 1 && run.Engine.Replies.Count == 0,
                     "A pinned card leaves the adjacent original hand slot available to real pointer input");
                 run.ClickCard("hand-b"); run.Settle("reader-b-closed");
                 Check(!run.Frame.Cards.Any(card => card.Focused)

@@ -79,7 +79,6 @@ internal sealed partial class TableApplication : IDisposable
     private Hit? pressed, dragSource;
     private double nextPoll, now, turnBannerUntil;
     private double lastDrawTime;
-    private readonly AutoPriority priority = new();
     private static readonly Color Ink = new(236, 236, 230), Muted = new(161, 173, 182), Gold = new(226, 190, 120), Teal = new(45, 94, 115), Panel = new(24, 30, 38), Blue = new(91, 184, 228), Red = new(235, 117, 105);
     private int DesignHeight => match == null ? 1000 : TableLayout.Height;
     private bool TableChoice => match != null && TableChoices.IsDirect(match);
@@ -114,11 +113,11 @@ internal sealed partial class TableApplication : IDisposable
         session = new(matchConnection, tables, this.clock, services.SourceActions); updates = new(session);
         sourceActions = session.SourceActions;
         session.Changed += AcceptEffects;
-        session.Completed += () => { FinishActivity(); nextPoll = 0; if (error.Length == 0) priority.Reset(); };
+        session.Completed += () => { FinishActivity(); nextPoll = 0; };
         session.Failed += ex => { error = ex.Message; commandFailure = session.LastFailureWasCommand; FailActivity(); try { File.AppendAllText(Path.Combine(profile, "client.log"), ex + "\n"); } catch (Exception logError) when (logError is IOException or UnauthorizedAccessException) { } };
         // Fresh observations restore play, but an explicit action failure remains
         // available until acknowledged instead of disappearing between frames.
-        session.Recovered += () => { if (!commandFailure) error = ""; priority.Reset(); pendingActionLabel = ""; };
+        session.Recovered += () => { if (!commandFailure) error = ""; pendingActionLabel = ""; };
         this.profile = profile; this.fixture = fixture; this.initialState = initialState; this.resources = resources ?? new(); this.allowAutomaticChecks = allowAutomaticChecks;
         this.appUpdates = appUpdates; this.installUpdate = installUpdate;
         LoadUpdatePreferences();
@@ -186,7 +185,7 @@ internal sealed partial class TableApplication : IDisposable
         if (decisionId != (prompt?.Id ?? "")) {
             if (BattlefieldFocused && prompt != null && !ReadingAbilitySource(prompt) && (prompt.Kind is "choice" or "reveal" or "number" or "text" or "allocate"
                 || prompt.Intent == DecisionIntent.Selection)) { zoneName = null; CollapseCardReading(); }
-            decisionId = prompt?.Id ?? ""; selections.Clear(); choicePage = 0; choiceFilter = ""; selectedCombat = null; priority.Reset();
+            decisionId = prompt?.Id ?? ""; selections.Clear(); choicePage = 0; choiceFilter = ""; selectedCombat = null;
             dragging = false; dragSource = null; ClearCardDrag(); collapsedDecision = false; textFocus = false;
             if (!TableChoice && prompt is { Ordered: true } && prompt.Min == prompt.Choices.Length) selections.AddRange(prompt.Choices.Select(c => c.Index));
             allocations = prompt?.Choices.Select(_ => prompt.AtLeastOne ? 1 : 0).ToArray() ?? [];
@@ -273,8 +272,8 @@ internal sealed partial class TableApplication : IDisposable
         bool autoBlocked = AutomaticInteractionPause() != DecisionDockPauseReason.None;
         bool quietReserved = UpdateQuietPriority(autoBlocked);
         if (!quietReserved && (!automatic || held || autoBlocked)) session.CancelAdvance();
-        if (!quietReserved && !ExperienceLabOpen && !session.NeedsRecovery && fixture == null && playback.Ready(now) && priority.Update(match, automatic, held, preferences.Stops,
-            autoBlocked, busy || polling) != null) {
+        if (!quietReserved && !ExperienceLabOpen && !session.NeedsRecovery && fixture == null && playback.Ready(now) && !busy && !polling
+            && match is { } currentState && TurnGuide.CanAutoPass(currentState, automatic, held, preferences.Stops, autoBlocked)) {
             // Snapshot the policy: the worker never reads mutable UI preferences.
             var stops = preferences.Stops.ToHashSet();
             error = "";
@@ -287,7 +286,7 @@ internal sealed partial class TableApplication : IDisposable
         }
     }
     private void SetAutomatic(bool value) { automatic = value; preferences = preferences with { Automatic = value }; SavePreferences(); }
-    private void SavePreferences() { StopQuietPriority(); session.CancelAdvance(); priority.Reset(); try { preferences.Save(profile); } catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { error = "Could not save settings: " + ex.Message; } }
+    private void SavePreferences() { StopQuietPriority(); session.CancelAdvance(); try { preferences.Save(profile); } catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { error = "Could not save settings: " + ex.Message; } }
     private void Send(DecisionCommand? command)
     {
         if (command == null || fixture != null || session.NeedsRecovery || match?.Id != command.GameId || match.Decision?.Id != command.DecisionId) return;

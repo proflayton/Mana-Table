@@ -8,7 +8,7 @@ internal sealed partial class TableApplication
 
     private void ClearExperienceInput()
     {
-        session.CancelAdvance(); priority.Reset();
+        session.CancelAdvance();
         pressed = dragSource = null; dragging = false;
         hovered = null; cardPresentation.Collapse();
     }

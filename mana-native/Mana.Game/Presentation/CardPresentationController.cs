@@ -15,7 +15,6 @@ internal sealed class CardPresentationController
     internal const int StudyDetailsWidth = 280, StudyDetailsGap = 18;
     private readonly SceneMotion motion = new();
     private readonly List<PresentedCard> cards = [];
-    private readonly List<PresentedCard> deferred = [];
     private readonly HashSet<string> transitions = [];
     private readonly HashSet<string> pendingCollapses = [];
     private readonly Dictionary<string, int> compositionCounts = [];
@@ -97,20 +96,12 @@ internal sealed class CardPresentationController
         var layer = focused ? CardPresentationLayer.Reader
             : transitions.Contains(request.Id) ? CardPresentationLayer.Returning : CardPresentationLayer.Table;
         bool pointerHover = request.Id == hoveredId && request.HitId == hoveredHit && !request.Card.FaceDown && readable;
-        var entry = new PresentedCard(cards.Count, request, pose, hit, focused,
+        var entry = new PresentedCard(request, pose, hit, focused,
             (focused || pointerHover) && !request.Card.FaceDown && readable, layer)
             { View = view, ReaderTarget = focused ? readerTarget : null, Hovered = pointerHover };
         cards.Add(entry);
-        if (layer != CardPresentationLayer.Table) deferred.Add(entry);
         if (focused) ReaderBounds = pose.Bounds;
         return entry;
-    }
-
-    public IReadOnlyList<PresentedCard> TakeDeferred()
-    {
-        var result = deferred.OrderBy(card => card.Layer).ToArray();
-        deferred.Clear();
-        return Array.AsReadOnly(result);
     }
 
     public void RecordComposition(PresentedCard entry) => compositionCounts[entry.Id]
@@ -172,7 +163,7 @@ internal sealed class CardPresentationController
         pinnedId = pinnedZone = null; readerTarget = null; ReaderBounds = null; hoveredId = hoveredHit = "";
     }
 
-    public void ClearComposition() { cards.Clear(); deferred.Clear(); }
+    public void ClearComposition() => cards.Clear();
     public void EndFrame()
     {
         transitions.RemoveWhere(id => !cards.Any(card => card.Id == id));

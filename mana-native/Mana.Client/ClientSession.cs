@@ -11,7 +11,6 @@ public sealed class ClientSession
     private readonly ConcurrentQueue<Action> completions = new();
     private readonly SessionReplica<GameSnapshot> replica = new(s => s.Id, s => s.Revision);
     private readonly DecisionAdvance advance;
-    private readonly DecisionQuietAdvance quietAdvance;
     private readonly TimeProvider time;
     private bool recoveryRequired;
     private CancellationTokenSource? advancing;
@@ -24,7 +23,6 @@ public sealed class ClientSession
         this.setup = setup;
         time = clock ?? TimeProvider.System;
         advance = new(connection);
-        quietAdvance = new(connection);
         SourceActions = new(sourceActions, Post);
     }
     public SourceActionSession SourceActions { get; }
@@ -110,29 +108,19 @@ public sealed class ClientSession
         pendingSettings.Enqueue(command); return true;
     }
     public bool Advance(Func<GameSnapshot, bool> canPass, Func<GameSnapshot, GameSnapshot, bool> shouldPresent)
-    {
-        if (Busy || Polling || Closed || NeedsRecovery || State is not { } initial || !canPass(initial)) return false;
-        var cancellation = advancing = new CancellationTokenSource();
-        Run(async epoch => {
-            try {
-                var state = await advance.RunAsync(initial, canPass, shouldPresent, cancellation.Token);
-                Post(() => Accept(state, epoch));
-            } finally {
-                Post(() => { if (advancing == cancellation) advancing = null; cancellation.Dispose(); });
-            }
-        });
-        return true;
-    }
+        => StartAdvance(canPass, (initial, cancellation) => advance.RunAsync(initial, canPass, shouldPresent, cancellation));
     public void CancelAdvance() => advancing?.Cancel();
     public bool AdvanceQuietly(string token, Func<GameSnapshot, bool> canContinue,
         Func<GameSnapshot, GameSnapshot, bool> shouldPresent)
+        => StartAdvance(initial => QuietPriorityPolicy.CanPass(initial, token) && canContinue(initial),
+            (initial, cancellation) => advance.RunQuietlyAsync(initial, token, canContinue, shouldPresent, cancellation));
+    private bool StartAdvance(Func<GameSnapshot, bool> canStart, Func<GameSnapshot, CancellationToken, Task<GameSnapshot?>> operation)
     {
-        if (Busy || Polling || Closed || NeedsRecovery || State is not { } initial
-            || !DecisionQuietAdvance.CanPass(initial, token) || !canContinue(initial)) return false;
+        if (Busy || Polling || Closed || NeedsRecovery || State is not { } initial || !canStart(initial)) return false;
         var cancellation = advancing = new CancellationTokenSource();
         Run(async epoch => {
             try {
-                var state = await quietAdvance.RunAsync(initial, token, canContinue, shouldPresent, cancellation.Token);
+                var state = await operation(initial, cancellation.Token);
                 Post(() => Accept(state, epoch));
             } finally {
                 Post(() => { if (advancing == cancellation) advancing = null; cancellation.Dispose(); });

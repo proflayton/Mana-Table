@@ -74,7 +74,7 @@ dotnet $driver --smoke-presentation --profile '<fresh-profile>'
 The test flags belong to `Mana.Table.Tests`, not the shipped `ManaTable.exe`.
 Choose an explicit fresh `--profile` for every independent journey.
 
-- `--smoke-presentation`: pure presentation, card-reader, scope, focus and geometry regressions.
+- `--smoke-presentation`: presentation, card-reader, scope, focus, geometry and bounded priority-batch regressions over a controlled provider.
 - `--smoke-headless-presentation`: production `TableApplication` composition and pointer input over controlled snapshots.
 - `--smoke-headless-priority-flow`: authored stack, responder, recipient and library-choice handoffs.
 - `--smoke-headless-clutter`: controlled crowded-field representation and reported effect targets.
@@ -83,6 +83,13 @@ These modes create no game window or graphics device. They exercise the same
 application and typed-frame composition used by the real window. Preserve their
 result/trace JSON when diagnosing a failure; submitted drawing data does not
 prove that a physical window is clear or correctly clipped.
+
+The presentation lane also runs the existing `AdvanceRegression` cases and writes
+`advance-results.json`: required decisions, visible checkpoints, stale/duplicate
+observations, bounded waiting, cancellation and retired-session results. They
+start no JVM or graphics device. `--smoke-advance` remains available to run those
+same cases alone. Client checks cover separate Auto/quiet intent authority and
+their shared batch lifecycle; no additional CI job is needed.
 
 Shared client checks also run `SourceActionSessionRegression`: delayed provider
 reads, seat/source/revision revocation, explicit unsupported versus empty results,

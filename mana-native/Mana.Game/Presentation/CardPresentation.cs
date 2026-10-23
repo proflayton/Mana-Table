@@ -61,7 +61,7 @@ internal sealed record CardPresentationRequest(string Id, Card Card, Pose Rest, 
 internal enum CardPresentationLayer { Table, Returning, Reader }
 
 /// <summary>A prepared occurrence. Rest, painting and input share presentation-space geometry.</summary>
-internal sealed record PresentedCard(int Sequence, CardPresentationRequest Request,
+internal sealed record PresentedCard(CardPresentationRequest Request,
     Pose Display, Hit Hit, bool Focused, bool Emphasized, CardPresentationLayer Layer)
 {
     public BoardView View { get; init; } = BoardView.Identity;

@@ -15,6 +15,7 @@ internal static class PresentationSmoke
     {
         Directory.CreateDirectory(profile); var results = new List<string>();
         void Check(bool condition, string message) { if (!condition) throw new InvalidOperationException(message); results.Add(message); }
+        AdvanceRegression.RunAsync(profile).GetAwaiter().GetResult();
         BitmapPixelSmoke.Run(Check);
         ForgeCommandBoundaryChecks.Run(Check);
         GameplayFeedbackChecks.Run(Check);
