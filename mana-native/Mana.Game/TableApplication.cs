@@ -46,6 +46,7 @@ internal sealed partial class TableApplication : IDisposable
     private readonly InteractionFrame hits = new();
     private readonly List<int> selections = [];
     private readonly TablePresence presence = new();
+    private readonly PublicActivityCursor publicActivity = new();
     private readonly PresentationPacing playback = new();
     private TableScene? tableScene;
     private readonly Dictionary<string, Pose> cardPositions = [];
@@ -148,14 +149,15 @@ internal sealed partial class TableApplication : IDisposable
     private void Accept(GameSnapshot? state) => session.Accept(state);
     private void AcceptEffects(GameSnapshot? previous, GameSnapshot? state)
     {
-        if (state?.Id != previous?.Id) { ResetTableView(); tableGuideOpen = false; sceneRevealAt = now; }
+        if (state?.Id != previous?.Id || state?.ViewerId != previous?.ViewerId) { ResetTableView(); tableGuideOpen = false; sceneRevealAt = now; }
         if (state?.Status == "finished" && previous?.Status != "finished") tableGuideOpen = false;
-        if (state != null) { effects.Observe(previous, state, now); presence.Observe(previous, state, now); playback.Observe(previous, state, now); }
-        if (state != null) ObserveActionFeedback(previous, state);
-        if (state != null) publicChanges.Observe(previous, state, now);
-        if (state != null) priorityTransitions.Observe(previous, state, now);
+        if (state != null) {
+            var activity = publicActivity.Observe(previous, state);
+            effects.Observe(activity, now); presence.Observe(activity, now); playback.Observe(previous, state, now);
+            ObserveActionFeedback(activity); publicChanges.Observe(activity, now); priorityTransitions.Observe(previous, state, now);
+        }
         ObserveMana(previous, state);
-        if (state != null && previous != null && state.Id == previous.Id) {
+        if (state != null && previous != null && state.Id == previous.Id && state.ViewerId == previous.ViewerId) {
             if (state.Notices.LastOrDefault() is { } latest && latest != previous.Notices.LastOrDefault()) { notice = latest; noticeUntil = now + 8; }
             foreach (var player in state.Players) {
                 var old = previous.Players.FirstOrDefault(p => p.Id == player.Id);

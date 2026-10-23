@@ -91,6 +91,13 @@ start no JVM or graphics device. `--smoke-advance` remains available to run thos
 same cases alone. Client checks cover separate Auto/quiet intent authority and
 their shared batch lifecycle; no additional CI job is needed.
 
+The same presentation lane runs `PublicActivityCursorChecks` for join/reset,
+repeated observations, bounded-history gaps and shared feedback consumption.
+Its production application journey runs in `--smoke-headless-presentation` and
+switches the viewed seat within one game, checking that readers and retained
+feedback from the previous seat are revoked. Existing board checks cover held
+cards and repeated pose preparation across frame-buffer swaps.
+
 Shared client checks also run `SourceActionSessionRegression`: delayed provider
 reads, seat/source/revision revocation, explicit unsupported versus empty results,
 timeouts, manual retry and shutdown use one scoped action-query lifecycle. Native
@@ -330,6 +337,13 @@ The explicit workflow steps and `mana-native/ci/native-ui.ps1 -ListOnly` define
 automatic coverage. A local mode's existence does not mean CI runs it. The
 extended inventory remains available for targeted investigation; it is not the
 default local checklist.
+
+Within native verification, the installed SDK update lifecycle starts after the
+immutable tools artifact is available. It can run alongside packaging. The
+product's managed migration lifecycle still waits for both tools and the actual
+package and verifies the real Forge-backed application. Both jobs remain required
+by the Windows aggregate and upload separate failure evidence. This scheduling
+change retains the full lifecycle tests; runner availability still affects time.
 
 Record the exact tested head and completed workflow links. Earlier-commit
 success, an uploaded intermediate engine artifact, or an unpublished release

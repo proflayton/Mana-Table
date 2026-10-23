@@ -9,24 +9,21 @@ public sealed class ImpactFeedback
 {
     public const double Duration = 2.4;
     private readonly List<ImpactCue> cues = [];
-    private long lastActivityId;
     public IReadOnlyList<ImpactCue> Cues => cues;
+    public void Clear() => cues.Clear();
 
-    public void Observe(GameSnapshot? before, GameSnapshot after, double now)
+    public void Observe(PublicActivityBatch activity, double now)
     {
-        if (before == null || before.Id != after.Id) {
-            cues.Clear(); lastActivityId = after.Activity.Select(e => e.Id).DefaultIfEmpty().Max(); return;
-        }
+        if (activity.IsBaseline) { Clear(); return; }
+        var after = activity.After;
         cues.RemoveAll(c => now - c.Started >= Duration || !RecipientVisible(after, c.Impact, c.ActivityId));
-        var entries = after.Activity.Where(e => e.Id > lastActivityId).ToArray();
+        var entries = activity.Entries;
         // The bounded feed can evict whole groups, so IDs may have gaps. If
         // retained history no longer overlaps our baseline and also skips its
         // next event, a public departure/return may be missing. Forget only old
         // card anchors; new typed facts and player life remain independently
         // valid. This does not infer that a departure actually occurred.
-        if (entries.Length > 0 && lastActivityId < long.MaxValue
-            && entries.Min(entry => entry.Id) > lastActivityId + 1
-            && !after.Activity.Any(entry => entry.Id <= lastActivityId))
+        if (activity.HasHistoryGap)
             cues.RemoveAll(cue => cue.Impact.CardId is { Length: > 0 });
         var replaced = entries.Where(e => e.Impact is { } impact && RecipientVisible(after, impact, e.Id))
             .Select(e => (e.Impact!.Kind, e.Impact.CardId, e.Impact.PlayerId)).ToHashSet();
@@ -41,12 +38,11 @@ public sealed class ImpactFeedback
         // Older hosts still supply authoritative life totals. Preserve a plain
         // life transition for them, without inventing damage or a source.
         foreach (var player in after.Players) {
-            var old = before.Players.FirstOrDefault(p => p.Id == player.Id);
+            var old = activity.Before!.Players.FirstOrDefault(p => p.Id == player.Id);
             if (old == null || old.Life == player.Life || entries.Any(e => e.Impact is { Kind: "life" } life && life.PlayerId == player.Id)) continue;
             cues.RemoveAll(c => c.Impact.Kind == "life" && c.Impact.PlayerId == player.Id);
             cues.Add(new(0, new("life", (long)player.Life - old.Life, PlayerId: player.Id, Before: old.Life, After: player.Life), now));
         }
-        lastActivityId = Math.Max(lastActivityId, after.Activity.Select(e => e.Id).DefaultIfEmpty().Max());
     }
 
     // Revalidate against the current public occurrence even if it was visible

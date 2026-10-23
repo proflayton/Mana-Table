@@ -390,7 +390,7 @@ jobs:
           retention-days: 14
 
   managed-updates:
-    name: Isolated managed update lifecycle
+    name: Isolated managed migration lifecycle
     needs: [package, tools]
     runs-on: windows-2025
     timeout-minutes: 15
@@ -424,16 +424,51 @@ jobs:
           ./mana-native/ci/update-tools.ps1 -Directory dist/ci-tools
       - name: Verify real protocol1 migration and product Forge health
         run: ./mana-native/installer/test-managed-migration.ps1 -InputPackageDirectory $env:MANA_NATIVE_PACKAGE -Version $env:MANA_RELEASE_VERSION -PortableArchive $env:MANA_NATIVE_ARCHIVE -SourceArchive $env:MANA_NATIVE_SOURCE -CompilerPath $env:MANA_ISCC -VpkDll $env:MANA_VPK -TestDirectory '${{ runner.temp }}/mana-managed-migration'
-      - name: Verify installed SDK delta, cancellation, fallback and explicit restart
-        run: ./mana-native/updates/test-installed-updates.ps1 -VpkDll $env:MANA_VPK -TestDirectory '${{ runner.temp }}/mana-managed-updates'
-      - name: Save managed migration and update lifecycle evidence
+      - name: Save managed migration evidence
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: mana-native-managed-updates-evidence-${{ github.run_attempt }}
+          name: mana-native-managed-migration-evidence-${{ github.run_attempt }}
           path: |
             ${{ runner.temp }}/mana-managed-migration/**/*.json
             ${{ runner.temp }}/mana-managed-migration/**/*.log
+          if-no-files-found: ignore
+          compression-level: 0
+          retention-days: 14
+
+  # SDK fixtures build their own probe and packages; they can verify the full
+  # update lifecycle while the exact-source product package is still building.
+  sdk-updates:
+    name: Isolated installed SDK update lifecycle
+    needs: tools
+    runs-on: windows-2025
+    timeout-minutes: 15
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: |
+            9.0.x
+            10.0.x
+      - uses: actions/download-artifact@v8
+        with:
+          name: mana-native-tools-${{ github.sha }}
+          path: dist/ci-tools
+      - name: Extract pinned update tools
+        run: ./mana-native/ci/update-tools.ps1 -Directory dist/ci-tools
+      - name: Verify installed SDK delta, cancellation, fallback and explicit restart
+        run: ./mana-native/updates/test-installed-updates.ps1 -VpkDll $env:MANA_VPK -TestDirectory '${{ runner.temp }}/mana-managed-updates'
+      - name: Save installed SDK update lifecycle evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: mana-native-sdk-updates-evidence-${{ github.run_attempt }}
+          path: |
             ${{ runner.temp }}/mana-managed-updates/**/*.json
             ${{ runner.temp }}/mana-managed-updates/**/*.log
           if-no-files-found: ignore
@@ -445,7 +480,7 @@ jobs:
   windows:
     name: Verify and package Windows x64
     if: ${{ always() }}
-    needs: [checks, tools, package, native-ui, installer, installer-lifecycle, update-installer, managed-updates]
+    needs: [checks, tools, package, native-ui, installer, installer-lifecycle, update-installer, managed-updates, sdk-updates]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     env:

@@ -27,18 +27,13 @@ public sealed record EffectChangeGroup(string Id, PublicEffectCause? Cause, IRea
 public sealed class PublicChangeFeedback
 {
     private readonly List<EffectChangeGroup> groups = [];
-    private string? game;
-    private long lastActivity;
     public IReadOnlyList<EffectChangeGroup> Groups => groups.AsReadOnly();
     public EffectChangeGroup? Latest => groups.LastOrDefault();
-    public void Observe(GameSnapshot? before, GameSnapshot after, double now)
+    public void Clear() => groups.Clear();
+    public void Observe(PublicActivityBatch activity, double now)
     {
-        if (before == null || before.Id != after.Id || game != after.Id) {
-            groups.Clear(); game = after.Id;
-            lastActivity = before?.Id == after.Id ? before.Activity.Select(entry => entry.Id).DefaultIfEmpty().Max()
-                : after.Activity.Select(entry => entry.Id).DefaultIfEmpty().Max();
-        }
-        foreach (var entry in after.Activity.Where(entry => entry.Id > lastActivity && entry.Change is { Kind: "counters" }
+        if (activity.IsBaseline) Clear();
+        foreach (var entry in activity.Entries.Where(entry => entry.Change is { Kind: "counters" }
             && entry.CardId is { Length: > 0 })) {
             var change = entry.Change!;
             if (change.Before == change.After) continue;
@@ -52,7 +47,6 @@ public sealed class PublicChangeFeedback
                 groups.Add(previous with { Changes = Array.AsReadOnly(previous.Changes.Append(cue).ToArray()), Updated = now });
             }
         }
-        lastActivity = Math.Max(lastActivity, after.Activity.Select(entry => entry.Id).DefaultIfEmpty().Max());
         while (groups.Count > 8) groups.RemoveAt(0);
         // Completed public events remain historical facts. Painting resolves
         // their opaque IDs against the current frame, never retained card faces.

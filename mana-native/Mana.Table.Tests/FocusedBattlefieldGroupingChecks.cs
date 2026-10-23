@@ -11,9 +11,9 @@ internal static class FocusedBattlefieldGroupingChecks
     {
         var initial = ClutteredChangesScenario.Initial();
         var earthbend = ClutteredChangesScenario.Earthbend(initial);
-        var history = new PublicChangeFeedback();
-        history.Observe(null, initial, 0);
-        history.Observe(initial, earthbend, 1);
+        var history = new PublicChangeFeedback(); var historyActivity = new PublicActivityCursor();
+        history.Observe(historyActivity.Observe(null, initial), 0);
+        history.Observe(historyActivity.Observe(initial, earthbend), 1);
         var forests = Forests(earthbend);
         var withoutHistory = FocusedBattlefieldLayout.Group(forests, CardPresentation.IsResource);
         var afterEarthbend = FocusedBattlefieldLayout.Group(forests, CardPresentation.IsResource, history.Groups);
@@ -28,7 +28,7 @@ internal static class FocusedBattlefieldGroupingChecks
         // current characteristics. Their earlier distinct event membership
         // remains relevant; an elapsed interval must not fold them together.
         var retreat = ClutteredChangesScenario.Retreat(earthbend);
-        history.Observe(earthbend, retreat, 100);
+        history.Observe(historyActivity.Observe(earthbend, retreat), 100);
         var laterForests = Forests(retreat);
         var afterRetreat = FocusedBattlefieldLayout.Group(laterForests, CardPresentation.IsResource, history.Groups);
         check(FocusedBattlefieldLayout.Group(laterForests, CardPresentation.IsResource).Count == 1

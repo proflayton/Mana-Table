@@ -104,6 +104,17 @@ the authority's next state. All three obey current visibility: historical facts,
 cached readers, art preloading and debug output cannot restore a face or private
 choice the viewer is no longer entitled to inspect.
 
+`PublicActivityCursor` consumes the accepted observation's event IDs once and
+publishes one immutable `PublicActivityBatch` to the feedback consumers. The batch
+binds its new entries to the same before/after snapshots. Initial observations,
+game changes and viewer changes establish a baseline without replaying retained
+history; a viewer change also clears the previous seat's readers and feedback.
+The cursor retains only the game/viewer scope and an event watermark. Consumers
+own cue timing and current visibility checks, not separate history cursors. A
+bounded-history gap invalidates uncertain old card-impact anchors while preserving
+reported new facts. `PresentationPacing` still inspects tentative advancement
+checkpoints before publication; it does not consume this accepted event stream.
+
 Projection playback and rules resimulation are different capabilities. Existing
 authored scenarios replay projected observations through the production client;
 they do not execute Magic rules. A future recorded projection needs ordered,
@@ -313,6 +324,13 @@ travel belong to `CardPresentationController`, and indexed scene seats and
 occurrences avoid rebuilding layouts or scanning the whole battlefield per card.
 Hit regions use those same displayed poses, including connected metadata and the
 original hand anchor.
+
+Current and previous displayed card poses each share a buffer with their
+coordinate-space flag. `BeginFrame` swaps and clears those buffers instead of
+copying every pose and pruning a separate space map. Reader/drag transitions
+rebase from the previous frame's pose, while repeated preparation within the
+current frame retains its latest space. Canonical `SceneMotion` remains separate
+from displayed poses, so reading or holding a card does not alter board layout.
 
 `RenderViewport` maps logical composition to the integer fitted backbuffer area
 and maps mouse pixels back through the same transform. `TableWindow` keeps one
@@ -959,8 +977,9 @@ joins an impact to a pending effect by its name, amount or neighbouring event.
 Damage, life loss and marked damage remain distinct; infect and loyalty loss do
 not authorize the renderer to subtract from life or current P/T.
 
-`ImpactFeedback` consumes new activity IDs once, treats an initial observation
-as a baseline and expires its short cues without extending them on polls.
+`ImpactFeedback` consumes the shared accepted activity batch and expires its
+short cues without extending them on polls. Baselines and history gaps come from
+`PublicActivityCursor`, rather than another independently maintained event cursor.
 It revalidates recipient visibility against the current snapshot. Public
 graveyard/exile departures retain an occurrence; a hidden transition revokes its
 anchor, and an anonymous battlefield recipient acquires no disclosed face.

@@ -11,28 +11,28 @@ internal static class ImpactFeedbackChecks
     {
         var baseline = CounterDamageScenario.Snapshot(1);
         var result = CounterDamageScenario.Snapshot(2);
-        var feedback = new ImpactFeedback();
-        feedback.Observe(null, baseline, 0);
-        feedback.Observe(baseline, result, 1);
+        var feedback = new ImpactFeedback(); var feedbackActivity = new PublicActivityCursor();
+        feedback.Observe(feedbackActivity.Observe(null, baseline), 0);
+        feedback.Observe(feedbackActivity.Observe(baseline, result), 1);
         check(feedback.Cues is [{ Impact: { Kind: "damage", Amount: 3, CardId: CounterDamageScenario.TargetId } }],
             "Actual damage is anchored to the explicit recipient, independently of the resolving source and legacy CardId semantics");
-        feedback.Observe(result, result, 1.5);
+        feedback.Observe(feedbackActivity.Observe(result, result), 1.5);
         check(feedback.Cues.Count == 1 && feedback.Cues[0].Started == 1, "Polling a consumed damage event neither repeats nor prolongs its impact");
         var death = result with { Players = result.Players.Select(p => p.Id != 1 ? p : p with { Zones = p.Zones.Select(z =>
             z.Name == "Battlefield" ? z with { Cards = z.Cards.Where(c => c.VisualId != CounterDamageScenario.TargetId).ToImmutableArray() }
             : z.Name == "Graveyard" ? z with { Count = 1, Cards = [result.Players[1].Zone("Battlefield").Cards[0]] } : z).ToImmutableArray() }).ToImmutableArray() };
-        feedback.Observe(result, death, 1.6);
+        feedback.Observe(feedbackActivity.Observe(result, death), 1.6);
         check(feedback.Cues.Count == 1, "An actual damaged recipient remains identifiable through a public graveyard departure between snapshots");
         var nextBurst = death with { Activity = [.. death.Activity,
             new(10, 8, "MAIN1", "damage", 1, "Another actual damage event", CounterDamageScenario.TargetId, "Colossal Dreadmaw") {
                 Impact = new("damage", 3, CounterDamageScenario.TargetId, "Colossal Dreadmaw")
             }] };
-        feedback.Observe(death, nextBurst, 1.65);
+        feedback.Observe(feedbackActivity.Observe(death, nextBurst), 1.65);
         check(feedback.Cues is [{ ActivityId: 10, Started: 1.65 }],
             "A later observed burst replaces the recipient's earlier transient amount instead of leaving two indistinguishable damage receipts around its departure");
         var hidden = death with { Players = death.Players.Select(p => p.Id != 1 ? p : p with { Zones = p.Zones.Select(z =>
             z.Name == "Graveyard" ? z with { Cards = [], Count = 0 } : z.Name == "Hand" ? z with { Count = z.Count + 1 } : z).ToImmutableArray() }).ToImmutableArray() };
-        feedback.Observe(death, hidden, 1.7);
+        feedback.Observe(feedbackActivity.Observe(death, hidden), 1.7);
         check(feedback.Cues.Count == 0, "A damage cue immediately drops a recipient whose occurrence is no longer public; it never preserves a hidden face");
 
         var returned = result with { Players = result.Players.Select(p => p.Id != 1 ? p : p with { Zones = p.Zones.Select(z =>
@@ -42,22 +42,22 @@ internal static class ImpactFeedbackChecks
                 new(20, 8, "MAIN1", "moved", 1, "Localized departure", CounterDamageScenario.TargetId, "Colossal Dreadmaw"),
                 new(21, 8, "MAIN1", "arrived", 1, "Localized arrival", CounterDamageScenario.TargetId, "Colossal Dreadmaw")]
         };
-        feedback.Observe(null, baseline, 0); feedback.Observe(baseline, returned, 1);
+        feedback.Observe(feedbackActivity.Observe(null, baseline), 0); feedback.Observe(feedbackActivity.Observe(baseline, returned), 1);
         check(feedback.Cues.Count == 0 && !ImpactFeedback.RecipientVisible(returned,
                 result.Activity.Single(entry => entry.Impact is { Kind: "damage" }).Impact!,
                 result.Activity.Single(entry => entry.Impact is { Kind: "damage" }).Id),
             "A damage event followed by an explicit exile/return arrival in one observation never anchors old damage to the returned permanent despite its unchanged public visual ID");
-        feedback.Observe(null, baseline, 0); feedback.Observe(baseline, result, 1); feedback.Observe(result, returned, 1.2);
+        feedback.Observe(feedbackActivity.Observe(null, baseline), 0); feedback.Observe(feedbackActivity.Observe(baseline, result), 1); feedback.Observe(feedbackActivity.Observe(result, returned), 1.2);
         check(feedback.Cues.Count == 0,
             "A later explicit arrival immediately invalidates an already displayed damage cue on the previous battlefield occurrence");
         var freshHit = returned with { Activity = [.. returned.Activity,
             new(22, 8, "MAIN1", "damage", 1, "Fresh damage after return", CounterDamageScenario.TargetId, "Colossal Dreadmaw") {
                 Impact = new("damage", 1, CounterDamageScenario.TargetId, "Colossal Dreadmaw", DamageType: "normal")
             }] };
-        feedback.Observe(returned, freshHit, 1.3);
+        feedback.Observe(feedbackActivity.Observe(returned, freshHit), 1.3);
         check(feedback.Cues is [{ ActivityId: 22, Impact: { Amount: 1, CardId: CounterDamageScenario.TargetId } }],
             "A new damage event ordered after the return remains visible; a public ID's historical arrival does not suppress later hits");
-        feedback.Observe(null, baseline, 0); feedback.Observe(baseline, freshHit, 1.4);
+        feedback.Observe(feedbackActivity.Observe(null, baseline), 0); feedback.Observe(feedbackActivity.Observe(baseline, freshHit), 1.4);
         check(feedback.Cues is [{ ActivityId: 22, Impact: { Amount: 1 } }],
             "When damage, exile/return and fresh damage arrive in one observation only the fresh occurrence's hit is represented");
 
@@ -76,7 +76,7 @@ internal static class ImpactFeedbackChecks
             new(101, 8, "MAIN1", "life", 2, "Fresh typed life change", null, null) {
                 Impact = new("life", -1, PlayerId: 2, Before: 40, After: 39) }
         ] };
-        feedback.Observe(null, baseline, 0); feedback.Observe(baseline, beforeGap, 1); feedback.Observe(beforeGap, afterGap, 1.2);
+        feedback.Observe(feedbackActivity.Observe(null, baseline), 0); feedback.Observe(feedbackActivity.Observe(baseline, beforeGap), 1); feedback.Observe(feedbackActivity.Observe(beforeGap, afterGap), 1.2);
         check(feedback.Cues.Count == 3 && feedback.Cues.All(cue => cue.Impact.CardId != CounterDamageScenario.TargetId)
             && feedback.Cues.Any(cue => cue is { ActivityId: 4, Impact: { Kind: "life", Amount: -2, PlayerId: 1 } })
             && feedback.Cues.Any(cue => cue.ActivityId == 100 && cue.Impact is { Kind: "damage", Amount: 1 } && cue.Impact.CardId == otherRecipient)
@@ -88,19 +88,19 @@ internal static class ImpactFeedbackChecks
                 Impact = new("damage", 2, PlayerId: 1, SourceCardId: CounterDamageScenario.SourceId, SourceName: "All Will Be One", Combat: false, Infect: false) },
             new(11, 8, "MAIN1", "life", 1, "Life changed", null, null) { Impact = new("life", -2, PlayerId: 1, Before: 40, After: 38) }
         ] };
-        feedback.Observe(null, baseline, 0); feedback.Observe(baseline, prevented, 2);
+        feedback.Observe(feedbackActivity.Observe(null, baseline), 0); feedback.Observe(feedbackActivity.Observe(baseline, prevented), 2);
         check(feedback.Cues.Count == 2 && feedback.Cues.Any(c => c.Impact is { Kind: "damage", Amount: 2, CardId: null, PlayerId: 1 })
             && feedback.Cues.Any(c => c.Impact is { Kind: "life", Amount: -2, Before: 40, After: 38 }),
             "Pending base three becomes reported actual two; player damage and signed life change remain separate facts without duplicate life feedback");
         var oldHost = prevented with { Activity = prevented.Activity.Select(e => e with { Impact = null }).ToImmutableArray() };
-        feedback.Observe(null, baseline, 0); feedback.Observe(baseline, oldHost, 3);
+        feedback.Observe(feedbackActivity.Observe(null, baseline), 0); feedback.Observe(feedbackActivity.Observe(baseline, oldHost), 3);
         check(feedback.Cues is [{ Impact: { Kind: "life", Amount: -2, SourceCardId: null } }],
             "Older engines retain an observed life transition but never invent actual damage from old prose, pending values or life loss");
-        feedback.Observe(oldHost, oldHost, 6);
+        feedback.Observe(feedbackActivity.Observe(oldHost, oldHost), 6);
         check(feedback.Cues.Count == 0, "Result feedback expires without replaying retained history");
-        feedback.Observe(null, prevented, 7);
+        feedback.Observe(feedbackActivity.Observe(null, prevented), 7);
         check(feedback.Cues.Count == 0, "Joining an existing table treats public activity as a baseline rather than replaying its damage");
-        var effects = new SceneEffects(); effects.Observe(baseline, result, 1);
+        var effects = new SceneEffects(); var effectsActivity = new PublicActivityCursor(); effects.Observe(effectsActivity.Observe(baseline, result), 1);
         check(effects.Cards.All(c => c.Kind != CueKind.Damage), "A typed result suppresses the duplicate marked-damage-derived impact");
         string json = System.Text.Json.JsonSerializer.Serialize(prevented);
         var roundtrip = System.Text.Json.JsonSerializer.Deserialize<GameSnapshot>(json)!;
@@ -110,7 +110,7 @@ internal static class ImpactFeedbackChecks
         var anonymous = result with { Players = result.Players.Select(p => p.Id != 1 ? p : p with { Zones = p.Zones.Select(z => z.Name != "Battlefield" ? z : z with {
             Cards = z.Cards.Select(c => c.VisualId != CounterDamageScenario.TargetId ? c : c with { VisualId = "", CombatId = "anonymous-recipient", FaceDown = true, Name = "Face-down card", Text = "" }).ToImmutableArray()
         }).ToImmutableArray() }).ToImmutableArray(), Activity = [new(100, 8, "MAIN1", "damage", 1, "Anonymous damage", null, null) { Impact = new("damage", 3, "anonymous-recipient", "Face-down card") }] };
-        feedback.Observe(null, baseline, 0); feedback.Observe(baseline, anonymous, 8);
+        feedback.Observe(feedbackActivity.Observe(null, baseline), 0); feedback.Observe(feedbackActivity.Observe(baseline, anonymous), 8);
         check(feedback.Cues is [{ Impact: { Amount: 3, CardId: "anonymous-recipient" } }],
             "A public anonymous recipient retains its opaque combat occurrence without acquiring a disclosed face");
     }

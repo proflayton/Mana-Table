@@ -26,6 +26,12 @@ exercises the shipping C# adapter against that packaged engine. Repository
 documentation and CI contracts belong to the lightweight `desktop` check;
 there is no second client or Node engine test pipeline.
 
+The isolated installed SDK update lifecycle needs only the immutable tools
+artifact and runs alongside packaging. Product migration waits for both tools and
+the package, retaining its real Forge-backed health check. Both complete
+lifecycles remain required by the Windows aggregate, with separate evidence
+artifacts; parallel scheduling does not relax publication checks.
+
 Publication waits for the **same master source SHA** to pass Java 17/21,
 `desktop`, the native verification aggregate and applicable iOS compatibility
 checks. The [read-only prerequisite helper](../../scripts/mana-table/wait-release-ci.cjs)

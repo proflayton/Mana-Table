@@ -97,6 +97,21 @@ internal static class BoardViewChecks
         check(!owner.HasPinnedCard && collapsed.Display == nextView.Apply(rest) && collapsed.Request.Rest == rest
             && collapsed.Hit.Contains(collapsed.Display.Center.ToPoint()) && owner.ReaderBounds == null && actions == 0,
             "Unpinning restores the current translated board pose exactly once instead of translating a stored display pose again");
+
+        owner.Reset(); normal = Compose(firstView);
+        owner.BeginFrame(context, null, .016f, false, nextView);
+        bool oldPoseHidden = !owner.TryGetPose(body.VisualId, out _);
+        var held = new Pose(new(1000, 600), rest.Size);
+        owner.Hold(body.VisualId, held);
+        bool heldPoseCurrent = owner.TryGetPose(body.VisualId, out var heldPose) && heldPose == held;
+        var returned = owner.Prepare(Request(body.VisualId, body, rest, "Battlefield"));
+        var repeated = owner.Prepare(Request(body.VisualId, body, rest, "Battlefield"));
+        owner.EndFrame();
+        check(oldPoseHidden && heldPoseCurrent && Vector2.Distance(returned.Display.Center, normal.Display.Center) < 20
+            && Vector2.Distance(repeated.Display.Center, nextView.Apply(rest).Center)
+                < Vector2.Distance(returned.Display.Center, nextView.Apply(rest).Center)
+            && owner.TryGetPose(body.VisualId, out var currentPose) && currentPose == repeated.Display && actions == 0,
+            "A held card exposes only its current pose; same-frame board preparation rebases from the previous displayed frame once and then continues toward the board without replaying that rebase");
     }
 
     private static void Motion(Action<bool, string> check)

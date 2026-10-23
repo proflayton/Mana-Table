@@ -11,14 +11,14 @@ public sealed class SceneEffects
     private readonly List<CardCue> cards = [];
     public IReadOnlyList<CardCue> Cards => cards;
     public void Clear() => cards.Clear();
-    public void Observe(GameSnapshot? previous, GameSnapshot current, double now)
+    public void Observe(PublicActivityBatch activity, double now)
     {
+        var current = activity.After;
         var visible = Visible(current).ToDictionary(p => p.Card.VisualId, p => p);
         cards.RemoveAll(c => now - c.Started > 1.1 || !visible.ContainsKey(c.VisualId));
-        if (previous == null || previous.Id != current.Id) { cards.Clear(); return; }
-        var before = Visible(previous).ToDictionary(p => p.Card.VisualId, p => p);
-        long priorActivity = previous.Activity.Select(a => a.Id).DefaultIfEmpty().Max();
-        var reportedDamage = current.Activity.Where(e => e.Id > priorActivity && e.Impact is { Kind: "damage", CardId: not null })
+        if (activity.IsBaseline) { cards.Clear(); return; }
+        var before = Visible(activity.Before!).ToDictionary(p => p.Card.VisualId, p => p);
+        var reportedDamage = activity.Entries.Where(e => e.Impact is { Kind: "damage", CardId: not null })
             .Select(e => e.Impact!.CardId!).ToHashSet(StringComparer.Ordinal);
         cards.RemoveAll(c => c.Kind == CueKind.Damage && reportedDamage.Contains(c.VisualId));
         foreach (var item in visible.Values) {

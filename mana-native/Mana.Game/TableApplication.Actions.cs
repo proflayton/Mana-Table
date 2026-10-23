@@ -15,13 +15,14 @@ internal sealed partial class TableApplication
     private sealed record Departure(Card Card, Pose Pose, string Destination, double Started);
     private readonly List<Departure> departures = [];
 
-    private void ObserveActionFeedback(GameSnapshot? before, GameSnapshot after)
+    private void ObserveActionFeedback(PublicActivityBatch activity)
     {
-        actionFeedback.Observe(before, after, now);
-        impactFeedback.Observe(before, after, now);
+        actionFeedback.Observe(activity, now);
+        impactFeedback.Observe(activity, now);
+        var before = activity.Before; var after = activity.After;
         departures.RemoveAll(d => now - d.Started > 1.5 || !CardViews.Located(after).Any(c => c.Card.VisualId == d.Card.VisualId && !c.Card.FaceDown && c.Zone is "Graveyard" or "Exile"));
-        if (before == null || before.Id != after.Id) { departures.Clear(); return; }
-        foreach (var card in before.Players.SelectMany(p => p.Zone("Battlefield").Cards).Where(c => !c.FaceDown && c.VisualId.Length > 0)) {
+        if (activity.IsBaseline) { departures.Clear(); return; }
+        foreach (var card in before!.Players.SelectMany(p => p.Zone("Battlefield").Cards).Where(c => !c.FaceDown && c.VisualId.Length > 0)) {
             var destination = CardViews.Located(after).FirstOrDefault(c => c.Card.VisualId == card.VisualId && !c.Card.FaceDown);
             // Keep no ghost face when a card enters a hidden zone or loses its public identity.
             if (destination.Card == null || destination.Zone is not ("Graveyard" or "Exile") || !cardPresentation.TryGetPose(card.VisualId, out var pose)) continue;
