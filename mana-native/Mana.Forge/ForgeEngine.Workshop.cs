@@ -1,3 +1,4 @@
+using System.Collections.Immutable;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using Mana.Contracts;
@@ -10,7 +11,7 @@ public sealed partial class ForgeEngine : IDeckVersionHistory
         Text(data, "format"), Text(data, "currentFormat"), data.GetProperty("entries").EnumerateArray().Select(e => {
             var c = MapCatalogCard(e.GetProperty("card"));
             return new DeckEntry(Text(e, "section"), c.Id, c.Card, e.GetProperty("quantity").GetInt32(), c.ManaValue, c.ColorIdentity, c.Edition);
-        }).ToArray(), Read<DeckVersionDifference[]>(data.GetProperty("differences")));
+        }).ToImmutableArray(), Read<ImmutableArray<DeckVersionDifference>>(data.GetProperty("differences")));
     public async Task<DeckVersionView> InspectTestAsync(string deckId, long revision, string testId) =>
         MapDeckVersion(await Request("workshopInspectTest", new { deckId, revision, testId }));
     public async Task<DeckVersionView> InspectVersionAsync(string deckId, long revision, string versionId) =>
@@ -22,7 +23,7 @@ public sealed partial class ForgeEngine : IDeckVersionHistory
         var node = JsonNode.Parse(data.GetRawText())!.AsObject();
         var considering = data.GetProperty("considering").EnumerateArray().Select(entry =>
             new ConsideringCard(Text(entry, "cardId"), MapCatalogCard(entry.GetProperty("card")),
-                entry.GetProperty("quantity").GetInt32(), Read<string[]>(entry.GetProperty("categories")))).ToArray();
+                entry.GetProperty("quantity").GetInt32(), Read<ImmutableArray<string>>(entry.GetProperty("categories")))).ToImmutableArray();
         node["considering"] = new JsonArray();
         return node.Deserialize<WorkshopState>(Json)! with { Considering = considering };
     }
@@ -32,7 +33,7 @@ public sealed partial class ForgeEngine : IDeckVersionHistory
         var cards = data.GetProperty("cards").EnumerateArray().Select(entry =>
             new DeckSourceCard(Text(entry, "cardId"), MapCatalogCard(entry.GetProperty("card")),
                 entry.GetProperty("quantity").GetInt32(), Text(entry, "section"),
-                Read<string[]>(entry.GetProperty("categories")), entry.GetProperty("included").GetBoolean())).ToArray();
+                Read<ImmutableArray<string>>(entry.GetProperty("categories")), entry.GetProperty("included").GetBoolean())).ToImmutableArray();
         node["cards"] = new JsonArray();
         return node.Deserialize<DeckSourcePreview>(Json)! with { Cards = cards };
     }
@@ -44,8 +45,8 @@ public sealed partial class ForgeEngine : IDeckVersionHistory
         if (edit.MetadataRevision != null) args["metadataRevision"] = edit.MetadataRevision;
         if (edit.Plan != null) args["plan"] = edit.Plan;
         if (edit.Question != null) args["question"] = edit.Question;
-        if (edit.Roles != null) args["roles"] = edit.Roles.Select(r => new { cardId = r.CardId, roles = r.Roles, pinned = r.Pinned, origin = r.Origin });
-        if (edit.Considering != null) args["considering"] = edit.Considering.Select(c => new { cardId = c.CardId, quantity = c.Quantity, categories = c.Categories });
+        if (edit.Roles is { } roles) args["roles"] = roles.Select(r => new { cardId = r.CardId, roles = r.Roles, pinned = r.Pinned, origin = r.Origin });
+        if (edit.Considering is { } considering) args["considering"] = considering.Select(c => new { cardId = c.CardId, quantity = c.Quantity, categories = c.Categories });
         return MapWorkshop(await Request("workshopMetadata", args));
     }
     public async Task<DeckDetails> RestoreWorkshopVersionAsync(string deckId, long revision, string versionId) =>
@@ -62,20 +63,20 @@ public sealed partial class ForgeEngine : IDeckVersionHistory
     {
         var node = JsonNode.Parse(data.GetRawText())!.AsObject();
         var hand = data.TryGetProperty("hand", out var cards) && cards.ValueKind == JsonValueKind.Array
-            ? cards.EnumerateArray().Select(MapCatalogCard).ToArray() : [];
+            ? cards.EnumerateArray().Select(MapCatalogCard).ToImmutableArray() : [];
         node["hand"] = new JsonArray();
         return node.Deserialize<DeckTest>(Json)! with { Hand = hand };
     }
-    public async Task<DeckTest[]> GetTestsAsync(string deckId) => (await Request("workshopTests", new { deckId })).EnumerateArray().Select(MapTest).ToArray();
+    public async Task<ImmutableArray<DeckTest>> GetTestsAsync(string deckId) => (await Request("workshopTests", new { deckId })).EnumerateArray().Select(MapTest).ToImmutableArray();
     public async Task<HandPractice> PracticeAsync(string deckId, long revision, string action, int? index = null, string? question = null)
     {
         var data = await Request("workshopPractice", new { deckId, revision, action, index, question });
         return new(Text(data, "testId"), Text(data, "versionId"),
-            data.GetProperty("hand").EnumerateArray().Select(MapCatalogCard).ToArray(),
+            data.GetProperty("hand").EnumerateArray().Select(MapCatalogCard).ToImmutableArray(),
             data.GetProperty("libraryCount").GetInt32(), data.GetProperty("draws").GetInt32(),
             data.GetProperty("redraws").GetInt32(), Text(data, "status"));
     }
-    public async Task<DeckTest> StartDeckTestAsync(string deckId, long revision, IReadOnlyList<string> opponents, string question) =>
+    public async Task<DeckTest> StartDeckTestAsync(string deckId, long revision, ImmutableArray<string> opponents, string question) =>
         MapTest(await Request("workshopStartTest", new { deckId, revision, opponents, question }));
     public async Task<DeckTest> SaveTestNoteAsync(string deckId, string testId, string note) =>
         MapTest(await Request("workshopTestNote", new { deckId, testId, note }));

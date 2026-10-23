@@ -1,3 +1,4 @@
+using System.Collections.Immutable;
 using Mana.Contracts;
 using Microsoft.Xna.Framework.Input;
 using Keys = Microsoft.Xna.Framework.Input.Keys;
@@ -85,7 +86,7 @@ internal sealed partial class TableApplication
     }
     private void PrepareLobbyPresentation()
     {
-        if (!Connected && !deckEditor) homeDeckPage = Math.Clamp(homeDeckPage, 0, Math.Max(0, (decks.Count - 1) / 4));
+        if (!Connected && !deckEditor) homeDeckPage = Math.Clamp(homeDeckPage, 0, Math.Max(0, (decks.Length - 1) / 4));
         if (setupModal == "decks") deckPage = Math.Clamp(deckPage, 0, Math.Max(0, (PickerChoices().Length - 1) / PickerPageSize));
         if (setupModal == "confirm" && reviewList) reviewPage = Math.Clamp(reviewPage, 0, Math.Max(0, (ReviewRows().Length - 1) / ReviewRowsPerPage));
         if (setupModal == "connection" && lobby is { } current) connectionPage = Math.Clamp(connectionPage, 0, Math.Max(0, (current.Addresses.Length - 1) / 5));
@@ -97,7 +98,7 @@ internal sealed partial class TableApplication
     private string LobbyScope => $"{DeckScope}:{DeckLibraryScope}:{setupModal}:{soloTab}:{pickerPresets}:{deckPage}:{pickerSearch}:{pickerSeat}:{reviewList}:{reviewSearch}:{reviewSection}:{reviewPage}:{reviewCard?.Section}:{reviewCard?.Id}:{connectionPage}:{confirmedDeckId}:{friendPlayerCount}:{lobby?.TableId}:{lobby?.Mode}:{LocalSeat?.Ready}:{lobby?.CanStart}:{string.Join(',', soloChoices)}:{lobbyAiSeat}:{lobbyAiPage}:{string.Join(';', lobby?.Seats.Select(s => $"{s.Index}:{s.Type}:{s.OpponentId}:{s.Ready}") ?? [])}";
     private void InvalidateDeckConfirmation() { confirmedDeckId = null; }
     private void SetupMode(bool solo) { if (soloTab != solo) InvalidateDeckConfirmation(); soloTab = solo; setupModal = ""; }
-    private void OpenDeckPicker() { pickerPresets = decks.Count == 0; pickerDeleted = false; pickerSeat = -1; pickerSearch = ""; deckPage = 0; setupModal = "decks"; textFocus = false; RefreshDeletedDecks(); }
+    private void OpenDeckPicker() { pickerPresets = decks.Length == 0; pickerDeleted = false; pickerSeat = -1; pickerSearch = ""; deckPage = 0; setupModal = "decks"; textFocus = false; RefreshDeletedDecks(); }
     private void ReviewDeck() {
         if (selectedDeckDetails == null) return;
         reviewList = false; reviewSearch = reviewSection = ""; reviewPage = 0; reviewBack = false;
@@ -123,7 +124,7 @@ internal sealed partial class TableApplication
         var defaults = setup.Opponents.Select((opponent, index) => (opponent, index))
             .Where(option => option.opponent.Name != setup.DeckName).Select(option => option.index).ToArray();
         int[] choices = Enumerable.Range(0, soloChoices.Length).Select(index => {
-            int kept = index < previous.Length ? Array.FindIndex(setup.Opponents, opponent => opponent.Id == previous[index]) : -1;
+            int kept = index < previous.Length ? setup.Opponents.IndexOf(setup.Opponents.FirstOrDefault(opponent => opponent.Id == previous[index])!) : -1;
             return kept >= 0 ? kept : defaults.Length > 0 ? defaults[index % defaults.Length] : 0;
         }).ToArray();
         return new(setup, choices);
@@ -161,7 +162,7 @@ internal sealed partial class TableApplication
             var prepared = existing ?? await PrepareSoloDeck(deck.Id, previous);
             if (generation != Volatile.Read(ref deckSelectionGeneration))
                 throw new InvalidOperationException("Your selected deck changed. Play again with the current list.");
-            var opponents = prepared.Choices.Take(Math.Min(3, prepared.Setup.MaxPlayers - 1)).Select(index => prepared.Setup.Opponents[index].Id).ToArray();
+            var opponents = prepared.Choices.Take(Math.Min(3, prepared.Setup.MaxPlayers - 1)).Select(index => prepared.Setup.Opponents[index].Id).ToImmutableArray();
             await tables.StartSoloAsync(deck.Id, opponents); var state = await matchConnection.ObserveAsync();
             updates.Enqueue(() => {
                 if (generation == deckSelectionGeneration) { ApplySoloPreparation(prepared); confirmedDeckId = deck.Id; }

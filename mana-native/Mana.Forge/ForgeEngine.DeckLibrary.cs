@@ -1,3 +1,4 @@
+using System.Collections.Immutable;
 using Mana.Contracts;
 
 namespace Mana.Forge;
@@ -13,10 +14,10 @@ public sealed partial class ForgeEngine : IDeckLibrary
         if (!SupportsDeckLibrary) throw new NotSupportedException("This rules adapter does not expose saved deck deletion and restore.");
     }
 
-    public async Task<IReadOnlyList<DeckLibraryDeletion>> DeletedDecksAsync()
+    public async Task<ImmutableArray<DeckLibraryDeletion>> DeletedDecksAsync()
     {
         RequireDeckLibrary();
-        return Read<DeckLibraryDeletion[]>(await Request("deletedDecks"));
+        return Read<ImmutableArray<DeckLibraryDeletion>>(await Request("deletedDecks"));
     }
 
     public async Task<DeckLibraryDeletion> DeleteDeckAsync(string deckId, string libraryToken)

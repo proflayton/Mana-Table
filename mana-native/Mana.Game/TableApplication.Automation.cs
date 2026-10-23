@@ -1,3 +1,4 @@
+using System.Collections.Immutable;
 using Mana.Contracts;
 using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Graphics;
@@ -50,10 +51,10 @@ internal sealed partial class TableApplication
         internal string ActivityDetail => game.activityDetail;
         internal string ActivityStage => game.activityStage.ToString() ?? "";
         internal bool StartupFailed => game.startupFailed;
-        internal IReadOnlyList<DeckPreset> Presets => game.presets;
+        internal ImmutableArray<DeckPreset> Presets => game.presets;
         internal DeckSummary? SelectedDeck => game.selectedDeck;
-        internal IReadOnlyList<DeckSummary> SavedDecks => game.decks;
-        internal IReadOnlyList<DeckLibraryDeletion> DeletedDecks => game.deletedDecks;
+        internal ImmutableArray<DeckSummary> SavedDecks => game.decks;
+        internal ImmutableArray<DeckLibraryDeletion> DeletedDecks => game.deletedDecks;
         internal void RefreshDeckLibrary() => game.RefreshDeletedDecks();
         internal DeckDetails? DeckDetails => game.selectedDeckDetails;
         internal bool DeckEditor => game.deckEditor;
@@ -118,7 +119,7 @@ internal sealed partial class TableApplication
         }
         internal bool WorkshopCurrent => game.WorkshopCurrent;
         internal HandPractice? WorkshopHand => game.deckWorkspace.View.Hand;
-        internal DeckTest[] WorkshopTests => game.deckWorkspace.View.Tests.ToArray();
+        internal ImmutableArray<DeckTest> WorkshopTests => game.deckWorkspace.View.Tests;
         internal string WorkshopTab => game.workshopTab;
         internal string WorkshopDialog => game.workshopDialog;
         internal string WorkshopError => game.deckWorkspace.View.WorkshopError;

@@ -17,6 +17,14 @@ in `SOURCE.txt` and `build.json`; an older installer may expose a smaller contra
 New public-state and deck-review fields are additive. Clients must preserve the
 engine's visibility and decision scope rather than deriving permissions from them.
 
+On the native side, `Mana.Contracts` uses deeply immutable collections for match,
+catalog, deck, workshop/analysis, pregame and conversation data, including
+collection-valued requests. `Mana.Forge` translates JSON arrays and objects into
+those values at the provider boundary. This is a C# API change requiring providers
+to rebuild, not a wire or saved-data migration: IPC/sync versions and JSON field
+names remain unchanged. Optional workshop metadata collections still distinguish
+omitted/null (leave unchanged) from an explicit empty array (clear).
+
 ## Implemented
 
 | Hook | Behavior |

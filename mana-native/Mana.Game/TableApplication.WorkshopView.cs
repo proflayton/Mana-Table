@@ -136,7 +136,7 @@ internal sealed partial class TableApplication
         canvas.Text(opponents, 552, 487, Muted, .62f, 950, 1);
         if (selected.Kind == "hand" && selected.Hand.Length > 0) Button("workshop-review-saved-hand", "Review saved hand", 1128, 487, 406, new DeckIntent.OpenSavedHand(), !busy, height: 40);
         int observation = 0;
-        foreach (var pair in selected.Observations.Take(9)) {
+        foreach (var pair in selected.Observations.OrderBy(pair => pair.Key, StringComparer.Ordinal).Take(9)) {
             int x = 552 + observation % 3 * 324, y = 538 + observation / 3 * 58;
             canvas.Text(pair.Value.ToString(), x, y, Ink, 1.1f, 76, 1, true);
             canvas.Text(ObservationLabel(pair.Key), x + 67, y + 7, Muted, .64f, 242, 2); observation++;

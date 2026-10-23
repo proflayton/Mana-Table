@@ -1,3 +1,4 @@
+using System.Collections.Immutable;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using Mana.Contracts;
@@ -30,7 +31,7 @@ internal static class DeckImportSmoke
         string[] savedFiles = [];
         const string deckName = "Native annotated Toph import";
         const string invalidCard = "Definitely Not A Real Mana Table Card";
-        Task<(string Export, IReadOnlyList<DeckSummary> Decks)>? inspected = null;
+        Task<(string Export, ImmutableArray<DeckSummary> Decks)>? inspected = null;
         static string Contents(DeckDetails deck) => string.Join('\n', deck.Entries.Select(e => $"{e.Section}:{e.Id}:{e.Quantity}").Order(StringComparer.Ordinal));
         static int Copies(DeckDetails deck, string name) => deck.Entries.Where(e => e.Card.Name == name).Sum(e => e.Quantity);
         string[] Files() => Directory.GetFiles(Path.Combine(working.Profile, "decks"), "*.json").Select(file => Path.GetFileName(file)!).Order(StringComparer.Ordinal).ToArray();
@@ -79,7 +80,7 @@ internal static class DeckImportSmoke
             s.Then(() => {
                 var result = inspected!.GetAwaiter().GetResult();
                 Check(result.Export.Contains("4 Forest", StringComparison.Ordinal) && result.Export.Contains("3 Mountain", StringComparison.Ordinal) && result.Export.Contains("Toph, the First Metalbender", StringComparison.Ordinal), "The adapter still has the original active deck after rejecting the bad import");
-                Check(result.Decks.Count == 1 && result.Decks[0].Id == deckId, "Only the successful import appears in the saved deck library");
+                Check(result.Decks.Length == 1 && result.Decks[0].Id == deckId, "Only the successful import appears in the saved deck library");
                 s.Capture("02-rejected-import-retained-deck");
             });
         });
@@ -99,7 +100,7 @@ internal static class DeckImportSmoke
         File.WriteAllText(Path.Combine(paths.Profile, "deck-import-results.json"), JsonSerializer.Serialize(checks, new JsonSerializerOptions { WriteIndented = true }));
     }
 
-    private static async Task<(string Export, IReadOnlyList<DeckSummary> Decks)> Inspect(IEngineCatalog engine, string id, long revision)
+    private static async Task<(string Export, ImmutableArray<DeckSummary> Decks)> Inspect(IEngineCatalog engine, string id, long revision)
         => (await engine.ExportDeckAsync(id, revision), await engine.DecksAsync());
 
     private sealed class EmptyArt : ICardArtSource

@@ -1,3 +1,4 @@
+using System.Collections.Immutable;
 using Mana.Contracts;
 using Mana.Magic;
 using Microsoft.Xna.Framework.Graphics;
@@ -27,7 +28,7 @@ internal sealed class DeckExperienceSmoke(TableWindow.Probe view) : ITableAutoma
         .OrderBy(hit => hit.Id).Select(hit => hit.Id + ":" + hit.Bounds));
     private DeckDetails? removedDeck;
     private DeckLibraryDeletion? removedReceipt;
-    private Task<IReadOnlyList<DeckLibraryDeletion>>? removedRead;
+    private Task<ImmutableArray<DeckLibraryDeletion>>? removedRead;
     private readonly Dictionary<string, byte[]> savedEvidence = [];
     private string independentBefore = "";
     public string? ExpectedClick { get; private set; }
@@ -64,7 +65,7 @@ internal sealed class DeckExperienceSmoke(TableWindow.Probe view) : ITableAutoma
         DeckSourceCard Row(DeckEntry entry, int quantity, string section, bool included) => new(entry.Id,
             new(entry.Id, entry.Card, entry.ManaValue, entry.ColorIdentity, section, entry.Edition), quantity, section, [], included);
         var cards = Deck.Entries.Where(e => e.Id != removed.Id).Select(e => Row(e,
-            e.Quantity + (e.Id == forest.Id ? 2 : 0), e.Section, true)).Append(Row(option, 1, "Considering", false)).ToArray();
+            e.Quantity + (e.Id == forest.Id ? 2 : 0), e.Section, true)).Append(Row(option, 1, "Considering", false)).ToImmutableArray();
         // The token is deliberately never registered with Forge: an accidental
         // early apply fails the test, and no HTTP/provider behavior is simulated.
         return new("unregistered-ui-review-" + Guid.NewGuid(), "https://archidekt.com/decks/123", "Controlled source review", Deck.Format,

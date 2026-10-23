@@ -1,10 +1,11 @@
+using System.Collections.Immutable;
 using Mana.Contracts;
 
 namespace Mana.Table;
 
 internal sealed partial class TableApplication
 {
-    private IReadOnlyList<DeckLibraryDeletion> deletedDecks = [];
+    private ImmutableArray<DeckLibraryDeletion> deletedDecks = [];
     private DeckLibraryDeletion? deckDeletionNotice;
     private string? deletingDeckId;
     private bool pickerDeleted;
@@ -45,8 +46,8 @@ internal sealed partial class TableApplication
                 updates.Enqueue(() => {
                     if (generation != deckLibraryGeneration) return;
                     Interlocked.Increment(ref deckLibraryReadGeneration);
-                    decks = decks.Where(deck => deck.Id != removed.DeckId).ToArray();
-                    deletedDecks = new[] { removed }.Concat(deletedDecks.Where(deck => deck.RestoreToken != removed.RestoreToken)).ToArray();
+                    decks = decks.Where(deck => deck.Id != removed.DeckId).ToImmutableArray();
+                    deletedDecks = new[] { removed }.Concat(deletedDecks.Where(deck => deck.RestoreToken != removed.RestoreToken)).ToImmutableArray();
                     deckDeletionNotice = removed;
                     if (match == null && selectedDeck?.Id == id) {
                         ClearDeletedDeckSelection();
@@ -70,8 +71,8 @@ internal sealed partial class TableApplication
             updates.Enqueue(() => {
                 if (generation != deckLibraryGeneration) return;
                 Interlocked.Increment(ref deckLibraryReadGeneration);
-                decks = decks.Where(deck => deck.Id != restored.Id).Append(restored).OrderBy(deck => deck.Name, StringComparer.OrdinalIgnoreCase).ToArray();
-                deletedDecks = deletedDecks.Where(deck => deck.RestoreToken != token).ToArray();
+                decks = decks.Where(deck => deck.Id != restored.Id).Append(restored).OrderBy(deck => deck.Name, StringComparer.OrdinalIgnoreCase).ToImmutableArray();
+                deletedDecks = deletedDecks.Where(deck => deck.RestoreToken != token).ToImmutableArray();
                 if (deckDeletionNotice?.RestoreToken == token) deckDeletionNotice = null;
                 if (match == null && setupModal == "decks") {
                     pickerPresets = pickerDeleted = false; pickerSearch = "";

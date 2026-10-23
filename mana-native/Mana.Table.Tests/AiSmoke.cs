@@ -1,3 +1,4 @@
+using System.Collections.Immutable;
 using Mana.Magic;
 using Mana.Client;
 using System.Text.Json;
@@ -25,11 +26,11 @@ internal static class AiSmoke
         var precon = await engine.ImportPresetAsync(presets[0].Id);
         var setup = await engine.PrepareSoloAsync(precon.Id);
         Check(setup.Opponents.Length >= 6, "Four precons and two starter AI decks available");
-        var preconOpponents = setup.Opponents.Where(o => o.Name != precon.Name).Take(3).Select(o => o.Id).ToArray();
+        var preconOpponents = setup.Opponents.Where(o => o.Name != precon.Name).Take(3).Select(o => o.Id).ToImmutableArray();
         // Opening another deck must not change which deck StartSolo uses.
         var testDeck = await engine.ImportAsync("Native AI benchmark", "Deck\n99 Mountain\nCommander\n1 Rograkh, Son of Rohgahh");
         bool rejectedCount = false;
-        try { await engine.StartSoloAsync(precon.Id, preconOpponents.Take(2).ToArray()); }
+        try { await engine.StartSoloAsync(precon.Id, preconOpponents.Take(2).ToImmutableArray()); }
         catch (ArgumentException) { rejectedCount = true; }
         Check(rejectedCount, "Four-seat table rejects fewer than three AI opponents");
         await engine.StartSoloAsync(precon.Id, preconOpponents);

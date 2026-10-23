@@ -1,3 +1,4 @@
+using System.Collections.Immutable;
 using Mana.Contracts;
 using Mana.Magic;
 
@@ -48,7 +49,7 @@ internal abstract record DeckIntent : UiIntent
     internal sealed record EnterQuantity : DeckIntent;
     internal sealed record MoveCard : DeckIntent;
     internal sealed record FlipCard : DeckIntent;
-    internal sealed record SetCommanders(string[] CardIds) : DeckIntent;
+    internal sealed record SetCommanders(ImmutableArray<string> CardIds) : DeckIntent;
     internal sealed record ShowIssue(DeckIssue Issue) : DeckIntent;
     internal sealed record PageIssues(int Direction, bool SelectedCard = false) : DeckIntent;
     internal sealed record CyclePrintingFinish : DeckIntent;

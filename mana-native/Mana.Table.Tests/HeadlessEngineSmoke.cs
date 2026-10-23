@@ -1,3 +1,4 @@
+using System.Collections.Immutable;
 using System.Diagnostics;
 using System.Text.Json;
 using Mana.Contracts;
@@ -39,6 +40,33 @@ internal static class HeadlessEngineSmoke
             var setup = await engine.PrepareSoloAsync(deck.Id);
             Check(setup.Opponents.Any(opponent => opponent.Id == "green") && setup.Opponents.Any(opponent => opponent.Id == "red"),
                 "The real adapter imports the Commander deck and exposes bundled starter AI opponents");
+            var deckBeforeMetadata = await engine.OpenDeckAsync(deck.Id);
+            var leader = deckBeforeMetadata.Entries.Single(entry => entry.Section == "Commander");
+            var candidate = deckBeforeMetadata.Entries.First(entry => entry.Section == "Main");
+            var workshop = await engine.WorkshopAsync(deck.Id, deckBeforeMetadata.Revision);
+            string playableVersion = workshop.VersionId;
+            var annotated = await engine.UpdateWorkshopAsync(deck.Id, deckBeforeMetadata.Revision, new(workshop.MetadataRevision,
+                Roles: [new(leader.Id, ["Tokens", "Payoff"], true, "local")],
+                Considering: [new(candidate.Id, 1, ["Ramp", "Patch regression"])]));
+            var planOnly = await engine.UpdateWorkshopAsync(deck.Id, deckBeforeMetadata.Revision,
+                new(annotated.MetadataRevision, Plan: "Check omission and explicit clearing without changing the played list."));
+            Check(planOnly.Plan.StartsWith("Check omission", StringComparison.Ordinal)
+                && planOnly.Roles.Any(role => role.CardId == leader.Id && role.Pinned && role.Origin == "local"
+                    && role.Roles.SequenceEqual(["Tokens", "Payoff"]))
+                && planOnly.Considering is [{ CardId: var consideredId, Quantity: 1 } considered] && consideredId == candidate.Id
+                && considered.Categories.SequenceEqual(["Ramp", "Patch regression"])
+                && annotated.VersionId == playableVersion && planOnly.VersionId == playableVersion,
+                "A real plan-only metadata patch preserves omitted roles, pins and Considering categories without changing the playable version");
+            var cleared = await engine.UpdateWorkshopAsync(deck.Id, deckBeforeMetadata.Revision, new(planOnly.MetadataRevision,
+                Roles: ImmutableArray<WorkshopRole>.Empty, Considering: ImmutableArray<ConsideringEdit>.Empty));
+            Check(!cleared.Roles.Any(role => role.Pinned || role.Origin == "local") && cleared.Considering.IsEmpty
+                && cleared.Plan == planOnly.Plan && cleared.VersionId == playableVersion,
+                "Explicit empty immutable metadata collections clear local roles, pins and Considering while preserving the plan and playable version");
+            var afterMetadata = await engine.OpenDeckAsync(deck.Id);
+            Check(afterMetadata.Name == deckBeforeMetadata.Name && afterMetadata.Format == deckBeforeMetadata.Format
+                && afterMetadata.Entries.Select(entry => (entry.Section, entry.Id, entry.Quantity))
+                    .SequenceEqual(deckBeforeMetadata.Entries.Select(entry => (entry.Section, entry.Id, entry.Quantity))),
+                "Metadata patch omission and clearing preserve every section, exact printing and quantity used by the ensuing real game");
             await engine.StartSoloAsync(deck.Id, ["green", "red", "green"]);
             GameSnapshot? initial = null;
             while (initial?.Players.Length != 4 || initial.Decision == null) {

@@ -27,6 +27,16 @@ standard immutable collections. A provider's construction buffers and a
 consumer's inspection cannot rewrite a published revision. New observations may
 share unchanged values while preserving the preceding frame for transitions.
 
+The same ownership rule applies to catalog, deck, workshop, analysis, pregame
+and conversation services. Their results and collection-valued requests use
+`ImmutableArray` and `ImmutableDictionary` throughout the nested graph, including
+roles, printings, recommendations, test hands and lobby seats. Providers freeze
+construction buffers at their boundary; the application retains accepted values
+without copying the graph each frame. A new revision replaces a value rather
+than editing a previously published document. Immutable values do not grant
+authority: document/revision, metadata/fingerprint, table and prompt admission
+checks still determine whether a result or command is current.
+
 Commands carry only their variant's required payload: keeping an opening hand,
 paying mana and passing priority are different types. Combat pair commands
 explicitly describe toggles. `GameCommandPermissions` checks current scope,
@@ -267,8 +277,15 @@ Deck workspace refreshes and writes use the same admission boundary. A late
 failure cannot replace a newer selection's error, and delete/restore cannot revive
 an old workspace stamp even if document identity and revision match again. A
 foreground analysis review can finish while ordinary background reads are gated
-by application activity. Deck service DTOs still contain mutable nested arrays;
-an immutable view record does not establish a deeply immutable deck contract.
+by application activity. Its deck service graphs are deeply immutable, so a
+retained workspace view and a queued metadata edit cannot change through shared
+provider buffers or consumer casts. Optional metadata collections retain their
+patch meaning: null leaves a field unchanged; an explicit empty collection clears
+it. These C# contract changes require providers to rebuild; JSON arrays/objects,
+IPC and synchronization versions, saved decks and profiles retain their existing
+formats and require no migration. The Java host's single current editor remains
+a separate ownership constraint; immutability does not create independent open
+backend documents.
 
 Updater discovery never starts a download. Becoming safe after a deferred restart
 requires another explicit install gesture; verification rechecks the blocker

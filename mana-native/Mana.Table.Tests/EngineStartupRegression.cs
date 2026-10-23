@@ -27,8 +27,8 @@ internal static class EngineStartupRegression
                 "The failed attempt launched bundled Java against the intentionally invalid JAR");
             File.Copy(paths.Jar, jar, true);
             await engine.InitializeAsync();
-            Check((await engine.DecksAsync()).Count == 0, "The same engine instance initializes successfully after its JAR is repaired");
-            Check((await engine.PresetsAsync()).Count > 0, "The retried engine serves the real card library and precons");
+            Check((await engine.DecksAsync()).Length == 0, "The same engine instance initializes successfully after its JAR is repaired");
+            Check((await engine.PresetsAsync()).Length > 0, "The retried engine serves the real card library and precons");
 
             var deck = await engine.CreateDeckAsync("Startup retry deck");
             deck = await engine.RenameDeckAsync(deck.Id, deck.Revision, "Renamed startup retry deck");

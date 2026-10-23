@@ -1,3 +1,4 @@
+using System.Collections.Immutable;
 using System.Collections.Concurrent;
 using Mana.Client;
 using Mana.Contracts;
@@ -124,9 +125,9 @@ internal static class DeckWorkspaceRegression
     }
 
     private static WorkshopState Workshop(DeckWorkspaceContext context, long metadata) =>
-        new(context.DeckId, context.Revision, metadata, "version-" + context.DeckId, "", "", [], [], [], null, new([], [], [], ""));
+        new(context.DeckId, context.Revision, metadata, "version-" + context.DeckId, "", "", [], [], [], null, new(ImmutableDictionary<string, int>.Empty, [], ImmutableDictionary<string, int>.Empty, ""));
     private static DeckTest Test(DeckWorkspaceContext context) =>
-        new("test-" + context.DeckId, context.DeckId, "version-" + context.DeckId, "sample", "", 0, null, "sample", null, [], [], "");
+        new("test-" + context.DeckId, context.DeckId, "version-" + context.DeckId, "sample", "", 0, null, "sample", null, [], ImmutableDictionary<string, int>.Empty, "");
     private static DeckAnalysisState Analysis(DeckWorkspaceContext context, long metadata) => new(metadata,
         new(context.DeckId, context.Revision, "version-" + context.DeckId,
             new("", "unspecified", "", "", "balanced", 0, [], []), new("Commander", 100, true, 1, 0, true, false),
@@ -177,7 +178,7 @@ internal static class DeckWorkspaceRegression
                 throw new Exception("Expected analysis read did not start.");
             return result;
         }
-        public Task<DeckTest[]> GetTestsAsync(string deckId) => Task.FromResult(new[] { Test(new(deckId, 0)) });
+        public Task<ImmutableArray<DeckTest>> GetTestsAsync(string deckId) => Task.FromResult<ImmutableArray<DeckTest>>([Test(new(deckId, 0))]);
         public Task<WorkshopState> UpdateWorkshopAsync(string deckId, long revision, WorkshopMetadataEdit edit) => throw new NotSupportedException();
         public Task<DeckDetails> RestoreWorkshopVersionAsync(string deckId, long revision, string versionId) => throw new NotSupportedException();
         public Task<DeckDetails> MoveWorkshopCardAsync(string deckId, long revision, long metadataRevision, string cardId, string to, string? cutCardId = null) => throw new NotSupportedException();
@@ -185,7 +186,7 @@ internal static class DeckWorkspaceRegression
         public Task<DeckSourcePreview> RefreshDeckSourceAsync(string deckId, long revision) => throw new NotSupportedException();
         public Task<DeckDetails> ApplyDeckSourceAsync(string token, string? deckId, long? revision, string choice) => throw new NotSupportedException();
         public Task<HandPractice> PracticeAsync(string deckId, long revision, string action, int? index = null, string? question = null) => throw new NotSupportedException();
-        public Task<DeckTest> StartDeckTestAsync(string deckId, long revision, IReadOnlyList<string> opponents, string question) => throw new NotSupportedException();
+        public Task<DeckTest> StartDeckTestAsync(string deckId, long revision, ImmutableArray<string> opponents, string question) => throw new NotSupportedException();
         public Task<DeckTest> SaveTestNoteAsync(string deckId, string testId, string note) => throw new NotSupportedException();
         public Task<DeckAnalysisState> SaveAnalysisProfileAsync(string deckId, long revision, long metadataRevision, string fingerprint, AnalysisProfile profile) => throw new NotSupportedException();
         public Task<AnalysisConsiderResult> ConsiderAnalysisAsync(string deckId, long revision, long metadataRevision, string fingerprint, string recommendationId, string note) => throw new NotSupportedException();

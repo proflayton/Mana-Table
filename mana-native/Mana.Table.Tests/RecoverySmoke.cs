@@ -133,8 +133,8 @@ internal sealed class RecoverySmoke : ITableAutomation
         internal Lobby Lobby => new(mode, "Connected", null, false, null, Active, "", null, [], [], "recovery-table");
         public string Name => "Recovery scenario";
         public Task InitializeAsync() => Task.CompletedTask;
-        public Task<IReadOnlyList<DeckSummary>> DecksAsync() => Task.FromResult<IReadOnlyList<DeckSummary>>([new("saved", "Current deck")]);
-        public Task<IReadOnlyList<DeckPreset>> PresetsAsync() => Task.FromResult<IReadOnlyList<DeckPreset>>([]);
+        public Task<ImmutableArray<DeckSummary>> DecksAsync() => Task.FromResult<ImmutableArray<DeckSummary>>([new("saved", "Current deck")]);
+        public Task<ImmutableArray<DeckPreset>> PresetsAsync() => Task.FromResult<ImmutableArray<DeckPreset>>([]);
         public Task<DeckDetails> OpenDeckAsync(string id) => Task.FromResult(new DeckDetails(id, "Current deck", 1,
             [new("Main", "saved-forest", new() { Name = "Forest", Type = "Basic Land — Forest" }, 99),
              new("Commander", "saved-commander", new() { Name = "Rhys the Redeemed", Type = "Legendary Creature — Elf Warrior", Power = 1, Toughness = 1 }, 1)], [], "", ""));
@@ -145,10 +145,10 @@ internal sealed class RecoverySmoke : ITableAutomation
         public ValueTask DisposeAsync() => ValueTask.CompletedTask;
         public Task<DeckSummary> ImportAsync(string name, string text) { Imports++; throw new InvalidOperationException("Unreadable files must not reach the parser"); }
         public Task<DeckSummary> ImportPresetAsync(string id) => throw new NotSupportedException();
-        public Task<DeckDetails> SetCommandersAsync(string id, long revision, IReadOnlyList<string> cards) => throw new NotSupportedException();
+        public Task<DeckDetails> SetCommandersAsync(string id, long revision, ImmutableArray<string> cards) => throw new NotSupportedException();
         public Task<CatalogPage> SearchCardsAsync(CardQuery query) => throw new NotSupportedException();
         public Task<DeckDetails> CreateDeckAsync(string name) => throw new NotSupportedException();
-        public Task<DeckDetails> EditDeckAsync(string id, long revision, IReadOnlyList<DeckEdit> edits) => throw new NotSupportedException();
+        public Task<DeckDetails> EditDeckAsync(string id, long revision, ImmutableArray<DeckEdit> edits) => throw new NotSupportedException();
         public Task<DeckDetails> RenameDeckAsync(string id, long revision, string name) => throw new NotSupportedException();
         public Task<DeckDetails> DuplicateDeckAsync(string id, long revision, string name) => throw new NotSupportedException();
         public Task<DeckDetails> UndoDeckAsync(string id, long revision) => throw new NotSupportedException();
@@ -156,7 +156,7 @@ internal sealed class RecoverySmoke : ITableAutomation
         public Task<DeckDetails> SaveDeckAsync(string id, long revision) => throw new NotSupportedException();
         public Task<string> ExportDeckAsync(string id, long revision) => throw new NotSupportedException();
         public Task<SoloSetup> PrepareSoloAsync(string id) => throw new NotSupportedException();
-        public Task StartSoloAsync(string id, IReadOnlyList<string> opponents) => throw new NotSupportedException();
+        public Task StartSoloAsync(string id, ImmutableArray<string> opponents) => throw new NotSupportedException();
         public Task<Lobby> HostAsync(int players, bool forward) => throw new NotSupportedException();
         public Task<Lobby> JoinAsync(string address) => throw new NotSupportedException();
         public Task SelectDeckAsync(string id) => throw new NotSupportedException();

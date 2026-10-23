@@ -1,3 +1,4 @@
+using System.Collections.Immutable;
 using Mana.Contracts;
 using Mana.Renderer;
 using Microsoft.Xna.Framework;
@@ -179,7 +180,7 @@ internal sealed partial class TableApplication
         bool eligible = deck.CommanderOptions.Any(c => c.Id == card.Id);
         bool partner = ids.Length == 1 && deck.CommanderOptions.FirstOrDefault(c => c.Id == ids[0])?.Partners.Contains(card.Id) == true;
         Button("deck-set-commander", ids.Length == 2 ? "Use as sole commander" : "Set as commander", 1150, 860, 398, new DeckIntent.SetCommanders([card.Id]), !busy && eligible && !(ids.Length == 1 && ids[0] == card.Id), true, 34);
-        if (ids.Contains(card.Id)) Button("deck-remove-commander", "Return to main deck", 1150, 903, 398, new DeckIntent.SetCommanders(ids.Where(id => id != card.Id).ToArray()), !busy, height: 34);
+        if (ids.Contains(card.Id)) Button("deck-remove-commander", "Return to main deck", 1150, 903, 398, new DeckIntent.SetCommanders(ids.Where(id => id != card.Id).ToImmutableArray()), !busy, height: 34);
         else Button("deck-add-partner", "Add as partner / Background", 1150, 903, 398, new DeckIntent.SetCommanders([.. ids, card.Id]), !busy && partner, height: 34);
     }
     private void DrawDeckIssues()

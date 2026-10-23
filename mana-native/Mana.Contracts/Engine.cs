@@ -11,15 +11,15 @@ public interface ICardEngine : IEngineCatalog, ITableSetup, IMatchConnection, IA
 }
 public interface IEngineCatalog
 {
-    Task<IReadOnlyList<DeckSummary>> DecksAsync();
-    Task<IReadOnlyList<DeckPreset>> PresetsAsync();
+    Task<ImmutableArray<DeckSummary>> DecksAsync();
+    Task<ImmutableArray<DeckPreset>> PresetsAsync();
     Task<DeckSummary> ImportAsync(string name, string text);
     Task<DeckSummary> ImportPresetAsync(string id);
     Task<DeckDetails> OpenDeckAsync(string id);
-    Task<DeckDetails> SetCommandersAsync(string deckId, long revision, IReadOnlyList<string> cardIds);
+    Task<DeckDetails> SetCommandersAsync(string deckId, long revision, ImmutableArray<string> cardIds);
     Task<CatalogPage> SearchCardsAsync(CardQuery query);
     Task<DeckDetails> CreateDeckAsync(string name);
-    Task<DeckDetails> EditDeckAsync(string deckId, long revision, IReadOnlyList<DeckEdit> edits);
+    Task<DeckDetails> EditDeckAsync(string deckId, long revision, ImmutableArray<DeckEdit> edits);
     Task<DeckDetails> RenameDeckAsync(string deckId, long revision, string name);
     Task<DeckDetails> DuplicateDeckAsync(string deckId, long revision, string name);
     Task<DeckDetails> UndoDeckAsync(string deckId, long revision);
@@ -35,7 +35,7 @@ public interface ICardPrintings
 public interface ITableSetup
 {
     Task<SoloSetup> PrepareSoloAsync(string deckId);
-    Task StartSoloAsync(string deckId, IReadOnlyList<string> opponentIds);
+    Task StartSoloAsync(string deckId, ImmutableArray<string> opponentIds);
     Task<Lobby> HostAsync(int players, bool automaticPortForwarding);
     Task<Lobby> JoinAsync(string address);
     Task<Lobby> LobbyAsync();
@@ -73,7 +73,7 @@ public interface ITableSocial
 }
 public sealed record TableMember(string Id, int Seat, string Name);
 public sealed record TableMessage(long Id, string SenderId, int Seat, string Name, string Kind, string Text);
-public sealed record TableConversation(string TableId, long Revision, int LocalSeat, TableMember[] Members, TableMessage[] Messages);
+public sealed record TableConversation(string TableId, long Revision, int LocalSeat, ImmutableArray<TableMember> Members, ImmutableArray<TableMessage> Messages);
 public sealed record DeckSummary(string Id, string Name)
 {
     public string LibraryToken { get; init; } = "";
@@ -82,23 +82,23 @@ public sealed record DeckEntry(string Section, string Id, Card Card, int Quantit
 public sealed record DeckEdit(string Section, string CardId, int Quantity);
 public sealed record CatalogCard(string Id, Card Card, int ManaValue, int ColorIdentity, string Section, string Edition);
 public sealed record CardQuery(string Text = "", string Type = "", int? ColorIdentity = null, int? MaxManaValue = null, string Sort = "name", int Offset = 0, int Limit = 6);
-public sealed record CatalogPage(int Total, int Offset, CatalogCard[] Cards);
-public sealed record CommanderOption(string Id, string[] Partners);
-public sealed record DeckIssue(string Code, string Message, string? Section, string[] CardIds);
-public sealed record DeckDetails(string Id, string Name, long Revision, DeckEntry[] Entries,
-    CommanderOption[] CommanderOptions, string Problem, string SaveError, bool CanUndo = false, bool CanRedo = false)
+public sealed record CatalogPage(int Total, int Offset, ImmutableArray<CatalogCard> Cards);
+public sealed record CommanderOption(string Id, ImmutableArray<string> Partners);
+public sealed record DeckIssue(string Code, string Message, string? Section, ImmutableArray<string> CardIds);
+public sealed record DeckDetails(string Id, string Name, long Revision, ImmutableArray<DeckEntry> Entries,
+    ImmutableArray<CommanderOption> CommanderOptions, string Problem, string SaveError, bool CanUndo = false, bool CanRedo = false)
 {
-    public DeckIssue[] Issues { get; init; } = [];
+    public ImmutableArray<DeckIssue> Issues { get; init; } = [];
     public string Format { get; init; } = "Commander";
     public string LibraryToken { get; init; } = "";
     public bool? StructureValid { get; init; }
     public string Eligibility { get; init; } = "unknown";
-    public string[] CommanderIds => Entries.Where(e => e.Section == "Commander").Select(e => e.Id).ToArray();
+    public ImmutableArray<string> CommanderIds => Entries.Where(e => e.Section == "Commander").Select(e => e.Id).ToImmutableArray();
 }
 public sealed record DeckPreset(string Id, string Name, string Description);
 // Opponent IDs are opaque engine-owned handles, just like saved deck IDs.
 public sealed record AiOpponent(string Id, string Name, string Description);
-public sealed record SoloSetup(string DeckId, string DeckName, AiOpponent[] Opponents)
+public sealed record SoloSetup(string DeckId, string DeckName, ImmutableArray<AiOpponent> Opponents)
 {
     public int MaxPlayers { get; init; } = 6;
 }
@@ -108,9 +108,9 @@ public sealed record Seat(int Index, string Name, string Type, string? Deck, boo
     public string? OpponentId { get; init; }
 }
 public sealed record Lobby(string Mode, string Status, string? Error, bool CanStart, string? StartProblem,
-    bool MatchActive, string PortMapping, string? InternetInvite, Address[] Addresses, Seat[] Seats, string TableId = "")
+    bool MatchActive, string PortMapping, string? InternetInvite, ImmutableArray<Address> Addresses, ImmutableArray<Seat> Seats, string TableId = "")
 {
-    public AiOpponent[] AiOpponents { get; init; } = [];
+    public ImmutableArray<AiOpponent> AiOpponents { get; init; } = [];
 }
 public enum DecisionIntent { General, Priority, Attack, Block, Mana, Selection }
 // Semantic tasks belong to the game boundary. Provider prompt/class names do not.

@@ -20,7 +20,7 @@ internal static class NativeSmoke
                 Check(!string.IsNullOrEmpty(deck.Id), "Imported deck for seat " + i); deckIds.Add(deck.Id);
                 Check((await engines[i].DecksAsync()).Any(d => d.Id == deck.Id), "Saved deck listed for seat " + i);
             }
-            Check((await engines[0].PresetsAsync()).Count >= 4, "Bundled precons available");
+            Check((await engines[0].PresetsAsync()).Length >= 4, "Bundled precons available");
             var lobby = await engines[0].HostAsync(4, false);
             var endpoint = lobby.Addresses.First(a => a.Url.Contains(':')).Url;
             var port = endpoint.Split(':').Last();

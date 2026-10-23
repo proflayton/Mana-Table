@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using System.Collections.Immutable;
 using System.Diagnostics;
 using System.Text.Json;
 using System.Text.Json.Nodes;
@@ -119,8 +120,8 @@ public sealed partial class ForgeEngine(ForgePaths paths) : ICardEngine, ITableS
             LibraryToken = Text(data, "libraryToken")
         };
     }
-    public async Task<IReadOnlyList<DeckSummary>> DecksAsync() => Read<DeckSummary[]>((await Request("list")).GetProperty("decks"));
-    public async Task<IReadOnlyList<DeckPreset>> PresetsAsync() => Read<DeckPreset[]>(await Request("deckPresets"));
+    public async Task<ImmutableArray<DeckSummary>> DecksAsync() => Read<ImmutableArray<DeckSummary>>((await Request("list")).GetProperty("decks"));
+    public async Task<ImmutableArray<DeckPreset>> PresetsAsync() => Read<ImmutableArray<DeckPreset>>(await Request("deckPresets"));
     public async Task<DeckSummary> ImportAsync(string name, string text) => Deck(await Request("import", new { name, text, format = "Commander" }));
     public async Task<DeckSummary> ImportPresetAsync(string id) => Deck(await Request("presetImport", new { id }));
     private static Card MapCatalogFace(JsonElement card) => new() {
@@ -147,12 +148,12 @@ public sealed partial class ForgeEngine(ForgePaths paths) : ICardEngine, ITableS
         var entries = deck.GetProperty("entries").EnumerateArray().Select(entry => {
             var card = MapCatalogCard(entry.GetProperty("card"));
             return new DeckEntry(Text(entry, "section"), card.Id, card.Card, entry.GetProperty("quantity").GetInt32(), card.ManaValue, card.ColorIdentity, card.Edition);
-        }).ToArray();
+        }).ToImmutableArray();
         var validation = data.GetProperty("validation");
         return new(Text(data, "id"), Text(deck, "name"), deck.GetProperty("revision").GetInt64(), entries,
-            Read<CommanderOption[]>(data.GetProperty("commanderChoices")), Text(validation, "problem"), Text(data, "saveError"),
+            Read<ImmutableArray<CommanderOption>>(data.GetProperty("commanderChoices")), Text(validation, "problem"), Text(data, "saveError"),
             deck.GetProperty("canUndo").GetBoolean(), deck.GetProperty("canRedo").GetBoolean()) {
-                Issues = validation.TryGetProperty("issues", out var issues) ? Read<DeckIssue[]>(issues) : [],
+                Issues = validation.TryGetProperty("issues", out var issues) ? Read<ImmutableArray<DeckIssue>>(issues) : [],
                 StructureValid = validation.TryGetProperty("structureValid", out var structural) ? structural.GetBoolean() : null,
                 Eligibility = Text(validation, "eligibility") is { Length: > 0 } eligibility ? eligibility : "unknown",
                 Format = Text(data, "format"),
@@ -160,25 +161,25 @@ public sealed partial class ForgeEngine(ForgePaths paths) : ICardEngine, ITableS
             };
     }
     public async Task<DeckDetails> OpenDeckAsync(string id) => MapDeck(await Request("open", new { id }));
-    public async Task<DeckDetails> SetCommandersAsync(string deckId, long revision, IReadOnlyList<string> cardIds) =>
+    public async Task<DeckDetails> SetCommandersAsync(string deckId, long revision, ImmutableArray<string> cardIds) =>
         MapDeck(await Request("setCommanders", new { deckId, revision, cardIds }));
     public async Task<CatalogPage> SearchCardsAsync(CardQuery query)
     {
         var data = await Request("search", new { text = query.Text, type = query.Type, colorIdentity = query.ColorIdentity,
             maxManaValue = query.MaxManaValue, sort = query.Sort, offset = query.Offset, limit = query.Limit, unique = true });
         return new(data.GetProperty("total").GetInt32(), data.GetProperty("offset").GetInt32(),
-            data.GetProperty("cards").EnumerateArray().Select(MapCatalogCard).ToArray());
+            data.GetProperty("cards").EnumerateArray().Select(MapCatalogCard).ToImmutableArray());
     }
     public async Task<DeckDetails> CreateDeckAsync(string name) => MapDeck(await Request("new", new { name, format = "Commander" }));
     public async Task<CatalogPage> CardPrintingsAsync(string cardId, int offset = 0, int limit = 6, string text = "", string finish = "")
     {
         var data = await Request("cardPrintings", new { cardId, offset, limit, text, finish });
         return new(data.GetProperty("total").GetInt32(), data.GetProperty("offset").GetInt32(),
-            data.GetProperty("cards").EnumerateArray().Select(MapCatalogCard).ToArray());
+            data.GetProperty("cards").EnumerateArray().Select(MapCatalogCard).ToImmutableArray());
     }
     public async Task<DeckDetails> ReplacePrintingAsync(string deckId, long revision, string section, string cardId, string printingId) =>
         MapDeck(await Request("replacePrinting", new { deckId, revision, section, cardId, printingId }));
-    public async Task<DeckDetails> EditDeckAsync(string deckId, long revision, IReadOnlyList<DeckEdit> edits) =>
+    public async Task<DeckDetails> EditDeckAsync(string deckId, long revision, ImmutableArray<DeckEdit> edits) =>
         MapDeck(await Request("edit", new { deckId, revision, edits = edits.Select(e => new { section = e.Section, cardId = e.CardId, quantity = e.Quantity }) }));
     public async Task<DeckDetails> RenameDeckAsync(string deckId, long revision, string name) => MapDeck(await Request("rename", new { deckId, revision, name }));
     public async Task<DeckDetails> DuplicateDeckAsync(string deckId, long revision, string name) => MapDeck(await Request("duplicate", new { deckId, revision, name }));
@@ -199,21 +200,21 @@ public sealed partial class ForgeEngine(ForgePaths paths) : ICardEngine, ITableS
     public async Task<SoloSetup> PrepareSoloAsync(string deckId)
     {
         var setup = await PrepareSolo(deckId);
-        return new(deckId, Text(setup, "name"), Read<AiOpponent[]>(setup.GetProperty("opponents"))) {
+        return new(deckId, Text(setup, "name"), Read<ImmutableArray<AiOpponent>>(setup.GetProperty("opponents"))) {
             MaxPlayers = setup.GetProperty("maxPlayers").GetInt32()
         };
     }
-    public async Task StartSoloAsync(string deckId, IReadOnlyList<string> opponentIds)
+    public async Task StartSoloAsync(string deckId, ImmutableArray<string> opponentIds)
     {
-        if (opponentIds.Count is < 1 or > 5) throw new ArgumentException("Choose between one and five AI opponents.", nameof(opponentIds));
+        if (opponentIds.IsDefaultOrEmpty || opponentIds.Length > 5) throw new ArgumentException("Choose between one and five AI opponents.", nameof(opponentIds));
         var setup = await PrepareSolo(deckId);
-        if (opponentIds.Count >= setup.GetProperty("maxPlayers").GetInt32()) throw new ArgumentException("This format supports fewer players.", nameof(opponentIds));
+        if (opponentIds.Length >= setup.GetProperty("maxPlayers").GetInt32()) throw new ArgumentException("This format supports fewer players.", nameof(opponentIds));
         await Request("matchStart", new { deckId, revision = setup.GetProperty("revision").GetInt64(), opponents = opponentIds });
     }
     private static Lobby MapLobby(JsonElement data) => new(Text(data, "mode"), Text(data, "status"), Text(data, "error"),
         data.GetProperty("canStart").GetBoolean(), Text(data, "startProblem"), data.GetProperty("matchActive").GetBoolean(),
-        Text(data, "portMapping"), Text(data, "internetInvite"), Read<Address[]>(data.GetProperty("addresses")), Read<Seat[]>(data.GetProperty("slots")), Text(data, "tableId")) {
-            AiOpponents = data.TryGetProperty("aiOpponents", out var opponents) ? Read<AiOpponent[]>(opponents) : []
+        Text(data, "portMapping"), Text(data, "internetInvite"), Read<ImmutableArray<Address>>(data.GetProperty("addresses")), Read<ImmutableArray<Seat>>(data.GetProperty("slots")), Text(data, "tableId")) {
+            AiOpponents = data.TryGetProperty("aiOpponents", out var opponents) ? Read<ImmutableArray<AiOpponent>>(opponents) : []
         };
     public async Task<TableConversation> ConversationAsync(string tableId) => Read<TableConversation>(await Request("tableSocial", new { tableId }));
     public async Task<TableConversation> SendMessageAsync(string tableId, string kind, string text) => Read<TableConversation>(await Request("tableChat", new { tableId, kind, text }));
