@@ -29,7 +29,7 @@ internal sealed partial class TableApplication
         }
         bool dense = tableScene.Seats.Any(seat => seat.IsDense);
         bool enabled = followTurnEnabled && !TableStudyEnabled && !dense && state.Players.Length is 3 or 4;
-        bool blocked = OverlayOpen || readingId != null || cardPresentation.HasReaderTransition
+        bool blocked = OverlayOpen || readingId != null || matchPresentation.Cards.HasReaderTransition
             || pressed != null || dragging || previousMouse.LeftButton == ButtonState.Pressed
             || boardViewportChanged || boardPointerActivity && pointer.Y is >= 54 and < 778
             || HitAt(pointer)?.Card != null || state.Stack.Length > 0 || state.Combat != null
@@ -43,7 +43,7 @@ internal sealed partial class TableApplication
         if (enabled) {
             // Existing displayed poses include transient elevation/flight. Guard
             // those too, without retaining faces in the view controller.
-            foreach (var card in cardPresentation.Cards.Where(card => BoardView.AffectsZone(card.Zone) && !card.Focused))
+            foreach (var card in matchPresentation.Cards.Cards.Where(card => BoardView.AffectsZone(card.Zone) && !card.Focused))
                 footprints.Add(boardView.Inverse(card.Display).Bounds);
         }
         boardView = boardViewMotion.Update(new(state.Id, state.Turn, state.ActivePlayerId, state.ViewerId,

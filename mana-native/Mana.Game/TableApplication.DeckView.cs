@@ -73,7 +73,7 @@ internal sealed partial class TableApplication
     private void DrawCardLibrary()
     {
         canvas.Text("CARD LIBRARY", 46, 252, Gold, .8f, 220, 1, true);
-        canvas.Text(catalogPage is { } page ? $"{page.Total:N0} matches" : catalogError.Length > 0 ? "Search unavailable" : "Searching…", 310, 253, Muted, .65f, 245, 1);
+        canvas.Text(catalogRead.View.Value is { } page ? $"{page.Total:N0} matches" : catalogRead.View.Error.Length > 0 ? "Search unavailable" : "Searching…", 310, 253, Muted, .65f, 245, 1);
         DeckSearchBox("library", catalogText, "Search names, rules, or creature types…", new(46, 283, 510, 38));
         Button("catalog-type", catalogType == 0 ? "Any type ▾" : CatalogTypes[catalogType] + " ▾", 46, 331, 163, () => deckMenu = "type", height: 32);
         Button("catalog-mana", catalogMana == 0 ? "MV: Any" : "MV ≤ " + (catalogMana - 1), 217, 331, 96, () => deckMenu = "mana", height: 32);
@@ -90,7 +90,7 @@ internal sealed partial class TableApplication
                 ChangeCatalog();
             }, accent: selected, height: 30);
         }
-        if (catalogPage is { } results) {
+        if (catalogRead.View.Value is { } results) {
             for (int i = 0; i < results.Cards.Length; i++) {
                 var card = results.Cards[i]; int x = 50 + i % 2 * 258, y = 419 + i / 2 * 150;
                 var pose = new Pose(new(x + 45, y + 64), new(86, 120));
@@ -107,7 +107,7 @@ internal sealed partial class TableApplication
             Button("catalog-prev", "Previous", 46, 896, 112, () => { catalogOffset = Math.Max(0, catalogOffset - 6); ChangeCatalog(true); }, results.Offset > 0, height: 32);
             Button("catalog-next", "Next", 166, 896, 94, () => { catalogOffset += 6; ChangeCatalog(true); }, results.Offset + results.Cards.Length < results.Total, height: 32);
             canvas.Text($"{(results.Total == 0 ? 0 : results.Offset + 1)}–{results.Offset + results.Cards.Length} of {results.Total:N0}", 282, 906, Muted, .63f, 272, 1);
-        } else if (catalogError.Length > 0) canvas.Text(catalogError + " · Use Reset to retry.", 69, 470, Red, .85f, 465, 5);
+        } else if (catalogRead.View.Error.Length > 0) canvas.Text(catalogRead.View.Error + " · Use Reset to retry.", 69, 470, Red, .85f, 465, 5);
         else {
             DrawLoadingIndicator(new(300, 506), 22, true, Blue);
             canvas.CenterText("Finding your cards", new(61, 553, 475, 42), Ink, .95f, true);
@@ -168,7 +168,7 @@ internal sealed partial class TableApplication
         if (services.Printings != null && deckCardSection != "Considering")
             Button("deck-printings", PrintingLabel(card.Card) + " ▾", 1150, 660, WorkshopEngine != null ? 238 : 398, OpenPrintings, !busy, height: 28);
         if (WorkshopEngine != null) {
-            var role = workshop?.Roles.FirstOrDefault(r => r.CardId == card.Id);
+            var role = deckWorkspace.View.Workshop?.Roles.FirstOrDefault(r => r.CardId == card.Id);
             string label = (role?.Pinned == true ? "★ " : "") + (role?.Roles.Length > 0 ? string.Join(" · ", role.Roles) : "Set categories / keep / Considering") + "  >";
             bool printings = services.Printings != null && deckCardSection != "Considering";
             Button("workshop-card-tools", printings ? "Card plan >" : label, printings ? 1396 : 1150, 660, printings ? 152 : 398, () => workshopDialog = "card", !busy && WorkshopCurrent, height: 28);

@@ -109,7 +109,7 @@ internal sealed partial class TableApplication
 
     private bool ScrollBattlefieldReaderState(int direction)
     {
-        if (cardPresentation.Pinned is not { } entry || !IsStudyBattlefieldReader(entry)
+        if (matchPresentation.Cards.Pinned is not { } entry || !IsStudyBattlefieldReader(entry)
             || battlefieldReaderStateBinding != (match?.Id ?? "") + "\n" + BattlefieldReaderBinding(entry)
             || !battlefieldReaderStateBounds.Contains(pointer)) return false;
         battlefieldReaderStateScroll = Math.Clamp(battlefieldReaderStateScroll - direction * 28, 0, battlefieldReaderStateScrollMax);

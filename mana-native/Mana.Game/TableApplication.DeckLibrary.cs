@@ -86,10 +86,9 @@ internal sealed partial class TableApplication
         Interlocked.Increment(ref deckSelectionGeneration);
         selectedDeck = null; selectedDeckDetails = null; InvalidateDeckConfirmation();
         soloSetup = null; CloseDeckEditor(); reviewCard = null; reviewList = false;
-        deckCardId = deckBackId = null; librarySelection = null; catalogGeneration++; catalogPending = false;
-        workshopGeneration++; workshopPending = false; workshop = null; workshopTests = []; workshopSetup = null;
-        workshopHand = null; workshopVersionView = null; workshopSourcePreview = null;
-        analysisState = null; analysisOpen = false; analysisError = "";
-        printingGeneration++; printingSelection = null;
+        deckCardId = deckBackId = null; librarySelection = null; catalogRead.Clear();
+        deckWorkspace.Clear(); workshopSetup = null;
+        workshopVersionView = null; workshopSourcePreview = null; analysisOpen = false;
+        printingRead.Clear(); printingSelection = null;
     }
 }

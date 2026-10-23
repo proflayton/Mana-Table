@@ -9,10 +9,8 @@ namespace Mana.Table;
 
 internal sealed partial class TableApplication
 {
-    private DeckAnalysisState? analysisState;
     private bool analysisOpen { get => workshopTab == "analysis"; set { if (value) workshopTab = "analysis"; else if (analysisOpen) workshopTab = "build"; } }
-    private bool analysisInFlight;
-    private string analysisError = "", analysisDetailTitle = "", analysisDetailText = "";
+    private string analysisDetailTitle = "", analysisDetailText = "";
     private string[] analysisDetailCards = [];
     private string analysisDetailBinding = "";
     private Card? analysisDetailSuggestion;
@@ -36,85 +34,64 @@ internal sealed partial class TableApplication
         "unknown" => "Eligibility unknown", "restricted" => "Restricted in the bundled format snapshot",
         _ => value.Replace('-', ' ')
     };
-    private string AnalysisScope => $"{analysisTab}:{analysisPage}:{analysisShowReviewed}:{analysisState?.MetadataRevision}:{analysisDetailTitle}:{analysisEvidenceScroll}:{analysisAdvanced}:{workspaceCardReading?.Identity}:{workspaceCardReading?.OtherFace}:{string.Join(',', analysisRelatedCards)}";
-    private bool AnalysisCurrent => analysisState is { } state && state.Report.DeckId == selectedDeckDetails?.Id
-        && state.Report.Revision == selectedDeckDetails.Revision && (WorkshopEngine == null || WorkshopCurrent
-            && workshop!.MetadataRevision == state.MetadataRevision && workshop.VersionId == state.Report.Fingerprint);
-
-    private void AcceptAnalysis(DeckAnalysisState state, WorkshopState? shared = null)
-    {
-        if (selectedDeckDetails?.Id != state.Report.DeckId || selectedDeckDetails.Revision != state.Report.Revision) return;
-        analysisState = state; analysisError = "";
-        if (shared != null) { workshop = shared; workshopGeneration++; workshopPending = false; }
-    }
+    private string AnalysisScope => $"{analysisTab}:{analysisPage}:{analysisShowReviewed}:{deckWorkspace.View.Analysis?.MetadataRevision}:{analysisDetailTitle}:{analysisEvidenceScroll}:{analysisAdvanced}:{workspaceCardReading?.Identity}:{workspaceCardReading?.OtherFace}:{string.Join(',', analysisRelatedCards)}";
+    private bool AnalysisCurrent => deckWorkspace.AnalysisCurrent;
     private void OpenDeckAnalysis()
     {
-        if (selectedDeckDetails is not { } deck) return;
+        if (busy || closing || loaded && ActivityOpen || selectedDeckDetails is not { } deck) return;
         DismissDeckWorkspaceReading();
         if (AnalysisCurrent || services.Analysis == null) {
             analysisOpen = true; workshopDialog = deckTextFocus = ""; textFocus = false; return;
         }
-        var service = services.Analysis;
-        bool sameDeck = analysisState?.Report.DeckId == deck.Id;
+        bool sameDeck = deckWorkspace.View.Analysis?.Report.DeckId == deck.Id;
+        var reviewing = deckWorkspace.ReviewAsync();
         Work(async () => {
-            var result = await service.AnalyzeDeckAsync(deck.Id, deck.Revision);
-            var shared = WorkshopEngine is { } builder ? await builder.WorkshopAsync(deck.Id, deck.Revision) : null;
+            bool accepted = await reviewing;
             updates.Enqueue(() => {
-                if (selectedDeckDetails?.Id != deck.Id || selectedDeckDetails.Revision != deck.Revision) return;
-                AcceptAnalysis(result, shared); analysisOpen = true;
+                if (!accepted || !AnalysisCurrent) return;
+                analysisOpen = true;
                 if (!sameDeck) analysisTab = analysisPage = 0;
                 workshopDialog = deckTextFocus = ""; textFocus = false;
             });
         }, "Reviewing your deck", "Checking its plan, resources, and engine dependencies.");
     }
-    private void UpdateDeckAnalysis()
-    {
-        if (!analysisOpen || AnalysisCurrent || analysisInFlight || analysisError.Length > 0 || busy || !loaded
-            || selectedDeckDetails is not { } deck || services.Analysis is not { } service || WorkshopEngine != null && !WorkshopCurrent) return;
-        analysisInFlight = true;
-        _ = Task.Run(async () => {
-            try {
-                var result = await service.AnalyzeDeckAsync(deck.Id, deck.Revision);
-                updates.Enqueue(() => AcceptAnalysis(result));
-            } catch (Exception ex) {
-                updates.Enqueue(() => { if (selectedDeckDetails?.Id == deck.Id && selectedDeckDetails.Revision == deck.Revision) analysisError = ex.Message; });
-            } finally { updates.Enqueue(() => analysisInFlight = false); }
-        });
-    }
     private void SaveAnalysisProfile(AnalysisProfile profile)
     {
-        if (!AnalysisCurrent || services.Analysis is not { } service || analysisState is not { } current) return;
+        if (!AnalysisCurrent || services.Analysis is not { } service || deckWorkspace.View.Analysis is not { } current) return;
+        var stamp = deckWorkspace.Capture();
         Work(async () => {
             var result = await service.SaveAnalysisProfileAsync(current.Report.DeckId, current.Report.Revision, current.MetadataRevision,
                 current.Report.Fingerprint, profile);
             var shared = WorkshopEngine is { } builder ? await builder.WorkshopAsync(current.Report.DeckId, current.Report.Revision) : null;
-            updates.Enqueue(() => AcceptAnalysis(result, shared));
+            updates.Enqueue(() => deckWorkspace.AcceptAnalysis(stamp, result, shared));
         }, "Saving review preferences", "Updating the checks against your choices.", false);
     }
     private void ConsiderAnalysis(AnalysisRecommendation recommendation)
     {
-        if (!AnalysisCurrent || services.Analysis is not { } service || analysisState is not { } current) return;
+        if (!AnalysisCurrent || services.Analysis is not { } service || deckWorkspace.View.Analysis is not { } current) return;
+        var stamp = deckWorkspace.Capture();
         Work(async () => {
             var result = await service.ConsiderAnalysisAsync(current.Report.DeckId, current.Report.Revision, current.MetadataRevision,
                 current.Report.Fingerprint, recommendation.Id, "");
-            updates.Enqueue(() => { AcceptAnalysis(result.Analysis, result.Workshop); message = recommendation.Add.Name + " saved to Considering. Review it in Build before swapping."; });
+            updates.Enqueue(() => { if (deckWorkspace.AcceptAnalysis(stamp, result.Analysis, result.Workshop)) message = recommendation.Add.Name + " saved to Considering. Review it in Build before swapping."; });
         }, "Saving this option", "Keeping your decision and candidate card together.", false);
     }
     private void RecordAnalysis(string id, string decision, string? suppliedNote = null)
     {
-        if (!AnalysisCurrent || services.Analysis is not { } service || analysisState is not { } current) return;
+        if (!AnalysisCurrent || services.Analysis is not { } service || deckWorkspace.View.Analysis is not { } current) return;
         string? note = suppliedNote ?? Ask("Recommendation note", "Why this choice? (optional)", "");
         if (note == null) return;
+        var stamp = deckWorkspace.Capture();
         Work(async () => {
             var result = await service.ReviewAnalysisAsync(current.Report.DeckId, current.Report.Revision, current.MetadataRevision,
                 current.Report.Fingerprint, id, decision, note);
             var shared = WorkshopEngine is { } builder ? await builder.WorkshopAsync(current.Report.DeckId, current.Report.Revision) : null;
-            updates.Enqueue(() => AcceptAnalysis(result, shared));
+            updates.Enqueue(() => deckWorkspace.AcceptAnalysis(stamp, result, shared));
         }, "Saving your decision", "Keeping it with the playable version you reviewed.", false);
     }
     private void EditAnalysisText(string field)
     {
-        if (!AnalysisCurrent || analysisState is not { } current) return;
+        if (!AnalysisCurrent || deckWorkspace.View.Analysis is not { } current) return;
         var p = current.Report.Profile;
         string value = field switch { "backup" => p.Backup, "protected" => string.Join("; ", p.ProtectedCards), "pool" => string.Join("; ", p.Pool), _ => p.TargetTurn.ToString() };
         string prompt = field switch { "backup" => "How else could this deck win? (optional note)", "protected" => "Which cards should we keep? Separate card names with semicolons, or mark favorites in Build.", "pool" => "Which cards are available from your draft or sealed pool? Separate card names with semicolons.", _ => "Which turn should the land check use? 0 uses your commander's mana value, or turn 3." };
@@ -126,7 +103,7 @@ internal sealed partial class TableApplication
             "pool" => p with { Pool = Names() }, _ => p with { TargetTurn = int.Parse(next) }
         });
     }
-    private string AnalysisDetailBinding => $"{selectedDeckDetails?.Id}:{selectedDeckDetails?.Revision}:{analysisState?.MetadataRevision}:{analysisTab}:{analysisPage}:{analysisShowReviewed}";
+    private string AnalysisDetailBinding => $"{selectedDeckDetails?.Id}:{selectedDeckDetails?.Revision}:{deckWorkspace.View.Analysis?.MetadataRevision}:{analysisTab}:{analysisPage}:{analysisShowReviewed}";
     private void ShowAnalysisDetails(string title, string text, string[]? cards = null, TuningQuestion? question = null, Card? suggestion = null, string[]? missing = null, string variant = "", int index = -1, string[]? payoffs = null)
     {
         analysisDetailTitle = title; analysisDetailText = text; analysisDetailCards = cards ?? [];
@@ -148,7 +125,7 @@ internal sealed partial class TableApplication
     }
     private void ShowAnalysisModel()
     {
-        if (analysisState is not { } state) {
+        if (deckWorkspace.View.Analysis is not { } state) {
             analysisAdvancedText = WorkshopResourceEvidence(); analysisDetailBinding = AnalysisDetailBinding; analysisAdvanced = true; analysisEvidenceScroll = 0; return;
         }
         var m = state.Report.Metrics;
@@ -160,7 +137,7 @@ internal sealed partial class TableApplication
             + "\n\nAnalysis limits\n" + string.Join("\n\n", state.Report.Limitations) + shared;
         analysisAdvanced = true; analysisEvidenceScroll = 0;
     }
-    private string WorkshopResourceEvidence() => workshop is not { } tools ? "" : "\n\nYour plan\n" + tools.Plan
+    private string WorkshopResourceEvidence() => deckWorkspace.View.Workshop is not { } tools ? "" : "\n\nYour plan\n" + tools.Plan
         + "\n\nRoles (may overlap)\n" + string.Join("; ", tools.Insights.RoleCounts.Select(pair => pair.Key + ": " + pair.Value))
         + "\n\nPotential colored sources\n" + string.Join("; ", tools.Insights.ColoredSources.Select(pair => pair.Key + ": " + pair.Value))
         + "\n" + tools.Insights.Note;
@@ -172,9 +149,9 @@ internal sealed partial class TableApplication
             if (analysisAdvanced) DrawAnalysisDetails();
             return;
         }
-        if (!AnalysisCurrent || analysisState is not { } state) {
-            canvas.Text(analysisError.Length == 0 ? "Updating your deck checks..." : analysisError, 64, 328, Ink, .95f, 1400, 6);
-            if (analysisError.Length > 0) Button("analysis-refresh", "Retry", 64, 470, 180, OpenDeckAnalysis, !busy, height: 40);
+        if (!AnalysisCurrent || deckWorkspace.View.Analysis is not { } state) {
+            canvas.Text(deckWorkspace.View.AnalysisError.Length == 0 ? "Updating your deck checks..." : deckWorkspace.View.AnalysisError, 64, 328, Ink, .95f, 1400, 6);
+            if (deckWorkspace.View.AnalysisError.Length > 0) Button("analysis-refresh", "Retry", 64, 470, 180, OpenDeckAnalysis, !busy, height: 40);
             return;
         }
         var layout = PrepareAnalysisWorkspace()!;
@@ -212,7 +189,7 @@ internal sealed partial class TableApplication
     // A removed recommendation must not revoke the scope halfway through a frame.
     private AnalysisWorkspaceLayout? PrepareAnalysisWorkspace()
     {
-        if (!analysisOpen || !AnalysisCurrent || analysisState is not { } state) return null;
+        if (!analysisOpen || !AnalysisCurrent || deckWorkspace.View.Analysis is not { } state) return null;
         int count = analysisTab switch { 0 => state.Report.Findings.Length, 1 => state.Report.Engines.Length,
             2 => VisibleRecommendations(state).Length, 3 => state.Report.Cards.Length, _ => state.History.Length };
         var entries = Enumerable.Range(0, count).Select(index => AnalysisEntry(state, index)).ToArray();
@@ -238,7 +215,7 @@ internal sealed partial class TableApplication
     }
     private void DrawAnalysisPreferences()
     {
-        if (!AnalysisCurrent || analysisState is not { } state) return;
+        if (!AnalysisCurrent || deckWorkspace.View.Analysis is not { } state) return;
         var p = state.Report.Profile;
         canvas.Text("Your deck is reviewed automatically. Answer only what matters to you; choices save immediately.", 208, 240, Muted, .77f, 1164, 2);
         canvas.Text("How quickly do you want the deck to get going?", 208, 292, Gold, .82f, 1164, 1, true);
@@ -312,7 +289,7 @@ internal sealed partial class TableApplication
             recommendation = r;
         } else if (analysisTab == 3) {
             var c = report.Cards[index];
-            bool favorite = workshop?.Roles.Any(r => r.CardId == c.CardId && r.Pinned) == true;
+            bool favorite = deckWorkspace.View.Workshop?.Roles.Any(r => r.CardId == c.CardId && r.Pinned) == true;
             bool enginePiece = report.Engines.Any(e => e.Missing.Length == 0 && e.Cards.Contains(c.Name, StringComparer.OrdinalIgnoreCase));
             title = c.Quantity + "x " + c.Name + " (" + c.Section + ")" + (favorite ? " - favorite" : c.ProtectedCard ? enginePiece ? " - engine piece" : " - preserved preference" : "");
             summary = string.Join(" | ", c.Functions.Select(f => f.Role + " [" + f.Event + "]: " + f.Provides));
@@ -367,7 +344,7 @@ internal sealed partial class TableApplication
     {
         if (selectedDeckDetails is not { } deck) return;
         DrawDeckComposition(deck, 760, 430, 764);
-        if (workshop is not { } tools) return;
+        if (deckWorkspace.View.Workshop is not { } tools) return;
         canvas.Text("Roles", 760, 552, Gold, .76f, 700, 1, true);
         int at = 0;
         foreach (var pair in tools.Insights.RoleCounts) {
@@ -412,7 +389,7 @@ internal sealed partial class TableApplication
         string body = analysisAdvanced ? analysisAdvancedText : analysisDetailText;
         var lines = body.Replace("\r", "").Split('\n')
             .SelectMany(paragraph => paragraph.Length == 0 ? [""] : canvas.TextPages(paragraph, textSize, width - 14, lineHeight, 80)).ToArray();
-        var roles = analysisAdvanced && workshop != null ? workshop.Insights.RoleCounts.ToArray() : [];
+        var roles = analysisAdvanced && deckWorkspace.View.Workshop != null ? deckWorkspace.View.Workshop.Insights.RoleCounts.ToArray() : [];
         int roleHeight = roles.Select(pair => canvas.TextSize(pair.Key + "  " + pair.Value, .72f, width - 16, 80).Y + 18).Sum();
         int contentHeight = faceHeight + lines.Length * lineHeight + roleHeight;
         analysisEvidenceMaximum = Math.Max(0, contentHeight - analysisEvidenceBounds.Height);
@@ -459,7 +436,7 @@ internal sealed partial class TableApplication
             () => { analysisAdvanced = false; analysisEvidenceScroll = 0; }, !busy, size: .75f);
         else if (analysisDetailRecommendation is { } offered) {
             int index = analysisDetailIndex;
-            bool saved = workshop?.Considering.Any(card => card.Card.Card.Name.Equals(offered.Add.Name, StringComparison.OrdinalIgnoreCase)) == true;
+            bool saved = deckWorkspace.View.Workshop?.Considering.Any(card => card.Card.Card.Name.Equals(offered.Add.Name, StringComparison.OrdinalIgnoreCase)) == true;
             Button("analysis-consider:" + index, saved ? "View option" : "Try this card", x, 902, 180,
                 () => { if (saved) ShowAnalysisOption(offered); else ConsiderAnalysis(offered); }, !busy, true, 36);
             if (analysisShowReviewed) MenuAction("analysis-reopen:" + index, "Reopen this swap", new(732, 902, 352, 36), () => RecordAnalysis(offered.Id, "reopen", ""), !busy, size: .75f);
@@ -467,7 +444,7 @@ internal sealed partial class TableApplication
                 MenuAction("analysis-keep:" + index, "Keep current", new(722, 902, 180, 36), () => RecordAnalysis(offered.Id, "keep", ""), !busy, size: .75f);
                 MenuAction("analysis-dismiss:" + index, "Dismiss", new(912, 902, 172, 36), () => RecordAnalysis(offered.Id, "dismiss", ""), !busy, size: .75f);
             }
-        } else if (analysisDetailQuestion is { } question && DeckTuning.Matches(question, workshop))
+        } else if (analysisDetailQuestion is { } question && DeckTuning.Matches(question, deckWorkspace.View.Workshop))
             Button("analysis-test-check", "Test this check", x, 902, 250, () => TestAnalysisFinding(question), !busy && AnalysisCurrent && WorkshopCurrent, true, 40);
         if (faces.Any(card => selectedDeckDetails!.Entries.Any(entry => entry.Card.Name == card.Name)))
             MenuAction("analysis-show-cards", "Edit related cards", new(796, 952, 288, 36), ShowAnalysisCards, !busy, size: .75f);

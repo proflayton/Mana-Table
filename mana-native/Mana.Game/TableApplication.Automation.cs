@@ -22,7 +22,7 @@ internal sealed partial class TableApplication
         internal void SetTableStudy(bool enabled) => game.SetTableStudy(enabled);
         internal bool TableStudyEnabled => game.TableStudyEnabled;
         internal int? StudyFocusOwner => game.StudyFocusActive ? game.studyFocusOwner : null;
-        internal IReadOnlyList<Mana.Renderer.EffectChangeGroup> PublicChanges => game.publicChanges.Groups;
+        internal IReadOnlyList<Mana.Renderer.EffectChangeGroup> PublicChanges => game.matchPresentation.Changes;
         internal Rectangle? ChangeCalloutBounds => game.changeCalloutBounds;
         internal IReadOnlySet<string> HighlightedChangeTargets => game.highlightedChangeTargets;
         internal string? HighlightedChangeSource => game.highlightedChangeSource;
@@ -57,22 +57,22 @@ internal sealed partial class TableApplication
         internal DeckDetails? DeckDetails => game.selectedDeckDetails;
         internal bool DeckEditor => game.deckEditor;
         internal bool AnalysisOpen => game.analysisOpen;
-        internal DeckAnalysisState? Analysis => game.analysisState;
+        internal DeckAnalysisState? Analysis => game.deckWorkspace.View.Analysis;
         internal bool AnalysisCurrent => game.AnalysisCurrent;
-        internal string[] AnalysisVisibleRecommendationIds => game.analysisState is { } a ? game.VisibleRecommendations(a).Select(r => r.Id).ToArray() : [];
+        internal string[] AnalysisVisibleRecommendationIds => game.deckWorkspace.View.Analysis is { } a ? game.VisibleRecommendations(a).Select(r => r.Id).ToArray() : [];
         internal bool UpdatesOpen => game.updatesOpen;
-        internal bool UpdateChecking => game.updateChecking;
-        internal bool UpdateDownloading => game.updateDownloading;
-        internal bool UpdateValidating => game.updateValidating;
-        internal bool UpdateInstallerLaunched => game.updateInstallerLaunched;
-        internal bool UpdateCheckOnStartup => game.updatePreferences.CheckOnStartup;
+        internal bool UpdateChecking => game.UpdateView.Checking;
+        internal bool UpdateDownloading => game.UpdateView.Downloading;
+        internal bool UpdateValidating => game.UpdateView.Verifying;
+        internal bool UpdateInstallerLaunched => game.UpdateView.InstallerLaunched;
+        internal bool UpdateCheckOnStartup => game.updateSession.CheckOnStartup;
         internal bool AutomaticUpdateCheckAllowed => game.AutomaticUpdateCheckAllowed;
-        internal string UpdateError => game.updateError;
-        internal string UpdateNotice => game.updateNotice;
+        internal string UpdateError => game.UpdateView.Error;
+        internal string UpdateNotice => game.UpdateView.Notice;
         internal string UpdateInstallBlocker => game.UpdateInstallBlocker();
-        internal long UpdateBytes => game.updateBytes;
-        internal Mana.Client.AppRelease? AvailableUpdate => game.availableUpdate;
-        internal Mana.Client.PreparedUpdate? PreparedUpdate => game.preparedUpdate;
+        internal long UpdateBytes => game.UpdateView.BytesReceived;
+        internal Mana.Client.AppRelease? AvailableUpdate => game.UpdateView.Release;
+        internal Mana.Client.PreparedUpdate? PreparedUpdate => game.UpdateView.Prepared;
         internal void OpenAppUpdates() => game.OpenAppUpdates();
         internal void CheckAppUpdates() => game.CheckAppUpdates();
         internal void Post(Action action) => game.updates.Enqueue(action);
@@ -101,28 +101,28 @@ internal sealed partial class TableApplication
         internal DeckEntry? ReviewedCard => game.reviewCard;
         internal CatalogCard? DeckSelection => game.DeckSelection;
         internal void TypeSetupText(string text) { foreach (char c in text) game.SetupText(c); }
-        internal CatalogPage? Catalog => game.catalogPage;
-        internal CatalogPage? Printings => game.printingPage;
-        internal bool CatalogBusy => game.catalogInFlight || game.catalogPending;
+        internal CatalogPage? Catalog => game.catalogRead.View.Value;
+        internal CatalogPage? Printings => game.printingRead.View.Value;
+        internal bool CatalogBusy => game.catalogRead.Busy;
         internal void TypeDeckText(string text) { foreach (char c in text) game.DeckText(c); }
         internal void DeckQuantity(int quantity) => game.DeckQuantity(quantity);
         internal void RenameDeck(string name) => game.RenameDeck(name);
         internal void DuplicateDeck(string name) => game.DuplicateDeck(name);
         internal void EditPreset(string id) => game.ImportDeck(() => game.catalog.ImportPresetAsync(id), true);
-        internal WorkshopState? Workshop => game.workshop;
+        internal WorkshopState? Workshop => game.deckWorkspace.View.Workshop;
         internal DeckVersionView? WorkshopVersion => game.workshopVersionView;
         internal void ShowSourcePreview(DeckSourcePreview preview) {
             game.workshopSourcePreview = preview; game.workshopSourceImport = false; game.workshopSourceChoice = "";
             game.workshopDialog = "source-preview"; game.WorkshopDialogPage = 0;
         }
         internal bool WorkshopCurrent => game.WorkshopCurrent;
-        internal HandPractice? WorkshopHand => game.workshopHand;
-        internal DeckTest[] WorkshopTests => game.workshopTests;
+        internal HandPractice? WorkshopHand => game.deckWorkspace.View.Hand;
+        internal DeckTest[] WorkshopTests => game.deckWorkspace.View.Tests.ToArray();
         internal string WorkshopTab => game.workshopTab;
         internal string WorkshopDialog => game.workshopDialog;
-        internal string WorkshopError => game.workshopError;
+        internal string WorkshopError => game.deckWorkspace.View.WorkshopError;
         internal void SetWorkshopPlan(string plan, string question) => game.SaveWorkshopMetadata(new(Plan: plan, Question: question), "Test plan saved.");
-        internal void SaveWorkshopNote(string testId, string note) => game.SaveWorkshopTestNote(game.workshopTests.First(t => t.Id == testId), note);
+        internal void SaveWorkshopNote(string testId, string note) => game.SaveWorkshopTestNote(game.deckWorkspace.View.Tests.First(t => t.Id == testId), note);
         internal void ConcedeWorkshop() => game.ReturnToWorkshop();
         internal Lobby? Lobby => game.lobby;
         internal bool LobbyAiSeatControlsAvailable => game.CanManageLobbySeats;
@@ -156,9 +156,9 @@ internal sealed partial class TableApplication
         internal bool ExperienceOpen => game.ExperienceOpen;
         internal void OpenTableGuide() => game.OpenTableGuide();
         internal void SetHeld(bool value) => game.held = value;
-        internal Mana.Renderer.ResolutionCue? LastResolution => game.actionFeedback.Last;
+        internal Mana.Renderer.ResolutionCue? LastResolution => game.matchPresentation.LastResolution;
         internal IReadOnlyList<ImpactPaint> Impacts => game.impactPaint;
-        internal IReadOnlyList<(string CardId, string Destination, Mana.Renderer.Pose Pose)> PublicDepartures => game.departures
+        internal IReadOnlyList<(string CardId, string Destination, Mana.Renderer.Pose Pose)> PublicDepartures => game.matchPresentation.Departures
             .Where(d => game.now - d.Started <= 1.5).Select(d => (d.Card.VisualId, d.Destination, game.DeparturePose(d))).ToArray();
         internal void SetAutomatic(bool value) => game.SetAutomatic(value);
         internal List<int> Selections => game.selections;
@@ -185,8 +185,8 @@ internal sealed partial class TableApplication
         internal double Now => game.now;
         internal Rectangle? HoverPreview => game.hoverPreview;
         internal Card? Hovered => game.hovered;
-        internal int CardPaintCount(string id) => game.cardPresentation.CompositionCount(id);
+        internal int CardPaintCount(string id) => game.matchPresentation.Cards.CompositionCount(id);
         internal Texture2D? Art(Card card) => game.resources.Card(card);
-        internal Mana.Renderer.Pose? DisplayedPose(string id) => game.cardPresentation.TryGetPose(id, out var pose) ? pose : null;
+        internal Mana.Renderer.Pose? DisplayedPose(string id) => game.matchPresentation.Cards.TryGetPose(id, out var pose) ? pose : null;
     }
 }

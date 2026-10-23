@@ -1,12 +1,11 @@
 using Mana.Contracts;
+using Mana.Client;
 
 namespace Mana.Table;
 
 internal sealed partial class TableApplication
 {
-    private WorkshopState? workshop;
-    private DeckTest[] workshopTests = [];
-    private HandPractice? workshopHand;
+    private readonly DeckWorkspaceSession deckWorkspace;
     private CatalogCard? workshopSavedCard;
     private bool workshopSavedBack;
     private string workshopSavedReturn = "saved-hand";
@@ -16,9 +15,9 @@ internal sealed partial class TableApplication
     private string workshopSourceChoice = "";
     private DeckSourcePreview? workshopSourcePreview;
     private string workshopTab = "build", workshopDialog = "", workshopRoleFilter = "";
-    private string workshopError = "", workshopSelectedTest = "";
+    private string workshopSelectedTest = "";
     private string? workshopMatchDeckId, workshopMatchTestId;
-    private int workshopGeneration, workshopPage, workshopPlayers = 4;
+    private int workshopPage, workshopPlayers = 4;
     // Background tabs still render beneath a modal. Their page clamps must
     // never alter a modal's page, including when returning from a detail view.
     private readonly Dictionary<string, int> workshopDialogPages = new(StringComparer.Ordinal);
@@ -41,43 +40,27 @@ internal sealed partial class TableApplication
         workshopPlayers = Math.Min(workshopPlayers, Math.Min(4, prepared.Setup.MaxPlayers));
         Array.Copy(prepared.Choices, workshopOpponents, workshopOpponents.Length);
     }
-    private bool workshopPending, workshopInFlight, workshopSourceImport;
+    private bool workshopSourceImport;
     private IDeckWorkshop? WorkshopEngine => services.Workshop;
-    private bool WorkshopCurrent => workshop != null && workshop.DeckId == selectedDeckDetails?.Id && workshop.Revision == selectedDeckDetails?.Revision && !workshopPending && !workshopInFlight;
-    private string WorkshopScope => $"{workshopTab}:{workshopDialog}:{printingGeneration}:{WorkshopDialogPage}:{workshopCompareVersion}:{workshopVersionView?.VersionId}:{workshopSourceChoice}:{workshopRoleFilter}:{workshopManaFilter}:{workshopGeneration}:{workshopPage}:{workshopPlayers}:{workshopSelectedTest}:{workshopOpponentSeat}:{workshopOpponentSearch}:{workshopSourcePreview?.Token}:{workshopHand?.TestId}:{workshopHand?.Draws}:{workshopHand?.Redraws}:{workspaceCardReading?.Identity}:{workspaceCardReading?.OtherFace}:{string.Join(',', workshopOpponents)}";
+    private bool WorkshopCurrent => deckWorkspace.WorkshopCurrent;
+    private string WorkshopScope => $"{workshopTab}:{workshopDialog}:{printingRead.View.Generation}:{WorkshopDialogPage}:{workshopCompareVersion}:{workshopVersionView?.VersionId}:{workshopSourceChoice}:{workshopRoleFilter}:{workshopManaFilter}:{deckWorkspace.View.Generation}:{workshopPage}:{workshopPlayers}:{workshopSelectedTest}:{workshopOpponentSeat}:{workshopOpponentSearch}:{workshopSourcePreview?.Token}:{deckWorkspace.View.Hand?.TestId}:{deckWorkspace.View.Hand?.Draws}:{deckWorkspace.View.Hand?.Redraws}:{workspaceCardReading?.Identity}:{workspaceCardReading?.OtherFace}:{string.Join(',', workshopOpponents)}";
     private bool IsWorkshopMatch => match != null && workshopMatchTestId != null;
 
     private void RequestWorkshopRefresh(bool changed = false)
     {
-        if (WorkshopEngine == null) return;
-        workshopGeneration++; workshopPending = true; workshopError = "";
+        deckWorkspace.RefreshWorkshop();
         if (changed) {
             DismissDeckWorkspaceReading();
             workshopDialogPages.Clear();
-            workshop = null; workshopTests = []; workshopHand = null; workshopSetup = null;
+            workshopSetup = null;
             workshopManaFilter = null;
             workshopTab = "build"; workshopDialog = workshopRoleFilter = workshopSelectedTest = ""; workshopPage = 0;
         }
     }
     private void UpdateWorkshopData()
     {
-        if (WorkshopEngine is not { } service || selectedDeckDetails is not { } deck || !deckEditor || match != null
-            || !loaded || busy || !workshopPending || workshopInFlight) return;
-        int generation = workshopGeneration;
-        workshopPending = false; workshopInFlight = true;
-        _ = Task.Run(async () => {
-            try {
-                var state = await service.WorkshopAsync(deck.Id, deck.Revision);
-                var tests = await service.GetTestsAsync(deck.Id);
-                updates.Enqueue(() => {
-                    if (generation != workshopGeneration || selectedDeckDetails?.Id != deck.Id || selectedDeckDetails?.Revision != deck.Revision) return;
-                    workshop = state; workshopTests = tests;
-                    if (workshopHand?.VersionId != state.VersionId) workshopHand = null;
-                    if (workshopSelectedTest.Length == 0) workshopSelectedTest = tests.FirstOrDefault()?.Id ?? "";
-                });
-            } catch (Exception ex) { updates.Enqueue(() => { if (generation == workshopGeneration) workshopError = ex.Message; }); }
-            finally { updates.Enqueue(() => workshopInFlight = false); }
-        });
+        deckWorkspace.Pump(deckEditor && match == null && loaded && !busy, analysisOpen);
+        if (WorkshopCurrent && workshopSelectedTest.Length == 0) workshopSelectedTest = deckWorkspace.View.Tests.FirstOrDefault()?.Id ?? "";
     }
     private void ShowWorkshopTab(string tab)
     {
@@ -91,49 +74,51 @@ internal sealed partial class TableApplication
     private void SaveWorkshopMetadata(WorkshopMetadataEdit edit, string success)
     {
         if (WorkshopEngine is not { } service || selectedDeckDetails is not { } deck || !WorkshopCurrent) return;
+        var stamp = deckWorkspace.Capture();
+        long metadataRevision = deckWorkspace.View.Workshop!.MetadataRevision;
         Work(async () => {
-            var saved = await service.UpdateWorkshopAsync(deck.Id, deck.Revision, edit with { MetadataRevision = workshop!.MetadataRevision });
-            updates.Enqueue(() => { workshop = saved; workshopGeneration++; message = success; });
+            var saved = await service.UpdateWorkshopAsync(deck.Id, deck.Revision, edit with { MetadataRevision = metadataRevision });
+            updates.Enqueue(() => { if (deckWorkspace.AcceptWorkshop(stamp, saved)) message = success; });
         }, "Saving deck preferences", "Keeping your plan and card roles with this deck.", false);
     }
     private void EditWorkshopPlan(bool question)
     {
         if (!WorkshopCurrent) return;
         string? value = Ask(question ? "A question for your next test" : "Your deck's plan", question
-            ? "What would you like to learn? This stays with each test." : "What is this deck trying to do? A short reminder for your future edits.", question ? workshop!.Question : workshop!.Plan);
+            ? "What would you like to learn? This stays with each test." : "What is this deck trying to do? A short reminder for your future edits.", question ? deckWorkspace.View.Workshop!.Question : deckWorkspace.View.Workshop!.Plan);
         if (value != null) SaveWorkshopMetadata(question ? new(Question: value) : new(Plan: value), question ? "Test question saved." : "Deck plan saved.");
     }
     private void ToggleWorkshopRole(string role)
     {
         if (!WorkshopCurrent || DeckSelection is not { } card) return;
-        var previous = workshop!.Roles.FirstOrDefault(r => r.CardId == card.Id);
+        var previous = deckWorkspace.View.Workshop!.Roles.FirstOrDefault(r => r.CardId == card.Id);
         var roles = previous?.Roles.ToList() ?? [];
         if (roles.RemoveAll(value => value.Equals(role, StringComparison.OrdinalIgnoreCase)) == 0) roles.Add(role);
         var updated = new WorkshopRole(card.Id, roles.ToArray(), previous?.Pinned ?? false, "local");
-        SaveWorkshopMetadata(new(Roles: workshop.Roles.Where(r => r.CardId != card.Id && r.Origin != "estimated").Append(updated).ToArray()), "Card roles saved. Roles can overlap.");
+        SaveWorkshopMetadata(new(Roles: deckWorkspace.View.Workshop.Roles.Where(r => r.CardId != card.Id && r.Origin != "estimated").Append(updated).ToArray()), "Card roles saved. Roles can overlap.");
     }
     private void EditWorkshopRoles()
     {
         if (!WorkshopCurrent || DeckSelection is not { } card) return;
-        var previous = workshop!.Roles.FirstOrDefault(r => r.CardId == card.Id);
+        var previous = deckWorkspace.View.Workshop!.Roles.FirstOrDefault(r => r.CardId == card.Id);
         string? text = Ask("Card categories", "Comma-separated categories for " + card.Card.Name, string.Join(", ", previous?.Roles ?? []));
         if (text == null) return;
         string[] roles = text.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
         var updated = new WorkshopRole(card.Id, roles, previous?.Pinned ?? false, "local");
-        SaveWorkshopMetadata(new(Roles: workshop.Roles.Where(r => r.CardId != card.Id && r.Origin != "estimated").Append(updated).ToArray()), "Categories saved.");
+        SaveWorkshopMetadata(new(Roles: deckWorkspace.View.Workshop.Roles.Where(r => r.CardId != card.Id && r.Origin != "estimated").Append(updated).ToArray()), "Categories saved.");
     }
     private void ToggleWorkshopPin()
     {
         if (!WorkshopCurrent || DeckSelection is not { } card) return;
-        var previous = workshop!.Roles.FirstOrDefault(r => r.CardId == card.Id);
+        var previous = deckWorkspace.View.Workshop!.Roles.FirstOrDefault(r => r.CardId == card.Id);
         var updated = new WorkshopRole(card.Id, previous?.Roles ?? [], !(previous?.Pinned ?? false), "local");
-        SaveWorkshopMetadata(new(Roles: workshop.Roles.Where(r => r.CardId != card.Id && r.Origin != "estimated").Append(updated).ToArray()), updated.Pinned ? "Card marked as a favorite to keep." : "Keep marker removed.");
+        SaveWorkshopMetadata(new(Roles: deckWorkspace.View.Workshop.Roles.Where(r => r.CardId != card.Id && r.Origin != "estimated").Append(updated).ToArray()), updated.Pinned ? "Card marked as a favorite to keep." : "Keep marker removed.");
     }
     private void ConsideringQuantity(CatalogCard card, int quantity)
     {
         if (!WorkshopCurrent || quantity is < 0 or > 1000) return;
-        var previous = workshop!.Considering.FirstOrDefault(c => c.CardId == card.Id);
-        var entries = workshop.Considering.Where(c => c.CardId != card.Id).Select(c => new ConsideringEdit(c.CardId, c.Quantity, c.Categories)).ToList();
+        var previous = deckWorkspace.View.Workshop!.Considering.FirstOrDefault(c => c.CardId == card.Id);
+        var entries = deckWorkspace.View.Workshop.Considering.Where(c => c.CardId != card.Id).Select(c => new ConsideringEdit(c.CardId, c.Quantity, c.Categories)).ToList();
         if (quantity > 0) entries.Add(new(card.Id, quantity, previous?.Categories ?? []));
         SaveWorkshopMetadata(new(Considering: entries.ToArray()), quantity > 0 ? "Saved to Considering. It is excluded from games." : "Removed from Considering.");
     }
@@ -142,7 +127,7 @@ internal sealed partial class TableApplication
         if (!WorkshopCurrent || WorkshopEngine is not { } service || selectedDeckDetails is not { } deck || DeckSelection is not { } card) return;
         bool fromConsidering = deckCardSection == "Considering";
         if (!fromConsidering && deckCardSection != "Main") return;
-        long metadataRevision = workshop!.MetadataRevision;
+        long metadataRevision = deckWorkspace.View.Workshop!.MetadataRevision;
         Work(async () => {
             await UnreadyForDeckEdit();
             var updated = await service.MoveWorkshopCardAsync(deck.Id, deck.Revision, metadataRevision, card.Id, fromConsidering ? "Main" : "Considering", cutCardId);
@@ -175,14 +160,14 @@ internal sealed partial class TableApplication
     {
         if (WorkshopEngine is not { } service || selectedDeckDetails is not { } deck || !DeckReady || !WorkshopCurrent || Connected || match != null) return;
         int generation = deckSelectionGeneration, requestedPlayers = workshopPlayers;
-        long metadataRevision = workshop!.MetadataRevision;
-        string question = workshop.Question, version = workshop.VersionId;
+        long metadataRevision = deckWorkspace.View.Workshop!.MetadataRevision;
+        string question = deckWorkspace.View.Workshop.Question, version = deckWorkspace.View.Workshop.VersionId;
         string[] previous = CurrentWorkshopOpponents();
         var existing = WorkshopSetupCurrent && workshopSetup is { Opponents.Length: > 0 } setup
             && workshopOpponents.All(index => index >= 0 && index < setup.Opponents.Length)
             ? new SoloPreparation(setup, workshopOpponents.ToArray()) : null;
         bool Current() => generation == Volatile.Read(ref deckSelectionGeneration) && selectedDeckDetails is { } currentDeck && currentDeck.Id == deck.Id
-            && currentDeck.Revision == deck.Revision && workshop is { } currentWorkshop && currentWorkshop.VersionId == version && currentWorkshop.MetadataRevision == metadataRevision
+            && currentDeck.Revision == deck.Revision && deckWorkspace.View.Workshop is { } currentWorkshop && currentWorkshop.VersionId == version && currentWorkshop.MetadataRevision == metadataRevision
             && currentWorkshop.Question == question && requestedPlayers == workshopPlayers && previous.SequenceEqual(CurrentWorkshopOpponents())
             && !Connected && match == null;
         Work(async () => {
@@ -211,10 +196,12 @@ internal sealed partial class TableApplication
     private void PracticeWorkshop(string action, int? index = null)
     {
         if (WorkshopEngine is not { } service || selectedDeckDetails is not { } deck || !WorkshopCurrent) return;
+        var stamp = deckWorkspace.Capture();
+        string question = deckWorkspace.View.Workshop!.Question;
         Work(async () => {
-            var hand = await service.PracticeAsync(deck.Id, deck.Revision, action, index, workshop!.Question);
+            var hand = await service.PracticeAsync(deck.Id, deck.Revision, action, index, question);
             var tests = await service.GetTestsAsync(deck.Id);
-            updates.Enqueue(() => { workshopHand = hand; workshopTests = tests; workshopSelectedTest = hand.TestId; workshopGeneration++; message = action == "keep" ? "Hand decision recorded for this version." : "Sample updated."; });
+            updates.Enqueue(() => { if (deckWorkspace.AcceptPractice(stamp, hand, tests)) { workshopSelectedTest = hand.TestId; message = action == "keep" ? "Hand decision recorded for this version." : "Sample updated."; } });
         }, action == "new" ? "Drawing a sample hand" : "Updating the sample", "Using the actual cards in this saved library.", false);
     }
     private void SaveWorkshopTestNote(DeckTest test, string? suppliedNote = null)
@@ -222,9 +209,10 @@ internal sealed partial class TableApplication
         if (WorkshopEngine is not { } service || selectedDeckDetails is not { } deck) return;
         string? note = suppliedNote ?? Ask("Test notes", "What happened, and what would you change? These are your observations.", test.Note);
         if (note == null) return;
+        var stamp = deckWorkspace.Capture();
         Work(async () => {
             var saved = await service.SaveTestNoteAsync(deck.Id, test.Id, note);
-            updates.Enqueue(() => { workshopTests = workshopTests.Select(t => t.Id == saved.Id ? saved : t).ToArray(); workshopGeneration++; message = "Test note saved."; });
+            updates.Enqueue(() => { if (deckWorkspace.AcceptTestNote(stamp, saved)) message = "Test note saved."; });
         }, "Saving your test notes", "Keeping this note with the version you tested.", false);
     }
     private void ReturnToWorkshop(bool testAgain = false)
@@ -301,7 +289,7 @@ internal sealed partial class TableApplication
     }
     private void OpenArchidekt()
     {
-        string? url = workshop?.Source?.Url;
+        string? url = deckWorkspace.View.Workshop?.Source?.Url;
         if (url == null) return;
         try { System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(url) { UseShellExecute = true }); }
         catch (Exception ex) { error = "Could not open Archidekt: " + ex.Message; }

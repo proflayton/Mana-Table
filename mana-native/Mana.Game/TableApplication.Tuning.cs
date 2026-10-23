@@ -7,15 +7,15 @@ internal sealed partial class TableApplication
 {
     private void TestAnalysisFinding(TuningQuestion question)
     {
-        if (!AnalysisCurrent || !WorkshopCurrent || !DeckTuning.Matches(question, workshop)
+        if (!AnalysisCurrent || !WorkshopCurrent || !DeckTuning.Matches(question, deckWorkspace.View.Workshop)
             || selectedDeckDetails is not { } deck || WorkshopEngine is not { } service) return;
-        long metadataRevision = workshop!.MetadataRevision;
+        long metadataRevision = deckWorkspace.View.Workshop!.MetadataRevision;
+        var stamp = deckWorkspace.Capture();
         Work(async () => {
             var saved = await service.UpdateWorkshopAsync(deck.Id, deck.Revision,
                 new(MetadataRevision: metadataRevision, Question: question.Question));
             updates.Enqueue(() => {
-                if (selectedDeckDetails?.Id != deck.Id || selectedDeckDetails.Revision != deck.Revision) return;
-                workshop = saved; workshopGeneration++;
+                if (!deckWorkspace.AcceptWorkshop(stamp, saved)) return;
                 ShowWorkshopTab("test");
                 message = "Test question saved. Hand samples and games keep it with the exact deck version you test.";
             });

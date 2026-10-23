@@ -20,7 +20,7 @@ internal sealed partial class TableApplication
     private sealed record BattlefieldFocusDetails(IReadOnlyList<BattlefieldFocusLine> Lines, int Height);
 
     private IReadOnlyList<FocusedBattlefieldGroup> FocusedBattlefieldGroups(Player player) =>
-        FocusedBattlefieldLayout.Group(player.Zone("Battlefield").Cards, CardPresentation.IsResource, publicChanges.Groups);
+        FocusedBattlefieldLayout.Group(player.Zone("Battlefield").Cards, CardPresentation.IsResource, matchPresentation.Changes);
     private static string BattlefieldFocusRoleLabel(string role) => role == "Lands" ? "Other lands" : role;
 
     // This workspace paints aliases of public table objects. It never prepares
@@ -178,7 +178,7 @@ internal sealed partial class TableApplication
         var current = match.Players.FirstOrDefault(player => player.Id == owner)?.Zone("Battlefield").Cards
             .FirstOrDefault(card => CardViews.Identity(card) == identity);
         if (current == null) return;
-        var canonical = cardPresentation.Cards.LastOrDefault(entry => entry.Zone == "Battlefield"
+        var canonical = matchPresentation.Cards.Cards.LastOrDefault(entry => entry.Zone == "Battlefield"
             && entry.Request.Owner == owner && CardViews.Same(entry.Card, current));
         if (canonical == null || !ToggleCardReader(canonical.Hit)) Inspect(current);
     }

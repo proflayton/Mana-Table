@@ -31,7 +31,7 @@ internal sealed partial class TableApplication
             .Where(occurrence => SameVisibleCard(occurrence.Card, reported)).Select(occurrence => (ZoneCardOccurrence?)occurrence).FirstOrDefault();
         var source = location?.Card;
         string identity = source == null ? "" : CardViews.Identity(source);
-        var entry = identity.Length == 0 || location == null ? null : cardPresentation.Cards.LastOrDefault(card =>
+        var entry = identity.Length == 0 || location == null ? null : matchPresentation.Cards.Cards.LastOrDefault(card =>
             card.ChoiceSlot < 0 && card.Zone == location.Value.Zone && CardViews.Identity(card.Card) == identity);
         var owner = state.Players.FirstOrDefault(player => player.Id == location?.PlayerId)
             ?? state.Players.FirstOrDefault(player => player.Id == decision.SourceControllerId) ?? state.Viewer;

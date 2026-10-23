@@ -8,7 +8,6 @@ namespace Mana.Table;
 
 internal sealed partial class TableApplication
 {
-    private readonly PublicChangeFeedback publicChanges = new();
     private string? selectedChangeId;
     private int changePage;
     private Rectangle? changeCalloutBounds;
@@ -19,20 +18,20 @@ internal sealed partial class TableApplication
     private string? changeReadPreviewGroup;
     private Rectangle? changeReadPreviewBounds;
     private sealed record ChangeIncrement(string Property, long Amount, int Recipients);
-    private EffectChangeGroup? CurrentChange => selectedChangeId == null ? publicChanges.Latest
-        : publicChanges.Groups.FirstOrDefault(group => group.Id == selectedChangeId) ?? publicChanges.Latest;
+    private EffectChangeGroup? CurrentChange => selectedChangeId == null ? matchPresentation.LatestChange
+        : matchPresentation.Changes.FirstOrDefault(group => group.Id == selectedChangeId) ?? matchPresentation.LatestChange;
     private void OpenChanges(string? id = null)
     {
         selectedChangeId = id; changePage = 0; overlay = "changes";
     }
     private void DrawChangesControl()
     {
-        if (publicChanges.Groups.Count > 0)
+        if (matchPresentation.Changes.Count > 0)
             Button("recent-changes", "Recent changes", 1004, 12, 176, () => OpenChanges(), height: 35);
     }
     private bool DrawChangeCallout()
     {
-        if (publicChanges.Latest is not { } group || ChangeSourcePreview(group) is not { } source) {
+        if (matchPresentation.LatestChange is not { } group || ChangeSourcePreview(group) is not { } source) {
             changeReadPreviewGroup = null; changeReadPreviewBounds = null;
             return false;
         }
@@ -162,7 +161,7 @@ internal sealed partial class TableApplication
             var tile = focus.Tiles.FirstOrDefault(tile => CardViews.Identity(tile.Group.Front) == id && focus.Viewport.Contains(tile.Art));
             if (tile != null) return new(tile.Art.Center.ToVector2(), tile.Art.Size.ToVector2());
         }
-        var entry = cardPresentation.Cards.FirstOrDefault(card => card.Id == id
+        var entry = matchPresentation.Cards.Cards.FirstOrDefault(card => card.Id == id
             && card.Zone is "Battlefield" or "Command" or "Graveyard" or "Exile" or "Stack");
         if (entry == null || BattlefieldFocused && entry.Display.Bounds.Intersects(BattlefieldFocusBounds)
             || entry.Display.Bounds.Intersects(decisionPanelBounds)) return null;
@@ -172,17 +171,17 @@ internal sealed partial class TableApplication
     }
     private void DrawChangeHighlights()
     {
-        if (OverlayOpen || publicChanges.Latest is not { } group || now - group.Updated > 8) return;
-        var current = cardPresentation.Cards.Where(entry => entry.Zone == "Battlefield").Select(entry => entry.Id).ToHashSet(StringComparer.Ordinal);
+        if (OverlayOpen || matchPresentation.LatestChange is not { } group || now - group.Updated > 8) return;
+        var current = matchPresentation.Cards.Cards.Where(entry => entry.Zone == "Battlefield").Select(entry => entry.Id).ToHashSet(StringComparer.Ordinal);
         string? focus = HitAt(pointer)?.Card is { } card ? CardViews.Identity(card) : null;
         Pose? source = group.Cause?.CardId is { } sourceId && current.Contains(sourceId)
-            && cardPresentation.TryGetPose(sourceId, out var sourcePose) ? sourcePose : null;
+            && matchPresentation.Cards.TryGetPose(sourceId, out var sourcePose) ? sourcePose : null;
         if (source is { } origin) {
             canvas.CardFrame(origin with { Size = origin.Size + new Vector2(6) }, Gold, 3);
             highlightedChangeSource = group.Cause?.CardId;
         }
         foreach (var target in group.Changes.GroupBy(change => change.TargetId)) {
-            if (!current.Contains(target.Key) || !cardPresentation.TryGetPose(target.Key, out var pose)) continue;
+            if (!current.Contains(target.Key) || !matchPresentation.Cards.TryGetPose(target.Key, out var pose)) continue;
             highlightedChangeTargets.Add(target.Key);
             canvas.CardFrame(pose with { Size = pose.Size + new Vector2(4) }, new(103, 228, 200), 2);
             if (focus != target.Key) continue;
@@ -195,7 +194,7 @@ internal sealed partial class TableApplication
         var group = CurrentChange;
         ModalFrame("What changed", () => overlay = "");
         if (group == null) { canvas.Text("These permanents are no longer visible. Public history still records the completed action.", 208, 211, Ink, .9f, 1150, 4); return; }
-        var groups = publicChanges.Groups.Reverse().ToArray();
+        var groups = matchPresentation.Changes.Reverse().ToArray();
         int selected = Array.FindIndex(groups, item => item.Id == group.Id);
         canvas.Text(group.Title, 208, 191, Gold, 1.04f, 1160, 2, true);
         string cause = group.Cause == null ? "The engine did not report the source of this change."

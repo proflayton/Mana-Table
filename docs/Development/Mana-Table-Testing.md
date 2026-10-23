@@ -98,6 +98,23 @@ switches the viewed seat within one game, checking that readers and retained
 feedback from the previous seat are revoked. Existing board checks cover held
 cards and repeated pose preparation across frame-buffer swaps.
 
+`MatchPresentationLifecycleChecks` shares that presentation lane and verifies
+baseline, viewer/rematch reset, mana/priority revocation and public departures.
+The existing seat-switch application case also checks revocation immediately
+after acceptance, before composing another frame, so stale hit callbacks cannot
+survive until the next paint.
+
+The shared client runner includes `LatestReadRegression`,
+`DeckWorkspaceRegression` and `AppUpdateSessionRegression`. Controlled completion
+gates cover coalesced reads, stale failures, deck revision/metadata/fingerprint
+admission, delete/restore epochs, explicit review retry, notify-first discovery,
+download cancellation races, prepared-release identity, blockers changing during
+verification, explicit restart and cancellation cleanup on shutdown. These use
+the existing runners and CI jobs; they add no JVM startup or graphics window.
+Window journeys for Build/Tune/Test, printings and Updates still exercise the
+production application over those owners. Passing lifecycle checks establishes
+transition safety, not human visual clarity or approval.
+
 Shared client checks also run `SourceActionSessionRegression`: delayed provider
 reads, seat/source/revision revocation, explicit unsupported versus empty results,
 timeouts, manual retry and shutdown use one scoped action-query lifecycle. Native

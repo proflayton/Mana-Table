@@ -9,7 +9,7 @@ internal sealed partial class TableApplication
 {
     private sealed record WorkspaceCardReading(string Scope, string Identity, Card Card, bool OtherFace = false);
     private WorkspaceCardReading? workspaceCardReading;
-    private string WorkspaceReadingScope => $"{selectedDeckDetails?.Id}:{selectedDeckDetails?.Revision}:{workshopTab}:{workshopHand?.TestId}:{workshopHand?.Draws}:{workshopHand?.Redraws}:{analysisTab}:{analysisPage}:{analysisDetailTitle}";
+    private string WorkspaceReadingScope => $"{selectedDeckDetails?.Id}:{selectedDeckDetails?.Revision}:{workshopTab}:{deckWorkspace.View.Hand?.TestId}:{deckWorkspace.View.Hand?.Draws}:{deckWorkspace.View.Hand?.Redraws}:{analysisTab}:{analysisPage}:{analysisDetailTitle}";
     private void ReadWorkspaceCard(Card card, string identity)
     {
         workspaceCardReading = workspaceCardReading is { } current && current.Scope == WorkspaceReadingScope && current.Identity == identity

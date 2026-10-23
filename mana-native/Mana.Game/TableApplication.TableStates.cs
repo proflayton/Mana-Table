@@ -10,7 +10,7 @@ internal sealed partial class TableApplication
     private void DrawTableStates(GameSnapshot state, Rectangle? area = null)
     {
         if (state.States.Length == 0) return;
-        int end = area?.Right ?? (publicChanges.Groups.Count > 0 ? 1000 : 1180);
+        int end = area?.Right ?? (matchPresentation.Changes.Count > 0 ? 1000 : 1180);
         int x = area?.X ?? 840, top = area?.Y ?? 12, height = area?.Height ?? 33;
         foreach (var item in state.States) {
             string caption = PublicStatePresentation.Caption(item);

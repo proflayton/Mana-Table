@@ -42,15 +42,15 @@ internal sealed partial class TableApplication
     private bool OpenDraggedPlayChoices(Card card, string? zone)
     {
         if (zone is null or "Battlefield" or "Stack" || OfferedPlayOptions(card).Length < 2
-            || cardPresentation.Cards.LastOrDefault(entry => entry.Zone == zone && SameVisibleCard(entry.Card, card)) is not { } entry) return false;
-        return cardPresentation.Toggle(entry.Hit, CardContext with { Dragging = false });
+            || matchPresentation.Cards.Cards.LastOrDefault(entry => entry.Zone == zone && SameVisibleCard(entry.Card, card)) is not { } entry) return false;
+        return matchPresentation.Cards.Toggle(entry.Hit, CardContext with { Dragging = false });
     }
 
     private void BeginCardDrag(Hit? source)
     {
         ClearCardDrag();
         if (source == null || source.Zone is "Battlefield" or "Stack" || source.Scope != Scope
-            || cardPresentation.Cards.LastOrDefault(candidate => candidate.Zone == source.Zone
+            || matchPresentation.Cards.Cards.LastOrDefault(candidate => candidate.Zone == source.Zone
                 && source.Id == candidate.Hit.Id && source.Scope == candidate.Hit.Scope) is not { } entry) return;
         // The reader is already above the table. Require deliberate movement,
         // then allow its card to land without escaping an invisible old face.

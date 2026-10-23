@@ -12,7 +12,6 @@ namespace Mana.Table;
 internal sealed partial class TableApplication
 {
     private static readonly Color HoverAccent = new(229, 240, 246);
-    private readonly CardPresentationController cardPresentation = new();
     private Hit? pointerSurface;
     private bool IsControlHovered(string id) => !dragging && pointerSurface?.Id == id && CurrentHit(pointerSurface);
     // These callbacks compose draw commands and are drained before publication.
@@ -29,8 +28,8 @@ internal sealed partial class TableApplication
     private CardPresentationContext CardContext => new(match, Scope, OverlayOpen && !BattlefieldFocused && !ZoneReadingOpen,
         ReadingGalleryOpen, dragging, CompactCardDecision, AbilityActionPending, SourceActionsSupported, TableStudyEnabled,
         TableStudyEnabled ? StudyActionArea : null);
-    private string? readingId => cardPresentation.PinnedId;
-    private Rectangle? hoverPreview => cardPresentation.ReaderBounds;
+    private string? readingId => matchPresentation.Cards.PinnedId;
+    private Rectangle? hoverPreview => matchPresentation.Cards.ReaderBounds;
     internal bool InteractivePointer => !dragging && HitAt(pointer) is { } hit
         && hit.ShowPointer
         && (hit.Card is not { } card || !card.FaceDown || IsCardActionable(card));
@@ -45,7 +44,7 @@ internal sealed partial class TableApplication
         if (ExperienceOpen) return hits.LastOrDefault(hit => (hit.Id.StartsWith("experience-") || hit.Id.StartsWith("updates-")) && hit.Contains(point) && CurrentHit(hit));
         if (BattlefieldFocused && hits.LastOrDefault(hit => hit.Contains(point)) is { } focusHit
             && focusHit.Id.StartsWith("battlefield-focus-", StringComparison.Ordinal)) return focusHit;
-        return cardPresentation.ResolveHit(point, hits, hits.LastOrDefault(hit => hit.Contains(point)), CardContext);
+        return matchPresentation.Cards.ResolveHit(point, hits, hits.LastOrDefault(hit => hit.Contains(point)), CardContext);
     }
 
     private void BeginCardReading(float frameElapsed)
@@ -54,16 +53,16 @@ internal sealed partial class TableApplication
         // frame. Preparation then uses current snapshot visibility and policy.
         pointerSurface = HitAt(pointer);
         string? hover = pointerSurface?.Id;
-        cardPresentation.BeginFrame(CardContext, hover, frameElapsed, preferences.ReducedMotion, boardView);
+        matchPresentation.Cards.BeginFrame(CardContext, hover, frameElapsed, preferences.ReducedMotion, boardView);
         deferredCardComposition.Clear();
         sourceReaderControls.Clear(); sourceReaderActionsBounds = Rectangle.Empty; sourceReaderScrollMax = 0;
         battlefieldReaderStateBounds = Rectangle.Empty;
     }
-    private void EndCardReading() => cardPresentation.EndFrame();
-    private bool ToggleCardReader(Hit hit) => cardPresentation.Toggle(hit, CardContext);
+    private void EndCardReading() => matchPresentation.Cards.EndFrame();
+    private bool ToggleCardReader(Hit hit) => matchPresentation.Cards.Toggle(hit, CardContext);
     private bool ReadingAbilitySource(Decision decision)
     {
-        if (!AbilityActionPending || match == null || cardPresentation.Pinned is not { Zone: "Battlefield" } entry) return false;
+        if (!AbilityActionPending || match == null || matchPresentation.Cards.Pinned is not { Zone: "Battlefield" } entry) return false;
         string id = decision.SourceCardId.Length > 0 ? decision.SourceCardId
             : decision.SourceCard is { VisualId.Length: > 0 } source ? source.VisualId : decision.SourceCard?.CombatId ?? "";
         return CardViews.FindZoneOccurrence(match, id) is { Zone: "Battlefield", Card: { FaceDown: false } card }
@@ -80,7 +79,7 @@ internal sealed partial class TableApplication
         string hitId, Action activate, Action<Pose, bool> paint, Vector2? entrance = null, float entranceDelay = 0,
         bool opensZone = false, int choiceSlot = -1, Rectangle? activationBounds = null)
     {
-        var entry = cardPresentation.Prepare(new(id, card, rest, zone, owner, hitId, activate,
+        var entry = matchPresentation.Cards.Prepare(new(id, card, rest, zone, owner, hitId, activate,
             entrance, entranceDelay, opensZone, choiceSlot, activationBounds));
         hits.Add(entry.Hit);
         if (entry.Layer == CardPresentationLayer.Table) ComposeCard(entry, paint);
@@ -93,7 +92,7 @@ internal sealed partial class TableApplication
         bool liveReader = DrawSourceActionReader(entry);
         if (!liveReader) compose(entry.Display, entry.Focused);
         if (entry.Hovered && !liveReader) canvas.CardFocus(entry.Display, HoverAccent);
-        if (Automated) cardPresentation.RecordComposition(entry);
+        if (Automated) matchPresentation.Cards.RecordComposition(entry);
     }
     private void DrawLiftedCards()
     {
@@ -108,7 +107,7 @@ internal sealed partial class TableApplication
     }
     private void DrawReaderControls()
     {
-        var entry = cardPresentation.Pinned;
+        var entry = matchPresentation.Cards.Pinned;
         if (entry == null || CompactCardDecision || !CardContext.CanRead(entry)) return;
         var target = (entry.ReaderTarget ?? CardPresentationController.ReaderPose(entry.Rest, entry.Zone)).Bounds;
         if (Vector2.Distance(entry.Display.Size, target.Size.ToVector2()) > 2
@@ -131,11 +130,11 @@ internal sealed partial class TableApplication
 
     private void ClearCardComposition()
     {
-        cardPresentation.ClearComposition(); deferredCardComposition.Clear();
+        matchPresentation.Cards.ClearComposition(); deferredCardComposition.Clear();
     }
     private void ClearCardReading()
     {
-        cardPresentation.Reset(); deferredCardComposition.Clear(); inspectedChoice = null;
+        matchPresentation.Cards.Reset(); deferredCardComposition.Clear(); inspectedChoice = null;
     }
-    private void CollapseCardReading() => cardPresentation.Collapse(HitAt(pointer)?.Id);
+    private void CollapseCardReading() => matchPresentation.Cards.Collapse(HitAt(pointer)?.Id);
 }

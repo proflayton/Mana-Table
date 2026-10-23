@@ -36,6 +36,14 @@ internal sealed class InteractionFrame : IReadOnlyList<TableHit>
         IsBuilding = false;
     }
 
+    // Accepted game/viewer changes revoke callbacks from the preceding seat
+    // before Update can inspect its last published pointer targets.
+    internal void RevokePublished()
+    {
+        if (IsBuilding) throw new InvalidOperationException("Cannot revoke an interaction frame while composing it.");
+        building.Clear(); published = Array.AsReadOnly(Array.Empty<TableHit>());
+    }
+
     internal void Add(TableHit hit) { RequireBuilding(); building.Add(hit); }
     internal void Insert(int index, TableHit hit) { RequireBuilding(); building.Insert(index, hit); }
     internal void Clear() { RequireBuilding(); building.Clear(); }

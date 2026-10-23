@@ -10,7 +10,6 @@ namespace Mana.Table;
 internal sealed partial class TableApplication
 {
     private static readonly Color PriorityAccent = new(100, 230, 209);
-    private readonly PriorityTransitionFeedback priorityTransitions = new();
     private PriorityView? priorityView;
     private int stackQueuePage;
     private string stackQueueTop = "";
@@ -30,7 +29,7 @@ internal sealed partial class TableApplication
 
     private void DrawPriorityHandoff()
     {
-        if (preferences.ReducedMotion || OverlayOpen || priorityTransitions.Latest is not {
+        if (preferences.ReducedMotion || OverlayOpen || matchPresentation.PriorityTransition is not {
                 ResponderChanged: true, PreviousResponderId: { } previous, ResponderId: { } current } cue
             || now - cue.Started is < 0 or > .55 || priorityView?.ResponderId != current) return;
         var state = match!;

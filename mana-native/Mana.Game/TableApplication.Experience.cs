@@ -10,7 +10,7 @@ internal sealed partial class TableApplication
     {
         session.CancelAdvance();
         pressed = dragSource = null; dragging = false;
-        hovered = null; cardPresentation.Collapse();
+        hovered = null; matchPresentation.Cards.Collapse();
     }
 
     private void ChoosePlayMode(bool solo)

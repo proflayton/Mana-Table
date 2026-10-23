@@ -9,7 +9,7 @@ internal sealed partial class TableApplication
     private void DrawSeatTransfers()
     {
         if (preferences.ReducedMotion) return;
-        foreach (var cue in presence.Cues.Where(c => c.Kind == SeatCueKind.Draw)) {
+        foreach (var cue in matchPresentation.SeatCues.Where(c => c.Kind == SeatCueKind.Draw)) {
             var player = match!.Players.FirstOrDefault(p => p.Id == cue.PlayerId);
             if (player == null || player.Id == match.ViewerId) continue;
             int seat = SeatDisplayIndex(player.Id);
@@ -39,7 +39,7 @@ internal sealed partial class TableApplication
     private void DrawSeatImpact(int player, Vector2 center, float radius)
     {
         if (preferences.ReducedMotion) return;
-        var cue = presence.Cues.LastOrDefault(c => c.PlayerId == player && c.Kind != SeatCueKind.Draw);
+        var cue = matchPresentation.SeatCues.LastOrDefault(c => c.PlayerId == player && c.Kind != SeatCueKind.Draw);
         if (cue == null) return;
         float age = (float)(now - cue.Started);
         if (age < 0 || age > .9f) return;

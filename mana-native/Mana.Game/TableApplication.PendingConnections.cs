@@ -16,7 +16,7 @@ internal sealed partial class TableApplication
         // actually displayed occurrence owns a live board endpoint.
         var current = match.Players.SelectMany(player => player.Zones).SelectMany(zone => zone.Cards)
             .FirstOrDefault(card => !card.FaceDown && (card.VisualId == id || card.CombatId == id || CardViews.Identity(card) == id));
-        return current == null ? null : cardPresentation.Cards.LastOrDefault(entry =>
+        return current == null ? null : matchPresentation.Cards.Cards.LastOrDefault(entry =>
             entry.Zone != "Stack" && entry.ChoiceSlot < 0 && !entry.Request.OpensZone && SameVisibleCard(current, entry.Card));
     }
 

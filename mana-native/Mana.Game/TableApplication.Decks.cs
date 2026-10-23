@@ -16,7 +16,7 @@ internal sealed partial class TableApplication
     private bool CommanderDeck => selectedDeckDetails?.Format is null or "Commander";
     private bool DeckReady => selectedDeckDetails is { Problem.Length: 0, SaveError.Length: 0 } && (!CommanderDeck || selectedDeckDetails.CommanderIds.Length > 0);
     private bool DeckCanCopy => selectedDeckDetails?.Entries.Any(e => e.Quantity > 0) == true;
-    private string DeckScope => $"setup:{selectedDeckDetails?.Id}:{selectedDeckDetails?.Revision}:{deckEditor}:{commanderCandidates}:{deckSection}:{deckFilter}:{deckCardsPage}:{deckCardId}:{deckCardSection}:{librarySelection?.Id}:{catalogGeneration}:{deckIssuesOnly}:{deckIssuePage}:{deckCardIssuePage}:{deckMenu}:{WorkshopScope}:{AnalysisScope}";
+    private string DeckScope => $"setup:{selectedDeckDetails?.Id}:{selectedDeckDetails?.Revision}:{deckEditor}:{commanderCandidates}:{deckSection}:{deckFilter}:{deckCardsPage}:{deckCardId}:{deckCardSection}:{librarySelection?.Id}:{catalogRead.View.Generation}:{deckIssuesOnly}:{deckIssuePage}:{deckCardIssuePage}:{deckMenu}:{WorkshopScope}:{AnalysisScope}";
     private DeckIssue[] DeckIssues => selectedDeckDetails is not { } deck ? [] : deck.Issues.Length > 0 ? deck.Issues
         : deck.Problem.Length > 0 ? [new("LEGACY", deck.Problem, null, [])] : [];
     private DeckIssue[] CardIssues(string cardId, string section) => DeckIssues
@@ -30,7 +30,7 @@ internal sealed partial class TableApplication
     private CatalogCard? DeckSelection {
         get {
             if (librarySelection != null) return librarySelection;
-            if (deckCardSection == "Considering" && workshop?.Considering.FirstOrDefault(c => c.CardId == deckCardId) is { } option) return option.Card;
+            if (deckCardSection == "Considering" && deckWorkspace.View.Workshop?.Considering.FirstOrDefault(c => c.CardId == deckCardId) is { } option) return option.Card;
             var entry = selectedDeckDetails?.Entries.FirstOrDefault(e => e.Id == deckCardId && e.Section == deckCardSection)
                 ?? selectedDeckDetails?.Entries.FirstOrDefault(e => e.Id == deckCardId);
             return entry == null ? null : new(entry.Id, entry.Card, entry.ManaValue, entry.ColorIdentity, entry.Section, entry.Edition);
@@ -43,13 +43,13 @@ internal sealed partial class TableApplication
         string? previousFormat = selectedDeckDetails?.Format;
         int? identity = CommanderIdentity;
         selectedDeck = new(details.Id, details.Name) { LibraryToken = details.LibraryToken }; selectedDeckDetails = details; InvalidateDeckConfirmation();
-        analysisError = "";
+        deckWorkspace.Observe(new(details.Id, details.Revision));
         if (previousFormat != details.Format) { workshopSetup = null; workshopPlayers = details.Format == "Commander" ? Math.Min(4, workshopPlayers) : 2; }
         RequestWorkshopRefresh(changed);
         deckIssuePage = deckCardIssuePage = 0;
         if (changed) {
             analysisShowReviewed = false;
-            analysisOpen = false; analysisState = null; analysisError = ""; analysisRelatedCards.Clear();
+            analysisOpen = false; analysisRelatedCards.Clear();
             commanderCandidates = details.CommanderIds.Length == 0 && details.Entries.Length > 0;
             deckSection = ""; deckFilter = ""; deckCardsPage = 0; deckIssuesOnly = false;
             var first = details.Entries.FirstOrDefault(e => e.Section == "Commander") ?? details.Entries.FirstOrDefault();
@@ -117,7 +117,7 @@ internal sealed partial class TableApplication
         string section = deckCardSection;
         EditDeck(d => catalog.EditDeckAsync(d.Id, d.Revision, [new(section, card.Id, count)]), "Deck saved.");
     }
-    private int DeckQuantity() => DeckSelection is not { } card ? 0 : deckCardSection == "Considering" ? workshop?.Considering.FirstOrDefault(c => c.CardId == card.Id)?.Quantity ?? 0
+    private int DeckQuantity() => DeckSelection is not { } card ? 0 : deckCardSection == "Considering" ? deckWorkspace.View.Workshop?.Considering.FirstOrDefault(c => c.CardId == card.Id)?.Quantity ?? 0
         : selectedDeckDetails!.Entries.FirstOrDefault(e => e.Id == card.Id && e.Section == deckCardSection)?.Quantity ?? 0;
     private void MoveDeckCard()
     {
@@ -151,7 +151,10 @@ internal sealed partial class TableApplication
             });
         }, "Copying your deck list", "Preparing the commander, main deck, and sideboard for the clipboard.");
     }
-    private void CloseDeckEditor() { analysisOpen = false; deckEditor = false; deckTextFocus = deckMenu = workshopDialog = ""; textFocus = false; }
+    private void CloseDeckEditor() {
+        analysisOpen = false; deckEditor = false; deckMenu = "";
+        ClosePrintings();
+    }
     private void OpenDeckEditor() => OpenDeckEditorAt(null);
     private void OpenDeckEditorAt(DeckEntry? entry) {
         if (selectedDeck is { } deck) Work(async () => {
@@ -180,12 +183,12 @@ internal sealed partial class TableApplication
             deckCardsPage = Math.Max(0, Array.FindIndex(DeckRowsToShow(), e => e.Id == entry.Id && e.Section == entry.Section) / DeckRows);
         } else if (issue.Code is "COMMANDER_COUNT" or "MISSING_COMMANDER") FilterDeck("", true);
     }
-    private DeckEntry[] DeckRowsToShow() => (deckSection == "Considering" ? workshop?.Considering.Select(c => new DeckEntry("Considering", c.CardId, c.Card.Card, c.Quantity, c.Card.ManaValue, c.Card.ColorIdentity, c.Card.Edition)) ?? [] : selectedDeckDetails?.Entries ?? [])
+    private DeckEntry[] DeckRowsToShow() => (deckSection == "Considering" ? deckWorkspace.View.Workshop?.Considering.Select(c => new DeckEntry("Considering", c.CardId, c.Card.Card, c.Quantity, c.Card.ManaValue, c.Card.ColorIdentity, c.Card.Edition)) ?? [] : selectedDeckDetails?.Entries ?? [])
         .Where(e => (deckSection.Length == 0 || e.Section == deckSection)
             && (!commanderCandidates || selectedDeckDetails!.CommanderOptions.Any(c => c.Id == e.Id))
             && (!deckIssuesOnly || CardIssues(e.Id, e.Section).Length > 0)
             && (analysisRelatedCards.Count == 0 || analysisRelatedCards.Contains(e.Card.Name))
-            && (workshopRoleFilter.Length == 0 || workshop?.Roles.Any(r => r.CardId == e.Id && r.Roles.Contains(workshopRoleFilter, StringComparer.OrdinalIgnoreCase)) == true)
+            && (workshopRoleFilter.Length == 0 || deckWorkspace.View.Workshop?.Roles.Any(r => r.CardId == e.Id && r.Roles.Contains(workshopRoleFilter, StringComparer.OrdinalIgnoreCase)) == true)
             && (workshopManaFilter == null || !e.Card.Type.Contains("Land") && Math.Min(6, e.ManaValue) == workshopManaFilter)
             && (deckFilter.Length == 0 || (e.Card.Name + " " + e.Card.Type + " " + e.Card.Text).Contains(deckFilter, StringComparison.OrdinalIgnoreCase)))
         .OrderBy(e => e.Card.Name).ThenBy(e => e.Section).ToArray();
