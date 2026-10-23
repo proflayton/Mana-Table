@@ -37,12 +37,51 @@ Publication waits for the **same master source SHA** to pass Java 17/21,
 checks. The [read-only prerequisite helper](../../scripts/mana-table/wait-release-ci.cjs)
 checks those completed runs. It never merges, reruns or cancels CI.
 
-Downloads are first uploaded to a draft, then published and marked Latest only
-if the tested revision is still the head of `master`. The prerequisite helper
-runs before downloading/uploading release assets and again immediately before
-making the draft public. A failed late gate leaves a draft; an advanced master
-leaves an Actions artifact or draft. Existing public release assets are never
-replaced by a rerun. A successful PR run never publishes a release.
+The [production installer workflow](../../.github/workflows/mana-table-native-installer.yml)
+has separate callers: PRs and non-master builds have read-only permissions;
+trusted master builds can upload verified downloads into a private release draft
+while UI and migration checks finish. Both callers use the same installer build.
+PR builds retain their downloadable Actions artifact and never create a release.
+
+Final publication downloads only a small staging receipt, then checks the exact
+remote asset inventory, sizes, SHA256 digests, source/version/run identity and
+current master. It also requires the same-source Java, repository, native and
+applicable iOS checks. Only then is the draft made public and marked Latest.
+The [release helper](../../scripts/mana-table/release-assets.cjs) checks master
+before staging and immediately before promotion. Failed gates leave a private
+draft; an advanced master cannot publish it. Existing public assets are never
+replaced by a rerun. Staging is preparation, not a published or updater-visible
+release. This transfer redesign is source-only until its candidate is merged.
+
+Runtime and source ZIPs are transferred as individual raw Actions artifacts;
+small manifests and the UI harness retain their own artifacts. Every consumer
+checks the runtime bytes and exact source identity before use. Installer smoke
+jobs receive a source receipt instead of downloading the full source ZIP.
+The producer issues that receipt only after hashing the actual archive, binding
+its name, size and SHA256 to the version, commit, build metadata and runtime ZIP.
+Only isolated smoke identities can use this receipt. The production installer
+still downloads and hashes the actual source ZIP, and publication still binds the
+complete corresponding source download. Existing real-archive callers remain
+supported; `sourceArchiveBytes` is an additive release metadata field used by the
+receipt path.
+
+### Measuring artifact transfers
+
+The optional `benchmark_transport` manual-dispatch input runs only a transport
+benchmark. It skips all normal build/release jobs and cannot stage or publish a
+release. For a candidate branch:
+
+```powershell
+gh workflow run mana-table-native-release.yml --ref <candidate-branch> -f benchmark_transport=true
+```
+
+The benchmark transfers the pinned public 0.2.89 runtime ZIP through wrapped and
+raw uploads/downloads, with two samples per mode in balanced order. Every output
+must have the exact original length, SHA256 and filename. Its JSON report records
+completed action durations and run/attempt/source identity; it excludes initial
+input download, queueing and verification. Network, cache and runner differences
+still affect measurements. This is a transport comparison, not a controlled
+end-to-end release speed claim or a new app validation run.
 
 For manual dispatch, only current `master` may publish. Dispatch cannot recover
 the original push range, so it conservatively requires an exact-source iOS push

@@ -1,0 +1,118 @@
+name: Mana Table production installer
+
+on:
+  workflow_call:
+    inputs:
+      version:
+        type: string
+        required: true
+      stage_release:
+        type: boolean
+        default: false
+
+# The caller grants read-only access for PRs and release-write access only for
+# trusted master builds. This workflow never elevates those permissions.
+jobs:
+  build:
+    name: Build immutable production installer
+    runs-on: windows-2025
+    timeout-minutes: 15
+    defaults:
+      run:
+        shell: pwsh
+    env:
+      MANA_RELEASE_VERSION: ${{ inputs.version }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: '10.0.x'
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+      - uses: actions/download-artifact@v8
+        with:
+          name: mana-native-installer-inputs-${{ github.sha }}
+          path: dist/ci-inputs
+      - name: Download the unchanged runtime ZIP
+        uses: actions/download-artifact@v8
+        with:
+          name: package-windows-x64.zip
+          path: dist/ci-inputs
+          skip-decompress: true
+          digest-mismatch: error
+      - name: Download the production source ZIP
+        uses: actions/download-artifact@v8
+        with:
+          name: package-source.zip
+          path: dist/ci-inputs
+          skip-decompress: true
+          digest-mismatch: error
+      - uses: actions/download-artifact@v8
+        with:
+          name: mana-native-tools-${{ github.sha }}
+          path: dist/ci-tools
+      - name: Verify package and central engine identity
+        run: ./mana-native/ci/restore-package.ps1 -Directory dist/ci-inputs
+      - name: Install the pinned installer compiler
+        run: ./mana-native/ci/tools.ps1 -Directory dist/ci-tools -Installer
+      - name: Extract the pinned update package compiler
+        run: ./mana-native/ci/update-tools.ps1 -Directory dist/ci-tools
+      - name: Find the verified previous published update base
+        run: ./mana-native/ci/previous-update.ps1 -Directory dist/previous-update -Version $env:MANA_RELEASE_VERSION
+      - name: Build genuine full and incremental update packages
+        run: |
+          $bundleOptions = @{InputPackageDirectory=$env:MANA_NATIVE_PACKAGE; Version=$env:MANA_RELEASE_VERSION; OutputDirectory='dist/update-bundles'; VpkDll=$env:MANA_VPK}
+          if ($env:MANA_PREVIOUS_FULL) { $bundleOptions.PreviousFullPackage=$env:MANA_PREVIOUS_FULL; $bundleOptions.PreviousFullSha256=$env:MANA_PREVIOUS_SHA }
+          ./mana-native/build-update-bundles.ps1 @bundleOptions
+      - name: Compile the production installer from the same immutable package
+        run: |
+          $bundle = Get-Content dist/update-bundles/update-bundle-report.json -Raw | ConvertFrom-Json
+          ./mana-native/build-installer.ps1 -InputPackageDirectory $env:MANA_NATIVE_PACKAGE -Version $env:MANA_RELEASE_VERSION -PortableArchive $env:MANA_NATIVE_ARCHIVE -SourceArchive $env:MANA_NATIVE_SOURCE -OutputDirectory dist/installer -CompilerPath $env:MANA_ISCC -ManagedSetup (Join-Path (Resolve-Path dist/update-bundles).Path $bundle.setupFileName)
+      - name: Prepare friend-friendly download names
+        run: |
+          $downloads = Join-Path $env:GITHUB_WORKSPACE 'dist/downloads'
+          New-Item -ItemType Directory -Path $downloads | Out-Null
+          Copy-Item dist/installer/ManaTable-Setup.exe $downloads
+          Copy-Item $env:MANA_NATIVE_ARCHIVE (Join-Path $downloads 'ManaTable-Windows-x64.zip')
+          Copy-Item $env:MANA_NATIVE_SOURCE (Join-Path $downloads 'ManaTable-Source.zip')
+          foreach ($name in @('ManaTable-Setup.exe','ManaTable-Windows-x64.zip','ManaTable-Source.zip')) {
+            $hash = (Get-FileHash -LiteralPath (Join-Path $downloads $name) -Algorithm SHA256).Hash.ToLowerInvariant()
+            "$hash  $name" | Set-Content -Encoding ascii (Join-Path $downloads ($name + '.sha256'))
+          }
+          Copy-Item (Join-Path $env:MANA_NATIVE_PACKAGE 'build.json') (Join-Path $downloads 'build.json')
+          Copy-Item dist/installer/installer-manifest.json $downloads
+          Copy-Item dist/update-bundles/update-manifest.json $downloads
+          Copy-Item dist/update-bundles/releases.win-x64.json $downloads
+          $sdkIndex = Get-Content dist/update-bundles/releases.win-x64.json -Raw | ConvertFrom-Json
+          foreach ($asset in $sdkIndex.Assets) {
+            if ([IO.Path]::GetFileName($asset.FileName) -cne $asset.FileName -or $asset.FileName -match '[\\/:]') { throw 'Invalid generated update asset name.' }
+            Copy-Item -LiteralPath (Join-Path 'dist/update-bundles' $asset.FileName) -Destination $downloads
+          }
+          ./mana-native/ci/validate-update-artifacts.ps1 -Directory $downloads -Version $env:MANA_RELEASE_VERSION -SourceRevision $env:GITHUB_SHA
+      - name: Stage verified release assets privately while checks finish
+        if: inputs.stage_release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node scripts/mana-table/release-assets.cjs stage --directory dist/downloads --receipt dist/release-stage-receipt.json
+      - uses: actions/upload-artifact@v7
+        if: ${{ !inputs.stage_release }}
+        with:
+          name: mana-native-windows-x64-${{ github.sha }}
+          path: dist/downloads/
+          compression-level: 0
+          if-no-files-found: error
+          retention-days: 30
+          overwrite: true
+      - name: Save the immutable private-stage receipt for final promotion
+        if: inputs.stage_release
+        uses: actions/upload-artifact@v7
+        with:
+          name: mana-native-release-stage-${{ github.sha }}
+          path: dist/release-stage-receipt.json
+          compression-level: 0
+          if-no-files-found: error
+          retention-days: 30
+          overwrite: true

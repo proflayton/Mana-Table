@@ -183,20 +183,70 @@ test('full SDK fixture verification starts from tools while product migration re
     for (const extension of ['json', 'log']) assert.ok(job.includes(`${directory}/**/*.${extension}`), 'Retain independent lifecycle evidence.');
   }
 });
-test('the actual Windows aggregate rejects either lifecycle failing, cancelled or skipped', () => {
+test('the actual Windows aggregate requires every check and exactly the authorized installer lane', () => {
   const gate = nativeJobs().get('windows'), required = dependencies(gate);
-  assert.match(gate, /^    if: \$\{\{ always\(\) \}\}$/m);
+  assert.match(gate, /^    if: \$\{\{ always\(\) && !\(github.event_name == 'workflow_dispatch' && inputs.benchmark_transport\) \}\}$/m);
   for (const job of ['managed-updates', 'sdk-updates']) assert.ok(required.includes(job), `${job} must block the required aggregate.`);
   const embedded = gate.match(/          node <<'NODE'\n([\s\S]*?)^          NODE$/m);
   assert.ok(embedded, 'Exercise the shipping aggregate rather than a second gate implementation.');
   const script = embedded[1].replace(/^          /gm, '');
-  function run(job, result) {
-    const results = Object.fromEntries(required.map(name => [name, { result: name === job ? result : 'success' }]));
-    const process = { env: { JOB_RESULTS: JSON.stringify(results) }, exitCode: 0 };
+  function run(installer, job, result, remove) {
+    const inactive = installer === 'installer' ? 'installer-release' : 'installer';
+    const results = Object.fromEntries(required.map(name => [name, { result: name === job ? result : name === inactive ? 'skipped' : 'success' }]));
+    if (remove) delete results[remove];
+    const process = { env: { JOB_RESULTS: JSON.stringify(results), INSTALLER_JOB: installer }, exitCode: 0 };
     vm.runInNewContext(script, { process, console: { log() {}, error() {} } }, { timeout: 1000 });
     return process.exitCode;
   }
-  assert.equal(run(), 0);
-  for (const job of ['managed-updates', 'sdk-updates'])
-    for (const result of ['failure', 'cancelled', 'skipped', 'neutral', 'timed_out', null]) assert.equal(run(job, result), 1, `${job}=${result} must remain red.`);
+  for (const installer of ['installer', 'installer-release']) {
+    const inactive = installer === 'installer' ? 'installer-release' : 'installer';
+    assert.equal(run(installer), 0);
+    for (const job of required.filter(name => name !== inactive))
+      for (const result of ['failure', 'cancelled', 'skipped', 'neutral', 'timed_out', null])
+        assert.equal(run(installer, job, result), 1, `${installer}: ${job}=${result} must remain red.`);
+    for (const result of ['success', 'failure', 'cancelled', null]) assert.equal(run(installer, inactive, result), 1);
+    for (const missing of ['installer', 'installer-release']) assert.throws(() => run(installer, null, null, missing), /accounted for/);
+  }
+  assert.throws(() => run('arbitrary-lane'), /Unknown installer lane/);
+});
+
+test('private staging runs during verification with release access confined to trusted master', () => {
+  const jobs = nativeJobs(), readOnly = jobs.get('installer'), stage = jobs.get('installer-release'), publish = jobs.get('publish');
+  for (const job of [readOnly, stage]) assert.deepEqual(dependencies(job), ['package', 'tools']);
+  assert.match(readOnly, /contents: read/); assert.match(readOnly, /stage_release: false/);
+  assert.match(stage, /contents: write/); assert.match(stage, /stage_release: true/);
+  assert.match(stage, /github.repository == 'proflayton\/Mana-Table' && github.ref == 'refs\/heads\/master' && github.event_name != 'pull_request'/);
+  assert.match(readOnly, /&& !\(github.repository == 'proflayton\/Mana-Table'/);
+  assert.deepEqual(dependencies(publish), ['windows']);
+  assert.match(publish, /name: mana-native-release-stage-\$\{\{ github.sha \}\}/);
+  assert.match(publish, /release-assets\.cjs promote --receipt stage\/release-stage-receipt.json/);
+  assert.doesNotMatch(publish, /mana-native-windows-x64-|gh release upload|path: downloads/);
+});
+
+test('installer smoke inputs omit source bytes while production still consumes the actual raw source ZIP', () => {
+  const jobs = nativeJobs(), producer = jobs.get('package');
+  const metadata = producer.slice(producer.indexOf('name: mana-native-installer-inputs-'));
+  assert.match(metadata, /dist\/ci-source-receipt.json/);
+  assert.doesNotMatch(metadata, /^            dist\/package-(?:source|windows-x64)\.zip$/m);
+  for (const name of ['installer-lifecycle', 'managed-updates']) {
+    const job = jobs.get(name);
+    assert.match(job, /-SourceReceipt \$env:MANA_NATIVE_SOURCE_RECEIPT/);
+    assert.doesNotMatch(job, /name: package-source.zip|\-SourceArchive/);
+    assert.match(job, /name: package-windows-x64.zip\n          path: dist\/ci-inputs\n          skip-decompress: true\n          digest-mismatch: error/);
+  }
+  const production = fs.readFileSync(path.join(__dirname, '../../../.github/workflows/mana-table-native-installer.yml'), 'utf8');
+  assert.match(production, /name: package-source.zip/);
+  assert.match(production, /build-installer\.ps1 .* -SourceArchive \$env:MANA_NATIVE_SOURCE/);
+  assert.doesNotMatch(production, /build-installer\.ps1 .* -SourceReceipt/);
+});
+
+test('the transport benchmark is manual-only, read-only, and outside release publication', () => {
+  const jobs = nativeJobs(), benchmark = jobs.get('artifact-transport-benchmark');
+  assert.match(benchmark, /if: github.event_name == 'workflow_dispatch' && inputs.benchmark_transport/);
+  assert.match(benchmark, /contents: read/); assert.doesNotMatch(benchmark, /contents: write|needs:/);
+  assert.match(benchmark, /gh release download mana-native-v0\.2\.89/);
+  assert.ok(!dependencies(jobs.get('windows')).includes('artifact-transport-benchmark'));
+  assert.match(jobs.get('windows'), /inputs.benchmark_transport && 'Release checks not run \(transport benchmark\)' \|\| 'Verify and package Windows x64'/);
+  for (const name of ['checks', 'tools', 'package', 'native-ui', 'installer', 'installer-release', 'installer-lifecycle', 'managed-updates', 'sdk-updates', 'update-installer', 'windows', 'publish'])
+    assert.match(jobs.get(name), /!\(github.event_name == 'workflow_dispatch' && inputs.benchmark_transport\)/, `${name} must skip benchmark-only runs.`);
 });

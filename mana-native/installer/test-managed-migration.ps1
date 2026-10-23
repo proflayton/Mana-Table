@@ -3,13 +3,15 @@ param(
     [Parameter(Mandatory=$true)][string]$InputPackageDirectory,
     [Parameter(Mandatory=$true)][string]$Version,
     [Parameter(Mandatory=$true)][string]$PortableArchive,
-    [Parameter(Mandatory=$true)][string]$SourceArchive,
+    [string]$SourceArchive,
+    [string]$SourceReceipt,
     [Parameter(Mandatory=$true)][string]$CompilerPath,
     [Parameter(Mandatory=$true)][string]$VpkDll,
     [Parameter(Mandatory=$true)][string]$TestDirectory
 )
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
+if ([bool]$SourceArchive -eq [bool]$SourceReceipt) { throw 'Pass exactly one SourceArchive or SourceReceipt.' }
 $TestDirectory = [IO.Path]::GetFullPath($TestDirectory).TrimEnd('\','/')
 $InputPackageDirectory = [IO.Path]::GetFullPath($InputPackageDirectory)
 if ((Test-Path -LiteralPath $TestDirectory) -or $TestDirectory -eq [IO.Path]::GetPathRoot($TestDirectory)) { throw 'Use a fresh isolated migration directory.' }
@@ -81,8 +83,10 @@ try {
     $bridgeOutput=Join-Path $TestDirectory 'bridge compiler'
     $metadata=Get-Content -LiteralPath (Join-Path $InputPackageDirectory 'build.json') -Raw | ConvertFrom-Json
     $buildInstaller=Join-Path (Split-Path -Parent $PSScriptRoot) 'build-installer.ps1'
-    $bridgeOptions=@{InputPackageDirectory=$InputPackageDirectory;Version=$Version;PortableArchive=$PortableArchive;SourceArchive=$SourceArchive;
+    $bridgeOptions=@{InputPackageDirectory=$InputPackageDirectory;Version=$Version;PortableArchive=$PortableArchive;
         CompilerPath=$CompilerPath;ManagedSetup=$setup;SmokeTestAppId=$smokeId;SmokeTestInstallDirectory=$legacy;SmokeTestManagedDirectory=$managed}
+    if ($SourceArchive) { $bridgeOptions.SourceArchive = $SourceArchive }
+    if ($SourceReceipt) { $bridgeOptions.SourceReceipt = $SourceReceipt }
     $reportPath=Join-Path $bundles 'update-bundle-report.json'
     $originalReport=[IO.File]::ReadAllText($reportPath)
     foreach($property in @('setupSha256','inputBuildMetadataSha256')){

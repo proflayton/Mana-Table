@@ -25,6 +25,10 @@ $source = Join-Path $Directory 'package-source.zip'
 if (Test-Path -LiteralPath $source) {
     if ((Get-FileHash -LiteralPath $source -Algorithm SHA256).Hash -ine $build.sourceArchiveSha256) { throw 'Native source archive differs from package metadata.' }
 }
+$receipt = Join-Path $Directory 'ci-source-receipt.json'
+if (Test-Path -LiteralPath $receipt) {
+    & (Join-Path $PSScriptRoot 'source-receipt.ps1') -InputPackageDirectory $package -Version $env:MANA_RELEASE_VERSION -PortableArchive $archive -ReceiptPath $receipt | Out-Null
+} else { $receipt = '' }
 if ($RequireHarness) {
     $harnessRoot = Join-Path $Directory 'harness'
     $harness = [IO.File]::ReadAllText((Join-Path $Directory 'ci-harness-manifest.json')) | ConvertFrom-Json
@@ -38,4 +42,5 @@ if ($RequireHarness) {
 "MANA_NATIVE_PACKAGE=$package" >> $env:GITHUB_ENV
 "MANA_NATIVE_ARCHIVE=$archive" >> $env:GITHUB_ENV
 "MANA_NATIVE_SOURCE=$source" >> $env:GITHUB_ENV
+"MANA_NATIVE_SOURCE_RECEIPT=$receipt" >> $env:GITHUB_ENV
 Write-Output "Verified native package and shared engine for $($build.sourceRevision)."

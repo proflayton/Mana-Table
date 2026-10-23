@@ -5,11 +5,13 @@ param(
     [string]$CompilerPath,
     [string]$PortableArchive,
     [string]$SourceArchive,
+    [string]$SourceReceipt,
     [string]$TestDirectory,
     [switch]$SkipClientLaunch
 )
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
+if ($SourceArchive -and $SourceReceipt) { throw 'Choose SourceArchive or SourceReceipt, never both.' }
 $repository = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
 if (-not $TestDirectory) { $TestDirectory = Join-Path $repository ('.tools/installer-smoke-' + [Guid]::NewGuid().ToString('N')) }
 $TestDirectory = [IO.Path]::GetFullPath($TestDirectory).TrimEnd('\', '/')
@@ -66,6 +68,7 @@ try {
     if ($CompilerPath) { $buildArguments.CompilerPath = $CompilerPath }
     if ($PortableArchive) { $buildArguments.PortableArchive = $PortableArchive }
     if ($SourceArchive) { $buildArguments.SourceArchive = $SourceArchive }
+    if ($SourceReceipt) { $buildArguments.SourceReceipt = $SourceReceipt }
     & (Join-Path (Split-Path -Parent $PSScriptRoot) 'build-installer.ps1') @buildArguments
     $installer = Join-Path $TestDirectory 'compiler-output/ManaTable-Setup.exe'
     $manifest = Get-Content -LiteralPath (Join-Path $TestDirectory 'compiler-output/installer-manifest.json') -Raw | ConvertFrom-Json

@@ -65,6 +65,7 @@ try {
         $checks++
     }
     Write-Output "$checks native CI partition/provenance fixture checks passed. No UI, downloaded code or network was used."
+    & (Join-Path $PSScriptRoot 'test-source-receipt.ps1') -TestDirectory (Join-Path $TestDirectory 'source-receipts')
 } finally {
     $env:GITHUB_SHA = $saved.SHA
     $env:MANA_RELEASE_VERSION = $saved.Version
