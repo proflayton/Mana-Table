@@ -1,3 +1,4 @@
+using System.Collections.Immutable;
 using System.Diagnostics;
 using System.Text.Json;
 using Mana.Contracts;
@@ -253,15 +254,15 @@ internal sealed class PriorityFlowSmoke : ITableAutomation
         public ValueTask DisposeAsync() => inner.DisposeAsync();
         private static Task<T> Unavailable<T>() => Task.FromException<T>(new NotSupportedException("Priority flow uses only its canonical authored match."));
         private static Task Unavailable() => Task.FromException(new NotSupportedException("Priority flow uses only its canonical authored match."));
-        public Task<IReadOnlyList<DeckSummary>> DecksAsync() => inner.DecksAsync();
-        public Task<IReadOnlyList<DeckPreset>> PresetsAsync() => inner.PresetsAsync();
+        public Task<ImmutableArray<DeckSummary>> DecksAsync() => inner.DecksAsync();
+        public Task<ImmutableArray<DeckPreset>> PresetsAsync() => inner.PresetsAsync();
         public Task<DeckSummary> ImportAsync(string name, string text) => Unavailable<DeckSummary>();
         public Task<DeckSummary> ImportPresetAsync(string id) => Unavailable<DeckSummary>();
         public Task<DeckDetails> OpenDeckAsync(string id) => Unavailable<DeckDetails>();
-        public Task<DeckDetails> SetCommandersAsync(string deckId, long revision, IReadOnlyList<string> cardIds) => Unavailable<DeckDetails>();
+        public Task<DeckDetails> SetCommandersAsync(string deckId, long revision, ImmutableArray<string> cardIds) => Unavailable<DeckDetails>();
         public Task<CatalogPage> SearchCardsAsync(CardQuery query) => Unavailable<CatalogPage>();
         public Task<DeckDetails> CreateDeckAsync(string name) => Unavailable<DeckDetails>();
-        public Task<DeckDetails> EditDeckAsync(string deckId, long revision, IReadOnlyList<DeckEdit> edits) => Unavailable<DeckDetails>();
+        public Task<DeckDetails> EditDeckAsync(string deckId, long revision, ImmutableArray<DeckEdit> edits) => Unavailable<DeckDetails>();
         public Task<DeckDetails> RenameDeckAsync(string deckId, long revision, string name) => Unavailable<DeckDetails>();
         public Task<DeckDetails> DuplicateDeckAsync(string deckId, long revision, string name) => Unavailable<DeckDetails>();
         public Task<DeckDetails> UndoDeckAsync(string deckId, long revision) => Unavailable<DeckDetails>();
@@ -269,7 +270,7 @@ internal sealed class PriorityFlowSmoke : ITableAutomation
         public Task<DeckDetails> SaveDeckAsync(string deckId, long revision) => Unavailable<DeckDetails>();
         public Task<string> ExportDeckAsync(string deckId, long revision) => Unavailable<string>();
         public Task<SoloSetup> PrepareSoloAsync(string deckId) => Unavailable<SoloSetup>();
-        public Task StartSoloAsync(string deckId, IReadOnlyList<string> opponents) => Unavailable();
+        public Task StartSoloAsync(string deckId, ImmutableArray<string> opponents) => Unavailable();
         public Task<Lobby> HostAsync(int players, bool forwarding) => Unavailable<Lobby>();
         public Task<Lobby> JoinAsync(string address) => Unavailable<Lobby>();
         public Task<Lobby> LobbyAsync() => Unavailable<Lobby>();

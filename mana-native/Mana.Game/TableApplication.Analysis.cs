@@ -1,3 +1,4 @@
+using System.Collections.Immutable;
 using Mana.Contracts;
 using Mana.Magic;
 using Mana.Renderer;
@@ -87,12 +88,12 @@ internal sealed partial class TableApplication
         string[] Names() => next.Split(';', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
         if (field == "turn" && (!int.TryParse(next, out int turn) || turn < 0 || turn > 30)) { error = "Choose a turn from 0 to 30."; return; }
         SaveAnalysisProfile(field switch {
-            "backup" => p with { Backup = next }, "protected" => p with { ProtectedCards = Names() },
-            "pool" => p with { Pool = Names() }, _ => p with { TargetTurn = int.Parse(next) }
+            "backup" => p with { Backup = next }, "protected" => p with { ProtectedCards = Names().ToImmutableArray() },
+            "pool" => p with { Pool = Names().ToImmutableArray() }, _ => p with { TargetTurn = int.Parse(next) }
         });
     }
     private string AnalysisDetailBinding => $"{selectedDeckDetails?.Id}:{selectedDeckDetails?.Revision}:{deckWorkspace.View.Analysis?.MetadataRevision}:{deckInteraction.AnalysisTab}:{deckInteraction.AnalysisPage}:{deckInteraction.ShowReviewed}";
-    private void ShowAnalysisDetails(string title, string text, string[]? cards = null, TuningQuestion? question = null, Card? suggestion = null, string[]? missing = null, string variant = "", int index = -1, string[]? payoffs = null, AnalysisRecommendation? recommendation = null)
+    private void ShowAnalysisDetails(string title, string text, IEnumerable<string>? cards = null, TuningQuestion? question = null, Card? suggestion = null, IEnumerable<string>? missing = null, string variant = "", int index = -1, IEnumerable<string>? payoffs = null, AnalysisRecommendation? recommendation = null)
     {
         deckInteraction.SelectDetail(new(title, text, cards, question, suggestion, missing, variant, index, payoffs, recommendation), AnalysisDetailBinding);
         DismissDeckWorkspaceReading();
@@ -123,9 +124,11 @@ internal sealed partial class TableApplication
             + "\n\nAnalysis limits\n" + string.Join("\n\n", state.Report.Limitations) + shared;
         deckInteraction.ShowAdvanced(evidence, AnalysisDetailBinding);
     }
+    // Maps are unordered boundary values; presentation keeps alphabetic roles and W/U/B/R/G/C sources.
+    private static int ColoredSourceOrder(string key) => key switch { "W" => 0, "U" => 1, "B" => 2, "R" => 3, "G" => 4, "C" => 5, _ => 6 };
     private string WorkshopResourceEvidence() => deckWorkspace.View.Workshop is not { } tools ? "" : "\n\nYour plan\n" + tools.Plan
-        + "\n\nRoles (may overlap)\n" + string.Join("; ", tools.Insights.RoleCounts.Select(pair => pair.Key + ": " + pair.Value))
-        + "\n\nPotential colored sources\n" + string.Join("; ", tools.Insights.ColoredSources.Select(pair => pair.Key + ": " + pair.Value))
+        + "\n\nRoles (may overlap)\n" + string.Join("; ", tools.Insights.RoleCounts.OrderBy(pair => pair.Key, StringComparer.OrdinalIgnoreCase).Select(pair => pair.Key + ": " + pair.Value))
+        + "\n\nPotential colored sources\n" + string.Join("; ", tools.Insights.ColoredSources.OrderBy(pair => ColoredSourceOrder(pair.Key)).ThenBy(pair => pair.Key, StringComparer.Ordinal).Select(pair => pair.Key + ": " + pair.Value))
         + "\n" + tools.Insights.Note;
     private void DrawDeckAnalysis()
     {
@@ -240,11 +243,11 @@ internal sealed partial class TableApplication
         if (state.Report.Format.PoolRequired) Button("analysis-pool", "Add available pool cards", 998, 746, 374, new DeckIntent.EditAnalysisText(AnalysisTextField.Pool), !busy, height: 36);
         canvas.Text("Favorites also live in Build. Plans are your notes; the review does not interpret free text as rules.", 208, 807, Muted, .69f, 1164, 2);
     }
-    private sealed record AnalysisWorkspaceEntry(string Title, string Details, string[] Cards, string[] Missing, string[] Payoffs, string Variant, TuningQuestion? Question, Card? Suggestion, AnalysisRecommendation? Recommendation);
+    private sealed record AnalysisWorkspaceEntry(string Title, string Details, ImmutableArray<string> Cards, ImmutableArray<string> Missing, ImmutableArray<string> Payoffs, string Variant, TuningQuestion? Question, Card? Suggestion, AnalysisRecommendation? Recommendation);
     private AnalysisWorkspaceEntry AnalysisEntry(DeckAnalysisState state, int index)
     {
         var report = state.Report;
-        string title, summary, details, variant = ""; string[] cards = [], missing = [], payoffs = [];
+        string title, summary, details, variant = ""; ImmutableArray<string> cards = [], missing = [], payoffs = [];
         Card? suggestion = null;
         TuningQuestion? question = null;
         AnalysisRecommendation? recommendation = null;
@@ -260,14 +263,14 @@ internal sealed partial class TableApplication
                 + "\nMissing: " + (e.Missing.Length == 0 ? "None in this line" : string.Join(", ", e.Missing))
                 + "\n\n" + string.Join("\n\n", e.Steps) + "\n\nOutputs: " + string.Join("; ", e.Outputs)
                 + "\nRequirements: " + string.Join("; ", e.Requirements) + "\nBasis: " + AnalysisBasis(e.Confidence);
-            cards = e.Cards.Concat(e.Payoffs).ToArray();
+            cards = e.Cards.Concat(e.Payoffs).ToImmutableArray();
         } else if (deckInteraction.AnalysisTab == 2) {
             var r = VisibleRecommendations(state)[index]; title = r.CutName + " -> " + r.Add.Name;
             var decision = Mana.Magic.DeckExperience.LatestDecision(state, r.Id);
             if (decision != null) title += " | " + (decision.Decision == "keep" ? "Keeping current" : decision.Decision == "dismiss" ? "Dismissed" : decision.Decision);
             summary = r.Benefit + " Tradeoff: " + r.Tradeoff + (r.Eligibility == "unknown" ? " Format eligibility is unverified." : "");
             details = r.Benefit + "\n\nTradeoff: " + r.Tradeoff + "\nMana value change: " + r.ManaValueDelta
-                + "\nRole changes: " + string.Join(", ", r.RoleDelta.Select(p => p.Key + " " + p.Value.ToString("+0;-0;0")))
+                + "\nRole changes: " + string.Join(", ", r.RoleDelta.OrderBy(pair => pair.Key, StringComparer.OrdinalIgnoreCase).Select(p => p.Key + " " + p.Value.ToString("+0;-0;0")))
                 + "\nEligibility: " + AnalysisBasis(r.Eligibility) + "\nBasis: " + AnalysisBasis(r.Confidence) + "\n\n" + r.Add.Name + "\n" + r.Add.Type + "\n" + r.Add.OracleText;
             cards = [r.CutName];
             suggestion = new() { Name = r.Add.Name, ArtName = r.Add.Name, Type = r.Add.Type, Text = r.Add.OracleText };
@@ -331,14 +334,14 @@ internal sealed partial class TableApplication
         if (deckWorkspace.View.Workshop is not { } tools) return;
         canvas.Text("Roles", 760, 552, Gold, .76f, 700, 1, true);
         int at = 0;
-        foreach (var pair in tools.Insights.RoleCounts) {
+        foreach (var pair in tools.Insights.RoleCounts.OrderBy(pair => pair.Key, StringComparer.OrdinalIgnoreCase)) {
             string role = pair.Key;
             Button("workshop-role-filter:" + role, role + "  " + pair.Value, 760 + at % 3 * 255, 592 + at / 3 * 42, 243, new DeckIntent.FilterRole(role), !busy, height: 32);
             at++;
             if (at == 12) break;
         }
         canvas.Text("Potential colored sources", 760, 784, Gold, .68f, 720, 1, true);
-        canvas.Text(string.Join("    ", tools.Insights.ColoredSources.Select(pair => pair.Key + " " + pair.Value)), 760, 824, Ink, .76f, 740, 2);
+        canvas.Text(string.Join("    ", tools.Insights.ColoredSources.OrderBy(pair => ColoredSourceOrder(pair.Key)).ThenBy(pair => pair.Key, StringComparer.Ordinal).Select(pair => pair.Key + " " + pair.Value)), 760, 824, Ink, .76f, 740, 2);
     }
     private List<Card> AnalysisSourceFaces()
     {
@@ -369,7 +372,7 @@ internal sealed partial class TableApplication
         string body = deckInteraction.Advanced ? deckInteraction.AdvancedText : deckInteraction.Detail.Text;
         var lines = body.Replace("\r", "").Split('\n')
             .SelectMany(paragraph => paragraph.Length == 0 ? [""] : canvas.TextPages(paragraph, textSize, width - 14, lineHeight, 80)).ToArray();
-        var roles = deckInteraction.Advanced && deckWorkspace.View.Workshop != null ? deckWorkspace.View.Workshop.Insights.RoleCounts.ToArray() : [];
+        var roles = deckInteraction.Advanced && deckWorkspace.View.Workshop != null ? deckWorkspace.View.Workshop.Insights.RoleCounts.OrderBy(pair => pair.Key, StringComparer.OrdinalIgnoreCase).ToArray() : [];
         int roleHeight = roles.Select(pair => canvas.TextSize(pair.Key + "  " + pair.Value, .72f, width - 16, 80).Y + 18).Sum();
         int contentHeight = faceHeight + lines.Length * lineHeight + roleHeight;
         deckInteraction.PrepareEvidence(new(x, top, width, Math.Max(100, 878 - top)), contentHeight);

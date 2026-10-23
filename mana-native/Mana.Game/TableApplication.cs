@@ -1,3 +1,4 @@
+using System.Collections.Immutable;
 using Mana.Client;
 using Mana.Magic;
 using System.Collections.Concurrent;
@@ -51,8 +52,8 @@ internal sealed partial class TableApplication : IDisposable
     private readonly Dictionary<int, Vector2> heroPositions = [];
     private readonly DrawList canvas = new();
     private PlayPreferences preferences;
-    private IReadOnlyList<DeckSummary> decks = [];
-    private IReadOnlyList<DeckPreset> presets = [];
+    private ImmutableArray<DeckSummary> decks = [];
+    private ImmutableArray<DeckPreset> presets = [];
     private DeckSummary? selectedDeck;
     private Lobby? lobby;
     private GameSnapshot? match => session.State;

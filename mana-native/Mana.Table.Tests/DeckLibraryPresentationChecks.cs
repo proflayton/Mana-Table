@@ -30,7 +30,7 @@ internal static class DeckLibraryPresentationChecks
             check(run.View.HitAt(deleteOther.Bounds.Center)?.Id == deleteOther.Id,
                 "A saved deck's explicit Delete hit owns its pointer region ahead of the surrounding deck-selection tile");
             var deleteRelease = Gate();
-            var staleReceipts = new TaskCompletionSource<IReadOnlyList<DeckLibraryDeletion>>(TaskCreationOptions.RunContinuationsAsynchronously);
+            var staleReceipts = new TaskCompletionSource<ImmutableArray<DeckLibraryDeletion>>(TaskCreationOptions.RunContinuationsAsynchronously);
             engine.DeleteRelease = deleteRelease.Task;
             run.Click(deleteOther.Id);
             run.Until(() => engine.DeleteCalls == 1 && run.View.Busy, "Delete reaches storage once and waits for its actual result");
@@ -168,7 +168,7 @@ internal static class DeckLibraryPresentationChecks
         internal readonly Dictionary<string, DeckDetails> Saved = new() { ["a"] = Details("a", "A Current Commander deck"), ["b"] = Details("b", "B Commander experiments with counters and landfall") };
         internal readonly List<DeckLibraryDeletion> StoredReceipts = [];
         private readonly Dictionary<string, DeckDetails> removed = [];
-        internal Func<Task<IReadOnlyList<DeckLibraryDeletion>>>? ReceiptReadOverride;
+        internal Func<Task<ImmutableArray<DeckLibraryDeletion>>>? ReceiptReadOverride;
         internal Task? DeleteRelease;
         private int deletes, restores, reads, completedReads;
         internal int DeleteCalls => Volatile.Read(ref deletes);
@@ -182,14 +182,14 @@ internal static class DeckLibraryPresentationChecks
                 new("Main", "forest", new() { Name = "Forest", Type = "Basic Land" }, 99)], [], "", "") { LibraryToken = "bytes:" + id + ":1" };
         public Task InitializeAsync() => Task.CompletedTask;
         public ValueTask DisposeAsync() => ValueTask.CompletedTask;
-        public Task<IReadOnlyList<DeckSummary>> DecksAsync() => Task.FromResult<IReadOnlyList<DeckSummary>>(Saved.Values.Select(deck => new DeckSummary(deck.Id, deck.Name) { LibraryToken = deck.LibraryToken }).ToArray());
-        public Task<IReadOnlyList<DeckPreset>> PresetsAsync() => Task.FromResult<IReadOnlyList<DeckPreset>>([new("precon", "A precon", "A complete deck")]);
+        public Task<ImmutableArray<DeckSummary>> DecksAsync() => Task.FromResult(Saved.Values.Select(deck => new DeckSummary(deck.Id, deck.Name) { LibraryToken = deck.LibraryToken }).ToImmutableArray());
+        public Task<ImmutableArray<DeckPreset>> PresetsAsync() => Task.FromResult<ImmutableArray<DeckPreset>>([new("precon", "A precon", "A complete deck")]);
         public Task<DeckDetails> OpenDeckAsync(string id) => Task.FromResult(Saved[id]);
         public Task<CatalogPage> SearchCardsAsync(CardQuery query) => Task.FromResult(new CatalogPage(0, 0, []));
-        public async Task<IReadOnlyList<DeckLibraryDeletion>> DeletedDecksAsync()
+        public async Task<ImmutableArray<DeckLibraryDeletion>> DeletedDecksAsync()
         {
             Interlocked.Increment(ref reads);
-            var result = ReceiptReadOverride == null ? StoredReceipts.ToArray() : await ReceiptReadOverride();
+            var result = ReceiptReadOverride == null ? StoredReceipts.ToImmutableArray() : await ReceiptReadOverride();
             Interlocked.Increment(ref completedReads); return result;
         }
         public async Task<DeckLibraryDeletion> DeleteDeckAsync(string id, string token)
@@ -214,15 +214,15 @@ internal static class DeckLibraryPresentationChecks
         public Task<DeckSummary> ImportAsync(string name, string text) => Unsupported<DeckSummary>();
         public Task<DeckSummary> ImportPresetAsync(string id) => Unsupported<DeckSummary>();
         public Task<DeckDetails> CreateDeckAsync(string name) => Unsupported<DeckDetails>();
-        public Task<DeckDetails> EditDeckAsync(string id, long revision, IReadOnlyList<DeckEdit> edits) => Unsupported<DeckDetails>();
+        public Task<DeckDetails> EditDeckAsync(string id, long revision, ImmutableArray<DeckEdit> edits) => Unsupported<DeckDetails>();
         public Task<DeckDetails> RenameDeckAsync(string id, long revision, string name) => Unsupported<DeckDetails>();
         public Task<DeckDetails> DuplicateDeckAsync(string id, long revision, string name) => Unsupported<DeckDetails>();
         public Task<DeckDetails> UndoDeckAsync(string id, long revision) => Unsupported<DeckDetails>();
         public Task<DeckDetails> RedoDeckAsync(string id, long revision) => Unsupported<DeckDetails>();
         public Task<DeckDetails> SaveDeckAsync(string id, long revision) => Unsupported<DeckDetails>();
         public Task<string> ExportDeckAsync(string id, long revision) => Unsupported<string>();
-        public Task<DeckDetails> SetCommandersAsync(string id, long revision, IReadOnlyList<string> cards) => Unsupported<DeckDetails>();
-        public Task StartSoloAsync(string id, IReadOnlyList<string> opponents) => Unsupported();
+        public Task<DeckDetails> SetCommandersAsync(string id, long revision, ImmutableArray<string> cards) => Unsupported<DeckDetails>();
+        public Task StartSoloAsync(string id, ImmutableArray<string> opponents) => Unsupported();
         public Task<Lobby> HostAsync(int players, bool forwarding) => Unsupported<Lobby>();
         public Task<Lobby> JoinAsync(string address) => Unsupported<Lobby>();
         public Task<Lobby> LobbyAsync() => Unsupported<Lobby>();

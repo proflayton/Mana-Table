@@ -69,7 +69,7 @@ internal sealed partial class TableApplication
     private void ChoosePickerDeck(string id)
     {
         if (pickerSeat >= 0 && soloSetup is { } setup) {
-            int index = Array.FindIndex(setup.Opponents, p => p.Id == id);
+            int index = setup.Opponents.IndexOf(setup.Opponents.FirstOrDefault(p => p.Id == id)!);
             if (index < 0) return;
             soloChoices[pickerSeat] = index; CloseSetupModal();
             message = $"AI opponent {pickerSeat + 1} will play {setup.Opponents[index].Name}.";
@@ -84,14 +84,14 @@ internal sealed partial class TableApplication
         string pickerHint = opponent ? "Choose this opponent's deck. The other seats stay the same."
             : Connected && DeckLibrary != null ? "Leave the lobby to delete or restore saved decks."
             : pickerDeleted ? "Deleted lists keep their cards and deck history. Undo returns a list to Your decks."
-            : decks.Count == 0 ? "New here? Try a precon for a complete Commander deck."
+            : decks.Length == 0 ? "New here? Try a precon for a complete Commander deck."
             : pickerPresets ? "Choose a precon to play or edit."
             : "Choose a saved list, or try a precon for a ready-made deck.";
         canvas.Text(pickerHint, 204, 234, Muted, .82f, 1110, 1);
         if (!opponent) {
-            Button("picker-saved", $"Your decks ({decks.Count})", 204, 278, 255, new ShellIntent.SelectDeckCollection(DeckCollection.Saved), !busy, !pickerPresets && !pickerDeleted, 40);
+            Button("picker-saved", $"Your decks ({decks.Length})", 204, 278, 255, new ShellIntent.SelectDeckCollection(DeckCollection.Saved), !busy, !pickerPresets && !pickerDeleted, 40);
             Button("picker-presets", "Try a precon", 471, 278, 220, new ShellIntent.SelectDeckCollection(DeckCollection.Presets), !busy, pickerPresets && !pickerDeleted, 40);
-            if (DeckLibrary != null) Button("picker-deleted", "Deleted (" + deletedDecks.Count + ")", 703, 278, 202,
+            if (DeckLibrary != null) Button("picker-deleted", "Deleted (" + deletedDecks.Length + ")", 703, 278, 202,
                 new ShellIntent.SelectDeckCollection(DeckCollection.Deleted), !busy, pickerDeleted, 40);
         } else LobbyPill("AI OPPONENT " + (pickerSeat + 1), 204, 284, 224, Blue);
         int searchX = !opponent && DeckLibrary != null ? 925 : 810;

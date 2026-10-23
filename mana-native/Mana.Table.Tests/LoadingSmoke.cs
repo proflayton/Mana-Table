@@ -344,12 +344,12 @@ internal static class LoadingSmoke
         internal int OtherWrites => Volatile.Read(ref otherWrites);
         public string Name => "Controlled loading scenario";
         public async Task InitializeAsync() => await (Interlocked.Increment(ref initializes) == 1 ? Initializing : Retrying).Task;
-        public async Task<IReadOnlyList<DeckSummary>> DecksAsync()
+        public async Task<ImmutableArray<DeckSummary>> DecksAsync()
         {
             Interlocked.Increment(ref decks); await ReadingDecks.Task;
             return imported ? [new("saved", "Saved commander deck"), new("imported", "Imported commander deck")] : [new("saved", "Saved commander deck")];
         }
-        public async Task<IReadOnlyList<DeckPreset>> PresetsAsync()
+        public async Task<ImmutableArray<DeckPreset>> PresetsAsync()
         {
             Interlocked.Increment(ref presets); await ReadingPresets.Task;
             return [new("starter", "Starter commander deck", "A controlled precon import")];
@@ -378,7 +378,7 @@ internal static class LoadingSmoke
         public Task<CatalogPage> SearchCardsAsync(CardQuery query) => Task.FromResult(new CatalogPage(0, 0, []));
         public Task<DeckSummary> ImportAsync(string name, string text) => Reject<DeckSummary>("import");
         public Task<DeckDetails> CreateDeckAsync(string name) => Reject<DeckDetails>("create");
-        public async Task<DeckDetails> EditDeckAsync(string deckId, long revision, IReadOnlyList<DeckEdit> changes)
+        public async Task<DeckDetails> EditDeckAsync(string deckId, long revision, ImmutableArray<DeckEdit> changes)
         {
             Interlocked.Increment(ref edits); await Editing.Task;
             return Details(deckId, changes.Single().Quantity, revision + 1);
@@ -389,9 +389,9 @@ internal static class LoadingSmoke
         public Task<DeckDetails> RedoDeckAsync(string deckId, long revision) => Reject<DeckDetails>("redo");
         public Task<DeckDetails> SaveDeckAsync(string deckId, long revision) => Reject<DeckDetails>("save");
         public Task<string> ExportDeckAsync(string deckId, long revision) => Reject<string>("export");
-        public Task<DeckDetails> SetCommandersAsync(string deckId, long revision, IReadOnlyList<string> cardIds) => Reject<DeckDetails>("commanders");
+        public Task<DeckDetails> SetCommandersAsync(string deckId, long revision, ImmutableArray<string> cardIds) => Reject<DeckDetails>("commanders");
         public Task<SoloSetup> PrepareSoloAsync(string deckId) => Reject<SoloSetup>("prepare-solo");
-        public Task StartSoloAsync(string deckId, IReadOnlyList<string> opponentIds) => Reject("start-solo");
+        public Task StartSoloAsync(string deckId, ImmutableArray<string> opponentIds) => Reject("start-solo");
         public Task<Lobby> HostAsync(int players, bool automaticPortForwarding) => Reject<Lobby>("host");
         public Task<Lobby> JoinAsync(string address) => Reject<Lobby>("join");
         public Task<Lobby> LobbyAsync() => throw new InvalidOperationException("No connected lobby exists in this scenario");

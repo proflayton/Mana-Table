@@ -1,3 +1,4 @@
+using System.Collections.Immutable;
 using Mana.Contracts;
 
 namespace Mana.Table;
@@ -17,7 +18,7 @@ internal sealed partial class TableApplication
     private bool DeckReady => selectedDeckDetails is { Problem.Length: 0, SaveError.Length: 0 } && (!CommanderDeck || selectedDeckDetails.CommanderIds.Length > 0);
     private bool DeckCanCopy => selectedDeckDetails?.Entries.Any(e => e.Quantity > 0) == true;
     private string DeckScope => $"setup:{selectedDeckDetails?.Id}:{selectedDeckDetails?.Revision}:{deckEditor}:{commanderCandidates}:{deckSection}:{deckFilter}:{deckCardsPage}:{deckCardId}:{deckCardSection}:{librarySelection?.Id}:{catalogRead.View.Generation}:{deckIssuesOnly}:{deckIssuePage}:{deckCardIssuePage}:{deckMenu}:{WorkshopScope}:{AnalysisScope}";
-    private DeckIssue[] DeckIssues => selectedDeckDetails is not { } deck ? [] : deck.Issues.Length > 0 ? deck.Issues
+    private ImmutableArray<DeckIssue> DeckIssues => selectedDeckDetails is not { } deck ? [] : deck.Issues.Length > 0 ? deck.Issues
         : deck.Problem.Length > 0 ? [new("LEGACY", deck.Problem, null, [])] : [];
     private DeckIssue[] CardIssues(string cardId, string section) => DeckIssues
         .Where(issue => (issue.Section == null || issue.Section == section) && issue.CardIds.Contains(cardId)).ToArray();
@@ -108,7 +109,7 @@ internal sealed partial class TableApplication
             });
         }, "Saving your deck", "Your changes save automatically.", false);
     }
-    private void SaveCommanders(string[] ids) => EditDeck(d => catalog.SetCommandersAsync(d.Id, d.Revision, ids), "Commander saved.");
+    private void SaveCommanders(ImmutableArray<string> ids) => EditDeck(d => catalog.SetCommandersAsync(d.Id, d.Revision, ids), "Commander saved.");
     private void DeckQuantity(int count)
     {
         if (DeckSelection is not { } card || deckCardSection == "Commander") return;

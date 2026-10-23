@@ -1,3 +1,4 @@
+using System.Collections.Immutable;
 using System.Text.Json;
 using Mana.Contracts;
 using Microsoft.Xna.Framework.Graphics;
@@ -234,8 +235,8 @@ internal static class OnboardingSmoke
         internal List<string> Mutations { get; } = [];
         public string Name => "Onboarding startup scenario";
         public Task InitializeAsync() => Task.CompletedTask;
-        public Task<IReadOnlyList<DeckSummary>> DecksAsync() => Task.FromResult<IReadOnlyList<DeckSummary>>([]);
-        public Task<IReadOnlyList<DeckPreset>> PresetsAsync() => Task.FromResult<IReadOnlyList<DeckPreset>>([new("starter", "Starter deck", "A deck-picker presentation fixture")]);
+        public Task<ImmutableArray<DeckSummary>> DecksAsync() => Task.FromResult<ImmutableArray<DeckSummary>>([]);
+        public Task<ImmutableArray<DeckPreset>> PresetsAsync() => Task.FromResult<ImmutableArray<DeckPreset>>([new("starter", "Starter deck", "A deck-picker presentation fixture")]);
         public Task<GameSnapshot?> ObserveAsync() => Task.FromResult<GameSnapshot?>(null);
         public ValueTask DisposeAsync() => ValueTask.CompletedTask;
         private Task Reject(string operation) { Mutations.Add(operation); throw new InvalidOperationException("Onboarding unexpectedly wrote to the engine: " + operation); }
@@ -245,16 +246,16 @@ internal static class OnboardingSmoke
         public Task<DeckSummary> ImportAsync(string name, string text) => Reject<DeckSummary>("import");
         public Task<DeckSummary> ImportPresetAsync(string id) => Reject<DeckSummary>("import-preset");
         public Task<DeckDetails> CreateDeckAsync(string name) => Reject<DeckDetails>("create-deck");
-        public Task<DeckDetails> EditDeckAsync(string deckId, long revision, IReadOnlyList<DeckEdit> edits) => Reject<DeckDetails>("edit-deck");
+        public Task<DeckDetails> EditDeckAsync(string deckId, long revision, ImmutableArray<DeckEdit> edits) => Reject<DeckDetails>("edit-deck");
         public Task<DeckDetails> RenameDeckAsync(string deckId, long revision, string name) => Reject<DeckDetails>("rename-deck");
         public Task<DeckDetails> DuplicateDeckAsync(string deckId, long revision, string name) => Reject<DeckDetails>("duplicate-deck");
         public Task<DeckDetails> UndoDeckAsync(string deckId, long revision) => Reject<DeckDetails>("undo-deck");
         public Task<DeckDetails> RedoDeckAsync(string deckId, long revision) => Reject<DeckDetails>("redo-deck");
         public Task<DeckDetails> SaveDeckAsync(string deckId, long revision) => Reject<DeckDetails>("save-deck");
         public Task<string> ExportDeckAsync(string deckId, long revision) => Reject<string>("export-deck");
-        public Task<DeckDetails> SetCommandersAsync(string deckId, long revision, IReadOnlyList<string> cardIds) => Reject<DeckDetails>("set-commanders");
+        public Task<DeckDetails> SetCommandersAsync(string deckId, long revision, ImmutableArray<string> cardIds) => Reject<DeckDetails>("set-commanders");
         public Task<SoloSetup> PrepareSoloAsync(string deckId) => Reject<SoloSetup>("prepare-solo");
-        public Task StartSoloAsync(string deckId, IReadOnlyList<string> opponentIds) => Reject("start-solo");
+        public Task StartSoloAsync(string deckId, ImmutableArray<string> opponentIds) => Reject("start-solo");
         public Task<Lobby> HostAsync(int players, bool automaticPortForwarding) => Reject<Lobby>("host");
         public Task<Lobby> JoinAsync(string address) => Reject<Lobby>("join");
         public Task<Lobby> LobbyAsync() => throw new InvalidOperationException("Onboarding unexpectedly requested a connected lobby");

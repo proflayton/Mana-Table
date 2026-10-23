@@ -1,3 +1,5 @@
+using System.Collections.Immutable;
+
 namespace Mana.Contracts;
 
 // Optional library management. A saved-file token targets the listed deck even
@@ -5,7 +7,7 @@ namespace Mana.Contracts;
 public interface IDeckLibrary
 {
     bool SupportsDeckLibrary => true;
-    Task<IReadOnlyList<DeckLibraryDeletion>> DeletedDecksAsync();
+    Task<ImmutableArray<DeckLibraryDeletion>> DeletedDecksAsync();
     Task<DeckLibraryDeletion> DeleteDeckAsync(string deckId, string libraryToken);
     Task<DeckSummary> RestoreDeckAsync(string deckId, string restoreToken);
 }

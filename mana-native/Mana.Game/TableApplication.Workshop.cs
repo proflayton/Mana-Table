@@ -1,3 +1,4 @@
+using System.Collections.Immutable;
 using Mana.Contracts;
 using Mana.Client;
 
@@ -94,8 +95,8 @@ internal sealed partial class TableApplication
         var previous = deckWorkspace.View.Workshop!.Roles.FirstOrDefault(r => r.CardId == card.Id);
         var roles = previous?.Roles.ToList() ?? [];
         if (roles.RemoveAll(value => value.Equals(role, StringComparison.OrdinalIgnoreCase)) == 0) roles.Add(role);
-        var updated = new WorkshopRole(card.Id, roles.ToArray(), previous?.Pinned ?? false, "local");
-        SaveWorkshopMetadata(new(Roles: deckWorkspace.View.Workshop.Roles.Where(r => r.CardId != card.Id && r.Origin != "estimated").Append(updated).ToArray()), "Card roles saved. Roles can overlap.");
+        var updated = new WorkshopRole(card.Id, roles.ToImmutableArray(), previous?.Pinned ?? false, "local");
+        SaveWorkshopMetadata(new(Roles: deckWorkspace.View.Workshop.Roles.Where(r => r.CardId != card.Id && r.Origin != "estimated").Append(updated).ToImmutableArray()), "Card roles saved. Roles can overlap.");
     }
     private void EditWorkshopRoles()
     {
@@ -103,16 +104,16 @@ internal sealed partial class TableApplication
         var previous = deckWorkspace.View.Workshop!.Roles.FirstOrDefault(r => r.CardId == card.Id);
         string? text = Ask("Card categories", "Comma-separated categories for " + card.Card.Name, string.Join(", ", previous?.Roles ?? []));
         if (text == null) return;
-        string[] roles = text.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
+        var roles = text.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).Distinct(StringComparer.OrdinalIgnoreCase).ToImmutableArray();
         var updated = new WorkshopRole(card.Id, roles, previous?.Pinned ?? false, "local");
-        SaveWorkshopMetadata(new(Roles: deckWorkspace.View.Workshop.Roles.Where(r => r.CardId != card.Id && r.Origin != "estimated").Append(updated).ToArray()), "Categories saved.");
+        SaveWorkshopMetadata(new(Roles: deckWorkspace.View.Workshop.Roles.Where(r => r.CardId != card.Id && r.Origin != "estimated").Append(updated).ToImmutableArray()), "Categories saved.");
     }
     private void ToggleWorkshopPin()
     {
         if (!WorkshopCurrent || DeckSelection is not { } card) return;
         var previous = deckWorkspace.View.Workshop!.Roles.FirstOrDefault(r => r.CardId == card.Id);
         var updated = new WorkshopRole(card.Id, previous?.Roles ?? [], !(previous?.Pinned ?? false), "local");
-        SaveWorkshopMetadata(new(Roles: deckWorkspace.View.Workshop.Roles.Where(r => r.CardId != card.Id && r.Origin != "estimated").Append(updated).ToArray()), updated.Pinned ? "Card marked as a favorite to keep." : "Keep marker removed.");
+        SaveWorkshopMetadata(new(Roles: deckWorkspace.View.Workshop.Roles.Where(r => r.CardId != card.Id && r.Origin != "estimated").Append(updated).ToImmutableArray()), updated.Pinned ? "Card marked as a favorite to keep." : "Keep marker removed.");
     }
     private void ConsideringQuantity(CatalogCard card, int quantity)
     {
@@ -120,7 +121,7 @@ internal sealed partial class TableApplication
         var previous = deckWorkspace.View.Workshop!.Considering.FirstOrDefault(c => c.CardId == card.Id);
         var entries = deckWorkspace.View.Workshop.Considering.Where(c => c.CardId != card.Id).Select(c => new ConsideringEdit(c.CardId, c.Quantity, c.Categories)).ToList();
         if (quantity > 0) entries.Add(new(card.Id, quantity, previous?.Categories ?? []));
-        SaveWorkshopMetadata(new(Considering: entries.ToArray()), quantity > 0 ? "Saved to Considering. It is excluded from games." : "Removed from Considering.");
+        SaveWorkshopMetadata(new(Considering: entries.ToImmutableArray()), quantity > 0 ? "Saved to Considering. It is excluded from games." : "Removed from Considering.");
     }
     private void MoveConsideringCard(string? cutCardId = null)
     {
@@ -174,7 +175,7 @@ internal sealed partial class TableApplication
             var prepared = existing ?? await PrepareSoloDeck(deck.Id, previous);
             if (!Current()) throw new InvalidOperationException("Your deck or test setup changed. Start again with the current list.");
             int players = Math.Min(requestedPlayers, Math.Min(4, prepared.Setup.MaxPlayers));
-            string[] opponents = prepared.Choices.Take(players - 1).Select(index => prepared.Setup.Opponents[index].Id).ToArray();
+            var opponents = prepared.Choices.Take(players - 1).Select(index => prepared.Setup.Opponents[index].Id).ToImmutableArray();
             await UnreadyForDeckEdit();
             if (!Current()) throw new InvalidOperationException("Your deck or test setup changed. Start again with the current list.");
             var test = await service.StartDeckTestAsync(deck.Id, deck.Revision, opponents, question);

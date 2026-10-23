@@ -184,23 +184,23 @@ internal sealed class InteractionScenarioEngine : ICardEngine, ISourceActions
     internal Func<Task<GameSnapshot?>>? ObserveOverride { get; set; }
     public Task<GameSnapshot?> ObserveAsync() { Interlocked.Increment(ref observations); return ObserveOverride?.Invoke() ?? Task.FromResult<GameSnapshot?>(state); }
     public ValueTask DisposeAsync() => ValueTask.CompletedTask;
-    public Task<IReadOnlyList<DeckSummary>> DecksAsync() => throw new NotSupportedException();
+    public Task<ImmutableArray<DeckSummary>> DecksAsync() => throw new NotSupportedException();
     public Task<DeckDetails> OpenDeckAsync(string id) => throw new NotSupportedException();
     public Task<CatalogPage> SearchCardsAsync(CardQuery query) => throw new NotSupportedException();
     public Task<DeckDetails> CreateDeckAsync(string name) => throw new NotSupportedException();
-    public Task<DeckDetails> EditDeckAsync(string deckId, long revision, IReadOnlyList<DeckEdit> edits) => throw new NotSupportedException();
+    public Task<DeckDetails> EditDeckAsync(string deckId, long revision, ImmutableArray<DeckEdit> edits) => throw new NotSupportedException();
     public Task<DeckDetails> RenameDeckAsync(string deckId, long revision, string name) => throw new NotSupportedException();
     public Task<DeckDetails> DuplicateDeckAsync(string deckId, long revision, string name) => throw new NotSupportedException();
     public Task<DeckDetails> UndoDeckAsync(string deckId, long revision) => throw new NotSupportedException();
     public Task<DeckDetails> RedoDeckAsync(string deckId, long revision) => throw new NotSupportedException();
     public Task<DeckDetails> SaveDeckAsync(string deckId, long revision) => throw new NotSupportedException();
     public Task<string> ExportDeckAsync(string deckId, long revision) => throw new NotSupportedException();
-    public Task<DeckDetails> SetCommandersAsync(string deckId, long revision, IReadOnlyList<string> cardIds) => throw new NotSupportedException();
-    public Task<IReadOnlyList<DeckPreset>> PresetsAsync() => throw new NotSupportedException();
+    public Task<DeckDetails> SetCommandersAsync(string deckId, long revision, ImmutableArray<string> cardIds) => throw new NotSupportedException();
+    public Task<ImmutableArray<DeckPreset>> PresetsAsync() => throw new NotSupportedException();
     public Task<DeckSummary> ImportAsync(string name, string text) => throw new NotSupportedException();
     public Task<DeckSummary> ImportPresetAsync(string id) => throw new NotSupportedException();
     public Task<SoloSetup> PrepareSoloAsync(string deckId) => throw new NotSupportedException();
-    public Task StartSoloAsync(string deckId, IReadOnlyList<string> opponents) => throw new NotSupportedException();
+    public Task StartSoloAsync(string deckId, ImmutableArray<string> opponents) => throw new NotSupportedException();
     public Task<Lobby> HostAsync(int players, bool forwarding) => throw new NotSupportedException();
     public Task<Lobby> JoinAsync(string address) => throw new NotSupportedException();
     public Task<Lobby> LobbyAsync() => throw new NotSupportedException();

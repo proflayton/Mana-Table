@@ -1,3 +1,4 @@
+using System.Collections.Immutable;
 using System.Collections.Concurrent;
 using Mana.Contracts;
 using Mana.Renderer;
@@ -125,8 +126,8 @@ internal static class PregameFlowChecks
         public string Name => "Controlled pregame";
         public Task InitializeAsync() => Task.CompletedTask;
         public ValueTask DisposeAsync() => ValueTask.CompletedTask;
-        public Task<IReadOnlyList<DeckSummary>> DecksAsync() => Task.FromResult<IReadOnlyList<DeckSummary>>([new("a", "Deck a"), new("b", "Deck b")]);
-        public Task<IReadOnlyList<DeckPreset>> PresetsAsync() => Task.FromResult<IReadOnlyList<DeckPreset>>([]);
+        public Task<ImmutableArray<DeckSummary>> DecksAsync() => Task.FromResult<ImmutableArray<DeckSummary>>([new("a", "Deck a"), new("b", "Deck b")]);
+        public Task<ImmutableArray<DeckPreset>> PresetsAsync() => Task.FromResult<ImmutableArray<DeckPreset>>([]);
         public Task<DeckDetails> OpenDeckAsync(string id) {
             Calls.Enqueue("open:" + id);
             return Task.FromResult(new DeckDetails(id, "Deck " + id, 1,
@@ -137,8 +138,8 @@ internal static class PregameFlowChecks
         internal SoloSetup Setup(string id) => new(id, "Deck " + id,
             [new("ai-self", "Deck " + id, ""), new("ai-1", "Other deck one", ""), new("ai-2", "Other deck two", "")]) { MaxPlayers = 4 };
         public Task<SoloSetup> PrepareSoloAsync(string id) { Calls.Enqueue("prepare:" + id); Interlocked.Increment(ref prepares); return Preparing?.Task ?? Task.FromResult(Setup(id)); }
-        public Task StartSoloAsync(string id, IReadOnlyList<string> opponents) {
-            if (id is not ("a" or "b") || opponents.Count != 3 || opponents.Any(opponent => !Setup(id).Opponents.Any(available => available.Id == opponent)))
+        public Task StartSoloAsync(string id, ImmutableArray<string> opponents) {
+            if (id is not ("a" or "b") || opponents.Length != 3 || opponents.Any(opponent => !Setup(id).Opponents.Any(available => available.Id == opponent)))
                 throw new InvalidOperationException("Unprepared or incompatible quick-play input.");
             Calls.Enqueue("start-solo:" + id); Interlocked.Increment(ref starts); StartDeck = id; StartOpponents = opponents.ToArray();
             state = PresentationSmoke.Example() with { Id = "quick-play-match" }; return Task.CompletedTask;
@@ -147,18 +148,18 @@ internal static class PregameFlowChecks
         public Task<Lobby> HostAsync(int players, bool forwarding) {
             Calls.Enqueue("host:" + players);
             lobby = new("hosting", "Open", null, false, "Open seats", false, "disabled", null, [],
-                Enumerable.Range(0, players).Select(index => new Seat(index, index == 0 ? "You" : "Open", index == 0 ? "HUMAN" : "OPEN", null, false, index == 0)).ToArray(), "pregame-table");
+                Enumerable.Range(0, players).Select(index => new Seat(index, index == 0 ? "You" : "Open", index == 0 ? "HUMAN" : "OPEN", null, false, index == 0)).ToImmutableArray(), "pregame-table");
             return Task.FromResult(lobby);
         }
         public Task<Lobby> LobbyAsync() => Task.FromResult(lobby ?? throw new InvalidOperationException("No connected table."));
         public Task SelectDeckAsync(string id) {
             if (lobby == null || id is not ("a" or "b")) throw new InvalidOperationException("Illegal lobby deck selection.");
-            Calls.Enqueue("select:" + id); lobby = lobby with { Seats = lobby.Seats.Select(seat => seat.Local ? seat with { Deck = "Deck " + id, Ready = false } : seat).ToArray() }; return Task.CompletedTask;
+            Calls.Enqueue("select:" + id); lobby = lobby with { Seats = lobby.Seats.Select(seat => seat.Local ? seat with { Deck = "Deck " + id, Ready = false } : seat).ToImmutableArray() }; return Task.CompletedTask;
         }
         public Task SetReadyAsync(bool ready) {
             if (lobby == null || ready && lobby.Seats.Single(seat => seat.Local).Deck == null) throw new InvalidOperationException("Ready requires an assigned deck.");
             Calls.Enqueue("ready:" + ready); Interlocked.Increment(ref readies);
-            lobby = lobby with { Seats = lobby.Seats.Select(seat => seat.Local ? seat with { Ready = ready } : seat).ToArray() }; return Task.CompletedTask;
+            lobby = lobby with { Seats = lobby.Seats.Select(seat => seat.Local ? seat with { Ready = ready } : seat).ToImmutableArray() }; return Task.CompletedTask;
         }
         public Task StartAsync() { Interlocked.Increment(ref friendStarts); throw new InvalidOperationException("A table with open seats cannot start."); }
         private static Task<T> Unsupported<T>() => throw new NotSupportedException();
@@ -166,14 +167,14 @@ internal static class PregameFlowChecks
         public Task<DeckSummary> ImportAsync(string name, string text) => Unsupported<DeckSummary>();
         public Task<DeckSummary> ImportPresetAsync(string id) => Unsupported<DeckSummary>();
         public Task<DeckDetails> CreateDeckAsync(string name) => Unsupported<DeckDetails>();
-        public Task<DeckDetails> EditDeckAsync(string id, long revision, IReadOnlyList<DeckEdit> edits) => Unsupported<DeckDetails>();
+        public Task<DeckDetails> EditDeckAsync(string id, long revision, ImmutableArray<DeckEdit> edits) => Unsupported<DeckDetails>();
         public Task<DeckDetails> RenameDeckAsync(string id, long revision, string name) => Unsupported<DeckDetails>();
         public Task<DeckDetails> DuplicateDeckAsync(string id, long revision, string name) => Unsupported<DeckDetails>();
         public Task<DeckDetails> UndoDeckAsync(string id, long revision) => Unsupported<DeckDetails>();
         public Task<DeckDetails> RedoDeckAsync(string id, long revision) => Unsupported<DeckDetails>();
         public Task<DeckDetails> SaveDeckAsync(string id, long revision) => Unsupported<DeckDetails>();
         public Task<string> ExportDeckAsync(string id, long revision) => Unsupported<string>();
-        public Task<DeckDetails> SetCommandersAsync(string id, long revision, IReadOnlyList<string> cards) => Unsupported<DeckDetails>();
+        public Task<DeckDetails> SetCommandersAsync(string id, long revision, ImmutableArray<string> cards) => Unsupported<DeckDetails>();
         public Task<Lobby> JoinAsync(string address) => Unsupported<Lobby>();
         public Task ReturnToLobbyAsync() => throw new NotSupportedException();
         public Task LeaveAsync() => throw new NotSupportedException();

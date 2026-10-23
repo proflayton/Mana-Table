@@ -106,14 +106,13 @@ public sealed class DeckWorkspaceSession(IDeckWorkshop? workshop, IDeckAnalysis?
         return true;
     }
 
-    public bool AcceptPractice(DeckWorkspaceStamp? stamp, HandPractice hand, IEnumerable<DeckTest> tests)
+    public bool AcceptPractice(DeckWorkspaceStamp? stamp, HandPractice hand, ImmutableArray<DeckTest> tests)
     {
-        var records = tests.ToImmutableArray();
-        if (!IsCurrent(stamp) || !WorkshopCurrent || hand.VersionId != View.Workshop!.VersionId
-            || records.Any(test => test.DeckId != stamp!.Context.DeckId)
-            || !records.Any(test => test.Id == hand.TestId && test.VersionId == hand.VersionId)) return false;
+        if (!IsCurrent(stamp) || !WorkshopCurrent || hand.VersionId != View.Workshop!.VersionId || tests.IsDefault
+            || tests.Any(test => test.DeckId != stamp!.Context.DeckId)
+            || !tests.Any(test => test.Id == hand.TestId && test.VersionId == hand.VersionId)) return false;
         SettleReviews(false);
-        View = View with { Generation = View.Generation + 1, Hand = hand, Tests = records,
+        View = View with { Generation = View.Generation + 1, Hand = hand, Tests = tests,
             AnalysisStatus = View.AnalysisStatus == DeckWorkspaceReadStatus.Loading ? DeckWorkspaceReadStatus.Pending : View.AnalysisStatus };
         return true;
     }
@@ -155,12 +154,13 @@ public sealed class DeckWorkspaceSession(IDeckWorkshop? workshop, IDeckAnalysis?
         View = View with { WorkshopStatus = readWorkshop ? DeckWorkspaceReadStatus.Loading : View.WorkshopStatus,
             AnalysisStatus = readAnalysis ? DeckWorkspaceReadStatus.Loading : View.AnalysisStatus };
         _ = Task.Run(async () => {
-            WorkshopState? shared = null; DeckTest[]? tests = null; DeckAnalysisState? report = null; Exception? failure = null;
+            WorkshopState? shared = null; ImmutableArray<DeckTest>? tests = null; DeckAnalysisState? report = null; Exception? failure = null;
             try {
                 if (readWorkshop) {
                     shared = await workshop!.WorkshopAsync(stamp.Context.DeckId, stamp.Context.Revision).WaitAsync(cancellation);
-                    tests = await workshop.GetTestsAsync(stamp.Context.DeckId).WaitAsync(cancellation);
-                    if (!Matches(stamp.Context, shared) || tests.Any(test => test.DeckId != stamp.Context.DeckId)
+                    var records = await workshop.GetTestsAsync(stamp.Context.DeckId).WaitAsync(cancellation);
+                    tests = records;
+                    if (!Matches(stamp.Context, shared) || records.IsDefault || records.Any(test => test.DeckId != stamp.Context.DeckId)
                         || knownWorkshop != null && shared.MetadataRevision < knownWorkshop.MetadataRevision)
                         throw new InvalidOperationException("The deck tools returned a different saved document.");
                 }
@@ -182,7 +182,7 @@ public sealed class DeckWorkspaceSession(IDeckWorkshop? workshop, IDeckAnalysis?
                             AnalysisError = readAnalysis ? failure.Message : View.AnalysisError };
                         SettleReviews(false, failure);
                     } else {
-                        View = View with { Workshop = shared ?? View.Workshop, Tests = tests?.ToImmutableArray() ?? View.Tests,
+                        View = View with { Workshop = shared ?? View.Workshop, Tests = tests ?? View.Tests,
                             Hand = shared == null || View.Hand?.VersionId == shared.VersionId ? View.Hand : null,
                             Analysis = report ?? View.Analysis,
                             WorkshopStatus = readWorkshop ? DeckWorkspaceReadStatus.Ready : View.WorkshopStatus,

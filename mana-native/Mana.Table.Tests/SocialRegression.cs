@@ -1,3 +1,4 @@
+using System.Collections.Immutable;
 using Mana.Client;
 using Mana.Contracts;
 using System.Text.Json;
@@ -11,7 +12,7 @@ internal static class SocialRegression
         var checks = new List<string>();
         void Check(bool passed, string text) { if (!passed) throw new InvalidOperationException(text); checks.Add(text); }
         TableMessage Message(long id, string sender = "guest", string kind = "chat") => new(id, sender, sender == "host" ? 0 : 1, sender, kind, "Message " + id);
-        TableConversation Snapshot(long revision, params TableMessage[] messages) => new("table-a", revision, 0, [new("host", 0, "Host"), new("guest", 1, "Guest")], messages);
+        TableConversation Snapshot(long revision, params TableMessage[] messages) => new("table-a", revision, 0, [new("host", 0, "Host"), new("guest", 1, "Guest")], messages.ToImmutableArray());
         var replica = new ConversationReplica(); replica.Bind("table-a");
         Check(replica.Accept(Snapshot(1, Message(1))) && replica.Unread == 0, "Joining a table loads its history without treating old messages as unread");
         replica.Accept(Snapshot(3, Message(1), Message(2), Message(3, "host")));

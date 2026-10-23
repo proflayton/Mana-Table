@@ -111,7 +111,7 @@ internal static class DeckTuningRegression
             Check(workshop.Considering.Single().Card.Card.Name == "Sol Ring" && workshop.Roles.Any(r => r.Pinned), "Considering printings and card annotations survive a complete engine restart");
             Check(tests.Single(t => t.Id == handId).Note.Contains("green") && tests.Single(t => t.Id == gameId).Note.Contains("tune") && tests.All(t => t.VersionId == originalVersion), "Hand and game notes remain attached to their immutable tested version after restart");
             Check(tests.Single(t => t.Id == handId).Hand.Length == 8 && tests.Single(t => t.Id == handId).Hand.All(c => c.Card.Name == "Forest") && tests.Single(t => t.Id == gameId).Hand.Length == 0, "Saved hand inspection survives restart and never substitutes opponent or game hidden cards");
-            Check((await reopened.DecksAsync()).Count == 1, "Workshop metadata and test files do not appear as spurious saved decks");
+            Check((await reopened.DecksAsync()).Length == 1, "Workshop metadata and test files do not appear as spurious saved decks");
         }
         return checks.ToArray();
     }

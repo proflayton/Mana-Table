@@ -135,12 +135,22 @@ timeouts, manual retry and shutdown use one scoped action-query lifecycle. Nativ
 journeys consume semantic `DecisionPurpose` values; Forge prompt class names stay
 inside the adapter. The real-engine opening/payment journey verifies that mapping.
 
-`ImmutableStateChecks` traverses the entire match graph, rejects writable nested
-collections/properties, and verifies that provider construction buffers or
-consumer casts cannot change an accepted revision. It retains the preceding
-frame while publishing updated counters and checks JSON round trips. The native
+`ImmutableStateChecks` traverses the entire match graph and every request/result
+of the catalog, printing, deck/workshop/analysis, setup and conversation ports,
+rejecting writable nested collections/properties. Provider construction buffers
+and consumer casts cannot change an accepted revision or queued metadata edit.
+It retains preceding match and workshop views while publishing new revisions,
+checks JSON array/object round trips and distinguishes omitted metadata fields
+from explicit empty clears. It runs in the existing graphics-free client lane.
+The native
 presentation lane inspects the emitted UI dependency closure and rejects a
 provider/host reference or use of the aggregate engine by `Mana.Game`.
+
+The existing `--smoke-headless-engine` journey also verifies the actual Forge
+metadata mapping: a plan-only patch preserves roles and Considering categories,
+and explicit empty collections clear the overrides without changing playable
+deck contents or their version. It reuses that journey's initialized engine
+before starting the same Commander game; it adds no separate JVM or CI job.
 
 The production headless run includes saved-deck deletion and Undo through the
 actual controls, delayed observations, restart recovery and stale-command guards.

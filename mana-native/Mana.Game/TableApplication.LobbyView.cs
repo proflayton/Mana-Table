@@ -103,7 +103,7 @@ internal sealed partial class TableApplication
     {
         canvas.Text("YOUR DECKS", 94, 810, Gold, .64f, 240, 1, true);
         MenuAction("home-library", "All decks", new(1330, 795, 170, 42), new ShellIntent.OpenDeckLibrary(), loaded && !busy, size: .75f);
-        for (int i = 0; i < Math.Min(4, decks.Count - homeDeckPage * 4); i++) {
+        for (int i = 0; i < Math.Min(4, decks.Length - homeDeckPage * 4); i++) {
             var deck = decks[homeDeckPage * 4 + i];
             int x = 94 + i * 347;
             var bounds = new Rectangle(x, 849, 315, 69);
@@ -112,10 +112,10 @@ internal sealed partial class TableApplication
             canvas.Text(deck.Name, x + 6, 864, selected || over ? Ink : Muted, .95f, 302, 2, selected);
             if (!busy) hits.Add(ShellHit("home-deck:" + deck.Id, bounds, new ShellIntent.SelectHomeDeck(deck.Id)));
         }
-        if (decks.Count == 0) MenuAction("home-precons", "Choose a precon", new(90, 848, 300, 60), new ShellIntent.OpenDeckLibrary(), loaded && !busy);
-        if (decks.Count > 4) {
+        if (decks.Length == 0) MenuAction("home-precons", "Choose a precon", new(90, 848, 300, 60), new ShellIntent.OpenDeckLibrary(), loaded && !busy);
+        if (decks.Length > 4) {
             MenuAction("home-prev", "‹", new(1502, 844, 37, 42), new ShellIntent.Page(ShellPage.HomeDecks, -1), !busy && homeDeckPage > 0, size: 1.3f);
-            MenuAction("home-next", "›", new(1540, 844, 37, 42), new ShellIntent.Page(ShellPage.HomeDecks, 1), !busy && (homeDeckPage + 1) * 4 < decks.Count, size: 1.3f);
+            MenuAction("home-next", "›", new(1540, 844, 37, 42), new ShellIntent.Page(ShellPage.HomeDecks, 1), !busy && (homeDeckPage + 1) * 4 < decks.Length, size: 1.3f);
         }
     }
     private void DrawSoloLobby(int top)

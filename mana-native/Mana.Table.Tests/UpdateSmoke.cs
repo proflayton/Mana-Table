@@ -1,3 +1,4 @@
+using System.Collections.Immutable;
 using Mana.Client;
 using Mana.Contracts;
 using Microsoft.Xna.Framework.Graphics;
@@ -223,8 +224,8 @@ internal static class UpdateSmoke
         internal int Writes;
         public string Name => "Controlled update scenario";
         public Task InitializeAsync() => Task.CompletedTask;
-        public Task<IReadOnlyList<DeckSummary>> DecksAsync() => Task.FromResult<IReadOnlyList<DeckSummary>>([]);
-        public Task<IReadOnlyList<DeckPreset>> PresetsAsync() => Task.FromResult<IReadOnlyList<DeckPreset>>([]);
+        public Task<ImmutableArray<DeckSummary>> DecksAsync() => Task.FromResult<ImmutableArray<DeckSummary>>([]);
+        public Task<ImmutableArray<DeckPreset>> PresetsAsync() => Task.FromResult<ImmutableArray<DeckPreset>>([]);
         public Task<GameSnapshot?> ObserveAsync() => Task.FromResult<GameSnapshot?>(null);
         public ValueTask DisposeAsync() => ValueTask.CompletedTask;
         private Task Reject() { Writes++; throw new InvalidOperationException("Updater unexpectedly changed game state"); }
@@ -234,16 +235,16 @@ internal static class UpdateSmoke
         public Task<DeckSummary> ImportAsync(string name, string text) => Reject<DeckSummary>();
         public Task<DeckSummary> ImportPresetAsync(string id) => Reject<DeckSummary>();
         public Task<DeckDetails> CreateDeckAsync(string name) => Reject<DeckDetails>();
-        public Task<DeckDetails> EditDeckAsync(string id, long revision, IReadOnlyList<DeckEdit> edits) => Reject<DeckDetails>();
+        public Task<DeckDetails> EditDeckAsync(string id, long revision, ImmutableArray<DeckEdit> edits) => Reject<DeckDetails>();
         public Task<DeckDetails> RenameDeckAsync(string id, long revision, string name) => Reject<DeckDetails>();
         public Task<DeckDetails> DuplicateDeckAsync(string id, long revision, string name) => Reject<DeckDetails>();
         public Task<DeckDetails> UndoDeckAsync(string id, long revision) => Reject<DeckDetails>();
         public Task<DeckDetails> RedoDeckAsync(string id, long revision) => Reject<DeckDetails>();
         public Task<DeckDetails> SaveDeckAsync(string id, long revision) => Reject<DeckDetails>();
         public Task<string> ExportDeckAsync(string id, long revision) => Reject<string>();
-        public Task<DeckDetails> SetCommandersAsync(string id, long revision, IReadOnlyList<string> ids) => Reject<DeckDetails>();
+        public Task<DeckDetails> SetCommandersAsync(string id, long revision, ImmutableArray<string> ids) => Reject<DeckDetails>();
         public Task<SoloSetup> PrepareSoloAsync(string id) => Reject<SoloSetup>();
-        public Task StartSoloAsync(string id, IReadOnlyList<string> opponents) => Reject();
+        public Task StartSoloAsync(string id, ImmutableArray<string> opponents) => Reject();
         public Task<Lobby> HostAsync(int players, bool forwarding) => Reject<Lobby>();
         public Task<Lobby> JoinAsync(string address) => Reject<Lobby>();
         public Task<Lobby> LobbyAsync() => Reject<Lobby>();
