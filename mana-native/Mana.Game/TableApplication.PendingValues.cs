@@ -128,7 +128,7 @@ internal sealed partial class TableApplication
             candidates.Add(new(face.Center.X - width / 2, face.Bottom + distance, width, height));
             candidates.Add(new(face.Center.X - width / 2, face.Top - height - distance, width, height));
         }
-        var occupied = cardPresentation.Cards.Where(entry => entry.ChoiceSlot < 0).Select(entry => entry.Display.Bounds)
+        var occupied = matchPresentation.Cards.Cards.Where(entry => entry.ChoiceSlot < 0).Select(entry => entry.Display.Bounds)
             .Append(decisionPanelBounds).Concat(stackRows.Select(row => row.Bounds)).Concat(pendingCounterReceiptBounds)
             .Where(bounds => !bounds.IsEmpty).ToList();
         if (!targetingEffectBounds.IsEmpty) occupied.Add(targetingEffectBounds);
@@ -148,7 +148,7 @@ internal sealed partial class TableApplication
     {
         string text = amount.ToString(CultureInfo.InvariantCulture) + " base";
         int width = Math.Max(28, canvas.TextWidth(text, .66f, true) + 12);
-        var occupied = cardPresentation.Cards.Select(card => card.Display.Bounds)
+        var occupied = matchPresentation.Cards.Cards.Select(card => card.Display.Bounds)
             .Append(decisionPanelBounds).Append(targetingEffectBounds).Concat(stackRows.Select(row => row.Bounds))
             .Concat(pendingCounterReceiptBounds).Where(bounds => !bounds.IsEmpty).ToList();
         foreach (var hero in heroPositions) {

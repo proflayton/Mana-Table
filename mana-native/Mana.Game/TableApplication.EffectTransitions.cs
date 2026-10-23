@@ -19,7 +19,7 @@ internal sealed partial class TableApplication
         effectTransitionFrame = EffectTransitionFrame.Empty;
         counterReceiptPaint.Clear();
         if (OverlayOpen && !BattlefieldFocused || readingId != null || tableScene == null) return;
-        var visible = cardPresentation.Cards.Where(card => card.Zone is "Battlefield" or "Command" or "Stack" or "Graveyard" or "Exile")
+        var visible = matchPresentation.Cards.Cards.Where(card => card.Zone is "Battlefield" or "Command" or "Stack" or "Graveyard" or "Exile")
             .GroupBy(card => CardViews.Identity(card.Card), StringComparer.Ordinal)
             .Where(group => group.Key.Length > 0).ToDictionary(group => group.Key,
                 group => group.FirstOrDefault(card => card.Zone == "Battlefield")?.Display ?? group.Last().Display, StringComparer.Ordinal);
@@ -39,12 +39,12 @@ internal sealed partial class TableApplication
         } else foreach (var cohort in tableScene.Seats.SelectMany(seat => seat.Cohorts))
             if (visible.TryGetValue(cohort.Front.Id, out var pose)) groups.Add(new(cohort.Front.Id,
                 Array.AsReadOnly(cohort.MemberIds.Where(visible.ContainsKey).ToArray()), pose, CounterLanding(cohort.Front, pose)));
-        if (publicChanges.Latest is { } latest && latest.Cause?.CardId is { } sourceId
+        if (matchPresentation.LatestChange is { } latest && latest.Cause?.CardId is { } sourceId
             && ChangeSourcePreview(latest) is { } sourcePreview) visible[sourceId] = sourcePreview.Pose;
         // Protect the actual decision controls. A source preview above them
         // remains a visible, reported origin when its physical card is offscreen.
         int protectedTop = Math.Max(550, decisionPanelBounds.Top - 8);
-        effectTransitionFrame = EffectTransitionPresentation.Compose(publicChanges.Groups, groups, visible,
+        effectTransitionFrame = EffectTransitionPresentation.Compose(matchPresentation.Changes, groups, visible,
             now, preferences.ReducedMotion, new(1240, protectedTop, 350, 900 - protectedTop));
         foreach (var source in effectTransitionFrame.Sources) {
             float radius = Math.Max(21, Math.Max(source.Pose.Size.X, source.Pose.Size.Y) / 2 + source.Expansion);
@@ -80,7 +80,7 @@ internal sealed partial class TableApplication
 
     private List<Rectangle> CounterReceiptObstacles(IReadOnlyList<EffectPermanentGroup> groups)
     {
-        var occupied = cardPresentation.Cards.Select(card => card.Display.Bounds)
+        var occupied = matchPresentation.Cards.Cards.Select(card => card.Display.Bounds)
             .Concat(groups.Where(group => !group.ReceiptExclusion.IsEmpty).Select(group => group.ReceiptExclusion))
             .Concat(counterReceiptPaint.Select(receipt => receipt.Bounds))
             .Concat(stackRows.Select(row => row.Bounds)).ToList();
@@ -103,7 +103,7 @@ internal sealed partial class TableApplication
         if (!decisionPanelBounds.IsEmpty) occupied.Add(decisionPanelBounds);
         if (!targetingEffectBounds.IsEmpty) occupied.Add(targetingEffectBounds);
         if (pendingPreviewBounds is { } preview) occupied.Add(preview);
-        if (publicChanges.Latest is { } latest && ChangeSourcePreview(latest) != null)
+        if (matchPresentation.LatestChange is { } latest && ChangeSourcePreview(latest) != null)
             occupied.Add(ChangeBridgeBounds);
         foreach (var hero in heroPositions) {
             int radius = hero.Key == match?.ViewerId ? 58 : 48;

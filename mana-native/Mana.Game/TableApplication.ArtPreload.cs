@@ -28,9 +28,9 @@ internal sealed partial class TableApplication
         artPreloadSnapshot = null;
 
         var selection = deckEditor ? DeckSelection?.Card : null;
-        var catalog = deckEditor ? catalogPage : null;
-        var printings = deckEditor && workshopDialog == "printings" ? printingPage : null;
-        var practice = deckEditor ? workshopHand : null;
+        var catalog = deckEditor ? catalogRead.View.Value : null;
+        var printings = deckEditor && workshopDialog == "printings" ? printingRead.View.Value : null;
+        var practice = deckEditor ? deckWorkspace.View.Hand : null;
         var review = deckEditor ? null : reviewCard?.Card;
         if (ReferenceEquals(artPreloadSelection, selection) && ReferenceEquals(artPreloadCatalog, catalog)
             && ReferenceEquals(artPreloadPrintings, printings) && ReferenceEquals(artPreloadPractice, practice)

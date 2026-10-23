@@ -30,7 +30,7 @@ internal sealed partial class TableApplication
         var state = match!;
         var pause = AutomaticInteractionPause();
         if (pause == DecisionDockPauseReason.None && ExperienceLabOpen) pause = DecisionDockPauseReason.Preview;
-        if (pause == DecisionDockPauseReason.None && !playback.Ready(now)) pause = DecisionDockPauseReason.Presentation;
+        if (pause == DecisionDockPauseReason.None && !matchPresentation.Ready(now)) pause = DecisionDockPauseReason.Presentation;
         return new() {
             Automatic = automatic, Held = held, PauseReason = pause,
             PhaseStopKey = state.ActivePlayerId == state.ViewerId && preferences.Stops.Contains(state.PhaseKey) ? state.PhaseKey : "",

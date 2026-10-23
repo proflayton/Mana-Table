@@ -174,6 +174,57 @@ function jobSteps(job) {
   const headings = [...job.matchAll(/^      - (?:name|uses):.+$/gm)];
   return headings.map((heading, index) => job.slice(heading.index, headings[index + 1]?.index));
 }
+function checkoutStep(job) {
+  const steps = jobSteps(job).filter(step => /uses: actions\/checkout@/.test(step));
+  assert.equal(steps.length, 1, 'Each native job must select its source checkout once.');
+  return steps[0];
+}
+function sparseDirectories(job) {
+  const checkout = checkoutStep(job);
+  assert.match(checkout, /^          persist-credentials: false$/m);
+  assert.match(checkout, /^          sparse-checkout-cone-mode: true$/m, 'Ancestor build scripts and root configuration rely on cone mode.');
+  assert.doesNotMatch(checkout, /^          filter:/m, 'An explicit filter overrides checkout action sparse selection.');
+  const declaration = checkout.match(/^          sparse-checkout: ([^\n]+)$/m);
+  assert.ok(declaration, 'Declare the consumer source directories explicitly.');
+  if (declaration[1] !== '|') return [declaration[1]];
+  const selected = checkout.match(/^          sparse-checkout: \|\n((?:^            [^\n]+\n?)+)/m);
+  assert.ok(selected, 'The sparse directory block must not be empty.');
+  return selected[1].trim().split('\n').map(line => line.trim());
+}
+test('native consumers check out only their source dependencies while producers and publisher remain full', () => {
+  const jobs = nativeJobs();
+  const cases = [
+    ['native-ui', jobs.get('native-ui'), ['mana-native/ci']],
+    ['installer-lifecycle', jobs.get('installer-lifecycle'), ['mana-native/ci', 'mana-native/installer']],
+    ['managed-updates', jobs.get('managed-updates'), ['mana-native/ci', 'mana-native/installer']],
+    ['update-installer', jobs.get('update-installer'), ['mana-native/ci', 'mana-native/installer']],
+    ['sdk-updates', jobs.get('sdk-updates'), ['mana-native/ci', 'mana-native/updates', 'mana-native/Mana.Update.Lifecycle.Tests', 'mana-native/Mana.Client', 'mana-native/Mana.Contracts']],
+    ['production installer', nativeJobs('mana-table-native-installer.yml').get('build'), ['mana-native/ci', 'mana-native/installer', 'scripts/mana-table']]
+  ];
+  for (const [name, job, directories] of cases)
+    assert.deepEqual(sparseDirectories(job).sort(), [...directories].sort(), `${name} must retain exactly its audited source dependencies.`);
+  for (const name of ['checks', 'tools', 'package', 'publish'])
+    assert.doesNotMatch(checkoutStep(jobs.get(name)), /^          (?:sparse-checkout(?:-cone-mode)?|filter):/m,
+      `${name} retains its complete source checkout, including the package producer's clean-tree and git archive authority.`);
+});
+test('the SDK lifecycle sparse checkout includes every transitive project reference', () => {
+  const root = path.resolve(__dirname, '../../..');
+  const directories = sparseDirectories(nativeJobs().get('sdk-updates'));
+  const seen = new Set();
+  function visit(project) {
+    const relative = path.relative(root, project).replaceAll(path.sep, '/');
+    assert.ok(directories.some(directory => relative.startsWith(directory + '/')),
+      `The SDK lifecycle needs a reviewed sparse directory for ${relative}.`);
+    if (seen.has(project)) return;
+    seen.add(project);
+    const xml = fs.readFileSync(project, 'utf8').replace(/<!--[\s\S]*?-->/g, '');
+    for (const match of xml.matchAll(/<ProjectReference\b[^>]*\bInclude\s*=\s*(["'])([^"']+)\1/g)) {
+      assert.doesNotMatch(match[2], /\$\(|[?*;]/, 'Dynamic project references require an explicit sparse dependency review.');
+      visit(path.resolve(path.dirname(project), match[2].replaceAll('\\', '/')));
+    }
+  }
+  visit(path.join(root, 'mana-native/Mana.Update.Lifecycle.Tests/Mana.Update.Lifecycle.Tests.csproj'));
+});
 test('native consumers receive only their required pinned tool archives', () => {
   const jobs = nativeJobs(), producer = jobs.get('tools');
   const artifact = kind => `mana-native-tools-${kind}-\${{ github.sha }}`;

@@ -46,7 +46,7 @@ internal sealed partial class TableApplication
             else {
                 // Keep the held occurrence in the scene, so release continues
                 // from the pointer instead of respawning it at the library.
-                var heldPose = cardPresentation.Hold(CardIdentity(heldCard), new(pointer.ToVector2() + new Vector2(0, -72), new(132, 185), -.025f, Elevation: 18));
+                var heldPose = matchPresentation.Cards.Hold(CardIdentity(heldCard), new(pointer.ToVector2() + new Vector2(0, -72), new(132, 185), -.025f, Elevation: 18));
                 PaintInteractionCard(heldCard, heldPose, false, legal);
             }
         }
@@ -274,7 +274,7 @@ internal sealed partial class TableApplication
             if (identity.Length == 0) identity = "stack:" + (state.Stack.ElementAtOrDefault(i)?.Id ?? card.Name);
             Vector2 entrance = new(800, 520);
             if (card.VisualId.Length > 0) {
-                if (cardPresentation.TryGetPose(card.VisualId, out var sourcePose)) entrance = sourcePose.Center;
+                if (matchPresentation.Cards.TryGetPose(card.VisualId, out var sourcePose)) entrance = sourcePose.Center;
                 else if (state.Activity.LastOrDefault(a => a.CardId == card.VisualId && a.PlayerId != null) is { PlayerId: { } actor })
                     entrance = SeatHand(actor);
             }

@@ -11,7 +11,7 @@ internal sealed partial class TableApplication
         string[] roles = ["Lands", "Ramp", "Draw", "Interaction"];
         int[] positions = [600, 716, 828, 940], widths = [108, 104, 104, 160];
         for (int i = 0; i < roles.Length; i++) {
-            string role = roles[i]; string count = workshop?.Insights.RoleCounts.GetValueOrDefault(role).ToString() ?? "...";
+            string role = roles[i]; string count = deckWorkspace.View.Workshop?.Insights.RoleCounts.GetValueOrDefault(role).ToString() ?? "...";
             Button("workshop-build-role:" + role, role + " " + count, positions[i], 714, widths[i], () => {
                 workshopRoleFilter = workshopRoleFilter == role ? "" : role; workshopManaFilter = null; analysisRelatedCards.Clear();
                 commanderCandidates = false; deckSection = "Main"; deckCardsPage = 0; deckIssuesOnly = false;
@@ -24,32 +24,32 @@ internal sealed partial class TableApplication
         MenuAction("deck-analysis", "Tune", new(158, 190, 134, 32), OpenDeckAnalysis, !busy && WorkshopCurrent, analysisOpen, .8f);
         MenuAction("workshop-test", "Test", new(302, 190, 100, 32), () => ShowWorkshopTab("test"), !busy, workshopTab == "test", .8f);
         MenuAction("workshop-results", "Results", new(412, 190, 116, 32), () => ShowWorkshopTab("results"), !busy, workshopTab == "results", .8f);
-        string version = workshop?.Versions.FirstOrDefault(v => v.Id == workshop.VersionId)?.Label ?? "";
-        string info = workshopError.Length > 0 ? "Deck tools unavailable" : !WorkshopCurrent ? "Loading deck tools..." : version + (workshop!.Plan.Length == 0 ? "  ·  Add your deck's plan" : "  ·  " + workshop.Plan);
+        string version = deckWorkspace.View.Workshop?.Versions.FirstOrDefault(v => v.Id == deckWorkspace.View.Workshop.VersionId)?.Label ?? "";
+        string info = deckWorkspace.View.WorkshopError.Length > 0 ? "Deck tools unavailable" : !WorkshopCurrent ? "Loading deck tools..." : version + (deckWorkspace.View.Workshop!.Plan.Length == 0 ? "  ·  Add your deck's plan" : "  ·  " + deckWorkspace.View.Workshop.Plan);
         if (WorkshopCurrent) MenuAction("workshop-plan-summary", version + " / Deck plan", new(540, 190, 614, 32), () => EditWorkshopPlan(false), !busy, size: .72f);
-        else canvas.Text(info, 540, 199, workshopError.Length > 0 ? Red : Muted, .62f, 614, 1);
-        MenuAction("workshop-source", workshop?.Source == null ? "Link Archidekt" : "Linked source", new(1174, 190, 184, 32), () => { if (workshop?.Source == null) ImportArchidekt(); else { workshopDialog = "source"; WorkshopDialogPage = 0; } }, !busy && WorkshopCurrent, size: .72f);
+        else canvas.Text(info, 540, 199, deckWorkspace.View.WorkshopError.Length > 0 ? Red : Muted, .62f, 614, 1);
+        MenuAction("workshop-source", deckWorkspace.View.Workshop?.Source == null ? "Link Archidekt" : "Linked source", new(1174, 190, 184, 32), () => { if (deckWorkspace.View.Workshop?.Source == null) ImportArchidekt(); else { workshopDialog = "source"; WorkshopDialogPage = 0; } }, !busy && WorkshopCurrent, size: .72f);
         MenuAction("workshop-history", "Versions", new(1368, 190, 184, 32), () => { workshopDialog = "versions"; WorkshopDialogPage = 0; }, !busy && WorkshopCurrent, size: .72f);
     }
     private void DrawWorkshopStatus()
     {
         if (workshopTab != "build" && InlineActivityVisible) DrawInlineActivity();
-        if (workshopError.Length == 0) return;
-        canvas.Text(workshopError, 48, 954, Red, .63f, 1240, 2);
+        if (deckWorkspace.View.WorkshopError.Length == 0) return;
+        canvas.Text(deckWorkspace.View.WorkshopError, 48, 954, Red, .63f, 1240, 2);
         Button("workshop-retry", "Retry deck tools", 1338, 953, 214, () => RequestWorkshopRefresh(), !busy, height: 34);
     }
     private void DrawWorkshopTest()
     {
         canvas.Line(new(1076, 250), new(1076, 936), LobbyTrim * .55f);
         canvas.Text("YOUR QUESTION", 52, 255, Gold, .74f, 855, 1, true);
-        canvas.Text(workshop?.Question is { Length: > 0 } question ? question : "No question set", 54, 294, Ink, .85f, 980, 2);
+        canvas.Text(deckWorkspace.View.Workshop?.Question is { Length: > 0 } question ? question : "No question set", 54, 294, Ink, .85f, 980, 2);
         canvas.Text("Record your answer in Results.", 54, 332, Muted, .61f, 980, 1);
         MenuAction("workshop-question", "Set test question", new(54, 365, 224, 33), () => EditWorkshopPlan(true), !busy && WorkshopCurrent, size: .76f);
         MenuAction("workshop-plan", "Deck plan", new(288, 365, 180, 33), () => EditWorkshopPlan(false), !busy && WorkshopCurrent, size: .76f);
         canvas.Line(new(54, 409), new(1046, 409), LobbyTrim);
         canvas.Text("OPENING HAND", 54, 430, Gold, .77f, 860, 1, true);
         canvas.Text("Draw-only practice. Redraw seven, without mulligan rules.", 54, 465, Muted, .68f, 977, 2);
-        if (workshopHand is { } hand) {
+        if (deckWorkspace.View.Hand is { } hand) {
             int handPage = Math.Clamp(workshopPage, 0, Math.Max(0, (hand.Hand.Length - 1) / 7));
             var shown = hand.Hand.Skip(handPage * 7).Take(7).ToArray();
             const float nameSize = .65f;
@@ -107,33 +107,33 @@ internal sealed partial class TableApplication
         canvas.Text(Connected ? "Leave your friends' table to start a test game." : DeckReady ? "This game is recorded with the deck version you play." : "Finish the deck checks in Build to start a game.", 1106, 758, DeckReady && !Connected ? Muted : Gold, .75f, 429, 3);
         Button("workshop-start-game", "Start test game", 1106, 855, 430, StartWorkshopTable, !busy && !Connected && DeckReady && WorkshopCurrent, true, 52, prominent: true);
     }
-    private string WorkshopVersionLabel(string id) => workshop?.Versions.FirstOrDefault(v => v.Id == id)?.Label ?? id[..Math.Min(8, id.Length)];
+    private string WorkshopVersionLabel(string id) => deckWorkspace.View.Workshop?.Versions.FirstOrDefault(v => v.Id == id)?.Label ?? id[..Math.Min(8, id.Length)];
     private static string WorkshopTime(long timestamp) => DateTimeOffset.FromUnixTimeMilliseconds(timestamp).ToLocalTime().ToString("MMM d · h:mm tt");
     private void DrawWorkshopResults()
     {
         canvas.Panel(new(32, 236, 476, 712), new(21, 29, 39), LobbyTrim, 8);
         canvas.Panel(new(524, 236, 1044, 712), new(21, 29, 39), LobbyTrim, 8);
         canvas.Text("YOUR TESTS", 52, 255, Gold, .78f, 420, 1, true);
-        int currentTests = workshopTests.Count(t => t.VersionId == workshop?.VersionId);
+        int currentTests = deckWorkspace.View.Tests.Count(t => t.VersionId == deckWorkspace.View.Workshop?.VersionId);
         canvas.Text(currentTests == 0 ? "Current version: no tests yet" : $"Current version: {currentTests} test{(currentTests == 1 ? "" : "s")}", 54, 294, currentTests == 0 ? Gold : Muted, .74f, 425, 2);
-        workshopPage = Math.Clamp(workshopPage, 0, Math.Max(0, (workshopTests.Length - 1) / 6));
-        for (int i = 0; i < Math.Min(6, workshopTests.Length - workshopPage * 6); i++) {
-            var test = workshopTests[workshopPage * 6 + i]; int y = 355 + i * 79;
+        workshopPage = Math.Clamp(workshopPage, 0, Math.Max(0, (deckWorkspace.View.Tests.Length - 1) / 6));
+        for (int i = 0; i < Math.Min(6, deckWorkspace.View.Tests.Length - workshopPage * 6); i++) {
+            var test = deckWorkspace.View.Tests[workshopPage * 6 + i]; int y = 355 + i * 79;
             canvas.Panel(new(50, y, 440, 68), workshopSelectedTest == test.Id ? new(37, 59, 75) : new(27, 38, 49), workshopSelectedTest == test.Id ? Blue : LobbyTrim, 5);
             canvas.Text((test.Kind == "hand" ? "Hand sample" : "AI game") + "  ·  " + WorkshopVersionLabel(test.VersionId), 64, y + 10, Ink, .72f, 410, 1, true);
             canvas.Text(WorkshopTime(test.Started) + "  ·  " + test.Status, 64, y + 39, Muted, .6f, 410, 1);
             hits.Add(new("workshop-test-record:" + test.Id, Scope, new(50, y, 440, 68), () => workshopSelectedTest = test.Id));
         }
         Button("workshop-tests-prev", "Previous", 54, 867, 150, () => workshopPage--, workshopPage > 0, height: 32);
-        Button("workshop-tests-next", "Next", 214, 867, 120, () => workshopPage++, (workshopPage + 1) * 6 < workshopTests.Length, height: 32);
-        if (workshopTests.FirstOrDefault(t => t.Id == workshopSelectedTest) is not { } selected) {
+        Button("workshop-tests-next", "Next", 214, 867, 120, () => workshopPage++, (workshopPage + 1) * 6 < deckWorkspace.View.Tests.Length, height: 32);
+        if (deckWorkspace.View.Tests.FirstOrDefault(t => t.Id == workshopSelectedTest) is not { } selected) {
             canvas.Text("Start with a question.", 570, 365, Ink, 1.65f, 917, 1, true);
             canvas.Text("Sample a hand or play a real AI game. Your observations stay attached to the version you tested, even after editing or refreshing Archidekt.", 572, 440, Muted, 1, 882, 5);
             Button("workshop-results-test", "Choose a test", 574, 637, 400, () => ShowWorkshopTab("test"), !busy, true, 52); return;
         }
         canvas.Text(selected.Kind == "hand" ? "Opening hand sample" : "AI game observations", 550, 257, Ink, 1.16f, 970, 1, true);
         canvas.Text(Mana.Magic.DeckExperience.ResultLabel(selected), 552, 333, selected.Status is "conceded" or "interrupted" or "error" ? Gold : Ink, .82f, 950, 1, true);
-        canvas.Text(WorkshopVersionLabel(selected.VersionId) + (selected.VersionId == workshop?.VersionId ? " | Current playable list" : " | Earlier playable list"), 552, 302, selected.VersionId == workshop?.VersionId ? Blue : Gold, .75f, 960, 1);
+        canvas.Text(WorkshopVersionLabel(selected.VersionId) + (selected.VersionId == deckWorkspace.View.Workshop?.VersionId ? " | Current playable list" : " | Earlier playable list"), 552, 302, selected.VersionId == deckWorkspace.View.Workshop?.VersionId ? Blue : Gold, .75f, 960, 1);
         canvas.Text(selected.Question.Length == 0 ? "No test question was set." : selected.Question, 552, 368, Ink, .88f, 949, 2, true);
         string opponents = selected.Opponents.Length == 0 ? "" : "AI decks: " + string.Join(", ", selected.Opponents.Select(id => workshopSetup?.Opponents.FirstOrDefault(o => o.Id == id)?.Name ?? presets.FirstOrDefault(p => "preset:" + p.Id == id)?.Name ?? (id == "green" ? "Verdant" : id == "red" ? "Cinder" : id)));
         canvas.Text("Question answer: not measured automatically. Record turn-by-turn evidence in your notes.", 552, 440, Gold, .64f, 950, 2);
@@ -183,7 +183,7 @@ internal sealed partial class TableApplication
     }
     private void DrawWorkshopVersions()
     {
-        if (workshop is not { } state) return;
+        if (deckWorkspace.View.Workshop is not { } state) return;
         canvas.Text("Versions save playable content. Your notes, roles, and past test records stay with the deck.", 206, 244, Muted, .84f, 1165, 3);
         var versions = state.Versions.Reverse().ToArray();
         WorkshopDialogPage = Math.Clamp(WorkshopDialogPage, 0, Math.Max(0, (versions.Length - 1) / 7));
@@ -200,7 +200,7 @@ internal sealed partial class TableApplication
     }
     private void DrawWorkshopCardRoles()
     {
-        if (DeckSelection is not { } card || workshop is not { } state) return;
+        if (DeckSelection is not { } card || deckWorkspace.View.Workshop is not { } state) return;
         var metadata = state.Roles.FirstOrDefault(r => r.CardId == card.Id);
         PaintCard(card.Card, new Pose(new(376, 495), new(270, 378)), false, false);
         canvas.Text(card.Card.Name, 572, 250, Ink, 1.16f, 790, 2, true);
@@ -222,7 +222,7 @@ internal sealed partial class TableApplication
     }
     private void DrawWorkshopSwap()
     {
-        if (DeckSelection is not { } candidate || workshop is not { } state || selectedDeckDetails is not { } deck) return;
+        if (DeckSelection is not { } candidate || deckWorkspace.View.Workshop is not { } state || selectedDeckDetails is not { } deck) return;
         canvas.Text("Bring in one " + candidate.Card.Name + ". The selected cut moves to Considering in the same saved edit.", 206, 246, Muted, .86f, 1153, 3);
         var options = deck.Entries.Where(e => e.Section == "Main" && e.Quantity > 0)
             .OrderBy(e => state.Roles.FirstOrDefault(r => r.CardId == e.Id)?.Pinned == true).ThenBy(e => e.Card.Name).ToArray();
@@ -242,7 +242,7 @@ internal sealed partial class TableApplication
     }
     private void DrawWorkshopSource()
     {
-        if (workshop?.Source is not { } source) return;
+        if (deckWorkspace.View.Workshop?.Source is not { } source) return;
         canvas.Text(source.Name, 206, 250, Ink, 1.4f, 1160, 2, true);
         canvas.Text(source.Url, 208, 330, Blue, .82f, 1160, 2);
         canvas.Text("Last checked: " + WorkshopTime(source.LastChecked) + "  ·  " + source.Status, 208, 404, Muted, .8f, 1160, 2);
@@ -301,7 +301,7 @@ internal sealed partial class TableApplication
     }
     private void DrawWorkshopSavedHand()
     {
-        if (workshopTests.FirstOrDefault(t => t.Id == workshopSelectedTest) is not { } test) return;
+        if (deckWorkspace.View.Tests.FirstOrDefault(t => t.Id == workshopSelectedTest) is not { } test) return;
         canvas.Text(WorkshopVersionLabel(test.VersionId) + "  ·  " + WorkshopTime(test.Started) + "  ·  " + test.Status, 206, 244, Blue, .85f, 1160, 2);
         canvas.Text("These are the cards recorded with this sample. Select one to read it.", 208, 306, Muted, .82f, 1160, 2);
         WorkshopDialogPage = Math.Clamp(WorkshopDialogPage, 0, Math.Max(0, (test.Hand.Length - 1) / 7));

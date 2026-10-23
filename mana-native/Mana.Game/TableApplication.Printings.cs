@@ -1,6 +1,7 @@
 using Mana.Contracts;
 using Mana.Magic;
 using Mana.Renderer;
+using Mana.Client;
 using Microsoft.Xna.Framework;
 
 namespace Mana.Table;
@@ -8,13 +9,15 @@ namespace Mana.Table;
 internal sealed partial class TableApplication
 {
     private PrintingSelection? printingSelection;
-    private CatalogPage? printingPage;
-    private string printingError = "", printingFilter = "";
-    private int printingGeneration, printingFinish;
+    private readonly LatestRead<PrintingQuery, CatalogPage> printingRead;
+    private sealed record PrintingQuery(PrintingSelection Selection, int Offset, string Filter, string Finish);
+    private string printingFilter = "";
+    private int printingFinish;
+    private double printingAfter;
     private void ClosePrintings()
     {
         workshopDialog = ""; deckTextFocus = ""; textFocus = false;
-        printingSelection = null; printingPage = null; printingError = ""; printingGeneration++;
+        printingSelection = null; printingRead.Clear();
     }
 
     private static string PrintingLabel(Card card) => card.Edition + (card.CollectorNumber.Length > 0 ? " #" + card.CollectorNumber : "")
@@ -33,29 +36,17 @@ internal sealed partial class TableApplication
     private void LoadPrintings(int offset)
     {
         if (printingSelection is not { } selection || !selection.IsCurrent(selectedDeckDetails) || services.Printings is not { } source) return;
-        int generation = ++printingGeneration;
         string filter = printingFilter.Trim(), finish = new[] { "", "nonfoil", "foil" }[printingFinish];
-        printingPage = null; printingError = "";
-        _ = Task.Run(async () => {
-            try {
-                await Task.Delay(150);
-                if (generation != printingGeneration) return;
-                var page = await source.CardPrintingsAsync(selection.Card.Id, offset, text: filter, finish: finish);
-                updates.Enqueue(() => {
-                    if (generation == printingGeneration && workshopDialog == "printings"
-                        && selection == printingSelection && selection.IsCurrent(selectedDeckDetails)) printingPage = page;
-                });
-            } catch (Exception ex) {
-                updates.Enqueue(() => { if (generation == printingGeneration && workshopDialog == "printings") printingError = ex.Message; });
-            }
-        });
+        var query = new PrintingQuery(selection, offset, filter, finish);
+        printingRead.Request(query, () => source.CardPrintingsAsync(selection.Card.Id, offset, text: filter, finish: finish));
+        printingAfter = now + .15;
     }
 
     private void ChoosePrinting(CatalogCard printing)
     {
         if (busy || printingSelection is not { } selection || services.Printings is not { } source) return;
-        if (!selection.IsCurrent(selectedDeckDetails)) { printingError = "The deck changed. Close this chooser and reopen it from the card you want to change."; return; }
-        if (printingPage?.Cards.Any(card => card.Id == printing.Id) != true) return;
+        if (!selection.IsCurrent(selectedDeckDetails)) return;
+        if (printingRead.View.Value?.Cards.Any(card => card.Id == printing.Id) != true) return;
         if (printing.Id == selection.Card.Id) { ClosePrintings(); return; }
         if (selection.FromLibrary) {
             librarySelection = printing; deckBackId = null; ClosePrintings();
@@ -85,7 +76,7 @@ internal sealed partial class TableApplication
         Button("printings-finish", new[] { "All finishes", "Nonfoil only", "Foil only" }[printingFinish], 1040, 300, 322, () => {
             printingFinish = (printingFinish + 1) % 3; LoadPrintings(0);
         }, !busy, height: 34);
-        if (printingPage is { } page) {
+        if (printingRead.View.Value is { } page) {
             for (int i = 0; i < page.Cards.Length; i++) {
                 var card = page.Cards[i]; int x = 214 + i * 194;
                 PaintCard(card.Card, new Pose(new(x + 84, 471), new(168, 235)), target.Id == card.Id, false);
@@ -99,8 +90,8 @@ internal sealed partial class TableApplication
             Button("printings-prev", "Previous", 214, 817, 140, () => LoadPrintings(Math.Max(0, page.Offset - 6)), !busy && page.Offset > 0, height: 36);
             Button("printings-next", "Next", 368, 817, 116, () => LoadPrintings(page.Offset + 6), !busy && page.Offset + page.Cards.Length < page.Total, height: 36);
             canvas.Text($"{(page.Total == 0 ? 0 : page.Offset + 1)}–{page.Offset + page.Cards.Length} of {page.Total} printings", 510, 828, Muted, .7f, 650, 1);
-        } else if (printingError.Length > 0) {
-            canvas.Text(printingError, 214, 380, Red, .9f, 1140, 5);
+        } else if (printingRead.View.Error.Length > 0) {
+            canvas.Text(printingRead.View.Error, 214, 380, Red, .9f, 1140, 5);
             Button("printings-retry", "Retry", 214, 705, 176, () => LoadPrintings(0), !busy, height: 38);
         } else {
             DrawLoadingIndicator(new(800, 448), 24, true, Blue);

@@ -59,6 +59,12 @@ public record UpdateDownloadProgress(long BytesReceived, long TotalBytes)
 }
 public record PreparedUpdate(AppRelease Release, string InstallerPath);
 
+/// <summary>
+/// Update operations must observe cancellation and complete their owned file and
+/// process cleanup before their returned task settles. The application joins
+/// active operations during shutdown; cancelling a client wait must not leave
+/// package writes or native preparation running beyond the application's life.
+/// </summary>
 public interface IAppUpdates
 {
     AppBuild Build { get; }

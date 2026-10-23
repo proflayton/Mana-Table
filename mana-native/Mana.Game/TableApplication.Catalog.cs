@@ -1,4 +1,5 @@
 using Mana.Contracts;
+using Mana.Client;
 using Microsoft.Xna.Framework.Input;
 using Keys = Microsoft.Xna.Framework.Input.Keys;
 
@@ -6,11 +7,11 @@ namespace Mana.Table;
 
 internal sealed partial class TableApplication
 {
-    private CatalogPage? catalogPage;
-    private string catalogText = "", catalogError = "", deckTextFocus = "", deckMenu = "";
-    private int catalogType, catalogMana, catalogOffset, catalogGeneration;
+    private readonly LatestRead<CardQuery, CatalogPage> catalogRead;
+    private string catalogText = "", deckTextFocus = "", deckMenu = "";
+    private int catalogType, catalogMana, catalogOffset;
     private int? catalogColors;
-    private bool catalogCommanderColors, catalogManaSort, catalogPending, catalogInFlight, deckSelectAll;
+    private bool catalogCommanderColors, catalogManaSort, deckSelectAll;
     private double catalogAfter;
     private static readonly string[] CatalogTypes = ["", "Creature", "Instant", "Sorcery", "Artifact", "Enchantment", "Planeswalker", "Land", "Legendary"];
     private void ResetCatalog()
@@ -22,23 +23,17 @@ internal sealed partial class TableApplication
     private void ChangeCatalog(bool paging = false)
     {
         if (!paging) catalogOffset = 0;
-        catalogGeneration++; catalogPending = true; catalogAfter = now + .25;
-        catalogPage = null; catalogError = ""; librarySelection = null;
+        var query = new CardQuery(catalogText.Trim(), CatalogTypes[catalogType], catalogCommanderColors ? CommanderIdentity : catalogColors,
+            catalogMana == 0 ? null : catalogMana - 1, catalogManaSort ? "mana" : "name", catalogOffset);
+        catalogRead.Request(query, () => catalog.SearchCardsAsync(query));
+        catalogAfter = now + .25; librarySelection = null;
     }
     private void UpdateDeckCatalog()
     {
-        if (match != null || !deckEditor || !loaded || !catalogPending || catalogInFlight || now < catalogAfter) return;
-        int generation = catalogGeneration;
-        var query = new CardQuery(catalogText.Trim(), CatalogTypes[catalogType], catalogCommanderColors ? CommanderIdentity : catalogColors,
-            catalogMana == 0 ? null : catalogMana - 1, catalogManaSort ? "mana" : "name", catalogOffset);
-        catalogPending = false; catalogInFlight = true;
-        _ = Task.Run(async () => {
-            try {
-                var page = await catalog.SearchCardsAsync(query);
-                updates.Enqueue(() => { if (generation == catalogGeneration) catalogPage = page; });
-            } catch (Exception ex) { updates.Enqueue(() => { if (generation == catalogGeneration) catalogError = ex.Message; }); }
-            finally { updates.Enqueue(() => catalogInFlight = false); }
-        });
+        if (match != null || !deckEditor || !loaded) return;
+        if (now >= catalogAfter) catalogRead.Start();
+        if (workshopDialog == "printings" && printingSelection?.IsCurrent(selectedDeckDetails) == true && now >= printingAfter) printingRead.Start();
+        else if (workshopDialog != "printings" || printingSelection?.IsCurrent(selectedDeckDetails) != true) printingRead.Clear();
     }
     private void FocusDeckText(string field) { deckTextFocus = field; textFocus = true; deckSelectAll = false; }
     private void DeckText(char character)

@@ -23,7 +23,7 @@ internal sealed partial class TableApplication
         }
         var source = CardViews.Source(state, decision);
         bool valued = decision.Effect is { Kind: "damage" };
-        var origin = source == null ? null : cardPresentation.Cards.LastOrDefault(card => card.Zone != "Stack" && card.ChoiceSlot < 0 && SameVisibleCard(card.Card, source));
+        var origin = source == null ? null : matchPresentation.Cards.Cards.LastOrDefault(card => card.Zone != "Stack" && card.ChoiceSlot < 0 && SameVisibleCard(card.Card, source));
         if (valued) DrawTargetingEffect(state, decision, source);
         if (origin == null && !valued) return;
         if (origin != null) canvas.CardFrame(origin.Display with { Size = origin.Display.Size + new Vector2(9) }, valued ? Gold : Blue, 2);
@@ -33,7 +33,7 @@ internal sealed partial class TableApplication
         Rectangle? targetBounds = null;
         if (hit is { Card: { Selectable: true, Key.Length: > 0 } card } && CurrentHit(hit)
             && IsCardActionable(card) && !hit.Id.StartsWith("targeting-", StringComparison.Ordinal)) {
-            var destination = cardPresentation.Cards.LastOrDefault(entry => entry.ChoiceSlot < 0 && SameVisibleCard(entry.Card, card));
+            var destination = matchPresentation.Cards.Cards.LastOrDefault(entry => entry.ChoiceSlot < 0 && SameVisibleCard(entry.Card, card));
             if (destination != null && (valued || destination.Id != origin?.Id)) {
                 target = destination.Display.EdgeToward(originPose.Center, 5);
                 targetBounds = destination.Display.Bounds;

@@ -12,7 +12,7 @@ internal sealed partial class TableApplication
     {
         // A pile face represents its zone on ordinary click. Explicit inspection
         // can still read that disclosed occurrence without opening the browser.
-        if (cardPresentation.Cards.Any(entry => entry.Hit.Id == hit.Id && entry.Hit.Scope == hit.Scope && entry.Request.OpensZone)) {
+        if (matchPresentation.Cards.Cards.Any(entry => entry.Hit.Id == hit.Id && entry.Hit.Scope == hit.Scope && entry.Request.OpensZone)) {
             CollapseCardReading();
             hit.Action();
             return;
@@ -31,7 +31,7 @@ internal sealed partial class TableApplication
         // Ordinary inspection stays on the actual scene occurrence and shares
         // its reader/action catalog. Auxiliary required views and reverse faces
         // retain the noncommitting fallback until they use that same owner.
-        var canonical = cardPresentation.Cards.LastOrDefault(entry => entry.ChoiceSlot < 0
+        var canonical = matchPresentation.Cards.Cards.LastOrDefault(entry => entry.ChoiceSlot < 0
             && CardViews.Same(entry.Card, card) && CardContext.CanRead(entry));
         bool needsStateDetails = canonical?.Zone == "Battlefield" && !TableStudyEnabled
             && card.States is { } states && states.Length > 0;
@@ -41,7 +41,7 @@ internal sealed partial class TableApplication
             return;
         }
         // A poll may have revoked visibility since the last rendered hit region.
-        var choice = cardPresentation.RevealedEntry(card, CardContext);
+        var choice = matchPresentation.Cards.RevealedEntry(card, CardContext);
         inspectedChoice = choice == null ? null : (Scope, choice.ChoiceSlot);
         inspected = choice == null ? VisibleCards().FirstOrDefault(c => SameVisibleCard(c, card)) : ChoiceFace(choice.ChoiceSlot);
         if (inspected == null) return;
@@ -74,7 +74,7 @@ internal sealed partial class TableApplication
         else if (result.Reply != null) {
             if (match.Decision?.Intent == DecisionIntent.Selection) CollapseCardReading();
             bool sourceReader = match.Decision?.Intent == DecisionIntent.Priority
-                && cardPresentation.Pinned is { Zone: "Battlefield" } entry && SameVisibleCard(entry.Card, card);
+                && matchPresentation.Cards.Pinned is { Zone: "Battlefield" } entry && SameVisibleCard(entry.Card, card);
             if (!sourceReader) zoneName = null;
             Send(result.Reply);
         }
@@ -137,7 +137,7 @@ internal sealed partial class TableApplication
             if (ScrollDeckWorkspace(direction)) return;
             if (workshopDialog.Length > 0) return;
             if (deckMenu.Length > 0) return;
-            if (pointer.X < 580 && catalogPage is { } page) {
+            if (pointer.X < 580 && catalogRead.View.Value is { } page) {
                 catalogOffset = Math.Clamp(catalogOffset - direction * 6, 0, Math.Max(0, (page.Total - 1) / 6 * 6)); ChangeCatalog(true);
             } else deckCardsPage = Math.Clamp(deckCardsPage - direction, 0, Math.Max(0, (DeckRowsToShow().Length - 1) / DeckRows));
             return;

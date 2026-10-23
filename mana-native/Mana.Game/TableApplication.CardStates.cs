@@ -110,7 +110,7 @@ internal sealed partial class TableApplication
             .Concat(states.Select(s => (Label: s, Value: ""))).ToArray();
         if (rows.Length == 0) return;
         int x = pose.Bounds.Right + 17 + 265 <= 1238 ? pose.Bounds.Right + 17 : pose.Bounds.Left - 282;
-        var target = cardPresentation.Pinned?.ReaderTarget ?? pose;
+        var target = matchPresentation.Cards.Pinned?.ReaderTarget ?? pose;
         int y = Math.Clamp(target.Bounds.Top + 8, 70, 740);
         var seat = TableLayout.LocalSeatBounds;
         int bottom = x + 265 > seat.Left && x < seat.Right ? Math.Min(882, seat.Top - 12) : 882;

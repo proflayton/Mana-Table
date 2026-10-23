@@ -42,8 +42,8 @@ internal sealed partial class TableApplication
         Button("lab-reset", "Reset", 1000, 11, 100, () => ReplayLabStage(Lab.StageIndex), !busy, height: 34);
         Button("lab-previous", "Previous", 1110, 11, 125, () => ReplayLabStage(Lab.StageIndex - 1), !busy && Lab.StageIndex > 0, height: 34);
         Button("lab-next", "Next", 1245, 11, 100, () => ReplayLabStage(Lab.StageIndex + 1), !busy && Lab.StageIndex + 1 < Lab.Stages.Count, height: 34);
-        Button("lab-why", publicChanges.Groups.Count > 0 ? "Why?" : "History", 1355, 11, 80,
-            () => { if (publicChanges.Groups.Count > 0) OpenChanges(); else { overlay = "history"; historyPage = 0; } }, height: 34);
+        Button("lab-why", matchPresentation.Changes.Count > 0 ? "Why?" : "History", 1355, 11, 80,
+            () => { if (matchPresentation.Changes.Count > 0) OpenChanges(); else { overlay = "history"; historyPage = 0; } }, height: 34);
         Button("lab-exit", "Exit lab", 1445, 11, 130, RequestExit, height: 34);
     }
     private void ReplayLabStage(int stage) => PresentLab(stage == Lab.StageIndex + 1 && stage < Lab.Stages.Count

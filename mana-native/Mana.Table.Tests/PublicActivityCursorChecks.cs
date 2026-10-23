@@ -117,7 +117,11 @@ internal static class PublicActivityCursorChecks
             Players = changed.Players.Select(player => player.Id != 0 ? player : player with {
                 Zones = player.Zones.Select(zone => zone.Name != "Hand" ? zone : zone with { Cards = [] }).ToImmutableArray()
             }).ToImmutableArray() };
-        engine.Present(nextViewer); app.TestPort.Accept(engine.State); frame = Tick(10.2);
+        engine.Present(nextViewer); app.TestPort.Accept(engine.State);
+        check(app.Frame == null && app.TestPort.Hits.Count == 0
+            && app.TestPort.DisplayedPose(privateFace.VisualId) == null && app.TestPort.LastResolution == null,
+            "A viewer switch immediately revokes prior-seat hits, faces and feedback before composition");
+        frame = Tick(10.2);
         check(app.TestPort.LastResolution == null && app.TestPort.PublicChanges.Count == 0 && app.TestPort.PublicDepartures.Count == 0
             && frame.Cards.All(card => !card.Focused && card.Card.VisualId != privateFace.VisualId)
             && frame.Hits.All(hit => hit.Card?.VisualId != privateFace.VisualId)

@@ -12,7 +12,6 @@ internal sealed partial class TableApplication
     private bool combatCandidates;
     private string? inspectedStack;
     private string? reviewedAttacker;
-    private readonly SceneEffects effects = new();
     private string? CombatSource => dragging ? dragSource?.Card?.CombatId : selectedCombat;
     private bool HasCombat => match?.Combat is { } combat && (combat.Attackers.Length > 0 || match.Decision?.Intent is DecisionIntent.Attack or DecisionIntent.Block);
     private bool CombatTarget(Card card) => match is { } state && CombatSource is { } source &&
@@ -131,9 +130,9 @@ internal sealed partial class TableApplication
     }
     private void DrawCardEffects()
     {
-        foreach (var cue in effects.Cards) {
+        foreach (var cue in matchPresentation.CardCues) {
             double age = now - cue.Started;
-            if (age < 0 || age > 1.1 || !cardPresentation.TryGetPose(cue.VisualId, out var pose)) continue;
+            if (age < 0 || age > 1.1 || !matchPresentation.Cards.TryGetPose(cue.VisualId, out var pose)) continue;
             float alpha = preferences.ReducedMotion ? 1 : (float)(1 - age / 1.1);
             var color = cue.Kind == CueKind.Damage ? Red : cue.Kind == CueKind.Arrive ? Gold : Blue;
             canvas.CardFrame(pose with { Size = pose.Size + new Vector2(8 + (preferences.ReducedMotion ? 0 : (float)age * 17)) }, color * alpha, 2);

@@ -45,9 +45,7 @@ internal sealed partial class TableApplication : IDisposable
     private readonly InteractionController interaction = new();
     private readonly InteractionFrame hits = new();
     private readonly List<int> selections = [];
-    private readonly TablePresence presence = new();
-    private readonly PublicActivityCursor publicActivity = new();
-    private readonly PresentationPacing playback = new();
+    private readonly MatchPresentationLifecycle matchPresentation = new();
     private TableScene? tableScene;
     private readonly Dictionary<string, Pose> cardPositions = [];
     private readonly Dictionary<int, Vector2> heroPositions = [];
@@ -112,16 +110,17 @@ internal sealed partial class TableApplication : IDisposable
         this.clock = clock ?? TimeProvider.System;
         this.restartedAfterUpdate = restartedAfterUpdate;
         session = new(matchConnection, tables, this.clock, services.SourceActions); updates = new(session);
+        catalogRead = new(updates.Enqueue); printingRead = new(updates.Enqueue);
+        deckWorkspace = new(services.Workshop, services.Analysis, updates.Enqueue);
         sourceActions = session.SourceActions;
-        session.Changed += AcceptEffects;
+        session.Changed += AcceptPresentation;
         session.Completed += () => { FinishActivity(); nextPoll = 0; };
         session.Failed += ex => { error = ex.Message; commandFailure = session.LastFailureWasCommand; FailActivity(); try { File.AppendAllText(Path.Combine(profile, "client.log"), ex + "\n"); } catch (Exception logError) when (logError is IOException or UnauthorizedAccessException) { } };
         // Fresh observations restore play, but an explicit action failure remains
         // available until acknowledged instead of disappearing between frames.
         session.Recovered += () => { if (!commandFailure) error = ""; pendingActionLabel = ""; };
         this.profile = profile; this.fixture = fixture; this.initialState = initialState; this.resources = resources ?? new(); this.allowAutomaticChecks = allowAutomaticChecks;
-        this.appUpdates = appUpdates; this.installUpdate = installUpdate;
-        LoadUpdatePreferences();
+        InitializeAppUpdates(appUpdates, installUpdate);
         preferences = PlayPreferences.Load(profile); automatic = preferences.Automatic;
     }
     internal void ReceiveText(char character)
@@ -147,29 +146,18 @@ internal sealed partial class TableApplication : IDisposable
         RetryStartup();
     }
     private void Accept(GameSnapshot? state) => session.Accept(state);
-    private void AcceptEffects(GameSnapshot? previous, GameSnapshot? state)
+    private void AcceptPresentation(GameSnapshot? previous, GameSnapshot? state)
     {
-        if (state?.Id != previous?.Id || state?.ViewerId != previous?.ViewerId) { ResetTableView(); tableGuideOpen = false; sceneRevealAt = now; }
+        var transition = matchPresentation.Observe(previous, state, now, boardView);
+        if (transition.ScopeChanged) { ResetTableView(); tableGuideOpen = false; sceneRevealAt = now; }
         if (state?.Status == "finished" && previous?.Status != "finished") tableGuideOpen = false;
-        if (state != null) {
-            var activity = publicActivity.Observe(previous, state);
-            effects.Observe(activity, now); presence.Observe(activity, now); playback.Observe(previous, state, now);
-            ObserveActionFeedback(activity); publicChanges.Observe(activity, now); priorityTransitions.Observe(previous, state, now);
-        }
-        ObserveMana(previous, state);
-        if (state != null && previous != null && state.Id == previous.Id && state.ViewerId == previous.ViewerId) {
-            if (state.Notices.LastOrDefault() is { } latest && latest != previous.Notices.LastOrDefault()) { notice = latest; noticeUntil = now + 8; }
-            foreach (var player in state.Players) {
-                var old = previous.Players.FirstOrDefault(p => p.Id == player.Id);
-                if (old != null && old.Life != player.Life) {
-                    long difference = (long)player.Life - old.Life;
-                    if (difference < 0 && preferences.Sounds) resources.Play("life-loss", .45f);
-                }
-            }
-            if (state.Status == "finished" && previous.Status != "finished") { overlay = "result"; zoneName = null; if (preferences.Sounds) resources.Play("game-end", .5f); }
-            if (state.Combat?.Attackers.Length > 0 && previous.Combat?.Attackers.Length is null or 0 && preferences.Sounds) resources.Play("combat", .35f);
-            if (state.Activity.LastOrDefault()?.Id != previous.Activity.LastOrDefault()?.Id && state.Activity.LastOrDefault()?.Kind is "land" or "cast" && preferences.Sounds) resources.Play("card-play", .35f);
-        }
+        if (transition.Notice is { } latest) { notice = latest; noticeUntil = now + 8; }
+        if (transition.Finished) { overlay = "result"; zoneName = null; }
+        if (!preferences.Sounds) return;
+        for (int i = 0; i < transition.LifeLosses; i++) resources.Play("life-loss", .45f);
+        if (transition.Finished) resources.Play("game-end", .5f);
+        if (transition.CombatStarted) resources.Play("combat", .35f);
+        if (transition.CardPlayed) resources.Play("card-play", .35f);
     }
     internal void Update(GameTime time, MouseState mouse, KeyboardState keys, Point viewport)
     {
@@ -180,7 +168,6 @@ internal sealed partial class TableApplication : IDisposable
         UpdateSocial();
         UpdateDeckCatalog();
         UpdateWorkshopData();
-        UpdateDeckAnalysis();
         UpdateAppUpdates();
         UpdateReaderActions();
         var prompt = match?.Decision;
@@ -274,7 +261,7 @@ internal sealed partial class TableApplication : IDisposable
         bool autoBlocked = AutomaticInteractionPause() != DecisionDockPauseReason.None;
         bool quietReserved = UpdateQuietPriority(autoBlocked);
         if (!quietReserved && (!automatic || held || autoBlocked)) session.CancelAdvance();
-        if (!quietReserved && !ExperienceLabOpen && !session.NeedsRecovery && fixture == null && playback.Ready(now) && !busy && !polling
+        if (!quietReserved && !ExperienceLabOpen && !session.NeedsRecovery && fixture == null && matchPresentation.Ready(now) && !busy && !polling
             && match is { } currentState && TurnGuide.CanAutoPass(currentState, automatic, held, preferences.Stops, autoBlocked)) {
             // Snapshot the policy: the worker never reads mutable UI preferences.
             var stops = preferences.Stops.ToHashSet();
@@ -342,13 +329,13 @@ internal sealed partial class TableApplication : IDisposable
         EndCardReading();
         var drawing = canvas.Complete();
         hits.Publish();
-        return Frame = new(drawing, hits.Published, tableScene, cardPresentation.Cards, DesignHeight,
+        return Frame = new(drawing, hits.Published, tableScene, matchPresentation.Cards.Cards, DesignHeight,
             new(match?.Id, match?.Revision ?? 0, match?.Decision?.Id, Scope, time.TotalGameTime.TotalSeconds), boardView, followTurnEnabled);
     }
     public void Dispose()
     {
         if (closing) return;
-        closing = true; CloseUpdateRequests(); session.Close();
+        closing = true; CloseUpdateRequests(); deckWorkspace.Close(); catalogRead.Close(); printingRead.Close(); session.Close(); matchPresentation.Reset();
         canvas.Dispose();
     }
 }

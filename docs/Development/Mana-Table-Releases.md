@@ -39,6 +39,14 @@ the pinned archive hash checks, and Inno retains its publisher verification.
 `tools.ps1 -DownloadOnly` accepts `-Graphics` and `-Installer` selectors; omitting
 both preserves the existing combined download behavior for local callers.
 
+Downstream UI, installer and SDK jobs check out only their required scripts and
+probe projects using directory cones. Root and ancestor files remain available
+for repository configuration and native packaging helpers. The package producer
+retains a complete checkout for tracked resources and the full source archive.
+The consumers still download and verify the immutable runtime, source or receipt,
+engine and harness inputs required by their existing journeys; smaller checkouts
+do not replace those inputs with local builds or cached product binaries.
+
 The isolated installed SDK update lifecycle needs only the immutable tools
 artifact and runs alongside packaging. Product migration waits for both tools and
 the package, retaining its real Forge-backed health check. Both complete

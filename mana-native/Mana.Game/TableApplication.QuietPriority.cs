@@ -45,7 +45,7 @@ internal sealed partial class TableApplication
             StopQuietPriority(); return false;
         }
         if (interactionBlocked) { session.CancelAdvance(); return true; }
-        if (busy || polling || !playback.Ready(now)) return true;
+        if (busy || polling || !matchPresentation.Ready(now)) return true;
         if (QuietPriorityPolicy.CanPass(state, quietYieldToken)) {
             // Capture the baseline, never replace it with a subsequently issued token.
             string token = quietYieldToken, game = quietYieldGame;

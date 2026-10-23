@@ -151,7 +151,7 @@ internal sealed partial class TableApplication
         float radius = own ? 40 : 34;
         if (!own && !StudyRail(player.Id)) {
             int count = Math.Min(7, player.Zone("Hand").Count);
-            int arriving = preferences.ReducedMotion ? 0 : presence.PendingDraws(player.Id, now);
+            int arriving = preferences.ReducedMotion ? 0 : matchPresentation.PendingDraws(player.Id, now);
             var handCenter = SeatHand(player.Id);
             for (int i = 0; i < Math.Max(0, count - arriving); i++) {
                 var back = TableLayout.HiddenHand(index, i, count);

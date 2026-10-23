@@ -11,10 +11,11 @@ internal sealed partial class TableApplication
     private void ResetTableView()
     {
         StopQuietPriority();
-        publicActivity.Clear(); publicChanges.Clear(); impactFeedback.Clear();
+        hits.RevokePublished(); Frame = null; tableScene = null; hovered = null;
+        cardPositions.Clear(); heroPositions.Clear();
         selections.Clear(); zoneName = null; selectedCombat = null;
-        effects.Clear(); presence.Clear(); playback.Reset(); combatPage = 0; combatCandidates = false; inspectedStack = null; reviewedAttacker = null;
-        actionFeedback.Clear(); departures.Clear(); inspectedAction = null;
+        combatPage = 0; combatCandidates = false; inspectedStack = null; reviewedAttacker = null;
+        inspectedAction = null;
         handPage = zonePage = choicePage = 0; choiceFilter = decisionId = "";
         automatic = !Automated && preferences.Automatic; pressed = null;
         ClearCardReading(); ClearReaderActions();

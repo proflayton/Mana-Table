@@ -9,32 +9,10 @@ namespace Mana.Table;
 
 internal sealed partial class TableApplication
 {
-    private readonly ActionFeedback actionFeedback = new();
-    private readonly ImpactFeedback impactFeedback = new();
     private ResolutionCue? inspectedAction;
-    private sealed record Departure(Card Card, Pose Pose, string Destination, double Started);
-    private readonly List<Departure> departures = [];
-
-    private void ObserveActionFeedback(PublicActivityBatch activity)
-    {
-        actionFeedback.Observe(activity, now);
-        impactFeedback.Observe(activity, now);
-        var before = activity.Before; var after = activity.After;
-        departures.RemoveAll(d => now - d.Started > 1.5 || !CardViews.Located(after).Any(c => c.Card.VisualId == d.Card.VisualId && !c.Card.FaceDown && c.Zone is "Graveyard" or "Exile"));
-        if (activity.IsBaseline) { departures.Clear(); return; }
-        foreach (var card in before!.Players.SelectMany(p => p.Zone("Battlefield").Cards).Where(c => !c.FaceDown && c.VisualId.Length > 0)) {
-            var destination = CardViews.Located(after).FirstOrDefault(c => c.Card.VisualId == card.VisualId && !c.Card.FaceDown);
-            // Keep no ghost face when a card enters a hidden zone or loses its public identity.
-            if (destination.Card == null || destination.Zone is not ("Graveyard" or "Exile") || !cardPresentation.TryGetPose(card.VisualId, out var pose)) continue;
-            departures.RemoveAll(d => d.Card.VisualId == card.VisualId);
-            var entry = cardPresentation.Cards.LastOrDefault(entry => entry.Id == card.VisualId);
-            var origin = entry?.Focused == true ? entry.Rest : pose;
-            departures.Add(new(card, (entry?.View ?? boardView).Inverse(origin), destination.Zone, now));
-        }
-    }
     private void DrawDepartures()
     {
-        foreach (var departure in departures) {
+        foreach (var departure in matchPresentation.Departures) {
             double age = now - departure.Started;
             if (age > 1.5) continue;
             float alpha = preferences.ReducedMotion ? .6f : (float)(1 - age / 1.5);
@@ -50,7 +28,7 @@ internal sealed partial class TableApplication
             canvas.CardFrame(pose, Red * alpha, 3);
         }
     }
-    private Pose DeparturePose(Departure departure)
+    private Pose DeparturePose(Mana.Table.Presentation.MatchPresentationLifecycle.Departure departure)
     {
         var origin = boardView.Apply(departure.Pose);
         var owner = match?.Players.FirstOrDefault(player => player.Zone(departure.Destination).Cards.Any(card => card.VisualId == departure.Card.VisualId));
@@ -69,8 +47,8 @@ internal sealed partial class TableApplication
         // The pending-effect surface already owns the reported effect, target
         // connections and responder. Do not repeat it in a second callout.
         if (match!.Stack.Length > 0) return;
-        if (match!.Stack.Length == 0 && publicChanges.Latest is { } change && now - change.Updated < 8) return;
-        var recent = actionFeedback.Last;
+        if (match!.Stack.Length == 0 && matchPresentation.LatestChange is { } change && now - change.Updated < 8) return;
+        var recent = matchPresentation.LastResolution;
         // Ordinary success is visible at the recipients and in their settled
         // state. Keep prose in History instead of covering the table with a
         // second, detached result panel. A failed resolution still needs notice.

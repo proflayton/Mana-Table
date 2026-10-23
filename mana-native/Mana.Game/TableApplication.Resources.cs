@@ -100,7 +100,7 @@ internal sealed partial class TableApplication
         var parts = PublicResources.Mana(player).ToList();
         if (!preferences.ReducedMotion) {
             var known = PublicResources.Mana(player, includeEmpty: true);
-            foreach (var cue in manaPresence.ForPlayer(player.Id, now).Where(cue => cue.After == 0 && parts.All(part => part.Key != cue.Symbol)))
+            foreach (var cue in matchPresentation.ManaCues(player.Id, now).Where(cue => cue.After == 0 && parts.All(part => part.Key != cue.Symbol)))
                 parts.Add(known.FirstOrDefault(part => part.Key == cue.Symbol) ?? new(cue.Symbol, cue.Symbol, "", 0));
         }
         seat = SeatDisplayIndex(player.Id);
@@ -143,7 +143,7 @@ internal sealed partial class TableApplication
         foreach (var item in halo.Parts) {
             var bounds = item.Bounds;
             var color = ResourceColor(item.Part.Symbol);
-            var cue = preferences.ReducedMotion ? null : manaPresence.For(player.Id, item.Part.Key, now);
+            var cue = preferences.ReducedMotion ? null : matchPresentation.ManaCue(player.Id, item.Part.Key, now);
             float progress = (float)(cue?.Progress(now) ?? 1);
             float opacity = cue is { After: 0 } ? 1 - progress : 1;
             string hitId = "mana-pool:" + player.Id + ":" + item.Part.Key;

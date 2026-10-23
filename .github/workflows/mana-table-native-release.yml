@@ -262,6 +262,8 @@ jobs:
       - uses: actions/checkout@v7
         with:
           persist-credentials: false
+          sparse-checkout: mana-native/ci
+          sparse-checkout-cone-mode: true
       - uses: actions/setup-dotnet@v6
         with:
           dotnet-version: '9.0.x'
@@ -338,6 +340,10 @@ jobs:
       - uses: actions/checkout@v7
         with:
           persist-credentials: false
+          sparse-checkout: |
+            mana-native/ci
+            mana-native/installer
+          sparse-checkout-cone-mode: true
       - uses: actions/download-artifact@v8
         with:
           name: mana-native-installer-inputs-${{ github.sha }}
@@ -386,6 +392,10 @@ jobs:
       - uses: actions/checkout@v7
         with:
           persist-credentials: false
+          sparse-checkout: |
+            mana-native/ci
+            mana-native/installer
+          sparse-checkout-cone-mode: true
       - uses: actions/download-artifact@v8
         with:
           name: mana-native-tools-installer-${{ github.sha }}
@@ -426,6 +436,10 @@ jobs:
       - uses: actions/checkout@v7
         with:
           persist-credentials: false
+          sparse-checkout: |
+            mana-native/ci
+            mana-native/installer
+          sparse-checkout-cone-mode: true
       - uses: actions/setup-dotnet@v6
         with:
           dotnet-version: |
@@ -485,6 +499,13 @@ jobs:
       - uses: actions/checkout@v7
         with:
           persist-credentials: false
+          sparse-checkout: |
+            mana-native/ci
+            mana-native/updates
+            mana-native/Mana.Update.Lifecycle.Tests
+            mana-native/Mana.Client
+            mana-native/Mana.Contracts
+          sparse-checkout-cone-mode: true
       - uses: actions/setup-dotnet@v6
         with:
           dotnet-version: |

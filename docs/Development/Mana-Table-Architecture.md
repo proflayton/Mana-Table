@@ -243,7 +243,42 @@ the same scoped player handles as portraits; the client never chooses one itself
 
 The window and application have separate lifetimes. `TableWindow : Game` owns
 MonoGame, GPU textures, sound, input sampling, letterboxing and captures.
-`TableApplication` owns the shared client session, screen state and input policy.
+`TableApplication` composes the shared client session, screen navigation and input
+policy. Feature lifecycles have explicit owners; render partials consume their
+views rather than independently accepting asynchronous results.
+
+| Owner | Authority and lifetime |
+| --- | --- |
+| `ClientSession` | Accepted engine observations, current command scopes, serialized commands and recovery. |
+| `MatchPresentationLifecycle` | One public activity cursor and the match's effects, presence, pacing, resolution, changes, impacts, mana, priority and departure feedback. A game/viewer boundary revokes readers, poses and transient feedback before baselining the next seat. |
+| `DeckWorkspaceSession` | Workshop, analysis, test history and practice results for the selected deck/revision/epoch. One refresh lifecycle coalesces requests; mutation completions require a captured stamp, and reports must match accepted workshop metadata and playable fingerprint. |
+| `LatestRead` | Replaceable catalog/printing reads. One active provider request, one latest pending intent, explicit caller-controlled start after debounce, and generation-scoped success/failure admission. Clear and close revoke late results. |
+| `AppUpdateSession` | One serialized discovery/download/preparation/verification/install workflow, cancellation, prepared-release identity, persisted startup policy and safe explicit restart. The UI supplies its current installation blocker. |
+
+Changing viewers immediately revokes the published hit frame and retained card
+context, including before the next composition. A visual occurrence or a retained
+callback cannot preserve the previous viewer's authority. UI navigation resets
+remain separate from feedback reset, so resetting a control does not baseline or
+clear a newly accepted event batch a second time.
+
+Deck workspace refreshes and writes use the same admission boundary. A late
+failure cannot replace a newer selection's error, and delete/restore cannot revive
+an old workspace stamp even if document identity and revision match again. A
+foreground analysis review can finish while ordinary background reads are gated
+by application activity. Deck service DTOs still contain mutable nested arrays;
+an immutable view record does not establish a deeply immutable deck contract.
+
+Updater discovery never starts a download. Becoming safe after a deferred restart
+requires another explicit install gesture; verification rechecks the blocker
+before launching. Shutdown cancels and joins the provider's actual task, including
+file cleanup, rather than abandoning writes through a cancelled client wait.
+An update provider must honor cancellation and finish its cleanup. This lifecycle
+does not change update manifests, installed profiles or transport protocols.
+
+These owners do not make application composition pure: layout, navigation,
+selection and interaction state still belong to the native application. Nor do
+they prove that another rules engine can replace Forge or replay its complete
+rules state; those remain separate conformance work.
 
 `DecisionDockPresentation` projects the current decision and public acting seat
 with explicit local control facts. The application shares its inspection/chat/

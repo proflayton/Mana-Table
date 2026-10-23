@@ -183,6 +183,7 @@ internal sealed class CardPresentationController
         ClearComposition(); transitions.Clear(); pendingCollapses.Clear(); compositionCounts.Clear();
         displayedPoses.Clear(); previousDisplayedPoses.Clear();
         pinnedId = pinnedZone = null; readerTarget = null; hoveredId = hoveredHit = ""; ReaderBounds = null;
+        context = new(null, "", false, false, false, false);
         boardView = BoardView.Identity; motion.Clear();
     }
 

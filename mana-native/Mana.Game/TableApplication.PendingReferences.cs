@@ -82,7 +82,7 @@ internal sealed partial class TableApplication
 
     private PendingCardReference? HoveredPendingReference()
     {
-        if (match == null || match.Stack.Length == 0 && !ValuedTargetDecision || OverlayOpen || dragging || cardPresentation.HasPinnedCard) return null;
+        if (match == null || match.Stack.Length == 0 && !ValuedTargetDecision || OverlayOpen || dragging || matchPresentation.Cards.HasPinnedCard) return null;
         var hit = HitAt(pointer);
         if (pendingPreviewBounds is { } preview && preview.Contains(pointer) && pendingPreviewReference is { } held
             && ResolvePendingReference(held) != null) return held;
@@ -128,7 +128,7 @@ internal sealed partial class TableApplication
                 int score = candidate.Intersects(decisionPanelBounds) ? 100_000 : 0;
                 if (!targetingEffectBounds.IsEmpty && candidate.Intersects(targetingEffectBounds)) score += 100_000;
                 score += stackRows.Count(row => candidate.Intersects(row.Bounds)) * 100_000;
-                if (ValuedTargetDecision) foreach (var target in cardPresentation.Cards.Where(card => card.Card.Selectable))
+                if (ValuedTargetDecision) foreach (var target in matchPresentation.Cards.Cards.Where(card => card.Card.Selectable))
                     if (candidate.Intersects(target.Display.Bounds)) score += 100;
                 foreach (var item in match!.Stack.Take(3)) {
                     if (item.Card != null && PendingConnectionCard(CardViews.Identity(item.Card)) is { } source && candidate.Intersects(source.Display.Bounds)) score += 100;

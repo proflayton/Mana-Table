@@ -19,7 +19,7 @@ internal sealed partial class TableApplication
         if (area.IsEmpty) return;
         float size = node.DenseMiniature ? .3f : .375f;
         int pitch = node.DenseRowHeight, padding = 4;
-        var face = cardPresentation.TryGetPose(node.Id, out var displayed) ? displayed : boardView.Apply(node.Pose);
+        var face = matchPresentation.Cards.TryGetPose(node.Id, out var displayed) ? displayed : boardView.Apply(node.Pose);
         var tile = Rectangle.Union(face.Bounds, area);
         canvas.Panel(tile, Color.Transparent, new(67, 85, 98), 3);
         canvas.Fill(area, new(14, 24, 31));

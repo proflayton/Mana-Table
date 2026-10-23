@@ -20,6 +20,7 @@ internal static class PresentationSmoke
         ForgeCommandBoundaryChecks.Run(Check);
         GameplayFeedbackChecks.Run(Check);
         PublicActivityCursorChecks.Run(Check);
+        MatchPresentationLifecycleChecks.Run(Check);
         ImpactFeedbackChecks.Run(Check);
         CardArtPreloadChecks.Run(Check);
         ManaPoolFeedbackChecks.Run(Check);

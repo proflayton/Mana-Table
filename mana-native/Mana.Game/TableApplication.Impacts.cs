@@ -81,7 +81,7 @@ internal sealed partial class TableApplication
         }
         // Draw counts are public facts; anonymous backs and a compact quantity
         // remain at that seat's hand instead of narrating them over the board.
-        foreach (var cue in presence.Cues.Where(c => c.Kind == SeatCueKind.Draw && c.Amount > 1 && now - c.Started < 1.5)) {
+        foreach (var cue in matchPresentation.SeatCues.Where(c => c.Kind == SeatCueKind.Draw && c.Amount > 1 && now - c.Started < 1.5)) {
             var hand = SeatHand(cue.PlayerId);
             var count = "+" + cue.Amount.ToString(CultureInfo.InvariantCulture);
             canvas.Text(count, (int)hand.X + 28, (int)hand.Y + 18, Blue, .8f, 150, 1, true);
@@ -90,7 +90,7 @@ internal sealed partial class TableApplication
 
     private IEnumerable<AnchoredImpact> AnchoredActualImpacts()
     {
-        foreach (var events in impactFeedback.Cues.Where(c => now - c.Started < ImpactFeedback.Duration
+        foreach (var events in matchPresentation.Impacts.Where(c => now - c.Started < ImpactFeedback.Duration
                 && ImpactFeedback.RecipientVisible(match!, c.Impact, c.ActivityId))
             .GroupBy(c => (c.Started, c.Impact.Kind, c.Impact.CardId, c.Impact.PlayerId,
                 c.Impact.DamageType, c.Impact.Combat, c.Impact.Infect))) {
@@ -111,7 +111,7 @@ internal sealed partial class TableApplication
             if (!battlefieldFocusPlan.Viewport.Contains(tile.Art)) return null;
             return new(tile.Group.Id, tile.Group.MemberIds, tile.ArtPose, tile.Bounds);
         }
-        if (departures.LastOrDefault(d => d.Card.VisualId == id && now - d.Started <= 1.5) is { } departure) {
+        if (matchPresentation.Departures.LastOrDefault(d => d.Card.VisualId == id && now - d.Started <= 1.5) is { } departure) {
             var pose = DeparturePose(departure);
             if (!BattlefieldFocused || !pose.Bounds.Intersects(BattlefieldFocusBounds)) return new(id, [id], pose, pose.Bounds);
             return null;
@@ -119,9 +119,9 @@ internal sealed partial class TableApplication
         // A collapsed stack still identifies every occurrence. Attach the result
         // to its visible front rather than drawing at a covered copy's centre.
         if (!BattlefieldFocused && tableScene?.Cohort(id) is { } cohort
-            && cardPresentation.TryGetPose(cohort.Front.Id, out var front))
+            && matchPresentation.Cards.TryGetPose(cohort.Front.Id, out var front))
             return new(cohort.Front.Id, cohort.MemberIds, front, front.Bounds);
-        var entry = cardPresentation.Cards.LastOrDefault(card => (card.Id == id || CardViews.Identity(card.Card) == id)
+        var entry = matchPresentation.Cards.Cards.LastOrDefault(card => (card.Id == id || CardViews.Identity(card.Card) == id)
             && card.Zone is "Battlefield" or "Command" or "Stack" or "Graveyard" or "Exile");
         if (entry == null || BattlefieldFocused && entry.Display.Bounds.Intersects(BattlefieldFocusBounds)) return null;
         return new(entry.Id, [id], entry.Display, entry.Display.Bounds);
