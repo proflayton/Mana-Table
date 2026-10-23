@@ -1,5 +1,8 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
+const vm = require('node:vm');
 const { REPO, WORKFLOWS, validateSource, validateComparison, iosApplicability, assessJobs, inspect, waitForCI } = require('../wait-release-ci.cjs');
 const SHA = 'a'.repeat(40), OTHER = 'b'.repeat(40);
 function fixture(options = {}) {
@@ -154,4 +157,46 @@ test('incomplete result pages and duplicate observed failure cannot be hidden', 
   await assert.rejects(inspect({ ...f, api }), /Incomplete/);
   const duplicate = fixture({ runs: (spec, runs) => runs.length ? [...runs, { ...runs[0], id: 99, conclusion: 'failure' }] : runs });
   await assert.rejects(inspect(duplicate), /failed/);
+});
+
+function nativeJobs() {
+  const workflow = fs.readFileSync(path.join(__dirname, '../../../.github/workflows/mana-table-native-release.yml'), 'utf8').replace(/\r\n/g, '\n');
+  const source = workflow.slice(workflow.indexOf('\njobs:\n') + '\njobs:\n'.length);
+  const headings = [...source.matchAll(/^  ([a-z][\w-]*):[ \t]*$/gm)];
+  return new Map(headings.map((heading, index) => [heading[1], source.slice(heading.index, headings[index + 1]?.index)]));
+}
+function dependencies(job) {
+  const declaration = job.match(/^    needs:\s*(.+)$/m);
+  assert.ok(declaration, 'Required native job must declare its prerequisites.');
+  return declaration[1].replace(/^\[|\]$/g, '').split(',').map(value => value.trim());
+}
+test('full SDK fixture verification starts from tools while product migration retains its exact package', () => {
+  const jobs = nativeJobs(), sdk = jobs.get('sdk-updates'), migration = jobs.get('managed-updates');
+  assert.ok(sdk && migration, 'Both isolated lifecycle jobs must exist.');
+  assert.deepEqual(dependencies(sdk), ['tools']);
+  assert.deepEqual(dependencies(migration).sort(), ['package', 'tools']);
+  assert.match(sdk, /run: \.\/mana-native\/updates\/test-installed-updates\.ps1 -VpkDll \$env:MANA_VPK -TestDirectory/);
+  assert.doesNotMatch(sdk, /-ShutdownOnly|-KeepInstalled|MANA_NATIVE_PACKAGE|restore-package\.ps1/);
+  assert.match(migration, /test-managed-migration\.ps1 -InputPackageDirectory \$env:MANA_NATIVE_PACKAGE/);
+  for (const [job, directory] of [[sdk, 'mana-managed-updates'], [migration, 'mana-managed-migration']]) {
+    assert.match(job, /if: always\(\)\n        uses: actions\/upload-artifact@/);
+    for (const extension of ['json', 'log']) assert.ok(job.includes(`${directory}/**/*.${extension}`), 'Retain independent lifecycle evidence.');
+  }
+});
+test('the actual Windows aggregate rejects either lifecycle failing, cancelled or skipped', () => {
+  const gate = nativeJobs().get('windows'), required = dependencies(gate);
+  assert.match(gate, /^    if: \$\{\{ always\(\) \}\}$/m);
+  for (const job of ['managed-updates', 'sdk-updates']) assert.ok(required.includes(job), `${job} must block the required aggregate.`);
+  const embedded = gate.match(/          node <<'NODE'\n([\s\S]*?)^          NODE$/m);
+  assert.ok(embedded, 'Exercise the shipping aggregate rather than a second gate implementation.');
+  const script = embedded[1].replace(/^          /gm, '');
+  function run(job, result) {
+    const results = Object.fromEntries(required.map(name => [name, { result: name === job ? result : 'success' }]));
+    const process = { env: { JOB_RESULTS: JSON.stringify(results) }, exitCode: 0 };
+    vm.runInNewContext(script, { process, console: { log() {}, error() {} } }, { timeout: 1000 });
+    return process.exitCode;
+  }
+  assert.equal(run(), 0);
+  for (const job of ['managed-updates', 'sdk-updates'])
+    for (const result of ['failure', 'cancelled', 'skipped', 'neutral', 'timed_out', null]) assert.equal(run(job, result), 1, `${job}=${result} must remain red.`);
 });

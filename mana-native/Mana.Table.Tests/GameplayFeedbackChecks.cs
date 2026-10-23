@@ -9,48 +9,48 @@ internal static class GameplayFeedbackChecks
     internal static void Run(Action<bool, string> check)
     {
         var state = PresentationSmoke.Example();
-        var presence = new TablePresence();
+        var presence = new TablePresence(); var presenceActivity = new PublicActivityCursor();
         var tutor = state with { Players = state.Players.Select(p => p.Id == 1 ? p with { Zones = p.Zones.Select(z => z.Name == "Hand"
             ? z with { Count = z.Count + 1 } : z.Name == "Library" ? z with { Count = z.Count - 1 } : z).ToImmutableArray() } : p).ToImmutableArray(),
             Activity = [new(1, state.Turn, state.PhaseKey, "moved", 1, "A card moved from library to hand.", null, null)] };
-        presence.Observe(state, tutor, 1);
+        presence.Observe(presenceActivity.Observe(state, tutor), 1);
         check(presence.Cues.All(c => c.Kind != SeatCueKind.Draw), "A tutor's matching library/hand deltas never invent a draw animation");
         var legacyTransfer = tutor with { Activity = [new(1, state.Turn, state.PhaseKey, "draw", 1, "A card moved from library to hand.", null, null)] };
-        var legacyPresence = new TablePresence(); var legacyFeedback = new ActionFeedback();
-        legacyPresence.Observe(state, legacyTransfer, 1); legacyFeedback.Observe(state, legacyTransfer, 1);
+        var legacyPresence = new TablePresence(); var legacyPresenceActivity = new PublicActivityCursor(); var legacyFeedback = new ActionFeedback(); var legacyFeedbackActivity = new PublicActivityCursor();
+        legacyPresence.Observe(legacyPresenceActivity.Observe(state, legacyTransfer), 1); legacyFeedback.Observe(legacyFeedbackActivity.Observe(state, legacyTransfer), 1);
         check(legacyPresence.Cues.Count == 0 && legacyFeedback.LastPublicOutcome == null,
             "An older protocol-compatible host's uncounted library-to-hand event never invents a draw animation or asserted draw outcome");
         var wheel = tutor with { Activity = [.. tutor.Activity, new(2, state.Turn, state.PhaseKey, "draw", 1, "Opponent drew cards.", null, null) { Count = 8 }] };
-        presence.Observe(tutor, wheel, 2);
+        presence.Observe(presenceActivity.Observe(tutor, wheel), 2);
         check(presence.Cues.Single(c => c.Kind == SeatCueKind.Draw).Amount == 8 && presence.PendingDraws(1, 2) == 7,
             "An actual eight-card draw keeps its full public count with a bounded anonymous visual batch despite unchanged final zones");
-        presence.Observe(tutor, wheel, 2.3);
+        presence.Observe(presenceActivity.Observe(tutor, wheel), 2.3);
         check(presence.Cues.Single(c => c.Kind == SeatCueKind.Draw).Started == 2,
             "Reobserving an already consumed event cannot replay or prolong its draw cue");
-        var feedback = new ActionFeedback();
+        var feedback = new ActionFeedback(); var feedbackActivity = new PublicActivityCursor();
         var noResolution = wheel with { Activity = [.. wheel.Activity, new(3, state.Turn, state.PhaseKey, "resolved", 1, "Spell did not resolve.", null, "Spell") { Outcome = "notResolved" }] };
-        feedback.Observe(wheel, noResolution, 3);
+        feedback.Observe(feedbackActivity.Observe(wheel, noResolution), 3);
         check(feedback.Last is { Heading: "DID NOT RESOLVE", Outcome: "notResolved" },
             "An engine-reported non-resolution gets a non-resolution heading rather than JUST RESOLVED");
         var success = noResolution with { Activity = [.. noResolution.Activity, new(4, state.Turn, state.PhaseKey, "resolved", 1, "Spell resolved.", null, "Spell") { Outcome = "resolved" }] };
-        feedback.Observe(noResolution, success, 4);
+        feedback.Observe(feedbackActivity.Observe(noResolution, success), 4);
         check(feedback.Last is { Heading: "JUST RESOLVED", Outcome: "resolved" }, "An actual successful resolution retains its affirmative heading");
         var legacy = success with { Activity = [.. success.Activity, new(5, state.Turn, state.PhaseKey, "resolved", 1, "Legacy outcome.", null, "Spell")] };
-        feedback.Observe(success, legacy, 5);
+        feedback.Observe(feedbackActivity.Observe(success, legacy), 5);
         check(feedback.Last?.Heading == "REPORTED OUTCOME", "An older engine without typed outcome is not guessed to have resolved successfully");
         var events = legacy with { Activity = [.. legacy.Activity,
             new(6, state.Turn, state.PhaseKey, "draw", 1, "Opponent drew cards.", null, null) { Count = 9 },
             new(7, state.Turn, state.PhaseKey, "shuffle", 1, "Opponent shuffled their library.", null, null) { Count = 1 }] };
-        feedback.Observe(legacy, events, 6);
+        feedback.Observe(feedbackActivity.Observe(legacy, events), 6);
         check(feedback.LastPublicOutcome is { Messages.Length: 2 } outcome && outcome.Messages.Any(m => m.Contains("9 cards"))
             && outcome.Messages.All(m => m.Contains("Seat 2")) && outcome.Messages.Any(m => m.Contains("shuffled")),
             "Actual public draw and shuffle events retain exact batch counts and acting seat without hidden card identity");
-        feedback.Observe(legacy, events, 7);
+        feedback.Observe(feedbackActivity.Observe(legacy, events), 7);
         check(feedback.LastPublicOutcome?.Started == 6, "Repeated event observation does not restart public outcome feedback");
         var decline = events with { Revision = events.Revision + 1 };
-        feedback.Observe(events, decline, 8);
+        feedback.Observe(feedbackActivity.Observe(events, decline), 8);
         check(feedback.LastPublicOutcome?.Started == 6, "A search decline or unchanged snapshot cannot invent a shuffle event");
-        feedback.Observe(events, events with { Id = "new-game" }, 9);
+        feedback.Observe(feedbackActivity.Observe(events, events with { Id = "new-game" }), 9);
         check(feedback.Last == null && feedback.LastPublicOutcome == null, "A new game cannot inherit earlier resolution or public outcome cues");
         CheckResolutionDraws(check, state);
         CheckPlayerStates(check, state);
@@ -90,31 +90,31 @@ internal static class GameplayFeedbackChecks
 
     private static void CheckPlayerStates(Action<bool, string> check, GameSnapshot state)
     {
-        var feedback = new ActionFeedback();
+        var feedback = new ActionFeedback(); var feedbackActivity = new PublicActivityCursor();
         var started = state with { Activity = [
             new(1, state.Turn, state.PhaseKey, "playerState", state.ViewerId, "Your Speed is now 1/4.", null, null) {
                 Detail = "Speed increases once on each of your turns when an opponent loses life." },
             new(2, state.Turn, state.PhaseKey, "resolved", state.ViewerId, "A creature resolved.", null, null) { Outcome = "resolved" }] };
-        feedback.Observe(state, started, 20);
+        feedback.Observe(feedbackActivity.Observe(state, started), 20);
         check(feedback.LastPublicOutcome is { Messages: ["Your Speed is now 1/4."] }
             && feedback.Last?.Changes.FirstOrDefault() == "Your Speed is now 1/4.",
             "A reported player-state change stays visible when its source resolves in the same poll");
-        feedback.Observe(started, started with { Revision = started.Revision + 1 }, 21);
+        feedback.Observe(feedbackActivity.Observe(started, started with { Revision = started.Revision + 1 }), 21);
         check(feedback.LastPublicOutcome?.Started == 20 && feedback.Last?.Started == 20,
             "Repeated snapshots cannot replay or prolong a player-state transition");
         var unknown = started with { Activity = [.. started.Activity,
             new(3, state.Turn, state.PhaseKey, "playerState", 1, "Opponent gained a new public status.", null, null)] };
-        feedback.Observe(started, unknown, 22);
+        feedback.Observe(feedbackActivity.Observe(started, unknown), 22);
         check(feedback.LastPublicOutcome is { Messages: ["Opponent gained a new public status."], Started: 22 },
             "A newly reported public mechanic uses the shared feedback path without a mechanic-specific client case");
         var unrelated = unknown with { Activity = [.. unknown.Activity,
             new(4, state.Turn, state.PhaseKey, "resolved", state.ViewerId, "Another ability resolved.", null, null) { Outcome = "resolved" }] };
-        feedback.Observe(unknown, unrelated, 23);
+        feedback.Observe(feedbackActivity.Observe(unknown, unrelated), 23);
         check(feedback.Last is { Changes.Length: 0 } && feedback.LastPublicOutcome?.Started == 22,
             "A later unrelated resolution does not inherit an earlier player-state transition");
         var noEvent = unrelated with { Players = unrelated.Players.Select(p => p.Id == state.ViewerId
             ? p with { States = [new("speed", "Speed", "progress", 4, 4, "Max speed.")] } : p).ToImmutableArray() };
-        feedback.Observe(unrelated, noEvent, 24);
+        feedback.Observe(feedbackActivity.Observe(unrelated, noEvent), 24);
         check(feedback.LastPublicOutcome?.Started == 22,
             "A changed snapshot alone does not invent or attribute a public state-change event");
         check(Mana.Magic.PresentationPacing.ShouldPresent(unrelated, noEvent)
@@ -127,14 +127,14 @@ internal static class GameplayFeedbackChecks
         check(Mana.Magic.PresentationPacing.ShouldPresent(Anonymous(anonymous), Anonymous(anonymous with { PhasedOut = true }))
             && Mana.Magic.PresentationPacing.ShouldPresent(Anonymous(anonymous), Anonymous(anonymous with { States = [new("ward", "Ward {3}", "ability", null, null, "A public effective ability.", "ward")] })),
             "Anonymous public occurrences and typed effective abilities retain their presentation beat using public combat identity");
-        feedback.Observe(noEvent, noEvent with { Id = "another-table" }, 25);
+        feedback.Observe(feedbackActivity.Observe(noEvent, noEvent with { Id = "another-table" }), 25);
         check(feedback.Last == null && feedback.LastPublicOutcome == null,
             "Player-state cues from a previous table cannot leak into a new game");
     }
 
     private static void CheckResolutionDraws(Action<bool, string> check, GameSnapshot state)
     {
-        var feedback = new ActionFeedback();
+        var feedback = new ActionFeedback(); var feedbackActivity = new PublicActivityCursor();
         var draw = state with { Activity = [
             new(1, state.Turn, state.PhaseKey, "moved", state.ViewerId, "Toothy moved from battlefield to hand.", null, null),
             new(2, state.Turn, state.PhaseKey, "moved", state.ViewerId, "You moved a card from library to hand.", null, null),
@@ -145,34 +145,34 @@ internal static class GameplayFeedbackChecks
             new(7, state.Turn, state.PhaseKey, "draw", state.ViewerId, "You drew a card.", null, null) { Count = 1 },
             new(8, state.Turn, state.PhaseKey, "resolved", state.ViewerId, "Toothy's ability resolved.", null, "Toothy") {
                 Outcome = "resolved", Detail = "Draw a card for each +1/+1 counter on Toothy." }] };
-        feedback.Observe(state, draw, 10);
+        feedback.Observe(feedbackActivity.Observe(state, draw), 10);
         check(feedback.LastPublicOutcome?.Started == feedback.Last?.Started,
             "A resolution and its draw events can be published in the same observed frame");
         check(feedback.Last is { Title: "Toothy's ability resolved.", Heading: "JUST RESOLVED" } resolved
             && resolved.Detail.Contains("+1/+1 counter") && resolved.Changes.FirstOrDefault() == "You drew 3 cards."
             && resolved.Changes.Count(c => c.Contains("drew")) == 1,
             "The visible first resolution result retains the exact three-card draw batch and source instead of one deduplicated draw or an earlier zone move");
-        feedback.Observe(draw, draw with { Revision = draw.Revision + 1 }, 11);
+        feedback.Observe(feedbackActivity.Observe(draw, draw with { Revision = draw.Revision + 1 }), 11);
         check(feedback.Last?.Started == 10 && feedback.LastPublicOutcome?.Started == 10
             && feedback.Last.Changes.FirstOrDefault() == "You drew 3 cards.",
             "Reobserving a resolution does not replay, prolong or add its draw total again");
         var unrelated = draw with { Activity = [.. draw.Activity,
             new(9, state.Turn, state.PhaseKey, "resolved", state.ViewerId, "Sol Ring's ability resolved.", null, "Sol Ring") { Outcome = "resolved" }] };
-        feedback.Observe(draw, unrelated, 12);
+        feedback.Observe(feedbackActivity.Observe(draw, unrelated), 12);
         check(feedback.Last is { Title: "Sol Ring's ability resolved.", Changes.Length: 0 }
             && feedback.LastPublicOutcome?.Started == 10,
             "An unrelated later resolution never inherits a cached draw total from a previous outcome");
         var spell = unrelated with { Activity = [.. unrelated.Activity,
             new(10, state.Turn, state.PhaseKey, "draw", 1, "Opponent drew cards.", null, null) { Count = 2 },
             new(11, state.Turn, state.PhaseKey, "resolved", 1, "Divination resolved.", null, "Divination") { Outcome = "resolved" }] };
-        feedback.Observe(unrelated, spell, 13);
+        feedback.Observe(feedbackActivity.Observe(unrelated, spell), 13);
         check(feedback.Last is { Title: "Divination resolved.", Changes.Length: 1 } spellResult
             && spellResult.Changes[0].Contains("Seat 2 drew 2 cards."),
             "A spell resolving in the same poll as a counted draw keeps the opponent's explicit total and seat");
         var tutor = spell with { Activity = [.. spell.Activity,
             new(12, state.Turn, state.PhaseKey, "moved", state.ViewerId, "A card moved from library to hand.", null, null),
             new(13, state.Turn, state.PhaseKey, "resolved", state.ViewerId, "Search spell resolved.", null, "Search spell") { Outcome = "resolved" }] };
-        feedback.Observe(spell, tutor, 14);
+        feedback.Observe(feedbackActivity.Observe(spell, tutor), 14);
         check(feedback.Last is { Changes.Length: 1 } tutorResult
             && tutorResult.Changes[0] == "A card moved from library to hand."
             && feedback.LastPublicOutcome?.Started == 13,

@@ -12,22 +12,17 @@ public sealed class TablePresence
 {
     public const double DrawDuration = .62, DrawStagger = .09;
     private readonly List<SeatCue> cues = [];
-    private string? gameId;
-    private long lastActivityId;
     public IReadOnlyList<SeatCue> Cues => cues;
-    public void Clear() { cues.Clear(); gameId = null; lastActivityId = 0; }
-    public void Observe(GameSnapshot? previous, GameSnapshot current, double now)
+    public void Clear() => cues.Clear();
+    public void Observe(PublicActivityBatch activity, double now)
     {
+        var current = activity.After;
         cues.RemoveAll(c => now - c.Started > 1.5 || !current.Players.Any(p => p.Id == c.PlayerId && !p.Eliminated));
-        if (previous == null || previous.Id != current.Id || current.Status == "finished") {
-            Clear(); gameId = current.Id; lastActivityId = current.Activity.Select(e => e.Id).DefaultIfEmpty().Max(); return;
-        }
-        if (gameId != current.Id) { gameId = current.Id; lastActivityId = previous.Activity.Select(e => e.Id).DefaultIfEmpty().Max(); }
-        var draws = current.Activity.Where(e => e.Id > lastActivityId && e.Kind == "draw" && e.Count > 0 && e.PlayerId != null)
+        if (activity.IsBaseline || current.Status == "finished") { Clear(); return; }
+        var draws = activity.Entries.Where(e => e.Kind == "draw" && e.Count > 0 && e.PlayerId != null)
             .GroupBy(e => e.PlayerId!.Value).ToDictionary(g => g.Key, g => (int)Math.Min(int.MaxValue, g.Sum(e => (long)e.Count)));
-        lastActivityId = Math.Max(lastActivityId, current.Activity.Select(e => e.Id).DefaultIfEmpty().Max());
         foreach (var player in current.Players) {
-            var before = previous.Players.FirstOrDefault(p => p.Id == player.Id);
+            var before = activity.Before!.Players.FirstOrDefault(p => p.Id == player.Id);
             if (before == null || player.Eliminated) continue;
             int life = player.Life - before.Life;
             if (life != 0) {

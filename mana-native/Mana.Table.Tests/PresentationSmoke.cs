@@ -19,6 +19,7 @@ internal static class PresentationSmoke
         BitmapPixelSmoke.Run(Check);
         ForgeCommandBoundaryChecks.Run(Check);
         GameplayFeedbackChecks.Run(Check);
+        PublicActivityCursorChecks.Run(Check);
         ImpactFeedbackChecks.Run(Check);
         CardArtPreloadChecks.Run(Check);
         ManaPoolFeedbackChecks.Run(Check);
@@ -187,12 +188,12 @@ internal static class PresentationSmoke
         motion.Begin(.016f, false); var releasedPose = motion.Place("dealt", end, new(0, 800)); motion.End();
         Check(releasedPose.Center.X > heldPose.Center.X && releasedPose.Center.X < end.Center.X, "Release continues from the held position rather than a new library entrance");
         CheckMotionTiming(Check);
-        var presence = new TablePresence();
+        var presence = new TablePresence(); var presenceActivity = new PublicActivityCursor();
         var afterDraw = state with { Players = state.Players.Select(p => p.Id == 1 ? p with { Zones = p.Zones.Select(z => z.Name == "Hand" ? z with { Count = z.Count + 1 } : z.Name == "Library" ? z with { Count = z.Count - 1 } : z).ToImmutableArray() } : p.Id == 2 ? p with { Life = p.Life - 3 } : p).ToImmutableArray(),
             Activity = [new(1, state.Turn, state.PhaseKey, "draw", 1, "Opponent drew a card.", null, null) { Count = 1 }] };
-        presence.Observe(state, afterDraw, 5);
+        presence.Observe(presenceActivity.Observe(state, afterDraw), 5);
         Check(presence.Cues.Count == 2 && presence.PendingDraws(1, 5.2) == 1 && presence.Cues.Any(c => c.Kind == SeatCueKind.LifeLoss && c.Amount == 3), "Public draw events and life deltas create seat feedback without hidden card identities");
-        presence.Observe(afterDraw, afterDraw, 5.1);
+        presence.Observe(presenceActivity.Observe(afterDraw, afterDraw), 5.1);
         Check(presence.Cues.Count == 2 && presence.PendingDraws(1, 6) == 0, "Repeated polls neither repeat nor prolong anonymous card draws");
         foreach (int seat in new[] { 0, 1, 2 }) {
             var library = TableWorld.Pile(seat, 0); var hand = TableLayout.HiddenHand(seat, 6, 7);
@@ -201,32 +202,32 @@ internal static class PresentationSmoke
                 $"Seat {seat} draws from its physical library into its own hand with an airborne arc");
         }
         var returned = afterDraw with { Players = afterDraw.Players.Select(p => p.Id == 1 ? p with { Zones = p.Zones.Select(z => z.Name == "Hand" ? z with { Count = z.Count + 1 } : z).ToImmutableArray() } : p).ToImmutableArray() };
-        presence.Observe(afterDraw, returned, 7);
+        presence.Observe(presenceActivity.Observe(afterDraw, returned), 7);
         Check(presence.Cues.Count == 0, "A hand increase without a library decrease does not invent a draw");
-        presence.Observe(state, afterDraw, 8); presence.Observe(afterDraw, afterDraw with { Id = "rematch" }, 8.1);
+        presence.Observe(presenceActivity.Observe(state, afterDraw), 8); presence.Observe(presenceActivity.Observe(afterDraw, afterDraw with { Id = "rematch" }), 8.1);
         Check(presence.Cues.Count == 0, "A rematch clears every seat's presentation cues");
         Check(TableWorld.Spell(0).Bounds.Height > 185 && TableWorld.Spell(0).Bounds.Bottom < 525 && TableWorld.Spell(0).Contains(TableWorld.Spell(0).Center.ToPoint()), "The response spell is readable and remains inside the shared center of the table");
         var edge = new Pose(new(100, 100), new(80, 120), MathF.PI / 2).EdgeToward(new(500, 100));
         Check(Math.Abs(edge.X - 160) < .01f && Math.Abs(edge.Y - 100) < .01f, "Combat connections meet rotated card edges instead of covering text");
         var damaged = state with { Players = state.Players.Select(p => p.Id != 0 ? p : p with { Zones = p.Zones.Select(z => z.Name != "Battlefield" ? z : z with { Cards = z.Cards.Select((c, i) => i == 1 ? c with { Damage = 2, Tapped = true } : c).ToImmutableArray() }).ToImmutableArray() }).ToImmutableArray() };
-        var effects = new SceneEffects(); effects.Observe(state, damaged, 1);
+        var effects = new SceneEffects(); var effectsActivity = new PublicActivityCursor(); effects.Observe(effectsActivity.Observe(state, damaged), 1);
         Check(effects.Cards.Count == 2 && effects.Cards.Any(c => c.Kind == CueKind.Damage && c.Amount == 2), "Damage and tapping feedback use authoritative deltas");
-        effects.Observe(damaged, damaged, 1.1);
+        effects.Observe(effectsActivity.Observe(damaged, damaged), 1.1);
         Check(effects.Cards.Count == 2, "Repeated snapshots do not duplicate feedback");
         var concealed = damaged with { Players = damaged.Players.Select(p => p.Id != 0 ? p : p with { Zones = p.Zones.Select(z => z with { Cards = z.Cards.Select(c => c.VisualId == "seat-0-1" ? c with { FaceDown = true } : c).ToImmutableArray() }).ToImmutableArray() }).ToImmutableArray() };
-        effects.Observe(damaged, concealed, 1.2);
+        effects.Observe(effectsActivity.Observe(damaged, concealed), 1.2);
         Check(effects.Cards.Count == 0, "Concealing a card immediately removes its remaining visual effects");
-        effects.Observe(state, damaged, 2); effects.Observe(damaged, damaged with { Id = "another-game" }, 2.1);
+        effects.Observe(effectsActivity.Observe(state, damaged), 2); effects.Observe(effectsActivity.Observe(damaged, damaged with { Id = "another-game" }), 2.1);
         Check(effects.Cards.Count == 0, "A new match discards feedback from the old game");
         var bird = new Card { VisualId = "new-token", Name = "Bird Token", Type = "Token Creature - Bird", Power = 1, Toughness = 1, CombatKeywords = ["flying"] };
         var tokenArrival = state with { Players = state.Players.Select(p => p.Id == 0 ? p with { Zones = p.Zones.Select(z => z.Name == "Battlefield" ? z with { Count = z.Count + 1, Cards = [.. z.Cards, bird] } : z).ToImmutableArray() } : p).ToImmutableArray() };
-        effects.Clear(); effects.Observe(state, tokenArrival, 3);
+        effects.Clear(); effects.Observe(effectsActivity.Observe(state, tokenArrival), 3);
         Check(effects.Cards.Any(c => c.VisualId == bird.VisualId && c.Kind == CueKind.Arrive), "A newly created token receives an arrival cue without needing a previous card occurrence");
-        var narrative = new ActionFeedback();
+        var narrative = new ActionFeedback(); var narrativeActivity = new PublicActivityCursor();
         var resolved = state with { Activity = [new(1, state.Turn, state.PhaseKey, "resolved", 1, "Ravenform resolved.", "raven", "Ravenform") { Detail = "The public spell description." }] };
-        narrative.Observe(state, resolved, 3); narrative.Observe(resolved, resolved, 4);
+        narrative.Observe(narrativeActivity.Observe(state, resolved), 3); narrative.Observe(narrativeActivity.Observe(resolved, resolved), 4);
         Check(narrative.Last is { Started: 3, Detail: "The public spell description." }, "Repeated polls do not restart or replace resolution feedback");
-        narrative.Observe(resolved, resolved with { Id = "rematch" }, 5);
+        narrative.Observe(narrativeActivity.Observe(resolved, resolved with { Id = "rematch" }), 5);
         Check(narrative.Last == null, "Resolution feedback cannot leak into the next match");
         var ability = state.Viewer!.Zone("Battlefield").Cards.First(c => c.Selectable);
         Check(CardActions.CanActivate(state, ability) && !CardActions.CanActivate(state, ability with { FaceDown = true }), "Activation cues require an authorized visible battlefield occurrence");

@@ -14,17 +14,12 @@ public sealed class ActionFeedback
 {
     public ResolutionCue? Last { get; private set; }
     public PublicOutcomeCue? LastPublicOutcome { get; private set; }
-    private string? gameId;
-    private long lastActivityId;
-    public void Clear() { Last = null; LastPublicOutcome = null; gameId = null; lastActivityId = 0; }
-    public void Observe(GameSnapshot? before, GameSnapshot after, double now)
+    public void Clear() { Last = null; LastPublicOutcome = null; }
+    public void Observe(PublicActivityBatch activity, double now)
     {
-        if (before == null || before.Id != after.Id) {
-            Clear(); gameId = after.Id; lastActivityId = after.Activity.Select(e => e.Id).DefaultIfEmpty().Max(); return;
-        }
-        if (gameId != after.Id) { gameId = after.Id; lastActivityId = before.Activity.Select(e => e.Id).DefaultIfEmpty().Max(); }
-        var entries = after.Activity.Where(e => e.Id > lastActivityId).ToArray();
-        lastActivityId = Math.Max(lastActivityId, after.Activity.Select(e => e.Id).DefaultIfEmpty().Max());
+        if (activity.IsBaseline) { Clear(); return; }
+        var after = activity.After;
+        var entries = activity.Entries;
         var publicEvents = entries.Where(e => e.Kind is "draw" or "shuffle" && e.Count > 0).ToArray();
         var countedMessages = publicEvents.GroupBy(e => (e.PlayerId, e.Kind)).Select(group => {
             int count = (int)Math.Min(int.MaxValue, group.Sum(e => (long)e.Count));
