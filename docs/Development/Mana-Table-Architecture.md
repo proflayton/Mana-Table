@@ -73,6 +73,15 @@ occurrence disappears. Cross-zone play gestures use a current offered cast/play
 action rather than a UI list of permitted zones. Hand-placement and Auto still
 consume their separate explicit provider permissions.
 
+`CardViews.InZones` enumerates current player-zone occurrences with their owner
+and zone, including a disclosed top and masked card envelopes. Occurrence-ID
+lookup and current action-key lookup are separate queries. Source authorization,
+reader reconciliation and ability placement share this traversal; historical
+stack and decision faces remain explicit reference views. They cannot restore a
+departed source's action authority. Display reconciliation keeps a current masked
+face rather than falling back to an older revealed report. None of these queries
+cache a previous snapshot or match a printed name.
+
 Forge priority alternatives are explicit state: Undo, pass turn or none. Native
 Undo and pass-turn commands never emulate Forge's overloaded Cancel button.
 The Java adapter validates their current meaning both before queueing and on the
@@ -233,7 +242,7 @@ automatic batch from an ordinary in-flight command. These presentation facts
 grant no permission: replies still require the current engine decision and token.
 It can initialize, update and compose with no `Game`, window or graphics device.
 
-The next portrait turn-controls iteration consumes these same facts and shared
+The portrait turn controls shipped in 0.2.83 consume these same facts and shared
 pause gate. Six local phase markers represent recurring own-turn stop preferences;
 the active opponent's phase is read-only. Current phase, saved stop, Auto/Hold and
 bounded-yield state remain separate facts even when composed beside one portrait.
@@ -241,7 +250,9 @@ Moving the priority-pass action there does not move required target/search/payme
 decisions or authorize answers. Saved stops prevent local automatic passing at
 an offered priority opportunity, not engine-scheduled waypoints. New guaranteed
 phase pauses or wider yield permissions would require a separate authority
-contract. Human review of this iteration is pending.
+contract. The user accepted the presented native preview at revision
+`adac239e1d2b11f86afe90a384415051411e274b`; individual review gestures and window
+settings were not recorded. This does not close the remaining dense-field audit.
 Its optional `PresentationResources` supplies textures and sound for a real window;
 an empty resource set uses the production rules-text and neutral-surface fallbacks.
 
@@ -293,7 +304,10 @@ flowchart LR
 `ComposePresentation` publishes ordered typed `DrawCommand` data through
 `DrawList`, a frozen `InteractionFrame`, prepared card occurrences, a scene and
 the exact game/revision/decision stamp. GPU replay does not run application
-callbacks or decide card layout. CPU font geometry and GPU text rasterization use
+callbacks or decide card layout. Application composition owns one deferred list
+pairing each lifted card with its painter; it drains in stable layer order before
+frame publication. The card controller owns poses, reading and layers, without a
+second queue or sequence-key join. CPU font geometry and GPU text rasterization use
 the same `TextLayout`; measuring a label creates no texture. Card readers and
 travel belong to `CardPresentationController`, and indexed scene seats and
 occurrences avoid rebuilding layouts or scanning the whole battlefield per card.
@@ -481,7 +495,7 @@ behavior. History retains both movement and draw entries, with an additive
 sequence and the shared native interruption predicate use that classification.
 Draw triggers and their required choices still stop passing. Unchanged stat
 recomputation and retained-mana refreshes do not count as actions.
-`DecisionQuietAdvance` observes ordinary priority handoffs but submits only against
+`DecisionAdvance.RunQuietlyAsync` observes ordinary priority handoffs but submits only against
 a current local priority prompt with that exact token. It never adopts a replacement
 token or consumes targets, payment, searches or other required decisions. Hold,
 Take control and manual game actions stop further quiet passes; an already submitted
@@ -524,7 +538,7 @@ its consequence; an eliminated seat can watch or leave.
 | `Mana.Conformance` | Test-only semantic scenarios, canonical full checkpoints and first-divergence reporting for two engine adapters |
 | `Mana.Client.Tests`, `Mana.Table.Tests` | Headless behavior checks and separate native test/automation executable |
 
-`TableScene` describes visible ranks, command cards, piles and hand placement.
+`TableScene` describes battlefield groups, command cards, piles and hand placement.
 Current native source uses `BattlefieldLayout` to include every projected
 battlefield occurrence, with ordered groups and exposed individual hit regions.
 Sparse boards keep projected role lanes. When crowding requires bounded packing,
@@ -534,7 +548,11 @@ controls. Dense headers carry owner/status while life, mana and player-state
 ribbons remain at their player icons. Redundant role and hero creature counts
 have been removed. Matching public-state
 copies share small fans; every occurrence stays rendered and independently hit.
-Its compatibility rank views do not page the battlefield. Long hands and
+Each scene seat prepares group membership and occurrence lookup once. Effect
+transitions and impacts use the same group front and members instead of rebuilding
+groups from paint order. Focused tiles expose their displayed membership and art
+pose through the same layout owner. Event attribution, departure visibility and
+counter landing remain with their existing consumers. Long hands and
 selection/inspection galleries still page. Release 0.2.39 introduced unpaged
 battlefields at revision `c11a3094be6c95ba1bddbafbe54aa7ad8fe3a7db`; current packing
 includes later changes. Inspect package metadata before attributing source
@@ -716,7 +734,7 @@ matching public states share a fan. Connected metadata extends the same
 occurrence's hit region rather than clicking through to a neighbor.
 
 `PaintInteractionCard` shares this current-state presentation across source,
-choice, stack, combat and allocation previews. `InteractionCards` resolves exact
+choice, stack, combat and allocation previews. `CardViews` resolves exact
 public occurrence IDs against the current snapshot for display, including a
 current face-down projection. It never matches printed names or changes the
 original choice index, action handle, allocation threshold or reply. If an
@@ -853,6 +871,14 @@ prompts are not resubmitted; stale revisions and retired-session results are rej
 Hold, Full control, changed stops, typing, inspection and pointer gestures cancel
 further passes; an already submitted command is reconciled. Required decisions,
 including blocks, payment and cleanup, are never consumed by Auto.
+
+Auto and explicit quiet yield use one bounded executor and one `ClientSession`
+cancellation/acceptance lifecycle. Their entry points construct only their own
+command variant and retain separate submitted-prompt histories. The unchanged
+`QuietPriorityPolicy` owns quiet token, turn and interruption gates; it cannot
+authorize ordinary Auto. The application checks eligibility and presentation
+pauses without keeping another submitted-prompt cache or constructing a discarded
+pass command. The session owns submission and reconciliation.
 
 `PresentationPacing` pauses for visible events, not empty phase changes. Board
 changes get 1.1 seconds, ordinary stack changes 1.25, targeted spells or retargets

@@ -94,9 +94,7 @@ public static class GameCommandPermissions
         Card? Card(string key) => CardViews.Located(state).Select(item => item.Card)
             .Concat(state.Players.SelectMany(player => player.Zones).Where(zone => zone.TopCard != null).Select(zone => zone.TopCard!))
             .FirstOrDefault(card => card.Key == key && key.Length > 0);
-        Card? CurrentSource(string key) => state.Players.SelectMany(player => player.Zones)
-            .SelectMany(zone => zone.TopCard is { } top ? zone.Cards.Append(top) : zone.Cards)
-            .FirstOrDefault(card => card.Key == key && key.Length > 0);
+        Card? CurrentSource(string key) => CardViews.FindZoneActionSource(state, key)?.Card;
         bool Selectable(string key) => Card(key) is { Selectable: true };
         bool Located(string key, params string[] zones) => CardViews.Located(state).Any(item => item.Card.Key == key && zones.Contains(item.Zone));
         return command switch {

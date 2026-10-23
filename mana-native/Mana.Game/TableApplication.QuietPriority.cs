@@ -12,14 +12,14 @@ internal sealed partial class TableApplication
     private bool QuietPriorityArmed => quietYieldToken.Length > 0;
     private bool CanOfferQuietPriority => !ExperienceLabOpen && fixture == null && !session.NeedsRecovery && !held
         && match is { } state && !(state.ActivePlayerId == state.ViewerId && preferences.Stops.Contains(state.PhaseKey))
-        && DecisionQuietAdvance.CanPass(state, state.Decision?.QuietYieldToken ?? "");
+        && QuietPriorityPolicy.CanPass(state, state.Decision?.QuietYieldToken ?? "");
 
     private void ArmQuietPriority()
     {
         // Observation does not change this local intent. The worker waits for
         // its result and rechecks this exact token before submitting any pass.
         if (!CanOfferQuietPriority || busy || match is not { } state) return;
-        session.CancelAdvance(); priority.Reset();
+        session.CancelAdvance();
         quietYieldGame = state.Id; quietYieldTurn = state.Turn; quietYieldActivePlayer = state.ActivePlayerId;
         quietYieldToken = state.Decision!.QuietYieldToken;
         quietYieldActivity = state.Activity.Select(entry => entry.Id).DefaultIfEmpty().Max();
@@ -30,7 +30,7 @@ internal sealed partial class TableApplication
     {
         if (!QuietPriorityArmed) return;
         quietYieldGame = quietYieldToken = "";
-        quietYieldActivity = 0; session.CancelAdvance(); priority.Reset();
+        quietYieldActivity = 0; session.CancelAdvance();
     }
 
     // True reserves the connection for this explicit policy, including while
@@ -40,20 +40,20 @@ internal sealed partial class TableApplication
         if (!QuietPriorityArmed) return false;
         if (held || ExperienceLabOpen || fixture != null || session.NeedsRecovery || commandFailure
             || match is not { } state || state.ActivePlayerId == state.ViewerId && preferences.Stops.Contains(state.PhaseKey)
-            || !DecisionQuietAdvance.CanWait(state, quietYieldGame, quietYieldTurn, quietYieldActivePlayer, quietYieldToken)
-            || DecisionQuietAdvance.HasInterruption(state, quietYieldActivity)) {
+            || !QuietPriorityPolicy.CanWait(state, quietYieldGame, quietYieldTurn, quietYieldActivePlayer, quietYieldToken)
+            || QuietPriorityPolicy.HasInterruption(state, quietYieldActivity)) {
             StopQuietPriority(); return false;
         }
         if (interactionBlocked) { session.CancelAdvance(); return true; }
         if (busy || polling || !playback.Ready(now)) return true;
-        if (DecisionQuietAdvance.CanPass(state, quietYieldToken)) {
+        if (QuietPriorityPolicy.CanPass(state, quietYieldToken)) {
             // Capture the baseline, never replace it with a subsequently issued token.
             string token = quietYieldToken, game = quietYieldGame;
             int turn = quietYieldTurn; int? active = quietYieldActivePlayer;
             long activity = quietYieldActivity; var stops = preferences.Stops.ToHashSet();
             bool Continue(GameSnapshot next) => !(next.ActivePlayerId == next.ViewerId && stops.Contains(next.PhaseKey))
-                && DecisionQuietAdvance.CanWait(next, game, turn, active, token)
-                && !DecisionQuietAdvance.HasInterruption(next, activity);
+                && QuietPriorityPolicy.CanWait(next, game, turn, active, token)
+                && !QuietPriorityPolicy.HasInterruption(next, activity);
             if (session.AdvanceQuietly(token, Continue, Mana.Magic.PresentationPacing.ShouldPresent))
                 pendingActionLabel = "Passing quiet priority windows.";
         }

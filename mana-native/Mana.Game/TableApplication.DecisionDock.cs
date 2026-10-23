@@ -34,7 +34,7 @@ internal sealed partial class TableApplication
         return new() {
             Automatic = automatic, Held = held, PauseReason = pause,
             PhaseStopKey = state.ActivePlayerId == state.ViewerId && preferences.Stops.Contains(state.PhaseKey) ? state.PhaseKey : "",
-            QuietArmed = QuietPriorityArmed, QuietCanPass = QuietPriorityArmed && DecisionQuietAdvance.CanPass(state, quietYieldToken),
+            QuietArmed = QuietPriorityArmed, QuietCanPass = QuietPriorityArmed && QuietPriorityPolicy.CanPass(state, quietYieldToken),
             AutomaticAdvanceInFlight = session.IsAdvancing, CommandBusy = busy, ObservationPending = polling
         };
     }

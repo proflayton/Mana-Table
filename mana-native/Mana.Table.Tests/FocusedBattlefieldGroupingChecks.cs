@@ -20,6 +20,7 @@ internal static class FocusedBattlefieldGroupingChecks
         check(withoutHistory is { Count: 1 } && withoutHistory[0].Count == 2
                 && afterEarthbend.Count == 2 && afterEarthbend.All(group => group.Count == 1)
                 && afterEarthbend.Select(group => group.Id).SequenceEqual(forests.Select(CardViews.Identity))
+                && afterEarthbend.All(group => group.MemberIds.SequenceEqual([group.Id]))
                 && afterEarthbend.All(group => ReferenceEquals(group.Front, forests.Single(card => CardViews.Identity(card) == group.Id))),
             "The reported earthbend target retains its own opaque identity beside an otherwise-equal unchanged Forest, using current projected cards");
 
@@ -38,7 +39,8 @@ internal static class FocusedBattlefieldGroupingChecks
         var cats = retreat.Viewer!.Zone("Battlefield").Cards.Where(card => card.VisualId.StartsWith("crowd-0-cat-", StringComparison.Ordinal)).ToArray();
         var together = FocusedBattlefieldLayout.Group(cats, CardPresentation.IsResource, history.Groups);
         check(together is { Count: 1 } && together[0].Count == 50
-                && together[0].Cards.Select(CardViews.Identity).SequenceEqual(cats.Select(CardViews.Identity)),
+                && together[0].Cards.Select(CardViews.Identity).SequenceEqual(cats.Select(CardViews.Identity))
+                && together[0].MemberIds.SequenceEqual(cats.Select(CardViews.Identity)),
             "Identical tokens affected together remain one complete fifty-copy family rather than being separated by individual IDs");
         check(FocusedBattlefieldLayout.Group([], CardPresentation.IsResource, history.Groups).Count == 0,
             "Retained reported targets never reconstruct a departed or no-longer-projected battlefield face");

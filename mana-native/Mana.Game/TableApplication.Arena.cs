@@ -187,7 +187,7 @@ internal sealed partial class TableApplication
             if (pose.Size.X >= 300) {
                 bool actionSpace = focus && (match?.Decision?.Intent == DecisionIntent.Priority && IsCardActionable(card)
                     || AbilityActionPending && match?.Decision is { } decision
-                        && InteractionCards.Source(match, decision) is { } source && SameVisibleCard(card, source));
+                        && CardViews.Source(match, decision) is { } source && SameVisibleCard(card, source));
                 int typeTop = actionSpace ? (int)(r.Height * .53f) : 121;
                 canvas.Text(card.Name, r.X + 20, r.Y + 20, Ink * opacity, 1.05f, r.Width - 40, 2, true);
                 canvas.Text(card.ManaCost == "no cost" ? "" : card.ManaCost, r.X + 20, r.Y + 82, Gold * opacity, .8f, r.Width - 40, 1);
@@ -268,7 +268,7 @@ internal sealed partial class TableApplication
         for (int i = stackCards.Length - 1; i >= 0; i--) {
             var reported = stackCards[i];
             var card = state.Decision is { } sourceDecision && (payingSource || state.Stack.Length == 0)
-                ? InteractionCards.Source(state, sourceDecision) ?? stackCards[i] : InteractionCards.Current(state, stackCards[i]);
+                ? CardViews.Source(state, sourceDecision) ?? stackCards[i] : CardViews.Current(state, stackCards[i]);
             bool alsoInZone = state.Players.Any(p => p.Zones.Any(z => z.Cards.Any(c => CardIdentity(c) == CardIdentity(card))));
             string identity = payingSource ? "payment:" + state.Decision!.Id : alsoInZone ? "stack:" + (state.Stack.ElementAtOrDefault(i)?.Id ?? "source") : CardIdentity(card);
             if (identity.Length == 0) identity = "stack:" + (state.Stack.ElementAtOrDefault(i)?.Id ?? card.Name);

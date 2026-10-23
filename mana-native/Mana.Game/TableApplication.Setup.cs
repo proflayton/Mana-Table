@@ -15,7 +15,7 @@ internal sealed partial class TableApplication
         effects.Clear(); presence.Clear(); playback.Reset(); combatPage = 0; combatCandidates = false; inspectedStack = null; reviewedAttacker = null;
         actionFeedback.Clear(); departures.Clear(); inspectedAction = null;
         handPage = zonePage = choicePage = 0; choiceFilter = decisionId = "";
-        automatic = !Automated && preferences.Automatic; priority.Reset(); pressed = null;
+        automatic = !Automated && preferences.Automatic; pressed = null;
         ClearCardReading(); ClearReaderActions();
         pendingPreviewReference = null; pendingPreviewBounds = null; pendingPreviewCardId = null;
         seatPortraits.Clear(); overlay = ""; inspected = null; held = false; dragging = false; dragSource = null;

@@ -38,7 +38,7 @@ public static class DecisionDockPresentation
         var reported = state.Decision;
         bool localOwner = priority.DecisionOwnerId == null || priority.DecisionOwnerId == state.ViewerId;
         var decision = localOwner ? reported : null;
-        var source = decision == null ? null : InteractionCards.Source(state, decision);
+        var source = decision == null ? null : CardViews.Source(state, decision);
         string sourceId = source == null ? decision?.SourceCardId ?? "" : CardViews.Identity(source);
         var pause = Pause(state, controls);
 

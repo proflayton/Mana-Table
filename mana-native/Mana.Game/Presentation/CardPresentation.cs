@@ -20,7 +20,7 @@ internal sealed record CardPresentationContext(GameSnapshot? State, string Scope
 
     public Card? ChoiceFace(int slot) => State?.Decision is { } decision
         ? decision.LibraryCards.Length > 0 ? decision.LibraryCards.ElementAtOrDefault(slot)?.Card
-            : decision.Choices.ElementAtOrDefault(slot) is { } choice ? InteractionCards.Choice(State, choice) : null
+            : decision.Choices.ElementAtOrDefault(slot) is { } choice ? CardViews.Choice(State, choice) : null
         : null;
 
     public bool CanRead(PresentedCard entry)
@@ -48,8 +48,7 @@ internal sealed record CardPresentationContext(GameSnapshot? State, string Scope
         if (State == null) return null;
         IEnumerable<Card> candidates = zoneName == "Stack"
             ? State.Stack.Where(item => item.Card != null).Select(item => item.Card!)
-            : State.Players.SelectMany(player => player.Zones).Where(zone => zone.Name == zoneName)
-                .SelectMany(zone => zone.TopCard is { } top ? zone.Cards.Append(top) : zone.Cards);
+            : CardViews.InZones(State).Where(occurrence => occurrence.Zone == zoneName).Select(occurrence => occurrence.Card);
         return candidates.FirstOrDefault(card => CardViews.Same(card, shown));
     }
 }
@@ -62,7 +61,7 @@ internal sealed record CardPresentationRequest(string Id, Card Card, Pose Rest, 
 internal enum CardPresentationLayer { Table, Returning, Reader }
 
 /// <summary>A prepared occurrence. Rest, painting and input share presentation-space geometry.</summary>
-internal sealed record PresentedCard(int Sequence, CardPresentationRequest Request,
+internal sealed record PresentedCard(CardPresentationRequest Request,
     Pose Display, Hit Hit, bool Focused, bool Emphasized, CardPresentationLayer Layer)
 {
     public BoardView View { get; init; } = BoardView.Identity;

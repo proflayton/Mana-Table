@@ -485,13 +485,13 @@ internal sealed partial class CardReadingSmoke : ITableAutomation
         Step(0, () => {
             Move(new(10, 70)); Publish(FocusedSeed(PresentationSmoke.StateExample()));
             original = TableScene.Build(view.Match!, 0, new(-1, -1), null, null, false, CardPresentation.IsResource)
-                .Rank(0, false).Cards.Single(c => c.Id == "seat-0-1").Pose;
+                .BattlefieldCard(0, "seat-0-1")!.Pose;
         });
         StepWhen(() => FreshOwnCard("seat-0-1", "Battlefield", c => c.CombatKeywords.Contains("flying"))
             && view.DisplayedPose("seat-0-1") is { Elevation: > 12 } flying
             && flying.Center.Y < original.Center.Y - 10, 1, () => {
             var scene = TableScene.Build(view.Match!, 0, new(-1, -1), null, null, false, CardPresentation.IsResource);
-            original = scene.Rank(0, false).Cards.Single(c => c.Id == "seat-0-1").Pose;
+            original = scene.BattlefieldCard(0, "seat-0-1")!.Pose;
             var displayed = view.DisplayedPose("seat-0-1");
             Check(displayed is { Elevation: > 12 } && displayed.Value.Center.Y < original.Center.Y - 10, "A creature with projected flying rests above the battlefield");
             MoveCard("seat-0-1"); Capture("06-card-states");
@@ -551,13 +551,13 @@ internal sealed partial class CardReadingSmoke : ITableAutomation
             }).ToImmutableArray() }).ToImmutableArray() });
             // Derive the target from the new untapped projection, never the old tapped cell.
             phaseInRest = TableScene.Build(view.Match!, 0, new(-1, -1), null, null, false, CardPresentation.IsResource)
-                .Rank(0, true).Cards.Single(c => c.Id == "seat-0-0").Pose;
+                .BattlefieldCard(0, "seat-0-0")!.Pose;
         });
         StepWhen(() => FreshOwnCard("seat-0-0", "Battlefield", c => !c.PhasedOut && !c.Tapped)
             && view.DisplayedPose("seat-0-0") is { Elevation: < 1, Angle: >= -.02f and <= .02f } returned
             && Microsoft.Xna.Framework.Vector2.Distance(returned.Center, phaseInRest.Center) < 2, 1, () => {
             var scene = TableScene.Build(view.Match!, 0, new(-1, -1), null, null, false, CardPresentation.IsResource);
-            var isleRest = scene.Rank(0, true).Cards.Single(c => c.Id == "seat-0-0").Pose;
+            var isleRest = scene.BattlefieldCard(0, "seat-0-0")!.Pose;
             Check(view.DisplayedPose("seat-0-0") is { Elevation: < 1, Angle: >= -.02f and <= .02f } pose
                 && Microsoft.Xna.Framework.Vector2.Distance(pose.Center, isleRest.Center) < 2,
                 "Phasing in settles the same untapped land occurrence into its current battlefield cell without floating");
@@ -842,7 +842,7 @@ internal sealed partial class CardReadingSmoke : ITableAutomation
     }
     private Pose? StateCreatureRest() => view.Match is { } state
         ? TableScene.Build(state, 0, new(-1, -1), null, null, false, CardPresentation.IsResource)
-            .Rank(0, false).Cards.FirstOrDefault(c => c.Id == "seat-0-1")?.Pose : null;
+            .BattlefieldCard(0, "seat-0-1")?.Pose : null;
     private object[] ChoiceSlotDiagnostics()
     {
         var decision = view.Match?.Decision;

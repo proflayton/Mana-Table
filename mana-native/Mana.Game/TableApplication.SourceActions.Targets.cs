@@ -21,7 +21,7 @@ internal sealed partial class TableApplication
                 DrawPendingCounterReceipt(pending);
             return;
         }
-        var source = InteractionCards.Source(state, decision);
+        var source = CardViews.Source(state, decision);
         bool valued = decision.Effect is { Kind: "damage" };
         var origin = source == null ? null : cardPresentation.Cards.LastOrDefault(card => card.Zone != "Stack" && card.ChoiceSlot < 0 && SameVisibleCard(card.Card, source));
         if (valued) DrawTargetingEffect(state, decision, source);

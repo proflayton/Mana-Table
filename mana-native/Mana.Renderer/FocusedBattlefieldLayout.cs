@@ -4,15 +4,27 @@ using Rectangle = Microsoft.Xna.Framework.Rectangle;
 
 namespace Mana.Renderer;
 
-public sealed record FocusedBattlefieldGroup(string Id, string Role, IReadOnlyList<Card> Cards)
+public sealed class FocusedBattlefieldGroup(string id, string role, IReadOnlyList<Card> cards)
 {
+    public string Id { get; } = id;
+    public string Role { get; } = role;
+    public IReadOnlyList<Card> Cards { get; } = cards;
     public Card Front => Cards[^1];
     public int Count => Cards.Count;
+    public IReadOnlyList<string> MemberIds { get; } = Array.AsReadOnly(cards.Select(CardViews.Identity)
+        .Where(id => id.Length > 0).Distinct(StringComparer.Ordinal).ToArray());
 }
-public sealed record FocusedBattlefieldTile(FocusedBattlefieldGroup Group, Rectangle Bounds, Rectangle Art, Rectangle Details);
+public sealed record FocusedBattlefieldTile(FocusedBattlefieldGroup Group, Rectangle Bounds, Rectangle Art, Rectangle Details)
+{
+    public Pose ArtPose => new(Art.Center.ToVector2(), Art.Size.ToVector2());
+}
 public sealed record FocusedBattlefieldHeading(string Role, int Permanents, int Groups, Rectangle Bounds);
 public sealed record FocusedBattlefieldPlan(Rectangle Viewport, IReadOnlyList<FocusedBattlefieldTile> Tiles,
-    IReadOnlyList<FocusedBattlefieldHeading> Headings, int Scroll, int MaximumScroll, int ContentHeight);
+    IReadOnlyList<FocusedBattlefieldHeading> Headings, int Scroll, int MaximumScroll, int ContentHeight)
+{
+    public IEnumerable<FocusedBattlefieldTile> VisibleTiles => Tiles.Where(tile => Viewport.Contains(tile.Art));
+    public FocusedBattlefieldTile? Tile(string occurrenceId) => Tiles.FirstOrDefault(tile => tile.Group.MemberIds.Contains(occurrenceId));
+}
 
 /// <summary>
 /// A readable one-seat workspace. Public-state families share an art tile;

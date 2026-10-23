@@ -17,7 +17,7 @@ internal sealed partial class TableApplication
     private bool IsControlHovered(string id) => !dragging && pointerSurface?.Id == id && CurrentHit(pointerSurface);
     // These callbacks compose draw commands and are drained before publication.
     // The card owner and the final GPU frame contain no painting callbacks.
-    private readonly Dictionary<int, Action<Pose, bool>> deferredCardComposition = [];
+    private readonly List<(PresentedCard Card, Action<Pose, bool> Compose)> deferredCardComposition = [];
     private (string Scope, int Slot)? inspectedChoice;
     private bool ReadingGalleryOpen => overlay.Length == 0 && zoneName == null && DecisionModal
         && match?.Decision?.Kind is "choice" or "reveal";
@@ -66,8 +66,8 @@ internal sealed partial class TableApplication
         if (!AbilityActionPending || match == null || cardPresentation.Pinned is not { Zone: "Battlefield" } entry) return false;
         string id = decision.SourceCardId.Length > 0 ? decision.SourceCardId
             : decision.SourceCard is { VisualId.Length: > 0 } source ? source.VisualId : decision.SourceCard?.CombatId ?? "";
-        return id.Length > 0 && match.Players.SelectMany(player => player.Zone("Battlefield").Cards)
-            .Any(card => !card.FaceDown && (card.VisualId == id || card.CombatId == id) && SameVisibleCard(card, entry.Card));
+        return CardViews.FindZoneOccurrence(match, id) is { Zone: "Battlefield", Card: { FaceDown: false } card }
+            && SameVisibleCard(card, entry.Card);
     }
     private Card? ChoiceFace(int slot) => CardContext.ChoiceFace(slot);
     private Card? RefreshInspectedCard()
@@ -84,7 +84,7 @@ internal sealed partial class TableApplication
             entrance, entranceDelay, opensZone, choiceSlot, activationBounds));
         hits.Add(entry.Hit);
         if (entry.Layer == CardPresentationLayer.Table) ComposeCard(entry, paint);
-        else deferredCardComposition.Add(entry.Sequence, paint);
+        else deferredCardComposition.Add((entry, paint));
         return entry.Display;
     }
 
@@ -97,9 +97,9 @@ internal sealed partial class TableApplication
     }
     private void DrawLiftedCards()
     {
-        foreach (var entry in cardPresentation.TakeDeferred()) {
-            if (!deferredCardComposition.Remove(entry.Sequence, out var compose))
-                throw new InvalidOperationException("A prepared card has no composition.");
+        var pending = deferredCardComposition.OrderBy(item => item.Card.Layer).ToArray();
+        deferredCardComposition.Clear();
+        foreach (var (entry, compose) in pending) {
             ComposeCard(entry, compose);
             // Labels may extend the face while composing. Promote that same
             // canonical hit rather than replacing it with the original face.

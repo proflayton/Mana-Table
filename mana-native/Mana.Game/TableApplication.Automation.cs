@@ -155,7 +155,7 @@ internal sealed partial class TableApplication
         internal bool TableGuideOpen => game.tableGuideOpen;
         internal bool ExperienceOpen => game.ExperienceOpen;
         internal void OpenTableGuide() => game.OpenTableGuide();
-        internal void SetHeld(bool value) { game.held = value; game.priority.Reset(); }
+        internal void SetHeld(bool value) => game.held = value;
         internal Mana.Renderer.ResolutionCue? LastResolution => game.actionFeedback.Last;
         internal IReadOnlyList<ImpactPaint> Impacts => game.impactPaint;
         internal IReadOnlyList<(string CardId, string Destination, Mana.Renderer.Pose Pose)> PublicDepartures => game.departures
