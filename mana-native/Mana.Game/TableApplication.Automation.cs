@@ -32,6 +32,7 @@ internal sealed partial class TableApplication
         internal string? ReferencePreviewCardId => game.pendingPreviewCardId;
         internal Rectangle? ReferencePreviewBounds => game.pendingPreviewBounds;
         internal IReadOnlyDictionary<int, Rectangle> PrioritySeats => game.prioritySeats;
+        internal Mana.Magic.TurnProgressView? TurnProgress => game.turnProgress;
         internal void OpenBattlefield(int owner) => game.OpenZone(owner, "Battlefield");
         internal string Profile => game.profile;
         internal GameSnapshot? Match => game.match;

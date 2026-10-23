@@ -193,24 +193,26 @@ internal sealed partial class TableApplication
         if (own) { x = Math.Max((int)center.X + 58, manaHalo.Bounds.Right) + 8; nameplate = new(x, y, 100, 24); }
         else if (index == 1) { x = Math.Max((int)center.X + 50, manaHalo.Bounds.Right) + 8; y = 64; nameplate = new(x, y, 188, 24); }
         bool dense = tableScene!.Seat(player.Id).IsDense;
-        if (!dense && !(own && TableStudyEnabled)) canvas.CenterText(own ? name : name + " ↗", nameplate, !own && nameplate.Contains(pointer) ? Blue : Ink, .6f, true);
+        if (!dense && !own) canvas.CenterText(name + " ↗", nameplate, nameplate.Contains(pointer) ? Blue : Ink, .6f, true);
         int incoming = match.Combat?.Attackers.Count(a => a.DefendingPlayerId == player.Id) ?? 0;
-        string status = player.Eliminated ? "ELIMINATED" : incoming > 0 ? incoming + (own ? " ATTACKING YOU" : " INCOMING") : player.Priority ? "PRIORITY" : active ? "ACTIVE TURN" : "";
+        string status = player.Eliminated ? "ELIMINATED" : incoming > 0 ? incoming + (own ? " ATTACKING YOU" : " INCOMING")
+            : active && !own && match.Turn > 0 ? turnProgress?.PhaseLabel ?? match.Phase : player.Priority ? "PRIORITY" : active ? "ACTIVE TURN" : "";
         if (!own && index != 1 && hasCounters) status += (status.Length > 0 ? " · " : "") + player.Zone("Hand").Count + " in hand";
-        if (!dense && !(own && TableStudyEnabled)) {
-            if (own) canvas.Text(status, x, y + 23, incoming > 0 ? Red : Gold, .43f, 100, (int)Math.Ceiling(2 * preferences.TextScale), true);
-            else canvas.CenterText(status, new(x, y + 23, 188, 19), incoming > 0 ? Red : Gold, .43f, true);
+        if (!own && (!dense || active) && (!active || index == 1 || incoming > 0 || player.Eliminated)) {
+            string caption = active && incoming > 0 ? (turnProgress?.PhaseLabel ?? match.Phase) + " · " + status : status;
+            canvas.Text(caption, x + 4, y + 24, incoming > 0 ? Red : Gold, .53f, 180, 3, true);
         }
-        if (own && TableStudyEnabled && (incoming > 0 || player.Eliminated))
+        if (own && (incoming > 0 || player.Eliminated))
             canvas.CenterText(status, new((int)center.X - 94, (int)center.Y - 64, 188, 19), Red, .5f, true);
         if (hasCounters) {
-            int counterX = own ? (int)center.X - 240 : (int)center.X - 94;
+            int counterX = own ? (int)center.X - 390 : (int)center.X - 94;
             int counterY = own ? (int)center.Y - 22 : index == 1 ? (int)center.Y + 35 : (int)center.Y - 64;
             if (own && manaHalo.Parts.Length > 0) counterX = Math.Min(counterX, manaHalo.Bounds.Left - 196);
             else if (index == 1) counterY = Math.Max(counterY, manaHalo.Bounds.Bottom + 8);
             DrawPublicPlayerCounters(player, counterX, counterY, index == 1 && !own ? 144 : 188, growUp: !own && index != 1);
         }
         DrawPlayerMana(player, manaHalo);
+        if (!own) DrawOpponentPhase(player, center, index);
         if (!own && !dense) hits.Add(new("focus:" + player.Id, Scope, nameplate, () => OpenZone(player.Id, "Battlefield")));
         DrawStudyRailCount(player);
     }

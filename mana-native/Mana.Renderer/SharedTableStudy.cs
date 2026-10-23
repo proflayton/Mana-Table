@@ -12,7 +12,7 @@ public static class SharedTableStudy
     public static Rectangle ActionArea => new(565, 390, 470, 165);
     public static Rectangle Territory(int seat) => seat switch {
         0 => new(195, 160, 350, 470), 1 => new(510, 171, 580, 204),
-        2 => new(1055, 160, 350, 370), _ => new(320, 565, 915, 215)
+        2 => new(1055, 160, 350, 370), _ => new(320, 555, 915, 225)
     };
     public static Rectangle Lane(int seat, string role) => (seat, role) switch {
         (0, "Creatures") => new(300, 165, 195, 385),
@@ -24,9 +24,9 @@ public static class SharedTableStudy
         (2, "Creatures") => new(1105, 165, 190, 355),
         (2, "Support") => new(1310, 165, 94, 218),
         (2, _) => new(1310, 398, 94, 122),
-        (_, "Creatures") => new(590, 565, 645, 104),
-        (_, "Support") => new(320, 565, 260, 215),
-        _ => new(920, 682, 315, 94)
+        (_, "Creatures") => new(590, 555, 645, 84),
+        (_, "Support") => new(320, 555, 260, 155),
+        _ => new(980, 646, 255, 55)
     };
 
     internal static BattlefieldCluster[] Arrange(int seat, int owner, IReadOnlyList<Card> cards,

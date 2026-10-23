@@ -37,6 +37,7 @@ internal sealed partial class CardReadingSmoke : ITableAutomation
     {
         this.view = view; this.scenario = scenario; this.selectionOnly = selectionOnly; this.statesOnly = statesOnly;
         if (statesOnly) {
+            QueueTurnControlChecks();
             QueueStateChecks();
             QueueHandReadingChecks();
             QueueDecisionReadabilityChecks();

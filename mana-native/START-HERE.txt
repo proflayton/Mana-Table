@@ -327,7 +327,16 @@ F switches Auto/full control, Ctrl holds priority for this turn, F11 is fullscre
 Auto starts enabled and passes priority when there is no playable response to
 stop for. Settings include saved own-turn phase stops and reduced motion.
 Empty priority windows pass quietly until your next action or a visible game event.
-The bottom-right dock stays steady while the table advances. Hold remains clickable.
+The next source iteration moves timing controls beside your portrait. Its human
+visual review is pending. Six compact phase markers set stops for your own turns.
+The current phase lights separately from a saved pause mark. Hover gives the
+exact action, such as "Stop on my end step"; click again to remove that stop.
+Saved stops recur on your own turns until removed. They pause automatic passing
+when you next have legal priority there, rather than answering a required choice.
+The active opponent's portrait shows their actual phase without another set of
+editable controls. Your own controls stay in place when the turn changes.
+Auto and Hold are icons beside your portrait; hover explains their state and
+the F/Ctrl shortcuts. Hold stops automatic passing for the current turn.
 Click a card to read its full face. Its concrete legal actions appear beside it;
 drag a playable hand card onto the table to begin playing it.
 An available activation can be set to "Pass until my next turn" beside Pass.
@@ -341,10 +350,14 @@ dock distinguishes your choice, your priority, another player's action and
 resolution; a submitted action remains acknowledged while the engine responds.
 Spells keep their source, pending effect and recipients together. Match history
 retains the public events.
-The current source version (not yet published) names the acting player in the
-decision dock and shows why Auto is paused. A saved phase pause has a visible
-pause mark; its stop chip can remove that saved stop. Pass for now and Take control
-share the main action row; Pass once answers only the current priority window.
+The source version names the acting player and shows why Auto is paused.
+In the portrait-controls iteration, Pass for now and Take control sit beside
+your portrait, along with the explicit priority-pass action. Pass for now applies
+only to quiet, empty-stack windows on the current opponent's turn; a meaningful
+public action or turn change returns control. Take control cancels that ongoing
+intent. A single priority pass answers only the current window. Targets, library
+searches and mana payment stay at their source/decision surfaces and need their
+own answers. Moving these controls grants no permission to make those choices.
 Results and exact counter increments appear beside their recipients. Public
 departures move toward the actual pile; Recent changes retains further details.
 Resolution feedback distinguishes resolved and did not resolve. Draw and shuffle

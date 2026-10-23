@@ -57,6 +57,22 @@ their choosing no attackers. A spell, ability, land play, actual attack, other
 required choice or turn change returns control. Available instants still stop
 ordinary Auto; this explicit policy applies only to the current opponent turn.
 
+The next source iteration places turn and passing controls beside your portrait.
+Six compact phase markers show recurring stops on your own turn; the current
+phase light and a saved pause mark remain visually distinct. Hover describes the
+exact scope, such as "Stop on my end step"; clicking a saved mark removes it.
+The active opponent has a read-only actual-phase cue at their portrait. Your
+controls stay in place as the turn moves; there are not four competing sets.
+
+Auto/Full control and Hold use portrait-side icons with hover explanations;
+F toggles Auto and Ctrl holds priority for the current turn. Pass for now,
+Take control and an explicit priority pass live beside that same portrait.
+Required targets, searches and payment remain at their source/decision surfaces.
+These views consume the existing decision model and automation gate; the layout
+does not grant new autoplay permissions or a guaranteed engine phase waypoint.
+Human visual review of this iteration is pending; earlier preview acceptance
+applies to the preview that was shown.
+
 The battlefield groups Creatures, Support and Lands. Sparse boards keep projected
 lanes; crowded boards switch together to upright cells within separate player
 regions. Dense headers identify the owner, current status and exact role counts,

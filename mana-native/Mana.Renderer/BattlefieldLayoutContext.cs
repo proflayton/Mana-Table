@@ -46,7 +46,10 @@ internal sealed class BattlefieldLayoutContext
             int seat = geometry.Index;
             var hero = geometry.Hero;
             yield return new((int)hero.X - 55, (int)hero.Y - 55, 110, 110);
-            if (seat == 3) yield return new((int)hero.X - 130, (int)hero.Y - 55, 190, 110);
+            if (seat == 3) {
+                yield return new((int)hero.X - 130, (int)hero.Y - 55, 190, 110);
+                foreach (var reservation in TurnControlLayout.For(hero).Reservations) yield return reservation;
+            }
             else yield return new((int)geometry.Hand.X - 83, (int)geometry.Hand.Y - 30, 166, 90);
 
             foreach (var pile in geometry.Piles) {
@@ -66,8 +69,9 @@ internal sealed class BattlefieldLayoutContext
                 int width = Math.Max(34, positive.Max(part => 30 + part.Value.ToString().Length * 11));
                 if (seat is 0 or 2) yield return new(seat == 0 ? (int)hero.X + 50 : (int)hero.X - 50 - width * 2 - 6, (int)hero.Y - 42, width * 2 + 6, 84);
                 else {
-                    yield return new((int)hero.X - 58 - width, (int)hero.Y - 42, width, 84);
-                    yield return new((int)hero.X + 58, (int)hero.Y - 42, width, 84);
+                    int inner = seat == 3 ? TurnControlLayout.ManaOffset : 58;
+                    yield return new((int)hero.X - inner - width, (int)hero.Y - 42, width, 84);
+                    yield return new((int)hero.X + inner, (int)hero.Y - 42, width, 84);
                 }
             }
             if (player.States.Length > 0 || player.Counters.Any(counter => counter.Value > 0))

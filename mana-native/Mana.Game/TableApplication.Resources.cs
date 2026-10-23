@@ -114,7 +114,7 @@ internal sealed partial class TableApplication
             return Math.Max(34, label + canvas.TextWidth(entry.Part.Amount.ToString(), .6f, true) + 10);
         });
         var plan = new List<ManaHaloPart>();
-        int inner = seat == 3 ? 58 : 50;
+        int inner = seat == 3 ? 102 : 50;
         foreach (var entry in ordered) {
             int column = seat is 0 or 2 ? entry.Slot % 2 + entry.Slot / 6 * 2 : entry.Slot / 3;
             int row = seat is 0 or 2 ? entry.Slot % 6 / 2 : entry.Slot % 3;
