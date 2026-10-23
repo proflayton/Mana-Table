@@ -242,7 +242,7 @@ automatic batch from an ordinary in-flight command. These presentation facts
 grant no permission: replies still require the current engine decision and token.
 It can initialize, update and compose with no `Game`, window or graphics device.
 
-The next portrait turn-controls iteration consumes these same facts and shared
+The portrait turn controls shipped in 0.2.83 consume these same facts and shared
 pause gate. Six local phase markers represent recurring own-turn stop preferences;
 the active opponent's phase is read-only. Current phase, saved stop, Auto/Hold and
 bounded-yield state remain separate facts even when composed beside one portrait.
@@ -250,7 +250,9 @@ Moving the priority-pass action there does not move required target/search/payme
 decisions or authorize answers. Saved stops prevent local automatic passing at
 an offered priority opportunity, not engine-scheduled waypoints. New guaranteed
 phase pauses or wider yield permissions would require a separate authority
-contract. Human review of this iteration is pending.
+contract. The user accepted the presented native preview at revision
+`adac239e1d2b11f86afe90a384415051411e274b`; individual review gestures and window
+settings were not recorded. This does not close the remaining dense-field audit.
 Its optional `PresentationResources` supplies textures and sound for a real window;
 an empty resource set uses the production rules-text and neutral-surface fallbacks.
 

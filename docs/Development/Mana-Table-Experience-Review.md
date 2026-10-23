@@ -118,12 +118,12 @@ journeys, rather than supplying human acceptance by themselves.
 
 ![Real four-seat opening hand after artwork preparation](images/native-opening-hand-2026-10-22.png)
 
-### Portrait turn controls: next source iteration
+### Portrait turn controls: release 0.2.83
 
 The player's Arena reference places phase and timing intent beside the avatar
 and hand, with an explicit hover action such as "Stop on my end step". The
 lesson is the relationship and scope, rather than another row of distant buttons.
-Our existing bottom-left abbreviated phase cells and bottom-right Auto/Hold/pass
+The former bottom-left abbreviated phase cells and bottom-right Auto/Hold/pass
 controls split that relationship. "Always pause" also overstated a saved stop
 that only applied on the local player's turn.
 
@@ -145,15 +145,16 @@ removed and prevent automatic passing at a legal priority opportunity; they do
 not create a phase where the engine offers no input. Per-ability until-next-turn
 preferences retain their distinct engine-owned scope and expiry.
 
-Human visual/interaction review of these new controls is pending. The earlier
-preview's "lgtm" does not approve their unviewed geometry or behavior. Review the
-whole local portrait/hand, current opponent cue, saved stop, armed yield and
-actual required choice together at small and large windows with 130% text.
+The user accepted the presented native preview with "lgtm" on 22 October 2026,
+at revision `adac239e1d2b11f86afe90a384415051411e274b`, recorded in
+[PR #21](https://github.com/proflayton/Mana-Table/pull/21). The merged controls
+shipped in 0.2.83. Individual manual gestures and window settings were not
+recorded; this acceptance does not close the remaining dense-field audit.
 
 The captures below are actual 1000 x 740 windows from the existing card-state
 journey, using authored four-player state and cached card art. They show the
 own-turn stop gesture and the explicitly armed quiet pass; they do not simulate
-rules or establish human acceptance. The same journey also runs at 1540 x 980.
+rules or by themselves establish human acceptance. The same journey also runs at 1540 x 980.
 
 ![Own end-step stop at the portrait](images/native-turn-stops-2026-10-22.png)
 
@@ -170,7 +171,7 @@ rules or establish human acceptance. The same journey also runs at 1540 x 980.
 | Card and ability interaction | Ordinary source reading, stack references and legacy action paths compete; generic Activate and role labels can obscure the concrete action. | This slice removes redundant reader/action surfaces and keeps offered costs/actions beside the current source. Remaining alternate-face and required auxiliary readers need the same read-only policy; do not delete their visibility safeguards to simplify the UI. |
 | Small choices and ordering | A handful of cards can still appear inside a paged form with search, navigation and repeated prose. | Sparse-choice decluttering is part of this source slice. Prefer the actual choices and visible order marks, retaining complete names and the engine's constraints. Large searches still need discovery/navigation; small choices should not inherit their furniture. |
 | Combat and damage assignment | Allocation still uses paged recipient rows and a nested amount editor, separating the assignment from effective P/T, marked damage and lethal constraints. | Remaining redesign: edit the amount at its actual recipient while keeping source, blockers and current characteristics visible. Preserve every minimum, maximum, lethal-order and optional-skip rule. |
-| Priority and yielding | Players hesitate to advance a pending effect and repeatedly pass because one response exists. Turn controls are separated from the portrait/hand; per-ability yield controls still open a large paged settings surface. | The next iteration groups own-turn phase markers, Auto/Hold and bounded passing beside the local portrait, with the active opponent's phase read-only. Its human review is pending. Remaining redesign: put an ability's until-next-turn policy at its source and show its armed/paused/expired state. Passing does not perform a later search or choose its answer. |
+| Priority and yielding | Players hesitate to advance a pending effect and repeatedly pass because one response exists. Per-ability yield controls still open a large paged settings surface. | Release 0.2.83 groups own-turn phase markers, Auto/Hold and bounded passing beside the local portrait, with the active opponent's phase read-only. The presented preview was accepted as recorded above. Remaining redesign: put an ability's until-next-turn policy at its source and show its armed/paused/expired state. Passing does not perform a later search or choose its answer. |
 | Results and crowded fields | Detached summaries, repeated counter labels and hidden copies break the connection between a cause and its actual affected objects. | Preserve the existing stable four-seat field, family membership, mana halos, current P/T, exact per-recipient receipts and source/target connections. Review dense composition and settled state as well as animation. Representation counts do not establish readability. |
 | Settings, history and system work | Large generic modal surfaces can make ordinary game navigation feel like an administration tool. | Play controls and Updates now share the same right-side system drawer. The table remains visible; scoped drawer input cannot activate it. History, player details and remaining required auxiliary surfaces still need a deliberate size/hierarchy review. Destructive concession and genuine system consent remain explicit. |
 | Conversation and table identity | Names, invitations and chat are useful table context but can cover or steal input from the player's current game decision. | Preserve explicit drawers, current table scope, local mute preferences and text-input ownership. No game command, readiness change or other player's private state may be inferred from a message or drawer transition. |
