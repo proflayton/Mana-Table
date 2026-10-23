@@ -118,6 +118,7 @@ if ($Release) {
     $sourceHash | Set-Content -LiteralPath $sourceChecksum -Encoding ASCII
     $build['sourceArchive'] = Split-Path -Leaf $sourceArchive
     $build['sourceArchiveSha256'] = $sourceHash
+    $build['sourceArchiveBytes'] = (Get-Item -LiteralPath $sourceArchive).Length
     foreach ($file in Get-ChildItem -LiteralPath $OutputDirectory -File -Recurse) {
         $relative = $file.FullName.Substring($OutputDirectory.Length + 1).Replace('\', '/')
         if ($relative -match '(^|/)(UserData|\.data|engine-profile|engine-cache|profiles|test-results)(/|$)' -or

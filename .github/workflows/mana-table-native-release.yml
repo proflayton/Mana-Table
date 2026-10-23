@@ -16,11 +16,16 @@ on:
       - '.mvn/**'
       - 'LICENSE'
       - '.github/workflows/mana-table-native-release.yml'
+      - '.github/workflows/mana-table-native-installer.yml'
   pull_request:
   workflow_dispatch:
     inputs:
       extended:
         description: 'Run all 46 native UI cases instead of the 10 critical release cases'
+        type: boolean
+        default: false
+      benchmark_transport:
+        description: 'Measure wrapped versus direct runtime ZIP artifact transfers without building or publishing'
         type: boolean
         default: false
 
@@ -30,11 +35,12 @@ permissions:
 # Serialize master releases, including manual reruns. A newer PR commit replaces
 # its superseded verification run. Publication checks master after the uploads.
 concurrency:
-  group: mana-native-${{ github.event_name == 'pull_request' && github.ref || 'master-release' }}
+  group: mana-native-${{ github.event_name == 'pull_request' && github.ref || github.event_name == 'workflow_dispatch' && inputs.benchmark_transport && github.run_id || 'master-release' }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   checks:
+    if: ${{ !(github.event_name == 'workflow_dispatch' && inputs.benchmark_transport) }}
     name: Native client and packaging checks
     runs-on: windows-2025
     timeout-minutes: 10
@@ -64,6 +70,7 @@ jobs:
         run: ./mana-native/ci/test-previous-update.ps1
 
   tools:
+    if: ${{ !(github.event_name == 'workflow_dispatch' && inputs.benchmark_transport) }}
     name: Pinned native CI tools
     runs-on: windows-2025
     timeout-minutes: 10
@@ -86,6 +93,7 @@ jobs:
           overwrite: true
 
   package:
+    if: ${{ !(github.event_name == 'workflow_dispatch' && inputs.benchmark_transport) }}
     name: Build the exact-source native package once
     runs-on: windows-2025
     timeout-minutes: 20
@@ -135,6 +143,8 @@ jobs:
           ./mana-native/package.ps1 -Release -Version $env:MANA_RELEASE_VERSION -OutputDirectory dist/package
           if ($LASTEXITCODE -ne 0) { throw 'Native packaging failed.' }
           Copy-Item forge-api/target/ci-engine-manifest.json dist/ci-engine-manifest.json
+      - name: Bind the verified source archive for installer smoke tests
+        run: ./mana-native/ci/source-receipt.ps1 -InputPackageDirectory dist/package -Version $env:MANA_RELEASE_VERSION -PortableArchive dist/package-windows-x64.zip -SourceArchive dist/package-source.zip -OutputPath dist/ci-source-receipt.json
       - name: Build, check and bind the native UI harness
         run: |
           dotnet build mana-native/Mana.Table.Tests/Mana.Table.Tests.csproj -c Release -o dist/harness "-p:Version=$env:MANA_RELEASE_VERSION" "-p:InformationalVersion=$env:MANA_RELEASE_VERSION+$env:GITHUB_SHA" -p:IncludeSourceRevisionInInformationalVersion=false
@@ -164,12 +174,27 @@ jobs:
             dist/*-checks/**/*.log
           if-no-files-found: ignore
           retention-days: 14
-      - name: Share immutable package and harness for UI shards
+      - name: Share the runtime ZIP without wrapping it in another archive
+        uses: actions/upload-artifact@v7
+        with:
+          path: dist/package-windows-x64.zip
+          archive: false
+          if-no-files-found: error
+          retention-days: 1
+          overwrite: true
+      - name: Share the source ZIP only with the production installer
+        uses: actions/upload-artifact@v7
+        with:
+          path: dist/package-source.zip
+          archive: false
+          if-no-files-found: error
+          retention-days: 1
+          overwrite: true
+      - name: Share immutable harness and verification metadata for UI shards
         uses: actions/upload-artifact@v7
         with:
           name: mana-native-ui-inputs-${{ github.sha }}
           path: |
-            dist/package-windows-x64.zip
             dist/package-windows-x64.zip.sha256
             dist/ci-engine-manifest.json
             dist/ci-harness-manifest.json
@@ -183,10 +208,9 @@ jobs:
         with:
           name: mana-native-installer-inputs-${{ github.sha }}
           path: |
-            dist/package-windows-x64.zip
             dist/package-windows-x64.zip.sha256
-            dist/package-source.zip
             dist/package-source.zip.sha256
+            dist/ci-source-receipt.json
             dist/ci-engine-manifest.json
           if-no-files-found: error
           compression-level: 0
@@ -194,6 +218,7 @@ jobs:
           overwrite: true
 
   native-ui:
+    if: ${{ !(github.event_name == 'workflow_dispatch' && inputs.benchmark_transport) }}
     name: Native UI shard ${{ matrix.shard }}
     needs: [package, tools]
     runs-on: windows-2025
@@ -219,6 +244,13 @@ jobs:
         with:
           name: mana-native-ui-inputs-${{ github.sha }}
           path: dist/ci-inputs
+      - name: Download the unchanged runtime ZIP
+        uses: actions/download-artifact@v8
+        with:
+          name: package-windows-x64.zip
+          path: dist/ci-inputs
+          skip-decompress: true
+          digest-mismatch: error
       - uses: actions/download-artifact@v8
         with:
           name: mana-native-tools-${{ github.sha }}
@@ -243,78 +275,31 @@ jobs:
           retention-days: 14
 
   installer:
-    name: Build immutable production installer
+    name: Build production installer without publishing
+    if: ${{ !(github.event_name == 'workflow_dispatch' && inputs.benchmark_transport) && !(github.repository == 'proflayton/Mana-Table' && github.ref == 'refs/heads/master' && github.event_name != 'pull_request') }}
     needs: [package, tools]
-    runs-on: windows-2025
-    timeout-minutes: 15
-    defaults:
-      run:
-        shell: pwsh
-    env:
-      MANA_RELEASE_VERSION: 0.2.${{ github.run_number }}
-    steps:
-      - uses: actions/checkout@v7
-        with:
-          persist-credentials: false
-      - uses: actions/setup-dotnet@v6
-        with:
-          dotnet-version: '10.0.x'
-      - uses: actions/download-artifact@v8
-        with:
-          name: mana-native-installer-inputs-${{ github.sha }}
-          path: dist/ci-inputs
-      - uses: actions/download-artifact@v8
-        with:
-          name: mana-native-tools-${{ github.sha }}
-          path: dist/ci-tools
-      - name: Verify package and central engine identity
-        run: ./mana-native/ci/restore-package.ps1 -Directory dist/ci-inputs
-      - name: Install the pinned installer compiler
-        run: ./mana-native/ci/tools.ps1 -Directory dist/ci-tools -Installer
-      - name: Extract the pinned update package compiler
-        run: ./mana-native/ci/update-tools.ps1 -Directory dist/ci-tools
-      - name: Find the verified previous published update base
-        run: ./mana-native/ci/previous-update.ps1 -Directory dist/previous-update -Version $env:MANA_RELEASE_VERSION
-      - name: Build genuine full and incremental update packages
-        run: |
-          $bundleOptions = @{InputPackageDirectory=$env:MANA_NATIVE_PACKAGE; Version=$env:MANA_RELEASE_VERSION; OutputDirectory='dist/update-bundles'; VpkDll=$env:MANA_VPK}
-          if ($env:MANA_PREVIOUS_FULL) { $bundleOptions.PreviousFullPackage=$env:MANA_PREVIOUS_FULL; $bundleOptions.PreviousFullSha256=$env:MANA_PREVIOUS_SHA }
-          ./mana-native/build-update-bundles.ps1 @bundleOptions
-      - name: Compile the production installer from the same immutable package
-        run: |
-          $bundle = Get-Content dist/update-bundles/update-bundle-report.json -Raw | ConvertFrom-Json
-          ./mana-native/build-installer.ps1 -InputPackageDirectory $env:MANA_NATIVE_PACKAGE -Version $env:MANA_RELEASE_VERSION -PortableArchive $env:MANA_NATIVE_ARCHIVE -SourceArchive $env:MANA_NATIVE_SOURCE -OutputDirectory dist/installer -CompilerPath $env:MANA_ISCC -ManagedSetup (Join-Path (Resolve-Path dist/update-bundles).Path $bundle.setupFileName)
-      - name: Prepare friend-friendly download names
-        run: |
-          $downloads = Join-Path $env:GITHUB_WORKSPACE 'dist/downloads'
-          New-Item -ItemType Directory -Path $downloads | Out-Null
-          Copy-Item dist/installer/ManaTable-Setup.exe $downloads
-          Copy-Item $env:MANA_NATIVE_ARCHIVE (Join-Path $downloads 'ManaTable-Windows-x64.zip')
-          Copy-Item $env:MANA_NATIVE_SOURCE (Join-Path $downloads 'ManaTable-Source.zip')
-          foreach ($name in @('ManaTable-Setup.exe','ManaTable-Windows-x64.zip','ManaTable-Source.zip')) {
-            $hash = (Get-FileHash -LiteralPath (Join-Path $downloads $name) -Algorithm SHA256).Hash.ToLowerInvariant()
-            "$hash  $name" | Set-Content -Encoding ascii (Join-Path $downloads ($name + '.sha256'))
-          }
-          Copy-Item (Join-Path $env:MANA_NATIVE_PACKAGE 'build.json') (Join-Path $downloads 'build.json')
-          Copy-Item dist/installer/installer-manifest.json $downloads
-          Copy-Item dist/update-bundles/update-manifest.json $downloads
-          Copy-Item dist/update-bundles/releases.win-x64.json $downloads
-          $sdkIndex = Get-Content dist/update-bundles/releases.win-x64.json -Raw | ConvertFrom-Json
-          foreach ($asset in $sdkIndex.Assets) {
-            if ([IO.Path]::GetFileName($asset.FileName) -cne $asset.FileName -or $asset.FileName -match '[\\/:]') { throw 'Invalid generated update asset name.' }
-            Copy-Item -LiteralPath (Join-Path 'dist/update-bundles' $asset.FileName) -Destination $downloads
-          }
-          ./mana-native/ci/validate-update-artifacts.ps1 -Directory $downloads -Version $env:MANA_RELEASE_VERSION -SourceRevision $env:GITHUB_SHA
-      - uses: actions/upload-artifact@v7
-        with:
-          name: mana-native-windows-x64-${{ github.sha }}
-          path: dist/downloads/
-          compression-level: 0
-          if-no-files-found: error
-          retention-days: 30
-          overwrite: true
+    permissions:
+      contents: read
+      actions: read
+    uses: ./.github/workflows/mana-table-native-installer.yml
+    with:
+      version: 0.2.${{ github.run_number }}
+      stage_release: false
+
+  installer-release:
+    name: Build and privately stage the production installer
+    if: ${{ !(github.event_name == 'workflow_dispatch' && inputs.benchmark_transport) && github.repository == 'proflayton/Mana-Table' && github.ref == 'refs/heads/master' && github.event_name != 'pull_request' }}
+    needs: [package, tools]
+    permissions:
+      contents: write
+      actions: read
+    uses: ./.github/workflows/mana-table-native-installer.yml
+    with:
+      version: 0.2.${{ github.run_number }}
+      stage_release: true
 
   installer-lifecycle:
+    if: ${{ !(github.event_name == 'workflow_dispatch' && inputs.benchmark_transport) }}
     name: Isolated installer lifecycle
     needs: [package, tools]
     runs-on: windows-2025
@@ -332,6 +317,13 @@ jobs:
         with:
           name: mana-native-installer-inputs-${{ github.sha }}
           path: dist/ci-inputs
+      - name: Download the unchanged runtime ZIP
+        uses: actions/download-artifact@v8
+        with:
+          name: package-windows-x64.zip
+          path: dist/ci-inputs
+          skip-decompress: true
+          digest-mismatch: error
       - uses: actions/download-artifact@v8
         with:
           name: mana-native-tools-${{ github.sha }}
@@ -341,7 +333,7 @@ jobs:
       - name: Install pinned graphics and installer tools
         run: ./mana-native/ci/tools.ps1 -Directory dist/ci-tools -Graphics -Installer
       - name: Verify install, reinstall, bundled startup and uninstall
-        run: ./mana-native/installer/test-installer.ps1 -InputPackageDirectory $env:MANA_NATIVE_PACKAGE -Version $env:MANA_RELEASE_VERSION -PortableArchive $env:MANA_NATIVE_ARCHIVE -SourceArchive $env:MANA_NATIVE_SOURCE -CompilerPath $env:MANA_ISCC -TestDirectory '${{ runner.temp }}/mana-native-installer'
+        run: ./mana-native/installer/test-installer.ps1 -InputPackageDirectory $env:MANA_NATIVE_PACKAGE -Version $env:MANA_RELEASE_VERSION -PortableArchive $env:MANA_NATIVE_ARCHIVE -SourceReceipt $env:MANA_NATIVE_SOURCE_RECEIPT -CompilerPath $env:MANA_ISCC -TestDirectory '${{ runner.temp }}/mana-native-installer'
       - name: Save installer lifecycle evidence
         if: always()
         uses: actions/upload-artifact@v7
@@ -356,6 +348,7 @@ jobs:
           retention-days: 14
 
   update-installer:
+    if: ${{ !(github.event_name == 'workflow_dispatch' && inputs.benchmark_transport) }}
     name: Isolated updater installer protocol
     needs: tools
     runs-on: windows-2025
@@ -390,6 +383,7 @@ jobs:
           retention-days: 14
 
   managed-updates:
+    if: ${{ !(github.event_name == 'workflow_dispatch' && inputs.benchmark_transport) }}
     name: Isolated managed migration lifecycle
     needs: [package, tools]
     runs-on: windows-2025
@@ -412,6 +406,13 @@ jobs:
         with:
           name: mana-native-installer-inputs-${{ github.sha }}
           path: dist/ci-inputs
+      - name: Download the unchanged runtime ZIP
+        uses: actions/download-artifact@v8
+        with:
+          name: package-windows-x64.zip
+          path: dist/ci-inputs
+          skip-decompress: true
+          digest-mismatch: error
       - uses: actions/download-artifact@v8
         with:
           name: mana-native-tools-${{ github.sha }}
@@ -423,7 +424,7 @@ jobs:
           ./mana-native/ci/tools.ps1 -Directory dist/ci-tools -Installer
           ./mana-native/ci/update-tools.ps1 -Directory dist/ci-tools
       - name: Verify real protocol1 migration and product Forge health
-        run: ./mana-native/installer/test-managed-migration.ps1 -InputPackageDirectory $env:MANA_NATIVE_PACKAGE -Version $env:MANA_RELEASE_VERSION -PortableArchive $env:MANA_NATIVE_ARCHIVE -SourceArchive $env:MANA_NATIVE_SOURCE -CompilerPath $env:MANA_ISCC -VpkDll $env:MANA_VPK -TestDirectory '${{ runner.temp }}/mana-managed-migration'
+        run: ./mana-native/installer/test-managed-migration.ps1 -InputPackageDirectory $env:MANA_NATIVE_PACKAGE -Version $env:MANA_RELEASE_VERSION -PortableArchive $env:MANA_NATIVE_ARCHIVE -SourceReceipt $env:MANA_NATIVE_SOURCE_RECEIPT -CompilerPath $env:MANA_ISCC -VpkDll $env:MANA_VPK -TestDirectory '${{ runner.temp }}/mana-managed-migration'
       - name: Save managed migration evidence
         if: always()
         uses: actions/upload-artifact@v7
@@ -439,6 +440,7 @@ jobs:
   # SDK fixtures build their own probe and packages; they can verify the full
   # update lifecycle while the exact-source product package is still building.
   sdk-updates:
+    if: ${{ !(github.event_name == 'workflow_dispatch' && inputs.benchmark_transport) }}
     name: Isolated installed SDK update lifecycle
     needs: tools
     runs-on: windows-2025
@@ -475,22 +477,131 @@ jobs:
           compression-level: 0
           retention-days: 14
 
+  artifact-transport-benchmark:
+    name: Benchmark artifact transport
+    if: github.event_name == 'workflow_dispatch' && inputs.benchmark_transport
+    runs-on: windows-2025
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      actions: read
+    defaults:
+      run:
+        shell: pwsh
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+      - name: Prepare the verified public benchmark input
+        run: |
+          gh release download mana-native-v0.2.89 --repo proflayton/Mana-Table --pattern ManaTable-Windows-x64.zip --pattern ManaTable-Windows-x64.zip.sha256 --dir dist/transport-input
+          if ($LASTEXITCODE -ne 0) { throw 'Public benchmark input download failed.' }
+          node scripts/mana-table/benchmark-artifact-transport.cjs prepare dist/transport-input/ManaTable-Windows-x64.zip dist/transport-input/ManaTable-Windows-x64.zip.sha256 dist/transport-benchmark
+          if ($LASTEXITCODE -ne 0) { throw 'The benchmark source does not match the pinned public release.' }
+      # ABBA order reduces first-versus-last bias; it does not establish cold-cache parity.
+      - name: Benchmark upload Wrapped A
+        uses: actions/upload-artifact@v7
+        with:
+          name: benchmark-wrapped-a-${{ github.run_attempt }}
+          path: dist/transport-benchmark/uploads/benchmark-wrapped-a-${{ github.run_attempt }}.zip
+          archive: true
+          compression-level: 0
+          if-no-files-found: error
+          retention-days: 1
+      - name: Benchmark upload Raw A
+        uses: actions/upload-artifact@v7
+        with:
+          path: dist/transport-benchmark/uploads/benchmark-raw-a-${{ github.run_attempt }}.zip
+          archive: false
+          if-no-files-found: error
+          retention-days: 1
+      - name: Benchmark upload Raw B
+        uses: actions/upload-artifact@v7
+        with:
+          path: dist/transport-benchmark/uploads/benchmark-raw-b-${{ github.run_attempt }}.zip
+          archive: false
+          if-no-files-found: error
+          retention-days: 1
+      - name: Benchmark upload Wrapped B
+        uses: actions/upload-artifact@v7
+        with:
+          name: benchmark-wrapped-b-${{ github.run_attempt }}
+          path: dist/transport-benchmark/uploads/benchmark-wrapped-b-${{ github.run_attempt }}.zip
+          archive: true
+          compression-level: 0
+          if-no-files-found: error
+          retention-days: 1
+      - name: Benchmark download Raw A
+        uses: actions/download-artifact@v8
+        with:
+          name: benchmark-raw-a-${{ github.run_attempt }}.zip
+          path: dist/transport-benchmark/downloads/raw-a
+          skip-decompress: true
+          digest-mismatch: error
+      - name: Benchmark download Wrapped A
+        uses: actions/download-artifact@v8
+        with:
+          name: benchmark-wrapped-a-${{ github.run_attempt }}
+          path: dist/transport-benchmark/downloads/wrapped-a
+          skip-decompress: false
+          digest-mismatch: error
+      - name: Benchmark download Wrapped B
+        uses: actions/download-artifact@v8
+        with:
+          name: benchmark-wrapped-b-${{ github.run_attempt }}
+          path: dist/transport-benchmark/downloads/wrapped-b
+          skip-decompress: false
+          digest-mismatch: error
+      - name: Benchmark download Raw B
+        uses: actions/download-artifact@v8
+        with:
+          name: benchmark-raw-b-${{ github.run_attempt }}.zip
+          path: dist/transport-benchmark/downloads/raw-b
+          skip-decompress: true
+          digest-mismatch: error
+      - name: Verify bytes and summarize completed action timings
+        run: |
+          gh api "/repos/$env:GITHUB_REPOSITORY/actions/runs/$env:GITHUB_RUN_ID/attempts/$env:GITHUB_RUN_ATTEMPT/jobs?per_page=100" > dist/transport-benchmark/jobs.json
+          if ($LASTEXITCODE -ne 0) { throw 'Benchmark job timing inventory failed.' }
+          gh api "/repos/$env:GITHUB_REPOSITORY/actions/runs/$env:GITHUB_RUN_ID/artifacts?per_page=100" > dist/transport-benchmark/artifacts.json
+          if ($LASTEXITCODE -ne 0) { throw 'Benchmark artifact inventory failed.' }
+          node scripts/mana-table/benchmark-artifact-transport.cjs summarize dist/transport-benchmark dist/transport-benchmark/jobs.json dist/transport-benchmark/artifacts.json
+          if ($LASTEXITCODE -ne 0) { throw 'Transport identity or timing validation failed.' }
+      - name: Save benchmark measurements
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: mana-artifact-transport-benchmark-${{ github.run_attempt }}
+          path: dist/transport-benchmark/*.json
+          if-no-files-found: error
+          retention-days: 7
+
   # Preserve branch protection's stable check name. The matrix result is success
   # only when every shard succeeds; skipped/cancelled dependencies also fail.
   windows:
-    name: Verify and package Windows x64
-    if: ${{ always() }}
-    needs: [checks, tools, package, native-ui, installer, installer-lifecycle, update-installer, managed-updates, sdk-updates]
+    name: ${{ github.event_name == 'workflow_dispatch' && inputs.benchmark_transport && 'Release checks not run (transport benchmark)' || 'Verify and package Windows x64' }}
+    if: ${{ always() && !(github.event_name == 'workflow_dispatch' && inputs.benchmark_transport) }}
+    needs: [checks, tools, package, native-ui, installer, installer-release, installer-lifecycle, update-installer, managed-updates, sdk-updates]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     env:
       JOB_RESULTS: ${{ toJSON(needs) }}
+      INSTALLER_JOB: ${{ github.repository == 'proflayton/Mana-Table' && github.ref == 'refs/heads/master' && github.event_name != 'pull_request' && 'installer-release' || 'installer' }}
     steps:
       - name: Require every native check, artifact and shard
         run: |
           node <<'NODE'
           const results = JSON.parse(process.env.JOB_RESULTS);
-          const failures = Object.entries(results).filter(([, job]) => job.result !== 'success');
+          const installer = process.env.INSTALLER_JOB;
+          if (!['installer', 'installer-release'].includes(installer)) throw new Error('Unknown installer lane.');
+          const inactive = installer === 'installer' ? 'installer-release' : 'installer';
+          if (!results[installer] || !results[inactive]) throw new Error('Both installer lanes must be accounted for.');
+          const failures = Object.entries(results).filter(([name, job]) => job.result !== (name === inactive ? 'skipped' : 'success'));
           for (const [name, job] of Object.entries(results)) console.log(`${name}: ${job.result}`);
           if (failures.length) {
             console.error(`Native verification failed: ${failures.map(([name, job]) => `${name}=${job.result}`).join(', ')}`);
@@ -500,7 +611,7 @@ jobs:
   publish:
     name: Publish the tested Windows release
     needs: windows
-    if: github.repository == 'proflayton/Mana-Table' && github.ref == 'refs/heads/master' && github.event_name != 'pull_request'
+    if: github.repository == 'proflayton/Mana-Table' && github.ref == 'refs/heads/master' && github.event_name != 'pull_request' && !(github.event_name == 'workflow_dispatch' && inputs.benchmark_transport)
     runs-on: ubuntu-latest
     timeout-minutes: 90
     permissions:
@@ -520,46 +631,13 @@ jobs:
           node-version: '24'
       - name: Wait for all required source CI before publication
         run: node scripts/mana-table/wait-release-ci.cjs
-      - uses: actions/download-artifact@v8
+      - name: Download only the source-bound private-stage receipt
+        uses: actions/download-artifact@v8
         with:
-          name: mana-native-windows-x64-${{ github.sha }}
-          path: downloads
-      - name: Upload a draft, then publish only the current master
-        shell: pwsh
-        run: |
-          $ErrorActionPreference = 'Stop'
-          $tag = "mana-native-v$env:RELEASE_VERSION"
-          $assetNames = @(./mana-native/ci/validate-update-artifacts.ps1 -Directory downloads -Version $env:RELEASE_VERSION -SourceRevision $env:GITHUB_SHA)
-          function MasterIsCurrent {
-            $head = gh api repos/proflayton/Mana-Table/git/ref/heads/master --jq '.object.sha'
-            if ($LASTEXITCODE -ne 0) { throw 'Could not verify current master.' }
-            return $head -ceq $env:GITHUB_SHA
-          }
-          if (-not (MasterIsCurrent)) { 'Master advanced; this verified build will remain an Actions artifact.' >> $env:GITHUB_STEP_SUMMARY; exit 0 }
-
-          $existingJson = gh release view $tag --repo $env:GH_REPO --json isDraft,targetCommitish 2>$null
-          if ($LASTEXITCODE -eq 0) {
-            $existing = $existingJson | ConvertFrom-Json
-            if ($existing.targetCommitish -cne $env:GITHUB_SHA) { throw 'An existing release points at a different commit.' }
-            if (-not $existing.isDraft) { "Release $tag is already published; its downloads remain unchanged." >> $env:GITHUB_STEP_SUMMARY; exit 0 }
-          } else {
-            $notes = @"
-          **Windows players:** download [ManaTable-Setup.exe](https://github.com/proflayton/Mana-Table/releases/download/$tag/ManaTable-Setup.exe), open it, and follow the installer. Java, .NET and the card library are included. Start Mana Table from the desktop or Start menu.
-
-          Everyone at a multiplayer table should use the same version. Close Mana Table before updating; your decks and settings are preserved. The portable ZIP is also available below: extract the whole folder and open ManaTable.exe.
-
-          Version $env:RELEASE_VERSION · [Source](https://github.com/proflayton/Mana-Table/commit/$env:GITHUB_SHA) · [Verified build](https://github.com/proflayton/Mana-Table/actions/runs/$env:GITHUB_RUN_ID)
-          "@
-            $notes | Set-Content -Encoding utf8 release-notes.md
-            gh release create $tag --repo $env:GH_REPO --target $env:GITHUB_SHA --draft --title "Mana Table $env:RELEASE_VERSION for Windows" --notes-file release-notes.md
-            if ($LASTEXITCODE -ne 0) { throw 'Could not create the draft release.' }
-          }
-          $uploadPaths = @($assetNames | ForEach-Object { Join-Path 'downloads' $_ })
-          gh release upload $tag @uploadPaths --repo $env:GH_REPO --clobber
-          if ($LASTEXITCODE -ne 0) { throw 'Download upload failed; the release remains a draft.' }
-          if (-not (MasterIsCurrent)) { 'Master advanced during upload; the release remains a draft.' >> $env:GITHUB_STEP_SUMMARY; exit 0 }
-          node scripts/mana-table/wait-release-ci.cjs
-          if ($LASTEXITCODE -ne 0) { throw 'Required source CI changed; the release remains a draft.' }
-          gh release edit $tag --repo $env:GH_REPO --draft=false --latest
-          if ($LASTEXITCODE -ne 0) { throw 'Could not publish the tested release.' }
-          '[Download Mana Table for Windows](https://github.com/proflayton/Mana-Table/releases/latest/download/ManaTable-Setup.exe)' >> $env:GITHUB_STEP_SUMMARY
+          name: mana-native-release-stage-${{ github.sha }}
+          path: stage
+          digest-mismatch: error
+      - name: Promote the verified private draft after every gate passes
+        run: node scripts/mana-table/release-assets.cjs promote --receipt stage/release-stage-receipt.json
+      - name: Link the published download
+        run: echo '[Download Mana Table for Windows](https://github.com/proflayton/Mana-Table/releases/latest/download/ManaTable-Setup.exe)' >> "$GITHUB_STEP_SUMMARY"

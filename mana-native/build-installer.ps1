@@ -6,6 +6,7 @@ param(
     [string]$CompilerPath,
     [string]$PortableArchive,
     [string]$SourceArchive,
+    [Parameter(ParameterSetName = 'SmokeTest')][string]$SourceReceipt,
     [string]$ManagedSetup,
     [Parameter(Mandatory = $true, ParameterSetName = 'SmokeTest')]
     [ValidatePattern('^ManaTableNative-Smoke-[a-fA-F0-9]{32}$')][string]$SmokeTestAppId,
@@ -14,6 +15,7 @@ param(
 )
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
+if ($SourceReceipt -and $SourceArchive) { throw 'Choose an actual SourceArchive or a smoke-only SourceReceipt, never both.' }
 
 foreach ($part in $Version.Split('.')) {
     if ([long]$part -gt 65535) { throw 'Every version component must fit the Windows range 0 through 65535.' }
@@ -52,15 +54,22 @@ if (-not (Test-Path -LiteralPath ($PortableArchive + '.sha256') -PathType Leaf))
 $recordedArchiveHash = ((Get-Content -LiteralPath ($PortableArchive + '.sha256') -Raw).Trim() -split '\s+')[0]
 if ($recordedArchiveHash -notmatch '^[a-fA-F0-9]{64}$' -or $recordedArchiveHash -ne $archiveHash) { throw 'Portable archive checksum does not match.' }
 if ((MetadataValue 'sourceArchiveSha256') -notmatch '^[a-fA-F0-9]{64}$') { throw 'build.json must record sourceArchiveSha256.' }
-if (-not $SourceArchive) {
-    $sourceArchiveName = MetadataValue 'sourceArchive'
-    if (-not $sourceArchiveName -or [IO.Path]::GetFileName($sourceArchiveName) -ne $sourceArchiveName) { throw 'build.json sourceArchive must be a filename.' }
-    $SourceArchive = Join-Path (Split-Path -Parent $InputPackageDirectory) $sourceArchiveName
+if ($SourceReceipt) {
+    $receipt = & (Join-Path $PSScriptRoot 'ci/source-receipt.ps1') -InputPackageDirectory $InputPackageDirectory -Version $Version -PortableArchive $PortableArchive -ReceiptPath $SourceReceipt
+    $sourceArchiveName = $receipt.sourceArchive.fileName
+    $sourceArchiveHash = $receipt.sourceArchive.sha256
+} else {
+    if (-not $SourceArchive) {
+        $sourceArchiveName = MetadataValue 'sourceArchive'
+        if (-not $sourceArchiveName -or [IO.Path]::GetFileName($sourceArchiveName) -ne $sourceArchiveName) { throw 'build.json sourceArchive must be a filename.' }
+        $SourceArchive = Join-Path (Split-Path -Parent $InputPackageDirectory) $sourceArchiveName
+    }
+    $SourceArchive = [IO.Path]::GetFullPath($SourceArchive)
+    if (-not (Test-Path -LiteralPath $SourceArchive -PathType Leaf)) { throw "Source archive not found: $SourceArchive" }
+    $sourceArchiveHash = (Get-FileHash -LiteralPath $SourceArchive -Algorithm SHA256).Hash
+    if ($sourceArchiveHash -ne (MetadataValue 'sourceArchiveSha256')) { throw 'Source archive does not match build.json sourceArchiveSha256.' }
+    $sourceArchiveName = [IO.Path]::GetFileName($SourceArchive)
 }
-$SourceArchive = [IO.Path]::GetFullPath($SourceArchive)
-if (-not (Test-Path -LiteralPath $SourceArchive -PathType Leaf)) { throw "Source archive not found: $SourceArchive" }
-$sourceArchiveHash = (Get-FileHash -LiteralPath $SourceArchive -Algorithm SHA256).Hash
-if ($sourceArchiveHash -ne (MetadataValue 'sourceArchiveSha256')) { throw 'Source archive does not match build.json sourceArchiveSha256.' }
 
 $managedSetupHash = $null
 $managedPackageId = if ($SmokeTestAppId) { $SmokeTestAppId } else { 'ManaTable' }
@@ -184,7 +193,7 @@ $manifest = [ordered]@{
     installerSha256 = $installerHash
     portableArchive = [IO.Path]::GetFileName($PortableArchive)
     portableArchiveSha256 = $archiveHash
-    sourceArchive = [IO.Path]::GetFileName($SourceArchive)
+    sourceArchive = $sourceArchiveName
     sourceArchiveSha256 = $sourceArchiveHash
     sourceUrl = MetadataValue 'sourceUrl'
     buildMetadataSha256 = (Get-FileHash -LiteralPath (Join-Path $InputPackageDirectory 'build.json') -Algorithm SHA256).Hash

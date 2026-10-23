@@ -345,6 +345,26 @@ package and verifies the real Forge-backed application. Both jobs remain require
 by the Windows aggregate and upload separate failure evidence. This scheduling
 change retains the full lifecycle tests; runner availability still affects time.
 
+`test-native-ci.ps1` also runs `test-source-receipt.ps1`. These cheap fixtures
+exercise production rejection of receipt-only input and smoke rejection of
+missing, changed or mismatched source, version, build metadata, archive hashes,
+sizes and runtime-embedded metadata. Production installers continue using the
+actual source ZIP; only isolated smoke identities use its producer-bound receipt.
+Both paths run in the existing native checks and installer/migration jobs.
+
+The installer workflow has a read-only PR caller and a master-only staging
+caller. The required Windows aggregate expects exactly its authorized caller to
+succeed and the other to be skipped; every remaining dependency must succeed.
+Repository tests execute that actual aggregate script for both contexts and
+exercise release staging/promotion failures through injected API fixtures.
+Private drafts do not establish a successful release or bypass final source CI.
+
+The [manual transport benchmark](Mana-Table-Releases.md#measuring-artifact-transfers)
+is outside the required aggregate and never runs on ordinary PRs or releases.
+Its exact-byte checks and action timings compare wrapped versus raw transport;
+they do not replace native or installer tests. Record the benchmark run and
+payload identity when reporting results, separately from full-build wall time.
+
 Record the exact tested head and completed workflow links. Earlier-commit
 success, an uploaded intermediate engine artifact, or an unpublished release
 draft does not establish success for the final source. Native publication checks
