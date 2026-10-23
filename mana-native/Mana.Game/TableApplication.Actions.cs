@@ -67,20 +67,19 @@ internal sealed partial class TableApplication
         canvas.Text(title, 34, 101, Ink, .78f, 350, 2, true);
         canvas.Text(detail, 34, 143, Ink, .63f, 350, 3);
         canvas.Text(targets, 34, 201, resolving ? Gold : Red, .6f, 275, 2);
-        Button("action-details", "Details", 304, 208, 82, () => {
-            if (resolving) { inspectedAction = recent; inspectPage = 0; overlay = "action"; }
-            else OpenStack();
-        }, height: 25);
+        Button("action-details", "Details", 304, 208, 82, resolving
+            ? new MatchIntent.ShowResolution(recent!.Started, recent.Title, recent.Detail, recent.Outcome)
+            : new MatchIntent.OpenStack(), height: 25);
     }
     private void DrawActionDetails()
     {
-        if (inspectedAction == null) { overlay = ""; return; }
-        ModalFrame(inspectedAction.Title, () => overlay = "");
-        var pages = TextPages(inspectedAction.Detail + "\n\nRecent table changes\n" + string.Join("\n", inspectedAction.Changes), 1800);
-        inspectPage = Math.Clamp(inspectPage, 0, pages.Length - 1);
-        canvas.Text(pages[inspectPage], 215, 198, Ink, .9f, 1150, 19);
-        Button("action-prev", "Previous", 215, 734, 145, () => inspectPage--, inspectPage > 0);
-        Button("action-next", "More", 372, 734, 145, () => inspectPage++, inspectPage + 1 < pages.Length);
-        Button("action-history", "Match history", 1090, 734, 275, () => { overlay = "history"; historyPage = 0; });
+        if (inspectedAction == null) return;
+        ModalFrame(inspectedAction.Title, new MatchIntent.CloseView());
+        var pages = matchReadingPages;
+        int page = Math.Clamp(inspectPage, 0, pages.Length - 1);
+        canvas.Text(pages[page], 215, 198, Ink, .9f, 1150, 19);
+        Button("action-prev", "Previous", 215, 734, 145, new MatchIntent.SetPage(MatchPage.Inspect, page - 1), page > 0);
+        Button("action-next", "More", 372, 734, 145, new MatchIntent.SetPage(MatchPage.Inspect, page + 1), page + 1 < pages.Length);
+        Button("action-history", "Match history", 1090, 734, 275, new MatchIntent.OpenView(MatchView.History));
     }
 }

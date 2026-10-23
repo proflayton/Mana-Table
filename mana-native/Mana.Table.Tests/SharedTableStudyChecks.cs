@@ -123,7 +123,8 @@ internal static class SharedTableStudyChecks
         app.Initialize();
         app.TestPort.SetTableStudy(true);
         app.TestPort.Accept(ReplaceField(lab.State, 2, [hidden]));
-        var frame = app.ComposePresentation(new GameTime(TimeSpan.FromSeconds(1), TimeSpan.Zero));
+        app.Update(new Microsoft.Xna.Framework.GameTime(TimeSpan.Zero, TimeSpan.Zero), new(), new(), new(1600, 900));
+        var frame = app.ReadPresentation();
         var text = frame.Drawing.Commands.Select(command => command switch {
             DrawCommand.Text value => value.Value, DrawCommand.CenterText value => value.Value, _ => null
         }).Where(value => value != null).ToArray();

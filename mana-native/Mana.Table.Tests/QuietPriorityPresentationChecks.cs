@@ -29,14 +29,15 @@ internal static class QuietPriorityPresentationChecks
         var view = app.TestPort;
         double seconds = 0;
         var point = new Point(20, 60);
-        PresentationFrame frame = app.ComposePresentation(Time());
+        PresentationFrame frame = null!;
+        Tick();
         GameTime Time() => new(TimeSpan.FromSeconds(seconds), TimeSpan.FromMilliseconds(1));
         PresentationFrame Tick(Point? next = null, ButtonState left = ButtonState.Released)
         {
             point = next ?? point; seconds += .001;
             app.Update(Time(), new(point.X, point.Y, 0, left, ButtonState.Released, ButtonState.Released,
                 ButtonState.Released, ButtonState.Released), new(), new(1600, 900));
-            return frame = app.ComposePresentation(Time());
+            return frame = app.ReadPresentation();
         }
         TableHit Hit(string id) => frame.Hits.Single(hit => hit.Id == id);
         DrawCommand.Panel Surface(PresentationFrame value, Rectangle bounds) => value.Drawing.Commands
@@ -145,13 +146,14 @@ internal static class QuietPriorityPresentationChecks
         double seconds = 0;
         var point = new Point(20, 60);
         GameTime Time() => new(TimeSpan.FromSeconds(seconds), TimeSpan.FromSeconds(1.0 / 60));
-        PresentationFrame frame = app.ComposePresentation(Time());
+        PresentationFrame frame = null!;
+        Tick();
         void Tick(Point? next = null, ButtonState left = ButtonState.Released)
         {
             point = next ?? point; seconds += 1.0 / 60;
             app.Update(Time(), new(point.X, point.Y, 0, left, ButtonState.Released, ButtonState.Released,
                 ButtonState.Released, ButtonState.Released), new(), new(1600, 900));
-            frame = app.ComposePresentation(Time());
+            frame = app.ReadPresentation();
         }
         void Until(Func<bool> ready, string description)
         {

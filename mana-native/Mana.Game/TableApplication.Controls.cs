@@ -5,30 +5,30 @@ namespace Mana.Table;
 
 internal sealed partial class TableApplication
 {
-    private Rectangle SystemDrawer(string title, string prefix, string scope, Action close, int height, string? closeId = null)
+    private Rectangle SystemDrawer(string title, string prefix, UiIntent close, int height, string? closeId = null)
     {
         hits.Clear(); hovered = null; ClearCardComposition();
         var bounds = new Rectangle(998, Math.Max(64, (DesignHeight - height) / 2), 564, height);
         canvas.Fill(new(0, 0, 1600, DesignHeight), Color.Black * .32f);
-        hits.Add(new(prefix + "backdrop", scope, new(0, 0, 1600, DesignHeight), close, ShowPointer: false));
+        hits.Add(new(prefix + "backdrop", ScopeFor(close), new(0, 0, 1600, DesignHeight), close, ShowPointer: false));
         canvas.Panel(bounds, new(15, 25, 32), LobbyTrim, 9);
-        hits.Add(new(prefix + "body", scope, bounds, () => { }, ShowPointer: false));
+        hits.Add(new(prefix + "body", ScopeFor(close), bounds, new UiIntent.Block(close.ScopeKind), ShowPointer: false));
         canvas.Text(title, bounds.X + 28, bounds.Y + 27, Ink, 1.3f, 380, 1, true);
         MenuAction(closeId ?? prefix + "close", "×", new(bounds.Right - 78, bounds.Y + 15, 50, 48), close, size: 1.25f);
         return bounds;
     }
 
-    private void MenuAction(string id, string label, Rectangle bounds, Action action, bool enabled = true, bool selected = false, float size = .85f)
+    private void MenuAction(string id, string label, Rectangle bounds, UiIntent action, bool enabled = true, bool selected = false, float size = .85f)
     {
         bool over = enabled && IsControlHovered(id);
         bool down = over && pressed?.Id == id && CurrentHit(pressed);
         Color color = !enabled ? Muted * .45f : down ? Blue : over ? Ink : selected ? Gold : Muted;
         if (over || selected) canvas.Line(new(bounds.X + 8, bounds.Bottom - 3), new(bounds.Right - 8, bounds.Bottom - 3), color, selected ? 3 : 1);
         canvas.CenterText(label, bounds, color, size, selected || over);
-        if (enabled) hits.Add(new(id, ControlScope(id), bounds, action));
+        if (enabled) hits.Add(new(id, ScopeFor(action), bounds, action));
     }
 
-    private void Button(string id, string label, int x, int y, int width, Action action, bool enabled = true, bool accent = false, int height = 40, bool prominent = false)
+    private void Button(string id, string label, int x, int y, int width, UiIntent action, bool enabled = true, bool accent = false, int height = 40, bool prominent = false)
     {
         var bounds = new Rectangle(x, y, width, height);
         bool over = enabled && IsControlHovered(id);
@@ -45,10 +45,10 @@ internal sealed partial class TableApplication
             canvas.Polygon(Shape(2), !enabled ? new(23, 30, 33) : down ? new(44, 34, 23) : over ? new(126, 90, 45) : new(79, 58, 32));
             canvas.Line(new(x + 21, y + 4), new(x + width - 21, y + 4), (enabled ? Gold : Muted) * .35f, 1);
             canvas.CenterText(label, new(x + 16, y + 1, width - 32, height - 2), enabled ? Ink : Muted * .6f, 1.02f, true);
-            if (enabled) hits.Add(new(id, ControlScope(id), bounds, action));
+            if (enabled) hits.Add(new(id, ScopeFor(action), bounds, action));
             return;
         }
-        bool decisionAction = match != null && id is "confirm" or "open-decision";
+        bool decisionAction = match != null && action is MatchIntent.ConfirmDecision or MatchIntent.OpenDecision;
         bool primary = accent || decisionAction;
         // Importance and pointer state are separate. A primary action keeps
         // its quiet gold edge at rest, then responds like every other button.
@@ -68,7 +68,7 @@ internal sealed partial class TableApplication
         } else if (over)
             canvas.Line(new(x + 7, y + height - 3), new(x + width - 7, y + height - 3), Blue, 2);
         canvas.CenterText(label, new(x + 9, y + 1, width - 18, height - 2), enabled ? Ink : Muted * .6f, .76f, primary);
-        if (enabled) hits.Add(new(id, ControlScope(id), bounds, action));
+        if (enabled) hits.Add(new(id, ScopeFor(action), bounds, action));
     }
 
     private void PaintControlSurface(string id, Rectangle bounds, Color restingFill, Color restingTrim, bool enabled = true, float opacity = 1)

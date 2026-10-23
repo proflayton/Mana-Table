@@ -16,12 +16,22 @@ internal sealed class PriorityAbilitySmoke(TableWindow.Probe view, InteractionSc
     private readonly List<string> checks = [];
     private MouseState mouse = new(0, 0, 0, ButtonState.Released, ButtonState.Released, ButtonState.Released, ButtonState.Released, ButtonState.Released);
     private string? click;
-    private Action? staleUndo;
+    private Mana.Table.Interaction.TableHit? staleUndo;
     private string manualGame = "", manualDecision = "", manualCard = "";
     public string? ExpectedClick => click;
     public bool ClickAccepted { get; set; }
     public MouseState ReadMouse() => mouse;
-    private void Check(bool value, string message) { if (!value) throw new InvalidOperationException(message); checks.Add(message); }
+    private void Check(bool value, string message)
+    {
+        if (!value) {
+            File.WriteAllText(Path.Combine(view.Profile, "priority-ability-failure.json"), JsonSerializer.Serialize(new {
+                stage, view.Now, view.Busy, view.Polling, view.ActivityOpen, view.PreparingTableArtwork,
+                view.TableArtworkProgress, view.Overlay, Match = view.Match, Frame = view.Frame?.Observe()
+            }, new JsonSerializerOptions { WriteIndented = true }));
+            throw new InvalidOperationException(message);
+        }
+        checks.Add(message);
+    }
     private void Publish(GameSnapshot state) { scenario.Present(state); view.Accept(scenario.State); }
     private void Next() { stage++; changed = view.Now; }
     private void Capture(Texture2D surface, string name) { using var file = File.Create(Path.Combine(view.Profile, name + ".png")); surface.SaveAsPng(file, surface.Width, surface.Height); }
@@ -46,11 +56,42 @@ internal sealed class PriorityAbilitySmoke(TableWindow.Probe view, InteractionSc
                 PriorityAbilities = [new("mesa-fetch", "mesa", "Arid Mesa", mesa.Text, false)] } };
     }
 
+    internal static void CheckArtworkHandoff(string profile, Action<bool, string> check)
+    {
+        string directory = Path.Combine(profile, "priority-artwork-handoff");
+        Directory.CreateDirectory(directory);
+        new PlayPreferences { Automatic = false, Sounds = false }.Save(directory);
+        var scenario = new InteractionScenarioEngine(); scenario.Present(Example());
+        bool artworkReady = false;
+        var resources = new Mana.Table.Presentation.PresentationResources {
+            Artwork = faces => new(faces.Length, artworkReady ? faces.Length : 0, 0)
+        };
+        using var app = new TableApplication(TestTableServices.For(scenario), directory, initialState: scenario.State, resources: resources) { Automated = true };
+        app.Initialize();
+        var probe = app.TestPort;
+        probe.PresentLobby(new("local", "Priority artwork handoff", null, false, null, true, "", null, [], []), pausePolling: true);
+        void Tick(double seconds) => app.Update(new(TimeSpan.FromSeconds(seconds), TimeSpan.FromSeconds(.016)),
+            new MouseState(20, 60, 0, default, default, default, default, default), new(), new(1280, 720));
+        Tick(.1); Tick(1.5);
+        var loading = app.ReadPresentation().Observe();
+        check(probe.ActivityOpen && probe.PreparingTableArtwork && !probe.Busy
+            && probe.Match?.Decision?.PriorityAbilities.Length == 1
+            && !loading.Controls.Any(hit => hit.Id == "ability-pass:mesa-fetch"),
+            "Pending initial artwork owns the priority frame even after the command connection becomes idle");
+        artworkReady = true; Tick(1.6);
+        var ready = app.ReadPresentation().Observe();
+        check(!probe.ActivityOpen && !probe.PreparingTableArtwork
+            && ready.Controls.Any(hit => hit.Id == "ability-pass:mesa-fetch") && scenario.Replies.Count == 0,
+            "Settling initial artwork reveals the existing single-ability preference without advancing gameplay");
+        File.WriteAllText(Path.Combine(directory, "frames.json"), JsonSerializer.Serialize(new { Loading = loading, Ready = ready },
+            new JsonSerializerOptions { WriteIndented = true }));
+    }
+
     public void Frame(Texture2D surface)
     {
         if (view.Error.Length > 0) throw new InvalidOperationException(view.Error);
         if (view.Now > 35) throw new TimeoutException("Ability auto-pass stage " + stage);
-        if (view.Busy || view.Now - changed < (stage == 0 ? 1.5 : .17)) return;
+        if (view.Busy || view.ActivityOpen || view.Now - changed < (stage == 0 ? 1.5 : .17)) return;
         var state = scenario.State;
         switch (stage) {
             case 0:
@@ -68,7 +109,7 @@ internal sealed class PriorityAbilitySmoke(TableWindow.Probe view, InteractionSc
                 Publish(state with { Decision = null, Status = "resolving" }); view.SetHeld(false); Next(); break;
             case 3:
                 Check(view.Hits.Any(h => h.Id == "ability-undo:mesa-fetch"), "Undo remains available while the table resolves without a local decision");
-                staleUndo = view.Hits.Single(h => h.Id == "ability-undo:mesa-fetch").Action;
+                staleUndo = view.Hits.Single(h => h.Id == "ability-undo:mesa-fetch");
                 Capture(surface, "03-ability-ignored-following"); Press("ability-undo:mesa-fetch"); Next(); break;
             case 4: Release(); Next(); break;
             case 5:
@@ -112,7 +153,7 @@ internal sealed class PriorityAbilitySmoke(TableWindow.Probe view, InteractionSc
                 var nextTurn = Example();
                 Publish(nextTurn with { Turn = nextTurn.Turn + 1, ActivePlayerId = nextTurn.ViewerId, IgnoredPriorityAbilities = [] }); Next(); break;
             case 17:
-                staleUndo!();
+                view.Activate(staleUndo!);
                 Check(!view.Busy && scenario.Replies.Count == 4, "An Undo captured before expiry quietly does nothing after that preference has cleared");
                 Check(view.Hits.Any(h => h.Id == "ability-pass:mesa-fetch") && !view.Hits.Any(h => h.Id.StartsWith("ability-undo:")), "The viewer's next turn shows the ability available again after engine expiry");
                 Check(!TurnGuide.CanAutoPass(state, true, false, new HashSet<string>(), false), "After expiry the available ability once again stops Auto");

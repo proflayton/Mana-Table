@@ -13,10 +13,10 @@ internal sealed partial class TableApplication
         StopQuietPriority();
         hits.RevokePublished(); Frame = null; tableScene = null; hovered = null;
         cardPositions.Clear(); heroPositions.Clear();
-        selections.Clear(); zoneName = null; selectedCombat = null;
+        decisionDraft.Clear(); zoneName = null; selectedCombat = null;
         combatPage = 0; combatCandidates = false; inspectedStack = null; reviewedAttacker = null;
         inspectedAction = null;
-        handPage = zonePage = choicePage = 0; choiceFilter = decisionId = "";
+        handPage = zonePage = choicePage = 0; choiceFilter = "";
         automatic = !Automated && preferences.Automatic; pressed = null;
         ClearCardReading(); ClearReaderActions();
         pendingPreviewReference = null; pendingPreviewBounds = null; pendingPreviewCardId = null;

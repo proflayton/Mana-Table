@@ -44,14 +44,15 @@ internal static class PendingEffectPresentationChecks
             var view = app.TestPort;
             double seconds = 0;
             Point pointer = new(20, 60);
-            PresentationFrame frame = app.ComposePresentation(Time());
+            PresentationFrame frame = null!;
+            Tick();
             GameTime Time() => new(TimeSpan.FromSeconds(seconds), TimeSpan.FromMilliseconds(10));
             PresentationFrame Tick(Point? next = null, ButtonState left = ButtonState.Released, double advance = .01)
             {
                 pointer = next ?? pointer; seconds += advance;
                 app.Update(Time(), new(pointer.X, pointer.Y, 0, left, ButtonState.Released, ButtonState.Released,
                     ButtonState.Released, ButtonState.Released), new(), new(1600, 900));
-                return frame = app.ComposePresentation(Time());
+                return frame = app.ReadPresentation();
             }
             void Present(GameSnapshot value) { engine.Present(value); view.Accept(engine.State); Tick(new(20, 60)); }
             bool Number(string value) => frame.Drawing.Commands.OfType<DrawCommand.CenterText>().Any(text => text.Value == value && text.Size >= 1.4f);

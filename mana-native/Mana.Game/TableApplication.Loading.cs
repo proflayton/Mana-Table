@@ -5,6 +5,14 @@ namespace Mana.Table;
 internal sealed partial class TableApplication
 {
     private readonly TableArtworkPreparation tableArtwork = new();
+    private void HandleActivityIntent(ShellIntent.Activity intent)
+    {
+        switch (intent) {
+            case ShellIntent.RetryStartup: RetryStartup(); break;
+            case ShellIntent.ExitStartup: RequestExit(); break;
+            case ShellIntent.DismissActivity: DismissActivity(); break;
+        }
+    }
     private bool startupActivity, startupFailed, activityTracked, activityForeground, activityFailed, activityWasVisible, activityScene;
     private string activityTitle = "Opening Mana Table", activityDetail = "Preparing your next Commander game.", activityStage = "Card library";
     private double activityStarted, activityCompleted = -1, sceneRevealAt = -1;

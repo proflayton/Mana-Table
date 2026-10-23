@@ -25,9 +25,10 @@ internal sealed partial class TableApplication
 
     // This workspace paints aliases of public table objects. It never prepares
     // a second canonical occurrence or submits an engine action when inspecting.
-    private void DrawFocusedBattlefield()
+    private void PrepareFocusedBattlefield()
     {
-        var state = match!;
+        battlefieldFocusPlan = null;
+        if (!BattlefieldFocused || match is not { } state) return;
         var player = state.Players.FirstOrDefault(candidate => candidate.Id == zonePlayer);
         if (player == null) { zoneName = null; return; }
         if (battlefieldFocusGame != state.Id || battlefieldFocusOwner != player.Id) {
@@ -44,20 +45,28 @@ internal sealed partial class TableApplication
         battlefieldFocusScroll = plan.Scroll; battlefieldFocusMaximum = plan.MaximumScroll;
         battlefieldFocusPlan = plan;
 
+        battlefieldFocusDetails = details;
+    }
+
+    private IReadOnlyDictionary<string, BattlefieldFocusDetails> battlefieldFocusDetails = new Dictionary<string, BattlefieldFocusDetails>();
+    private void DrawFocusedBattlefield()
+    {
+        if (match is not { } state || battlefieldFocusPlan is not { } plan) return;
+        var player = state.Players.FirstOrDefault(candidate => candidate.Id == zonePlayer);
+        if (player == null) return;
+        var details = battlefieldFocusDetails;
         canvas.Fill(new(0, 54, 1600, 724), Color.Black * .36f);
         canvas.Panel(BattlefieldFocusBounds, new(19, 29, 36), new(104, 125, 135), 12);
         // Gaps and partially clipped rows must not click the obscured table.
-        hits.Add(new("battlefield-focus-surface", Scope, BattlefieldFocusBounds, () => { }, ShowPointer: false));
+        hits.Add(new("battlefield-focus-surface", Scope, BattlefieldFocusBounds, new MatchIntent.FocusSurface(), ShowPointer: false));
         canvas.Text(player.Id == state.ViewerId ? "Your battlefield" : player.Name + "'s battlefield", 190, 103, Ink, 1.06f, 820, 2, true);
-        Button("battlefield-focus-close", "Whole table", 1050, 101, 160, () => {
-            CollapseCardReading(); zoneName = null;
-        }, height: 36);
+        Button("battlefield-focus-close", "Whole table", 1050, 101, 160, new MatchIntent.CloseBattlefieldFocus(), height: 36);
 
         int tabGap = 8, tabWidth = (1020 - tabGap * Math.Max(0, state.Players.Length - 1)) / Math.Max(1, state.Players.Length);
         for (int index = 0; index < state.Players.Length; index++) {
             var candidate = state.Players[index];
             Button("battlefield-focus-owner:" + candidate.Id, candidate.Name, 190 + index * (tabWidth + tabGap), 151,
-                tabWidth, () => { CollapseCardReading(); zonePlayer = candidate.Id; }, accent: candidate.Id == player.Id, height: 34);
+                tabWidth, new MatchIntent.SetBattlefieldOwner(candidate.Id), accent: candidate.Id == player.Id, height: 34);
         }
         canvas.Text(player.Zone("Battlefield").Count + " permanents", 191, 192, Muted, .67f, 620, 1);
         int roleX = 400;
@@ -67,11 +76,11 @@ internal sealed partial class TableApplication
             string caption = BattlefieldFocusRoleLabel(heading.Role) + " " + heading.Permanents;
             int roleWidth = Math.Max(170, canvas.TextWidth(caption, .76f) + 22);
             Button("battlefield-focus-role:" + heading.Role, caption, roleX, 190, roleWidth,
-                () => { CollapseCardReading(); battlefieldFocusScroll = Math.Clamp(capturedOffset, 0, battlefieldFocusMaximum); }, height: 27);
+                new MatchIntent.ScrollBattlefieldTo(capturedOffset), height: 27);
             roleX += roleWidth + 10;
         }
         if (state.Stack.Length > 0)
-            Button("battlefield-focus-stack", "Stack · " + state.Stack.Length, 1038, 189, 172, () => OpenStack(), height: 27);
+            Button("battlefield-focus-stack", "Stack · " + state.Stack.Length, 1038, 189, 172, new MatchIntent.OpenStack(), height: 27);
 
         foreach (var heading in plan.Headings) {
             if (!BattlefieldFocusViewport.Contains(heading.Bounds)) continue;
@@ -110,9 +119,9 @@ internal sealed partial class TableApplication
             if (over) hovered = card;
             string game = state.Id, identity = CardViews.Identity(card); int owner = player.Id;
             hits.Add(new("battlefield-focus-card:" + tile.Group.Id, Scope, visible,
-                () => ReadFocusedBattlefieldCard(game, owner, identity), card, "BattlefieldFocus", owner));
+                new MatchIntent.ReadFocusedCard(game, owner, identity), card, "BattlefieldFocus", owner));
         }
-        if (groups.Count == 0)
+        if (plan.Tiles.Count == 0)
             canvas.CenterText("No permanents on this battlefield.", BattlefieldFocusViewport, Muted, 1);
         if (plan.MaximumScroll > 0) {
             var rail = new Rectangle(BattlefieldFocusViewport.Right - 7, BattlefieldFocusViewport.Top, 5, BattlefieldFocusViewport.Height);

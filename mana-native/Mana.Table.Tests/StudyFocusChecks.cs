@@ -34,7 +34,7 @@ internal static class StudyFocusChecks
             var time = new GameTime(TimeSpan.FromSeconds(seconds), TimeSpan.FromSeconds(.01));
             app.Update(time, new MouseState(point.X, point.Y, 0, left, ButtonState.Released,
                 ButtonState.Released, ButtonState.Released, ButtonState.Released), new KeyboardState(), new(1600, 900));
-            frame = app.ComposePresentation(time);
+            frame = app.ReadPresentation();
             if (view.Error.Length > 0) throw new InvalidOperationException("Native study focus: " + view.Error);
         }
         void Click(string id)

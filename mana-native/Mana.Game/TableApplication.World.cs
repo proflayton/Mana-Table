@@ -93,7 +93,7 @@ internal sealed partial class TableApplication
             string owner = seat == 3 ? "YOU" : player.Name;
             canvas.Panel(identity, new Color(15, 24, 29) * .95f, Blue, 3);
             canvas.Text(owner, identity.X + 4, identity.Y + 1, Ink, .375f, Math.Max(1, identity.Width - 8), 1, true);
-            hits.Add(new("focus:" + player.Id, Scope, identity, () => OpenZone(player.Id, "Battlefield")));
+            hits.Add(new("focus:" + player.Id, Scope, identity, new MatchIntent.OpenZone(player.Id, "Battlefield")));
         }
         foreach (var cluster in clusters)
             foreach (var node in cluster.Cards) DrawSceneCard(node);
@@ -109,12 +109,12 @@ internal sealed partial class TableApplication
         var commandLink = geometry.CommandLink;
         int cx = (int)commandLink.X, cy = (int)commandLink.Y;
         canvas.CenterText("Command " + player.Zone("Command").Count, new(cx - 52, cy, 104, 24), Gold * .85f, .48f);
-        hits.Add(new("zone:" + player.Id + ":Command", Scope, new(cx - 56, cy - 3, 112, 30), () => OpenZone(player.Id, "Command")));
+        hits.Add(new("zone:" + player.Id + ":Command", Scope, new(cx - 56, cy - 3, 112, 30), new MatchIntent.OpenZone(player.Id, "Command")));
         if (AvailableZoneCount(player, "Command") is > 0 and var available) {
             var badge = new Rectangle(cx - 51, cy + 25, 102, 22);
             canvas.Panel(badge, new(15, 41, 54), ActionAccent, 4);
             canvas.CenterText(available + " available", badge, ActionAccent, .5f, true);
-            hits.Add(new("zone-actions:" + player.Id + ":Command", Scope, badge, () => OpenZone(player.Id, "Command")));
+            hits.Add(new("zone-actions:" + player.Id + ":Command", Scope, badge, new MatchIntent.OpenZone(player.Id, "Command")));
         }
         foreach (var pile in geometry.Piles) DrawWorldPile(player, pile.Zone, pile.Pose, pile.Compact);
     }
@@ -134,11 +134,11 @@ internal sealed partial class TableApplication
             canvas.CenterText(value.Count.ToString(), geometry.Count, Ink, .56f, true);
             canvas.CenterText(zone == "Graveyard" ? "Grave" : zone, geometry.Label, Muted, .45f);
         }
-        hits.Add(new("zone:" + player.Id + ":" + zone, Scope, geometry.HitBounds, () => OpenZone(player.Id, zone), Shape: geometry.Contains));
+        hits.Add(new("zone:" + player.Id + ":" + zone, Scope, geometry.HitBounds, new MatchIntent.OpenZone(player.Id, zone), Shape: geometry.Contains));
         // Browser members open their pile. A separately disclosed top remains
         // directly readable even when the rest of its zone is concealed.
         if (top != null) DrawTableCard("pile:" + player.Id + ":" + zone + ":" + CardIdentity(top), top, pose, zone, player.Id,
-            "pile-card:" + player.Id + ":" + zone, () => OpenZone(player.Id, zone), (displayed, focus) => PaintCard(top, displayed, false, IsCardActionable(top), focus),
+            "pile-card:" + player.Id + ":" + zone, new MatchIntent.OpenZone(player.Id, zone), (displayed, focus) => PaintCard(top, displayed, false, IsCardActionable(top), focus),
             opensZone: value.Cards.Any(card => CardViews.Same(card, top)));
         else PaintBack(pose, value.Count == 0 ? .3f : 1);
         DrawZoneActionBadge(player, zone, pose);
@@ -160,7 +160,7 @@ internal sealed partial class TableApplication
                 PaintBack(back);
             }
             var handBounds = new Rectangle((int)handCenter.X - 83, (int)handCenter.Y - 30, 166, 75);
-            hits.Add(new("hand-zone:" + player.Id, Scope, handBounds, () => OpenZone(player.Id, "Hand")));
+            hits.Add(new("hand-zone:" + player.Id, Scope, handBounds, new MatchIntent.OpenZone(player.Id, "Hand")));
             if (index != 1 && !hasCounters) canvas.CenterText(player.Zone("Hand").Count + " in hand", new((int)handCenter.X - 65, (int)handCenter.Y + 35, 130, 22), Muted, .48f);
         }
         canvas.Glow(center + new Vector2(0, 10), new(radius * 3.8f, radius * 2.5f), Color.Black * .9f);
@@ -182,7 +182,7 @@ internal sealed partial class TableApplication
         canvas.CenterText(player.Life.ToString(), new((int)(center.X - radius) + 1, (int)(center.Y - radius) + 2, (int)radius * 2, (int)radius * 2), Color.Black, own ? 1.65f : 1.35f, true);
         canvas.CenterText(player.Life.ToString(), new((int)(center.X - radius), (int)(center.Y - radius), (int)radius * 2, (int)radius * 2), player.Eliminated ? Muted : Ink, own ? 1.65f : 1.35f, true);
         var bounds = new Rectangle((int)center.X - (int)radius - 9, (int)center.Y - (int)radius - 9, (int)radius * 2 + 18, (int)radius * 2 + 18);
-        hits.Add(new("player:" + player.Id, Scope, bounds, () => PlayerClick(player.Id), PlayerId: player.Id, Shape: p => Vector2.DistanceSquared(p.ToVector2(), center) <= (radius + 9) * (radius + 9)));
+        hits.Add(new("player:" + player.Id, Scope, bounds, new MatchIntent.UsePlayer(player.Id), PlayerId: player.Id, Shape: p => Vector2.DistanceSquared(p.ToVector2(), center) <= (radius + 9) * (radius + 9)));
         string name = own ? "YOU" : localMatch && !ExperienceLabOpen
             ? "AI " + (TableLayout.SeatIndex(match, player.Id) + 1) + " · " + player.Name.Split('·')[0].Trim() : player.Name;
         int x = (int)center.X - 94, y = (int)center.Y + (own ? 44 : 41);
@@ -213,7 +213,7 @@ internal sealed partial class TableApplication
         }
         DrawPlayerMana(player, manaHalo);
         if (!own) DrawOpponentPhase(player, center, index);
-        if (!own && !dense) hits.Add(new("focus:" + player.Id, Scope, nameplate, () => OpenZone(player.Id, "Battlefield")));
+        if (!own && !dense) hits.Add(new("focus:" + player.Id, Scope, nameplate, new MatchIntent.OpenZone(player.Id, "Battlefield")));
         DrawStudyRailCount(player);
     }
 }

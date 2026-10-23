@@ -44,7 +44,7 @@ internal sealed partial class TableApplication : IDisposable
     private bool polling => session.Polling;
     private readonly InteractionController interaction = new();
     private readonly InteractionFrame hits = new();
-    private readonly List<int> selections = [];
+    private readonly DecisionDraft decisionDraft = new();
     private readonly MatchPresentationLifecycle matchPresentation = new();
     private TableScene? tableScene;
     private readonly Dictionary<string, Pose> cardPositions = [];
@@ -60,7 +60,7 @@ internal sealed partial class TableApplication : IDisposable
     private readonly int[] soloChoices = [0, 1, 2];
     private bool soloTab = true, localMatch, loaded, closing, automatic, forward = true;
     private bool held, dragging, collapsedDecision, textFocus, filterInput, inspectBack;
-    private string message = "Loading the card library…", error = "", decisionId = "", choiceFilter = "";
+    private string message = "Loading the card library…", error = "", choiceFilter = "";
     private string overlay = "", inputText = "", previousTurn = "";
     private string notice = "";
     private string pendingActionLabel = "";
@@ -70,30 +70,32 @@ internal sealed partial class TableApplication : IDisposable
     private string? zoneName;
     private int zonePlayer, zonePage, handPage, choicePage, deckPage, historyPage, inspectPage;
 
-    private int[] allocations = [];
     private Card? hovered, inspected;
     private Point pointer, pressPoint;
     private MouseState previousMouse;
     private KeyboardState previousKeys;
     private Hit? pressed, dragSource;
     private double nextPoll, now, turnBannerUntil;
-    private double lastDrawTime;
+    private double lastPresentationTime;
     private static readonly Color Ink = new(236, 236, 230), Muted = new(161, 173, 182), Gold = new(226, 190, 120), Teal = new(45, 94, 115), Panel = new(24, 30, 38), Blue = new(91, 184, 228), Red = new(235, 117, 105);
     private int DesignHeight => match == null ? 1000 : TableLayout.Height;
     private bool TableChoice => match != null && TableChoices.IsDirect(match);
     private bool AbilityActionPending => !session.NeedsRecovery && match?.Decision is { } decision && IsAbilityActionChoice(decision);
     private bool DecisionModal => !session.NeedsRecovery && !TableChoice && !AbilityActionPending && !collapsedDecision && match?.Decision?.Kind is "choice" or "reveal" or "number" or "text" or "allocate";
     private bool OverlayOpen => updatesOpen || ActivityOpen || ExperienceOpen || workshopDialog.Length > 0 || overlay.Length > 0 || zoneName != null || DecisionModal;
-    private string Scope => match == null ? deckEditor ? DeckScope : LobbyScope : session.Scope;
-    private string ControlScope(string id) => SourceActionsSupported && (id == "read-card-action" || id.StartsWith("source-action:", StringComparison.Ordinal)
-        || id.StartsWith("source-placement:", StringComparison.Ordinal))
-        ? Scope + ":source:" + sourceActions.View.Generation + ":" + sourceActions.View.Context
-        : id.StartsWith("home-") ? Scope + ":home:" + homeDeckPage
-        : id.StartsWith("updates-") ? UpdateScope : id.StartsWith("activity-") ? ActivityScope : id.StartsWith("experience-") ? ExperienceScope : id.StartsWith("chat-") ? ChatScope
-        : match != null && id == "resume-phase-stop" ? match.Id + ":playback:phase-stop:" + match.PhaseKey
-        : match != null && (id is "auto" or "hold" or "instructions" or "action-details" or "battlefields" or "quiet-priority-stop" or "ability-auto-pass-open" or "ability-prev" or "ability-next" or "ability-text-prev" or "ability-text-next"
-            || id.StartsWith("phase-stop:") || id.StartsWith("ability-undo:")) ? match.Id + ":playback" : Scope;
-    private bool CurrentHit(Hit hit) => hit.Scope == ControlScope(hit.Id);
+    private string Scope => match == null ? deckEditor ? DeckScope : LobbyScope : session.Scope + ":viewer:" + match.ViewerId;
+    private string ScopeFor(UiIntent intent) => intent.ScopeKind switch {
+        InteractionScopeKind.Home => Scope + ":home:" + homeDeckPage,
+        InteractionScopeKind.Updates => UpdateScope,
+        InteractionScopeKind.Activity => ActivityScope,
+        InteractionScopeKind.Experience => ExperienceScope,
+        InteractionScopeKind.Chat => ChatScope,
+        InteractionScopeKind.Playback when match != null => match.Id + ":viewer:" + match.ViewerId + ":playback",
+        InteractionScopeKind.PhaseStop when match != null => match.Id + ":viewer:" + match.ViewerId + ":playback:phase-stop:" + match.PhaseKey,
+        InteractionScopeKind.Source when SourceActionsSupported => Scope + ":source:" + sourceActions.View.Generation + ":" + sourceActions.View.Context,
+        _ => Scope
+    };
+    private bool CurrentHit(Hit hit) => hit.Scope == ScopeFor(hit.Intent);
     private Hit? HitAt(Point at) => TableHitAt(at);
 
     public TableApplication(TableServices services, string profile, string? fixture = null, GameSnapshot? initialState = null,
@@ -159,6 +161,17 @@ internal sealed partial class TableApplication : IDisposable
         if (transition.CombatStarted) resources.Play("combat", .35f);
         if (transition.CardPlayed) resources.Play("card-play", .35f);
     }
+    private void ReconcileDecisionDraft()
+    {
+        var prompt = match?.Decision;
+        if (decisionDraft.Observe(match, TableChoice)) {
+            if (BattlefieldFocused && prompt != null && !ReadingAbilitySource(prompt) && (prompt.Kind is "choice" or "reveal" or "number" or "text" or "allocate"
+                || prompt.Intent == DecisionIntent.Selection)) { zoneName = null; CollapseCardReading(); }
+            choicePage = 0; choiceFilter = ""; selectedCombat = null;
+            dragging = false; dragSource = null; ClearCardDrag(); collapsedDecision = false; textFocus = false;
+            inputText = prompt?.Kind == "number" ? prompt.Min.ToString() : prompt?.Initial ?? "";
+        }
+    }
     internal void Update(GameTime time, MouseState mouse, KeyboardState keys, Point viewport)
     {
         AcceptedHit = null; AcceptedDrag = false;
@@ -170,16 +183,7 @@ internal sealed partial class TableApplication : IDisposable
         UpdateWorkshopData();
         UpdateAppUpdates();
         UpdateReaderActions();
-        var prompt = match?.Decision;
-        if (decisionId != (prompt?.Id ?? "")) {
-            if (BattlefieldFocused && prompt != null && !ReadingAbilitySource(prompt) && (prompt.Kind is "choice" or "reveal" or "number" or "text" or "allocate"
-                || prompt.Intent == DecisionIntent.Selection)) { zoneName = null; CollapseCardReading(); }
-            decisionId = prompt?.Id ?? ""; selections.Clear(); choicePage = 0; choiceFilter = ""; selectedCombat = null;
-            dragging = false; dragSource = null; ClearCardDrag(); collapsedDecision = false; textFocus = false;
-            if (!TableChoice && prompt is { Ordered: true } && prompt.Min == prompt.Choices.Length) selections.AddRange(prompt.Choices.Select(c => c.Index));
-            allocations = prompt?.Choices.Select(_ => prompt.AtLeastOne ? 1 : 0).ToArray() ?? [];
-            inputText = prompt?.Kind == "number" ? prompt.Min.ToString() : prompt?.Initial ?? "";
-        }
+        ReconcileDecisionDraft();
         string turn = match == null ? "" : match.Id + ":" + match.Turn + ":" + match.ActivePlayerId;
         if (previousTurn != turn) { previousTurn = turn; held = false; turnBannerUntil = now + 1.5; if (match?.ActivePlayerId == match?.ViewerId && match?.Turn > 0 && preferences.Sounds) resources.Play("your-priority", .3f); }
         if (inspected != null) {
@@ -209,7 +213,7 @@ internal sealed partial class TableApplication : IDisposable
         if (mouse.LeftButton == ButtonState.Pressed && previousMouse.LeftButton == ButtonState.Released) {
             pressed = HitAt(pointer); pressPoint = pointer;
             if (!blockedInput && chatOpen && !ChatBounds.Contains(pointer)) chatFocus = false;
-            if (!blockedInput && match == null && deckEditor && pressed?.Id is not ("deck-search-library" or "deck-search-deck" or "deck-clear-library" or "deck-clear-deck")) { deckTextFocus = ""; textFocus = false; }
+            if (!blockedInput && match == null && deckEditor && pressed?.Intent is not DeckIntent.FocusText) { deckTextFocus = ""; textFocus = false; }
             dragSource = (!OverlayOpen || ZoneReadingOpen) && !AbilityActionPending && pressed is { Card: { } source } sourceHit
                 && IsCardActionable(source) && CanStartSourceDrag(sourceHit) ? pressed : null; dragging = false;
             BeginCardDrag(dragSource);
@@ -224,7 +228,7 @@ internal sealed partial class TableApplication : IDisposable
         if (mouse.LeftButton == ButtonState.Released && previousMouse.LeftButton == ButtonState.Pressed) {
             var hit = HitAt(pointer);
             if (dragging) AcceptedDrag = DropCard(hit);
-            else if (hit != null && pressed?.Id == hit.Id && pressed.Scope == hit.Scope && CurrentHit(hit)) { ActivateHit(hit); AcceptedHit = hit.Id; }
+            else if (hit != null && pressed?.Id == hit.Id && pressed.Scope == hit.Scope && ActivateHit(hit)) AcceptedHit = hit.Id;
             else if (pressed == null && hit == null) CollapseCardReading();
             pressed = null; dragSource = null; dragging = false; ClearCardDrag();
         }
@@ -246,7 +250,7 @@ internal sealed partial class TableApplication : IDisposable
             }
         }
         if (!chatKeys && !textFocus && keys.IsKeyDown(Keys.Space) && previousKeys.IsKeyUp(Keys.Space) && !OverlayOpen && !AbilityActionPending && !busy && match != null) {
-            if (TableChoice && TableChoices.CanConfirm(match, selections)) Send(DecisionCommands.Choose(match, selections));
+            if (TableChoice && TableChoices.CanConfirm(match, decisionDraft.Selections)) Send(DecisionCommands.Choose(match, decisionDraft.Selections));
             else if (!TableChoice && CombatGuide.CanConfirm(match)) Send(DecisionCommands.Confirm(match));
         }
         if (!chatKeys && !textFocus && keys.IsKeyDown(Keys.C) && previousKeys.IsKeyUp(Keys.C) && HasCombat && (overlay.Length == 0 || overlay == "combat")) { if (overlay == "combat") overlay = ""; else OpenCombat(); }
@@ -273,6 +277,7 @@ internal sealed partial class TableApplication : IDisposable
             nextPoll = now + (session.NeedsRecovery ? 2 : match == null ? .6 : match.Decision == null ? .05 : .12);
             session.Poll(!localMatch, nextLobby => lobby = nextLobby);
         }
+        PreparePresentation(time);
     }
     private void SetAutomatic(bool value) { automatic = value; preferences = preferences with { Automatic = value }; SavePreferences(); }
     private void SavePreferences() { StopQuietPriority(); session.CancelAdvance(); try { preferences.Save(profile); } catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { error = "Could not save settings: " + ex.Message; } }
@@ -289,17 +294,23 @@ internal sealed partial class TableApplication : IDisposable
         error = ""; commandFailure = false;
         if (session.Submit(command)) pendingActionLabel = StateClarity.PendingActionLabel(match, command);
     }
-    internal PresentationFrame ComposePresentation(GameTime time)
+    internal PresentationFrame ReadPresentation() => Frame
+        ?? throw new InvalidOperationException("Update the presentation before reading its frame.");
+
+    private void PreparePresentation(GameTime time)
     {
-        float frameElapsed = (float)(time.TotalGameTime.TotalSeconds - lastDrawTime);
-        lastDrawTime = time.TotalGameTime.TotalSeconds;
+        float frameElapsed = (float)(time.TotalGameTime.TotalSeconds - lastPresentationTime);
+        lastPresentationTime = time.TotalGameTime.TotalSeconds;
         canvas.TextScale = preferences.TextScale;
+        PrepareShellPresentation();
+        PrepareDeckInteraction();
         ValidateStudyFocus();
         tableScene = match == null ? null : TableScene.Build(match, handPage, pointer, null,
             dragging && dragSource?.Card is { } held ? CardViews.Identity(held) : null, false, CardPresentation.IsResource,
             denseMeasure: MeasureDenseBattlefieldLabel, allowInlineOrdering: TableChoices.IsDirect(match), sharedTableStudy: TableStudyEnabled,
             studyFocusedOpponent: StudyFocusActive ? studyFocusOpponent : null);
         UpdateBoardView();
+        PrepareMatchPresentation();
         BeginCardReading(frameElapsed);
         hits.Begin();
         publicCounterBadges.Clear();
@@ -313,13 +324,13 @@ internal sealed partial class TableApplication : IDisposable
         if (match != null && noticeUntil > now && !OverlayOpen) {
             canvas.Panel(new(427, 64, 746, 60), new Color(26, 36, 48), Gold, 7);
             canvas.Text(notice, 440, 76, Ink, .75f, 719, 2);
-            hits.Add(new("notice", Scope, new(427, 64, 746, 60), () => { overlay = "history"; historyPage = 0; noticeUntil = 0; }));
+            hits.Add(new("notice", Scope, new(427, 64, 746, 60), new MatchIntent.OpenHistory()));
         }
         if (!updatesOpen && !ExperienceOpen && !ActivityOpen) DrawSocial();
         if (!ActivityOpen && !string.IsNullOrWhiteSpace(error)) {
             int y = match == null ? 942 : 59;
             canvas.Panel(new(270, y, 1060, 46), new(71, 37, 38), Red, 7); canvas.Text(error, 284, y + 9, Ink, .76f, 980, 1);
-            Button("dismiss", "×", 1280, y + 3, 42, () => error = "", height: 40);
+            Button("dismiss", "×", 1280, y + 3, 42, new ShellIntent.DismissError(), height: 40);
         }
         if (tableGuideOpen && !StartupVisible) DrawTableGuide();
         if (ActivityOpen && !StartupVisible) DrawActivity();
@@ -329,7 +340,7 @@ internal sealed partial class TableApplication : IDisposable
         EndCardReading();
         var drawing = canvas.Complete();
         hits.Publish();
-        return Frame = new(drawing, hits.Published, tableScene, matchPresentation.Cards.Cards, DesignHeight,
+        Frame = new(drawing, hits.Published, tableScene, matchPresentation.Cards.Cards, DesignHeight,
             new(match?.Id, match?.Revision ?? 0, match?.Decision?.Id, Scope, time.TotalGameTime.TotalSeconds), boardView, followTurnEnabled);
     }
     public void Dispose()

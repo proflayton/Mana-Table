@@ -22,27 +22,29 @@ internal sealed partial class TableApplication
         Send(new ChooseOptions(state.Id, decision.Id, [index]));
     }
 
-    private void DrawAbilityActions()
+    private sealed record AbilityActionPlan(Rectangle Anchor, Pose? Source, Rectangle Area, List<List<AbilityActionText>> Pages, int TextWidth);
+    private AbilityActionPlan? abilityActionPlan;
+
+    private AbilityActionPlan? PrepareAbilityActionLayout()
     {
         if (match is not { Decision: { } decision } state || !IsAbilityActionChoice(decision) || session.NeedsRecovery
-            || ActivityOpen || updatesOpen || ExperienceOpen || overlay.Length > 0 || zoneName != null && !BattlefieldFocused) return;
+            || ActivityOpen || updatesOpen || ExperienceOpen || overlay.Length > 0 || zoneName != null && !BattlefieldFocused) return null;
         var reported = CardViews.Source(state, decision);
         var location = reported == null ? null : CardViews.InZones(state)
             .Where(occurrence => SameVisibleCard(occurrence.Card, reported)).Select(occurrence => (ZoneCardOccurrence?)occurrence).FirstOrDefault();
         var source = location?.Card;
         string identity = source == null ? "" : CardViews.Identity(source);
-        var entry = identity.Length == 0 || location == null ? null : matchPresentation.Cards.Cards.LastOrDefault(card =>
-            card.ChoiceSlot < 0 && card.Zone == location.Value.Zone && CardViews.Identity(card.Card) == identity);
+        var sourcePose = location == null ? null : AbilitySourcePose(identity, location.Value.Zone, location.Value.PlayerId);
         var owner = state.Players.FirstOrDefault(player => player.Id == location?.PlayerId)
             ?? state.Players.FirstOrDefault(player => player.Id == decision.SourceControllerId) ?? state.Viewer;
-        var geometry = owner == null ? null : tableScene?.Seat(owner.Id).Geometry;
+        var geometry = tableScene?.Seats.FirstOrDefault(seat => seat.PlayerId == owner?.Id)?.Geometry;
         string zone = location?.Zone ?? decision.SourceZone;
         var pile = geometry?.Piles.FirstOrDefault(candidate => candidate.Zone == zone);
-        var anchor = (entry?.ReaderTarget ?? entry?.Rest)?.Bounds ?? pile?.Pose.Bounds
+        var anchor = sourcePose?.Bounds ?? pile?.Pose.Bounds
             ?? new Rectangle((int)(geometry?.Hero.X ?? 800) - 55, (int)(geometry?.Hero.Y ?? 744) - 55, 110, 110);
         const float fontSize = .78f;
         const int padding = 12, rowGap = 8, controlsHeight = 40;
-        string context = entry != null ? "" : reported is { FaceDown: false } ? reported.Name
+        string context = sourcePose != null ? "" : reported is { FaceDown: false } ? reported.Name
             : !string.IsNullOrWhiteSpace(decision.Title) ? decision.Title : reported == null ? "Card ability" : "Face-down card";
         if (context.Length > 0 && zone.Length > 0) context += " · " + zone;
         string Content(Choice choice) => string.Join("\n", new[] { context, choice.Mana, choice.Label, choice.Detail }
@@ -53,7 +55,7 @@ internal sealed partial class TableApplication
             canvas.TextSize(Content(choice), fontSize, requestedWidth - padding * 2, 80, true).Y + padding * 2))
             + (decision.Choices.Length - 1) * rowGap;
         var area = AbilityActionArea(anchor, requestedWidth, Math.Min(400, requestedHeight));
-        if (area.Width < 100 || area.Height < 110) return;
+        if (area.Width < 100 || area.Height < 110) return null;
         int textWidth = area.Width - padding * 2, bodyHeight = area.Height - controlsHeight;
         List<List<AbilityActionText>> pages = [[]];
         int used = 0;
@@ -67,36 +69,58 @@ internal sealed partial class TableApplication
                 used += (used > 0 ? rowGap : 0) + height;
             }
         }
-        choicePage = Math.Clamp(choicePage, 0, pages.Count - 1);
-        var visible = pages[choicePage];
+        return new(anchor, sourcePose, area, pages, textWidth);
+    }
+
+    private void DrawAbilityActions()
+    {
+        if (abilityActionPlan is not { } layout || match?.Decision is not { } decision) return;
+        const float fontSize = .78f;
+        const int padding = 12, rowGap = 8, controlsHeight = 40;
+        var anchor = layout.Anchor; var entry = layout.Source; var area = layout.Area;
+        var pages = layout.Pages; int textWidth = layout.TextWidth;
+        int page = Math.Clamp(choicePage, 0, pages.Count - 1);
+        var visible = pages[page];
         int heightNeeded = visible.Sum(row => row.Height) + (visible.Count - 1) * rowGap + controlsHeight;
         int y = Math.Clamp(anchor.Top, area.Top, area.Bottom - heightNeeded);
         bool rightSide = area.Left >= anchor.Right;
         var target = new Vector2(rightSide ? area.Left : area.Right, y + visible[0].Height / 2);
-        var connection = entry?.Display.EdgeToward(target, 4)
+        var connection = entry?.EdgeToward(target, 4)
             ?? new Vector2(rightSide ? anchor.Right : anchor.Left, Math.Clamp((int)target.Y, anchor.Top, anchor.Bottom));
         canvas.Line(connection, target, Blue * .45f, 1.5f);
-        if (entry != null) canvas.CardFrame(entry.Display with { Size = entry.Display.Size + new Vector2(5) }, Blue * .55f, 1);
+        if (entry is { } source) canvas.CardFrame(source with { Size = source.Size + new Vector2(5) }, Blue * .55f, 1);
         foreach (var row in visible) {
             string id = "choice:" + row.Choice.Index;
             var bounds = new Rectangle(area.X, y, area.Width, row.Height);
             PaintControlSurface(id, bounds, Panel, new(77, 110, 125), !busy);
             canvas.Text(row.Text, bounds.X + padding, bounds.Y + padding, Ink, fontSize, textWidth, 80, true);
             int index = row.Choice.Index;
-            if (!busy) hits.Add(new(id, Scope, bounds, () => SubmitAbilityChoice(state, decision, index)));
+            if (!busy) hits.Add(new(id, Scope, bounds, new MatchIntent.ChooseAbility(index)));
             y += row.Height + rowGap;
         }
         if (pages.Count > 1) {
-            Button("choicesprev", "‹", area.X, y, 40, () => choicePage--, !busy && choicePage > 0, height: 32);
-            Button("choicesnext", "›", area.X + 46, y, 40, () => choicePage++, !busy && choicePage + 1 < pages.Count, height: 32);
-            canvas.Text($"{choicePage + 1} / {pages.Count}", area.X + 98, y + 6, Muted, .6f,
+            Button("choicesprev", "‹", area.X, y, 40, new MatchIntent.SetPage(MatchPage.Choice, page - 1), !busy && page > 0, height: 32);
+            Button("choicesnext", "›", area.X + 46, y, 40, new MatchIntent.SetPage(MatchPage.Choice, page + 1), !busy && page + 1 < pages.Count, height: 32);
+            canvas.Text($"{page + 1} / {pages.Count}", area.X + 98, y + 6, Muted, .6f,
                 Math.Min(110, Math.Max(0, area.Width - 98 - (decision.Min == 0 ? 117 : 0))), 1);
         }
         if (decision.Min == 0)
-            Button("choice-cancel", "Cancel", area.Right - 105, y, 105, () => {
-                CollapseCardReading();
-                Send(new ChooseOptions(state.Id, decision.Id, []));
-            }, !busy, height: 32);
+            Button("choice-cancel", "Cancel", area.Right - 105, y, 105, new MatchIntent.ChooseNone(true), !busy, height: 32);
+    }
+
+    private Pose? AbilitySourcePose(string identity, string zone, int owner)
+    {
+        if (tableScene == null || identity.Length == 0) return null;
+        SceneCard? node = zone == "Battlefield" ? tableScene.Cohort(identity)?.Front
+            : zone == "Hand" ? tableScene.Hand.Cards.FirstOrDefault(card => card.Id == identity)
+            : zone == "Command" ? tableScene.Seats.FirstOrDefault(seat => seat.PlayerId == owner)?.Geometry.Commanders.FirstOrDefault(card => card.Id == identity)
+            : null;
+        Pose? pose = node == null ? null : BoardView.AffectsZone(zone) ? boardView.Apply(node.Pose) : node.Pose;
+        if (BattlefieldFocused && zone == "Battlefield" && battlefieldFocusPlan?.Tile(identity) is { } tile) pose = tile.ArtPose;
+        if (pose is not { } rest || matchPresentation.Cards.PinnedId != identity) return pose;
+        return TableStudyEnabled && zone == "Battlefield"
+            ? Mana.Table.Presentation.CardPresentationController.StudyReaderPose(rest, StudyActionArea)
+            : Mana.Table.Presentation.CardPresentationController.ReaderPose(rest, zone);
     }
 
     private Rectangle AbilityActionArea(Rectangle anchor, int requestedWidth, int requestedHeight)
@@ -104,15 +128,13 @@ internal sealed partial class TableApplication
         var free = new List<Rectangle> { new(20, 64, 1560, 696) };
         var source = anchor; source.Inflate(12, 12);
         var occupied = new List<Rectangle> { source, new(1240, 550, 350, 245) };
-        if (!battlefieldReaderStateBounds.IsEmpty) occupied.Add(battlefieldReaderStateBounds);
-        occupied.AddRange(match!.Players.Select(player => {
-            var hero = SeatHero(player.Id);
-            return new Rectangle((int)hero.X - 55, (int)hero.Y - 55, 110, 110);
-        }));
-        occupied.AddRange(manaPoolBadges.Values.Select(badge => badge.Bounds).Where(bounds => !bounds.IsEmpty));
-        occupied.AddRange(publicCounterBadges.Values.Select(badge => badge.Bounds).Where(bounds => !bounds.IsEmpty));
-        occupied.AddRange(hits.Where(hit => hit.Id.StartsWith("focus:", StringComparison.Ordinal))
-            .Select(hit => { var bounds = hit.Bounds; bounds.Inflate(8, 8); return bounds; }));
+        if (match is { } state && tableScene != null) {
+            occupied.AddRange(TableViewGeometry.FixedReservations(state, tableScene));
+            occupied.AddRange(state.Players.Select(player => PlanManaHalo(player, SeatDisplayIndex(player.Id)).Bounds).Where(bounds => !bounds.IsEmpty));
+            if (TableStudyEnabled && matchPresentation.Cards.Pinned is { Zone: "Battlefield" } && anchor.Width >= 300)
+                occupied.Add(new(anchor.Right + Mana.Table.Presentation.CardPresentationController.StudyDetailsGap, anchor.Top,
+                    Mana.Table.Presentation.CardPresentationController.StudyDetailsWidth, anchor.Height));
+        }
         foreach (var obstacle in occupied) {
             for (int index = free.Count - 1; index >= 0; index--) {
                 var area = free[index]; var overlap = Rectangle.Intersect(area, obstacle);

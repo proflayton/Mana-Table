@@ -1,3 +1,4 @@
+using Mana.Table.Interaction;
 using System.Collections.Immutable;
 using Mana.Contracts;
 using Mana.Renderer;
@@ -25,7 +26,7 @@ internal static class MatchPresentationLifecycleChecks
         var context = new CardPresentationContext(initial, "match:priority", false, false, false, false);
         owner.Cards.BeginFrame(context, null, .016f, true);
         var entry = owner.Cards.Prepare(new(card.VisualId, card, new(new(500, 450), new(100, 140)),
-            "Battlefield", initial.ViewerId, "card:" + card.Key, () => throw new InvalidOperationException("No presentation operation may submit a command.")));
+            "Battlefield", initial.ViewerId, "card:" + card.Key, UiIntent.None));
         owner.Cards.EndFrame(); owner.Cards.Toggle(entry.Hit, context);
         var changed = initial with { Revision = 2, PriorityPlayerId = 1, DecisionOwnerId = 1, Decision = null, Notices = ["New notice"],
             Players = initial.Players.Select(player => player.Id != initial.ViewerId ? player : player with {

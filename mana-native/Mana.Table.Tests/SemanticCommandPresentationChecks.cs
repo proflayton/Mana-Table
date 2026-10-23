@@ -37,7 +37,7 @@ internal static class SemanticCommandPresentationChecks
                 var time = new GameTime(TimeSpan.FromSeconds(seconds), TimeSpan.FromSeconds(1.0 / 60));
                 app.Update(time, new((int)MathF.Ceiling(physical.X), (int)MathF.Ceiling(physical.Y), 0,
                     button, default, default, default, default), new(), viewport);
-                return app.ComposePresentation(time);
+                return app.ReadPresentation();
             }
             void Wait(Func<bool> reached, string stage)
             {

@@ -17,7 +17,7 @@ internal sealed partial class TableApplication
         for (int count = 2; count <= 4; count++) {
             int players = count;
             MenuAction("lobby-count:" + count, count.ToString(), new(813 + (count - 2) * 64, 697, 54, 40),
-                () => ResizeLobby(players), !busy && CanResizeLobby(count), lobby!.Seats.Length == count, .75f);
+                new ShellIntent.ResizeLobby(players), !busy && CanResizeLobby(count), lobby!.Seats.Length == count, .75f);
         }
     }
     private void ResizeLobby(int players)
@@ -38,9 +38,9 @@ internal sealed partial class TableApplication
     {
         int x = 280 + position * 347;
         MenuAction("lobby-ai:" + seat.Index, seat.Type == "AI" ? "Change deck" : "Add AI", new(x - 145, 637, 290, 36),
-            () => OpenLobbyAiPicker(seat.Index), !busy && lobby!.AiOpponents.Length > 0, size: .75f);
+            new ShellIntent.OpenLobbyAi(seat.Index), !busy && lobby!.AiOpponents.Length > 0, size: .75f);
         if (seat.Type == "AI") MenuAction("lobby-ai-remove:" + seat.Index, "Remove AI", new(x - 145, 680, 290, 36),
-            () => RemoveLobbyAi(seat.Index), !busy, size: .65f);
+            new ShellIntent.RemoveLobbyAi(seat.Index), !busy, size: .65f);
     }
     private void OpenLobbyAiPicker(int seat)
     {
@@ -84,7 +84,6 @@ internal sealed partial class TableApplication
         }
         canvas.Text("The host controls this AI opponent. Choose a compatible deck; the other seats stay as they are.", 208, 240, Muted, .8f, 1164, 2);
         var choices = current.AiOpponents;
-        lobbyAiPage = Math.Clamp(lobbyAiPage, 0, Math.Max(0, (choices.Length - 1) / 6));
         for (int i = 0; i < Math.Min(6, choices.Length - lobbyAiPage * 6); i++) {
             var choice = choices[lobbyAiPage * 6 + i];
             bool selected = seat.OpponentId == choice.Id;
@@ -93,11 +92,11 @@ internal sealed partial class TableApplication
             canvas.Text(choice.Name, x + 18, y + 15, Ink, .9f, 440, 2, true);
             canvas.Text(choice.Description, x + 18, y + 69, Muted, .66f, 440, 2);
             Button("lobby-ai-deck:" + choice.Id, selected ? "Selected" : "Use deck", x + 465, y + 45, 103,
-                () => SetLobbyAi(choice.Id), !busy, selected, 38);
+                new ShellIntent.SelectLobbyAi(choice.Id), !busy, selected, 38);
         }
         if (choices.Length == 0) canvas.Text("No compatible AI decks are available in this build.", 208, 363, Muted, .95f, 1164, 3);
-        Button("lobby-ai-prev", "Previous", 208, 777, 150, () => lobbyAiPage--, !busy && lobbyAiPage > 0, height: 36);
-        Button("lobby-ai-next", "Next", 370, 777, 126, () => lobbyAiPage++, !busy && (lobbyAiPage + 1) * 6 < choices.Length, height: 36);
+        Button("lobby-ai-prev", "Previous", 208, 777, 150, new ShellIntent.Page(ShellPage.LobbyAi, -1), !busy && lobbyAiPage > 0, height: 36);
+        Button("lobby-ai-next", "Next", 370, 777, 126, new ShellIntent.Page(ShellPage.LobbyAi, 1), !busy && (lobbyAiPage + 1) * 6 < choices.Length, height: 36);
         canvas.Text($"{choices.Length} compatible decks | Page {lobbyAiPage + 1} / {Math.Max(1, (choices.Length + 5) / 6)}", 522, 788, Muted, .67f, 850, 1);
         canvas.Text("AI seats are ready automatically. Remove an AI from the lobby to make room for a friend.", 208, 846, Muted, .7f, 1164, 2);
     }

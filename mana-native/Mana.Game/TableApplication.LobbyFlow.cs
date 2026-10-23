@@ -9,8 +9,88 @@ internal sealed partial class TableApplication
     private string setupModal = "", joinAddress = "";
     private string? confirmedDeckId;
     private bool pickerPresets, setupSelectAll;
-    private int connectionPage;
+    private int connectionPage, homeDeckPage;
     private int friendPlayerCount = 4;
+    private void HandleLobbyIntent(ShellIntent.Lobby intent)
+    {
+        switch (intent) {
+            case ShellIntent.ChoosePlayMode choice: ChoosePlayMode(choice.Solo); break;
+            case ShellIntent.OpenPlayHome: OpenPlayHome(); break;
+            case ShellIntent.OpenDeckLibrary: OpenDeckLibrary(); break;
+            case ShellIntent.EditDeck edit:
+                if (edit.ClearInput) ClearExperienceInput();
+                if (edit.AtReviewCard) OpenDeckEditorAt(reviewList ? reviewCard : null); else OpenDeckEditor();
+                break;
+            case ShellIntent.ReviewDeck reviewRequest:
+                if (reviewRequest.ClearInput) ClearExperienceInput();
+                ReviewDeck(); break;
+            case ShellIntent.SelectHomeDeck select:
+                if (decks.FirstOrDefault(deck => deck.Id == select.DeckId) is { } selectedHomeDeck) { ClearExperienceInput(); ChooseDeck(selectedHomeDeck); }
+                break;
+            case ShellIntent.Page page: ChangeShellPage(page.Target, page.Delta); break;
+            case ShellIntent.OpenOpponentPicker opponent: OpenOpponentPicker(opponent.Seat); break;
+            case ShellIntent.SetFriendCount count when !busy && count.Players is >= 2 and <= 4: friendPlayerCount = count.Players; break;
+            case ShellIntent.Connect connect: ConnectLobby(connect.Hosting); break;
+            case ShellIntent.OpenJoin: ClearExperienceInput(); OpenJoin(); break;
+            case ShellIntent.OpenConnection connection:
+                if (connection.ClearInput) ClearExperienceInput();
+                setupModal = "connection"; connectionPage = 0; break;
+            case ShellIntent.LeaveLobby: LeaveLobby(); break;
+            case ShellIntent.SetReady ready: SetLobbyReady(ready.Ready); break;
+            case ShellIntent.StartSolo: StartSolo(); break;
+            case ShellIntent.StartFriends: StartFriends(); break;
+            case ShellIntent.CloseSetup: CloseSetupModal(); break;
+            case ShellIntent.ShowReview reviewMode: reviewList = reviewMode.List; textFocus = false; break;
+            case ShellIntent.FocusSetupInput focus:
+                if (focus.Clear) SetSetupInput("");
+                textFocus = true;
+                if (focus.ResetSelection) setupSelectAll = false;
+                break;
+            case ShellIntent.TogglePortForwarding: forward = !forward; break;
+            case ShellIntent.CopyInternetInvite:
+                if (lobby?.InternetInvite is { Length: > 0 } invite) { Clipboard.SetText(invite); message = "Internet invite copied."; }
+                break;
+            case ShellIntent.CopyAddress copy:
+                if (lobby?.Addresses.FirstOrDefault(address => address.Url == copy.Url) is { } currentAddress) { Clipboard.SetText(currentAddress.Url); message = currentAddress.Label + " address copied."; }
+                break;
+            case ShellIntent.SelectDeckCollection collection:
+                pickerPresets = collection.Collection == DeckCollection.Presets; pickerDeleted = collection.Collection == DeckCollection.Deleted; deckPage = 0; break;
+            case ShellIntent.ChoosePickerDeck pickerChoice: ChoosePickerDeck(pickerChoice.DeckId); break;
+            case ShellIntent.FlipReviewCard: reviewBack = !reviewBack; break;
+            case ShellIntent.SelectReviewSection section: reviewSection = section.Section; reviewPage = 0; break;
+            case ShellIntent.SelectReviewCard selectedCard:
+                if (ReviewRows().FirstOrDefault(row => row.Id == selectedCard.CardId && row.Section == selectedCard.Section) is { } reviewRow) { reviewCard = reviewRow; reviewBack = false; textFocus = false; }
+                break;
+            case ShellIntent.ResizeLobby resize: ResizeLobby(resize.Players); break;
+            case ShellIntent.OpenLobbyAi openAi: OpenLobbyAiPicker(openAi.Seat); break;
+            case ShellIntent.SelectLobbyAi selectedAi: SetLobbyAi(selectedAi.OpponentId); break;
+            case ShellIntent.RemoveLobbyAi removedAi: RemoveLobbyAi(removedAi.Seat); break;
+            case ShellIntent.ImportFile: ImportFile(); break;
+            case ShellIntent.ImportClipboard: ImportClipboard(); break;
+            case ShellIntent.EditPlayerName: ClearExperienceInput(); OpenPlayerName(); break;
+            case ShellIntent.SavePlayerName: SavePlayerName(); break;
+        }
+    }
+    private void ChangeShellPage(ShellPage target, int delta)
+    {
+        if (delta is not (-1 or 1)) return;
+        switch (target) {
+            case ShellPage.HomeDecks: homeDeckPage += delta; break;
+            case ShellPage.DeckPicker: deckPage += delta; break;
+            case ShellPage.Review: reviewPage += delta; break;
+            case ShellPage.Connection: connectionPage += delta; break;
+            case ShellPage.LobbyAi: lobbyAiPage += delta; break;
+            case ShellPage.LabGallery: labGalleryPage += delta; break;
+        }
+    }
+    private void PrepareLobbyPresentation()
+    {
+        if (!Connected && !deckEditor) homeDeckPage = Math.Clamp(homeDeckPage, 0, Math.Max(0, (decks.Count - 1) / 4));
+        if (setupModal == "decks") deckPage = Math.Clamp(deckPage, 0, Math.Max(0, (PickerChoices().Length - 1) / PickerPageSize));
+        if (setupModal == "confirm" && reviewList) reviewPage = Math.Clamp(reviewPage, 0, Math.Max(0, (ReviewRows().Length - 1) / ReviewRowsPerPage));
+        if (setupModal == "connection" && lobby is { } current) connectionPage = Math.Clamp(connectionPage, 0, Math.Max(0, (current.Addresses.Length - 1) / 5));
+        if (setupModal == "lobby-ai" && lobby is { } ai) lobbyAiPage = Math.Clamp(lobbyAiPage, 0, Math.Max(0, (ai.AiOpponents.Length - 1) / 6));
+    }
     private bool Connected => lobby is { Mode: not "idle" };
     private Seat? LocalSeat => lobby?.Seats.FirstOrDefault(s => s.Local);
     private bool DeckConfirmed => DeckReady && confirmedDeckId == selectedDeckDetails?.Id;

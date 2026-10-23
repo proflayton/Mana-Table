@@ -29,7 +29,7 @@ internal sealed partial class TableApplication
     private void DrawPortraitTurnControls()
     {
         var state = match!;
-        turnProgress ??= TurnProgressPresentation.From(state, preferences.Stops);
+        if (turnProgress == null) return;
         if (state.Viewer == null || state.Turn == 0) return;
         var layout = TurnControlLayout.For(SeatHero(state.ViewerId));
         var markers = turnProgress.Markers;
@@ -53,14 +53,11 @@ internal sealed partial class TableApplication
             }
             var bounds = new Rectangle((int)center.X - 18, (int)center.Y - 18, 36, 36);
             string key = phase.Key;
-            hits.Add(new(id, ControlScope(id), bounds, () => {
-                if (!preferences.Stops.Remove(key)) preferences.Stops.Add(key);
-                SavePreferences();
-            }, Shape: point => Vector2.DistanceSquared(point.ToVector2(), center) <= 18 * 18));
+            hits.Add(new(id, ScopeFor(new MatchIntent.TogglePhaseStop(key)), bounds, new MatchIntent.TogglePhaseStop(key), Shape: point => Vector2.DistanceSquared(point.ToVector2(), center) <= 18 * 18));
         }
         if (!SelectingActionTarget) {
-            TurnControlIcon("auto", layout.AutoCenter, automatic, () => UseAutomaticControl(!automatic));
-            TurnControlIcon("hold", layout.HoldCenter, held, ToggleHoldControl, pause: true);
+            TurnControlIcon("auto", layout.AutoCenter, automatic, new MatchIntent.SetAutomatic(!automatic));
+            TurnControlIcon("hold", layout.HoldCenter, held, new MatchIntent.ToggleHold(), pause: true);
         }
         for (int i = 0; i < markers.Length; i++)
             if (IsControlHovered("phase-stop:" + markers[i].Key)) DrawTurnHint(markers[i].Hint, layout.Markers[i]);
@@ -96,22 +93,22 @@ internal sealed partial class TableApplication
             string id = "resume-phase-stop", key = state.PhaseKey;
             var bounds = new Rectangle(area.Right - 28, area.Y - 4, 28, 27);
             canvas.CenterText("×", bounds, IsControlHovered(id) ? Ink : Gold, .85f, true);
-            hits.Add(new(id, ControlScope(id), bounds, () => { preferences.Stops.Remove(key); SavePreferences(); }));
+            hits.Add(new(id, ScopeFor(new MatchIntent.TogglePhaseStop(key, true)), bounds, new MatchIntent.TogglePhaseStop(key, true)));
             if (IsControlHovered(id)) DrawTurnHint("Remove my " + turnProgress!.PhaseLabel.ToLowerInvariant() + " stop", bounds.Center.ToVector2());
         }
         bool following = busy || d == null || view.Status == DecisionDockStatus.AutoPassing;
         var action = new Rectangle(area.X, area.Bottom - 40, area.Width, 40);
         if (QuietPriorityArmed || !following && CanOfferQuietPriority) {
             Button(QuietPriorityArmed ? "quiet-priority-stop" : "quiet-priority-arm", QuietPriorityArmed ? "Take control" : "Pass for now",
-                action.X, action.Y, action.Width - 48, QuietPriorityArmed ? StopQuietPriority : ArmQuietPriority, !busy || QuietPriorityArmed, true, action.Height);
+                action.X, action.Y, action.Width - 48, new MatchIntent.SetQuietPriority(!QuietPriorityArmed), !busy || QuietPriorityArmed, true, action.Height);
             if (!busy && d is { Intent: DecisionIntent.Priority, OkEnabled: true }) {
                 var center = new Vector2(action.Right - 19, action.Center.Y);
-                TurnControlIcon("confirm", center, false, () => Send(new PassPriority(state.Id, d.Id)));
+                TurnControlIcon("confirm", center, false, new MatchIntent.SubmitCommand(new PassPriority(state.Id, d.Id)));
                 if (IsControlHovered("confirm")) DrawTurnHint("Pass priority once", center);
             }
         } else if (!following && d is { OkEnabled: true }) {
             Button("confirm", view.ActionLabel, action.X, action.Y, action.Width,
-                () => Send(DecisionCommands.Confirm(state)), CombatGuide.CanConfirm(state), true, action.Height);
+                new MatchIntent.ConfirmDecision(), CombatGuide.CanConfirm(state), true, action.Height);
         } else if (view.Status == DecisionDockStatus.AutoPassing) {
             PaintTurnAdvance(new(action.X + 14, action.Center.Y), Blue);
             canvas.Text("Passing", action.X + 38, action.Y + 8, Muted, .66f, action.Width - 45, 1);
@@ -119,10 +116,10 @@ internal sealed partial class TableApplication
         if (!following && d?.CancelEnabled == true)
             Button("cancel", d.Cancel == "End Turn" ? "Pass turn" : d.Cancel,
                 area.Right + 12, action.Y, Math.Min(130, 1580 - area.Right - 12),
-                () => Send(DecisionCommands.Cancel(state)), height: action.Height);
+                new MatchIntent.CancelDecision(), height: action.Height);
     }
 
-    private void TurnControlIcon(string id, Vector2 center, bool selected, Action action, bool pause = false)
+    private void TurnControlIcon(string id, Vector2 center, bool selected, UiIntent action, bool pause = false)
     {
         bool hover = IsControlHovered(id), down = hover && pressed?.Id == id && CurrentHit(pressed);
         Color color = hover ? Ink : selected ? id == "hold" ? Gold : Blue : Muted;
@@ -131,7 +128,7 @@ internal sealed partial class TableApplication
         canvas.Circle(center, 14, down ? new(35, 60, 69) : new(13, 24, 30));
         if (pause) PaintTurnPause(center, color, 6); else PaintTurnAdvance(center, color);
         var bounds = new Rectangle((int)center.X - 18, (int)center.Y - 18, 36, 36);
-        hits.Add(new(id, ControlScope(id), bounds, action,
+        hits.Add(new(id, ScopeFor(action), bounds, action,
             Shape: point => Vector2.DistanceSquared(point.ToVector2(), center) <= 18 * 18));
     }
 

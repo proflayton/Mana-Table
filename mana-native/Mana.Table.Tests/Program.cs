@@ -52,7 +52,8 @@ internal static class Program
             if (args.Contains("--smoke-full-battlefield")) { FullBattlefieldSmoke.Run(profile, size, args.Contains("--real-art"), args.Contains("--readable-crowd")); return 0; }
             if (args.Contains("--smoke-commander-tax")) {
                 var scenario = new InteractionScenarioEngine(); scenario.Present(PresentationSmoke.CommanderTaxExample());
-                using var test = new TableWindow(TestTableServices.For(scenario), profile, null, null, size, initialState: scenario.State, artSource: new CardReadingArtFixture());
+                using var test = new TableWindow(TestTableServices.For(scenario), profile, null, null, size, initialState: scenario.State,
+                    artSource: new CommanderTaxSmoke.CostReadableArtFixture());
                 test.Automation = new CommanderTaxSmoke(test.TestPort, scenario);
                 test.Run(); return 0;
             }
@@ -65,7 +66,8 @@ internal static class Program
             }
             if (args.Contains("--smoke-priority-abilities")) {
                 var scenario = new InteractionScenarioEngine(); scenario.Present(PriorityAbilitySmoke.Example());
-                using var test = new TableWindow(TestTableServices.For(scenario), profile, null, null, size, initialState: scenario.State);
+                using var test = new TableWindow(TestTableServices.For(scenario), profile, null, null, size, initialState: scenario.State,
+                    artSource: new CardReadingArtFixture());
                 test.Automation = new PriorityAbilitySmoke(test.TestPort, scenario);
                 test.Run(); return 0;
             }

@@ -101,8 +101,22 @@ cards and repeated pose preparation across frame-buffer swaps.
 `MatchPresentationLifecycleChecks` shares that presentation lane and verifies
 baseline, viewer/rematch reset, mana/priority revocation and public departures.
 The existing seat-switch application case also checks revocation immediately
-after acceptance, before composing another frame, so stale hit callbacks cannot
+after acceptance, before preparing another frame, so stale hit intents cannot
 survive until the next paint.
+
+`PresentationReadChecks`, `DecisionDraftChecks` and `DeckInteractionChecks` run
+in the same presentation lane. They cover repeated frame reads without advancing
+state, publication on Update, revoked or altered intents, prompt/viewer draft
+resets, bounded selections/allocations and deck navigation/reader lifetimes.
+The window only reads the prepared frame. Headless timing measures Update,
+including frame preparation; reading the cached frame is not a new composition
+or an FPS measurement. These checks supply behavior evidence, not UX acceptance.
+
+The priority artwork-handoff case also runs in that lane. It retains the exact
+priority prompt while loading owns the screen, then verifies that the same
+ability control becomes available without a command when artwork settles.
+Its window journey uses deterministic artwork and waits for that handoff rather
+than asserting on gameplay controls behind the loading screen.
 
 The shared client runner includes `LatestReadRegression`,
 `DeckWorkspaceRegression` and `AppUpdateSessionRegression`. Controlled completion

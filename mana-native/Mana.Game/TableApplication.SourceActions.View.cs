@@ -65,8 +65,6 @@ internal sealed partial class TableApplication
     {
         var card = VisibleCards().FirstOrDefault(current => SameVisibleCard(current, entry.Card));
         if (card == null) return;
-        string key = string.Join("\n", match?.Id, match?.Decision?.Id, entry.Id, entry.Zone, card.Key);
-        if (key != sourceReaderViewKey) { sourceReaderViewKey = key; sourceReaderScroll = 0; }
         var options = SourceReaderOptions(card);
         string state = IsStudyBattlefieldReader(entry) ? "" : SourceReaderState(card, entry.Zone);
         if (sourceActions.View is { Context: { } current, Status: SourceActionStatus.Unsupported } unavailable
@@ -106,9 +104,9 @@ internal sealed partial class TableApplication
         int top = Math.Clamp(face.Center.Y - height / 2, area.Top, area.Bottom - height);
         sourceReaderActionsBounds = new(area.X, top, width, height);
         sourceReaderScrollMax = Math.Max(0, contentHeight - height);
-        sourceReaderScroll = Math.Clamp(sourceReaderScroll, 0, sourceReaderScrollMax);
-        hits.Add(new("source-actions-surface", Scope, sourceReaderActionsBounds, () => { }, ShowPointer: false));
-        int y = top - sourceReaderScroll;
+        int scroll = Math.Clamp(sourceReaderScroll, 0, sourceReaderScrollMax);
+        hits.Add(new("source-actions-surface", Scope, sourceReaderActionsBounds, UiIntent.None, ShowPointer: false));
+        int y = top - scroll;
         if (stateHeight > 0) {
             if (y >= top && y + stateHeight <= top + height)
                 canvas.Text(state, area.X + 4, y, new(161, 228, 207), .63f, width - 8, 80, true);
@@ -141,18 +139,16 @@ internal sealed partial class TableApplication
         if (sourceReaderScrollMax > 0) {
             int trackHeight = Math.Max(8, height - 8);
             int thumbHeight = Math.Max(18, trackHeight * height / contentHeight);
-            int thumbY = top + 4 + (trackHeight - thumbHeight) * sourceReaderScroll / sourceReaderScrollMax;
+            int thumbY = top + 4 + (trackHeight - thumbHeight) * scroll / sourceReaderScrollMax;
             canvas.Rounded(new(area.Right + 4, top + 4, 3, trackHeight), Muted * .18f, 1);
             canvas.Rounded(new(area.Right + 4, thumbY, 3, thumbHeight), Blue * .75f, 1);
         }
         foreach (var control in sourceReaderControls) {
             if (busy) continue;
-            var captured = control;
-            hits.Add(new(control.Id, ControlScope(control.Id), control.Bounds, () => {
-                if (captured.Retry) RetryReaderActions();
-                else if (captured.Action != null) UseReaderAction(captured.Action);
-                else if (captured.Placement != null) UseReaderPlacement(captured.Placement);
-            }));
+            UiIntent intent = control.Retry ? new MatchIntent.RetrySourceActions()
+                : control.Action != null ? new MatchIntent.UseSourceAction(control.Action.Id)
+                : control.Placement != null ? new MatchIntent.UseSourcePlacement(control.Placement.Id) : UiIntent.None;
+            hits.Add(new(control.Id, ScopeFor(intent), control.Bounds, intent));
         }
     }
 

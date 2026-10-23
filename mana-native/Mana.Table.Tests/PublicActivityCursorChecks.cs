@@ -91,7 +91,7 @@ internal static class PublicActivityCursorChecks
         PresentationFrame Tick(double seconds, Point point = default, ButtonState left = ButtonState.Released) {
             var time = new GameTime(TimeSpan.FromSeconds(seconds), TimeSpan.FromSeconds(.01));
             app.Update(time, new(point.X, point.Y, 0, left, default, default, default, default), new(), new(1600, 900));
-            return app.ComposePresentation(time);
+            return app.ReadPresentation();
         }
         var frame = Tick(10);
         var readerPoint = frame.Hits.Single(hit => hit.Card?.VisualId == privateFace.VisualId && hit.Zone == "Hand").Bounds.Center;

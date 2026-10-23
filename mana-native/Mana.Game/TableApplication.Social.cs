@@ -11,10 +11,55 @@ internal sealed partial class TableApplication
     private bool chatOpen, chatFocus, chatSelectAll, socialPolling, socialSending, chatPeople;
     private string chatDraft = "", chatError = "", chatToast = "", nameDraft = "";
     private int chatPage;
+    private long chatAnchor;
+    private long? chatSelectedMessage;
     private double nextSocialPoll, nextChatSend, chatToastUntil;
     private const int ChatPageSize = 4;
     private static readonly string[] Emotes = ["Hello!", "Good luck!", "Nice play!", "Thinking…", "Thanks!", "Good game!"];
     private bool SocialAvailable => Connected && services.Social != null && !string.IsNullOrEmpty(lobby?.TableId);
+    private string ChatScope => $"chat:{conversation.TableId}:{chatOpen}:{chatPeople}:{chatPage}:{chatAnchor}:{chatSelectedMessage}:{chatDraft}:{preferences.MuteTableChat}:{string.Join(',', conversation.MutedMembers.Order())}";
+    private void HandleSocialIntent(ShellIntent.Social intent)
+    {
+        switch (intent) {
+            case ShellIntent.ToggleChat: ToggleChat(); break;
+            case ShellIntent.BlurChat: chatFocus = false; break;
+            case ShellIntent.ShowMessages:
+                chatPeople = false; chatPage = 0; chatSelectedMessage = null; conversation.MarkRead(); break;
+            case ShellIntent.ShowPeople: chatPeople = true; chatFocus = false; break;
+            case ShellIntent.ReadMessage read:
+                if (conversation.Messages.Any(message => message.Id == read.MessageId)) { chatSelectedMessage = read.MessageId; chatFocus = false; }
+                break;
+            case ShellIntent.CloseMessage: chatSelectedMessage = null; break;
+            case ShellIntent.OlderMessages:
+                if (chatPage == 0) chatAnchor = conversation.State?.Revision ?? 0;
+                chatPage++; break;
+            case ShellIntent.NewerMessages:
+                chatPage = Math.Max(0, chatPage - 1);
+                if (chatPage == 0) conversation.MarkRead();
+                break;
+            case ShellIntent.LatestMessages: chatPage = 0; conversation.MarkRead(); break;
+            case ShellIntent.SendMessage: SendChat(); break;
+            case ShellIntent.SendEmote emote when Emotes.Contains(emote.Text): SendChat(emote.Text); break;
+            case ShellIntent.FocusChat: chatFocus = true; chatSelectAll = false; textFocus = false; break;
+            case ShellIntent.ToggleTableMute:
+                preferences = preferences with { MuteTableChat = !preferences.MuteTableChat };
+                conversation.Muted = preferences.MuteTableChat; SavePreferences(); chatToast = ""; break;
+            case ShellIntent.ToggleMemberMute mute:
+                if (conversation.State?.Members.Any(member => member.Id == mute.MemberId && member.Seat != conversation.State.LocalSeat) == true) {
+                    if (!conversation.MutedMembers.Remove(mute.MemberId)) conversation.MutedMembers.Add(mute.MemberId);
+                    chatToast = "";
+                }
+                break;
+        }
+    }
+    private void PrepareSocialPresentation()
+    {
+        if (!SocialAvailable || !chatOpen || chatPeople) return;
+        if (chatSelectedMessage != null && conversation.Messages.Any(message => message.Id == chatSelectedMessage)) return;
+        chatSelectedMessage = null;
+        var messages = chatPage > 0 ? conversation.Messages.Where(message => message.Id <= chatAnchor).ToArray() : conversation.Messages;
+        chatPage = Math.Clamp(chatPage, 0, Math.Max(0, (messages.Length - 1) / ChatPageSize));
+    }
     private void UpdateSocial()
     {
         string tableId = SocialAvailable ? lobby!.TableId : "";

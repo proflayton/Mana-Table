@@ -197,7 +197,7 @@ internal sealed class CardPresentationController
         return new(new(x, y), new(410, 574), Elevation: 22);
     }
 
-    private static Pose StudyReaderPose(Pose rest, Rectangle? avoid)
+    internal static Pose StudyReaderPose(Pose rest, Rectangle? avoid)
     {
         // Keep the complete card and its right-hand state column on screen.
         var right = new Pose(new(1600 - 20 - StudyDetailsWidth - StudyDetailsGap - 205, 385), new(410, 574), Elevation: 22);

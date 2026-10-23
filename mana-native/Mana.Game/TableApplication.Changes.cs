@@ -27,7 +27,7 @@ internal sealed partial class TableApplication
     private void DrawChangesControl()
     {
         if (matchPresentation.Changes.Count > 0)
-            Button("recent-changes", "Recent changes", 1004, 12, 176, () => OpenChanges(), height: 35);
+            Button("recent-changes", "Recent changes", 1004, 12, 176, new MatchIntent.OpenChanges(), height: 35);
     }
     private bool DrawChangeCallout()
     {
@@ -45,7 +45,7 @@ internal sealed partial class TableApplication
         bool sourceOver = source.Pose.Bounds.Contains(pointer);
         canvas.CardFrame(source.Pose, sourceOver ? HoverAccent : Gold * .8f, sourceOver ? 3 : 2);
         hits.Add(new("change-source:" + CardViews.Identity(source.Card), Scope, source.Pose.Bounds,
-            () => { }, source.Card, "ChangeReference"));
+            UiIntent.None, source.Card, "ChangeReference"));
         canvas.Arrow(new(1330, 602), new(1349, 602), Gold, 3);
         DrawChangeIncrements(group, recipients.Select(CardViews.Identity).ToHashSet(StringComparer.Ordinal), accent);
         canvas.Arrow(new(1444, 602), new(1460, 602), accent, 3);
@@ -64,7 +64,7 @@ internal sealed partial class TableApplication
         string count = recipients.Length == total ? "×" + total : recipients.Length + "/" + total;
         canvas.CenterText(count, new(1464, 630, 106, 23), accent, .72f, true);
         // The fan is an observation/navigation gesture, never a game-card action.
-        hits.Add(new("change-locate", Scope, new(1352, 554, 218, 96), () => FocusAffectedChange(group)));
+        hits.Add(new("change-locate", Scope, new(1352, 554, 218, 96), new MatchIntent.FocusChange(group.Id)));
         if (new Rectangle(1352, 554, 218, 96).Contains(pointer)) DrawChangeRecipientFocus(group);
         DrawChangeSourceReading(group, source.Card, sourceOver);
         return true;
@@ -122,7 +122,7 @@ internal sealed partial class TableApplication
         if (bounds.Intersects(decisionPanelBounds) || !targetingEffectBounds.IsEmpty && bounds.Intersects(targetingEffectBounds)) return;
         changeReadPreviewGroup = group.Id; changeReadPreviewBounds = bounds;
         PaintReferencePreview(source, new(bounds.Center.ToVector2(), bounds.Size.ToVector2()));
-        hits.Add(new("change-card-preview", Scope, bounds, () => { }));
+        hits.Add(new("change-card-preview", Scope, bounds, UiIntent.None));
     }
     private void FocusAffectedChange(EffectChangeGroup effect)
     {
@@ -189,26 +189,29 @@ internal sealed partial class TableApplication
                 canvas.Arrow(start.EdgeToward(pose.Center, 4), pose.EdgeToward(start.Center, 4), Gold * .85f, 5);
         }
     }
-    private void DrawChangeDetails()
+    private string[] ChangeReadingPages(EffectChangeGroup group)
     {
-        var group = CurrentChange;
-        ModalFrame("What changed", () => overlay = "");
-        if (group == null) { canvas.Text("These permanents are no longer visible. Public history still records the completed action.", 208, 211, Ink, .9f, 1150, 4); return; }
-        var groups = matchPresentation.Changes.Reverse().ToArray();
-        int selected = Array.FindIndex(groups, item => item.Id == group.Id);
-        canvas.Text(group.Title, 208, 191, Gold, 1.04f, 1160, 2, true);
         string cause = group.Cause == null ? "The engine did not report the source of this change."
             : (group.Cause.ControllerId is { } controller ? match!.Players.FirstOrDefault(player => player.Id == controller)?.Name + " · " : "")
                 + (group.Cause.Kind == "trigger" ? "Triggered ability" : "Effect") + "\n" + group.Cause.Ability;
         string changes = string.Join("\n", group.Changes.Select(change => change.TargetName + " · " + change.Change.Property
             + " counters " + change.Change.Before + " → " + change.Change.After));
-        var pages = canvas.TextPages(cause + "\n\n" + group.Summary + "\n\n" + changes, .84f, 1150, 460, 24);
-        changePage = Math.Clamp(changePage, 0, pages.Length - 1);
-        canvas.Text(pages[changePage], 208, 254, Ink, .84f, 1150, 24);
-        Button("changes-page-prev", "Previous page", 208, 734, 175, () => changePage--, changePage > 0);
-        Button("changes-page-next", "More results", 395, 734, 175, () => changePage++, changePage + 1 < pages.Length);
-        Button("changes-source-prev", "Earlier effect", 797, 734, 180, () => { selectedChangeId = groups[selected + 1].Id; changePage = 0; }, selected + 1 < groups.Length);
-        Button("changes-source-next", "Newer effect", 989, 734, 180, () => { selectedChangeId = groups[selected - 1].Id; changePage = 0; }, selected > 0);
+        return canvas.TextPages(cause + "\n\n" + group.Summary + "\n\n" + changes, .84f, 1150, 460, 24);
+    }
+    private void DrawChangeDetails()
+    {
+        var group = CurrentChange;
+        ModalFrame("What changed", new MatchIntent.CloseView());
+        if (group == null) { canvas.Text("These permanents are no longer visible. Public history still records the completed action.", 208, 211, Ink, .9f, 1150, 4); return; }
+        var groups = matchPresentation.Changes.Reverse().ToArray();
+        int selected = Array.FindIndex(groups, item => item.Id == group.Id);
+        canvas.Text(group.Title, 208, 191, Gold, 1.04f, 1160, 2, true);
+        var pages = matchReadingPages; int page = changePage;
+        canvas.Text(pages[page], 208, 254, Ink, .84f, 1150, 24);
+        Button("changes-page-prev", "Previous page", 208, 734, 175, new MatchIntent.SetPage(MatchPage.Change, page - 1), page > 0);
+        Button("changes-page-next", "More results", 395, 734, 175, new MatchIntent.SetPage(MatchPage.Change, page + 1), page + 1 < pages.Length);
+        Button("changes-source-prev", "Earlier effect", 797, 734, 180, new MatchIntent.OpenChanges(groups.ElementAtOrDefault(selected + 1)?.Id), selected + 1 < groups.Length);
+        Button("changes-source-next", "Newer effect", 989, 734, 180, new MatchIntent.OpenChanges(groups.ElementAtOrDefault(selected - 1)?.Id), selected > 0);
         canvas.Text($"Effect {selected + 1} / {groups.Length}", 1190, 748, Muted, .6f, 200, 1);
     }
 }

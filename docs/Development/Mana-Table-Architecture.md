@@ -251,13 +251,15 @@ views rather than independently accepting asynchronous results.
 | --- | --- |
 | `ClientSession` | Accepted engine observations, current command scopes, serialized commands and recovery. |
 | `MatchPresentationLifecycle` | One public activity cursor and the match's effects, presence, pacing, resolution, changes, impacts, mana, priority and departure feedback. A game/viewer boundary revokes readers, poses and transient feedback before baselining the next seat. |
+| `DecisionDraft` | The current game/viewer/prompt's ordered selections and bounded numeric allocations. Observing a new scope resets the draft; rendering cannot initialize or edit it. |
+| `DeckInteractionState` | Analysis navigation, selected evidence, related-card filters and the workspace reader. Selection changes and deletion reset the owner; closing the editor closes its reader. |
 | `DeckWorkspaceSession` | Workshop, analysis, test history and practice results for the selected deck/revision/epoch. One refresh lifecycle coalesces requests; mutation completions require a captured stamp, and reports must match accepted workshop metadata and playable fingerprint. |
 | `LatestRead` | Replaceable catalog/printing reads. One active provider request, one latest pending intent, explicit caller-controlled start after debounce, and generation-scoped success/failure admission. Clear and close revoke late results. |
 | `AppUpdateSession` | One serialized discovery/download/preparation/verification/install workflow, cancellation, prepared-release identity, persisted startup policy and safe explicit restart. The UI supplies its current installation blocker. |
 
 Changing viewers immediately revokes the published hit frame and retained card
-context, including before the next composition. A visual occurrence or a retained
-callback cannot preserve the previous viewer's authority. UI navigation resets
+context, including before the next update. A visual occurrence or a retained
+intent cannot preserve the previous viewer's authority. UI navigation resets
 remain separate from feedback reset, so resetting a control does not baseline or
 clear a newly accepted event batch a second time.
 
@@ -275,10 +277,11 @@ file cleanup, rather than abandoning writes through a cancelled client wait.
 An update provider must honor cancellation and finish its cleanup. This lifecycle
 does not change update manifests, installed profiles or transport protocols.
 
-These owners do not make application composition pure: layout, navigation,
-selection and interaction state still belong to the native application. Nor do
-they prove that another rules engine can replace Forge or replay its complete
-rules state; those remain separate conformance work.
+The application still owns navigation and transient layout caches. Update applies
+input and reconciles feature navigation before emitting the frame; command
+emission can populate temporary geometry and painter queues, but must not change
+the selected page, reader or decision draft. This is not a full rules-state replay
+or proof that another rules engine can replace Forge.
 
 `DecisionDockPresentation` projects the current decision and public acting seat
 with explicit local control facts. The application shares its inspection/chat/
@@ -340,17 +343,20 @@ flowchart LR
     Engine[Seat-filtered engine snapshot] --> Session[ClientSession]
     Input[Pointer / keyboard / time / viewport] --> Application[TableApplication]
     Session --> Application
-    Application --> Layout[TableScene + CardPresentationController]
+    Application --> Intents[Typed intent dispatch + feature state]
+    Intents --> Layout[Update prepares TableScene + card poses]
     Layout --> Frame[PresentationFrame]
     Frame --> GPU[Canvas GPU replay]
     Frame --> Observe[Copied FrameObservation]
     Observe --> Checks[Headless replay and state checks]
 ```
 
-`ComposePresentation` publishes ordered typed `DrawCommand` data through
+`TableApplication.Update` prepares and publishes ordered typed `DrawCommand` data through
 `DrawList`, a frozen `InteractionFrame`, prepared card occurrences, a scene and
-the exact game/revision/decision stamp. GPU replay does not run application
-callbacks or decide card layout. Application composition owns one deferred list
+the exact game/revision/decision stamp. `ReadPresentation` only returns that
+completed frame; it requires an update first. `TableWindow.Draw` reads and replays
+it without reconciling navigation, advancing animation or running interactions.
+Application preparation owns one deferred list
 pairing each lifted card with its painter; it drains in stable layer order before
 frame publication. The card controller owns poses, reading and layers, without a
 second queue or sequence-key join. CPU font geometry and GPU text rasterization use
@@ -359,6 +365,16 @@ travel belong to `CardPresentationController`, and indexed scene seats and
 occurrences avoid rebuilding layouts or scanning the whole battlefield per card.
 Hit regions use those same displayed poses, including connected metadata and the
 original hand anchor.
+
+Published controls carry closed `MatchIntent`, `DeckIntent` or `ShellIntent`
+records instead of executable callbacks. Their explicit scope kinds select the
+current game/viewer/prompt, source, or feature-modal lifetime. Dispatch requires
+both a current scope and membership in the latest published interaction frame;
+a retained control from a removed panel cannot execute. Debug IDs identify
+controls for diagnostics and automation; they do not select a scope or replace
+engine validation. Intent handlers own navigation and call the existing
+permission-checked command builders for rules actions. Hit-shape predicates and
+temporary painters describe geometry and painting only; they are not actions.
 
 Current and previous displayed card poses each share a buffer with their
 coordinate-space flag. `BeginFrame` swaps and clears those buffers instead of
@@ -1118,9 +1134,10 @@ under `scripts/mana-table`; they are not an application runtime.
 
 1. Forge publishes an immutable snapshot for the trusted human viewer.
 2. `ClientSession` accepts its game, revision and current decision scope.
-3. `TableApplication` composes the visible cards and controls into one frame.
+3. `TableApplication.Update` prepares the visible cards and controls into one frame.
    Drawing and hit testing use the same displayed occurrences.
-4. A deliberate input resolves the current occurrence and prompt-scoped handle.
+4. A deliberate input dispatches its current published typed intent, then resolves
+   the occurrence and prompt-scoped handle.
    `Mana.Forge` sends the command over the private process protocol.
 5. The host validates the session, prompt and permission before dispatching to
    the shared human controller. The client reconciles the next snapshot.

@@ -72,10 +72,8 @@ internal sealed partial class TableApplication
         canvas.Text(selection.FromLibrary ? "Choose a printing to preview. Add copies from Build when you are ready."
             : "Replace " + selectedDeckDetails?.Entries.FirstOrDefault(entry => entry.Id == target.Id && entry.Section == selection.Section)?.Quantity
                 + " copies in " + selection.Section + ". Other sections and your tested deck version stay in place.", 214, 269, Muted, .76f, 1160, 1);
-        DeckSearchBox("printing", printingFilter, "Filter by set code or collector number…", new(214, 300, 800, 34));
-        Button("printings-finish", new[] { "All finishes", "Nonfoil only", "Foil only" }[printingFinish], 1040, 300, 322, () => {
-            printingFinish = (printingFinish + 1) % 3; LoadPrintings(0);
-        }, !busy, height: 34);
+        DeckSearchBox(DeckTextField.Printing, printingFilter, "Filter by set code or collector number…", new(214, 300, 800, 34));
+        Button("printings-finish", new[] { "All finishes", "Nonfoil only", "Foil only" }[printingFinish], 1040, 300, 322, new DeckIntent.CyclePrintingFinish(), !busy, height: 34);
         if (printingRead.View.Value is { } page) {
             for (int i = 0; i < page.Cards.Length; i++) {
                 var card = page.Cards[i]; int x = 214 + i * 194;
@@ -84,15 +82,15 @@ internal sealed partial class TableApplication
                 canvas.Text("#" + card.Card.CollectorNumber + " · Art " + card.Card.ArtIndex, x, 635, Ink, .63f, 176, 1);
                 canvas.Text(card.Card.Foil ? "Foil" : "Nonfoil", x, 662, Muted, .65f, 176, 1);
                 Button("printing-use:" + card.Id, target.Id == card.Id ? "Current" : "Use printing", x, 705, 176,
-                    () => ChoosePrinting(card), !busy && card.Id != target.Id, target.Id == card.Id, 38);
+                    new DeckIntent.ChoosePrinting(card), !busy && card.Id != target.Id, target.Id == card.Id, 38);
             }
             if (page.Total == 0) canvas.Text("No printings match. Try another set code or finish.", 214, 414, Muted, 1, 1150, 3);
-            Button("printings-prev", "Previous", 214, 817, 140, () => LoadPrintings(Math.Max(0, page.Offset - 6)), !busy && page.Offset > 0, height: 36);
-            Button("printings-next", "Next", 368, 817, 116, () => LoadPrintings(page.Offset + 6), !busy && page.Offset + page.Cards.Length < page.Total, height: 36);
+            Button("printings-prev", "Previous", 214, 817, 140, new DeckIntent.LoadPrintings(Math.Max(0, page.Offset - 6)), !busy && page.Offset > 0, height: 36);
+            Button("printings-next", "Next", 368, 817, 116, new DeckIntent.LoadPrintings(page.Offset + 6), !busy && page.Offset + page.Cards.Length < page.Total, height: 36);
             canvas.Text($"{(page.Total == 0 ? 0 : page.Offset + 1)}–{page.Offset + page.Cards.Length} of {page.Total} printings", 510, 828, Muted, .7f, 650, 1);
         } else if (printingRead.View.Error.Length > 0) {
             canvas.Text(printingRead.View.Error, 214, 380, Red, .9f, 1140, 5);
-            Button("printings-retry", "Retry", 214, 705, 176, () => LoadPrintings(0), !busy, height: 38);
+            Button("printings-retry", "Retry", 214, 705, 176, new DeckIntent.LoadPrintings(0), !busy, height: 38);
         } else {
             DrawLoadingIndicator(new(800, 448), 24, true, Blue);
             canvas.CenterText("Finding printings…", new(214, 502, 1160, 48), Ink, 1);

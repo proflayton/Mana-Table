@@ -21,10 +21,14 @@ internal static class PresentationSmoke
         GameplayFeedbackChecks.Run(Check);
         PublicActivityCursorChecks.Run(Check);
         MatchPresentationLifecycleChecks.Run(Check);
+        DeckInteractionChecks.Run(Check);
+        DecisionDraftChecks.Run(Check);
         ImpactFeedbackChecks.Run(Check);
         CardArtPreloadChecks.Run(Check);
+        PriorityAbilitySmoke.CheckArtworkHandoff(profile, Check);
         ManaPoolFeedbackChecks.Run(Check);
         InteractionFrameChecks.Run(Check);
+        PresentationReadChecks.Run(profile, Check);
         CardPresentationChecks.Run(Check);
         PresentationSceneChecks.Run(Check);
         DrawingFrameChecks.Run(Check);

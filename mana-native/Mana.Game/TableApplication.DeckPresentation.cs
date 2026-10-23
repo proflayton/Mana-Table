@@ -7,26 +7,21 @@ namespace Mana.Table;
 
 internal sealed partial class TableApplication
 {
-    private sealed record WorkspaceCardReading(string Scope, string Identity, Card Card, bool OtherFace = false);
-    private WorkspaceCardReading? workspaceCardReading;
-    private string WorkspaceReadingScope => $"{selectedDeckDetails?.Id}:{selectedDeckDetails?.Revision}:{workshopTab}:{deckWorkspace.View.Hand?.TestId}:{deckWorkspace.View.Hand?.Draws}:{deckWorkspace.View.Hand?.Redraws}:{analysisTab}:{analysisPage}:{analysisDetailTitle}";
+    private string WorkspaceReadingScope => $"{selectedDeckDetails?.Id}:{selectedDeckDetails?.Revision}:{workshopTab}:{deckWorkspace.View.Hand?.TestId}:{deckWorkspace.View.Hand?.Draws}:{deckWorkspace.View.Hand?.Redraws}:{deckInteraction.AnalysisTab}:{deckInteraction.AnalysisPage}:{deckInteraction.Detail.Title}";
     private void ReadWorkspaceCard(Card card, string identity)
     {
-        workspaceCardReading = workspaceCardReading is { } current && current.Scope == WorkspaceReadingScope && current.Identity == identity
-            ? null : new(WorkspaceReadingScope, identity, card);
+        deckInteraction.ToggleReading(card, identity, WorkspaceReadingScope);
     }
     private bool DismissDeckWorkspaceReading()
     {
-        bool visible = workspaceCardReading?.Scope == WorkspaceReadingScope;
-        workspaceCardReading = null;
-        return visible;
+        return deckInteraction.CloseReading(WorkspaceReadingScope);
     }
     // Reading owns only its local space. The hand, selected finding, deck version
     // and test setup stay in place; no deck mutation or game command is offered.
     private void DrawWorkspaceCardReading(Rectangle area)
     {
-        if (workspaceCardReading is not { } reading) return;
-        if (reading.Scope != WorkspaceReadingScope) { workspaceCardReading = null; return; }
+        if (deckInteraction.Reading is not { } reading) return;
+        if (reading.Scope != WorkspaceReadingScope) return;
         canvas.Rounded(area, new(17, 26, 33), 8);
         hits.RemoveAll(hit => hit.Bounds.Intersects(area));
         bool otherFace = reading.Card.OtherFace != null;
@@ -34,10 +29,10 @@ internal sealed partial class TableApplication
         int width = height * 5 / 7;
         var pose = new Pose(new(area.Center.X, area.Top + 12 + height / 2), new(width, height));
         PaintCard(DeckCardFace(reading.Card, reading.OtherFace), pose, false, false);
-        hits.Add(new("workspace-card-reading", Scope, area, () => workspaceCardReading = null));
+        hits.Add(new("workspace-card-reading", Scope, area, new DeckIntent.CloseReader()));
         if (otherFace) Button("workspace-card-flip", reading.OtherFace ? "Front face" : "Other face",
             area.Center.X - 90, area.Bottom - 40, 180,
-            () => { if (workspaceCardReading == reading) workspaceCardReading = reading with { OtherFace = !reading.OtherFace }; }, !busy, height: 30);
+            new DeckIntent.FlipReader(reading.Identity), !busy, height: 30);
     }
 
     private static Card DeckCardFace(Card card, bool otherFace) => otherFace && card.OtherFace is { } back ? card with {
@@ -63,10 +58,7 @@ internal sealed partial class TableApplication
             canvas.Text(i == 6 ? "6+" : i.ToString(), left + (step - 30) / 2, y + 69, Muted, .51f, 36, 1);
             if (deckEditor && WorkshopEngine != null && workshopDialog.Length == 0) {
                 int value = i;
-                hits.Add(new("workshop-curve:" + i, Scope, new(left - 3, y + 22, step - 4, 68), () => {
-                    workshopManaFilter = value; workshopRoleFilter = ""; analysisRelatedCards.Clear(); workshopTab = "build"; workshopDialog = "";
-                    commanderCandidates = false; deckSection = "Main"; deckFilter = ""; deckCardsPage = 0; deckIssuesOnly = false;
-                }));
+                hits.Add(new("workshop-curve:" + i, Scope, new(left - 3, y + 22, step - 4, 68), new DeckIntent.FilterMana(value)));
             }
         }
     }

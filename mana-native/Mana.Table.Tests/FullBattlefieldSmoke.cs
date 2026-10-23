@@ -22,6 +22,7 @@ internal sealed class FullBattlefieldSmoke : ITableAutomation
     private MouseState mouse;
     private double lastStep;
     private string actionGame = "", actionDecision = "", actionCard = "";
+    private string namedOccurrence = "distinct-2-49";
     public string? ExpectedClick => null;
     public bool ClickAccepted { get; set; }
     public MouseState ReadMouse() => mouse;
@@ -65,13 +66,17 @@ internal sealed class FullBattlefieldSmoke : ITableAutomation
         Step(0, () => Buttons(right: ButtonState.Pressed));
         Step(.04, () => Buttons());
         Step(.15, () => {
-            Check(view.Overlay == "inspect" && scenario.Replies.Count == 0,
-                "Right-click inspects the opponent's tenth creature without a game command");
+            Check(view.Overlay.Length == 0 && Reading("ten-1-9") && view.CardPaintCount("ten-1-9") == 1
+                && view.Frame!.Cards.Single(card => card.Id == "ten-1-9").Card is { Power: 2, Toughness: 2 }
+                && scenario.Replies.Count == 0,
+                "Right-click keeps the opponent's exact tenth creature in its canonical reader with current stats and no game command");
             Capture("03-tenth-opponent-inspect");
-            MoveHit("close-overlay");
+            MoveCard("ten-1-9");
         }); Click();
-        Step(.15, () => {
-            Check(view.Overlay.Length == 0, "The tenth-creature inspector closes normally");
+        Wait(() => view.HoverPreview == null, 2, () => {
+            Check(view.Overlay.Length == 0 && !Reading("ten-1-9") && view.HoverPreview == null
+                && view.CardPaintCount("ten-1-9") == 1 && scenario.Replies.Count == 0,
+                "Clicking the tenth creature again closes its reader and retains its single battlefield face without a game command");
             MoveAway();
         });
         Step(.6, () => {
@@ -79,7 +84,7 @@ internal sealed class FullBattlefieldSmoke : ITableAutomation
             actionGame = view.Match.Id; actionDecision = view.Match.Decision!.Id; actionCard = card.Key;
             MoveCard(card.VisualId);
         }); Click();
-        Wait(() => Reading("ten-0-9"), 3, () => {
+        Wait(() => Reading("ten-0-9") && view.Hits.Any(hit => hit.Id == "read-card-action"), 3, () => {
             Check(Reading("ten-0-9") && scenario.Replies.Count == 0 && view.Hits.Any(h => h.Id == "read-card-action"),
                 "The local tenth creature reads first and exposes its explicit current activation");
             MoveHit("read-card-action");
@@ -159,28 +164,48 @@ internal sealed class FullBattlefieldSmoke : ITableAutomation
             AssertExposed(50, "Fifty distinct creature families");
             foreach (var player in view.Match!.Players) {
                 var creatures = Scene().Battlefield(player.Id).Single(c => c.Kind == "Creatures").Cards;
+                bool labeled = creatures.All(card => !card.DenseLabels.IsEmpty);
+                bool faces = creatures.All(card => card.Compact && card.DenseMiniature && card.DenseLabels.IsEmpty);
                 Check(creatures.Length == 50 && creatures.All(c => c.GroupCount == 1)
+                    && creatures.All(card => card.GroupFront && card.Owner == player.Id && card.Zone == "Battlefield"
+                        && card.Card == player.Zone("Battlefield").Cards.Single(current => CardViews.Identity(current) == card.Id))
+                    && creatures.Select(card => card.Id).Distinct().Count() == 50
                     && creatures.Select(c => c.Card.Name).Distinct().Count() == 50
-                    && creatures.All(c => c.Dense && !c.DenseLabels.IsEmpty && InDenseArea(player.Id, c.Pose.Bounds)),
-                    $"Seat {player.Id}'s fifty distinct names retain fifty independently exposed occurrences");
+                    && (labeled || faces) && creatures.All(card => card.Dense && InDenseArea(player.Id, card.Pose.Bounds)
+                        && (card.DenseLabels.IsEmpty || InDenseArea(player.Id, card.DenseLabels))),
+                    $"Seat {player.Id}'s fifty distinct names and current states retain independent exposed occurrences inside their seat's labeled or individual-face layout");
             }
             Check(scenario.Replies.Count == 1, "Displaying fifty distinct creatures per seat sends no additional game action");
             Capture("09-fifty-distinct");
-            MoveCard("distinct-2-49");
+            // Exercise the explicit reader on the compact individual-face
+            // fallback when the current seat's measured labels cannot fit.
+            namedOccurrence = Scene().Seats.SelectMany(seat => seat.Battlefield.SelectMany(cluster => cluster.Cards))
+                .FirstOrDefault(card => card.DenseMiniature && card.DenseLabels.IsEmpty && card.Card.Name == "Alloy Myr")?.Id ?? "distinct-2-49";
+            MoveCard(namedOccurrence);
         });
         Click();
-        Wait(() => Reading("distinct-2-49"), 3, () => {
-            Check(Reading("distinct-2-49") && view.Match!.Players[2].Zone("Battlefield").Cards.Single(c => c.VisualId == "distinct-2-49").Name == "Alloy Myr",
+        Wait(() => Reading(namedOccurrence), 3, () => {
+            Check(Reading(namedOccurrence) && view.Frame!.Cards.Single(card => card.Id == namedOccurrence).Card
+                is { Name: "Alloy Myr", Power: 2, Toughness: 2 } && view.CardPaintCount(namedOccurrence) == 1 && scenario.Replies.Count == 1,
                 "The named Alloy Myr remains individually readable among fifty distinct creatures");
             Capture("10-named-occurrence");
         });
         Step(0, () => Buttons(right: ButtonState.Pressed));
         Step(.04, () => Buttons());
         Step(.15, () => {
-            Check(view.Overlay == "inspect" && scenario.Replies.Count == 1, "Inspecting the named occurrence preserves the game and sends no command");
+            Check(view.Overlay.Length == 0 && Reading(namedOccurrence) && view.CardPaintCount(namedOccurrence) == 1
+                && view.Frame!.Cards.Single(card => card.Id == namedOccurrence).Card is { Name: "Alloy Myr", Power: 2, Toughness: 2 }
+                && scenario.Replies.Count == 1,
+                "Right-click retains the exact named occurrence and its current stats in the canonical reader without a command");
             Capture("11-named-inspector");
-            MoveHit("close-overlay");
+            MoveCard(namedOccurrence);
         }); Click();
+        Wait(() => view.HoverPreview == null, 2, () => {
+            Check(view.Overlay.Length == 0 && !Reading(namedOccurrence) && view.HoverPreview == null
+                && view.CardPaintCount(namedOccurrence) == 1 && scenario.Replies.Count == 1,
+                "Clicking the named occurrence again closes its reader and preserves the battlefield without a command");
+            MoveAway();
+        });
         QueueReadableCrowd(1, finish: false);
         QueueDenseOrdering();
     }
@@ -331,8 +356,8 @@ internal sealed class FullBattlefieldSmoke : ITableAutomation
                 $"Seat {player.Id}'s additional counter type and marked damage remain explicitly identified");
         }
     }
-    private bool InDenseArea(int player, Microsoft.Xna.Framework.Rectangle bounds) => BattlefieldLayout.DenseAreas(
-        player == view.Match!.ViewerId ? 3 : TableLayout.SeatIndex(view.Match, player)).Any(area => area.Contains(bounds));
+    private bool InDenseArea(int player, Microsoft.Xna.Framework.Rectangle bounds) => BattlefieldLayout.DenseAreas(Scene().Seat(player).Index)
+        .Any(area => area.Contains(bounds));
     private void AssertExposed(int count, string description)
     {
         Check(view.HoverPreview == null && view.Overlay.Length == 0, description + ": exposure is checked on the resting table");
@@ -402,7 +427,8 @@ internal sealed class FullBattlefieldSmoke : ITableAutomation
     private void Move(Point physical) => mouse = new(physical.X, physical.Y, 0, ButtonState.Released, ButtonState.Released, ButtonState.Released, ButtonState.Released, ButtonState.Released);
     private void Buttons(ButtonState left = ButtonState.Released, ButtonState right = ButtonState.Released) => mouse = new(mouse.X, mouse.Y, 0, left, ButtonState.Released, right, ButtonState.Released, ButtonState.Released);
     private void Click() { Step(.03, () => Buttons(ButtonState.Pressed)); Step(.04, () => Buttons()); }
-    private bool Reading(string id) => view.DisplayedPose(id) is { Size.X: >= 400 }
+    private bool Reading(string id) => view.Frame?.Cards.Any(card => card.Id == id && card.Focused) == true
+        && view.DisplayedPose(id) is { Size.X: >= 400 }
         && view.HoverPreview is { Width: >= 400, Height: >= 560 };
     private TableScene Scene() => view.TableScene ?? throw new InvalidOperationException("The production table scene is not ready");
     private void Publish(GameSnapshot state) { scenario.Present(state); view.Accept(scenario.State); }
@@ -415,6 +441,15 @@ internal sealed class FullBattlefieldSmoke : ITableAutomation
         File.WriteAllText(Path.Combine(view.Profile, "full-battlefield-failure.json"), JsonSerializer.Serialize(new {
             description, view.Now, view.Overlay, view.ZoneName, mouse.X, mouse.Y,
             hovered = view.Hovered == null ? null : CardViews.Identity(view.Hovered), view.HoverPreview,
+            Frame = view.Frame?.Observe(),
+            Scene = view.TableScene?.Seats.Select(seat => new { seat.PlayerId, seat.Index, seat.IsDense,
+                Areas = BattlefieldLayout.DenseAreas(seat.Index),
+                Groups = seat.Battlefield.Select(cluster => new { cluster.Kind,
+                    Cards = cluster.Cards.Select(card => new { card.Id, card.Card.Name, card.Owner, card.Zone,
+                        card.GroupCount, card.GroupFront, card.Dense, card.Compact, card.DenseMiniature, card.DenseScale,
+                        card.DenseLabels, card.Pose, InSeatArea = InDenseArea(seat.PlayerId, card.Pose.Bounds),
+                        LabelsInSeatArea = card.DenseLabels.IsEmpty || InDenseArea(seat.PlayerId, card.DenseLabels),
+                        card.Card.Power, card.Card.Toughness, card.Card.Counters, card.Card.Damage }) }) }),
             hits = view.Hits.Select(h => new { h.Id, h.Zone, h.PlayerId, card = h.Card == null ? null : CardViews.Identity(h.Card), h.Bounds })
         }, new JsonSerializerOptions { WriteIndented = true, IncludeFields = true }));
         throw new InvalidOperationException(description);

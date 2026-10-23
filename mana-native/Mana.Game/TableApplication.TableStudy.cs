@@ -52,7 +52,7 @@ internal sealed partial class TableApplication
         if (state.Stack.Length > 1) {
             var count = new Rectangle(header.Right - 125, header.Y, 119, 23);
             canvas.CenterText(state.Stack.Length + " pending", count, Muted, .5f, true);
-            hits.Add(new("study-stack-list", Scope, count, () => OpenStack(0)));
+            hits.Add(new("study-stack-list", Scope, count, new MatchIntent.OpenStack(0)));
         }
         var body = new Rectangle(area.X, header.Bottom + 2, area.Width, area.Height - header.Height - 2);
         canvas.Panel(body, new(17, 29, 36), Gold * .55f, 4);
@@ -95,7 +95,7 @@ internal sealed partial class TableApplication
         }
         canvas.Text(preview, effectArea.X, effectArea.Y, Ink,
             effectSize, effectArea.Width, 80, true);
-        hits.Add(new("study-stack-effect:" + entry.Id, Scope, effectArea, () => InspectPendingEffect(entry.Id)));
+        hits.Add(new("study-stack-effect:" + entry.Id, Scope, effectArea, new MatchIntent.InspectPendingEffect(entry.Id)));
         if (entry.Targets.Length > 0)
             DrawPendingTargetReferences(entry, new(body.X + 12, body.Bottom - 28, body.Width - 24, 24));
         stackRows.Add(new(entry.Id, 1, body));
