@@ -26,6 +26,19 @@ exercises the shipping C# adapter against that packaged engine. Repository
 documentation and CI contracts belong to the lightweight `desktop` check;
 there is no second client or Node engine test pipeline.
 
+Harness compilation and the four engine-independent presentation checks run
+before waiting for the Java artifact. Their elapsed times are logged separately.
+The real-engine headless check still waits for the completed package and uses
+its Forge resources; the harness is hashed only after these checks pass.
+
+Pinned tools have separate graphics, installer and update artifacts. UI shards
+download only Mesa, the installer protocol check only Inno, and the installed SDK
+check only Velopack. Migration and production packaging receive Inno and Velopack;
+the windowed installer lifecycle receives Mesa and Inno. Every consumer retains
+the pinned archive hash checks, and Inno retains its publisher verification.
+`tools.ps1 -DownloadOnly` accepts `-Graphics` and `-Installer` selectors; omitting
+both preserves the existing combined download behavior for local callers.
+
 The isolated installed SDK update lifecycle needs only the immutable tools
 artifact and runs alongside packaging. Product migration waits for both tools and
 the package, retaining its real Forge-backed health check. Both complete
@@ -53,7 +66,7 @@ The [release helper](../../scripts/mana-table/release-assets.cjs) checks master
 before staging and immediately before promotion. Failed gates leave a private
 draft; an advanced master cannot publish it. Existing public assets are never
 replaced by a rerun. Staging is preparation, not a published or updater-visible
-release. This transfer redesign is source-only until its candidate is merged.
+release.
 
 Runtime and source ZIPs are transferred as individual raw Actions artifacts;
 small manifests and the UI harness retain their own artifacts. Every consumer
@@ -66,6 +79,19 @@ still downloads and hashes the actual source ZIP, and publication still binds th
 complete corresponding source download. Existing real-archive callers remain
 supported; `sourceArchiveBytes` is an additive release metadata field used by the
 receipt path.
+
+### Release timing target
+
+The target is **five minutes from merge into `master` to a public native release
+discoverable through Updates**. Record both merge-to-public and workflow-start-to-
+public durations, along with the source SHA, run and attempt. Keep queueing,
+checkout, transfer and required verification time in the end-to-end measurement.
+Use completed step timings and artifact sizes to identify the last dependency;
+a faster individual job can move that dependency to another job.
+
+The target is not a measured guarantee. Record cache/runner conditions where
+known and compare multiple runs before claiming a repeatable improvement. All
+required source, native, lifecycle and publication checks remain mandatory.
 
 ### Measuring artifact transfers
 

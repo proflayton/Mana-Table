@@ -52,7 +52,11 @@ jobs:
           digest-mismatch: error
       - uses: actions/download-artifact@v8
         with:
-          name: mana-native-tools-${{ github.sha }}
+          name: mana-native-tools-installer-${{ github.sha }}
+          path: dist/ci-tools
+      - uses: actions/download-artifact@v8
+        with:
+          name: mana-native-tools-update-${{ github.sha }}
           path: dist/ci-tools
       - name: Verify package and central engine identity
         run: ./mana-native/ci/restore-package.ps1 -Directory dist/ci-inputs

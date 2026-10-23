@@ -159,8 +159,8 @@ test('incomplete result pages and duplicate observed failure cannot be hidden', 
   await assert.rejects(inspect(duplicate), /failed/);
 });
 
-function nativeJobs() {
-  const workflow = fs.readFileSync(path.join(__dirname, '../../../.github/workflows/mana-table-native-release.yml'), 'utf8').replace(/\r\n/g, '\n');
+function nativeJobs(filename = 'mana-table-native-release.yml') {
+  const workflow = fs.readFileSync(path.join(__dirname, '../../../.github/workflows', filename), 'utf8').replace(/\r\n/g, '\n');
   const source = workflow.slice(workflow.indexOf('\njobs:\n') + '\njobs:\n'.length);
   const headings = [...source.matchAll(/^  ([a-z][\w-]*):[ \t]*$/gm)];
   return new Map(headings.map((heading, index) => [heading[1], source.slice(heading.index, headings[index + 1]?.index)]));
@@ -170,6 +170,83 @@ function dependencies(job) {
   assert.ok(declaration, 'Required native job must declare its prerequisites.');
   return declaration[1].replace(/^\[|\]$/g, '').split(',').map(value => value.trim());
 }
+function jobSteps(job) {
+  const headings = [...job.matchAll(/^      - (?:name|uses):.+$/gm)];
+  return headings.map((heading, index) => job.slice(heading.index, headings[index + 1]?.index));
+}
+test('native consumers receive only their required pinned tool archives', () => {
+  const jobs = nativeJobs(), producer = jobs.get('tools');
+  const artifact = kind => `mana-native-tools-${kind}-\${{ github.sha }}`;
+  const producers = jobSteps(producer).filter(step => /uses: actions\/upload-artifact@/.test(step));
+  assert.deepEqual(producers.map(step => step.match(/^          name: (.+)$/m)?.[1]).sort(),
+    ['graphics', 'installer', 'update'].map(artifact).sort(), 'Publish every tool type once, without a combined archive.');
+  const directories = [];
+  for (const [kind, script, flag] of [['graphics', 'tools.ps1', '-Graphics'], ['installer', 'tools.ps1', '-Installer'], ['update', 'update-tools.ps1', null]]) {
+    const upload = producers.find(step => step.includes(`name: ${artifact(kind)}\n`));
+    const directory = upload.match(/^          path: ([^\n]+)$/m)?.[1].replace(/\/$/, '');
+    assert.ok(directory?.startsWith('dist/'), `${kind} must share its own prepared directory.`);
+    directories.push(directory);
+    const command = producer.split('\n').find(line => line.trim().startsWith(`./mana-native/ci/${script} `) && line.includes(`-Directory ${directory} `));
+    assert.ok(command?.includes('-DownloadOnly'), `${kind} must come from the pinned download verifier.`);
+    if (flag) {
+      assert.ok(command.split(/\s+/).includes(flag), `${kind} must select its actual tool files.`);
+      assert.ok(!command.split(/\s+/).includes(flag === '-Graphics' ? '-Installer' : '-Graphics'), `${kind} must omit unrelated tool files.`);
+    }
+    assert.match(upload, /if-no-files-found: error/);
+  }
+  assert.equal(new Set(directories).size, 3, 'Tool types must not upload the same combined directory.');
+  const consumers = [
+    ['native-ui', jobs.get('native-ui'), ['graphics'], ['package', 'tools']],
+    ['installer-lifecycle', jobs.get('installer-lifecycle'), ['graphics', 'installer'], ['package', 'tools']],
+    ['update-installer', jobs.get('update-installer'), ['installer'], ['tools']],
+    ['managed-updates', jobs.get('managed-updates'), ['installer', 'update'], ['package', 'tools']],
+    ['sdk-updates', jobs.get('sdk-updates'), ['update'], ['tools']],
+    ['production installer', nativeJobs('mana-table-native-installer.yml').get('build'), ['installer', 'update'], null]
+  ];
+  for (const [name, job, kinds, prerequisites] of consumers) {
+    const downloads = jobSteps(job).filter(step => /uses: actions\/download-artifact@/.test(step));
+    const selected = downloads.map(step => step.match(/^          name: (.+)$/m)?.[1]).filter(value => value?.startsWith('mana-native-tools'));
+    assert.deepEqual(selected.sort(), kinds.map(artifact).sort(), `${name} must not transfer unrelated tool archives.`);
+    for (const kind of kinds) {
+      const download = downloads.find(step => step.includes(`name: ${artifact(kind)}\n`));
+      assert.match(download, /^          path: dist\/ci-tools\/?$/m, `${name} must restore ${kind} where the verifier consumes it.`);
+    }
+    if (prerequisites) assert.deepEqual(dependencies(job).sort(), prerequisites, `${name} retains its required production prerequisites.`);
+  }
+});
+test('native checks use the engine wait window without omitting or preempting packaged Forge verification', () => {
+  const producer = nativeJobs().get('package');
+  const steps = jobSteps(producer);
+  function onlyStep(pattern, description) {
+    const matches = steps.map((source, index) => ({ source, index })).filter(step => pattern.test(step.source));
+    assert.equal(matches.length, 1, `${description} must run once.`);
+    return matches[0];
+  }
+  const build = onlyStep(/dotnet build mana-native\/Mana.Table.Tests\/Mana.Table.Tests.csproj /, 'Build the source-bound harness');
+  const wait = onlyStep(/run: node scripts\/mana-table\/wait-ci-engine.cjs/, 'Find the exact-source engine');
+  const verify = onlyStep(/node scripts\/mana-table\/ci-engine-artifact.cjs verify/, 'Verify the downloaded engine');
+  const packaged = onlyStep(/\.\/mana-native\/package.ps1 -Release /, 'Build the clean production package');
+  assert.ok(wait.index < verify.index && verify.index < packaged.index, 'Packaging must use the verified engine.');
+  const independent = ['presentation', 'headless-presentation', 'headless-clutter', 'headless-priority-flow'].map(mode => '--smoke-' + mode);
+  assert.deepEqual([...producer.matchAll(/--smoke-[\w-]+/g)].map(match => match[0]).sort(),
+    [...independent, '--smoke-headless-engine'].sort(), 'Declare every required native mode once.');
+  const modes = build.source.match(/foreach \(\$mode in @\(([^)]*)\)\)/);
+  assert.ok(modes, 'The early harness step must execute its declared modes.');
+  assert.deepEqual([...modes[1].matchAll(/'([^']+)'/g)].map(match => match[1]), independent);
+  assert.ok(build.index < wait.index && build.source.indexOf('dotnet build ') < modes.index,
+    'Build and check the harness while Java produces its engine.');
+  assert.match(build.source, /"-p:Version=\$env:MANA_RELEASE_VERSION" "-p:InformationalVersion=\$env:MANA_RELEASE_VERSION\+\$env:GITHUB_SHA"/);
+  assert.match(build.source, /dotnet build [^\n]+\n\s+if \(\$LASTEXITCODE -ne 0\) \{ throw /);
+  assert.match(build.source, /dotnet \.\/dist\/harness\/Mana.Table.Tests.dll \$mode --profile \("dist\/" \+ \$mode.Substring\(8\) \+ "-checks"\)\n\s+if \(\$LASTEXITCODE -ne 0\) \{ throw /,
+    'Each early mode must run with its own profile and fail the producer on error.');
+  const engine = onlyStep(/--smoke-headless-engine\b/, 'Check the real Forge engine');
+  assert.ok(engine.index > packaged.index, 'The real Forge walkthrough requires the completed production package.');
+  assert.match(engine.source, /dotnet \.\/dist\/harness\/Mana.Table.Tests.dll --smoke-headless-engine --engine-resources dist\/package\/engine --profile dist\/headless-engine-checks\n\s+if \(\$LASTEXITCODE -ne 0\) \{ throw /);
+  const manifest = onlyStep(/Set-Content dist\/ci-harness-manifest.json/, 'Bind the checked harness');
+  const shared = onlyStep(/name: mana-native-ui-inputs-/, 'Share the checked harness');
+  assert.ok(engine.index < manifest.index && manifest.index < shared.index,
+    'Publish harness identity only after the real Forge walkthrough passes.');
+});
 test('full SDK fixture verification starts from tools while product migration retains its exact package', () => {
   const jobs = nativeJobs(), sdk = jobs.get('sdk-updates'), migration = jobs.get('managed-updates');
   assert.ok(sdk && migration, 'Both isolated lifecycle jobs must exist.');
@@ -186,7 +263,8 @@ test('full SDK fixture verification starts from tools while product migration re
 test('the actual Windows aggregate requires every check and exactly the authorized installer lane', () => {
   const gate = nativeJobs().get('windows'), required = dependencies(gate);
   assert.match(gate, /^    if: \$\{\{ always\(\) && !\(github.event_name == 'workflow_dispatch' && inputs.benchmark_transport\) \}\}$/m);
-  for (const job of ['managed-updates', 'sdk-updates']) assert.ok(required.includes(job), `${job} must block the required aggregate.`);
+  assert.deepEqual([...required].sort(), ['checks', 'tools', 'package', 'native-ui', 'installer', 'installer-release',
+    'installer-lifecycle', 'update-installer', 'managed-updates', 'sdk-updates'].sort(), 'Every native release gate remains required.');
   const embedded = gate.match(/          node <<'NODE'\n([\s\S]*?)^          NODE$/m);
   assert.ok(embedded, 'Exercise the shipping aggregate rather than a second gate implementation.');
   const script = embedded[1].replace(/^          /gm, '');

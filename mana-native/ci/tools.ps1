@@ -7,8 +7,9 @@ $tools = @(
     @{ Name='innosetup-6.7.3.exe'; Url='https://github.com/jrsoftware/issrc/releases/download/is-6_7_3/innosetup-6.7.3.exe'; Hash='9c73c3bae7ed48d44112a0f48e66742c00090bdb5bef71d9d3c056c66e97b732' },
     @{ Name='mesa-llvmpipe-x64-26.2.5.7z'; Url='https://github.com/mmozeiko/build-mesa/releases/download/26.2.5/mesa-llvmpipe-x64-26.2.5.7z'; Hash='d1b713ca2a7fba47a50c058099f13c435ddb76a16a422c334e4d787f9755a31d' }
 )
+$downloadAll = $DownloadOnly -and -not ($Graphics -or $Installer)
 foreach ($tool in $tools) {
-    if (-not $DownloadOnly -and (($tool.Name -like 'inno*' -and -not $Installer) -or ($tool.Name -like 'mesa*' -and -not $Graphics))) { continue }
+    if (-not $downloadAll -and (($tool.Name -like 'inno*' -and -not $Installer) -or ($tool.Name -like 'mesa*' -and -not $Graphics))) { continue }
     $path = Join-Path $Directory $tool.Name
     if ($DownloadOnly) { Invoke-WebRequest $tool.Url -OutFile $path }
     if ((Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash -ine $tool.Hash) { throw "Pinned CI tool checksum mismatch: $($tool.Name)" }
