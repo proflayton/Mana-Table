@@ -1,5 +1,8 @@
 using Mana.Contracts;
 using Mana.Magic;
+using Mana.Renderer;
+using Color = Microsoft.Xna.Framework.Color;
+using Rectangle = Microsoft.Xna.Framework.Rectangle;
 using Microsoft.Xna.Framework;
 
 namespace Mana.Table;
@@ -11,21 +14,29 @@ internal sealed partial class TableApplication
     private bool analysisInFlight;
     private string analysisError = "", analysisDetailTitle = "", analysisDetailText = "";
     private string[] analysisDetailCards = [];
-    private string[] analysisDetailPages = [""];
+    private string analysisDetailBinding = "";
+    private Card? analysisDetailSuggestion;
+    private string[] analysisMissingCards = [], analysisPayoffCards = [];
+    private string analysisVariant = "", analysisAdvancedText = "";
+    private bool analysisAdvanced;
+    private int analysisDetailIndex = -1;
+    private AnalysisRecommendation? analysisDetailRecommendation;
+    private int analysisEvidenceScroll, analysisEvidenceMaximum;
+    private Rectangle analysisEvidenceBounds;
     private TuningQuestion? analysisDetailQuestion;
     private readonly HashSet<string> analysisRelatedCards = new(StringComparer.OrdinalIgnoreCase);
-    private int analysisTab, analysisPage, analysisDetailPage;
+    private int analysisTab, analysisPage;
     private bool analysisShowReviewed;
     private AnalysisRecommendation[] VisibleRecommendations(DeckAnalysisState state) => state.Report.Recommendations
         .Where(r => Mana.Magic.DeckExperience.Reviewed(state, r.Id) == analysisShowReviewed).ToArray();
-    private static readonly string[] AnalysisTabs = ["What to check", "How cards work together", "Cards to try", "What each card does", "Your decisions"];
+    private static readonly string[] AnalysisTabs = ["Checks", "Engines", "Swaps", "Roles", "History"];
     private static string AnalysisBasis(string value) => value switch {
         "text-estimate" => "Estimated from card text", "strategic-estimate" => "Strategy estimate",
         "curated-rules-line" => "Curated rules interaction", "bundled-rules" => "Bundled format snapshot",
         "unknown" => "Eligibility unknown", "restricted" => "Restricted in the bundled format snapshot",
         _ => value.Replace('-', ' ')
     };
-    private string AnalysisScope => $"{analysisTab}:{analysisPage}:{analysisShowReviewed}:{analysisState?.MetadataRevision}:{analysisDetailTitle}:{analysisDetailPage}:{string.Join(',', analysisRelatedCards)}";
+    private string AnalysisScope => $"{analysisTab}:{analysisPage}:{analysisShowReviewed}:{analysisState?.MetadataRevision}:{analysisDetailTitle}:{analysisEvidenceScroll}:{analysisAdvanced}:{workspaceCardReading?.Identity}:{workspaceCardReading?.OtherFace}:{string.Join(',', analysisRelatedCards)}";
     private bool AnalysisCurrent => analysisState is { } state && state.Report.DeckId == selectedDeckDetails?.Id
         && state.Report.Revision == selectedDeckDetails.Revision && (WorkshopEngine == null || WorkshopCurrent
             && workshop!.MetadataRevision == state.MetadataRevision && workshop.VersionId == state.Report.Fingerprint);
@@ -38,13 +49,20 @@ internal sealed partial class TableApplication
     }
     private void OpenDeckAnalysis()
     {
-        if (services.Analysis is not { } service || selectedDeckDetails is not { } deck) return;
+        if (selectedDeckDetails is not { } deck) return;
+        DismissDeckWorkspaceReading();
+        if (AnalysisCurrent || services.Analysis == null) {
+            analysisOpen = true; workshopDialog = deckTextFocus = ""; textFocus = false; return;
+        }
+        var service = services.Analysis;
+        bool sameDeck = analysisState?.Report.DeckId == deck.Id;
         Work(async () => {
             var result = await service.AnalyzeDeckAsync(deck.Id, deck.Revision);
             var shared = WorkshopEngine is { } builder ? await builder.WorkshopAsync(deck.Id, deck.Revision) : null;
             updates.Enqueue(() => {
                 if (selectedDeckDetails?.Id != deck.Id || selectedDeckDetails.Revision != deck.Revision) return;
-                AcceptAnalysis(result, shared); analysisOpen = true; analysisTab = analysisPage = 0;
+                AcceptAnalysis(result, shared); analysisOpen = true;
+                if (!sameDeck) analysisTab = analysisPage = 0;
                 workshopDialog = deckTextFocus = ""; textFocus = false;
             });
         }, "Reviewing your deck", "Checking its plan, resources, and engine dependencies.");
@@ -108,12 +126,13 @@ internal sealed partial class TableApplication
             "pool" => p with { Pool = Names() }, _ => p with { TargetTurn = int.Parse(next) }
         });
     }
-    private void ShowAnalysisDetails(string title, string text, string[]? cards = null, TuningQuestion? question = null)
+    private string AnalysisDetailBinding => $"{selectedDeckDetails?.Id}:{selectedDeckDetails?.Revision}:{analysisState?.MetadataRevision}:{analysisTab}:{analysisPage}:{analysisShowReviewed}";
+    private void ShowAnalysisDetails(string title, string text, string[]? cards = null, TuningQuestion? question = null, Card? suggestion = null, string[]? missing = null, string variant = "", int index = -1, string[]? payoffs = null)
     {
         analysisDetailTitle = title; analysisDetailText = text; analysisDetailCards = cards ?? [];
-        analysisDetailQuestion = question;
-        analysisDetailPages = AnalysisDetailPages(text);
-        analysisDetailPage = 0; workshopDialog = "analysis-detail";
+        analysisDetailQuestion = question; analysisMissingCards = missing ?? []; analysisPayoffCards = payoffs ?? []; analysisVariant = variant; analysisDetailIndex = index; analysisAdvanced = false;
+        analysisDetailSuggestion = suggestion; analysisDetailBinding = AnalysisDetailBinding; analysisEvidenceScroll = 0;
+        DismissDeckWorkspaceReading();
     }
     private void ShowAnalysisCards()
     {
@@ -129,56 +148,93 @@ internal sealed partial class TableApplication
     }
     private void ShowAnalysisModel()
     {
-        if (analysisState is not { } state) return;
+        if (analysisState is not { } state) {
+            analysisAdvancedText = WorkshopResourceEvidence(); analysisDetailBinding = AnalysisDetailBinding; analysisAdvanced = true; analysisEvidenceScroll = 0; return;
+        }
         var m = state.Report.Metrics;
         string model = m.LandProbability is { } probability ? $"{probability:P1} to see {m.LandGoal} lands in {m.CardsSeen} cards." : "No land-count estimate applies to this target.";
         string counts = $"{m.MainCards} main cards | {m.Lands} lands | {m.Creatures} creatures | {m.ExpensiveSpells} spells costing 5+\n{m.EarlyRamp} early ramp | {m.UnconditionalDraw} unconditional draw | {m.ConditionalDraw} conditional draw | {m.Interaction} interaction";
-        ShowAnalysisDetails("What this review can tell you", counts + "\n\n" + model + "\n\nLand-count model\n" + m.ProbabilityAssumptions
-            + "\n\nAnalysis limits\n" + string.Join("\n\n", state.Report.Limitations));
+        string shared = WorkshopResourceEvidence();
+        analysisAdvancedText = counts + "\n\n" + model + "\n\nLand-count model\n" + m.ProbabilityAssumptions
+            + "\n\nMana curve\n" + string.Join("; ", m.Curve.Select((count, value) => (value == m.Curve.Length - 1 ? value + "+" : value.ToString()) + ": " + count))
+            + "\n\nAnalysis limits\n" + string.Join("\n\n", state.Report.Limitations) + shared;
+        analysisAdvanced = true; analysisEvidenceScroll = 0;
     }
+    private string WorkshopResourceEvidence() => workshop is not { } tools ? "" : "\n\nYour plan\n" + tools.Plan
+        + "\n\nRoles (may overlap)\n" + string.Join("; ", tools.Insights.RoleCounts.Select(pair => pair.Key + ": " + pair.Value))
+        + "\n\nPotential colored sources\n" + string.Join("; ", tools.Insights.ColoredSources.Select(pair => pair.Key + ": " + pair.Value))
+        + "\n" + tools.Insights.Note;
     private void DrawDeckAnalysis()
     {
-        if (!AnalysisCurrent || analysisState is not { } state) {
-            canvas.Panel(new(32, 236, 1536, 712), new(21, 29, 39), LobbyTrim, 8);
-            canvas.Text(analysisError.Length == 0 ? "Updating your strategy review..." : analysisError, 82, 428, Ink, 1.12f, 1420, 4);
-            canvas.Text("The review follows the current playable list, plan, and favorites.", 84, 584, Muted, .86f, 1400, 2);
-            if (analysisError.Length > 0) Button("analysis-refresh", "Retry analysis", 84, 690, 284, OpenDeckAnalysis, !busy, height: 42);
+        if (services.Analysis == null) {
+            DrawAnalysisWorkspaceOverview();
+            MenuAction("analysis-model", "Advanced evidence", new(48, 910, 240, 36), ShowAnalysisModel, !busy, analysisAdvanced, .7f);
+            if (analysisAdvanced) DrawAnalysisDetails();
             return;
         }
-        var report = state.Report; var m = report.Metrics;
-        canvas.Panel(new(32, 236, 1536, 180), new(21, 29, 39), LobbyTrim, 8);
-        canvas.Text("YOUR DECK AT A GLANCE", 50, 252, Gold, .78f, 710, 1, true);
-        canvas.Text(WorkshopVersionLabel(report.Fingerprint) + " | Current playable list", 798, 255, Muted, .65f, 736, 1);
-        canvas.Text($"{report.Format.Name} | {m.MainCards} main cards | {m.Lands} lands | {m.EarlyRamp} early ramp | {m.UnconditionalDraw + m.ConditionalDraw} draw | {m.Interaction} interaction", 50, 290, Ink, .73f, 1222, 1);
-        canvas.Text($"{report.Findings.Count(f => f.Severity == "review")} checks to review | {report.Recommendations.Length} swap ideas. Read a check, then try one change in Test.", 50, 324, Ink, .69f, 1222, 1);
-        Button("analysis-preferences", "Review preferences", 1292, 284, 260, () => workshopDialog = "analysis-preferences", !busy, height: 34);
-        canvas.Text(m.LandProbability is { } p ? $"Land check: {p:P0} chance to see {m.LandGoal} lands by turn {m.LandGoal}. Counts lands only; see how this works."
-            : "Finish the main deck to see a land-drop estimate. Other supported checks are available now.", 50, 358, Muted, .65f, 1222, 1);
-        Button("analysis-model", "How this works", 1292, 349, 260, ShowAnalysisModel, !busy, height: 30);
-        bool needsPool = report.Findings.Any(f => f.Id == "missing-pool");
-        bool needsFormat = report.Format.Name == "Constructed" && report.Profile.RulesFormat.Length == 0;
-        canvas.Text(needsPool ? "Which cards can you use? Add your draft or sealed pool to get swap ideas."
-            : needsFormat ? "Which format do you play? Using casual Constructed until you choose one."
-            : "Ready without setup. Preferences are optional; your plan and favorites are shared with Build.", 50, 391, Muted, .63f, 1222, 1);
-        if (needsPool || needsFormat) Button("analysis-question", needsPool ? "Add available cards" : "Choose format", 1292, 385, 260,
-            () => { if (needsPool) EditAnalysisText("pool"); else workshopDialog = "analysis-preferences"; }, !busy, height: 28);
+        if (!AnalysisCurrent || analysisState is not { } state) {
+            canvas.Text(analysisError.Length == 0 ? "Updating your deck checks..." : analysisError, 64, 328, Ink, .95f, 1400, 6);
+            if (analysisError.Length > 0) Button("analysis-refresh", "Retry", 64, 470, 180, OpenDeckAnalysis, !busy, height: 40);
+            return;
+        }
+        var layout = PrepareAnalysisWorkspace()!;
+        var entries = layout.Entries;
+        var pages = layout.Pages;
+        var visible = layout.Visible;
+        int count = entries.Length;
         for (int i = 0; i < AnalysisTabs.Length; i++) {
             int tab = i;
-            Button("analysis-tab:" + i, AnalysisTabs[i], 48 + i * 302, 432, 290, () => { analysisTab = tab; analysisPage = 0; }, !busy, analysisTab == i, 36);
+            MenuAction("analysis-tab:" + i, AnalysisTabs[i], new(48 + i * 88, 244, 86, 38),
+                () => { analysisTab = tab; analysisPage = 0; }, !busy, analysisTab == i, .65f);
         }
-        int count = analysisTab switch { 0 => report.Findings.Length, 1 => report.Engines.Length, 2 => VisibleRecommendations(state).Length, 3 => report.Cards.Length, _ => state.History.Length };
-        analysisPage = Math.Clamp(analysisPage, 0, Math.Max(0, (count - 1) / 3));
-        for (int i = 0; i < Math.Min(3, count - analysisPage * 3); i++) DrawAnalysisRow(state, analysisPage * 3 + i, 486 + i * 142);
-        if (count == 0) canvas.Text(analysisTab == 1 ? "No lines from the curated engine registry were found. This does not mean the deck lacks synergy."
-            : analysisTab == 2 ? analysisShowReviewed ? "No reviewed swaps for this playable version." : "No undecided supported swaps. Review saved decisions or the findings and card functions."
-            : analysisTab == 4 ? "Save a recommendation decision here. Keep observations from hands and real games in Results."
-            : analysisTab == 0 ? "No specific issues found by the supported checks. Try an opening hand in Test; this review does not cover every interaction." : "Nothing to show in this view.", 72, 540, Muted, .9f, 1430, 4);
-        Button("analysis-prev", "Previous", 48, 920, 150, () => analysisPage--, !busy && analysisPage > 0, height: 32);
-        Button("analysis-next", "Next", 210, 920, 150, () => analysisPage++, !busy && (analysisPage + 1) * 3 < count, height: 32);
-        if (analysisTab == 2) Button("analysis-reviewed", analysisShowReviewed ? "Show undecided swaps" : "Review decisions (" + report.Recommendations.Count(r => Mana.Magic.DeckExperience.Reviewed(state, r.Id)) + ")", 385, 918, 452, () => { analysisShowReviewed = !analysisShowReviewed; analysisPage = 0; }, !busy, height: 34);
-        else canvas.Text($"Page {analysisPage + 1} / {Math.Max(1, (count + 2) / 3)} | Strategic estimates. Test changes at the table.", 385, 929, Muted, .62f, 850, 1);
-        Button("analysis-back", "Build", 1260, 918, 122, () => ShowWorkshopTab("build"), !busy, height: 34);
-        Button("analysis-test", "Test deck", 1394, 918, 158, () => ShowWorkshopTab("test"), !busy, true, 34);
+        int top = 300;
+        foreach (int index in visible) {
+            DrawAnalysisRow(entries[index], index, top); top += AnalysisRowHeight(entries[index]) + 12;
+        }
+        if (count == 0) canvas.Text(analysisTab == 1 ? "No curated lines found. Coverage is limited; this does not mean the deck lacks synergy."
+            : analysisTab == 2 ? analysisShowReviewed ? "No reviewed swaps for this version." : "No supported undecided swaps for this version."
+            : analysisTab == 4 ? "Your saved recommendation decisions appear here." : "No supported checks in this view.", 60, 326, Muted, .8f, 420, 10);
+        if (pages.Count > 1) {
+            MenuAction("analysis-prev", "Previous", new(48, 888, 122, 32), () => analysisPage--, !busy && analysisPage > 0, size: .68f);
+            MenuAction("analysis-next", "Next", new(180, 888, 100, 32), () => analysisPage++, !busy && analysisPage + 1 < pages.Count, size: .68f);
+        }
+        if (analysisTab == 2) MenuAction("analysis-reviewed", analysisShowReviewed ? "Undecided swaps" : "Saved decisions", new(286, 888, 202, 32),
+            () => { analysisShowReviewed = !analysisShowReviewed; analysisPage = 0; }, !busy, analysisShowReviewed, .68f);
+        MenuAction("analysis-model", "Advanced evidence", new(48, 930, 240, 36), ShowAnalysisModel, !busy, analysisAdvanced, .7f);
+        MenuAction("analysis-preferences", "Preferences", new(304, 930, 184, 36), () => workshopDialog = "analysis-preferences", !busy, size: .7f);
+        canvas.Line(new(508, 250), new(508, 950), LobbyTrim * .6f);
+        if (analysisDetailTitle.Length > 0 || analysisAdvanced) DrawAnalysisDetails();
+        DrawWorkspaceCardReading(new(1110, 250, 442, 660));
+        if (count == 0 && !analysisAdvanced) DrawAnalysisWorkspaceOverview();
+    }
+    private sealed record AnalysisWorkspaceLayout(AnalysisWorkspaceEntry[] Entries, List<List<int>> Pages, IReadOnlyList<int> Visible);
+    // Resolve local selection and reader ownership before registering any controls.
+    // A removed recommendation must not revoke the scope halfway through a frame.
+    private AnalysisWorkspaceLayout? PrepareAnalysisWorkspace()
+    {
+        if (!analysisOpen || !AnalysisCurrent || analysisState is not { } state) return null;
+        int count = analysisTab switch { 0 => state.Report.Findings.Length, 1 => state.Report.Engines.Length,
+            2 => VisibleRecommendations(state).Length, 3 => state.Report.Cards.Length, _ => state.History.Length };
+        var entries = Enumerable.Range(0, count).Select(index => AnalysisEntry(state, index)).ToArray();
+        // Rows grow with the full card/variant names and the current text scale.
+        // Paging is only for the list; the selected relationship never changes size.
+        var pages = new List<List<int>>();
+        var page = new List<int>(); int used = 0;
+        for (int i = 0; i < entries.Length; i++) {
+            int height = AnalysisRowHeight(entries[i]);
+            if (page.Count > 0 && used + height > 586) { pages.Add(page); page = []; used = 0; }
+            page.Add(i); used += height + 12;
+        }
+        if (page.Count > 0) pages.Add(page);
+        analysisPage = Math.Clamp(analysisPage, 0, Math.Max(0, pages.Count - 1));
+        IReadOnlyList<int> visible = pages.Count == 0 ? [] : pages[analysisPage];
+        if (analysisDetailBinding != AnalysisDetailBinding || visible.Count > 0 && !visible.Contains(analysisDetailIndex)
+            || visible.Count == 0 && analysisDetailIndex != -1) {
+            if (visible.Count > 0) SelectAnalysisEntry(entries[visible[0]], visible[0]);
+            else { ShowAnalysisDetails("", ""); analysisDetailRecommendation = null; }
+        }
+        if (workspaceCardReading is { } reading && reading.Scope != WorkspaceReadingScope) DismissDeckWorkspaceReading();
+        return new(entries, pages, visible);
     }
     private void DrawAnalysisPreferences()
     {
@@ -222,18 +278,21 @@ internal sealed partial class TableApplication
         if (state.Report.Format.PoolRequired) Button("analysis-pool", "Add available pool cards", 998, 746, 374, () => EditAnalysisText("pool"), !busy, height: 36);
         canvas.Text("Favorites also live in Build. Plans are your notes; the review does not interpret free text as rules.", 208, 807, Muted, .69f, 1164, 2);
     }
-    private void DrawAnalysisRow(DeckAnalysisState state, int index, int y)
+    private sealed record AnalysisWorkspaceEntry(string Title, string Details, string[] Cards, string[] Missing, string[] Payoffs, string Variant, TuningQuestion? Question, Card? Suggestion, AnalysisRecommendation? Recommendation);
+    private AnalysisWorkspaceEntry AnalysisEntry(DeckAnalysisState state, int index)
     {
         var report = state.Report;
-        canvas.Panel(new(48, y, 1504, 132), new(21, 29, 39), new(54, 67, 79), 5);
-        string title, summary, details; string[] cards = [];
+        string title, summary, details, variant = ""; string[] cards = [], missing = [], payoffs = [];
+        Card? suggestion = null;
         TuningQuestion? question = null;
+        AnalysisRecommendation? recommendation = null;
         if (analysisTab == 0) {
             var f = report.Findings[index]; title = f.Dimension + ": " + f.Title; summary = f.Evidence;
             details = f.Evidence + "\n\nSeverity: " + f.Severity + "\nBasis: " + AnalysisBasis(f.Confidence); cards = f.Cards;
             question = f.Severity == "review" ? DeckTuning.FromFinding(report, f) : null;
         } else if (analysisTab == 1) {
-            var e = report.Engines[index]; title = e.Name + (e.Missing.Length == 0 ? " - pieces present" : " - pieces missing");
+            var e = report.Engines[index]; title = e.Missing.Length == 0 ? e.Name : "Missing: " + string.Join(" + ", e.Missing);
+            missing = e.Missing; payoffs = e.Payoffs; variant = e.Name;
             summary = "Pieces: " + string.Join(" + ", e.Cards) + ". " + string.Join(" ", e.Steps);
             details = "Pieces: " + string.Join(" + ", e.Cards) + "\nPayoffs present: " + string.Join(", ", e.Payoffs)
                 + "\nMissing: " + (e.Missing.Length == 0 ? "None in this line" : string.Join(", ", e.Missing))
@@ -249,13 +308,8 @@ internal sealed partial class TableApplication
                 + "\nRole changes: " + string.Join(", ", r.RoleDelta.Select(p => p.Key + " " + p.Value.ToString("+0;-0;0")))
                 + "\nEligibility: " + AnalysisBasis(r.Eligibility) + "\nBasis: " + AnalysisBasis(r.Confidence) + "\n\n" + r.Add.Name + "\n" + r.Add.Type + "\n" + r.Add.OracleText;
             cards = [r.CutName];
-            bool saved = workshop?.Considering.Any(c => c.Card.Card.Name.Equals(r.Add.Name, StringComparison.OrdinalIgnoreCase)) == true;
-            Button("analysis-consider:" + index, saved ? "View option" : "Save to Considering", 1264, y + 9, 270, () => { if (saved) ShowAnalysisOption(r); else ConsiderAnalysis(r); }, !busy, height: 32);
-            if (analysisShowReviewed) Button("analysis-reopen:" + index, "Reopen this swap", 1264, y + 50, 270, () => RecordAnalysis(r.Id, "reopen", ""), !busy, height: 30);
-            else {
-                Button("analysis-keep:" + index, "Keep current", 1264, y + 50, 130, () => RecordAnalysis(r.Id, "keep", ""), !busy, height: 30);
-                Button("analysis-dismiss:" + index, "Dismiss", 1404, y + 50, 130, () => RecordAnalysis(r.Id, "dismiss", ""), !busy, height: 30);
-            }
+            suggestion = new() { Name = r.Add.Name, ArtName = r.Add.Name, Type = r.Add.Type, Text = r.Add.OracleText };
+            recommendation = r;
         } else if (analysisTab == 3) {
             var c = report.Cards[index];
             bool favorite = workshop?.Roles.Any(r => r.CardId == c.CardId && r.Pinned) == true;
@@ -271,38 +325,158 @@ internal sealed partial class TableApplication
             var h = state.History[state.History.Length - 1 - index]; title = h.Decision + " | " + WorkshopVersionLabel(h.Fingerprint);
             summary = WorkshopTime(h.Created) + (h.Note.Length == 0 ? " | No note added." : " | " + h.Note);
             details = summary + "\n\nPlayable version: " + WorkshopVersionLabel(h.Fingerprint) + (h.Fingerprint == report.Fingerprint ? " (current)" : " (earlier list)");
-            if (report.Recommendations.FirstOrDefault(r => r.Id == h.RecommendationId) is { } recommendation) details += "\n\n" + recommendation.CutName + " -> " + recommendation.Add.Name;
+            if (report.Recommendations.FirstOrDefault(r => r.Id == h.RecommendationId) is { } earlier) details += "\n\n" + earlier.CutName + " -> " + earlier.Add.Name;
         }
-        canvas.Text(title, 64, y + 12, Gold, .77f, 1184, 1, true);
-        canvas.Text(summary.Length == 0 ? "No function was confidently detected; inspect this card's rules." : summary, 64, y + 47, Ink, .68f, 1180, 3);
-        Button("analysis-details:" + index, "Read details", 1264, y + (analysisTab == 2 ? 91 : 48), 270, () => ShowAnalysisDetails(title, details, cards, question), !busy, height: 30);
+        return new(title, details, cards, missing, payoffs, variant, question, suggestion, recommendation);
+    }
+    private void SelectAnalysisEntry(AnalysisWorkspaceEntry entry, int index)
+    {
+        ShowAnalysisDetails(entry.Title, entry.Details, entry.Cards, entry.Question, entry.Suggestion, entry.Missing, entry.Variant, index, entry.Payoffs);
+        analysisDetailRecommendation = entry.Recommendation;
+        if (AnalysisSourceFaces().FirstOrDefault() is { } source) ReadWorkspaceCard(source, "analysis:" + source.Name);
+    }
+    private static string AnalysisRowVariant(AnalysisWorkspaceEntry entry) => entry.Variant.Length == 0 ? ""
+        : (entry.Variant == entry.Title ? "" : entry.Variant + "\n")
+            + string.Join(" + ", entry.Cards.Where(name => !entry.Payoffs.Contains(name, StringComparer.OrdinalIgnoreCase)));
+    private int AnalysisRowHeight(AnalysisWorkspaceEntry entry)
+    {
+        int titleHeight = canvas.TextSize(entry.Title, .75f, 326, 80, true).Y;
+        string variant = AnalysisRowVariant(entry);
+        int variantHeight = variant.Length == 0 ? 0 : canvas.TextSize(variant, .65f, 326, 80).Y + 10;
+        return Math.Max(132, titleHeight + variantHeight + 32);
+    }
+    private void DrawAnalysisRow(AnalysisWorkspaceEntry entry, int index, int y)
+    {
+        bool selected = analysisDetailIndex == index && analysisDetailBinding == AnalysisDetailBinding;
+        int height = AnalysisRowHeight(entry);
+        var bounds = new Rectangle(48, y, 440, height);
+        if (selected || IsControlHovered("analysis-details:" + index)) canvas.Rounded(bounds, selected ? new(30, 51, 61) : new(24, 37, 46), 5);
+        if (selected) canvas.Fill(new(48, y + 4, 3, height - 8), Blue);
+        Card? face = entry.Suggestion ?? selectedDeckDetails?.Entries.FirstOrDefault(card => entry.Cards.Contains(card.Card.Name, StringComparer.OrdinalIgnoreCase))?.Card;
+        if (face != null) PaintCard(face, new Pose(new(98, y + 66), new(74, 104)), false, false);
+        int titleX = 150;
+        canvas.Text(entry.Title, titleX, y + 14, selected ? Ink : entry.Missing.Length > 0 ? Gold : Muted, .75f, 326, 80, true);
+        string variant = AnalysisRowVariant(entry);
+        if (variant.Length > 0) {
+            int titleHeight = canvas.TextSize(entry.Title, .75f, 326, 80, true).Y;
+            canvas.Text(variant, titleX, y + 24 + titleHeight, Muted, .65f, 326, 80);
+        }
+        hits.Add(new("analysis-details:" + index, Scope, bounds, () => SelectAnalysisEntry(entry, index)));
+    }
+    private void DrawAnalysisWorkspaceOverview()
+    {
+        if (selectedDeckDetails is not { } deck) return;
+        DrawDeckComposition(deck, 760, 430, 764);
+        if (workshop is not { } tools) return;
+        canvas.Text("Roles", 760, 552, Gold, .76f, 700, 1, true);
+        int at = 0;
+        foreach (var pair in tools.Insights.RoleCounts) {
+            string role = pair.Key;
+            Button("workshop-role-filter:" + role, role + "  " + pair.Value, 760 + at % 3 * 255, 592 + at / 3 * 42, 243, () => {
+                workshopRoleFilter = role; workshopManaFilter = null; analysisRelatedCards.Clear();
+                ShowWorkshopTab("build"); commanderCandidates = false; deckSection = "Main"; deckFilter = ""; deckCardsPage = 0; deckIssuesOnly = false;
+            }, !busy, height: 32);
+            at++;
+            if (at == 12) break;
+        }
+        canvas.Text("Potential colored sources", 760, 784, Gold, .68f, 720, 1, true);
+        canvas.Text(string.Join("    ", tools.Insights.ColoredSources.Select(pair => pair.Key + " " + pair.Value)), 760, 824, Ink, .76f, 740, 2);
+    }
+    private List<Card> AnalysisSourceFaces()
+    {
+        var cards = analysisDetailCards.Select(name => selectedDeckDetails?.Entries.FirstOrDefault(entry => entry.Card.Name.Equals(name, StringComparison.OrdinalIgnoreCase))?.Card)
+            .OfType<Card>().DistinctBy(card => card.Name).ToList();
+        if (analysisDetailSuggestion is { } candidate && cards.All(card => card.Name != candidate.Name)) cards.Add(candidate);
+        return cards;
     }
     private void DrawAnalysisDetails()
     {
-        canvas.Text(analysisDetailTitle, 206, 244, Gold, 1, 1166, 2, true);
-        var pages = analysisDetailPages; analysisDetailPage = Math.Clamp(analysisDetailPage, 0, pages.Length - 1);
-        canvas.Text(pages[analysisDetailPage], 208, 325, Ink, .83f, 1164, 22);
-        Button("analysis-detail-prev", "Previous", 208, 817, 160, () => analysisDetailPage--, analysisDetailPage > 0, height: 36);
-        Button("analysis-detail-next", "More", 380, 817, 126, () => analysisDetailPage++, analysisDetailPage + 1 < pages.Length, height: 36);
-        canvas.Text($"{analysisDetailPage + 1} / {pages.Length}", 526, 827, Muted, .7f, 220, 1);
-        if (analysisDetailQuestion is { } question && DeckTuning.Matches(question, workshop))
-            Button("analysis-test-check", "Test this check", 742, 817, 226, () => TestAnalysisFinding(question), !busy && AnalysisCurrent && WorkshopCurrent, true, 36);
-        bool hasCards = selectedDeckDetails?.Entries.Any(e => analysisDetailCards.Contains(e.Card.Name, StringComparer.OrdinalIgnoreCase)) == true;
-        if (hasCards) Button("analysis-show-cards", "Show related cards in Build", 980, 817, 402, ShowAnalysisCards, !busy, true, 36);
+        const int x = 532, width = 552;
+        string heading = analysisAdvanced ? "Deck evidence" : analysisVariant.Length > 0 ? analysisVariant : analysisDetailTitle;
+        int headingHeight = canvas.TextSize(heading, .85f, width, 80, true).Y;
+        canvas.Text(heading, x, 250, Ink, .85f, width, 80, true);
+        int top = 268 + headingHeight;
+        string missing = analysisAdvanced ? "" : analysisMissingCards.Length > 0 ? "Missing from this deck: " + string.Join(" + ", analysisMissingCards)
+            : analysisVariant.Length > 0 ? "All required cards are in this deck" : "";
+        if (missing.Length > 0) {
+            canvas.Text(missing, x, top, analysisMissingCards.Length > 0 ? Gold : Blue, .75f, width, 80);
+            top += canvas.TextSize(missing, .75f, width, 80).Y + 18;
+        }
+        var faces = AnalysisSourceFaces();
+        const int perRow = 4;
+        int faceRowHeight = 176 + faces.Select(card => canvas.TextSize(card.Name, .65f, 128, 80).Y).DefaultIfEmpty(0).Max();
+        int faceHeight = analysisAdvanced ? 0 : (faces.Count + perRow - 1) / perRow * faceRowHeight + (faces.Count > 0 ? 18 : 0);
+        analysisEvidenceBounds = new(x, top, width, Math.Max(100, 878 - top));
+        const float textSize = .75f;
+        int lineHeight = canvas.TextSize("Ag", textSize, width - 14, 80).Y;
+        string body = analysisAdvanced ? analysisAdvancedText : analysisDetailText;
+        var lines = body.Replace("\r", "").Split('\n')
+            .SelectMany(paragraph => paragraph.Length == 0 ? [""] : canvas.TextPages(paragraph, textSize, width - 14, lineHeight, 80)).ToArray();
+        var roles = analysisAdvanced && workshop != null ? workshop.Insights.RoleCounts.ToArray() : [];
+        int roleHeight = roles.Select(pair => canvas.TextSize(pair.Key + "  " + pair.Value, .72f, width - 16, 80).Y + 18).Sum();
+        int contentHeight = faceHeight + lines.Length * lineHeight + roleHeight;
+        analysisEvidenceMaximum = Math.Max(0, contentHeight - analysisEvidenceBounds.Height);
+        analysisEvidenceScroll = Math.Clamp(analysisEvidenceScroll, 0, analysisEvidenceMaximum);
+        if (!analysisAdvanced) for (int i = 0; i < faces.Count; i++) {
+            int left = x + i % perRow * 138, y = top + i / perRow * faceRowHeight - analysisEvidenceScroll;
+            if (y < top || y + faceRowHeight > analysisEvidenceBounds.Bottom) continue;
+            var card = faces[i];
+            string caption = analysisDetailRecommendation != null ? i == 0 ? "Current" : "Option"
+                : analysisPayoffCards.Contains(card.Name, StringComparer.OrdinalIgnoreCase) ? "Payoff" : analysisVariant.Length > 0 ? "Required" : "";
+            if (caption.Length > 0) canvas.Text(caption, left, y, Muted, .65f, 128, 1);
+            var pose = new Pose(new(left + 62, y + 95), new(92, 129));
+            PaintCard(card, pose, false, false);
+            if (workspaceCardReading?.Identity == "analysis:" + card.Name) canvas.CardFrame(pose, Blue, 2);
+            canvas.Text(card.Name, left, y + 164, Ink, .65f, 128, 80);
+            hits.Add(new("analysis-card:" + i, Scope, new(left, y, 128, faceRowHeight), () => ReadWorkspaceCard(card, "analysis:" + card.Name)));
+        }
+        for (int i = 0; i < lines.Length; i++) {
+            int y = top + faceHeight + i * lineHeight - analysisEvidenceScroll;
+            if (y >= top && y + lineHeight <= analysisEvidenceBounds.Bottom)
+                canvas.Text(lines[i], x, y, Ink, textSize, width - 14, 1);
+        }
+        int roleY = top + faceHeight + lines.Length * lineHeight - analysisEvidenceScroll;
+        foreach (var pair in roles) {
+            int height = canvas.TextSize(pair.Key + "  " + pair.Value, .72f, width - 16, 80).Y + 18;
+            if (roleY >= top && roleY + height <= analysisEvidenceBounds.Bottom) {
+                string role = pair.Key;
+                canvas.Text(pair.Key + "  " + pair.Value, x + 8, roleY + 8, Blue, .72f, width - 16, 80);
+                hits.Add(new("workshop-role-filter:" + role, Scope, new(x, roleY, width - 14, height), () => {
+                    workshopRoleFilter = role; workshopManaFilter = null; analysisRelatedCards.Clear();
+                    ShowWorkshopTab("build"); commanderCandidates = false; deckSection = "Main"; deckFilter = ""; deckCardsPage = 0; deckIssuesOnly = false;
+                }));
+            }
+            roleY += height;
+        }
+        if (analysisEvidenceMaximum > 0) {
+            int height = analysisEvidenceBounds.Height;
+            int thumb = Math.Max(18, height * height / Math.Max(1, contentHeight));
+            int y = top + (height - thumb) * analysisEvidenceScroll / analysisEvidenceMaximum;
+            canvas.Rounded(new(1090, top, 3, height), Muted * .2f, 1);
+            canvas.Rounded(new(1090, y, 3, thumb), Blue, 1);
+        }
+        if (analysisAdvanced) MenuAction("analysis-detail-close", "Back to this check", new(x, 922, 250, 36),
+            () => { analysisAdvanced = false; analysisEvidenceScroll = 0; }, !busy, size: .75f);
+        else if (analysisDetailRecommendation is { } offered) {
+            int index = analysisDetailIndex;
+            bool saved = workshop?.Considering.Any(card => card.Card.Card.Name.Equals(offered.Add.Name, StringComparison.OrdinalIgnoreCase)) == true;
+            Button("analysis-consider:" + index, saved ? "View option" : "Try this card", x, 902, 180,
+                () => { if (saved) ShowAnalysisOption(offered); else ConsiderAnalysis(offered); }, !busy, true, 36);
+            if (analysisShowReviewed) MenuAction("analysis-reopen:" + index, "Reopen this swap", new(732, 902, 352, 36), () => RecordAnalysis(offered.Id, "reopen", ""), !busy, size: .75f);
+            else {
+                MenuAction("analysis-keep:" + index, "Keep current", new(722, 902, 180, 36), () => RecordAnalysis(offered.Id, "keep", ""), !busy, size: .75f);
+                MenuAction("analysis-dismiss:" + index, "Dismiss", new(912, 902, 172, 36), () => RecordAnalysis(offered.Id, "dismiss", ""), !busy, size: .75f);
+            }
+        } else if (analysisDetailQuestion is { } question && DeckTuning.Matches(question, workshop))
+            Button("analysis-test-check", "Test this check", x, 902, 250, () => TestAnalysisFinding(question), !busy && AnalysisCurrent && WorkshopCurrent, true, 40);
+        if (faces.Any(card => selectedDeckDetails!.Entries.Any(entry => entry.Card.Name == card.Name)))
+            MenuAction("analysis-show-cards", "Edit related cards", new(796, 952, 288, 36), ShowAnalysisCards, !busy, size: .75f);
     }
-    private string[] AnalysisDetailPages(string value)
+    private bool ScrollDeckWorkspace(int direction)
     {
-        using var bitmap = new System.Drawing.Bitmap(1, 1);
-        using var graphics = System.Drawing.Graphics.FromImage(bitmap);
-        int pixels = Math.Max(9, (int)Math.Round(22 * .83f * preferences.TextScale));
-        using var font = new System.Drawing.Font("Segoe UI", pixels, System.Drawing.FontStyle.Regular, System.Drawing.GraphicsUnit.Pixel);
-        using var format = new System.Drawing.StringFormat(System.Drawing.StringFormat.GenericTypographic);
-        var pages = new List<string>(); string rest = value.Replace("\r", "");
-        do {
-            graphics.MeasureString(rest, font, new System.Drawing.SizeF(1164, 430), format, out int fitted, out _);
-            fitted = Math.Clamp(fitted, 1, Math.Max(1, rest.Length));
-            pages.Add(rest.Length == 0 ? "" : rest[..fitted]); rest = rest.Length == 0 ? "" : rest[fitted..].TrimStart();
-        } while (rest.Length > 0);
-        return pages.ToArray();
+        if (match != null || !deckEditor || !analysisOpen || workshopDialog.Length > 0) return false;
+        if (analysisDetailTitle.Length == 0 || analysisDetailBinding != AnalysisDetailBinding || !analysisEvidenceBounds.Contains(pointer)) return true;
+        analysisEvidenceScroll = Math.Clamp(analysisEvidenceScroll - direction * 36, 0, analysisEvidenceMaximum);
+        return true;
     }
 }

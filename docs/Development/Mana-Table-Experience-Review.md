@@ -58,6 +58,222 @@ does not establish that a person can understand or use the screen.
 9. **Finish the everyday lifecycle.** Deck management includes creating, naming,
    editing, saving, importing, duplicating, exporting, deleting and recovering a
    deck. Review these ordinary journeys before describing the experience as complete.
+10. **Make game intent the navigation.** Home and pregame are one place to choose
+    a deck and play. A local prepared/confirmed flag is an implementation detail,
+    not another role the player must complete in a form. Joining a table,
+    selecting a list, becoming Ready and starting a game are distinct actions;
+    keep real multiplayer consent explicit while removing redundant review gates.
+    Build, tune and test the same deck in context. Do not make a player translate
+    between administrative dashboards or find a role menu before taking the next
+    natural action.
+
+## Whole-game audit and redesign: 22 October 2026
+
+The player rejected both the landing screen and the following lobby as a website
+rather than a game. Repainting their panels would retain the problem: the player
+first chose a role, then entered another setup screen, then reviewed and confirmed
+a deck before reaching Play. The redesign starts with the player's actual deck
+and commander identity and continues into the actual people at their table.
+
+This is the full journey audit, not a claim that the whole game has been
+redesigned. The current candidate is **`feature/game-home-20261022`**, based on
+published 0.2.78 / `eebe04722fd56ab93b91038093f040cae2c11479`. The source changes
+below are implemented in this source candidate; they are not in that installer.
+Final commit/build identity, actual-window evidence and human acceptance must be
+recorded in the PR. **Human review of this candidate is pending.** Older dated
+entries below record their own review scope and must not imply acceptance of
+these new journeys.
+The player's latest "looks a lot better" records positive feedback on the
+experience they viewed; it does not establish acceptance of the whole game or
+changes they have not reviewed.
+
+### Preview acceptance and review captures
+
+On 22 October 2026 the user accepted the linked native preview with "lgtm"
+after the opening-artwork update. The reviewed product candidate is
+`4f2a6a002c02e53b9f27970f94be879c3bc6ac8b`, with `Mana.Game.dll` SHA-256
+`1C101B421FBBCFED426C5191D9CEE3AACCFF82A3B4562B700636D094AB3CE364`.
+This accepts the presented preview; it does not establish review of every audit
+scenario or remote CI. The user's individual window settings were not recorded.
+
+These agent captures use the bundled Explorers of the Deep precon and a
+controlled loading fixture, rather than a user's saved deck list. Home is shown
+at 1540 x 1000; loading is an actual 1000 x 740 window; the opening hand is the
+1000 x 625 rendered table within that window. They illustrate the implemented
+journeys, rather than supplying human acceptance by themselves.
+
+![Selected precon and direct Play](images/native-home-2026-10-22.png)
+
+![Opening artwork preparation](images/native-artwork-loading-2026-10-22.png)
+
+![Real four-seat opening hand after artwork preparation](images/native-opening-hand-2026-10-22.png)
+
+### Findings, current slice and remaining scope
+
+| Area | Audit finding | Candidate work or remaining design |
+| --- | --- | --- |
+| Home and deck selection | A large title, three explanatory routes and a decorative table concealed the player's saved deck and added another setup destination. | Current branch uses the selected commander's real card/art, complete deck identity and a compact saved-deck rail. Play modes change in place. Empty libraries lead to existing import/precon/build actions. |
+| Solo pregame | Review/Confirm was a mandatory administrative stage before preparing AI seats and enabling Start. | One Play intent captures the valid saved deck, prepares compatible opponents if needed, then starts it. Reading the optional deck list is entirely noncommitting; its Back action does no engine preparation. An explicit opponent-customization gesture prepares compatible choices on demand. |
+| Friends pregame | Deck confirmation, readiness, seat occupancy and the host's start permission were explained through multiple panels and repeated instructions. | Current branch presents actual seats, portrait/identity and readiness together. Host/Join brings a valid chosen list but never readies it. Explicit Ready assigns the current list if needed; only a ready host with authoritative CanStart can start. |
+| Build, tune and test | Separate builder/analysis/workshop presentations make one deck feel like different tools; reading a sampled card can divert into another detail flow. | Build/Tune/Test/Results retain the same selected document and version. Tune keeps its selected relationship and evidence beside a separate full-card reading region; Test keeps the sampled hand intact while its card is read. One explicit Start test game prepares compatible opponents if needed, then starts the captured version. A draw sampler is not a rules-game or a measured land-drop result. |
+| Card and ability interaction | Ordinary source reading, stack references and legacy action paths compete; generic Activate and role labels can obscure the concrete action. | This slice removes redundant reader/action surfaces and keeps offered costs/actions beside the current source. Remaining alternate-face and required auxiliary readers need the same read-only policy; do not delete their visibility safeguards to simplify the UI. |
+| Small choices and ordering | A handful of cards can still appear inside a paged form with search, navigation and repeated prose. | Sparse-choice decluttering is part of this source slice. Prefer the actual choices and visible order marks, retaining complete names and the engine's constraints. Large searches still need discovery/navigation; small choices should not inherit their furniture. |
+| Combat and damage assignment | Allocation still uses paged recipient rows and a nested amount editor, separating the assignment from effective P/T, marked damage and lethal constraints. | Remaining redesign: edit the amount at its actual recipient while keeping source, blockers and current characteristics visible. Preserve every minimum, maximum, lethal-order and optional-skip rule. |
+| Priority and yielding | Players hesitate to advance a pending effect and repeatedly pass because one response exists. Per-ability yield controls still open a large paged settings surface. | Retain the current responder/pending-effect row and bounded Pass for now intent. Remaining redesign: put an ability's until-next-turn policy at its source, show its armed/paused/expired state and keep Take control available. Passing does not perform a later search or choose its answer. |
+| Results and crowded fields | Detached summaries, repeated counter labels and hidden copies break the connection between a cause and its actual affected objects. | Preserve the existing stable four-seat field, family membership, mana halos, current P/T, exact per-recipient receipts and source/target connections. Review dense composition and settled state as well as animation. Representation counts do not establish readability. |
+| Settings, history and system work | Large generic modal surfaces can make ordinary game navigation feel like an administration tool. | Play controls and Updates now share the same right-side system drawer. The table remains visible; scoped drawer input cannot activate it. History, player details and remaining required auxiliary surfaces still need a deliberate size/hierarchy review. Destructive concession and genuine system consent remain explicit. |
+| Conversation and table identity | Names, invitations and chat are useful table context but can cover or steal input from the player's current game decision. | Preserve explicit drawers, current table scope, local mute preferences and text-input ownership. No game command, readiness change or other player's private state may be inferred from a message or drawer transition. |
+
+### The journey before the controls
+
+Each row defines what the player is doing, rather than a new screen to add.
+Reading never grants an action; a visual transition never supplies a rules result.
+
+| Player intent | Source and target | Gesture | Authoritative transition | Meaningful visible result |
+| --- | --- | --- | --- | --- |
+| Return to a deck | Saved list and its actual commander(s) | Choose its library entry | Open that exact saved document; selecting another list withdraws any old readiness | The chosen identity becomes the focus, with valid Play or the concrete issue to fix |
+| Bring or build a list | File, copied list, precon or new saved document | Import/create deliberately; open the deck to edit | Catalog import/create/edit and persistence return their actual result | The saved list appears in the same library; errors retain the previous selection and the user's input |
+| Manage a saved list | Exact saved deck/version or named deletion receipt | Rename, duplicate, export, Delete or Undo explicitly | Storage acknowledges that exact operation; removal is unavailable during a game or connected table | The intended row changes, Undo restores its saved history, and an unrelated selected deck stays selected |
+| Tune and test that deck | Selected cards, recommendations, exact version and test question | Read a card, adjust a list, sample a hand or start a rules test | Deck/workshop services record the relevant revision and evidence | Changes, recommendations and outcomes remain attributable to that version; no invented win rate or automatic test conclusion |
+| Play against AI | Current valid saved list and chosen/default compatible opponents | One Play | Prepare the captured list if needed, start it, observe the opening decision | Contextual loading leads to the actual opening hand; duplicate input cannot launch another game |
+| Gather friends | Current deck, invite and actual table capacity | Host or submit an invite | Connect first; assign a valid chosen deck without Ready | Actual seats appear, including open/AI seats; a later deck-assignment failure does not erase a successful connection |
+| Commit a multiplayer seat | Local seat and current saved list | Ready; Not ready reverses only readiness | Select the current list if needed, then set readiness | The local portrait/seat changes state; other players and their decks remain intact |
+| Begin the shared game | Actual occupied/ready seats | Host presses Play | Provider permits Start only when its current table can start | Every human receives the real match; a guest cannot start it or answer for another seat |
+| Talk to the table | Current conversation and actual participant identities | Open/type/send or mute deliberately | Table-scoped social service records the message; local mute affects presentation only | Readable sender/history and a quiet unread cue, with the underlying game decision and seat readiness preserved |
+| Understand a card | Current disclosed occurrence, its complete face and current state | Read/hover/focus; click again to put it back | No game command | One readable card with complete identity, current characteristics and relevant source-linked detail; hidden/revoked objects disappear |
+| Play or activate | Current source, exact offered cost/action and required recipients | Deliberate drag or source-attached action, then actual required choices | Submit the current scoped command; engine owns costs, targets and continuation | The source moves/taps/pays as reported; the next required decision remains a separate, understandable step |
+| Choose or order | Actual allowed cards/options and source | Select directly; show selection order on the objects | Submit original prompt indices/handles and required order | The selected candidates and their order are clear before commitment, without treating inspection as a choice |
+| Assign damage | Damage source, actual recipients and effective combat state | Adjust at each recipient, inspect without losing assignment, then commit | Engine validates distribution and lethal/order constraints | The player can read the intended amount and why that assignment is legal before it is sent |
+| Let play continue | Current responder, stack and bounded passing policy | Pass once, Pass for now, or Take control | Engine advances only its own current priority windows; required input interrupts | Status explains who acts next and why automation paused; pending targets and values remain readable |
+| Understand what happened | Reported source/event, each recipient and current totals | Watch; optionally read the object or Recent changes | Consume current state and actual event-time outcomes | Source-to-recipient attention, exact increments/actual damage and settled P/T/life remain coherent; pending base values never masquerade as actual results |
+| Play again or recover | Actual result, current table or deck-test version | Return, reconnect or retry the failed operation | Keep the intended saved/table context, revoke stale commands, observe fresh authority | The user resumes the correct deck/table or sees the concrete unresolved failure without repeating successful writes |
+| Update the app | Available version and current session/save state | Choose Download, then explicitly restart when safe | Updater verifies/prepares the package; installation observes actual game/save blockers | Progress stays in a compact system surface. Closing it does not cancel work or activate a card underneath; no automatic download or midgame restart |
+
+### Implemented source slice and its limits
+
+Home is normal navigation after startup, with no invisible welcome overlay,
+WelcomeSeen/TableGuideSeen state, preference loader or completion writes.
+The optional Deck list opens the saved document for reading; Back to play only
+closes that reader. Neither gesture prepares opponents, selects a multiplayer
+deck again nor marks a player Ready. The explicit F1 guide remains available
+without becoming a first-run task.
+
+Tune now keeps three distinct places in the workspace: the check/engine/swap
+list, its selected relationship and evidence, and full-card reading. Selecting a
+relationship keeps its actual required/payoff or current/option cards together;
+reading one uses the adjacent region, preserving that relationship and the list.
+Long names wrap, the evidence scrolls locally, and only lists with additional
+entries expose paging. These layout changes do not establish curated coverage
+for every deck or turn estimated recommendations into measured results.
+
+Build/Tune/Test/Results use quiet, consistently placed navigation instead of
+another row of boxed tasks. Test is one continuous workspace, with the sample
+and optional rules-table setup separated by a quiet divider. Sample captions and
+builder rows measure full wrapped names before placing their following content
+and hit regions; card-library captions and saved-library names are larger.
+Tune normalizes its selected entry, page and local reader scope before header
+and navigation hit targets are composed, so a default-selection change cannot
+leave those controls stale in the same frame. These changes still require review
+with real art, long names and the actual small window at 130% text.
+
+Test separates draw-only practice from a real rules game. Reading a sampled card
+uses the setup region while adjacent sample cards remain available; closing the
+card restores the current setup. Start test game is one explicit operation:
+capture the saved revision, version, question, seat count and chosen opponents;
+prepare compatible defaults if needed; revalidate that intent; then start and
+observe the real game. Choosing AI opponents remains optional customization,
+not a prerequisite button before starting. Draw samples and manual notes retain
+their own evidence type and version association.
+
+Settings (Play controls) and Updates use one right-side drawer composition rather
+than separate full-screen layouts. Their input replaces underlying hit targets
+while the game stays visible. Backdrop/close dismisses the drawer without also
+playing a card; closing Updates keeps a chosen transfer running. Updates still
+download only after explicit intent and recheck actual game/save blockers before
+an explicit restart. These are implemented interaction boundaries, not a claim
+that every system, history or auxiliary surface has been redesigned.
+
+Opening artwork now belongs to the table-entry transition. Engine starting and
+image preparation are separate: a missing opening seat view cannot appear ready
+because it has zero images, and downloaded bytes do not count as ready GPU
+textures. The central gate uses current seat-visible faces, lets failed images
+settle to readable fallback and bounds the artwork wait to eight seconds after
+the first playable snapshot. Other known local-deck art stays background work;
+ordinary same-game polls do not interrupt play with another loading screen.
+Cache publication uses completed temporary writes before replacing a trusted
+entry, so interrupted writes cannot become the next launch's cached image.
+Controlled loading checks protect that handoff; actual artwork, fallback and
+first interaction still need human review in their relevant window.
+
+### Ownership and removal plan
+
+The provider boundary and rendering refactor support this experience, rather
+than introducing another navigation framework:
+
+- The catalog owns saved contents, validity and persistence. A deck summary's
+  name/ID is not evidence of its commander art; do not open every list on hover
+  or infer its contents to populate a gallery. Use the selected document's real
+  commander(s) now; richer read-only summaries require an explicit catalog contract.
+- Table setup owns compatible opponents, seats, readiness and CanStart. The
+  internal `confirmedDeckId` is only a preparation/synchronized-selection cache;
+  it is not consent, a new domain state or a player-facing task. Only an explicit
+  Ready intent commits multiplayer readiness. One Play
+  intent may encompass several asynchronous setup calls; capture its selected
+  document and reject stale completion instead of reading later mutable UI fields.
+- `ClientSession` owns serialized command/observation work, decision/source
+  freshness and recovery. A failed or empty source-action query is different from
+  an unavailable query capability, and none of these states prohibits inspection.
+- `Mana.Game` owns local navigation, focus and interaction intent;
+  `Mana.Magic` maps semantic tasks and `Mana.Renderer` composes their visuals.
+  The emitted game assembly remains isolated from the installed provider.
+  Current state, event-time facts and presentation state stay separate, including
+  in tests, recordings, grouping, camera focus and cached card readers.
+- The shipping host owns installation/provider lifetime. System and deck-tool
+  errors must not consume a gameplay decision or silently change a seat.
+
+Remove the obsolete route as its replacement becomes reviewable. The landing
+path panels, decorative table and Continue to setup route are replaced by the
+shared deck stage. Automatic Review/Confirm navigation is removed from ordinary
+selection/import and play. Keep optional deck-list reading and real multiplayer
+Ready. The obsolete welcome state, preference loader/writer, first-run flags,
+and separate input gate are removed. Home uses ordinary navigation; the table
+guide opens only when requested and has no persisted Seen state. Existing
+`experience.json` files are ignored, without changing player preferences or
+decks. Redundant ordinary reader/action paths, separate Tune detail navigation,
+small-choice paging furniture and the former Settings/Updates layouts are also
+removed in this slice. Remaining redesign includes the nested allocation editor,
+full-screen per-ability policy menu, repeated-target bursts and oversized history,
+player and required auxiliary detail surfaces. Do not mark this backlog done by
+hiding a control or deleting its authority regression.
+
+### Visual and interaction acceptance for the whole journey
+
+Review actual windows at **1000x740 and a larger window**, with **130% text**,
+real cached artwork, missing/slow-art fallback and reduced motion. Record the
+candidate commit and reviewer separately from automated safety results. The
+following are walkthroughs, not a numerical UX score:
+
+| Case | What the person must be able to understand or do |
+| --- | --- |
+| Empty first launch; populated return; long and partner commander names | Identify the actual selected deck, choose/import/build one, reach Play directly and read complete identity without a second setup page |
+| Solo default Play, custom opponents, invalid draft and failed save | See what will play; get one match from one intent; understand an actual issue instead of a disabled mystery or a forced review |
+| Two friends, four friends, three friends plus AI, seat resize and guest | Recognize every actual participant/readiness state, reserve the intended capacity, change only the chosen AI seat and distinguish Ready from host Start |
+| Build -> Tune -> Test -> actual game -> Results | Keep the same deck/version/question in mind, read a sampled card without committing, and distinguish a manual note, draw sample and real rules-game evidence |
+| Opening hand, multiple abilities, flashback and disclosed library top | Read the intact card and current cost, perform its real gesture, follow payment/target steps, and recover from stale/revoked offers without a guessed action |
+| Small private choice/order; large library search; 37 repeated targets | Understand what is required and the chosen order; inspect without selecting; review the remaining repetitive workload honestly. The bounded repeated-choice shortcut is still a separate design/engine task |
+| Two-seat and four-seat combat; multiple blockers; changed P/T | Recognize source/recipients, counters, actual stats, assigned/lethal amounts and which player must act, including through inspection |
+| `decision-flow.v1`, `counter-damage.v1` and `damage-results.v1` | Distinguish turn owner, responder, required input and Auto pause; see base versus actual damage and the final recipient state |
+| `cluttered-changes.v1`, 480 public permanents, Toph/Felidar Retreat | Follow source -> trigger -> affected family/subset -> exact per-recipient counter increment -> settled characteristics, then focus another seat without losing ownership |
+| Empty priority, one instant available, ignored ability, new public action | Trust the armed passing policy, know why it pauses or expires, and take control before a meaningful response is lost |
+| Import/prepare/connect failure, reconnect and changed decision | Retain input/deck/table context, recognize what succeeded, retry only the failed operation and find the newly authorized interaction |
+| Update available, chosen download, cancellation/fallback and restart blocked by game/save | See progress without losing the table, choose when bytes download, close/reopen safely and restart only after explicit safe intent |
+
+Keep the existing headless composition/input, client authority and real-provider
+journeys as regression coverage. Update obsolete route assertions to exercise
+the new journey; do not restore rejected confirmation screens just to satisfy
+them. Use captured pixels and manual interaction to assess comprehension and
+game feel. No passing card count, geometry bound or test total supplies that
+judgment.
 
 ## Partner commander casting: current source, not yet published
 

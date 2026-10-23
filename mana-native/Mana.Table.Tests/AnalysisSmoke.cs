@@ -1,3 +1,4 @@
+using Mana.Renderer;
 using Microsoft.Xna.Framework.Graphics;
 using Microsoft.Xna.Framework.Input;
 using System.Text.Json;
@@ -10,21 +11,23 @@ internal sealed class AnalysisSmoke(TableWindow.Probe view) : ITableAutomation
 {
     private readonly DateTime deadline = DateTime.UtcNow.AddMinutes(5);
     private readonly List<string> checks = [];
-    private int stage, mousePhase, next;
+    private int stage, mousePhase, next, wheel, evidenceFrames;
+    private readonly List<string> renderedEvidence = [];
     private Point mouse;
     private string version = "", candidate = "";
     private long revision;
+    private string[] relatedNames = [];
+    private bool RelationshipNamesVisible() => relatedNames.All(name => view.Frame!.Drawing.Commands.OfType<DrawCommand.Text>()
+        .Any(text => text.X >= 532 && text.X < 1090 && text.Value == name));
     public string? ExpectedClick { get; private set; }
     public bool ClickAccepted { get; set; }
     public MouseState ReadMouse() {
         bool down = mousePhase == 1; if (mousePhase is 1 or 2) mousePhase++;
-        return new(mouse.X, mouse.Y, 0, down ? ButtonState.Pressed : ButtonState.Released, ButtonState.Released, ButtonState.Released, ButtonState.Released, ButtonState.Released);
+        return new(mouse.X, mouse.Y, wheel, down ? ButtonState.Pressed : ButtonState.Released, ButtonState.Released, ButtonState.Released, ButtonState.Released, ButtonState.Released);
     }
     private void Click(string id, int target) {
         var hit = view.Hits.LastOrDefault(h => h.Id == id) ?? throw new InvalidOperationException("Missing analysis control: " + id);
-        var p = hit.Bounds.Center; var viewport = view.GraphicsDevice.Viewport;
-        float scale = Math.Min(viewport.Width / 1600f, viewport.Height / (float)view.DesignHeight);
-        mouse = new((int)((viewport.Width - 1600 * scale) / 2 + p.X * scale), (int)((viewport.Height - view.DesignHeight * scale) / 2 + p.Y * scale));
+        mouse = SmokePointer.Hit(view, hit);
         ExpectedClick = id; ClickAccepted = false; next = target; mousePhase = 1;
     }
     private void Check(bool condition, string text) { if (!condition) { Capture("analysis-failure"); throw new InvalidOperationException("Analysis stage " + stage + ": " + text); } checks.Add(text); File.AppendAllText(Path.Combine(view.Profile, "analysis-progress.log"), text + "\n"); }
@@ -54,7 +57,7 @@ internal sealed class AnalysisSmoke(TableWindow.Probe view) : ITableAutomation
                 Check(view.Analysis.Report.Findings.Any(f => f.Id == "curio-lattice"), "Native review displays the shared dependency findings");
                 version = view.Workshop!.VersionId; revision = view.DeckDetails!.Revision;
                 Check(view.Analysis.Report.Fingerprint == version, "Analysis shares the version used by tests and restores");
-                string[] navigation = ["workshop-build", "workshop-test", "workshop-results", "deck-analysis", "workshop-insights", "workshop-plan-summary", "workshop-source", "workshop-history"];
+                string[] navigation = ["workshop-build", "workshop-test", "workshop-results", "deck-analysis", "workshop-plan-summary", "workshop-source", "workshop-history"];
                 var nav = navigation.Select(id => view.Hits.Single(h => h.Id == id)).ToArray();
                 Check(nav.SelectMany((hit, i) => nav.Skip(i + 1).Select(other => !hit.Bounds.Intersects(other.Bounds))).All(value => value), "Build, Test, Results, analysis, shared plan, source and versions remain visible without overlap");
                 Check(view.Analysis.Report.Profile.Plan.Length == 0 && view.Analysis.Report.Profile.TargetTurn == 0
@@ -76,14 +79,50 @@ internal sealed class AnalysisSmoke(TableWindow.Probe view) : ITableAutomation
                 Click("workshop-dialog-close", 27); break;
             case 27: Click("analysis-model", 4); break;
             case 4:
-                Check(view.WorkshopDialog == "analysis-detail", "Probability assumptions and analysis limitations have a readable detail view");
-                Capture("analysis-model"); Click("workshop-dialog-close", 5); break;
+                Check(view.WorkshopDialog.Length == 0 && view.AnalysisOpen && view.Hits.Any(hit => hit.Id == "analysis-detail-close")
+                    && view.Hits.All(hit => hit.Id is not ("analysis-detail-prev" or "analysis-detail-next")),
+                    "Probability assumptions and limitations share Tune's evidence pane without a modal or detail pages");
+                Capture("analysis-model"); renderedEvidence.Clear(); evidenceFrames = 0; stage = 40; break;
+            case 40:
+                foreach (var text in view.Frame!.Drawing.Commands.OfType<DrawCommand.Text>().Where(text => text.X == 532 && text.Y >= 250 && text.Y < 878 && text.Value != null))
+                    if (!renderedEvidence.Contains(text.Value!)) renderedEvidence.Add(text.Value!);
+                string Normalize(string value) => string.Concat(value.Where(character => !char.IsWhiteSpace(character)));
+                string observed = Normalize(string.Join(" ", renderedEvidence));
+                string[] facts = [view.Analysis!.Report.Metrics.ProbabilityAssumptions, .. view.Analysis.Report.Limitations, view.Workshop!.Insights.Note];
+                if (facts.Where(fact => fact.Length > 0).All(fact => observed.Contains(Normalize(fact), StringComparison.Ordinal))) {
+                    Check(evidenceFrames > 0 && view.DeckDetails!.Revision == revision && view.Workshop.VersionId == version,
+                        "Real wheel input reaches every engine-authored probability assumption, limitation and source note without changing the played list");
+                    Capture("analysis-model-scrolled"); Click("analysis-detail-close", 5); break;
+                }
+                if (++evidenceFrames > 150) Check(false, "Scrolling must reach the complete engine-authored probability, limitations and colored-source evidence");
+                mouse = SmokePointer.Screen(view, new(1000, 700)); wheel -= 120; break;
             case 5: Click("analysis-tab:1", 6); break;
             case 6:
                 Check(view.Analysis!.Report.Engines.Any(e => e.Missing.Length == 0), "Native engine tab has the actual Toph lines");
+                foreach (var hit in view.Hits.Where(hit => hit.Id.StartsWith("analysis-details:", StringComparison.Ordinal))) {
+                    var line = view.Analysis.Report.Engines[int.Parse(hit.Id.Split(':')[1])];
+                    if (line.Missing.Length > 0) Check(view.Frame!.Drawing.Commands.OfType<DrawCommand.Text>()
+                        .Any(text => text.Value == "Missing: " + string.Join(" + ", line.Missing)),
+                        "A missing engine variant names its actual absent card identities in the list");
+                }
                 Capture("analysis-engines"); Click("analysis-details:0", 7); break;
             case 7:
-                Capture("analysis-engine-details"); Click("analysis-show-cards", 8); break;
+                Check(view.WorkshopDialog.Length == 0 && view.Hits.Any(hit => hit.Id == "analysis-card:0"),
+                    "An engine's actual source cards sit beside its conditions and steps in Tune");
+                relatedNames = view.Analysis!.Report.Engines[0].Cards.Concat(view.Analysis.Report.Engines[0].Payoffs)
+                    .Where(name => view.DeckDetails!.Entries.Any(entry => entry.Card.Name == name)).Distinct().ToArray();
+                Check(RelationshipNamesVisible(), "The selected engine presents its actual related card identities together before reading");
+                Capture("analysis-engine-details"); Click("analysis-card:1", 70); break;
+            case 70:
+                Check(view.AnalysisOpen && view.WorkshopDialog.Length == 0 && view.DeckDetails!.Revision == revision
+                    && view.Workshop!.VersionId == version && view.Hits.Any(hit => hit.Id == "workspace-card-reading") && RelationshipNamesVisible(),
+                    "Reading a related card retains its partner card identities and selected relationship beside the reader, with no deck/version mutation");
+                Click("analysis-card:0", 72); break;
+            case 72:
+                Check(RelationshipNamesVisible() && view.Hits.Any(hit => hit.Id == "analysis-card:1"),
+                    "Reading Ashaya leaves Earthbending Student and the other relationship cards visible and independently reachable");
+                Capture("analysis-related-reader"); Click("workspace-card-reading", 71); break;
+            case 71: Click("analysis-show-cards", 8); break;
             case 8:
                 Check(!view.AnalysisOpen && view.DeckEditor && view.DeckFilter.Length == 0 && view.Hits.Any(h => h.Id == "analysis-clear-cards")
                     && view.Hits.Any(h => h.Id.StartsWith("deck-card:")), "Engine details clear an unrelated search and reveal related editable cards");
@@ -99,8 +138,9 @@ internal sealed class AnalysisSmoke(TableWindow.Probe view) : ITableAutomation
                 candidate = view.Analysis.Report.Recommendations[0].Add.Name;
                 Capture("analysis-swaps"); Click("analysis-details:0", 13); break;
             case 13:
-                Check(view.WorkshopDialog == "analysis-detail", "Swap details expose conditions, tradeoffs and the suggested card's rules");
-                Capture("analysis-swap-details"); Click("workshop-dialog-close", 14); break;
+                Check(view.WorkshopDialog.Length == 0 && view.Hits.Any(hit => hit.Id == "analysis-consider:0"),
+                    "Swap evidence keeps its conditions, tradeoffs and suggested rules in the existing Tune pane");
+                Capture("analysis-swap-details"); stage = 14; break;
             case 14: Click("analysis-consider:0", 15); break;
             case 15:
                 Check(view.Workshop!.Considering.Any(c => c.Card.Card.Name == candidate), "Save to Considering persists the actual candidate card");
@@ -118,7 +158,7 @@ internal sealed class AnalysisSmoke(TableWindow.Probe view) : ITableAutomation
             case 19:
                 Check(view.WorkshopDialog == "versions", "Analysis uses the workshop's existing version history");
                 Click("workshop-dialog-close", 20); break;
-            case 20: Click("analysis-test", 21); break;
+            case 20: Click("workshop-test", 21); break;
             case 21:
                 Check(view.WorkshopTab == "test" && view.Hits.Any(h => h.Id == "workshop-hand-new"), "Analysis moves into the existing sampler and real AI test setup");
                 Check(view.Workshop!.Question == "Does the engine recover after removal?", "The test keeps its shared question");

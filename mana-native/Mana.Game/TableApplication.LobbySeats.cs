@@ -13,13 +13,12 @@ internal sealed partial class TableApplication
 
     private void DrawLobbySizeControls()
     {
-        canvas.Text("Total seats", 586, 758, Gold, .64f, 140, 1, true);
+        canvas.Text("Seats", 716, 710, Muted, .64f, 100, 1, true);
         for (int count = 2; count <= 4; count++) {
             int players = count;
-            Button("lobby-count:" + count, count + " players", 730 + (count - 2) * 166, 752, 154,
-                () => ResizeLobby(players), !busy && CanResizeLobby(count), lobby!.Seats.Length == count, 30);
+            MenuAction("lobby-count:" + count, count.ToString(), new(813 + (count - 2) * 64, 697, 54, 40),
+                () => ResizeLobby(players), !busy && CanResizeLobby(count), lobby!.Seats.Length == count, .75f);
         }
-        canvas.Text("Shrink only past open seats.", 1244, 760, Muted, .57f, 286, 1);
     }
     private void ResizeLobby(int players)
     {
@@ -37,11 +36,11 @@ internal sealed partial class TableApplication
 
     private void DrawLobbySeatControls(int position, Seat seat)
     {
-        int x = 586 + position % 2 * 480, y = 346 + position / 2 * 210;
-        Button("lobby-ai:" + seat.Index, seat.Type == "AI" ? "Change AI deck" : "Add AI opponent", x + 22, y + 143, 243,
-            () => OpenLobbyAiPicker(seat.Index), !busy && lobby!.AiOpponents.Length > 0, height: 30);
-        if (seat.Type == "AI") Button("lobby-ai-remove:" + seat.Index, "Remove AI", x + 278, y + 143, 160,
-            () => RemoveLobbyAi(seat.Index), !busy, height: 30);
+        int x = 280 + position * 347;
+        MenuAction("lobby-ai:" + seat.Index, seat.Type == "AI" ? "Change deck" : "Add AI", new(x - 145, 637, 290, 36),
+            () => OpenLobbyAiPicker(seat.Index), !busy && lobby!.AiOpponents.Length > 0, size: .75f);
+        if (seat.Type == "AI") MenuAction("lobby-ai-remove:" + seat.Index, "Remove AI", new(x - 145, 680, 290, 36),
+            () => RemoveLobbyAi(seat.Index), !busy, size: .65f);
     }
     private void OpenLobbyAiPicker(int seat)
     {

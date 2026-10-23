@@ -39,7 +39,7 @@ internal sealed class RecoverySmoke : ITableAutomation
     {
         this.view = view; this.engine = engine; this.checks = checks;
         Wait(() => view.Loaded && !view.Busy && !view.ActivityOpen, () => {
-            view.DismissWelcome();
+
             Check(view.SelectedDeck?.Id == "saved", "The original saved deck is selected before a failed import");
             savedBeforeImport = JsonSerializer.Serialize(view.DeckDetails);
             view.ImportFilePath(Path.Combine(view.Profile, "missing-deck.txt"));

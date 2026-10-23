@@ -97,46 +97,44 @@ internal sealed partial class TableApplication
         string stateText = onBattlefield ? string.Join(" · ", CardPresentation.StateLabels(card)) : "";
         if (CardPresentation.CommanderTaxDetails(card) is { Length: > 0 } taxDetails) stateText = taxDetails + (stateText.Length > 0 ? "\n" + stateText : "");
         if (CardPresentation.Counters(card) is { Length: > 0 } counters) stateText += "\nCounters: " + string.Join("; ", counters.Select(c => c.Key + " × " + c.Value));
-        if (onBattlefield) canvas.Text(CardActions.Hint(match, original), 686, 335, CardActions.CanActivate(match, original) ? ActionAccent : Muted, .77f, 670, 2, true);
-        bool contextual = onBattlefield || HandPlacements.Options(match, original).Length > 0 || AvailableZone(original) != null;
         string effectiveDetails = onBattlefield ? string.Join("\n", CardPresentation.AbilityDetails(card)) : "";
         var paragraphs = TextPages((stateText.Length > 0 ? stateText + "\n\n" : "") + card.Text
-            + (effectiveDetails.Length > 0 ? "\n\nCurrent abilities\n" + effectiveDetails : "")
-            + (onBattlefield ? "\n\n" + CardActions.Help : ""), ReadingPageSize(contextual ? 750 : 1050)); inspectPage = Math.Clamp(inspectPage, 0, paragraphs.Length - 1);
-        canvas.Text(paragraphs[inspectPage], 686, contextual ? 394 : 378, Ink, .8f, 660, contextual ? 12 : 17);
+            + (effectiveDetails.Length > 0 ? "\n\nCurrent abilities\n" + effectiveDetails : ""), ReadingPageSize(1050)); inspectPage = Math.Clamp(inspectPage, 0, paragraphs.Length - 1);
+        canvas.Text(paragraphs[inspectPage], 686, 378, Ink, .8f, 660, 17);
         if (paragraphs.Length > 1) {
             Button("inspect-prev", "Previous", 686, 727, 135, () => inspectPage--, inspectPage > 0);
             Button("inspect-next", "More rules", 831, 727, 145, () => inspectPage++, inspectPage + 1 < paragraphs.Length);
             canvas.Text($"{inspectPage + 1} / {paragraphs.Length}", 995, 738, Muted, .7f);
         }
         if (original.OtherFace != null) Button("other-face", inspectBack ? "View current face" : "View other face", 274, 737, 347, () => { inspectBack = !inspectBack; inspectPage = 0; }, accent: true);
-        if (onBattlefield) Button("activate-ability", "Activate ability", 1080, 727, 280, () => { overlay = ""; if (zoneName == "Battlefield") zoneName = null; CardClick(original); }, !busy && CardActions.CanActivate(match, original), true);
-        else DrawInspectorPlacement(original);
     }
     private void DrawSettings()
     {
-        ModalFrame("Play controls", () => { overlay = ""; textFocus = false; });
-        canvas.Text("PRIORITY", 201, 196, Gold, .65f, 600, 1, true);
-        Button("settings-auto", "Auto", 202, 231, 256, () => UseAutomaticControl(true), accent: automatic, height: 48);
-        Button("settings-manual", "Full control", 472, 231, 256, () => UseAutomaticControl(false), accent: !automatic, height: 48);
-        canvas.Text("Auto passes according to your settings. Use the priority controls to ignore individual abilities until your next turn. Other legal plays and required choices still wait for you.", 202, 298, Muted, .81f, 544, 6);
-        Button("settings-hold", held ? "Held for this turn" : "Hold priority this turn", 202, 445, 526, ToggleHoldControl, accent: held, height: 45);
-        canvas.Text("Always stop at these steps on your turn", 805, 196, Gold, .76f, 551, 1, true);
+        var drawer = SystemDrawer("Play controls", "settings-", Scope, () => { overlay = ""; textFocus = false; }, 760, "close-overlay");
+        int x = drawer.X + 28, y = drawer.Y;
+        canvas.Text("Priority", x, y + 108, Gold, .8f, 500, 1, true);
+        MenuAction("settings-auto", "Auto", new(x, y + 148, 236, 42), () => UseAutomaticControl(true), selected: automatic);
+        MenuAction("settings-manual", "Full control", new(x + 264, y + 148, 236, 42), () => UseAutomaticControl(false), selected: !automatic);
+        MenuAction("settings-hold", held ? "Held for this turn" : "Hold priority this turn", new(x, y + 210, 500, 42), ToggleHoldControl, selected: held, size: .78f);
+        canvas.Text("Stop on your turn", x, y + 289, Gold, .78f, 500, 1, true);
         for (int i = 0; i < TurnGuide.Stops.Length; i++) {
             var stop = TurnGuide.Stops[i]; bool selected = preferences.Stops.Contains(stop.Key);
-            Button("stop:" + stop.Key, (selected ? "✓  " : "○  ") + stop.Label, 805 + i % 2 * 285, 237 + i / 2 * 61, 267, () => { if (!preferences.Stops.Remove(stop.Key)) preferences.Stops.Add(stop.Key); SavePreferences(); }, accent: selected, height: 46);
+            MenuAction("stop:" + stop.Key, stop.Label, new(x + i % 2 * 264, y + 329 + i / 2 * 46, 236, 40), () => {
+                if (!preferences.Stops.Remove(stop.Key)) preferences.Stops.Add(stop.Key); SavePreferences();
+            }, selected: selected, size: .75f);
         }
-        Button("motion", preferences.ReducedMotion ? "Reduced motion: On" : "Reduced motion: Off", 805, 455, 553, () => { preferences = preferences with { ReducedMotion = !preferences.ReducedMotion }; SavePreferences(); }, accent: preferences.ReducedMotion, height: 45);
-        Button("sound", preferences.Sounds ? "Sound cues: On" : "Sound cues: Off", 805, 512, 553, () => { preferences = preferences with { Sounds = !preferences.Sounds }; SavePreferences(); }, accent: preferences.Sounds, height: 45);
-        Button("text-size", $"Text size: {preferences.TextScale:P0}", 202, 569, 526, () => {
-            preferences = preferences with { TextScale = preferences.TextScale < 1.1f ? 1.15f : preferences.TextScale < 1.25f ? 1.3f : 1 };
-            SavePreferences();
-        }, height: 32);
-        canvas.Text("Larger text keeps controls in place. Inspect cards for full details; F11 opens fullscreen.", 805, 574, Muted, .64f, 553, 1);
-        canvas.Line(new(201, 607), new(1370, 607), Muted * .25f);
-        canvas.Text("Space  Continue / confirm     F  Auto / full control     Ctrl Hold this turn\nC  Review combat     Escape  Cancel a drag / close a panel     F11  Fullscreen\nRight-click  Inspect a card     Wheel  Browse a long hand or an open card gallery", 203, 632, Ink, .78f, 1150, 5);
-        Button("updates-settings", "Updates", 202, 737, 260, OpenAppUpdates, height: 38);
-        canvas.Text(CurrentAppVersion, 482, 748, Muted, .67f, 861, 1);
+        canvas.Line(new(x, y + 485), new(x + 500, y + 485), LobbyTrim);
+        MenuAction("motion", "Reduced motion  " + (preferences.ReducedMotion ? "On" : "Off"), new(x, y + 505, 500, 40), () => {
+            preferences = preferences with { ReducedMotion = !preferences.ReducedMotion }; SavePreferences();
+        }, selected: preferences.ReducedMotion, size: .78f);
+        MenuAction("sound", "Sound  " + (preferences.Sounds ? "On" : "Off"), new(x, y + 555, 500, 40), () => {
+            preferences = preferences with { Sounds = !preferences.Sounds }; SavePreferences();
+        }, selected: preferences.Sounds, size: .78f);
+        MenuAction("text-size", $"Text size  {preferences.TextScale:P0}", new(x, y + 605, 500, 40), () => {
+            preferences = preferences with { TextScale = preferences.TextScale < 1.1f ? 1.15f : preferences.TextScale < 1.25f ? 1.3f : 1 }; SavePreferences();
+        }, size: .78f);
+        MenuAction("updates-settings", "Updates", new(x, y + 687, 240, 40), OpenAppUpdates, size: .75f);
+        canvas.Text("F11  Fullscreen", x + 293, y + 700, Muted, .65f, 207, 1);
     }
     private void DrawHistory()
     {
@@ -213,26 +211,18 @@ internal sealed partial class TableApplication
         canvas.Text(cards.Length + " visible" + (zoneName == "Stack" ? "" : " / " + (zone?.Count ?? 0) + " total"), 205, 183, Muted, .72f, 650, 1);
         if (player != null && AvailableZoneCount(player, zoneName!) is > 0 and var available)
             canvas.Text(available + " available · Use a card below to see its play and costs.", 205, 220, ActionAccent, .77f, 1170, 2, true);
-        bool sourceReader = ZoneReadingOpen;
         string displayedZone = zoneName!;
         int index = 0;
         foreach (var card in cards.Skip(zonePage * count).Take(count)) {
             int x = 210 + index++ * 169;
             var pose = new Pose(new(x + 74, 409), new(148, 207));
-            if (sourceReader) DrawTableCard("zone:" + zonePlayer + ":" + displayedZone + ":" + CardIdentity(card),
+            DrawTableCard("zone:" + zonePlayer + ":" + displayedZone + ":" + CardIdentity(card),
                 card, pose, displayedZone, zonePlayer, "card:" + card.Key + ":" + card.VisualId, () => Inspect(card),
                 (displayed, focused) => PaintCard(card, displayed, card.Highlighted, IsCardActionable(card), focused));
-            else PaintInteractionCard(card, pose, card.Highlighted, IsCardActionable(card));
             if (zoneName == "Command") PaintCommanderTax(card, pose);
             canvas.Text(card.Name, x, 533, Ink, .68f, 155, 3, true);
             canvas.Text(card.ManaCost == "no cost" ? "" : card.ManaCost, x, 600, Gold, .62f, 156, 2);
             if (pose.Contains(pointer)) hovered = card;
-            if (!sourceReader) hits.Add(new("card:" + card.Key + ":" + card.VisualId, Scope, new(x, 304, 148, 298), () => { if (IsCardActionable(card)) { zoneName = null; CardClick(card); } else Inspect(card); }, card, zoneName, zonePlayer));
-            if (!sourceReader && AvailableZone(card) is { } availableZone && zonePlayer == match.ViewerId) {
-                string scope = Scope;
-                PriorityAbilityButton("zone-use:" + CardIdentity(card), ZoneUseLabel(availableZone), new(x - 3, 644, 160, 42),
-                    () => UseZoneCard(card, availableZone, scope), !busy, true);
-            }
         }
         if (cards.Length == 0) canvas.CenterText("No cards are visible in this zone.", new(230, 333, 1120, 100), Muted, 1.05f);
         Button("zoneprev", "Previous", 208, 734, 160, () => zonePage--, zonePage > 0);
@@ -258,9 +248,12 @@ internal sealed partial class TableApplication
         canvas.Text($"{zonePage + 1} / {entries.Length}   " + (zonePage == 0 ? "Next to resolve" : "Waiting on the stack"), 217, 190, Gold, .8f, 1100, 1, true);
         if (entry.Card is { } card) {
             var pose = new Pose(new(408, 459), new(304, 426));
-            PaintInteractionCard(card, pose, false, IsCardActionable(card));
+            bool target = IsCardActionable(card);
+            DrawTableCard("stack-detail:" + entry.Id, card, pose, "Stack", entry.ControllerId,
+                target ? "stack-target:" + zonePage : "stack-inspect:" + entry.Id,
+                () => { if (target) { zoneName = null; CardClick(card); } else Inspect(card); },
+                (displayed, focused) => PaintInteractionCard(card, displayed, false, target, focused));
             if (pose.Contains(pointer)) hovered = card;
-            if (IsCardActionable(card)) hits.Add(new("stack-target:" + zonePage, Scope, pose.Bounds, () => { zoneName = null; CardClick(card); }, card));
         }
         canvas.Text(entry.Name, 630, 246, Ink, 1.05f, 716, 3, true);
         canvas.Text((entry.Ability ? "ABILITY" : "SPELL") + " · " + StateClarity.StackController(match, entry), 631, 328, Gold, .74f, 700, 1, true);
@@ -277,7 +270,10 @@ internal sealed partial class TableApplication
     {
         var state = match!; var d = state.Decision!;
         if (d.Kind == "allocate") { DrawAllocation(state, d); return; }
-        ModalFrame(d.Title.Length > 0 ? d.Title : d.Kind == "reveal" ? "Revealed cards" : d.Kind == "allocate" ? "Assign damage or counters" : "Make your choice", () => { collapsedDecision = true; textFocus = false; }, "View battlefield", d.Kind is "choice" or "reveal" ? 790 : 706);
+        bool cards = d.LibraryCards.Length > 0 || d.Choices.Length > 0 && d.Choices.All(choice => choice.Card != null);
+        string title = d.Title.Length > 0 ? d.Title : d.Kind == "reveal" ? "Revealed cards" : d.Ordered ? "Choose an order"
+            : cards ? d.Max == 1 ? "Choose a card" : "Choose cards" : "Make your choice";
+        ModalFrame(title, () => { collapsedDecision = true; textFocus = false; }, "View battlefield", d.Kind is "choice" or "reveal" ? 790 : 706);
         canvas.Text(d.Message, 204, 181, Ink, .77f, 1185, 3);
         if (d.Kind is "number" or "text") { DrawValueDecision(state, d); return; }
         DrawChoices(state, d);
@@ -296,13 +292,16 @@ internal sealed partial class TableApplication
         var filtered = items.Select((item, slot) => (Item: item, Slot: slot))
             .Where(c => c.Item.Label.Contains(choiceFilter, StringComparison.OrdinalIgnoreCase)).ToArray();
         bool portraits = items.Any(c => c.Card != null); int capacity = portraits ? 7 : 6;
-        var sourcePreview = !portraits ? InteractionCards.Source(state, d) : null;
+        bool sparseSource = portraits && items.Length <= 4;
+        var sourcePreview = !portraits || sparseSource ? InteractionCards.Source(state, d) : null;
         if (sourcePreview != null) {
-            var sourcePose = new Pose(new(1268, 435), new(166, 232));
+            int sourceX = sparseSource ? 199 : 1185;
+            var sourcePose = new Pose(new(sourceX + 83, 435), new(166, 232));
+            if (sparseSource) canvas.Text("SOURCE", sourceX, 294, Gold, .55f, 166, 1, true);
             PaintInteractionCard(sourcePreview, sourcePose, false, false);
-            canvas.Text(sourcePreview.FaceDown ? "Face-down card" : sourcePreview.Name, 1185, 562, Ink, .68f, 166, 3, true);
+            canvas.Text(sourcePreview.FaceDown ? "Face-down card" : sourcePreview.Name, sourceX, 562, Ink, .68f, 166, 3, true);
             if (!sourcePreview.FaceDown && VisibleCards().Any(card => SameVisibleCard(card, sourcePreview))) {
-                var sourceBounds = new Rectangle(1185, 319, 166, 298);
+                var sourceBounds = new Rectangle(sourceX, 319, 166, 298);
                 if (sourceBounds.Contains(pointer)) canvas.CardFocus(sourcePose, HoverAccent);
                 hits.Add(new("choice-source-inspect", Scope, sourceBounds, () => Inspect(sourcePreview), sourcePreview));
             }
@@ -318,6 +317,10 @@ internal sealed partial class TableApplication
         canvas.Text(instruction, 206, 251, Gold, .72f, 1160, 2);
         var pageItems = filtered.Skip(choicePage * capacity).Take(capacity).ToArray();
         int expanded = Array.FindIndex(pageItems, e => readingId == "choice-face:" + Scope + ":" + e.Slot);
+        bool sparseCards = portraits && items.Length <= capacity;
+        int rowWidth = expanded < 0 ? 148 + Math.Max(0, pageItems.Length - 1) * 169 : 410 + Math.Max(0, pageItems.Length - 1) * 128;
+        int rowLeft = sparseCards ? sparseSource && sourcePreview != null ? 403 + (991 - rowWidth) / 2 : (1600 - rowWidth) / 2
+            : expanded < 0 ? 206 : 190;
         int row = 0;
         foreach (var entry in pageItems) {
             var item = entry.Item;
@@ -329,7 +332,7 @@ internal sealed partial class TableApplication
                 // Make room for the original face as it grows, so it cannot
                 // completely bury an adjacent revealed card or choice.
                 int column = expanded < 0 ? 148 : index == expanded ? 410 : 112;
-                int x = expanded < 0 ? 206 + index * 169 : 190 + index * 128 + (index > expanded ? 298 : 0);
+                int x = expanded < 0 ? rowLeft + index * 169 : rowLeft + index * 128 + (index > expanded ? 298 : 0);
                 int faceWidth = expanded >= 0 && index != expanded ? 112 : 148;
                 var pose = new Pose(new(x + column / 2, 408), new(faceWidth, faceWidth * 1.4f));
                 if (item.Card != null) DrawTableCard("choice-face:" + Scope + ":" + entry.Slot, item.Card, pose, "Choice", null,
@@ -367,14 +370,20 @@ internal sealed partial class TableApplication
             }
         }
         if (filtered.Length == 0) canvas.CenterText("No matching cards or choices.", new(209, 356, 1177, 90), Muted, 1);
-        Button("choicesprev", "‹", 206, 754, 45, () => choicePage--, choicePage > 0, height: 34);
-        Button("choicesnext", "›", 260, 754, 45, () => choicePage++, (choicePage + 1) * capacity < filtered.Length, height: 34);
-        canvas.Text($"Page {choicePage + 1} / {Math.Max(1, (filtered.Length + capacity - 1) / capacity)}", 325, 761, Muted, .66f, 350, 1);
-        Button("choicesfilter", choiceFilter.Length == 0 ? "Search choices…" : choiceFilter, 808, 754, 587, () => { textFocus = true; filterInput = true; }, accent: textFocus && filterInput, height: 34);
-        if (textFocus && filterInput) canvas.Text("Type to filter. Backspace edits. Escape closes the gallery.", 810, 794, Muted, .56f, 580, 1);
-        Button("choicesclear", "Clear selection", 206, 819, 183, () => selections.Clear(), !busy && d.Kind != "reveal");
+        if (filtered.Length > capacity) {
+            Button("choicesprev", "‹", 206, 754, 45, () => choicePage--, choicePage > 0, height: 34);
+            Button("choicesnext", "›", 260, 754, 45, () => choicePage++, (choicePage + 1) * capacity < filtered.Length, height: 34);
+            canvas.Text($"Page {choicePage + 1} / {(filtered.Length + capacity - 1) / capacity}", 325, 761, Muted, .66f, 350, 1);
+        }
+        if (items.Length > capacity) {
+            Button("choicesfilter", choiceFilter.Length == 0 ? "Search choices…" : choiceFilter, 808, 754, 587, () => { textFocus = true; filterInput = true; }, accent: textFocus && filterInput, height: 34);
+            if (textFocus && filterInput) canvas.Text("Type to filter. Backspace edits. Escape closes the gallery.", 810, 794, Muted, .56f, 580, 1);
+        }
+        if (selections.Count > 0 && d.Kind != "reveal")
+            Button("choicesclear", d.Ordered ? "Reset order" : "Clear", 206, 819, 183, () => selections.Clear(), !busy);
         if (d.Min == 0 && d.Kind != "reveal") Button("choice-cancel", "Choose none", 405, 819, 182, () => Send(DecisionCommands.Choose(state, [])), !busy);
-        Button("choicesdone", d.Kind == "reveal" ? "Continue" : "Confirm selection", 1088, 814, 307, () => { textFocus = false; Send(DecisionCommands.Choose(state, d.Kind == "reveal" ? [] : selections)); }, !busy && (d.Kind == "reveal" || selections.Count >= d.Min && selections.Count <= d.Max), true, 47);
+        Button("choicesdone", d.Kind == "reveal" ? "Continue" : d.Ordered ? "Confirm order" : cardChoices && selections.Count > 0
+            ? selections.Count == 1 ? "Confirm card" : "Confirm cards" : "Confirm selection", 1088, 814, 307, () => { textFocus = false; Send(DecisionCommands.Choose(state, d.Kind == "reveal" ? [] : selections)); }, !busy && (d.Kind == "reveal" || selections.Count >= d.Min && selections.Count <= d.Max), true, 47);
     }
     private void DrawValueDecision(GameSnapshot state, Decision d)
     {

@@ -107,7 +107,7 @@ internal sealed partial class TableApplication
         sourceReaderActionsBounds = new(area.X, top, width, height);
         sourceReaderScrollMax = Math.Max(0, contentHeight - height);
         sourceReaderScroll = Math.Clamp(sourceReaderScroll, 0, sourceReaderScrollMax);
-        hits.Add(new("source-actions-surface", Scope, sourceReaderActionsBounds, () => { }));
+        hits.Add(new("source-actions-surface", Scope, sourceReaderActionsBounds, () => { }, ShowPointer: false));
         int y = top - sourceReaderScroll;
         if (stateHeight > 0) {
             if (y >= top && y + stateHeight <= top + height)

@@ -12,7 +12,7 @@ internal sealed partial class SmokeAutomation
     // same press/release hit-testing path as a mouse. No player's profile is seeded.
     private readonly DateTime smokeDeadline = DateTime.UtcNow.AddMinutes(4);
     private string? smokeScreenshot, smokeFirstGame;
-    private int smokeStage, smokeOriginalChoice;
+    private int smokeStage;
     private Point? smokeRelease, smokeDrag;
     private readonly List<string> smokeChecks = [];
     private string? smokeDecision;
@@ -20,6 +20,17 @@ internal sealed partial class SmokeAutomation
     private bool smokeClickAccepted;
     private int smokeRetryStage;
     private string? smokeLand;
+    private readonly HashSet<string> artworkOpenings = [];
+
+    private void RecordOpeningArtwork(string name)
+    {
+        var state = view.Match!;
+        File.WriteAllText(Path.Combine(view.Profile, name + ".json"), JsonSerializer.Serialize(new {
+            view.Now, state.Turn, state.PhaseKey, Progress = view.TableArtworkProgress,
+            Cards = CardViews.Visible(state).Where(card => Mana.Magic.CardPresentation.Artwork(card) != null)
+                .Select(card => new { card.Name, Artwork = Mana.Magic.CardPresentation.Artwork(card), Ready = view.Art(card) != null }).ToArray()
+        }, new JsonSerializerOptions { WriteIndented = true }));
+    }
 
     private void SmokeCheck(bool condition, string description)
     {
@@ -42,6 +53,10 @@ internal sealed partial class SmokeAutomation
         if (DateTime.UtcNow > smokeDeadline) throw new TimeoutException($"UI smoke timed out at stage {smokeStage}; decision {view.Match?.Decision?.Message}");
         if (view.Error.Length > 0) throw new InvalidOperationException("UI smoke: " + view.Error);
         if (!view.Loaded || view.Busy || view.ActivityOpen || view.Polling) return At(new(0, 0), ButtonState.Released);
+        if (view.Match is { } opening && opening.Viewer!.Zone("Hand").Cards.Length > 0 && artworkOpenings.Add(opening.Id)) {
+            string name = artworkOpenings.Count == 1 ? "solo-first-hand" : "solo-next-hand";
+            RecordOpeningArtwork(name); smokeScreenshot = name + ".png";
+        }
         if (smokeDecision != view.Match?.Decision?.Id) {
             smokeDecision = view.Match?.Decision?.Id;
             File.WriteAllText(Path.Combine(view.Profile, "ui-latest.json"), JsonSerializer.Serialize(view.Match));
@@ -57,23 +72,16 @@ internal sealed partial class SmokeAutomation
                 click = "preset:" + view.Presets[0].Id; smokeStage = 1; break;
             case 1:
                 if (view.SelectedDeck == null) break;
-                click = "confirm-deck"; smokeStage++; break;
-            case 2:
-                if (view.SoloSetup == null) break;
-                SmokeCheck(view.SoloSetup.Opponents.Length >= 6, "Setup shows all six AI deck choices");
-                smokeOriginalChoice = view.SoloChoices[1];
-                click = "ai-next:1"; smokeStage++; break;
-            case 3:
-                SmokeCheck(view.SoloChoices[1] != smokeOriginalChoice, "Next arrow changes the second AI deck");
-                click = "ai-prev:1"; smokeStage++; break;
-            case 4:
-                SmokeCheck(view.SoloChoices[1] == smokeOriginalChoice, "Previous arrow restores the second AI deck");
-                smokeScreenshot = "solo-setup.png";
-                click = "start-solo"; smokeStage++; break;
+                SmokeCheck(view.SetupModal.Length == 0 && !view.DeckConfirmed && view.Match == null,
+                    "Selecting a precon returns to its deck home without a forced review or implicit game");
+                smokeScreenshot = "solo-deck-home.png";
+                click = "start-solo"; smokeStage = 5; break;
             case 5:
                 if (view.Match?.Decision == null) break;
-                SmokeCheck(view.LocalMatch && view.Match.Players.Length == 4 && view.Match.Players.All(p => p.Life == 40), "Start button opens the four-player AI table");
+                SmokeCheck(view.LocalMatch && view.Match.Players.Length == 4 && view.Match.Players.All(p => p.Life == 40)
+                    && view.SoloSetup?.DeckId == view.SelectedDeck?.Id, "One Play action prepares and opens the selected deck's four-player AI table");
                 smokeFirstGame = view.Match.Id;
+                RecordOpeningArtwork("solo-opening-artwork");
                 smokeScreenshot = "solo-opening.png"; smokeStage++; break;
             case 6:
             case 11:
@@ -109,7 +117,7 @@ internal sealed partial class SmokeAutomation
                 SmokeCheck(view.Match.Result == "Defeat", "Concede button ends the local game");
                 click = "return"; smokeStage++; break;
             case 9:
-                SmokeCheck(view.Match == null && !view.LocalMatch && view.SoloSetup != null, "Return to setup clears the game and retains AI choices");
+                SmokeCheck(view.Match == null && !view.LocalMatch && view.SoloSetup != null, "Returning home clears the game and retains the selected deck and AI choices");
                 click = "start-solo"; smokeStage++; break;
             case 10:
                 if (view.Match?.Decision == null) break;
@@ -132,8 +140,8 @@ internal sealed partial class SmokeAutomation
                 click = "friends-tab"; smokeStage++; break;
             case 17:
                 if (!view.Hits.Any(h => h.Id == "host")) break;
-                SmokeCheck(!view.SoloTab && view.Match == null && view.Hits.Any(h => h.Id == "host"), "Friends setup is available after solo games");
-                smokeScreenshot = "friends-setup.png";
+                SmokeCheck(!view.SoloTab && view.Match == null && view.Hits.Any(h => h.Id == "host"), "Friends play is available in the same home after solo games");
+                smokeScreenshot = "friends-home.png";
                 File.WriteAllText(Path.Combine(view.Profile, "ui-results.json"), JsonSerializer.Serialize(smokeChecks, new JsonSerializerOptions { WriteIndented = true }));
                 smokeStage++; break;
             case 18:

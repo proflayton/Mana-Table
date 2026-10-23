@@ -15,6 +15,7 @@ internal sealed partial class TableApplication
     // background observation is deliberately absent: it does not change intent.
     private DecisionDockPauseReason AutomaticInteractionPause()
     {
+        if (ActivityOpen) return DecisionDockPauseReason.Presentation;
         if (session.NeedsRecovery) return DecisionDockPauseReason.Recovery;
         if (commandFailure && error.Length > 0) return DecisionDockPauseReason.CommandFailure;
         if (readingId != null || HoveredPendingReference() != null) return DecisionDockPauseReason.Inspection;

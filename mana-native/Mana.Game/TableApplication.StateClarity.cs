@@ -45,7 +45,7 @@ internal sealed partial class TableApplication
         int y = bottom - height;
         var bounds = new Rectangle(x, y, width, height);
         canvas.Panel(bounds, new Color(15, 24, 32) * .98f, ActionAccent, 7);
-        hits.Add(new("decision-context-panel", Scope, bounds, () => { }));
+        hits.Add(new("decision-context-panel", Scope, bounds, () => { }, ShowPointer: false));
         canvas.Text("CHOOSE A PLAYER", x + 10, y + 11, ActionAccent, .57f, width - 20, 1, true);
         if (consequence.Length > 0)
             canvas.Text(consequence, x + 10, y + 11 + headingHeight + 8, Ink, consequenceSize, width - 20, consequenceLines);

@@ -21,6 +21,10 @@ internal sealed class DeckExperienceSmoke(TableWindow.Probe view) : ITableAutoma
     private long sourceMetadataRevision;
     private DeckSourcePreview? sourcePreview;
     private long revision;
+    private string sampledHand = "", sampledSetup = "";
+    private string TableSetupControls() => string.Join(";", view.Hits.Where(hit => hit.Id.StartsWith("workshop-players:", StringComparison.Ordinal)
+        || hit.Id.StartsWith("workshop-opponent-", StringComparison.Ordinal) || hit.Id is "workshop-prepare" or "workshop-start-game")
+        .OrderBy(hit => hit.Id).Select(hit => hit.Id + ":" + hit.Bounds));
     private DeckDetails? removedDeck;
     private DeckLibraryDeletion? removedReceipt;
     private Task<IReadOnlyList<DeckLibraryDeletion>>? removedRead;
@@ -124,7 +128,26 @@ internal sealed class DeckExperienceSmoke(TableWindow.Probe view) : ITableAutoma
                 Capture("01b-finding-experiment"); Click("workshop-hand-new", 11); break;
             case 10: Click("workshop-hand-new", 11); break;
             case 11:
-                sample = view.WorkshopHand!.TestId; Click("workshop-hand-keep", 12); break;
+                sample = view.WorkshopHand!.TestId; sampledHand = JsonSerializer.Serialize(view.WorkshopHand); sampledSetup = TableSetupControls();
+                Click("workshop-hand-card:0", 110); break;
+            case 110:
+                Check(view.WorkshopTab == "test" && view.WorkshopDialog.Length == 0 && JsonSerializer.Serialize(view.WorkshopHand) == sampledHand
+                    && Deck.Revision == revision && view.Workshop!.VersionId == version && view.Workshop.Question == experimentQuestion,
+                    "Reading a sampled card keeps the exact hand, question, editor revision and playable version in Test");
+                var readingBounds = view.Hits.Single(hit => hit.Id == "workspace-card-reading").Bounds;
+                Check(view.Hits.Any(hit => hit.Id == "workshop-hand-card:1")
+                    && view.Hits.Where(hit => hit.Bounds.Intersects(readingBounds)).All(hit => hit.Id is "workspace-card-reading" or "workspace-card-flip"),
+                    "The intact read-only sample card uses the setup area while adjacent cards remain clickable and no play or edit action is invented");
+                Capture("01c-hand-reading"); Click("workshop-hand-card:1", 111); break;
+            case 111:
+                Check(view.WorkshopTab == "test" && JsonSerializer.Serialize(view.WorkshopHand) == sampledHand,
+                    "Reading the next sampled card requires no tab change or library search and leaves the sample untouched");
+                Click("workspace-card-reading", 112); break;
+            case 112:
+                Check(view.Hits.All(hit => hit.Id != "workspace-card-reading") && TableSetupControls() == sampledSetup
+                    && JsonSerializer.Serialize(view.WorkshopHand) == sampledHand,
+                    "Closing local card reading restores the exact prior AI setup controls beside the unchanged hand");
+                Click("workshop-hand-keep", 12); break;
             case 12: Click("workshop-results", 13); break;
             case 13:
                 Check(view.WorkshopTests.Any(t => t.Id == sample && t.VersionId == version && t.Question == experimentQuestion),
@@ -233,7 +256,10 @@ internal sealed class DeckExperienceSmoke(TableWindow.Probe view) : ITableAutoma
                     && view.SelectedDeck == null && view.DeckDetails == null && !view.DeckEditor,
                     "Undo returns the same saved tile and content token without implicitly selecting or opening it");
                 PreservedLibraryEvidence(); Capture("12-restored-unselected"); Click("deck:" + removedDeck!.Id, 40); break;
-            case 40: Click("confirm-edit", 41); break;
+            case 40:
+                Check(view.HomeVisible && view.SelectedDeck?.Id == removedDeck!.Id && !view.DeckConfirmed,
+                    "Choosing the restored tile returns its exact saved document to Home without a review or confirmation gate");
+                Click("edit-deck", 41); break;
             case 41:
                 Check(Deck.Id == removedDeck!.Id && Deck.Name == removedDeck.Name && Deck.LibraryToken == removedDeck.LibraryToken
                     && JsonSerializer.Serialize(Deck.Entries) == JsonSerializer.Serialize(removedDeck.Entries)

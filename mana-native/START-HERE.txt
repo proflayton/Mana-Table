@@ -7,7 +7,7 @@ the release page identifies each download's source and verified build.
 Download ManaTable-Setup.exe from https://github.com/proflayton/Mana-Table/releases/latest
 and open it. Setup installs for your Windows account, adds shortcuts, and opens
 the game. Administrator access, Java and .NET installation are not required.
-Open Updates from Home, setup or Settings to check for a newer release. Startup
+Open Updates from Home or Settings to check for a newer release. Startup
 checks can be turned off there. The app notifies you first and downloads only
 when you choose. Smaller patches are used when available; a complete download
 is the fallback if a patch cannot be used. Progress distinguishes Downloading,
@@ -30,26 +30,32 @@ or install the app. Update preparation also needs disk space for cached and
 temporary files, even when the download is small.
 
 STARTUP AND YOUR FIRST SESSION
-Every launch opens a loading screen, then the main menu: Play with AI,
-Play with friends, and Your decks. Loading stages follow actual startup work.
-Choose a path, then review and confirm your deck before starting a game.
-Continue to setup opens the lobby. Home in setup returns to the main menu.
-Opening a deck, confirming it, or connecting to a table shows visible progress.
+Every launch opens a loading screen, then Home with your selected deck and its
+commander(s). Loading stages follow actual startup work. Choose Play with AI or
+With friends in the same place. Decks opens your saved lists, precons and imports;
+the Your decks row chooses a saved list directly. + New deck starts a draft.
+Choose the commander's card or Edit deck to build. Deck list is optional reading;
+Back to play closes it without preparing a game or making you Ready.
+There is no required review or confirmation before Play.
+Opening a deck or connecting to a table shows visible progress.
 Entering a game uses the same table imagery before revealing the battlefield.
+Opening artwork loads before the table becomes playable, using only cards your
+seat can see. The app waits until those images are ready to draw, not just
+downloaded. Failed images keep readable card fallbacks. Artwork waits at most
+eight seconds once the engine supplies the opening table; engine startup is a
+separate stage. Other known cards in your deck warm in the background, and
+ordinary table updates do not reopen this loading screen.
 Deck edits show Saving/Changes saved beside the builder without covering it.
 Failed actions explain the problem and offer Back; startup failures offer Retry.
 An unreadable import or unavailable clipboard leaves your saved deck untouched.
-Short hints appear beside deck choices, Confirm, Ready and Start as needed.
-At the table, a playable card explains its gesture; choosing an attacker or
-blocker changes the hint to the next target. Hover Auto or Hold for its meaning.
-Hints do not intercept clicks or pause Auto. They retire after a successful use
-of that control, and remember it across launches. A failed action keeps its hint.
-Settings > Show control hints again restores reminders without changing play.
-F1 offers brief help for the current moment. Games open directly at your decision,
-without a controls tour. Existing decks, names and play preferences are retained.
+F1 opens an optional controls reference. Closing it returns to the same context
+without making a game decision. Games open directly at your decision, without a
+first-run controls tour. Existing decks, names and play preferences are retained.
+Settings opens Play controls in a side drawer, keeping the table visible.
 The deck builder checks every saved edit. Problem cards are highlighted and
 their reasons appear beside the selected card; deck-wide checks stay visible.
-Back to setup returns to the lobby. Deck checks and saving update automatically.
+Back to play returns Home or to your connected table. Deck checks and saving
+update automatically.
 Your decks offers Delete beside each saved list; the builder also has Delete deck.
 Deletion leaves a named Undo row and keeps the deck's cards and history available.
 Open Deleted to restore an earlier deleted list, including after restarting the app.
@@ -57,10 +63,11 @@ Undo returns the list to Your decks without replacing your currently chosen deck
 Leave a friends' lobby before deleting or restoring decks. Precons and AI deck
 choices are unaffected; deck management is unavailable during a game.
 
-REVIEW YOUR DECK
-Open Analyze in the deck workshop for an automatic review. Start with What to
-check, read the benefit and tradeoff in Cards to try, then test one change.
-Review preferences are optional and ask direct questions about pace, format,
+TUNE YOUR DECK
+Open Tune beside Build, Test and Results for automatic deck checks. Browse
+Checks, Engines, Swaps, Roles and History. Select an entry to keep its related
+cards and evidence together; select a card to read its full face beside them.
+Preferences are optional and ask direct questions about pace, format,
 and cards to keep. Your deck format and land-check target start automatically.
 Limited uses unused Sideboard cards as available pool cards; if no pool is known,
 the review asks which cards you can use. Your playable list changes only in Build.
@@ -71,19 +78,20 @@ then tune in Build. Earlier tests retain their original question and deck versio
 Card counts do not automatically answer turn-by-turn questions or prove a matchup.
 
 PLAY SOLO AGAINST AI
-1. Under Play with AI, select Choose a deck (or Change deck). Pick a saved list,
-   try a precon, import a list, or build a new deck. Imported lists open the builder.
+1. On Home, select Play with AI. Choose Decks to pick a saved list, try a precon,
+   import a list, or build a new deck. Imported lists open the builder.
    Select your commander and compatible partners/Backgrounds there. Changes save.
-2. Review your commander, card counts and deck checks, then select Confirm deck.
-3. Use the arrows to choose a deck for each of your three AI opponents.
-   There are four precons plus green ramp and red damage starter decks.
-4. Select Start Commander. Forge controls the other three seats.
+   Back to play returns to your selected deck on Home.
+2. Optionally select an AI icon to choose that opponent's compatible deck.
+   Otherwise Play prepares compatible opponents for you.
+3. Select Play with a valid saved deck. Forge controls the other three Commander
+   seats; no separate Confirm or opponent-preparation step is required.
    You make all decisions for your own cards. Auto can pass when you have no play.
-5. After the game, select Return to setup to play again or switch to friends.
+4. After the game, select Return to setup to play again or switch to friends.
 No network setup, account, API key or paid AI service is needed for solo play.
 
 IMPORT YOUR DECK
-Choose a deck > Import deck file or Paste deck list accepts text exports.
+Decks > Import deck file or Paste deck list accepts text exports.
 Use quantity/name rows such as "4 Forest" or "4x Forest". Set codes, collector
 numbers, foil markers and Archidekt category tags can remain in the list.
 Explicit Commander tags or section headings select the commander automatically.
@@ -107,23 +115,23 @@ there. This export includes commander, main and sideboard; categories and
 Considering stay in Mana Table. Changes are not published to Archidekt for you.
 
 PLAY WITH FRIENDS
-1. Every player uses this same build. Change deck opens saved lists, precons,
-   Import deck file and Paste deck list. Deck builder edits your selected list.
-2. Select Play with friends. One player selects Host table.
+1. Every player uses this same build. Decks opens saved lists, precons,
+   Import deck file and Paste deck list. Edit deck opens your selected list.
+2. Select With friends. One player selects Host a table.
    Allow the bundled Java runtime
    through Windows Firewall when Windows asks, for the network you are using.
-   Choose 2 players, 3 players or 4 players before hosting. Three people can
+   Choose 2, 3 or 4 Seats before hosting. Three people can
    choose three seats and play without AI; choose four to add a fourth opponent.
 3. The host opens Invite friends and copies the internet invite, or an address
-   for the local/VPN network. Friends select Join with invite and paste it.
+   for the local/VPN network. Friends select Join with an invite and paste it.
    Short a player? The host can Add AI to an open seat and choose its deck from
    the compatible bundled opponents/precons. Three people plus one AI can play
    a four-seat game. AI seats show their deck and are ready automatically.
    Remove AI opens its seat before the game so another person can join.
-4. Everyone reviews their deck and selects Confirm deck, then Ready up.
-   Confirming selects the saved list for the table; it does not make you ready.
-   The four-seat roster shows who has joined, chosen a deck, and readied up.
-5. Start Commander becomes available to the host when every selected seat is ready.
+4. Everyone selects Ready with a valid saved deck. This uses your current list
+   for the table. Choosing a deck or joining alone never makes you Ready.
+   Seat portraits show who has joined, chosen a deck, and become Ready.
+5. Play becomes available to the host when every selected seat is ready.
    Not ready withdraws your readiness. After the game everyone readies again.
 If three people are waiting in a four-seat lobby, the host can choose 3 players
 under Total seats while the last seat is open. Saved decks stay selected; people ready
@@ -135,7 +143,7 @@ AI deck changes preserve human readiness. Returning to the lobby retains AI
 decks and readiness; each human must ready again for the rematch.
 
 BUILD AND EDIT DECKS
-Open Deck builder for the selected deck, or choose + New deck.
+Choose Edit deck on Home or at your connected seat, or choose + New deck.
 Search the library by name, rules text or creature type. Narrow it by card type,
 maximum mana value or color identity; Leader colors follows your commander(s).
 Click a card to read its large face. Use its + button to add a copy to Main.
@@ -167,7 +175,11 @@ Considering holds options outside your playable list. Swap a candidate for a mai
 deck card in one saved change. Versions lets you inspect a saved list and compare
 its quantities with your current deck before choosing whether to restore it.
 Use Test to set a question, sample opening hands, or play against AI with two
-or four Commander players. Hand sampling is draw-only practice; Redraw seven
+or four Commander players. Start test game prepares compatible opponents if
+needed and starts the current saved version in one operation. Choose AI opponents
+is optional customization. Select a sample card to read it beside the unchanged
+hand; select it again or close its reading area to return to the table setup.
+Hand sampling is draw-only practice; Redraw seven
 does not enforce London mulligan rules. Real games use Forge's full game rules.
 Results keeps observed counts and your notes with the version actually tested.
 View tested deck / compare shows that test's exact saved cards; Compare to current
@@ -178,10 +190,10 @@ cannot establish what was available on a particular turn.
 Tune deck returns to building; Test again sets up another experiment. Changing
 the deck does not rewrite earlier results. Small AI samples are not a win rate.
 For a friends' table, finish a valid 100-card deck including its commander(s),
-return to setup and confirm the saved list. AI opponent choices persist.
-Opening the builder or choosing another deck clears confirmation and Ready;
-review, confirm, and ready again. Merely browsing or canceling the deck chooser
-leaves your current confirmed deck and readiness intact.
+select Back to play and then Ready. Compatible AI opponent choices persist.
+Opening the builder or choosing another deck withdraws Ready; choose Ready again
+when finished. Browsing, canceling the chooser, or reselecting your current saved
+deck preserves readiness. Optional Deck list reading also leaves readiness alone.
 The deck chooser searches saved deck names and precon names/descriptions. In a
 deck review, Full deck list lets you search names, types and rules, switch between
 Main, Commander and Sideboard, and select cards for a large preview. Other face
@@ -191,7 +203,7 @@ your ready status. In an AI lobby, each opponent's Choose deck opens the same
 searchable picker; changing one opponent leaves the other seats alone.
 
 TABLE CHAT AND EMOTES
-Choose Your display name at the top of the lobby to save the name your friends
+Choose Player or your current name at the top to save the name your friends
 will see. In a friends' table, Table chat opens the conversation in the lobby,
 deck builder, or game. Enter opens chat; while its input is focused, Enter sends
 and Esc closes. Typing does not play cards or pass priority; Auto waits while
@@ -207,7 +219,7 @@ at connected human tables; AI opponents do not produce fake replies.
 All friends need this social build: it uses seat synchronization protocol 3.
 
 INTERNET CONNECTIONS
-Connection options lets the host request automatic router port forwarding before
+Connection lets the host request automatic router port forwarding before
 creating a table. Connection shows the resulting status and addresses. A mapped status is the
 router's acknowledgement, not a successful external connection test.
 If your router cannot forward ports (including carrier-grade NAT), use an
@@ -237,7 +249,10 @@ Click a card to enlarge it for reading; click it again or empty table to close.
 Use the opened card's current Play, Cast or ability action, or drag a playable hand
 card or your commander onto the table. Each partner commander has its own Cast
 action and commander tax. Required choices, targets and mana payments use their normal
-single click and stay compact. Right-click opens the complete card inspector.
+single click and stay compact. Right-click uses the same full-card reader.
+Required selections, auxiliary views and alternate faces retain a read-only
+inspector when the table reader is unavailable. Actions stay beside the live
+card; inspecting never activates an ability or casts from a public zone.
 Zone piles open browsers containing only the cards your player can see. Your own
 graveyard, exile and command browsers can offer engine-authorized actions,
 including Flashback when available. Hidden hands show anonymous backs.
@@ -374,17 +389,22 @@ Original Forge: https://github.com/Card-Forge/forge
 See FORGE-LICENSE.txt and THIRD-PARTY.txt for attribution.
 
 STRATEGY REVIEW
-Choose Analyze beside Build, Test and Results. Your plan and favorite cards are
+Choose Tune beside Build, Test and Results. Your plan and favorite cards are
 shared with the builder. The review starts with defaults; preferences are optional
-questions you can open when useful. Review Findings, Engines, Suggested swaps,
-Card functions and Decisions. Save to Considering keeps a proposed card
-outside the playable list; Keep current and Dismiss record your reasons with
-the deck version. Review decisions shows reviewed suggestions until you choose
+questions you can open when useful. Browse Checks, Engines, Swaps, Roles and
+History. The selected relationship stays beside the list, with its related
+cards and locally scrollable evidence. Reading a card uses the separate area
+on the right without navigating away or changing the list.
+Try this card keeps a proposed card in Considering, outside the playable list;
+Keep current and Dismiss record your decision with the deck version.
+Saved decisions shows reviewed swaps until you choose
 Reopen this swap. Editing the playable list gives its own review while preserving
 earlier history.
 Automatic land targets use your highest positive commander mana value, otherwise
 the first three land drops; you can choose another target. Limited review uses
 your entered pool plus unused Sideboard cards, excluding Considering.
-Test deck opens the existing Test setup. Review actual tests and your notes in
+Test this check carries its observation question into Test. Start test game plays
+the saved version against AI; drawing a sample is a separate draw-only practice.
+Review actual tests and your notes in
 Results, then return to Build to tune the list. Analysis and
 format checks use the bundled snapshot and show their assumptions.

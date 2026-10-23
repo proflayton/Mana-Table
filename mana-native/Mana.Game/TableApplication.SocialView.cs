@@ -12,8 +12,6 @@ internal sealed partial class TableApplication
     private string ChatScope => $"chat:{conversation.TableId}:{chatOpen}:{chatPeople}:{chatPage}:{chatAnchor}:{chatSelectedMessage}:{chatDraft}:{preferences.MuteTableChat}:{string.Join(',', conversation.MutedMembers.Order())}";
     private void DrawSocial()
     {
-        if (match == null && !deckEditor && setupModal.Length == 0)
-            Button("player-name", preferences.PlayerName.Length == 0 ? "Your display name" : preferences.PlayerName, 1200, 17, 178, OpenPlayerName, loaded && !busy, height: 34);
         if (!SocialAvailable) return;
         Button("chat-toggle", conversation.Unread > 0 ? $"Chat ({conversation.Unread})" : "Table chat", match == null ? 1390 : 1052, match == null ? 17 : 12, match == null ? 164 : 126, ToggleChat, accent: chatOpen || conversation.Unread > 0, height: 35);
         if (!chatOpen && now < chatToastUntil && chatToast.Length > 0 && !conversation.Muted) {

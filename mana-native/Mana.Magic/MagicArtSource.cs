@@ -32,8 +32,19 @@ public sealed class MagicArtSource : ICardArtSource
             byte[] bytes;
             try { bytes = await http.GetByteArrayAsync("https://api.scryfall.com/cards/" + card + "format=image&version=normal&face=" + (art.Face == "back" ? "back" : "front"), cancellationToken); }
             finally { await Task.Delay(150, cancellationToken); }
-            await File.WriteAllBytesAsync(file, bytes, cancellationToken);
-            return bytes;
+            // Publish only a complete image. A cancelled or interrupted write
+            // must not become the next launch's trusted cache entry.
+            string temporary = file + "." + Guid.NewGuid().ToString("N") + ".tmp";
+            try {
+                await File.WriteAllBytesAsync(temporary, bytes, cancellationToken);
+                cancellationToken.ThrowIfCancellationRequested();
+                File.Move(temporary, file, overwrite: true);
+                return bytes;
+            } finally {
+                try { File.Delete(temporary); }
+                catch (IOException) { }
+                catch (UnauthorizedAccessException) { }
+            }
         } finally { serial.Release(); }
     }
     public void Dispose() => http.Dispose();

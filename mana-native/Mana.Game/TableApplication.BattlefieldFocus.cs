@@ -47,7 +47,7 @@ internal sealed partial class TableApplication
         canvas.Fill(new(0, 54, 1600, 724), Color.Black * .36f);
         canvas.Panel(BattlefieldFocusBounds, new(19, 29, 36), new(104, 125, 135), 12);
         // Gaps and partially clipped rows must not click the obscured table.
-        hits.Add(new("battlefield-focus-surface", Scope, BattlefieldFocusBounds, () => { }));
+        hits.Add(new("battlefield-focus-surface", Scope, BattlefieldFocusBounds, () => { }, ShowPointer: false));
         canvas.Text(player.Id == state.ViewerId ? "Your battlefield" : player.Name + "'s battlefield", 190, 103, Ink, 1.06f, 820, 2, true);
         Button("battlefield-focus-close", "Whole table", 1050, 101, 160, () => {
             CollapseCardReading(); zoneName = null;

@@ -60,15 +60,18 @@ internal sealed class EquipmentSmoke : ITableAutomation
         });
         Step(0, () => mouse = Mouse(right: ButtonState.Pressed));
         Step(0, () => mouse = Mouse());
-        Wait(() => view.Overlay == "inspect", 3, () => {
-            Check(view.Overlay == "inspect" && view.AttachmentConnections.Count == 0,
-                "Right-click opens the inspector and suppresses table attachment lines behind it");
+        Wait(() => Reading("boots-2-0"), 3, () => {
+            Check(view.Overlay.Length == 0 && Reading("boots-2-0")
+                    && view.Frame!.Cards.SingleOrDefault(card => card.Focused)?.Card.VisualId == "boots-2-0",
+                "Right-click retains the exact Equipment's canonical reader without opening another dialog");
+            AssertConnection("boots-2-0", "elf-2-0");
             Check(scenario.Replies.Count == 0, "Equipment reading and inspection consume no game decision");
-            Capture("03-equipment-inspector");
+            Capture("03-equipment-reader");
         });
-        ClickHit("close-overlay");
+        Step(0, () => MoveCard(view.Frame!.Cards.Single(card => card.Focused).Id)); Click();
         Step(.15, () => {
-            Check(view.Overlay.Length == 0, "The equipment inspector closes through its normal control");
+            Check(view.Overlay.Length == 0 && view.HoverPreview == null && !view.Frame!.Cards.Any(card => card.Focused),
+                "Clicking the focused Equipment closes its reader through the actual card pointer target");
             MoveAway();
             Publish(ChangeCards(c => c.VisualId == "boots-2-0" ? c with { AttachedTo = c.AttachedTo! with { Id = "elf-3-0" } }
                 : c.VisualId == "elf-2-0" ? c with { Attachments = [] }
@@ -251,10 +254,6 @@ internal sealed class EquipmentSmoke : ITableAutomation
     private MouseState Mouse(ButtonState left = ButtonState.Released, ButtonState right = ButtonState.Released) => new(mouse.X, mouse.Y, 0, left, ButtonState.Released, right, ButtonState.Released, ButtonState.Released);
     private bool Reading(string id) => view.DisplayedPose(id) is { Size.X: >= 400 } && view.HoverPreview is { Width: >= 400 };
     private void Click() { Step(0, () => mouse = Mouse(ButtonState.Pressed)); Step(0, () => mouse = Mouse()); }
-    private void ClickHit(string id) {
-        Step(0, () => MoveHit(view.Hits.Single(h => h.Id == id)));
-        Step(0, () => mouse = Mouse(ButtonState.Pressed)); Step(0, () => mouse = Mouse());
-    }
     private void Capture(string name) {
         using var file = File.Create(Path.Combine(view.Profile, name + ".png")); view.Surface.SaveAsPng(file, view.Surface.Width, view.Surface.Height);
         view.CaptureWindow(Path.Combine(view.Profile, name + "-window.png"));

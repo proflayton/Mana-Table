@@ -31,6 +31,7 @@ internal static class HeadlessPresentationSmoke
         }
         try {
             ProviderIsolationChecks.Run(Check);
+            PregameFlowChecks.Run(profile, Check);
             DeckLibraryPresentationChecks.Run(profile, Check);
             DecisionDockInteractionChecks.Run(profile, Check);
             SemanticCommandPresentationChecks.Run(profile, Check);
@@ -252,10 +253,10 @@ internal static class HeadlessPresentationSmoke
                 run.Present(sourceChoice with { Decision = sourcePrompt with { Ordered = true } });
                 run.Tick("ordered-source-choice-gallery-fallback");
                 run.ClickHit("choice:17");
-                Check(run.Frame.Hits.Any(hit => hit.Id == "choicesfilter") && run.Frame.Hits.Any(hit => hit.Id == "choicesclear")
+                Check(!run.Frame.Hits.Any(hit => hit.Id is "choicesfilter" or "choicesprev" or "choicesnext") && run.Frame.Hits.Any(hit => hit.Id == "choicesclear")
                     && run.Frame.Hits.Any(hit => hit.Id == "choicesdone") && run.View.Selections.SequenceEqual([17])
                     && run.Engine.Replies.Count == 1,
-                    "An ordered source choice retains staged gallery selection and confirmation rather than activating a row directly");
+                    "A sparse ordered source choice retains staged selection and confirmation without irrelevant search or pagination");
                 run.Present(sourceChoice with { Decision = sourcePrompt with {
                     Choices = sourcePrompt.Choices.Select(choice => choice with {
                         Detail = string.Join(" ", Enumerable.Repeat("This authoritative ability detail must remain available without being discarded to fit a compact panel.", 40))
@@ -303,6 +304,44 @@ internal static class HeadlessPresentationSmoke
                 Check(!run.Frame.Hits.Any(hit => hit.Id.StartsWith("table-state:", StringComparison.Ordinal))
                     && !Text(run.Frame).Contains("Night") && run.Engine.Replies.Count == privacyReplies,
                     "Removing table state clears its old controls and labels without inventing a game command");
+            }
+
+            var orderedCards = Example() with { Decision = new() { Kind = "choice", Ordered = true, Min = 3, Max = 3,
+                Choices = [new(7, "First private card", new() { Name = "First private card", Type = "Sorcery" }),
+                    new(31, "Second private card", new() { Name = "Second private card", Type = "Sorcery" }),
+                    new(9, "Third private card", new() { Name = "Third private card", Type = "Sorcery" })],
+                SourceCard = Example().Viewer!.Zone("Battlefield").Cards.Single(), SourceControllerId = 0 } };
+            using (var run = new Runner(profile, "sparse-private-order", orderedCards, trace, performance)) {
+                run.Tick("private-order-open");
+                Check(new[] { "choice:7", "choice:31", "choice:9", "close-overlay", "choicesclear" }.All(id => run.Frame.Hits.Any(hit => hit.Id == id))
+                    && run.View.Selections.SequenceEqual([7, 31, 9])
+                    && !run.Frame.Hits.Any(hit => hit.Id is "choicesfilter" or "choicesprev" or "choicesnext")
+                    && !Text(run.Frame).Any(text => text.StartsWith("Page ", StringComparison.Ordinal))
+                    && Text(run.Frame).Contains("Choose an order") && Text(run.Frame).Contains("SOURCE")
+                    && Text(run.Frame).Contains("Public ward creature") && run.Engine.Replies.Count == 0,
+                    "Three private card choices retain their supplied draft order, scoped source and battlefield return without irrelevant search, pagination or a submitted answer");
+                run.ClickHit("choicesclear");
+                Check(run.View.Selections.Count == 0 && run.Engine.Replies.Count == 0,
+                    "Reset order clears only the local draft while preserving the unanswered private decision");
+                run.ClickHit("choice:9"); run.ClickHit("choice:7"); run.ClickHit("choice:31");
+                Check(run.View.Selections.SequenceEqual([9, 7, 31]) && run.Frame.Hits.Any(hit => hit.Id == "choicesdone")
+                    && Text(run.Frame).Contains("ORDER 1") && Text(run.Frame).Contains("ORDER 2") && Text(run.Frame).Contains("ORDER 3")
+                    && run.Engine.Replies.Count == 0,
+                    "The actual card objects retain visible position badges and original selection order until explicit commitment");
+                string game = run.View.Match!.Id, decision = run.View.Match.Decision!.Id;
+                run.ClickHit("choicesdone"); run.Until(() => !run.View.Busy && run.Engine.Replies.Count == 1, "private-order-committed");
+                Check(run.Engine.Replies.Single() is OrderOptions command && command.GameId == game && command.DecisionId == decision
+                        && command.Choices.SequenceEqual([9, 7, 31]),
+                    "Decluttering a private ordered choice preserves one exact scoped ordered command and its explicit final commitment");
+                var many = orderedCards with { Decision = orderedCards.Decision! with { Ordered = false, Min = 1, Max = 1,
+                    Choices = Enumerable.Range(0, 8).Select(index => new Choice(100 + index, "Private card " + index,
+                        new() { Name = "Private card " + index, Type = "Sorcery" })).ToImmutableArray() } };
+                run.Present(many); run.Tick("large-private-choice");
+                Check(run.Frame.Hits.Any(hit => hit.Id == "choicesfilter") && run.Frame.Hits.Any(hit => hit.Id == "choicesnext"),
+                    "A genuinely larger private choice keeps search and navigation available");
+                run.ClickHit("choicesnext"); run.ClickHit("choice:107");
+                Check(run.View.Selections.SequenceEqual([107]) && run.Engine.Replies.Count == 1,
+                    "The last private option remains reachable on another page without changing its original index or submitting on selection");
             }
 
             using (var run = new Runner(profile, "complete-dense-battlefield", DenseExample(), trace, performance)) {

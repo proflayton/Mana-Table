@@ -139,15 +139,7 @@ internal sealed class HandPlacementSmoke : ITableAutomation
                 "When ordinary play is legal, the reader's Play card action keeps the ordinary engine route");
             Publish("normal"); MoveAway();
         });
-        Step(.7, () => MoveCard("hand-forest")); RightClick();
-        Wait(() => view.Overlay == "inspect", 3, () => {
-            Check(view.Hits.Any(h => h.Id == "inspect-placement"), "The hand inspector exposes the alternate placement even when normal play is legal");
-            Capture("04-inspector-alternative"); Expect("placement-a"); MoveHit("inspect-placement");
-        }); Click();
-        Wait(ReplySettled, 3, () => {
-            CheckPlacement("The inspector's explicit alternate action uses the requested placement source");
-            Publish("phased"); MoveAway();
-        });
+        Step(.7, () => { Publish("phased"); MoveAway(); });
         Step(.7, () => { before = scenario.Replies.Count; MoveCard("hand-forest"); }); Click();
         Wait(() => Reading("hand-forest"), 3, () => {
             Check(Reading("hand-forest") && scenario.Replies.Count == before && view.Overlay.Length == 0
@@ -179,51 +171,11 @@ internal sealed class HandPlacementSmoke : ITableAutomation
             Check(view.Hits.Any(h => h.Id == "zone-actions:0:Graveyard") && view.Hits.Any(h => h.Id == "zone-actions:0:Exile")
                 && view.Hits.Any(h => h.Id == "zone-actions:0:Command"), "Your graveyard, exile and command zone visibly signal currently available cards");
             Check(!view.Hits.Any(h => h.Id.StartsWith("zone-actions:1:")), "Opponent zones never receive private action availability cues");
-            Capture("05-zone-availability"); MoveHit("zone-actions:0:Graveyard");
-        }); Click();
-        Step(.2, () => {
-            Check(view.ZoneName == "Graveyard" && view.Hits.Any(h => h.Id == "zone-use:own-grave"),
-                "Opening the graveyard exposes an explicit use action on the available card");
-            before = scenario.Replies.Count; Capture("06-graveyard-action"); MoveCard("own-grave");
-        }); Click();
-        Wait(() => view.Overlay == "inspect", 3, () => {
-            Check(scenario.Replies.Count == before && view.ZoneName == "Graveyard" && view.Overlay == "inspect",
-                "A single graveyard-card click opens its inspector without committing its available action");
-            Check(view.Hits.Any(h => h.Id == "inspect-zone-use"), "The graveyard inspector offers the legitimate current zone action");
-            Capture("07-graveyard-inspector"); MoveHit("inspect-zone-use");
-        }); Click();
-        Wait(ReplySettled, 3, () => {
-            Check(scenario.Replies.Count == before + 1 && scenario.Replies[^1] is PlayCard && view.Match?.Decision is { Purpose: DecisionPurpose.AbilitySelection, SourceZone: "Graveyard" },
-                "Use from graveyard opens the engine's current ability and cost choice");
-            Check(view.Match!.Decision!.Choices.Any(c => c.Label.StartsWith("Flashback", StringComparison.Ordinal)),
-                "The engine-provided chooser supplies the actual Flashback label rather than guessing from printed text");
-            Capture("08-engine-ability-choice"); Publish("zones"); MoveAway();
+            Capture("05-zone-availability"); Publish("revoked"); MoveAway();
         });
-        Step(.7, () => MoveHit("zone-actions:0:Exile")); Click();
         Step(.2, () => {
-            Check(view.Hits.Any(h => h.Id == "zone-use:own-exile"), "Exile uses the same explicit current-action control");
-            before = scenario.Replies.Count; MoveHit("zone-use:own-exile");
-        }); Click();
-        Wait(ReplySettled, 3, () => {
-            Check(scenario.Replies.Count == before + 1 && view.Match?.Decision is { Purpose: DecisionPurpose.AbilitySelection, SourceZone: "Exile" },
-                "The exile action uses the normal engine route exactly once");
-            Publish("zones"); MoveAway();
-        });
-        Step(.7, () => MoveHit("zone-actions:0:Exile")); Click();
-        Step(.2, () => { before = scenario.Replies.Count; MoveHit("zone-use:own-exile"); });
-        Step(.03, () => Buttons(left: ButtonState.Pressed));
-        Step(.06, () => Publish("revoked"));
-        // The deliberately stale release must reach production's rejection guard.
-        Step(.06, () => Buttons(validateTarget: false));
-        Step(.2, () => {
-            Check(scenario.Replies.Count == before && !view.Hits.Any(h => h.Id == "zone-use:own-exile"),
-                "Revoking a zone action between press and release discards the stale use button");
-            MoveAway();
-        });
-        Step(.7, () => {
             Check(!view.Hits.Any(h => h.Id.StartsWith("zone-actions:")), "Unavailable zones lose their action cues on the next authoritative snapshot");
-            MoveHit("close-overlay");
-        }); Click();
+        });
         (string Game, string Prompt, string Key) sourceRead = default;
         Step(.2, () => {
             scenario.SourceActionRead = (game, prompt, key) => {
@@ -268,7 +220,7 @@ internal sealed class HandPlacementSmoke : ITableAutomation
             var current = view.Match!.Viewer!.Zone("Graveyard").Cards.Single(card => card.VisualId == "own-grave");
             Check(scenario.Replies.Count == before && view.ZoneName == "Graveyard" && view.Overlay.Length == 0
                 && sourceRead == (view.Match.Id, view.Match.Decision!.Id, current.Key)
-                && ReaderActionText() == "Flashback {1}{U}, Pay 3 life: Target player draws two cards."
+                && ReaderActionText() == "Cast Flashback {1}{U}, Pay 3 life: Target player draws two cards."
                 && !view.Hits.Any(hit => hit.Id is "zone-use:own-grave" or "inspect-zone-use"),
                 "A source-aware graveyard card opens its actual live reader and current-key cast action without an inspector detour or a game reply");
             Capture("10-source-aware-grave-reader");
@@ -363,7 +315,6 @@ internal sealed class HandPlacementSmoke : ITableAutomation
         });
         Click();
     }
-    private void RightClick() { Step(.03, () => Buttons(right: ButtonState.Pressed)); Step(.04, () => Buttons()); }
     private void Drag() { Step(.03, () => Buttons(left: ButtonState.Pressed)); Step(.08, () => Move(new(800, 580), ButtonState.Pressed)); Step(.18, () => Buttons()); }
     private void Step(double delay, Action action) => steps.Enqueue((delay, null, action));
     private void Wait(Func<bool> ready, double deadline, Action action) => steps.Enqueue((deadline, ready, action));

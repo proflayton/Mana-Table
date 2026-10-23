@@ -9,6 +9,7 @@ namespace Mana.Table;
 internal sealed partial class TableApplication
 {
     private static readonly Color ReadyColor = new(118, 214, 181), LobbyTrim = new(51, 67, 82);
+    private int homeDeckPage;
     private void LobbyPill(string label, int x, int y, int width, Color color)
     {
         canvas.Rounded(new(x, y, width, 28), color * .13f, 14);
@@ -16,154 +17,175 @@ internal sealed partial class TableApplication
     }
     private void DrawLobby()
     {
+        DrawHomeSurface();
+        DrawMenuHeading();
         if (deckEditor && selectedDeckDetails != null) { DrawDeckEditor(); return; }
-        canvas.Glow(new(310, 450), new(840, 810), Teal * .25f);
-        canvas.Text("Gather your table.", 48, 106, Ink, 1.9f, 970, 1, true);
-        int playerCount = Connected ? lobby!.Seats.Length : soloTab ? 4 : friendPlayerCount;
-        canvas.Text(CommanderDeck ? $"COMMANDER   /   {playerCount} PLAYERS   /   40 LIFE" : selectedDeckDetails!.Format.ToUpperInvariant() + "   /   TWO PLAYERS", 51, 165, Muted, .73f, 970, 1);
-        Button("solo-tab", "Play with AI", 1122, 112, 200, () => SetupMode(true), !busy && !Connected, soloTab && !Connected, 44);
-        Button("friends-tab", "Play with friends", 1334, 112, 220, () => SetupMode(false), !busy && !Connected, !soloTab || Connected, 44);
-        canvas.Line(new(48, 205), new(1552, 205), LobbyTrim);
-        DrawLobbyDeck();
-        canvas.Panel(new(556, 232, 1000, 664), new(20, 29, 39), LobbyTrim, 16);
         if (Connected) DrawFriendsLobby();
-        else if (soloTab) DrawSoloLobby();
-        else DrawFriendsWelcome();
-        if (!Connected) Button("experience-home", "Home", 1115, 920, 160, OpenWelcome, loaded && !busy, height: 38);
-        DrawUpdateFooter(false);
+        else {
+            int actionTop = DrawHomeDeck();
+            MenuAction("solo-tab", "Play with AI", new(84, actionTop, 210, 48), () => ChoosePlayMode(true), loaded && !busy, soloTab);
+            MenuAction("friends-tab", "With friends", new(315, actionTop, 210, 48), () => ChoosePlayMode(false), loaded && !busy, !soloTab);
+            if (soloTab) DrawSoloLobby(actionTop); else DrawFriendsWelcome(actionTop);
+            DrawHomeDecks();
+        }
+        DrawUpdateFooter(true);
         if (setupModal.Length > 0) DrawSetupModal();
         DrawWorkshopDialog();
     }
-    private void DrawLobbyDeck()
+    private void DrawHomeSurface()
     {
-        canvas.Panel(new(40, 232, 490, 664), new(23, 33, 44), DeckConfirmed ? ReadyColor * .6f : LobbyTrim, 16);
-        canvas.Text("YOUR DECK", 64, 256, Gold, .75f, 245, 1, true);
-        Button("new-deck", "+ New deck", 352, 249, 152, () => NewDeck(), loaded && !busy, height: 32);
-        if (selectedDeckDetails is not { } deck) {
-            canvas.Ring(new(285, 461), 77, Teal, 2);
-            canvas.Rounded(new(251, 414, 66, 94), new(35, 55, 68), 8);
-            canvas.CenterText("+", new(251, 413, 66, 94), Blue, 2);
-            canvas.Text("Make it your table.", 81, 585, Ink, 1.15f, 406, 1, true);
-            canvas.Text("Try a precon, import a list, or build your own.", 81, 707, Muted, .86f, 405, 2);
-            Button("change-deck", "Choose a deck", 64, 780, 440, OpenDeckPicker, loaded && !busy, true, 54);
-            return;
+        canvas.Gradient(new(0, 0, 1600, 1000), new(20, 29, 31), new(7, 13, 17));
+        var leader = selectedDeckDetails?.Entries.FirstOrDefault(entry => entry.Section == "Commander")?.Card;
+        if (leader != null && resources.Card(leader) is { } image) {
+            var crop = new Rectangle((int)(image.Width * .08f), (int)(image.Height * .13f), (int)(image.Width * .84f), (int)(image.Height * .43f));
+            canvas.Sprite(image, new(800, 430), new(1600, 1187), tint: Color.White * .25f, crop: crop);
+            for (int i = 0; i < 64; i++) {
+                float shade = .92f * Math.Clamp((1080 - i * 25) / 850f, 0, 1);
+                canvas.Fill(new(i * 25, 0, 25, 1000), new Color(8, 17, 21) * shade);
+            }
         }
-        canvas.Text(deck.Name, 64, 298, Ink, 1.2f, 440, 2, true);
-        var leaders = deck.Entries.Where(e => e.Section == "Commander").ToArray();
-        if (leaders.Length == 0) {
-            canvas.Panel(new(87, 388, 186, 260), new(19, 27, 36), LobbyTrim, 8);
-            canvas.Text("Choose your\ncommander", 108, 478, Muted, .9f, 149, 3);
-        } else for (int i = 0; i < Math.Min(2, leaders.Length); i++) {
-            var pose = leaders.Length == 1 ? new Pose(new(181, 503), new(186, 260))
-                : new Pose(new(153 + i * 77, 500 + i * 12), new(142, 199), i == 0 ? -.065f : .065f);
+        canvas.Gradient(new(0, 0, 1600, 1000), new Color(9, 17, 22) * .18f, new Color(5, 11, 16) * .98f);
+        canvas.Glow(new(1000, 390), new(1400, 980), Teal * .10f);
+    }
+    private void DrawMenuHeading()
+    {
+        canvas.Text("MANA TABLE", 64, 38, Gold, 1.35f, 340, 1, true);
+        MenuAction("experience-home", "Play", new(405, 31, 100, 48), () => { CloseDeckEditor(); CloseSetupModal(); OpenPlayHome(); }, loaded && !busy, !deckEditor);
+        MenuAction("change-deck", "Decks", new(528, 31, 115, 48), () => { ClearExperienceInput(); OpenDeckPicker(); }, loaded && !busy);
+        MenuAction("new-deck", "+ New deck", new(666, 31, 160, 48), () => { ClearExperienceInput(); NewDeck(); }, loaded && !busy);
+        MenuAction("player-name", preferences.PlayerName.Length > 0 ? preferences.PlayerName : "Player", new(1130, 31, 210, 48), () => { ClearExperienceInput(); OpenPlayerName(); }, loaded && !busy);
+    }
+    private int DrawHomeDeck()
+    {
+        var deck = selectedDeckDetails;
+        canvas.Text(deck?.Format.ToUpperInvariant() ?? "COMMANDER", 94, 140, Gold, .74f, 570, 1, true);
+        string title = deck?.Name ?? "Your next commander.";
+        int titleHeight = canvas.TextSize(title, 1.7f, 670, 3, true).Y;
+        canvas.Text(title, 88, 180, Ink, 1.7f, 670, 3, true);
+        if (deck == null) {
+            canvas.Text("Choose a precon or bring your own deck.", 94, 375, Muted, .95f, 600, 2);
+            if (soloTab) Button("home-choose", "Choose a deck", 90, 554, 430, () => OpenDeckLibrary(), loaded && !busy, true, 68, prominent: true);
+            if (resources.CardBack is { } back) for (int i = 0; i < 3; i++)
+                canvas.Sprite(back, new(1010 + i * 95, 445 + (i == 1 ? -22 : 0)), new(270, 378), (i - 1) * .13f, Color.White * .7f);
+            return 465;
+        }
+        var leaders = deck.Entries.Where(entry => entry.Section == "Commander").Take(2).ToArray();
+        string names = string.Join(" + ", leaders.Select(entry => entry.Card.Name));
+        int namesY = Math.Max(290, 180 + titleHeight + 24);
+        int namesHeight = canvas.TextSize(names, .93f, 630, 3).Y;
+        canvas.Text(names, 94, namesY, Muted, .93f, 630, 3);
+        int countY = namesY + namesHeight + 24, actionTop = Math.Max(465, countY + 48);
+        int count = deck.Entries.Where(entry => entry.Section is "Commander" or "Main").Sum(entry => entry.Quantity);
+        string countLabel = CommanderDeck ? $"{count} / 100 cards" : $"{count} cards";
+        canvas.Text(countLabel + (DeckReady ? "" : " · Needs changes"), 94, countY, DeckReady ? Muted : Gold, .76f, 620, 1);
+        var bounds = new Rectangle(855, 155, 590, 600);
+        bool over = !busy && bounds.Contains(pointer);
+        for (int i = leaders.Length - 1; i >= 0; i--) {
+            var pose = leaders.Length == 1 ? new Pose(new(1135, 439), new(370, 518), -.025f)
+                : new Pose(new(1060 + i * 166, 410 + i * 38), new(300, 420), i == 0 ? -.08f : .07f);
+            canvas.Quad(pose.Center + new Vector2(10, 16), pose.Size + new Vector2(10), pose.Angle, Color.Black * .5f);
             PaintCard(leaders[i].Card, pose, false, false);
+            if (over) canvas.CardFocus(pose, Gold);
         }
-        int main = deck.Entries.Where(e => e.Section == "Main").Sum(e => e.Quantity), commanders = leaders.Sum(e => e.Quantity);
-        int side = deck.Entries.Where(e => e.Section == "Sideboard").Sum(e => e.Quantity);
-        canvas.Text((main + commanders).ToString(), 319, 394, Ink, 2.5f, 174, 1, true);
-        canvas.Text(CommanderDeck ? "OF 100 CARDS" : "CARDS IN MAIN", 322, 461, Muted, .58f, 170, 1);
-        canvas.Text($"{main} main\n{commanders} commander{(commanders == 1 ? "" : "s")}\n{side} sideboard", 320, 496, Muted, .73f, 177, 4);
-        LobbyPill(DeckConfirmed ? "CONFIRMED" : DeckReady ? "READY TO REVIEW" : "NEEDS CHANGES", 305, 605, 194, DeckConfirmed ? ReadyColor : DeckReady ? Blue : Gold);
-        canvas.Text(leaders.Length == 0 ? "No commander selected" : string.Join(" + ", leaders.Select(e => e.Card.Name)), 66, 665, leaders.Length == 0 ? Gold : Ink, .78f, 438, 2);
-        Button("change-deck", "Change deck", 64, 739, 213, OpenDeckPicker, !busy, height: 40);
-        Button("edit-deck", "Deck builder", 289, 739, 215, OpenDeckEditor, !busy, height: 40);
-        Button("review-deck", DeckConfirmed ? "Review confirmed deck" : "Review & confirm", 64, 795, 440, ReviewDeck, !busy, !DeckConfirmed, 50);
-        string deckHint = deck.SaveError.Length > 0 ? "Save failed. Open Deck builder to retry."
-            : !DeckReady ? "Finish this list in Deck builder, then review it."
-            : !DeckConfirmed ? "Review your list, then select Confirm deck."
-            : Connected ? "Editing or changing decks clears Ready."
-            : "Editing or changing decks means confirming again.";
-        canvas.Text(deckHint, 67, 856, deck.SaveError.Length > 0 ? Red : Muted, .68f, 433, 2);
+        if (leaders.Length == 0) {
+            canvas.CardFrame(new Vector2(1135, 439), new(315, 440), -.025f, Gold * .45f, 2);
+            canvas.CenterText("Choose a commander", new(972, 401, 326, 80), Gold, 1.05f, true);
+        }
+        canvas.CenterText("Edit deck", new(950, 718, 370, 40), over ? Ink : Muted, .82f, over);
+        if (!busy) hits.Add(new("edit-deck", Scope, bounds, () => { ClearExperienceInput(); OpenDeckEditor(); }));
+        if (!DeckReady && soloTab) {
+            string issue = deck.SaveError.Length > 0 ? "Unsaved changes. Open your deck to retry." : deck.Problem.Length > 0 ? deck.Problem : "Choose a commander in your deck.";
+            canvas.Text(issue, 94, actionTop + 170, Gold, .82f, 620, 4);
+        }
+        MenuAction("review-deck", "Deck list", new(950, 765, 370, 36), () => { ClearExperienceInput(); ReviewDeck(); }, !busy, size: .74f);
+        return actionTop;
     }
-    private void DrawLobbySeat(int index, string name, string deckName, string detail, string status, bool ready, bool local, bool open = false)
+    private void DrawHomeDecks()
     {
-        int x = 586 + index % 2 * 480, y = 346 + index / 2 * 210;
-        var color = ready ? ReadyColor : open ? Muted : local ? Blue : Gold;
-        canvas.Panel(new(x, y, 460, 190), open ? new(21, 29, 38) : new(28, 40, 53), ready ? color * .7f : LobbyTrim, 12);
-        canvas.Circle(new(x + 38, y + 36), 18, color * .18f);
-        canvas.CenterText((index + 1).ToString(), new(x + 20, y + 18, 36, 36), color, .8f, true);
-        canvas.Text(name, x + 68, y + 21, Ink, .9f, 230, 1, true);
-        LobbyPill(status, x + 310, y + 22, 132, color);
-        canvas.Text(deckName, x + 22, y + 69, open ? Muted : Ink, .94f, 416, 2, !open);
-        if (Connected || !soloTab || local || open) canvas.Text(detail, x + 23, y + 138, Muted, .64f, 411, 2);
+        canvas.Text("YOUR DECKS", 94, 810, Gold, .64f, 240, 1, true);
+        MenuAction("home-library", "All decks", new(1330, 795, 170, 42), () => OpenDeckLibrary(), loaded && !busy, size: .75f);
+        homeDeckPage = Math.Clamp(homeDeckPage, 0, Math.Max(0, (decks.Count - 1) / 4));
+        for (int i = 0; i < Math.Min(4, decks.Count - homeDeckPage * 4); i++) {
+            var deck = decks[homeDeckPage * 4 + i];
+            int x = 94 + i * 347;
+            var bounds = new Rectangle(x, 849, 315, 69);
+            bool selected = selectedDeck?.Id == deck.Id, over = !busy && bounds.Contains(pointer);
+            canvas.Line(new(x, 846), new(x + 314, 846), selected ? Gold : over ? Ink : LobbyTrim, selected ? 3 : 1);
+            canvas.Text(deck.Name, x + 6, 864, selected || over ? Ink : Muted, .95f, 302, 2, selected);
+            if (!busy) hits.Add(new("home-deck:" + deck.Id, ControlScope("home-deck:" + deck.Id), bounds, () => { ClearExperienceInput(); ChooseDeck(deck); }));
+        }
+        if (decks.Count == 0) MenuAction("home-precons", "Choose a precon", new(90, 848, 300, 60), () => OpenDeckLibrary(), loaded && !busy);
+        if (decks.Count > 4) {
+            MenuAction("home-prev", "‹", new(1502, 844, 37, 42), () => homeDeckPage--, !busy && homeDeckPage > 0, size: 1.3f);
+            MenuAction("home-next", "›", new(1540, 844, 37, 42), () => homeDeckPage++, !busy && (homeDeckPage + 1) * 4 < decks.Count, size: 1.3f);
+        }
     }
-    private void DrawSoloLobby()
+    private void DrawSoloLobby(int top)
     {
-        canvas.Text("A table on your terms", 586, 257, Ink, 1.13f, 650, 1, true);
-        LobbyPill("SOLO / AI", 1358, 254, 168, Blue);
-        int opponentCount = Math.Min(3, (soloSetup?.MaxPlayers ?? (CommanderDeck ? 6 : 2)) - 1);
-        canvas.Text(opponentCount == 1 ? "You make every decision for your deck. One AI opponent takes the other seat." : "You make every decision for your deck. Three AI opponents take the other seats.", 587, 300, Muted, .73f, 920, 1);
-        DrawLobbySeat(0, "You", selectedDeck?.Name ?? "Choose your deck", DeckConfirmed ? "Deck confirmed. Your seat is reserved." : "Review and confirm your deck to play.", DeckConfirmed ? "CONFIRMED" : "CHOOSING", DeckConfirmed, true);
-        for (int i = 0; i < opponentCount; i++) {
+        if (selectedDeckDetails == null) return;
+        Button("start-solo", "Play", 90, top + 89, 430, StartSolo, loaded && !busy && DeckReady, true, 68, prominent: true);
+        if (!DeckReady) return;
+        int count = CommanderDeck ? 3 : 1;
+        for (int i = 0; i < count; i++) {
             int seat = i;
-            var opponent = soloSetup?.Opponents[soloChoices[i]];
-            DrawLobbySeat(i + 1, "AI opponent " + (i + 1), opponent?.Name ?? "Waiting for your deck", opponent?.Description ?? "Confirm your deck to choose an opponent.", "AI", opponent != null, false);
-            int x = 586 + (i + 1) % 2 * 480, y = 346 + (i + 1) / 2 * 210;
-            Button("choose-ai:" + i, "Choose deck", x + 22, y + 143, 171, () => OpenOpponentPicker(seat), !busy && opponent != null, height: 30);
-            Button("ai-prev:" + i, "<", x + 343, y + 143, 43, () => soloChoices[seat] = (soloChoices[seat] + soloSetup!.Opponents.Length - 1) % soloSetup.Opponents.Length, !busy && opponent != null, height: 30);
-            Button("ai-next:" + i, ">", x + 395, y + 143, 43, () => soloChoices[seat] = (soloChoices[seat] + 1) % soloSetup!.Opponents.Length, !busy && opponent != null, height: 30);
+            var opponent = soloSetup is { } setup && setup.DeckId == selectedDeck?.Id ? setup.Opponents.ElementAtOrDefault(soloChoices[i]) : null;
+            int x = 164 + i * 139;
+            int centerY = top + 232;
+            var bounds = new Rectangle(x - 58, centerY - 33, 116, 94);
+            bool over = !busy && DeckReady && bounds.Contains(pointer);
+            canvas.Circle(new(x, centerY), 29, new(20, 37, 45));
+            canvas.Ring(new(x, centerY), 30, over ? Gold : LobbyTrim, over ? 3 : 1);
+            canvas.Rounded(new(x - 13, centerY - 9, 26, 18), over ? Ink : Muted, 4);
+            canvas.Circle(new(x - 5, centerY - 1), 2, Panel); canvas.Circle(new(x + 5, centerY - 1), 2, Panel);
+            canvas.Line(new(x, centerY - 9), new(x, centerY - 15), over ? Ink : Muted, 2);
+            canvas.CenterText("AI", new(x - 35, centerY + 36, 70, 26), over ? Ink : Muted, .65f, true);
+            if (over && opponent != null) canvas.Text(opponent.Name, 580, centerY - 8, Ink, .74f, 300, 3);
+            if (!busy && DeckReady) hits.Add(new("choose-ai:" + i, Scope, bounds, () => OpenOpponentPicker(seat)));
         }
-        canvas.Text(DeckConfirmed ? "Your table is ready." : "Waiting for your deck.", 590, 800, DeckConfirmed ? ReadyColor : Muted, .85f, 420, 2);
-        Button("start-solo", CommanderDeck ? "Start Commander" : "Start game", 1070, 790, 456, StartSolo, !busy && DeckConfirmed && soloSetup?.DeckId == selectedDeck?.Id, true, 54);
-        string startHint = selectedDeck == null ? "Choose a deck on the left to get started."
-            : !DeckReady ? "Open Deck builder on the left to finish your list."
-            : !DeckConfirmed ? "Select Review & confirm under your deck first."
-            : "Start now. Changing the AI decks above is optional.";
-        canvas.Text(startHint, 1072, 855, Muted, .68f, 452, 2);
     }
-    private void DrawFriendsWelcome()
+    private void DrawFriendsWelcome(int top)
     {
-        canvas.Text("Bring your friends", 586, 257, Ink, 1.2f, 620, 1, true);
-        Button("connection-options", "Connection options", 1300, 251, 226, () => { setupModal = "connection"; connectionPage = 0; }, !busy, height: 34);
-        canvas.Text("One player hosts. Everyone chooses a deck and readies their seat.", 588, 305, Muted, .8f, 917, 2);
-        canvas.Panel(new(586, 375, 940, 180), new(28, 40, 53), LobbyTrim, 12);
-        canvas.Text("Start a new table", 614, 405, Ink, 1.13f, 510, 1, true);
-        canvas.Text("Choose seats for your group, then share an invite.", 614, 450, Muted, .75f, 510, 1);
+        canvas.Text("Seats", 94, top + 76, Muted, .75f, 100, 1);
         for (int count = 2; count <= 4; count++) {
             int players = count;
-            Button("friends-count:" + count, count + " players", 614 + (count - 2) * 158, 490, 146,
-                () => friendPlayerCount = players, !busy, friendPlayerCount == count, 34);
+            MenuAction("friends-count:" + count, count.ToString(), new(204 + (count - 2) * 68, top + 58, 53, 42), () => friendPlayerCount = players, !busy, friendPlayerCount == count);
         }
-        Button("host", "Host table", 1174, 439, 324, () => ConnectLobby(true), loaded && !busy, true, 52);
-        canvas.Panel(new(586, 581, 940, 180), new(24, 35, 47), LobbyTrim, 12);
-        canvas.Text("Your friends are waiting", 614, 612, Ink, 1.13f, 510, 1, true);
-        canvas.Text("Paste their invite to take a seat.", 614, 660, Muted, .83f, 510, 2);
-        Button("join", "Join with invite", 1174, 645, 324, OpenJoin, loaded && !busy, height: 52);
-        canvas.Text("Keep this build in sync with your friends. Decks use the same builder and rules as solo play.", 595, 807, Muted, .78f, 903, 3);
+        Button("host", "Host a table", 90, top + 119, 430, () => ConnectLobby(true), loaded && !busy, true, 68, prominent: true);
+        MenuAction("join", "Join with an invite", new(90, top + 208, 430, 48), () => { ClearExperienceInput(); OpenJoin(); }, loaded && !busy);
+        MenuAction("connection-options", "Connection", new(90, top + 266, 430, 38), () => { ClearExperienceInput(); setupModal = "connection"; connectionPage = 0; }, !busy, size: .68f);
     }
     private void DrawFriendsLobby()
     {
         var state = lobby!;
-        int joined = state.Seats.Count(s => s.Type != "OPEN"), ready = state.Seats.Count(s => s.Ready);
-        int ai = state.Seats.Count(s => s.Type == "AI"), people = joined - ai;
-        canvas.Text(state.Mode == "hosting" ? "Your friends' table" : "You're at the table", 586, 257, Ink, 1.16f, 570, 1, true);
-        Button("connection-options", "Connection", 1110, 252, 151, () => { setupModal = "connection"; connectionPage = 0; }, !busy, height: 34);
-        if (state.Mode == "hosting") Button("invite", "Invite friends", 1273, 252, 143, () => { setupModal = "connection"; connectionPage = 0; }, !busy, true, 34);
-        Button("leave", "Leave", 1428, 252, 98, LeaveLobby, !busy, height: 34);
-        canvas.Text($"{people} player{(people == 1 ? "" : "s")} + {ai} AI     ·     {ready} / {state.Seats.Length} ready" + (state.Mode == "hosting" ? "     ·     You are hosting" : ""), 588, 301, Muted, .78f, 915, 1);
+        canvas.Text(state.Mode == "hosting" ? "Your table" : "At the table", 90, 149, Ink, 1.8f, 800, 1, true, true);
+        MenuAction("invite", "Invite friends", new(1050, 143, 230, 45), () => { setupModal = "connection"; connectionPage = 0; }, !busy);
+        MenuAction("leave", "Leave table", new(1310, 143, 220, 45), LeaveLobby, !busy);
         for (int i = 0; i < Math.Min(4, state.Seats.Length); i++) {
-            var seat = state.Seats[i]; bool open = seat.Type == "OPEN", computer = seat.Type == "AI";
-            bool manage = CanManageLobbySeats && seat.Index > 0 && (open || computer);
-            string detail = manage ? "" : open ? "Waiting for a friend or an AI opponent." : computer ? "AI opponent. The host chooses its deck."
-                : seat.Ready ? "Ready for the host to start." : seat.Local && !DeckConfirmed ? "Review your selected deck, then confirm." : seat.Deck == null ? "Choosing a deck." : "Deck selected. Not ready yet.";
-            DrawLobbySeat(i, seat.Local ? "You" : computer ? "AI opponent " + (seat.Index + 1) : seat.Name, open ? "Open seat" : seat.Deck ?? "No deck confirmed", detail,
-                open ? "OPEN" : computer ? seat.Ready ? "AI READY" : "AI" : seat.Ready ? "READY" : "NOT READY", seat.Ready, seat.Local, open);
-            if (manage) DrawLobbySeatControls(i, seat);
+            var seat = state.Seats[i]; int x = 280 + i * 347, y = 390;
+            bool open = seat.Type == "OPEN", ai = seat.Type == "AI";
+            Color color = seat.Ready ? ReadyColor : open ? Muted * .45f : seat.Local ? Gold : Blue;
+            canvas.Glow(new(x, y), new(250, 250), color * .10f);
+            canvas.Circle(new(x, y), 70, new(14, 25, 31));
+            if (seat.Local && selectedDeckDetails?.Entries.FirstOrDefault(entry => entry.Section == "Commander")?.Card is { } leader && resources.Card(leader) is { } portrait)
+                canvas.Portrait(portrait, new(x, y), 66, Color.White);
+            else canvas.CenterText(open ? "+" : ai ? "AI" : seat.Name.Length > 0 ? seat.Name[..1] : "?", new(x - 63, y - 62, 126, 124), color, open ? 2.7f : 1.7f, true);
+            canvas.Ring(new(x, y), 71, color, seat.Ready ? 4 : 2);
+            if (seat.Ready) { canvas.Circle(new(x + 52, y + 47), 18, ReadyColor); canvas.CenterText("✓", new(x + 34, y + 27, 36, 40), new(9, 26, 25), .95f, true); }
+            canvas.CenterText(seat.Local ? "You" : open ? "Open seat" : seat.Name, new(x - 154, 489, 308, 43), open ? Muted : Ink, 1.03f, true);
+            canvas.Text(seat.Deck ?? (open ? "Invite a friend" : "Choosing a deck"), x - 148, 546, Muted, .82f, 296, 3);
+            if (seat.Local) MenuAction("edit-deck", "Edit deck", new(x - 130, 637, 260, 36), OpenDeckEditor, !busy && selectedDeck != null, size: .75f);
+            if (CanManageLobbySeats && seat.Index > 0 && (open || ai)) DrawLobbySeatControls(i, seat);
         }
         if (CanManageLobbySeats) DrawLobbySizeControls();
-        bool localReady = LocalSeat?.Ready == true;
-        Button(localReady ? "unready" : "ready", localReady ? "Not ready" : "Ready up", 586, 790, 250, () => SetLobbyReady(!localReady), !busy && (localReady || DeckConfirmed), !localReady, 54);
-        Button("start", state.Mode == "hosting" ? "Start Commander" : "Waiting for host", 1070, 790, 456, StartFriends, !busy && DeckConfirmed && localReady && state.CanStart, true, 54);
-        string readyHint = !DeckConfirmed ? "Review & confirm your deck first, then Ready up."
-            : localReady ? "You're ready. Editing your deck makes you unready."
-            : "Your deck is confirmed. Ready up to join this game.";
-        canvas.Text(readyHint, 590, 855, localReady ? ReadyColor : Muted, .67f, 460, 2);
-        int missing = Math.Max(0, state.Seats.Length - joined);
-        string startHint = state.CanStart ? state.Mode == "hosting" ? "Everyone is ready. Start when you're set." : "Everyone is ready. Your host can start."
-            : !string.IsNullOrWhiteSpace(state.StartProblem) ? state.StartProblem
-            : missing > 0 ? state.Mode == "hosting" ? $"{missing} open seat{(missing == 1 ? "" : "s")}. Invite friends or add AI above." : $"Waiting for {missing} more player{(missing == 1 ? "" : "s")} or AI."
-            : state.Mode == "hosting" ? "Waiting for every seat to ready up." : "Your host starts once every seat is ready.";
-        canvas.Text(startHint, 1072, 855, state.CanStart ? ReadyColor : Muted, .67f, 452, 2);
+        MenuAction("review-deck", "Deck list", new(92, 714, 250, 40), ReviewDeck, !busy && selectedDeckDetails != null, size: .75f);
+        bool ready = LocalSeat?.Ready == true;
+        Button(ready ? "unready" : "ready", ready ? "Not ready" : "Ready", 90, 797, 320, () => SetLobbyReady(!ready), !busy && (ready || DeckReady), !ready, 60, prominent: true);
+        if (state.Mode == "hosting") Button("start", "Play", 1170, 797, 340, StartFriends, !busy && ready && DeckConfirmed && state.CanStart, true, 60, prominent: true);
+        else canvas.Text("Waiting for the host", 1170, 815, Muted, .9f, 340, 2);
+        string? problem = !DeckReady ? selectedDeckDetails is not { } deck ? "Choose your deck."
+            : deck.SaveError.Length > 0 ? "Save your deck before becoming Ready."
+            : deck.Problem.Length > 0 ? deck.Problem : "Choose a commander in your deck." : state.StartProblem;
+        if (!string.IsNullOrWhiteSpace(problem)) canvas.Text(problem, 464, 808, Gold, .78f, 650, 3);
     }
     private void DrawSetupModal()
     {
@@ -183,10 +205,10 @@ internal sealed partial class TableApplication
     private void DrawDeckConfirmation()
     {
         if (selectedDeckDetails is not { } deck) return;
-        canvas.Text(reviewList ? deck.Name : "Bring this deck to the table?", 202, 179, Ink, 1.4f, 1020, 1, true);
+        canvas.Text(deck.Name, 202, 179, Ink, 1.4f, 1020, 2, true);
         Button("review-overview", "Deck overview", 204, 232, 184, () => { reviewList = false; textFocus = false; }, !busy, !reviewList, 36);
         Button("review-list", "Full deck list", 400, 232, 184, () => { reviewList = true; textFocus = false; }, !busy, reviewList, 36);
-        canvas.Text(DeckConfirmed ? "Confirmed. Browsing preserves your ready status." : "Confirm selects this saved list for the game.", 628, 244, DeckConfirmed ? ReadyColor : Muted, .73f, 740, 1);
+        canvas.Text("Browsing keeps your current deck selected.", 628, 244, Muted, .73f, 740, 1);
         if (reviewList) DrawLobbyDeckList();
         else {
             var leaders = deck.Entries.Where(e => e.Section == "Commander").ToArray();
@@ -201,17 +223,16 @@ internal sealed partial class TableApplication
             canvas.Text(CommanderDeck ? $"{main + commander} / 100 cards    ·    {main} main + {commander} commander    ·    {side} sideboard" : $"{main} main · {side} sideboard · {deck.Format}", 628, 473, Ink, .81f, 738, 2);
             LobbyPill(DeckReady ? "DECK CHECKS PASSED" : "NEEDS ATTENTION", 626, 538, 290, DeckReady ? ReadyColor : Gold);
             string problem = deck.SaveError.Length > 0 ? "Could not save this deck. Open the builder and retry saving.\n" + deck.SaveError : deck.Problem;
-            canvas.Text(DeckReady ? "Your saved list passes Commander checks.\nReview again after editing or changing decks." : problem.Length > 0 ? problem : "Choose a commander in the deck builder.", 628, 587, DeckReady ? Muted : Gold, .8f, 739, 7);
+            canvas.Text(DeckReady ? "Your saved list is ready to play." : problem.Length > 0 ? problem : "Choose a commander in the deck builder.", 628, 587, DeckReady ? Muted : Gold, .8f, 739, 7);
             if (DeckReady) DrawDeckComposition(deck, 628, 679, 739);
         }
         canvas.Line(new(204, 808), new(1394, 808), LobbyTrim);
         Button("confirm-change", "Choose another deck", 204, 817, 280, OpenDeckPicker, !busy, height: 48);
         Button("confirm-edit", reviewList && reviewCard != null ? "Edit this card in builder" : "Open deck builder", 638, 817, 280, () => OpenDeckEditorAt(reviewList ? reviewCard : null), !busy, !DeckReady, 48);
-        Button("confirm-deck", busy ? "Confirming..." : DeckConfirmed ? "Return to lobby" : "Confirm deck", 932, 817, 462, ConfirmDeck, !busy && DeckReady, DeckReady, 48);
+        Button("confirm-deck", "Back to play", 932, 817, 462, CloseSetupModal, !busy, true, 48);
         string confirmHint = !DeckReady ? "Fix the issues above in Deck builder first."
-            : DeckConfirmed ? "Browsing this list keeps it confirmed."
-            : Connected ? "Confirm chooses your deck. Ready up next in the lobby."
-            : "Confirm this list to enable Start Commander.";
+            : Connected ? "Ready at the table when you want to play."
+            : "Play starts directly with your selected deck.";
         canvas.Text(confirmHint, 936, 873, Muted, .61f, 454, 1);
     }
     private void DrawJoinLobby()

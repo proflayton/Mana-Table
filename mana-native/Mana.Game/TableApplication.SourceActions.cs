@@ -13,7 +13,7 @@ internal sealed partial class TableApplication
     {
         if (!SourceActionsSupported || busy || session.NeedsRecovery || match is not { Decision: { } decision }
             || decision.Intent is not (DecisionIntent.Priority or DecisionIntent.Mana)) return null;
-        var current = cardPresentation.Pinned is { ChoiceSlot: < 0 } entry && CardContext.CanRead(entry)
+        var current = cardPresentation.Pinned is { ChoiceSlot: < 0, Zone: not "Stack" } entry && CardContext.CanRead(entry)
             ? CardContext.CurrentOccurrence(entry) : dragging && dragSource != null ? CurrentDragCard(dragSource) : null;
         return current is { FaceDown: false, Key.Length: > 0 } ? current : null;
     }

@@ -146,6 +146,6 @@ internal sealed partial class TableApplication
         pendingPreviewCardId = CardViews.Identity(card);
         // The read-only face absorbs input rather than passing clicks through
         // to the battlefield beneath it. It never becomes a game-card occurrence.
-        hits.Add(new("stack-card-preview", Scope, bounds, () => { }));
+        hits.Add(new("stack-card-preview", Scope, bounds, () => { }, ShowPointer: false));
     }
 }

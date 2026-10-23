@@ -135,8 +135,11 @@ internal sealed partial class TableApplication
             canvas.CenterText(zone == "Graveyard" ? "Grave" : zone, geometry.Label, Muted, .45f);
         }
         hits.Add(new("zone:" + player.Id + ":" + zone, Scope, geometry.HitBounds, () => OpenZone(player.Id, zone), Shape: geometry.Contains));
+        // Browser members open their pile. A separately disclosed top remains
+        // directly readable even when the rest of its zone is concealed.
         if (top != null) DrawTableCard("pile:" + player.Id + ":" + zone + ":" + CardIdentity(top), top, pose, zone, player.Id,
-            "pile-card:" + player.Id + ":" + zone, () => OpenZone(player.Id, zone), (displayed, focus) => PaintCard(top, displayed, false, IsCardActionable(top), focus), opensZone: true);
+            "pile-card:" + player.Id + ":" + zone, () => OpenZone(player.Id, zone), (displayed, focus) => PaintCard(top, displayed, false, IsCardActionable(top), focus),
+            opensZone: value.Cards.Any(card => CardViews.Same(card, top)));
         else PaintBack(pose, value.Count == 0 ? .3f : 1);
         DrawZoneActionBadge(player, zone, pose);
     }

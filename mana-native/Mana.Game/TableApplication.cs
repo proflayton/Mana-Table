@@ -90,6 +90,7 @@ internal sealed partial class TableApplication : IDisposable
     private string ControlScope(string id) => SourceActionsSupported && (id == "read-card-action" || id.StartsWith("source-action:", StringComparison.Ordinal)
         || id.StartsWith("source-placement:", StringComparison.Ordinal))
         ? Scope + ":source:" + sourceActions.View.Generation + ":" + sourceActions.View.Context
+        : id.StartsWith("home-") ? Scope + ":home:" + homeDeckPage
         : id.StartsWith("updates-") ? UpdateScope : id.StartsWith("activity-") ? ActivityScope : id.StartsWith("experience-") ? ExperienceScope : id.StartsWith("chat-") ? ChatScope
         : match != null && id == "resume-phase-stop" ? match.Id + ":playback:phase-stop:" + match.PhaseKey
         : match != null && (id is "auto" or "hold" or "instructions" or "action-details" or "battlefields" or "quiet-priority-stop" or "ability-auto-pass-open" or "ability-prev" or "ability-next" or "ability-text-prev" or "ability-text-next"
@@ -122,8 +123,6 @@ internal sealed partial class TableApplication : IDisposable
         this.appUpdates = appUpdates; this.installUpdate = installUpdate;
         LoadUpdatePreferences();
         preferences = PlayPreferences.Load(profile); automatic = preferences.Automatic;
-        experience = ExperiencePreferences.Load(profile);
-        welcomeOpen = initialState == null && fixture == null;
     }
     internal void ReceiveText(char character)
     {
@@ -151,7 +150,6 @@ internal sealed partial class TableApplication : IDisposable
     private void AcceptEffects(GameSnapshot? previous, GameSnapshot? state)
     {
         if (state?.Id != previous?.Id) { ResetTableView(); tableGuideOpen = false; sceneRevealAt = now; }
-        if (state != null) welcomeOpen = false;
         if (state?.Status == "finished" && previous?.Status != "finished") tableGuideOpen = false;
         if (state != null) { effects.Observe(previous, state, now); presence.Observe(previous, state, now); playback.Observe(previous, state, now); }
         if (state != null) ObserveActionFeedback(previous, state);
@@ -243,7 +241,7 @@ internal sealed partial class TableApplication : IDisposable
             pressed = null; dragSource = null; dragging = false; ClearCardDrag();
         }
         if (experienceInput && keys.IsKeyDown(Keys.Escape) && previousKeys.IsKeyUp(Keys.Escape)) {
-            if (tableGuideOpen) CloseTableGuide(); else DismissWelcome();
+            CloseTableGuide();
         }
         if (updatesOpen && !ActivityOpen && keys.IsKeyDown(Keys.Escape) && previousKeys.IsKeyUp(Keys.Escape)) CloseAppUpdates();
         if (escapePressed && !cancelledDrag) {
@@ -252,7 +250,7 @@ internal sealed partial class TableApplication : IDisposable
             dragging = false; dragSource = null; pressed = null; ClearCardDrag();
             if (!closedReader) {
                 selectedCombat = null; textFocus = false;
-                if (match == null && !busy) { if (workshopDialog == "printings") ClosePrintings(); else if (workshopDialog.Length > 0) workshopDialog = ""; else if (deckMenu.Length > 0) deckMenu = ""; else if (deckEditor) CloseDeckEditor(); else CloseSetupModal(); }
+                if (match == null && !busy) { if (DismissDeckWorkspaceReading()) { } else if (workshopDialog == "printings") ClosePrintings(); else if (workshopDialog.Length > 0) workshopDialog = ""; else if (deckMenu.Length > 0) deckMenu = ""; else if (deckEditor) CloseDeckEditor(); else CloseSetupModal(); }
                 if (overlay.Length > 0) overlay = ""; else if (zoneName != null) zoneName = null;
                 else if (StudyFocusActive) SetStudyFocus(null);
                 else if (DecisionModal && match?.Decision?.Kind == "allocate" && allocationDetail >= -1) CloseAllocationDetail();
@@ -264,8 +262,8 @@ internal sealed partial class TableApplication : IDisposable
             else if (!TableChoice && CombatGuide.CanConfirm(match)) Send(DecisionCommands.Confirm(match));
         }
         if (!chatKeys && !textFocus && keys.IsKeyDown(Keys.C) && previousKeys.IsKeyUp(Keys.C) && HasCombat && (overlay.Length == 0 || overlay == "combat")) { if (overlay == "combat") overlay = ""; else OpenCombat(); }
-        if (!chatKeys && !textFocus && keys.IsKeyDown(Keys.F) && previousKeys.IsKeyUp(Keys.F)) UseAutomaticControl(!automatic);
-        if (!chatKeys && !textFocus && keys.IsKeyDown(Keys.LeftControl) && previousKeys.IsKeyUp(Keys.LeftControl)) ToggleHoldControl();
+        if (match != null && !chatKeys && !textFocus && keys.IsKeyDown(Keys.F) && previousKeys.IsKeyUp(Keys.F)) UseAutomaticControl(!automatic);
+        if (match != null && !chatKeys && !textFocus && keys.IsKeyDown(Keys.LeftControl) && previousKeys.IsKeyUp(Keys.LeftControl)) ToggleHoldControl();
         if (!blockedInput && !chatKeys && !textFocus && keys.IsKeyDown(Keys.F1) && previousKeys.IsKeyUp(Keys.F1)) OpenTableGuide();
         int wheel = mouse.ScrollWheelValue - previousMouse.ScrollWheelValue;
         if (!blockedInput && wheel != 0) Scroll(Math.Sign(wheel));
@@ -320,16 +318,8 @@ internal sealed partial class TableApplication : IDisposable
         hovered = null; cardPositions.Clear(); heroPositions.Clear();
         canvas.BeginComposition();
         if (StartupVisible) DrawStartup();
-        else if (match == null && welcomeOpen) DrawWelcome();
-        else if (match == null) {
-            canvas.Gradient(new(0, 0, 1600, 1000), new(24, 31, 42), new(12, 17, 24));
-            canvas.Text("MANA TABLE", 28, 19, Gold, 1.2f, bold: true);
-            int formatX = 48 + canvas.TextWidth("MANA TABLE", 1.2f, true);
-            canvas.Text("COMMANDER", formatX, 25, Muted, .75f);
-            int messageX = Math.Max(435, formatX + canvas.TextWidth("COMMANDER", .75f) + 24);
-            canvas.Text(message, messageX, 25, Ink, .82f, Math.Max(0, 1175 - messageX), 1);
-            DrawLobby();
-        } else {
+        else if (match == null) DrawLobby();
+        else {
             DrawArena();
         }
         if (match != null && noticeUntil > now && !OverlayOpen) {

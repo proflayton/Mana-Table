@@ -1,3 +1,4 @@
+using System.Collections.Immutable;
 using System.Text.Json;
 using Mana.Contracts;
 using Microsoft.Xna.Framework.Graphics;
@@ -22,9 +23,9 @@ internal static class LoadingSmoke
             if (!valid) throw new InvalidOperationException(message);
             checks.Add(message); File.AppendAllText(Path.Combine(profile, "loading-progress.log"), message + "\n");
         }
-        void Scene(string path, GatedEngine engine, Action<Script, TableWindow.Probe> arrange, GameSnapshot? state = null)
+        void Scene(string path, GatedEngine engine, Action<Script, TableWindow.Probe> arrange, GameSnapshot? state = null, ICardArtSource? images = null)
         {
-            using var game = new TableWindow(TestTableServices.For(engine), path, null, null, size, initialState: state, artSource: new EmptyArt());
+            using var game = new TableWindow(TestTableServices.For(engine), path, null, null, size, initialState: state, artSource: images ?? new EmptyArt());
             var script = new Script(game.TestPort); arrange(script, game.TestPort); game.Automation = script; game.Run();
         }
 
@@ -35,7 +36,7 @@ internal static class LoadingSmoke
             s.Then(() => {
                 Check(view.StartupVisible && view.ActivityOpen && view.Busy && !view.Loaded, "A pending first initialization shows startup activity before setup is ready");
                 Check(view.ActivityStage == "Card library" && startup.DeckReads == 0 && startup.PresetReads == 0, "Startup identifies the pending card library without claiming later stages have started");
-                Check(!view.Hits.Any(h => h.Id.StartsWith("experience-") || h.Id is "host" or "change-deck" or "start-solo"), "Startup exposes no welcome, table, or deck actions behind loading");
+                Check(!view.Hits.Any(h => h.Id.StartsWith("experience-") || h.Id is "host" or "change-deck" or "start-solo"), "Startup exposes no home, table, or deck actions behind loading");
                 s.Capture("01-starting-library");
             });
             s.Pulse(Keys.Escape, Keys.Enter, Keys.Space, Keys.F, Keys.LeftControl, Keys.F1);
@@ -61,8 +62,8 @@ internal static class LoadingSmoke
                 s.Capture("02-preparing-table"); startup.OpeningSaved.SetResult();
             });
             s.Until(() => view.Loaded && !view.ActivityOpen && !view.Busy);
-            s.Then(() => Check(view.WelcomeOpen && view.SelectedDeck?.Id == "saved" && view.Hits.Any(h => h.Id == "experience-ai"), "A completed startup hands off to the welcome with the selected deck ready"));
-            s.Click("experience-skip");
+            s.Then(() => Check(view.SelectedDeck?.Id == "saved" && view.Hits.Any(h => h.Id == "change-deck")
+                    && view.Hits.Any(h => h.Id == "start-solo"), "A completed startup exposes the real saved deck and its direct Play action"));
             s.Click("change-deck");
             s.Click("picker-presets");
             Point presetPoint = default;
@@ -89,11 +90,12 @@ internal static class LoadingSmoke
             });
             s.Until(() => !view.ActivityOpen && !view.Busy);
             s.Then(() => {
-                Check(view.SelectedDeck?.Id == "imported" && view.SetupModal == "confirm" && !view.DeckConfirmed, "Finished deck loading hands off to the imported deck review without confirming play");
+                Check(view.SelectedDeck?.Id == "imported" && view.SetupModal.Length == 0 && !view.DeckConfirmed
+                    && view.Hits.Any(h => h.Id == "start-solo"), "Finished deck loading returns to the selected deck's direct Play action without forcing review or starting anything");
                 Check(startup.Imports == 1 && startup.OtherWrites == 0 && view.Error.Length == 0, "Loading feedback completes exactly one intended mutation with no extra engine writes");
                 s.Capture("04-deck-ready");
             });
-            s.Click("confirm-edit");
+            s.Click("edit-deck");
             s.Until(() => view.DeckEditor && !view.Busy && !view.ActivityOpen);
             s.Click("deck-main");
             s.Click("deck-card:Main:forest");
@@ -129,14 +131,75 @@ internal static class LoadingSmoke
             });
             s.Until(() => view.Loaded && !view.ActivityOpen && !view.Busy);
             s.Then(() => {
-                Check(retry.InitializeCalls == 2 && view.Error.Length == 0 && view.WelcomeOpen && view.SelectedDeck?.Id == "saved", "A successful retry reaches the fully loaded welcome without restarting the application");
+                Check(retry.InitializeCalls == 2 && view.Error.Length == 0 && view.HomeVisible && view.SelectedDeck?.Id == "saved"
+                    && view.Hits.Any(h => h.Id == "change-deck") && view.Hits.Any(h => h.Id == "start-solo"), "A successful retry reaches the fully loaded deck home without restarting the application");
                 s.AllowError = false;
             });
         });
 
+        var sample = PresentationSmoke.Example();
+        string firstId = sample.Viewer!.Zone("Hand").Cards[0].VisualId;
+        var opening = sample with { Turn = 0, Players = sample.Players.Select(player => player.Id != sample.ViewerId ? player : player with {
+            Zones = player.Zones.Select(zone => zone.Name != "Hand" ? zone : zone with {
+                Cards = zone.Cards.Select(card => card.VisualId != firstId ? card : card with {
+                    Name = "Delayed opening-hand image", ArtName = "Delayed opening-hand image", ArtSet = "", CollectorNumber = ""
+                }).ToImmutableArray()
+            }).ToImmutableArray()
+        }).ToImmutableArray() };
+        var firstFace = opening.Viewer!.Zone("Hand").Cards.First(card => Mana.Magic.CardPresentation.Artwork(card) != null);
+        var openingArt = new GatedArt(Mana.Magic.CardPresentation.Artwork(firstFace)!.Key);
+        var predeal = opening with { Players = opening.Players.Select(player => player.Id != opening.ViewerId ? player : player with {
+            Zones = player.Zones.Select(zone => zone.Name != "Hand" ? zone : zone with { Cards = [], Count = 0 }).ToImmutableArray()
+        }).ToImmutableArray() };
+        var openingEngine = new GatedEngine(); openingEngine.Scenario.Present(predeal);
+        string openingPath = Case("opening-artwork");
+        Scene(openingPath, openingEngine, (s, view) => {
+            s.Until(() => !view.PreparingTableArtwork && !view.ActivityOpen && view.Hits.Any(hit => hit.Id == "settings"));
+            s.Then(() => {
+                Check(!openingArt.Requested && view.TableArtworkProgress.Ready == view.TableArtworkProgress.Total,
+                    "A prepared pre-deal table can present its required input without waiting for a hand that does not exist yet");
+                openingEngine.Scenario.Present(opening); view.Accept(openingEngine.Scenario.State);
+            });
+            s.Until(() => openingArt.Requested && view.PreparingTableArtwork);
+            s.Then(() => {
+                Check(view.ActivityOpen && !view.Busy && !view.StartupVisible && view.Hits.Count == 0,
+                    "Opening artwork keeps the table loading after rules work completes, without exposing gameplay targets");
+                Check(view.TableArtworkProgress.Ready < view.TableArtworkProgress.Total,
+                    "The loading stage reports unfinished opening textures rather than treating queued bytes as ready");
+                view.SetAutomatic(true); s.Capture("06-opening-artwork");
+            });
+            s.Pulse(Keys.Space, Keys.F, Keys.C, Keys.LeftControl, Keys.Escape);
+            s.ClickAt(new(800, 900)); s.Wait(.12);
+            s.Then(() => {
+                Check(view.PreparingTableArtwork && view.Automatic && !view.Held && openingEngine.Replies == 0,
+                    "Loading artwork blocks shortcuts, card clicks and automatic replies without changing the player's passing policy");
+                openingArt.Released.TrySetResult();
+            });
+            s.Until(() => !view.PreparingTableArtwork && !view.ActivityOpen);
+            s.Then(() => {
+                Check(view.TableArtworkProgress.Ready == view.TableArtworkProgress.Total && view.TableArtworkProgress.Unavailable == 0
+                    && CardViews.Visible(opening).Where(card => Mana.Magic.CardPresentation.Artwork(card) != null).All(card => view.Art(card) != null),
+                    "The first playable table has actual GPU textures for every eligible opening face");
+                Check(view.Hits.Any(hit => hit.Id == "settings"), "Gameplay controls appear only after the opening artwork handoff");
+                s.Capture("07-opening-ready");
+            });
+        }, predeal, openingArt);
+
+        var brokenArt = new GatedArt(Mana.Magic.CardPresentation.Artwork(firstFace)!.Key, corrupt: true);
+        var fallbackEngine = new GatedEngine(); fallbackEngine.Scenario.Present(opening);
+        Scene(Case("opening-artwork-fallback"), fallbackEngine, (s, view) => {
+            s.Until(() => brokenArt.Requested && !view.PreparingTableArtwork && !view.ActivityOpen);
+            s.Then(() => {
+                Check(view.TableArtworkProgress.Unavailable == 1 && view.Art(firstFace) == null && view.Hits.Any(hit => hit.Id == "settings"),
+                    "A corrupt opening image settles to the readable card fallback instead of trapping the player in loading");
+                s.Capture("08-opening-fallback");
+            });
+            s.Wait(.15);
+            s.Then(() => Check(brokenArt.HeldLoads == 1, "A corrupt opening image does not trigger a new request every frame"));
+        }, opening, brokenArt);
+
         var table = new GatedEngine(); table.Scenario.Present(PresentationSmoke.Example());
         string tablePath = Case("table-background");
-        File.WriteAllText(Path.Combine(tablePath, "experience.json"), JsonSerializer.Serialize(new { WelcomeSeen = true, TableGuideSeen = true }));
         Scene(tablePath, table, (s, view) => {
             s.Until(() => table.Observations > 0 && view.Polling);
             s.Then(() => Check(!view.ActivityOpen && !view.StartupVisible && view.Hits.Any(h => h.Id == "settings"), "Background table observation leaves the scene interactive without a loading overlay"));
@@ -185,6 +248,25 @@ internal static class LoadingSmoke
         public void Dispose() { }
     }
 
+    private sealed class GatedArt(string key, bool corrupt = false) : ICardArtSource
+    {
+        private readonly CardReadingArtFixture images = new();
+        internal readonly TaskCompletionSource Released = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private int heldLoads;
+        internal int HeldLoads => Volatile.Read(ref heldLoads);
+        internal bool Requested => HeldLoads > 0;
+        public async Task<byte[]?> LoadAsync(ArtRequest art, CancellationToken cancellationToken)
+        {
+            if (art.Key == key) {
+                Interlocked.Increment(ref heldLoads);
+                if (corrupt) return [1, 2, 3];
+                await Released.Task.WaitAsync(cancellationToken);
+            }
+            return await images.LoadAsync(art, cancellationToken);
+        }
+        public void Dispose() => images.Dispose();
+    }
+
     private sealed class Script(TableWindow.Probe view) : ITableAutomation
     {
         private readonly Queue<(Action? Action, Func<bool>? Ready)> steps = [];
@@ -221,7 +303,11 @@ internal static class LoadingSmoke
             mouse = new(physical.X, physical.Y, 0,
                 ButtonState.Released, ButtonState.Released, ButtonState.Released, ButtonState.Released, ButtonState.Released);
         });
-        internal void Capture(string name) { using var output = File.Create(Path.Combine(view.Profile, name + ".png")); view.Surface.SaveAsPng(output, view.Surface.Width, view.Surface.Height); }
+        internal void Capture(string name) {
+            view.CaptureWindow(Path.Combine(view.Profile, name + "-window.png"));
+            using var output = File.Create(Path.Combine(view.Profile, name + ".png"));
+            view.Surface.SaveAsPng(output, view.Surface.Width, view.Surface.Height);
+        }
         public void Frame(Texture2D surface)
         {
             if (!AllowError && view.Error.Length > 0) { Capture("failure"); throw new InvalidOperationException(view.Error); }

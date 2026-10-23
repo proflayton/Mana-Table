@@ -33,14 +33,13 @@ internal sealed class LobbyAiSeatSmoke : ITableAutomation, IDisposable
     internal static void Run(ForgePaths paths, Point? size)
     {
         new PlayPreferences { Automatic = false, Sounds = false, ReducedMotion = true, TextScale = 1.3f }.Save(paths.Profile);
-        File.WriteAllText(Path.Combine(paths.Profile, "experience.json"), JsonSerializer.Serialize(new { WelcomeSeen = true, TableGuideSeen = true }));
         var engine = new ForgeEngine(paths);
         try {
             engine.InitializeAsync().GetAwaiter().GetResult();
             engine.ImportAsync("Mixed table host", "Commander\n1 Rograkh, Son of Rohgahh\nDeck\n99 Mountain").GetAwaiter().GetResult();
             using var game = new TableWindow(TestTableServices.For(engine), paths.Profile, null, null, size, artSource: new CardReadingArtFixture());
             using var smoke = new LobbyAiSeatSmoke(game.TestPort, paths);
-            game.Automation = smoke; game.TestPort.DismissWelcome(); game.Run();
+            game.Automation = smoke;  game.Run();
         } finally { engine.DisposeAsync().AsTask().GetAwaiter().GetResult(); }
     }
     private LobbyAiSeatSmoke(TableWindow.Probe view, ForgePaths paths)

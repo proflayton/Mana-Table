@@ -29,12 +29,22 @@ internal sealed partial class TableApplication
     private int? workshopManaFilter;
     private int workshopOpponentSeat;
     private string workshopOpponentSearch = "";
-    private readonly int[] workshopOpponents = [0, 1, 2, 3, 4];
+    private readonly int[] workshopOpponents = [0, 1, 2];
     private SoloSetup? workshopSetup;
+    private long workshopSetupRevision = -1;
+    private bool WorkshopSetupCurrent => workshopSetup is { } setup && selectedDeckDetails is { } deck && setup.DeckId == deck.Id && workshopSetupRevision == deck.Revision;
+    private string[] CurrentWorkshopOpponents() => !WorkshopSetupCurrent ? [] : workshopOpponents
+        .Select(index => index >= 0 && index < workshopSetup!.Opponents.Length ? workshopSetup.Opponents[index].Id : "").ToArray();
+    private void ApplyWorkshopPreparation(SoloPreparation prepared, long revision)
+    {
+        workshopSetup = prepared.Setup; workshopSetupRevision = revision;
+        workshopPlayers = Math.Min(workshopPlayers, Math.Min(4, prepared.Setup.MaxPlayers));
+        Array.Copy(prepared.Choices, workshopOpponents, workshopOpponents.Length);
+    }
     private bool workshopPending, workshopInFlight, workshopSourceImport;
     private IDeckWorkshop? WorkshopEngine => services.Workshop;
     private bool WorkshopCurrent => workshop != null && workshop.DeckId == selectedDeckDetails?.Id && workshop.Revision == selectedDeckDetails?.Revision && !workshopPending && !workshopInFlight;
-    private string WorkshopScope => $"{workshopTab}:{workshopDialog}:{printingGeneration}:{WorkshopDialogPage}:{workshopCompareVersion}:{workshopVersionView?.VersionId}:{workshopSourceChoice}:{workshopRoleFilter}:{workshopManaFilter}:{workshopGeneration}:{workshopPage}:{workshopPlayers}:{workshopSelectedTest}:{workshopOpponentSeat}:{workshopOpponentSearch}:{workshopSourcePreview?.Token}:{workshopHand?.TestId}:{workshopHand?.Draws}:{workshopHand?.Redraws}:{string.Join(',', workshopOpponents)}";
+    private string WorkshopScope => $"{workshopTab}:{workshopDialog}:{printingGeneration}:{WorkshopDialogPage}:{workshopCompareVersion}:{workshopVersionView?.VersionId}:{workshopSourceChoice}:{workshopRoleFilter}:{workshopManaFilter}:{workshopGeneration}:{workshopPage}:{workshopPlayers}:{workshopSelectedTest}:{workshopOpponentSeat}:{workshopOpponentSearch}:{workshopSourcePreview?.Token}:{workshopHand?.TestId}:{workshopHand?.Draws}:{workshopHand?.Redraws}:{workspaceCardReading?.Identity}:{workspaceCardReading?.OtherFace}:{string.Join(',', workshopOpponents)}";
     private bool IsWorkshopMatch => match != null && workshopMatchTestId != null;
 
     private void RequestWorkshopRefresh(bool changed = false)
@@ -42,6 +52,7 @@ internal sealed partial class TableApplication
         if (WorkshopEngine == null) return;
         workshopGeneration++; workshopPending = true; workshopError = "";
         if (changed) {
+            DismissDeckWorkspaceReading();
             workshopDialogPages.Clear();
             workshop = null; workshopTests = []; workshopHand = null; workshopSetup = null;
             workshopManaFilter = null;
@@ -71,11 +82,11 @@ internal sealed partial class TableApplication
     private void ShowWorkshopTab(string tab)
     {
         workshopDialogPages.Clear();
+        DismissDeckWorkspaceReading();
         workshopTab = tab; workshopDialog = ""; workshopPage = 0;
         deckTextFocus = ""; textFocus = false;
         if (tab == "results") RequestWorkshopRefresh();
         if (!CommanderDeck) workshopPlayers = 2;
-        if (tab == "test" && !Connected && WorkshopCurrent && DeckReady && workshopSetup?.DeckId != selectedDeckDetails?.Id) PrepareWorkshopTable();
     }
     private void SaveWorkshopMetadata(WorkshopMetadataEdit edit, string success)
     {
@@ -149,23 +160,38 @@ internal sealed partial class TableApplication
     }
     private void PrepareWorkshopTable()
     {
-        if (selectedDeckDetails is not { } deck || !DeckReady || busy || Connected) return;
+        if (selectedDeckDetails is not { } deck || !DeckReady || busy || Connected || match != null) return;
+        int generation = deckSelectionGeneration;
+        string[] previous = CurrentWorkshopOpponents();
         Work(async () => {
-            var setup = await tables.PrepareSoloAsync(deck.Id);
+            var prepared = await PrepareSoloDeck(deck.Id, previous);
             updates.Enqueue(() => {
-                workshopSetup = setup;
-                if (setup.MaxPlayers < workshopPlayers) workshopPlayers = setup.MaxPlayers;
-                for (int i = 0; i < workshopOpponents.Length; i++) workshopOpponents[i] = setup.Opponents.Length == 0 ? 0 : i % setup.Opponents.Length;
+                if (generation != deckSelectionGeneration || selectedDeckDetails?.Revision != deck.Revision || Connected || match != null) return;
+                ApplyWorkshopPreparation(prepared, deck.Revision);
             });
-        }, "Preparing your test table", "Finding the AI decks available for this format.");
+        }, "Preparing your test table", "Finding compatible AI opponents for this deck.");
     }
     private void StartWorkshopTable()
     {
-        if (WorkshopEngine is not { } service || selectedDeckDetails is not { } deck || workshopSetup is not { Opponents.Length: > 0 } setup || !DeckReady || !WorkshopCurrent || Connected) return;
-        string[] opponents = workshopOpponents.Take(workshopPlayers - 1).Select(i => setup.Opponents[i].Id).ToArray();
-        string question = workshop!.Question;
+        if (WorkshopEngine is not { } service || selectedDeckDetails is not { } deck || !DeckReady || !WorkshopCurrent || Connected || match != null) return;
+        int generation = deckSelectionGeneration, requestedPlayers = workshopPlayers;
+        long metadataRevision = workshop!.MetadataRevision;
+        string question = workshop.Question, version = workshop.VersionId;
+        string[] previous = CurrentWorkshopOpponents();
+        var existing = WorkshopSetupCurrent && workshopSetup is { Opponents.Length: > 0 } setup
+            && workshopOpponents.All(index => index >= 0 && index < setup.Opponents.Length)
+            ? new SoloPreparation(setup, workshopOpponents.ToArray()) : null;
+        bool Current() => generation == Volatile.Read(ref deckSelectionGeneration) && selectedDeckDetails is { } currentDeck && currentDeck.Id == deck.Id
+            && currentDeck.Revision == deck.Revision && workshop is { } currentWorkshop && currentWorkshop.VersionId == version && currentWorkshop.MetadataRevision == metadataRevision
+            && currentWorkshop.Question == question && requestedPlayers == workshopPlayers && previous.SequenceEqual(CurrentWorkshopOpponents())
+            && !Connected && match == null;
         Work(async () => {
+            var prepared = existing ?? await PrepareSoloDeck(deck.Id, previous);
+            if (!Current()) throw new InvalidOperationException("Your deck or test setup changed. Start again with the current list.");
+            int players = Math.Min(requestedPlayers, Math.Min(4, prepared.Setup.MaxPlayers));
+            string[] opponents = prepared.Choices.Take(players - 1).Select(index => prepared.Setup.Opponents[index].Id).ToArray();
             await UnreadyForDeckEdit();
+            if (!Current()) throw new InvalidOperationException("Your deck or test setup changed. Start again with the current list.");
             var test = await service.StartDeckTestAsync(deck.Id, deck.Revision, opponents, question);
             var state = await matchConnection.ObserveAsync();
             var deadline = DateTime.UtcNow.AddSeconds(30);
@@ -174,12 +200,13 @@ internal sealed partial class TableApplication
                 state = await matchConnection.ObserveAsync();
             }
             updates.Enqueue(() => {
+                ApplyWorkshopPreparation(prepared, deck.Revision);
                 workshopMatchDeckId = deck.Id; workshopMatchTestId = test.Id; workshopSelectedTest = test.Id;
                 setupModal = workshopDialog = ""; ResetTableView(); lobby = null; localMatch = true; Accept(state);
                 message = "Testing your saved deck version.";
             });
             if (state?.Status == "error") throw new InvalidOperationException(state.Error ?? "The test game could not start.");
-        }, "Gathering your test table", $"Preparing your exact deck version and {opponents.Length} AI opponent{(opponents.Length == 1 ? "" : "s")}.", scene: true);
+        }, "Gathering your test table", "Preparing your exact deck version, AI opponents and opening hand.", scene: true);
     }
     private void PracticeWorkshop(string action, int? index = null)
     {

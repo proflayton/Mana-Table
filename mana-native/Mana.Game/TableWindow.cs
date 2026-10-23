@@ -54,6 +54,7 @@ public sealed class TableWindow : Game
         this.capture = capture;
         art = new(artSource ?? new MagicArtSource(profile));
         resources.Card = art.Get;
+        resources.Artwork = art.Readiness;
         application = new(services, profile, fixture, initialState, resources, appUpdates, installUpdate, allowAutomaticChecks: capture == null,
             restartedAfterUpdate: restartedAfterUpdate);
         if (enableLiveTableStudy) application.EnableLiveTableStudy();
