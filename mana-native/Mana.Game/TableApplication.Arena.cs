@@ -19,6 +19,7 @@ internal sealed partial class TableApplication
         stackRows.Clear(); prioritySeats.Clear();
         changeCalloutBounds = null; highlightedChangeTargets.Clear(); highlightedChangeSource = null;
         var state = match!;
+        turnProgress = TurnProgressPresentation.From(state, preferences.Stops);
         priorityView = PriorityPresentation.From(state);
         DrawTableSurface();
         // Queue the player's faces first; slow remote downloads must not bury the hand.
@@ -290,32 +291,6 @@ internal sealed partial class TableApplication
         if (state.Stack.Length == 0 && !payingSource) {
             canvas.Text(stackCards[0].Name, 549, 400, Ink, .62f, 154, 3, true);
             Button("stack", "Inspect source", 549, 462, 154, () => { if (state.Decision?.SourceCard is { } source) Inspect(source); }, height: 29);
-        }
-    }
-    private void DrawPhaseStrip()
-    {
-        int x = 27;
-        foreach (var phase in TurnGuide.Stops) {
-            bool current = phase.Key == match!.PhaseKey || phase.Key == "COMBAT_BEGIN" && match.PhaseKey.StartsWith("COMBAT");
-            bool stopped = preferences.Stops.Contains(phase.Key);
-            string key = phase.Key, id = "phase-stop:" + key;
-            var bounds = new Rectangle(x, 855, 36, 40);
-            var r = new Rectangle(x, 870, 36, 25);
-            PaintControlSurface(id, bounds, stopped ? new Color(24, 53, 66) : current ? new Color(80, 78, 62) : new Color(25, 33, 44),
-                stopped ? Blue : current ? Gold * .6f : new Color(51, 64, 75));
-            canvas.CenterText(phase.Label switch { "Upkeep" => "UP", "Draw" => "DR", "Main 1" => "M1", "Combat" => "ATK", "Main 2" => "M2", _ => "END" }, r, current ? Gold : Muted, .43f, true);
-            if (stopped) {
-                canvas.Rounded(new(x + 12, 858, 4, 9), Blue, 1);
-                canvas.Rounded(new(x + 20, 858, 4, 9), Blue, 1);
-            }
-            if (IsControlHovered(id)) {
-                string label = phase.Label + (stopped ? " · Always pause" : " · No saved pause");
-                int width = canvas.TextWidth(label, .6f, true) + 16;
-                canvas.Rounded(new(27, 824, width, 25), new(12, 24, 30), 4);
-                canvas.Text(label, 35, 828, stopped ? Blue : Muted, .6f, width - 16, 1, true);
-            }
-            hits.Add(new(id, ControlScope(id), bounds, () => { if (!preferences.Stops.Remove(key)) preferences.Stops.Add(key); SavePreferences(); }));
-            x += 38;
         }
     }
     private void ManaOrb(string name, int amount, Vector2 point)

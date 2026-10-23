@@ -59,6 +59,14 @@ internal sealed partial class TableApplication
             return;
         }
 
+        DrawPortraitTurnControls();
+        if (!SelectingActionTarget && (d?.Intent == DecisionIntent.Priority || QuietPriorityArmed)) {
+            DrawPortraitPriority(decisionDock);
+            var availableAbilities = PriorityAbilityOptions();
+            if (availableAbilities.Length > 0) DrawPriorityAbilityControl(availableAbilities);
+            return;
+        }
+
         var view = decisionDock;
         bool recipientChoice = !SelectingActionTarget && d?.Intent == DecisionIntent.Selection && StateClarity.Recipients(state).Length > 0;
         bool following = busy || d == null || view.Status == DecisionDockStatus.AutoPassing;
@@ -73,17 +81,7 @@ internal sealed partial class TableApplication
             : view.PauseReason == DecisionDockPauseReason.PhaseStop || view.PauseReason == DecisionDockPauseReason.Held ? Gold : PriorityAccent;
         DrawDecisionRole(view, new(1281, layout.StatusY + layout.StatusHeight / 2), accent);
         canvas.Text(view.Headline, 1304, layout.StatusY, accent, .78f, 258, 80, true);
-        if (view.Caption.Length > 0) {
-            if (view.PauseReason == DecisionDockPauseReason.PhaseStop && d?.Intent == DecisionIntent.Priority) {
-                int width = Math.Min(262, canvas.TextWidth(view.Caption, .68f, true) + 37);
-                var bounds = new Rectangle(1300, layout.CaptionY - 3, width, layout.CaptionHeight + 6);
-                string id = "resume-phase-stop", key = state.PhaseKey;
-                PaintControlSurface(id, bounds, new(44, 40, 25), Gold * .45f);
-                canvas.Text(view.Caption, 1307, layout.CaptionY, Gold, .68f, width - 30, 80, true);
-                canvas.Text("×", bounds.Right - 17, layout.CaptionY, IsControlHovered(id) ? Ink : Gold, .68f, 16, 1, true);
-                hits.Add(new(id, ControlScope(id), bounds, () => { preferences.Stops.Remove(key); SavePreferences(); }));
-            } else canvas.Text(view.Caption, 1304, layout.CaptionY, Muted, .68f, 258, 80);
-        }
+        if (view.Caption.Length > 0) canvas.Text(view.Caption, 1304, layout.CaptionY, Muted, .68f, 258, 80);
         if (instruction.Length > 0) {
             canvas.Text(instruction, 1266, layout.TextY, Ink, .75f, 295, layout.Lines);
             hits.Add(new("instructions", ControlScope("instructions"), decisionTextBounds, () => { overlay = "help"; inspectPage = 0; }));
@@ -92,15 +90,7 @@ internal sealed partial class TableApplication
         }
         if (abilities.Length > 0) DrawPriorityAbilityControl(abilities);
 
-        bool quietPrimary = !SelectingActionTarget && !recipientChoice && (QuietPriorityArmed || !following && CanOfferQuietPriority);
-        if (quietPrimary) {
-            // The bounded intent is one explicit action, rather than a second
-            // full-size pass button floating above the same decision.
-            Button(QuietPriorityArmed ? "quiet-priority-stop" : "quiet-priority-arm", QuietPriorityArmed ? "Take control" : "Pass for now",
-                1266, 799, 296, QuietPriorityArmed ? StopQuietPriority : ArmQuietPriority, !busy || QuietPriorityArmed, true, 47);
-            if (!busy && d is { Intent: DecisionIntent.Priority, OkEnabled: true })
-                PriorityAbilityButton("confirm", "Pass once", new(1459, 852, 103, 27), () => Send(new PassPriority(state.Id, d.Id)));
-        } else if (following) {
+        if (following) {
             // Waiting is a state, not a disabled action button. Its public actor
             // is named above and at their portrait; leave the battlefield quiet.
             if (busy || view.Status == DecisionDockStatus.AutoPassing) {
@@ -124,11 +114,6 @@ internal sealed partial class TableApplication
             if (d.CancelEnabled) Button("cancel", d.Intent == DecisionIntent.Priority && d.Cancel == "End Turn" ? "Pass turn" : d.Cancel,
                 1459, 852, 103, () => Send(DecisionCommands.Cancel(state)), height: 27);
         } else if (d != null) Button("open-decision", "Make a choice", 1266, 799, 296, () => collapsedDecision = false, true, true, 47);
-        if (!SelectingActionTarget) {
-            Button("auto", automatic ? "Auto" : preferences.TextScale > 1.1f ? "Manual" : "Full control", 1266, 852, 111, () => UseAutomaticControl(!automatic), true, automatic, 27);
-            Button("hold", held ? "Held" : "Hold", 1383, 852, 70, ToggleHoldControl, true, held, 27);
-        }
-        DrawPhaseStrip();
     }
 
     private void DrawDecisionRole(DecisionDockView view, Vector2 center, Color accent)

@@ -138,12 +138,14 @@ internal static class ExperienceLabChecks
             Decision = null
         }); Tick();
         var boardFace = frame.Cards.Last(card => card.Id == countedFront.Id && card.Zone == "Battlefield");
-        var counterMarker = app.TestPort.BattlefieldLabels(countedFront.Id).Single(label => label.Kind == "counter").Bounds;
+        var counterMarker = app.TestPort.BattlefieldLabels(countedFront.Id).SingleOrDefault(label => label.Kind == "counter");
         var affected = app.TestPort.EffectTransitions.Targets.Where(target => target.AffectedIds.Contains(countedFront.Id)).ToArray();
         check(affected.Length > 0 && !frame.Cards.Any(card => card.Zone == "Stack")
             && app.TestPort.StackRows.Any(row => row.Id == "counter-source-preview")
-            && affected.All(target => target.Target.Pose == boardFace.Display && counterMarker.Contains(target.Target.CounterLanding.ToPoint())),
-            "A pending effect keeps its own surface without copying its source or stealing the battlefield counter arrival anchor");
+            && affected.All(target => target.Target.Pose == boardFace.Display
+                && (counterMarker?.Bounds.Contains(target.Target.CounterLanding.ToPoint())
+                    ?? boardFace.Display.Contains(target.Target.CounterLanding.ToPoint()))),
+            "A pending effect keeps its own surface without copying its source or stealing the recipient's current counter-chip or displayed-face arrival anchor");
         foreach (var scenario in ExperienceScenarios.All) {
             LoadScenario(scenario.Id);
             check(lab.Scenario.Id == scenario.Id && frame.Hits.Any(hit => hit.Id == "lab-reset") && frame.Hits.Any(hit => hit.Id == "lab-scenarios"),

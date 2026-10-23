@@ -232,6 +232,16 @@ does not become an action or pause. `ClientSession.IsAdvancing` distinguishes an
 automatic batch from an ordinary in-flight command. These presentation facts
 grant no permission: replies still require the current engine decision and token.
 It can initialize, update and compose with no `Game`, window or graphics device.
+
+The next portrait turn-controls iteration consumes these same facts and shared
+pause gate. Six local phase markers represent recurring own-turn stop preferences;
+the active opponent's phase is read-only. Current phase, saved stop, Auto/Hold and
+bounded-yield state remain separate facts even when composed beside one portrait.
+Moving the priority-pass action there does not move required target/search/payment
+decisions or authorize answers. Saved stops prevent local automatic passing at
+an offered priority opportunity, not engine-scheduled waypoints. New guaranteed
+phase pauses or wider yield permissions would require a separate authority
+contract. Human review of this iteration is pending.
 Its optional `PresentationResources` supplies textures and sound for a real window;
 an empty resource set uses the production rules-text and neutral-surface fallbacks.
 

@@ -49,6 +49,8 @@ internal static class DecisionDockPresentationChecks
             && DecisionDockPresentation.From(priority, auto with { Held = true }) is { Caption: "Holding this turn", PauseReason: DecisionDockPauseReason.Held },
             "Manual control and a held turn identify the actual local reason for retaining priority");
 
+        CheckTurnProgress(ownMain, check);
+
         var optional = priority with { Decision = priority.Decision! with { CanAutoPass = false,
             Message = "Arid Mesa could be activated. This text does not explain the engine's conservative permission.",
             PriorityAbilities = [new("mesa", "mesa-key", "Arid Mesa", "Search your library.", false)] } };
@@ -139,5 +141,45 @@ internal static class DecisionDockPresentationChecks
             && DecisionDockPresentation.From(priority, auto with { PauseReason = DecisionDockPauseReason.Recovery }).Status == DecisionDockStatus.Recovery
             && DecisionDockPresentation.From(priority with { Status = "finished", Result = "Game finished" }, auto with { CommandBusy = true }).Status == DecisionDockStatus.Finished,
             "A reported required choice, recovery or terminal snapshot takes precedence over stale auto permission and in-flight transport facts");
+    }
+
+    private static void CheckTurnProgress(GameSnapshot state, Action<bool, string> check)
+    {
+        var stops = new HashSet<string> { "COMBAT_BEGIN", "END_OF_TURN" };
+        var end = TurnProgressPresentation.From(state with { PhaseKey = "END_OF_TURN" }, stops);
+        check(end.IsOwnTurn && end.ActivePlayerId == state.ViewerId && end.PhaseLabel == "End step"
+                && end.Markers.Select(marker => marker.Key).SequenceEqual(TurnGuide.Stops.Select(stop => stop.Key))
+                && end.Markers.Single(marker => marker.Current) is {
+                    Key: "END_OF_TURN", Label: "End step", Stop: true, Hint: "Remove my end-step stop" }
+                && TurnProgressPresentation.From(state, new HashSet<string>()).Markers.Single(marker => marker.Key == "END_OF_TURN")
+                    is { Stop: false, Hint: "Stop on my end step" },
+            "Own-turn progress retains the exact six saved stop keys and explains adding or removing the end-step stop in full");
+
+        var opponent = TurnProgressPresentation.From(state with { ActivePlayerId = 2, PhaseKey = "COMBAT_DECLARE_BLOCKERS" }, stops);
+        check(!opponent.IsOwnTurn && opponent.ActivePlayerId == 2 && opponent.PhaseLabel == "Declare blockers"
+                && opponent.Markers.All(marker => !marker.Current)
+                && opponent.Markers.Where(marker => marker.Stop).Select(marker => marker.Key).ToHashSet().SetEquals(stops),
+            "Another player's exact combat step never highlights the viewer's planned stop markers or changes their saved choices");
+
+        (string Key, string Label)[] combat = [("COMBAT_BEGIN", "Beginning of combat"), ("COMBAT_DECLARE_ATTACKERS", "Declare attackers"),
+            ("COMBAT_DECLARE_BLOCKERS", "Declare blockers"), ("COMBAT_FIRST_STRIKE_DAMAGE", "First-strike damage"),
+            ("COMBAT_DAMAGE", "Combat damage"), ("COMBAT_END", "End of combat")];
+        check(combat.All(step => TurnProgressPresentation.From(state with { PhaseKey = step.Key }, stops) is { } view
+                && view.PhaseLabel == step.Label && view.Markers.Single(marker => marker.Current) is {
+                    Key: "COMBAT_BEGIN", Hint: "Remove my beginning-of-combat stop" })
+                && TurnGuide.CanAutoPass(state with { PhaseKey = "COMBAT_DAMAGE" }, true, false, stops, false),
+            "Known combat substeps share progress while retaining their exact step labels and the existing beginning-only stop policy");
+
+        var untap = TurnProgressPresentation.From(state with { PhaseKey = "UNTAP" }, stops);
+        var cleanup = TurnProgressPresentation.From(state with { PhaseKey = "CLEANUP" }, stops);
+        check(untap.PhaseLabel == "Untap step" && untap.Markers.Single(marker => marker.Current).Key == "UPKEEP"
+                && cleanup.PhaseLabel == "Cleanup" && cleanup.Markers.Single(marker => marker.Current).Key == "END_OF_TURN",
+            "Untap and cleanup occupy their progress groups without relabeling the authoritative current step");
+
+        var unknown = TurnProgressPresentation.From(state with { PhaseKey = "COMBAT_FUTURE_STEP", Phase = "A newly supported combat window" }, stops);
+        var noActor = TurnProgressPresentation.From(state with { ActivePlayerId = null, PhaseKey = "MAIN1" }, stops);
+        check(unknown.PhaseLabel == "A newly supported combat window" && unknown.Markers.All(marker => !marker.Current)
+                && !noActor.IsOwnTurn && noActor.ActivePlayerId == null && noActor.Markers.All(marker => !marker.Current),
+            "An unfamiliar phase preserves its reported label and a missing active player never inherits a fabricated current marker");
     }
 }

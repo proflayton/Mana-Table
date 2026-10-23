@@ -43,7 +43,7 @@ internal sealed partial class TableApplication
 
     private void DrawPriorityAbilityControl(PriorityAbility[] abilities)
     {
-        var bounds = new Rectangle(1266, 772, 296, 23);
+        var bounds = new Rectangle(1266, 852, 296, 23);
         if (abilities.Length == 1) {
             var ability = abilities[0];
             PriorityAbilityButton(ability.IgnoredUntilNextTurn ? "ability-undo:" + ability.Id : "ability-pass:" + ability.Id,

@@ -74,7 +74,7 @@ internal sealed class PriorityFlowSmoke : ITableAutomation
     {
         this.view = view; this.engine = engine; this.viewport = viewport; this.window = window;
         Move(new(20, 60));
-        Wait(() => view.Loaded && view.StackRows.Count == 3, () => {
+        Wait(() => view.Loaded && !view.ActivityOpen && view.StackRows.Count == 3, () => {
             Observe("local-response"); Capture("01-local-response");
             Check(window == null || window.GraphicsDevice.Viewport.Width == viewport.X && window.GraphicsDevice.Viewport.Height == viewport.Y,
                 "Priority pointer input uses the actual requested physical viewport");

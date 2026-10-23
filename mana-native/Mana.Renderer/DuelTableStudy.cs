@@ -11,9 +11,9 @@ public static class DuelTableStudy
         (1, "Creatures") => new(300, 245, 880, 285),
         (1, "Support") => new(300, 145, 530, 90),
         (1, _) => new(845, 145, 335, 90),
-        (3, "Creatures") => new(540, 555, 640, 125),
+        (3, "Creatures") => new(540, 555, 640, 84),
         (3, "Support") => new(330, 555, 200, 155),
-        (3, _) => new(920, 690, 260, 70),
+        (3, _) => new(980, 646, 255, 55),
         _ => Rectangle.Empty
     };
 }
