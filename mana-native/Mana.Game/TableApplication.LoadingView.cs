@@ -21,8 +21,8 @@ internal sealed partial class TableApplication
             canvas.CenterText("Mana Table couldn't start.", new(180, 603, 1240, 48), Ink, 1.4f, true);
             string detail = error.Length > 0 ? error : activityDetail;
             canvas.Text(detail, 295, 676, Red, .91f, 1010, 5);
-            Button("activity-retry", "Try again", 490, 848, 300, RetryStartup, !ActivityPending, true, 52);
-            Button("activity-exit", "Exit game", 810, 848, 300, RequestExit, !ActivityPending, height: 52);
+            Button("activity-retry", "Try again", 490, 848, 300, new ShellIntent.RetryStartup(), !ActivityPending, true, 52);
+            Button("activity-exit", "Exit game", 810, 848, 300, new ShellIntent.ExitStartup(), !ActivityPending, height: 52);
             return;
         }
 
@@ -55,7 +55,7 @@ internal sealed partial class TableApplication
         DrawActivityHeading(failed ? "That action could not finish" : activityTitle, new(380, top + 107, 840, 72));
         canvas.Text(failed ? error : activityDetail, 390, top + 186, failed ? Red : Muted, .9f, 820, 3);
         if (failed) {
-            Button("activity-dismiss", "Back", 1010, top + 277, 210, DismissActivity, accent: true, height: 44);
+            Button("activity-dismiss", "Back", 1010, top + 277, 210, new ShellIntent.DismissActivity(), accent: true, height: 44);
             return;
         }
         double elapsed = Math.Max(0, now - activityStarted);

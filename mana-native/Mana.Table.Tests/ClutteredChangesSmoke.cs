@@ -51,7 +51,7 @@ internal sealed class ClutteredChangesSmoke : ITableAutomation
                     time += 1.0 / 60;
                     var tick = new GameTime(TimeSpan.FromSeconds(time), TimeSpan.FromSeconds(1.0 / 60));
                     application.Update(tick, driver.ReadMouse(), new(), size);
-                    application.ComposePresentation(tick); driver.Advance(); Thread.Yield();
+                    application.ReadPresentation(); driver.Advance(); Thread.Yield();
                 }
             } catch (Exception exception) { driver.Save(exception.ToString()); throw; }
         }

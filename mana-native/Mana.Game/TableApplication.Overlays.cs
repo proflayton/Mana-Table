@@ -14,7 +14,7 @@ internal sealed partial class TableApplication
     private readonly Dictionary<int, ChoiceOrderBadge> choiceOrderBadges = [];
     private void PaintChoiceOrder(int index, Rectangle bounds, float fontSize = .56f)
     {
-        int position = selections.IndexOf(index) + 1;
+        int position = decisionDraft.Position(index);
         if (position == 0) return;
         string caption = "ORDER " + position;
         float size = fontSize;
@@ -29,7 +29,7 @@ internal sealed partial class TableApplication
         canvas.CenterText(caption, new(bounds.X + 4, bounds.Y, available, bounds.Height), Gold, size, true);
         if (Automated) choiceOrderBadges[index] = new(index, position, bounds, caption, canvas.TextWidth(caption, size, true), available);
     }
-    private void ModalFrame(string title, Action close, string closeLabel = "Close", int height = 706)
+    private void ModalFrame(string title, UiIntent close, string closeLabel = "Close", int height = 706)
     {
         // Modal hit regions replace the table's regions, including invisible cards.
         hits.Clear(); hovered = null; ClearCardComposition();
@@ -77,14 +77,24 @@ internal sealed partial class TableApplication
         pages.Add(rest); return pages.ToArray();
     }
     private int ReadingPageSize(int characters) => Math.Max(100, (int)(characters / (preferences.TextScale * preferences.TextScale)));
+    private Card InspectorFace(Card original) => inspectBack && original.OtherFace is { } back
+        ? original with { Name = back.Name, Type = back.Type, ManaCost = back.ManaCost, Text = back.OracleText, Power = back.Power, Toughness = back.Toughness, ArtName = back.ArtName, ArtFace = back.ArtFace } : original;
+    private string[] InspectorPages(Card original, Card card)
+    {
+        bool onBattlefield = match!.Players.Any(p => p.Zone("Battlefield").Cards.Any(c => SameVisibleCard(c, original)));
+        string stateText = onBattlefield ? string.Join(" · ", CardPresentation.StateLabels(card)) : "";
+        if (CardPresentation.CommanderTaxDetails(card) is { Length: > 0 } taxDetails) stateText = taxDetails + (stateText.Length > 0 ? "\n" + stateText : "");
+        if (CardPresentation.Counters(card) is { Length: > 0 } counters) stateText += "\nCounters: " + string.Join("; ", counters.Select(c => c.Key + " × " + c.Value));
+        string effectiveDetails = onBattlefield ? string.Join("\n", CardPresentation.AbilityDetails(card)) : "";
+        return TextPages((stateText.Length > 0 ? stateText + "\n\n" : "") + card.Text
+            + (effectiveDetails.Length > 0 ? "\n\nCurrent abilities\n" + effectiveDetails : ""), ReadingPageSize(1050));
+    }
     private void DrawInspector()
     {
-        if (inspected == null) { overlay = ""; return; }
+        if (inspected == null) return;
         var original = inspected;
-        var card = inspectBack && original.OtherFace is { } back
-            ? original with { Name = back.Name, Type = back.Type, ManaCost = back.ManaCost, Text = back.OracleText, Power = back.Power, Toughness = back.Toughness, ArtName = back.ArtName, ArtFace = back.ArtFace }
-            : original;
-        ModalFrame(card.Name, () => { overlay = ""; inspected = null; });
+        var card = InspectorFace(original);
+        ModalFrame(card.Name, new MatchIntent.CloseInspector());
         var inspectedPose = new Pose(new(447, 460), new(380, 532));
         PaintCard(card, inspectedPose, false, false);
         if (!inspectBack) PaintAttachedCardState(CardViews.Current(match, original), inspectedPose);
@@ -93,73 +103,59 @@ internal sealed partial class TableApplication
         string values = card.Type.Contains("Creature") ? $"Power / toughness: {card.Power}/{card.Toughness}" : "";
         if (card.Damage > 0) values += "   Damage marked: " + card.Damage;
         canvas.Text(values, 686, 287, Ink, .78f, 674, 3);
-        bool onBattlefield = match!.Players.Any(p => p.Zone("Battlefield").Cards.Any(c => SameVisibleCard(c, original)));
-        string stateText = onBattlefield ? string.Join(" · ", CardPresentation.StateLabels(card)) : "";
-        if (CardPresentation.CommanderTaxDetails(card) is { Length: > 0 } taxDetails) stateText = taxDetails + (stateText.Length > 0 ? "\n" + stateText : "");
-        if (CardPresentation.Counters(card) is { Length: > 0 } counters) stateText += "\nCounters: " + string.Join("; ", counters.Select(c => c.Key + " × " + c.Value));
-        string effectiveDetails = onBattlefield ? string.Join("\n", CardPresentation.AbilityDetails(card)) : "";
-        var paragraphs = TextPages((stateText.Length > 0 ? stateText + "\n\n" : "") + card.Text
-            + (effectiveDetails.Length > 0 ? "\n\nCurrent abilities\n" + effectiveDetails : ""), ReadingPageSize(1050)); inspectPage = Math.Clamp(inspectPage, 0, paragraphs.Length - 1);
-        canvas.Text(paragraphs[inspectPage], 686, 378, Ink, .8f, 660, 17);
+        var paragraphs = matchReadingPages; int page = inspectPage;
+        canvas.Text(paragraphs[page], 686, 378, Ink, .8f, 660, 17);
         if (paragraphs.Length > 1) {
-            Button("inspect-prev", "Previous", 686, 727, 135, () => inspectPage--, inspectPage > 0);
-            Button("inspect-next", "More rules", 831, 727, 145, () => inspectPage++, inspectPage + 1 < paragraphs.Length);
-            canvas.Text($"{inspectPage + 1} / {paragraphs.Length}", 995, 738, Muted, .7f);
+            Button("inspect-prev", "Previous", 686, 727, 135, new MatchIntent.SetPage(MatchPage.Inspect, page - 1), page > 0);
+            Button("inspect-next", "More rules", 831, 727, 145, new MatchIntent.SetPage(MatchPage.Inspect, page + 1), page + 1 < paragraphs.Length);
+            canvas.Text($"{page + 1} / {paragraphs.Length}", 995, 738, Muted, .7f);
         }
-        if (original.OtherFace != null) Button("other-face", inspectBack ? "View current face" : "View other face", 274, 737, 347, () => { inspectBack = !inspectBack; inspectPage = 0; }, accent: true);
+        if (original.OtherFace != null) Button("other-face", inspectBack ? "View current face" : "View other face", 274, 737, 347, new MatchIntent.FlipInspector(), accent: true);
     }
     private void DrawSettings()
     {
-        var drawer = SystemDrawer("Play controls", "settings-", Scope, () => { overlay = ""; textFocus = false; }, 760, "close-overlay");
+        var drawer = SystemDrawer("Play controls", "settings-", new MatchIntent.CloseView(), 760, "close-overlay");
         int x = drawer.X + 28, y = drawer.Y;
         canvas.Text("Priority", x, y + 108, Gold, .8f, 500, 1, true);
-        MenuAction("settings-auto", "Auto", new(x, y + 148, 236, 42), () => UseAutomaticControl(true), selected: automatic);
-        MenuAction("settings-manual", "Full control", new(x + 264, y + 148, 236, 42), () => UseAutomaticControl(false), selected: !automatic);
-        MenuAction("settings-hold", held ? "Held for this turn" : "Hold priority this turn", new(x, y + 210, 500, 42), ToggleHoldControl, selected: held, size: .78f);
+        MenuAction("settings-auto", "Auto", new(x, y + 148, 236, 42), new MatchIntent.SetAutomatic(true), selected: automatic);
+        MenuAction("settings-manual", "Full control", new(x + 264, y + 148, 236, 42), new MatchIntent.SetAutomatic(false), selected: !automatic);
+        MenuAction("settings-hold", held ? "Held for this turn" : "Hold priority this turn", new(x, y + 210, 500, 42), new MatchIntent.ToggleHold(), selected: held, size: .78f);
         canvas.Text("Stop on your turn", x, y + 289, Gold, .78f, 500, 1, true);
         for (int i = 0; i < TurnGuide.Stops.Length; i++) {
             var stop = TurnGuide.Stops[i]; bool selected = preferences.Stops.Contains(stop.Key);
-            MenuAction("stop:" + stop.Key, stop.Label, new(x + i % 2 * 264, y + 329 + i / 2 * 46, 236, 40), () => {
-                if (!preferences.Stops.Remove(stop.Key)) preferences.Stops.Add(stop.Key); SavePreferences();
-            }, selected: selected, size: .75f);
+            MenuAction("stop:" + stop.Key, stop.Label, new(x + i % 2 * 264, y + 329 + i / 2 * 46, 236, 40), new MatchIntent.TogglePhaseStop(stop.Key), selected: selected, size: .75f);
         }
         canvas.Line(new(x, y + 485), new(x + 500, y + 485), LobbyTrim);
-        MenuAction("motion", "Reduced motion  " + (preferences.ReducedMotion ? "On" : "Off"), new(x, y + 505, 500, 40), () => {
-            preferences = preferences with { ReducedMotion = !preferences.ReducedMotion }; SavePreferences();
-        }, selected: preferences.ReducedMotion, size: .78f);
-        MenuAction("sound", "Sound  " + (preferences.Sounds ? "On" : "Off"), new(x, y + 555, 500, 40), () => {
-            preferences = preferences with { Sounds = !preferences.Sounds }; SavePreferences();
-        }, selected: preferences.Sounds, size: .78f);
-        MenuAction("text-size", $"Text size  {preferences.TextScale:P0}", new(x, y + 605, 500, 40), () => {
-            preferences = preferences with { TextScale = preferences.TextScale < 1.1f ? 1.15f : preferences.TextScale < 1.25f ? 1.3f : 1 }; SavePreferences();
-        }, size: .78f);
-        MenuAction("updates-settings", "Updates", new(x, y + 687, 240, 40), OpenAppUpdates, size: .75f);
+        MenuAction("motion", "Reduced motion  " + (preferences.ReducedMotion ? "On" : "Off"), new(x, y + 505, 500, 40), new MatchIntent.ToggleReducedMotion(), selected: preferences.ReducedMotion, size: .78f);
+        MenuAction("sound", "Sound  " + (preferences.Sounds ? "On" : "Off"), new(x, y + 555, 500, 40), new MatchIntent.ToggleSounds(), selected: preferences.Sounds, size: .78f);
+        MenuAction("text-size", $"Text size  {preferences.TextScale:P0}", new(x, y + 605, 500, 40), new MatchIntent.CycleTextScale(), size: .78f);
+        MenuAction("updates-settings", "Updates", new(x, y + 687, 240, 40), new ShellIntent.OpenUpdates(), size: .75f);
         canvas.Text("F11  Fullscreen", x + 293, y + 700, Muted, .65f, 207, 1);
     }
     private void DrawHistory()
     {
-        ModalFrame("Match history", () => overlay = "");
+        ModalFrame("Match history", new MatchIntent.CloseView());
         var events = match!.Notices.Reverse().Select(message => (Label: "NOTICE", Message: message))
             .Concat(match.Activity.Reverse().Select(entry => (Label: "TURN " + entry.Turn, Message: entry.Message + (entry.Detail.Length > 0 ? " " + entry.Detail : "")))).ToArray(); int count = 10;
-        historyPage = Math.Clamp(historyPage, 0, Math.Max(0, (events.Length - 1) / count));
+        int page = Math.Clamp(historyPage, 0, Math.Max(0, (events.Length - 1) / count));
         int row = 0;
-        foreach (var entry in events.Skip(historyPage * count).Take(count)) {
+        foreach (var entry in events.Skip(page * count).Take(count)) {
             int y = 189 + row++ * 49;
             canvas.Text(entry.Label, 204, y + 1, Gold, .58f, 96, 1, true);
             canvas.Text(entry.Message, 317, y, Ink, .75f, 1032, 2);
             canvas.Line(new(204, y + 40), new(1370, y + 40), Muted * .12f);
         }
         if (events.Length == 0) canvas.Text("No events have been reported for this game yet.", 206, 214, Muted, .9f);
-        Button("history-prev", "Newer", 205, 739, 145, () => historyPage--, historyPage > 0);
-        Button("history-next", "Older", 362, 739, 145, () => historyPage++, (historyPage + 1) * count < events.Length);
+        Button("history-prev", "Newer", 205, 739, 145, new MatchIntent.SetPage(MatchPage.History, page - 1), page > 0);
+        Button("history-next", "Older", 362, 739, 145, new MatchIntent.SetPage(MatchPage.History, page + 1), (page + 1) * count < events.Length);
         canvas.Text("Only events visible to your seat are shown.", 790, 752, Muted, .65f, 574, 1);
     }
     private void DrawPlayerDetails()
     {
         var player = match!.Players.FirstOrDefault(p => p.Id == zonePlayer);
-        if (player == null) { overlay = ""; return; }
-        ModalFrame(player.Name, () => overlay = "");
-        Button("player-mana", "Mana pool", 1130, 211, 220, () => OpenManaPool(player.Id), height: 36);
+        if (player == null) return;
+        ModalFrame(player.Name, new MatchIntent.CloseView());
+        Button("player-mana", "Mana pool", 1130, 211, 220, new MatchIntent.OpenManaPool(player.Id), height: 36);
         canvas.Text(player.Life + " LIFE", 212, 202, Ink, 2, 1090, 1, true);
         string handLimit = player.MaxHandSize is { } maximum ? $"Maximum hand size: {maximum} · Discard during this player's cleanup" : "No maximum hand size";
         canvas.Text($"{player.Zone("Hand").Count} cards in hand · {handLimit}", 213, 258, Muted, .7f, 1090, 1);
@@ -167,8 +163,8 @@ internal sealed partial class TableApplication
         canvas.Text("COMMANDER DAMAGE RECEIVED", 213, 375, Gold, .76f, 1000, 1, true);
         int y = 414;
         const int count = 6;
-        playerDamagePage = Math.Clamp(playerDamagePage, 0, Math.Max(0, (player.CommanderDamage.Length - 1) / count));
-        foreach (var entry in player.CommanderDamage.Skip(playerDamagePage * count).Take(count)) {
+        int page = Math.Clamp(playerDamagePage, 0, Math.Max(0, (player.CommanderDamage.Length - 1) / count));
+        foreach (var entry in player.CommanderDamage.Skip(page * count).Take(count)) {
             canvas.Text(entry.Name, 216, y, Ink, .89f, 815, 1, true);
             canvas.Text(entry.Owner, 216, y + 28, Muted, .66f, 815, 1);
             canvas.Text(entry.Damage + " / 21", 1121, y, entry.Damage >= 18 ? Red : Gold, 1.2f, 200, 1, true);
@@ -176,28 +172,27 @@ internal sealed partial class TableApplication
         }
         canvas.Text("Each opposing commander is tracked separately.", 216, 710, Muted, .75f, 970, 1);
         if (player.CommanderDamage.Length > count) {
-            Button("commander-damage-prev", "Previous", 216, 745, 150, () => playerDamagePage--, playerDamagePage > 0, height: 32);
-            Button("commander-damage-next", "More commanders", 380, 745, 230, () => playerDamagePage++, (playerDamagePage + 1) * count < player.CommanderDamage.Length, height: 32);
+            Button("commander-damage-prev", "Previous", 216, 745, 150, new MatchIntent.SetPage(MatchPage.PlayerDamage, page - 1), page > 0, height: 32);
+            Button("commander-damage-next", "More commanders", 380, 745, 230, new MatchIntent.SetPage(MatchPage.PlayerDamage, page + 1), (page + 1) * count < player.CommanderDamage.Length, height: 32);
         }
     }
     private void DrawConcede()
     {
-        ModalFrame("Concede this game?", () => overlay = "", "Keep playing");
+        ModalFrame("Concede this game?", new MatchIntent.CloseView(), "Keep playing");
         canvas.Text("Your seat will lose this game. This cannot be undone.", 244, 263, Ink, 1.2f, 1090, 3);
         canvas.Text(localMatch ? "The solo game ends when you concede." : "The remaining players can continue playing.", 244, 353, Muted, .92f, 1090, 3);
         string id = match!.Id;
-        Button("confirm-concede", "Concede game", 1010, 690, 323, () => { overlay = ""; Work(async () => { await matchConnection.ConcedeAsync(id); var next = await matchConnection.ObserveAsync(); updates.Enqueue(() => Accept(next)); }, "Leaving this game", "Updating the result for your seat.", true); }, !busy, true, 57);
+        Button("confirm-concede", "Concede game", 1010, 690, 323, new MatchIntent.Concede(), !busy, true, 57);
     }
     private void DrawHelp()
     {
-        ModalFrame("Current decision", () => overlay = "");
-        string purpose = string.IsNullOrWhiteSpace(match!.Decision?.Message) ? StateClarity.DecisionInstruction(match, busy, pendingActionLabel) : match.Decision.Message;
-        var text = MeasuredHelpPages(purpose + "\n\n" + (match.Combat?.BlockProblem ?? "") + "\n\n" + CardActions.Help);
-        inspectPage = Math.Clamp(inspectPage, 0, text.Length - 1);
-        helpPageText = text[inspectPage];
+        ModalFrame("Current decision", new MatchIntent.CloseView());
+        var text = matchReadingPages;
+        int page = Math.Clamp(inspectPage, 0, text.Length - 1);
+        helpPageText = text[page];
         canvas.Text(helpPageText, 211, 200, Ink, .93f, 1155, 80);
-        Button("help-prev", "Previous", 211, 736, 144, () => inspectPage--, inspectPage > 0);
-        Button("help-next", "More", 368, 736, 144, () => inspectPage++, inspectPage + 1 < text.Length);
+        Button("help-prev", "Previous", 211, 736, 144, new MatchIntent.SetPage(MatchPage.Inspect, page - 1), page > 0);
+        Button("help-next", "More", 368, 736, 144, new MatchIntent.SetPage(MatchPage.Inspect, page + 1), page + 1 < text.Length);
     }
     private void DrawZone()
     {
@@ -206,18 +201,18 @@ internal sealed partial class TableApplication
         var player = match!.Players.FirstOrDefault(p => p.Id == zonePlayer);
         var zone = player?.Zone(zoneName!);
         var cards = zone?.Cards ?? [];
-        ModalFrame(zoneName + (zoneName == "Stack" ? "" : " · " + player?.Name), () => zoneName = null);
-        int count = 7; zonePage = Math.Clamp(zonePage, 0, Math.Max(0, (cards.Length - 1) / count));
+        ModalFrame(zoneName + (zoneName == "Stack" ? "" : " · " + player?.Name), new MatchIntent.CloseZone());
+        int count = 7; int page = Math.Clamp(zonePage, 0, Math.Max(0, (cards.Length - 1) / count));
         canvas.Text(cards.Length + " visible" + (zoneName == "Stack" ? "" : " / " + (zone?.Count ?? 0) + " total"), 205, 183, Muted, .72f, 650, 1);
         if (player != null && AvailableZoneCount(player, zoneName!) is > 0 and var available)
             canvas.Text(available + " available · Use a card below to see its play and costs.", 205, 220, ActionAccent, .77f, 1170, 2, true);
         string displayedZone = zoneName!;
         int index = 0;
-        foreach (var card in cards.Skip(zonePage * count).Take(count)) {
+        foreach (var card in cards.Skip(page * count).Take(count)) {
             int x = 210 + index++ * 169;
             var pose = new Pose(new(x + 74, 409), new(148, 207));
             DrawTableCard("zone:" + zonePlayer + ":" + displayedZone + ":" + CardIdentity(card),
-                card, pose, displayedZone, zonePlayer, "card:" + card.Key + ":" + card.VisualId, () => Inspect(card),
+                card, pose, displayedZone, zonePlayer, "card:" + card.Key + ":" + card.VisualId, new MatchIntent.InspectCard(card),
                 (displayed, focused) => PaintCard(card, displayed, card.Highlighted, IsCardActionable(card), focused));
             if (zoneName == "Command") PaintCommanderTax(card, pose);
             canvas.Text(card.Name, x, 533, Ink, .68f, 155, 3, true);
@@ -225,45 +220,45 @@ internal sealed partial class TableApplication
             if (pose.Contains(pointer)) hovered = card;
         }
         if (cards.Length == 0) canvas.CenterText("No cards are visible in this zone.", new(230, 333, 1120, 100), Muted, 1.05f);
-        Button("zoneprev", "Previous", 208, 734, 160, () => zonePage--, zonePage > 0);
-        Button("zonenext", "Next", 380, 734, 160, () => zonePage++, (zonePage + 1) * count < cards.Length);
+        Button("zoneprev", "Previous", 208, 734, 160, new MatchIntent.SetPage(MatchPage.Zone, page - 1), page > 0);
+        Button("zonenext", "Next", 380, 734, 160, new MatchIntent.SetPage(MatchPage.Zone, page + 1), (page + 1) * count < cards.Length);
         canvas.Text("Right-click a card for its complete rules.", 917, 746, Muted, .66f, 474, 1);
     }
     private void DrawStackDetails()
     {
         var entries = match!.Stack;
-        ModalFrame("The stack", () => zoneName = null);
+        ModalFrame("The stack", new MatchIntent.CloseZone());
         if (entries.Length == 0) { canvas.Text("The stack is empty.", 219, 222, Muted, 1); return; }
-        zonePage = Math.Clamp(zonePage, 0, entries.Length - 1);
+        int page = Math.Clamp(zonePage, 0, entries.Length - 1);
         if (!string.IsNullOrEmpty(inspectedStack)) {
             int current = entries.IndexOf(entries.FirstOrDefault(s => s.Id == inspectedStack)!);
             if (current < 0) {
                 canvas.Text("The inspected spell or ability has left the stack.", 219, 235, Ink, 1.05f, 1100, 2);
-                Button("stack-current", "Inspect next to resolve", 220, 345, 412, () => OpenStack(), accent: true, height: 51);
+                Button("stack-current", "Inspect next to resolve", 220, 345, 412, new MatchIntent.OpenStack(), accent: true, height: 51);
                 return;
             }
-            zonePage = current;
+            page = current;
         }
-        var entry = entries[zonePage];
-        canvas.Text($"{zonePage + 1} / {entries.Length}   " + (zonePage == 0 ? "Next to resolve" : "Waiting on the stack"), 217, 190, Gold, .8f, 1100, 1, true);
+        var entry = entries[page];
+        canvas.Text($"{page + 1} / {entries.Length}   " + (page == 0 ? "Next to resolve" : "Waiting on the stack"), 217, 190, Gold, .8f, 1100, 1, true);
         if (entry.Card is { } card) {
             var pose = new Pose(new(408, 459), new(304, 426));
             bool target = IsCardActionable(card);
             DrawTableCard("stack-detail:" + entry.Id, card, pose, "Stack", entry.ControllerId,
-                target ? "stack-target:" + zonePage : "stack-inspect:" + entry.Id,
-                () => { if (target) { zoneName = null; CardClick(card); } else Inspect(card); },
+                target ? "stack-target:" + page : "stack-inspect:" + entry.Id,
+                target ? new MatchIntent.UseCard(card, false, true) : new MatchIntent.InspectCard(card),
                 (displayed, focused) => PaintInteractionCard(card, displayed, false, target, focused));
             if (pose.Contains(pointer)) hovered = card;
         }
         canvas.Text(entry.Name, 630, 246, Ink, 1.05f, 716, 3, true);
         canvas.Text((entry.Ability ? "ABILITY" : "SPELL") + " · " + StateClarity.StackController(match, entry), 631, 328, Gold, .74f, 700, 1, true);
-        var text = TextPages(entry.Text, ReadingPageSize(1000)); inspectPage = Math.Clamp(inspectPage, 0, text.Length - 1);
-        canvas.Text(text[inspectPage], 632, 369, Ink, .8f, 714, 15);
-        Button("stack-newer", "Above", 216, 734, 130, () => OpenStack(zonePage - 1), zonePage > 0);
-        Button("stack-older", "Below", 359, 734, 130, () => OpenStack(zonePage + 1), zonePage + 1 < entries.Length);
+        var text = matchReadingPages; int textPage = Math.Clamp(inspectPage, 0, text.Length - 1);
+        canvas.Text(text[textPage], 632, 369, Ink, .8f, 714, 15);
+        Button("stack-newer", "Above", 216, 734, 130, new MatchIntent.OpenStack(page - 1), page > 0);
+        Button("stack-older", "Below", 359, 734, 130, new MatchIntent.OpenStack(page + 1), page + 1 < entries.Length);
         if (text.Length > 1) {
-            Button("stack-text-prev", "Previous text", 1002, 734, 171, () => inspectPage--, inspectPage > 0);
-            Button("stack-text-next", "More text", 1187, 734, 171, () => inspectPage++, inspectPage + 1 < text.Length);
+            Button("stack-text-prev", "Previous text", 1002, 734, 171, new MatchIntent.SetPage(MatchPage.Inspect, textPage - 1), textPage > 0);
+            Button("stack-text-next", "More text", 1187, 734, 171, new MatchIntent.SetPage(MatchPage.Inspect, textPage + 1), textPage + 1 < text.Length);
         }
     }
     private void DrawDecisionOverlay()
@@ -273,16 +268,14 @@ internal sealed partial class TableApplication
         bool cards = d.LibraryCards.Length > 0 || d.Choices.Length > 0 && d.Choices.All(choice => choice.Card != null);
         string title = d.Title.Length > 0 ? d.Title : d.Kind == "reveal" ? "Revealed cards" : d.Ordered ? "Choose an order"
             : cards ? d.Max == 1 ? "Choose a card" : "Choose cards" : "Make your choice";
-        ModalFrame(title, () => { collapsedDecision = true; textFocus = false; }, "View battlefield", d.Kind is "choice" or "reveal" ? 790 : 706);
+        ModalFrame(title, new MatchIntent.ViewBattlefield(), "View battlefield", d.Kind is "choice" or "reveal" ? 790 : 706);
         canvas.Text(d.Message, 204, 181, Ink, .77f, 1185, 3);
         if (d.Kind is "number" or "text") { DrawValueDecision(state, d); return; }
         DrawChoices(state, d);
     }
     private void ToggleChoice(Decision d, int index)
     {
-        if (selections.Remove(index)) { CollapseCardReading(); return; }
-        if (d.Max == 1) selections.Clear();
-        if (selections.Count < d.Max) { selections.Add(index); CollapseCardReading(); }
+        if (match?.Decision == d && decisionDraft.Toggle(match, index)) CollapseCardReading();
     }
     private void DrawChoices(GameSnapshot state, Decision d)
     {
@@ -303,19 +296,19 @@ internal sealed partial class TableApplication
             if (!sourcePreview.FaceDown && VisibleCards().Any(card => SameVisibleCard(card, sourcePreview))) {
                 var sourceBounds = new Rectangle(sourceX, 319, 166, 298);
                 if (sourceBounds.Contains(pointer)) canvas.CardFocus(sourcePose, HoverAccent);
-                hits.Add(new("choice-source-inspect", Scope, sourceBounds, () => Inspect(sourcePreview), sourcePreview));
+                hits.Add(new("choice-source-inspect", Scope, sourceBounds, new MatchIntent.InspectCard(sourcePreview), sourcePreview));
             }
         }
         bool cardChoices = items.Length > 0 && items.All(c => c.Card != null);
-        choicePage = Math.Clamp(choicePage, 0, Math.Max(0, (filtered.Length - 1) / capacity));
+        int page = Math.Clamp(choicePage, 0, Math.Max(0, (filtered.Length - 1) / capacity));
         string instruction = d.Kind == "reveal" ? "" : d.Ordered
-            ? $"Choose {d.Min}–{d.Max} in order. Selected: {selections.Count}."
-            : d.Min == 1 && d.Max == 1 ? selections.Count == 0
+            ? $"Choose {d.Min}–{d.Max} in order. Selected: {decisionDraft.Selections.Count}."
+            : d.Min == 1 && d.Max == 1 ? decisionDraft.Selections.Count == 0
                 ? cardChoices ? "Choose one card" : "Choose one option"
                 : cardChoices ? "One card selected" : "One option selected"
-            : $"Choose {d.Min}–{d.Max}. Selected: {selections.Count}.";
+            : $"Choose {d.Min}–{d.Max}. Selected: {decisionDraft.Selections.Count}.";
         canvas.Text(instruction, 206, 251, Gold, .72f, 1160, 2);
-        var pageItems = filtered.Skip(choicePage * capacity).Take(capacity).ToArray();
+        var pageItems = filtered.Skip(page * capacity).Take(capacity).ToArray();
         int expanded = Array.FindIndex(pageItems, e => readingId == "choice-face:" + Scope + ":" + e.Slot);
         bool sparseCards = portraits && items.Length <= capacity;
         int rowWidth = expanded < 0 ? 148 + Math.Max(0, pageItems.Length - 1) * 169 : 410 + Math.Max(0, pageItems.Length - 1) * 128;
@@ -324,7 +317,7 @@ internal sealed partial class TableApplication
         int row = 0;
         foreach (var entry in pageItems) {
             var item = entry.Item;
-            int index = row++; bool selected = item.Index is { } id && selections.Contains(id);
+            int index = row++; bool selected = item.Index is { } id && decisionDraft.Selections.Contains(id);
             bool available = d.Kind != "reveal" && item.Index != null && !busy;
             string buttonId = item.Index is { } cardIndex ? "choice:" + cardIndex : "reveal:" + entry.Slot;
             var captured = item;
@@ -336,7 +329,7 @@ internal sealed partial class TableApplication
                 int faceWidth = expanded >= 0 && index != expanded ? 112 : 148;
                 var pose = new Pose(new(x + column / 2, 408), new(faceWidth, faceWidth * 1.4f));
                 if (item.Card != null) DrawTableCard("choice-face:" + Scope + ":" + entry.Slot, item.Card, pose, "Choice", null,
-                    buttonId, () => { if (available) ToggleChoice(d, captured.Index!.Value); },
+                    buttonId, available ? new MatchIntent.SelectChoice(captured.Index!.Value) : UiIntent.None,
                     (displayed, focus) => {
                         PaintInteractionCard(item.Card, displayed, selected, false, focus);
                         // Availability stays visible, while the chosen face owns
@@ -353,7 +346,7 @@ internal sealed partial class TableApplication
                     canvas.Line(center + new Vector2(-8, 0), center + new Vector2(-2, 6), Gold, 3);
                     canvas.Line(center + new Vector2(-2, 6), center + new Vector2(9, -7), Gold, 3);
                 }
-                if (available && item.Card == null) hits.Add(new(buttonId, Scope, new(x, 304, 150, 329), () => ToggleChoice(d, captured.Index!.Value)));
+                if (available && item.Card == null) hits.Add(new(buttonId, Scope, new(x, 304, 150, 329), new MatchIntent.SelectChoice(captured.Index!.Value)));
             } else {
                 int columnWidth = sourcePreview != null ? 465 : 585;
                 int x = 206 + index % 2 * (columnWidth + 17), y = 302 + index / 2 * 116;
@@ -366,36 +359,36 @@ internal sealed partial class TableApplication
                 if (item.Mana.Length > 0) ManaOrb(item.Mana.Trim('{', '}'), 1, new(x + offset - 30, y + 48));
                 canvas.Text((selected && !d.Ordered ? "✓  " : "") + item.Label, x + offset, y + 12, Ink, .83f, columnWidth - 22 - offset, 3, true);
                 if (item.Detail.Length > 0) canvas.Text(item.Detail, x + offset, y + 69, Muted, .65f, columnWidth - 22 - offset, 1);
-                if (available) hits.Add(new(buttonId, Scope, bounds, () => ToggleChoice(d, captured.Index!.Value)));
+                if (available) hits.Add(new(buttonId, Scope, bounds, new MatchIntent.SelectChoice(captured.Index!.Value)));
             }
         }
         if (filtered.Length == 0) canvas.CenterText("No matching cards or choices.", new(209, 356, 1177, 90), Muted, 1);
         if (filtered.Length > capacity) {
-            Button("choicesprev", "‹", 206, 754, 45, () => choicePage--, choicePage > 0, height: 34);
-            Button("choicesnext", "›", 260, 754, 45, () => choicePage++, (choicePage + 1) * capacity < filtered.Length, height: 34);
-            canvas.Text($"Page {choicePage + 1} / {(filtered.Length + capacity - 1) / capacity}", 325, 761, Muted, .66f, 350, 1);
+            Button("choicesprev", "‹", 206, 754, 45, new MatchIntent.SetPage(MatchPage.Choice, page - 1), page > 0, height: 34);
+            Button("choicesnext", "›", 260, 754, 45, new MatchIntent.SetPage(MatchPage.Choice, page + 1), (page + 1) * capacity < filtered.Length, height: 34);
+            canvas.Text($"Page {page + 1} / {(filtered.Length + capacity - 1) / capacity}", 325, 761, Muted, .66f, 350, 1);
         }
         if (items.Length > capacity) {
-            Button("choicesfilter", choiceFilter.Length == 0 ? "Search choices…" : choiceFilter, 808, 754, 587, () => { textFocus = true; filterInput = true; }, accent: textFocus && filterInput, height: 34);
+            Button("choicesfilter", choiceFilter.Length == 0 ? "Search choices…" : choiceFilter, 808, 754, 587, new MatchIntent.FocusInput(true), accent: textFocus && filterInput, height: 34);
             if (textFocus && filterInput) canvas.Text("Type to filter. Backspace edits. Escape closes the gallery.", 810, 794, Muted, .56f, 580, 1);
         }
-        if (selections.Count > 0 && d.Kind != "reveal")
-            Button("choicesclear", d.Ordered ? "Reset order" : "Clear", 206, 819, 183, () => selections.Clear(), !busy);
-        if (d.Min == 0 && d.Kind != "reveal") Button("choice-cancel", "Choose none", 405, 819, 182, () => Send(DecisionCommands.Choose(state, [])), !busy);
-        Button("choicesdone", d.Kind == "reveal" ? "Continue" : d.Ordered ? "Confirm order" : cardChoices && selections.Count > 0
-            ? selections.Count == 1 ? "Confirm card" : "Confirm cards" : "Confirm selection", 1088, 814, 307, () => { textFocus = false; Send(DecisionCommands.Choose(state, d.Kind == "reveal" ? [] : selections)); }, !busy && (d.Kind == "reveal" || selections.Count >= d.Min && selections.Count <= d.Max), true, 47);
+        if (decisionDraft.Selections.Count > 0 && d.Kind != "reveal")
+            Button("choicesclear", d.Ordered ? "Reset order" : "Clear", 206, 819, 183, new MatchIntent.ClearSelection(), !busy);
+        if (d.Min == 0 && d.Kind != "reveal") Button("choice-cancel", "Choose none", 405, 819, 182, new MatchIntent.ChooseNone(), !busy);
+        Button("choicesdone", d.Kind == "reveal" ? "Continue" : d.Ordered ? "Confirm order" : cardChoices && decisionDraft.Selections.Count > 0
+            ? decisionDraft.Selections.Count == 1 ? "Confirm card" : "Confirm cards" : "Confirm selection", 1088, 814, 307, new MatchIntent.ConfirmSelection(), !busy && (d.Kind == "reveal" || decisionDraft.Selections.Count >= d.Min && decisionDraft.Selections.Count <= d.Max), true, 47);
     }
     private void DrawValueDecision(GameSnapshot state, Decision d)
     {
         bool numeric = d.Kind == "number" || d.Numeric;
         canvas.Text(numeric && d.Kind == "number" ? $"Choose a number from {d.Min} to {d.Max}." : "Enter your answer.", 228, 315, Gold, .94f, 1127, 2);
-        Button("text-input", inputText.Length == 0 ? "Click here and type…" : inputText, 230, 399, 1100, () => { textFocus = true; filterInput = false; }, accent: textFocus, height: 66);
+        Button("text-input", inputText.Length == 0 ? "Click here and type…" : inputText, 230, 399, 1100, new MatchIntent.FocusInput(false), accent: textFocus, height: 66);
         if (d.Kind == "number") {
-            Button("number-less", "−", 232, 490, 65, () => { if (int.TryParse(inputText, out int value)) inputText = Math.Clamp((long)value - 1, d.Min, d.Max).ToString(); }, height: 44);
-            Button("number-more", "+", 310, 490, 65, () => { if (int.TryParse(inputText, out int value)) inputText = Math.Clamp((long)value + 1, d.Min, d.Max).ToString(); }, height: 44);
+            Button("number-less", "−", 232, 490, 65, new MatchIntent.AdjustNumber(-1), height: 44);
+            Button("number-more", "+", 310, 490, 65, new MatchIntent.AdjustNumber(1), height: 44);
         }
         bool valid = !numeric || int.TryParse(inputText, out int number) && (d.Kind != "number" || number >= d.Min && number <= d.Max);
         if (!valid) canvas.Text("Enter a whole number within the permitted range.", 231, 559, Red, .78f, 1090, 2);
-        Button("value", "Confirm", 1090, 718, 266, () => { textFocus = false; Send(DecisionCommands.Value(state, inputText)); }, valid && !busy, true, 54);
+        Button("value", "Confirm", 1090, 718, 266, new MatchIntent.ConfirmValue(), valid && !busy, true, 54);
     }
 }

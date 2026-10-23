@@ -82,7 +82,7 @@ internal static class EffectTransitionChecks
             {
                 var time = new GameTime(TimeSpan.FromSeconds(seconds), TimeSpan.FromSeconds(.01));
                 app.Update(time, new(), new(), new(1600, 900));
-                return app.ComposePresentation(time);
+                return app.ReadPresentation();
             }
             var initial = Tick(10);
             var represented = initial.Cards.Where(card => card.Zone == "Battlefield").Select(card => card.Id).ToHashSet(StringComparer.Ordinal);
@@ -148,7 +148,7 @@ internal static class EffectTransitionChecks
             {
                 var time = new GameTime(TimeSpan.FromSeconds(seconds), TimeSpan.FromSeconds(.01));
                 app.Update(time, new(), new(), new(1600, 900));
-                return app.ComposePresentation(time);
+                return app.ReadPresentation();
             }
             Tick(10);
             var changed = baseline with {

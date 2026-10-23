@@ -64,7 +64,7 @@ internal sealed partial class TableApplication
                 canvas.Line(corner, corner - new Vector2(0, y * 5), color, 1.5f);
             }
         canvas.Text("Whole table", bounds.X + 32, bounds.Y + 6, color, .65f, bounds.Width - 34, 80, true);
-        hits.Add(new(id, Scope, bounds, () => SetStudyFocus(null)));
+        hits.Add(new(id, Scope, bounds, new MatchIntent.SetStudyFocus(null)));
     }
 
     private void DrawStudyRailCount(Player player)

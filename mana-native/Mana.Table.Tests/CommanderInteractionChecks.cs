@@ -52,7 +52,7 @@ internal static class CommanderInteractionChecks
                 seconds += 1.0 / 60; var at = Physical(logical);
                 var time = new GameTime(TimeSpan.FromSeconds(seconds), TimeSpan.FromSeconds(1.0 / 60));
                 app.Update(time, new(at.X, at.Y, 0, left, default, default, default, default), new(), size);
-                return app.ComposePresentation(time);
+                return app.ReadPresentation();
             }
             Point Source(string id)
             {

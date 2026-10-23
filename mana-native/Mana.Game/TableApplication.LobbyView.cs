@@ -9,7 +9,6 @@ namespace Mana.Table;
 internal sealed partial class TableApplication
 {
     private static readonly Color ReadyColor = new(118, 214, 181), LobbyTrim = new(51, 67, 82);
-    private int homeDeckPage;
     private void LobbyPill(string label, int x, int y, int width, Color color)
     {
         canvas.Rounded(new(x, y, width, 28), color * .13f, 14);
@@ -23,8 +22,8 @@ internal sealed partial class TableApplication
         if (Connected) DrawFriendsLobby();
         else {
             int actionTop = DrawHomeDeck();
-            MenuAction("solo-tab", "Play with AI", new(84, actionTop, 210, 48), () => ChoosePlayMode(true), loaded && !busy, soloTab);
-            MenuAction("friends-tab", "With friends", new(315, actionTop, 210, 48), () => ChoosePlayMode(false), loaded && !busy, !soloTab);
+            MenuAction("solo-tab", "Play with AI", new(84, actionTop, 210, 48), new ShellIntent.ChoosePlayMode(true), loaded && !busy, soloTab);
+            MenuAction("friends-tab", "With friends", new(315, actionTop, 210, 48), new ShellIntent.ChoosePlayMode(false), loaded && !busy, !soloTab);
             if (soloTab) DrawSoloLobby(actionTop); else DrawFriendsWelcome(actionTop);
             DrawHomeDecks();
         }
@@ -50,10 +49,10 @@ internal sealed partial class TableApplication
     private void DrawMenuHeading()
     {
         canvas.Text("MANA TABLE", 64, 38, Gold, 1.35f, 340, 1, true);
-        MenuAction("experience-home", "Play", new(405, 31, 100, 48), () => { CloseDeckEditor(); CloseSetupModal(); OpenPlayHome(); }, loaded && !busy, !deckEditor);
-        MenuAction("change-deck", "Decks", new(528, 31, 115, 48), () => { ClearExperienceInput(); OpenDeckPicker(); }, loaded && !busy);
-        MenuAction("new-deck", "+ New deck", new(666, 31, 160, 48), () => { ClearExperienceInput(); NewDeck(); }, loaded && !busy);
-        MenuAction("player-name", preferences.PlayerName.Length > 0 ? preferences.PlayerName : "Player", new(1130, 31, 210, 48), () => { ClearExperienceInput(); OpenPlayerName(); }, loaded && !busy);
+        MenuAction("experience-home", "Play", new(405, 31, 100, 48), new ShellIntent.OpenPlayHome(), loaded && !busy, !deckEditor);
+        MenuAction("change-deck", "Decks", new(528, 31, 115, 48), new ShellIntent.OpenDeckLibrary(), loaded && !busy);
+        MenuAction("new-deck", "+ New deck", new(666, 31, 160, 48), new DeckIntent.NewDeck(), loaded && !busy);
+        MenuAction("player-name", preferences.PlayerName.Length > 0 ? preferences.PlayerName : "Player", new(1130, 31, 210, 48), new ShellIntent.EditPlayerName(), loaded && !busy);
     }
     private int DrawHomeDeck()
     {
@@ -64,7 +63,7 @@ internal sealed partial class TableApplication
         canvas.Text(title, 88, 180, Ink, 1.7f, 670, 3, true);
         if (deck == null) {
             canvas.Text("Choose a precon or bring your own deck.", 94, 375, Muted, .95f, 600, 2);
-            if (soloTab) Button("home-choose", "Choose a deck", 90, 554, 430, () => OpenDeckLibrary(), loaded && !busy, true, 68, prominent: true);
+            if (soloTab) Button("home-choose", "Choose a deck", 90, 554, 430, new ShellIntent.OpenDeckLibrary(), loaded && !busy, true, 68, prominent: true);
             if (resources.CardBack is { } back) for (int i = 0; i < 3; i++)
                 canvas.Sprite(back, new(1010 + i * 95, 445 + (i == 1 ? -22 : 0)), new(270, 378), (i - 1) * .13f, Color.White * .7f);
             return 465;
@@ -92,19 +91,18 @@ internal sealed partial class TableApplication
             canvas.CenterText("Choose a commander", new(972, 401, 326, 80), Gold, 1.05f, true);
         }
         canvas.CenterText("Edit deck", new(950, 718, 370, 40), over ? Ink : Muted, .82f, over);
-        if (!busy) hits.Add(new("edit-deck", Scope, bounds, () => { ClearExperienceInput(); OpenDeckEditor(); }));
+        if (!busy) hits.Add(ShellHit("edit-deck", bounds, new ShellIntent.EditDeck(true)));
         if (!DeckReady && soloTab) {
             string issue = deck.SaveError.Length > 0 ? "Unsaved changes. Open your deck to retry." : deck.Problem.Length > 0 ? deck.Problem : "Choose a commander in your deck.";
             canvas.Text(issue, 94, actionTop + 170, Gold, .82f, 620, 4);
         }
-        MenuAction("review-deck", "Deck list", new(950, 765, 370, 36), () => { ClearExperienceInput(); ReviewDeck(); }, !busy, size: .74f);
+        MenuAction("review-deck", "Deck list", new(950, 765, 370, 36), new ShellIntent.ReviewDeck(true), !busy, size: .74f);
         return actionTop;
     }
     private void DrawHomeDecks()
     {
         canvas.Text("YOUR DECKS", 94, 810, Gold, .64f, 240, 1, true);
-        MenuAction("home-library", "All decks", new(1330, 795, 170, 42), () => OpenDeckLibrary(), loaded && !busy, size: .75f);
-        homeDeckPage = Math.Clamp(homeDeckPage, 0, Math.Max(0, (decks.Count - 1) / 4));
+        MenuAction("home-library", "All decks", new(1330, 795, 170, 42), new ShellIntent.OpenDeckLibrary(), loaded && !busy, size: .75f);
         for (int i = 0; i < Math.Min(4, decks.Count - homeDeckPage * 4); i++) {
             var deck = decks[homeDeckPage * 4 + i];
             int x = 94 + i * 347;
@@ -112,18 +110,18 @@ internal sealed partial class TableApplication
             bool selected = selectedDeck?.Id == deck.Id, over = !busy && bounds.Contains(pointer);
             canvas.Line(new(x, 846), new(x + 314, 846), selected ? Gold : over ? Ink : LobbyTrim, selected ? 3 : 1);
             canvas.Text(deck.Name, x + 6, 864, selected || over ? Ink : Muted, .95f, 302, 2, selected);
-            if (!busy) hits.Add(new("home-deck:" + deck.Id, ControlScope("home-deck:" + deck.Id), bounds, () => { ClearExperienceInput(); ChooseDeck(deck); }));
+            if (!busy) hits.Add(ShellHit("home-deck:" + deck.Id, bounds, new ShellIntent.SelectHomeDeck(deck.Id)));
         }
-        if (decks.Count == 0) MenuAction("home-precons", "Choose a precon", new(90, 848, 300, 60), () => OpenDeckLibrary(), loaded && !busy);
+        if (decks.Count == 0) MenuAction("home-precons", "Choose a precon", new(90, 848, 300, 60), new ShellIntent.OpenDeckLibrary(), loaded && !busy);
         if (decks.Count > 4) {
-            MenuAction("home-prev", "‹", new(1502, 844, 37, 42), () => homeDeckPage--, !busy && homeDeckPage > 0, size: 1.3f);
-            MenuAction("home-next", "›", new(1540, 844, 37, 42), () => homeDeckPage++, !busy && (homeDeckPage + 1) * 4 < decks.Count, size: 1.3f);
+            MenuAction("home-prev", "‹", new(1502, 844, 37, 42), new ShellIntent.Page(ShellPage.HomeDecks, -1), !busy && homeDeckPage > 0, size: 1.3f);
+            MenuAction("home-next", "›", new(1540, 844, 37, 42), new ShellIntent.Page(ShellPage.HomeDecks, 1), !busy && (homeDeckPage + 1) * 4 < decks.Count, size: 1.3f);
         }
     }
     private void DrawSoloLobby(int top)
     {
         if (selectedDeckDetails == null) return;
-        Button("start-solo", "Play", 90, top + 89, 430, StartSolo, loaded && !busy && DeckReady, true, 68, prominent: true);
+        Button("start-solo", "Play", 90, top + 89, 430, new ShellIntent.StartSolo(), loaded && !busy && DeckReady, true, 68, prominent: true);
         if (!DeckReady) return;
         int count = CommanderDeck ? 3 : 1;
         for (int i = 0; i < count; i++) {
@@ -140,7 +138,7 @@ internal sealed partial class TableApplication
             canvas.Line(new(x, centerY - 9), new(x, centerY - 15), over ? Ink : Muted, 2);
             canvas.CenterText("AI", new(x - 35, centerY + 36, 70, 26), over ? Ink : Muted, .65f, true);
             if (over && opponent != null) canvas.Text(opponent.Name, 580, centerY - 8, Ink, .74f, 300, 3);
-            if (!busy && DeckReady) hits.Add(new("choose-ai:" + i, Scope, bounds, () => OpenOpponentPicker(seat)));
+            if (!busy && DeckReady) hits.Add(ShellHit("choose-ai:" + i, bounds, new ShellIntent.OpenOpponentPicker(seat)));
         }
     }
     private void DrawFriendsWelcome(int top)
@@ -148,18 +146,18 @@ internal sealed partial class TableApplication
         canvas.Text("Seats", 94, top + 76, Muted, .75f, 100, 1);
         for (int count = 2; count <= 4; count++) {
             int players = count;
-            MenuAction("friends-count:" + count, count.ToString(), new(204 + (count - 2) * 68, top + 58, 53, 42), () => friendPlayerCount = players, !busy, friendPlayerCount == count);
+            MenuAction("friends-count:" + count, count.ToString(), new(204 + (count - 2) * 68, top + 58, 53, 42), new ShellIntent.SetFriendCount(players), !busy, friendPlayerCount == count);
         }
-        Button("host", "Host a table", 90, top + 119, 430, () => ConnectLobby(true), loaded && !busy, true, 68, prominent: true);
-        MenuAction("join", "Join with an invite", new(90, top + 208, 430, 48), () => { ClearExperienceInput(); OpenJoin(); }, loaded && !busy);
-        MenuAction("connection-options", "Connection", new(90, top + 266, 430, 38), () => { ClearExperienceInput(); setupModal = "connection"; connectionPage = 0; }, !busy, size: .68f);
+        Button("host", "Host a table", 90, top + 119, 430, new ShellIntent.Connect(true), loaded && !busy, true, 68, prominent: true);
+        MenuAction("join", "Join with an invite", new(90, top + 208, 430, 48), new ShellIntent.OpenJoin(), loaded && !busy);
+        MenuAction("connection-options", "Connection", new(90, top + 266, 430, 38), new ShellIntent.OpenConnection(true), !busy, size: .68f);
     }
     private void DrawFriendsLobby()
     {
         var state = lobby!;
         canvas.Text(state.Mode == "hosting" ? "Your table" : "At the table", 90, 149, Ink, 1.8f, 800, 1, true, true);
-        MenuAction("invite", "Invite friends", new(1050, 143, 230, 45), () => { setupModal = "connection"; connectionPage = 0; }, !busy);
-        MenuAction("leave", "Leave table", new(1310, 143, 220, 45), LeaveLobby, !busy);
+        MenuAction("invite", "Invite friends", new(1050, 143, 230, 45), new ShellIntent.OpenConnection(), !busy);
+        MenuAction("leave", "Leave table", new(1310, 143, 220, 45), new ShellIntent.LeaveLobby(), !busy);
         for (int i = 0; i < Math.Min(4, state.Seats.Length); i++) {
             var seat = state.Seats[i]; int x = 280 + i * 347, y = 390;
             bool open = seat.Type == "OPEN", ai = seat.Type == "AI";
@@ -173,14 +171,14 @@ internal sealed partial class TableApplication
             if (seat.Ready) { canvas.Circle(new(x + 52, y + 47), 18, ReadyColor); canvas.CenterText("✓", new(x + 34, y + 27, 36, 40), new(9, 26, 25), .95f, true); }
             canvas.CenterText(seat.Local ? "You" : open ? "Open seat" : seat.Name, new(x - 154, 489, 308, 43), open ? Muted : Ink, 1.03f, true);
             canvas.Text(seat.Deck ?? (open ? "Invite a friend" : "Choosing a deck"), x - 148, 546, Muted, .82f, 296, 3);
-            if (seat.Local) MenuAction("edit-deck", "Edit deck", new(x - 130, 637, 260, 36), OpenDeckEditor, !busy && selectedDeck != null, size: .75f);
+            if (seat.Local) MenuAction("edit-deck", "Edit deck", new(x - 130, 637, 260, 36), new ShellIntent.EditDeck(), !busy && selectedDeck != null, size: .75f);
             if (CanManageLobbySeats && seat.Index > 0 && (open || ai)) DrawLobbySeatControls(i, seat);
         }
         if (CanManageLobbySeats) DrawLobbySizeControls();
-        MenuAction("review-deck", "Deck list", new(92, 714, 250, 40), ReviewDeck, !busy && selectedDeckDetails != null, size: .75f);
+        MenuAction("review-deck", "Deck list", new(92, 714, 250, 40), new ShellIntent.ReviewDeck(), !busy && selectedDeckDetails != null, size: .75f);
         bool ready = LocalSeat?.Ready == true;
-        Button(ready ? "unready" : "ready", ready ? "Not ready" : "Ready", 90, 797, 320, () => SetLobbyReady(!ready), !busy && (ready || DeckReady), !ready, 60, prominent: true);
-        if (state.Mode == "hosting") Button("start", "Play", 1170, 797, 340, StartFriends, !busy && ready && DeckConfirmed && state.CanStart, true, 60, prominent: true);
+        Button(ready ? "unready" : "ready", ready ? "Not ready" : "Ready", 90, 797, 320, new ShellIntent.SetReady(!ready), !busy && (ready || DeckReady), !ready, 60, prominent: true);
+        if (state.Mode == "hosting") Button("start", "Play", 1170, 797, 340, new ShellIntent.StartFriends(), !busy && ready && DeckConfirmed && state.CanStart, true, 60, prominent: true);
         else canvas.Text("Waiting for the host", 1170, 815, Muted, .9f, 340, 2);
         string? problem = !DeckReady ? selectedDeckDetails is not { } deck ? "Choose your deck."
             : deck.SaveError.Length > 0 ? "Save your deck before becoming Ready."
@@ -192,7 +190,7 @@ internal sealed partial class TableApplication
         hits.Clear();
         canvas.Fill(new(0, 64, 1600, 936), Color.Black * .82f);
         canvas.Panel(new(168, 142, 1264, 752), new(22, 32, 44), LobbyTrim, 18);
-        Button("setup-close", "Back", 1292, 160, 112, CloseSetupModal, !busy, height: 36);
+        Button("setup-close", "Back", 1292, 160, 112, new ShellIntent.CloseSetup(), !busy, height: 36);
         switch (setupModal) {
             case "decks": DrawDeckPicker(); break;
             case "confirm": DrawDeckConfirmation(); break;
@@ -206,8 +204,8 @@ internal sealed partial class TableApplication
     {
         if (selectedDeckDetails is not { } deck) return;
         canvas.Text(deck.Name, 202, 179, Ink, 1.4f, 1020, 2, true);
-        Button("review-overview", "Deck overview", 204, 232, 184, () => { reviewList = false; textFocus = false; }, !busy, !reviewList, 36);
-        Button("review-list", "Full deck list", 400, 232, 184, () => { reviewList = true; textFocus = false; }, !busy, reviewList, 36);
+        Button("review-overview", "Deck overview", 204, 232, 184, new ShellIntent.ShowReview(false), !busy, !reviewList, 36);
+        Button("review-list", "Full deck list", 400, 232, 184, new ShellIntent.ShowReview(true), !busy, reviewList, 36);
         canvas.Text("Browsing keeps your current deck selected.", 628, 244, Muted, .73f, 740, 1);
         if (reviewList) DrawLobbyDeckList();
         else {
@@ -227,9 +225,9 @@ internal sealed partial class TableApplication
             if (DeckReady) DrawDeckComposition(deck, 628, 679, 739);
         }
         canvas.Line(new(204, 808), new(1394, 808), LobbyTrim);
-        Button("confirm-change", "Choose another deck", 204, 817, 280, OpenDeckPicker, !busy, height: 48);
-        Button("confirm-edit", reviewList && reviewCard != null ? "Edit this card in builder" : "Open deck builder", 638, 817, 280, () => OpenDeckEditorAt(reviewList ? reviewCard : null), !busy, !DeckReady, 48);
-        Button("confirm-deck", "Back to play", 932, 817, 462, CloseSetupModal, !busy, true, 48);
+        Button("confirm-change", "Choose another deck", 204, 817, 280, new ShellIntent.OpenDeckLibrary(), !busy, height: 48);
+        Button("confirm-edit", reviewList && reviewCard != null ? "Edit this card in builder" : "Open deck builder", 638, 817, 280, new ShellIntent.EditDeck(AtReviewCard: true), !busy, !DeckReady, 48);
+        Button("confirm-deck", "Back to play", 932, 817, 462, new ShellIntent.CloseSetup(), !busy, true, 48);
         string confirmHint = !DeckReady ? "Fix the issues above in Deck builder first."
             : Connected ? "Ready at the table when you want to play."
             : "Play starts directly with your selected deck.";
@@ -243,17 +241,17 @@ internal sealed partial class TableApplication
         var field = new Rectangle(230, 413, 1140, 66);
         canvas.Panel(field, new(14, 22, 32), textFocus ? Blue : LobbyTrim, 8);
         canvas.Text(joinAddress.Length == 0 ? "MT1-... or host:port" : joinAddress + (textFocus && (int)(now * 2) % 2 == 0 ? "|" : ""), 248, 435, setupSelectAll ? Gold : joinAddress.Length == 0 ? Muted : Ink, .96f, 1100, 1);
-        if (!busy) hits.Add(new("join-address", Scope, field, () => textFocus = true));
+        if (!busy) hits.Add(ShellHit("join-address", field, new ShellIntent.FocusSetupInput(ResetSelection: false)));
         canvas.Text("Use the same Mana Table build as your friends. For a shared VPN or local network, the host can copy a matching address from Connection.", 233, 518, Muted, .86f, 1120, 4);
         if (error.Length > 0) canvas.Text(error, 233, 662, Red, .8f, 1120, 4);
-        Button("join-confirm", busy ? "Joining..." : "Join table", 958, 810, 412, () => ConnectLobby(false), !busy && joinAddress.Trim().Length > 0, true, 50);
+        Button("join-confirm", busy ? "Joining..." : "Join table", 958, 810, 412, new ShellIntent.Connect(false), !busy && joinAddress.Trim().Length > 0, true, 50);
     }
     private void DrawLobbyConnection()
     {
         canvas.Text(Connected ? "Invite & connection" : "Connection options", 204, 179, Ink, 1.4f, 1020, 1, true);
         if (!Connected) {
             canvas.Text("Let the host request port forwarding from their router.", 208, 269, Ink, 1.05f, 1100, 2);
-            Button("forward", (forward ? "[x] " : "[ ] ") + "Automatic router port forwarding", 208, 354, 730, () => forward = !forward, !busy, forward, 48);
+            Button("forward", (forward ? "[x] " : "[ ] ") + "Automatic router port forwarding", 208, 354, 730, new ShellIntent.TogglePortForwarding(), !busy, forward, 48);
             canvas.Text("If the router cannot forward ports, use a shared private VPN or a reachable host address. This setting applies when you create a table.", 210, 454, Muted, .92f, 1110, 4);
             return;
         }
@@ -263,17 +261,16 @@ internal sealed partial class TableApplication
         canvas.Text("Router mapping: " + state.PortMapping, 209, 301, Ink, .85f, 1100, 1);
         canvas.Text("A router mapping is not a verified internet connection. Local or VPN addresses work only on the matching network.", 209, 337, Muted, .71f, 1140, 2);
         if (!string.IsNullOrWhiteSpace(state.InternetInvite)) {
-            Button("copy-invite", "Copy internet invite", 210, 404, 398, () => { Clipboard.SetText(state.InternetInvite!); message = "Internet invite copied."; }, !busy, true, 42);
+            Button("copy-invite", "Copy internet invite", 210, 404, 398, new ShellIntent.CopyInternetInvite(), !busy, true, 42);
         } else canvas.Text("No internet invite yet. Choose a local or VPN address below.", 210, 411, Gold, .79f, 1140, 1);
-        connectionPage = Math.Clamp(connectionPage, 0, Math.Max(0, (state.Addresses.Length - 1) / 5));
         for (int i = 0; i < Math.Min(5, state.Addresses.Length - connectionPage * 5); i++) {
             var address = state.Addresses[connectionPage * 5 + i]; int y = 474 + i * 61;
             canvas.Rounded(new(208, y, 1186, 51), new(29, 43, 57), 6);
             canvas.Text(address.Label, 222, y + 16, Ink, .74f, 325, 1);
             canvas.Text(address.Url, 561, y + 16, Muted, .74f, 540, 1);
-            Button("copy-address:" + address.Url, "Copy", 1246, y + 7, 132, () => { Clipboard.SetText(address.Url); message = address.Label + " address copied."; }, !busy, height: 35);
+            Button("copy-address:" + address.Url, "Copy", 1246, y + 7, 132, new ShellIntent.CopyAddress(address.Url), !busy, height: 35);
         }
-        Button("connection-prev", "Previous", 208, 818, 140, () => connectionPage--, connectionPage > 0, height: 34);
-        Button("connection-next", "Next", 360, 818, 110, () => connectionPage++, (connectionPage + 1) * 5 < state.Addresses.Length, height: 34);
+        Button("connection-prev", "Previous", 208, 818, 140, new ShellIntent.Page(ShellPage.Connection, -1), connectionPage > 0, height: 34);
+        Button("connection-next", "Next", 360, 818, 110, new ShellIntent.Page(ShellPage.Connection, 1), (connectionPage + 1) * 5 < state.Addresses.Length, height: 34);
     }
 }

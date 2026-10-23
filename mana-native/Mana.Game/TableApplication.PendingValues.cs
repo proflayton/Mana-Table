@@ -177,6 +177,6 @@ internal sealed partial class TableApplication
         if (ResolvePendingReference(reference) is not { } current) return;
         // Hover uses the existing noncommitting full-card preview. A click on
         // this reference never chooses a target or activates the source.
-        hits.Add(new(prefix + decision.Id, Scope, bounds, () => { }, current, "StackReference"));
+        hits.Add(new(prefix + decision.Id, Scope, bounds, new MatchIntent.PreviewPendingCard(reference.StackId, reference.CardId, reference.DecisionId), current, "StackReference"));
     }
 }

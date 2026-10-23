@@ -51,7 +51,7 @@ internal sealed class PriorityFlowSmoke : ITableAutomation
                     now += 1.0 / 60;
                     var time = new GameTime(TimeSpan.FromSeconds(now), TimeSpan.FromSeconds(1.0 / 60));
                     application.Update(time, driver.ReadMouse(), new(), size);
-                    application.ComposePresentation(time); driver.Advance(); Thread.Yield();
+                    application.ReadPresentation(); driver.Advance(); Thread.Yield();
                 }
             } catch (Exception exception) { driver.Save(exception.ToString()); throw; }
         }

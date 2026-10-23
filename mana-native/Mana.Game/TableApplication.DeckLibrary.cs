@@ -87,7 +87,7 @@ internal sealed partial class TableApplication
         selectedDeck = null; selectedDeckDetails = null; InvalidateDeckConfirmation();
         soloSetup = null; CloseDeckEditor(); reviewCard = null; reviewList = false;
         deckCardId = deckBackId = null; librarySelection = null; catalogRead.Clear();
-        deckWorkspace.Clear(); workshopSetup = null;
+        deckWorkspace.Clear(); deckInteraction.Reset(); workshopSetup = null;
         workshopVersionView = null; workshopSourcePreview = null; analysisOpen = false;
         printingRead.Clear(); printingSelection = null;
     }

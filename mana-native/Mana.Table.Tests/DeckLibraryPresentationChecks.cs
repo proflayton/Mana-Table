@@ -36,7 +36,7 @@ internal static class DeckLibraryPresentationChecks
             run.Until(() => engine.DeleteCalls == 1 && run.View.Busy, "Delete reaches storage once and waits for its actual result");
             check(run.View.SavedDecks.Any(deck => deck.Id == "b") && run.View.SelectedDeck?.Id == current && run.View.DeckConfirmed,
                 "An unacknowledged delete keeps its saved row and the unrelated confirmed selection intact");
-            deleteOther.Action();
+            run.View.Activate(deleteOther);
             int reads = engine.ReceiptReads;
             engine.ReceiptReadOverride = () => staleReceipts.Task;
             run.View.RefreshDeckLibrary();
@@ -50,16 +50,16 @@ internal static class DeckLibraryPresentationChecks
                     && run.View.DeletedDecks.Any(deck => deck.DeckId == "b") && run.View.SelectedDeck?.Id == current && run.View.DeckConfirmed,
                 "Duplicate delete input and a late empty receipt observation cannot cancel the successful removal, lose Undo or withdraw another selected deck");
             engine.ReceiptReadOverride = null; engine.DeleteRelease = null;
-            deleteOther.Action(); run.Tick();
-            check(engine.DeleteCalls == 1, "A captured Delete callback cannot delete a row that has already disappeared");
+            run.View.Activate(deleteOther); run.Tick();
+            check(engine.DeleteCalls == 1, "A captured Delete intent cannot delete a row that has already disappeared");
             var otherReceipt = run.View.DeletedDecks.Single(deck => deck.DeckId == "b");
             var oldRestore = run.Hit("deck-restore:" + otherReceipt.RestoreToken);
             run.Click(oldRestore.Id);
             run.Until(() => !run.View.Busy && run.View.SavedDecks.Any(deck => deck.Id == "b"), "Undo returns the actual saved row to the visible active library");
             check(run.View.SelectedDeck?.Id == current && run.View.DeckConfirmed && run.Frame.Hits.Any(hit => hit.Id == "deck:b"),
                 "Undo visibly reveals the restored active deck without selecting it over an unrelated confirmed list");
-            oldRestore.Action(); run.Tick();
-            check(engine.RestoreCalls == 1, "A consumed Undo receipt cannot be submitted again through a captured callback");
+            run.View.Activate(oldRestore); run.Tick();
+            check(engine.RestoreCalls == 1, "A consumed Undo receipt cannot be submitted again through a captured intent");
             run.Click("setup-close"); run.Click("edit-deck");
             run.Until(() => run.View.DeckEditor && !run.View.Busy && !run.View.ActivityOpen
                     && run.Frame.Hits.Any(hit => hit.Id == "deck-delete:a"), "The current saved deck opens in the actual editor with its exposed Delete control");
@@ -73,7 +73,7 @@ internal static class DeckLibraryPresentationChecks
             run.Click("picker-deleted"); run.Click("deck-restore:" + receipt.RestoreToken);
             run.Until(() => !run.View.Busy && run.Frame.Hits.Any(hit => hit.Id == "deck:a"), "Undo from Deleted reveals the restored active tile instead of leaving an empty Deleted page");
             check(run.View.SelectedDeck == null && run.View.DeckDetails == null, "Restoring a deleted current deck does not implicitly reopen or confirm it");
-            oldCurrentDelete.Action(); run.Tick();
+            run.View.Activate(oldCurrentDelete); run.Tick();
             check(engine.DeleteCalls == 2, "A captured pre-delete control cannot delete the restored identical saved bytes in a later library generation");
             run.Click("picker-presets");
             check(!run.Frame.Hits.Any(hit => hit.Id.StartsWith("deck-delete:", StringComparison.Ordinal) || hit.Id.StartsWith("deck-restore:", StringComparison.Ordinal)),
@@ -81,12 +81,12 @@ internal static class DeckLibraryPresentationChecks
             run.Click("picker-saved");
             var lobbyDelete = run.Hit("deck-delete:b");
             run.View.PresentLobby(new("hosting", "Controlled lobby", null, false, null, false, "", null, [], []), true); run.Tick();
-            lobbyDelete.Action(); run.Tick();
+            run.View.Activate(lobbyDelete); run.Tick();
             check(!run.Frame.Hits.Any(hit => hit.Id.StartsWith("deck-delete:", StringComparison.Ordinal)) && engine.DeleteCalls == 2
                     && run.Frame.Drawing.Commands.OfType<DrawCommand.Text>().Any(text => text.Value?.Contains("Leave the lobby", StringComparison.Ordinal) == true),
                 "A connected lobby explains the leave requirement and rejects even a previously captured Delete without silently withdrawing readiness");
             run.View.Accept(new InteractionScenarioEngine().State); run.Tick();
-            lobbyDelete.Action(); run.Tick();
+            run.View.Activate(lobbyDelete); run.Tick();
             check(run.View.Match != null && engine.DeleteCalls == 2
                     && !run.Frame.Hits.Any(hit => hit.Id.StartsWith("deck-delete:", StringComparison.Ordinal) || hit.Id.StartsWith("deck-restore:", StringComparison.Ordinal)),
                 "A live table exposes no library mutations and rejects an older saved-deck Delete callback");
@@ -144,7 +144,7 @@ internal static class DeckLibraryPresentationChecks
             var time = new GameTime(TimeSpan.FromSeconds(now), TimeSpan.FromSeconds(.025));
             var physical = RenderViewport.Fit(new(1000, 740), View.DesignHeight).ToPhysical(point.ToVector2() + new Vector2(.5f));
             app.Update(time, new((int)physical.X, (int)physical.Y, 0, left, default, default, default, default), new(), new(1000, 740));
-            Frame = app.ComposePresentation(time);
+            Frame = app.ReadPresentation();
         }
         internal void Until(Func<bool> ready, string description)
         {

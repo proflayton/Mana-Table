@@ -49,13 +49,13 @@ internal sealed partial class TableApplication
         if (state.Status is "finished" or "error") {
             canvas.Text(state.Result ?? "Game stopped", 1267, 730, Gold, 1.17f, 295, 2, true);
             canvas.Text(state.Error ?? "You can still inspect the final battlefield.", 1267, 767, Muted, .63f, 294, 2);
-            if (localMatch || state.Status == "finished") Button("return", IsWorkshopMatch ? "Return to tune" : localMatch ? "Return to setup" : "Return to lobby", 1266, 828, 296, ReturnFromMatch, !busy, true, 47);
-            else Button("error-leave", "Leave table", 1266, 828, 296, () => overlay = "leave-table", !busy, true, 47);
+            if (localMatch || state.Status == "finished") Button("return", IsWorkshopMatch ? "Return to tune" : localMatch ? "Return to setup" : "Return to lobby", 1266, 828, 296, new MatchIntent.ReturnFromMatch(), !busy, true, 47);
+            else Button("error-leave", "Leave table", 1266, 828, 296, new MatchIntent.OpenView(MatchView.LeaveTable), !busy, true, 47);
             return;
         }
         if (state.Viewer?.Eliminated == true) {
             canvas.Text("Watching the table", 1266, 735, Muted, .88f, 298, 2, true);
-            Button("eliminated-leave", "Leave table", 1266, 828, 296, () => overlay = "leave-table", !busy, height: 47);
+            Button("eliminated-leave", "Leave table", 1266, 828, 296, new MatchIntent.OpenView(MatchView.LeaveTable), !busy, height: 47);
             return;
         }
 
@@ -84,9 +84,9 @@ internal sealed partial class TableApplication
         if (view.Caption.Length > 0) canvas.Text(view.Caption, 1304, layout.CaptionY, Muted, .68f, 258, 80);
         if (instruction.Length > 0) {
             canvas.Text(instruction, 1266, layout.TextY, Ink, .75f, 295, layout.Lines);
-            hits.Add(new("instructions", ControlScope("instructions"), decisionTextBounds, () => { overlay = "help"; inspectPage = 0; }));
+            hits.Add(new("instructions", ScopeFor(new MatchIntent.OpenDecisionHelp()), decisionTextBounds, new MatchIntent.OpenDecisionHelp()));
             if (decisionTextOverflow) Button("decision-read-all", "Read all", 1456, layout.StatusY - 26, 106,
-                () => { overlay = "help"; inspectPage = 0; }, height: 23);
+                new MatchIntent.OpenView(MatchView.Help), height: 23);
         }
         if (abilities.Length > 0) DrawPriorityAbilityControl(abilities);
 
@@ -101,19 +101,19 @@ internal sealed partial class TableApplication
                 }
             }
         } else if (SelectingActionTarget) {
-            if (d!.OkEnabled) Button("confirm", d.Ok, 1266, 799, 296, () => Send(DecisionCommands.Confirm(state)), !busy, true, 47);
-            if (d.CancelEnabled) Button("cancel", d.Cancel, 1459, d.OkEnabled ? 852 : 799, 103, () => Send(DecisionCommands.Cancel(state)), !busy, height: 32);
+            if (d!.OkEnabled) Button("confirm", d.Ok, 1266, 799, 296, new MatchIntent.ConfirmDecision(), !busy, true, 47);
+            if (d.CancelEnabled) Button("cancel", d.Cancel, 1459, d.OkEnabled ? 852 : 799, 103, new MatchIntent.CancelDecision(), !busy, height: 32);
         } else if (recipientChoice) {
             // The named source/portrait targets own this required choice.
         } else if (TableChoice) {
-            Button("confirm", selections.Count == 0 && d!.Min == 0 ? "Choose none" : $"Confirm ({selections.Count}/{d!.Max})", 1266, 799, 296,
-                () => Send(DecisionCommands.Choose(state, selections)), TableChoices.CanConfirm(state, selections), true, 47);
-            Button("choicesclear", "Clear", 1459, 852, 103, () => selections.Clear(), selections.Count > 0, height: 27);
+            Button("confirm", decisionDraft.Selections.Count == 0 && d!.Min == 0 ? "Choose none" : $"Confirm ({decisionDraft.Selections.Count}/{d!.Max})", 1266, 799, 296,
+                new MatchIntent.ConfirmSelection(), TableChoices.CanConfirm(state, decisionDraft.Selections), true, 47);
+            Button("choicesclear", "Clear", 1459, 852, 103, new MatchIntent.ClearSelection(), decisionDraft.Selections.Count > 0, height: 27);
         } else if (d?.Kind == "input") {
-            Button("confirm", view.ActionLabel, 1266, 799, 296, () => Send(DecisionCommands.Confirm(state)), CombatGuide.CanConfirm(state), true, 47);
+            Button("confirm", view.ActionLabel, 1266, 799, 296, new MatchIntent.ConfirmDecision(), CombatGuide.CanConfirm(state), true, 47);
             if (d.CancelEnabled) Button("cancel", d.Intent == DecisionIntent.Priority && d.Cancel == "End Turn" ? "Pass turn" : d.Cancel,
-                1459, 852, 103, () => Send(DecisionCommands.Cancel(state)), height: 27);
-        } else if (d != null) Button("open-decision", "Make a choice", 1266, 799, 296, () => collapsedDecision = false, true, true, 47);
+                1459, 852, 103, new MatchIntent.CancelDecision(), height: 27);
+        } else if (d != null) Button("open-decision", "Make a choice", 1266, 799, 296, new MatchIntent.OpenDecision(), true, true, 47);
     }
 
     private void DrawDecisionRole(DecisionDockView view, Vector2 center, Color accent)

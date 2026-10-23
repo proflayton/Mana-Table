@@ -91,7 +91,7 @@ internal static class PregameFlowChecks
             var time = new GameTime(TimeSpan.FromSeconds(now), TimeSpan.FromSeconds(.025));
             var physical = RenderViewport.Fit(new(1000, 740), View.DesignHeight).ToPhysical((point ?? new Point(20, 70)).ToVector2() + new Vector2(.5f));
             app.Update(time, new((int)physical.X, (int)physical.Y, 0, left, default, default, default, default), new(), new(1000, 740));
-            Frame = app.ComposePresentation(time);
+            Frame = app.ReadPresentation();
         }
         internal void Until(Func<bool> ready, string description) {
             var deadline = DateTime.UtcNow.AddSeconds(5);

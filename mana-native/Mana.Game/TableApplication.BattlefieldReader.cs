@@ -44,11 +44,6 @@ internal sealed partial class TableApplication
     {
         battlefieldReaderStateBounds = Rectangle.Empty;
         battlefieldReaderStateScrollMax = 0;
-        string binding = (match?.Id ?? "") + "\n" + BattlefieldReaderBinding(entry);
-        if (binding != battlefieldReaderStateBinding) {
-            battlefieldReaderStateBinding = binding;
-            battlefieldReaderStateScroll = 0;
-        }
         var chips = CardPresentation.Counters(card).Select(counter => new BattlefieldReaderChip(
             counter.Value + " " + counter.Key + (counter.Value == 1 ? " counter" : " counters"), new(154, 224, 203))).ToList();
         if (card.Damage > 0) chips.Add(new(card.Damage + " damage marked", Red));
@@ -84,9 +79,9 @@ internal sealed partial class TableApplication
         int height = Math.Min(available, contentHeight);
         battlefieldReaderStateBounds = new(x, top, width, height);
         battlefieldReaderStateScrollMax = Math.Max(0, contentHeight - height);
-        battlefieldReaderStateScroll = Math.Clamp(battlefieldReaderStateScroll, 0, battlefieldReaderStateScrollMax);
+        int scroll = Math.Clamp(battlefieldReaderStateScroll, 0, battlefieldReaderStateScrollMax);
         foreach (var item in positions) {
-            int y = top + item.Y - battlefieldReaderStateScroll;
+            int y = top + item.Y - scroll;
             var bounds = Rectangle.Intersect(new(x, y, width, item.Height), battlefieldReaderStateBounds);
             if (bounds.IsEmpty) continue;
             canvas.Rounded(bounds, new(13, 25, 31), 5);
@@ -99,12 +94,12 @@ internal sealed partial class TableApplication
         }
         if (battlefieldReaderStateScrollMax > 0) {
             int thumbHeight = Math.Max(16, height * height / contentHeight);
-            int thumbTop = top + (height - thumbHeight) * battlefieldReaderStateScroll / battlefieldReaderStateScrollMax;
+            int thumbTop = top + (height - thumbHeight) * scroll / battlefieldReaderStateScrollMax;
             canvas.Rounded(new(x + width + 3, top, 3, height), Muted * .18f, 1);
             canvas.Rounded(new(x + width + 3, thumbTop, 3, thumbHeight), Blue * .7f, 1);
         }
         // Read-only state must not click a different battlefield beneath it.
-        hits.Add(new("battlefield-reader-state", Scope, battlefieldReaderStateBounds, () => { }, ShowPointer: false));
+        hits.Add(new("battlefield-reader-state", Scope, battlefieldReaderStateBounds, UiIntent.None, ShowPointer: false));
     }
 
     private bool ScrollBattlefieldReaderState(int direction)

@@ -19,23 +19,21 @@ internal sealed partial class TableApplication
             var bounds = new Rectangle(x, top, width, height);
             canvas.Panel(bounds, Panel, Gold, 5);
             canvas.CenterText(caption, bounds, Gold, .58f, true);
-            hits.Add(new("table-state:" + item.Id, Scope, bounds, () => {
-                tableStatePage = 0; overlay = "table-state";
-            }));
+            hits.Add(new("table-state:" + item.Id, Scope, bounds, new MatchIntent.OpenTableState(0)));
             x += width + 8;
         }
-        Button("table-states", "All", end - 56, top, 56, () => { tableStatePage = 0; overlay = "table-state"; }, height: height);
+        Button("table-states", "All", end - 56, top, 56, new MatchIntent.OpenTableState(0), height: height);
     }
     private int tableStatePage;
     private void DrawTableStateDetails()
     {
-        ModalFrame("Table state", () => overlay = "");
-        var pages = TextPages(string.Join("\n\n", match!.States.Select(PublicStatePresentation.Description)), ReadingPageSize(1100));
-        tableStatePage = Math.Clamp(tableStatePage, 0, pages.Length - 1);
-        canvas.Text(pages[tableStatePage], 204, 195, Ink, .9f, 1170, 17);
+        ModalFrame("Table state", new MatchIntent.CloseView());
+        var pages = matchReadingPages;
+        int page = Math.Clamp(tableStatePage, 0, pages.Length - 1);
+        canvas.Text(pages[page], 204, 195, Ink, .9f, 1170, 17);
         if (pages.Length > 1) {
-            Button("table-state-prev", "Previous", 204, 729, 160, () => tableStatePage--, tableStatePage > 0);
-            Button("table-state-next", "Next", 380, 729, 160, () => tableStatePage++, tableStatePage + 1 < pages.Length);
+            Button("table-state-prev", "Previous", 204, 729, 160, new MatchIntent.SetPage(MatchPage.TableState, page - 1), page > 0);
+            Button("table-state-next", "Next", 380, 729, 160, new MatchIntent.SetPage(MatchPage.TableState, page + 1), page + 1 < pages.Length);
         }
     }
 }

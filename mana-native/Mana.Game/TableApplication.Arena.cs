@@ -19,8 +19,6 @@ internal sealed partial class TableApplication
         stackRows.Clear(); prioritySeats.Clear();
         changeCalloutBounds = null; highlightedChangeTargets.Clear(); highlightedChangeSource = null;
         var state = match!;
-        turnProgress = TurnProgressPresentation.From(state, preferences.Stops);
-        priorityView = PriorityPresentation.From(state);
         DrawTableSurface();
         // Queue the player's faces first; slow remote downloads must not bury the hand.
         foreach (var card in state.Viewer?.Zone("Hand").Cards ?? []) resources.Card(card);
@@ -81,14 +79,14 @@ internal sealed partial class TableApplication
         string label = state.Turn == 0 ? "Opening hands" : state.ActivePlayerId == state.ViewerId ? "Your turn" : active?.Name ?? "Waiting";
         canvas.Text(label, 220, 9, Ink, .85f, 410, 1, true);
         canvas.Text($"Turn {state.Turn}  ·  {state.Phase}", 220, 32, Muted, .6f, 410, 1);
-        Button("battlefields", "Battlefields", 650, 12, 178, () => OpenZone(state.ViewerId, "Battlefield"), height: 35);
+        Button("battlefields", "Battlefields", 650, 12, 178, new MatchIntent.OpenBattlefields(), height: 35);
         DrawTableStates(state);
         DrawChangesControl();
-        Button("history", "History", 1190, 12, 110, () => { overlay = "history"; historyPage = 0; }, height: 35);
-        Button("settings", "Settings", 1310, 12, 112, () => overlay = "settings", height: 35);
+        Button("history", "History", 1190, 12, 110, new MatchIntent.OpenView(MatchView.History), height: 35);
+        Button("settings", "Settings", 1310, 12, 112, new MatchIntent.OpenView(MatchView.Settings), height: 35);
         bool departure = session.NeedsRecovery || state.Viewer?.Eliminated == true || state.Status == "error";
         Button(departure ? "leave-table" : "concede", departure ? "Leave table" : "Concede", 1432, 12, 143,
-            () => overlay = departure ? "leave-table" : "concede", !busy && state.Status != "finished", height: 35);
+            new MatchIntent.OpenView(departure ? MatchView.LeaveTable : MatchView.Concede), !busy && state.Status != "finished", height: 35);
 
     }
     private void DrawHand()
@@ -110,8 +108,8 @@ internal sealed partial class TableApplication
             }
         }
         if (hand.Total > 11) {
-            Button("handprev", "‹", 254, 789, 34, () => handPage = hand.Page - 1, hand.Page > 0, height: 34);
-            Button("handnext", "›", 1203, 789, 34, () => handPage = hand.Page + 1, (hand.Page + 1) * 11 < hand.Total, height: 34);
+            Button("handprev", "‹", 254, 789, 34, new MatchIntent.SetHandPage(hand.Page - 1), hand.Page > 0, height: 34);
+            Button("handnext", "›", 1203, 789, 34, new MatchIntent.SetHandPage(hand.Page + 1), (hand.Page + 1) * 11 < hand.Total, height: 34);
         }
     }
     private static string CardIdentity(Card card) => CardViews.Identity(card);
@@ -128,7 +126,7 @@ internal sealed partial class TableApplication
         var rest = node.Zone == "Battlefield" && !node.Dense && !node.ScanFace && (card.PhasedOut || CardPresentation.HasAbility(card, "flying"))
             ? CardMotion.Airborne(node.Pose, now, preferences.ReducedMotion, node.Id) : node.Pose;
         var pose = DrawTableCard(node.Id, card, rest, node.Zone, node.Owner,
-            "card:" + card.Key + ":" + card.VisualId, () => CardClick(card),
+            "card:" + card.Key + ":" + card.VisualId, new MatchIntent.UseCard(card),
             (displayed, focus) => PaintSceneCard(card, displayed, node.Zone, node.Owner, focus, node.Compact, node.GroupFront, node.GroupCount, node.Dense), node.Entrance, node.EntranceDelay);
         if (!string.IsNullOrEmpty(card.CombatId)) cardPositions[card.CombatId]
             = node.ScanFace && readingId == node.Id ? node.Pose : pose;
@@ -136,7 +134,7 @@ internal sealed partial class TableApplication
     private void PaintSceneCard(Card card, Pose pose, string zone, int owner, bool focus, bool compact = false, bool groupFront = true, int groupCount = 1, bool dense = false)
     {
         int? choice = match == null ? null : TableChoices.Index(match, card);
-        bool selected = choice is { } index ? selections.Contains(index) : card.Highlighted || card.CombatId.Length > 0 && selectedCombat == card.CombatId;
+        bool selected = choice is { } index ? decisionDraft.Selections.Contains(index) : card.Highlighted || card.CombatId.Length > 0 && selectedCombat == card.CombatId;
         bool legal = IsCardActionable(card);
         bool scanFace = zone == "Battlefield" && !focus && !dense && !pose.IsProjected && pose.Size.X < 300
             && tableScene?.BattlefieldCard(owner, CardViews.Identity(card)) is { ScanFace: true };
@@ -281,16 +279,11 @@ internal sealed partial class TableApplication
             int stackIndex = i;
             var spellPose = TableWorld.Spell(i);
             if (state.Stack.Length > 0 || payingSource) spellPose = spellPose with { Center = spellPose.Center + new Vector2(32, 14), Size = new(124, 174) };
-            DrawTableCard(identity, card, spellPose, "Stack", null, "stack-item:" + i, () => {
-                if (payingSource) Inspect(card);
-                else if (IsCardActionable(reported)) CardClick(reported);
-                else if (state.Stack.Length > stackIndex) OpenStack(stackIndex);
-                else Inspect(card);
-            }, (displayed, focus) => PaintInteractionCard(card, displayed, stackIndex == 0, false, focus), entrance);
+            DrawTableCard(identity, card, spellPose, "Stack", null, "stack-item:" + i, new MatchIntent.UseStackCard(card, reported, stackIndex, payingSource), (displayed, focus) => PaintInteractionCard(card, displayed, stackIndex == 0, false, focus), entrance);
         }
         if (state.Stack.Length == 0 && !payingSource) {
             canvas.Text(stackCards[0].Name, 549, 400, Ink, .62f, 154, 3, true);
-            Button("stack", "Inspect source", 549, 462, 154, () => { if (state.Decision?.SourceCard is { } source) Inspect(source); }, height: 29);
+            Button("stack", "Inspect source", 549, 462, 154, new MatchIntent.InspectDecisionSource(), height: 29);
         }
     }
     private void ManaOrb(string name, int amount, Vector2 point)

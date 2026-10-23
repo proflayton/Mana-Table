@@ -99,7 +99,7 @@ public sealed class TableWindow : Game
     }
     protected override void Draw(GameTime time)
     {
-        var frame = application.ComposePresentation(time);
+        var frame = application.ReadPresentation();
         var backbuffer = GraphicsDevice.PresentationParameters;
         var renderView = RenderViewport.Fit(new(backbuffer.BackBufferWidth, backbuffer.BackBufferHeight), frame.DesignHeight);
         if (surface == null || surface.Width != renderView.Bounds.Width || surface.Height != renderView.Bounds.Height) {

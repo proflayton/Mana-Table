@@ -45,7 +45,7 @@ internal sealed partial class TableApplication
         int y = bottom - height;
         var bounds = new Rectangle(x, y, width, height);
         canvas.Panel(bounds, new Color(15, 24, 32) * .98f, ActionAccent, 7);
-        hits.Add(new("decision-context-panel", Scope, bounds, () => { }, ShowPointer: false));
+        hits.Add(new("decision-context-panel", Scope, bounds, UiIntent.None, ShowPointer: false));
         canvas.Text("CHOOSE A PLAYER", x + 10, y + 11, ActionAccent, .57f, width - 20, 1, true);
         if (consequence.Length > 0)
             canvas.Text(consequence, x + 10, y + 11 + headingHeight + 8, Ink, consequenceSize, width - 20, consequenceLines);
@@ -56,12 +56,10 @@ internal sealed partial class TableApplication
             string label = player.Id == state.ViewerId ? "You" : player.Name;
             if (state.Players.Count(other => other.Name == player.Name) > 1 && player.Id != state.ViewerId) label += " · Seat " + (state.Players.IndexOf(player) + 1);
             Button("recipient:" + player.Id, label, x + 6, y + controlsOffset + i * (controlHeight + 4), width - 12,
-                () => {
-                    if (Scope == scope && match is { } current && StateClarity.ChooseRecipient(current, player.Id) is { } reply) Send(reply);
-                }, !busy, true, controlHeight);
+                new MatchIntent.ChooseRecipient(player.Id), !busy, true, controlHeight);
         }
         Button("decision-explanation", "Effect details", x + 6, bottom - 34, width - 12,
-            () => { overlay = "help"; inspectPage = 0; }, height: 28);
+            new MatchIntent.OpenView(MatchView.Help), height: 28);
         return true;
     }
 
@@ -93,7 +91,7 @@ internal sealed partial class TableApplication
         bool poison = counters.Any(c => c.Key.Equals("poison", StringComparison.OrdinalIgnoreCase));
         canvas.Panel(bounds, new(14, 26, 31), poison ? new Color(157, 198, 118) : Blue, 4);
         canvas.Text(summary, x + 7, y + 2, Ink, size, available, 1, true);
-        hits.Add(new("player-counters:" + player.Id, Scope, bounds, () => { zonePlayer = player.Id; overlay = "player"; }));
+        hits.Add(new("player-counters:" + player.Id, Scope, bounds, new MatchIntent.OpenPlayerDetails(player.Id)));
     }
 
     private void DrawPublicPlayerStates(Player player, int x, int y, int width, bool growUp)
@@ -128,7 +126,7 @@ internal sealed partial class TableApplication
         int rows = Math.Max(chips.Max(c => c.Row) + 1, hidden > 0 ? row + 1 : 1);
         int top = growUp ? y - (rows - 1) * (rowHeight + gap) : y;
         var bounds = new Rectangle(x, top, width, rows * rowHeight + (rows - 1) * gap);
-        hits.Add(new("player-counters:" + player.Id, Scope, bounds, () => OpenPlayerState(player.Id, "")));
+        hits.Add(new("player-counters:" + player.Id, Scope, bounds, new MatchIntent.OpenPlayerState(player.Id, "")));
         var painted = new List<PublicStateChipPaint>();
         foreach (var chip in chips) {
             var rectangle = new Rectangle(x + chip.X, top + chip.Row * (rowHeight + gap), chip.Width, rowHeight);
@@ -137,7 +135,7 @@ internal sealed partial class TableApplication
             PaintControlSurface(hitId, rectangle, new(14, 26, 31), accent);
             canvas.Text(chip.Text, rectangle.X + 6, rectangle.Y + 2, Ink, chip.Size, rectangle.Width - 12, 1, true);
             string stateId = chip.State.Id;
-            hits.Add(new(hitId, Scope, rectangle, () => OpenPlayerState(player.Id, stateId)));
+            hits.Add(new(hitId, Scope, rectangle, new MatchIntent.OpenPlayerState(player.Id, stateId)));
             painted.Add(new(stateId, chip.Text, rectangle, canvas.TextWidth(chip.Text, chip.Size, true), rectangle.Width - 12));
         }
         if (hidden > 0) {
@@ -145,7 +143,7 @@ internal sealed partial class TableApplication
             string hitId = "player-state-more:" + player.Id;
             PaintControlSurface(hitId, rectangle, new(14, 26, 31), Muted);
             canvas.Text(MoreText(), rectangle.X + 6, rectangle.Y + 2, Ink, .53f, rectangle.Width - 12, 1, true);
-            hits.Add(new(hitId, Scope, rectangle, () => OpenPlayerState(player.Id, "")));
+            hits.Add(new(hitId, Scope, rectangle, new MatchIntent.OpenPlayerState(player.Id, "")));
         }
         publicCounterBadges[player.Id] = new(string.Join(" · ", painted.Select(c => c.Text)) + (hidden > 0 ? " " + MoreText() : ""),
             .6f, painted.Max(c => c.MeasuredWidth), width - 12, hidden) { Chips = painted.ToArray(), Bounds = bounds };
@@ -163,20 +161,18 @@ internal sealed partial class TableApplication
         if (player.States.Length > 0) return DrawPlayerStateDetails(player, x, y, width);
         var counters = StateClarity.PlayerCounters(player);
         canvas.Text("PUBLIC COUNTERS", x, y, Gold, .65f, width, 1, true);
-        string context = match!.Id + ":" + player.Id;
-        if (playerCounterContext != context) { playerCounterContext = context; playerCounterPage = 0; }
         const int perPage = 4;
         int pages = Math.Max(1, (counters.Length + perPage - 1) / perPage);
-        playerCounterPage = Math.Clamp(playerCounterPage, 0, pages - 1);
-        var visible = counters.Skip(playerCounterPage * perPage).Take(perPage).ToArray();
+        int page = Math.Clamp(playerCounterPage, 0, pages - 1);
+        var visible = counters.Skip(page * perPage).Take(perPage).ToArray();
         if (visible.Length == 0) canvas.Text("None", x, y + 25, Ink, .83f, width, 1);
         for (int i = 0; i < visible.Length; i++) {
             var counter = visible[i];
             canvas.Text(counter.Key + " " + counter.Value, x + i % 2 * (width / 2), y + 25 + i / 2 * 27, Ink, .83f, width / 2 - 12, 1);
         }
         if (pages > 1) {
-            Button("counter-details-prev", "Previous", x + width - 272, y - 5, 125, () => playerCounterPage--, playerCounterPage > 0, height: 26);
-            Button("counter-details-next", "More counters", x + width - 137, y - 5, 137, () => playerCounterPage++, playerCounterPage + 1 < pages, height: 26);
+            Button("counter-details-prev", "Previous", x + width - 272, y - 5, 125, new MatchIntent.SetPage(MatchPage.PlayerCounter, page - 1), page > 0, height: 26);
+            Button("counter-details-next", "More counters", x + width - 137, y - 5, 137, new MatchIntent.SetPage(MatchPage.PlayerCounter, page + 1), page + 1 < pages, height: 26);
         }
         return 80;
     }
@@ -184,26 +180,19 @@ internal sealed partial class TableApplication
     private int DrawPlayerStateDetails(Player player, int x, int y, int width)
     {
         var states = StateClarity.ProminentPlayerStates(player);
-        string context = match!.Id + ":" + player.Id;
-        if (playerCounterContext != context) { playerCounterContext = context; playerCounterPage = 0; }
-        if (playerStateFocus.Length > 0) {
-            int index = Array.FindIndex(states, s => s.Id == playerStateFocus);
-            if (index >= 0) playerCounterPage = index;
-            playerStateFocus = "";
-        }
-        playerCounterPage = Math.Clamp(playerCounterPage, 0, Math.Max(0, states.Length - 1));
-        string heading = "PLAYER STATE" + (states.Length > 1 ? "  " + (playerCounterPage + 1) + " / " + states.Length : "");
+        int page = Math.Clamp(playerCounterPage, 0, Math.Max(0, states.Length - 1));
+        string heading = "PLAYER STATE" + (states.Length > 1 ? "  " + (page + 1) + " / " + states.Length : "");
         canvas.Text(heading, x, y, Gold, .5f, 190, 1, true);
         if (states.Length == 0) { canvas.Text("None", x, y + 24, Ink, .75f, width, 1); return 80; }
-        var state = states[playerCounterPage];
+        var state = states[page];
         string caption = StateClarity.StateCaption(state);
         canvas.Text(caption, x + 200, y - 3, Ink, .7f, width - 490, 1, true);
         canvas.Text(state.Detail, x, y + 30, Muted, .55f, width, (int)Math.Ceiling(2 * preferences.TextScale));
         if (publicCounterBadges.TryGetValue(player.Id, out var badge))
             publicCounterBadges[player.Id] = badge with { DetailStateId = state.Id, DetailCaption = caption, DetailText = state.Detail };
         if (states.Length > 1) {
-            Button("counter-details-prev", "Previous state", x + width - 284, y - 5, 136, () => playerCounterPage--, playerCounterPage > 0, height: 26);
-            Button("counter-details-next", "Next state", x + width - 138, y - 5, 138, () => playerCounterPage++, playerCounterPage + 1 < states.Length, height: 26);
+            Button("counter-details-prev", "Previous state", x + width - 284, y - 5, 136, new MatchIntent.SetPage(MatchPage.PlayerCounter, page - 1), page > 0, height: 26);
+            Button("counter-details-next", "Next state", x + width - 138, y - 5, 138, new MatchIntent.SetPage(MatchPage.PlayerCounter, page + 1), page + 1 < states.Length, height: 26);
         }
         return 80;
     }

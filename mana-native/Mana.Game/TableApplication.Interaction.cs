@@ -8,19 +8,32 @@ namespace Mana.Table;
 
 internal sealed partial class TableApplication
 {
-    private void ActivateHit(Hit hit)
+    private bool ActivateHit(Hit hit)
     {
+        if (!CurrentHit(hit) || !hits.Published.Any(current => current.Id == hit.Id
+            && current.Scope == hit.Scope && Equals(current.Intent, hit.Intent))) return false;
         // A pile face represents its zone on ordinary click. Explicit inspection
         // can still read that disclosed occurrence without opening the browser.
         if (matchPresentation.Cards.Cards.Any(entry => entry.Hit.Id == hit.Id && entry.Hit.Scope == hit.Scope && entry.Request.OpensZone)) {
             CollapseCardReading();
-            hit.Action();
-            return;
+            DispatchIntent(hit.Intent);
+            return true;
         }
-        if (ToggleCardReader(hit)) return;
+        if (ToggleCardReader(hit)) return true;
         if (OverlayOpen && match?.Decision?.Intent == DecisionIntent.Priority && hit.Card is { } card
-                && hit.Zone is "Hand" or "Command" or "Graveyard" or "Exile" or "Library") { Inspect(card); return; }
-        hit.Action();
+                && hit.Zone is "Hand" or "Command" or "Graveyard" or "Exile" or "Library") { Inspect(card); return true; }
+        DispatchIntent(hit.Intent);
+        return true;
+    }
+    private void DispatchIntent(UiIntent intent)
+    {
+        switch (intent) {
+            case UiIntent.NoInteraction or UiIntent.Block: break;
+            case MatchIntent matchIntent: HandleMatchIntent(matchIntent); break;
+            case DeckIntent deckIntent: DispatchDeckIntent(deckIntent); break;
+            case ShellIntent shellIntent: HandleShellIntent(shellIntent); break;
+            default: throw new InvalidOperationException("No interaction flow owns " + intent.GetType().Name);
+        }
     }
     private IEnumerable<Card> AllCards() => match?.Players.SelectMany(p => p.Zones).SelectMany(z => z.Cards) ?? [];
     private IEnumerable<Card> VisibleCards() => match == null ? [] : CardViews.Visible(match);

@@ -39,11 +39,12 @@ internal sealed partial class TableApplication
 
     private Hit? TableHitAt(Point point)
     {
-        if (ActivityOpen) return hits.LastOrDefault(hit => hit.Id.StartsWith("activity-") && hit.Contains(point) && CurrentHit(hit));
-        if (updatesOpen) return hits.LastOrDefault(hit => hit.Id.StartsWith("updates-") && hit.Contains(point) && CurrentHit(hit));
-        if (ExperienceOpen) return hits.LastOrDefault(hit => (hit.Id.StartsWith("experience-") || hit.Id.StartsWith("updates-")) && hit.Contains(point) && CurrentHit(hit));
+        if (ActivityOpen) return hits.LastOrDefault(hit => hit.Intent.ScopeKind == InteractionScopeKind.Activity && hit.Contains(point) && CurrentHit(hit));
+        if (updatesOpen) return hits.LastOrDefault(hit => hit.Intent.ScopeKind == InteractionScopeKind.Updates && hit.Contains(point) && CurrentHit(hit));
+        if (ExperienceOpen) return hits.LastOrDefault(hit => hit.Intent.ScopeKind is InteractionScopeKind.Experience or InteractionScopeKind.Updates && hit.Contains(point) && CurrentHit(hit));
         if (BattlefieldFocused && hits.LastOrDefault(hit => hit.Contains(point)) is { } focusHit
-            && focusHit.Id.StartsWith("battlefield-focus-", StringComparison.Ordinal)) return focusHit;
+            && focusHit.Intent is MatchIntent.FocusSurface or MatchIntent.CloseBattlefieldFocus or MatchIntent.SetBattlefieldOwner
+                or MatchIntent.ScrollBattlefieldTo or MatchIntent.ReadFocusedCard or MatchIntent.OpenStack) return focusHit;
         return matchPresentation.Cards.ResolveHit(point, hits, hits.LastOrDefault(hit => hit.Contains(point)), CardContext);
     }
 
@@ -76,7 +77,7 @@ internal sealed partial class TableApplication
     }
 
     private Pose DrawTableCard(string id, Card card, Pose rest, string zone, int? owner,
-        string hitId, Action activate, Action<Pose, bool> paint, Vector2? entrance = null, float entranceDelay = 0,
+        string hitId, UiIntent activate, Action<Pose, bool> paint, Vector2? entrance = null, float entranceDelay = 0,
         bool opensZone = false, int choiceSlot = -1, Rectangle? activationBounds = null)
     {
         var entry = matchPresentation.Cards.Prepare(new(id, card, rest, zone, owner, hitId, activate,
@@ -119,12 +120,7 @@ internal sealed partial class TableApplication
                 : !entry.Card.Selectable && HandPlacements.Options(match, entry.Card).Length > 0 ? "Place"
                 : entry.Card.Type.Contains("Land", StringComparison.Ordinal) ? "Play" : "Cast";
             Button("read-card-action", label, target.X + 8, Math.Min(840, target.Bottom - 2),
-                Math.Max(90, canvas.TextWidth(label, .76f) + 24), () => {
-                var current = VisibleCards().FirstOrDefault(card => SameVisibleCard(card, entry.Card));
-                if (current == null || !IsCardActionable(current)) return;
-                if (entry.Zone != "Battlefield") { CollapseCardReading(); if (BattlefieldFocused) zoneName = null; }
-                CardClick(current);
-            }, !busy, height: 30);
+                Math.Max(90, canvas.TextWidth(label, .76f) + 24), new MatchIntent.UseReaderCard(entry.Card), !busy, height: 30);
         }
     }
 

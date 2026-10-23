@@ -35,7 +35,7 @@ internal static class ExperienceLabChecks
             var time = new GameTime(TimeSpan.FromSeconds(seconds), TimeSpan.FromSeconds(.05));
             app.Update(time, new MouseState(point.X, point.Y, 0, left, ButtonState.Released, ButtonState.Released, ButtonState.Released, ButtonState.Released),
                 new KeyboardState(), new Point(1600, 900));
-            frame = app.ComposePresentation(time);
+            frame = app.ReadPresentation();
         }
         void Click(string id)
         {
@@ -346,7 +346,7 @@ internal static class ExperienceLabChecks
         {
             var time = new GameTime(TimeSpan.FromSeconds(seconds), TimeSpan.FromSeconds(.05));
             app.Update(time, new(), new(), new(1000, 740));
-            return app.ComposePresentation(time);
+            return app.ReadPresentation();
         }
         Tick(10); app.TestPort.OpenBattlefield(0); Tick(10.1);
         app.TestPort.Accept(lab.AdvanceTo(1));

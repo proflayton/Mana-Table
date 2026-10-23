@@ -32,9 +32,9 @@ internal sealed partial class TableApplication
         string value = SetupInput;
         canvas.Text(value.Length == 0 ? placeholder : value + (textFocus && (int)(now * 2) % 2 == 0 ? "|" : ""),
             bounds.X + 14, bounds.Y + 12, value.Length == 0 ? Muted : textFocus && setupSelectAll ? Gold : Ink, .72f, bounds.Width - 65, 1);
-        if (!busy) hits.Add(new(id, Scope, bounds, () => { textFocus = true; setupSelectAll = false; }));
+        if (!busy) hits.Add(ShellHit(id, bounds, new ShellIntent.FocusSetupInput()));
         if (value.Length > 0) Button(id + "-clear", "×", bounds.Right - 42, bounds.Y + 4, 36,
-            () => { SetSetupInput(""); textFocus = true; setupSelectAll = false; }, !busy, height: bounds.Height - 8);
+            new ShellIntent.FocusSetupInput(Clear: true), !busy, height: bounds.Height - 8);
     }
     private DeckChoice[] PickerChoices()
     {
@@ -89,16 +89,15 @@ internal sealed partial class TableApplication
             : "Choose a saved list, or try a precon for a ready-made deck.";
         canvas.Text(pickerHint, 204, 234, Muted, .82f, 1110, 1);
         if (!opponent) {
-            Button("picker-saved", $"Your decks ({decks.Count})", 204, 278, 255, () => { pickerPresets = pickerDeleted = false; deckPage = 0; }, !busy, !pickerPresets && !pickerDeleted, 40);
-            Button("picker-presets", "Try a precon", 471, 278, 220, () => { pickerPresets = true; pickerDeleted = false; deckPage = 0; }, !busy, pickerPresets && !pickerDeleted, 40);
+            Button("picker-saved", $"Your decks ({decks.Count})", 204, 278, 255, new ShellIntent.SelectDeckCollection(DeckCollection.Saved), !busy, !pickerPresets && !pickerDeleted, 40);
+            Button("picker-presets", "Try a precon", 471, 278, 220, new ShellIntent.SelectDeckCollection(DeckCollection.Presets), !busy, pickerPresets && !pickerDeleted, 40);
             if (DeckLibrary != null) Button("picker-deleted", "Deleted (" + deletedDecks.Count + ")", 703, 278, 202,
-                () => { pickerDeleted = true; pickerPresets = false; deckPage = 0; }, !busy, pickerDeleted, 40);
+                new ShellIntent.SelectDeckCollection(DeckCollection.Deleted), !busy, pickerDeleted, 40);
         } else LobbyPill("AI OPPONENT " + (pickerSeat + 1), 204, 284, 224, Blue);
         int searchX = !opponent && DeckLibrary != null ? 925 : 810;
         SetupSearchBox("picker-search", "Search decks…", new(searchX, 278, 1394 - searchX, 40));
         var choices = PickerChoices(); int count = choices.Length;
         int pageSize = PickerPageSize, tileHeight = PickerTileHeight;
-        deckPage = Math.Clamp(deckPage, 0, Math.Max(0, (count - 1) / pageSize));
         for (int i = 0; i < Math.Min(pageSize, count - deckPage * pageSize); i++) {
             int at = deckPage * pageSize + i, x = 204 + i % 2 * 602, y = 342 + i / 2 * (tileHeight + 15);
             var choice = choices[at];
@@ -109,31 +108,31 @@ internal sealed partial class TableApplication
             canvas.Text(deletingDeckId == choice.Id ? "Removing…" : saveFailed ? "Save failed; retry in builder." : choice.Description, x + 18, y + 20 + titleHeight, Muted, .7f, 440, 2);
             if (choice.Deleted is { } removed) {
                 Button("deck-restore:" + removed.RestoreToken, "Undo", x + 462, y + tileHeight - 42, 104,
-                    () => RestoreSavedDeck(removed.DeckId, removed.RestoreToken), CanManageDeckLibrary, height: 32);
+                    new DeckIntent.RestoreSavedDeck(removed.DeckId, removed.RestoreToken), CanManageDeckLibrary, height: 32);
                 continue;
             }
-            Button((opponent ? "opponent:" : pickerPresets ? "preset:" : "deck:") + choice.Id, choice.Current ? "✓" : ">", x + 514, y + 16, 52, () => ChoosePickerDeck(choice.Id), !busy, choice.Current, 42);
-            if (!busy) hits.Insert(Math.Max(0, hits.Count - 1), new("pick-tile:" + at, Scope, new(x, y, 586, tileHeight), () => ChoosePickerDeck(choice.Id)));
+            Button((opponent ? "opponent:" : pickerPresets ? "preset:" : "deck:") + choice.Id, choice.Current ? "✓" : ">", x + 514, y + 16, 52, new ShellIntent.ChoosePickerDeck(choice.Id), !busy, choice.Current, 42);
+            if (!busy) hits.Insert(Math.Max(0, hits.Count - 1), ShellHit("pick-tile:" + at, new(x, y, 586, tileHeight), new ShellIntent.ChoosePickerDeck(choice.Id)));
             if (!opponent && !pickerPresets && DeckLibrary != null && choice.LibraryToken.Length > 0)
             {
                 int libraryGeneration = deckLibraryGeneration;
                 Button("deck-delete:" + choice.Id, "Delete", x + 470, y + tileHeight - 37, 96,
-                    () => DeleteSavedDeck(choice.Id, choice.LibraryToken, libraryGeneration), CanManageDeckLibrary && !saveFailed, height: 28);
+                    new DeckIntent.Delete(choice.Id, choice.LibraryToken, libraryGeneration), CanManageDeckLibrary && !saveFailed, height: 28);
             }
         }
         if (count == 0) {
             canvas.Text(pickerSearch.Length > 0 ? "No decks match your search." : pickerDeleted ? "No deleted decks." : "Your next deck starts here.", 280, 456, Ink, 1.2f, 1020, 1, true);
             canvas.Text(pickerSearch.Length > 0 ? "Try a different name or clear the search to see every deck." : pickerDeleted ? "Deleted saved lists appear here for Undo." : "Import a list, try a precon, or build around your favorite commander.", 280, 511, Muted, .9f, 1020, 3);
         }
-        Button("decks-prev", "Previous", 204, 740, 135, () => deckPage--, !busy && deckPage > 0, height: 34);
-        Button("decks-next", "Next", 351, 740, 108, () => deckPage++, !busy && (deckPage + 1) * pageSize < count, height: 34);
+        Button("decks-prev", "Previous", 204, 740, 135, new ShellIntent.Page(ShellPage.DeckPicker, -1), !busy && deckPage > 0, height: 34);
+        Button("decks-next", "Next", 351, 740, 108, new ShellIntent.Page(ShellPage.DeckPicker, 1), !busy && (deckPage + 1) * pageSize < count, height: 34);
         canvas.Text($"{count} {(count == 1 ? "list" : "lists")}  ·  Page {deckPage + 1} / {Math.Max(1, (count + pageSize - 1) / pageSize)}", 484, 749, Muted, .67f, 620, 1);
         canvas.Line(new(204, 795), new(1394, 795), LobbyTrim);
         if (!opponent) {
-            Button("import", "Import deck file", 204, 820, 247, ImportFile, !busy, height: 44);
-            Button("paste", "Paste deck list", 463, 820, 247, ImportClipboard, !busy, height: 44);
-            if (WorkshopEngine != null) Button("picker-archidekt", "Link Archidekt", 722, 820, 310, () => ImportArchidekt(), !busy, height: 44);
-            Button("picker-new", "+ Build a new deck", 1078, 820, 316, () => NewDeck(), !busy, true, 44);
+            Button("import", "Import deck file", 204, 820, 247, new ShellIntent.ImportFile(), !busy, height: 44);
+            Button("paste", "Paste deck list", 463, 820, 247, new ShellIntent.ImportClipboard(), !busy, height: 44);
+            if (WorkshopEngine != null) Button("picker-archidekt", "Link Archidekt", 722, 820, 310, new DeckIntent.ImportArchidekt(), !busy, height: 44);
+            Button("picker-new", "+ Build a new deck", 1078, 820, 316, new DeckIntent.NewDeck(), !busy, true, 44);
             canvas.Text("A deck file from your computer.", 209, 874, Muted, .59f, 240, 1);
             canvas.Text("Use a copied deck list.", 468, 874, Muted, .59f, 240, 1);
             if (WorkshopEngine != null) canvas.Text("Import and safely refresh a public deck.", 727, 874, Muted, .59f, 300, 1);
@@ -149,17 +148,16 @@ internal sealed partial class TableApplication
         if (reviewCard is { } entry) {
             PaintCard(DeckCardFace(entry.Card, reviewBack), new Pose(new(403, 512), new(316, 442)), false, false);
             canvas.Text($"{entry.Quantity}×  ·  {entry.Edition}  ·  {entry.Section}", 232, 746, Muted, .69f, 348, 1);
-            if (entry.Card.OtherFace != null) Button("review-flip", reviewBack ? "Front face" : "Other face", 234, 773, 336, () => reviewBack = !reviewBack, !busy, height: 28);
+            if (entry.Card.OtherFace != null) Button("review-flip", reviewBack ? "Front face" : "Other face", 234, 773, 336, new ShellIntent.FlipReviewCard(), !busy, height: 28);
         } else canvas.Text("This deck has no cards yet. Open the builder to get started.", 243, 444, Muted, 1, 320, 4);
         SetupSearchBox("review-search", "Find a card by name, type, or rules…", new(626, 284, 768, 40));
         var sections = new[] { ("all", "All cards", ""), ("main", "Main", "Main"), ("command", "Commander", "Commander"), ("side", "Sideboard", "Sideboard") };
         for (int i = 0; i < sections.Length; i++) {
             var (id, label, section) = sections[i];
             int total = deck.Entries.Where(e => section.Length == 0 || e.Section == section).Sum(e => e.Quantity);
-            Button("review-section:" + id, label + " (" + total + ")", 626 + i * 194, 337, 184, () => { reviewSection = section; reviewPage = 0; }, !busy, reviewSection == section, 34);
+            Button("review-section:" + id, label + " (" + total + ")", 626 + i * 194, 337, 184, new ShellIntent.SelectReviewSection(section), !busy, reviewSection == section, 34);
         }
         var rows = ReviewRows();
-        reviewPage = Math.Clamp(reviewPage, 0, Math.Max(0, (rows.Length - 1) / ReviewRowsPerPage));
         for (int i = 0; i < Math.Min(ReviewRowsPerPage, rows.Length - reviewPage * ReviewRowsPerPage); i++) {
             var row = rows[reviewPage * ReviewRowsPerPage + i]; int y = 384 + i * 35;
             bool selected = reviewCard?.Id == row.Id && reviewCard?.Section == row.Section;
@@ -167,11 +165,11 @@ internal sealed partial class TableApplication
             canvas.Text(row.Quantity + "×", 638, y + 8, Muted, .66f, 50, 1);
             canvas.Text(row.Card.Name, 686, y + 7, row.Section == "Commander" ? Gold : Ink, .75f, 523, 1, selected);
             canvas.Text(row.Section == "Commander" ? "COMMANDER" : row.Section == "Sideboard" ? "SIDEBOARD" : "MV " + row.ManaValue, 1252, y + 10, Muted, .52f, 132, 1);
-            if (!busy) hits.Add(new("review-card:" + row.Section + ":" + row.Id, Scope, new(626, y, 768, 32), () => { reviewCard = row; reviewBack = false; textFocus = false; }));
+            if (!busy) hits.Add(ShellHit("review-card:" + row.Section + ":" + row.Id, new(626, y, 768, 32), new ShellIntent.SelectReviewCard(row.Id, row.Section)));
         }
         if (rows.Length == 0) canvas.Text(reviewSearch.Length > 0 ? "No cards match. Try a different search or clear it." : "There are no cards in this section.", 650, 451, Muted, .92f, 708, 3);
-        Button("review-prev", "Previous", 626, 745, 131, () => reviewPage--, !busy && reviewPage > 0, height: 32);
-        Button("review-next", "Next", 769, 745, 104, () => reviewPage++, !busy && (reviewPage + 1) * ReviewRowsPerPage < rows.Length, height: 32);
+        Button("review-prev", "Previous", 626, 745, 131, new ShellIntent.Page(ShellPage.Review, -1), !busy && reviewPage > 0, height: 32);
+        Button("review-next", "Next", 769, 745, 104, new ShellIntent.Page(ShellPage.Review, 1), !busy && (reviewPage + 1) * ReviewRowsPerPage < rows.Length, height: 32);
         int totalCards = rows.Sum(e => e.Quantity);
         canvas.Text($"{totalCards} {(totalCards == 1 ? "card" : "cards")}  ·  {reviewPage + 1}/{Math.Max(1, (rows.Length + ReviewRowsPerPage - 1) / ReviewRowsPerPage)}", 904, 755, Muted, .66f, 480, 1);
     }

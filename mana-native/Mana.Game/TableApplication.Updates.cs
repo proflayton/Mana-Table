@@ -5,6 +5,19 @@ namespace Mana.Table;
 internal sealed partial class TableApplication
 {
     private AppUpdateSession updateSession = null!;
+    private void HandleUpdateIntent(ShellIntent.Update intent)
+    {
+        switch (intent) {
+            case ShellIntent.OpenUpdates: OpenAppUpdates(); break;
+            case ShellIntent.CloseUpdates: CloseAppUpdates(); break;
+            case ShellIntent.CheckUpdates: CheckAppUpdates(); break;
+            case ShellIntent.DownloadUpdate: DownloadAppUpdate(); break;
+            case ShellIntent.CancelUpdateDownload: CancelAppUpdateDownload(); break;
+            case ShellIntent.InstallUpdate: InstallAppUpdate(); break;
+            case ShellIntent.OpenUpdateLocation location: OpenUpdateLocation(location.Folder); break;
+            case ShellIntent.ToggleStartupUpdateCheck: ToggleStartupUpdateCheck(); break;
+        }
+    }
     private static readonly Uri AppReleasesPage = new("https://github.com/proflayton/Mana-Table/releases");
     private bool updatesOpen;
     private int updateModalGeneration;

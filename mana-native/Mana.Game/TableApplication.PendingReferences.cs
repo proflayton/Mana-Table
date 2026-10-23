@@ -38,14 +38,14 @@ internal sealed partial class TableApplication
         if (item.Card is not { FaceDown: false } source) return;
         var reference = new PendingCardReference(item.Id, CardViews.Identity(source));
         if (ResolvePendingReference(reference) is not { } current) return;
-        hits.Add(new("stack-source:" + item.Id, Scope, bounds, () => ReadPendingReference(reference, !item.Ability), current, "StackReference"));
+        hits.Add(new("stack-source:" + item.Id, Scope, bounds, new MatchIntent.ReadPendingReference(reference.StackId, reference.CardId, reference.DecisionId, !item.Ability), current, "StackReference"));
     }
 
     private void AddPendingCounterReference(StackItem item, Card card, Rectangle bounds)
     {
         var reference = new PendingCardReference(item.Id, CardViews.Identity(card));
         if (ResolvePendingReference(reference) is not { } current) return;
-        hits.Add(new("stack-counter:" + item.Id, Scope, bounds, () => { }, current, "StackReference"));
+        hits.Add(new("stack-counter:" + item.Id, Scope, bounds, new MatchIntent.PreviewPendingCard(reference.StackId, reference.CardId), current, "StackReference"));
     }
 
     private void DrawPendingTargetReferences(StackItem item, Rectangle bounds)
@@ -62,9 +62,9 @@ internal sealed partial class TableApplication
             if (target.Kind == "card") {
                 var reference = new PendingCardReference(item.Id, target.Id);
                 if (ResolvePendingReference(reference) is { } current)
-                    hits.Add(new(id, Scope, area, () => ReadPendingReference(reference, false), current, "StackReference"));
+                    hits.Add(new(id, Scope, area, new MatchIntent.ReadPendingReference(reference.StackId, reference.CardId, reference.DecisionId, false), current, "StackReference"));
             } else if (target.Kind == "player" && target.PlayerId is { } player && match!.Players.Any(candidate => candidate.Id == player)) {
-                hits.Add(new(id, Scope, area, () => PlayerClick(player), PlayerId: player));
+                hits.Add(new(id, Scope, area, new MatchIntent.ReadPendingPlayer(item.Id, player), PlayerId: player));
             }
             x += width + 12;
         }
@@ -86,11 +86,14 @@ internal sealed partial class TableApplication
         var hit = HitAt(pointer);
         if (pendingPreviewBounds is { } preview && preview.Contains(pointer) && pendingPreviewReference is { } held
             && ResolvePendingReference(held) != null) return held;
-        if (hit is { Id: "stack-card-preview" } && pendingPreviewReference is { } retained
-            && ResolvePendingReference(retained) != null) return retained;
+        var explicitReference = hit?.Intent switch {
+            MatchIntent.ReadPendingReference read => new PendingCardReference(read.StackId, read.CardId, read.DecisionId),
+            MatchIntent.PreviewPendingCard read => new PendingCardReference(read.StackId, read.CardId, read.DecisionId),
+            _ => null
+        };
+        if (explicitReference != null && hit != null && CurrentHit(hit) && ResolvePendingReference(explicitReference) != null) return explicitReference;
         if (hit?.Card is not { FaceDown: false } card || !CurrentHit(hit)
-            || !(hit.Id.StartsWith("stack-source:", StringComparison.Ordinal) || hit.Id.StartsWith("stack-target:", StringComparison.Ordinal)
-                || hit.Id.StartsWith("stack-counter:", StringComparison.Ordinal) || hit.Id.StartsWith("targeting-", StringComparison.Ordinal) || hit.Zone == "Battlefield")) return null;
+            || hit.Zone != "Battlefield") return null;
         if (ValuedTargetDecision && match.Decision is { } decision) {
             var reference = new PendingCardReference("", CardViews.Identity(card), decision.Id);
             if (ResolvePendingReference(reference) != null) return reference;
@@ -104,9 +107,8 @@ internal sealed partial class TableApplication
 
     private void DrawPendingReferencePreview()
     {
-        if (!OverlayOpen && HitAt(pointer) is { PlayerId: { } player } playerHit
-            && playerHit.Id.StartsWith("stack-target:", StringComparison.Ordinal)
-            && match!.Stack.Any(item => item.Targets.Any(target => target.Kind == "player" && target.PlayerId == player))
+        if (!OverlayOpen && HitAt(pointer) is { Intent: MatchIntent.ReadPendingPlayer { PlayerId: var player } read } playerHit
+            && CurrentHit(playerHit) && match!.Stack.Any(item => item.Id == read.StackId && item.Targets.Any(target => target.Kind == "player" && target.PlayerId == player))
             && heroPositions.TryGetValue(player, out var hero))
             canvas.Ring(hero, player == match.ViewerId ? 57 : 45, HoverAccent, 3);
         var reference = HoveredPendingReference();
@@ -146,6 +148,6 @@ internal sealed partial class TableApplication
         pendingPreviewCardId = CardViews.Identity(card);
         // The read-only face absorbs input rather than passing clicks through
         // to the battlefield beneath it. It never becomes a game-card occurrence.
-        hits.Add(new("stack-card-preview", Scope, bounds, () => { }, ShowPointer: false));
+        hits.Add(new("stack-card-preview", Scope, bounds, new MatchIntent.PreviewPendingCard(reference.StackId, reference.CardId, reference.DecisionId), ShowPointer: false));
     }
 }

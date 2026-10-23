@@ -48,8 +48,8 @@ internal sealed partial class TableApplication
         RequestWorkshopRefresh(changed);
         deckIssuePage = deckCardIssuePage = 0;
         if (changed) {
-            analysisShowReviewed = false;
-            analysisOpen = false; analysisRelatedCards.Clear();
+            deckInteraction.Reset();
+            analysisOpen = false;
             commanderCandidates = details.CommanderIds.Length == 0 && details.Entries.Length > 0;
             deckSection = ""; deckFilter = ""; deckCardsPage = 0; deckIssuesOnly = false;
             var first = details.Entries.FirstOrDefault(e => e.Section == "Commander") ?? details.Entries.FirstOrDefault();
@@ -152,7 +152,7 @@ internal sealed partial class TableApplication
         }, "Copying your deck list", "Preparing the commander, main deck, and sideboard for the clipboard.");
     }
     private void CloseDeckEditor() {
-        analysisOpen = false; deckEditor = false; deckMenu = "";
+        analysisOpen = false; deckEditor = false; deckMenu = ""; DismissDeckWorkspaceReading();
         ClosePrintings();
     }
     private void OpenDeckEditor() => OpenDeckEditorAt(null);
@@ -166,16 +166,16 @@ internal sealed partial class TableApplication
         }, "Opening the deck builder", "Getting your saved list ready to edit.");
     }
     private void SelectDeckRow(DeckEntry entry) { deckCardId = entry.Id; deckCardSection = entry.Section; librarySelection = null; deckBackId = null; deckCardIssuePage = 0; }
-    private void FilterDeck(string section, bool leaders = false) { deckSection = section; commanderCandidates = leaders; deckCardsPage = 0; deckIssuesOnly = false; workshopRoleFilter = ""; workshopManaFilter = null; analysisRelatedCards.Clear(); }
+    private void FilterDeck(string section, bool leaders = false) { deckSection = section; commanderCandidates = leaders; deckCardsPage = 0; deckIssuesOnly = false; workshopRoleFilter = ""; workshopManaFilter = null; deckInteraction.ClearRelated(); }
     private void ToggleDeckIssues()
     {
         deckIssuesOnly = !deckIssuesOnly; deckCardsPage = 0;
-        workshopRoleFilter = ""; workshopManaFilter = null; analysisRelatedCards.Clear();
+        workshopRoleFilter = ""; workshopManaFilter = null; deckInteraction.ClearRelated();
         if (deckIssuesOnly) { deckSection = deckFilter = ""; commanderCandidates = false; }
     }
     private void ShowDeckIssue(DeckIssue issue)
     {
-        analysisRelatedCards.Clear();
+        deckInteraction.ClearRelated();
         var entry = selectedDeckDetails?.Entries.FirstOrDefault(e => (issue.Section == null || issue.Section == e.Section) && issue.CardIds.Contains(e.Id));
         if (entry != null) {
             deckIssuesOnly = true; deckSection = deckFilter = ""; commanderCandidates = false;
@@ -187,7 +187,7 @@ internal sealed partial class TableApplication
         .Where(e => (deckSection.Length == 0 || e.Section == deckSection)
             && (!commanderCandidates || selectedDeckDetails!.CommanderOptions.Any(c => c.Id == e.Id))
             && (!deckIssuesOnly || CardIssues(e.Id, e.Section).Length > 0)
-            && (analysisRelatedCards.Count == 0 || analysisRelatedCards.Contains(e.Card.Name))
+            && (deckInteraction.RelatedCards.Count == 0 || deckInteraction.RelatedCards.Contains(e.Card.Name))
             && (workshopRoleFilter.Length == 0 || deckWorkspace.View.Workshop?.Roles.Any(r => r.CardId == e.Id && r.Roles.Contains(workshopRoleFilter, StringComparer.OrdinalIgnoreCase)) == true)
             && (workshopManaFilter == null || !e.Card.Type.Contains("Land") && Math.Min(6, e.ManaValue) == workshopManaFilter)
             && (deckFilter.Length == 0 || (e.Card.Name + " " + e.Card.Type + " " + e.Card.Text).Contains(deckFilter, StringComparison.OrdinalIgnoreCase)))

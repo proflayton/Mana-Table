@@ -1,3 +1,4 @@
+using Mana.Table.Interaction;
 using System.Collections.Immutable;
 using Mana.Contracts;
 using Mana.Magic;
@@ -23,9 +24,9 @@ internal static class CardPresentationChecks
         var owner = new CardPresentationController();
         var firstRest = new Pose(new(600, 825), new(137, 192), -.2f);
         var secondRest = new Pose(new(720, 825), new(137, 192), .2f);
-        int actions = 0;
+
         CardPresentationRequest Request(Card card, Pose pose, string zone = "Hand") => new(card.VisualId,
-            card, pose, zone, 0, "card:" + card.Key, () => actions++);
+            card, pose, zone, 0, "card:" + card.Key, UiIntent.None);
 
         owner.BeginFrame(context, null, .016f, true);
         var normal = owner.Prepare(Request(first, firstRest));
@@ -34,10 +35,10 @@ internal static class CardPresentationChecks
         var hovered = owner.Prepare(Request(first, firstRest));
         owner.Prepare(Request(second, secondRest)); owner.EndFrame();
         check(hovered.Hovered && !hovered.Focused && hovered.Emphasized && !owner.HasPinnedCard && hovered.Display == firstRest
-            && hovered.Layer == CardPresentationLayer.Table && actions == 0,
+            && hovered.Layer == CardPresentationLayer.Table,
             "Card preparation highlights hover without opening a reader, moving its face, or dispatching an action");
 
-        check(owner.Toggle(hovered.Hit, context) && owner.HasPinnedCard && actions == 0,
+        check(owner.Toggle(hovered.Hit, context) && owner.HasPinnedCard,
             "An explicit card click pins presentation without dispatching the underlying game action");
         // The opening frame first restores any old reader to its hand slot;
         // reconciliation then places the new reader at its settled target.
@@ -93,11 +94,11 @@ internal static class CardPresentationChecks
         var revealState = state with { Decision = new() { Id = "reveal-1", Kind = "reveal", Choices = [new(0, "Reveal", anonymous)] } };
         var reveal = context with { State = revealState, Scope = "table:reveal-1", OverlayOpen = true, GalleryOpen = true };
         var choiceRequest = new CardPresentationRequest("choice-face:reveal-1:0", anonymous,
-            new(new(650, 450), new(120, 168)), "Choice", null, "choice:0", () => actions++, ChoiceSlot: 0);
+            new(new(650, 450), new(120, 168)), "Choice", null, "choice:0", UiIntent.None, ChoiceSlot: 0);
         owner.BeginFrame(reveal, null, .016f, true);
         var choice = owner.Prepare(choiceRequest); owner.EndFrame();
         check(owner.Toggle(choice.Hit, reveal) && owner.RevealedEntry(anonymous, reveal)?.ChoiceSlot == 0
-            && owner.RevealedEntry(anonymous with { }, reveal) == null && actions == 0,
+            && owner.RevealedEntry(anonymous with { }, reveal) == null,
             "Anonymous revealed faces are read through their original scoped slot and never guessed from matching card text");
         var nextDecision = reveal with { Scope = "table:reveal-2", State = revealState with { Decision = revealState.Decision! with { Id = "reveal-2" } } };
         owner.BeginFrame(nextDecision, null, .016f, true);
@@ -122,7 +123,7 @@ internal static class CardPresentationChecks
         var source = owner.Prepare(Request(first, firstRest)); owner.EndFrame(); owner.Toggle(source.Hit, context);
         owner.BeginFrame(context with { State = state with { Id = "different-game" } }, null, .016f, true);
         var fresh = owner.Prepare(Request(first, firstRest)); owner.EndFrame();
-        check(!owner.HasPinnedCard && fresh.Display == firstRest && actions == 0,
+        check(!owner.HasPinnedCard && fresh.Display == firstRest,
             "Changing games clears presentation identity, pinned readers, and motion without executing a card action");
 
         // The layout study reads a copy while keeping the controller's actual
@@ -142,11 +143,11 @@ internal static class CardPresentationChecks
         check(opened && battlefield.Focused && battlefield.Display.Size == new Vector2(410, 574)
             && battlefield.Display.Center.X > 800 && battlefield.Rest == battlefieldRest
             && battlefield.Hit.Contains(battlefieldRest.Center.ToPoint()) && battlefield.Hit.Contains(battlefield.Display.Center.ToPoint())
-            && battlefield.Hit.Bounds.Contains(betweenFaces) && !battlefield.Hit.Contains(betweenFaces) && actions == 0,
+            && battlefield.Hit.Bounds.Contains(betweenFaces) && !battlefield.Hit.Contains(betweenFaces),
             "Study inspection keeps its original battlefield anchor and opposite-side full reader clickable, leaves their intervening space clear, and submits no game action");
         var anchorHit = owner.ResolveHit(battlefieldRest.Center.ToPoint(), [battlefield.Hit], battlefield.Hit, study);
         check(anchorHit is { } currentAnchor && currentAnchor.Id == battlefield.Hit.Id
-            && owner.Toggle(currentAnchor, study) && !owner.HasPinnedCard && actions == 0,
+            && owner.Toggle(currentAnchor, study) && !owner.HasPinnedCard,
             "A second click on the study's actual battlefield occurrence closes reading without activating its underlying action");
     }
 
@@ -157,18 +158,18 @@ internal static class CardPresentationChecks
             Purpose = DecisionPurpose.OpeningHand, Intent = DecisionIntent.General, OkEnabled = true, CancelEnabled = true } };
         var context = new CardPresentationContext(state, "keep-hand", false, false, false, false);
         var owner = new CardPresentationController();
-        int actions = 0;
+
         var request = new CardPresentationRequest(card.VisualId, card, new(new(700, 825), new(137, 192)),
-            "Hand", state.ViewerId, "opening-hit", () => actions++);
+            "Hand", state.ViewerId, "opening-hit", UiIntent.None);
         owner.BeginFrame(context, null, .016f, true);
         var hand = owner.Prepare(request); owner.EndFrame();
-        check(owner.Toggle(hand.Hit, context) && owner.HasPinnedCard && actions == 0,
+        check(owner.Toggle(hand.Hit, context) && owner.HasPinnedCard,
             "The engine's exact keep/mulligan prompt permits read-only browsing of the viewer's authorized hand without an action");
         for (int frame = 0; frame < 2; frame++) {
             owner.BeginFrame(context, null, .016f, true);
             hand = owner.Prepare(request); owner.EndFrame();
         }
-        check(hand.Focused && hand.Display.Size == new Vector2(410, 574) && hand.Hit.Contains(hand.Rest.Center.ToPoint()) && actions == 0,
+        check(hand.Focused && hand.Display.Size == new Vector2(410, 574) && hand.Hit.Contains(hand.Rest.Center.ToPoint()),
             "Opening-hand inspection uses the normal full-card reader and preserves the original hand anchor without keeping, redrawing or playing");
 
         var bottomCard = card with { Key = "current-bottom-card", Selectable = true };
@@ -188,7 +189,7 @@ internal static class CardPresentationChecks
         var unknown = context with { State = state with { Decision = state.Decision! with { Purpose = DecisionPurpose.Unspecified } } };
         owner.BeginFrame(unknown, null, .016f, true);
         var otherPrompt = owner.Prepare(request); owner.EndFrame();
-        check(!owner.Toggle(otherPrompt.Hit, unknown) && actions == 0,
+        check(!owner.Toggle(otherPrompt.Hit, unknown),
             "An unrelated general decision does not inherit keep/mulligan hand-browsing permissions");
     }
 
@@ -204,18 +205,18 @@ internal static class CardPresentationChecks
             var context = new CardPresentationContext(state, state.Id + ":" + state.Decision!.Id,
                 false, false, false, false, SourceActions: capability);
             var owner = new CardPresentationController();
-            int commands = 0;
+
             var request = new CardPresentationRequest(top.VisualId, top, new(new(700, 300), new(80, 112)),
-                zone, 0, "top-card", () => commands++, OpensZone: true);
+                zone, 0, "top-card", UiIntent.None, OpensZone: true);
             owner.BeginFrame(context, null, .016f, true);
             var entry = owner.Prepare(request); owner.EndFrame();
             check(entry.Hit.Zone == zone && ReferenceEquals(context.CurrentOccurrence(entry), top) && context.CanRead(entry)
-                    && owner.Toggle(entry.Hit, context) && commands == 0,
+                    && owner.Toggle(entry.Hit, context),
                 $"A disclosed {zone} top is readable during {intent} independently of action-query capability ({capability}), without committing input");
             var revoked = context with { State = state with { Players = [state.Viewer! with { Zones = [new(zone, 10, [], null)] }],
                 Decision = state.Decision with { SourceCard = top, SourceCardId = top.VisualId } } };
             owner.BeginFrame(revoked, null, .016f, true); owner.EndFrame();
-            check(!owner.HasPinnedCard && !revoked.CanRead(entry) && revoked.CurrentOccurrence(entry) == null && commands == 0,
+            check(!owner.HasPinnedCard && !revoked.CanRead(entry) && revoked.CurrentOccurrence(entry) == null,
                 "A retained historical source cannot restore a reader after its actual disclosed top/location disappears");
         }
 

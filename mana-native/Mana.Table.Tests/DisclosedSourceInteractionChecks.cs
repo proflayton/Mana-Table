@@ -46,7 +46,7 @@ internal static class DisclosedSourceInteractionChecks
                 seconds += 1.0 / 60; var at = Physical(logical);
                 var time = new GameTime(TimeSpan.FromSeconds(seconds), TimeSpan.FromSeconds(1.0 / 60));
                 app.Update(time, new(at.X, at.Y, 0, left, default, right, default, default), new(), size);
-                return app.ComposePresentation(time);
+                return app.ReadPresentation();
             }
             Point AtHit(string id) {
                 var hit = frame.Hits.Single(hit => hit.Id == id);

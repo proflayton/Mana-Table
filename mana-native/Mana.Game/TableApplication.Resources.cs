@@ -171,7 +171,7 @@ internal sealed partial class TableApplication
             if (hover && item.Part.Symbol.Length > 0) canvas.Ring(symbol, down ? 10 : 12, Blue * opacity, down ? 2 : 1);
             painted.Add(new(item.Part.Key, item.Part.Name, amount, bounds, canvas.TextWidth(amount, item.Size, true), available)
                 { Delta = cue?.Delta, AnimationStarted = cue?.Started, Opacity = opacity });
-            hits.Add(new(hitId, Scope, bounds, () => OpenManaPool(player.Id)));
+            hits.Add(new(hitId, Scope, bounds, new MatchIntent.OpenManaPool(player.Id)));
         }
         manaPoolBadges[player.Id] = new("UNSPENT MANA", PublicResources.ManaTotal(player), halo.Bounds, painted.ToArray(), 0, 0);
     }
@@ -180,8 +180,8 @@ internal sealed partial class TableApplication
     private void DrawManaDetails()
     {
         var player = match!.Players.FirstOrDefault(p => p.Id == zonePlayer);
-        if (player == null) { overlay = ""; return; }
-        ModalFrame("Unspent mana · " + StateClarity.SeatName(match, player.Id), () => overlay = "");
+        if (player == null) return;
+        ModalFrame("Unspent mana · " + StateClarity.SeatName(match, player.Id), new MatchIntent.CloseView());
         canvas.Text("CURRENT POOL · READ ONLY", 212, 191, Gold, .7f, 1150, 1, true);
         long total = PublicResources.ManaTotal(player);
         var layout = ResourceLayout("UNSPENT MANA", total, PublicResources.Mana(player, includeEmpty: true), 1125);

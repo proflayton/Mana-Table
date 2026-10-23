@@ -43,7 +43,7 @@ internal static class HeadlessPresentationSmoke
             PublicActivityCursorChecks.RunPresentation(profile, Check);
             using (var run = new Runner(profile, "reading-and-scope", Example(), trace, performance)) {
                 var first = run.Tick("initial");
-                var second = run.Compose("same-time");
+                var second = run.ReadFrame("same-time");
                 Check(Fingerprint(first.Drawing).SequenceEqual(Fingerprint(second.Drawing))
                     && first.Cards.Select(card => (card.Id, card.Display)).SequenceEqual(second.Cards.Select(card => (card.Id, card.Display))),
                     "The actual application composes identical typed drawing and card geometry for unchanged state and time");
@@ -101,7 +101,7 @@ internal static class HeadlessPresentationSmoke
                     "The explicit reader action sends exactly the current scoped card command through ClientSession");
                 Check(pinnedA.Cards.Single(card => card.Id == "hand-a").Focused
                     && pinnedA.Cards.Single(card => card.Id == "hand-a").Display.Size.X == 410,
-                    "Later input and compositions cannot change a previously published card frame");
+                    "Later input and preparedUpdates cannot change a previously published card frame");
 
                 run.ClickCard("hand-b"); run.Settle("before-stale-press");
                 var action = run.Hit("read-card-action"); var point = run.PointFor(action);
@@ -390,7 +390,7 @@ internal static class HeadlessPresentationSmoke
         private readonly TableApplication application;
         private readonly string scenario;
         private readonly List<object> trace, performance;
-        private readonly List<double> composeMilliseconds = [];
+        private readonly List<double> updateMilliseconds = [];
         private readonly Point viewport = new(1600, 900);
         private double seconds;
         private Point pointer = new(20, 60);
@@ -413,13 +413,14 @@ internal static class HeadlessPresentationSmoke
             ButtonState right = ButtonState.Released, string label = "input", KeyboardState? keys = null)
         {
             pointer = point; seconds += 1.0 / 60;
+            var timer = Stopwatch.StartNew();
             application.Update(Time(), new(point.X, point.Y, 0, left, ButtonState.Released, right, ButtonState.Released, ButtonState.Released), keys ?? new(), viewport);
-            return Compose(label);
+            timer.Stop(); updateMilliseconds.Add(timer.Elapsed.TotalMilliseconds);
+            return ReadFrame(label);
         }
-        internal PresentationFrame Compose(string label)
+        internal PresentationFrame ReadFrame(string label)
         {
-            var timer = Stopwatch.StartNew(); Frame = application.ComposePresentation(Time()); timer.Stop();
-            composeMilliseconds.Add(timer.Elapsed.TotalMilliseconds);
+            Frame = application.ReadPresentation();
             trace.Add(new { scenario, label, seconds, revision = View.Match?.Revision, decision = View.Match?.Decision?.Id,
                 commands = Frame.Drawing.Commands.Count, cards = Frame.Cards.Count, hits = Frame.Hits.Count,
                 replies = Engine.Replies.Count, text = Text(Frame) });
@@ -480,11 +481,10 @@ internal static class HeadlessPresentationSmoke
         }
         public void Dispose()
         {
-            performance.Add(new { scenario, frames = composeMilliseconds.Count,
-                composeMilliseconds = composeMilliseconds.Sum(),
-                meanComposeMilliseconds = composeMilliseconds.Average(),
-                composedFramesPerSecond = 1000 * composeMilliseconds.Count / Math.Max(.001, composeMilliseconds.Sum()),
-                note = "Observed composition throughput only; no GPU frame-rate threshold." });
+            performance.Add(new { scenario, frames = updateMilliseconds.Count,
+                updateMilliseconds = updateMilliseconds.Sum(),
+                meanUpdateMilliseconds = updateMilliseconds.Average(),
+                note = "Update includes input, session pumping and frame preparation; this is not GPU frame rate." });
             application.Dispose();
         }
     }

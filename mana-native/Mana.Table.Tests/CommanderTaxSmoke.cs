@@ -26,7 +26,16 @@ internal sealed class CommanderTaxSmoke(TableWindow.Probe view, InteractionScena
     }
     private void Buttons(ButtonState left = ButtonState.Released, ButtonState right = ButtonState.Released) =>
         mouse = new(mouse.X, mouse.Y, 0, left, ButtonState.Released, right, ButtonState.Released, ButtonState.Released);
-    private void Check(bool value, string description) { if (!value) throw new InvalidOperationException(description); checks.Add(description); }
+    private void Check(bool value, string description)
+    {
+        if (!value) {
+            File.WriteAllText(Path.Combine(view.Profile, "commander-tax-failure.json"), JsonSerializer.Serialize(new {
+                description, stage, view.Now, view.Overlay, Match = view.Match, Frame = view.Frame?.Observe()
+            }, new JsonSerializerOptions { WriteIndented = true }));
+            throw new InvalidOperationException(description);
+        }
+        checks.Add(description);
+    }
     private void Capture(Texture2D surface, string name) {
         using var file = File.Create(Path.Combine(view.Profile, name + ".png"));
         surface.SaveAsPng(file, surface.Width, surface.Height);
@@ -36,7 +45,7 @@ internal sealed class CommanderTaxSmoke(TableWindow.Probe view, InteractionScena
     {
         if (view.Error.Length > 0) throw new InvalidOperationException(view.Error);
         if (view.Now > 25) throw new TimeoutException("Commander tax review at stage " + stage);
-        if (view.Now - started < (stage == 0 ? 1.5 : .6)) return;
+        if (view.ActivityOpen || view.Now - started < (stage == 0 ? 1.5 : .6)) return;
         if (stage == 3 && view.HoverPreview is not { Width: >= 400 } && view.Now - started < 3) return;
         switch (stage) {
             case 0:
@@ -60,14 +69,26 @@ internal sealed class CommanderTaxSmoke(TableWindow.Probe view, InteractionScena
                 break;
             case 4: Buttons(); break;
             case 5:
-                Check(view.Overlay == "inspect", "Right-click opens complete commander tax and printed cost details");
+                var frame = view.Frame!;
+                var reader = frame.Cards.SingleOrDefault(card => card.Id == "commander-0" && card.Focused);
+                var text = frame.Observe().Text.Select(item => item.Value).ToArray();
+                Check(view.Overlay.Length == 0 && reader != null && reader.Zone == "Command" && reader.Display.Size.X >= 400
+                    && reader.Card is { ManaCost: "{3}{G}", CommanderTax: 2 } && view.CardPaintCount("commander-0") == 1
+                    && text.Contains("{3}{G}") && text.Contains("COMMANDER TAX  +2")
+                    && text.Any(value => value.Contains("Extra generic mana to cast from the command zone.", StringComparison.Ordinal))
+                    && scenario.Replies.Count == 0,
+                    "Right-click retains the canonical commander reader with the complete printed cost and separate current tax explanation without a command");
                 Capture(surface, "03-tax-inspector");
-                var close = view.Hits.Single(h => h.Id == "close-overlay").Bounds.Center;
-                Move(close.X, close.Y, ButtonState.Pressed);
+                var close = SmokePointer.Hit(view, reader!.Hit);
+                mouse = new(close.X, close.Y, 0, ButtonState.Pressed, ButtonState.Released,
+                    ButtonState.Released, ButtonState.Released, ButtonState.Released);
                 break;
             case 6: Buttons(); break;
             case 7:
-                Check(view.Overlay.Length == 0, "Inspector closes through its normal control");
+                Check(view.Overlay.Length == 0 && view.HoverPreview == null
+                    && !view.Frame!.Cards.Any(card => card.Id == "commander-0" && card.Focused)
+                    && view.CardPaintCount("commander-0") == 1 && scenario.Replies.Count == 0,
+                    "Clicking the commander again closes its canonical reader and retains its single command-zone face without a command");
                 Move(0, 0);
                 Publish(scenario.State with { Players = scenario.State.Players.Select(p => p with { Zones = p.Zones.Select(z => z with {
                     Cards = z.Cards.Select(c => c.VisualId == "commander-0" ? c with { CommanderTax = 6 } : c).ToImmutableArray()
@@ -91,5 +112,19 @@ internal sealed class CommanderTaxSmoke(TableWindow.Probe view, InteractionScena
                 break;
         }
         started = view.Now; stage++;
+    }
+
+    // A checkerboard stand-in cannot prove that a printed mana cost is readable.
+    // Missing commander artwork exercises the real complete-cost text fallback.
+    internal sealed class CostReadableArtFixture : ICardArtSource
+    {
+        private readonly CardReadingArtFixture otherCards = new();
+        public Task<byte[]?> LoadAsync(ArtRequest art, CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return art.Name is "Goreclaw, Terror of Qal Sisma" or "Anara, Wolvid Familiar"
+                ? Task.FromResult<byte[]?>(null) : otherCards.LoadAsync(art, cancellationToken);
+        }
+        public void Dispose() => otherCards.Dispose();
     }
 }

@@ -128,7 +128,7 @@ internal static class ImpactFeedbackChecks
             Mana.Table.Presentation.PresentationFrame Tick(double seconds) {
                 var time = new Microsoft.Xna.Framework.GameTime(TimeSpan.FromSeconds(seconds), TimeSpan.FromSeconds(.01));
                 app.Update(time, new(20, 60, 0, default, default, default, default, default), new(), new(1600, 900));
-                return app.ComposePresentation(time);
+                return app.ReadPresentation();
             }
             Tick(10);
             engine.Present(stages[1].Snapshot); app.TestPort.Accept(engine.State);
@@ -190,7 +190,7 @@ internal static class ImpactFeedbackChecks
         Mana.Table.Presentation.PresentationFrame Tick(double seconds) {
             var time = new Microsoft.Xna.Framework.GameTime(TimeSpan.FromSeconds(seconds), TimeSpan.FromSeconds(.01));
             app.Update(time, new(20, 60, 0, default, default, default, default, default), new(), new(1600, 900));
-            return app.ComposePresentation(time);
+            return app.ReadPresentation();
         }
         void Present(GameSnapshot state) { engine.Present(state); app.TestPort.Accept(engine.State); }
         Tick(10);

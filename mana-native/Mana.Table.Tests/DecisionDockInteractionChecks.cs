@@ -29,13 +29,14 @@ internal static class DecisionDockInteractionChecks
         view.PresentLobby(new("local", "Controlled decision policy", null, false, null, true, "", null, [], []), true);
         view.SetAutomatic(true);
         double seconds = 0;
-        PresentationFrame frame = app.ComposePresentation(Time());
+        PresentationFrame frame = null!;
+        Tick();
         GameTime Time() => new(TimeSpan.FromSeconds(seconds), TimeSpan.FromSeconds(1.0 / 60));
         void Tick(Point? pointer = null, ButtonState left = ButtonState.Released)
         {
             seconds += 1.0 / 60; var point = pointer ?? new Point(20, 60);
             app.Update(Time(), new(point.X, point.Y, 0, left, default, default, default, default), new(), new(1600, 900));
-            frame = app.ComposePresentation(Time());
+            frame = app.ReadPresentation();
         }
         void Until(Func<bool> ready, string message)
         {
@@ -87,7 +88,7 @@ internal static class DecisionDockInteractionChecks
             var time = new GameTime(TimeSpan.FromSeconds(seconds), TimeSpan.FromSeconds(1.0 / 60));
             var point = pointer ?? new Point(20, 60);
             app.Update(time, new(point.X, point.Y, 0, left, default, default, default, default), new(), new(1600, 900));
-            frame = app.ComposePresentation(time);
+            frame = app.ReadPresentation();
         }
         void Click(string id)
         {
@@ -173,7 +174,7 @@ internal static class DecisionDockInteractionChecks
             seconds += 1.0 / 60;
             var time = new GameTime(TimeSpan.FromSeconds(seconds), TimeSpan.FromSeconds(1.0 / 60));
             app.Update(time, new(point.X, point.Y, 0, left, default, default, default, default), new(), new(1600, 900));
-            return app.ComposePresentation(time);
+            return app.ReadPresentation();
         }
         var first = Tick(new(20, 60)).Hits.Single(hit => hit.Id == "resume-phase-stop");
         Tick(first.Bounds.Center, ButtonState.Pressed);
@@ -205,7 +206,7 @@ internal static class DecisionDockInteractionChecks
             seconds += 1.0 / 60;
             var time = new GameTime(TimeSpan.FromSeconds(seconds), TimeSpan.FromSeconds(1.0 / 60));
             app.Update(time, new(point.X, point.Y, 0, left, default, default, default, default), new(), new(1600, 900));
-            return app.ComposePresentation(time);
+            return app.ReadPresentation();
         }
         var frame = Tick(new(20, 60));
         var land = frame.Cards.Single(card => card.Id == DecisionFlowScenario.LandId);

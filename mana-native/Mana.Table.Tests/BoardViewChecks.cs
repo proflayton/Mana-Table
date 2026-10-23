@@ -1,3 +1,4 @@
+using Mana.Table.Interaction;
 using System.Collections.Immutable;
 using Mana.Contracts;
 using Mana.Renderer;
@@ -59,13 +60,13 @@ internal static class BoardViewChecks
             [new(0, "You", 40, true, false, ImmutableDictionary<string, int>.Empty, [new("Battlefield", 1, [body], null), new("Hand", 1, [hand], null), new("Command", 1, [commander], null)])],
             [], null, new() { Id = "prompt", Kind = "input", Intent = DecisionIntent.Priority, OkEnabled = true });
         var context = new CardPresentationContext(state, "board-reader:prompt", false, false, false, false);
-        var owner = new CardPresentationController(); int actions = 0;
+        var owner = new CardPresentationController();
         var rest = new Pose(new(600, 430), new(120, 168), .15f, .8f, .0001f);
         var handRest = new Pose(new(760, 825), new(137, 192));
         var commandRest = new Pose(new(175, 660), new(62, 87));
         var stackRest = new Pose(new(850, 410), new(124, 174));
         var firstView = new BoardView(new(28, -10)); var nextView = new BoardView(new(-20, 8));
-        CardPresentationRequest Request(string id, Card card, Pose pose, string zone) => new(id, card, pose, zone, 0, "hit:" + id, () => actions++);
+        CardPresentationRequest Request(string id, Card card, Pose pose, string zone) => new(id, card, pose, zone, 0, "hit:" + id, UiIntent.None);
         PresentedCard Compose(BoardView view)
         {
             owner.BeginFrame(context, null, .016f, true, view);
@@ -90,12 +91,12 @@ internal static class BoardViewChecks
         check(pinned.Focused && shifted.Focused && shifted.Display == reader
             && shifted.Rest == nextView.Apply(rest) && owner.ReaderBounds == reader.Bounds
             && owner.ResolveHit(shifted.Rest.Center.ToPoint(), [shifted.Hit], null, context)?.Id == shifted.Hit.Id
-            && actions == 0,
+           ,
             "A pinned reader remains in fixed screen space while its current board anchor stays mapped without invoking its action");
         owner.Toggle(shifted.Hit, context);
         var collapsed = Compose(nextView);
         check(!owner.HasPinnedCard && collapsed.Display == nextView.Apply(rest) && collapsed.Request.Rest == rest
-            && collapsed.Hit.Contains(collapsed.Display.Center.ToPoint()) && owner.ReaderBounds == null && actions == 0,
+            && collapsed.Hit.Contains(collapsed.Display.Center.ToPoint()) && owner.ReaderBounds == null,
             "Unpinning restores the current translated board pose exactly once instead of translating a stored display pose again");
 
         owner.Reset(); normal = Compose(firstView);
@@ -110,7 +111,7 @@ internal static class BoardViewChecks
         check(oldPoseHidden && heldPoseCurrent && Vector2.Distance(returned.Display.Center, normal.Display.Center) < 20
             && Vector2.Distance(repeated.Display.Center, nextView.Apply(rest).Center)
                 < Vector2.Distance(returned.Display.Center, nextView.Apply(rest).Center)
-            && owner.TryGetPose(body.VisualId, out var currentPose) && currentPose == repeated.Display && actions == 0,
+            && owner.TryGetPose(body.VisualId, out var currentPose) && currentPose == repeated.Display,
             "A held card exposes only its current pose; same-frame board preparation rebases from the previous displayed frame once and then continues toward the board without replaying that rebase");
     }
 
@@ -207,7 +208,7 @@ internal static class BoardViewChecks
             seconds += 1.0 / 60;
             var time = new GameTime(TimeSpan.FromSeconds(seconds), TimeSpan.FromSeconds(1.0 / 60));
             app.Update(time, new(-100, -100, 0, ButtonState.Released, ButtonState.Released, ButtonState.Released, ButtonState.Released, ButtonState.Released), new KeyboardState(), new(1600, 900));
-            return app.ComposePresentation(time);
+            return app.ReadPresentation();
         }
         Tick();
         string game = view.Match!.Id; string? prompt = view.Match!.Decision?.Id;

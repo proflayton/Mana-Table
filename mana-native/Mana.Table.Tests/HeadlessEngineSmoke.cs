@@ -24,8 +24,8 @@ internal static class HeadlessEngineSmoke
         var elapsed = Stopwatch.StartNew();
         var json = new JsonSerializerOptions { WriteIndented = true };
         string? error = null;
-        int compositions = 0;
-        double compositionMilliseconds = 0;
+        int preparedUpdates = 0;
+        double updateMilliseconds = 0;
         void Check(bool value, string description)
         {
             if (!value) throw new InvalidOperationException(description);
@@ -175,10 +175,10 @@ internal static class HeadlessEngineSmoke
             PresentationFrame Tick(string stage, ButtonState left = ButtonState.Released)
             {
                 seconds += 1.0 / 60;
-                app.Update(Time(), new(pointer.X, pointer.Y, 0, left, ButtonState.Released, ButtonState.Released, ButtonState.Released, ButtonState.Released), new(), viewport);
                 var timer = Stopwatch.StartNew();
-                var composed = app.ComposePresentation(Time()); timer.Stop();
-                compositions++; compositionMilliseconds += timer.Elapsed.TotalMilliseconds;
+                app.Update(Time(), new(pointer.X, pointer.Y, 0, left, ButtonState.Released, ButtonState.Released, ButtonState.Released, ButtonState.Released), new(), viewport);
+                var composed = app.ReadPresentation(); timer.Stop();
+                preparedUpdates++; updateMilliseconds += timer.Elapsed.TotalMilliseconds;
                 if (view.Error.Length > 0) throw new InvalidOperationException(view.Error);
                 if (composed.Stamp.Revision != (view.Match?.Revision ?? 0)) throw new InvalidOperationException("Composition stamp does not match the actual snapshot.");
                 if (view.Match is { } state && state.Players.Any(player => player.Id != state.ViewerId && player.Zone("Hand").Cards.Length > 0))
@@ -297,8 +297,8 @@ internal static class HeadlessEngineSmoke
             File.WriteAllText(Path.Combine(paths.Profile, "headless-engine-trace.json"), JsonSerializer.Serialize(new { frames, actions }, json));
             File.WriteAllText(Path.Combine(paths.Profile, "headless-engine-results.json"), JsonSerializer.Serialize(new {
                 passed = error == null, checks, error, elapsedSeconds = elapsed.Elapsed.TotalSeconds,
-                compositions, compositionMilliseconds,
-                meanComposeMilliseconds = compositions > 0 ? compositionMilliseconds / compositions : 0,
+                preparedUpdates, updateMilliseconds,
+                meanUpdateMilliseconds = preparedUpdates > 0 ? updateMilliseconds / preparedUpdates : 0,
                 scope = "Real Forge game and production application pointer/composition paths; no window or GPU, no simulated Magic rules."
             }, json));
         }

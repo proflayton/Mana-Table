@@ -15,6 +15,7 @@ internal sealed partial class TableApplication
     internal class Probe(TableApplication game)
     {
         internal Mana.Table.Presentation.PresentationFrame? Frame => game.Frame;
+        internal bool Activate(Hit hit) => game.ActivateHit(hit);
         internal Mana.Renderer.BoardView BoardView => game.boardView;
         internal bool FollowTurnEnabled => game.followTurnEnabled;
         internal bool BoardViewLimitedByLayout => game.boardViewMotion.LimitedByLayout;
@@ -161,11 +162,11 @@ internal sealed partial class TableApplication
         internal IReadOnlyList<(string CardId, string Destination, Mana.Renderer.Pose Pose)> PublicDepartures => game.matchPresentation.Departures
             .Where(d => game.now - d.Started <= 1.5).Select(d => (d.Card.VisualId, d.Destination, game.DeparturePose(d))).ToArray();
         internal void SetAutomatic(bool value) => game.SetAutomatic(value);
-        internal List<int> Selections => game.selections;
+        internal IReadOnlyList<int> Selections => game.decisionDraft.Selections;
         internal IReadOnlyDictionary<int, ChoiceOrderBadge> ChoiceOrderBadges => game.choiceOrderBadges;
-        internal IReadOnlyList<int> AllocationAmounts => game.allocations;
+        internal IReadOnlyList<int> AllocationAmounts => game.decisionDraft.Allocations;
         internal int AllocationDetail => game.allocationDetail;
-        internal string? AllocationProblem => game.match?.Decision is { Kind: "allocate" } decision ? Mana.Magic.AllocationGuide.Problem(decision, game.allocations) : null;
+        internal string? AllocationProblem => game.match?.Decision is { Kind: "allocate" } decision ? Mana.Magic.AllocationGuide.Problem(decision, game.decisionDraft.Allocations) : null;
         internal string Overlay => game.overlay;
         internal string? ZoneName => game.zoneName;
         internal IReadOnlyList<Hit> Hits => game.hits.Published;

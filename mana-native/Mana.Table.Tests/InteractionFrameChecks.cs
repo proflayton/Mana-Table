@@ -9,8 +9,8 @@ internal static class InteractionFrameChecks
     internal static void Run(Action<bool, string> check)
     {
         var frame = new InteractionFrame();
-        var background = new TableHit("background", "game:decision", new(0, 0, 100, 100), () => { });
-        var card = new TableHit("card:one", "game:decision", new(10, 10, 40, 40), () => { },
+        var background = new TableHit("background", "game:decision", new(0, 0, 100, 100), UiIntent.None);
+        var card = new TableHit("card:one", "game:decision", new(10, 10, 40, 40), UiIntent.None,
             Shape: point => point.X >= 20 && point.Y >= 20);
         frame.Begin(); frame.Add(background); frame.Add(card);
         check(frame.FindTop(new Point(25, 25)) == card && frame.FindTop(new Point(11, 11)) == background,
@@ -24,7 +24,7 @@ internal static class InteractionFrameChecks
             "A card label extends its canonical input region without filling gaps or losing the projected face shape");
 
         // A foreground control wins until the corresponding card is lifted.
-        frame.Add(new("foreground", card.Scope, new(20, 60, 30, 12), () => { }));
+        frame.Add(new("foreground", card.Scope, new(20, 60, 30, 12), UiIntent.None));
         frame.Add(card with { Scope = "retired:decision", Bounds = new(75, 75, 10, 10), Shape = null });
         frame.PromoteCanonical(card.Id, card.Scope);
         check(frame.Count(hit => hit.Id == card.Id && hit.Scope == card.Scope) == 1
@@ -33,13 +33,13 @@ internal static class InteractionFrameChecks
             && !frame.FindTop(hit => hit.Id == card.Id)!.Contains(new(11, 11)),
             "Lifting a card promotes its one canonical region with the accumulated face and label geometry intact");
 
-        frame.Add(new("outside-chat", card.Scope, new(110, 110, 10, 10), () => { }));
+        frame.Add(new("outside-chat", card.Scope, new(110, 110, 10, 10), UiIntent.None));
         frame.RemoveIntersections(new(0, 0, 100, 100));
         check(frame.Count == 1 && frame[0].Id == "outside-chat" && frame.FindTop(new Point(25, 25)) == null,
             "An opaque chat panel removes every intersecting underlying control while preserving controls outside it");
 
         frame.ClearForModal();
-        var modal = new TableHit("modal-action", "modal:decision", new(0, 0, 50, 50), () => { });
+        var modal = new TableHit("modal-action", "modal:decision", new(0, 0, 50, 50), UiIntent.None);
         frame.Add(modal);
         check(frame.Count == 1 && frame.FindTop(new Point(25, 25)) == modal && frame.FindTop(new Point(115, 115)) == null,
             "A modal replaces the complete underlying interaction set instead of leaving invisible controls reachable");

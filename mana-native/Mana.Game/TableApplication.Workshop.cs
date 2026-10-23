@@ -43,7 +43,7 @@ internal sealed partial class TableApplication
     private bool workshopSourceImport;
     private IDeckWorkshop? WorkshopEngine => services.Workshop;
     private bool WorkshopCurrent => deckWorkspace.WorkshopCurrent;
-    private string WorkshopScope => $"{workshopTab}:{workshopDialog}:{printingRead.View.Generation}:{WorkshopDialogPage}:{workshopCompareVersion}:{workshopVersionView?.VersionId}:{workshopSourceChoice}:{workshopRoleFilter}:{workshopManaFilter}:{deckWorkspace.View.Generation}:{workshopPage}:{workshopPlayers}:{workshopSelectedTest}:{workshopOpponentSeat}:{workshopOpponentSearch}:{workshopSourcePreview?.Token}:{deckWorkspace.View.Hand?.TestId}:{deckWorkspace.View.Hand?.Draws}:{deckWorkspace.View.Hand?.Redraws}:{workspaceCardReading?.Identity}:{workspaceCardReading?.OtherFace}:{string.Join(',', workshopOpponents)}";
+    private string WorkshopScope => $"{workshopTab}:{workshopDialog}:{printingRead.View.Generation}:{WorkshopDialogPage}:{workshopCompareVersion}:{workshopVersionView?.VersionId}:{workshopSourceChoice}:{workshopRoleFilter}:{workshopManaFilter}:{deckWorkspace.View.Generation}:{workshopPage}:{workshopPlayers}:{workshopSelectedTest}:{workshopOpponentSeat}:{workshopOpponentSearch}:{workshopSourcePreview?.Token}:{deckWorkspace.View.Hand?.TestId}:{deckWorkspace.View.Hand?.Draws}:{deckWorkspace.View.Hand?.Redraws}:{deckInteraction.Reading?.Identity}:{deckInteraction.Reading?.OtherFace}:{string.Join(',', workshopOpponents)}";
     private bool IsWorkshopMatch => match != null && workshopMatchTestId != null;
 
     private void RequestWorkshopRefresh(bool changed = false)
