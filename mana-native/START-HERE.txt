@@ -352,6 +352,9 @@ Auto and Hold are icons beside your portrait; hover explains their state and
 the F/Ctrl shortcuts. Hold stops automatic passing for the current turn.
 Click a card to read its full face. Its concrete legal actions appear beside it;
 drag a playable hand card onto the table to begin playing it.
+Two-player games place the opponent above you and use the same card rendering
+as larger tables. Battlefield growth does not switch everyone into labelled
+tiles. Battlefields opens a larger inspection of either player's public cards.
 During a required hand-card choice, including mulligan bottoming or discarding,
 clicking a card reads it. Choose card beside that face makes the selection;
 Deselect removes an existing choice when available. Complete any remaining

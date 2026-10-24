@@ -82,6 +82,28 @@ does not establish that a person can understand or use the screen.
     and deck legality are separate facts; returning to Play must not require a
     second confirmation of edits already acknowledged by storage.
 
+## Two-player battlefield continuity: 23 October 2026
+
+**Source candidate; human review pending.** A live two-player match abruptly
+changed both battlefields into small labelled tiles. The old renderer switches
+the entire table when either controller exceeds seven card/state groups. The
+newer card-based renderer was enabled only for three- and four-player tables,
+so the same problem had not appeared in the player's preceding four-player game.
+
+Two-player play now uses the shared card renderer with the opponent above the
+local player. Separate creature, support and land rows retain recognizable art,
+current stats, counters and tapped states. Adding a group changes its own role
+row instead of changing the whole table's presentation. Multiplayer focus retains
+its existing framing; two-player battlefield and player inspection remain usable.
+
+Load `two-player-table.v1` to compare seven groups, an eighth local group and
+opposing counters. Agent inspection used actual GPU windows at 1000 x 740 with
+normal motion and 1540 x 980 with reduced motion and named cached artwork.
+These authored checkpoints and scoped interaction checks do not simulate rules
+or supply human acceptance of the layout.
+
+![Two-player card rows after the eighth group](images/native-two-player-table-2026-10-23.png)
+
 ## Hand choices and inspection: 23 October 2026
 
 **Source candidate; human review pending.** Card clicks during required hand
@@ -911,6 +933,7 @@ native renderer and input pipeline with controlled state, not a rules simulator.
 | Scenario ID | Review focus |
 | --- | --- |
 | `four-player-table.v1` | Ordinary and asymmetric four-seat fields, a seven-card local hand, commanders, public zones, current stats/counters/attachments and a cross-seat ability/result; optional `--table-study` comparison |
+| `two-player-table.v1` | Seven card/state groups, an eighth local group and an opposing counter change; inspect two-player continuity across the old global threshold |
 | `crowded-counters.v1` | 480 permanents, Toph earthbend 2, then one Felidar Retreat effect with 82 recipients; source, changed land and complete affected set |
 | `card-reading.v1` | Hand slots, reading/collapse and required selection; current P/T/counters in card and ability-source previews despite an older embedded source face |
 | `ability-choice.v1` | Select the Elf, read its concrete mana action without changing the prompt, then explicitly activate and see the authored tapped source and green mana; no extra one-option chooser |

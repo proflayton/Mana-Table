@@ -31,7 +31,7 @@ public static class SharedTableStudy
 
     internal static BattlefieldCluster[] Arrange(int seat, int owner, IReadOnlyList<Card> cards,
         Func<Card, bool> isResource, IReadOnlySet<string>? separate,
-        Func<string, Rectangle>? lanes = null, float faceScale = 1, bool horizontalRows = false)
+        Func<string, Rectangle>? lanes = null, float faceScale = 1, bool horizontalRows = false, bool centerRows = false)
     {
         faceScale = float.IsFinite(faceScale) && faceScale > 0 ? faceScale : 1;
         string Identity(Card card) => CardViews.Identity(card) is { Length: > 0 } id ? id
@@ -59,7 +59,7 @@ public static class SharedTableStudy
             // Pose.Bounds rounds out to integer pixels, including tap rotation.
             lane.Inflate(-2, -2);
             var desired = (kind == "Creatures" ? new Vector2(112, 104) : new Vector2(112, 92)) * faceScale;
-            var slots = Pack(selected, lane, desired, faceScale, seat, horizontalRows);
+            var slots = Pack(selected, lane, desired, faceScale, seat, horizontalRows, centerRows);
             var nodes = new List<SceneCard>();
             foreach (var slot in slots) {
                 var familyNodes = new List<SceneCard>();
@@ -134,7 +134,7 @@ public static class SharedTableStudy
                 + (family.Header > 0 ? HeaderHeight(family, detail, headerFloor) + 4 * detail : 0));
     }
 
-    private static Slot[] Pack(Family[] families, Rectangle lane, Vector2 desired, float faceScale, int seat, bool horizontalRows)
+    private static Slot[] Pack(Family[] families, Rectangle lane, Vector2 desired, float faceScale, int seat, bool horizontalRows, bool centerRows)
     {
         // A single-column plan is always available before trying roomier shapes.
         // This fallback preserves every cohort even beyond the readable budget.
@@ -236,7 +236,13 @@ public static class SharedTableStudy
                     Occupy(free, new(chosenArea.X, chosenArea.Y, chosenSize.X + padding, chosenSize.Y + padding));
                 }
                 if (placed.Count == families.Length) {
-                    slots = families.Select(family => placed[family.Id]).ToArray(); return true;
+                    slots = families.Select(family => placed[family.Id]).ToArray();
+                    if (centerRows) {
+                        float left = slots.Min(slot => slot.Position.X), right = slots.Max(slot => slot.Position.X + slot.Size.X);
+                        float shift = lane.Left + (lane.Width - (right - left)) / 2 - left;
+                        slots = slots.Select(slot => slot with { Position = slot.Position + new Vector2(shift, 0) }).ToArray();
+                    }
+                    return true;
                 }
             }
             slots = []; return false;

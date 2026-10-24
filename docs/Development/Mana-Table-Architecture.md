@@ -321,6 +321,13 @@ with the local Take control action. These presentation facts grant no permission
 replies still require the current engine decision and token.
 It can initialize, update and compose with no `Game`, window or graphics device.
 
+Default live tables with two, three or four players use the shared card
+presentation path. Two-player tables frame the actual opponent above the viewer
+and reserve distinct role lanes, portrait resources and the pending-effect area.
+Their complete rows stay centered independently; controller identities, action
+keys and command scopes remain unchanged. The classic compatibility renderer's
+global seven-group fallback does not participate in default two-player play.
+
 The portrait turn controls shipped in 0.2.83 consume these same facts and shared
 pause gate. Six local phase markers represent recurring own-turn stop preferences;
 the active opponent's phase is read-only. Current phase, saved stop, Auto/Hold and

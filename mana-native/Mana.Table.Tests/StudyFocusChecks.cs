@@ -142,5 +142,52 @@ internal static class StudyFocusChecks
         check(view.StudyFocusOwner == null && Battlefield(frame.Scene!).Length == overview.Count
                 && frame.Scene!.Seat(3).Index == TableLayout.SeatIndex(view.Match!, 3) && engine.Replies.Count == 1,
             "Accepting a different match clears native focus and restores the new match's complete overview without another command");
+        TwoPlayerMatch(check);
+    }
+
+    private static void TwoPlayerMatch(Action<bool, string> check)
+    {
+        var stages = ExperienceScenarios.Find("two-player-table.v1").Create();
+        string profile = Path.Combine(Path.GetTempPath(), "ManaTableDuelChecks", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(profile);
+        new PlayPreferences { Automatic = false, Sounds = false, ReducedMotion = true }.Save(profile);
+        var engine = new InteractionScenarioEngine(); engine.Present(stages[0].Snapshot);
+        using var app = new TableApplication(TestTableServices.For(engine), profile, initialState: engine.State) { Automated = true };
+        app.EnableLiveTableStudy(); app.Initialize();
+        var view = app.TestPort;
+        view.PresentLobby(new("local", "Controlled two-player table", null, false, null, true, "", null, [], []), true);
+        PresentationFrame frame = null!; double seconds = 0;
+        void Tick(Point point = default, ButtonState left = ButtonState.Released) {
+            seconds += .02;
+            app.Update(new(TimeSpan.FromSeconds(seconds), TimeSpan.FromSeconds(.02)),
+                new(point.X, point.Y, 0, left, default, default, default, default), new(), new(1600, 900));
+            frame = app.ReadPresentation();
+            if (view.Error.Length > 0) throw new InvalidOperationException(view.Error);
+        }
+        Tick();
+        var baseline = frame.Cards.Where(card => card.Zone == "Battlefield" && card.Request.Owner == 1)
+            .ToDictionary(card => card.Id, card => card.Rest);
+        engine.Present(stages[1].Snapshot); view.Accept(engine.State); Tick(); Tick();
+        check(frame.Scene!.Seat(1).Index == 1 && frame.Scene.Seat(0).Index == 3
+                && frame.Scene.Seats.All(seat => !seat.IsDense)
+                && frame.Cards.Where(card => card.Zone == "Battlefield" && card.Request.Owner == 1).All(card => baseline[card.Id] == card.Rest)
+                && !frame.Hits.Any(hit => hit.Id is "focus:0" or "study-focus-return")
+                && engine.Replies.Count == 0,
+            "The shipping live-table entry keeps two-player source faces and the opponent's exact framing when the eighth local group arrives, without an overflow HUD or navigation command");
+        engine.ChoosePlayer(1); view.Accept(engine.State); Tick();
+        string game = view.Match!.Id, prompt = view.Match.Decision!.Id;
+        var portrait = frame.Hits.Single(hit => hit.Id == "player:1");
+        check(portrait.Contains(frame.Scene.Seat(1).Geometry.Hero.ToPoint())
+                && view.HitAt(portrait.Bounds.Center)?.Id == portrait.Id,
+            "The required opponent target uses the exposed top portrait's real player ID");
+        Tick(portrait.Bounds.Center, ButtonState.Pressed); Tick(portrait.Bounds.Center);
+        var deadline = Stopwatch.StartNew();
+        while (view.Busy && deadline.Elapsed < TimeSpan.FromSeconds(5)) { Tick(); Thread.Yield(); }
+        check(!view.Busy && engine.Replies.SingleOrDefault() is SelectPlayer { Player: 1 } reply
+                && reply.GameId == game && reply.DecisionId == prompt && view.StudyFocusOwner == null,
+            "A required two-player portrait click submits its exact current target command rather than changing table focus");
+        view.OpenBattlefield(1); Tick();
+        check(view.ZoneName == "Battlefield" && view.StudyFocusOwner == null && engine.Replies.Count == 1,
+            "The two-player battlefield inspection remains reachable instead of adding a redundant multiplayer focus toggle");
     }
 }

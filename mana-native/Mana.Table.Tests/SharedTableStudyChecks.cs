@@ -45,9 +45,32 @@ internal static class SharedTableStudyChecks
         NameFamilies(ordinary, check);
         FocusedRows(crowded, check);
         HiddenFace(check);
+        TwoPlayerContinuity(check);
         check(TableScene.Build(ordinary, 0, new(-100, -100), null, null, false, CardPresentation.IsResource)
                 .Seats.All(seat => seat.Battlefield.SelectMany(cluster => cluster.Cards).All(card => !card.ScanFace)),
             "The explicit study leaves the default battlefield presentation unchanged");
+    }
+
+    private static void TwoPlayerContinuity(Action<bool, string> check)
+    {
+        var stages = ExperienceScenarios.Find("two-player-table.v1").Create();
+        foreach (int viewer in stages[0].Snapshot.Players.Select(player => player.Id)) {
+            var scenes = stages.Select(stage => Build(stage.Snapshot with { ViewerId = viewer })).ToArray();
+            check(scenes.All(scene => scene.Seat(viewer).Index == 3 && scene.Seats.Single(seat => seat.PlayerId != viewer).Index == 1
+                    && scene.Seats.All(seat => !seat.IsDense) && Cards(scene).All(card => card.ScanFace)
+                    && Cards(scene).All(card => DuelTableStudy.MatchLane(scene.Seat(card.Owner).Index,
+                        BattlefieldLayout.Role(card.Card, CardPresentation.IsResource)).Contains(card.Pose.Bounds))
+                    && Cards(scene).All(card => !card.Pose.Bounds.Intersects(DuelTableStudy.ActionArea))),
+                "Both two-player viewers retain actual player IDs, top/bottom framing and source-card faces in their role lanes across the old seven-group boundary");
+            check(scenes.All(scene => !Cards(scene).Any(card => Cards(scene).Any(other => card.Owner != other.Owner
+                    && card.Pose.Bounds.Intersects(other.Pose.Bounds)))),
+                "The two-player creature rows keep opposing faces and their current stats separate");
+            var before = Cards(scenes[0]).ToDictionary(card => card.Id, card => card.Pose);
+            check(Cards(scenes[1]).Where(card => card.Owner == 1 || card.Card.Type is "Artifact" or "Enchantment" or "Basic Land")
+                    .All(card => before[card.Id] == card.Pose)
+                    && Cards(scenes[2]).Where(card => card.Owner == 0).All(card => scenes[1].BattlefieldCard(card.Owner, card.Id)!.Pose == card.Pose),
+                "Adding an eighth group changes only its controller's creature row; the opponent, unrelated role lanes and subsequent other-controller counter updates do not reframe the table");
+        }
     }
 
     private static void CheckFootprints(TableScene scene, string label, Action<bool, string> check)

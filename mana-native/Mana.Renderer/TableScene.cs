@@ -101,6 +101,8 @@ public sealed class TableScene
         var hand = HandLayout.Build(state, handPage, pointer, previouslyRaised, dragged, allowHover);
         var orderedChoices = allowInlineOrdering && state.Decision is { Kind: "choice", Ordered: true } decision
             ? decision.Choices.Where(c => c.Card != null && !string.IsNullOrEmpty(c.CardId)).Select(c => c.CardId).ToHashSet(StringComparer.Ordinal) : null;
+        bool duel = sharedTableStudy && state.Players.Length == 2;
+        if (duel) studyFocusedOpponent = state.Players.First(player => player.Id != state.ViewerId).Id;
         bool studyFocus = sharedTableStudy && studyFocusedOpponent is { } opponent && opponent != state.ViewerId
             && state.Players.Any(player => player.Id == opponent);
         var geometry = SeatGeometry.Build(state, sharedTableStudy, studyFocus ? studyFocusedOpponent : null);
@@ -123,8 +125,9 @@ public sealed class TableScene
             var clusters = sharedTableStudy
                 ? studyFocus && seat.Index is 0 or 2 ? Array.Empty<BattlefieldCluster>()
                     : SharedTableStudy.Arrange(seat.Index, player.Id, player.Zone("Battlefield").Cards, isResource, studySeparate,
-                        studyFocus ? role => DuelTableStudy.Lane(seat.Index, role) : null, studyFocus ? 1.35f : 1,
-                        horizontalRows: studyFocus)
+                        duel ? role => DuelTableStudy.MatchLane(seat.Index, role)
+                            : studyFocus ? role => DuelTableStudy.Lane(seat.Index, role) : null, studyFocus ? 1.35f : 1,
+                        horizontalRows: studyFocus, centerRows: duel)
                 : BattlefieldLayout.Arrange(layout!, seat.Index, player.Id,
                     player.Zone("Battlefield").Cards, isResource, orderedChoices, denseMeasure);
             seats.Add(new(seat, clusters));

@@ -10,9 +10,11 @@ internal sealed partial class TableApplication
 {
     private int? studyFocusOwner, studyFocusOpponent;
     private string studyFocusGame = "";
+    private bool MultiplayerFocusAvailable => TableStudyEnabled && match?.Players.Length > 2;
     private bool StudyFocusActive => TableStudyEnabled && studyFocusOwner != null && studyFocusOpponent != null;
+    private bool TwoFieldTable => TableStudyEnabled && (match?.Players.Length == 2 || StudyFocusActive);
     private bool StudyRail(int player) => StudyFocusActive && player != match?.ViewerId && player != studyFocusOpponent;
-    private Rectangle StudyActionArea => StudyFocusActive ? DuelTableStudy.ActionArea : SharedTableStudy.ActionArea;
+    private Rectangle StudyActionArea => TwoFieldTable ? DuelTableStudy.ActionArea : SharedTableStudy.ActionArea;
 
     private Vector2 SeatHero(int player) => tableScene?.Seats.FirstOrDefault(seat => seat.PlayerId == player)?.Geometry.Hero
         ?? TableLayout.Hero(player == match?.ViewerId ? 3 : match == null ? 1 : TableLayout.SeatIndex(match, player));
@@ -35,7 +37,7 @@ internal sealed partial class TableApplication
 
     private void SetStudyFocus(int? owner)
     {
-        if (!TableStudyEnabled || match == null || dragging) return;
+        if (!MultiplayerFocusAvailable || match == null || dragging) return;
         if (owner != null && !match.Players.Any(player => player.Id == owner)) return;
         ClearCardReading(); ClearReaderActions();
         pressed = null; dragSource = null; ClearCardDrag();

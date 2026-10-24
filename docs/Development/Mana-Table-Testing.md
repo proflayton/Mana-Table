@@ -176,6 +176,11 @@ against Forge, including restoring the original saved bytes and preserving an
 unrelated open deck. Deletion requires the optional `deck-library` capability.
 
 The existing presentation run includes `DecisionDockPresentationChecks` and the
+two-player continuity checks in `SharedTableStudyChecks` and `StudyFocusChecks`.
+They cross the old seven-group boundary from both viewer seats and exercise the
+shipping live-table entry, required opponent targeting and battlefield inspection.
+Use `two-player-table.v1` for immediate visual review of those projected states.
+The same run also includes the
 scoped authored `DecisionFlowLabChecks`. The production headless run includes
 `DecisionDockInteractionChecks`: an actual stop-removal gesture clears only that
 saved stop, dispatches an authorized Auto pass and leaves another player's

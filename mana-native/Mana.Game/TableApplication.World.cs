@@ -44,13 +44,13 @@ internal sealed partial class TableApplication
             float a = i * MathF.Tau / 64, b = (i + 1) * MathF.Tau / 64;
             canvas.Line(boardView.Apply(TableWorld.Project(new(MathF.Cos(a) * 136, MathF.Sin(a) * 136))), boardView.Apply(TableWorld.Project(new(MathF.Cos(b) * 136, MathF.Sin(b) * 136))), Gold * .055f, 1);
         }
-        foreach (int seat in StudyFocusActive ? Array.Empty<int>() : new[] { 0, 1, 2, 3 }) {
+        foreach (var sceneSeat in TwoFieldTable ? Array.Empty<SceneSeat>() : tableScene!.Seats) {
+            int seat = sceneSeat.Index;
             var p = boardView.Apply(TableWorld.Project(TableWorld.SeatPoint(seat, 0, seat is 0 or 2 ? 690 : 421)));
-            var player = seat == 3 ? match!.Viewer : TableLayout.Opponents(match!).ElementAtOrDefault(seat);
-            bool active = player?.Id == match!.ActivePlayerId;
+            bool active = sceneSeat.PlayerId == match!.ActivePlayerId;
             canvas.Glow(p, seat is 0 or 2 ? new(245, 370) : new(620, 230), (active ? Gold : Blue) * (active ? .16f : .035f));
         }
-        if (StudyFocusActive) {
+        if (TwoFieldTable) {
             canvas.Glow(new(740, 330), new(1100, 400), Blue * .08f);
             canvas.Glow(new(740, 590), new(1100, 260), Gold * .04f);
         }
