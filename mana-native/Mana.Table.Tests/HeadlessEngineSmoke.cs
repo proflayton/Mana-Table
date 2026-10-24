@@ -67,6 +67,33 @@ internal static class HeadlessEngineSmoke
                 && afterMetadata.Entries.Select(entry => (entry.Section, entry.Id, entry.Quantity))
                     .SequenceEqual(deckBeforeMetadata.Entries.Select(entry => (entry.Section, entry.Id, entry.Quantity))),
                 "Metadata patch omission and clearing preserve every section, exact printing and quantity used by the ensuing real game");
+            var withHistory = await engine.RenameDeckAsync(deck.Id, afterMetadata.Revision, "Headless setup history");
+            var practice = await engine.PracticeAsync(deck.Id, withHistory.Revision, "new");
+            var firstSetup = await engine.PrepareSoloAsync(deck.Id);
+            var repeatedSetup = await engine.PrepareSoloAsync(deck.Id);
+            var retained = await engine.WorkshopAsync(deck.Id, withHistory.Revision);
+            var continuedPractice = await engine.PracticeAsync(deck.Id, withHistory.Revision, "draw");
+            Check(firstSetup.DeckId == deck.Id && repeatedSetup.DeckId == deck.Id && repeatedSetup.DeckName == withHistory.Name
+                && retained.Revision == withHistory.Revision && continuedPractice.TestId == practice.TestId
+                && continuedPractice.Draws == 1 && continuedPractice.Hand.Length == practice.Hand.Length + 1,
+                "Repeated explicit setup reuses the same real editor revision and active practice sample");
+            var undoneSetup = await engine.UndoDeckAsync(deck.Id, withHistory.Revision);
+            Check(withHistory.CanUndo && undoneSetup.Name == afterMetadata.Name,
+                "Repeated setup preserves the existing editor undo history rather than reopening the saved deck");
+            var alternate = await engine.DuplicateDeckAsync(deck.Id, undoneSetup.Revision, "Other explicit setup deck");
+            var originalSetup = await engine.PrepareSoloAsync(deck.Id);
+            var preparedOriginal = await engine.WorkshopAsync(deck.Id, alternate.Revision);
+            var switchedSetup = await engine.PrepareSoloAsync(alternate.Id);
+            var switchedOwner = await engine.WorkshopAsync(alternate.Id, alternate.Revision);
+            bool wrongOwnerRejected = false;
+            try { await engine.RenameDeckAsync(deck.Id, switchedOwner.Revision, "Wrong owner must not be renamed"); }
+            catch (EngineCommandRejectedException) { wrongOwnerRejected = true; }
+            Check(originalSetup.DeckId == deck.Id && originalSetup.DeckName == afterMetadata.Name
+                && switchedSetup.DeckId == alternate.Id && switchedSetup.DeckName == alternate.Name
+                && preparedOriginal.Revision == switchedOwner.Revision && wrongOwnerRejected,
+                "Switching explicit setup reports its actual deck association and rejects a same-revision write for the previous owner");
+            Check((await engine.PrepareSoloAsync(deck.Id)).DeckId == deck.Id,
+                "Explicit setup can return to the requested original deck before the real match starts");
             await engine.StartSoloAsync(deck.Id, ["green", "red", "green"]);
             GameSnapshot? initial = null;
             while (initial?.Players.Length != 4 || initial.Decision == null) {

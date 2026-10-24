@@ -28,7 +28,6 @@ public sealed partial class ForgeEngine : IDeckLibrary
         var deletion = Read<DeckLibraryDeletion>(await Request("deleteDeck", new { deckId, libraryToken }));
         if (!string.Equals(deletion.DeckId, deckId, StringComparison.Ordinal) || string.IsNullOrWhiteSpace(deletion.RestoreToken))
             throw new IOException("The rules adapter returned an invalid deck deletion receipt.");
-        if (activeDeckId == deckId) activeDeckId = null;
         return deletion;
     }
 
@@ -37,8 +36,8 @@ public sealed partial class ForgeEngine : IDeckLibrary
         ArgumentException.ThrowIfNullOrWhiteSpace(deckId);
         ArgumentException.ThrowIfNullOrWhiteSpace(restoreToken);
         RequireDeckLibrary();
-        // Deck()/MapDeck() also select the editor. A library restore must retain
-        // an unrelated open document, so deserialize this summary directly.
+        // Restoring updates the saved library while the document owner retains
+        // any unrelated open editor.
         var restored = Read<DeckSummary>(await Request("restoreDeck", new { deckId, restoreToken }));
         if (!string.Equals(restored.Id, deckId, StringComparison.Ordinal))
             throw new IOException("The rules adapter returned a different restored deck.");
