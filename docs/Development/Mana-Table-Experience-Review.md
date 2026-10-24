@@ -112,7 +112,8 @@ another player's turn. A quiet draining ring becomes a red countdown near
 expiry; required-choice grace remains visibly urgent. Hover gives timing context
 without opening a modal. No repeated text feed or automatic viewport jump is
 added. Preparing/automatically passed windows do not flash a clock. A confirmed
-timeout loss leaves a Timed out label at the seat and in results. Clock reads
+timeout replaces the eliminated portrait's life value with Timed out and remains
+explicit in result rows. This keeps the settled cause off nearby cards. Clock reads
 do not repaint the board as a new game state. Reduced motion
 retains the same clock state and countdown without a pulse or flash.
 

@@ -148,6 +148,7 @@ internal sealed partial class TableApplication
     {
         heroPositions[player.Id] = center;
         bool target = IsPlayerTarget(player.Id), active = match!.ActivePlayerId == player.Id;
+        bool timedOut = player.Eliminated && TimedOut(player.Id);
         bool hasCounters = StateClarity.PlayerStates(player).Length > 0;
         float radius = own ? 40 : 34;
         if (!own) {
@@ -180,8 +181,13 @@ internal sealed partial class TableApplication
         }
         canvas.Glow(center - new Vector2(4, 13), new(radius * 2), new Color(169, 178, 159) * .25f);
         DrawPrioritySeat(player, center, radius);
-        canvas.CenterText(player.Life.ToString(), new((int)(center.X - radius) + 1, (int)(center.Y - radius) + 2, (int)radius * 2, (int)radius * 2), Color.Black, own ? 1.65f : 1.35f, true);
-        canvas.CenterText(player.Life.ToString(), new((int)(center.X - radius), (int)(center.Y - radius), (int)radius * 2, (int)radius * 2), player.Eliminated ? Muted : Ink, own ? 1.65f : 1.35f, true);
+        if (timedOut) {
+            canvas.CenterText("TIMED", new((int)(center.X - radius), (int)center.Y - 22, (int)radius * 2, 24), Red, .5f, true);
+            canvas.CenterText("OUT", new((int)(center.X - radius), (int)center.Y + 1, (int)radius * 2, 24), Ink, .72f, true);
+        } else {
+            canvas.CenterText(player.Life.ToString(), new((int)(center.X - radius) + 1, (int)(center.Y - radius) + 2, (int)radius * 2, (int)radius * 2), Color.Black, own ? 1.65f : 1.35f, true);
+            canvas.CenterText(player.Life.ToString(), new((int)(center.X - radius), (int)(center.Y - radius), (int)radius * 2, (int)radius * 2), player.Eliminated ? Muted : Ink, own ? 1.65f : 1.35f, true);
+        }
         DrawDecisionClock(player, center, radius);
         var bounds = new Rectangle((int)center.X - (int)radius - 9, (int)center.Y - (int)radius - 9, (int)radius * 2 + 18, (int)radius * 2 + 18);
         hits.Add(new("player:" + player.Id, Scope, bounds, new MatchIntent.UsePlayer(player.Id), PlayerId: player.Id, Shape: p => Vector2.DistanceSquared(p.ToVector2(), center) <= (radius + 9) * (radius + 9)));
@@ -200,11 +206,11 @@ internal sealed partial class TableApplication
         string status = player.Eliminated ? TimedOut(player.Id) ? "TIMED OUT" : "ELIMINATED" : incoming > 0 ? incoming + (own ? " ATTACKING YOU" : " INCOMING")
             : active && !own && match.Turn > 0 ? turnProgress?.PhaseLabel ?? match.Phase : active ? "ACTIVE TURN" : "";
         if (!own && index != 1 && hasCounters) status += (status.Length > 0 ? " · " : "") + player.Zone("Hand").Count + " in hand";
-        if (!own && (!dense || active) && (!active || index == 1 || incoming > 0 || player.Eliminated)) {
+        if (!own && !timedOut && (!dense || active) && (!active || index == 1 || incoming > 0 || player.Eliminated)) {
             string caption = active && incoming > 0 ? (turnProgress?.PhaseLabel ?? match.Phase) + " · " + status : status;
             canvas.Text(caption, x + 4, y + 24, incoming > 0 ? Red : Gold, .53f, 180, 3, true);
         }
-        if (own && (incoming > 0 || player.Eliminated))
+        if (own && !timedOut && (incoming > 0 || player.Eliminated))
             canvas.CenterText(status, new((int)center.X - 94, (int)center.Y - 64, 188, 19), Red, .5f, true);
         if (hasCounters) {
             int counterX = own ? (int)center.X - 390 : (int)center.X - 94;
