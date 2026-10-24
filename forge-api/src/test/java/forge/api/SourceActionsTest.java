@@ -94,7 +94,10 @@ public class SourceActionsTest {
     }
 
     private static void finishTargetedCast(RulesScenario game, String spell, String targetCard) throws Exception {
-        for (int step = 0; step < 3; step++) {
+        // Targeting/payment may publish intermediate prompts (including another
+        // payment prompt). Their count is not the spell's completion condition.
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(45);
+        while (System.nanoTime() < deadline) {
             var input = game.until(next -> next.seat() == 0 && (text(next.prompt(), "inputType").equals("InputSelectTargets")
                     || text(next.prompt(), "inputType").startsWith("InputPayMana")
                     || priority(next) && next.state().getAsJsonArray("stack").asList().stream().anyMatch(item -> text(item.getAsJsonObject(), "name").equals(spell))));
@@ -106,14 +109,6 @@ public class SourceActionsTest {
             } else {
                 assertTrue(input.prompt().get("okEnabled").getAsBoolean(), "The fixture supplies the real spell's mana cost");
                 assertTrue(game.answer(input, Map.of("action", "ok")));
-                long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
-                while (System.nanoTime() < deadline) {
-                    var state = game.state(0);
-                    var prompt = state.get("prompt");
-                    if (!state.getAsJsonArray("stack").isEmpty() || prompt != null && !prompt.isJsonNull()
-                            && !text(prompt.getAsJsonObject(), "inputType").startsWith("InputPayMana")) break;
-                    Thread.sleep(5);
-                }
             }
         }
         fail("The actual targeted spell did not reach the stack: " + spell);
