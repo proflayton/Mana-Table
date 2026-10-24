@@ -1,6 +1,7 @@
 using System.Collections.Immutable;
 using Mana.Contracts;
 using Mana.Forge;
+using System.Text.Json;
 using System.Text.Json.Nodes;
 
 namespace Mana.Table;
@@ -11,6 +12,15 @@ internal static class ForgeCommandBoundaryChecks
 {
     internal static void Run(Action<bool, string> check)
     {
+        var legacyReady = JsonSerializer.SerializeToElement(new { protocolVersion = 2,
+            capabilities = ForgeProtocol.RequiredCapabilities.Where(capability => capability != "explicit-deck-setup") });
+        bool legacyRejected = false;
+        try { ForgeProtocol.ReadyCapabilities(legacyReady); } catch (IOException) { legacyRejected = true; }
+        check(legacyRejected, "The production ready validator rejects an otherwise compatible adapter missing explicit deck setup before startup succeeds");
+        var currentReady = JsonSerializer.SerializeToElement(new { protocolVersion = 2,
+            capabilities = ForgeProtocol.RequiredCapabilities.Add("source-actions") });
+        check(ForgeProtocol.ReadyCapabilities(currentReady).Contains("source-actions"),
+            "A complete version-two ready response retains its declared optional provider capabilities");
         var selection = new JsonObject { ["kind"] = "input", ["task"] = "selection", ["purpose"] = "targets",
             ["inputType"] = "UnrelatedProviderImplementation", ["context"] = "private-provider-metadata" };
         ForgeDecisionDecoder.Normalize(selection);

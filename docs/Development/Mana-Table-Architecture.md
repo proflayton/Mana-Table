@@ -296,6 +296,29 @@ formats and require no migration. The Java host's single current editor remains
 a separate ownership constraint; immutability does not create independent open
 backend documents.
 
+`DeckDocumentSession` owns that provider's active document: its identity, editor,
+format, save failure and attached practice state. It implements the actual
+selection, editing, history, persistence, library and workshop operations.
+`DesktopEngine` decodes requests and retains network/game lifetime and lobby
+permissions; it cannot independently replace an editor or its associated ID.
+Durable game-test records remain in `DeckPlaytests`, separate from the document's
+revocable opening-hand attachment.
+
+Solo setup names its requested deck explicitly. Preparing the current ID reuses
+its editor, revision, undo history and practice sample. Preparing another saved
+ID uses the guarded open transition and cannot discard an unsaved document.
+An explicit Open still reconstructs the editor and clears attached practice.
+Writes validate their current document/revision and never open their target.
+Match startup captures detached deck contents, format and document scope once;
+switching, reopening or editing revokes that capture before it can start a game.
+The native adapter validates the returned setup identity/revision and no longer
+keeps a second active-deck cache or changes selection while mapping a response.
+
+The private IPC remains version 2 with required `explicit-deck-setup` capability;
+new native builds reject older jars before startup succeeds. Legacy callers may
+omit the setup's deck ID to read the selected document. Saved decks, workshop
+data, profiles and multiplayer synchronization require no migration.
+
 Updater discovery never starts a download. Becoming safe after a deferred restart
 requires another explicit install gesture; verification rechecks the blocker
 before launching. Shutdown cancels and joins the provider's actual task, including
@@ -709,7 +732,8 @@ returns directly to the lobby, where deck selection and readiness remain explici
 `TableApplication.Decks` routes every mutation through the same readiness, persistence
 and refresh path. Each native edit carries both the deck ID and revision; the
 adapter rejects commands for a different active document or an older revision.
-Opening the builder refreshes its document after match setup has reopened it.
+Opening the builder refreshes its document explicitly. Match setup preserves an
+already-current editor; only selecting a different requested deck opens it.
 Forge's `DeckCommanders` moves existing occurrences between Main, Sideboard and
 Commander in one `DeckEditor` batch; replacing a commander returns the old card
 to Main. Duplicating creates a separate persisted deck with identical printings.
@@ -720,8 +744,10 @@ native gallery uses existing `LatestRead` owners for deck/revision and selected
 definition/page, rejecting late results and old hits. Full-face selection uses
 the existing persistence session and Undo/Redo; there is no confirmation stage.
 `Deck.tokenPrintings` survives detached match copies and seat synchronization,
-while playable fingerprints, legality and test versions ignore it. Forge
-`TokenInfo` chooses the exact printing per token owner/definition at creation;
+while playable fingerprints, legality and test versions ignore it.
+`DeckDocumentSession` owns token reads, revision-guarded edits and persisted
+cosmetics alongside the existing deck document; the command host only dispatches.
+Forge `TokenInfo` chooses the exact printing per token owner/definition at creation;
 the adapter projects that actual image key rather than applying client-side art
 substitution. Selected-deck `tokenPreviews` feed the existing preload queue.
 Unknown token artwork stays readable without a same-name image guess. See the

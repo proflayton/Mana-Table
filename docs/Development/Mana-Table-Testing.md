@@ -180,6 +180,15 @@ and explicit empty collections clear the overrides without changing playable
 deck contents or their version. It reuses that journey's initialized engine
 before starting the same Commander game; it adds no separate JVM or CI job.
 
+That same initialized engine also covers explicit setup association: repeated
+setup preserves editor revision, undo and an active practice sample; switching
+setup reports the requested document and rejects a write for the former owner at
+the same numeric revision. `DeckWorkshopTest` covers those transitions with small
+offline fixtures, explicit-open practice invalidation and failed/missing setup
+switches preserving the current document. The existing presentation lane tests
+the production ready-message validator's required `explicit-deck-setup`
+capability without another process.
+
 The production headless run includes saved-deck deletion and Undo through the
 actual controls, delayed observations, restart recovery and stale-command guards.
 The existing `--smoke-deck-experience` window journey covers that same lifecycle

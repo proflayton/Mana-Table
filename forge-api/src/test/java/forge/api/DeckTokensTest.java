@@ -36,6 +36,10 @@ public class DeckTokensTest {
         assertTrue(printings.size() > 1);
         assertTrue(token.automatic()); assertEquals(token.printingId(), TokenDb.printingId(script, printings.get(0)));
         assertEquals(token.sources(), List.of("Felidar Retreat"));
+        var staleDeck = deck(); staleDeck.setTokenPrintings(Map.of(script, script + "|REMOVED|1"));
+        var fallback = DeckTokens.view("deck", new DeckEditor(catalog(), staleDeck)).tokens().get(0);
+        assertTrue(fallback.unavailable()); assertFalse(fallback.automatic());
+        assertEquals(fallback.printingId(), token.defaultPrintingId());
         for (int i = 1; i < printings.size(); i++) assertFalse(StaticData.instance().getCardEdition(printings.get(i).getEdition()).getDate()
                 .after(StaticData.instance().getCardEdition(printings.get(i - 1).getEdition()).getDate()));
         var workshop = new DeckWorkshopStore(Files.createTempDirectory("token-version-"), catalog());
@@ -81,6 +85,9 @@ public class DeckTokensTest {
             var copied = (DeckTokens.View)engine.dispatch("deckTokens", args("deckId", copy.get("id"), "revision", 0));
             assertEquals(copied.tokens().get(0).printingId(), choice);
         }
+        var documents = new DeckDocumentSession(catalog(), directory, new DeckPlaytests(directory));
+        assertEquals(documents.loadLobbyDeck(id).deck().getTokenPrintings().get(script), choice,
+                "Detached multiplayer deck loading preserves token cosmetics through the document owner");
     }
 
     @Test public void realTokenFactoryUsesIndependentDeckChoicesAndPublishesExactArt() throws Exception {

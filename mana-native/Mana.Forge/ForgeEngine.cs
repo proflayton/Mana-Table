@@ -31,7 +31,6 @@ public sealed partial class ForgeEngine(ForgePaths paths) : ICardEngine, ITableS
     private EngineProcess? current;
     private long sequence;
     private bool disposed;
-    private string? activeDeckId;
     public string Name => "Forge";
     public async Task InitializeAsync()
     {
@@ -43,7 +42,6 @@ public sealed partial class ForgeEngine(ForgePaths paths) : ICardEngine, ITableS
             finally { if (current == previous) current = null; }
         }
         Directory.CreateDirectory(paths.Profile);
-        activeDeckId = null;
         var start = new ProcessStartInfo(paths.Java) { UseShellExecute = false, CreateNoWindow = true,
             RedirectStandardInput = true, RedirectStandardOutput = true, RedirectStandardError = true,
             StandardInputEncoding = new System.Text.UTF8Encoding(false), StandardOutputEncoding = System.Text.Encoding.UTF8 };
@@ -61,10 +59,7 @@ public sealed partial class ForgeEngine(ForgePaths paths) : ICardEngine, ITableS
                     var message = document.RootElement;
                     if (message.TryGetProperty("event", out var ev)) {
                         if (ev.GetString() == "ready") {
-                            if (!message.TryGetProperty("protocolVersion", out var version) || version.GetInt32() != ForgeProtocol.Version)
-                                throw new IOException("The client and rules adapter use different protocol versions. Install the complete matching build.");
-                            var capabilities = message.GetProperty("capabilities").EnumerateArray().Select(c => c.GetString()).ToHashSet();
-                            if (ForgeProtocol.RequiredCapabilities.Any(c => !capabilities.Contains(c))) throw new IOException("The rules adapter is missing required synchronization capabilities.");
+                            var capabilities = ForgeProtocol.ReadyCapabilities(message);
                             owner.SourceActionsAvailable = capabilities.Contains("source-actions");
                             owner.DeckLibraryAvailable = capabilities.Contains("deck-library");
                             owner.DeckTokensAvailable = capabilities.Contains("deck-tokens");
@@ -116,9 +111,8 @@ public sealed partial class ForgeEngine(ForgePaths paths) : ICardEngine, ITableS
     }
     private static string Text(JsonElement value, string name) => value.TryGetProperty(name, out var v) && v.ValueKind != JsonValueKind.Null ? v.ToString() : "";
     private static T Read<T>(JsonElement value) => value.Deserialize<T>(Json) ?? throw new IOException("Missing engine response");
-    private DeckSummary Deck(JsonElement data) {
-        activeDeckId = Text(data, "id");
-        return new(activeDeckId, data.TryGetProperty("deck", out var deck) ? Text(deck, "name") : Text(data, "name")) {
+    private static DeckSummary Deck(JsonElement data) {
+        return new(Text(data, "id"), data.TryGetProperty("deck", out var deck) ? Text(deck, "name") : Text(data, "name")) {
             LibraryToken = Text(data, "libraryToken")
         };
     }
@@ -144,9 +138,8 @@ public sealed partial class ForgeEngine(ForgePaths paths) : ICardEngine, ITableS
         Text(face, "artName"), Text(face, "artFace"));
     private static CatalogCard MapCatalogCard(JsonElement card) => new(Text(card, "id"), MapCatalogFace(card),
         card.GetProperty("manaValue").GetInt32(), card.GetProperty("colorIdentity").GetInt32(), Text(card, "deckSection"), Text(card, "edition"));
-    private DeckDetails MapDeck(JsonElement data)
+    private static DeckDetails MapDeck(JsonElement data)
     {
-        activeDeckId = Text(data, "id");
         var deck = data.GetProperty("deck");
         var entries = deck.GetProperty("entries").EnumerateArray().Select(entry => {
             var card = MapCatalogCard(entry.GetProperty("card"));
@@ -193,10 +186,17 @@ public sealed partial class ForgeEngine(ForgePaths paths) : ICardEngine, ITableS
     public async Task<string> ExportDeckAsync(string deckId, long revision) => (await Request("export", new { deckId, revision, kind = "text" })).GetString() ?? "";
     private async Task<JsonElement> PrepareSolo(string deckId)
     {
-        // Opening a deck replaces its editor and undo history. Preparing a test
-        // for the current document must retain its existing revision and edits.
-        if (activeDeckId != deckId) MapDeck(await Request("open", new { id = deckId }));
-        var setup = await Request("matchSetup");
+        ArgumentException.ThrowIfNullOrWhiteSpace(deckId);
+        // The document owner resolves an explicit deck without reopening an
+        // already-current editor or trusting a native cache of prior responses.
+        var setup = await Request("matchSetup", new { deckId });
+        if (!string.Equals(Text(setup, "deckId"), deckId, StringComparison.Ordinal))
+            throw new IOException("The rules adapter prepared a different deck than requested.");
+        if (!setup.TryGetProperty("revision", out var revision) || revision.ValueKind != JsonValueKind.Number
+            || !revision.TryGetInt64(out var preparedRevision) || preparedRevision < 0)
+            throw new IOException("The rules adapter did not report the prepared deck revision.");
+        var saveError = Text(setup, "saveError");
+        if (saveError.Length > 0) throw new InvalidOperationException(saveError);
         var problem = Text(setup.GetProperty("setup"), "problem");
         if (problem.Length > 0) throw new InvalidOperationException(problem);
         return setup;
@@ -204,7 +204,7 @@ public sealed partial class ForgeEngine(ForgePaths paths) : ICardEngine, ITableS
     public async Task<SoloSetup> PrepareSoloAsync(string deckId)
     {
         var setup = await PrepareSolo(deckId);
-        return new(deckId, Text(setup, "name"), Read<ImmutableArray<AiOpponent>>(setup.GetProperty("opponents"))) {
+        return new(Text(setup, "deckId"), Text(setup, "name"), Read<ImmutableArray<AiOpponent>>(setup.GetProperty("opponents"))) {
             MaxPlayers = setup.GetProperty("maxPlayers").GetInt32()
         };
     }
@@ -213,7 +213,7 @@ public sealed partial class ForgeEngine(ForgePaths paths) : ICardEngine, ITableS
         if (opponentIds.IsDefaultOrEmpty || opponentIds.Length > 5) throw new ArgumentException("Choose between one and five AI opponents.", nameof(opponentIds));
         var setup = await PrepareSolo(deckId);
         if (opponentIds.Length >= setup.GetProperty("maxPlayers").GetInt32()) throw new ArgumentException("This format supports fewer players.", nameof(opponentIds));
-        await Request("matchStart", new { deckId, revision = setup.GetProperty("revision").GetInt64(), opponents = opponentIds });
+        await Request("matchStart", new { deckId = Text(setup, "deckId"), revision = setup.GetProperty("revision").GetInt64(), opponents = opponentIds });
     }
     private static Lobby MapLobby(JsonElement data) => new(Text(data, "mode"), Text(data, "status"), Text(data, "error"),
         data.GetProperty("canStart").GetBoolean(), Text(data, "startProblem"), data.GetProperty("matchActive").GetBoolean(),

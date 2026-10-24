@@ -52,7 +52,7 @@ them through its private transport. Explicit multiplayer hosting starts the seat
 synchronization listener; the desktop command API remains on private stdin/stdout pipes.
 The ready message advertises `protocolVersion: 2` and the `seat-sync`, `snapshots`,
 `command-receipts`, `resume`, `table-social`, `deck-workshop`, `deck-analysis`, and
-`semantic-priority-actions` capabilities. All connected players
+`semantic-priority-actions` and `explicit-deck-setup` capabilities. All connected players
 need this build; the seat synchronization handshake now uses version 3.
 Printing IDs are opaque, case-sensitive identifiers; clients must round-trip them.
 `cardPrintings` takes `{cardId, offset, limit, text, finish}` (limit 1–200, default 6) and returns
@@ -216,7 +216,7 @@ IDs and records diagnostics in the active profile's log.
 | `tokenPrintings` | `{deckId, revision, tokenId, offset?, limit?}`; exact-definition printing page, newest released first; default limit 4, maximum 30 |
 | `setTokenPrinting` | `{deckId, revision, tokenId, printingId}`; save an offered exact token printing; null resets to automatic newest |
 | `edit` | `{revision, edits}`; absolute quantities using `DeckEditor.Edit` entries |
-| `rename`, `format` | `{revision, name}` or `{revision, format}` |
+| `rename`, `format` | `{deckId?, revision, name}` or `{deckId?, revision, format}`; a supplied ID must name the current document |
 | `duplicate` | `{deckId, revision, name}`; save and open an independent copy preserving exact printings and sections |
 | `undo`, `redo` | `{revision}`; deck-editor history |
 | `save` | Retry saving the current deck |
@@ -350,7 +350,8 @@ with their test records. Neither is a playable match.
 Native callers scope `edit`, `rename`, `undo`, `redo`, `save`, `export` and
 `duplicate` with `deckId` plus `revision`. When supplied, both must match the
 active document before the command runs. Legacy protocol calls that omit
-`deckId` retain their revision behavior. `setCommanders` always requires both.
+`deckId` retain their revision behavior. `format` applies the same guard when
+an ID is supplied. `setCommanders` always requires both.
 
 `search.colorIdentity` is an additional allowed-color-identity mask (0..31),
 including symbols in rules text and alternate faces. It is independent of the
@@ -564,7 +565,7 @@ and avoid source-creature printing metadata in artwork requests.
 | Request | Parameters / result |
 | --- | --- |
 | `matchOpponents` | Lists AI decks for the current deck's format, including Commander preset opponents |
-| `matchSetup` | Optional `{commanderId}`; returns deck ID/revision, candidate commanders, validated setup, opponents, and `commanderAvailable` for a Commander-ready list saved as Constructed |
+| `matchSetup` | Optional `{deckId, commanderId}`; an explicit deck ID reuses the current editor or opens the requested saved document through its save guards. Returns the actual deck ID/revision, candidate commanders, validated setup, opponents, and `commanderAvailable` for a Commander-ready list saved as Constructed |
 | `matchStart` | `{opponents: [...], commanderId?, deckId?, revision?}`; validates a detached match deck and rejects stale setup; legacy `opponent` accepts one deck ID |
 | `matchState` | Cached snapshot with session `id`, `revision`, `boardRevision`, `status`, `players`, `stack`, `prompt`, `activity`, and `result` |
 | `matchAction` | `{sessionId, promptId, ...answer}`; replies once to the current prompt |
@@ -572,6 +573,15 @@ and avoid source-creature printing metadata in artwork requests.
 | `multiplayerReconnect` | Resumes an interrupted TCP connection to its existing seat while the host remains alive |
 | `multiplayerSetSeat` | `{tableId, seat, type: "AI" / "OPEN", opponentId?}`; host-only setup operation on an open/AI slot |
 | `multiplayerConfigure` | `{tableId, format, playerCount}`; host-only setup changes, preserving occupied human seats and rejecting stale table IDs |
+
+Explicit setup requires the `explicit-deck-setup` capability in the matching
+native build. Repeated setup for the selected ID preserves its editor revision,
+undo and practice attachment; switching uses the existing save-failure guard.
+Omitting `deckId` retains the legacy selected-document read. Editing and starting
+still validate their supplied document/revision and never select an unrelated
+target. Setup responses report the actual selected ID rather than echoing a
+requested association. This additive IPC-2 capability changes no saved-data or
+multiplayer synchronization format.
 
 Input answers use `action: ok/cancel/attackAll/card/player`, with `key` for a
 visible card or `playerId` for a player. Dialog answers use `choices` (indices in

@@ -293,6 +293,125 @@ public class DeckWorkshopTest {
         }
     }
 
+    @Test public void repeatedExplicitSetupPreservesEditorHistoryAndItsPracticeAttachment() throws Exception {
+        var f = fixture();
+        try (var engine = new DesktopEngine(f.catalog(), f.path())) {
+            var created = create(engine, "Selected document");
+            String id = created.get("id").getAsString();
+            var edited = command(engine, "edit", Map.of("deckId", id, "revision", 0,
+                    "edits", List.of(new DeckEditor.Edit("Main", f.forest().id(), 8))));
+            long revision = edited.getAsJsonObject("deck").get("revision").getAsLong();
+            var hand = command(engine, "workshopPractice", Map.of("deckId", id, "revision", revision, "action", "new"));
+            var legacy = command(engine, "practice", Map.of("action", "shuffle"));
+            for (int attempt = 0; attempt < 2; attempt++) {
+                var setup = command(engine, "matchSetup", Map.of("deckId", id));
+                assertEquals(setup.get("deckId").getAsString(), id);
+                assertEquals(setup.get("revision").getAsLong(), revision);
+                assertEquals(command(engine, "snapshot", Map.of()), edited,
+                        "Preparing the current document must not reopen it, reset undo or manufacture a new revision");
+            }
+            var drawn = command(engine, "workshopPractice", Map.of("deckId", id, "revision", revision, "action", "draw"));
+            assertEquals(drawn.get("testId"), hand.get("testId"));
+            assertEquals(drawn.getAsJsonArray("hand").size(), 8);
+            assertEquals(command(engine, "practice", Map.of("action", "draw")).getAsJsonArray("hand").size(),
+                    legacy.getAsJsonArray("hand").size() + 1);
+
+            var reopened = command(engine, "open", Map.of("id", id));
+            long reopenedRevision = reopened.getAsJsonObject("deck").get("revision").getAsLong();
+            assertFalse(reopened.getAsJsonObject("deck").get("canUndo").getAsBoolean());
+            assertThrows(IllegalArgumentException.class, () -> engine.dispatch("workshopPractice",
+                    patch(Map.of("deckId", id, "revision", reopenedRevision, "action", "draw"))));
+            assertEquals(command(engine, "practice", Map.of("action", "draw")).getAsJsonArray("hand").size(), 0,
+                    "An explicit reopen still revokes both practice attachments");
+        }
+    }
+
+    @Test public void explicitSetupSwitchesDocumentsButWritesNeverSelectTheirTarget() throws Exception {
+        var f = fixture();
+        try (var engine = new DesktopEngine(f.catalog(), f.path())) {
+            String first = create(engine, "First document").get("id").getAsString();
+            String second = create(engine, "Second document").get("id").getAsString();
+            var setup = command(engine, "matchSetup", Map.of("deckId", first));
+            assertEquals(setup.get("deckId").getAsString(), first);
+            assertEquals(setup.get("name").getAsString(), "First document");
+            assertEquals(setup.get("revision").getAsLong(), 0);
+            assertThrows(IllegalArgumentException.class, () -> engine.dispatch("rename",
+                    patch(Map.of("deckId", second, "revision", 0, "name", "Wrong document"))));
+            assertThrows(IllegalArgumentException.class, () -> engine.dispatch("format",
+                    patch(Map.of("deckId", second, "revision", 0, "format", "Commander"))));
+            assertEquals(command(engine, "snapshot", Map.of()).get("id").getAsString(), first);
+            var next = command(engine, "matchSetup", Map.of("deckId", second));
+            assertEquals(next.get("deckId").getAsString(), second);
+            assertEquals(next.get("name").getAsString(), "Second document");
+            assertEquals(command(engine, "matchSetup", Map.of()), next,
+                    "Legacy setup without a deck ID still reads the selected document");
+            assertThrows(IllegalArgumentException.class, () -> engine.dispatch("edit", patch(Map.of(
+                    "deckId", first, "revision", 0, "edits", List.of(new DeckEditor.Edit("Main", f.forest().id(), 1))))));
+            assertEquals(command(engine, "snapshot", Map.of()).get("id").getAsString(), second);
+        }
+    }
+
+    @Test public void setupSwitchFailurePreservesTheUnsavedDocumentAndRejectsMissingTargets() throws Exception {
+        var f = fixture();
+        try (var engine = new DesktopEngine(f.catalog(), f.path())) {
+            String other = create(engine, "Other document").get("id").getAsString();
+            String current = create(engine, "Current document").get("id").getAsString();
+            Path blocker = f.path().resolve(current + ".tmp"); Files.createDirectory(blocker);
+            var unsaved = command(engine, "rename", Map.of("deckId", current, "revision", 0, "name", "Unsaved name"));
+            assertTrue(unsaved.has("saveError"));
+            assertThrows(IllegalStateException.class, () -> engine.dispatch("matchSetup", patch(Map.of("deckId", other))));
+            var same = command(engine, "matchSetup", Map.of("deckId", current));
+            assertEquals(same.get("saveError"), unsaved.get("saveError"));
+            assertEquals(command(engine, "snapshot", Map.of()), unsaved);
+            Files.delete(blocker);
+            var saved = command(engine, "save", Map.of("deckId", current, "revision", 1));
+            assertThrows(java.io.IOException.class, () -> engine.dispatch("matchSetup",
+                    patch(Map.of("deckId", UUID.randomUUID().toString()))));
+            assertEquals(command(engine, "snapshot", Map.of()), saved,
+                    "Loading a missing target must not partly replace the current document");
+            Files.writeString(f.path().resolve("workshop/" + other + ".json"), "{broken");
+            assertThrows(java.io.IOException.class, () -> engine.dispatch("matchSetup", patch(Map.of("deckId", other))));
+            assertEquals(command(engine, "snapshot", Map.of()), saved,
+                    "Failed workshop loading must not commit a switch to the target document");
+        }
+    }
+
+    @Test public void preparedMatchContentsAreDetachedAndTheirScopeExpiresAcrossDocumentTransitions() throws Exception {
+        var f = fixture();
+        var documents = new DeckDocumentSession(f.catalog(), f.path(), new DeckPlaytests(f.path()));
+        String id = patch(documents.create("Prepared document", "Constructed")).get("id").getAsString();
+        var initial = new DeckDocumentSession.RequestScope(id, 0L);
+        documents.edit(initial, List.of(new DeckEditor.Edit("Main", f.forest().id(), 8)));
+        var prepared = documents.prepareSetup(id, "");
+        documents.requireCurrent(prepared);
+        prepared.deck().getMain().clear();
+        var state = patch(documents.state());
+        assertEquals(state.getAsJsonObject("deck").getAsJsonArray("entries").get(0).getAsJsonObject().get("quantity").getAsInt(), 8,
+                "A consumer's detached match copy must not mutate the active editor");
+
+        documents.rename(new DeckDocumentSession.RequestScope(id, prepared.scope().revision()), "New name");
+        assertThrows(IllegalArgumentException.class, () -> documents.requireCurrent(prepared));
+        var beforeOpen = documents.prepareSetup(id, "");
+        documents.open(id);
+        assertThrows(IllegalArgumentException.class, () -> documents.requireCurrent(beforeOpen));
+        var beforeSwitch = documents.prepareSetup(id, "");
+        documents.create("Other document", "Constructed");
+        assertThrows(IllegalArgumentException.class, () -> documents.requireCurrent(beforeSwitch));
+        var returned = documents.prepareSetup(id, "");
+        assertEquals(returned.scope(), beforeSwitch.scope(), "A reopened document can have the same public ID and numeric revision");
+        assertThrows("Returning to the same public scope must not revive a capture from an earlier document lifetime",
+                IllegalArgumentException.class, () -> documents.requireCurrent(beforeSwitch));
+        documents.requireCurrent(returned);
+        Path journal = f.path().resolve("workshop/" + id + ".journal");
+        Files.writeString(journal, "An interrupted write must revoke start admission");
+        assertThrows(IllegalStateException.class, () -> documents.requireCurrent(returned));
+        Files.delete(journal);
+        Path blocker = f.path().resolve(id + ".tmp"); Files.createDirectory(blocker);
+        assertTrue(patch(documents.save(new DeckDocumentSession.RequestScope(id, returned.scope().revision()))).has("saveError"));
+        assertThrows(IllegalStateException.class, () -> documents.requireCurrent(returned));
+        Files.delete(blocker);
+    }
+
     @Test public void removedTilesRemainOrderedAndOldDeleteAndUndoTokensCannotAffectNewerCopies() throws Exception {
         var f = fixture(); JsonObject first, second, firstReceipt, secondReceipt;
         try (var engine = new DesktopEngine(f.catalog(), f.path())) {
