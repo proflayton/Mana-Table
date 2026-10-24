@@ -78,7 +78,7 @@ final class SyncLobby {
     Object selectDeck(Deck deck, String format) {
         var entries = new ArrayList<Map<String, Object>>();
         for (var section : deck) for (var card : section.getValue()) entries.add(Map.of("section", section.getKey().name(), "cardId", CardCatalog.describe(card.getKey()).id(), "quantity", card.getValue()));
-        return request("deck", object(Map.of("format", format, "name", deck.getName(), "cards", entries)));
+        return request("deck", object(Map.of("format", format, "name", deck.getName(), "cards", entries, "tokenPrintings", deck.getTokenPrintings())));
     }
     Object ready(boolean value) { return request("ready", object(Map.of("ready", value))); }
     Object social(JsonObject args) { return request("social", args); }
@@ -126,6 +126,7 @@ final class SyncLobby {
                 var editor = new DeckEditor(catalog, new Deck(name));
                 editor.apply(0, List.of(SyncTransport.JSON.fromJson(p.get("cards"), DeckEditor.Edit[].class)));
                 var deck = editor.toDeck();
+                deck.setTokenPrintings(DeckTokens.readPreferences(p.get("tokenPrintings")));
                 var problem = editor.validate(format.equals("Commander") ? DeckFormat.Commander : DeckFormat.Constructed).problem();
                 if (problem != null) throw new IllegalArgumentException(name + " is not legal for " + format + ": " + problem);
                 slot.deck = deck; slot.ready = false; conversation.activity(seat, "selected " + deck.getName() + "."); break;

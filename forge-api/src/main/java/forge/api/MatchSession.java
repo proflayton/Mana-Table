@@ -1048,6 +1048,22 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
                 result.put("artName", card.getCurrentState().getName()); result.put("artFace", "front");
                 return;
             }
+            String imageKey = card.getCurrentState().getTrackableImageKey();
+            String tokenImage = imageKey == null ? null : forge.ImageKeys.getTokenImageName(imageKey);
+            if (card.isToken() && tokenImage != null) {
+                String[] parts = tokenImage.split("\\|", -1);
+                if (parts.length >= 3) {
+                    var token = forge.StaticData.instance().getAllTokens().getPrinting(parts[0], parts[0] + "|" + parts[1] + "|" + parts[2]);
+                    if (token != null) {
+                        var printing = DeckTokens.describe(parts[0], token);
+                        result.put("artName", printing.artName());
+                        result.put("artFace", card.getCurrentState().getState() == CardStateName.Backside ? "back" : "front");
+                        result.put("artSet", printing.artSet()); result.put("edition", printing.edition());
+                        result.put("collectorNumber", printing.collectorNumber());
+                    }
+                }
+                return;
+            }
             var printing = forge.util.ImageUtil.getPaperCardFromImageKey(card.getCurrentState().getTrackableImageKey());
             if (printing != null) {
                 result.put("artSet", CardCatalog.artSet(printing));

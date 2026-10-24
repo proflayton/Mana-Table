@@ -114,6 +114,7 @@ internal sealed partial class TableApplication : IDisposable
         this.restartedAfterUpdate = restartedAfterUpdate;
         session = new(matchConnection, tables, this.clock, services.SourceActions); updates = new(session);
         catalogRead = new(updates.Enqueue); printingRead = new(updates.Enqueue);
+        deckTokensRead = new(updates.Enqueue); tokenPrintingsRead = new(updates.Enqueue);
         deckWorkspace = new(services.Workshop, services.Analysis, updates.Enqueue);
         sourceActions = session.SourceActions;
         session.Changed += AcceptPresentation;
@@ -346,7 +347,7 @@ internal sealed partial class TableApplication : IDisposable
     public void Dispose()
     {
         if (closing) return;
-        closing = true; CloseUpdateRequests(); deckWorkspace.Close(); deckPersistence.Close(); catalogRead.Close(); printingRead.Close(); session.Close(); matchPresentation.Reset();
+        closing = true; CloseUpdateRequests(); deckWorkspace.Close(); deckPersistence.Close(); catalogRead.Close(); printingRead.Close(); deckTokensRead.Close(); tokenPrintingsRead.Close(); session.Close(); matchPresentation.Reset();
         canvas.Dispose();
     }
 }

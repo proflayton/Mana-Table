@@ -212,6 +212,9 @@ IDs and records diagnostics in the active profile's log.
 | `restoreDeck` | `{deckId, restoreToken}`; restore the same deck ID without overwriting an existing deck or selecting it |
 | `new` | `{name, format}`; create a saved deck |
 | `snapshot` | Current deck, revision, validation, format and save state |
+| `deckTokens` | `{deckId, revision}`; exact token definitions created by the deck, creator names, effective/default printing and automatic/unavailable status |
+| `tokenPrintings` | `{deckId, revision, tokenId, offset?, limit?}`; exact-definition printing page, newest released first; default limit 4, maximum 30 |
+| `setTokenPrinting` | `{deckId, revision, tokenId, printingId}`; save an offered exact token printing; null resets to automatic newest |
 | `edit` | `{revision, edits}`; absolute quantities using `DeckEditor.Edit` entries |
 | `rename`, `format` | `{revision, name}` or `{revision, format}` |
 | `duplicate` | `{deckId, revision, name}`; save and open an independent copy preserving exact printings and sections |
@@ -256,6 +259,30 @@ manual Considering edits. A conflicting manual removal fails before changing the
 deck. Durable versions remain available after restarting, when transient undo
 history is no longer present. Duplication copies the current workspace and source
 baseline into a fresh history without copying another deck's test records.
+
+The optional `deck-tokens` ready capability enables per-deck token cosmetics.
+`IDeckTokens` keeps definition and printing handles opaque to the native game.
+Definitions come from Forge's registered token scripts, recursively including
+tokens created by tokens; equal display names do not imply equal rules. The
+catalog uses edition release dates, excludes future editions and honors each
+edition's `TokensCode` for exact image addressing, including reprints.
+Deck details add `tokenPreviews` for known cosmetic faces only; these are not
+playable entries, legal actions or hidden opponent information.
+
+Version-1 saved decks add an optional `tokenPrintings` object mapping exact
+definition IDs to printing IDs. Missing metadata means automatic newest, with
+no migration or new playable-content version. A missing saved printing falls
+back to newest and is marked unavailable until reset or replaced. Choice edits
+use the existing deck revision, save, undo/redo and duplication paths; ordinary
+deck-list exports omit cosmetics. Multiplayer deck selection carries the same
+optional map through the existing seat protocol: older peers ignore it, and
+absent preferences default on new hosts. The host validates the metadata before
+accepting a deck. Mana Table sets the automatic-newest policy on registered match
+decks; upstream clients retain their existing token-art policy. `TokenInfo`
+selects and pins an exact `PaperToken` per owner/definition, preserving distinct
+deck choices at one table. Projection reads the actual token image key and keeps
+the ordinary visibility gate. Rules, effective stats and controller changes never
+come from the artwork selection.
 
 `DeckVersionView` returns `versionId`, `name`, saved `format`, `currentFormat`,
 saved `entries` and `differences` (`section`, `card`, `saved`, `current`).

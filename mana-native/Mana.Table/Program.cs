@@ -41,6 +41,7 @@ internal static class Program
                 }
                 var services = new TableServices(engine, engine, engine, engine.InitializeAsync) {
                     SourceActions = engine as ISourceActions, Printings = engine as ICardPrintings,
+                    Tokens = engine as IDeckTokens,
                     Library = engine as IDeckLibrary, Workshop = engine as IDeckWorkshop,
                     Analysis = engine as IDeckAnalysis, Seats = engine as ITableSeatSetup,
                     Social = engine as ITableSocial, Versions = engine as IDeckVersionHistory

@@ -72,6 +72,11 @@ internal sealed partial class TableApplication
             case DeckIntent.CyclePrintingFinish: printingFinish = (printingFinish + 1) % 3; LoadPrintings(0); break;
             case DeckIntent.ChoosePrinting printing: ChoosePrinting(printing.Card); break;
             case DeckIntent.LoadPrintings printing: LoadPrintings(printing.Offset); break;
+            case DeckIntent.SelectToken token: SelectToken(token.Id); break;
+            case DeckIntent.ChooseTokenPrinting token: SetTokenPrinting(token.Id); break;
+            case DeckIntent.PageTokens page: tokenListPage = Math.Max(0, tokenListPage + page.Direction); break;
+            case DeckIntent.PageTokenPrintings page: tokenPrintingOffset = Math.Max(0, tokenPrintingOffset + page.Direction * 4); break;
+            case DeckIntent.RefreshTokens: deckTokensRead.Clear(); tokenPrintingsRead.Clear(); break;
             case DeckIntent.ShowWorkshopTab tab: ShowWorkshopTab(tab.Tab.ToString().ToLowerInvariant()); break;
             case DeckIntent.OpenAnalysis: OpenDeckAnalysis(); break;
             case DeckIntent.EditWorkshopPlan plan: EditWorkshopPlan(plan.Question); break;

@@ -19,6 +19,13 @@ changing a game decision; step changes never clear a pool locally.
 Check a package's `SOURCE.txt` and `build.json` for its exact revision.
 For playing instructions, use [START-HERE.txt](START-HERE.txt).
 
+The builder's Tokens view lists exact tokens created by the deck and offers full
+printing faces. Clicking a face autosaves the choice for this deck; Use newest
+removes a pin and follows the newest released printing in the bundled catalog.
+Choices survive reopening, duplication and multiplayer deck selection, and use
+the normal undo/redo history. Token artwork warms with the selected deck. Token
+definitions and live characteristics remain authoritative engine state.
+
 ## Table interaction and state
 
 Hover highlights a card without enlarging it. During ordinary priority, clicking

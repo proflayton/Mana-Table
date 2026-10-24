@@ -36,6 +36,9 @@ final class MatchTable implements ManaTableSession, AutoCloseable {
         game.subscribeToEvents(identities);
         for (int i = 0; i < game.getPlayers().size(); i++) {
             var player = game.getPlayers().get(i);
+            // Cosmetics are per registered deck; rules and live characteristics
+            // still come from the exact token definition used by the effect.
+            player.getRegisteredPlayer().getDeck().setPreferLatestTokenArt(true);
             if (player.getController() instanceof PlayerControllerHuman human) seats.put(i, new MatchSession(this, human));
             player.updateOpponentsForView();
         }

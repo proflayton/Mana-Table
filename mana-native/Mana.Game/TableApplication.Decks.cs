@@ -20,7 +20,7 @@ internal sealed partial class TableApplication
     private bool DeckReady => selectedDeckDetails is { Problem.Length: 0, SaveError.Length: 0 } && DeckSaveProblem.Length == 0
         && deckPersistence.View.Status != DeckPersistenceStatus.Saving && (!CommanderDeck || selectedDeckDetails.CommanderIds.Length > 0);
     private bool DeckCanCopy => selectedDeckDetails?.Entries.Any(e => e.Quantity > 0) == true;
-    private string DeckScope => $"setup:{selectedDeckDetails?.Id}:{selectedDeckDetails?.Revision}:{deckPersistence.View.Generation}:{deckEditor}:{commanderCandidates}:{partnerCandidates}:{deckSection}:{deckFilter}:{deckCardsPage}:{deckCardId}:{deckCardSection}:{librarySelection?.Id}:{catalogRead.View.Generation}:{deckIssuesOnly}:{deckIssuePage}:{deckCardIssuePage}:{deckMenu}:{WorkshopScope}:{AnalysisScope}";
+    private string DeckScope => $"setup:{selectedDeckDetails?.Id}:{selectedDeckDetails?.Revision}:{deckPersistence.View.Generation}:{deckEditor}:{commanderCandidates}:{partnerCandidates}:{deckSection}:{deckFilter}:{deckCardsPage}:{deckCardId}:{deckCardSection}:{librarySelection?.Id}:{catalogRead.View.Generation}:{deckIssuesOnly}:{deckIssuePage}:{deckCardIssuePage}:{deckMenu}:{WorkshopScope}:{AnalysisScope}:{TokenScope}";
     private string DeckSaveProblem => deckPersistence.View.Error;
     private string DeckSaveLabel => deckPersistence.View.Status switch {
         DeckPersistenceStatus.Saving => "Saving…", DeckPersistenceStatus.Failed => "Not saved",

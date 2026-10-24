@@ -713,6 +713,20 @@ Opening the builder refreshes its document after match setup has reopened it.
 Forge's `DeckCommanders` moves existing occurrences between Main, Sideboard and
 Commander in one `DeckEditor` batch; replacing a commander returns the old card
 to Main. Duplicating creates a separate persisted deck with identical printings.
+The optional `IDeckTokens` port supplies exact token definitions and cosmetic
+printing choices independently of playable catalog entries. `Mana.Forge`
+negotiates `deck-tokens`; providers without it expose no Tokens control. The
+native gallery uses existing `LatestRead` owners for deck/revision and selected
+definition/page, rejecting late results and old hits. Full-face selection uses
+the existing persistence session and Undo/Redo; there is no confirmation stage.
+`Deck.tokenPrintings` survives detached match copies and seat synchronization,
+while playable fingerprints, legality and test versions ignore it. Forge
+`TokenInfo` chooses the exact printing per token owner/definition at creation;
+the adapter projects that actual image key rather than applying client-side art
+substitution. Selected-deck `tokenPreviews` feed the existing preload queue.
+Unknown token artwork stays readable without a same-name image guess. See the
+[API contract](../../forge-api/README.md#desktop-transport-and-deck-commands)
+for additive save and older-peer compatibility.
 The optional `IDeckLibrary` handles saved-deck deletion and restoration. It binds
 deletion to the saved bytes through `LibraryToken`, independently of the currently
 open editor. The adapter negotiates `deck-library`; older engines hide these

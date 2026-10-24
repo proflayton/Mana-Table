@@ -58,6 +58,8 @@ internal sealed partial class TableApplication
         internal void RefreshDeckLibrary() => game.RefreshDeletedDecks();
         internal DeckDetails? DeckDetails => game.selectedDeckDetails;
         internal bool DeckEditor => game.deckEditor;
+        internal DeckTokenCatalog? DeckTokens => game.CurrentDeckTokens;
+        internal CatalogPage? TokenPrintings => game.tokenPrintingsRead.View.Value;
         internal bool AnalysisOpen => game.analysisOpen;
         internal DeckAnalysisState? Analysis => game.deckWorkspace.View.Analysis;
         internal bool AnalysisCurrent => game.AnalysisCurrent;

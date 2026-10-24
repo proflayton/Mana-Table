@@ -34,9 +34,10 @@ internal sealed partial class TableApplication
         artPreloadSnapshot = null;
         artPreloadSourceActions = null;
 
-        var selection = deckEditor ? DeckSelection?.Card : null;
-        var catalog = deckEditor ? catalogRead.View.Value : null;
-        var printings = deckEditor && workshopDialog == "printings" ? printingRead.View.Value : null;
+        bool tokens = deckEditor && workshopTab == "tokens";
+        var selection = tokens ? SelectedToken?.Card.Card : deckEditor ? DeckSelection?.Card : null;
+        var catalog = deckEditor && !tokens ? catalogRead.View.Value : null;
+        var printings = tokens ? tokenPrintingsRead.View.Value : deckEditor && workshopDialog == "printings" ? printingRead.View.Value : null;
         var practice = deckEditor ? deckWorkspace.View.Hand : null;
         var review = deckEditor ? null : reviewCard?.Card;
         if (ReferenceEquals(artPreloadSelection, selection) && ReferenceEquals(artPreloadCatalog, catalog)
@@ -60,8 +61,9 @@ internal sealed partial class TableApplication
     {
         if (ReferenceEquals(artPreloadDeck, selectedDeckDetails)) return selectedDeckArtwork;
         artPreloadDeck = selectedDeckDetails;
-        return selectedDeckArtwork = PrintableFaces(selectedDeckDetails?.Entries
-            .OrderBy(entry => entry.Section == "Commander" ? 0 : 1).Select(entry => entry.Card) ?? []).ToArray();
+        return selectedDeckArtwork = PrintableFaces((selectedDeckDetails?.Entries
+            .OrderBy(entry => entry.Section == "Commander" ? 0 : 1).Select(entry => entry.Card) ?? [])
+            .Concat(selectedDeckDetails?.TokenPreviews ?? [])).ToArray();
     }
 
     private static IEnumerable<Card> PrintableFaces(IEnumerable<Card> cards)

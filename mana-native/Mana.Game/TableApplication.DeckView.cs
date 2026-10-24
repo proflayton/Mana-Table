@@ -37,12 +37,16 @@ internal sealed partial class TableApplication
         if (WorkshopEngine != null) {
             DrawWorkshopNavigation();
             if (workshopTab != "build") {
-                if (workshopTab == "test") DrawWorkshopTest(); else if (workshopTab == "analysis") DrawDeckAnalysis(); else DrawWorkshopResults();
+                if (workshopTab == "tokens") DrawDeckTokens(); else if (workshopTab == "test") DrawWorkshopTest(); else if (workshopTab == "analysis") DrawDeckAnalysis(); else DrawWorkshopResults();
                 DrawWorkshopStatus(); DrawWorkshopDialog(); return;
             }
-        } else canvas.Text(names.Length == 0 ? "Choose your commander from the deck's Leaders tab, or find one in the library." : "COMMANDER  " + string.Join(" + ", names), 50, 194, names.Length == 0 ? Muted : Gold, .78f, 1480, 1);
+        } else {
+            canvas.Text(names.Length == 0 ? "Choose your commander from the deck's Leaders tab, or find one in the library." : "COMMANDER  " + string.Join(" + ", names), 50, 194, names.Length == 0 ? Muted : Gold, .78f, TokenEngine != null ? 1100 : 1480, 1);
+            if (TokenEngine != null) Button("workshop-tokens", "Tokens", 1372, 188, 180, new DeckIntent.ShowWorkshopTab(WorkshopTab.Tokens), !busy, height: 32);
+        }
+        if (WorkshopEngine == null && workshopTab == "tokens" && TokenEngine != null) { DrawDeckTokens(); DrawWorkshopDialog(); return; }
         if (WorkshopEngine == null && services.Analysis != null) {
-            Button("deck-analysis", "Analyze deck", 1372, 188, 180, new DeckIntent.OpenAnalysis(), !busy, height: 32);
+            Button("deck-analysis", "Analyze deck", TokenEngine != null ? 1184 : 1372, 188, 180, new DeckIntent.OpenAnalysis(), !busy, height: 32);
             if (analysisOpen) { DrawDeckAnalysis(); DrawWorkshopDialog(); return; }
         }
         canvas.Fill(new(32, 236, 1536, 712), new Color(10, 19, 25) * .7f);

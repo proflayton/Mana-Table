@@ -92,6 +92,24 @@ does not establish that a person can understand or use the screen.
     and deck legality are separate facts; returning to Play must not require a
     second confirmation of edits already acknowledged by storage.
 
+## Deck token artwork: 24 October 2026
+
+**Source candidate; human review pending.** The player's intent is to choose how
+their deck's tokens look. Tokens in the existing builder shows the deck's exact
+token types, their creator cards and full printing faces. Clicking a face saves
+that deck cosmetic immediately; the selected border and Deck saved acknowledge
+the result. Use newest removes the pin and follows the newest released printing
+in the bundled catalog. No Apply dialog, extra deck cards or rules permission is
+introduced. Undo/Redo and duplication preserve the ordinary deck lifecycle.
+
+Agent review uses real Forge catalogs and actual token images at 1000 x 740 and
+1540 x 980, including enlarged text. Review newest versus pinned state, reset,
+switching token types, long names, unavailable images and the saved result before
+returning to Play. Automated freshness, persistence and actual token-factory
+checks establish their own boundaries; human interaction approval is pending.
+
+![Per-deck token printing gallery](images/native-token-artwork-2026-10-24.png)
+
 ## Connected match header: 23 October 2026
 
 **Source candidate; human review pending.** Table chat covered Recent changes

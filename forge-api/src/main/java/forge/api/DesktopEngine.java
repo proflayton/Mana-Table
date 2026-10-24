@@ -68,7 +68,7 @@ public final class DesktopEngine implements AutoCloseable {
         var engine = new DesktopEngine(CardCatalog.fromDatabases(data.getAvailableDatabases().values()), Path.of(args[1]));
         engine.resources = Path.of(args[0]);
         engine.analysisFormats.load(engine.resources);
-        protocol.println(JSON.toJson(Map.of("event", "ready", "printings", engine.catalog.size(), "protocolVersion", 2, "capabilities", List.of("seat-sync", "snapshots", "command-receipts", "resume", "table-social", "deck-workshop", "deck-analysis", "source-actions", "deck-library", "semantic-priority-actions"))));
+        protocol.println(JSON.toJson(Map.of("event", "ready", "printings", engine.catalog.size(), "protocolVersion", 2, "capabilities", List.of("seat-sync", "snapshots", "command-receipts", "resume", "table-social", "deck-workshop", "deck-analysis", "source-actions", "deck-library", "deck-tokens", "semantic-priority-actions"))));
         try (engine; var input = new BufferedReader(new InputStreamReader(System.in, StandardCharsets.UTF_8))) {
             String line;
             while ((line = input.readLine()) != null) {
@@ -161,6 +161,17 @@ public final class DesktopEngine implements AutoCloseable {
                     integer(p, "colorIdentity"), string(p, "role", ""));
             case "cardPrintings" -> catalog.printings(string(p, "cardId", ""), number(p, "offset", 0), number(p, "limit", 6),
                     string(p, "text", ""), string(p, "finish", ""));
+            case "deckTokens" -> { requireWorkshopDeck(p); yield DeckTokens.view(deckId, editor); }
+            case "tokenPrintings" -> {
+                requireWorkshopDeck(p);
+                yield DeckTokens.printings(editor.toDeck(), string(p, "tokenId", ""), number(p, "offset", 0), number(p, "limit", 4));
+            }
+            case "setTokenPrinting" -> {
+                requireWorkshopDeck(p); workshop.assertWritable(deckId);
+                editor.setTokenPrinting(p.get("revision").getAsLong(), string(p, "tokenId", ""),
+                        p.has("printingId") && !p.get("printingId").isJsonNull() ? p.get("printingId").getAsString() : null);
+                yield save();
+            }
             case "replacePrinting" -> {
                 requireWorkshopDeck(p);
                 workshop.replacePrinting(deckId, editor, format, string(p, "section", ""),
@@ -399,7 +410,7 @@ public final class DesktopEngine implements AutoCloseable {
         return state();
     }
 
-    private record StoredDeck(int version, String name, String format, List<DeckEditor.Edit> cards, long updated) { }
+    private record StoredDeck(int version, String name, String format, List<DeckEditor.Edit> cards, long updated, Map<String, String> tokenPrintings) { }
     private record LoadedDeck(DeckEditor editor, String format) { }
     private record DeletedDeck(String deckId, String name, String restoreToken, long deletedAt) { }
 
@@ -446,6 +457,7 @@ public final class DesktopEngine implements AutoCloseable {
         var stored = JSON.fromJson(Files.readString(file(id)), StoredDeck.class);
         if (stored.version() != 1) { throw new IllegalArgumentException("Unsupported deck file version"); }
         var deck = new Deck(checkedName(stored.name()));
+        deck.setTokenPrintings(DeckTokens.readPreferences(JSON.toJsonTree(stored.tokenPrintings())));
         var loaded = new DeckEditor(catalog, deck);
         loaded.apply(0, stored.cards());
         return new LoadedDeck(loaded, stored.format());
@@ -482,7 +494,7 @@ public final class DesktopEngine implements AutoCloseable {
             var snapshot = editor.snapshot();
             var stored = new StoredDeck(1, snapshot.name(), format, snapshot.entries().stream()
                     .map(entry -> new DeckEditor.Edit(entry.section(), entry.card().id(), entry.quantity())).toList(),
-                    System.currentTimeMillis());
+                    System.currentTimeMillis(), editor.toDeck().getTokenPrintings());
             Path target = file(deckId);
             Path temporary = directory.resolve(deckId + ".tmp");
             Files.writeString(temporary, JSON.toJson(stored), StandardCharsets.UTF_8);
@@ -505,6 +517,7 @@ public final class DesktopEngine implements AutoCloseable {
         result.put("validation", editor.validate(DeckFormat.valueOf(format)));
         result.put("commanderChoices", DeckCommanders.choices(editor.toDeck()));
         result.put("saveError", saveError);
+        result.put("tokenPreviews", DeckTokens.view(deckId, editor).tokens().stream().map(DeckTokens.Token::card).toList());
         return result;
     }
 

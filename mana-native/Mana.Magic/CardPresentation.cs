@@ -10,6 +10,10 @@ public static class CardPresentation
         // rules text remains readable without a name-based artwork lookup.
         if (card.FaceDown || card.GamePieceType.Equals("effect", StringComparison.OrdinalIgnoreCase)
             || string.IsNullOrWhiteSpace(card.Name)) return null;
+        // A token name can describe many different definitions. Without an
+        // exact printing, a name lookup could show another token or a real card.
+        if (card.GamePieceType.Equals("token", StringComparison.OrdinalIgnoreCase)
+            && (string.IsNullOrWhiteSpace(card.ArtSet) || string.IsNullOrWhiteSpace(card.CollectorNumber))) return null;
         return new(string.IsNullOrWhiteSpace(card.ArtName) ? card.Name : card.ArtName,
             card.ArtFace == "back" ? "back" : "front", card.ArtSet, card.CollectorNumber);
     }

@@ -100,6 +100,7 @@ public sealed record DeckIssue(string Code, string Message, string? Section, Imm
 public sealed record DeckDetails(string Id, string Name, long Revision, ImmutableArray<DeckEntry> Entries,
     ImmutableArray<CommanderOption> CommanderOptions, string Problem, string SaveError, bool CanUndo = false, bool CanRedo = false)
 {
+    public ImmutableArray<Card> TokenPreviews { get; init; } = [];
     public ImmutableArray<DeckIssue> Issues { get; init; } = [];
     public string Format { get; init; } = "Commander";
     public string LibraryToken { get; init; } = "";

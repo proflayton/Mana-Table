@@ -81,6 +81,19 @@ public final class DeckEditor {
         return snapshot();
     }
 
+    /** Cosmetic-only history step; no playable cards or format rules change. */
+    public synchronized Snapshot setTokenPrinting(long expectedRevision, String script, String printingId) {
+        checkRevision(expectedRevision);
+        DeckTokens.validateChoice(deck, script, printingId);
+        var choices = new java.util.LinkedHashMap<>(deck.getTokenPrintings());
+        if (printingId == null) choices.remove(script); else choices.put(script, printingId);
+        if (choices.equals(deck.getTokenPrintings())) return snapshot();
+        Deck updated = new Deck(deck); updated.setTokenPrintings(choices);
+        remember(undo, deck, historyToken); deck = updated;
+        historyToken = UUID.randomUUID().toString(); redo.clear(); revision++;
+        return snapshot();
+    }
+
     /** Replace only this section's copies; the command zone and partners stay intact. */
     public synchronized Snapshot replacePrinting(long expectedRevision, String sectionName, String cardId, String printingId) {
         checkRevision(expectedRevision);

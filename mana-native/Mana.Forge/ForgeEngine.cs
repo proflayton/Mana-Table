@@ -24,6 +24,7 @@ public sealed partial class ForgeEngine(ForgePaths paths) : ICardEngine, ITableS
         public Task? Stopped { get; set; }
         public bool SourceActionsAvailable { get; set; }
         public bool DeckLibraryAvailable { get; set; }
+        public bool DeckTokensAvailable { get; set; }
         public ForgeCommandScope Commands { get; } = new();
         public volatile Exception? Failure;
     }
@@ -66,6 +67,7 @@ public sealed partial class ForgeEngine(ForgePaths paths) : ICardEngine, ITableS
                             if (ForgeProtocol.RequiredCapabilities.Any(c => !capabilities.Contains(c))) throw new IOException("The rules adapter is missing required synchronization capabilities.");
                             owner.SourceActionsAvailable = capabilities.Contains("source-actions");
                             owner.DeckLibraryAvailable = capabilities.Contains("deck-library");
+                            owner.DeckTokensAvailable = capabilities.Contains("deck-tokens");
                             owner.Ready.TrySetResult();
                         }
                         else if (ev.GetString() == "error") throw new IOException(Text(message, "message"));
@@ -125,6 +127,7 @@ public sealed partial class ForgeEngine(ForgePaths paths) : ICardEngine, ITableS
     public async Task<DeckSummary> ImportAsync(string name, string text) => Deck(await Request("import", new { name, text, format = "Commander" }));
     public async Task<DeckSummary> ImportPresetAsync(string id) => Deck(await Request("presetImport", new { id }));
     private static Card MapCatalogFace(JsonElement card) => new() {
+        GamePieceType = Text(card, "deckSection") == "Tokens" ? "token" : "card",
         Name = Text(card, "name"), ArtName = Text(card, "artName"), ArtFace = Text(card, "artFace"),
         Edition = Text(card, "edition"), ArtSet = Text(card, "artSet"), CollectorNumber = Text(card, "collectorNumber"),
         ArtIndex = card.TryGetProperty("artIndex", out var artIndex) ? artIndex.GetInt32() : 0,
@@ -157,7 +160,8 @@ public sealed partial class ForgeEngine(ForgePaths paths) : ICardEngine, ITableS
                 StructureValid = validation.TryGetProperty("structureValid", out var structural) ? structural.GetBoolean() : null,
                 Eligibility = Text(validation, "eligibility") is { Length: > 0 } eligibility ? eligibility : "unknown",
                 Format = Text(data, "format"),
-                LibraryToken = Text(data, "libraryToken")
+                LibraryToken = Text(data, "libraryToken"),
+                TokenPreviews = data.TryGetProperty("tokenPreviews", out var previews) ? previews.EnumerateArray().Select(MapCatalogFace).ToImmutableArray() : []
             };
     }
     public async Task<DeckDetails> OpenDeckAsync(string id) => MapDeck(await Request("open", new { id }));

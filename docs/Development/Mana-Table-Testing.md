@@ -74,6 +74,17 @@ dotnet $driver --smoke-presentation --profile '<fresh-profile>'
 The test flags belong to `Mana.Table.Tests`, not the shipped `ManaTable.exe`.
 Choose an explicit fresh `--profile` for every independent journey.
 
+The existing `--smoke-headless-presentation` lane includes `TokenArtworkChecks`:
+enter Tokens through the production builder, save/reset exact printing choices,
+retain the save acknowledgement and card count, reject an old revision's hit,
+and switch definitions while an obsolete gallery response is held in flight.
+It runs at small and large sizes with enlarged text, without another CI process.
+`DeckTokensTest` in the Java API suite covers newest-first exact definitions,
+reprint image addressing, save/reopen/duplicate, undo/redo/reset, stale edits,
+unchanged playable versions and actual `TokenInfo` creation with two independent
+deck choices. These checks do not approve the gallery's visual clarity; inspect
+real token images in the game window as well.
+
 - `--smoke-presentation`: presentation, card-reader, scope, focus, geometry and bounded priority-batch regressions over a controlled provider.
 - `--smoke-headless-presentation`: production `TableApplication` composition and pointer input over controlled snapshots.
 - `--smoke-headless-priority-flow`: authored stack, responder, recipient and library-choice handoffs.

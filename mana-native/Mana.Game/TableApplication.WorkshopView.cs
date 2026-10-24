@@ -21,10 +21,12 @@ internal sealed partial class TableApplication
         MenuAction("deck-analysis", "Tune", new(158, 190, 134, 32), new DeckIntent.OpenAnalysis(), !busy && WorkshopCurrent, analysisOpen, .8f);
         MenuAction("workshop-test", "Test", new(302, 190, 100, 32), new DeckIntent.ShowWorkshopTab(WorkshopTab.Test), !busy, workshopTab == "test", .8f);
         MenuAction("workshop-results", "Results", new(412, 190, 116, 32), new DeckIntent.ShowWorkshopTab(WorkshopTab.Results), !busy, workshopTab == "results", .8f);
+        if (TokenEngine != null) MenuAction("workshop-tokens", "Tokens", new(540, 190, 100, 32), new DeckIntent.ShowWorkshopTab(WorkshopTab.Tokens), !busy, workshopTab == "tokens", .8f);
         string version = deckWorkspace.View.Workshop?.Versions.FirstOrDefault(v => v.Id == deckWorkspace.View.Workshop.VersionId)?.Label ?? "";
         string info = deckWorkspace.View.WorkshopError.Length > 0 ? "Deck tools unavailable" : !WorkshopCurrent ? "Loading deck tools..." : version + (deckWorkspace.View.Workshop!.Plan.Length == 0 ? "  ·  Add your deck's plan" : "  ·  " + deckWorkspace.View.Workshop.Plan);
-        if (WorkshopCurrent) MenuAction("workshop-plan-summary", version + " / Deck plan", new(540, 190, 614, 32), new DeckIntent.EditWorkshopPlan(false), !busy, size: .72f);
-        else canvas.Text(info, 540, 199, deckWorkspace.View.WorkshopError.Length > 0 ? Red : Muted, .62f, 614, 1);
+        int planX = TokenEngine != null ? 650 : 540;
+        if (WorkshopCurrent) MenuAction("workshop-plan-summary", version + " / Deck plan", new(planX, 190, 1154 - planX, 32), new DeckIntent.EditWorkshopPlan(false), !busy, size: .72f);
+        else canvas.Text(info, planX, 199, deckWorkspace.View.WorkshopError.Length > 0 ? Red : Muted, .62f, 1154 - planX, 1);
         MenuAction("workshop-source", deckWorkspace.View.Workshop?.Source == null ? "Link Archidekt" : "Linked source", new(1174, 190, 184, 32), new DeckIntent.OpenSource(), !busy && WorkshopCurrent, size: .72f);
         MenuAction("workshop-history", "Versions", new(1368, 190, 184, 32), new DeckIntent.OpenVersions(), !busy && WorkshopCurrent, size: .72f);
     }

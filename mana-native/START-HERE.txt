@@ -167,6 +167,13 @@ Copy list includes each printing's set, collector number and foil finish so it
 can be imported again with the same choices. Exact artwork is cached separately;
 when an image is unavailable, the card remains readable with rules text.
 
+Open Tokens to choose the artwork for tokens your deck can create. Click a full
+token face to save that printing immediately; Use newest returns to the automatic
+newest released printing in the bundled catalog. Choices stay with this deck,
+including when duplicated or used at a friends' table. Undo/Redo also restores
+token artwork choices. Tokens are cosmetics and do not add cards to your list.
+Ordinary exported deck-list text does not include these artwork preferences.
+
 Changes save automatically. Beside Back to play, Saving waits for the actual
 save acknowledgment, Deck saved confirms it, and Not saved offers Retry save.
 Back to play keeps both chosen commanders; no additional confirmation is needed.
