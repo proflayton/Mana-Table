@@ -83,8 +83,11 @@ internal sealed partial class TableApplication
         string hitId, UiIntent activate, Action<Pose, bool> paint, Vector2? entrance = null, float entranceDelay = 0,
         bool opensZone = false, int choiceSlot = -1, Rectangle? activationBounds = null)
     {
+        var play = choiceSlot < 0 && id == CardIdentity(card) && zone is "Stack" or "Battlefield"
+            ? matchPresentation.CardCues.LastOrDefault(cue => cue.Kind == CueKind.Play && cue.VisualId == id) : null;
+        if (play?.PlayerId is { } actor) entrance = SeatHand(actor);
         var entry = matchPresentation.Cards.Prepare(new(id, card, rest, zone, owner, hitId, activate,
-            entrance, entranceDelay, opensZone, choiceSlot, activationBounds));
+            entrance, entranceDelay, opensZone, choiceSlot, activationBounds, play == null ? null : (float)(now - play.Started), play?.Reveal ?? true));
         var hit = entry.Hit;
         if (zone == "Battlefield" && choiceSlot < 0 && !entry.Focused && !BattlefieldFocused)
             hit = hit with { Bounds = Rectangle.Intersect(hit.Bounds, BoardViewport), Shape = point => BoardViewport.Contains(point) && entry.Hit.Contains(point) };
@@ -99,7 +102,10 @@ internal sealed partial class TableApplication
         bool clipped = entry.Zone == "Battlefield" && entry.Layer == CardPresentationLayer.Returning && !BattlefieldFocused;
         if (clipped) canvas.BeginClip(BoardViewport);
         bool liveReader = DrawSourceActionReader(entry);
-        if (!liveReader) compose(entry.Display, entry.Focused);
+        if (!liveReader) {
+            if (entry.Playing) PaintInteractionCard(entry.Card, entry.Display, false, false);
+            else compose(entry.Display, entry.Focused);
+        }
         if (entry.Hovered && !liveReader) canvas.CardFocus(entry.Display, HoverAccent);
         if (clipped) canvas.EndClip();
         if (Automated) matchPresentation.Cards.RecordComposition(entry);

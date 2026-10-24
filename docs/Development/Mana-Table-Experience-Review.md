@@ -41,9 +41,10 @@ does not establish that a person can understand or use the screen.
    A viewpoint change moves across the same table. Keep seating and occurrences
    continuous while a presentation camera pans and zooms; inspecting a player
    must not rebuild the battlefield or reset every card's motion.
-   Viewpoint changes move across the same table. Keep canonical seating and
-   occurrences continuous while a presentation camera pans and zooms; do not
-   replace the battlefield or reset all card motion when inspecting a player.
+   A played card also keeps its physical identity: show the authorized face as
+   it leaves its source, then move that card through the stack into its current
+   destination. Compact effect panels and closing a reader must not break that
+   journey. Ability references do not move their source permanent.
 5. **Let the engine describe the game.** Use authoritative current characteristics,
    action handles and decision constraints. A list intended for auto-pass is not
    a complete action catalog. Simplify presentation without inventing availability,
@@ -87,6 +88,28 @@ does not establish that a person can understand or use the screen.
     Pairing guidance comes from the engine. Saving, saved, failed persistence
     and deck legality are separate facts; returning to Play must not require a
     second confirmation of edits already acknowledged by storage.
+
+## Physical card play: 23 October 2026
+
+**Source candidate; human review pending.** The compact pending-effect panel
+stopped composing the physical spell, and closing its old hand reader could
+snap a played card into place. Public casts and land plays now briefly show the
+full card, then continue to its current stack or battlefield position. Resolution
+keeps that same physical occurrence; a long response window does not replay the
+cast reveal. Camera navigation uses the current destination. Reduced motion
+settles directly. Abilities retain their existing source references, and losing
+visibility removes a moving face immediately. Animation never answers a prompt.
+
+Load `card-play.v1` and use Next to observe a land leaving an inspected hand,
+your spell on the stack and its resolution, an opponent's public cast and
+resolution, then an ability whose permanent stays in place. These are authored
+projections, not a rules simulation. Agent review includes the rendered sequence
+at 1000 x 740 with motion, 1540 x 980 with reduced motion, and a zoomed camera.
+Existing presentation suites cover reader revocation, actual stack composition,
+targeting/payment interruptions, visibility and noncommitting inspection. This
+does not supply human approval of animation timing or clarity.
+
+![A physical spell during its cast reveal; use the running case to review movement](images/native-card-play-2026-10-23.png)
 
 ## Spatial battlefield inspection: 23 October 2026
 
@@ -968,6 +991,7 @@ native renderer and input pipeline with controlled state, not a rules simulator.
 | `two-player-table.v1` | Seven card/state groups, an eighth local group and an opposing counter change; inspect two-player continuity across the old global threshold |
 | `crowded-counters.v1` | 480 permanents, Toph earthbend 2, then one Felidar Retreat effect with 82 recipients; source, changed land and complete affected set |
 | `card-reading.v1` | Hand slots, reading/collapse and required selection; current P/T/counters in card and ability-source previews despite an older embedded source face |
+| `card-play.v1` | Physical hand → land, hand → stack → battlefield, opponent public cast and resolution, then an ability whose source stays in place; review normal/reduced motion and camera navigation |
 | `ability-choice.v1` | Select the Elf, read its concrete mana action without changing the prompt, then explicitly activate and see the authored tapped source and green mana; no extra one-option chooser |
 | `ability-targeting.v1` | Walking Ballista's distinct costs/effects, card/player targets, cancellation, paid counter cost, pending stack, another player's response window, and authored result |
 | `counter-damage.v1` | All Will Be One: captured three-counter damage, then one added loyalty with four settled counters; target, pending stack and authored result |

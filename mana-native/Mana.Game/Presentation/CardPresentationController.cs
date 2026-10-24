@@ -17,6 +17,10 @@ internal sealed class CardPresentationController
     private readonly List<PresentedCard> cards = [];
     private readonly HashSet<string> transitions = [];
     private readonly HashSet<string> pendingCollapses = [];
+    private readonly HashSet<string> playFlights = [];
+    private bool reduced;
+    internal const float PlayRevealSeconds = .72f;
+    internal static Pose PlayRevealPose => new(new(800, 390), new(220, 308), Elevation: 24);
     private readonly Dictionary<string, int> compositionCounts = [];
     private readonly record struct PresentedPose(Pose Display, bool UsesBoardMotion);
     private Dictionary<string, PresentedPose> displayedPoses = [], previousDisplayedPoses = [];
@@ -40,13 +44,20 @@ internal sealed class CardPresentationController
         if (context.State?.Id != current.State?.Id) Reset();
         bool leavingOpeningHand = context.OpeningHandDecision && !current.OpeningHandDecision;
         context = current;
+        reduced = reducedMotion;
         var hovered = cards.LastOrDefault(card => card.Hit.Id == hoveredHitId && card.Hit.Scope == current.Scope && !card.Card.FaceDown);
         hoveredId = hovered?.Id ?? "";
         hoveredHit = hovered?.Hit.Id ?? "";
         // A reader survives pointer movement, but never lost visibility or a
         // required compact interaction. Reconciliation uses the current snapshot.
         if (pinnedId != null && (current.Dragging || leavingOpeningHand || Pinned is not { } pinned
-            || current.CompactDecision && !current.CanBrowseHandSelection(pinned) || !current.CanRead(pinned))) Collapse(hoveredHitId);
+            || current.CompactDecision && !current.CanBrowseHandSelection(pinned) || !current.CanRead(pinned))) {
+            string oldId = pinnedId;
+            bool relocated = current.State != null && CardViews.Located(current.State).Any(item =>
+                !item.Card.FaceDown && CardViews.Identity(item.Card) == oldId && item.Zone != pinnedZone);
+            Collapse(hoveredHitId);
+            if (relocated) { pendingCollapses.Remove(oldId); transitions.Remove(oldId); }
+        }
         (displayedPoses, previousDisplayedPoses) = (previousDisplayedPoses, displayedPoses);
         displayedPoses.Clear();
         boardView = view;
@@ -59,7 +70,7 @@ internal sealed class CardPresentationController
     {
         bool readable = (request.ChoiceSlot >= 0 ? context.GalleryOpen : !context.OverlayOpen) && !context.Dragging;
         bool focused = !request.Card.FaceDown && pinnedId == request.Id && pinnedZone == request.Zone && readable;
-        if (request.Card.FaceDown) transitions.Remove(request.Id);
+        if (request.Card.FaceDown) { transitions.Remove(request.Id); playFlights.Remove(request.Id); }
         var view = request.ChoiceSlot < 0 && BoardView.AffectsZone(request.Zone) ? boardView : BoardView.Identity;
         var rest = view.Apply(request.Rest);
         if (focused) {
@@ -67,8 +78,13 @@ internal sealed class CardPresentationController
                 ? StudyReaderPose(rest, context.BattlefieldReaderAvoid)
                 : ReaderPose(rest, request.Zone);
         }
-        bool useBoardMotion = !focused && BoardView.AffectsZone(request.Zone) && request.ChoiceSlot < 0;
+        bool revealPlay = !reduced && !focused && !request.Card.FaceDown && request.RevealPlay
+            && request.PlayAge is >= 0 and < PlayRevealSeconds;
+        if (!reduced && !focused && !request.Card.FaceDown && request.PlayAge is >= 0) playFlights.Add(request.Id);
+        if (reduced) playFlights.Remove(request.Id);
+        bool useBoardMotion = !focused && !revealPlay && BoardView.AffectsZone(request.Zone) && request.ChoiceSlot < 0;
         bool collapse = pendingCollapses.Remove(request.Id);
+        if (request.PlayAge != null) collapse = false;
         bool hadPrevious = previousDisplayedPoses.TryGetValue(request.Id, out var previous);
         bool wasBoardMotion = displayedPoses.TryGetValue(request.Id, out var current) ? current.UsesBoardMotion : previous.UsesBoardMotion;
         if (!collapse && hadPrevious && wasBoardMotion != useBoardMotion) {
@@ -77,12 +93,15 @@ internal sealed class CardPresentationController
             // Rebase once when crossing that boundary, never once per frame.
             motion.Hold(request.Id, useBoardMotion ? view.Inverse(previous.Display) : previous.Display);
         }
-        var target = focused ? readerTarget!.Value : request.Rest;
+        var target = focused ? readerTarget!.Value : revealPlay ? PlayRevealPose : request.Rest;
         Vector2? entrance = request.Entrance is { } start && useBoardMotion ? view.Inverse(start) : request.Entrance;
         var pose = collapse ? motion.Hold(request.Id, focused ? rest : request.Rest)
             : motion.Place(request.Id, target, entrance, request.EntranceDelay);
         if (useBoardMotion) pose = view.Apply(pose);
         displayedPoses[request.Id] = new(pose, useBoardMotion);
+        bool playing = playFlights.Contains(request.Id) && (revealPlay || Vector2.Distance(pose.Center, rest.Center) > 2
+            || Vector2.Distance(pose.Size, rest.Size) > 2);
+        if (!playing) playFlights.Remove(request.Id);
         if (!focused && Vector2.Distance(pose.Size, rest.Size) < 2
             && Vector2.Distance(pose.Center, rest.Center) < 2) transitions.Remove(request.Id);
         bool anchored = request.Zone == "Hand" && (focused || transitions.Contains(request.Id))
@@ -92,6 +111,7 @@ internal sealed class CardPresentationController
         var hit = new Hit(request.HitId, context.Scope, geometry.Bounds, request.Activate, request.Card,
             request.Zone, request.Owner, geometry.Contains);
         var layer = focused ? CardPresentationLayer.Reader
+            : playing ? CardPresentationLayer.Playing
             : transitions.Contains(request.Id) ? CardPresentationLayer.Returning : CardPresentationLayer.Table;
         bool pointerHover = request.Id == hoveredId && request.HitId == hoveredHit && !request.Card.FaceDown && readable;
         var entry = new PresentedCard(request, pose, hit, focused,
@@ -165,6 +185,7 @@ internal sealed class CardPresentationController
     public void EndFrame()
     {
         transitions.RemoveWhere(id => !cards.Any(card => card.Id == id));
+        playFlights.RemoveWhere(id => !cards.Any(card => card.Id == id));
         pendingCollapses.RemoveWhere(id => !displayedPoses.ContainsKey(id));
         previousDisplayedPoses.Clear();
         motion.End();
@@ -180,7 +201,7 @@ internal sealed class CardPresentationController
     }
     public void Reset()
     {
-        ClearComposition(); transitions.Clear(); pendingCollapses.Clear(); compositionCounts.Clear();
+        ClearComposition(); transitions.Clear(); pendingCollapses.Clear(); playFlights.Clear(); compositionCounts.Clear();
         displayedPoses.Clear(); previousDisplayedPoses.Clear();
         pinnedId = pinnedZone = null; readerTarget = null; hoveredId = hoveredHit = ""; ReaderBounds = null;
         context = new(null, "", false, false, false, false);

@@ -131,6 +131,7 @@ internal sealed partial class TableApplication
     private void DrawCardEffects()
     {
         foreach (var cue in matchPresentation.CardCues) {
+            if (cue.Kind == CueKind.Play || matchPresentation.Cards.Cards.Any(card => card.Id == cue.VisualId && card.Playing)) continue;
             double age = now - cue.Started;
             if (age < 0 || age > 1.1 || !matchPresentation.Cards.TryGetPose(cue.VisualId, out var pose)) continue;
             float alpha = preferences.ReducedMotion ? 1 : (float)(1 - age / 1.1);

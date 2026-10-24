@@ -252,14 +252,14 @@ internal sealed partial class TableApplication
     private void DrawStack()
     {
         var state = match!;
-        if (ValuedTargetDecision) return;
+        if (ValuedTargetDecision) { DrawPendingSpellCards(); return; }
         // Choosing an ability has not put it on the stack. Its current card
         // remains the source on the table; do not manufacture a stack copy.
         if (state.Stack.Length == 0 && (AbilityActionPending || SelectingActionTarget)) return;
         if (state.Stack.Length == 0 && state.Decision?.SourceCard == null) return;
         bool payingSource = state.Decision is { Intent: DecisionIntent.Mana, SourceCard: not null }
             || !SelectingActionTarget && state.Decision is { Intent: DecisionIntent.Selection, SourceCard: not null, PlayerChoices.Length: > 0 };
-        if (state.Stack.Length > 0 && !payingSource) { DrawStackFlow(); return; }
+        if (state.Stack.Length > 0 && !payingSource) { DrawStackFlow(); DrawPendingSpellCards(); return; }
         canvas.Glow(new(807, 485), new(430, 165), Blue * .17f);
         var resting = TableWorld.Card(new(6, 108), new(245, 126));
         canvas.CardFrame(resting, Gold * .12f, 1);
@@ -288,6 +288,7 @@ internal sealed partial class TableApplication
             canvas.Text(stackCards[0].Name, 549, 400, Ink, .62f, 154, 3, true);
             Button("stack", "Inspect source", 549, 462, 154, new MatchIntent.InspectDecisionSource(), height: 29);
         }
+        if (state.Stack.Length > 0) DrawPendingSpellCards();
     }
     private void ManaOrb(string name, int amount, Vector2 point)
     {

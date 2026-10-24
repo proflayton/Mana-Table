@@ -185,8 +185,13 @@ internal sealed class PriorityFlowSmoke : ITableAutomation
             && (pending.ControllerId == null || painted.Contains(StateClarity.PlayerName(view.Match, pending.ControllerId.Value), StringComparison.Ordinal))
             && pending.Targets.All(target => painted.Contains(target.Name, StringComparison.Ordinal)),
             "The first visible effect shows its actual pending text, source, controller and reported targets before inspection: " + pending.Id);
-        Check(!view.Hits.Any(hit => hit.Id is "stack" or "action-details") && !Current.Cards.Any(card => card.Zone == "Stack"),
-            "Pending effects have no redundant Stack/Details opens or copied source-card surface on the ordinary board");
+        var spells = view.Match.Stack.Where(item => !item.Ability && item.Card is { FaceDown: false })
+            .Select(item => CardViews.Identity(item.Card!)).Order().ToArray();
+        var physical = Current.Cards.Where(card => card.Zone == "Stack").ToArray();
+        Check(!view.Hits.Any(hit => hit.Id is "stack" or "action-details")
+                && physical.Select(card => card.Id).Order().SequenceEqual(spells)
+                && physical.All(card => view.Hits.Count(hit => hit.Id == card.Hit.Id) == 1),
+            "Actual spells retain their physical stack occurrence and one canonical source hit; ability sources are not copied and redundant Stack/Details controls stay absent");
     }
     private string[] Text() => Current.Drawing.Commands.Select(command => command switch {
         DrawCommand.Text text => text.Value, DrawCommand.CenterText text => text.Value, _ => null

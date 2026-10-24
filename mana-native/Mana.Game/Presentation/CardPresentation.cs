@@ -62,9 +62,9 @@ internal sealed record CardPresentationContext(GameSnapshot? State, string Scope
 /// <summary>Rest is canonical layout geometry; Entrance is an already presented source position.</summary>
 internal sealed record CardPresentationRequest(string Id, Card Card, Pose Rest, string Zone,
     int? Owner, string HitId, UiIntent Activate, Vector2? Entrance = null, float EntranceDelay = 0,
-    bool OpensZone = false, int ChoiceSlot = -1, Rectangle? ActivationBounds = null);
+    bool OpensZone = false, int ChoiceSlot = -1, Rectangle? ActivationBounds = null, float? PlayAge = null, bool RevealPlay = true);
 
-internal enum CardPresentationLayer { Table, Returning, Reader }
+internal enum CardPresentationLayer { Table, Playing, Returning, Reader }
 
 /// <summary>A prepared occurrence. Rest, painting and input share presentation-space geometry.</summary>
 internal sealed record PresentedCard(CardPresentationRequest Request,
@@ -73,6 +73,7 @@ internal sealed record PresentedCard(CardPresentationRequest Request,
     public BoardView View { get; init; } = BoardView.Identity;
     public Pose? ReaderTarget { get; init; }
     public bool Hovered { get; init; }
+    public bool Playing => Layer == CardPresentationLayer.Playing;
     public string Id => Request.Id;
     public Card Card => Request.Card;
     public string Zone => Request.Zone;

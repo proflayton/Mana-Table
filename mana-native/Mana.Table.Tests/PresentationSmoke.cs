@@ -30,6 +30,7 @@ internal static class PresentationSmoke
         InteractionFrameChecks.Run(Check);
         PresentationReadChecks.Run(profile, Check);
         CardPresentationChecks.Run(Check);
+        CardPlayChecks.Run(Check);
         PresentationSceneChecks.Run(Check);
         DrawingFrameChecks.Run(Check);
         PublicChangeFeedbackChecks.Run(Check);

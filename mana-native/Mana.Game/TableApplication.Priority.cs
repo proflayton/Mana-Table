@@ -119,17 +119,17 @@ internal sealed partial class TableApplication
         else OpenStack(index);
     }
 
-    private int PendingEffectHeaderHeight(StackItem entry, string owner) => Math.Max(64,
+    private int PendingEffectHeaderHeight(StackItem entry, string owner) => Math.Max(entry.Ability ? 64 : 92,
         21 + canvas.TextSize(entry.Name, .67f, 347, 2, true).Y + canvas.TextSize("Pending · " + owner, .5f, 347, 1).Y);
 
     private void PaintPendingEffect(StackItem entry, int index, Rectangle bounds, string owner, string effect)
     {
         var art = new Rectangle(bounds.X + 12, bounds.Y + 12, 52, 44);
-        if (entry.Card is { FaceDown: false } source && resources.Card(source) is { } image) {
+        if (entry.Ability && entry.Card is { FaceDown: false } source && resources.Card(source) is { } image) {
             var crop = new Rectangle((int)(image.Width * .12f), (int)(image.Height * .14f),
                 (int)(image.Width * .76f), (int)(image.Height * .38f));
             canvas.Sprite(image, art.Center.ToVector2(), art.Size.ToVector2(), 0, Color.White, crop);
-        } else canvas.Gradient(art, new(43, 58, 64), new(28, 40, 48));
+        } else if (entry.Ability) canvas.Gradient(art, new(43, 58, 64), new(28, 40, 48));
         int nameHeight = canvas.TextSize(entry.Name, .67f, bounds.Width - 88, 2, true).Y;
         canvas.Text(entry.Name, bounds.X + 76, bounds.Y + 10, Ink, .67f, bounds.Width - 88, 2, true);
         string order = match!.Stack.Length == 1 ? "Pending" : (index + 1) + (index == 0 ? " · Next" : " · Waiting");

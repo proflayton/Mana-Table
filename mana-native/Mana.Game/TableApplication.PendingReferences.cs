@@ -35,10 +35,41 @@ internal sealed partial class TableApplication
 
     private void AddPendingSourceReference(StackItem item, Rectangle bounds)
     {
+        // Physical spells own this reference through their actual moving face.
+        if (!item.Ability) return;
         if (item.Card is not { FaceDown: false } source) return;
         var reference = new PendingCardReference(item.Id, CardViews.Identity(source));
         if (ResolvePendingReference(reference) is not { } current) return;
         hits.Add(new("stack-source:" + item.Id, Scope, bounds, new MatchIntent.ReadPendingReference(reference.StackId, reference.CardId, reference.DecisionId, !item.Ability), current, "StackReference"));
+    }
+
+    private void DrawPendingSpellCards()
+    {
+        var state = match!;
+        for (int index = state.Stack.Length - 1; index >= 0; index--) {
+            var item = state.Stack[index];
+            if (item.Ability || item.Card is not { FaceDown: false } card
+                || CardIdentity(card).Length == 0) continue;
+            // Abilities refer to an existing permanent; only an actual spell
+            // becomes a physical stack occurrence with the same moving id.
+            var row = stackRows.FirstOrDefault(row => row.Id == item.Id);
+            var area = row?.Bounds ?? (TableStudyEnabled ? StudyActionArea : new Rectangle(545, 319, 435, 220));
+            bool header = row?.Position == 1;
+            var size = header ? new Vector2(TableStudyEnabled ? 42 : 52, TableStudyEnabled ? 59 : 73) : new Vector2(34, 48);
+            var center = header ? new Vector2(area.X + 10 + size.X / 2, area.Y + 8 + size.Y / 2)
+                : new Vector2(area.X - 28 - index * 8, area.Y + 28 + index * 12);
+            var pose = new Pose(center, size);
+            string owner = item.ControllerId is { } controller ? StateClarity.PlayerName(state, controller) : "Controller not reported";
+            int headerHeight = TableStudyEnabled ? Math.Max(75, 14 + canvas.TextSize(item.Name, .67f, area.Width - 78, 80, true).Y
+                + canvas.TextSize(owner, .48f, area.Width - 78, 80).Y) : PendingEffectHeaderHeight(item, owner);
+            var source = new PendingCardReference(item.Id, CardIdentity(card));
+            if (ResolvePendingReference(source) is not { } current) continue;
+            DrawTableCard(CardIdentity(card), current, pose, "Stack", item.ControllerId,
+                "stack-source:" + item.Id, new MatchIntent.ReadPendingReference(item.Id, source.CardId, "", true),
+                (display, _) => PaintInteractionCard(current, display, false, false),
+                item.ControllerId is { } actor ? SeatHand(actor) : null,
+                activationBounds: header ? new Rectangle(area.X + 8, area.Y + 6, area.Width - 16, headerHeight - 8) : null);
+        }
     }
 
     private void AddPendingCounterReference(StackItem item, Card card, Rectangle bounds)

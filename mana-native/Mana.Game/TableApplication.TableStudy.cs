@@ -57,14 +57,14 @@ internal sealed partial class TableApplication
         var body = new Rectangle(area.X, header.Bottom + 2, area.Width, area.Height - header.Height - 2);
         canvas.Panel(body, new(17, 29, 36), Gold * .55f, 4);
         var art = new Rectangle(body.X + 10, body.Y + 8, 42, 37);
-        if (entry.Card is { FaceDown: false } source && resources.Card(source) is { } image) {
+        if (entry.Ability && entry.Card is { FaceDown: false } source && resources.Card(source) is { } image) {
             var crop = new Rectangle((int)(image.Width * .12f), (int)(image.Height * .14f),
                 (int)(image.Width * .76f), (int)(image.Height * .38f));
             canvas.Sprite(image, art.Center.ToVector2(), art.Size.ToVector2(), 0, Color.White, crop);
-        } else canvas.Fill(art, new(43, 58, 64));
+        } else if (entry.Ability) canvas.Fill(art, new(43, 58, 64));
         int nameHeight = canvas.TextSize(entry.Name, .67f, body.Width - 78, 80, true).Y;
         int ownerHeight = canvas.TextSize(owner, .48f, body.Width - 78, 80).Y;
-        int sourceHeight = Math.Max(51, 14 + nameHeight + ownerHeight);
+        int sourceHeight = Math.Max(entry.Ability ? 51 : 75, 14 + nameHeight + ownerHeight);
         canvas.Text(entry.Name, art.Right + 10, body.Y + 7, Ink, .67f, body.Width - 78, 80, true);
         canvas.Text(owner, art.Right + 10, body.Y + 10 + nameHeight, Gold, .48f, body.Width - 78, 80);
         AddPendingSourceReference(entry, new(art.X, art.Y, body.Width - 20, sourceHeight - 8));
