@@ -128,7 +128,7 @@ public sealed class TableScene
             var clusters = sharedTableStudy
                 ? SharedTableStudy.Arrange(seat.Index, player.Id, player.Zone("Battlefield").Cards.Where(card => !attachments!.IsTucked(card)).ToArray(), isResource, studySeparate,
                         duel ? role => DuelTableStudy.MatchLane(seat.Index, role) : null, duel ? 1.35f : 1,
-                        horizontalRows: duel, centerRows: duel, attachments: attachments)
+                        horizontalRows: duel, centerRows: duel, attachments: attachments, seatFacing: !duel)
                 : BattlefieldLayout.Arrange(layout!, seat.Index, player.Id,
                     player.Zone("Battlefield").Cards, isResource, orderedChoices, denseMeasure);
             seats.Add(new(seat, clusters));

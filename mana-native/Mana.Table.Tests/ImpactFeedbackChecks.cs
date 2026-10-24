@@ -139,7 +139,8 @@ internal static class ImpactFeedbackChecks
                 && app.TestPort.Match!.Players[1].Zone("Battlefield").Cards.Single(c => c.VisualId == CounterDamageScenario.TargetId) is { Power: 6, Toughness: 6, Damage: 3 }
                 && !frame.Hits.Any(hit => hit.Id == "action-details")
                 && !frame.Observe().Text.Any(text => text.Value is "JUST RESOLVED" or "PUBLIC OUTCOME"),
-                "The actual result composition anchors three damage outside its surviving recipient, keeps settled 6/6 and three marked damage, and does not cover the table with routine success prose");
+                "The actual result composition anchors three damage outside its surviving recipient, keeps settled 6/6 and three marked damage, and does not cover the table with routine success prose; receipt "
+                + receipt + "; intersections " + string.Join(", ", frame.Cards.Where(card => receipt != null && card.Display.Bounds.Intersects(receipt.Bounds)).Select(card => card.Id)));
             engine.Present(stages[2].Snapshot); app.TestPort.Accept(engine.State); Tick(10.5);
             check(app.TestPort.Impacts.Any(i => i is { CardId: CounterDamageScenario.TargetId, Amount: 3 })
                 && app.TestPort.Match!.Players[1].Zone("Graveyard").Cards.Any(c => c.VisualId == CounterDamageScenario.TargetId),

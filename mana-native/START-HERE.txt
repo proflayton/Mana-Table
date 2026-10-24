@@ -343,6 +343,9 @@ attachment controlled by a different player; its hover name identifies that
 controller. Re-equipping moves the same card to its new host. Detached Equipment
 returns to its controller's support cards. The classic troubleshooting layout
 retains the previous relationship lines.
+In shared multiplayer games, cards face their player around the table. Current
+stats stay upright; click a turned card to read its full face upright. Tapping
+is separate from seat direction. The two-player view keeps upright faces.
 Current stats already include the engine's effects; do not add an Equipment's
 printed bonus again. Re-equipping updates the same occurrences.
 Click a player's life header to inspect public counters and commander damage

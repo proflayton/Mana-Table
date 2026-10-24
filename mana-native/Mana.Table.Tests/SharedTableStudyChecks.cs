@@ -82,9 +82,10 @@ internal static class SharedTableStudyChecks
             || !entry.Territory.Contains(entry.Node.Pose.Bounds)
             || !entry.Node.Pose.Contains(entry.Node.Pose.Center.ToPoint())
             || entry.Node.Pose.IsProjected || !entry.Node.ScanFace
-            || entry.Node.Pose.Angle != (entry.Node.Card.Tapped ? MathF.PI / 2 : 0));
+            || MathF.Abs(MathHelper.WrapAngle(entry.Node.Pose.Angle - SharedTableStudy.Facing(entry.Seat)
+                - (entry.Node.Card.Tapped ? MathF.PI / 2 : 0))) > .001f);
         check(outside == null,
-            "Study " + label + ": every upright or tapped face and its input geometry fit its controller's reserved role lane"
+            "Study " + label + ": every seat-facing or tapped face and its input geometry fit its controller's reserved role lane"
             + (outside == null ? "" : $"; first offender {outside.Node.Id} ({outside.Node.Card.Name}), controller {outside.Node.Owner}, seat {outside.Seat}, role {outside.Role}, bounds {outside.Node.Pose.Bounds}, lane {outside.Lane}, territory {outside.Territory}, pose {outside.Node.Pose}, corners {string.Join(";", outside.Node.Pose.Corners)}"));
         var cards = Cards(scene).ToArray();
         var overlap = cards.SelectMany(card => cards.Where(other => other.Owner != card.Owner && card.Pose.Bounds.Intersects(other.Pose.Bounds))

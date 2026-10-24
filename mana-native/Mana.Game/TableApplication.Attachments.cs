@@ -51,25 +51,30 @@ internal sealed partial class TableApplication
         if (over || selected || legal) canvas.Border(edge, accent, over || selected ? 2 : 1);
         // The exposed illustration is the attachment, not a row of controls.
         // Its complete name appears at the source on hover; click reads its face.
-        if (node.Attachment.RootOwner != node.Owner && edge.Width >= 10 && edge.Height >= 20) {
-            var center = new Vector2(edge.Center.X, edge.Top + 8);
+        bool horizontal = edge.Width > edge.Height;
+        if (node.Attachment.RootOwner != node.Owner && Math.Min(edge.Width, edge.Height) >= 14) {
+            var center = horizontal ? new Vector2(edge.Left + 8, edge.Center.Y) : new Vector2(edge.Center.X, edge.Top + 8);
             if (seatPortraits.TryGetValue(node.Owner, out var portraitName) && resources.Card(new Card { Name = portraitName, ArtName = portraitName }) is { } portrait)
                 canvas.Portrait(portrait, center, 6, Color.White);
             else canvas.Circle(center, 5, node.Owner == match!.ViewerId ? Gold : Blue);
             canvas.Ring(center, 6, node.Owner == match!.ViewerId ? Gold : Blue, 1);
         }
         string counter = CounterMarker(card);
-        if (counter.Length > 0 && edge.Width >= 12 && edge.Height >= 36) {
-            var chip = new Rectangle(edge.X, edge.Bottom - 25, edge.Width, 24);
+        if (counter.Length > 0 && Math.Min(edge.Width, edge.Height) >= 12 && Math.Max(edge.Width, edge.Height) >= 36) {
+            var chip = horizontal ? new Rectangle(edge.Right - 36, edge.Y, 35, edge.Height)
+                : new Rectangle(edge.X, edge.Bottom - 25, edge.Width, 24);
             canvas.Fill(chip, new Color(16, 27, 31));
-            PaintCounterGlyph(new(edge.Center.X - 3, chip.Top + 3, 6, 6), new(154, 224, 203));
+            PaintCounterGlyph(horizontal ? new(chip.Left + 3, chip.Center.Y - 3, 6, 6)
+                : new(edge.Center.X - 3, chip.Top + 3, 6, 6), new(154, 224, 203));
             counterAnchors[node.Id] = chip.Center.ToVector2();
-            if (canvas.TextWidth(counter, .4f, true) <= chip.Width - 2) {
-                canvas.CenterText(counter, new(chip.X, chip.Top + 11, chip.Width, 12), new(154, 224, 203), .4f, true);
-                RecordBattlefieldLabel(card, node.Owner, "counter", counter, chip, canvas.TextWidth(counter, .4f, true), chip.Width - 2);
+            var number = horizontal ? new Rectangle(chip.X + 12, chip.Y, chip.Width - 12, chip.Height)
+                : new Rectangle(chip.X, chip.Top + 11, chip.Width, 12);
+            if (canvas.TextWidth(counter, .4f, true) <= number.Width - 2) {
+                canvas.CenterText(counter, number, new(154, 224, 203), .4f, true);
+                RecordBattlefieldLabel(card, node.Owner, "counter", counter, chip, canvas.TextWidth(counter, .4f, true), number.Width - 2);
             }
         }
-        if (card.Tapped && edge.Width >= 12 && edge.Height >= 22) {
+        if (card.Tapped && Math.Min(edge.Width, edge.Height) >= 12 && Math.Max(edge.Width, edge.Height) >= 22) {
             var mark = new Vector2(edge.Center.X, edge.Center.Y);
             canvas.Line(mark + new Vector2(-4, -5), mark + new Vector2(3, -5), Gold, 1.5f);
             canvas.Line(mark + new Vector2(3, -5), mark + new Vector2(3, 3), Gold, 1.5f);

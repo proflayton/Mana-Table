@@ -4,12 +4,13 @@ using Rectangle = Microsoft.Xna.Framework.Rectangle;
 
 namespace Mana.Renderer;
 
-/// <summary>An explicit layout study: independent, upright controller territories.
+/// <summary>An explicit layout study: independent, seat-facing controller territories.
 /// A pending effect or another seat's density never participates in this packing.</summary>
 public static class SharedTableStudy
 {
     private static readonly string[] Roles = ["Creatures", "Support", "Lands"];
-    private const float AttachmentEdge = 22, AttachmentDrop = 8;
+    private const float AttachmentEdge = 36, AttachmentDrop = 8;
+    public static float Facing(int seat) => seat switch { 0 => MathF.PI / 2, 1 => MathF.PI, 2 => -MathF.PI / 2, _ => 0 };
     public static Rectangle ActionArea => new(565, 390, 470, 165);
     public static Rectangle Territory(int seat) => seat switch {
         0 => new(195, 160, 350, 470), 1 => new(510, 171, 580, 204),
@@ -33,7 +34,7 @@ public static class SharedTableStudy
     internal static BattlefieldCluster[] Arrange(int seat, int owner, IReadOnlyList<Card> cards,
         Func<Card, bool> isResource, IReadOnlySet<string>? separate,
         Func<string, Rectangle>? lanes = null, float faceScale = 1, bool horizontalRows = false, bool centerRows = false,
-        BattlefieldAttachments? attachments = null)
+        BattlefieldAttachments? attachments = null, bool seatFacing = true)
     {
         faceScale = float.IsFinite(faceScale) && faceScale > 0 ? faceScale : 1;
         string Identity(Card card) => CardViews.Identity(card) is { Length: > 0 } id ? id
@@ -62,7 +63,21 @@ public static class SharedTableStudy
             var lane = lanes?.Invoke(kind) ?? Lane(seat, kind);
             // Pose.Bounds rounds out to integer pixels, including tap rotation.
             lane.Inflate(-2, -2);
-            var desired = (kind == "Creatures" ? new Vector2(112, 104) : new Vector2(112, 92)) * faceScale;
+            float facing = seatFacing ? Facing(seat) : 0;
+            var worldCenter = lane.Center.ToVector2();
+            bool sideways = seatFacing && seat is 0 or 2;
+            if (sideways) lane = new(0, 0, lane.Height, lane.Width);
+            Vector2 Turn(Vector2 point) {
+                var local = point - lane.Center.ToVector2();
+                // Quarter turns keep exact packing bounds and pointer geometry.
+                return worldCenter + (facing == 0 ? local : facing == MathF.PI ? -local
+                    : facing > 0 ? new Vector2(-local.Y, local.X) : new Vector2(local.Y, -local.X));
+            }
+            Pose TurnPose(Pose pose) => pose with { Center = Turn(pose.Center), Angle = pose.Angle + facing };
+            Rectangle TurnBounds(Rectangle bounds) => bounds.IsEmpty ? bounds
+                : TurnPose(new(new(bounds.X + bounds.Width / 2f, bounds.Y + bounds.Height / 2f), bounds.Size.ToVector2())).Bounds;
+            var desired = (kind == "Creatures" ? new Vector2(112, seatFacing ? 128 : 104)
+                : new Vector2(112, seatFacing ? 112 : 92)) * faceScale;
             var slots = Pack(selected, lane, desired, faceScale, seat, horizontalRows, centerRows);
             var nodes = new List<SceneCard>();
             foreach (var slot in slots) {
@@ -99,7 +114,7 @@ public static class SharedTableStudy
                             var memberPose = new Pose(memberCenter, member.Card.Tapped ? new(size.Y, size.X) : size, member.Card.Tapped ? MathF.PI / 2 : 0);
                             familyNodes.Add(SceneCard.Create(member.Card, memberPose, "Battlefield", member.Owner, 0, TableLayout.Hero(seat)) with {
                                 ScanFace = true, Compact = true,
-                                Attachment = new(node.Id, owner, member.HostId, layer + 1, member.Depth, AttachmentEdge * detail / size.X)
+                                Attachment = new(node.Id, owner, member.HostId, layer + 1, member.Depth, AttachmentEdge * detail / size.X, facing)
                             });
                         }
                         cohortNodes.Add(node); familyNodes.Add(node);
@@ -109,10 +124,12 @@ public static class SharedTableStudy
                 }
                 var extent = slot.Size;
                 var nameBounds = header > 0 ? Bounds(slot.Position, new(extent.X, header)) : Rectangle.Empty;
+                familyNodes = familyNodes.Select(node => node with { Pose = TurnPose(node.Pose) }).ToList();
                 var bodyBounds = familyNodes.Select(node => node.Pose.Bounds).Aggregate(Rectangle.Union);
+                nameBounds = TurnBounds(nameBounds);
                 var family = new StudyBattlefieldFamily(slot.Family.Id, slot.Family.Name, kind,
                     Rectangle.Union(bodyBounds, nameBounds.IsEmpty ? bodyBounds : nameBounds), nameBounds, bodyBounds,
-                    Array.AsReadOnly(cohortPlans.ToArray()));
+                    Array.AsReadOnly(cohortPlans.Select(cohort => cohort with { Bounds = TurnBounds(cohort.Bounds) }).ToArray()));
                 nodes.AddRange(familyNodes.Select(node => node with { StudyFamily = family }));
             }
             return new BattlefieldCluster(kind, nodes.ToArray());

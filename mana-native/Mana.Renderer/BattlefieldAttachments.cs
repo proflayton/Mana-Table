@@ -59,13 +59,21 @@ internal sealed class BattlefieldAttachments
 }
 
 /// <summary>The actual card keeps a full pose behind its host; this edge stays exposed.</summary>
-public sealed record BattlefieldAttachment(string RootId, int RootOwner, string HostId, int Layer, int Depth, float ExposedWidthFraction)
+public sealed record BattlefieldAttachment(string RootId, int RootOwner, string HostId, int Layer, int Depth, float ExposedWidthFraction, float Facing = 0)
 {
     public Rectangle Edge(Pose pose)
     {
-        var bounds = pose.Bounds;
-        float faceWidth = MathF.Abs(MathF.Cos(pose.Angle)) * pose.Size.X + MathF.Abs(MathF.Sin(pose.Angle)) * pose.Size.Y;
+        // Exposed edges follow the assembly's seat, independently of tapping.
+        var local = pose with { Angle = pose.Angle - Facing };
+        var bounds = local.Bounds;
+        float faceWidth = MathF.Abs(MathF.Cos(local.Angle)) * pose.Size.X + MathF.Abs(MathF.Sin(local.Angle)) * pose.Size.Y;
         int width = Math.Clamp((int)MathF.Floor(faceWidth * ExposedWidthFraction), 1, Math.Max(1, bounds.Width));
-        return new(bounds.Left, bounds.Top, width, bounds.Height);
+        // Keep rounding at either quarter-turned face from extending the hit
+        // strip into the covering host. Dense one-pixel strips stay reachable.
+        var edge = new Rectangle(bounds.Left, bounds.Top, Math.Max(1, width - 2), Math.Max(1, bounds.Height - 2));
+        var offset = new Vector2(edge.X + edge.Width / 2f, edge.Y + edge.Height / 2f) - pose.Center;
+        var rotated = Facing == 0 ? offset : Facing == MathF.PI ? -offset
+            : Facing > 0 ? new Vector2(-offset.Y, offset.X) : new Vector2(offset.Y, -offset.X);
+        return new Pose(pose.Center + rotated, edge.Size.ToVector2(), Facing).Bounds;
     }
 }

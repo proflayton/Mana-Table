@@ -63,6 +63,9 @@ does not establish that a person can understand or use the screen.
    territories and reading direction stable. Turn ownership, priority and required
    decisions are different facts. Direct attention to the relevant source,
    recipients and responder without rearranging everyone's battlefield.
+   Cards face their seat in the shared multiplayer space; viewer-upright art
+   everywhere erases a useful ownership cue. Keep current stats and full readers
+   upright. Seat facing and a card's tapped state are separate facts.
    Reserve room for portrait resources before packing cards. Mana quantities
    must remain separate from both card faces and the life total.
 8. **Reduce repeated interaction through explicit, bounded intent.** A burst of
@@ -93,6 +96,34 @@ does not establish that a person can understand or use the screen.
     Pairing guidance comes from the engine. Saving, saved, failed persistence
     and deck legality are separate facts; returning to Play must not require a
     second confirmation of edits already acknowledged by storage.
+
+## Seat-facing multiplayer battlefields: 24 October 2026
+
+**Source candidate; human review pending.** Player feedback found the shared
+battlefield's ownership unclear. Left and right seats now turn their battlefield
+faces inward by a quarter turn; the far seat faces its own player. The local
+seat remains upright. Creature silhouettes retain a portrait proportion, while
+names and authoritative current state remain viewer-readable. Full readers open
+upright, then return to the same turned occurrence. No new controls or engine
+transitions are involved: pointing identifies a source and clicking reads it.
+
+Packing measures each role lane in its seat's coordinates before placing the
+whole assembly into the shared world. Tapping adds a separate quarter turn;
+attachment edges, foreign-controller cues and Equipment counters follow the host
+assembly without transferring control. Camera navigation keeps those world
+positions and directions. Two-player framing keeps its existing upright faces.
+
+Agent inspection used real artwork at 1000x740 and 1540x980, including enlarged
+text, reduced motion, attachment readers, re-equipping, a tapped host and the
+480-permanent mixed case. The crowded overview still needs focused inspection;
+these captures do not establish that the whole battlefield is understandable.
+Existing interaction checks cover all viewer seat mappings and actual pointer
+reading at the left, far and right seats. Damage/counter feedback tries the rest
+of its recipient's perimeter when the turned source anchor faces a blocked lane.
+Human assessment of ownership clarity, reading direction and tap distinction
+remains pending for this exact candidate.
+
+![Seat-facing shared table with real artwork](images/native-seat-facing-table-2026-10-24.png)
 
 ## Attachments beneath their host: 24 October 2026
 
@@ -795,7 +826,7 @@ and its damage result. The hand, public command/zone piles, attached equipment a
 counter-bearing creatures are present together. The study is not the default
 layout for normal games or a released feature.
 
-`SharedTableStudy` arranges upright scan faces independently within fixed role
+The original comparison arranged upright scan faces independently within fixed role
 lanes. A pending stack or another controller's density does not participate in
 packing. Battlefield faces prioritize real artwork, complete wrapped names, current P/T,
 small counters and state glyphs. Every occurrence remains represented; differing
@@ -875,7 +906,8 @@ that issue. The prototype still uses the existing letterboxed game surface.
 
 Start with a shared table: the viewer below, with other seats clockwise at the
 left, top and right. Reconsider the current territory dimensions. Give every
-seat viewer-upright battlefield faces with identity, art and authoritative P/T;
+seat identifiable battlefield faces with art and authoritative P/T (the later
+seat-facing candidate supersedes this study's viewer-upright direction);
 put creatures toward the shared action area and resources/support farther out.
 These are spatial relationships, not permanent role headings or four framed
 miniature screens. Place cards by current controller; retain original ownership

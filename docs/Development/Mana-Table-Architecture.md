@@ -467,7 +467,12 @@ decision. Every command still passes current game/decision scope checks.
 The native launcher selects `SharedTableStudy` by default when building
 `TableScene` for two, three and four seats. `--classic-table` retains the previous layout,
 and the Experience Lab offers the study through `--table-study`. It uses fixed controller role lanes
-and flat scan faces without global density/stack repacking. `SceneCard.ScanFace`
+and flat scan faces without global density/stack repacking. Multiplayer packing
+uses seat-local coordinates and turns complete assemblies into their stable
+world lanes: left/right quarter turns, far seat half turn, local seat upright.
+Two-player framing keeps its upright faces. Tap rotation is relative to that
+baseline; state labels and full readers stay viewer-readable. The same turned
+pose drives texture, footprint and pointer geometry. `SceneCard.ScanFace`
 selects battlefield painting; full readers retain a canonical battlefield anchor
 and share its exact scoped hit geometry. Their current P/T and typed state come
 from the same authorized occurrence. The study's pending-effect area is reserved
@@ -488,7 +493,7 @@ ambiguous references and missing hosts leave the actual cards independent.
 `BattlefieldDrawOrder` paints attachments beneath their host across controller
 boundaries. `SceneSeat` still indexes each card under its actual controller.
 `BattlefieldAttachment` describes spatial root, immediate host, layer and exposed
-edge; it grants no group action. The card reader uses that edge as its retained
+edge and assembly facing; it grants no group action. The card reader uses that edge as its retained
 anchor, avoiding invisible covered-body targets. Source effect anchors and counter
 receipts use the exposed edge. Re-equipping keeps the same occurrence/motion ID;
 the renderer never recomputes bonuses or changes attachment rules. The classic

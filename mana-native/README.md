@@ -54,6 +54,12 @@ Whole table or Escape returns. Full readers keep current P/T on the card with
 larger live details on the right. `--classic-table` starts the previous layout
 when comparing behavior or troubleshooting.
 
+In shared multiplayer games, battlefield cards face their seat: left/right cards
+turn inward, far-seat cards face that player, and your cards stay upright. Current
+stats and full card readers remain upright. Tapping is relative to the seat's
+direction. Camera focus keeps the same world positions and orientations.
+Two-player faces retain their existing upright framing.
+
 Auras and Equipment in the shared layout fan beneath their exact host. Point at
 an exposed artwork edge to identify it and highlight its host; click to read that
 specific card. Re-equipping moves the existing occurrence. The layout reserves

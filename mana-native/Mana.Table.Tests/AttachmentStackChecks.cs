@@ -112,7 +112,8 @@ internal static class AttachmentStackChecks
             "Clicking an attachment edge reads that exact card without activating or choosing it");
         check(view.AttachmentConnections.Count == 0, "A tucked attachment highlights its host without drawing a relationship line");
         check(view.BattlefieldLabels(AttachmentScenario.Jitte).Any(label => label.Kind == "counter" && label.Text == "2"),
-            "Counters on an attached permanent remain on its exposed edge, independently of the host's current P/T");
+            "Counters on an attached permanent remain on its exposed edge, independently of the host's current P/T: "
+            + frame.Scene!.BattlefieldCard(0, AttachmentScenario.Jitte)!.Attachment!.Edge(frame.Cards.Single(card => card.Id == AttachmentScenario.Jitte).Rest));
         ClickEdge(AttachmentScenario.Aura);
         check(frame.Cards.Single(card => card.Focused).Id == AttachmentScenario.Aura && engine.Replies.Count == 0,
             "Reading can switch directly between exposed attachment edges without a modal");
@@ -124,5 +125,18 @@ internal static class AttachmentStackChecks
         engine.Present(stages[2].Snapshot); view.Accept(engine.State); Settle();
         check(frame.Scene!.BattlefieldCard(0, AttachmentScenario.Boots)!.Attachment == null && engine.Replies.Count == 0,
             "The current snapshot removes obsolete stacking geometry without submitting a game command");
+        foreach (int seat in new[] { 0, 1, 2 }) {
+            var node = frame.Scene!.Seats.Single(item => item.Index == seat).Battlefield.SelectMany(cluster => cluster.Cards)
+                .First(card => card.Attachment == null && card.GroupFront && card.Card.AttachedTo == null);
+            var point = frame.Cards.Single(card => card.Id == node.Id).Rest.Center.ToPoint();
+            check(view.HitAt(point)?.Card?.VisualId == node.Id,
+                "A seat-facing battlefield face retains its exact physical pointer target at seat " + seat);
+            Tick(point, ButtonState.Pressed); Tick(point); Settle();
+            check(frame.Cards.Single(card => card.Focused) is { } reader && reader.Id == node.Id
+                && MathF.Abs(MathHelper.WrapAngle(reader.Display.Angle)) < .01f && engine.Replies.Count == 0,
+                "Reading a turned opponent card opens that exact occurrence upright without a game action at seat " + seat);
+            Tick(point, ButtonState.Pressed); Tick(point); Settle();
+            check(frame.Cards.All(card => !card.Focused), "The same battlefield anchor closes its upright reader at seat " + seat);
+        }
     }
 }

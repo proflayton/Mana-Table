@@ -338,6 +338,8 @@ rendering and input behavior, not perceived visual clarity.
 The existing headless presentation lane also runs `AttachmentStackChecks` over
 the production shared layout: exact occurrence/controller retention, exposed
 pointer targets, switching and closing readers, counter-bearing Equipment,
+seat-facing layouts for every viewer, upright readers from actual left/top/right
+pointer gestures, independently tapped faces and rotated attachment edges,
 re-equipping/detaching, nested and foreign-controlled attachments, distinct
 reference/visual ID domains, malformed links, two-player views and crowded fields.
 It does not start another CI process. Use `attachments.v1` for real-window review
