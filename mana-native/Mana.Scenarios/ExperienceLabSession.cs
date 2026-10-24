@@ -41,6 +41,7 @@ public sealed partial class ExperienceLabSession
             if (stage != StageIndex + 1 || stage >= Stages.Count) throw new ArgumentOutOfRangeException(nameof(stage), "Continue to the next authored stage; replay to move backward.");
             abilityParent = null;
             if (Scenario.Id == "ability-targeting.v1") return AdvanceBallista(stage);
+            if (Scenario.Id == PreparedSpellScenario.Id) return AdvancePreparedSpell(stage);
             StageIndex = stage; return State = Stamp(Stages[stage].Snapshot);
         }
     }
@@ -72,6 +73,8 @@ public sealed partial class ExperienceLabSession
             if (reply is UseOfferedAction) {
                 reply.Validate();
                 return UseSourceAction((UseOfferedAction)reply);
+            } else if (Scenario.Id == PreparedSpellScenario.Id) {
+                return ReplyPreparedSpell(reply);
             } else if (Scenario.Id == "ability-targeting.v1" && sourceActionParent != null
                 && decision is { Kind: "input", Intent: DecisionIntent.Selection, Purpose: DecisionPurpose.TargetSelection }) {
                 return ReplyBallistaTarget(reply);

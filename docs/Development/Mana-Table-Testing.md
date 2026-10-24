@@ -22,7 +22,7 @@ The matrix uses no JVM, graphics device or network; it prints its measured runti
 
 Real Forge goldens use the existing `canonical-interaction` TestNG group: paid
 casting/payment, private partner search, Toothy's last-known counters and draws,
-pending versus prevented damage, combat allocation and persistent Speed. The
+prepared-spell casting, pending versus prevented damage, combat allocation and persistent Speed. The
 partner search retains four recipient variants. These methods already run once
 in normal Java CI; grouping them adds no duplicate engine startups. The focused
 command selects their classes as well as the group so upstream modules do not
@@ -134,6 +134,23 @@ reads, seat/source/revision revocation, explicit unsupported versus empty result
 timeouts, manual retry and shutdown use one scoped action-query lifecycle. Native
 journeys consume semantic `DecisionPurpose` values; Forge prompt class names stay
 inside the adapter. The real-engine opening/payment journey verifies that mapping.
+
+Prepared-spell regressions reuse `SourceActionsTest` and the existing native
+presentation lane. The real engine creates Emeritus of Ideation's copy in exile,
+casts that exact spell through the source, then checks unpreparing and revoked
+links. The `prepared-spell.v1` Experience Lab case provides authored four-seat
+checkpoints for source reading, the actual spell face, cancellable targeting,
+priority, the draw result and preparing again. Its scripted transition checks
+are not a rules implementation. Review the visible prepared marker and linked
+spell affordance at the small and large window sizes; passing the lifecycle
+checks does not establish visual clarity or human acceptance.
+
+The same presentation lane exercises paired-deck editing through the production
+app: discover an absent named partner, add it, select the compatible pair, wait
+for the persistence acknowledgment, return to Play and reopen. Delayed saves,
+rejection/retry, stale responses and library-list failures retain their distinct
+states. The real `DeckCommandersTest` checks discovery metadata independently of
+the existing legality checks. No extra CI job or JVM per UI case is required.
 
 `ImmutableStateChecks` traverses the entire match graph and every request/result
 of the catalog, printing, deck/workshop/analysis, setup and conversation ports,

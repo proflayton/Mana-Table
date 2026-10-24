@@ -148,9 +148,13 @@ Search the library by name, rules text or creature type. Narrow it by card type,
 maximum mana value or color identity; Leader colors follows your commander(s).
 Click a card to read its large face. Use its + button to add a copy to Main.
 Select an entry in Your deck to add/remove copies, click its count to enter a
-quantity, or move it between Main and Side. The Leaders tab finds commander
-candidates already in your list. Set a commander, replace it, or add a compatible
-partner/Background; returning a commander to Main keeps the card in your deck.
+quantity, or move it between Main and Side. The commander strip keeps your chosen
+commander(s) visible. Choose your commander there, or use Find a partner when the
+engine reports that it supports pairing. A named partner pre-fills the library
+search; add that card to your list, then choose Pair with your commander.
+Compatible partners already in your list are shown directly. Returning a
+commander to Main keeps the card in your deck. A supported pairing is optional;
+the engine still validates your final commander combination.
 Other face flips double-faced cards in the preview without adding another card.
 
 Click the set/collector button under the large card to choose another printing,
@@ -163,8 +167,11 @@ Copy list includes each printing's set, collector number and foil finish so it
 can be imported again with the same choices. Exact artwork is cached separately;
 when an image is unavailable, the card remains readable with rules text.
 
-Changes save automatically. Undo/Redo restores edits, Duplicate makes a separate
-deck, and Copy list exports text with commander and sideboard sections.
+Changes save automatically. Beside Back to play, Saving waits for the actual
+save acknowledgment, Deck saved confirms it, and Not saved offers Retry save.
+Back to play keeps both chosen commanders; no additional confirmation is needed.
+Undo/Redo restores edits. Deck options holds Rename, Duplicate and Delete;
+Copy list exports text with commander and sideboard sections.
 Card counts, a nonland mana curve and live deck checks identify needed changes.
 Checks distinguish deck structure from the bundled format rules. Unknown means
 the bundled data cannot establish eligibility. These checks do not certify
@@ -256,6 +263,12 @@ card; inspecting never activates an ability or casts from a public zone.
 Zone piles open browsers containing only the cards your player can see. Your own
 graveyard, exile and command browsers can offer engine-authorized actions,
 including Flashback when available. Hidden hands show anonymous backs.
+Prepared-spell source access is source-only until a release containing it is
+published: a small spell marker shows a prepared permanent. Open that permanent
+to find its available spell beside the full card, with the spell's name and
+mana cost. Hover the spell to read it; choose its cast action to continue with
+normal targets and payment. The copy also lives in exile. Casting it leaves
+the source permanent on the battlefield and removes its prepared designation.
 Gold TAX +2, TAX +4, etc. badges show the extra mana for a command-zone recast.
 Click or inspect for details. Each commander tracks its own previous casts;
 dying does not add tax by itself.

@@ -16,6 +16,7 @@ internal static class ExperienceLabChecks
     {
         CheckHighScaleCounterBridge(check);
         DecisionFlowLabChecks.Run(check);
+        PreparedSpellLabChecks.Run(check);
         check(ExperienceScenarios.All.Count > 0 && ExperienceScenarios.All.Select(item => item.Id).Distinct().Count() == ExperienceScenarios.All.Count
             && ExperienceScenarios.All.All(item => item.Id.EndsWith(".v1", StringComparison.Ordinal)),
             "Named, versioned canonical experiences are shared by the production lab and scoped composition/input checks");

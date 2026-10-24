@@ -18,17 +18,18 @@ internal sealed partial class TableApplication
         var deck = selectedDeckDetails!;
         deckIssueBounds = null; renderedDeckIssueCodes.Clear(); renderedDeckIssueCardIds.Clear();
         if (DeckSelection is { } selected) resources.Card(selected.Card);
-        canvas.Text(deck.Name, 48, 96, Ink, 1.3f, 700, 1, true);
-        MenuAction("deck-rename", "Rename", new(764, 98, 108, 36), new DeckIntent.Rename(), !busy, size: .7f);
-        MenuAction("deck-duplicate", "Duplicate", new(882, 98, 118, 36), new DeckIntent.Duplicate(), !busy, size: .7f);
-        MenuAction("deck-export", "Copy list", new(1010, 98, 125, 36), new DeckIntent.Export(), !busy && DeckCanCopy, size: .7f);
+        canvas.Text(deck.Name, 48, 84, Ink, 1.3f, 700, 1, true);
+        MenuAction("deck-options", "Deck options ▾", new(770, 98, 180, 36), new DeckIntent.OpenDeckOptions(), !busy, size: .7f);
+        MenuAction("deck-export", "Copy list", new(966, 98, 125, 36), new DeckIntent.Export(), !busy && DeckCanCopy, size: .7f);
+        DrawDeckSaveStatus(1100, 98, 170);
         MenuAction("deck-done", "Back to play", new(1280, 98, 272, 36), new DeckIntent.CloseEditor(), !busy, size: .8f);
         int main = deck.Entries.Where(e => e.Section == "Main").Sum(e => e.Quantity), leaders = deck.Entries.Where(e => e.Section == "Commander").Sum(e => e.Quantity);
         int side = deck.Entries.Where(e => e.Section == "Sideboard").Sum(e => e.Quantity);
         bool countIssue = DeckIssues.Any(issue => issue.Code is "MAIN_COUNT" or "COMMANDER_COUNT" or "MISSING_COMMANDER");
+        if (CommanderDeck) DrawDeckCommanders();
         if (workshopTab != "analysis" || !analysisOpen) {
             canvas.Text(CommanderDeck ? $"{main + leaders} / 100 cards" : $"{main} cards · {deck.Format}", 50, 153, countIssue ? Gold : Ink, .85f, 230, 1, countIssue);
-            canvas.Text($"{main} main   ·   {leaders} commander{(leaders == 1 ? "" : "s")}   ·   {side} sideboard", 294, 153, Muted, .8f, 980, 1);
+            if (!CommanderDeck) canvas.Text($"{main} main   ·   {side} sideboard", 294, 153, Muted, .8f, 980, 1);
             Button("deck-undo", "Undo", 1320, 151, 110, new DeckIntent.Undo(), !busy && deck.CanUndo, height: 32);
             Button("deck-redo", "Redo", 1440, 151, 110, new DeckIntent.Redo(), !busy && deck.CanRedo, height: 32);
         }
@@ -48,19 +49,44 @@ internal sealed partial class TableApplication
         canvas.Line(new(578, 246), new(578, 936), LobbyTrim * .65f, 1);
         canvas.Line(new(1122, 246), new(1122, 936), LobbyTrim * .65f, 1);
         DrawCardLibrary(); DrawEditableDeck(); DrawDeckCardPreview();
-        string status = deck.SaveError.Length > 0 ? "Could not save: " + deck.SaveError
-            : DeckIssues.Length > 0 ? "Changes saved. Deck checks update as you edit." : "All changes saved.";
+        string status = DeckSaveProblem.Length > 0 ? "Could not save: " + DeckSaveProblem
+            : "Changes save automatically. Deck checks update as you edit.";
         if (InlineActivityVisible) DrawInlineActivity();
-        else canvas.Text(status, 46, 963, deck.SaveError.Length > 0 ? Red : Muted, .68f, 1250, 1);
-        if (deck.SaveError.Length > 0) Button("deck-retry-save", "Retry save", 1340, 955, 214, new DeckIntent.Save(), !busy, height: 33);
-        else if (DeckLibrary != null && deck.LibraryToken.Length > 0) {
-            int libraryGeneration = deckLibraryGeneration;
-            if (Connected) canvas.Text("Leave the lobby to delete decks.", 990, 966, Muted, .58f, 330, 2);
-            Button("deck-delete:" + deck.Id, "Delete deck", 1340, 955, 214,
-                new DeckIntent.Delete(deck.Id, deck.LibraryToken, libraryGeneration), CanManageDeckLibrary, height: 33);
-        }
+        else canvas.Text(status, 46, 963, DeckSaveProblem.Length > 0 ? Red : Muted, .68f, 1250, 1);
+        if (DeckSaveProblem.Length > 0) Button("deck-retry-save", "Retry save", 1340, 955, 214, new DeckIntent.Save(), !busy, height: 33);
         if (deckMenu.Length > 0) DrawDeckMenu();
         DrawWorkshopStatus(); DrawWorkshopDialog();
+    }
+    private void DrawDeckSaveStatus(int x, int y, int width)
+    {
+        string label = DeckSaveLabel;
+        bool pending = label == "Saving…", failed = DeckSaveProblem.Length > 0;
+        Color color = failed ? Red : pending ? Gold : ReadyColor;
+        if (pending) DrawLoadingIndicator(new(x + 9, y + 18), 6, true, color);
+        else if (!failed) { canvas.Line(new(x + 2, y + 18), new(x + 7, y + 23), color, 2); canvas.Line(new(x + 7, y + 23), new(x + 16, y + 12), color, 2); }
+        else canvas.Text("!", x + 5, y + 8, color, .75f, 20, 1, true);
+        canvas.Text(label, x + 24, y + 6, color, .78f, width - 24, 1, true);
+    }
+    private void DrawDeckCommanders()
+    {
+        var deck = selectedDeckDetails!;
+        var leaders = deck.Entries.Where(entry => entry.Section == "Commander").ToArray();
+        if (leaders.Length == 0) {
+            MenuAction("deck-choose-commander", "Choose your commander", new(294, 142, 980, 43), new DeckIntent.ChooseCommander(), !busy, true, .82f);
+            return;
+        }
+        canvas.Text(leaders.Length == 1 ? "COMMANDER" : "PAIRED COMMANDERS", 50, 133, Gold, .52f, 230, 1, true);
+        int nameLines = (int)Math.Ceiling(2 * preferences.TextScale);
+        for (int i = 0; i < Math.Min(2, leaders.Length); i++) {
+            var entry = leaders[i]; int x = 294 + i * 488;
+            canvas.Text(entry.Card.Name, x, 134, Ink, .78f, 470, nameLines, true);
+            if (!busy) hits.Add(new("deck-leader:" + entry.Id, Scope, new(x, 132, 470, 56), new DeckIntent.SelectRow(entry)));
+        }
+        if (leaders.Length == 1) {
+            if (CanFindPartner)
+                MenuAction("deck-choose-partner", CompatiblePartnerIds.Length > 0 ? "+ Choose a partner" : "+ Find a partner", new(782, 145, 470, 38), new DeckIntent.ChooseCommander(true), !busy, size: .72f);
+            else canvas.Text("Select another eligible card to change commander.", 782, 156, Muted, .57f, 470, 2);
+        }
     }
     private void DeckSearchBox(DeckTextField field, string value, string placeholder, Rectangle bounds)
     {
@@ -73,7 +99,7 @@ internal sealed partial class TableApplication
     }
     private void DrawCardLibrary()
     {
-        canvas.Text("CARD LIBRARY", 46, 252, Gold, .8f, 220, 1, true);
+        canvas.Text(partnerCandidates ? "FIND A PARTNER" : "CARD LIBRARY", 46, 252, Gold, .8f, 260, 1, true);
         canvas.Text(catalogRead.View.Value is { } page ? $"{page.Total:N0} matches" : catalogRead.View.Error.Length > 0 ? "Search unavailable" : "Searching…", 310, 253, Muted, .65f, 245, 1);
         DeckSearchBox(DeckTextField.Library, catalogText, "Search names, rules, or creature types…", new(46, 283, 510, 38));
         Button("catalog-type", catalogType == 0 ? "Any type ▾" : CatalogTypes[catalogType] + " ▾", 46, 331, 163, new DeckIntent.OpenCatalogMenu(CatalogFilterMenu.Type), height: 32);
@@ -112,21 +138,21 @@ internal sealed partial class TableApplication
     private void DrawEditableDeck()
     {
         var deck = selectedDeckDetails!;
-        canvas.Text("YOUR DECK", 600, 252, Gold, .8f, 310, 1, true);
+        canvas.Text(partnerCandidates ? "CHOOSE A PARTNER" : commanderCandidates ? "CHOOSE A COMMANDER" : "YOUR DECK", 600, 252, Gold, .8f, 340, 1, true);
         if (workshopRoleFilter.Length > 0) Button("workshop-clear-role", workshopRoleFilter + " ×", 755, 248, 182, new DeckIntent.ClearRoleFilter(), !busy, true, 28);
         else if (workshopManaFilter is { } manaFilter) Button("workshop-clear-mana", "MV " + (manaFilter == 6 ? "6+" : manaFilter) + " ×", 755, 248, 182, new DeckIntent.ClearManaFilter(), !busy, true, 28);
         else if (deckInteraction.RelatedCards.Count > 0) Button("analysis-clear-cards", "Related cards ×", 755, 248, 182, new DeckIntent.ClearRelatedCards(), !busy, true, 28);
         int affected = deck.Entries.Count(entry => CardIssues(entry.Id, entry.Section).Length > 0);
         Button("deck-issues-filter", "Problems (" + affected + ")", 946, 247, 154, new DeckIntent.ToggleIssues(), affected > 0 || deckIssuesOnly, deckIssuesOnly, 29);
         DeckSearchBox(DeckTextField.Deck, deckFilter, "Find a card in this deck…", new(600, 283, 500, 38));
-        var tabs = new List<(string, string, string, bool)> { ("deck-all", "All", "", false), ("deck-main", "Main", "Main", false), ("deck-side", "Side", "Sideboard", false), ("deck-command", "Cmd", "Commander", false), ("deck-candidates", "Leaders", "", true) };
+        var tabs = new List<(string, string, string, bool)> { ("deck-all", "All", "", false), ("deck-main", "Main", "Main", false), ("deck-side", "Side", "Sideboard", false), ("deck-candidates", "Commanders", "", true) };
         if (WorkshopEngine != null) tabs.Add(("deck-considering", "Options", "Considering", false));
         int tabX = 600;
-        int[] tabWidths = tabs.Count == 6 ? [54, 70, 64, 64, 106, 122] : [92, 92, 92, 92, 92];
+        int[] tabWidths = tabs.Count == 5 ? [58, 75, 70, 158, 123] : [94, 94, 94, 188];
         for (int i = 0; i < tabs.Count; i++) {
             var tab = tabs[i];
             Button(tab.Item1, tab.Item2, tabX, 331, tabWidths[i], new DeckIntent.FilterList(tab.Item3, tab.Item4), true, !deckIssuesOnly && commanderCandidates == tab.Item4 && deckSection == tab.Item3, 32);
-            tabX += tabWidths[i] + (tabs.Count == 6 ? 4 : 10);
+            tabX += tabWidths[i] + 4;
         }
         var rows = DeckRowsToShow();
         int rowHeight = DeckRowHeight;
@@ -145,7 +171,8 @@ internal sealed partial class TableApplication
             hits.Add(new("deck-card:" + entry.Section + ":" + entry.Id, Scope, new(600, y, 500, rowHeight - 2), new DeckIntent.SelectRow(entry)));
         }
         if (rows.Length == 0) canvas.Text(deckIssuesOnly ? "No cards need changes in this view. Turn off Problems to see your full list."
-            : commanderCandidates ? "No leaders in this view. Find your commander in the library, add it, then set its role here." : "No cards in this view. Select a library card and use + to add it.", 620, 419, Muted, .82f, 450, 5);
+            : partnerCandidates ? "No compatible partner in your list. Find a card in the library and add it; compatibility is checked by the game."
+            : commanderCandidates ? "Find your commander in the library, add it, then choose it here." : "No cards in this view. Select a library card and use + to add it.", 620, 419, Muted, .82f, 450, 5);
         Button("deck-cards-prev", "Previous", 600, 674, 105, new DeckIntent.PageDeck(-1), deckCardsPage > 0, height: 30);
         Button("deck-cards-next", "Next", 715, 674, 90, new DeckIntent.PageDeck(1), (deckCardsPage + 1) * rowsPerPage < rows.Length, height: 30);
         canvas.Text($"{rows.Length} entries · {deckCardsPage + 1}/{Math.Max(1, (rows.Length + rowsPerPage - 1) / rowsPerPage)}", 822, 683, Muted, .6f, 278, 1);
@@ -179,9 +206,14 @@ internal sealed partial class TableApplication
         var ids = deck.CommanderIds;
         bool eligible = deck.CommanderOptions.Any(c => c.Id == card.Id);
         bool partner = ids.Length == 1 && deck.CommanderOptions.FirstOrDefault(c => c.Id == ids[0])?.Partners.Contains(card.Id) == true;
-        Button("deck-set-commander", ids.Length == 2 ? "Use as sole commander" : "Set as commander", 1150, 860, 398, new DeckIntent.SetCommanders([card.Id]), !busy && eligible && !(ids.Length == 1 && ids[0] == card.Id), true, 34);
-        if (ids.Contains(card.Id)) Button("deck-remove-commander", "Return to main deck", 1150, 903, 398, new DeckIntent.SetCommanders(ids.Where(id => id != card.Id).ToImmutableArray()), !busy, height: 34);
-        else Button("deck-add-partner", "Add as partner / Background", 1150, 903, 398, new DeckIntent.SetCommanders([.. ids, card.Id]), !busy && partner, height: 34);
+        if (partner && !ids.Contains(card.Id)) {
+            Button("deck-add-partner", "Pair with your commander", 1150, 860, 398, new DeckIntent.SetCommanders([.. ids, card.Id]), !busy, true, 38);
+            MenuAction("deck-set-commander", "Use as sole commander instead", new(1150, 907, 398, 30), new DeckIntent.SetCommanders([card.Id]), !busy && eligible, size: .64f);
+        } else if (ids.Contains(card.Id)) {
+            canvas.Text(ids.Length == 2 ? "One of your paired commanders" : "Your commander", 1150, 868, Gold, .72f, 398, 1, true);
+            if (ids.Length == 2) MenuAction("deck-set-commander", "Use as sole commander", new(1150, 902, 218, 34), new DeckIntent.SetCommanders([card.Id]), !busy && eligible, size: .61f);
+            MenuAction("deck-remove-commander", "To main deck", new(ids.Length == 2 ? 1378 : 1150, 902, ids.Length == 2 ? 170 : 398, 34), new DeckIntent.SetCommanders(ids.Where(id => id != card.Id).ToImmutableArray()), !busy, size: .61f);
+        } else if (eligible) Button("deck-set-commander", ids.Length == 0 ? "Choose as commander" : "Replace commander", 1150, 860, 398, new DeckIntent.SetCommanders([card.Id]), !busy, true, 38);
     }
     private void DrawDeckIssues()
     {
@@ -238,6 +270,15 @@ internal sealed partial class TableApplication
     private void DrawDeckMenu()
     {
         string kind = deckMenu;
+        if (kind == "deck-actions") {
+            hits.Clear(); hits.Add(new("deck-menu-dismiss", Scope, new(0, 64, 1600, 936), new DeckIntent.CloseCatalogMenu()));
+            canvas.Panel(new(768, 140, 328, 150), new(16, 24, 34), Gold, 6);
+            MenuAction("deck-rename", "Rename deck", new(780, 149, 304, 36), new DeckIntent.Rename(), !busy, size: .75f);
+            MenuAction("deck-duplicate", "Duplicate deck", new(780, 190, 304, 36), new DeckIntent.Duplicate(), !busy, size: .75f);
+            if (selectedDeckDetails is { LibraryToken.Length: > 0 } deck && DeckLibrary != null)
+                MenuAction("deck-delete:" + deck.Id, "Delete deck", new(780, 231, 304, 36), new DeckIntent.Delete(deck.Id, deck.LibraryToken, deckLibraryGeneration), CanManageDeckLibrary && DeckSaveProblem.Length == 0, size: .75f);
+            return;
+        }
         string[] options = kind == "type" ? CatalogTypes.Select(t => t.Length == 0 ? "Any type" : t).ToArray()
             : kind == "mana" ? Enumerable.Range(0, 10).Select(i => i == 0 ? "Any mana value" : "Mana value ≤ " + (i - 1)).ToArray() : ["Name", "Mana value"];
         int x = kind == "type" ? 46 : kind == "mana" ? 217 : 321;

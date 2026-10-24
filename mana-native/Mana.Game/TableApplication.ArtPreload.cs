@@ -1,4 +1,5 @@
 using Mana.Contracts;
+using Mana.Client;
 using Mana.Magic;
 
 namespace Mana.Table;
@@ -6,6 +7,7 @@ namespace Mana.Table;
 internal sealed partial class TableApplication
 {
     private GameSnapshot? artPreloadSnapshot;
+    private SourceActionView? artPreloadSourceActions;
     private (Card[] Visible, Card[] Anticipated) matchArtPreload = ([], []);
     private DeckDetails? artPreloadDeck;
     private Card[] selectedDeckArtwork = [];
@@ -19,13 +21,18 @@ internal sealed partial class TableApplication
     {
         var upcoming = SelectedDeckArtwork();
         if (match is { } state) {
-            if (ReferenceEquals(artPreloadSnapshot, state) && ReferenceEquals(matchArtPreload.Anticipated, upcoming)) return matchArtPreload;
+            var offers = ReaderActionSource() is { } source && ReaderActionsMatch(source) ? sourceActions.View : null;
+            if (ReferenceEquals(artPreloadSnapshot, state) && ReferenceEquals(artPreloadSourceActions, offers)
+                && ReferenceEquals(matchArtPreload.Anticipated, upcoming)) return matchArtPreload;
             artPreloadSnapshot = state;
+            artPreloadSourceActions = offers;
             // Use only the seat-filtered snapshot, including a current reveal
             // or search. Never infer a library order or consult another deck.
-            return matchArtPreload = (PrintableFaces(CardViews.Visible(state)).ToArray(), upcoming);
+            var linked = offers?.Actions.Select(action => action.Card).OfType<Card>() ?? [];
+            return matchArtPreload = (PrintableFaces(CardViews.Visible(state).Concat(linked)).ToArray(), upcoming);
         }
         artPreloadSnapshot = null;
+        artPreloadSourceActions = null;
 
         var selection = deckEditor ? DeckSelection?.Card : null;
         var catalog = deckEditor ? catalogRead.View.Value : null;

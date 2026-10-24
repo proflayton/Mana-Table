@@ -37,6 +37,7 @@ internal static class HeadlessPresentationSmoke
             SemanticCommandPresentationChecks.Run(profile, Check);
             CommanderInteractionChecks.Run(profile, Check);
             DisclosedSourceInteractionChecks.Run(profile, Check);
+            LinkedSourceInteractionChecks.Run(profile, Check);
             QuietPriorityPresentationChecks.Run(profile, Check);
             PendingEffectPresentationChecks.Run(profile, Check);
             ImpactFeedbackChecks.RunPresentation(profile, Check);

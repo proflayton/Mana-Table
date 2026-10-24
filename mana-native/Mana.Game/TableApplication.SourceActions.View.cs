@@ -29,7 +29,10 @@ internal sealed partial class TableApplication
         // Reading always paints the complete original face. Action discovery,
         // effective stats and controls never replace or cover its printed rules.
         if (IsStudyBattlefieldReader(entry)) PaintStudyBattlefieldReader(card, entry);
-        else PaintCard(card, entry.Display, false, IsCardActionable(card), true);
+        else {
+            PaintCard(card, entry.Display, false, IsCardActionable(card), true);
+            PaintPreparedMarker(card, entry.Display, entry.Request.Owner ?? -1);
+        }
         return true;
     }
 
@@ -58,6 +61,8 @@ internal sealed partial class TableApplication
         if (card.PhasedOut) parts.Add("Phased out");
         if (zone == "Command" && CardPresentation.CommanderTax(card) is > 0 and var tax)
             parts.Add("Commander tax +" + tax);
+        if (card.States is { } states) parts.AddRange(states.Where(state => state.Kind == "status")
+            .Select(PublicStatePresentation.Description));
         return string.Join(" · ", parts);
     }
 
@@ -83,8 +88,10 @@ internal sealed partial class TableApplication
         int desiredWidth = Math.Clamp(options.SelectMany(option => option.Text.Split('\n'))
             .Append(state).Select(text => canvas.TextWidth(text, size, true) + padding * 2)
             .DefaultIfEmpty(120).Max(), 120, 316);
+        if (options.Any(option => option.Action?.Card != null)) desiredWidth = 316;
         int desiredHeight = (state.Length == 0 ? 0 : canvas.TextSize(state, .63f, desiredWidth - 8, 80, true).Y + 12)
-            + options.Sum(option => canvas.TextSize(option.Text, size, desiredWidth - padding * 2, 80, true).Y + padding * 2 + gap);
+            + options.Sum(option => canvas.TextSize(option.Text, size, desiredWidth - padding * 2, 80, true).Y + padding * 2 + gap
+                + (option.Action?.Card == null ? 0 : LinkedSpellHeaderHeight(option.Action.Card, desiredWidth)));
         var area = AbilityActionArea(face, desiredWidth, Math.Min(face.Height, desiredHeight));
         if (area.IsEmpty) return;
         int width = area.Width;
@@ -95,11 +102,12 @@ internal sealed partial class TableApplication
             int lineHeight = canvas.TextSize("Ag", font, width - inset * 2, 80, !secondary).Y;
             string text = option.Text.Replace('\r', ' ').Replace('\n', ' ');
             var lines = canvas.TextPages(text, font, width - inset * 2, lineHeight, 80, !secondary);
-            return (Option: option, Lines: lines, Height: Math.Max(secondary ? 30 : 38, lines.Length * lineHeight + inset * 2),
+            int linkedHeight = option.Action?.Card == null ? 0 : LinkedSpellHeaderHeight(option.Action.Card, width);
+            return (Option: option, Lines: lines, Height: Math.Max(secondary ? 30 : 38, lines.Length * lineHeight + inset * 2), LinkedHeight: linkedHeight,
                 Secondary: secondary, Font: font, Inset: inset, LineHeight: lineHeight);
         }).ToArray();
         int stateHeight = state.Length == 0 ? 0 : canvas.TextSize(state, .63f, width - 8, 80, true).Y + 12;
-        int contentHeight = stateHeight + rows.Sum(row => row.Height + gap) - (rows.Length > 0 ? gap : 0);
+        int contentHeight = stateHeight + rows.Sum(row => row.Height + row.LinkedHeight + gap) - (rows.Length > 0 ? gap : 0);
         int height = Math.Min(area.Height, contentHeight);
         int top = Math.Clamp(face.Center.Y - height / 2, area.Top, area.Bottom - height);
         sourceReaderActionsBounds = new(area.X, top, width, height);
@@ -114,6 +122,12 @@ internal sealed partial class TableApplication
         }
         for (int index = 0; index < rows.Length; index++) {
             var row = rows[index]; var option = row.Option;
+            if (option.Action is { Card: { } linked } action) {
+                var header = new Rectangle(area.X, y, width, row.LinkedHeight);
+                if (header.Top >= top && header.Bottom <= top + height)
+                    PaintLinkedSpellHeader(action, header, face);
+                y += row.LinkedHeight;
+            }
             var whole = new Rectangle(area.X, y, width, row.Height);
             var visible = Rectangle.Intersect(whole, sourceReaderActionsBounds);
             if (!visible.IsEmpty) {

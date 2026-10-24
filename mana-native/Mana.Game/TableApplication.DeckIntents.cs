@@ -11,12 +11,16 @@ internal sealed partial class TableApplication
             case DeckIntent.ImportArchidekt: ImportArchidekt(); break;
             case DeckIntent.RestoreSavedDeck restore: RestoreSavedDeck(restore.DeckId, restore.RestoreToken); break;
             case DeckIntent.Rename:
+                deckMenu = "";
                 if (selectedDeckDetails is { } rename) { var name = Ask("Rename deck", "Deck name", rename.Name); if (name != null) RenameDeck(name); }
                 break;
             case DeckIntent.Duplicate:
+                deckMenu = "";
                 if (selectedDeckDetails is { } duplicate) { var name = Ask("Copy deck", "Name this separate copy", duplicate.Name + " copy"); if (name != null) DuplicateDeck(name); }
                 break;
             case DeckIntent.Export: ExportDeck(); break;
+            case DeckIntent.OpenDeckOptions: deckMenu = deckMenu == "deck-actions" ? "" : "deck-actions"; break;
+            case DeckIntent.ChooseCommander choose: ChooseDeckCommander(choose.Partner); break;
             case DeckIntent.CloseEditor: CloseDeckEditor(); break;
             case DeckIntent.Undo: EditDeck(d => catalog.UndoDeckAsync(d.Id, d.Revision), "Edit undone."); break;
             case DeckIntent.Redo: EditDeck(d => catalog.RedoDeckAsync(d.Id, d.Revision), "Edit restored."); break;
@@ -79,10 +83,10 @@ internal sealed partial class TableApplication
                 workshopRoleFilter = filter.Toggle && workshopRoleFilter == filter.Role ? "" : filter.Role;
                 workshopManaFilter = null; deckInteraction.ClearRelated();
                 if (!filter.Toggle) { ShowWorkshopTab("build"); deckFilter = ""; }
-                commanderCandidates = false; deckSection = "Main"; deckCardsPage = 0; deckIssuesOnly = false; break;
+                commanderCandidates = partnerCandidates = false; deckSection = "Main"; deckCardsPage = 0; deckIssuesOnly = false; break;
             case DeckIntent.FilterMana filter:
                 workshopManaFilter = filter.Value; workshopRoleFilter = ""; deckInteraction.ClearRelated();
-                ShowWorkshopTab("build"); commanderCandidates = false; deckSection = "Main"; deckFilter = ""; deckCardsPage = 0; deckIssuesOnly = false; break;
+                ShowWorkshopTab("build"); commanderCandidates = partnerCandidates = false; deckSection = "Main"; deckFilter = ""; deckCardsPage = 0; deckIssuesOnly = false; break;
             case DeckIntent.ReadCard read: ReadWorkspaceCard(read.Card, read.Identity); break;
             case DeckIntent.CloseReader: DismissDeckWorkspaceReading(); break;
             case DeckIntent.FlipReader readerFlip: deckInteraction.FlipReading(readerFlip.Identity); break;

@@ -183,6 +183,15 @@ Returning after a game preserves AI decks/readiness while humans ready again.
 
 ### Deck commands
 
+`deckState.commanderChoices` entries include `id`, compatible in-deck `partners`,
+and additive discovery hints `canPartner` and `partnerName`. The engine's rules
+determine those hints even when the named counterpart is absent from the list.
+They guide searching and never authorize a pair: `setCommanders` still requires
+current in-deck IDs and validates the actual combination. Generic pairing opens
+the normal card library rather than claiming to filter every compatible partner.
+Older clients ignore the hints; older engines omit them, with native clients
+retaining the existing compatible-ID selection path.
+
 `DesktopEngine` reads newline-delimited UTF-8 JSON from its private stdin:
 `{id, method, params}`. Replies are `{id, result}` or `{id, error}`. Startup emits
 `{event: "loading", message}` and `{event: "ready", printings}`. Diagnostics go to
@@ -504,6 +513,26 @@ An action such as playing a land returns to a visible priority prompt before
 the game can advance. Explicit pass and end-turn inputs still use engine rules.
 
 The private desktop transport exposes:
+
+`matchSourceActions {sessionId, promptId, key}` reads a visible source's current
+engine-owned actions without answering priority or payment. Results carry
+`gameId`, `decisionId`, `sourceCardKey`, `sourceCardId` and `actions`; each action
+has an opaque `id`, `kind` (`play`, `cast`, `activate`) and engine `text`.
+An action may additionally include `card` and `zone` for a disclosed linked spell.
+That preview has no action key or selection permission. Invoke the original
+source using `matchAction {sessionId, promptId, action: "useSourceAction", key,
+actionId}`. A prepared creature can therefore offer its actual spell copy in
+exile without pretending that casting is an activated ability of the creature.
+Source identity, linked occurrence, location, visibility and engine legality are
+revalidated at invocation; reading does not authorize a later changed action.
+Optional fields are additive: older clients may ignore previews and still use
+the exile card directly; absent previews retain the ordinary source-action path.
+
+Card `states` also includes the authoritative `prepared` status, separate from
+legal actions and available mana. Casting the prepared copy removes that status;
+the permanent stays on the battlefield. Source departure or unpreparing revokes
+the unused copy and its linked action. Prepared copies project their spell face
+and avoid source-creature printing metadata in artwork requests.
 
 | Request | Parameters / result |
 | --- | --- |

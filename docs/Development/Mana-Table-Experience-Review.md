@@ -73,6 +73,44 @@ does not establish that a person can understand or use the screen.
     yield and a required decision have different authority and lifetimes; visual
     consolidation must preserve those distinctions.
 
+12. **Keep deck identity and persistence visible through editing.** Both chosen
+    commanders belong beside the deck, including while browsing library cards.
+    Pairing guidance comes from the engine. Saving, saved, failed persistence
+    and deck legality are separate facts; returning to Play must not require a
+    second confirmation of edits already acknowledged by storage.
+
+## Prepared spells and paired decks: 23 October 2026
+
+**Source candidate; human review pending.** A player could not discover Emeritus
+of Ideation's prepared spell or its prepared designation. Forge already created
+the castable copy in exile. The missing relationship and inherited creature
+artwork made that state difficult to recognize. The candidate adds a persistent
+source marker, the actual prepared spell's name/cost in the reader and an offered
+cast beside the complete source card. Hover reads the spell without covering the
+source, cast control, state column or pending decision. The engine still owns
+casting, targets, payment, unpreparing and copy lifetime.
+
+Deckbuilding feedback identified competing actions and uncertain persistence,
+especially with two commanders. The candidate keeps both complete names visible,
+groups administration in Deck options and displays Saving / Deck saved / Not
+saved beside Back to play. Finding an absent named partner uses engine-supplied
+discovery metadata; selecting a pair still requires actual compatible IDs.
+Generic partner discovery opens the normal Legendary library, not a
+catalog-wide compatibility filter. No additional review/confirmation is required
+to return to Play. Saved status remains distinct from deck legality.
+
+These are agent-inspected actual 1000 x 740 windows, also reviewed at 1540 x 980.
+The spell journey uses the authored `prepared-spell.v1` lab; a separate actual
+Forge regression casts the spell and checks the result and revoked links. The
+deck capture uses the real adapter and an isolated Toothy/Pir/98-Forest list.
+Named cached art supplies the relevant faces; uncached library results retain
+their readable fallback. The screenshots and automated lifecycle checks do not
+establish human acceptance or complete the broader experience audit.
+
+![Prepared source with its actual available spell](images/native-prepared-spell-2026-10-23.png)
+
+![Both commanders and acknowledged persistence in the builder](images/native-paired-deck-2026-10-23.png)
+
 ## Whole-game audit and redesign: 22 October 2026
 
 The player rejected both the landing screen and the following lobby as a website

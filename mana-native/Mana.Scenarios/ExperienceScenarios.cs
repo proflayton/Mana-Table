@@ -15,6 +15,7 @@ public static partial class ExperienceScenarios
         new("card-reading.v1", "Card reading and selection", "Stable hand slots, inspectable battlefield cards and a hand selection.", Reading),
         new("ability-choice.v1", "Llanowar Elves · make green mana", "Start before an activation, choose its ability, and see the tapped source and green mana.", AbilityFlow),
         new("ability-targeting.v1", "Walking Ballista · costs and targets", "Two on-card abilities, cancellable targeting, a pending stack ability and its authored result.", BallistaFlow),
+        new(PreparedSpellScenario.Id, "Prepared spell · Emeritus of Ideation", "A prepared source, its linked spell in exile, targeting, priority and the unprepared result.", PreparedSpellScenario.Create),
         new(CounterDamageScenario.Id, "Counters → damage", "Chandra's counter increment, a numbered damage choice, its pending effect and an authored result.", CounterDamageScenario.Create),
         new(DamageResultsScenario.Id, "Damage · actual results", "Surviving recipients, death between observations and base versus actual prevented damage.", DamageResultsScenario.Create),
         new(DecisionFlowScenario.Id, "Four players · decisions and priority", "Authored land, priority handoffs, private-choice ownership, a typed target and pending effect, then its public result.", DecisionFlowScenario.Create),

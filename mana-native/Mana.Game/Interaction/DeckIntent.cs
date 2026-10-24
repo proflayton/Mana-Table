@@ -18,6 +18,8 @@ internal abstract record DeckIntent : UiIntent
 {
     internal sealed override InteractionScopeKind ScopeKind => InteractionScopeKind.Current;
     internal sealed record Rename : DeckIntent;
+    internal sealed record OpenDeckOptions : DeckIntent;
+    internal sealed record ChooseCommander(bool Partner = false) : DeckIntent;
     internal sealed record NewDeck : DeckIntent;
     internal sealed record ImportArchidekt : DeckIntent;
     internal sealed record RestoreSavedDeck(string DeckId, string RestoreToken) : DeckIntent;

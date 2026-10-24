@@ -86,6 +86,7 @@ internal sealed partial class TableApplication
     {
         Interlocked.Increment(ref deckSelectionGeneration);
         selectedDeck = null; selectedDeckDetails = null; InvalidateDeckConfirmation();
+        deckPersistence.Observe(null);
         soloSetup = null; CloseDeckEditor(); reviewCard = null; reviewList = false;
         deckCardId = deckBackId = null; librarySelection = null; catalogRead.Clear();
         deckWorkspace.Clear(); deckInteraction.Reset(); workshopSetup = null;

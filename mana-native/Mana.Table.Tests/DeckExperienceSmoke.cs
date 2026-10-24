@@ -229,7 +229,8 @@ internal sealed class DeckExperienceSmoke(TableWindow.Probe view) : ITableAutoma
                 foreach (string relative in new[] { Deck.Id + ".json", "workshop/" + Deck.Id + ".json", "workshop-tests/" + sample + ".json" }) {
                     string path = Path.Combine(view.Profile, "decks", relative); savedEvidence.Add(path, File.ReadAllBytes(path));
                 }
-                Capture("09-before-delete"); Click("deck-delete:" + Deck.Id, 35); break;
+                Capture("09-before-delete"); Click("deck-options", 340); break;
+            case 340: Click("deck-delete:" + Deck.Id, 35); break;
             case 35:
                 Check(!view.DeckEditor && view.DeckDetails == null && view.SelectedDeck == null && view.SetupModal == "decks"
                     && view.SavedDecks.All(deck => deck.Id != removedDeck!.Id),

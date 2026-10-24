@@ -83,6 +83,15 @@ occurrence disappears. Cross-zone play gestures use a current offered cast/play
 action rather than a UI list of permitted zones. Hand-placement and Auto still
 consume their separate explicit provider permissions.
 
+Source-action descriptions can include a visible linked `Card` and its `Zone`.
+The face is reading material, not a second action handle. The current use is a
+prepared permanent's spell copy in exile: the client submits the original
+source key and offered action ID. Forge validates the exact source, linked spell,
+timestamps, locations, permission and current input again before selecting the
+real spell ability. The prepared designation is an independent public status;
+it remains visible when casting is unavailable. A copied spell's artwork uses
+its actual face, never incompatible printing metadata inherited from its source.
+
 `CardViews.InZones` enumerates current player-zone occurrences with their owner
 and zone, including a disclosed top and masked card envelopes. Occurrence-ID
 lookup and current action-key lookup are separate queries. Source authorization,
@@ -690,6 +699,14 @@ select a deck over the user's current choice. Delete/restore require an offline
 library with no active game; they do not silently leave a lobby or change readiness.
 The same saved list feeds solo and network setup. Validation remains authoritative
 in Forge, and invalid or unsaved decks cannot enter setup.
+
+`Mana.Client.DeckPersistenceSession` owns the active document's save
+acknowledgment, pending mutation and failure. Captured document/revision/generation
+stamps reject obsolete responses. Admit an authoritative mutation before the
+independent saved-library refresh: a failed list read must not discard a saved
+revision or cause retries against an obsolete editor. The UI consumes this state
+beside its return-to-play control. Commander pairing hints come from the
+provider's rules metadata; only actual compatible IDs authorize selecting a pair.
 
 Deck validation separates structural conformance from bundled format eligibility.
 The editor, analysis candidate filter and match setup use the shipped format

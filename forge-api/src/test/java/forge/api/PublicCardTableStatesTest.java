@@ -5,6 +5,7 @@ import com.google.gson.JsonObject;
 import forge.StaticData;
 import forge.deck.Deck;
 import forge.game.card.Card;
+import forge.game.ability.AbilityFactory;
 import forge.game.keyword.Keyword;
 import forge.game.player.RegisteredPlayer;
 import forge.game.zone.ZoneType;
@@ -102,6 +103,32 @@ public class PublicCardTableStatesTest {
             var hidden = zone(player(own, owner.getId()), "Hand").getAsJsonArray("cards").get(0).getAsJsonObject();
             assertTrue(hidden.getAsJsonArray("states").isEmpty()); assertTrue(own.getAsJsonArray("states").isEmpty());
             for (int seat = 1; seat < 4; seat++) assertTrue(zone(player(JSON.toJsonTree(table.seat(seat).state()).getAsJsonObject(), owner.getId()), "Hand").getAsJsonArray("cards").isEmpty());
+        }
+    }
+
+    @Test public void preparedDetailsDescribeTheCurrentVisibleSpellWithoutRevealingAHiddenLinkedFace() throws Exception {
+        try (var table = table("public-prepared-designation")) {
+            var owner = table.game.getPlayers().get(0);
+            var source = Card.fromPaperCard(StaticData.instance().getCommonCards().getCard("Emeritus of Ideation"), owner);
+            owner.getZone(ZoneType.Battlefield).add(source, null, null);
+            var prepare = AbilityFactory.getAbility("DB$ AlterAttribute | Defined$ Self | Attributes$ Prepared", source);
+            prepare.setActivatingPlayer(owner); prepare.resolve();
+            assertTrue(source.isPrepared());
+            var observer = table.game.getPlayers().get(1).getView();
+            var status = source.getView().getPublicStates(observer).stream().filter(state -> state.key().equals("prepared")).findFirst().orElseThrow();
+            assertEquals(status.detail(), "Ancestral Recall {U}");
+
+            var spell = source.getPreparedSpell();
+            owner.getZone(ZoneType.Exile).remove(spell); owner.getZone(ZoneType.Hand).add(spell, null, null);
+            assertEquals(source.getView().getPublicStates(observer).stream().filter(state -> state.key().equals("prepared")).findFirst().orElseThrow().detail(), "");
+            assertEquals(source.getView().getPublicStates(owner.getView()).stream().filter(state -> state.key().equals("prepared")).findFirst().orElseThrow().detail(), "Ancestral Recall {U}");
+            owner.getZone(ZoneType.Hand).remove(spell); owner.getZone(ZoneType.Exile).add(spell, null, null);
+            spell.turnFaceDown(true);
+            assertEquals(source.getView().getPublicStates(observer).stream().filter(state -> state.key().equals("prepared")).findFirst().orElseThrow().detail(), "",
+                    "Prepared remains public, but its hidden linked face is not described");
+            source.turnFaceDown(true);
+            assertTrue(source.getView().getPublicStates(observer).stream().noneMatch(state -> state.key().equals("prepared")),
+                    "A face-down source does not expose its original card's designation");
         }
     }
 

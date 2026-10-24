@@ -63,7 +63,13 @@ public interface ISourceActions
     Task<SourceActionSet> SourceActionsAsync(string gameId, string decisionId, string sourceCardKey);
 }
 public sealed record SourceActionSet(string GameId, string DecisionId, string SourceCardKey, string SourceCardId, ImmutableArray<SourceAction> Actions);
-public sealed record SourceAction(string Id, string Kind, string Text);
+public sealed record SourceAction(string Id, string Kind, string Text)
+{
+    // A disclosed linked face is reading material, never another action handle.
+    // Submission still names the source and this offer's opaque Id.
+    public Card? Card { get; init; }
+    public string Zone { get; init; } = "";
+}
 // Social commands have their own ordering and never advance a game decision.
 public interface ITableSocial
 {
@@ -83,7 +89,13 @@ public sealed record DeckEdit(string Section, string CardId, int Quantity);
 public sealed record CatalogCard(string Id, Card Card, int ManaValue, int ColorIdentity, string Section, string Edition);
 public sealed record CardQuery(string Text = "", string Type = "", int? ColorIdentity = null, int? MaxManaValue = null, string Sort = "name", int Offset = 0, int Limit = 6);
 public sealed record CatalogPage(int Total, int Offset, ImmutableArray<CatalogCard> Cards);
-public sealed record CommanderOption(string Id, ImmutableArray<string> Partners);
+public sealed record CommanderOption(string Id, ImmutableArray<string> Partners)
+{
+    // Discovery hints describe pairing capability even before a counterpart is
+    // in the deck. Only Partners supplies compatible in-deck selection handles.
+    public bool CanPartner { get; init; }
+    public string PartnerName { get; init; } = "";
+}
 public sealed record DeckIssue(string Code, string Message, string? Section, ImmutableArray<string> CardIds);
 public sealed record DeckDetails(string Id, string Name, long Revision, ImmutableArray<DeckEntry> Entries,
     ImmutableArray<CommanderOption> CommanderOptions, string Problem, string SaveError, bool CanUndo = false, bool CanRedo = false)

@@ -754,6 +754,18 @@ public class CardView extends GameEntityView {
     public CardView getPreparedSpell() {
         return get(TrackableProperty.PreparedSpell);
     }
+    /** Effective public keywords and current non-keyword designations. */
+    public java.util.List<forge.game.PublicState> getPublicStates(PlayerView viewer) {
+        var keywords = getCurrentState().getPublicStates();
+        var prepared = getPreparedSpell();
+        if (isFaceDown() || prepared == null) return keywords;
+        String detail = prepared.isFaceDown() || !prepared.canBeShownTo(viewer) ? ""
+                : prepared.getCurrentState().getName() + " " + prepared.getCurrentState().getManaCost();
+        var states = new java.util.ArrayList<>(keywords);
+        states.add(new forge.game.PublicState("prepared", "Prepared", forge.game.PublicState.Kind.STATUS,
+                null, null, detail, "prepared"));
+        return java.util.List.copyOf(states);
+    }
     void updatePreparedSpell(Card c) {
         set(TrackableProperty.PreparedSpell, CardView.get(c.getPreparedSpell()));
     }

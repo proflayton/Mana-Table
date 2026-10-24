@@ -132,6 +132,49 @@ internal static class SourceActionSessionRegression
         check(malformed.Session.View.Actions.Count == 0 && malformed.Session.TryCreateCommand(first, action.Id) == null,
             "Ambiguous duplicate action handles fail the read without widening command authority");
 
+        var spell = new Card { VisualId = "linked-exile-occurrence", Name = "A disclosed linked spell", ManaCost = "{U}" };
+        var linkedAction = action with { Card = spell, Zone = "Exile" };
+        var linked = new Driver();
+        linked.Session.Observe(first);
+        var linkedRead = await linked.Request(1);
+        linkedRead.Result.SetResult(Catalog(first, linkedAction));
+        await linked.Until(() => linked.Session.View.Status == SourceActionStatus.Ready);
+        check(linked.Session.View.Actions.Single().Card == spell
+                && linked.Session.View.Actions.Single().Zone == "Exile"
+                && linked.Session.TryCreateCommand(first, action.Id) is { Card: "source-key" },
+            "A disclosed linked spell is immutable reading material; its cast retains the offering source handle");
+        var changedLink = first with { Revision = first.Revision + 1 };
+        linked.Session.Observe(changedLink);
+        check(linked.Session.View.Actions.Count == 0 && linked.Session.TryCreateCommand(first, action.Id) == null,
+            "A new publication immediately removes a linked spell preview and its old source cast before refresh finishes");
+        var refreshedLink = await linked.Request(2);
+        linked.Session.Clear();
+        refreshedLink.Result.SetResult(Catalog(changedLink, linkedAction));
+        await linked.Until(() => linked.Applied == 2);
+        check(linked.Session.View is { Context: null, Actions.Count: 0 },
+            "A linked spell query finishing after its source reader closes cannot resurrect the face or cast");
+
+        var linkedViewer = new Driver();
+        linkedViewer.Session.Observe(first);
+        var privateLink = await linkedViewer.Request(1);
+        linkedViewer.Session.Observe(otherViewer);
+        privateLink.Result.SetResult(Catalog(first, linkedAction));
+        var nextSeatLink = await linkedViewer.Request(2);
+        check(linkedViewer.Session.View.Actions.Count == 0,
+            "An in-flight linked face for a previous viewer is never published into the replacement viewer's reader");
+        nextSeatLink.Result.SetResult(Catalog(otherViewer));
+        await linkedViewer.Until(() => linkedViewer.Session.View.Status == SourceActionStatus.Ready);
+
+        foreach (var unsafePreview in new[] { spell with { Key = "another-action-handle" }, spell with { Selectable = true },
+                     spell with { Highlighted = true }, spell with { FaceDown = true } }) {
+            var invalidLink = new Driver();
+            invalidLink.Session.Observe(first);
+            (await invalidLink.Request(1)).Result.SetResult(Catalog(first, linkedAction with { Card = unsafePreview }));
+            await invalidLink.Until(() => invalidLink.Session.View.Status == SourceActionStatus.Failed);
+            check(invalidLink.Session.View.Actions.Count == 0 && invalidLink.Session.TryCreateCommand(first, action.Id) == null,
+                "A linked preview cannot carry another action handle, selection authority or a concealed face");
+        }
+
         var timed = new Driver(TimeSpan.FromMilliseconds(250));
         timed.Session.Observe(first);
         var timedOutRead = await timed.Request(1);

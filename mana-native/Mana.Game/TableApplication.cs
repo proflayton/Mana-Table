@@ -347,7 +347,7 @@ internal sealed partial class TableApplication : IDisposable
     public void Dispose()
     {
         if (closing) return;
-        closing = true; CloseUpdateRequests(); deckWorkspace.Close(); catalogRead.Close(); printingRead.Close(); session.Close(); matchPresentation.Reset();
+        closing = true; CloseUpdateRequests(); deckWorkspace.Close(); deckPersistence.Close(); catalogRead.Close(); printingRead.Close(); session.Close(); matchPresentation.Reset();
         canvas.Dispose();
     }
 }

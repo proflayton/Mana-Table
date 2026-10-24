@@ -62,6 +62,7 @@ internal sealed partial class TableApplication
         if (card.Attacking || card.Blocking)
             canvas.CardFrame(pose with { Size = pose.Size + new Vector2(3) }, card.Attacking ? Red : Blue, 2);
         if (focus) canvas.CardFrame(pose with { Size = pose.Size + new Vector2(3) }, Ink * .5f, 2);
+        if (stateVisible) PaintPreparedMarker(card, pose, owner);
     }
 
     private bool PaintBattlefieldTapCue(Card card, int owner, Rectangle face, int copies, float opacity)

@@ -32,8 +32,10 @@ public sealed partial class ForgeEngine
             || !string.Equals(result.DecisionId, decisionId, StringComparison.Ordinal)
             || !string.Equals(result.SourceCardKey, sourceCardKey, StringComparison.Ordinal))
             throw new EngineCommandRejectedException("The source action context changed. Select the current card again.");
-        if (result.SourceCardId == null || result.Actions == null || result.Actions.Any(action => action == null || string.IsNullOrWhiteSpace(action.Id)
-                || action.Kind is not ("activate" or "cast" or "play") || string.IsNullOrWhiteSpace(action.Text))
+        if (result.SourceCardId == null || result.Actions.IsDefault || result.Actions.Any(action => action == null || string.IsNullOrWhiteSpace(action.Id)
+                || action.Kind is not ("activate" or "cast" or "play") || string.IsNullOrWhiteSpace(action.Text)
+                || action.Card is { } linked && (linked.FaceDown || linked.Key != "" || linked.Selectable || linked.Highlighted
+                    || string.IsNullOrWhiteSpace(linked.Name) || string.IsNullOrWhiteSpace(action.Zone)))
             || result.Actions.Select(action => action.Id).Distinct(StringComparer.Ordinal).Count() != result.Actions.Length)
             throw new IOException("The rules adapter returned an invalid source action list.");
         return result;

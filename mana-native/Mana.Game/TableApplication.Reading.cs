@@ -57,6 +57,7 @@ internal sealed partial class TableApplication
         matchPresentation.Cards.BeginFrame(CardContext, hover, frameElapsed, preferences.ReducedMotion, boardView);
         deferredCardComposition.Clear();
         sourceReaderControls.Clear(); sourceReaderActionsBounds = Rectangle.Empty; sourceReaderScrollMax = 0;
+        linkedSpellFaces.Clear();
         battlefieldReaderStateBounds = Rectangle.Empty;
     }
     private void EndCardReading() => matchPresentation.Cards.EndFrame();

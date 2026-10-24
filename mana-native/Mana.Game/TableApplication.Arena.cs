@@ -64,6 +64,7 @@ internal sealed partial class TableApplication
         if (ReadingGalleryOpen || BattlefieldFocused || ZoneReadingOpen) DrawReaderControls();
         if (ReadingGalleryOpen) hovered = HitAt(pointer)?.Card;
         DrawPendingReferencePreview();
+        DrawLinkedSpellPreview();
         DrawStudyBattlefieldName();
         DrawStudyFocusNavigation();
         DrawExperienceLabHeader();
@@ -169,6 +170,7 @@ internal sealed partial class TableApplication
         // Paint the relationship marker after combat stats so the small corner
         // indicator remains visible on densely packed projected card faces.
         if (zone == "Battlefield" && (groupFront || focus)) PaintAttachmentBadge(card, pose, owner, compact && !focus);
+        if (zone == "Battlefield" && !scanFace && (groupFront || focus)) PaintPreparedMarker(card, pose, owner);
     }
     private void PaintCard(Card card, Pose pose, bool selected, bool legal, bool focus = false, float opacity = 1)
     {

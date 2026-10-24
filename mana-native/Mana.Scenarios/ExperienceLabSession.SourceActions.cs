@@ -14,6 +14,8 @@ public sealed partial class ExperienceLabSession
         sourceActionParent = null;
         ballistaMode = ExperienceScenarios.BallistaDamageAction;
         ballistaTarget = null;
+        preparedRecipient = 0;
+        preparedAgain = false;
     }
 
     public SourceActionSet SourceActions(string gameId, string decisionId, string sourceCardKey)
@@ -24,6 +26,7 @@ public sealed partial class ExperienceLabSession
                 .SingleOrDefault(card => card.Key == sourceCardKey);
             if (source == null) throw Unsupported();
             var viewer = State.Viewer ?? throw Unsupported();
+            if (Scenario.Id == PreparedSpellScenario.Id) return PreparedSpellActions(source);
             SourceAction Action(string id, string text) => new(decisionId + ":" + sourceCardKey + ":" + id, "activate", text);
             SourceAction[] actions = [];
             if (Scenario.Id == DecisionFlowScenario.Id && StageIndex == 0
@@ -51,6 +54,7 @@ public sealed partial class ExperienceLabSession
     {
         var offered = SourceActions(reply.GameId, reply.DecisionId, reply.Card!);
         var selected = offered.Actions.SingleOrDefault(action => action.Id == reply.ActionId) ?? throw Unsupported();
+        if (Scenario.Id == PreparedSpellScenario.Id) return AdvancePreparedSpell(1);
         if (Scenario.Id == DecisionFlowScenario.Id && StageIndex == 0 && offered.SourceCardId == DecisionFlowScenario.LandId)
             return AdvanceTo(1);
         if (offered.SourceCardId == ExperienceScenarios.BallistaId) {

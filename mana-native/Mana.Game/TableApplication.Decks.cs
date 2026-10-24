@@ -1,12 +1,14 @@
 using System.Collections.Immutable;
 using Mana.Contracts;
+using Mana.Client;
 
 namespace Mana.Table;
 
 internal sealed partial class TableApplication
 {
     private DeckDetails? selectedDeckDetails;
-    private bool deckEditor, commanderCandidates = true, deckIssuesOnly;
+    private bool deckEditor, commanderCandidates = true, partnerCandidates, deckIssuesOnly;
+    private readonly DeckPersistenceSession deckPersistence = new();
     private int deckCardsPage, deckIssuePage, deckCardIssuePage;
     private string? deckCardId;
     private string deckSection = "", deckCardSection = "Main", deckFilter = "";
@@ -15,9 +17,20 @@ internal sealed partial class TableApplication
     private int DeckRowHeight => Math.Max(32, DeckRowsToShow().Select(entry => canvas.TextSize(entry.Card.Name, .66f, 378, 80, true).Y + 12).DefaultIfEmpty(32).Max());
     private int DeckRows => Math.Max(1, 288 / DeckRowHeight);
     private bool CommanderDeck => selectedDeckDetails?.Format is null or "Commander";
-    private bool DeckReady => selectedDeckDetails is { Problem.Length: 0, SaveError.Length: 0 } && (!CommanderDeck || selectedDeckDetails.CommanderIds.Length > 0);
+    private bool DeckReady => selectedDeckDetails is { Problem.Length: 0, SaveError.Length: 0 } && DeckSaveProblem.Length == 0
+        && deckPersistence.View.Status != DeckPersistenceStatus.Saving && (!CommanderDeck || selectedDeckDetails.CommanderIds.Length > 0);
     private bool DeckCanCopy => selectedDeckDetails?.Entries.Any(e => e.Quantity > 0) == true;
-    private string DeckScope => $"setup:{selectedDeckDetails?.Id}:{selectedDeckDetails?.Revision}:{deckEditor}:{commanderCandidates}:{deckSection}:{deckFilter}:{deckCardsPage}:{deckCardId}:{deckCardSection}:{librarySelection?.Id}:{catalogRead.View.Generation}:{deckIssuesOnly}:{deckIssuePage}:{deckCardIssuePage}:{deckMenu}:{WorkshopScope}:{AnalysisScope}";
+    private string DeckScope => $"setup:{selectedDeckDetails?.Id}:{selectedDeckDetails?.Revision}:{deckPersistence.View.Generation}:{deckEditor}:{commanderCandidates}:{partnerCandidates}:{deckSection}:{deckFilter}:{deckCardsPage}:{deckCardId}:{deckCardSection}:{librarySelection?.Id}:{catalogRead.View.Generation}:{deckIssuesOnly}:{deckIssuePage}:{deckCardIssuePage}:{deckMenu}:{WorkshopScope}:{AnalysisScope}";
+    private string DeckSaveProblem => deckPersistence.View.Error;
+    private string DeckSaveLabel => deckPersistence.View.Status switch {
+        DeckPersistenceStatus.Saving => "Saving…", DeckPersistenceStatus.Failed => "Not saved",
+        DeckPersistenceStatus.Saved => "Deck saved", _ => "Checking save…"
+    };
+    private ImmutableArray<string> CompatiblePartnerIds => selectedDeckDetails is { CommanderIds.Length: 1 } deck
+        ? deck.CommanderOptions.FirstOrDefault(option => option.Id == deck.CommanderIds[0])?.Partners ?? [] : [];
+    private CommanderOption? SoleCommanderOption => selectedDeckDetails is { CommanderIds.Length: 1 } deck
+        ? deck.CommanderOptions.FirstOrDefault(option => option.Id == deck.CommanderIds[0]) : null;
+    private bool CanFindPartner => SoleCommanderOption?.CanPartner == true || CompatiblePartnerIds.Length > 0;
     private ImmutableArray<DeckIssue> DeckIssues => selectedDeckDetails is not { } deck ? [] : deck.Issues.Length > 0 ? deck.Issues
         : deck.Problem.Length > 0 ? [new("LEGACY", deck.Problem, null, [])] : [];
     private DeckIssue[] CardIssues(string cardId, string section) => DeckIssues
@@ -44,6 +57,10 @@ internal sealed partial class TableApplication
         string? previousFormat = selectedDeckDetails?.Format;
         int? identity = CommanderIdentity;
         selectedDeck = new(details.Id, details.Name) { LibraryToken = details.LibraryToken }; selectedDeckDetails = details; InvalidateDeckConfirmation();
+        deckPersistence.Observe(details);
+        if (partnerCandidates && details.CommanderIds.Length != 1) {
+            partnerCandidates = commanderCandidates = false; deckSection = "Main";
+        }
         deckWorkspace.Observe(new(details.Id, details.Revision));
         if (previousFormat != details.Format) { workshopSetup = null; workshopPlayers = details.Format == "Commander" ? Math.Min(4, workshopPlayers) : 2; }
         RequestWorkshopRefresh(changed);
@@ -52,6 +69,7 @@ internal sealed partial class TableApplication
             deckInteraction.Reset();
             analysisOpen = false;
             commanderCandidates = details.CommanderIds.Length == 0 && details.Entries.Length > 0;
+            partnerCandidates = false;
             deckSection = ""; deckFilter = ""; deckCardsPage = 0; deckIssuesOnly = false;
             var first = details.Entries.FirstOrDefault(e => e.Section == "Commander") ?? details.Entries.FirstOrDefault();
             deckCardId = first?.Id; deckCardSection = first?.Section ?? "Main"; librarySelection = null;
@@ -96,17 +114,36 @@ internal sealed partial class TableApplication
         updates.Enqueue(() => { decks = saved; setupModal = ""; ApplyDeck(created, true); message = "Search for your commander or start adding cards."; });
     }, "Creating your deck", "Making a place for your next Commander list.");
     // Every mutation shares persistence, readiness invalidation and refresh.
-    private void EditDeck(Func<DeckDetails, Task<DeckDetails>> edit, string success)
+    private void EditDeck(Func<DeckDetails, Task<DeckDetails>> edit, string success, bool createsDocument = false)
     {
+        if (busy || ActivityOpen || selectedDeckDetails == null) return;
         var current = selectedDeckDetails!;
+        if (deckPersistence.Begin(new(current.Id, current.Revision)) is not { } stamp) return;
+        deckMenu = "";
         Work(async () => {
-            await UnreadyForDeckEdit();
-            var updated = await edit(current); var saved = await catalog.DecksAsync();
-            updates.Enqueue(() => {
-                decks = saved; ApplyDeck(updated);
-                message = updated.SaveError.Length > 0 ? "Could not save the deck. Retry below." : success;
-                if (updated.SaveError.Length > 0) { error = updated.SaveError; activityFailed = true; }
-            });
+            try {
+                await UnreadyForDeckEdit();
+                var updated = await edit(current);
+                updates.Enqueue(() => {
+                    if (!deckPersistence.Accept(stamp, updated, createsDocument)) return;
+                    ApplyDeck(updated);
+                    message = updated.SaveError.Length > 0 ? "Could not save the deck. Retry save." : success;
+                    if (updated.SaveError.Length > 0) { error = updated.SaveError; activityFailed = true; }
+                });
+                try {
+                    var saved = await catalog.DecksAsync();
+                    updates.Enqueue(() => { if (selectedDeckDetails is { } selected && selected.Id == updated.Id && selected.Revision == updated.Revision) decks = saved; });
+                } catch (Exception refreshFailure) {
+                    updates.Enqueue(() => {
+                        if (selectedDeckDetails is { } selected && selected.Id == updated.Id && selected.Revision == updated.Revision)
+                            message = (updated.SaveError.Length == 0 ? "Deck saved. " : "Deck not saved. Retry save. ")
+                                + "Could not refresh Your decks: " + refreshFailure.Message;
+                    });
+                }
+            } catch (Exception failure) {
+                updates.Enqueue(() => deckPersistence.Fail(stamp, failure.Message));
+                throw;
+            }
         }, "Saving your deck", "Your changes save automatically.", false);
     }
     private void SaveCommanders(ImmutableArray<string> ids) => EditDeck(d => catalog.SetCommandersAsync(d.Id, d.Revision, ids), "Commander saved.");
@@ -133,9 +170,10 @@ internal sealed partial class TableApplication
         }, "Cards moved. Deck saved.");
     }
     private void RenameDeck(string name) => EditDeck(d => catalog.RenameDeckAsync(d.Id, d.Revision, name), "Deck renamed.");
-    private void DuplicateDeck(string name) => EditDeck(d => catalog.DuplicateDeckAsync(d.Id, d.Revision, name), "Copy saved as a separate deck.");
+    private void DuplicateDeck(string name) => EditDeck(d => catalog.DuplicateDeckAsync(d.Id, d.Revision, name), "Copy saved as a separate deck.", createsDocument: true);
     private void ExportDeck()
     {
+        deckMenu = "";
         if (!DeckCanCopy) { message = "Add a card before copying your deck list."; return; }
         var d = selectedDeckDetails!;
         Work(async () => {
@@ -167,15 +205,29 @@ internal sealed partial class TableApplication
         }, "Opening the deck builder", "Getting your saved list ready to edit.");
     }
     private void SelectDeckRow(DeckEntry entry) { deckCardId = entry.Id; deckCardSection = entry.Section; librarySelection = null; deckBackId = null; deckCardIssuePage = 0; }
-    private void FilterDeck(string section, bool leaders = false) { deckSection = section; commanderCandidates = leaders; deckCardsPage = 0; deckIssuesOnly = false; workshopRoleFilter = ""; workshopManaFilter = null; deckInteraction.ClearRelated(); }
+    private void FilterDeck(string section, bool leaders = false) { deckSection = section; commanderCandidates = leaders; partnerCandidates = false; deckCardsPage = 0; deckIssuesOnly = false; workshopRoleFilter = ""; workshopManaFilter = null; deckInteraction.ClearRelated(); }
+    private void ChooseDeckCommander(bool partner)
+    {
+        ShowWorkshopTab("build"); FilterDeck("", true); deckFilter = "";
+        partnerCandidates = partner && CanFindPartner;
+        var candidate = DeckRowsToShow().FirstOrDefault(entry => !selectedDeckDetails!.CommanderIds.Contains(entry.Id));
+        if (candidate != null) SelectDeckRow(candidate);
+        else {
+            FocusDeckText("library"); catalogText = partnerCandidates ? SoleCommanderOption?.PartnerName ?? "" : "";
+            catalogType = catalogText.Length > 0 ? 0 : Array.IndexOf(CatalogTypes, "Legendary");
+            catalogMana = 0; catalogCommanderColors = false; catalogColors = null; ChangeCatalog();
+        }
+    }
     private void ToggleDeckIssues()
     {
+        partnerCandidates = false;
         deckIssuesOnly = !deckIssuesOnly; deckCardsPage = 0;
         workshopRoleFilter = ""; workshopManaFilter = null; deckInteraction.ClearRelated();
         if (deckIssuesOnly) { deckSection = deckFilter = ""; commanderCandidates = false; }
     }
     private void ShowDeckIssue(DeckIssue issue)
     {
+        partnerCandidates = false;
         deckInteraction.ClearRelated();
         var entry = selectedDeckDetails?.Entries.FirstOrDefault(e => (issue.Section == null || issue.Section == e.Section) && issue.CardIds.Contains(e.Id));
         if (entry != null) {
@@ -187,6 +239,7 @@ internal sealed partial class TableApplication
     private DeckEntry[] DeckRowsToShow() => (deckSection == "Considering" ? deckWorkspace.View.Workshop?.Considering.Select(c => new DeckEntry("Considering", c.CardId, c.Card.Card, c.Quantity, c.Card.ManaValue, c.Card.ColorIdentity, c.Card.Edition)) ?? [] : selectedDeckDetails?.Entries ?? [])
         .Where(e => (deckSection.Length == 0 || e.Section == deckSection)
             && (!commanderCandidates || selectedDeckDetails!.CommanderOptions.Any(c => c.Id == e.Id))
+            && (!partnerCandidates || CompatiblePartnerIds.Contains(e.Id))
             && (!deckIssuesOnly || CardIssues(e.Id, e.Section).Length > 0)
             && (deckInteraction.RelatedCards.Count == 0 || deckInteraction.RelatedCards.Contains(e.Card.Name))
             && (workshopRoleFilter.Length == 0 || deckWorkspace.View.Workshop?.Roles.Any(r => r.CardId == e.Id && r.Roles.Contains(workshopRoleFilter, StringComparer.OrdinalIgnoreCase)) == true)

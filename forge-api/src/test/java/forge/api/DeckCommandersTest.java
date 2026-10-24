@@ -48,6 +48,21 @@ public class DeckCommandersTest {
         assertThrows(IllegalArgumentException.class, () -> select(editor, A, C));
         assertEquals(editor.snapshot(), before);
     }
+    @Test public void missingPartnerDiscoveryDoesNotGrantAnOutOfDeckCommanderChoice() {
+        var toothy = card("Toothy, Imaginary Friend", "Legendary Creature Illusion", "Partner with:Pir, Imaginative Rascal:Pir");
+        var deck = new Deck("Missing partner"); deck.getMain().add(toothy); deck.getMain().add(A); deck.getMain().add(C);
+        var choices = DeckCommanders.choices(deck);
+        var named = choices.stream().filter(choice -> choice.id().equals(CardCatalog.id(toothy))).findFirst().orElseThrow();
+        assertTrue(named.canPartner()); assertEquals(named.partnerName(), "Pir, Imaginative Rascal");
+        assertTrue(named.partners().isEmpty(), "A named partner outside the deck is discovery guidance, never a legal selection handle");
+        var generic = choices.stream().filter(choice -> choice.id().equals(CardCatalog.id(A))).findFirst().orElseThrow();
+        assertTrue(generic.canPartner()); assertEquals(generic.partnerName(), ""); assertTrue(generic.partners().isEmpty());
+        var ordinary = choices.stream().filter(choice -> choice.id().equals(CardCatalog.id(C))).findFirst().orElseThrow();
+        assertFalse(ordinary.canPartner()); assertEquals(ordinary.partnerName(), ""); assertTrue(ordinary.partners().isEmpty());
+        var editor = new DeckEditor(new CardCatalog(List.of(toothy, A, C)), deck);
+        assertThrows(IllegalArgumentException.class, () -> DeckCommanders.set(editor, 0, List.of(named.id(), "missing-partner")));
+        assertEquals(editor.snapshot().revision(), 0L);
+    }
     @Test public void invalidAndStaleSelectionsLeaveTheDeckUntouched() {
         var editor = editor(); select(editor, A);
         var before = editor.snapshot();
