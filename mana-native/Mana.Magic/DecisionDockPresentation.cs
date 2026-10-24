@@ -56,6 +56,7 @@ public static class DecisionDockPresentation
             DecisionDockStatus.Priority when routinePriority && ambientPause => DecisionDockSurface.None,
             DecisionDockStatus.Priority => DecisionDockSurface.Portrait,
             DecisionDockStatus.AutoPassing or DecisionDockStatus.Resolving => controls.QuietArmed ? DecisionDockSurface.Portrait : DecisionDockSurface.None,
+            DecisionDockStatus.Waiting when role == DecisionDockActorRole.Priority && state.Stack.Length > 0 => DecisionDockSurface.Workspace,
             DecisionDockStatus.Waiting when role == DecisionDockActorRole.Priority => controls.QuietArmed ? DecisionDockSurface.Portrait : DecisionDockSurface.None,
             _ => DecisionDockSurface.Workspace
         };

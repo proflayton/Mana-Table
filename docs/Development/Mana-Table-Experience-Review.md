@@ -96,6 +96,8 @@ now keeps its heading and Take control position through other-seat priority,
 polls and temporary inspection pauses. Required choices and real responses still
 surface immediately. A small steady priority token identifies the actual
 responder; strong emphasis remains for stack interaction or local attention.
+When an effect is pending, its response workspace still names the opponent
+holding priority. Empty-stack handoffs need no separate waiting announcement.
 Ignored-ability Undo remains reachable. No permission, command timing or game
 state is inferred from this quieter presentation.
 

@@ -128,6 +128,14 @@ internal static class DecisionDockPresentationChecks
         var pendingCard = new Card { VisualId = "public-pending-source", Name = "Toothy, Imaginary Friend" };
         var pending = new StackItem("Toothy, Imaginary Friend — draw ability", "Public effect", true, pendingCard) {
             Id = "public-ability", ControllerId = 2 };
+        var otherPending = priority with { Players = namedPlayers.ToImmutableArray(), Decision = null,
+            DecisionOwnerId = 1, PriorityPlayerId = 1, Stack = [pending] };
+        check(new[] { auto, quiet }.All(controls => DecisionDockPresentation.From(otherPending, controls) is {
+                Status: DecisionDockStatus.Waiting, ActorRole: DecisionDockActorRole.Priority, ActorId: 1,
+                ActorName: "Mira, Weaver of Very Long Names", Headline: "Mira, Weaver of Very Long Names has priority",
+                Surface: DecisionDockSurface.Workspace, Pending.Id: "public-ability", Instruction: "",
+                DecisionId: "", ActionLabel: "", SourceCard: null, SourceCardId: "" }),
+            "Another responder beside a pending effect keeps their complete name and public stack context visible without exposing a private prompt or local action, even if quiet intent was armed");
         var processing = target with { Decision = null, DecisionOwnerId = null, PriorityPlayerId = null, ActionClass = "resolving", Stack = [pending],
             Activity = [new(1, 1, "MAIN1", "changed", 1, "Unrelated nearby activity", "unrelated", "Unrelated card")] };
         var processingView = DecisionDockPresentation.From(processing, auto);
