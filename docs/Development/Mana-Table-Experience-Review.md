@@ -82,6 +82,28 @@ does not establish that a person can understand or use the screen.
     and deck legality are separate facts; returning to Play must not require a
     second confirmation of edits already acknowledged by storage.
 
+## Hand choices and inspection: 23 October 2026
+
+**Source candidate; human review pending.** Card clicks during required hand
+selection bypassed the reader and immediately sent an engine selection. For
+single-card discards that can finish the action before the player reads the card.
+The keep/mulligan reader exception did not cover London bottom-card selection.
+
+Own-hand selection now uses the same noncommitting full-card reader. Choose card
+beside the face is the explicit selection gesture; Deselect reverses a current
+choice where available. The engine retains its actual completion behavior and
+remaining confirmation. Direct battlefield targeting and other compact choices
+retain their existing gestures. The same real Forge opening journey now includes
+two Commander mulligans, reading the bottom-card candidate, choosing it and
+confirming before its departure. Authored pointer checks also cover staged lists,
+reversible choices and prompt replacement during a press.
+
+Actual Forge windows were agent-inspected at 1000 x 740 with normal motion and
+1540 x 980 with reduced motion, using cached Forest art. These finite captures
+do not establish human acceptance of the interaction.
+
+![Read a mulligan candidate before explicitly choosing it](images/native-hand-selection-2026-10-23.png)
+
 ## Quiet priority handoffs: 23 October 2026
 
 **Source candidate; human review pending.** Player feedback identified jarring

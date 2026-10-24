@@ -18,6 +18,12 @@ internal sealed record CardPresentationContext(GameSnapshot? State, string Scope
         && entry.Zone == "Hand" && entry.Request.Owner == viewer.Id
         && viewer.Zone("Hand").Cards.Any(card => !card.FaceDown && CardViews.Same(card, entry.Card));
 
+    public bool CanBrowseHandSelection(PresentedCard entry) => State is { } state
+        && (state.Decision?.Intent == DecisionIntent.Selection || TableChoices.IsDirect(state))
+        && state.Viewer is { } viewer && entry.ChoiceSlot < 0
+        && entry.Zone == "Hand" && entry.Request.Owner == viewer.Id
+        && viewer.Zone("Hand").Cards.Any(card => !card.FaceDown && CardViews.Same(card, entry.Card));
+
     public Card? ChoiceFace(int slot) => State?.Decision is { } decision
         ? decision.LibraryCards.Length > 0 ? decision.LibraryCards.ElementAtOrDefault(slot)?.Card
             : decision.Choices.ElementAtOrDefault(slot) is { } choice ? CardViews.Choice(State, choice) : null

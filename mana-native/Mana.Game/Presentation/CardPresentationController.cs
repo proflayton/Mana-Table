@@ -45,8 +45,8 @@ internal sealed class CardPresentationController
         hoveredHit = hovered?.Hit.Id ?? "";
         // A reader survives pointer movement, but never lost visibility or a
         // required compact interaction. Reconciliation uses the current snapshot.
-        if (pinnedId != null && (current.Dragging || current.CompactDecision || leavingOpeningHand
-            || Pinned is not { } pinned || !current.CanRead(pinned))) Collapse(hoveredHitId);
+        if (pinnedId != null && (current.Dragging || leavingOpeningHand || Pinned is not { } pinned
+            || current.CompactDecision && !current.CanBrowseHandSelection(pinned) || !current.CanRead(pinned))) Collapse(hoveredHitId);
         (displayedPoses, previousDisplayedPoses) = (previousDisplayedPoses, displayedPoses);
         displayedPoses.Clear();
         boardView = view;
@@ -110,13 +110,13 @@ internal sealed class CardPresentationController
     {
         var entry = cards.LastOrDefault(card => card.Hit.Id == hit.Id && card.Hit.Scope == hit.Scope);
         if (entry == null || entry.Card.FaceDown || !current.CanRead(entry)
-            || current.Dragging || current.CompactDecision) return false;
+            || current.Dragging || current.CompactDecision && !current.CanBrowseHandSelection(entry)) return false;
         if (entry.ChoiceSlot >= 0) {
             if (current.State?.Decision?.Kind != "reveal") return false;
         } else if (current.OverlayOpen
             || !current.AbilityChoice && current.State?.Decision is { Intent: not DecisionIntent.Priority }
                 && current.State?.Decision?.Intent != DecisionIntent.Mana
-                && !current.CanBrowseOpeningHand(entry)) return false;
+                && !current.CanBrowseOpeningHand(entry) && !current.CanBrowseHandSelection(entry)) return false;
         bool close = pinnedId == entry.Id && pinnedZone == entry.Zone;
         Collapse(hit.Id);
         if (!close) {

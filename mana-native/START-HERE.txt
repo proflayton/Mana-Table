@@ -352,6 +352,10 @@ Auto and Hold are icons beside your portrait; hover explains their state and
 the F/Ctrl shortcuts. Hold stops automatic passing for the current turn.
 Click a card to read its full face. Its concrete legal actions appear beside it;
 drag a playable hand card onto the table to begin playing it.
+During a required hand-card choice, including mulligan bottoming or discarding,
+clicking a card reads it. Choose card beside that face makes the selection;
+Deselect removes an existing choice when available. Complete any remaining
+confirmation in the decision controls. Reading alone never chooses the card.
 An available activation can be set to "Pass until my next turn" beside Pass.
 This keeps Auto moving when that ability is your only play. The ability remains
 usable; other available plays still pause the game. The indicator offers Undo,

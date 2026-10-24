@@ -255,7 +255,12 @@ dotnet $driver --smoke-headless-engine --engine-resources '<package>/engine' --e
 ```
 
 `--smoke-headless-engine` operates a real Commander opening, a land play, a paid
-command-zone cast and concession through production input without a GPU. It
+command-zone cast and concession through production input without a GPU. Its
+same opening now takes two Commander mulligans and verifies that reading a
+bottom-card candidate does not select it, its explicit reader action selects it,
+and final confirmation removes it from the kept hand. Headless presentation
+checks cover the same noncommitting hand reader for engine inputs and staged
+card lists, including deselection and prompt replacement during a press. It
 opens the commander's current source actions, drags it into play and activates
 a Forest during its actual mana payment. Startup, workshop adapter
 and multiplayer modes cover their own boundaries; choose them when affected.

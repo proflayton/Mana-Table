@@ -87,8 +87,8 @@ internal static class HeadlessEngineSmoke
             PresentationFrame frame = Tick("opening");
             Save("opening");
             string? landId = null, commanderId = null;
-            bool landSaved = false, commanderSaved = false, openingHandRead = false, commanderPayment = false, paidWithForest = false;
-            int decisions = 0;
+            bool landSaved = false, commanderSaved = false, openingHandRead = false, bottomHandRead = false, commanderPayment = false, paidWithForest = false;
+            int decisions = 0, mulligans = 0;
 
             while (!landSaved || !commanderSaved) {
                 Guard();
@@ -151,6 +151,41 @@ internal static class HeadlessEngineSmoke
                         "A second opening-card click collapses reading without keeping or redrawing the real hand");
                     openingHandRead = true;
                 }
+                if (decision is { Kind: "input", Purpose: DecisionPurpose.OpeningHand } && mulligans < 2) {
+                    Click("cancel"); mulligans++;
+                    await Idle();
+                    continue;
+                }
+                if (!bottomHandRead && mulligans == 2 && state.Turn == 0
+                        && decision is { Kind: "input", Intent: DecisionIntent.Selection, OkEnabled: false }) {
+                    var bottomCard = view.Match.Viewer!.Zone("Hand").Cards.First(card => card.Selectable);
+                    string prompt = decision.Id;
+                    int count = view.Match.Viewer.Zone("Hand").Count;
+                    Click("card:" + bottomCard.Key + ":" + bottomCard.VisualId);
+                    frame = Tick("bottom-hand-reader"); frame = Tick("bottom-hand-reader-settled");
+                    Check(frame.Cards.Any(card => card.Id == CardViews.Identity(bottomCard) && card.Focused)
+                            && frame.Hits.Any(hit => hit.Id == "read-card-action") && view.Match.Decision?.Id == prompt && !view.Busy
+                            && view.Match.Viewer!.Zone("Hand").Count == count && !view.Match.Viewer.Zone("Hand").Cards.Any(card => card.Highlighted),
+                        "After two real Commander mulligans, clicking a bottom-card candidate only enlarges it and leaves the hand and selection unchanged");
+                    Save("bottom-hand-reader");
+                    Click("read-card-action"); await Idle();
+                    Save("bottom-hand-selection-observed");
+                    Check(view.Match!.Decision is { Intent: DecisionIntent.Selection, OkEnabled: true }
+                            && view.Match.Viewer!.Zone("Hand").Count == count
+                            && view.Match.Viewer.Zone("Hand").Cards.Any(card => card.VisualId == bottomCard.VisualId && card.Highlighted),
+                        "The explicit reader choice selects the real London bottom card without removing it before final confirmation");
+                    Save("bottom-hand-selected");
+                    Click("confirm"); await Idle();
+                    var bottomDeadline = Stopwatch.StartNew();
+                    while (view.Match!.Viewer!.Zone("Hand").Cards.Any(card => card.VisualId == bottomCard.VisualId)
+                            && bottomDeadline.Elapsed < TimeSpan.FromSeconds(5)) {
+                        Guard(); await Task.Delay(5); await Refresh("await-bottom-card-departure");
+                    }
+                    Check(!view.Match!.Viewer!.Zone("Hand").Cards.Any(card => card.VisualId == bottomCard.VisualId),
+                        "Only final confirmation removes the real selected card from the kept hand");
+                    bottomHandRead = true;
+                    continue;
+                }
                 if (decision is { Kind: "input", Intent: DecisionIntent.Priority }
                     && view.Match.ActivePlayerId == view.Match.ViewerId && view.Match.PhaseKey is "MAIN1" or "MAIN2") {
                     Card? playable = !landSaved ? view.Match.Viewer!.Zone("Hand").Cards.FirstOrDefault(card => card.Selectable && card.Type.Contains("Land", StringComparison.Ordinal))
@@ -189,6 +224,7 @@ internal static class HeadlessEngineSmoke
                 && landId != null && commanderId != null,
                 "The real land reader drag, command-zone commander drag and Forest payment action all use production pointer controls");
             Check(openingHandRead, "The real Forge walkthrough exercised opening-hand browsing before explicitly keeping");
+            Check(mulligans == 2 && bottomHandRead, "The same real Forge walkthrough exercised inspection, explicit bottom-card selection and confirmation after Commander mulligans");
             Check(frame.Stamp.GameId == view.Match!.Id && frame.Stamp.Revision == view.Match.Revision
                 && frame.Stamp.DecisionId == view.Match.Decision?.Id,
                 "The published frame is stamped with the exact authoritative game, revision and decision being displayed");

@@ -110,11 +110,21 @@ internal sealed partial class TableApplication
     private void DrawReaderControls()
     {
         var entry = matchPresentation.Cards.Pinned;
-        if (entry == null || CompactCardDecision || !CardContext.CanRead(entry)) return;
+        if (entry == null || CompactCardDecision && !CardContext.CanBrowseHandSelection(entry) || !CardContext.CanRead(entry)) return;
         var target = (entry.ReaderTarget ?? CardPresentationController.ReaderPose(entry.Rest, entry.Zone)).Bounds;
         if (Vector2.Distance(entry.Display.Size, target.Size.ToVector2()) > 2
             || Vector2.Distance(entry.Display.Center, target.Center.ToVector2()) > 2) return;
         if (CardContext.CanBrowseOpeningHand(entry)) return;
+        if (CardContext.CanBrowseHandSelection(entry)) {
+            if (IsCardActionable(entry.Card)) {
+                int? index = TableChoices.Index(match!, entry.Card);
+                bool selected = index is { } choice ? decisionDraft.Selections.Contains(choice) : entry.Card.Highlighted;
+                string label = selected ? "Deselect" : "Choose card";
+                Button("read-card-action", label, target.X + 8, Math.Min(840, target.Bottom - 2),
+                    canvas.TextWidth(label, .76f) + 24, new MatchIntent.UseReaderCard(entry.Card), !busy, height: 30);
+            }
+            return;
+        }
         if (SourceActionsSupported) { DrawSourceReaderControls(entry); return; }
         if (match?.Decision?.Intent is DecisionIntent.Priority or DecisionIntent.Mana && IsCardActionable(entry.Card)) {
             string label = entry.Zone == "Battlefield" ? "Abilities"
