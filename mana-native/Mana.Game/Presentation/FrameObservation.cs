@@ -27,10 +27,10 @@ internal sealed record FrameObservation(FrameStamp Stamp, int Width, int Height,
             DrawCommand.CenterText text => new ObservedText(text.Value ?? "", ObservedBounds.From(text.Bounds), text.Size,
                 1, text.Bold, true, frame.Drawing.TextScale),
             _ => null
-        }).OfType<ObservedText>().ToArray()), new(frame.BoardView.Offset.X, frame.BoardView.Offset.Y, frame.TurnFollowEnabled));
+        }).OfType<ObservedText>().ToArray()), new(frame.BoardView.Offset.X, frame.BoardView.Offset.Y, frame.TurnFollowEnabled, frame.BoardView.Scale));
 }
 
-internal sealed record ObservedBoardView(float X, float Y, bool FollowTurnEnabled);
+internal sealed record ObservedBoardView(float X, float Y, bool FollowTurnEnabled, float Zoom);
 
 internal sealed record ObservedBounds(int X, int Y, int Width, int Height)
 {

@@ -14,7 +14,7 @@ public sealed class SeatGeometry
     public IReadOnlyList<SceneCard> Commanders { get; }
     public IReadOnlyList<PilePlan> Piles { get; }
 
-    private SeatGeometry(Player player, int seat, bool study, bool focused = false)
+    private SeatGeometry(Player player, int seat, bool study, bool duel = false)
     {
         PlayerId = player.Id;
         Index = seat;
@@ -46,14 +46,8 @@ public sealed class SeatGeometry
                 return new PilePlan(zone, new(center, new(39, 55)), true);
             }).ToArray());
         }
-        if (study && focused) {
-            if (seat is 0 or 2) {
-                Hero = new(115, seat == 0 ? 280 : 520);
-                Hand = Hero + new Vector2(0, -55);
-                Commanders = Array.AsReadOnly(Array.Empty<SceneCard>());
-                Piles = Array.AsReadOnly(Array.Empty<PilePlan>());
-                CommandLink = Hero;
-            } else if (seat == 1) {
+        if (study && duel) {
+            if (seat == 1) {
                 CommandLink = new(1280, 181);
                 Commanders = Array.AsReadOnly(leaders.Select((card, index) => SceneCard.Create(card,
                     new(new(1240 + index * 80, 130), new(58, 81)), "Command", player.Id, index, Hero)).ToArray());
@@ -63,14 +57,10 @@ public sealed class SeatGeometry
         }
     }
 
-    internal static SeatGeometry[] Build(GameSnapshot state, bool study = false, int? focusedOpponent = null)
+    internal static SeatGeometry[] Build(GameSnapshot state, bool study = false)
     {
-        bool focused = study && focusedOpponent is { } opponent && opponent != state.ViewerId
-            && state.Players.Any(player => player.Id == opponent);
-        var remaining = focused ? state.Players.Where(player => player.Id != state.ViewerId && player.Id != focusedOpponent)
-            .Select(player => player.Id).ToArray() : [];
+        bool duel = study && state.Players.Length == 2;
         return state.Players.Select(player => new SeatGeometry(player,
-            player.Id == state.ViewerId ? 3 : !focused ? TableLayout.SeatIndex(state, player.Id)
-            : player.Id == focusedOpponent ? 1 : Array.IndexOf(remaining, player.Id) == 0 ? 0 : 2, study, focused)).ToArray();
+            player.Id == state.ViewerId ? 3 : duel ? 1 : TableLayout.SeatIndex(state, player.Id), study, duel)).ToArray();
     }
 }

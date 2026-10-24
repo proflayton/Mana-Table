@@ -442,7 +442,7 @@ Frame publication does not answer the engine's pending
 decision. Every command still passes current game/decision scope checks.
 
 The native launcher selects `SharedTableStudy` by default when building
-`TableScene` for three/four seats. `--classic-table` retains the previous layout,
+`TableScene` for two, three and four seats. `--classic-table` retains the previous layout,
 and the Experience Lab offers the study through `--table-study`. It uses fixed controller role lanes
 and flat scan faces without global density/stack repacking. `SceneCard.ScanFace`
 selects battlefield painting; full readers retain a canonical battlefield anchor
@@ -457,15 +457,27 @@ public occurrences while preserving strict state/availability cohorts and exact
 member IDs; required candidates are separated before packing. A bounded copy fan
 does not grow with the number of matching tokens or lands.
 
-The study's manual focus uses `DuelTableStudy` lanes and `SeatGeometry` to enlarge
-the selected opponent above the actual viewer, with the other players on a rail.
-`SeatHero`, `SeatHand` and the display orientation keep mana, priority, targeting
-and draw effects aligned with those scene poses. Condensed fields publish no
-obsolete card hits; player targets still use actual player IDs before navigation.
-Focus is local presentation state and resets with the game or a removed player.
-Crowded recognition and responsive viewport composition
-remain open human-review/design work; see the
-[four-player study](Mana-Table-Experience-Review.md#four-player-direction-stable-table-selective-attention).
+Manual battlefield inspection changes `BoardView` instead of rebuilding a duel
+layout. `TableScene` retains every controller's canonical role lanes, card
+occurrences and seat IDs throughout. `BoardViewMotion.Navigate` eases a uniform
+pan/zoom over those positions and the table surface. Retargeting samples the
+currently displayed camera; returning reverses it. It holds while a card is
+pressed, dragged or read and scopes its state to the game/viewer. Required
+player targets take precedence over navigation. Reduced motion settles directly.
+
+The hand, portraits, player resources and zone controls remain in screen space.
+Card presentation applies the camera after canonical pose smoothing and maps
+projected perspective as well as size/position. Reading stays in screen space;
+its live battlefield anchor, family captions and counter-effect obstacles use
+the displayed camera. Draw-command clips constrain battlefield painting to the
+same viewport that filters board input; clipping is preserved by both sprite
+and triangle painting and cannot leak into a published frame. The actual
+two-player match retains its dedicated canonical rows; multiplayer inspection
+no longer drops other fields or creates a second layout.
+
+Camera framing and crowded recognition still require human review. A scoped
+geometry or command check does not establish an understandable spatial journey;
+see the [experience review](Mana-Table-Experience-Review.md).
 
 Simulations inject elapsed/total time and pointer/keyboard state into the same
 application methods used by the window. Recovery checks and recovery text share
@@ -516,7 +528,7 @@ view and disables following until **Follow turn** is enabled again. Opening or
 resetting a case establishes a baseline before any subsequent turn movement.
 
 Canonical `TableScene` coordinates remain separate from immutable `BoardView`
-presentation translation. `BoardViewMotion` consumes public match/turn/active-player
+presentation pan/zoom. `BoardViewMotion` consumes public match/turn/active-player
 identity, supplied time and interaction state. Card presentation applies the view
 after canonical pose smoothing, then publishes matching draw and hit geometry.
 Reader/returning-card transitions convert presentation spaces once rather than

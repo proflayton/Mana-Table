@@ -45,7 +45,9 @@ internal sealed partial class TableApplication
         if (BattlefieldFocused && hits.LastOrDefault(hit => hit.Contains(point)) is { } focusHit
             && focusHit.Intent is MatchIntent.FocusSurface or MatchIntent.CloseBattlefieldFocus or MatchIntent.SetBattlefieldOwner
                 or MatchIntent.ScrollBattlefieldTo or MatchIntent.ReadFocusedCard or MatchIntent.OpenStack) return focusHit;
-        return matchPresentation.Cards.ResolveHit(point, hits, hits.LastOrDefault(hit => hit.Contains(point)), CardContext);
+        var resolved = matchPresentation.Cards.ResolveHit(point, hits, hits.LastOrDefault(hit => hit.Contains(point)), CardContext);
+        return resolved?.Zone == "Battlefield" && !BattlefieldFocused && resolved.Id != matchPresentation.Cards.Pinned?.Hit.Id
+            && !BoardViewport.Contains(point) ? null : resolved;
     }
 
     private void BeginCardReading(float frameElapsed)
@@ -83,7 +85,10 @@ internal sealed partial class TableApplication
     {
         var entry = matchPresentation.Cards.Prepare(new(id, card, rest, zone, owner, hitId, activate,
             entrance, entranceDelay, opensZone, choiceSlot, activationBounds));
-        hits.Add(entry.Hit);
+        var hit = entry.Hit;
+        if (zone == "Battlefield" && choiceSlot < 0 && !entry.Focused && !BattlefieldFocused)
+            hit = hit with { Bounds = Rectangle.Intersect(hit.Bounds, BoardViewport), Shape = point => BoardViewport.Contains(point) && entry.Hit.Contains(point) };
+        hits.Add(hit);
         if (entry.Layer == CardPresentationLayer.Table) ComposeCard(entry, paint);
         else deferredCardComposition.Add((entry, paint));
         return entry.Display;
@@ -91,9 +96,12 @@ internal sealed partial class TableApplication
 
     private void ComposeCard(PresentedCard entry, Action<Pose, bool> compose)
     {
+        bool clipped = entry.Zone == "Battlefield" && entry.Layer == CardPresentationLayer.Returning && !BattlefieldFocused;
+        if (clipped) canvas.BeginClip(BoardViewport);
         bool liveReader = DrawSourceActionReader(entry);
         if (!liveReader) compose(entry.Display, entry.Focused);
         if (entry.Hovered && !liveReader) canvas.CardFocus(entry.Display, HoverAccent);
+        if (clipped) canvas.EndClip();
         if (Automated) matchPresentation.Cards.RecordComposition(entry);
     }
     private void DrawLiftedCards()

@@ -21,7 +21,35 @@ internal static class BoardViewChecks
         Geometry(check);
         Reading(check);
         Motion(check);
+        InspectionCamera(check);
         ProductionControls(check);
+    }
+
+    private static void InspectionCamera(Action<bool, string> check)
+    {
+        var pose = new Pose(new(640, 410), new(120, 168), .21f, .7f, .0002f, .12f, 4);
+        var zoom = new BoardView(new(-180, -60), 1.65f);
+        var moved = zoom.Apply(pose);
+        check(pose.Corners.Zip(moved.Corners).All(pair => Near(pair.Second, zoom.Apply(pair.First)))
+                && Near(zoom.Inverse(moved).Center, pose.Center) && Near(zoom.Inverse(moved).Size, pose.Size)
+                && moved.Contains(zoom.Apply(pose.Center).ToPoint()) && default(BoardView).Apply(pose) == pose,
+            "Pan/zoom preserves every projected corner and the inverse pose, including perspective and default identity");
+        var camera = new BoardViewMotion();
+        var target = BoardView.Frame(SharedTableStudy.Territory(2), new(195, 170, 995, 530));
+        BoardView At(BoardView destination, double time, bool reduced = false, bool blocked = false, string game = "camera")
+            => camera.Navigate(game, 0, destination, time, reduced, blocked);
+        var start = At(target, 0); var middle = At(target, .2);
+        var retarget = At(BoardView.Identity, .2); var returned = At(BoardView.Identity, 1);
+        check(start.IsIdentity && middle.Scale > 1 && middle.Scale < target.Scale && retarget == middle && returned.IsIdentity,
+            "Explicit camera navigation eases both pan and zoom; reversing mid-flight retains the exact displayed view and returns home");
+        At(target, 2); var beforePress = At(target, 2.2);
+        var held = At(target, 5, blocked: true); var resumed = At(target, 5.01);
+        var uninterrupted = new BoardViewMotion();
+        uninterrupted.Navigate("comparison", 0, target, 2, false, false);
+        var expected = uninterrupted.Navigate("comparison", 0, target, 2.21, false, false);
+        check(held == beforePress && Near(resumed.Offset, expected.Offset) && Math.Abs(resumed.Scale - expected.Scale) < .0001f
+                && At(target, 6, reduced: true) == target && At(BoardView.Identity, 7, game: "another-game").IsIdentity,
+            "Pressing a moving card freezes the camera without a delayed jump; reduced motion settles directly and a new game starts at overview");
     }
 
     private static void Geometry(Action<bool, string> check)

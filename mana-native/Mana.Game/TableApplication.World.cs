@@ -28,7 +28,7 @@ internal sealed partial class TableApplication
         canvas.Polygon(Rim(28), new(35, 48, 51));
         if (resources.Arena != null) canvas.ProjectedEllipse(resources.Arena, boardView.Apply(TableWorld.Card(Vector2.Zero, new(1664, 972))), Color.White);
         else {
-            canvas.Glow(new(800, 355), new(1450, 710), new Color(126, 149, 145) * .26f);
+            canvas.Glow(boardView.Apply(new Vector2(800, 355)), new Vector2(1450, 710) * boardView.Scale, new Color(126, 149, 145) * .26f);
             // Fine woven marks remain understated at play distance.
             for (int i = 0; i < 650; i++) {
                 float x = (i * 173 % 1591) - 795, y = (i * 137 % 887) - 443;
@@ -48,7 +48,7 @@ internal sealed partial class TableApplication
             int seat = sceneSeat.Index;
             var p = boardView.Apply(TableWorld.Project(TableWorld.SeatPoint(seat, 0, seat is 0 or 2 ? 690 : 421)));
             bool active = sceneSeat.PlayerId == match!.ActivePlayerId;
-            canvas.Glow(p, seat is 0 or 2 ? new(245, 370) : new(620, 230), (active ? Gold : Blue) * (active ? .16f : .035f));
+            canvas.Glow(p, (seat is 0 or 2 ? new Vector2(245, 370) : new Vector2(620, 230)) * boardView.Scale, (active ? Gold : Blue) * (active ? .16f : .035f));
         }
         if (TwoFieldTable) {
             canvas.Glow(new(740, 330), new(1100, 400), Blue * .08f);
@@ -69,6 +69,7 @@ internal sealed partial class TableApplication
     }
     private void DrawWorldBattlefield(Player player)
     {
+        canvas.BeginClip(BoardViewport);
         var plan = tableScene!.Seat(player.Id);
         int seat = plan.Index;
         var clusters = plan.Battlefield;
@@ -97,10 +98,10 @@ internal sealed partial class TableApplication
         }
         foreach (var cluster in clusters)
             foreach (var node in cluster.Cards) DrawSceneCard(node);
+        canvas.EndClip();
     }
     private void DrawSeatObjects(Player player)
     {
-        if (StudyRail(player.Id)) return;
         var geometry = tableScene!.Seat(player.Id).Geometry;
         foreach (var node in geometry.Commanders) {
             canvas.CardFrame(node.Pose with { Size = node.Pose.Size + new Vector2(13) }, Gold * .35f, 1);
@@ -149,7 +150,7 @@ internal sealed partial class TableApplication
         bool target = IsPlayerTarget(player.Id), active = match!.ActivePlayerId == player.Id;
         bool hasCounters = StateClarity.PlayerStates(player).Length > 0;
         float radius = own ? 40 : 34;
-        if (!own && !StudyRail(player.Id)) {
+        if (!own) {
             int count = Math.Min(7, player.Zone("Hand").Count);
             int arriving = preferences.ReducedMotion ? 0 : matchPresentation.PendingDraws(player.Id, now);
             var handCenter = SeatHand(player.Id);
@@ -214,6 +215,5 @@ internal sealed partial class TableApplication
         DrawPlayerMana(player, manaHalo);
         if (!own) DrawOpponentPhase(player, center, index);
         if (!own && !dense) hits.Add(new("focus:" + player.Id, Scope, nameplate, new MatchIntent.OpenZone(player.Id, "Battlefield")));
-        DrawStudyRailCount(player);
     }
 }

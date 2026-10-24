@@ -121,8 +121,9 @@ internal sealed partial class TableApplication
         // in place. The presentation controller includes this same anchor in
         // its scoped hit geometry, so a second click can close inspection.
         if (node.ScanFace && readingId == node.Id && !card.FaceDown) {
-            PaintBattlefieldScanFace(card, node.Pose, node.Owner, false, false, false, node.GroupFront, node.GroupCount);
-            canvas.CardFrame(node.Pose, HoverAccent * .85f, 2);
+            var anchor = boardView.Apply(node.Pose);
+            PaintBattlefieldScanFace(card, anchor, node.Owner, false, false, false, node.GroupFront, node.GroupCount);
+            canvas.CardFrame(anchor, HoverAccent * .85f, 2);
         }
         var rest = node.Zone == "Battlefield" && !node.Dense && !node.ScanFace && (card.PhasedOut || CardPresentation.HasAbility(card, "flying"))
             ? CardMotion.Airborne(node.Pose, now, preferences.ReducedMotion, node.Id) : node.Pose;
@@ -130,7 +131,7 @@ internal sealed partial class TableApplication
             "card:" + card.Key + ":" + card.VisualId, new MatchIntent.UseCard(card),
             (displayed, focus) => PaintSceneCard(card, displayed, node.Zone, node.Owner, focus, node.Compact, node.GroupFront, node.GroupCount, node.Dense), node.Entrance, node.EntranceDelay);
         if (!string.IsNullOrEmpty(card.CombatId)) cardPositions[card.CombatId]
-            = node.ScanFace && readingId == node.Id ? node.Pose : pose;
+            = node.ScanFace && readingId == node.Id ? boardView.Apply(node.Pose) : pose;
     }
     private void PaintSceneCard(Card card, Pose pose, string zone, int owner, bool focus, bool compact = false, bool groupFront = true, int groupCount = 1, bool dense = false)
     {

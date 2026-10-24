@@ -242,27 +242,27 @@ internal static class SharedTableStudyChecks
 
     private static void FocusedRows(GameSnapshot snapshot, Action<bool, string> check)
     {
-        var state = snapshot with { Players = snapshot.Players.Select(player => player with {
+        var state = snapshot with { Players = snapshot.Players.Where(player => player.Id is 0 or 2).Select(player => player with {
             Zones = player.Zones.Select(zone => zone.Name != "Battlefield" ? zone : zone with {
                 Cards = zone.Cards.Select(card => card with { Key = "focus-action:" + card.VisualId }).ToImmutableArray()
             }).ToImmutableArray()
         }).ToImmutableArray() };
         var scene = TableScene.Build(state, 0, new(-100, -100), null, null, false,
-            CardPresentation.IsResource, sharedTableStudy: true, studyFocusedOpponent: 2);
+            CardPresentation.IsResource, sharedTableStudy: true);
         var scutes = Cards(scene).Where(node => node.Owner == 2 && node.Card.Name == "Scute Swarm").ToArray();
         var family = scutes[0].StudyFamily!;
         check(family is { TotalCount: 9, CohortCount: 4 } && family.BodyBounds.Width > family.BodyBounds.Height
                 && scutes.Count(node => node.GroupFront) == 4
                 && scutes.All(node => node.Card.Key == "focus-action:" + node.Id)
                 && family.Cohorts.SelectMany(cohort => cohort.MemberIds).Order().SequenceEqual(scutes.Select(node => node.Id).Order()),
-            "Focused rows keep all four Scute Swarm states in a compact horizontal family block without losing copies or exact action keys");
+            "Two-player rows keep all four Scute Swarm states in a compact horizontal family block without losing copies or exact action keys");
         var families = scene.Seats.SelectMany(seat => seat.Battlefield.SelectMany(cluster => cluster.Cards
             .Select(node => node.StudyFamily!).DistinctBy(item => item.Id).Select(item => new { Seat = seat.Index, Family = item }))).ToArray();
-        check(families.All(item => DuelTableStudy.Lane(item.Seat, item.Family.Role).Contains(item.Family.Bounds))
+        check(families.All(item => DuelTableStudy.MatchLane(item.Seat, item.Family.Role).Contains(item.Family.Bounds))
                 && families.All(item => !families.Any(other => other.Family.Id != item.Family.Id
                     && item.Family.Bounds.Intersects(other.Family.Bounds)))
                 && Cards(scene).All(node => node.Pose.Contains(node.Pose.Center.ToPoint())),
-            "Focused row packing reserves every family's caption and body without overlapping another family, lane or actual card target");
+            "Two-player row packing reserves every family's caption and body without overlapping another family, lane or actual card target");
     }
 
     private static GameSnapshot ReplaceField(GameSnapshot state, int owner, Card[] cards) => state with {

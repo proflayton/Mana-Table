@@ -149,15 +149,16 @@ internal sealed partial class TableApplication
         if (!TableStudyEnabled || OverlayOpen || dragging || readingId != null
             || HitAt(pointer) is not { Card: { } card, Zone: "Battlefield", PlayerId: { } owner }
             || tableScene?.BattlefieldCard(owner, CardViews.Identity(card)) is not { ScanFace: true } node) return;
-        var face = BattlefieldScanLabelArea(node.Pose);
+        var displayed = boardView.Apply(node.Pose);
+        var face = BattlefieldScanLabelArea(displayed);
         if (node.StudyFamily is { CohortCount: > 1 } family ? StudyFamilyNameVisible(family)
             : BattlefieldScanNameHeight(card, face, node.GroupCount) > 0) return;
         string name = card.FaceDown ? "Face-down permanent" : card.Name;
         const float size = .7f;
         int width = Math.Min(380, canvas.TextWidth(name, size, true) + 16);
         int height = canvas.TextSize(name, size, width - 16, 80, true).Y + 10;
-        var bounds = new Rectangle(Math.Clamp(node.Pose.Bounds.Center.X - width / 2, 12, 1588 - width),
-            Math.Clamp(node.Pose.Bounds.Top - height - 6, 58, 840 - height), width, height);
+        var bounds = new Rectangle(Math.Clamp(displayed.Bounds.Center.X - width / 2, 12, 1588 - width),
+            Math.Clamp(displayed.Bounds.Top - height - 6, 58, 840 - height), width, height);
         canvas.Panel(bounds, new(13, 24, 30), HoverAccent, 4);
         canvas.Text(name, bounds.X + 8, bounds.Y + 5, Ink, size, bounds.Width - 16, 80, true);
         // This is a read-only identity cue, not a second card or action surface.

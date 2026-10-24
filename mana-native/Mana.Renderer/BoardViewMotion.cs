@@ -30,6 +30,33 @@ public sealed class BoardViewMotion
     public bool Paused { get; private set; }
     public bool LimitedByLayout { get; private set; }
 
+    /// <summary>Explicit inspection moves one camera, independent of turn and prompt publications.</summary>
+    public BoardView Navigate(string game, int viewer, BoardView target, double totalSeconds, bool reducedMotion, bool blocked)
+    {
+        if (gameId != game || viewerId != viewer) { Reset(); gameId = game; viewerId = viewer; }
+        if (!double.IsFinite(totalSeconds) || totalSeconds < lastTime || reducedMotion) {
+            Current = origin = destination = target; moving = false;
+            lastTime = double.IsFinite(totalSeconds) ? totalSeconds : 0;
+            return Current;
+        }
+        if (blocked && moving) startedAt += totalSeconds - lastTime;
+        lastTime = totalSeconds;
+        if (!blocked) Advance(totalSeconds);
+        if (destination != target) {
+            origin = Current; destination = target; startedAt = totalSeconds; moving = true;
+        }
+        return Current;
+    }
+
+    private void Advance(double totalSeconds)
+    {
+        if (!moving) return;
+        float amount = (float)Math.Clamp((totalSeconds - startedAt) / TransitionSeconds, 0, 1);
+        amount = amount * amount * (3 - 2 * amount);
+        Current = new(Vector2.Lerp(origin.Offset, destination.Offset, amount), MathHelper.Lerp(origin.Scale, destination.Scale, amount));
+        if (amount >= 1) moving = false;
+    }
+
     public void Pause() { Paused = true; moving = false; }
     public void Resume() { Paused = false; }
     public void Reset()
@@ -78,10 +105,7 @@ public sealed class BoardViewMotion
             if (!PathAllowed(Current, destination, boardFootprints, fixedReservations, viewport)) {
                 moving = false; LimitedByLayout = true; return Current;
             }
-            float amount = (float)Math.Clamp((totalSeconds - startedAt) / TransitionSeconds, 0, 1);
-            amount = amount * amount * (3 - 2 * amount);
-            Current = new(Vector2.Lerp(origin.Offset, destination.Offset, amount));
-            if (amount >= 1) moving = false;
+            Advance(totalSeconds);
         }
 
         if (!changedTurn) return Current;

@@ -308,8 +308,7 @@ internal sealed partial class TableApplication : IDisposable
         ValidateStudyFocus();
         tableScene = match == null ? null : TableScene.Build(match, handPage, pointer, null,
             dragging && dragSource?.Card is { } held ? CardViews.Identity(held) : null, false, CardPresentation.IsResource,
-            denseMeasure: MeasureDenseBattlefieldLabel, allowInlineOrdering: TableChoices.IsDirect(match), sharedTableStudy: TableStudyEnabled,
-            studyFocusedOpponent: StudyFocusActive ? studyFocusOpponent : null);
+            denseMeasure: MeasureDenseBattlefieldLabel, allowInlineOrdering: TableChoices.IsDirect(match), sharedTableStudy: TableStudyEnabled);
         UpdateBoardView();
         PrepareMatchPresentation();
         BeginCardReading(frameElapsed);

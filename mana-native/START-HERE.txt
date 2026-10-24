@@ -355,6 +355,9 @@ drag a playable hand card onto the table to begin playing it.
 Two-player games place the opponent above you and use the same card rendering
 as larger tables. Battlefield growth does not switch everyone into labelled
 tiles. Battlefields opens a larger inspection of either player's public cards.
+In the next source build, clicking a non-target player portrait in multiplayer
+pans/zooms across the existing table. Whole table or Escape moves back. Your hand
+and player controls stay in place; reduced motion settles without camera travel.
 During a required hand-card choice, including mulligan bottoming or discarding,
 clicking a card reads it. Choose card beside that face makes the selection;
 Deselect removes an existing choice when available. Complete any remaining

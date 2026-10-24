@@ -12,6 +12,7 @@ public sealed class DrawList : IDisposable
     private readonly List<DrawCommand> commands = [];
     private readonly TextMetrics metrics = new();
     private bool composing;
+    private int clipDepth;
     private float scale = 1;
     private float textScale = 1;
     public float TextScale {
@@ -25,11 +26,12 @@ public sealed class DrawList : IDisposable
     public void BeginComposition(float scale = 1)
     {
         if (composing) throw new InvalidOperationException("Finish the current composition before starting another frame.");
-        commands.Clear(); this.scale = scale; composing = true;
+        commands.Clear(); clipDepth = 0; this.scale = scale; composing = true;
     }
     public DrawingFrame Complete()
     {
         if (!composing) throw new InvalidOperationException("No frame is being composed.");
+        if (clipDepth != 0) throw new InvalidOperationException("A drawing clip was not closed.");
         composing = false;
         metrics.Trim();
         return new(commands, TextScale, scale);
@@ -38,6 +40,12 @@ public sealed class DrawList : IDisposable
     {
         if (!composing) throw new InvalidOperationException("Drawing data can only be added while composing a frame.");
         commands.Add(command);
+    }
+    public void BeginClip(Rectangle bounds) { Add(new DrawCommand.BeginClip(bounds)); clipDepth++; }
+    public void EndClip()
+    {
+        if (clipDepth == 0) throw new InvalidOperationException("No drawing clip is open.");
+        Add(new DrawCommand.EndClip()); clipDepth--;
     }
     public int TextWidth(string value, float size = 1, bool bold = false) => metrics.TextWidth(value, size, bold, TextScale);
     public Point TextSize(string value, float size, int width, int maxLines, bool bold = false) => metrics.TextSize(value, size, width, maxLines, bold, TextScale);

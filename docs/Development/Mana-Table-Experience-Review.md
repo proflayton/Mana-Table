@@ -38,6 +38,12 @@ does not establish that a person can understand or use the screen.
    Routine passing is a mode, not a repeating announcement. Keep timing controls
    steady through requests and observations; reserve new attention surfaces for
    real responses, required choices and failures.
+   A viewpoint change moves across the same table. Keep seating and occurrences
+   continuous while a presentation camera pans and zooms; inspecting a player
+   must not rebuild the battlefield or reset every card's motion.
+   Viewpoint changes move across the same table. Keep canonical seating and
+   occurrences continuous while a presentation camera pans and zooms; do not
+   replace the battlefield or reset all card motion when inspecting a player.
 5. **Let the engine describe the game.** Use authoritative current characteristics,
    action handles and decision constraints. A list intended for auto-pass is not
    a complete action catalog. Simplify presentation without inventing availability,
@@ -82,6 +88,32 @@ does not establish that a person can understand or use the screen.
     and deck legality are separate facts; returning to Play must not require a
     second confirmation of edits already acknowledged by storage.
 
+## Spatial battlefield inspection: 23 October 2026
+
+**Source candidate; human review pending.** Switching to a player field felt
+like refreshing a page. The previous focus path reset card presentation,
+repacked the chosen opponent above the viewer and removed the other fields.
+Inspection now moves one pan/zoom camera over the existing battlefield geometry.
+The table surface moves with the cards; other fields leave the viewport through
+camera movement. Hand, player resources and actual decision controls stay anchored.
+
+Click a non-target player portrait to inspect that field. Whole table or Escape
+travels back; another portrait retargets from the displayed view. Card reading
+and presses hold movement, current engine P/T and counter updates remain live,
+and reduced motion settles directly. This is explicit navigation; turn and
+priority handoffs do not automatically move the camera. The normal two-player
+layout remains its own stable table. The pending-effect panel retains its
+existing focus placement policy, separate from the camera and decision controls.
+
+Use `four-player-table.v1` for ordinary fields, then the crowded checkpoint;
+`crowded-counters.v1` supplies the 480-permanent Toph/Felidar case. Agent visual
+review includes intermediate and settled windows, full-card inspection, return
+and each seat, at 1000 x 740 with motion and 1540 x 980 with reduced motion.
+These finite captures and scoped command/coordinate checks do not supply human
+acceptance of the motion, readability or dense-field experience.
+
+![A settled camera view; movement itself requires the running preview](images/native-table-camera-2026-10-23.png)
+
 ## Two-player battlefield continuity: 23 October 2026
 
 **Source candidate; human review pending.** A live two-player match abruptly
@@ -93,8 +125,8 @@ so the same problem had not appeared in the player's preceding four-player game.
 Two-player play now uses the shared card renderer with the opponent above the
 local player. Separate creature, support and land rows retain recognizable art,
 current stats, counters and tapped states. Adding a group changes its own role
-row instead of changing the whole table's presentation. Multiplayer focus retains
-its existing framing; two-player battlefield and player inspection remain usable.
+row instead of changing the whole table's presentation. Multiplayer focus uses
+the spatial camera described above; two-player battlefield and player inspection remain usable.
 
 Load `two-player-table.v1` to compare seven groups, an eighth local group and
 opposing counters. Agent inspection used actual GPU windows at 1000 x 740 with

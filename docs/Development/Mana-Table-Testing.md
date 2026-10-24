@@ -180,6 +180,12 @@ two-player continuity checks in `SharedTableStudyChecks` and `StudyFocusChecks`.
 They cross the old seven-group boundary from both viewer seats and exercise the
 shipping live-table entry, required opponent targeting and battlefield inspection.
 Use `two-player-table.v1` for immediate visual review of those projected states.
+The same run checks explicit pan/zoom and reversal in `BoardViewChecks`, live
+counter/P/T updates during movement, Escape, current player targets and stable
+canonical occurrences in `StudyFocusChecks`. `DrawingFrameChecks` rejects leaking
+clip scopes; `EffectTransitionChecks` protects the camera-mapped family captions
+from counter receipts. No additional CI process is introduced. Review actual
+motion in `four-player-table.v1` and `crowded-counters.v1`; checks cannot approve it.
 The same run also includes the
 scoped authored `DecisionFlowLabChecks`. The production headless run includes
 `DecisionDockInteractionChecks`: an actual stop-removal gesture clears only that

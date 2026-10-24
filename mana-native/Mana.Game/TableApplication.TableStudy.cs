@@ -22,7 +22,7 @@ internal sealed partial class TableApplication
     {
         if (!TableStudyAvailable || dragging) return;
         tableStudy = enabled;
-        studyFocusOwner = studyFocusOpponent = null;
+        studyFocusOwner = null;
         ClearCardReading();
         SetTurnFollow(false);
         boardViewMotion.Reset();
