@@ -66,6 +66,9 @@ does not establish that a person can understand or use the screen.
    Cards face their seat in the shared multiplayer space; viewer-upright art
    everywhere erases a useful ownership cue. Keep current stats and full readers
    upright. Seat facing and a card's tapped state are separate facts.
+   A tapped resource must change its visible silhouette. Do not exchange its
+   width and height while rotating it: that cancels the physical turn. Reserve
+   the turning footprint, and give compact state cues space before names.
    Reserve room for portrait resources before packing cards. Mana quantities
    must remain separate from both card faces and the life total.
 8. **Reduce repeated interaction through explicit, bounded intent.** A burst of
@@ -96,6 +99,33 @@ does not establish that a person can understand or use the screen.
     Pairing guidance comes from the engine. Saving, saved, failed persistence
     and deck legality are separate facts; returning to Play must not require a
     second confirmation of edits already acknowledged by storage.
+
+## Tapped land silhouettes: 24 October 2026
+
+**Source candidate; human review pending.** The reported Forest, Mountain and
+Plains were all tapped, yet only one displayed a tap arrow. Two presentation
+choices hid their state: exchanging width/height cancelled their outline's turn,
+and the arrow disappeared when a name consumed the remaining art space.
+
+Resource faces now reserve a square turning footprint and keep one portrait
+size through tapping. The same occurrence turns sideways relative to its seat,
+without moving neighboring resources. Your resource lane has more depth to keep
+these faces usable. Tapped artwork is quieter, and compact noncreature faces
+reserve a corner for the tap arrow before fitting names. Names that cannot fit
+completely use the existing source hover cue and upright full reader.
+
+`tapped-resources.v1` opens the exact three-tapped-land case at every seat, then
+shows one untapped, all untapped and mixed matching lands. These are authored
+checkpoints, not simulated mana activations. Agent review uses real artwork at
+1000x740 and 1540x980, with enlarged text and reduced motion. Existing shared
+layout checks verify all viewer mappings, the changed outline, stable centers
+and actual footprint boundaries. At very dense scales, individual labels and
+arrows can still be omitted; physical facing and inspection retain the state.
+Human assessment of instant tap recognition remains pending for this candidate.
+
+![Three tapped resources](images/native-tapped-resources-2026-10-24.png)
+
+![The same resources untapped](images/native-untapped-resources-2026-10-24.png)
 
 ## Seat-facing multiplayer battlefields: 24 October 2026
 
@@ -1096,6 +1126,7 @@ native renderer and input pipeline with controlled state, not a rules simulator.
 | `public-state.v1` | Qualified/repeated abilities, generic player resources, day/night and revocation of visible information |
 | `stack-priority.v1` | Named stack order, controller/targets, whose response is pending, local response and resolution |
 | `trigger-search.v1` | Passing priority hands off to another responder, then required recipient/library choices and the searched card in hand |
+| `tapped-resources.v1` | Three tapped lands at every seat, one untapped, all untapped and mixed matching lands |
 | `turn-orientation.v1` | Ordinary four-player turn sequence; Follow turn currently exposes insufficient travel space and remains stationary |
 | `turn-orientation-crowded.v1` | The same authored turn sequence with the crowded battlefield; stationary fallback and table context |
 

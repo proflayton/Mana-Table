@@ -336,6 +336,12 @@ an opaque texel of its original RGB color after MSAA. These checks establish
 rendering and input behavior, not perceived visual clarity.
 
 The existing headless presentation lane also runs `AttachmentStackChecks` over
+the production shared layout. `SharedTableStudyChecks` additionally runs the
+`tapped-resources.v1` checkpoints for every viewer, verifying that the same
+resource dimensions turn into a different outline without moving their centers
+or crossing reserved lanes. The lab case is the visual tap-recognition review.
+
+`AttachmentStackChecks` covers
 the production shared layout: exact occurrence/controller retention, exposed
 pointer targets, switching and closing readers, counter-bearing Equipment,
 seat-facing layouts for every viewer, upright readers from actual left/top/right

@@ -472,8 +472,11 @@ uses seat-local coordinates and turns complete assemblies into their stable
 world lanes: left/right quarter turns, far seat half turn, local seat upright.
 Two-player framing keeps its upright faces. Tap rotation is relative to that
 baseline; state labels and full readers stay viewer-readable. The same turned
-pose drives texture, footprint and pointer geometry. `SceneCard.ScanFace`
-selects battlefield painting; full readers retain a canonical battlefield anchor
+pose drives texture, footprint and pointer geometry.
+Resource faces reserve their complete turning footprint before packing. Their
+portrait dimensions stay constant through a tap; only their angle changes.
+Compact noncreature paint reserves its tap cue before fitting a complete name.
+`SceneCard.ScanFace` selects battlefield painting; full readers retain a canonical battlefield anchor
 and share its exact scoped hit geometry. Their current P/T and typed state come
 from the same authorized occurrence. The study's pending-effect area is reserved
 before packing and can use the remaining space beside a reader. This comparison

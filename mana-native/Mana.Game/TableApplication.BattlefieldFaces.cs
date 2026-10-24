@@ -30,12 +30,13 @@ internal sealed partial class TableApplication
                 int height = Math.Max(1, (int)(crop.Width / aspect));
                 crop.Y += (crop.Height - height) / 2; crop.Height = height;
             }
-            canvas.Sprite(image, pose.Center, pose.Size, pose.Angle, Color.White * opacity, crop);
+            canvas.Sprite(image, pose.Center, pose.Size, pose.Angle, Color.White * (opacity * (card.Tapped ? .72f : 1)), crop);
         }
         canvas.CardFrame(pose, new Color(98, 122, 126) * opacity, 1);
 
-        var face = BattlefieldScanLabelArea(pose);
-        bool tappedCue = stateVisible && card.Tapped && PaintBattlefieldTapCue(card, owner, face, copies, opacity);
+        var fullFace = BattlefieldScanLabelArea(pose);
+        bool tappedCue = stateVisible && card.Tapped && PaintBattlefieldTapCue(card, owner, fullFace, copies, opacity);
+        var face = BattlefieldScanContentArea(card, fullFace, copies);
         if (stateVisible) {
             // Upright labels remain inside the rotating face, including during
             // the tap animation, rather than enlarging its rectangular hit area.
@@ -74,10 +75,11 @@ internal sealed partial class TableApplication
         bool sharedName = tableScene?.BattlefieldCard(owner, CardViews.Identity(card))?.StudyFamily is { CohortCount: > 1 };
         int caption = labels && !sharedName ? BattlefieldScanNameHeight(card, face, copies) : 0;
         int stats = labels && (CardPresentation.HasCombatStats(card) || card.Damage > 0) ? Math.Min(22, face.Height / 3) : 0;
-        bool badges = copies > 1 || CounterMarker(card).Length > 0 || card.Sick || card.PhasedOut
-            || CardPresentation.Abilities(card).Any(ability => ability != "tapped");
+        bool badges = BattlefieldScanHasBadges(card, copies);
         int top = face.Top + caption + (labels && badges ? 21 : 0) + 2;
-        var art = new Rectangle(face.Left + 2, top, face.Width - 4, face.Bottom - stats - top - 2);
+        var content = BattlefieldScanContentArea(card, face, copies);
+        var art = content != face ? new Rectangle(content.Right + 2, face.Top + 2, face.Right - content.Right - 3, face.Height - 4)
+            : new Rectangle(face.Left + 2, top, face.Width - 4, face.Bottom - stats - top - 2);
         if (art.Width < 18 || art.Height < 14) return false;
 
         var center = art.Center.ToVector2();
@@ -113,6 +115,14 @@ internal sealed partial class TableApplication
     }
 
     private const float BattlefieldNameSize = .5f;
+
+    private static bool BattlefieldScanHasBadges(Card card, int copies) => copies > 1 || CounterMarker(card).Length > 0
+        || card.Sick || card.PhasedOut || CardPresentation.Abilities(card).Any(ability => ability != "tapped");
+
+    private Rectangle BattlefieldScanContentArea(Card card, Rectangle face, int copies) => card.Tapped
+        && !CardPresentation.HasCombatStats(card) && face.Width >= 32 && face.Height is >= 18 and < 60
+        && face.Height - BattlefieldScanNameHeight(card, face, copies) - (BattlefieldScanHasBadges(card, copies) ? 21 : 0) < 18
+        ? new(face.X, face.Y, Math.Max(0, face.Width - 24), face.Height) : face;
 
     private int BattlefieldScanNameHeight(Card card, Rectangle face, int copies)
     {
@@ -150,7 +160,7 @@ internal sealed partial class TableApplication
             || HitAt(pointer) is not { Card: { } card, Zone: "Battlefield", PlayerId: { } owner }
             || tableScene?.BattlefieldCard(owner, CardViews.Identity(card)) is not { ScanFace: true } node) return;
         var displayed = boardView.Apply(node.Pose);
-        var face = BattlefieldScanLabelArea(displayed);
+        var face = BattlefieldScanContentArea(card, BattlefieldScanLabelArea(displayed), node.GroupCount);
         if (node.Attachment == null && (node.StudyFamily is { CohortCount: > 1 } family ? StudyFamilyNameVisible(family)
             : BattlefieldScanNameHeight(card, face, node.GroupCount) > 0)) return;
         string name = card.FaceDown ? "Face-down permanent" : card.Name;

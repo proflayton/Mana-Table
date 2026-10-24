@@ -59,6 +59,11 @@ turn inward, far-seat cards face that player, and your cards stay upright. Curre
 stats and full card readers remain upright. Tapping is relative to the seat's
 direction. Camera focus keeps the same world positions and orientations.
 Two-player faces retain their existing upright framing.
+Resource faces keep portrait dimensions and turn sideways when tapped; packing
+reserves their turning footprint. Tapped art dims, and compact faces reserve a
+corner for the tap cue before fitting names. Hover reveals a complete name when
+the face is too small. `tapped-resources.v1` compares three tapped lands, one
+untapped, all untapped and mixed matching lands in the Experience Lab.
 
 Auras and Equipment in the shared layout fan beneath their exact host. Point at
 an exposed artwork edge to identify it and highlight its host; click to read that

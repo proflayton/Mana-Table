@@ -28,7 +28,7 @@ public static class SharedTableStudy
         (2, _) => new(1310, 398, 94, 122),
         (_, "Creatures") => new(590, 555, 645, 84),
         (_, "Support") => new(320, 555, 260, 155),
-        _ => new(980, 646, 255, 55)
+        _ => new(980, 640, 255, 64)
     };
 
     internal static BattlefieldCluster[] Arrange(int seat, int owner, IReadOnlyList<Card> cards,
@@ -99,7 +99,12 @@ public static class SharedTableStudy
                         // real occurrences remain, with one current front/count.
                         float advance = copies.Length > 1 ? 6 * detail * copy / (copies.Length - 1) : 0;
                         var center = position + size / 2 + new Vector2(advance) + new Vector2(slot.Family.Attachments * AttachmentEdge * detail, 0);
-                        var pose = new Pose(center, card.Tapped ? new(size.Y, size.X) : size, card.Tapped ? MathF.PI / 2 : 0);
+                        // Resources reserve their complete turn footprint. A tap
+                        // rotates the same portrait face instead of exchanging
+                        // its dimensions and cancelling the visible silhouette.
+                        var face = kind == "Lands" ? new Vector2(size.X * 62 / 112, size.Y) : size;
+                        var pose = new Pose(center, kind == "Lands" ? face : card.Tapped ? new(size.Y, size.X) : size,
+                            card.Tapped ? MathF.PI / 2 : 0);
                         int ordinal = CardViews.Identity(card).Length == 0
                             ? Enumerable.Range(0, cards.Count).First(index => ReferenceEquals(cards[index], card)) : 0;
                         var node = SceneCard.Create(card, pose, "Battlefield", owner, ordinal, TableLayout.Hero(seat)) with {
@@ -153,7 +158,7 @@ public static class SharedTableStudy
         return new(x, y, (int)MathF.Ceiling(position.X + size.X) - x, (int)MathF.Ceiling(position.Y + size.Y) - y);
     }
     private static Vector2 FaceSize(Family family, Vector2 desired) => family.Role == "Lands"
-        ? new(desired.X * (family.Cohorts.Length > 1 ? .5f : 1), desired.X * 62 / 112) : desired;
+        ? new(desired.X * (family.Cohorts.Length > 1 ? .5f : 1)) : desired;
     private static float HeaderHeight(Family family, float detail, float headerFloor) => family.Header > 0
         ? Math.Max(family.Header * detail, headerFloor) : 0;
     private static Vector2 Shape(Family family, int columns, Vector2 desired, float faceScale, float scale, float headerFloor)

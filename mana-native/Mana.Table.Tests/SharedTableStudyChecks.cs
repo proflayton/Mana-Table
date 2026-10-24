@@ -46,6 +46,7 @@ internal static class SharedTableStudyChecks
         FocusedRows(crowded, check);
         HiddenFace(check);
         TwoPlayerContinuity(check);
+        ResourceTurns(check);
         check(TableScene.Build(ordinary, 0, new(-100, -100), null, null, false, CardPresentation.IsResource)
                 .Seats.All(seat => seat.Battlefield.SelectMany(cluster => cluster.Cards).All(card => !card.ScanFace)),
             "The explicit study leaves the default battlefield presentation unchanged");
@@ -73,6 +74,25 @@ internal static class SharedTableStudyChecks
         }
     }
 
+    private static void ResourceTurns(Action<bool, string> check)
+    {
+        var stages = TappedResourcesScenario.Create();
+        foreach (int viewer in stages[0].Snapshot.Players.Select(player => player.Id)) {
+            var tapped = Build(stages[0].Snapshot with { ViewerId = viewer });
+            var ready = Build(stages[2].Snapshot with { ViewerId = viewer });
+            foreach (var card in Cards(tapped).Where(card => card.Id.StartsWith("tap-land-", StringComparison.Ordinal))) {
+                var untapped = ready.BattlefieldCard(card.Owner, card.Id)!;
+                check(card.Pose.Center == untapped.Pose.Center && card.Pose.Size == untapped.Pose.Size
+                    && card.Pose.Size.Y > card.Pose.Size.X * 1.5f
+                    && MathF.Abs(MathHelper.WrapAngle(card.Pose.Angle - untapped.Pose.Angle) - MathF.PI / 2) < .001f
+                    && Math.Abs(card.Pose.Bounds.Width - untapped.Pose.Bounds.Height) <= 2
+                    && Math.Abs(card.Pose.Bounds.Height - untapped.Pose.Bounds.Width) <= 2,
+                    "Tapping a resource turns the same portrait face sideways without swapping dimensions or moving its reserved slot: " + card.Id);
+            }
+            foreach (var stage in stages) CheckFootprints(Build(stage.Snapshot with { ViewerId = viewer }), "resource turns viewer " + viewer, check);
+        }
+    }
+
     private static void CheckFootprints(TableScene scene, string label, Action<bool, string> check)
     {
         var outside = scene.Seats.SelectMany(seat => seat.Battlefield.SelectMany(cluster => cluster.Cards.Select(card => new {
@@ -91,6 +111,9 @@ internal static class SharedTableStudyChecks
         var overlap = cards.SelectMany(card => cards.Where(other => other.Owner != card.Owner && card.Pose.Bounds.Intersects(other.Pose.Bounds))
             .Select(other => new { First = card, Second = other })).FirstOrDefault();
         var actionOverlap = cards.FirstOrDefault(card => card.Pose.Bounds.Intersects(SharedTableStudy.ActionArea));
+        var controls = TurnControlLayout.For(TableLayout.Hero(3)).Reservations;
+        check(cards.All(card => controls.All(bounds => !card.Pose.Bounds.Intersects(bounds))),
+            "Study " + label + ": battlefield faces stay clear of the local portrait's phase and priority controls");
         check(overlap == null && actionOverlap == null,
             "Study " + label + ": controller faces remain separate from other players and the fixed action area"
             + (overlap == null ? "" : $"; {overlap.First.Id} controller {overlap.First.Owner} bounds {overlap.First.Pose.Bounds} intersects {overlap.Second.Id} controller {overlap.Second.Owner} bounds {overlap.Second.Pose.Bounds}")
@@ -237,10 +260,13 @@ internal static class SharedTableStudyChecks
         check(landFamily is { Role: "Lands", CohortCount: 2, TotalCount: 2 } && landFamily.NameBounds.Height >= 23
                 && mixedNodes.All(node => node.Pose.Bounds.Width <= 57 && node.GroupFront && node.GroupCount == 1)
                 && !mixedNodes[0].Pose.Bounds.Intersects(mixedNodes[1].Pose.Bounds)
-                && landFamily.Bounds.Width <= matchingLands.BattlefieldCard(0, "compact-ready")!.StudyFamily!.Bounds.Width + 1
+                && landFamily.Bounds.Width <= 120
+                && matchingLands.BattlefieldCard(0, "compact-ready")!.StudyFamily is { CohortCount: 1, TotalCount: 2 }
                 && landFamily.Cohorts.All(cohort => cohort.MemberIds.Count == 1
                     && mixedLands.BattlefieldCard(0, cohort.FrontCardId)!.Card.Key == "action:" + cohort.FrontCardId),
-            "Tapped and untapped ordinary lands share one standard-width family with compact separate state faces, a real caption band, and each exact action key");
+            "Tapped and untapped ordinary lands share one bounded turning footprint with compact separate state faces, a real caption band, and each exact action key; "
+            + $"family {landFamily.Bounds}, caption {landFamily.NameBounds}, matching {matchingLands.BattlefieldCard(0, "compact-ready")!.StudyFamily!.BodyBounds}; "
+            + string.Join("; ", mixedNodes.Select(node => $"{node.Id}: {node.Pose.Bounds}, front {node.GroupFront}, count {node.GroupCount}")));
     }
 
     private static void FocusedRows(GameSnapshot snapshot, Action<bool, string> check)

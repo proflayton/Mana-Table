@@ -346,6 +346,9 @@ retains the previous relationship lines.
 In shared multiplayer games, cards face their player around the table. Current
 stats stay upright; click a turned card to read its full face upright. Tapping
 is separate from seat direction. The two-player view keeps upright faces.
+Lands turn sideways when tapped and return upright toward their seat when
+untapped. Their art dims while tapped; compact faces reserve space for a tap
+arrow. Hover for the full name if a compact face has no room for it.
 Current stats already include the engine's effects; do not add an Equipment's
 printed bonus again. Re-equipping updates the same occurrences.
 Click a player's life header to inspect public counters and commander damage
