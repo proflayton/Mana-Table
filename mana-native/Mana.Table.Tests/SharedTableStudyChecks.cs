@@ -156,10 +156,12 @@ internal static class SharedTableStudyChecks
                 && text.All(value => !value!.Contains("HIDDEN_", StringComparison.Ordinal)),
             "The production study painter masks a hidden printed name, artwork, cost and rules while retaining its public anonymous creature state");
         check(frame.Cards.Where(card => card.Zone == "Battlefield").All(card => {
-                int seat = frame.Scene!.Seat(card.Request.Owner!.Value).Index;
-                return SharedTableStudy.Lane(seat, BattlefieldLayout.Role(card.Card, CardPresentation.IsResource)).Contains(card.Rest.Bounds);
+                var node = frame.Scene!.BattlefieldCard(card.Request.Owner!.Value, card.Id)!;
+                var placement = node.Attachment is { } attachment ? frame.Scene.BattlefieldDrawOrder.Single(item => item.Id == attachment.RootId) : node;
+                int seat = frame.Scene.Seat(placement.Owner).Index;
+                return SharedTableStudy.Lane(seat, BattlefieldLayout.Role(placement.Card, CardPresentation.IsResource)).Contains(card.Rest.Bounds);
             }),
-            "The composed study's actual resting card/input poses remain inside their role lanes, including flying and phased state presentation");
+            "The composed study's actual resting card/input poses stay in their host's role lane, including attachments, flying and phased state presentation");
     }
 
     private static void NameFamilies(GameSnapshot baseline, Action<bool, string> check)

@@ -21,8 +21,14 @@ internal sealed partial class TableApplication
         // current hit after battlefield cards have registered their actual poses.
         string? focus = HitAt(pointer)?.Card?.CombatId;
         if (string.IsNullOrEmpty(focus)) return;
-        foreach (var card in match!.Players.SelectMany(p => p.Zone("Battlefield").Cards)) {
+        foreach (var player in match!.Players)
+        foreach (var card in player.Zone("Battlefield").Cards) {
             if (card.AttachedTo is not { } target || card.CombatId != focus && target.Id != focus) continue;
+            if (tableScene?.BattlefieldCard(player.Id, CardViews.Identity(card))?.Attachment != null) {
+                string linkedId = card.CombatId == focus ? target.Id : card.CombatId;
+                if (cardPositions.TryGetValue(linkedId, out var linkedPose)) canvas.CardFrame(linkedPose, Gold * .7f, 2);
+                continue;
+            }
             if (!cardPositions.TryGetValue(card.CombatId, out var sourcePose) || !cardPositions.TryGetValue(target.Id, out var targetPose)) continue;
             var start = sourcePose.EdgeToward(targetPose.Center, 4);
             var end = targetPose.EdgeToward(sourcePose.Center, 4);
@@ -32,6 +38,45 @@ internal sealed partial class TableApplication
             canvas.CardFrame(linked with { Size = linked.Size + new Vector2(7) }, Gold * .85f, 2);
             attachmentConnections.Add(new(card.CombatId, target.Id, start, end));
         }
+    }
+    private void PaintBattlefieldAttachment(SceneCard node, Pose pose, bool selected, bool legal)
+    {
+        var card = node.Card;
+        PaintAbilityEffects(card, pose);
+        PaintBattlefieldScanFace(card, pose, node.Owner, false, false, false, false, 1);
+        if (card.PhasedOut) PaintPhasedOutline(pose);
+        var edge = node.Attachment!.Edge(pose);
+        bool over = pointerSurface?.Card is { } pointed && CardViews.Same(pointed, card);
+        var accent = selected ? Gold : over ? HoverAccent : legal ? ActionAccent : new Color(120, 145, 148);
+        if (over || selected || legal) canvas.Border(edge, accent, over || selected ? 2 : 1);
+        // The exposed illustration is the attachment, not a row of controls.
+        // Its complete name appears at the source on hover; click reads its face.
+        if (node.Attachment.RootOwner != node.Owner && edge.Width >= 10 && edge.Height >= 20) {
+            var center = new Vector2(edge.Center.X, edge.Top + 8);
+            if (seatPortraits.TryGetValue(node.Owner, out var portraitName) && resources.Card(new Card { Name = portraitName, ArtName = portraitName }) is { } portrait)
+                canvas.Portrait(portrait, center, 6, Color.White);
+            else canvas.Circle(center, 5, node.Owner == match!.ViewerId ? Gold : Blue);
+            canvas.Ring(center, 6, node.Owner == match!.ViewerId ? Gold : Blue, 1);
+        }
+        string counter = CounterMarker(card);
+        if (counter.Length > 0 && edge.Width >= 12 && edge.Height >= 36) {
+            var chip = new Rectangle(edge.X, edge.Bottom - 25, edge.Width, 24);
+            canvas.Fill(chip, new Color(16, 27, 31));
+            PaintCounterGlyph(new(edge.Center.X - 3, chip.Top + 3, 6, 6), new(154, 224, 203));
+            counterAnchors[node.Id] = chip.Center.ToVector2();
+            if (canvas.TextWidth(counter, .4f, true) <= chip.Width - 2) {
+                canvas.CenterText(counter, new(chip.X, chip.Top + 11, chip.Width, 12), new(154, 224, 203), .4f, true);
+                RecordBattlefieldLabel(card, node.Owner, "counter", counter, chip, canvas.TextWidth(counter, .4f, true), chip.Width - 2);
+            }
+        }
+        if (card.Tapped && edge.Width >= 12 && edge.Height >= 22) {
+            var mark = new Vector2(edge.Center.X, edge.Center.Y);
+            canvas.Line(mark + new Vector2(-4, -5), mark + new Vector2(3, -5), Gold, 1.5f);
+            canvas.Line(mark + new Vector2(3, -5), mark + new Vector2(3, 3), Gold, 1.5f);
+            canvas.Polygon([mark + new Vector2(-1, 1), mark + new Vector2(6, 1), mark + new Vector2(3, 6)], Gold);
+        }
+        if (TableChoices.Index(match!, card) is { } choice && match!.Decision!.Ordered && decisionDraft.Selections.Contains(choice))
+            PaintChoiceOrder(choice, new(edge.Left, edge.Top, edge.Width, Math.Min(24, edge.Height)), .48f);
     }
     private void PaintAttachmentBadge(Card card, Pose pose, int owner, bool compact)
     {

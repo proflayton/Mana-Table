@@ -52,7 +52,15 @@ permanents share state-specific groups, tapped faces carry a prominent curved
 arrow, and clicking a non-target player portrait opens the two-field view.
 Whole table or Escape returns. Full readers keep current P/T on the card with
 larger live details on the right. `--classic-table` starts the previous layout
-when comparing behavior or troubleshooting. Two-player tables are unchanged.
+when comparing behavior or troubleshooting.
+
+Auras and Equipment in the shared layout fan beneath their exact host. Point at
+an exposed artwork edge to identify it and highlight its host; click to read that
+specific card. Re-equipping moves the existing occurrence. The layout reserves
+the fan's footprint before packing neighboring cards, including foreign-controlled
+Auras; controller lookup and engine actions retain the attachment's real seat.
+`attachments.v1` in the Experience Lab covers multiple attachments, Equipment
+counters, re-equipping, detachment, a tapped host and a crowded mixed battlefield.
 
 Visible faces preload, and the selected local deck warms the artwork cache before
 and during play. Reading takes precedence over background downloads; hidden

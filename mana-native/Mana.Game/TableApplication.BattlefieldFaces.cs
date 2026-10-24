@@ -151,9 +151,11 @@ internal sealed partial class TableApplication
             || tableScene?.BattlefieldCard(owner, CardViews.Identity(card)) is not { ScanFace: true } node) return;
         var displayed = boardView.Apply(node.Pose);
         var face = BattlefieldScanLabelArea(displayed);
-        if (node.StudyFamily is { CohortCount: > 1 } family ? StudyFamilyNameVisible(family)
-            : BattlefieldScanNameHeight(card, face, node.GroupCount) > 0) return;
+        if (node.Attachment == null && (node.StudyFamily is { CohortCount: > 1 } family ? StudyFamilyNameVisible(family)
+            : BattlefieldScanNameHeight(card, face, node.GroupCount) > 0)) return;
         string name = card.FaceDown ? "Face-down permanent" : card.Name;
+        if (node.Attachment is { } attached && attached.RootOwner != owner)
+            name += " · " + match!.Players.First(player => player.Id == owner).Name;
         const float size = .7f;
         int width = Math.Min(380, canvas.TextWidth(name, size, true) + 16);
         int height = canvas.TextSize(name, size, width - 16, 80, true).Y + 10;

@@ -106,7 +106,8 @@ internal sealed class CardPresentationController
             && Vector2.Distance(pose.Center, rest.Center) < 2) transitions.Remove(request.Id);
         bool anchored = request.Zone == "Hand" && (focused || transitions.Contains(request.Id))
             || context.KeepBattlefieldAnchor && request.Zone == "Battlefield" && focused;
-        var geometry = new CardHitGeometry(pose, anchored ? rest : null,
+        var anchorPose = request.ReadingAnchor is { } anchor ? new Pose(view.Apply(anchor.Center.ToVector2()), anchor.Size.ToVector2() * view.Scale) : rest;
+        var geometry = new CardHitGeometry(pose, anchored ? anchorPose : null,
             request.ActivationBounds is { } activation ? view.Apply(activation) : null);
         var hit = new Hit(request.HitId, context.Scope, geometry.Bounds, request.Activate, request.Card,
             request.Zone, request.Owner, geometry.Contains);
@@ -165,10 +166,11 @@ internal sealed class CardPresentationController
         var focused = Pinned;
         if (focused?.Zone == "Battlefield") {
             var strip = cards.LastOrDefault(card => card.Zone == "Battlefield" && card.Id != focused.Id
-                && (card.Rest with { Center = card.Rest.Point(.5f, .08f), Size = new(card.Rest.Size.X, card.Rest.Size.Y * .16f) }).Contains(point));
+                && (card.Request.ReadingAnchor != null ? card.AnchorContains(point)
+                    : (card.Rest with { Center = card.Rest.Point(.5f, .08f), Size = new(card.Rest.Size.X, card.Rest.Size.Y * .16f) }).Contains(point)));
             if (strip != null) return Registered(strip);
         }
-        return focused != null && (focused.Rest.Contains(point) || focused.Display.Contains(point))
+        return focused != null && (focused.AnchorContains(point) || focused.Display.Contains(point))
             ? Registered(focused) : top;
     }
 

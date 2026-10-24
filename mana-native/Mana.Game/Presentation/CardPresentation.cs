@@ -62,7 +62,8 @@ internal sealed record CardPresentationContext(GameSnapshot? State, string Scope
 /// <summary>Rest is canonical layout geometry; Entrance is an already presented source position.</summary>
 internal sealed record CardPresentationRequest(string Id, Card Card, Pose Rest, string Zone,
     int? Owner, string HitId, UiIntent Activate, Vector2? Entrance = null, float EntranceDelay = 0,
-    bool OpensZone = false, int ChoiceSlot = -1, Rectangle? ActivationBounds = null, float? PlayAge = null, bool RevealPlay = true);
+    bool OpensZone = false, int ChoiceSlot = -1, Rectangle? ActivationBounds = null, float? PlayAge = null, bool RevealPlay = true,
+    Rectangle? ReadingAnchor = null);
 
 internal enum CardPresentationLayer { Table, Playing, Returning, Reader }
 
@@ -78,6 +79,7 @@ internal sealed record PresentedCard(CardPresentationRequest Request,
     public Card Card => Request.Card;
     public string Zone => Request.Zone;
     public Pose Rest => View.Apply(Request.Rest);
+    public bool AnchorContains(Point point) => Request.ReadingAnchor is { } anchor ? View.Apply(anchor).Contains(point) : Rest.Contains(point);
     public int ChoiceSlot => Request.ChoiceSlot;
 }
 

@@ -335,6 +335,16 @@ relationships and scoped pointer targets. A thin logical stroke need not contain
 an opaque texel of its original RGB color after MSAA. These checks establish
 rendering and input behavior, not perceived visual clarity.
 
+The existing headless presentation lane also runs `AttachmentStackChecks` over
+the production shared layout: exact occurrence/controller retention, exposed
+pointer targets, switching and closing readers, counter-bearing Equipment,
+re-equipping/detaching, nested and foreign-controlled attachments, distinct
+reference/visual ID domains, malformed links, two-player views and crowded fields.
+It does not start another CI process. Use `attachments.v1` for real-window review
+at 1000 x 740 and a larger window, including enlarged text, motion/reduced motion
+and camera focus. Agent screenshots and automated invariants do not establish
+human acceptance of the fan or its small exposed targets.
+
 For a relevant graphical regression, use the same test driver, for example:
 
 ```powershell

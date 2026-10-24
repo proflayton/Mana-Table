@@ -28,6 +28,8 @@ does not establish that a person can understand or use the screen.
    gained abilities must remain inspectable after an animation, with their sources
    where the engine reports them. Repeated labels and a paragraph of
    changes cannot substitute for that relationship.
+   Persistent relationships belong in placement: keep Auras and Equipment
+   beneath their host with individually reachable artwork edges.
    Public-zone inspection also needs the relevant casting route, its cost and
    conditions, and reliable recent zone history. A public capability is distinct
    from a current legal action, especially when inspecting an opponent's card.
@@ -91,6 +93,31 @@ does not establish that a person can understand or use the screen.
     Pairing guidance comes from the engine. Saving, saved, failed persistence
     and deck legality are separate facts; returning to Play must not require a
     second confirmation of edits already acknowledged by storage.
+
+## Attachments beneath their host: 24 October 2026
+
+**Source candidate; human review pending.** The player should recognize an
+attachment relationship from the cards' physical arrangement. Auras and Equipment
+now form a shallow artwork fan beneath their host in the shared table. Pointing
+at an exposed edge identifies the full card and highlights its host; clicking
+reads that exact occurrence, and clicking its edge again closes reading. Existing
+engine actions and required-choice gestures retain their authority.
+
+The fan reserves space before neighboring cards are packed. Re-equipping moves
+the same occurrence; detached Equipment returns to its controller's support lane.
+Foreign-controlled Auras stay beneath their host with a controller portrait cue
+and controller identity on hover. Host P/T remains the engine's current value;
+Equipment counters stay on the exposed source edge. An initial tall-stack review
+made nearby creatures too small, so the current candidate uses a shallow fan.
+
+`attachments.v1` replays multiple attachments, Jitte with two counters, a foreign
+Aura, re-equipping, detachment, a tapped host and mixed crowded fields. Review the
+real artwork at small and large windows, with enlarged text, camera movement and
+normal/reduced motion. Automated occurrence/input checks are separate from human
+judgment of recognition and target comfort. The classic comparison layout retains
+the older line treatment.
+
+![Attachment fan and full-card reading](images/native-attachment-fan-2026-10-24.png)
 
 ## Deck token artwork: 24 October 2026
 
@@ -852,7 +879,8 @@ seat viewer-upright battlefield faces with identity, art and authoritative P/T;
 put creatures toward the shared action area and resources/support farther out.
 These are spatial relationships, not permanent role headings or four framed
 miniature screens. Place cards by current controller; retain original ownership
-in inspection. Cross-controller attachments still need their controller cue.
+in inspection. The current attachment candidate adds a controller portrait and
+hover identity for cross-controller Auras; human review of that cue is pending.
 
 The alternative of three opponent bands above one wide local field deserves a
 visual comparison, especially in a larger window. At a small window, its narrow
@@ -1022,6 +1050,7 @@ native renderer and input pipeline with controlled state, not a rules simulator.
 | Scenario ID | Review focus |
 | --- | --- |
 | `four-player-table.v1` | Ordinary and asymmetric four-seat fields, a seven-card local hand, commanders, public zones, current stats/counters/attachments and a cross-seat ability/result; optional `--table-study` comparison |
+| `attachments.v1` | Multiple Auras/Equipment beneath their host, Equipment counters, cross-controller Aura, re-equipping, detachment, tapped host and 480 mixed permanents |
 | `two-player-table.v1` | Seven card/state groups, an eighth local group and an opposing counter change; inspect two-player continuity across the old global threshold |
 | `crowded-counters.v1` | 480 permanents, Toph earthbend 2, then one Felidar Retreat effect with 82 recipients; source, changed land and complete affected set |
 | `card-reading.v1` | Hand slots, reading/collapse and required selection; current P/T/counters in card and ability-source previews despite an older embedded source face |

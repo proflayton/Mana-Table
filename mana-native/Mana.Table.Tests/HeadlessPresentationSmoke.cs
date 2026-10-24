@@ -41,6 +41,7 @@ internal static class HeadlessPresentationSmoke
             QuietPriorityPresentationChecks.Run(profile, Check);
             MatchHeaderInteractionChecks.Run(profile, Check);
             TokenArtworkChecks.Run(profile, Check);
+            AttachmentStackChecks.Run(profile, Check);
             PendingEffectPresentationChecks.Run(profile, Check);
             CardPlayChecks.RunPresentation(profile, Check);
             ImpactFeedbackChecks.RunPresentation(profile, Check);

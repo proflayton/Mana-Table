@@ -96,7 +96,7 @@ internal sealed partial class TableApplication
             canvas.Text(owner, identity.X + 4, identity.Y + 1, Ink, .375f, Math.Max(1, identity.Width - 8), 1, true);
             hits.Add(new("focus:" + player.Id, Scope, identity, new MatchIntent.OpenZone(player.Id, "Battlefield")));
         }
-        foreach (var cluster in clusters)
+        if (!TableStudyEnabled) foreach (var cluster in clusters)
             foreach (var node in cluster.Cards) DrawSceneCard(node);
         canvas.EndClip();
     }

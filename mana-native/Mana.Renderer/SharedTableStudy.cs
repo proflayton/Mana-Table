@@ -9,6 +9,7 @@ namespace Mana.Renderer;
 public static class SharedTableStudy
 {
     private static readonly string[] Roles = ["Creatures", "Support", "Lands"];
+    private const float AttachmentEdge = 22, AttachmentDrop = 8;
     public static Rectangle ActionArea => new(565, 390, 470, 165);
     public static Rectangle Territory(int seat) => seat switch {
         0 => new(195, 160, 350, 470), 1 => new(510, 171, 580, 204),
@@ -31,14 +32,16 @@ public static class SharedTableStudy
 
     internal static BattlefieldCluster[] Arrange(int seat, int owner, IReadOnlyList<Card> cards,
         Func<Card, bool> isResource, IReadOnlySet<string>? separate,
-        Func<string, Rectangle>? lanes = null, float faceScale = 1, bool horizontalRows = false, bool centerRows = false)
+        Func<string, Rectangle>? lanes = null, float faceScale = 1, bool horizontalRows = false, bool centerRows = false,
+        BattlefieldAttachments? attachments = null)
     {
         faceScale = float.IsFinite(faceScale) && faceScale > 0 ? faceScale : 1;
         string Identity(Card card) => CardViews.Identity(card) is { Length: > 0 } id ? id
             : "anonymous:" + Enumerable.Range(0, cards.Count).First(index => ReferenceEquals(cards[index], card));
         // A family joins public names, not mutable characteristics. Hidden and
         // anonymous identities never acquire a family through their printed face.
-        var families = cards.GroupBy(card => card.FaceDown || string.IsNullOrWhiteSpace(card.Name)
+        var families = cards.GroupBy(card => attachments?.Under(Identity(card)).Count > 0 ? "assembly:" + Identity(card)
+                : card.FaceDown || string.IsNullOrWhiteSpace(card.Name)
                 ? "occurrence:" + Identity(card) : "name:" + card.Name, StringComparer.Ordinal)
             .Select(group => {
                 var members = group.ToArray();
@@ -50,7 +53,8 @@ public static class SharedTableStudy
                     : members.Any(isResource) ? "Lands" : "Support";
                 string name = members[0].FaceDown ? "Face-down permanent"
                     : string.IsNullOrWhiteSpace(members[0].Name) ? "Unnamed permanent" : members[0].Name;
-                return new Family(owner + ":" + group.Key, name, role, cohorts);
+                var under = attachments?.Under(Identity(members[0])) ?? [];
+                return new Family(owner + ":" + group.Key, name, role, cohorts, under.Count, under.Count == 0 ? 0 : under.Max(member => member.Depth));
             }).ToArray();
         return Roles.Select(kind => {
             var selected = families.Where(family => family.Role == kind).ToArray();
@@ -79,13 +83,25 @@ public static class SharedTableStudy
                         // Copy count never enlarges a cohort's footprint. All
                         // real occurrences remain, with one current front/count.
                         float advance = copies.Length > 1 ? 6 * detail * copy / (copies.Length - 1) : 0;
-                        var center = position + size / 2 + new Vector2(advance);
+                        var center = position + size / 2 + new Vector2(advance) + new Vector2(slot.Family.Attachments * AttachmentEdge * detail, 0);
                         var pose = new Pose(center, card.Tapped ? new(size.Y, size.X) : size, card.Tapped ? MathF.PI / 2 : 0);
                         int ordinal = CardViews.Identity(card).Length == 0
                             ? Enumerable.Range(0, cards.Count).First(index => ReferenceEquals(cards[index], card)) : 0;
                         var node = SceneCard.Create(card, pose, "Battlefield", owner, ordinal, TableLayout.Hero(seat)) with {
                             ScanFace = true, Compact = true, GroupFront = copy == copies.Length - 1, GroupCount = copies.Length
                         };
+                        var under = attachments?.Under(node.Id) ?? [];
+                        // Paint deepest cards first; the front host covers their
+                        // bodies while every attachment keeps an exposed edge.
+                        for (int layer = under.Count - 1; layer >= 0; layer--) {
+                            var member = under[layer];
+                            var memberCenter = center + new Vector2(-AttachmentEdge * (layer + 1), AttachmentDrop * member.Depth) * detail;
+                            var memberPose = new Pose(memberCenter, member.Card.Tapped ? new(size.Y, size.X) : size, member.Card.Tapped ? MathF.PI / 2 : 0);
+                            familyNodes.Add(SceneCard.Create(member.Card, memberPose, "Battlefield", member.Owner, 0, TableLayout.Hero(seat)) with {
+                                ScanFace = true, Compact = true,
+                                Attachment = new(node.Id, owner, member.HostId, layer + 1, member.Depth, AttachmentEdge * detail / size.X)
+                            });
+                        }
                         cohortNodes.Add(node); familyNodes.Add(node);
                     }
                     cohortPlans.Add(new(cohortNodes[^1].Id, Array.AsReadOnly(cohortNodes.Select(node => node.Id).ToArray()),
@@ -93,7 +109,7 @@ public static class SharedTableStudy
                 }
                 var extent = slot.Size;
                 var nameBounds = header > 0 ? Bounds(slot.Position, new(extent.X, header)) : Rectangle.Empty;
-                var bodyBounds = cohortPlans.Select(cohort => cohort.Bounds).Aggregate(Rectangle.Union);
+                var bodyBounds = familyNodes.Select(node => node.Pose.Bounds).Aggregate(Rectangle.Union);
                 var family = new StudyBattlefieldFamily(slot.Family.Id, slot.Family.Name, kind,
                     Rectangle.Union(bodyBounds, nameBounds.IsEmpty ? bodyBounds : nameBounds), nameBounds, bodyBounds,
                     Array.AsReadOnly(cohortPlans.ToArray()));
@@ -103,7 +119,7 @@ public static class SharedTableStudy
         }).ToArray();
     }
 
-    private sealed record Family(string Id, string Name, string Role, Card[][] Cohorts)
+    private sealed record Family(string Id, string Name, string Role, Card[][] Cohorts, int Attachments, int AttachmentDepth)
     {
         internal int Fan => Cohorts.Any(cohort => cohort.Length > 1) ? 6 : 0;
         internal int Header => Cohorts.Length > 1 ? 26 : 0;
@@ -129,9 +145,9 @@ public static class SharedTableStudy
         int rows = (family.Cohorts.Length + columns - 1) / columns;
         float detail = faceScale * scale;
         float fan = family.Fan * detail, gap = 6 * detail;
-        return new(columns * (desired.X + fan) + (columns - 1) * gap,
+        return new(columns * (desired.X + fan) + (columns - 1) * gap + family.Attachments * AttachmentEdge * detail,
             rows * (desired.Y + fan) + (rows - 1) * gap
-                + (family.Header > 0 ? HeaderHeight(family, detail, headerFloor) + 4 * detail : 0));
+                + (family.Header > 0 ? HeaderHeight(family, detail, headerFloor) + 4 * detail : 0) + family.AttachmentDepth * AttachmentDrop * detail);
     }
 
     private static Slot[] Pack(Family[] families, Rectangle lane, Vector2 desired, float faceScale, int seat, bool horizontalRows, bool centerRows)

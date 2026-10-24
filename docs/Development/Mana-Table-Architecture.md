@@ -480,6 +480,20 @@ public occurrences while preserving strict state/availability cohorts and exact
 member IDs; required candidates are separated before packing. A bounded copy fan
 does not grow with the number of matching tokens or lands.
 
+`BattlefieldAttachments` resolves visible public attachment references into scene
+occurrences before packing. Combat-reference IDs, visual IDs and action keys keep
+their separate domains. Valid chains form one measured host assembly; cycles,
+ambiguous references and missing hosts leave the actual cards independent.
+`SharedTableStudy` reserves the shallow fan's full extent, and the global
+`BattlefieldDrawOrder` paints attachments beneath their host across controller
+boundaries. `SceneSeat` still indexes each card under its actual controller.
+`BattlefieldAttachment` describes spatial root, immediate host, layer and exposed
+edge; it grants no group action. The card reader uses that edge as its retained
+anchor, avoiding invisible covered-body targets. Source effect anchors and counter
+receipts use the exposed edge. Re-equipping keeps the same occurrence/motion ID;
+the renderer never recomputes bonuses or changes attachment rules. The classic
+comparison layout retains its old connector treatment.
+
 Manual battlefield inspection changes `BoardView` instead of rebuilding a duel
 layout. `TableScene` retains every controller's canonical role lanes, card
 occurrences and seat IDs throughout. `BoardViewMotion.Navigate` eases a uniform
@@ -927,8 +941,8 @@ Help pages are measured to fit above navigation controls and retain all text;
 opening or paging help never answers the decision.
 
 Public attachment references link visible battlefield occurrences by opaque
-`combatId`, with face-down names/types redacted. Native badges, hover connectors
-and inspection show those relationships without treating attached cards as one
+`combatId`, with face-down names/types redacted. Shared-table artwork fans, host
+highlights and inspection show those relationships without treating attached cards as one
 occurrence or recalculating the host's current characteristics. Grouping preserves
 attachment differences so identical card names do not hide separate equipped
 states. Phasing retains the public relationship; leaving visible zones removes it.

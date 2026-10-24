@@ -14,6 +14,7 @@ public static partial class ExperienceScenarios
         new(DefaultId, "480 permanents · Toph + Felidar", "Four crowded battlefields, an earthbent land, then 82 exact landfall recipients.", Crowd),
         new("card-reading.v1", "Card reading and selection", "Stable hand slots, inspectable battlefield cards and a hand selection.", Reading),
         new("card-play.v1", "Card play journeys", "A land from hand, your spell through the stack, an opponent's public cast, then an ability that keeps its source in place.", CardPlay),
+        new(AttachmentScenario.Id, "Auras and Equipment · attached stacks", "Multiple attachments, cross-controller Auras, re-equip, detach, tapping and a crowded field.", AttachmentScenario.Create),
         new("ability-choice.v1", "Llanowar Elves · make green mana", "Start before an activation, choose its ability, and see the tapped source and green mana.", AbilityFlow),
         new("ability-targeting.v1", "Walking Ballista · costs and targets", "Two on-card abilities, cancellable targeting, a pending stack ability and its authored result.", BallistaFlow),
         new(PreparedSpellScenario.Id, "Prepared spell · Emeritus of Ideation", "A prepared source, its linked spell in exile, targeting, priority and the unprepared result.", PreparedSpellScenario.Create),

@@ -335,8 +335,14 @@ of their visible permanents in an upright battlefield gallery.
 The table keeps every battlefield occurrence visible, including
 crowded groups; enlarge or inspect an individual card to read it. Battlefield
 ranks do not have pages. Long hands and choice galleries still have page controls.
-Hover an Equipment or its attached creature to trace the connection. Badges and
-inspection identify what it is attached to and how many attachments it has.
+Auras and Equipment tuck beneath their host in a shallow artwork fan. Hover an
+exposed edge for its full name and a highlight of its host; click that edge to
+read the actual card and use its offered actions. Click the same edge to close.
+Each attachment stays independently selectable. A small portrait marks an
+attachment controlled by a different player; its hover name identifies that
+controller. Re-equipping moves the same card to its new host. Detached Equipment
+returns to its controller's support cards. The classic troubleshooting layout
+retains the previous relationship lines.
 Current stats already include the engine's effects; do not add an Equipment's
 printed bonus again. Re-equipping updates the same occurrences.
 Click a player's life header to inspect public counters and commander damage
