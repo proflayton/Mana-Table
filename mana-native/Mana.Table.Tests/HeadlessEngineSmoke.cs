@@ -116,6 +116,7 @@ internal static class HeadlessEngineSmoke
             string? landId = null, commanderId = null;
             bool landSaved = false, commanderSaved = false, openingHandRead = false, bottomHandRead = false, commanderPayment = false, paidWithForest = false;
             int decisions = 0, mulligans = 0;
+            bool freeMulliganObserved = false;
 
             while (!landSaved || !commanderSaved) {
                 Guard();
@@ -144,6 +145,12 @@ internal static class HeadlessEngineSmoke
                 if (view.Busy || view.Match?.Decision == null) { await Task.Delay(5); continue; }
                 if (++decisions > 80) throw new InvalidOperationException("The focused opening scenario required unexpectedly many decisions.");
                 var decision = view.Match.Decision;
+                if (mulligans == 1 && state.Turn == 0) {
+                    Check(decision is { Purpose: DecisionPurpose.OpeningHand }
+                            && view.Match.Viewer!.Zone("Hand").Count == 7,
+                        "The first real multiplayer mulligan redraws seven and returns to Keep without a bottom-card prompt");
+                    freeMulliganObserved = true;
+                }
                 if (decision is { Kind: "input", Intent: DecisionIntent.Mana } && !paidWithForest) {
                     Check(decision.SourceCard?.Name == "Rhys the Redeemed" && decision.Message.Length > 0,
                         "Dragging the real paid commander opens its authoritative mana-payment input with the current source and cost instruction");
@@ -185,6 +192,8 @@ internal static class HeadlessEngineSmoke
                 }
                 if (!bottomHandRead && mulligans == 2 && state.Turn == 0
                         && decision is { Kind: "input", Intent: DecisionIntent.Selection, OkEnabled: false }) {
+                    Check(decision.Min == 1 && decision.Max == 1,
+                        "The second multiplayer mulligan projects exactly one required bottom card through the native provider");
                     var bottomCard = view.Match.Viewer!.Zone("Hand").Cards.First(card => card.Selectable);
                     string prompt = decision.Id;
                     int count = view.Match.Viewer.Zone("Hand").Count;
@@ -251,7 +260,7 @@ internal static class HeadlessEngineSmoke
                 && landId != null && commanderId != null,
                 "The real land reader drag, command-zone commander drag and Forest payment action all use production pointer controls");
             Check(openingHandRead, "The real Forge walkthrough exercised opening-hand browsing before explicitly keeping");
-            Check(mulligans == 2 && bottomHandRead, "The same real Forge walkthrough exercised inspection, explicit bottom-card selection and confirmation after Commander mulligans");
+            Check(freeMulliganObserved && mulligans == 2 && bottomHandRead, "The same real Forge walkthrough exercised the free multiplayer redraw, inspection, explicit bottom-card selection and confirmation after Commander mulligans");
             Check(frame.Stamp.GameId == view.Match!.Id && frame.Stamp.Revision == view.Match.Revision
                 && frame.Stamp.DecisionId == view.Match.Decision?.Id,
                 "The published frame is stamped with the exact authoritative game, revision and decision being displayed");

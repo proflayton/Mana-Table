@@ -590,6 +590,13 @@ need only the two IDs. The prompt supplies cardinality and range constraints;
 the host validates them before dispatch. Combat allocations may allow `action:
 skip`. Old session IDs and prompt IDs fail rather than being replayed.
 
+London bottom-card inputs publish their exact total `min` and `max`; highlighted
+cards remain selected until explicit confirmation. A free multiplayer mulligan
+draws seven and returns to the opening-hand decision without publishing a
+zero-card bottoming input. Forge owns the free-mulligan policy: three or more
+players receive the multiplayer free redraw; two-player Commander uses its
+ordinary paid mulligans. This adds no command, capability or saved-data version.
+
 The native adapter also sends `expectedTask` (`openingHand`, `priority`, `mana`,
 `attack`, `block`, `selection`, `confirmation`, `choice`, `reveal`, `number`,
 `text` or `allocate`). The host checks the actual pending task before accepting

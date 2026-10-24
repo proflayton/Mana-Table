@@ -24,6 +24,9 @@ public class LondonMulligan extends AbstractMulligan {
     public void mulliganDraw() {
         player.drawCards(handSizeAfterNextMulligan());
         int tuckingCards = tuckCardsDuringMulligan();
+        // A free redraw has no bottom-card decision. In particular, do not
+        // publish a zero-card selection that a frontend can mistake for a cost.
+        if (tuckingCards == 0) return;
         CardCollection hand = new CardCollection(player.getCardsIn(ZoneType.Hand));
 
         for (final Card c : player.getController().tuckCardsViaMulligan(hand, tuckingCards)) {

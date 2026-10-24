@@ -343,6 +343,10 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
                 var effect = pendingEffect(targeting.getSpellAbility());
                 if (effect != null) next.prompt.put("effect", effect);
             }
+            if (current instanceof InputLondonMulligan mulligan) {
+                next.prompt.put("min", mulligan.getCardsToReturn());
+                next.prompt.put("max", mulligan.getCardsToReturn());
+            }
             if (promptSource != null && promptSource.canBeShownTo(viewer)) {
                 next.prompt.put("sourceCard", cardState(promptSource, null));
                 next.prompt.put("sourceZone", promptSource.getZone() == null ? "" : promptSource.getZone().name());

@@ -100,6 +100,28 @@ does not establish that a person can understand or use the screen.
     and deck legality are separate facts; returning to Play must not require a
     second confirmation of edits already acknowledged by storage.
 
+## Free multiplayer mulligan: 24 October 2026
+
+**Source candidate; human review pending.** The reported first mulligan appeared
+to require returning a card. Real three- and four-player reproductions found
+that Forge drew seven but still opened a bottom-card input requiring zero cards.
+The adapter also omitted the total selection range for paid London inputs.
+
+The rules layer now skips that empty choice. The first multiplayer redraw goes
+directly back to Keep with seven cards; subsequent redraws retain the engine's
+actual bottom-card costs. The adapter publishes those exact totals through the
+existing selection contract. No frontend free-mulligan counter or automatic
+answer bypasses a required decision. Two-player Commander retains its normal
+paid first mulligan; the multiplayer exemption is for games starting with more
+than two players (Comprehensive Rules 103.5c).
+
+`OpeningMulliganTest` uses production match inputs for two, three and four seats,
+checks three redraws, selects the actual required cards and verifies the kept
+hand and first-turn draw. It failed on both multiplayer cases before the fix.
+The existing native real-engine journey checks the free redraw, then reads,
+selects and confirms the second redraw's one required bottom card. These checks
+verify behavior; human review of the complete opening flow remains pending.
+
 ## Tapped land silhouettes: 24 October 2026
 
 **Source candidate; human review pending.** The reported Forest, Mountain and

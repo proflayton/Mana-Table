@@ -287,7 +287,9 @@ dotnet $driver --smoke-headless-engine --engine-resources '<package>/engine' --e
 
 `--smoke-headless-engine` operates a real Commander opening, a land play, a paid
 command-zone cast and concession through production input without a GPU. Its
-same opening now takes two Commander mulligans and verifies that reading a
+same opening now takes two Commander mulligans: the first returns directly to
+Keep with seven cards, and the second projects exactly one required bottom card.
+It verifies that reading a
 bottom-card candidate does not select it, its explicit reader action selects it,
 and final confirmation removes it from the kept hand. Headless presentation
 checks cover the same noncommitting hand reader for engine inputs and staged
