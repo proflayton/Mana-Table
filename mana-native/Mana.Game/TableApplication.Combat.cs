@@ -153,7 +153,7 @@ internal sealed partial class TableApplication
         for (int i = 0; i < state.Players.Length; i++) {
             var player = state.Players[i]; int y = 353 + i * 70;
             canvas.Text(player.Id == state.ViewerId ? "You" : player.Name, 263, y, Ink, 1, 702, 1, true);
-            canvas.Text(player.Eliminated ? "Eliminated" : "Remaining", 973, y + 3, Muted, .8f, 195, 1);
+            canvas.Text(player.Eliminated ? TimedOut(player.Id) ? "Timed out" : "Eliminated" : "Remaining", 973, y + 3, Muted, .8f, 195, 1);
             canvas.Text(player.Life + " life", 1183, y, Gold, .9f, 173, 1, true);
             canvas.Line(new(260, y + 47), new(1341, y + 47), Muted * .17f);
         }

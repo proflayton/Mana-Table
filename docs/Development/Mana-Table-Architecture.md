@@ -46,6 +46,18 @@ alone translates these meanings into its private wire actions. There is no
 public nullable reply bag. This does not provide live engine migration or an
 installed second rules engine.
 
+Optional table timing has a separate `ITableTempo` port and closed neutral
+settings/clock states in `Mana.Contracts`. Lobby policy, Ready consent and
+monotonic expiry belong to the host. `DecisionTempo` owns budgets without rules
+objects or transport dependencies; `MatchTable` owns its scheduler/lifetime, and
+`MatchSession` binds actual input episodes to normal scoped passes/concessions.
+Accepted-action processing pauses the clock; a refreshed input scope does not
+create a new budget for the same underlying choice. Presentation acknowledgements
+have bounded authority to start the current seat's clock, never to reset it.
+`Mana.Game` waits for artwork/motion before acknowledging and interpolates portrait
+paint only. Clock observations neither advance the board revision nor replace
+the match command family. A renderer reaching zero cannot play a card or pass.
+
 Replacing a provider also requires resolving deck contents and printings into
 that provider's catalog. Catalog identifiers, match occurrences and current
 action handles are different identities; copying opaque saved/provider IDs is

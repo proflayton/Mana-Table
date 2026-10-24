@@ -159,6 +159,7 @@ internal sealed partial class TableApplication
         canvas.Text(state.Mode == "hosting" ? "Your table" : "At the table", 90, 149, Ink, 1.8f, 800, 1, true, true);
         MenuAction("invite", "Invite friends", new(1050, 143, 230, 45), new ShellIntent.OpenConnection(), !busy);
         MenuAction("leave", "Leave table", new(1310, 143, 220, 45), new ShellIntent.LeaveLobby(), !busy);
+        DrawLobbyTempo(state);
         for (int i = 0; i < Math.Min(4, state.Seats.Length); i++) {
             var seat = state.Seats[i]; int x = 280 + i * 347, y = 390;
             bool open = seat.Type == "OPEN", ai = seat.Type == "AI";

@@ -73,6 +73,17 @@ internal static class PregameFlowChecks
             run.Click("change-deck"); run.Click("deck:b");
             check(friends.Calls.Count == before && run.View.Lobby!.Seats.Single(seat => seat.Local).Ready && run.View.SetupModal.Length == 0,
                 "Rechoosing the already selected list preserves readiness without reopening it in the provider");
+            string policy = run.View.Lobby!.Tempo!.Revision;
+            run.Click("tempo:Fast");
+            run.Until(() => run.View.Lobby?.Tempo?.Preset == TempoPreset.Fast && !run.View.Busy,
+                "The host changes tempo directly in the connected lobby without a modal");
+            check(run.View.Lobby!.Tempo!.Revision != policy && !run.View.Lobby.Seats.Single(seat => seat.Local).Ready,
+                "A new timing policy clears Ready consent while keeping the selected deck");
+            run.Click("tempo-expiry:Warn");
+            run.Until(() => run.View.Lobby?.Tempo?.Expiry == TempoExpiry.Warn && !run.View.Busy, "Warnings-only timing is selectable independently of the decision budget");
+            run.Click("ready");
+            run.Until(() => run.View.Lobby!.Seats.Single(seat => seat.Local).Ready && !run.View.Busy, "Ready acknowledges the exact displayed tempo policy");
+            check(friends.AcknowledgedTempo == run.View.Lobby!.Tempo!.Revision, "Ready carries the policy revision the player actually reviewed");
         }
     }
 
@@ -283,9 +294,21 @@ internal static class PregameFlowChecks
         public Task<string> ExportDeckAsync(string id, long revision) => Unsupported<string>();
     }
 
-    private sealed class PregameEngine : ICardEngine
+    private sealed class PregameEngine : ICardEngine, ITableTempo
     {
         internal ConcurrentQueue<string> Calls { get; } = new();
+        internal string? AcknowledgedTempo;
+        public Task<Lobby> ConfigureTempoAsync(string tableId, TempoPreset preset, TempoExpiry expiry) {
+            if (lobby?.TableId != tableId) throw new InvalidOperationException("Stale table");
+            lobby = lobby with { Tempo = new(preset, expiry, preset == TempoPreset.Fast ? 30 : 60, 60, Guid.NewGuid().ToString()),
+                Seats = lobby.Seats.Select(seat => seat with { Ready = false }).ToImmutableArray() };
+            return Task.FromResult(lobby);
+        }
+        public Task SetReadyAsync(string tableId, bool ready, string tempoRevision) {
+            if (lobby?.TableId != tableId || lobby.Tempo?.Revision != tempoRevision) throw new InvalidOperationException("Stale tempo consent");
+            AcknowledgedTempo = tempoRevision; return SetReadyAsync(ready);
+        }
+        public Task PresentedAsync(string gameId, string clockId) => Task.CompletedTask;
         internal TaskCompletionSource<SoloSetup>? Preparing;
         internal string Invalid { get; init; } = "";
         private int prepares, starts, readies, friendStarts;
@@ -322,7 +345,9 @@ internal static class PregameFlowChecks
         public Task<Lobby> HostAsync(int players, bool forwarding) {
             Calls.Enqueue("host:" + players);
             lobby = new("hosting", "Open", null, false, "Open seats", false, "disabled", null, [],
-                Enumerable.Range(0, players).Select(index => new Seat(index, index == 0 ? "You" : "Open", index == 0 ? "HUMAN" : "OPEN", null, false, index == 0)).ToImmutableArray(), "pregame-table");
+                Enumerable.Range(0, players).Select(index => new Seat(index, index == 0 ? "You" : "Open", index == 0 ? "HUMAN" : "OPEN", null, false, index == 0)).ToImmutableArray(), "pregame-table") {
+                    Tempo = new(TempoPreset.Off, TempoExpiry.Pass, 0, 60, "initial-policy")
+                };
             return Task.FromResult(lobby);
         }
         public Task<Lobby> LobbyAsync() => Task.FromResult(lobby ?? throw new InvalidOperationException("No connected table."));

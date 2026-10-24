@@ -84,7 +84,7 @@ internal sealed partial class TableApplication : IDisposable
     private bool AbilityActionPending => !session.NeedsRecovery && match?.Decision is { } decision && IsAbilityActionChoice(decision);
     private bool DecisionModal => !session.NeedsRecovery && !TableChoice && !AbilityActionPending && !collapsedDecision && match?.Decision?.Kind is "choice" or "reveal" or "number" or "text" or "allocate";
     private bool OverlayOpen => updatesOpen || ActivityOpen || ExperienceOpen || workshopDialog.Length > 0 || overlay.Length > 0 || zoneName != null || DecisionModal;
-    private string Scope => match == null ? deckEditor ? DeckScope : LobbyScope : session.Scope + ":viewer:" + match.ViewerId;
+    private string Scope => match == null ? deckEditor ? DeckScope : LobbyScope + ":tempo:" + lobby?.Tempo?.Revision : session.Scope + ":viewer:" + match.ViewerId;
     private string ScopeFor(UiIntent intent) => intent.ScopeKind switch {
         InteractionScopeKind.Home => Scope + ":home:" + homeDeckPage,
         InteractionScopeKind.Updates => UpdateScope,
@@ -180,6 +180,7 @@ internal sealed partial class TableApplication : IDisposable
         now = time.TotalGameTime.TotalSeconds;
         session.Pump();
         UpdateActivity();
+        UpdateTempo();
         UpdateSocial();
         UpdateDeckCatalog();
         UpdateWorkshopData();

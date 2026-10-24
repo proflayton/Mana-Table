@@ -133,6 +133,18 @@ PLAY WITH FRIENDS
    Seat portraits show who has joined, chosen a deck, and become Ready.
 5. Play becomes available to the host when every selected seat is ready.
    Not ready withdraws your readiness. After the game everyone readies again.
+
+Source candidate: the host can set Tempo before starting: Off (default), 120s,
+60s or 30s per decision. Everyone sees the policy and readies again after a change.
+The portrait clock follows whoever must decide, including off-turn responses.
+It becomes a red countdown near expiry. Hover the clock rim to read its timing.
+Pass + grace passes priority on timeout; required choices get 60s extra, then
+lose the seat. Three consecutive unattended priority timeouts also lose the seat.
+Lose seat uses the base deadline; Warn only never plays for you or removes you.
+Artwork/presentation gets up to 30s before thinking time starts. Engine processing
+does not consume decision time; reconnecting does not reset it. Use the same
+build as your friends: older clients cannot Ready at a timed table they cannot show.
+
 If three people are waiting in a four-seat lobby, the host can choose 3 players
 under Total seats while the last seat is open. Saved decks stay selected; people ready
 again after the seat count changes. A connected person's seat cannot be removed.

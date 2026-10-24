@@ -202,7 +202,10 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
                     latest = Collections.unmodifiableMap(next);
                 }
             }
-            return latest;
+            if (!table.tempo.enabled()) return latest;
+            var timed = new LinkedHashMap<>(latest);
+            timed.put("tempo", table.tempo.view(!finished()));
+            return Collections.unmodifiableMap(timed);
         }
     }
     public boolean finished() { return closed || error != null || game.isGameOver(); }
@@ -467,6 +470,9 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
     }
 
     public Map<String, Object> action(JsonObject request) {
+        return action(request, true);
+    }
+    private Map<String, Object> action(JsonObject request, boolean playerDriven) {
         synchronized (gate) {
             requireSession(request);
             String action = string(request, "action");
@@ -490,6 +496,7 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
                 throw new IllegalArgumentException("The table has changed. Review the current decision before passing for now.");
             if (!next.kind.equals("input")) {
                 validateDialog(next, request);
+                if (playerDriven) table.tempo.activity(viewer.getId());
                 pending = null;
                 markBusy();
                 next.response.complete(request.deepCopy());
@@ -580,6 +587,7 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
             String chosenYieldToken = yieldToken;
             SourceActions.Catalog chosenSourceCatalog = sourceCatalog;
             SourceActions.Action chosenSourceAction = sourceAction;
+            if (playerDriven) table.tempo.activity(viewer.getId());
             pending = null;
             inputActionQueued = true;
             markBusy();
@@ -748,6 +756,39 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
     }
 
     record PublicDecision(int ownerId, String actionClass) { }
+
+    private Object tempoEpisode() {
+        if (publicDecision() == null || game.isGameOver() || inputActionQueued && pending.input != null) return null;
+        // A nested ability menu/payment/confirmation must not refund the parent
+        // decision when cancelled. Its current input still determines whether a
+        // timeout can pass or must allow required-choice grace.
+        var root = human.getInputQueue().getRootInput();
+        return root != null ? root : pending;
+    }
+    void observeTempo() {
+        table.tempo.observe(viewer.getId(), tempoEpisode(), pending != null && pending.input instanceof InputPassPriority priority
+                && priority.isPriorityActive() && okEnabled);
+    }
+    public Map<String, Object> tempoPresented(JsonObject request) {
+        synchronized (gate) {
+            requireSession(request);
+            if (finished()) return Map.of("accepted", false);
+            return Map.of("accepted", table.tempo.presented(viewer.getId(), string(request, "clockId")));
+        }
+    }
+    void expireTempo(DecisionTempo.Expired expiry) {
+        if (viewer.getId() != expiry.player() || tempoEpisode() != expiry.episode()) return;
+        if (expiry.outcome() == DecisionTempo.Outcome.WARNING) return;
+        var request = new JsonObject(); request.addProperty("sessionId", id);
+        if (expiry.outcome() == DecisionTempo.Outcome.LOSS) {
+            notices.add("Decision time expired.");
+            concede(request);
+            if (viewer.getHasLost()) table.tempo.lost(viewer.getId());
+        } else {
+            request.addProperty("promptId", pending.id); request.addProperty("action", "passPriority");
+            action(request, false);
+        }
+    }
 
     PublicDecision publicDecision() {
         Pending current = pending;

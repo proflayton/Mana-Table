@@ -14,6 +14,7 @@ import java.nio.file.Path;
 import java.time.Duration;
 import java.util.*;
 import java.util.function.Predicate;
+import java.util.function.LongSupplier;
 
 import static org.testng.Assert.*;
 
@@ -36,6 +37,12 @@ final class RulesScenario implements AutoCloseable {
     RulesScenario(String name, int seatCount) throws Exception {
         this(name, Map.of(), "Forest", List.of("Rhys the Redeemed"), false, seatCount);
     }
+    RulesScenario(String name, DecisionTempo.Settings settings, LongSupplier time) throws Exception {
+        this(name, Map.of(), settings, time);
+    }
+    RulesScenario(String name, Map<Integer, List<String>> battlefield, DecisionTempo.Settings settings, LongSupplier time) throws Exception {
+        this(name, battlefield, "Forest", List.of("Rhys the Redeemed"), false, 4, settings, time);
+    }
 
     RulesScenario(String name, Map<Integer, List<String>> battlefield, String mainCard, String commander) throws Exception {
         this(name, battlefield, mainCard, commander, false);
@@ -57,6 +64,10 @@ final class RulesScenario implements AutoCloseable {
 
     private RulesScenario(String name, Map<Integer, List<String>> battlefield, String mainCard, List<String> commanders,
                           boolean enableEtbCounters, int seatCount) throws Exception {
+        this(name, battlefield, mainCard, commanders, enableEtbCounters, seatCount, DecisionTempo.Settings.off(), () -> System.nanoTime() / 1_000_000);
+    }
+    private RulesScenario(String name, Map<Integer, List<String>> battlefield, String mainCard, List<String> commanders,
+                          boolean enableEtbCounters, int seatCount, DecisionTempo.Settings settings, LongSupplier time) throws Exception {
         this.seatCount = seatCount;
         if (StaticData.instance() == null) EngineResources.load(RESOURCES);
         evidence = Path.of("target/rules-regressions", name);
@@ -78,7 +89,7 @@ final class RulesScenario implements AutoCloseable {
             player.addExtraCardsOnBattlefield(extras);
             players.add(player);
         }
-        table = new MatchTable("Commander", players, RESOURCES, evidence);
+        table = new MatchTable("Commander", players, RESOURCES, evidence, settings, time);
         table.start();
     }
 
@@ -144,7 +155,7 @@ final class RulesScenario implements AutoCloseable {
         assertEquals(text(state(input.seat()).getAsJsonObject("prompt"), "id"), text(input.prompt(), "id"));
     }
 
-    private JsonObject request(Input input, Map<String, ?> answer) {
+    static JsonObject request(Input input, Map<String, ?> answer) {
         var request = JSON.toJsonTree(answer).getAsJsonObject();
         request.addProperty("sessionId", text(input.state(), "id"));
         request.addProperty("promptId", text(input.prompt(), "id"));

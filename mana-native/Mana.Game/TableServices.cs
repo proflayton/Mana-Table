@@ -14,6 +14,7 @@ public sealed record TableServices(IEngineCatalog Catalog, ITableSetup Tables, I
     public IDeckWorkshop? Workshop { get; init; }
     public IDeckAnalysis? Analysis { get; init; }
     public ITableSeatSetup? Seats { get; init; }
+    public ITableTempo? Tempo { get; init; }
     public ITableSocial? Social { get; init; }
     public IDeckVersionHistory? Versions { get; init; }
     public ExperienceLabSession? Lab { get; init; }

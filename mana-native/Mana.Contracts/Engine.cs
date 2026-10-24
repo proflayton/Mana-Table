@@ -124,6 +124,7 @@ public sealed record Lobby(string Mode, string Status, string? Error, bool CanSt
     bool MatchActive, string PortMapping, string? InternetInvite, ImmutableArray<Address> Addresses, ImmutableArray<Seat> Seats, string TableId = "")
 {
     public ImmutableArray<AiOpponent> AiOpponents { get; init; } = [];
+    public TempoSettings? Tempo { get; init; }
 }
 public enum DecisionIntent { General, Priority, Attack, Block, Mana, Selection }
 // Semantic tasks belong to the game boundary. Provider prompt/class names do not.
@@ -308,6 +309,7 @@ public sealed record GameSnapshot(string Id, string Status, string? Error, strin
     public ImmutableArray<ActivityEntry> Activity { get; init; } = [];
     public ImmutableArray<string> Notices { get; init; } = [];
     public ImmutableArray<PriorityAbility> IgnoredPriorityAbilities { get; init; } = [];
+    public DecisionTempoFrame? Tempo { get; init; }
     public Player? Viewer => Players.FirstOrDefault(p => p.Id == ViewerId);
 }
 public sealed record ActivityEntry(long Id, int Turn, string PhaseKey, string Kind, int? PlayerId, string Message, string? CardId, string? CardName)

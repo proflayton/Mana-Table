@@ -181,6 +181,43 @@ joining takes an open human seat. Changing AI choices leaves human readiness
 unchanged. Match start uses actual Forge AI controllers with the selected decks.
 Returning after a game preserves AI decks/readiness while humans ready again.
 
+### Optional decision tempo (source candidate)
+
+The additive `decision-tempo` ready capability enables `multiplayerTempo
+{tableId, preset, expiry}`. Only the host may change it, before a match. Presets
+are `off` (default), `relaxed` (120 seconds), `standard` (60) and `fast` (30), per
+human decision. Expiry is `pass`, `loss` or `warn`. With `pass`, actual priority
+passes on expiry; other choices receive 60 seconds of grace, then the player
+loses through the existing engine concession path. Three consecutive unattended
+priority expiries also lose the seat; an accepted player action clears that
+count. `loss` loses immediately at the base deadline. `warn` only displays expiry.
+No timer chooses cards, targets, payments, modes or combat assignments.
+
+Lobby `tempo` contains `{preset, expiry, seconds, graceSeconds, revision}`. A
+policy change clears human Ready states while retaining decks. A timed lobby
+requires `multiplayerReady {tableId, ready: true, tempoRevision}` matching the
+policy actually displayed. Missing/stale acknowledgements are rejected, including
+old clients that cannot display the policy. Untimed lobbies retain legacy Ready
+compatibility. Timing cannot change during play; it remains selected for rematches.
+
+Optional snapshot `tempo` contains `settings`, settled `timedOutPlayers` IDs and public `clocks`, each with
+`playerId`, opaque `id`, `phase` (`preparing`, `thinking`, `grace`, `expired`),
+`remainingMs`, `limitMs` and `strikes`. Terminal snapshots retain timing policy
+and confirmed timeout losses with no running clocks. Clock reads do not change board/decision
+revisions or disclose private choices. Clocks follow actual waiting human inputs,
+including simultaneous/off-turn decisions, and pause during accepted input
+processing. Updating a selection, reading, polling or reconnecting does not refund
+the current input's time. AI work and rules resolution have no decision clock.
+
+`matchTempoPresented {sessionId, clockId}` acknowledges that the authenticated
+seat can see its current choice after artwork/presentation. It returns `accepted`;
+another seat's ID or an old episode cannot arm/reset a clock. The host bounds
+preparation at 30 seconds of waiting time, then starts the budget even without an
+acknowledgement. Disconnects therefore cannot freeze a timed match indefinitely.
+A monotonic host scheduler enforces expiry independently of polling; clients only
+interpolate the displayed countdown and never dispatch a timeout themselves.
+This retains IPC 2, seat synchronization 3 and all saved-data versions.
+
 ### Deck commands
 
 `deckState.commanderChoices` entries include `id`, compatible in-deck `partners`,

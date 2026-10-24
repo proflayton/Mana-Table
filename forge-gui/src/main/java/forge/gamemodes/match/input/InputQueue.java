@@ -52,6 +52,11 @@ public class InputQueue extends Observable implements IHasForgeLog {
         return inputStack.isEmpty() ? null : inputStack.peek();
     }
 
+    /** The decision being answered, including while a nested choice is open. */
+    public final Input getRootInput() {
+        return inputStack.peekLast();
+    }
+
     /*pfps sometimes this is being called twice for the same input */
     public final void removeInput(final Input inp) {
         final Input topMostInput = inputStack.isEmpty() ? null : inputStack.peek();

@@ -35,6 +35,7 @@ internal static class PresentationSmoke
         DrawingFrameChecks.Run(Check);
         PublicChangeFeedbackChecks.Run(Check);
         PriorityPresentationChecks.Run(Check);
+        TempoPresentationChecks.Run(Check);
         DecisionDockPresentationChecks.Run(Check);
         ExperienceLabChecks.Run(Check);
         EffectTransitionChecks.Run(Check);

@@ -81,7 +81,7 @@ internal sealed partial class TableApplication
             var area = BattlefieldLayout.DenseTerritory(seat);
             int right = area.Right - 4;
             int incoming = match!.Combat?.Attackers.Count(attack => attack.DefendingPlayerId == player.Id) ?? 0;
-            string status = player.Eliminated ? "ELIMINATED" : incoming > 0 ? incoming + (seat == 3 ? " ATTACKING YOU" : " INCOMING")
+            string status = player.Eliminated ? TimedOut(player.Id) ? "TIMED OUT" : "ELIMINATED" : incoming > 0 ? incoming + (seat == 3 ? " ATTACKING YOU" : " INCOMING")
                 : player.Id == match.ActivePlayerId ? "ACTIVE TURN" : "";
             int statusWidth = status.Length > 0 ? canvas.TextWidth(status, .375f, true) + 10 : 0;
             if (statusWidth > 0) {
@@ -182,6 +182,7 @@ internal sealed partial class TableApplication
         DrawPrioritySeat(player, center, radius);
         canvas.CenterText(player.Life.ToString(), new((int)(center.X - radius) + 1, (int)(center.Y - radius) + 2, (int)radius * 2, (int)radius * 2), Color.Black, own ? 1.65f : 1.35f, true);
         canvas.CenterText(player.Life.ToString(), new((int)(center.X - radius), (int)(center.Y - radius), (int)radius * 2, (int)radius * 2), player.Eliminated ? Muted : Ink, own ? 1.65f : 1.35f, true);
+        DrawDecisionClock(player, center, radius);
         var bounds = new Rectangle((int)center.X - (int)radius - 9, (int)center.Y - (int)radius - 9, (int)radius * 2 + 18, (int)radius * 2 + 18);
         hits.Add(new("player:" + player.Id, Scope, bounds, new MatchIntent.UsePlayer(player.Id), PlayerId: player.Id, Shape: p => Vector2.DistanceSquared(p.ToVector2(), center) <= (radius + 9) * (radius + 9)));
         string name = own ? "YOU" : localMatch && !ExperienceLabOpen
@@ -196,7 +197,7 @@ internal sealed partial class TableApplication
         bool dense = tableScene!.Seat(player.Id).IsDense;
         if (!dense && !own) canvas.CenterText(name + " ↗", nameplate, nameplate.Contains(pointer) ? Blue : Ink, .6f, true);
         int incoming = match.Combat?.Attackers.Count(a => a.DefendingPlayerId == player.Id) ?? 0;
-        string status = player.Eliminated ? "ELIMINATED" : incoming > 0 ? incoming + (own ? " ATTACKING YOU" : " INCOMING")
+        string status = player.Eliminated ? TimedOut(player.Id) ? "TIMED OUT" : "ELIMINATED" : incoming > 0 ? incoming + (own ? " ATTACKING YOU" : " INCOMING")
             : active && !own && match.Turn > 0 ? turnProgress?.PhaseLabel ?? match.Phase : active ? "ACTIVE TURN" : "";
         if (!own && index != 1 && hasCounters) status += (status.Length > 0 ? " · " : "") + player.Zone("Hand").Count + " in hand";
         if (!own && (!dense || active) && (!active || index == 1 || incoming > 0 || player.Eliminated)) {

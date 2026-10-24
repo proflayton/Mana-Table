@@ -16,6 +16,7 @@ public static partial class ExperienceScenarios
         new("card-play.v1", "Card play journeys", "A land from hand, your spell through the stack, an opponent's public cast, then an ability that keeps its source in place.", CardPlay),
         new(AttachmentScenario.Id, "Auras and Equipment · attached stacks", "Multiple attachments, cross-controller Auras, re-equip, detach, tapping and a crowded field.", AttachmentScenario.Create),
         new(TappedResourcesScenario.Id, "Tapped resources", "Three tapped lands, one untapped, all untapped and mixed matching lands around the table.", TappedResourcesScenario.Create),
+        new(DecisionTempoScenario.Id, "Decision tempo", "A quiet clock, approaching expiry, off-turn responses, required-choice grace and resolving.", DecisionTempoScenario.Create),
         new("ability-choice.v1", "Llanowar Elves · make green mana", "Start before an activation, choose its ability, and see the tapped source and green mana.", AbilityFlow),
         new("ability-targeting.v1", "Walking Ballista · costs and targets", "Two on-card abilities, cancellable targeting, a pending stack ability and its authored result.", BallistaFlow),
         new(PreparedSpellScenario.Id, "Prepared spell · Emeritus of Ideation", "A prepared source, its linked spell in exile, targeting, priority and the unprepared result.", PreparedSpellScenario.Create),

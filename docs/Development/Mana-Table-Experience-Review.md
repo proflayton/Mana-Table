@@ -100,6 +100,44 @@ does not establish that a person can understand or use the screen.
     and deck legality are separate facts; returning to Play must not require a
     second confirmation of edits already acknowledged by storage.
 
+## Lobby decision tempo: 24 October 2026
+
+**Source candidate; human review pending.** Intent: keep a friends' table moving
+without making rules choices for somebody. The host chooses a budget and expiry
+policy in the lobby itself; every player sees it before Ready. The engine
+retains that policy for the match. Changing it withdraws human Ready consent.
+
+The visual source is the deciding player's portrait, including responses during
+another player's turn. A quiet draining ring becomes a red countdown near
+expiry; required-choice grace remains visibly urgent. Hover gives timing context
+without opening a modal. No repeated text feed or automatic viewport jump is
+added. Preparing/automatically passed windows do not flash a clock. A confirmed
+timeout loss leaves a Timed out label at the seat and in results. Clock reads
+do not repaint the board as a new game state. Reduced motion
+retains the same clock state and countdown without a pulse or flash.
+
+Off is the compatible default. Enabled presets use 120/60/30 seconds. Pass +
+grace sends an actual priority pass, gives required choices 60 seconds extra,
+then loses the seat; three consecutive unattended priority expiries also lose
+the seat. The other policies lose at the base deadline or warn only. The host
+allows up to 30 seconds for initial decision presentation before starting time,
+pauses during accepted-action processing, and cannot be reset by reconnecting,
+reading, selection updates or cancelling a nested ability menu. The original
+engine input root owns the budget; the current input still determines whether
+a pass is legal or required-choice grace applies.
+
+Agent review used actual table art at 1000×740 with 130% text/reduced motion and
+1540×980 with normal motion, plus the real three-client lobby/Ready/start
+journey. The canonical `decision-tempo.v1` case covers quiet/urgent clocks,
+off-turn response, required-choice grace, expired warning and engine resolution.
+The current local portrait keeps the countdown below life and inside the timing
+controls. Automated policy, authority and projection checks run in existing
+suites; neither those checks nor these captures establish human acceptance.
+
+![Host chooses the tempo before everyone readies](images/native-lobby-tempo-2026-10-24.png)
+
+![Decision clock follows an off-turn responder](images/native-decision-clock-2026-10-24.png)
+
 ## Free multiplayer mulligan: 24 October 2026
 
 **Source candidate; human review pending.** The reported first mulligan appeared

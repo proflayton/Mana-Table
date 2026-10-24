@@ -11,6 +11,20 @@ a complete engine/runtime/resource bundle.
 
 ## Canonical interaction coverage
 
+Optional decision timing runs in existing suites. `DecisionTempoTest` advances
+fake monotonic time through presentation, paused processing, simultaneous seats,
+grace, warning-only expiry and repeated unattended priority windows without
+waiting real minutes. `DecisionTempoIntegrationTest` uses real Forge priority and
+opening decisions, checks stale scope/foreign acknowledgement rejection and
+normal elimination, and asserts clock reads leave the board revision unchanged.
+`LobbyTempoTest` covers host/setup authority, invalid changes, Ready consent and
+policy retention. The existing three-player native journey now selects timing
+and readies remote peers with the exact policy revision; no extra CI process is
+added. Native presentation checks cover neutral clock decoding/interpolation and
+the lobby gesture/consent path. `decision-tempo.v1` is the authored visual case
+for quiet/urgent clocks, off-turn responses, grace, expiry and resolving. It is
+not a rules simulation or human approval of the presentation.
+
 The shared client check runs `InteractionContractMatrix`: named cases cover every
 concrete `GameCommand` variant, `DecisionIntent` and `DecisionPurpose`, with a
 closed-command/enum coverage guard, fixed-seed permission/visibility transitions, authority rejection and
