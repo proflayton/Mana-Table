@@ -92,9 +92,9 @@ internal static class EffectTransitionChecks
             var families = frame.Scene!.Seats.SelectMany(seat => seat.Battlefield).SelectMany(cluster => cluster.Cards)
                 .Select(card => card.StudyFamily).OfType<StudyBattlefieldFamily>().DistinctBy(family => family.Id)
                 .Where(family => family.CohortCount > 1 && paintedNames.Any(text => text.Value == family.Name
-                    && text.X == family.NameBounds.X + 4 && text.Y == family.NameBounds.Y)).ToArray();
+                    && text.X == frame.BoardView.Apply(family.NameBounds).X + 4 && text.Y == frame.BoardView.Apply(family.NameBounds).Y)).ToArray();
             check(families.Any(family => family.Name == "Forest") && app.TestPort.CounterReceipts.Count > 0
-                && app.TestPort.CounterReceipts.All(receipt => families.All(family => !receipt.Bounds.Intersects(family.NameBounds)))
+                && app.TestPort.CounterReceipts.All(receipt => families.All(family => !receipt.Bounds.Intersects(frame.BoardView.Apply(family.NameBounds))))
                 && represented.SetEquals(frame.Cards.Where(card => card.Zone == "Battlefield").Select(card => card.Id))
                 && (!focused || app.TestPort.StudyFocusOwner == 1),
                 "The actual 480-permanent " + (focused ? "focused table" : "whole table")

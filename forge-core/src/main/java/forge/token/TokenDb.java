@@ -31,6 +31,33 @@ public class TokenDb implements ITokenDatabase {
     // If that isn't found, consider falling back to the original token
     private final Multimap<String, PaperToken> allTokenByName = HashMultimap.create();
     private final Map<String, PaperToken> extraTokensByName = Maps.newTreeMap(String.CASE_INSENSITIVE_ORDER);
+    private final Map<String, List<PaperToken>> printingIndex = new HashMap<>();
+
+    /** Exact definitions, newest released edition first; no random art selection. */
+    public synchronized List<PaperToken> getPrintings(String script) {
+        return printingIndex.computeIfAbsent(script, key -> {
+            var result = new ArrayList<PaperToken>();
+            for (CardEdition edition : editions) {
+                if (edition.getDate().after(new Date()) || !edition.getTokens().containsKey(key)) continue;
+                if (!loadTokenFromSet(edition, key)) continue;
+                result.addAll(allTokenByName.get(key + "_" + edition.getCode().toLowerCase(Locale.ROOT)));
+            }
+            result.removeIf(token -> token.getCollectorNumber() == null || token.getCollectorNumber().isBlank()
+                    || token.getCollectorNumber().equals(forge.item.IPaperCard.NO_COLLECTOR_NUMBER));
+            result.sort(Comparator.comparing((PaperToken token) -> editions.get(token.getEdition()).getDate()).reversed()
+                    .thenComparing(PaperToken::getEdition).thenComparing(PaperToken::getCollectorNumber)
+                    .thenComparing(PaperToken::getArtIndex));
+            return List.copyOf(result);
+        });
+    }
+
+    public PaperToken getPrinting(String script, String id) {
+        return getPrintings(script).stream().filter(token -> printingId(script, token).equals(id)).findFirst().orElse(null);
+    }
+
+    public static String printingId(String script, PaperToken token) {
+        return script + "|" + token.getEdition() + "|" + token.getCollectorNumber();
+    }
 
     private final CardEdition.Collection editions;
     private final Map<String, CardRules> rulesByName;

@@ -9,6 +9,14 @@ namespace Mana.Renderer;
 public abstract record DrawCommand
 {
     internal abstract void Paint(Canvas canvas);
+    public sealed record BeginClip(Rectangle Bounds) : DrawCommand
+    {
+        internal override void Paint(Canvas canvas) => canvas.BeginClip(Bounds);
+    }
+    public sealed record EndClip : DrawCommand
+    {
+        internal override void Paint(Canvas canvas) => canvas.EndClip();
+    }
     public sealed record Fill(Rectangle Bounds, Color Color) : DrawCommand
     {
         internal override void Paint(Canvas canvas) => canvas.Fill(Bounds, Color);

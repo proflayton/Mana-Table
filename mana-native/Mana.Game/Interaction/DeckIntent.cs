@@ -6,7 +6,7 @@ namespace Mana.Table.Interaction;
 
 internal enum DeckTextField { Library, Deck, Printing }
 internal enum CatalogFilterMenu { Type, Mana, Sort }
-internal enum WorkshopTab { Build, Test, Results }
+internal enum WorkshopTab { Build, Test, Results, Tokens }
 internal enum PracticeAction { New, Draw, Redraw, Keep }
 internal enum SourceChoice { Local, Remote, Copy, Merge }
 internal enum AnalysisTextField { Turn, ProtectedCards, Backup, Pool }
@@ -18,6 +18,8 @@ internal abstract record DeckIntent : UiIntent
 {
     internal sealed override InteractionScopeKind ScopeKind => InteractionScopeKind.Current;
     internal sealed record Rename : DeckIntent;
+    internal sealed record OpenDeckOptions : DeckIntent;
+    internal sealed record ChooseCommander(bool Partner = false) : DeckIntent;
     internal sealed record NewDeck : DeckIntent;
     internal sealed record ImportArchidekt : DeckIntent;
     internal sealed record RestoreSavedDeck(string DeckId, string RestoreToken) : DeckIntent;
@@ -55,6 +57,11 @@ internal abstract record DeckIntent : UiIntent
     internal sealed record CyclePrintingFinish : DeckIntent;
     internal sealed record ChoosePrinting(CatalogCard Card) : DeckIntent;
     internal sealed record LoadPrintings(int Offset) : DeckIntent;
+    internal sealed record SelectToken(string Id) : DeckIntent;
+    internal sealed record ChooseTokenPrinting(string? Id) : DeckIntent;
+    internal sealed record PageTokens(int Direction) : DeckIntent;
+    internal sealed record PageTokenPrintings(int Direction) : DeckIntent;
+    internal sealed record RefreshTokens : DeckIntent;
     internal sealed record ShowWorkshopTab(WorkshopTab Tab) : DeckIntent;
     internal sealed record OpenAnalysis : DeckIntent;
     internal sealed record EditWorkshopPlan(bool Question) : DeckIntent;

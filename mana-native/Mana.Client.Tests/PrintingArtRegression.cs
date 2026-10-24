@@ -21,6 +21,10 @@ internal static class PrintingArtRegression
             && CardPresentation.Artwork(card with { GamePieceType = "effect" }) == null,
             "Exact printing metadata reaches artwork requests while face-down cards and rules effects keep their safe fallback");
         var catalogCard = new CatalogCard("printing", card, 4, 16, "Main", "TLA");
+        var token = new Card { Name = "Zombie Token", GamePieceType = "token", ArtSet = "tm21", CollectorNumber = "5" };
+        check(CardPresentation.Artwork(token) is { Set: "tm21", CollectorNumber: "5" }
+                && CardPresentation.Artwork(token with { CollectorNumber = "" }) == null,
+            "Token artwork uses its exact printing; missing printing metadata cannot fall back to a different same-name token or real card");
         var deck = new DeckDetails("deck", "My deck", 7, [new("Main", catalogCard.Id, card, 2, 4, 16, "TLA")], [], "", "");
         var selection = new PrintingSelection(deck.Id, deck.Revision, "Main", catalogCard, false);
         check(selection.IsCurrent(deck) && !selection.IsCurrent(deck with { Id = "other" })

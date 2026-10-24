@@ -63,7 +63,7 @@ internal sealed partial class TableApplication
     }
     private void OpenZone(int player, string zone)
     {
-        if (TableStudyEnabled && zone == "Battlefield") { SetStudyFocus(player); return; }
+        if (MultiplayerFocusAvailable && zone == "Battlefield") { SetStudyFocus(player); return; }
         zonePlayer = player; zoneName = zone; zonePage = 0; overlay = "";
     }
     private bool IsPlayerTarget(int player) => !AbilityActionPending && (match?.Decision?.PlayerChoices.Contains(player) == true
@@ -97,7 +97,7 @@ internal sealed partial class TableApplication
     private void PlayerClick(int player)
     {
         if (match == null) return;
-        if (TableStudyEnabled && !IsPlayerTarget(player) && (busy || session.NeedsRecovery || AbilityActionPending)) {
+        if (MultiplayerFocusAvailable && !IsPlayerTarget(player) && (busy || session.NeedsRecovery || AbilityActionPending)) {
             SetStudyFocus(player); return;
         }
         if (busy) return;
@@ -105,7 +105,7 @@ internal sealed partial class TableApplication
         var result = interaction.PlayerClick(match, player);
         if (result.Reply != null) Send(result.Reply);
         else if (result.Effect == InteractionEffect.InspectPlayer) {
-            if (TableStudyEnabled) SetStudyFocus(StudyFocusActive && studyFocusOwner == player ? null : player);
+            if (MultiplayerFocusAvailable) SetStudyFocus(StudyFocusActive && studyFocusOwner == player ? null : player);
             else { zonePlayer = player; overlay = "player"; }
         }
     }

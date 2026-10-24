@@ -9,7 +9,7 @@ namespace Mana.Forge;
 
 public sealed record ForgePaths(string Java, string Jar, string Resources, string Profile);
 
-public sealed partial class ForgeEngine(ForgePaths paths) : ICardEngine, ITableSocial, IDeckWorkshop, ITableSeatSetup, ICardPrintings, ISourceActions
+public sealed partial class ForgeEngine(ForgePaths paths) : ICardEngine, ITableSocial, IDeckWorkshop, ITableSeatSetup, ICardPrintings, ISourceActions, ITableTempo
 {
     private static readonly JsonSerializerOptions Json = new() { PropertyNameCaseInsensitive = true };
     private readonly ConcurrentDictionary<long, TaskCompletionSource<JsonElement>> pending = new();
@@ -24,6 +24,8 @@ public sealed partial class ForgeEngine(ForgePaths paths) : ICardEngine, ITableS
         public Task? Stopped { get; set; }
         public bool SourceActionsAvailable { get; set; }
         public bool DeckLibraryAvailable { get; set; }
+        public bool DeckTokensAvailable { get; set; }
+        public bool TempoAvailable { get; set; }
         public ForgeCommandScope Commands { get; } = new();
         public volatile Exception? Failure;
     }
@@ -61,6 +63,8 @@ public sealed partial class ForgeEngine(ForgePaths paths) : ICardEngine, ITableS
                             var capabilities = ForgeProtocol.ReadyCapabilities(message);
                             owner.SourceActionsAvailable = capabilities.Contains("source-actions");
                             owner.DeckLibraryAvailable = capabilities.Contains("deck-library");
+                            owner.DeckTokensAvailable = capabilities.Contains("deck-tokens");
+                            owner.TempoAvailable = capabilities.Contains("decision-tempo");
                             owner.Ready.TrySetResult();
                         }
                         else if (ev.GetString() == "error") throw new IOException(Text(message, "message"));
@@ -119,6 +123,7 @@ public sealed partial class ForgeEngine(ForgePaths paths) : ICardEngine, ITableS
     public async Task<DeckSummary> ImportAsync(string name, string text) => Deck(await Request("import", new { name, text, format = "Commander" }));
     public async Task<DeckSummary> ImportPresetAsync(string id) => Deck(await Request("presetImport", new { id }));
     private static Card MapCatalogFace(JsonElement card) => new() {
+        GamePieceType = Text(card, "deckSection") == "Tokens" ? "token" : "card",
         Name = Text(card, "name"), ArtName = Text(card, "artName"), ArtFace = Text(card, "artFace"),
         Edition = Text(card, "edition"), ArtSet = Text(card, "artSet"), CollectorNumber = Text(card, "collectorNumber"),
         ArtIndex = card.TryGetProperty("artIndex", out var artIndex) ? artIndex.GetInt32() : 0,
@@ -150,7 +155,8 @@ public sealed partial class ForgeEngine(ForgePaths paths) : ICardEngine, ITableS
                 StructureValid = validation.TryGetProperty("structureValid", out var structural) ? structural.GetBoolean() : null,
                 Eligibility = Text(validation, "eligibility") is { Length: > 0 } eligibility ? eligibility : "unknown",
                 Format = Text(data, "format"),
-                LibraryToken = Text(data, "libraryToken")
+                LibraryToken = Text(data, "libraryToken"),
+                TokenPreviews = data.TryGetProperty("tokenPreviews", out var previews) ? previews.EnumerateArray().Select(MapCatalogFace).ToImmutableArray() : []
             };
     }
     public async Task<DeckDetails> OpenDeckAsync(string id) => MapDeck(await Request("open", new { id }));
@@ -214,8 +220,16 @@ public sealed partial class ForgeEngine(ForgePaths paths) : ICardEngine, ITableS
     private static Lobby MapLobby(JsonElement data) => new(Text(data, "mode"), Text(data, "status"), Text(data, "error"),
         data.GetProperty("canStart").GetBoolean(), Text(data, "startProblem"), data.GetProperty("matchActive").GetBoolean(),
         Text(data, "portMapping"), Text(data, "internetInvite"), Read<ImmutableArray<Address>>(data.GetProperty("addresses")), Read<ImmutableArray<Seat>>(data.GetProperty("slots")), Text(data, "tableId")) {
-            AiOpponents = data.TryGetProperty("aiOpponents", out var opponents) ? Read<ImmutableArray<AiOpponent>>(opponents) : []
+            AiOpponents = data.TryGetProperty("aiOpponents", out var opponents) ? Read<ImmutableArray<AiOpponent>>(opponents) : [],
+            Tempo = data.TryGetProperty("tempo", out var tempo) ? Read<TempoSettings>(tempo) : null
         };
+    public bool SupportsTempo => current?.TempoAvailable == true;
+    public async Task<Lobby> ConfigureTempoAsync(string tableId, TempoPreset preset, TempoExpiry expiry) =>
+        MapLobby(await Request("multiplayerTempo", new { tableId, preset = preset.ToString().ToLowerInvariant(), expiry = expiry.ToString().ToLowerInvariant() }));
+    public async Task SetReadyAsync(string tableId, bool ready, string tempoRevision) =>
+        await Request("multiplayerReady", new { tableId, ready, tempoRevision });
+    public async Task PresentedAsync(string gameId, string clockId) =>
+        await Request("matchTempoPresented", new { sessionId = gameId, clockId });
     public async Task<TableConversation> ConversationAsync(string tableId) => Read<TableConversation>(await Request("tableSocial", new { tableId }));
     public async Task<TableConversation> SendMessageAsync(string tableId, string kind, string text) => Read<TableConversation>(await Request("tableChat", new { tableId, kind, text }));
     public async Task<TableConversation> SetPlayerNameAsync(string tableId, string name) => Read<TableConversation>(await Request("tableName", new { tableId, name }));

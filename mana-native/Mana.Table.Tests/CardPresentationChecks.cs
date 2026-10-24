@@ -173,14 +173,20 @@ internal static class CardPresentationChecks
             "Opening-hand inspection uses the normal full-card reader and preserves the original hand anchor without keeping, redrawing or playing");
 
         var bottomCard = card with { Key = "current-bottom-card", Selectable = true };
-        var bottom = context with { Scope = "bottom-hand", State = state with { Players = Snapshot(bottomCard).Players,
+        var bottom = context with { Scope = "bottom-hand", CompactDecision = true, State = state with { Players = Snapshot(bottomCard).Players,
             Decision = state.Decision! with { Id = "bottom-hand", Purpose = DecisionPurpose.Unspecified, Intent = DecisionIntent.Selection } } };
         owner.BeginFrame(bottom, null, .016f, true);
         var candidate = owner.Prepare(request with { Card = bottomCard }); owner.EndFrame();
         var selection = new InteractionController().CardClick(bottom.State!, bottomCard);
-        check(!owner.HasPinnedCard && !candidate.Focused && !owner.Toggle(candidate.Hit, bottom)
+        check(!owner.HasPinnedCard && !candidate.Focused && owner.Toggle(candidate.Hit, bottom)
                 && selection.Reply is SelectCard { DecisionId: "bottom-hand", Card: "current-bottom-card" },
-            "Entering London bottom-card selection closes the opening reader and preserves the actual current card-selection command");
+            "Entering hand selection closes the old opening reader but permits fresh inspection; only the separate selection action retains the current engine command");
+        for (int frame = 0; frame < 2; frame++) {
+            owner.BeginFrame(bottom, null, .016f, true);
+            candidate = owner.Prepare(request with { Card = bottomCard }); owner.EndFrame();
+        }
+        check(candidate.Focused && candidate.Display.Size == new Vector2(410, 574) && owner.Toggle(candidate.Hit, bottom) && !owner.HasPinnedCard,
+            "A compact hand-selection decision preserves the full reader across frames and a second card click only collapses it");
 
         owner.BeginFrame(context, null, .016f, true);
         var otherZone = owner.Prepare(request with { Zone = "Command" }); owner.EndFrame();

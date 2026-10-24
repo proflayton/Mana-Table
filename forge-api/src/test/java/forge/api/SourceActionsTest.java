@@ -18,6 +18,103 @@ public class SourceActionsTest {
     private static final Gson JSON = new Gson();
 
     @Test(groups = "canonical-interaction", timeOut = 90000)
+    public void linkedPreparedSpellsCastFromTheirCreatureAndRevokeConsumedOrReplacedCopies() throws Exception {
+        String creature = "Emeritus of Ideation", spell = "Ancestral Recall";
+        try (var game = new RulesScenario("source-actions-prepared", Map.of(0,
+                List.of(creature, "Island", "Island", "Plains", "Plains", "Plains")), "Cloudshift", "Rhys the Redeemed")) {
+            var input = main(game);
+            // Registered fixture permanents bypass entering replacements. A real
+            // blink exercises the creature's actual enters-prepared rules.
+            input = blinkPreparedSource(game, input, creature);
+            var source = card(input.state(), "Battlefield", creature);
+            assertTrue(prepared(source), "The engine publishes the current non-keyword Prepared designation");
+            assertTrue(source.getAsJsonArray("states").asList().stream().map(value -> value.getAsJsonObject())
+                    .anyMatch(state -> text(state, "key").equals("prepared") && text(state, "detail").equals(spell + " {U}")));
+            assertTrue(source.get("selectable").getAsBoolean(), "A creature whose only action is its linked spell remains discoverable on the battlefield");
+            var before = game.state(0);
+            var actions = query(game, input, source);
+            assertEquals(query(game, input, source), actions, "Repeated reading preserves the exact current action handle");
+            assertEquals(game.state(0), before, "Reading a prepared spell does not cast, unprepare, or advance priority");
+            var cast = castAction(actions);
+            assertEquals(actions.getAsJsonArray("actions").size(), 1);
+            assertEquals(text(cast, "zone"), "Exile");
+            var preview = cast.getAsJsonObject("card");
+            assertEquals(text(preview, "name"), spell);
+            assertEquals(text(preview, "manaCost"), "{U}");
+            assertEquals(text(preview, "artName"), spell, "The spell preview must not request the creature's full card artwork");
+            assertEquals(text(preview, "artSet"), ""); assertEquals(text(preview, "collectorNumber"), "");
+            assertEquals(text(preview, "key"), ""); assertFalse(preview.get("selectable").getAsBoolean());
+            assertFalse(preview.get("highlighted").getAsBoolean());
+            assertEquals(text(actions, "sourceCardId"), text(source, "visualId"));
+            assertNotEquals(text(preview, "visualId"), text(source, "visualId"));
+            Files.writeString(game.evidence.resolve("prepared-source-actions.json"), JSON.toJson(actions));
+
+            assertTrue(game.answer(input, invoke(actions, cast)));
+            finishTargetedCast(game, spell, null);
+            input = game.until(next -> next.seat() == 0 && priority(next) && next.state().getAsJsonArray("stack").isEmpty()
+                    && !prepared(card(next.state(), "Battlefield", creature)));
+            assertEquals(count(viewer(input.state()), "Exile"), 0, "Casting consumes the prepared copy instead of leaving a stale exile entry");
+            assertEquals(count(viewer(input.state()), "Hand"), count(viewer(before), "Hand") + 3, "The actual prepared Ancestral Recall resolves its draw-three effect");
+            assertTrue(query(game, input, card(input.state(), "Battlefield", creature)).getAsJsonArray("actions").isEmpty());
+
+            input = blinkPreparedSource(game, input, creature);
+            var renewed = query(game, input, card(input.state(), "Battlefield", creature));
+            var renewedCast = castAction(renewed);
+            assertNotEquals(text(renewedCast.getAsJsonObject("card"), "visualId"), text(preview, "visualId"));
+            assertThrows(IllegalArgumentException.class, () -> game.table.seat(0).action(request(
+                    new Input(0, game.state(0), game.state(0).getAsJsonObject("prompt")), invoke(renewed, cast))));
+
+            input = blinkPreparedSource(game, input, creature);
+            var replaced = query(game, input, card(input.state(), "Battlefield", creature));
+            assertEquals(count(viewer(input.state()), "Exile"), 1, "Leaving play removes the old prepared copy before re-entering creates its replacement");
+            assertNotEquals(text(castAction(replaced).getAsJsonObject("card"), "visualId"),
+                    text(renewedCast.getAsJsonObject("card"), "visualId"));
+            var current = input;
+            assertThrows(IllegalArgumentException.class, () -> game.table.seat(0).action(request(current, invoke(replaced, renewedCast))));
+            assertTrue(prepared(card(input.state(), "Battlefield", creature)));
+            for (int seat = 1; seat < 4; seat++) {
+                var other = game.state(seat);
+                assertTrue(zone(player(other, input.state().get("viewerId").getAsInt()), "Hand").getAsJsonArray("cards").isEmpty(),
+                        "A linked public spell never broadens another seat's hand visibility");
+            }
+        }
+    }
+
+    private static boolean prepared(JsonObject card) {
+        return card != null && card.getAsJsonArray("states").asList().stream().map(value -> value.getAsJsonObject())
+                .anyMatch(state -> text(state, "key").equals("prepared") && text(state, "kind").equals("status"));
+    }
+
+    private static Input blinkPreparedSource(RulesScenario game, Input input, String creature) throws Exception {
+        var blink = query(game, input, card(input.state(), "Hand", "Cloudshift"));
+        assertTrue(game.answer(input, invoke(blink, castAction(blink))));
+        finishTargetedCast(game, "Cloudshift", creature);
+        return game.until(next -> next.seat() == 0 && priority(next) && next.state().getAsJsonArray("stack").isEmpty()
+                && prepared(card(next.state(), "Battlefield", creature)));
+    }
+
+    private static void finishTargetedCast(RulesScenario game, String spell, String targetCard) throws Exception {
+        // Targeting/payment may publish intermediate prompts (including another
+        // payment prompt). Their count is not the spell's completion condition.
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(45);
+        while (System.nanoTime() < deadline) {
+            var input = game.until(next -> next.seat() == 0 && (text(next.prompt(), "inputType").equals("InputSelectTargets")
+                    || text(next.prompt(), "inputType").startsWith("InputPayMana")
+                    || priority(next) && next.state().getAsJsonArray("stack").asList().stream().anyMatch(item -> text(item.getAsJsonObject(), "name").equals(spell))));
+            if (priority(input)) return;
+            if (text(input.prompt(), "inputType").equals("InputSelectTargets")) {
+                assertTrue(game.answer(input, targetCard == null
+                        ? Map.of("action", "player", "playerId", input.state().get("viewerId").getAsInt())
+                        : Map.of("action", "card", "key", text(card(input.state(), "Battlefield", targetCard), "key"))));
+            } else {
+                assertTrue(input.prompt().get("okEnabled").getAsBoolean(), "The fixture supplies the real spell's mana cost");
+                assertTrue(game.answer(input, Map.of("action", "ok")));
+            }
+        }
+        fail("The actual targeted spell did not reach the stack: " + spell);
+    }
+
+    @Test(groups = "canonical-interaction", timeOut = 90000)
     public void readingRealManaActionsDoesNotAnswerPriorityAndAnExplicitActionUsesItsExactSource() throws Exception {
         try (var game = new RulesScenario("source-actions-mana", Map.of(0, List.of("Concordant Crossroads", "Llanowar Elves", "Llanowar Elves")))) {
             var input = main(game);

@@ -28,10 +28,10 @@ import java.util.concurrent.ConcurrentHashMap;
 
 public class TokenInfo {
     // Per-game pin so same-type tokens share art. Weak keys GC finished games.
-    private static final Map<Game, Map<String, String>> TOKEN_EDITION_PINS =
+    private static final Map<Game, Map<String, PaperToken>> TOKEN_EDITION_PINS =
             java.util.Collections.synchronizedMap(new WeakHashMap<>());
 
-    private static Map<String, String> getPinsFor(Game game) {
+    private static Map<String, PaperToken> getPinsFor(Game game) {
         return TOKEN_EDITION_PINS.computeIfAbsent(game, g -> new ConcurrentHashMap<>());
     }
 
@@ -262,12 +262,20 @@ public class TokenInfo {
         }
         String edition = Objects.requireNonNullElse(editionHost, host).getSetCode();
         edition = Objects.requireNonNullElse(StaticData.instance().getCardEdition(edition).getTokenSet(script), edition);
-        Map<String, String> pins = getPinsFor(game);
-        String pinned = pins.get(script);
-        if (pinned != null) edition = pinned;
-        PaperToken token = StaticData.instance().getAllTokens().getToken(script, edition);
-        if (token != null && pinned == null) {
-            pins.put(script, token.getEdition());
+        var deck = owner.getRegisteredPlayer().getDeck();
+        var database = StaticData.instance().getAllTokens();
+        boolean configured = deck.prefersLatestTokenArt() || !deck.getTokenPrintings().isEmpty();
+        // Each deck can choose different artwork for the same token. The actual
+        // PaperToken is pinned, including its collector number, for this game.
+        String pinKey = configured ? owner.getId() + ":" + script : script;
+        Map<String, PaperToken> pins = getPinsFor(game);
+        PaperToken token = pins.get(pinKey);
+        if (token == null) {
+            String preference = deck.getTokenPrintings().get(script);
+            if (preference != null) token = database.getPrinting(script, preference);
+            if (token == null && deck.prefersLatestTokenArt()) token = database.getPrintings(script).stream().findFirst().orElse(null);
+            if (token == null) token = database.getToken(script, edition);
+            if (token != null) pins.put(pinKey, token);
         }
 
         if (token == null) {

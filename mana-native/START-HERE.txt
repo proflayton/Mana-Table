@@ -133,6 +133,18 @@ PLAY WITH FRIENDS
    Seat portraits show who has joined, chosen a deck, and become Ready.
 5. Play becomes available to the host when every selected seat is ready.
    Not ready withdraws your readiness. After the game everyone readies again.
+
+Source candidate: the host can set Tempo before starting: Off (default), 120s,
+60s or 30s per decision. Everyone sees the policy and readies again after a change.
+The portrait clock follows whoever must decide, including off-turn responses.
+It becomes a red countdown near expiry. Hover the clock rim to read its timing.
+Pass + grace passes priority on timeout; required choices get 60s extra, then
+lose the seat. Three consecutive unattended priority timeouts also lose the seat.
+Lose seat uses the base deadline; Warn only never plays for you or removes you.
+Artwork/presentation gets up to 30s before thinking time starts. Engine processing
+does not consume decision time; reconnecting does not reset it. Use the same
+build as your friends: older clients cannot Ready at a timed table they cannot show.
+
 If three people are waiting in a four-seat lobby, the host can choose 3 players
 under Total seats while the last seat is open. Saved decks stay selected; people ready
 again after the seat count changes. A connected person's seat cannot be removed.
@@ -148,9 +160,13 @@ Search the library by name, rules text or creature type. Narrow it by card type,
 maximum mana value or color identity; Leader colors follows your commander(s).
 Click a card to read its large face. Use its + button to add a copy to Main.
 Select an entry in Your deck to add/remove copies, click its count to enter a
-quantity, or move it between Main and Side. The Leaders tab finds commander
-candidates already in your list. Set a commander, replace it, or add a compatible
-partner/Background; returning a commander to Main keeps the card in your deck.
+quantity, or move it between Main and Side. The commander strip keeps your chosen
+commander(s) visible. Choose your commander there, or use Find a partner when the
+engine reports that it supports pairing. A named partner pre-fills the library
+search; add that card to your list, then choose Pair with your commander.
+Compatible partners already in your list are shown directly. Returning a
+commander to Main keeps the card in your deck. A supported pairing is optional;
+the engine still validates your final commander combination.
 Other face flips double-faced cards in the preview without adding another card.
 
 Click the set/collector button under the large card to choose another printing,
@@ -163,8 +179,18 @@ Copy list includes each printing's set, collector number and foil finish so it
 can be imported again with the same choices. Exact artwork is cached separately;
 when an image is unavailable, the card remains readable with rules text.
 
-Changes save automatically. Undo/Redo restores edits, Duplicate makes a separate
-deck, and Copy list exports text with commander and sideboard sections.
+Open Tokens to choose the artwork for tokens your deck can create. Click a full
+token face to save that printing immediately; Use newest returns to the automatic
+newest released printing in the bundled catalog. Choices stay with this deck,
+including when duplicated or used at a friends' table. Undo/Redo also restores
+token artwork choices. Tokens are cosmetics and do not add cards to your list.
+Ordinary exported deck-list text does not include these artwork preferences.
+
+Changes save automatically. Beside Back to play, Saving waits for the actual
+save acknowledgment, Deck saved confirms it, and Not saved offers Retry save.
+Back to play keeps both chosen commanders; no additional confirmation is needed.
+Undo/Redo restores edits. Deck options holds Rename, Duplicate and Delete;
+Copy list exports text with commander and sideboard sections.
 Card counts, a nonland mana curve and live deck checks identify needed changes.
 Checks distinguish deck structure from the bundled format rules. Unknown means
 the bundled data cannot establish eligibility. These checks do not certify
@@ -256,6 +282,12 @@ card; inspecting never activates an ability or casts from a public zone.
 Zone piles open browsers containing only the cards your player can see. Your own
 graveyard, exile and command browsers can offer engine-authorized actions,
 including Flashback when available. Hidden hands show anonymous backs.
+Prepared-spell source access is source-only until a release containing it is
+published: a small spell marker shows a prepared permanent. Open that permanent
+to find its available spell beside the full card, with the spell's name and
+mana cost. Hover the spell to read it; choose its cast action to continue with
+normal targets and payment. The copy also lives in exile. Casting it leaves
+the source permanent on the battlefield and removes its prepared designation.
 Gold TAX +2, TAX +4, etc. badges show the extra mana for a command-zone recast.
 Click or inspect for details. Each commander tracks its own previous casts;
 dying does not add tax by itself.
@@ -315,8 +347,20 @@ of their visible permanents in an upright battlefield gallery.
 The table keeps every battlefield occurrence visible, including
 crowded groups; enlarge or inspect an individual card to read it. Battlefield
 ranks do not have pages. Long hands and choice galleries still have page controls.
-Hover an Equipment or its attached creature to trace the connection. Badges and
-inspection identify what it is attached to and how many attachments it has.
+Auras and Equipment tuck beneath their host in a shallow artwork fan. Hover an
+exposed edge for its full name and a highlight of its host; click that edge to
+read the actual card and use its offered actions. Click the same edge to close.
+Each attachment stays independently selectable. A small portrait marks an
+attachment controlled by a different player; its hover name identifies that
+controller. Re-equipping moves the same card to its new host. Detached Equipment
+returns to its controller's support cards. The classic troubleshooting layout
+retains the previous relationship lines.
+In shared multiplayer games, cards face their player around the table. Current
+stats stay upright; click a turned card to read its full face upright. Tapping
+is separate from seat direction. The two-player view keeps upright faces.
+Lands turn sideways when tapped and return upright toward their seat when
+untapped. Their art dims while tapped; compact faces reserve space for a tap
+arrow. Hover for the full name if a compact face has no room for it.
 Current stats already include the engine's effects; do not add an Equipment's
 printed bonus again. Re-equipping updates the same occurrences.
 Click a player's life header to inspect public counters and commander damage
@@ -339,6 +383,16 @@ Auto and Hold are icons beside your portrait; hover explains their state and
 the F/Ctrl shortcuts. Hold stops automatic passing for the current turn.
 Click a card to read its full face. Its concrete legal actions appear beside it;
 drag a playable hand card onto the table to begin playing it.
+Two-player games place the opponent above you and use the same card rendering
+as larger tables. Battlefield growth does not switch everyone into labelled
+tiles. Battlefields opens a larger inspection of either player's public cards.
+In the next source build, clicking a non-target player portrait in multiplayer
+pans/zooms across the existing table. Whole table or Escape moves back. Your hand
+and player controls stay in place; reduced motion settles without camera travel.
+During a required hand-card choice, including mulligan bottoming or discarding,
+clicking a card reads it. Choose card beside that face makes the selection;
+Deselect removes an existing choice when available. Complete any remaining
+confirmation in the decision controls. Reading alone never chooses the card.
 An available activation can be set to "Pass until my next turn" beside Pass.
 This keeps Auto moving when that ability is your only play. The ability remains
 usable; other available plays still pause the game. The indicator offers Undo,
@@ -346,8 +400,10 @@ and the preference clears when your next turn starts. Hold overrides it immediat
 Triggered abilities happen automatically; answer any choices the game presents.
 For a player choice, a named recipient panel keeps the source, controller and
 purpose visible. Choose an offered name or highlighted portrait. The decision
-dock distinguishes your choice, your priority, another player's action and
-resolution; a submitted action remains acknowledged while the engine responds.
+dock distinguishes your choice, your priority and another player's required
+action. Routine automatic passes and engine replies do not open a temporary
+Passing or Action submitted panel. Auto stays beside your portrait; required
+choices, real responses and errors still appear when they need attention.
 Spells keep their source, pending effect and recipients together. Match history
 retains the public events.
 The source version names the acting player and shows why Auto is paused.
@@ -358,6 +414,9 @@ public action or turn change returns control. Take control cancels that ongoing
 intent. A single priority pass answers only the current window. Targets, library
 searches and mana payment stay at their source/decision surfaces and need their
 own answers. Moving these controls grants no permission to make those choices.
+Pass for now keeps its label and Take control position through routine handoffs
+and pauses while reading. Another player's required choice does not hide that
+cancellation control.
 Results and exact counter increments appear beside their recipients. Public
 departures move toward the actual pile; Recent changes retains further details.
 Resolution feedback distinguishes resolved and did not resolve. Draw and shuffle

@@ -84,7 +84,7 @@ internal sealed partial class TableApplication : IDisposable
     private bool AbilityActionPending => !session.NeedsRecovery && match?.Decision is { } decision && IsAbilityActionChoice(decision);
     private bool DecisionModal => !session.NeedsRecovery && !TableChoice && !AbilityActionPending && !collapsedDecision && match?.Decision?.Kind is "choice" or "reveal" or "number" or "text" or "allocate";
     private bool OverlayOpen => updatesOpen || ActivityOpen || ExperienceOpen || workshopDialog.Length > 0 || overlay.Length > 0 || zoneName != null || DecisionModal;
-    private string Scope => match == null ? deckEditor ? DeckScope : LobbyScope : session.Scope + ":viewer:" + match.ViewerId;
+    private string Scope => match == null ? deckEditor ? DeckScope : LobbyScope + ":tempo:" + lobby?.Tempo?.Revision : session.Scope + ":viewer:" + match.ViewerId;
     private string ScopeFor(UiIntent intent) => intent.ScopeKind switch {
         InteractionScopeKind.Home => Scope + ":home:" + homeDeckPage,
         InteractionScopeKind.Updates => UpdateScope,
@@ -114,6 +114,7 @@ internal sealed partial class TableApplication : IDisposable
         this.restartedAfterUpdate = restartedAfterUpdate;
         session = new(matchConnection, tables, this.clock, services.SourceActions); updates = new(session);
         catalogRead = new(updates.Enqueue); printingRead = new(updates.Enqueue);
+        deckTokensRead = new(updates.Enqueue); tokenPrintingsRead = new(updates.Enqueue);
         deckWorkspace = new(services.Workshop, services.Analysis, updates.Enqueue);
         sourceActions = session.SourceActions;
         session.Changed += AcceptPresentation;
@@ -179,6 +180,7 @@ internal sealed partial class TableApplication : IDisposable
         now = time.TotalGameTime.TotalSeconds;
         session.Pump();
         UpdateActivity();
+        UpdateTempo();
         UpdateSocial();
         UpdateDeckCatalog();
         UpdateWorkshopData();
@@ -308,8 +310,7 @@ internal sealed partial class TableApplication : IDisposable
         ValidateStudyFocus();
         tableScene = match == null ? null : TableScene.Build(match, handPage, pointer, null,
             dragging && dragSource?.Card is { } held ? CardViews.Identity(held) : null, false, CardPresentation.IsResource,
-            denseMeasure: MeasureDenseBattlefieldLabel, allowInlineOrdering: TableChoices.IsDirect(match), sharedTableStudy: TableStudyEnabled,
-            studyFocusedOpponent: StudyFocusActive ? studyFocusOpponent : null);
+            denseMeasure: MeasureDenseBattlefieldLabel, allowInlineOrdering: TableChoices.IsDirect(match), sharedTableStudy: TableStudyEnabled);
         UpdateBoardView();
         PrepareMatchPresentation();
         BeginCardReading(frameElapsed);
@@ -347,7 +348,7 @@ internal sealed partial class TableApplication : IDisposable
     public void Dispose()
     {
         if (closing) return;
-        closing = true; CloseUpdateRequests(); deckWorkspace.Close(); catalogRead.Close(); printingRead.Close(); session.Close(); matchPresentation.Reset();
+        closing = true; CloseUpdateRequests(); deckWorkspace.Close(); deckPersistence.Close(); catalogRead.Close(); printingRead.Close(); deckTokensRead.Close(); tokenPrintingsRead.Close(); session.Close(); matchPresentation.Reset();
         canvas.Dispose();
     }
 }

@@ -19,6 +19,13 @@ changing a game decision; step changes never clear a pool locally.
 Check a package's `SOURCE.txt` and `build.json` for its exact revision.
 For playing instructions, use [START-HERE.txt](START-HERE.txt).
 
+The builder's Tokens view lists exact tokens created by the deck and offers full
+printing faces. Clicking a face autosaves the choice for this deck; Use newest
+removes a pin and follows the newest released printing in the bundled catalog.
+Choices survive reopening, duplication and multiplayer deck selection, and use
+the normal undo/redo history. Token artwork warms with the selected deck. Token
+definitions and live characteristics remain authoritative engine state.
+
 ## Table interaction and state
 
 Hover highlights a card without enlarging it. During ordinary priority, clicking
@@ -45,7 +52,26 @@ permanents share state-specific groups, tapped faces carry a prominent curved
 arrow, and clicking a non-target player portrait opens the two-field view.
 Whole table or Escape returns. Full readers keep current P/T on the card with
 larger live details on the right. `--classic-table` starts the previous layout
-when comparing behavior or troubleshooting. Two-player tables are unchanged.
+when comparing behavior or troubleshooting.
+
+In shared multiplayer games, battlefield cards face their seat: left/right cards
+turn inward, far-seat cards face that player, and your cards stay upright. Current
+stats and full card readers remain upright. Tapping is relative to the seat's
+direction. Camera focus keeps the same world positions and orientations.
+Two-player faces retain their existing upright framing.
+Resource faces keep portrait dimensions and turn sideways when tapped; packing
+reserves their turning footprint. Tapped art dims, and compact faces reserve a
+corner for the tap cue before fitting names. Hover reveals a complete name when
+the face is too small. `tapped-resources.v1` compares three tapped lands, one
+untapped, all untapped and mixed matching lands in the Experience Lab.
+
+Auras and Equipment in the shared layout fan beneath their exact host. Point at
+an exposed artwork edge to identify it and highlight its host; click to read that
+specific card. Re-equipping moves the existing occurrence. The layout reserves
+the fan's footprint before packing neighboring cards, including foreign-controlled
+Auras; controller lookup and engine actions retain the attachment's real seat.
+`attachments.v1` in the Experience Lab covers multiple attachments, Equipment
+counters, re-equipping, detachment, a tapped host and a crowded mixed battlefield.
 
 Visible faces preload, and the selected local deck warms the artwork cache before
 and during play. Reading takes precedence over background downloads; hidden

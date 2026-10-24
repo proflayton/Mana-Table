@@ -1,5 +1,6 @@
 using Mana.Contracts;
 using Mana.Renderer;
+using Mana.Table.Presentation;
 using Microsoft.Xna.Framework;
 using Color = Microsoft.Xna.Framework.Color;
 using Rectangle = Microsoft.Xna.Framework.Rectangle;
@@ -27,7 +28,7 @@ internal sealed partial class TableApplication
     private void DrawChangesControl()
     {
         if (matchPresentation.Changes.Count > 0)
-            Button("recent-changes", "Recent changes", 1004, 12, 176, new MatchIntent.OpenChanges(), height: 35);
+            Button("recent-changes", "Recent changes", MatchHeaderLayout.Changes, new MatchIntent.OpenChanges());
     }
     private bool DrawChangeCallout()
     {

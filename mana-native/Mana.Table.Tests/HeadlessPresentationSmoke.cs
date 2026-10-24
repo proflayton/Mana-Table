@@ -37,10 +37,67 @@ internal static class HeadlessPresentationSmoke
             SemanticCommandPresentationChecks.Run(profile, Check);
             CommanderInteractionChecks.Run(profile, Check);
             DisclosedSourceInteractionChecks.Run(profile, Check);
+            LinkedSourceInteractionChecks.Run(profile, Check);
             QuietPriorityPresentationChecks.Run(profile, Check);
+            MatchHeaderInteractionChecks.Run(profile, Check);
+            TokenArtworkChecks.Run(profile, Check);
+            AttachmentStackChecks.Run(profile, Check);
             PendingEffectPresentationChecks.Run(profile, Check);
+            CardPlayChecks.RunPresentation(profile, Check);
             ImpactFeedbackChecks.RunPresentation(profile, Check);
             PublicActivityCursorChecks.RunPresentation(profile, Check);
+            foreach (bool directChoices in new[] { false, true }) {
+                var handState = Example();
+                var hand = handState.Viewer!.Zone("Hand").Cards;
+                handState = handState with { Turn = 0, Combat = null, Decision = new() {
+                    Kind = directChoices ? "choice" : "input", Intent = directChoices ? DecisionIntent.General : DecisionIntent.Selection,
+                    Message = "Choose a card from your hand.", Min = 1, Max = 1,
+                    Choices = directChoices ? hand.Select((card, index) => new Choice(17 + index, card.Name, card) { CardId = card.VisualId }).ToImmutableArray() : []
+                } };
+                using var run = new Runner(profile, directChoices ? "hand-choice-inspection" : "hand-input-inspection", handState, trace, performance);
+                run.Tick("hand-selection");
+                string initialPrompt = run.View.Match!.Decision!.Id;
+                run.ClickCard("hand-a"); run.Settle("inspect-before-choosing");
+                Check(run.Frame.Cards.Single(card => card.Id == "hand-a").Focused
+                        && run.View.Match?.Decision?.Id == initialPrompt && !run.View.Busy
+                        && run.View.Selections.Count == 0 && run.Engine.Replies.Count == 0
+                        && Text(run.Frame).Contains("Choose card") && run.Frame.Hits.Any(hit => hit.Id == "read-card-action"),
+                    "A required hand selection first opens its full card and separate choice action without selecting, discarding or answering the prompt");
+                run.ClickCard("hand-b", originalHandSlot: true); run.Settle("inspect-another-candidate");
+                Check(run.Frame.Cards.Single(card => card.Id == "hand-b").Focused
+                        && !run.Frame.Cards.Single(card => card.Id == "hand-a").Focused
+                        && run.View.Selections.Count == 0 && run.Engine.Replies.Count == 0,
+                    "Browsing another hand candidate changes only the reader, including a one-card required choice");
+                var oldAction = run.Hit("read-card-action");
+                var oldPoint = run.PointFor(oldAction);
+                run.Input(oldPoint, left: ButtonState.Pressed, label: "press-old-hand-choice");
+                run.Present(run.Engine.State);
+                run.Input(oldPoint, label: "release-after-prompt-replacement");
+                Check(run.Engine.Replies.Count == 0 && run.View.Selections.Count == 0 && !run.View.CurrentHit(oldAction),
+                    "Replacing the required prompt between press and release rejects its captured hand-choice action");
+                run.Settle("current-hand-choice");
+                var currentCard = run.View.Match!.Viewer!.Zone("Hand").Cards.Single(card => card.VisualId == "hand-b");
+                string prompt = run.View.Match.Decision!.Id;
+                run.ClickHit("read-card-action");
+                if (directChoices) {
+                    Check(run.View.Selections.SequenceEqual([18]) && run.Engine.Replies.Count == 0,
+                        "The explicit hand choice stages its original offered index without confirming the card list");
+                    run.ClickCard("hand-b"); run.Settle("read-selected-candidate");
+                    Check(Text(run.Frame).Contains("Deselect") && run.View.Selections.SequenceEqual([18]),
+                        "Inspecting a chosen hand card retains its selection and exposes the separate Deselect action");
+                    run.ClickHit("read-card-action");
+                    Check(run.View.Selections.Count == 0 && run.Engine.Replies.Count == 0,
+                        "Deselect reverses the local hand choice without sending a game command");
+                    run.ClickCard("hand-b"); run.Settle("choose-again"); run.ClickHit("read-card-action"); run.ClickHit("confirm");
+                    run.Until(() => !run.View.Busy && run.Engine.Replies.Count == 1, "confirm-hand-choice");
+                    Check(run.Engine.Replies.Single() is ChooseOptions choice && choice.DecisionId == prompt && choice.Choices.SequenceEqual([18]),
+                        "Only explicit final confirmation submits the exact current hand-choice index");
+                } else {
+                    run.Until(() => !run.View.Busy && run.Engine.Replies.Count == 1, "choose-hand-input");
+                    Check(run.Engine.Replies.Single() is SelectCard selected && selected.DecisionId == prompt && selected.Card == currentCard.Key,
+                        "Only the explicit reader choice submits one current engine card-selection command");
+                }
+            }
             using (var run = new Runner(profile, "reading-and-scope", Example(), trace, performance)) {
                 var first = run.Tick("initial");
                 var second = run.ReadFrame("same-time");

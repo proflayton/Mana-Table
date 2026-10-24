@@ -20,6 +20,7 @@ final class SyncLobby {
     private MatchTable table;
     private TableConversation conversation = new TableConversation();
     private String format = "Constructed";
+    private DecisionTempo.Settings tempo = DecisionTempo.Settings.off();
     private int port;
     private PortForwarding forwarding;
     private CompletableFuture<String> external = CompletableFuture.completedFuture(null);
@@ -39,6 +40,7 @@ final class SyncLobby {
     Object host(String format, int count, boolean autoForward, String transport) {
         close(); HeadlessPlatform.initialize(resources, profile);
         synchronized (this) {
+            tempo = DecisionTempo.Settings.off();
             configureSeats(format, count); slots.get(0).occupied = true;
             conversation = new TableConversation(); conversation.join(0, slots.get(0).name);
             server = new SyncTransport.Server(this::dispatch, this::joinSeat); connection = server.local(0);
@@ -75,12 +77,14 @@ final class SyncLobby {
     }
     Object configure(String tableId, String format, int count) { return request("configure", object(Map.of("tableId", tableId, "format", format, "count", count))); }
     Object setSeat(JsonObject args) { return request("seat", args); }
+    Object configureTempo(JsonObject args) { return request("tempo", args); }
     Object selectDeck(Deck deck, String format) {
         var entries = new ArrayList<Map<String, Object>>();
         for (var section : deck) for (var card : section.getValue()) entries.add(Map.of("section", section.getKey().name(), "cardId", CardCatalog.describe(card.getKey()).id(), "quantity", card.getValue()));
-        return request("deck", object(Map.of("format", format, "name", deck.getName(), "cards", entries)));
+        return request("deck", object(Map.of("format", format, "name", deck.getName(), "cards", entries, "tokenPrintings", deck.getTokenPrintings())));
     }
     Object ready(boolean value) { return request("ready", object(Map.of("ready", value))); }
+    Object ready(JsonObject args) { return request("ready", args); }
     Object social(JsonObject args) { return request("social", args); }
     Object chat(JsonObject args) { return request("chat", args); }
     Object rename(JsonObject args) { return request("name", args); }
@@ -115,6 +119,16 @@ final class SyncLobby {
             case "reply": requireMatch(); return table.seat(seat).action(p);
             case "sourceActions": requireMatch(); return table.seat(seat).sourceActions(p);
             case "concede": requireMatch(); return table.seat(seat).concede(p);
+            case "tempoPresented": requireMatch(); return table.seat(seat).tempoPresented(p);
+            case "tempo": {
+                requireHost(seat); requireSetup(); requireConversation(p);
+                var next = DecisionTempo.Settings.preset(p.get("preset").getAsString(), p.get("expiry").getAsString());
+                if (tempo.preset().equals(next.preset()) && tempo.expiry().equals(next.expiry())) break;
+                tempo = next;
+                for (var member : slots) if (!member.ai) member.ready = false;
+                conversation.activity(seat, "changed the table tempo. Ready again to accept the new timing.");
+                break;
+            }
             case "configure": requireHost(seat); requireSetup(); requireConversation(p); configureSeats(p.get("format").getAsString(), p.get("count").getAsInt()); break;
             case "seat": requireHost(seat); requireSetup(); requireConversation(p); configureSeat(seat, p); break;
             case "deck": {
@@ -126,13 +140,18 @@ final class SyncLobby {
                 var editor = new DeckEditor(catalog, new Deck(name));
                 editor.apply(0, List.of(SyncTransport.JSON.fromJson(p.get("cards"), DeckEditor.Edit[].class)));
                 var deck = editor.toDeck();
+                deck.setTokenPrintings(DeckTokens.readPreferences(p.get("tokenPrintings")));
                 var problem = editor.validate(format.equals("Commander") ? DeckFormat.Commander : DeckFormat.Constructed).problem();
                 if (problem != null) throw new IllegalArgumentException(name + " is not legal for " + format + ": " + problem);
                 slot.deck = deck; slot.ready = false; conversation.activity(seat, "selected " + deck.getName() + "."); break;
             }
             case "ready": {
                 requireSetup(); boolean ready = p.get("ready").getAsBoolean();
+                if (ready && tempo.enabled()) requireConversation(p);
                 if (ready && slot.deck == null) throw new IllegalStateException("Choose a deck first");
+                if (ready && tempo.enabled() && (!p.has("tempoRevision") || !p.get("tempoRevision").isJsonPrimitive()
+                        || !p.getAsJsonPrimitive("tempoRevision").isString() || !tempo.revision().equals(p.get("tempoRevision").getAsString())))
+                    throw new IllegalStateException("Review the current table tempo before readying. Update Mana Table if timing settings are not visible.");
                 if (slot.ready != ready) conversation.activity(seat, ready ? "is ready." : "is no longer ready.");
                 slot.ready = ready; break;
             }
@@ -140,7 +159,8 @@ final class SyncLobby {
                 requireHost(seat); requireSetup(); String problem = startProblem(); if (problem != null) throw new IllegalStateException(problem);
                 List<RegisteredPlayer> players = slots.stream().map(s -> s.ai
                         ? MatchTable.ai(s.deck, format, s.name) : MatchTable.human(s.deck, format, s.name)).toList();
-                table = new MatchTable(format, players, resources, profile); table.start(); conversation.activity(seat, "started the game."); break;
+                table = new MatchTable(format, players, resources, profile, tempo, () -> System.nanoTime() / 1_000_000);
+                table.start(); conversation.activity(seat, "started the game."); break;
             }
             case "return":
                 if (table != null) { if (!table.game.isGameOver()) throw new IllegalStateException("The match is still active"); table.close(); table = null; for (var s : slots) s.ready = s.ai && s.deck != null; conversation.activity(seat, "returned the table to the lobby."); }
@@ -217,6 +237,7 @@ final class SyncLobby {
     private Map<String, Object> lobby(int viewer) {
         var result = idle();
         result.put("tableId", conversation.id());
+        result.put("tempo", tempo.view());
         result.put("mode", viewer == 0 ? "hosting" : "joined"); result.put("status", table == null ? "Connected to table." : "Game in progress.");
         result.put("hosting", viewer == 0); result.put("format", format); result.put("playerCount", slots.size()); result.put("maxPlayers", format.equals("Commander") ? 6 : 2);
         result.put("canStart", viewer == 0 && startProblem() == null); result.put("startProblem", viewer == 0 ? startProblem() : "Only the host can start the game."); result.put("matchActive", table != null);

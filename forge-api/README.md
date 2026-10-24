@@ -181,7 +181,53 @@ joining takes an open human seat. Changing AI choices leaves human readiness
 unchanged. Match start uses actual Forge AI controllers with the selected decks.
 Returning after a game preserves AI decks/readiness while humans ready again.
 
+### Optional decision tempo (source candidate)
+
+The additive `decision-tempo` ready capability enables `multiplayerTempo
+{tableId, preset, expiry}`. Only the host may change it, before a match. Presets
+are `off` (default), `relaxed` (120 seconds), `standard` (60) and `fast` (30), per
+human decision. Expiry is `pass`, `loss` or `warn`. With `pass`, actual priority
+passes on expiry; other choices receive 60 seconds of grace, then the player
+loses through the existing engine concession path. Three consecutive unattended
+priority expiries also lose the seat; an accepted player action clears that
+count. `loss` loses immediately at the base deadline. `warn` only displays expiry.
+No timer chooses cards, targets, payments, modes or combat assignments.
+
+Lobby `tempo` contains `{preset, expiry, seconds, graceSeconds, revision}`. A
+policy change clears human Ready states while retaining decks. A timed lobby
+requires `multiplayerReady {tableId, ready: true, tempoRevision}` matching the
+policy actually displayed. Missing/stale acknowledgements are rejected, including
+old clients that cannot display the policy. Untimed lobbies retain legacy Ready
+compatibility. Timing cannot change during play; it remains selected for rematches.
+
+Optional snapshot `tempo` contains `settings`, settled `timedOutPlayers` IDs and public `clocks`, each with
+`playerId`, opaque `id`, `phase` (`preparing`, `thinking`, `grace`, `expired`),
+`remainingMs`, `limitMs` and `strikes`. Terminal snapshots retain timing policy
+and confirmed timeout losses with no running clocks. Clock reads do not change board/decision
+revisions or disclose private choices. Clocks follow actual waiting human inputs,
+including simultaneous/off-turn decisions, and pause during accepted input
+processing. Updating a selection, reading, polling or reconnecting does not refund
+the current input's time. AI work and rules resolution have no decision clock.
+
+`matchTempoPresented {sessionId, clockId}` acknowledges that the authenticated
+seat can see its current choice after artwork/presentation. It returns `accepted`;
+another seat's ID or an old episode cannot arm/reset a clock. The host bounds
+preparation at 30 seconds of waiting time, then starts the budget even without an
+acknowledgement. Disconnects therefore cannot freeze a timed match indefinitely.
+A monotonic host scheduler enforces expiry independently of polling; clients only
+interpolate the displayed countdown and never dispatch a timeout themselves.
+This retains IPC 2, seat synchronization 3 and all saved-data versions.
+
 ### Deck commands
+
+`deckState.commanderChoices` entries include `id`, compatible in-deck `partners`,
+and additive discovery hints `canPartner` and `partnerName`. The engine's rules
+determine those hints even when the named counterpart is absent from the list.
+They guide searching and never authorize a pair: `setCommanders` still requires
+current in-deck IDs and validates the actual combination. Generic pairing opens
+the normal card library rather than claiming to filter every compatible partner.
+Older clients ignore the hints; older engines omit them, with native clients
+retaining the existing compatible-ID selection path.
 
 `DesktopEngine` reads newline-delimited UTF-8 JSON from its private stdin:
 `{id, method, params}`. Replies are `{id, result}` or `{id, error}`. Startup emits
@@ -203,6 +249,9 @@ IDs and records diagnostics in the active profile's log.
 | `restoreDeck` | `{deckId, restoreToken}`; restore the same deck ID without overwriting an existing deck or selecting it |
 | `new` | `{name, format}`; create a saved deck |
 | `snapshot` | Current deck, revision, validation, format and save state |
+| `deckTokens` | `{deckId, revision}`; exact token definitions created by the deck, creator names, effective/default printing and automatic/unavailable status |
+| `tokenPrintings` | `{deckId, revision, tokenId, offset?, limit?}`; exact-definition printing page, newest released first; default limit 4, maximum 30 |
+| `setTokenPrinting` | `{deckId, revision, tokenId, printingId}`; save an offered exact token printing; null resets to automatic newest |
 | `edit` | `{revision, edits}`; absolute quantities using `DeckEditor.Edit` entries |
 | `rename`, `format` | `{deckId?, revision, name}` or `{deckId?, revision, format}`; a supplied ID must name the current document |
 | `duplicate` | `{deckId, revision, name}`; save and open an independent copy preserving exact printings and sections |
@@ -247,6 +296,30 @@ manual Considering edits. A conflicting manual removal fails before changing the
 deck. Durable versions remain available after restarting, when transient undo
 history is no longer present. Duplication copies the current workspace and source
 baseline into a fresh history without copying another deck's test records.
+
+The optional `deck-tokens` ready capability enables per-deck token cosmetics.
+`IDeckTokens` keeps definition and printing handles opaque to the native game.
+Definitions come from Forge's registered token scripts, recursively including
+tokens created by tokens; equal display names do not imply equal rules. The
+catalog uses edition release dates, excludes future editions and honors each
+edition's `TokensCode` for exact image addressing, including reprints.
+Deck details add `tokenPreviews` for known cosmetic faces only; these are not
+playable entries, legal actions or hidden opponent information.
+
+Version-1 saved decks add an optional `tokenPrintings` object mapping exact
+definition IDs to printing IDs. Missing metadata means automatic newest, with
+no migration or new playable-content version. A missing saved printing falls
+back to newest and is marked unavailable until reset or replaced. Choice edits
+use the existing deck revision, save, undo/redo and duplication paths; ordinary
+deck-list exports omit cosmetics. Multiplayer deck selection carries the same
+optional map through the existing seat protocol: older peers ignore it, and
+absent preferences default on new hosts. The host validates the metadata before
+accepting a deck. Mana Table sets the automatic-newest policy on registered match
+decks; upstream clients retain their existing token-art policy. `TokenInfo`
+selects and pins an exact `PaperToken` per owner/definition, preserving distinct
+deck choices at one table. Projection reads the actual token image key and keeps
+the ordinary visibility gate. Rules, effective stats and controller changes never
+come from the artwork selection.
 
 `DeckVersionView` returns `versionId`, `name`, saved `format`, `currentFormat`,
 saved `entries` and `differences` (`section`, `card`, `saved`, `current`).
@@ -506,6 +579,26 @@ the game can advance. Explicit pass and end-turn inputs still use engine rules.
 
 The private desktop transport exposes:
 
+`matchSourceActions {sessionId, promptId, key}` reads a visible source's current
+engine-owned actions without answering priority or payment. Results carry
+`gameId`, `decisionId`, `sourceCardKey`, `sourceCardId` and `actions`; each action
+has an opaque `id`, `kind` (`play`, `cast`, `activate`) and engine `text`.
+An action may additionally include `card` and `zone` for a disclosed linked spell.
+That preview has no action key or selection permission. Invoke the original
+source using `matchAction {sessionId, promptId, action: "useSourceAction", key,
+actionId}`. A prepared creature can therefore offer its actual spell copy in
+exile without pretending that casting is an activated ability of the creature.
+Source identity, linked occurrence, location, visibility and engine legality are
+revalidated at invocation; reading does not authorize a later changed action.
+Optional fields are additive: older clients may ignore previews and still use
+the exile card directly; absent previews retain the ordinary source-action path.
+
+Card `states` also includes the authoritative `prepared` status, separate from
+legal actions and available mana. Casting the prepared copy removes that status;
+the permanent stays on the battlefield. Source departure or unpreparing revokes
+the unused copy and its linked action. Prepared copies project their spell face
+and avoid source-creature printing metadata in artwork requests.
+
 | Request | Parameters / result |
 | --- | --- |
 | `matchOpponents` | Lists AI decks for the current deck's format, including Commander preset opponents |
@@ -533,6 +626,13 @@ selection order), `value` (number/text), or `values` (allocations). Reveal promp
 need only the two IDs. The prompt supplies cardinality and range constraints;
 the host validates them before dispatch. Combat allocations may allow `action:
 skip`. Old session IDs and prompt IDs fail rather than being replayed.
+
+London bottom-card inputs publish their exact total `min` and `max`; highlighted
+cards remain selected until explicit confirmation. A free multiplayer mulligan
+draws seven and returns to the opening-hand decision without publishing a
+zero-card bottoming input. Forge owns the free-mulligan policy: three or more
+players receive the multiplayer free redraw; two-player Commander uses its
+ordinary paid mulligans. This adds no command, capability or saved-data version.
 
 The native adapter also sends `expectedTask` (`openingHand`, `priority`, `mana`,
 `attack`, `block`, `selection`, `confirmation`, `choice`, `reveal`, `number`,

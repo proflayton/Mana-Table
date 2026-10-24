@@ -63,6 +63,7 @@ internal sealed partial class TableApplication
                 if (ReviewRows().FirstOrDefault(row => row.Id == selectedCard.CardId && row.Section == selectedCard.Section) is { } reviewRow) { reviewCard = reviewRow; reviewBack = false; textFocus = false; }
                 break;
             case ShellIntent.ResizeLobby resize: ResizeLobby(resize.Players); break;
+            case ShellIntent.SetTempo tempo: SetLobbyTempo(tempo.Preset, tempo.Expiry); break;
             case ShellIntent.OpenLobbyAi openAi: OpenLobbyAiPicker(openAi.Seat); break;
             case ShellIntent.SelectLobbyAi selectedAi: SetLobbyAi(selectedAi.OpponentId); break;
             case ShellIntent.RemoveLobbyAi removedAi: RemoveLobbyAi(removedAi.Seat); break;
@@ -140,12 +141,17 @@ internal sealed partial class TableApplication
         string? deckId = ready ? selectedDeckDetails?.Id : null;
         if (ready && deckId == null) return;
         bool select = ready && !DeckConfirmed;
+        var timing = lobby?.Tempo;
+        string tableId = lobby?.TableId ?? "";
         int generation = deckSelectionGeneration;
         Work(async () => {
             if (select) await tables.SelectDeckAsync(deckId!);
             if (ready && generation != Volatile.Read(ref deckSelectionGeneration))
                 throw new InvalidOperationException("Your selected deck changed. Ready again with the current list.");
-            await tables.SetReadyAsync(ready); var state = await tables.LobbyAsync();
+            if (services.Tempo is { SupportsTempo: true } tempo && timing != null)
+                await tempo.SetReadyAsync(tableId, ready, timing.Revision);
+            else await tables.SetReadyAsync(ready);
+            var state = await tables.LobbyAsync();
             updates.Enqueue(() => { lobby = state;
                 if (ready && generation == deckSelectionGeneration) confirmedDeckId = deckId;
                 message = ready ? "You are ready. Waiting for the table." : "You are no longer ready."; });

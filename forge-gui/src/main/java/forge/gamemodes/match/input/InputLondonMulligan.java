@@ -136,6 +136,10 @@ public class InputLondonMulligan extends InputSyncronizedBase {
         return selected;
     }
 
+    public int getCardsToReturn() {
+        return toReturn;
+    }
+
     @Override
     public String getActivateAction(final Card card) {
         return null;

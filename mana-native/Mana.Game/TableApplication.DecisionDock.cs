@@ -34,8 +34,7 @@ internal sealed partial class TableApplication
         return new() {
             Automatic = automatic, Held = held, PauseReason = pause,
             PhaseStopKey = state.ActivePlayerId == state.ViewerId && preferences.Stops.Contains(state.PhaseKey) ? state.PhaseKey : "",
-            QuietArmed = QuietPriorityArmed, QuietCanPass = QuietPriorityArmed && QuietPriorityPolicy.CanPass(state, quietYieldToken),
-            AutomaticAdvanceInFlight = session.IsAdvancing, CommandBusy = busy, ObservationPending = polling
+            QuietArmed = QuietPriorityArmed, QuietCanPass = QuietPriorityArmed && QuietPriorityPolicy.CanPass(state, quietYieldToken)
         };
     }
 
@@ -60,16 +59,26 @@ internal sealed partial class TableApplication
         }
 
         DrawPortraitTurnControls();
-        if (!SelectingActionTarget && (d?.Intent == DecisionIntent.Priority || QuietPriorityArmed)) {
+        if (!SelectingActionTarget && decisionDock.Surface == DecisionDockSurface.None) {
+            decisionPanelBounds = Rectangle.Empty;
+            var ignoredAbilities = PriorityAbilityOptions().Where(ability => ability.IgnoredUntilNextTurn).ToArray();
+            if (ignoredAbilities.Length > 0) DrawPriorityAbilityControl(ignoredAbilities);
+            return;
+        }
+        if (!SelectingActionTarget && decisionDock.Surface == DecisionDockSurface.Portrait) {
             DrawPortraitPriority(decisionDock);
             var availableAbilities = PriorityAbilityOptions();
             if (availableAbilities.Length > 0) DrawPriorityAbilityControl(availableAbilities);
             return;
         }
 
+        // Another seat's required choice does not revoke our pass intent. Keep
+        // its cancellation beside our portrait while that choice owns the dock.
+        if (QuietPriorityArmed && !SelectingActionTarget) DrawPortraitPriority(decisionDock);
+
         var view = decisionDock;
         bool recipientChoice = !SelectingActionTarget && d?.Intent == DecisionIntent.Selection && StateClarity.Recipients(state).Length > 0;
-        bool following = busy || d == null || view.Status == DecisionDockStatus.AutoPassing;
+        bool following = busy || d == null;
         var abilities = PriorityAbilityOptions();
         // A source/recipient workspace owns its effect. The dock owns the next
         // gesture. Only unfamiliar required prompts retain the engine's full text.
@@ -77,7 +86,7 @@ internal sealed partial class TableApplication
         var layout = PlanDecisionDock(view, instruction, abilities.Length > 0);
         canvas.Gradient(new(1240, Math.Max(55, decisionPanelBounds.Top - 24), 360, 924 - Math.Max(55, decisionPanelBounds.Top - 24)),
             Color.Transparent, new Color(8, 16, 21) * .95f);
-        var accent = view.Status is DecisionDockStatus.Waiting or DecisionDockStatus.Resolving or DecisionDockStatus.Submitted ? Muted
+        var accent = view.Status is DecisionDockStatus.Waiting or DecisionDockStatus.Resolving ? Muted
             : view.PauseReason == DecisionDockPauseReason.PhaseStop || view.PauseReason == DecisionDockPauseReason.Held ? Gold : PriorityAccent;
         DrawDecisionRole(view, new(1281, layout.StatusY + layout.StatusHeight / 2), accent);
         canvas.Text(view.Headline, 1304, layout.StatusY, accent, .78f, 258, 80, true);
@@ -90,17 +99,10 @@ internal sealed partial class TableApplication
         }
         if (abilities.Length > 0) DrawPriorityAbilityControl(abilities);
 
-        if (following) {
-            // Waiting is a state, not a disabled action button. Its public actor
-            // is named above and at their portrait; leave the battlefield quiet.
-            if (busy || view.Status == DecisionDockStatus.AutoPassing) {
-                var origin = new Vector2(1274, 823);
-                for (int i = 0; i < 3; i++) {
-                    float alpha = preferences.ReducedMotion ? .55f : .3f + .6f * (.5f + .5f * MathF.Sin((float)now * 3 - i));
-                    canvas.Circle(origin + new Vector2(i * 10, 0), 2, accent * alpha);
-                }
-            }
-        } else if (SelectingActionTarget) {
+        // Preserve the prompt while its answer is reconciled. Busy state removes
+        // actions without adding a competing status panel.
+        if (following) return;
+        if (SelectingActionTarget) {
             if (d!.OkEnabled) Button("confirm", d.Ok, 1266, 799, 296, new MatchIntent.ConfirmDecision(), !busy, true, 47);
             if (d.CancelEnabled) Button("cancel", d.Cancel, 1459, d.OkEnabled ? 852 : 799, 103, new MatchIntent.CancelDecision(), !busy, height: 32);
         } else if (recipientChoice) {

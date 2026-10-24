@@ -18,6 +18,7 @@ public sealed record SceneCard(string Id, Card Card, Pose Pose, string Zone, int
     public bool DenseMiniature { get; init; }
     public bool ScanFace { get; init; }
     public StudyBattlefieldFamily? StudyFamily { get; init; }
+    public BattlefieldAttachment? Attachment { get; init; }
 
     internal static SceneCard Create(Card card, Pose pose, string zone, int owner, int index, Vector2? entrance)
     {
@@ -77,12 +78,15 @@ public sealed class TableScene
     private readonly Dictionary<int, SceneSeat> seats;
     public HandPlan Hand { get; }
     public IReadOnlyList<SceneSeat> Seats { get; }
+    public IReadOnlyList<SceneCard> BattlefieldDrawOrder { get; }
 
     private TableScene(HandPlan hand, SceneSeat[] seats)
     {
         Hand = hand;
         Seats = Array.AsReadOnly(seats);
         this.seats = seats.ToDictionary(seat => seat.PlayerId);
+        BattlefieldDrawOrder = Array.AsReadOnly(seats.SelectMany(seat => seat.Battlefield).SelectMany(cluster => cluster.Cards)
+            .OrderByDescending(card => card.Attachment?.Layer ?? 0).ToArray());
     }
 
     public SceneSeat Seat(int player) => seats[player];
@@ -96,14 +100,13 @@ public sealed class TableScene
     public static TableScene Build(GameSnapshot state, int handPage,
         Point pointer, string? previouslyRaised, string? dragged, bool allowHover, Func<Card, bool> isResource,
         Func<Card, int, bool, BattlefieldLabelMetrics>? denseMeasure = null, bool allowInlineOrdering = true,
-        bool sharedTableStudy = false, int? studyFocusedOpponent = null)
+        bool sharedTableStudy = false)
     {
         var hand = HandLayout.Build(state, handPage, pointer, previouslyRaised, dragged, allowHover);
         var orderedChoices = allowInlineOrdering && state.Decision is { Kind: "choice", Ordered: true } decision
             ? decision.Choices.Where(c => c.Card != null && !string.IsNullOrEmpty(c.CardId)).Select(c => c.CardId).ToHashSet(StringComparer.Ordinal) : null;
-        bool studyFocus = sharedTableStudy && studyFocusedOpponent is { } opponent && opponent != state.ViewerId
-            && state.Players.Any(player => player.Id == opponent);
-        var geometry = SeatGeometry.Build(state, sharedTableStudy, studyFocus ? studyFocusedOpponent : null);
+        bool duel = sharedTableStudy && state.Players.Length == 2;
+        var geometry = SeatGeometry.Build(state, sharedTableStudy);
         var studySeparate = orderedChoices == null ? new HashSet<string>(StringComparer.Ordinal)
             : new HashSet<string>(orderedChoices, StringComparer.Ordinal);
         if (sharedTableStudy && state.Decision is { } required
@@ -115,19 +118,27 @@ public sealed class TableScene
                     || choice.Card != null && CardViews.Same(choice.Card, card)))) studySeparate.Add(CardViews.Identity(card));
         }
         var layout = sharedTableStudy ? null : BattlefieldLayoutContext.Build(state, orderedChoices, geometry, isResource);
+        var attachments = sharedTableStudy ? BattlefieldAttachments.Build(state,
+            geometry.Where(seat => seat.Index is >= 0 and <= 3).Select(seat => seat.PlayerId).ToHashSet()) : null;
         var seats = new List<SceneSeat>();
         for (int index = 0; index < state.Players.Length; index++) {
             var player = state.Players[index];
             var seat = geometry[index];
             if (seat.Index is < 0 or > 3) continue;
             var clusters = sharedTableStudy
-                ? studyFocus && seat.Index is 0 or 2 ? Array.Empty<BattlefieldCluster>()
-                    : SharedTableStudy.Arrange(seat.Index, player.Id, player.Zone("Battlefield").Cards, isResource, studySeparate,
-                        studyFocus ? role => DuelTableStudy.Lane(seat.Index, role) : null, studyFocus ? 1.35f : 1,
-                        horizontalRows: studyFocus)
+                ? SharedTableStudy.Arrange(seat.Index, player.Id, player.Zone("Battlefield").Cards.Where(card => !attachments!.IsTucked(card)).ToArray(), isResource, studySeparate,
+                        duel ? role => DuelTableStudy.MatchLane(seat.Index, role) : null, duel ? 1.35f : 1,
+                        horizontalRows: duel, centerRows: duel, attachments: attachments, seatFacing: !duel)
                 : BattlefieldLayout.Arrange(layout!, seat.Index, player.Id,
                     player.Zone("Battlefield").Cards, isResource, orderedChoices, denseMeasure);
             seats.Add(new(seat, clusters));
+        }
+        if (sharedTableStudy) {
+            // A foreign-controlled Aura follows its host spatially, while lookup,
+            // input permissions and controller collections retain its actual owner.
+            var all = seats.SelectMany(seat => seat.Battlefield).SelectMany(cluster => cluster.Cards.Select(node => (cluster.Kind, Node: node))).ToArray();
+            seats = seats.Select(seat => new SceneSeat(seat.Geometry, all.Where(item => item.Node.Owner == seat.PlayerId)
+                .GroupBy(item => item.Kind).Select(group => new BattlefieldCluster(group.Key, group.Select(item => item.Node).ToArray())).ToArray())).ToList();
         }
         return new(hand, seats.ToArray());
     }

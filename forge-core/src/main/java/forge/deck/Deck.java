@@ -68,6 +68,14 @@ public class Deck extends DeckBase implements Iterable<Entry<DeckSection, CardPo
     private Boolean lastCardArtOptimisationOptionUsed = null;
     private boolean includeCardsFromUnspecifiedSet = false;
     private String sleeveArtKey = "";
+    private Map<String, String> tokenPrintings = Map.of();
+    private boolean preferLatestTokenArt;
+
+    /** Cosmetic choices keyed by the token definition, separate from playable cards. */
+    public Map<String, String> getTokenPrintings() { return tokenPrintings == null ? Map.of() : tokenPrintings; }
+    public void setTokenPrintings(Map<String, String> choices) { tokenPrintings = Map.copyOf(choices); }
+    public boolean prefersLatestTokenArt() { return preferLatestTokenArt; }
+    public void setPreferLatestTokenArt(boolean value) { preferLatestTokenArt = value; }
     private int sleeveArtOffset = DEFAULT_SLEEVE_OFFSET;
     private transient UnplayableAICards unplayableAI = null;
 
@@ -272,6 +280,8 @@ public class Deck extends DeckBase implements Iterable<Entry<DeckSection, CardPo
         if(keyCards != null)
             result.keyCards.addAll(this.keyCards);
         result.sleeveArtKey = this.sleeveArtKey;
+        result.setTokenPrintings(getTokenPrintings());
+        result.preferLatestTokenArt = preferLatestTokenArt;
         result.sleeveArtOffset = this.sleeveArtOffset;
     }
 

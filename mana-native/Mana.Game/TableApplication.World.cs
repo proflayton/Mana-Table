@@ -28,7 +28,7 @@ internal sealed partial class TableApplication
         canvas.Polygon(Rim(28), new(35, 48, 51));
         if (resources.Arena != null) canvas.ProjectedEllipse(resources.Arena, boardView.Apply(TableWorld.Card(Vector2.Zero, new(1664, 972))), Color.White);
         else {
-            canvas.Glow(new(800, 355), new(1450, 710), new Color(126, 149, 145) * .26f);
+            canvas.Glow(boardView.Apply(new Vector2(800, 355)), new Vector2(1450, 710) * boardView.Scale, new Color(126, 149, 145) * .26f);
             // Fine woven marks remain understated at play distance.
             for (int i = 0; i < 650; i++) {
                 float x = (i * 173 % 1591) - 795, y = (i * 137 % 887) - 443;
@@ -44,13 +44,13 @@ internal sealed partial class TableApplication
             float a = i * MathF.Tau / 64, b = (i + 1) * MathF.Tau / 64;
             canvas.Line(boardView.Apply(TableWorld.Project(new(MathF.Cos(a) * 136, MathF.Sin(a) * 136))), boardView.Apply(TableWorld.Project(new(MathF.Cos(b) * 136, MathF.Sin(b) * 136))), Gold * .055f, 1);
         }
-        foreach (int seat in StudyFocusActive ? Array.Empty<int>() : new[] { 0, 1, 2, 3 }) {
+        foreach (var sceneSeat in TwoFieldTable ? Array.Empty<SceneSeat>() : tableScene!.Seats) {
+            int seat = sceneSeat.Index;
             var p = boardView.Apply(TableWorld.Project(TableWorld.SeatPoint(seat, 0, seat is 0 or 2 ? 690 : 421)));
-            var player = seat == 3 ? match!.Viewer : TableLayout.Opponents(match!).ElementAtOrDefault(seat);
-            bool active = player?.Id == match!.ActivePlayerId;
-            canvas.Glow(p, seat is 0 or 2 ? new(245, 370) : new(620, 230), (active ? Gold : Blue) * (active ? .16f : .035f));
+            bool active = sceneSeat.PlayerId == match!.ActivePlayerId;
+            canvas.Glow(p, (seat is 0 or 2 ? new Vector2(245, 370) : new Vector2(620, 230)) * boardView.Scale, (active ? Gold : Blue) * (active ? .16f : .035f));
         }
-        if (StudyFocusActive) {
+        if (TwoFieldTable) {
             canvas.Glow(new(740, 330), new(1100, 400), Blue * .08f);
             canvas.Glow(new(740, 590), new(1100, 260), Gold * .04f);
         }
@@ -69,6 +69,7 @@ internal sealed partial class TableApplication
     }
     private void DrawWorldBattlefield(Player player)
     {
+        canvas.BeginClip(BoardViewport);
         var plan = tableScene!.Seat(player.Id);
         int seat = plan.Index;
         var clusters = plan.Battlefield;
@@ -80,8 +81,8 @@ internal sealed partial class TableApplication
             var area = BattlefieldLayout.DenseTerritory(seat);
             int right = area.Right - 4;
             int incoming = match!.Combat?.Attackers.Count(attack => attack.DefendingPlayerId == player.Id) ?? 0;
-            string status = player.Eliminated ? "ELIMINATED" : incoming > 0 ? incoming + (seat == 3 ? " ATTACKING YOU" : " INCOMING")
-                : player.Priority ? "PRIORITY" : player.Id == match.ActivePlayerId ? "ACTIVE TURN" : "";
+            string status = player.Eliminated ? TimedOut(player.Id) ? "TIMED OUT" : "ELIMINATED" : incoming > 0 ? incoming + (seat == 3 ? " ATTACKING YOU" : " INCOMING")
+                : player.Id == match.ActivePlayerId ? "ACTIVE TURN" : "";
             int statusWidth = status.Length > 0 ? canvas.TextWidth(status, .375f, true) + 10 : 0;
             if (statusWidth > 0) {
                 var caption = new Rectangle(right - statusWidth, area.Top, statusWidth - 2, 19);
@@ -95,12 +96,12 @@ internal sealed partial class TableApplication
             canvas.Text(owner, identity.X + 4, identity.Y + 1, Ink, .375f, Math.Max(1, identity.Width - 8), 1, true);
             hits.Add(new("focus:" + player.Id, Scope, identity, new MatchIntent.OpenZone(player.Id, "Battlefield")));
         }
-        foreach (var cluster in clusters)
+        if (!TableStudyEnabled) foreach (var cluster in clusters)
             foreach (var node in cluster.Cards) DrawSceneCard(node);
+        canvas.EndClip();
     }
     private void DrawSeatObjects(Player player)
     {
-        if (StudyRail(player.Id)) return;
         var geometry = tableScene!.Seat(player.Id).Geometry;
         foreach (var node in geometry.Commanders) {
             canvas.CardFrame(node.Pose with { Size = node.Pose.Size + new Vector2(13) }, Gold * .35f, 1);
@@ -147,9 +148,10 @@ internal sealed partial class TableApplication
     {
         heroPositions[player.Id] = center;
         bool target = IsPlayerTarget(player.Id), active = match!.ActivePlayerId == player.Id;
+        bool timedOut = player.Eliminated && TimedOut(player.Id);
         bool hasCounters = StateClarity.PlayerStates(player).Length > 0;
         float radius = own ? 40 : 34;
-        if (!own && !StudyRail(player.Id)) {
+        if (!own) {
             int count = Math.Min(7, player.Zone("Hand").Count);
             int arriving = preferences.ReducedMotion ? 0 : matchPresentation.PendingDraws(player.Id, now);
             var handCenter = SeatHand(player.Id);
@@ -179,8 +181,14 @@ internal sealed partial class TableApplication
         }
         canvas.Glow(center - new Vector2(4, 13), new(radius * 2), new Color(169, 178, 159) * .25f);
         DrawPrioritySeat(player, center, radius);
-        canvas.CenterText(player.Life.ToString(), new((int)(center.X - radius) + 1, (int)(center.Y - radius) + 2, (int)radius * 2, (int)radius * 2), Color.Black, own ? 1.65f : 1.35f, true);
-        canvas.CenterText(player.Life.ToString(), new((int)(center.X - radius), (int)(center.Y - radius), (int)radius * 2, (int)radius * 2), player.Eliminated ? Muted : Ink, own ? 1.65f : 1.35f, true);
+        if (timedOut) {
+            canvas.CenterText("TIMED", new((int)(center.X - radius), (int)center.Y - 22, (int)radius * 2, 24), Red, .5f, true);
+            canvas.CenterText("OUT", new((int)(center.X - radius), (int)center.Y + 1, (int)radius * 2, 24), Ink, .72f, true);
+        } else {
+            canvas.CenterText(player.Life.ToString(), new((int)(center.X - radius) + 1, (int)(center.Y - radius) + 2, (int)radius * 2, (int)radius * 2), Color.Black, own ? 1.65f : 1.35f, true);
+            canvas.CenterText(player.Life.ToString(), new((int)(center.X - radius), (int)(center.Y - radius), (int)radius * 2, (int)radius * 2), player.Eliminated ? Muted : Ink, own ? 1.65f : 1.35f, true);
+        }
+        DrawDecisionClock(player, center, radius);
         var bounds = new Rectangle((int)center.X - (int)radius - 9, (int)center.Y - (int)radius - 9, (int)radius * 2 + 18, (int)radius * 2 + 18);
         hits.Add(new("player:" + player.Id, Scope, bounds, new MatchIntent.UsePlayer(player.Id), PlayerId: player.Id, Shape: p => Vector2.DistanceSquared(p.ToVector2(), center) <= (radius + 9) * (radius + 9)));
         string name = own ? "YOU" : localMatch && !ExperienceLabOpen
@@ -195,14 +203,14 @@ internal sealed partial class TableApplication
         bool dense = tableScene!.Seat(player.Id).IsDense;
         if (!dense && !own) canvas.CenterText(name + " ↗", nameplate, nameplate.Contains(pointer) ? Blue : Ink, .6f, true);
         int incoming = match.Combat?.Attackers.Count(a => a.DefendingPlayerId == player.Id) ?? 0;
-        string status = player.Eliminated ? "ELIMINATED" : incoming > 0 ? incoming + (own ? " ATTACKING YOU" : " INCOMING")
-            : active && !own && match.Turn > 0 ? turnProgress?.PhaseLabel ?? match.Phase : player.Priority ? "PRIORITY" : active ? "ACTIVE TURN" : "";
+        string status = player.Eliminated ? TimedOut(player.Id) ? "TIMED OUT" : "ELIMINATED" : incoming > 0 ? incoming + (own ? " ATTACKING YOU" : " INCOMING")
+            : active && !own && match.Turn > 0 ? turnProgress?.PhaseLabel ?? match.Phase : active ? "ACTIVE TURN" : "";
         if (!own && index != 1 && hasCounters) status += (status.Length > 0 ? " · " : "") + player.Zone("Hand").Count + " in hand";
-        if (!own && (!dense || active) && (!active || index == 1 || incoming > 0 || player.Eliminated)) {
+        if (!own && !timedOut && (!dense || active) && (!active || index == 1 || incoming > 0 || player.Eliminated)) {
             string caption = active && incoming > 0 ? (turnProgress?.PhaseLabel ?? match.Phase) + " · " + status : status;
             canvas.Text(caption, x + 4, y + 24, incoming > 0 ? Red : Gold, .53f, 180, 3, true);
         }
-        if (own && (incoming > 0 || player.Eliminated))
+        if (own && !timedOut && (incoming > 0 || player.Eliminated))
             canvas.CenterText(status, new((int)center.X - 94, (int)center.Y - 64, 188, 19), Red, .5f, true);
         if (hasCounters) {
             int counterX = own ? (int)center.X - 390 : (int)center.X - 94;
@@ -214,6 +222,5 @@ internal sealed partial class TableApplication
         DrawPlayerMana(player, manaHalo);
         if (!own) DrawOpponentPhase(player, center, index);
         if (!own && !dense) hits.Add(new("focus:" + player.Id, Scope, nameplate, new MatchIntent.OpenZone(player.Id, "Battlefield")));
-        DrawStudyRailCount(player);
     }
 }

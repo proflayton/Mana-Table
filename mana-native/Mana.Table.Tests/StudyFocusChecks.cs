@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Collections.Immutable;
 using Mana.Contracts;
 using Mana.Renderer;
 using Mana.Scenarios;
@@ -7,6 +8,7 @@ using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Input;
 using ButtonState = Microsoft.Xna.Framework.Input.ButtonState;
 using Point = Microsoft.Xna.Framework.Point;
+using Keys = Microsoft.Xna.Framework.Input.Keys;
 
 namespace Mana.Table;
 
@@ -18,7 +20,7 @@ internal static class StudyFocusChecks
     {
         string profile = Path.Combine(Path.GetTempPath(), "ManaTableStudyFocusChecks", Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(profile);
-        new PlayPreferences { Automatic = false, Sounds = false, ReducedMotion = true }.Save(profile);
+        new PlayPreferences { Automatic = false, Sounds = false, ReducedMotion = false }.Save(profile);
         var engine = new InteractionScenarioEngine();
         engine.Present(FourPlayerTableScenario.Create()[2].Snapshot);
         using var app = new TableApplication(TestTableServices.For(engine), profile, initialState: engine.State) { Automated = true };
@@ -28,119 +30,134 @@ internal static class StudyFocusChecks
         view.PresentLobby(new("local", "Controlled study", null, false, null, true, "", null, [], []), true);
         PresentationFrame frame = null!;
         double seconds = 0;
-        void Tick(Point point = default, ButtonState left = ButtonState.Released)
+        void Tick(Point point = default, ButtonState left = ButtonState.Released, double elapsed = .01, KeyboardState keyboard = default)
         {
-            seconds += .01;
-            var time = new GameTime(TimeSpan.FromSeconds(seconds), TimeSpan.FromSeconds(.01));
-            app.Update(time, new MouseState(point.X, point.Y, 0, left, ButtonState.Released,
-                ButtonState.Released, ButtonState.Released, ButtonState.Released), new KeyboardState(), new(1600, 900));
+            seconds += elapsed;
+            app.Update(new(TimeSpan.FromSeconds(seconds), TimeSpan.FromSeconds(elapsed)),
+                new(point.X, point.Y, 0, left, default, default, default, default), keyboard, new(1600, 900));
             frame = app.ReadPresentation();
-            if (view.Error.Length > 0) throw new InvalidOperationException("Native study focus: " + view.Error);
+            if (view.Error.Length > 0) throw new InvalidOperationException(view.Error);
         }
         void Click(string id)
         {
-            var hit = frame.Hits.LastOrDefault(candidate => candidate.Id == id)
-                ?? throw new InvalidOperationException("Missing native study input: " + id);
-            var bounds = hit.Bounds;
-            var candidates = new List<Point> { bounds.Center };
-            for (int row = 0; row < 5; row++)
-                for (int column = 0; column < 5; column++)
-                    candidates.Add(new(bounds.Left + (column * 2 + 1) * bounds.Width / 10,
-                        bounds.Top + (row * 2 + 1) * bounds.Height / 10));
-            var point = candidates.Where(candidate => hit.Contains(candidate) && view.HitAt(candidate)?.Id == id)
-                .Select(candidate => (Point?)candidate).FirstOrDefault()
-                ?? throw new InvalidOperationException("Covered native study input: " + id);
+            var hit = frame.Hits.Last(candidate => candidate.Id == id);
+            var point = hit.Bounds.Center;
+            if (!hit.Contains(point) || view.HitAt(point)?.Id != id) throw new InvalidOperationException("Covered input: " + id);
             Tick(point); Tick(point, ButtonState.Pressed); Tick(point);
-        }
-        void Wait(Func<bool> ready)
-        {
-            var wall = Stopwatch.StartNew();
-            while (!ready()) {
-                if (wall.Elapsed > TimeSpan.FromSeconds(5)) throw new TimeoutException("Native study command did not settle.");
-                Tick(new(20, 70)); Thread.Yield();
-            }
         }
         static SceneCard[] Battlefield(TableScene scene) => scene.Seats.SelectMany(seat => seat.Battlefield)
             .SelectMany(cluster => cluster.Cards).ToArray();
-        void CheckPortraits(string context)
-        {
-            var portraits = frame.Hits.Where(hit => hit.Id.StartsWith("player:", StringComparison.Ordinal)).ToArray();
-            check(portraits.Length == 4 && engine.State.Players.All(player => portraits.SingleOrDefault(hit => hit.Id == "player:" + player.Id)
-                    is { PlayerId: { } id } && id == player.Id),
-                context + ": all four portrait hit IDs retain their exact actual player IDs");
-        }
-
         Tick();
+        for (int frameIndex = 0; frameIndex < 16; frameIndex++) Tick(elapsed: .1);
         var original = view.Match!;
-        string originalScope = frame.Stamp.Scope;
+        string scope = frame.Stamp.Scope;
         var overview = Battlefield(frame.Scene!).ToDictionary(card => card.Id);
-        var hand = frame.Scene!.Hand.Cards.Select(card => (card.Id, card.Card.Key, card.Pose)).ToArray();
-        var playerOrder = original.Players.Select(player => player.Id).ToArray();
-        CheckPortraits("Overview");
-
-        // Player 3 starts at the right seat, so this exercises actual remapping
-        // rather than coincidentally focusing the original top opponent.
+        var seats = frame.Scene!.Seats.ToDictionary(seat => seat.PlayerId, seat => seat.Index);
+        var hand = frame.Cards.Where(card => card.Zone == "Hand").Select(card => card.Rest).ToArray();
+        var portraits = frame.Hits.Where(hit => hit.Id.StartsWith("player:", StringComparison.Ordinal)).ToDictionary(hit => hit.Id, hit => hit.Bounds);
+        // Follow an actual right-hand opponent without reseating them at the top.
         view.OpenBattlefield(3); Tick();
         check(view.StudyFocusOwner == 3 && view.ZoneName == null && view.Overlay.Length == 0
-                && frame.Scene!.Seat(3).Index == 1 && frame.Scene.Seat(original.ViewerId).Index == 3,
-            "Opening an opponent battlefield uses native top/bottom framing without opening the modal battlefield workspace");
-        check(ReferenceEquals(view.Match, original) && frame.Stamp.Scope == originalScope
-                && view.Match!.ViewerId == original.ViewerId && view.Match.Players.Select(player => player.Id).SequenceEqual(playerOrder)
-                && frame.Scene!.Hand.Cards.Select(card => (card.Id, card.Card.Key, card.Pose)).SequenceEqual(hand)
-                && view.Match.Stack.SequenceEqual(original.Stack)
-                && view.DecisionDock?.GameId == original.Id && view.DecisionDock.DecisionId == original.Decision?.Id
-                && frame.Hits.Any(hit => hit.Id == "confirm") == original.Decision!.OkEnabled
-                && engine.Replies.Count == 0,
-            "Native focus preserves the exact snapshot, viewer, player order, hand geometry, action keys, stack and decision scope without a command");
-        var focused = Battlefield(frame.Scene!).Where(card => card.Owner == 3).ToArray();
-        check(focused.Length == original.Players.Single(player => player.Id == 3).Zone("Battlefield").Cards.Length
-                && focused.Any(card => card.Pose.Size.X * card.Pose.Size.Y > overview[card.Id].Pose.Size.X * overview[card.Id].Pose.Size.Y),
-            "The chosen opponent retains every battlefield occurrence and receives enlarged native faces");
-        var offFocus = overview.Values.Where(card => card.Owner != original.ViewerId && card.Owner != 3)
-            .Select(card => card.Id).ToHashSet(StringComparer.Ordinal);
-        var pending = original.Stack.Single();
-        var sourceReference = frame.Hits.SingleOrDefault(hit => hit.Id == "stack-source:" + pending.Id);
-        check(sourceReference is { Zone: "StackReference", Card: { } sourceCard }
-                && CardViews.Identity(sourceCard) == CardViews.Identity(pending.Card!)
-                && offFocus.Contains(CardViews.Identity(sourceCard)),
-            "The condensed opponent's exact pending source remains reachable as a stack reference rather than a battlefield occurrence");
-        var ghostScene = frame.Scene!.Seats.Where(seat => seat.PlayerId != original.ViewerId && seat.PlayerId != 3)
-            .SelectMany(seat => seat.Battlefield).SelectMany(cluster => cluster.Cards).ToArray();
-        var ghostHits = frame.Hits.Where(hit => hit.Zone == "Battlefield" && hit.Card is { } card
-            && offFocus.Contains(CardViews.Identity(card))).ToArray();
-        var ghostCards = frame.Cards.Where(card => card.Zone == "Battlefield" && offFocus.Contains(card.Id)).ToArray();
-        check(ghostScene.Length == 0 && ghostHits.Length == 0 && ghostCards.Length == 0,
-            "Condensed opponents leave no ghost battlefield faces or card hit regions at their former overview positions"
-            + "; scene=" + string.Join(", ", ghostScene.Select(card => card.Id + "@" + card.Pose.Bounds))
-            + "; hits=" + string.Join(", ", ghostHits.Select(hit => hit.Id + "/" + hit.Zone + "@" + hit.Bounds))
-            + "; cards=" + string.Join(", ", ghostCards.Select(card => card.Id + "/" + card.Zone + "@" + card.Display.Bounds)));
-        CheckPortraits("Native focus");
-
+                && view.BoardView.IsIdentity && frame.Scene!.Seat(3).Index == seats[3],
+            "Opening a player battlefield starts at the existing camera and retains that player's actual table seat");
+        Tick(elapsed: .22);
+        var traveling = view.BoardView;
+        check(!traveling.IsIdentity && traveling.Scale > 1
+                && ReferenceEquals(view.Match, original) && frame.Stamp.Scope == scope && engine.Replies.Count == 0
+                && Battlefield(frame.Scene!).Length == overview.Count
+                && Battlefield(frame.Scene!).All(card => card.Pose == overview[card.Id].Pose && ReferenceEquals(card.Card, overview[card.Id].Card))
+                && frame.Cards.Where(card => card.Zone == "Battlefield").All(card =>
+                    Vector2.Distance(card.Display.Center, traveling.Apply(overview[card.Id].Pose).Center) < .01f)
+                && frame.Cards.Where(card => card.Zone == "Hand").Select(card => card.Rest).SequenceEqual(hand)
+                && portraits.All(pair => frame.Hits.Single(hit => hit.Id == pair.Key).Bounds == pair.Value),
+            "Mid-flight pan and zoom share one transform across every battlefield occurrence while the snapshot, canonical poses, hand and all four scoped player targets remain unchanged");
+        engine.Present(original with { Revision = original.Revision + 1,
+            Players = original.Players.Select(player => player with {
+                Zones = player.Zones.Select(zone => zone.Name != "Battlefield" ? zone : zone with {
+                    Cards = zone.Cards.Select(card => card.VisualId != FourPlayerTableScenario.TargetId ? card
+                        : card with { Power = 6, Toughness = 5, Counters = card.Counters.SetItem("+1/+1", 2) }).ToImmutableArray()
+                }).ToImmutableArray()
+            }).ToImmutableArray() });
+        view.Accept(engine.State); Tick();
+        var changed = frame.Cards.Single(card => card.Zone == "Battlefield" && card.Id == FourPlayerTableScenario.TargetId);
+        check(changed.Card is { Power: 6, Toughness: 5 } && changed.Card.Counters["+1/+1"] == 2
+                && view.BoardView.Scale > traveling.Scale && engine.Replies.Count == 0,
+            "A fresh authoritative P/T and counter update remains live during camera travel without restarting the camera or replaying a game action");
+        Tick(elapsed: .7);
+        check(view.BoardView.Scale > traveling.Scale
+                && frame.Cards.Where(card => card.Zone == "Battlefield" && card.Request.Owner == 3).All(card =>
+                    card.Display.Size.X > overview[card.Id].Pose.Size.X && card.Hit.Contains(card.Display.Center.ToPoint())),
+            "The settled camera enlarges the chosen battlefield and its exact displayed pointer geometry without rebuilding or dropping other battlefields");
         Click("study-focus-return");
-        var restored = Battlefield(frame.Scene!);
-        check(view.StudyFocusOwner == null && restored.Length == overview.Count
-                && restored.All(card => overview.TryGetValue(card.Id, out var before) && card.Owner == before.Owner
-                    && card.Pose == before.Pose && ReferenceEquals(card.Card, before.Card))
+        check(!view.BoardView.IsIdentity && view.StudyFocusOwner == null,
+            "Whole table begins a return journey from the displayed camera instead of snapping the battlefield to its overview");
+        Tick(elapsed: .7);
+        check(view.BoardView.IsIdentity && Battlefield(frame.Scene!).All(card => card.Pose == overview[card.Id].Pose)
                 && engine.Replies.Count == 0,
-            "The actual whole-table input restores every original occurrence, owner, pose and current card without issuing a game command");
-
-        Click("player:1");
-        check(view.StudyFocusOwner == 1 && frame.Scene!.Seat(1).Index == 1 && engine.Replies.Count == 0,
-            "A non-target opponent portrait enters native focus through its actual input route");
+            "Returning restores the same table positions without game commands or reconstructed card state");
+        Click("player:1"); Tick(elapsed: .7);
+        check(view.StudyFocusOwner == 1 && frame.Scene!.Seats.Count == 4,
+            "A non-target portrait inspects its battlefield while all four seats remain present");
+        Tick(keyboard: new KeyboardState(Keys.Escape));
+        check(view.StudyFocusOwner == null && !view.BoardView.IsIdentity && engine.Replies.Count == 0,
+            "Escape starts the same noncommitting return movement as Whole table");
+        Tick(elapsed: .7); Click("player:1"); Tick(elapsed: .7);
         engine.ChoosePlayer(3); view.Accept(engine.State); Tick();
-        string gameId = view.Match!.Id, decisionId = view.Match.Decision!.Id;
-        check(view.StudyFocusOwner == 1 && frame.Scene!.Seat(3).Index != 1,
-            "A legal player-selection prompt retains the existing framing and the actual condensed target portrait");
+        string game = view.Match!.Id, decision = view.Match.Decision!.Id;
         Click("player:3");
-        Wait(() => !view.Busy && engine.Replies.Count == 1);
-        check(engine.Replies.Single() is SelectPlayer { Player: 3 } reply
-                && reply.GameId == gameId && reply.DecisionId == decisionId && view.StudyFocusOwner == 1,
-            "Clicking a legal condensed player target submits its exact current game, decision and player reply instead of navigating");
-        CheckPortraits("After player selection");
-
+        var wait = Stopwatch.StartNew();
+        while (view.Busy && wait.Elapsed < TimeSpan.FromSeconds(5)) { Tick(); Thread.Yield(); }
+        check(!view.Busy && engine.Replies.SingleOrDefault() is SelectPlayer { Player: 3 } reply
+                && reply.GameId == game && reply.DecisionId == decision && view.StudyFocusOwner == 1,
+            "A legal player target submits its current exact decision and player ID while retaining the inspection camera");
         engine.Present(engine.State with { Id = "native-study-next-match" }); view.Accept(engine.State); Tick();
-        check(view.StudyFocusOwner == null && Battlefield(frame.Scene!).Length == overview.Count
-                && frame.Scene!.Seat(3).Index == TableLayout.SeatIndex(view.Match!, 3) && engine.Replies.Count == 1,
-            "Accepting a different match clears native focus and restores the new match's complete overview without another command");
+        check(view.StudyFocusOwner == null && view.BoardView.IsIdentity && Battlefield(frame.Scene!).Length == overview.Count,
+            "A different game drops the previous inspection camera rather than replaying its movement");
+        TwoPlayerMatch(check);
+    }
+    private static void TwoPlayerMatch(Action<bool, string> check)
+    {
+        var stages = ExperienceScenarios.Find("two-player-table.v1").Create();
+        string profile = Path.Combine(Path.GetTempPath(), "ManaTableDuelChecks", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(profile);
+        new PlayPreferences { Automatic = false, Sounds = false, ReducedMotion = true }.Save(profile);
+        var engine = new InteractionScenarioEngine(); engine.Present(stages[0].Snapshot);
+        using var app = new TableApplication(TestTableServices.For(engine), profile, initialState: engine.State) { Automated = true };
+        app.EnableLiveTableStudy(); app.Initialize();
+        var view = app.TestPort;
+        view.PresentLobby(new("local", "Controlled two-player table", null, false, null, true, "", null, [], []), true);
+        PresentationFrame frame = null!; double seconds = 0;
+        void Tick(Point point = default, ButtonState left = ButtonState.Released) {
+            seconds += .02;
+            app.Update(new(TimeSpan.FromSeconds(seconds), TimeSpan.FromSeconds(.02)),
+                new(point.X, point.Y, 0, left, default, default, default, default), new(), new(1600, 900));
+            frame = app.ReadPresentation();
+            if (view.Error.Length > 0) throw new InvalidOperationException(view.Error);
+        }
+        Tick();
+        var baseline = frame.Cards.Where(card => card.Zone == "Battlefield" && card.Request.Owner == 1)
+            .ToDictionary(card => card.Id, card => card.Rest);
+        engine.Present(stages[1].Snapshot); view.Accept(engine.State); Tick(); Tick();
+        check(frame.Scene!.Seat(1).Index == 1 && frame.Scene.Seat(0).Index == 3
+                && frame.Scene.Seats.All(seat => !seat.IsDense)
+                && frame.Cards.Where(card => card.Zone == "Battlefield" && card.Request.Owner == 1).All(card => baseline[card.Id] == card.Rest)
+                && !frame.Hits.Any(hit => hit.Id is "focus:0" or "study-focus-return")
+                && engine.Replies.Count == 0,
+            "The shipping live-table entry keeps two-player source faces and the opponent's exact framing when the eighth local group arrives, without an overflow HUD or navigation command");
+        engine.ChoosePlayer(1); view.Accept(engine.State); Tick();
+        string game = view.Match!.Id, prompt = view.Match.Decision!.Id;
+        var portrait = frame.Hits.Single(hit => hit.Id == "player:1");
+        check(portrait.Contains(frame.Scene.Seat(1).Geometry.Hero.ToPoint())
+                && view.HitAt(portrait.Bounds.Center)?.Id == portrait.Id,
+            "The required opponent target uses the exposed top portrait's real player ID");
+        Tick(portrait.Bounds.Center, ButtonState.Pressed); Tick(portrait.Bounds.Center);
+        var deadline = Stopwatch.StartNew();
+        while (view.Busy && deadline.Elapsed < TimeSpan.FromSeconds(5)) { Tick(); Thread.Yield(); }
+        check(!view.Busy && engine.Replies.SingleOrDefault() is SelectPlayer { Player: 1 } reply
+                && reply.GameId == game && reply.DecisionId == prompt && view.StudyFocusOwner == null,
+            "A required two-player portrait click submits its exact current target command rather than changing table focus");
+        view.OpenBattlefield(1); Tick();
+        check(view.ZoneName == "Battlefield" && view.StudyFocusOwner == null && engine.Replies.Count == 1,
+            "The two-player battlefield inspection remains reachable instead of adding a redundant multiplayer focus toggle");
     }
 }

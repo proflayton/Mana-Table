@@ -88,10 +88,8 @@ internal sealed partial class TableApplication
             foreach (var family in tableScene.Seats.SelectMany(seat => seat.Battlefield).SelectMany(cluster => cluster.Cards)
                 .Select(card => card.StudyFamily).OfType<StudyBattlefieldFamily>().DistinctBy(family => family.Id)
                 .Where(family => family.CohortCount > 1 && StudyFamilyNameVisible(family))) {
-                // These captions sit outside the individual card poses. Reserve
-                // the same raw area DrawStudyFamily paints, including when a
-                // crowded local field remains compact in the focused table.
-                occupied.Add(family.NameBounds);
+                // Captions share the camera with their card family.
+                occupied.Add(boardView.Apply(family.NameBounds));
             }
         }
         if (BattlefieldFocused && battlefieldFocusPlan is { } focus) {

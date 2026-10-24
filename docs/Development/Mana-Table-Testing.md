@@ -11,6 +11,20 @@ a complete engine/runtime/resource bundle.
 
 ## Canonical interaction coverage
 
+Optional decision timing runs in existing suites. `DecisionTempoTest` advances
+fake monotonic time through presentation, paused processing, simultaneous seats,
+grace, warning-only expiry and repeated unattended priority windows without
+waiting real minutes. `DecisionTempoIntegrationTest` uses real Forge priority and
+opening decisions, checks stale scope/foreign acknowledgement rejection and
+normal elimination, and asserts clock reads leave the board revision unchanged.
+`LobbyTempoTest` covers host/setup authority, invalid changes, Ready consent and
+policy retention. The existing three-player native journey now selects timing
+and readies remote peers with the exact policy revision; no extra CI process is
+added. Native presentation checks cover neutral clock decoding/interpolation and
+the lobby gesture/consent path. `decision-tempo.v1` is the authored visual case
+for quiet/urgent clocks, off-turn responses, grace, expiry and resolving. It is
+not a rules simulation or human approval of the presentation.
+
 The shared client check runs `InteractionContractMatrix`: named cases cover every
 concrete `GameCommand` variant, `DecisionIntent` and `DecisionPurpose`, with a
 closed-command/enum coverage guard, fixed-seed permission/visibility transitions, authority rejection and
@@ -22,7 +36,7 @@ The matrix uses no JVM, graphics device or network; it prints its measured runti
 
 Real Forge goldens use the existing `canonical-interaction` TestNG group: paid
 casting/payment, private partner search, Toothy's last-known counters and draws,
-pending versus prevented damage, combat allocation and persistent Speed. The
+prepared-spell casting, pending versus prevented damage, combat allocation and persistent Speed. The
 partner search retains four recipient variants. These methods already run once
 in normal Java CI; grouping them adds no duplicate engine startups. The focused
 command selects their classes as well as the group so upstream modules do not
@@ -73,6 +87,17 @@ dotnet $driver --smoke-presentation --profile '<fresh-profile>'
 
 The test flags belong to `Mana.Table.Tests`, not the shipped `ManaTable.exe`.
 Choose an explicit fresh `--profile` for every independent journey.
+
+The existing `--smoke-headless-presentation` lane includes `TokenArtworkChecks`:
+enter Tokens through the production builder, save/reset exact printing choices,
+retain the save acknowledgement and card count, reject an old revision's hit,
+and switch definitions while an obsolete gallery response is held in flight.
+It runs at small and large sizes with enlarged text, without another CI process.
+`DeckTokensTest` in the Java API suite covers newest-first exact definitions,
+reprint image addressing, save/reopen/duplicate, undo/redo/reset, stale edits,
+unchanged playable versions and actual `TokenInfo` creation with two independent
+deck choices. These checks do not approve the gallery's visual clarity; inspect
+real token images in the game window as well.
 
 - `--smoke-presentation`: presentation, card-reader, scope, focus, geometry and bounded priority-batch regressions over a controlled provider.
 - `--smoke-headless-presentation`: production `TableApplication` composition and pointer input over controlled snapshots.
@@ -135,6 +160,23 @@ timeouts, manual retry and shutdown use one scoped action-query lifecycle. Nativ
 journeys consume semantic `DecisionPurpose` values; Forge prompt class names stay
 inside the adapter. The real-engine opening/payment journey verifies that mapping.
 
+Prepared-spell regressions reuse `SourceActionsTest` and the existing native
+presentation lane. The real engine creates Emeritus of Ideation's copy in exile,
+casts that exact spell through the source, then checks unpreparing and revoked
+links. The `prepared-spell.v1` Experience Lab case provides authored four-seat
+checkpoints for source reading, the actual spell face, cancellable targeting,
+priority, the draw result and preparing again. Its scripted transition checks
+are not a rules implementation. Review the visible prepared marker and linked
+spell affordance at the small and large window sizes; passing the lifecycle
+checks does not establish visual clarity or human acceptance.
+
+The same presentation lane exercises paired-deck editing through the production
+app: discover an absent named partner, add it, select the compatible pair, wait
+for the persistence acknowledgment, return to Play and reopen. Delayed saves,
+rejection/retry, stale responses and library-list failures retain their distinct
+states. The real `DeckCommandersTest` checks discovery metadata independently of
+the existing legality checks. No extra CI job or JVM per UI case is required.
+
 `ImmutableStateChecks` traverses the entire match graph and every request/result
 of the catalog, printing, deck/workshop/analysis, setup and conversation ports,
 rejecting writable nested collections/properties. Provider construction buffers
@@ -168,11 +210,27 @@ against Forge, including restoring the original saved bytes and preserving an
 unrelated open deck. Deletion requires the optional `deck-library` capability.
 
 The existing presentation run includes `DecisionDockPresentationChecks` and the
+two-player continuity checks in `SharedTableStudyChecks` and `StudyFocusChecks`.
+They cross the old seven-group boundary from both viewer seats and exercise the
+shipping live-table entry, required opponent targeting and battlefield inspection.
+Use `two-player-table.v1` for immediate visual review of those projected states.
+The same run checks explicit pan/zoom and reversal in `BoardViewChecks`, live
+counter/P/T updates during movement, Escape, current player targets and stable
+canonical occurrences in `StudyFocusChecks`. `DrawingFrameChecks` rejects leaking
+clip scopes; `EffectTransitionChecks` protects the camera-mapped family captions
+from counter receipts. No additional CI process is introduced. Review actual
+motion in `four-player-table.v1` and `crowded-counters.v1`; checks cannot approve it.
+The same run also includes the
 scoped authored `DecisionFlowLabChecks`. The production headless run includes
 `DecisionDockInteractionChecks`: an actual stop-removal gesture clears only that
 saved stop, dispatches an authorized Auto pass and leaves another player's
-required choice unanswered. Reading a current card must pause both Auto and its
-visible status. `decision-flow.v1` supplies the corresponding window-review
+required choice unanswered. Reading a current card pauses dispatch without
+introducing a temporary priority surface. Delayed replies, fresh polls, Hold,
+rejection and uncertain acknowledgements exercise the real serialized command
+path. Quiet-pass controls retain their heading and position through handoffs;
+required local targets preempt them immediately. The existing `--smoke-auto-dock`
+window journey captures routine Auto, a real response and required blockers.
+`decision-flow.v1` supplies the corresponding window-review
 sequence; authored replies and passing checks do not supply rules or UX proof.
 
 The pending-effect journey in `--smoke-headless-presentation` distinguishes a
@@ -242,7 +300,14 @@ dotnet $driver --smoke-headless-engine --engine-resources '<package>/engine' --e
 ```
 
 `--smoke-headless-engine` operates a real Commander opening, a land play, a paid
-command-zone cast and concession through production input without a GPU. It
+command-zone cast and concession through production input without a GPU. Its
+same opening now takes two Commander mulligans: the first returns directly to
+Keep with seven cards, and the second projects exactly one required bottom card.
+It verifies that reading a
+bottom-card candidate does not select it, its explicit reader action selects it,
+and final confirmation removes it from the kept hand. Headless presentation
+checks cover the same noncommitting hand reader for engine inputs and staged
+card lists, including deselection and prompt replacement during a press. It
 opens the commander's current source actions, drags it into play and activates
 a Forest during its actual mana payment. Startup, workshop adapter
 and multiplayer modes cover their own boundaries; choose them when affected.
@@ -285,6 +350,24 @@ density with antialiasing coverage, alongside exact current stats, occurrence
 relationships and scoped pointer targets. A thin logical stroke need not contain
 an opaque texel of its original RGB color after MSAA. These checks establish
 rendering and input behavior, not perceived visual clarity.
+
+The existing headless presentation lane also runs `AttachmentStackChecks` over
+the production shared layout. `SharedTableStudyChecks` additionally runs the
+`tapped-resources.v1` checkpoints for every viewer, verifying that the same
+resource dimensions turn into a different outline without moving their centers
+or crossing reserved lanes. The lab case is the visual tap-recognition review.
+
+`AttachmentStackChecks` covers
+the production shared layout: exact occurrence/controller retention, exposed
+pointer targets, switching and closing readers, counter-bearing Equipment,
+seat-facing layouts for every viewer, upright readers from actual left/top/right
+pointer gestures, independently tapped faces and rotated attachment edges,
+re-equipping/detaching, nested and foreign-controlled attachments, distinct
+reference/visual ID domains, malformed links, two-player views and crowded fields.
+It does not start another CI process. Use `attachments.v1` for real-window review
+at 1000 x 740 and a larger window, including enlarged text, motion/reduced motion
+and camera focus. Agent screenshots and automated invariants do not establish
+human acceptance of the fan or its small exposed targets.
 
 For a relevant graphical regression, use the same test driver, for example:
 

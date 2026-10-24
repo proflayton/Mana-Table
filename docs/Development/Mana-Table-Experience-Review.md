@@ -28,6 +28,8 @@ does not establish that a person can understand or use the screen.
    gained abilities must remain inspectable after an animation, with their sources
    where the engine reports them. Repeated labels and a paragraph of
    changes cannot substitute for that relationship.
+   Persistent relationships belong in placement: keep Auras and Equipment
+   beneath their host with individually reachable artwork edges.
    Public-zone inspection also needs the relevant casting route, its cost and
    conditions, and reliable recent zone history. A public capability is distinct
    from a current legal action, especially when inspecting an opponent's card.
@@ -35,6 +37,19 @@ does not establish that a person can understand or use the screen.
    likely artwork; prioritize visible and inspected cards. A background observation
    should not flicker, disable or move an unchanged control. Retain local intent
    and revalidate its exact engine permission before commitment.
+   Routine passing is a mode, not a repeating announcement. Keep timing controls
+   steady through requests and observations; reserve new attention surfaces for
+   real responses, required choices and failures.
+   A viewpoint change moves across the same table. Keep seating and occurrences
+   continuous while a presentation camera pans and zooms; inspecting a player
+   must not rebuild the battlefield or reset every card's motion.
+   A played card also keeps its physical identity: show the authorized face as
+   it leaves its source, then move that card through the stack into its current
+   destination. Compact effect panels and closing a reader must not break that
+   journey. Ability references do not move their source permanent.
+   Shared screen regions need one layout owner: multiplayer chat, recent changes
+   and table-state controls reserve separate header slots even when optional
+   features appear. Review them together, including enlarged text.
 5. **Let the engine describe the game.** Use authoritative current characteristics,
    action handles and decision constraints. A list intended for auto-pass is not
    a complete action catalog. Simplify presentation without inventing availability,
@@ -48,6 +63,12 @@ does not establish that a person can understand or use the screen.
    territories and reading direction stable. Turn ownership, priority and required
    decisions are different facts. Direct attention to the relevant source,
    recipients and responder without rearranging everyone's battlefield.
+   Cards face their seat in the shared multiplayer space; viewer-upright art
+   everywhere erases a useful ownership cue. Keep current stats and full readers
+   upright. Seat facing and a card's tapped state are separate facts.
+   A tapped resource must change its visible silhouette. Do not exchange its
+   width and height while rotating it: that cancels the physical turn. Reserve
+   the turning footprint, and give compact state cues space before names.
    Reserve room for portrait resources before packing cards. Mana quantities
    must remain separate from both card faces and the life total.
 8. **Reduce repeated interaction through explicit, bounded intent.** A burst of
@@ -72,6 +93,327 @@ does not establish that a person can understand or use the screen.
     player's actual phase directs attention to their seat. Auto, Hold, a bounded
     yield and a required decision have different authority and lifetimes; visual
     consolidation must preserve those distinctions.
+
+12. **Keep deck identity and persistence visible through editing.** Both chosen
+    commanders belong beside the deck, including while browsing library cards.
+    Pairing guidance comes from the engine. Saving, saved, failed persistence
+    and deck legality are separate facts; returning to Play must not require a
+    second confirmation of edits already acknowledged by storage.
+
+## Lobby decision tempo: 24 October 2026
+
+**Source candidate; human review pending.** Intent: keep a friends' table moving
+without making rules choices for somebody. The host chooses a budget and expiry
+policy in the lobby itself; every player sees it before Ready. The engine
+retains that policy for the match. Changing it withdraws human Ready consent.
+
+The visual source is the deciding player's portrait, including responses during
+another player's turn. A quiet draining ring becomes a red countdown near
+expiry; required-choice grace remains visibly urgent. Hover gives timing context
+without opening a modal. No repeated text feed or automatic viewport jump is
+added. Preparing/automatically passed windows do not flash a clock. A confirmed
+timeout replaces the eliminated portrait's life value with Timed out and remains
+explicit in result rows. This keeps the settled cause off nearby cards. Clock reads
+do not repaint the board as a new game state. Reduced motion
+retains the same clock state and countdown without a pulse or flash.
+
+Off is the compatible default. Enabled presets use 120/60/30 seconds. Pass +
+grace sends an actual priority pass, gives required choices 60 seconds extra,
+then loses the seat; three consecutive unattended priority expiries also lose
+the seat. The other policies lose at the base deadline or warn only. The host
+allows up to 30 seconds for initial decision presentation before starting time,
+pauses during accepted-action processing, and cannot be reset by reconnecting,
+reading, selection updates or cancelling a nested ability menu. The original
+engine input root owns the budget; the current input still determines whether
+a pass is legal or required-choice grace applies.
+
+Agent review used actual table art at 1000×740 with 130% text/reduced motion and
+1540×980 with normal motion, plus the real three-client lobby/Ready/start
+journey. The canonical `decision-tempo.v1` case covers quiet/urgent clocks,
+off-turn response, required-choice grace, expired warning and engine resolution.
+The current local portrait keeps the countdown below life and inside the timing
+controls. Automated policy, authority and projection checks run in existing
+suites; neither those checks nor these captures establish human acceptance.
+
+![Host chooses the tempo before everyone readies](images/native-lobby-tempo-2026-10-24.png)
+
+![Decision clock follows an off-turn responder](images/native-decision-clock-2026-10-24.png)
+
+## Free multiplayer mulligan: 24 October 2026
+
+**Source candidate; human review pending.** The reported first mulligan appeared
+to require returning a card. Real three- and four-player reproductions found
+that Forge drew seven but still opened a bottom-card input requiring zero cards.
+The adapter also omitted the total selection range for paid London inputs.
+
+The rules layer now skips that empty choice. The first multiplayer redraw goes
+directly back to Keep with seven cards; subsequent redraws retain the engine's
+actual bottom-card costs. The adapter publishes those exact totals through the
+existing selection contract. No frontend free-mulligan counter or automatic
+answer bypasses a required decision. Two-player Commander retains its normal
+paid first mulligan; the multiplayer exemption is for games starting with more
+than two players (Comprehensive Rules 103.5c).
+
+`OpeningMulliganTest` uses production match inputs for two, three and four seats,
+checks three redraws, selects the actual required cards and verifies the kept
+hand and first-turn draw. It failed on both multiplayer cases before the fix.
+The existing native real-engine journey checks the free redraw, then reads,
+selects and confirms the second redraw's one required bottom card. These checks
+verify behavior; human review of the complete opening flow remains pending.
+
+## Tapped land silhouettes: 24 October 2026
+
+**Source candidate; human review pending.** The reported Forest, Mountain and
+Plains were all tapped, yet only one displayed a tap arrow. Two presentation
+choices hid their state: exchanging width/height cancelled their outline's turn,
+and the arrow disappeared when a name consumed the remaining art space.
+
+Resource faces now reserve a square turning footprint and keep one portrait
+size through tapping. The same occurrence turns sideways relative to its seat,
+without moving neighboring resources. Your resource lane has more depth to keep
+these faces usable. Tapped artwork is quieter, and compact noncreature faces
+reserve a corner for the tap arrow before fitting names. Names that cannot fit
+completely use the existing source hover cue and upright full reader.
+
+`tapped-resources.v1` opens the exact three-tapped-land case at every seat, then
+shows one untapped, all untapped and mixed matching lands. These are authored
+checkpoints, not simulated mana activations. Agent review uses real artwork at
+1000x740 and 1540x980, with enlarged text and reduced motion. Existing shared
+layout checks verify all viewer mappings, the changed outline, stable centers
+and actual footprint boundaries. At very dense scales, individual labels and
+arrows can still be omitted; physical facing and inspection retain the state.
+Human assessment of instant tap recognition remains pending for this candidate.
+
+![Three tapped resources](images/native-tapped-resources-2026-10-24.png)
+
+![The same resources untapped](images/native-untapped-resources-2026-10-24.png)
+
+## Seat-facing multiplayer battlefields: 24 October 2026
+
+**Source candidate; human review pending.** Player feedback found the shared
+battlefield's ownership unclear. Left and right seats now turn their battlefield
+faces inward by a quarter turn; the far seat faces its own player. The local
+seat remains upright. Creature silhouettes retain a portrait proportion, while
+names and authoritative current state remain viewer-readable. Full readers open
+upright, then return to the same turned occurrence. No new controls or engine
+transitions are involved: pointing identifies a source and clicking reads it.
+
+Packing measures each role lane in its seat's coordinates before placing the
+whole assembly into the shared world. Tapping adds a separate quarter turn;
+attachment edges, foreign-controller cues and Equipment counters follow the host
+assembly without transferring control. Camera navigation keeps those world
+positions and directions. Two-player framing keeps its existing upright faces.
+
+Agent inspection used real artwork at 1000x740 and 1540x980, including enlarged
+text, reduced motion, attachment readers, re-equipping, a tapped host and the
+480-permanent mixed case. The crowded overview still needs focused inspection;
+these captures do not establish that the whole battlefield is understandable.
+Existing interaction checks cover all viewer seat mappings and actual pointer
+reading at the left, far and right seats. Damage/counter feedback tries the rest
+of its recipient's perimeter when the turned source anchor faces a blocked lane.
+Human assessment of ownership clarity, reading direction and tap distinction
+remains pending for this exact candidate.
+
+![Seat-facing shared table with real artwork](images/native-seat-facing-table-2026-10-24.png)
+
+## Attachments beneath their host: 24 October 2026
+
+**Source candidate; human review pending.** The player should recognize an
+attachment relationship from the cards' physical arrangement. Auras and Equipment
+now form a shallow artwork fan beneath their host in the shared table. Pointing
+at an exposed edge identifies the full card and highlights its host; clicking
+reads that exact occurrence, and clicking its edge again closes reading. Existing
+engine actions and required-choice gestures retain their authority.
+
+The fan reserves space before neighboring cards are packed. Re-equipping moves
+the same occurrence; detached Equipment returns to its controller's support lane.
+Foreign-controlled Auras stay beneath their host with a controller portrait cue
+and controller identity on hover. Host P/T remains the engine's current value;
+Equipment counters stay on the exposed source edge. An initial tall-stack review
+made nearby creatures too small, so the current candidate uses a shallow fan.
+
+`attachments.v1` replays multiple attachments, Jitte with two counters, a foreign
+Aura, re-equipping, detachment, a tapped host and mixed crowded fields. Review the
+real artwork at small and large windows, with enlarged text, camera movement and
+normal/reduced motion. Automated occurrence/input checks are separate from human
+judgment of recognition and target comfort. The classic comparison layout retains
+the older line treatment.
+
+![Attachment fan and full-card reading](images/native-attachment-fan-2026-10-24.png)
+
+## Deck token artwork: 24 October 2026
+
+**Source candidate; human review pending.** The player's intent is to choose how
+their deck's tokens look. Tokens in the existing builder shows the deck's exact
+token types, their creator cards and full printing faces. Clicking a face saves
+that deck cosmetic immediately; the selected border and Deck saved acknowledge
+the result. Use newest removes the pin and follows the newest released printing
+in the bundled catalog. No Apply dialog, extra deck cards or rules permission is
+introduced. Undo/Redo and duplication preserve the ordinary deck lifecycle.
+
+Agent review uses real Forge catalogs and actual token images at 1000 x 740 and
+1540 x 980, including enlarged text. Review newest versus pinned state, reset,
+switching token types, long names, unavailable images and the saved result before
+returning to Play. Automated freshness, persistence and actual token-factory
+checks establish their own boundaries; human interaction approval is pending.
+
+![Per-deck token printing gallery](images/native-token-artwork-2026-10-24.png)
+
+## Connected match header: 23 October 2026
+
+**Source candidate; human review pending.** Table chat covered Recent changes
+because separate features placed controls in the same header space. Table-state
+badges could also occupy that area. One shared header layout now reserves each
+control's space, including turn and phase text. Optional content does not move
+chat or cover another action. Agent review includes the connected four-player
+header and open chat at 1000 x 740 and 1540 x 980, with normal and enlarged text.
+The existing headless presentation suite exercises their combined presence and
+actual physical pointer access; it does not supply human UX acceptance.
+
+![Connected match header with chat, recent changes and table state visible together](images/native-connected-header-2026-10-23.png)
+
+## Physical card play: 23 October 2026
+
+**Source candidate; human review pending.** The compact pending-effect panel
+stopped composing the physical spell, and closing its old hand reader could
+snap a played card into place. Public casts and land plays now briefly show the
+full card, then continue to its current stack or battlefield position. Resolution
+keeps that same physical occurrence; a long response window does not replay the
+cast reveal. Camera navigation uses the current destination. Reduced motion
+settles directly. Abilities retain their existing source references, and losing
+visibility removes a moving face immediately. Animation never answers a prompt.
+
+Load `card-play.v1` and use Next to observe a land leaving an inspected hand,
+your spell on the stack and its resolution, an opponent's public cast and
+resolution, then an ability whose permanent stays in place. These are authored
+projections, not a rules simulation. Agent review includes the rendered sequence
+at 1000 x 740 with motion, 1540 x 980 with reduced motion, and a zoomed camera.
+Existing presentation suites cover reader revocation, actual stack composition,
+targeting/payment interruptions, visibility and noncommitting inspection. This
+does not supply human approval of animation timing or clarity.
+
+![A physical spell during its cast reveal; use the running case to review movement](images/native-card-play-2026-10-23.png)
+
+## Spatial battlefield inspection: 23 October 2026
+
+**Source candidate; human review pending.** Switching to a player field felt
+like refreshing a page. The previous focus path reset card presentation,
+repacked the chosen opponent above the viewer and removed the other fields.
+Inspection now moves one pan/zoom camera over the existing battlefield geometry.
+The table surface moves with the cards; other fields leave the viewport through
+camera movement. Hand, player resources and actual decision controls stay anchored.
+
+Click a non-target player portrait to inspect that field. Whole table or Escape
+travels back; another portrait retargets from the displayed view. Card reading
+and presses hold movement, current engine P/T and counter updates remain live,
+and reduced motion settles directly. This is explicit navigation; turn and
+priority handoffs do not automatically move the camera. The normal two-player
+layout remains its own stable table. The pending-effect panel retains its
+existing focus placement policy, separate from the camera and decision controls.
+
+Use `four-player-table.v1` for ordinary fields, then the crowded checkpoint;
+`crowded-counters.v1` supplies the 480-permanent Toph/Felidar case. Agent visual
+review includes intermediate and settled windows, full-card inspection, return
+and each seat, at 1000 x 740 with motion and 1540 x 980 with reduced motion.
+These finite captures and scoped command/coordinate checks do not supply human
+acceptance of the motion, readability or dense-field experience.
+
+![A settled camera view; movement itself requires the running preview](images/native-table-camera-2026-10-23.png)
+
+## Two-player battlefield continuity: 23 October 2026
+
+**Source candidate; human review pending.** A live two-player match abruptly
+changed both battlefields into small labelled tiles. The old renderer switches
+the entire table when either controller exceeds seven card/state groups. The
+newer card-based renderer was enabled only for three- and four-player tables,
+so the same problem had not appeared in the player's preceding four-player game.
+
+Two-player play now uses the shared card renderer with the opponent above the
+local player. Separate creature, support and land rows retain recognizable art,
+current stats, counters and tapped states. Adding a group changes its own role
+row instead of changing the whole table's presentation. Multiplayer focus uses
+the spatial camera described above; two-player battlefield and player inspection remain usable.
+
+Load `two-player-table.v1` to compare seven groups, an eighth local group and
+opposing counters. Agent inspection used actual GPU windows at 1000 x 740 with
+normal motion and 1540 x 980 with reduced motion and named cached artwork.
+These authored checkpoints and scoped interaction checks do not simulate rules
+or supply human acceptance of the layout.
+
+![Two-player card rows after the eighth group](images/native-two-player-table-2026-10-23.png)
+
+## Hand choices and inspection: 23 October 2026
+
+**Source candidate; human review pending.** Card clicks during required hand
+selection bypassed the reader and immediately sent an engine selection. For
+single-card discards that can finish the action before the player reads the card.
+The keep/mulligan reader exception did not cover London bottom-card selection.
+
+Own-hand selection now uses the same noncommitting full-card reader. Choose card
+beside the face is the explicit selection gesture; Deselect reverses a current
+choice where available. The engine retains its actual completion behavior and
+remaining confirmation. Direct battlefield targeting and other compact choices
+retain their existing gestures. The same real Forge opening journey now includes
+two Commander mulligans, reading the bottom-card candidate, choosing it and
+confirming before its departure. Authored pointer checks also cover staged lists,
+reversible choices and prompt replacement during a press.
+
+Actual Forge windows were agent-inspected at 1000 x 740 with normal motion and
+1540 x 980 with reduced motion, using cached Forest art. These finite captures
+do not establish human acceptance of the interaction.
+
+![Read a mulligan candidate before explicitly choosing it](images/native-hand-selection-2026-10-23.png)
+
+## Quiet priority handoffs: 23 October 2026
+
+**Source candidate; human review pending.** Player feedback identified jarring
+passing frames. Routine handoffs changed a headline and portrait animation,
+added a Passing row, and could move feedback into the decision workspace.
+Cancelling an automatic batch could briefly substitute Action submitted for
+the real prompt while its reply was still being reconciled.
+
+The candidate separates attention from transport. Auto remains a stable portrait
+mode; routine priority and processing add no announcement. An explicit Pass for
+now keeps its heading and Take control position through other-seat priority,
+polls and temporary inspection pauses. Required choices and real responses still
+surface immediately. A small steady priority token identifies the actual
+responder; strong emphasis remains for stack interaction or local attention.
+When an effect is pending, its response workspace still names the opponent
+holding priority. Empty-stack handoffs need no separate waiting announcement.
+Ignored-ability Undo remains reachable. No permission, command timing or game
+state is inferred from this quieter presentation.
+
+## Prepared spells and paired decks: 23 October 2026
+
+**Source candidate; human review pending.** A player could not discover Emeritus
+of Ideation's prepared spell or its prepared designation. Forge already created
+the castable copy in exile. The missing relationship and inherited creature
+artwork made that state difficult to recognize. The candidate adds a persistent
+source marker, the actual prepared spell's name/cost in the reader and an offered
+cast beside the complete source card. Hover reads the spell without covering the
+source, cast control, state column or pending decision. The engine still owns
+casting, targets, payment, unpreparing and copy lifetime.
+
+Deckbuilding feedback identified competing actions and uncertain persistence,
+especially with two commanders. The candidate keeps both complete names visible,
+groups administration in Deck options and displays Saving / Deck saved / Not
+saved beside Back to play. Finding an absent named partner uses engine-supplied
+discovery metadata; selecting a pair still requires actual compatible IDs.
+Generic partner discovery opens the normal Legendary library, not a
+catalog-wide compatibility filter. No additional review/confirmation is required
+to return to Play. Saved status remains distinct from deck legality.
+
+These are agent-inspected actual 1000 x 740 windows, also reviewed at 1540 x 980.
+The spell journey uses the authored `prepared-spell.v1` lab; a separate actual
+Forge regression casts the spell and checks the result and revoked links. The
+deck capture uses the real adapter and an isolated Toothy/Pir/98-Forest list.
+Named cached art supplies the relevant faces; uncached library results retain
+their readable fallback. The screenshots and automated lifecycle checks do not
+establish human acceptance or complete the broader experience audit.
+
+![Prepared source with its actual available spell](images/native-prepared-spell-2026-10-23.png)
+
+![Both commanders and acknowledged persistence in the builder](images/native-paired-deck-2026-10-23.png)
 
 ## Whole-game audit and redesign: 22 October 2026
 
@@ -575,7 +917,7 @@ and its damage result. The hand, public command/zone piles, attached equipment a
 counter-bearing creatures are present together. The study is not the default
 layout for normal games or a released feature.
 
-`SharedTableStudy` arranges upright scan faces independently within fixed role
+The original comparison arranged upright scan faces independently within fixed role
 lanes. A pending stack or another controller's density does not participate in
 packing. Battlefield faces prioritize real artwork, complete wrapped names, current P/T,
 small counters and state glyphs. Every occurrence remains represented; differing
@@ -655,11 +997,13 @@ that issue. The prototype still uses the existing letterboxed game surface.
 
 Start with a shared table: the viewer below, with other seats clockwise at the
 left, top and right. Reconsider the current territory dimensions. Give every
-seat viewer-upright battlefield faces with identity, art and authoritative P/T;
+seat identifiable battlefield faces with art and authoritative P/T (the later
+seat-facing candidate supersedes this study's viewer-upright direction);
 put creatures toward the shared action area and resources/support farther out.
 These are spatial relationships, not permanent role headings or four framed
 miniature screens. Place cards by current controller; retain original ownership
-in inspection. Cross-controller attachments still need their controller cue.
+in inspection. The current attachment candidate adds a controller portrait and
+hover identity for cross-controller Auras; human review of that cue is pending.
 
 The alternative of three opponent bands above one wide local field deserves a
 visual comparison, especially in a larger window. At a small window, its narrow
@@ -829,8 +1173,11 @@ native renderer and input pipeline with controlled state, not a rules simulator.
 | Scenario ID | Review focus |
 | --- | --- |
 | `four-player-table.v1` | Ordinary and asymmetric four-seat fields, a seven-card local hand, commanders, public zones, current stats/counters/attachments and a cross-seat ability/result; optional `--table-study` comparison |
+| `attachments.v1` | Multiple Auras/Equipment beneath their host, Equipment counters, cross-controller Aura, re-equipping, detachment, tapped host and 480 mixed permanents |
+| `two-player-table.v1` | Seven card/state groups, an eighth local group and an opposing counter change; inspect two-player continuity across the old global threshold |
 | `crowded-counters.v1` | 480 permanents, Toph earthbend 2, then one Felidar Retreat effect with 82 recipients; source, changed land and complete affected set |
 | `card-reading.v1` | Hand slots, reading/collapse and required selection; current P/T/counters in card and ability-source previews despite an older embedded source face |
+| `card-play.v1` | Physical hand → land, hand → stack → battlefield, opponent public cast and resolution, then an ability whose source stays in place; review normal/reduced motion and camera navigation |
 | `ability-choice.v1` | Select the Elf, read its concrete mana action without changing the prompt, then explicitly activate and see the authored tapped source and green mana; no extra one-option chooser |
 | `ability-targeting.v1` | Walking Ballista's distinct costs/effects, card/player targets, cancellation, paid counter cost, pending stack, another player's response window, and authored result |
 | `counter-damage.v1` | All Will Be One: captured three-counter damage, then one added loyalty with four settled counters; target, pending stack and authored result |
@@ -840,6 +1187,7 @@ native renderer and input pipeline with controlled state, not a rules simulator.
 | `public-state.v1` | Qualified/repeated abilities, generic player resources, day/night and revocation of visible information |
 | `stack-priority.v1` | Named stack order, controller/targets, whose response is pending, local response and resolution |
 | `trigger-search.v1` | Passing priority hands off to another responder, then required recipient/library choices and the searched card in hand |
+| `tapped-resources.v1` | Three tapped lands at every seat, one untapped, all untapped and mixed matching lands |
 | `turn-orientation.v1` | Ordinary four-player turn sequence; Follow turn currently exposes insufficient travel space and remains stationary |
 | `turn-orientation-crowded.v1` | The same authored turn sequence with the crowded battlefield; stationary fallback and table context |
 

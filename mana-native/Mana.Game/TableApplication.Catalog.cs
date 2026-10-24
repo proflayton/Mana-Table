@@ -31,6 +31,7 @@ internal sealed partial class TableApplication
     private void UpdateDeckCatalog()
     {
         if (match != null || !deckEditor || !loaded) return;
+        UpdateTokenCatalog();
         if (now >= catalogAfter) catalogRead.Start();
         if (workshopDialog == "printings" && printingSelection?.IsCurrent(selectedDeckDetails) == true && now >= printingAfter) printingRead.Start();
         else if (workshopDialog != "printings" || printingSelection?.IsCurrent(selectedDeckDetails) != true) printingRead.Clear();

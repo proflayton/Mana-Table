@@ -10,6 +10,10 @@ import forge.player.PlayerControllerHuman;
 import java.nio.file.Path;
 import java.util.*;
 import java.util.concurrent.CancellationException;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
+import java.util.function.LongSupplier;
 
 /** The sole owner of a Forge game. Seats, projections and decisions never depend on transport. */
 final class MatchTable implements ManaTableSession, AutoCloseable {
@@ -23,9 +27,17 @@ final class MatchTable implements ManaTableSession, AutoCloseable {
     private final ThreadLocal<MatchSession> dialogOwner = new ThreadLocal<>();
     private long boardRevision;
     private boolean closed;
+    final DecisionTempo tempo;
+    private ScheduledExecutorService tempoWorker;
 
     MatchTable(String format, List<RegisteredPlayer> players, Path resources, Path profile) {
+        this(format, players, resources, profile, DecisionTempo.Settings.off(), () -> System.nanoTime() / 1_000_000);
+    }
+
+    MatchTable(String format, List<RegisteredPlayer> players, Path resources, Path profile,
+               DecisionTempo.Settings timing, LongSupplier monotonicMillis) {
         HeadlessPlatform.initialize(resources, profile);
+        tempo = new DecisionTempo(timing, monotonicMillis);
         this.format = format;
         var rules = new GameRules(GameType.Constructed);
         if (format.equals("Commander")) rules.addAppliedVariant(GameType.Commander);
@@ -36,6 +48,9 @@ final class MatchTable implements ManaTableSession, AutoCloseable {
         game.subscribeToEvents(identities);
         for (int i = 0; i < game.getPlayers().size(); i++) {
             var player = game.getPlayers().get(i);
+            // Cosmetics are per registered deck; rules and live characteristics
+            // still come from the exact token definition used by the effect.
+            player.getRegisteredPlayer().getDeck().setPreferLatestTokenArt(true);
             if (player.getController() instanceof PlayerControllerHuman human) seats.put(i, new MatchSession(this, human));
             player.updateOpponentsForView();
         }
@@ -65,6 +80,14 @@ final class MatchTable implements ManaTableSession, AutoCloseable {
 
     void start() {
         HeadlessPlatform.activate(this);
+        if (tempo.enabled()) {
+            tempoWorker = Executors.newSingleThreadScheduledExecutor(task -> {
+                var worker = new Thread(task, "mana-table-tempo"); worker.setDaemon(true); return worker;
+            });
+            tempoWorker.scheduleWithFixedDelay(() -> {
+                try { tickTempo(); } catch (Throwable failure) { fail(failure); stopTempo(); }
+            }, 100, 100, TimeUnit.MILLISECONDS);
+        }
         game.getAction().invoke(() -> {
             try {
                 match.startGame(game);
@@ -72,6 +95,7 @@ final class MatchTable implements ManaTableSession, AutoCloseable {
                 if (!closed && !(failure instanceof CancellationException && game.isGameOver())) fail(failure);
             }
             finally {
+                stopTempo();
                 synchronized (gate) { for (var seat : seats.values()) seat.clearDecision(); publish(); }
                 game.unsubscribeFromEvents(identities);
                 for (var seat : seats.values()) seat.detach();
@@ -95,8 +119,19 @@ final class MatchTable implements ManaTableSession, AutoCloseable {
             Integer owner = decisions.size() == 1 ? decisions.get(0).ownerId() : null;
             String actionClass = decisions.isEmpty() ? "resolving" : decisions.size() == 1 ? decisions.get(0).actionClass() : "simultaneous";
             for (var seat : seats.values()) seat.updatePublicDecision(owner, actionClass);
+            for (var seat : seats.values()) seat.observeTempo();
         }
     }
+
+    void tickTempo() {
+        synchronized (gate) {
+            if (closed || game.isGameOver()) return;
+            for (var expiry : tempo.expired()) {
+                for (var seat : seats.values()) seat.expireTempo(expiry);
+            }
+        }
+    }
+    private void stopTempo() { if (tempoWorker != null) tempoWorker.shutdownNow(); }
 
     void enter(MatchSession seat) { dialogOwner.set(seat); }
     void stopIfNoHumans() {
@@ -120,11 +155,12 @@ final class MatchTable implements ManaTableSession, AutoCloseable {
     }
     @Override public Object platformDialog(String name, Object[] args) { return owner().platformDialog(name, args); }
     @Override public void publishInput() { for (var seat : seats.values()) seat.publishInput(); }
-    @Override public void fail(Throwable error) { synchronized (gate) { for (var seat : seats.values()) seat.fail(error); } }
+    @Override public void fail(Throwable error) { synchronized (gate) { stopTempo(); for (var seat : seats.values()) seat.fail(error); } }
     @Override public void close() {
         synchronized (gate) {
             if (closed) return;
             closed = true;
+            stopTempo();
             for (var seat : seats.values()) seat.cancelDecision();
             if (!game.isGameOver()) game.setGameOver(GameEndReason.AllHumansLost);
             for (var seat : seats.values()) seat.releaseInput();

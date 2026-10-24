@@ -62,7 +62,7 @@ final class DeckDocumentSession {
         MatchSetup.Preview preview() { return prepared.preview(); }
     }
 
-    private record StoredDeck(int version, String name, String format, List<DeckEditor.Edit> cards, long updated) { }
+    private record StoredDeck(int version, String name, String format, List<DeckEditor.Edit> cards, long updated, Map<String, String> tokenPrintings) { }
     private record LoadedDeck(DeckEditor editor, String format) { }
     private record DeletedDeck(String deckId, String name, String restoreToken, long deletedAt) { }
 
@@ -189,6 +189,7 @@ final class DeckDocumentSession {
         result.put("format", document.format); result.put("deck", document.editor.snapshot());
         result.put("validation", document.editor.validate(DeckFormat.valueOf(document.format)));
         result.put("commanderChoices", DeckCommanders.choices(document.editor.toDeck()));
+        result.put("tokenPreviews", DeckTokens.view(document.id, document.editor).tokens().stream().map(DeckTokens.Token::card).toList());
         result.put("saveError", document.saveError);
         return result;
     }
@@ -198,7 +199,7 @@ final class DeckDocumentSession {
             workshop.assertWritable(document.id);
             var snapshot = document.editor.snapshot();
             var stored = new StoredDeck(1, snapshot.name(), document.format, snapshot.entries().stream()
-                    .map(entry -> new DeckEditor.Edit(entry.section(), entry.card().id(), entry.quantity())).toList(), System.currentTimeMillis());
+                    .map(entry -> new DeckEditor.Edit(entry.section(), entry.card().id(), entry.quantity())).toList(), System.currentTimeMillis(), document.editor.toDeck().getTokenPrintings());
             Path target = file(document.id), temporary = directory.resolve(document.id + ".tmp");
             Files.writeString(temporary, JSON.toJson(stored), StandardCharsets.UTF_8);
             try { Files.move(temporary, target, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE); }
@@ -265,6 +266,19 @@ final class DeckDocumentSession {
         var document = requireWorkshop(scope);
         workshop.replacePrinting(document.id, document.editor, document.format, section, cardId, printingId);
         document.resetPractice(); return save(document);
+    }
+    DeckTokens.View tokens(RequestScope scope) {
+        var document = requireWorkshop(scope);
+        return DeckTokens.view(document.id, document.editor);
+    }
+    CardCatalog.Page tokenPrintings(RequestScope scope, String tokenId, int offset, int limit) {
+        var document = requireWorkshop(scope);
+        return DeckTokens.printings(document.editor.toDeck(), tokenId, offset, limit);
+    }
+    Object setTokenPrinting(RequestScope scope, String tokenId, String printingId) {
+        var document = requireWorkshop(scope);
+        document.editor.setTokenPrinting(scope.revision(), tokenId, printingId);
+        return save(document);
     }
     Object previewSource(String url) throws Exception { return workshop.importPreview(url); }
     Object refreshSource(RequestScope scope) throws Exception {
@@ -438,7 +452,9 @@ final class DeckDocumentSession {
     private LoadedDeck loadStoredDeck(String id) throws Exception {
         var stored = JSON.fromJson(Files.readString(file(id)), StoredDeck.class);
         if (stored.version() != 1) throw new IllegalArgumentException("Unsupported deck file version");
-        var loaded = new DeckEditor(catalog, new Deck(checkedName(stored.name())));
+        var deck = new Deck(checkedName(stored.name()));
+        deck.setTokenPrintings(DeckTokens.readPreferences(JSON.toJsonTree(stored.tokenPrintings())));
+        var loaded = new DeckEditor(catalog, deck);
         loaded.apply(0, stored.cards()); return new LoadedDeck(loaded, stored.format());
     }
     private static Map<String, Object> summary(String id, StoredDeck stored, String libraryToken) {

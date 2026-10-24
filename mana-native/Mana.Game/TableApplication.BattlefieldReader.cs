@@ -38,6 +38,7 @@ internal sealed partial class TableApplication
             canvas.CenterText(stats, bounds, Ink, size, true);
         }
         PaintBattlefieldReaderState(card, entry);
+        PaintPreparedMarker(card, entry.Display, entry.Request.Owner ?? -1);
     }
 
     private void PaintBattlefieldReaderState(Card card, PresentedCard entry)
@@ -55,6 +56,8 @@ internal sealed partial class TableApplication
             && !abilityLabels.Contains("Summoning sick", StringComparer.OrdinalIgnoreCase))
             chips.Add(new("Summoning sick", Blue));
         chips.AddRange(abilityLabels.Select(label => new BattlefieldReaderChip(label, Blue)));
+        if (card.States is { } states) chips.AddRange(states.Where(state => state.Kind == "status")
+            .Select(state => new BattlefieldReaderChip(PublicStatePresentation.Description(state), Gold)));
         if (chips.Count == 0) return;
 
         var face = entry.Display.Bounds;

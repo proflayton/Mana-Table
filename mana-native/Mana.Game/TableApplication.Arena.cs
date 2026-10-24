@@ -1,6 +1,7 @@
 using Mana.Magic;
 using Mana.Contracts;
 using Mana.Renderer;
+using Mana.Table.Presentation;
 using Microsoft.Xna.Framework;
 using Color = Microsoft.Xna.Framework.Color;
 using Rectangle = Microsoft.Xna.Framework.Rectangle;
@@ -26,6 +27,11 @@ internal sealed partial class TableApplication
         var opponents = TableLayout.Opponents(state);
         foreach (int i in new[] { 1, 0, 2 }) if (i < opponents.Length) DrawOpponent(opponents[i], i);
         if (state.Viewer is { } viewer) DrawLocal(viewer);
+        if (TableStudyEnabled) {
+            canvas.BeginClip(BoardViewport);
+            foreach (var node in tableScene!.BattlefieldDrawOrder) DrawSceneCard(node);
+            canvas.EndClip();
+        }
         for (int i = 0; i < opponents.Length && i < 3; i++) DrawHero(opponents[i], SeatHero(opponents[i].Id), false, SeatDisplayIndex(opponents[i].Id));
         DrawCombatConnections(); DrawAttachmentConnections(); DrawStack(); DrawSeatTransfers();
         DrawChangeHighlights();
@@ -64,6 +70,7 @@ internal sealed partial class TableApplication
         if (ReadingGalleryOpen || BattlefieldFocused || ZoneReadingOpen) DrawReaderControls();
         if (ReadingGalleryOpen) hovered = HitAt(pointer)?.Card;
         DrawPendingReferencePreview();
+        DrawLinkedSpellPreview();
         DrawStudyBattlefieldName();
         DrawStudyFocusNavigation();
         DrawExperienceLabHeader();
@@ -77,16 +84,18 @@ internal sealed partial class TableApplication
 
         var active = state.Players.FirstOrDefault(p => p.Id == state.ActivePlayerId);
         string label = state.Turn == 0 ? "Opening hands" : state.ActivePlayerId == state.ViewerId ? "Your turn" : active?.Name ?? "Waiting";
-        canvas.Text(label, 220, 9, Ink, .85f, 410, 1, true);
-        canvas.Text($"Turn {state.Turn}  ·  {state.Phase}", 220, 32, Muted, .6f, 410, 1);
-        Button("battlefields", "Battlefields", 650, 12, 178, new MatchIntent.OpenBattlefields(), height: 35);
+        var turn = MatchHeaderLayout.Turn;
+        var phase = MatchHeaderLayout.Phase;
+        canvas.Text(label, turn.X, turn.Y, Ink, .85f, turn.Width, 1, true);
+        canvas.Text($"Turn {state.Turn}  ·  {state.Phase}", phase.X, phase.Y, Muted, .6f, phase.Width, 1);
+        Button("battlefields", "Battlefields", MatchHeaderLayout.Battlefields, new MatchIntent.OpenBattlefields());
         DrawTableStates(state);
         DrawChangesControl();
-        Button("history", "History", 1190, 12, 110, new MatchIntent.OpenView(MatchView.History), height: 35);
-        Button("settings", "Settings", 1310, 12, 112, new MatchIntent.OpenView(MatchView.Settings), height: 35);
+        Button("history", "History", MatchHeaderLayout.History, new MatchIntent.OpenView(MatchView.History));
+        Button("settings", "Settings", MatchHeaderLayout.Settings, new MatchIntent.OpenView(MatchView.Settings));
         bool departure = session.NeedsRecovery || state.Viewer?.Eliminated == true || state.Status == "error";
-        Button(departure ? "leave-table" : "concede", departure ? "Leave table" : "Concede", 1432, 12, 143,
-            new MatchIntent.OpenView(departure ? MatchView.LeaveTable : MatchView.Concede), !busy && state.Status != "finished", height: 35);
+        Button(departure ? "leave-table" : "concede", departure ? "Leave table" : "Concede", MatchHeaderLayout.Departure,
+            new MatchIntent.OpenView(departure ? MatchView.LeaveTable : MatchView.Concede), !busy && state.Status != "finished");
 
     }
     private void DrawHand()
@@ -120,16 +129,28 @@ internal sealed partial class TableApplication
         // in place. The presentation controller includes this same anchor in
         // its scoped hit geometry, so a second click can close inspection.
         if (node.ScanFace && readingId == node.Id && !card.FaceDown) {
-            PaintBattlefieldScanFace(card, node.Pose, node.Owner, false, false, false, node.GroupFront, node.GroupCount);
-            canvas.CardFrame(node.Pose, HoverAccent * .85f, 2);
+            var anchor = boardView.Apply(node.Pose);
+            if (node.Attachment != null) PaintBattlefieldAttachment(node, anchor, false, false);
+            else PaintBattlefieldScanFace(card, anchor, node.Owner, false, false, false, node.GroupFront, node.GroupCount);
+            canvas.CardFrame(anchor, HoverAccent * .85f, 2);
         }
         var rest = node.Zone == "Battlefield" && !node.Dense && !node.ScanFace && (card.PhasedOut || CardPresentation.HasAbility(card, "flying"))
             ? CardMotion.Airborne(node.Pose, now, preferences.ReducedMotion, node.Id) : node.Pose;
         var pose = DrawTableCard(node.Id, card, rest, node.Zone, node.Owner,
             "card:" + card.Key + ":" + card.VisualId, new MatchIntent.UseCard(card),
-            (displayed, focus) => PaintSceneCard(card, displayed, node.Zone, node.Owner, focus, node.Compact, node.GroupFront, node.GroupCount, node.Dense), node.Entrance, node.EntranceDelay);
-        if (!string.IsNullOrEmpty(card.CombatId)) cardPositions[card.CombatId]
-            = node.ScanFace && readingId == node.Id ? node.Pose : pose;
+            (displayed, focus) => {
+                if (node.Attachment != null && !focus && displayed.Size.X < 300) PaintBattlefieldAttachment(node, displayed,
+                    card.Highlighted || card.CombatId.Length > 0 && selectedCombat == card.CombatId || TableChoices.Index(match!, card) is { } choice && decisionDraft.Selections.Contains(choice), IsCardActionable(card));
+                else PaintSceneCard(card, displayed, node.Zone, node.Owner, focus, node.Compact, node.GroupFront, node.GroupCount, node.Dense);
+            }, node.Entrance, node.EntranceDelay, readingAnchor: node.Attachment?.Edge(node.Pose));
+        if (!string.IsNullOrEmpty(card.CombatId)) {
+            var anchor = node.ScanFace && readingId == node.Id ? boardView.Apply(node.Pose) : pose;
+            if (node.Attachment is { } attachment && !node.Card.FaceDown) {
+                var edge = attachment.Edge(anchor);
+                anchor = new(edge.Center.ToVector2(), edge.Size.ToVector2());
+            }
+            cardPositions[card.CombatId] = anchor;
+        }
     }
     private void PaintSceneCard(Card card, Pose pose, string zone, int owner, bool focus, bool compact = false, bool groupFront = true, int groupCount = 1, bool dense = false)
     {
@@ -169,6 +190,7 @@ internal sealed partial class TableApplication
         // Paint the relationship marker after combat stats so the small corner
         // indicator remains visible on densely packed projected card faces.
         if (zone == "Battlefield" && (groupFront || focus)) PaintAttachmentBadge(card, pose, owner, compact && !focus);
+        if (zone == "Battlefield" && !scanFace && (groupFront || focus)) PaintPreparedMarker(card, pose, owner);
     }
     private void PaintCard(Card card, Pose pose, bool selected, bool legal, bool focus = false, float opacity = 1)
     {
@@ -249,14 +271,14 @@ internal sealed partial class TableApplication
     private void DrawStack()
     {
         var state = match!;
-        if (ValuedTargetDecision) return;
+        if (ValuedTargetDecision) { DrawPendingSpellCards(); return; }
         // Choosing an ability has not put it on the stack. Its current card
         // remains the source on the table; do not manufacture a stack copy.
         if (state.Stack.Length == 0 && (AbilityActionPending || SelectingActionTarget)) return;
         if (state.Stack.Length == 0 && state.Decision?.SourceCard == null) return;
         bool payingSource = state.Decision is { Intent: DecisionIntent.Mana, SourceCard: not null }
             || !SelectingActionTarget && state.Decision is { Intent: DecisionIntent.Selection, SourceCard: not null, PlayerChoices.Length: > 0 };
-        if (state.Stack.Length > 0 && !payingSource) { DrawStackFlow(); return; }
+        if (state.Stack.Length > 0 && !payingSource) { DrawStackFlow(); DrawPendingSpellCards(); return; }
         canvas.Glow(new(807, 485), new(430, 165), Blue * .17f);
         var resting = TableWorld.Card(new(6, 108), new(245, 126));
         canvas.CardFrame(resting, Gold * .12f, 1);
@@ -285,6 +307,7 @@ internal sealed partial class TableApplication
             canvas.Text(stackCards[0].Name, 549, 400, Ink, .62f, 154, 3, true);
             Button("stack", "Inspect source", 549, 462, 154, new MatchIntent.InspectDecisionSource(), height: 29);
         }
+        if (state.Stack.Length > 0) DrawPendingSpellCards();
     }
     private void ManaOrb(string name, int amount, Vector2 point)
     {

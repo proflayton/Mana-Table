@@ -14,10 +14,11 @@ import java.nio.file.Path;
 import java.time.Duration;
 import java.util.*;
 import java.util.function.Predicate;
+import java.util.function.LongSupplier;
 
 import static org.testng.Assert.*;
 
-/** Real four-seat Forge games, exercised only through the production decision API.
+/** Real Forge games, exercised only through the production decision API.
  * Fixture permanents enter during game setup, using Forge's registered-player API;
  * no test modifies a running game or supplies its own rules/cleanup implementation. */
 final class RulesScenario implements AutoCloseable {
@@ -25,11 +26,22 @@ final class RulesScenario implements AutoCloseable {
     private static final Path RESOURCES = Path.of("../forge-gui/res");
     final MatchTable table;
     final Path evidence;
+    private final int seatCount;
     private final List<Object> trace = new ArrayList<>();
     private final Map<Integer, String> answered = new HashMap<>();
 
     RulesScenario(String name, Map<Integer, List<String>> battlefield) throws Exception {
         this(name, battlefield, "Forest", "Rhys the Redeemed");
+    }
+
+    RulesScenario(String name, int seatCount) throws Exception {
+        this(name, Map.of(), "Forest", List.of("Rhys the Redeemed"), false, seatCount);
+    }
+    RulesScenario(String name, DecisionTempo.Settings settings, LongSupplier time) throws Exception {
+        this(name, Map.of(), settings, time);
+    }
+    RulesScenario(String name, Map<Integer, List<String>> battlefield, DecisionTempo.Settings settings, LongSupplier time) throws Exception {
+        this(name, battlefield, "Forest", List.of("Rhys the Redeemed"), false, 4, settings, time);
     }
 
     RulesScenario(String name, Map<Integer, List<String>> battlefield, String mainCard, String commander) throws Exception {
@@ -47,11 +59,21 @@ final class RulesScenario implements AutoCloseable {
 
     private RulesScenario(String name, Map<Integer, List<String>> battlefield, String mainCard, List<String> commanders,
                           boolean enableEtbCounters) throws Exception {
+        this(name, battlefield, mainCard, commanders, enableEtbCounters, 4);
+    }
+
+    private RulesScenario(String name, Map<Integer, List<String>> battlefield, String mainCard, List<String> commanders,
+                          boolean enableEtbCounters, int seatCount) throws Exception {
+        this(name, battlefield, mainCard, commanders, enableEtbCounters, seatCount, DecisionTempo.Settings.off(), () -> System.nanoTime() / 1_000_000);
+    }
+    private RulesScenario(String name, Map<Integer, List<String>> battlefield, String mainCard, List<String> commanders,
+                          boolean enableEtbCounters, int seatCount, DecisionTempo.Settings settings, LongSupplier time) throws Exception {
+        this.seatCount = seatCount;
         if (StaticData.instance() == null) EngineResources.load(RESOURCES);
         evidence = Path.of("target/rules-regressions", name);
         Files.createDirectories(evidence);
         var players = new ArrayList<RegisteredPlayer>();
-        for (int seat = 0; seat < 4; seat++) {
+        for (int seat = 0; seat < seatCount; seat++) {
             var deck = new Deck("Rules seat " + seat);
             deck.getMain().add(StaticData.instance().getCommonCards().getCard(mainCard), 100 - commanders.size());
             for (String commander : commanders)
@@ -67,7 +89,7 @@ final class RulesScenario implements AutoCloseable {
             player.addExtraCardsOnBattlefield(extras);
             players.add(player);
         }
-        table = new MatchTable("Commander", players, RESOURCES, evidence);
+        table = new MatchTable("Commander", players, RESOURCES, evidence, settings, time);
         table.start();
     }
 
@@ -84,7 +106,7 @@ final class RulesScenario implements AutoCloseable {
     Input until(Predicate<Input> stop) throws Exception {
         long deadline = System.nanoTime() + Duration.ofSeconds(45).toNanos();
         while (System.nanoTime() < deadline) {
-            for (int seat = 0; seat < 4; seat++) {
+            for (int seat = 0; seat < seatCount; seat++) {
                 var state = state(seat);
                 if (!state.has("prompt") || state.get("prompt").isJsonNull()) continue;
                 var prompt = state.getAsJsonObject("prompt");
@@ -133,7 +155,7 @@ final class RulesScenario implements AutoCloseable {
         assertEquals(text(state(input.seat()).getAsJsonObject("prompt"), "id"), text(input.prompt(), "id"));
     }
 
-    private JsonObject request(Input input, Map<String, ?> answer) {
+    static JsonObject request(Input input, Map<String, ?> answer) {
         var request = JSON.toJsonTree(answer).getAsJsonObject();
         request.addProperty("sessionId", text(input.state(), "id"));
         request.addProperty("promptId", text(input.prompt(), "id"));

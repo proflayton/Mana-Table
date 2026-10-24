@@ -63,7 +63,13 @@ public interface ISourceActions
     Task<SourceActionSet> SourceActionsAsync(string gameId, string decisionId, string sourceCardKey);
 }
 public sealed record SourceActionSet(string GameId, string DecisionId, string SourceCardKey, string SourceCardId, ImmutableArray<SourceAction> Actions);
-public sealed record SourceAction(string Id, string Kind, string Text);
+public sealed record SourceAction(string Id, string Kind, string Text)
+{
+    // A disclosed linked face is reading material, never another action handle.
+    // Submission still names the source and this offer's opaque Id.
+    public Card? Card { get; init; }
+    public string Zone { get; init; } = "";
+}
 // Social commands have their own ordering and never advance a game decision.
 public interface ITableSocial
 {
@@ -83,11 +89,18 @@ public sealed record DeckEdit(string Section, string CardId, int Quantity);
 public sealed record CatalogCard(string Id, Card Card, int ManaValue, int ColorIdentity, string Section, string Edition);
 public sealed record CardQuery(string Text = "", string Type = "", int? ColorIdentity = null, int? MaxManaValue = null, string Sort = "name", int Offset = 0, int Limit = 6);
 public sealed record CatalogPage(int Total, int Offset, ImmutableArray<CatalogCard> Cards);
-public sealed record CommanderOption(string Id, ImmutableArray<string> Partners);
+public sealed record CommanderOption(string Id, ImmutableArray<string> Partners)
+{
+    // Discovery hints describe pairing capability even before a counterpart is
+    // in the deck. Only Partners supplies compatible in-deck selection handles.
+    public bool CanPartner { get; init; }
+    public string PartnerName { get; init; } = "";
+}
 public sealed record DeckIssue(string Code, string Message, string? Section, ImmutableArray<string> CardIds);
 public sealed record DeckDetails(string Id, string Name, long Revision, ImmutableArray<DeckEntry> Entries,
     ImmutableArray<CommanderOption> CommanderOptions, string Problem, string SaveError, bool CanUndo = false, bool CanRedo = false)
 {
+    public ImmutableArray<Card> TokenPreviews { get; init; } = [];
     public ImmutableArray<DeckIssue> Issues { get; init; } = [];
     public string Format { get; init; } = "Commander";
     public string LibraryToken { get; init; } = "";
@@ -111,6 +124,7 @@ public sealed record Lobby(string Mode, string Status, string? Error, bool CanSt
     bool MatchActive, string PortMapping, string? InternetInvite, ImmutableArray<Address> Addresses, ImmutableArray<Seat> Seats, string TableId = "")
 {
     public ImmutableArray<AiOpponent> AiOpponents { get; init; } = [];
+    public TempoSettings? Tempo { get; init; }
 }
 public enum DecisionIntent { General, Priority, Attack, Block, Mana, Selection }
 // Semantic tasks belong to the game boundary. Provider prompt/class names do not.
@@ -295,6 +309,7 @@ public sealed record GameSnapshot(string Id, string Status, string? Error, strin
     public ImmutableArray<ActivityEntry> Activity { get; init; } = [];
     public ImmutableArray<string> Notices { get; init; } = [];
     public ImmutableArray<PriorityAbility> IgnoredPriorityAbilities { get; init; } = [];
+    public DecisionTempoFrame? Tempo { get; init; }
     public Player? Viewer => Players.FirstOrDefault(p => p.Id == ViewerId);
 }
 public sealed record ActivityEntry(long Id, int Turn, string PhaseKey, string Kind, int? PlayerId, string Message, string? CardId, string? CardName)

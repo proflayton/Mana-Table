@@ -104,7 +104,9 @@ public sealed class SourceActionSession(ISourceActions? source, Action<Action> p
                 || !string.IsNullOrEmpty(result.SourceCardId) && result.SourceCardId != context.SourceCardId
                 ? SourceActionStatus.Stale : SourceActionStatus.Ready;
         if (status == SourceActionStatus.Ready && (result!.Actions.IsDefault
-            || result.Actions.Any(action => action == null || string.IsNullOrWhiteSpace(action.Id) || string.IsNullOrWhiteSpace(action.Text))
+            || result.Actions.Any(action => action == null || string.IsNullOrWhiteSpace(action.Id) || string.IsNullOrWhiteSpace(action.Text)
+                || action.Card is { } linked && (linked.FaceDown || linked.Key != "" || linked.Selectable || linked.Highlighted
+                    || string.IsNullOrWhiteSpace(linked.Name) || string.IsNullOrWhiteSpace(action.Zone)))
             || result.Actions.Select(action => action.Id).Distinct(StringComparer.Ordinal).Count() != result.Actions.Length))
             status = SourceActionStatus.Failed;
         var actions = status == SourceActionStatus.Ready ? Array.AsReadOnly(result!.Actions!.ToArray()) : (IReadOnlyList<SourceAction>)Array.Empty<SourceAction>();

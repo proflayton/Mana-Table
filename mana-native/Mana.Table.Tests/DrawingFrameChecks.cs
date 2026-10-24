@@ -49,6 +49,16 @@ internal static class DrawingFrameChecks
         catch (InvalidOperationException) { changed = true; }
         drawing.Complete();
         check(changed, "Font measurement and painting use one stable text scale throughout a frame");
+        drawing.BeginComposition();
+        drawing.BeginClip(new(0, 54, 1600, 724));
+        drawing.Fill(new(-100, -100, 2000, 1200), Color.Gold);
+        bool unclosed = false;
+        try { drawing.Complete(); } catch (InvalidOperationException) { unclosed = true; }
+        drawing.EndClip();
+        drawing.Text("Fixed hand", 300, 850, Color.White);
+        var clipped = drawing.Complete();
+        check(unclosed && clipped.Commands is [DrawCommand.BeginClip, DrawCommand.Fill, DrawCommand.EndClip, DrawCommand.Text],
+            "World clipping brackets only its drawing commands and an unclosed clip cannot leak into a published frame or the fixed hand");
         string rows = string.Join("\n", Enumerable.Range(0, 82).Select(index => $"Creature {index} · +1/+1 counters 2 → 3"));
         var pages = drawing.TextPages(rows, .84f, 1150, 460, 24);
         check(string.Concat(pages) == rows && pages.Length > 1 && pages.All(page =>

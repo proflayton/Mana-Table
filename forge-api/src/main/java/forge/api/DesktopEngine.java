@@ -46,7 +46,7 @@ public final class DesktopEngine implements AutoCloseable {
         var engine = new DesktopEngine(CardCatalog.fromDatabases(data.getAvailableDatabases().values()), Path.of(args[1]));
         engine.resources = Path.of(args[0]);
         engine.documents.loadAnalysisFormats(engine.resources);
-        protocol.println(JSON.toJson(Map.of("event", "ready", "printings", engine.catalog.size(), "protocolVersion", 2, "capabilities", List.of("seat-sync", "snapshots", "command-receipts", "resume", "table-social", "deck-workshop", "deck-analysis", "source-actions", "deck-library", "semantic-priority-actions", "explicit-deck-setup"))));
+        protocol.println(JSON.toJson(Map.of("event", "ready", "printings", engine.catalog.size(), "protocolVersion", 2, "capabilities", List.of("seat-sync", "snapshots", "command-receipts", "resume", "table-social", "deck-workshop", "deck-analysis", "source-actions", "deck-library", "deck-tokens", "semantic-priority-actions", "explicit-deck-setup", "decision-tempo"))));
         try (engine; var input = new BufferedReader(new InputStreamReader(System.in, StandardCharsets.UTF_8))) {
             String line;
             while ((line = input.readLine()) != null) {
@@ -97,13 +97,15 @@ public final class DesktopEngine implements AutoCloseable {
                 case "tableChat" -> seat.chat(p);
                 case "tableName" -> seat.rename(p);
                 case "multiplayerSelectDeck" -> { var loaded = documents.loadLobbyDeck(string(p, "deckId", "")); yield seat.selectDeck(loaded.deck(), loaded.format()); }
-                case "multiplayerReady" -> seat.ready(p.get("ready").getAsBoolean());
+                case "multiplayerReady" -> seat.ready(p);
+                case "multiplayerTempo" -> seat.configureTempo(p);
                 case "multiplayerReturn" -> seat.returnToLobby();
                 case "multiplayerClose" -> seat.close();
                 case "matchState" -> seat.match().state();
                 case "matchAction" -> seat.match().action(p);
                 case "matchSourceActions" -> seat.match().sourceActions(p);
                 case "matchConcede" -> seat.match().concede(p);
+                case "matchTempoPresented" -> seat.match().tempoPresented(p);
                 default -> throw new IllegalArgumentException("Command is not available on a seat connection");
             };
         }
@@ -121,6 +123,9 @@ public final class DesktopEngine implements AutoCloseable {
                     integer(p, "colorIdentity"), string(p, "role", ""));
             case "cardPrintings" -> catalog.printings(string(p, "cardId", ""), number(p, "offset", 0), number(p, "limit", 6),
                     string(p, "text", ""), string(p, "finish", ""));
+            case "deckTokens" -> documents.tokens(scope(p));
+            case "tokenPrintings" -> documents.tokenPrintings(scope(p), string(p, "tokenId", ""), number(p, "offset", 0), number(p, "limit", 4));
+            case "setTokenPrinting" -> documents.setTokenPrinting(scope(p), string(p, "tokenId", ""), string(p, "printingId", null));
             case "replacePrinting" -> documents.replacePrinting(scope(p), string(p, "section", ""), string(p, "cardId", ""), string(p, "printingId", ""));
             case "deckInsights" -> documents.insights();
             case "workshop" -> documents.workshop(scope(p));
@@ -174,7 +179,8 @@ public final class DesktopEngine implements AutoCloseable {
                 var loaded = documents.loadLobbyDeck(string(p, "deckId", ""));
                 yield multiplayer().selectDeck(loaded.deck(), loaded.format());
             }
-            case "multiplayerReady" -> multiplayer().ready(p.has("ready") && p.get("ready").getAsBoolean());
+            case "multiplayerReady" -> multiplayer().ready(p);
+            case "multiplayerTempo" -> multiplayer().configureTempo(p);
             case "multiplayerStart" -> multiplayer().start();
             case "multiplayerState" -> multiplayer().state();
             case "tableSocial" -> multiplayer().social(p);
@@ -207,6 +213,11 @@ public final class DesktopEngine implements AutoCloseable {
                 if (multiplayer != null && multiplayer.connected()) yield multiplayer.match().sourceActions(p);
                 if (match == null) throw new IllegalStateException("No active match");
                 yield match.sourceActions(p);
+            }
+            case "matchTempoPresented" -> {
+                if (multiplayer != null && multiplayer.connected()) yield multiplayer.match().tempoPresented(p);
+                if (match == null) throw new IllegalStateException("No active match");
+                yield match.tempoPresented(p);
             }
             case "matchConcede" -> {
                 if (multiplayer != null && multiplayer.connected()) {

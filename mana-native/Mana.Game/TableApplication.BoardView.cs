@@ -10,6 +10,7 @@ namespace Mana.Table;
 
 internal sealed partial class TableApplication
 {
+    private static readonly Rectangle BoardViewport = new(0, 54, 1600, 724);
     private readonly BoardViewMotion boardViewMotion = new();
     private BoardView boardView = BoardView.Identity;
     private bool followTurnEnabled, boardPointerActivity, boardViewportChanged;
@@ -26,6 +27,14 @@ internal sealed partial class TableApplication
     {
         if (match is not { } state || tableScene == null) {
             boardViewMotion.Reset(); boardView = BoardView.Identity; return;
+        }
+        if (TableStudyEnabled) {
+            var targetView = StudyFocusActive
+                ? BoardView.Frame(SharedTableStudy.Territory(tableScene.Seat(studyFocusOwner!.Value).Index), new(195, 170, 995, 530))
+                : BoardView.Identity;
+            boardView = boardViewMotion.Navigate(state.Id, state.ViewerId, targetView, now, preferences.ReducedMotion,
+                dragging || pressed?.Card != null || readingId != null || OverlayOpen);
+            return;
         }
         bool dense = tableScene.Seats.Any(seat => seat.IsDense);
         bool enabled = followTurnEnabled && !TableStudyEnabled && !dense && state.Players.Length is 3 or 4;

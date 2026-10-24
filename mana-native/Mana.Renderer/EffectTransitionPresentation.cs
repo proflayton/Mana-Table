@@ -119,6 +119,19 @@ public static class EffectTransitionPresentation
             candidates.Add(new(x, recipient.Bottom + gap, size.X, size.Y));
             candidates.Add(new(x, recipient.Top - gap - size.Y, size.X, size.Y));
         }
+        // A seat-facing source can put its local anchor beside a neighboring
+        // lane. Try the rest of that recipient's perimeter before suppressing
+        // the result; never move it over a card or into an unrelated UI region.
+        foreach (int gap in new[] { 6, 18, 30 }) {
+            foreach (int y in new[] { recipient.Center.Y - size.Y / 2, recipient.Top, recipient.Bottom - size.Y }) {
+                candidates.Add(new(recipient.Right + gap, y, size.X, size.Y));
+                candidates.Add(new(recipient.Left - gap - size.X, y, size.X, size.Y));
+            }
+            foreach (int x in new[] { recipient.Center.X - size.X / 2, recipient.Left, recipient.Right - size.X }) {
+                candidates.Add(new(x, recipient.Bottom + gap, size.X, size.Y));
+                candidates.Add(new(x, recipient.Top - gap - size.Y, size.X, size.Y));
+            }
+        }
         return candidates.FirstOrDefault(candidate => viewport.Contains(candidate)
             && !candidate.Intersects(recipient) && occupied.All(bounds => !candidate.Intersects(bounds)));
     }

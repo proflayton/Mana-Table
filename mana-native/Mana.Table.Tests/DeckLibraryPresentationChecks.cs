@@ -62,7 +62,8 @@ internal static class DeckLibraryPresentationChecks
             check(engine.RestoreCalls == 1, "A consumed Undo receipt cannot be submitted again through a captured intent");
             run.Click("setup-close"); run.Click("edit-deck");
             run.Until(() => run.View.DeckEditor && !run.View.Busy && !run.View.ActivityOpen
-                    && run.Frame.Hits.Any(hit => hit.Id == "deck-delete:a"), "The current saved deck opens in the actual editor with its exposed Delete control");
+                    && run.Frame.Hits.Any(hit => hit.Id == "deck-options"), "The current saved deck opens in the actual editor with its deck options");
+            run.Click("deck-options");
             var oldCurrentDelete = run.Hit("deck-delete:a");
             run.Click(oldCurrentDelete.Id);
             run.Until(() => !run.View.Busy && run.View.SelectedDeck == null, "Deleting the current deck clears its selection after storage acknowledges it");

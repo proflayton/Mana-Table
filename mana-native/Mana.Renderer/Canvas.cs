@@ -13,6 +13,8 @@ public sealed class Canvas : IDisposable
     private readonly SpriteBatch batch;
     private readonly Texture2D pixel, disk, halo;
     private readonly BasicEffect surfaceEffect;
+    private readonly RasterizerState clipping = new() { ScissorTestEnable = true, CullMode = CullMode.None };
+    private readonly Stack<Rectangle> clips = [];
     private Vector2 scale = Vector2.One;
     private readonly Dictionary<(TextLayout Layout, Vector2 Density), (Texture2D Texture, long Used)> text = [];
     private readonly TextMetrics metrics = new();
@@ -45,13 +47,30 @@ public sealed class Canvas : IDisposable
     }
     private void Resume()
     {
-        batch.Begin(SpriteSortMode.Deferred, BlendState.AlphaBlend, SamplerState.LinearClamp, null, null, null, Matrix.CreateScale(scale.X, scale.Y, 1));
+        batch.Begin(SpriteSortMode.Deferred, BlendState.AlphaBlend, SamplerState.LinearClamp, null, clips.Count > 0 ? clipping : null, null, Matrix.CreateScale(scale.X, scale.Y, 1));
     }
     public void End()
     {
+        if (clips.Count > 0) throw new InvalidOperationException("A GPU drawing clip was not closed.");
         batch.End();
         if (text.Count > 600) foreach (var key in text.OrderBy(p => p.Value.Used).Take(text.Count - 450).Select(p => p.Key).ToArray()) { text[key].Texture.Dispose(); text.Remove(key); }
         metrics.Trim();
+    }
+    public void BeginClip(Rectangle bounds)
+    {
+        batch.End();
+        int left = (int)MathF.Floor(bounds.Left * scale.X), top = (int)MathF.Floor(bounds.Top * scale.Y);
+        var pixels = new Rectangle(left, top, Math.Max(0, (int)MathF.Ceiling(bounds.Right * scale.X) - left),
+            Math.Max(0, (int)MathF.Ceiling(bounds.Bottom * scale.Y) - top));
+        pixels = Rectangle.Intersect(pixels, clips.Count > 0 ? clips.Peek() : device.Viewport.Bounds);
+        clips.Push(pixels); device.ScissorRectangle = pixels; Resume();
+    }
+    public void EndClip()
+    {
+        if (clips.Count == 0) throw new InvalidOperationException("No GPU drawing clip is open.");
+        batch.End(); clips.Pop();
+        device.ScissorRectangle = clips.Count > 0 ? clips.Peek() : device.Viewport.Bounds;
+        Resume();
     }
     public void Draw(DrawingFrame drawing) => Draw(drawing, Vector2.One);
     public void Draw(DrawingFrame drawing, Vector2 outputScale)
@@ -214,7 +233,7 @@ public sealed class Canvas : IDisposable
         surfaceEffect.Projection = Matrix.CreateOrthographicOffCenter(0, device.Viewport.Width, device.Viewport.Height, 0, -1, 1);
         surfaceEffect.Texture = texture;
         device.BlendState = BlendState.AlphaBlend; device.DepthStencilState = DepthStencilState.None;
-        device.RasterizerState = RasterizerState.CullNone; device.SamplerStates[0] = SamplerState.AnisotropicClamp;
+        device.RasterizerState = clips.Count > 0 ? clipping : RasterizerState.CullNone; device.SamplerStates[0] = SamplerState.AnisotropicClamp;
         foreach (var pass in surfaceEffect.CurrentTechnique.Passes) { pass.Apply(); device.DrawUserPrimitives(PrimitiveType.TriangleList, vertices, 0, vertices.Length / 3); }
         Resume();
     }
@@ -296,5 +315,5 @@ public sealed class Canvas : IDisposable
         try { texture.SetData(data); return texture; }
         catch { texture.Dispose(); throw; }
     }
-    public void Dispose() { foreach (var value in text.Values) value.Texture.Dispose(); surfaceEffect.Dispose(); batch.Dispose(); pixel.Dispose(); disk.Dispose(); halo.Dispose(); }
+    public void Dispose() { foreach (var value in text.Values) value.Texture.Dispose(); clipping.Dispose(); surfaceEffect.Dispose(); batch.Dispose(); pixel.Dispose(); disk.Dispose(); halo.Dispose(); }
 }

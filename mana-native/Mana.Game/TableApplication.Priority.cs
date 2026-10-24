@@ -17,19 +17,30 @@ internal sealed partial class TableApplication
     private readonly Dictionary<int, Rectangle> prioritySeats = [];
     internal sealed record StackRowPaint(string Id, int Position, Rectangle Bounds);
 
+    private bool PriorityNeedsEmphasis()
+    {
+        if (match is not { } state) return false;
+        if (state.Stack.Length > 0) return true;
+        // Read the current pure model: the dock is composed after the seats,
+        // so its previous-frame value cannot decide which responder to stress.
+        var view = DecisionDockPresentation.From(state, CurrentDecisionControls());
+        return view.Status == DecisionDockStatus.Priority && view.Surface == DecisionDockSurface.Portrait && !QuietPriorityArmed;
+    }
+
     private void DrawPrioritySeat(Player player, Vector2 center, float radius)
     {
         if (priorityView?.ResponderId != player.Id || player.Eliminated) return;
-        float pulse = preferences.ReducedMotion ? 1 : .85f + .15f * MathF.Sin((float)now * 3);
-        canvas.Ring(center, radius + 9, PriorityAccent * pulse, 3);
+        bool emphasize = PriorityNeedsEmphasis();
+        float strength = !emphasize ? .55f : preferences.ReducedMotion ? 1 : .85f + .15f * MathF.Sin((float)now * 3);
+        canvas.Ring(center, radius + 9, PriorityAccent * strength, emphasize ? 3 : 1.5f);
         var token = center + new Vector2(-radius * .75f, -radius * .75f);
-        PaintPriorityToken(token, 12, 1);
-        prioritySeats[player.Id] = new((int)token.X - 13, (int)token.Y - 13, 26, 26);
+        PaintPriorityToken(token, 9, 1);
+        prioritySeats[player.Id] = new((int)token.X - 10, (int)token.Y - 10, 20, 20);
     }
 
     private void DrawPriorityHandoff()
     {
-        if (preferences.ReducedMotion || OverlayOpen || matchPresentation.PriorityTransition is not {
+        if (preferences.ReducedMotion || OverlayOpen || !PriorityNeedsEmphasis() || matchPresentation.PriorityTransition is not {
                 ResponderChanged: true, PreviousResponderId: { } previous, ResponderId: { } current } cue
             || now - cue.Started is < 0 or > .55 || priorityView?.ResponderId != current) return;
         var state = match!;
@@ -108,17 +119,17 @@ internal sealed partial class TableApplication
         else OpenStack(index);
     }
 
-    private int PendingEffectHeaderHeight(StackItem entry, string owner) => Math.Max(64,
+    private int PendingEffectHeaderHeight(StackItem entry, string owner) => Math.Max(entry.Ability ? 64 : 92,
         21 + canvas.TextSize(entry.Name, .67f, 347, 2, true).Y + canvas.TextSize("Pending · " + owner, .5f, 347, 1).Y);
 
     private void PaintPendingEffect(StackItem entry, int index, Rectangle bounds, string owner, string effect)
     {
         var art = new Rectangle(bounds.X + 12, bounds.Y + 12, 52, 44);
-        if (entry.Card is { FaceDown: false } source && resources.Card(source) is { } image) {
+        if (entry.Ability && entry.Card is { FaceDown: false } source && resources.Card(source) is { } image) {
             var crop = new Rectangle((int)(image.Width * .12f), (int)(image.Height * .14f),
                 (int)(image.Width * .76f), (int)(image.Height * .38f));
             canvas.Sprite(image, art.Center.ToVector2(), art.Size.ToVector2(), 0, Color.White, crop);
-        } else canvas.Gradient(art, new(43, 58, 64), new(28, 40, 48));
+        } else if (entry.Ability) canvas.Gradient(art, new(43, 58, 64), new(28, 40, 48));
         int nameHeight = canvas.TextSize(entry.Name, .67f, bounds.Width - 88, 2, true).Y;
         canvas.Text(entry.Name, bounds.X + 76, bounds.Y + 10, Ink, .67f, bounds.Width - 88, 2, true);
         string order = match!.Stack.Length == 1 ? "Pending" : (index + 1) + (index == 0 ? " · Next" : " · Waiting");

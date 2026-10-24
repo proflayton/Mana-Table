@@ -62,6 +62,12 @@ internal sealed class LobbyThreePlayerSmoke : ITableAutomation, IDisposable
             tableId = view.Lobby!.TableId;
             Capture("02-three-seat-lobby");
         });
+        Click("tempo:Fast");
+        Wait(() => view.Lobby?.Tempo?.Preset == TempoPreset.Fast && !view.Busy, 10, () => {
+            Check(view.Lobby!.Seats.All(seat => !seat.Ready), "Enabling a decision timer requires renewed Ready consent");
+        });
+        Click("tempo-expiry:Warn");
+        Wait(() => view.Lobby?.Tempo?.Expiry == TempoExpiry.Warn && !view.Busy, 10, () => Capture("02b-lobby-tempo"));
         Click("review-deck"); Click("confirm-deck"); Click("ready");
         Step(.1, () => background = JoinGuests());
         Wait(() => view.Lobby?.CanStart == true, 20, () => {
@@ -95,6 +101,8 @@ internal sealed class LobbyThreePlayerSmoke : ITableAutomation, IDisposable
         Wait(() => view.Match?.Players.Length == 3 && view.Lobby?.MatchActive == true && !view.Busy && !view.ActivityOpen, 30, () => {
             Check(view.Match is { Players.Length: 3 } && view.Lobby?.MatchActive == true,
                 "The native Start control launches a real three-player Commander game");
+            Check(view.Match!.Tempo?.Settings is { Preset: TempoPreset.Fast, Expiry: TempoExpiry.Warn },
+                "The authoritative match retains the lobby's agreed decision timer");
             background = FinishOpening();
         });
         Step(.1, () => {
@@ -119,7 +127,7 @@ internal sealed class LobbyThreePlayerSmoke : ITableAutomation, IDisposable
             var deck = await guest.ImportAsync("Friend " + (i + 1), "Commander\n1 Rograkh, Son of Rohgahh\nDeck\n99 Mountain");
             var joined = await guest.JoinAsync(address);
             if (joined.Seats.Single(s => s.Local).Index != i + 1) throw new InvalidOperationException("A friend joined the wrong three-player seat");
-            await guest.SelectDeckAsync(deck.Id); await guest.SetReadyAsync(true);
+            await guest.SelectDeckAsync(deck.Id); await guest.SetReadyAsync(joined.TableId, true, joined.Tempo!.Revision);
         }
     }
     private async Task ReadyGuests()
@@ -128,7 +136,7 @@ internal sealed class LobbyThreePlayerSmoke : ITableAutomation, IDisposable
             var lobby = await guests[i].LobbyAsync();
             if (lobby.TableId != tableId || lobby.Seats.Length != 3 || lobby.Seats.Single(s => s.Local).Index != i + 1)
                 throw new InvalidOperationException("Resizing displaced a connected friend");
-            await guests[i].SetReadyAsync(true);
+            await guests[i].SetReadyAsync(lobby.TableId, true, lobby.Tempo!.Revision);
         }
     }
     private async Task FinishOpening()

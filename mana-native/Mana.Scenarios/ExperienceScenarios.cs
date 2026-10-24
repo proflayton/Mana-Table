@@ -13,8 +13,13 @@ public static partial class ExperienceScenarios
     public static IReadOnlyList<ExperienceScenario> All { get; } = Array.AsReadOnly(new ExperienceScenario[] {
         new(DefaultId, "480 permanents · Toph + Felidar", "Four crowded battlefields, an earthbent land, then 82 exact landfall recipients.", Crowd),
         new("card-reading.v1", "Card reading and selection", "Stable hand slots, inspectable battlefield cards and a hand selection.", Reading),
+        new("card-play.v1", "Card play journeys", "A land from hand, your spell through the stack, an opponent's public cast, then an ability that keeps its source in place.", CardPlay),
+        new(AttachmentScenario.Id, "Auras and Equipment · attached stacks", "Multiple attachments, cross-controller Auras, re-equip, detach, tapping and a crowded field.", AttachmentScenario.Create),
+        new(TappedResourcesScenario.Id, "Tapped resources", "Three tapped lands, one untapped, all untapped and mixed matching lands around the table.", TappedResourcesScenario.Create),
+        new(DecisionTempoScenario.Id, "Decision tempo", "A quiet clock, approaching expiry, off-turn responses, required-choice grace and resolving.", DecisionTempoScenario.Create),
         new("ability-choice.v1", "Llanowar Elves · make green mana", "Start before an activation, choose its ability, and see the tapped source and green mana.", AbilityFlow),
         new("ability-targeting.v1", "Walking Ballista · costs and targets", "Two on-card abilities, cancellable targeting, a pending stack ability and its authored result.", BallistaFlow),
+        new(PreparedSpellScenario.Id, "Prepared spell · Emeritus of Ideation", "A prepared source, its linked spell in exile, targeting, priority and the unprepared result.", PreparedSpellScenario.Create),
         new(CounterDamageScenario.Id, "Counters → damage", "Chandra's counter increment, a numbered damage choice, its pending effect and an authored result.", CounterDamageScenario.Create),
         new(DamageResultsScenario.Id, "Damage · actual results", "Surviving recipients, death between observations and base versus actual prevented damage.", DamageResultsScenario.Create),
         new(DecisionFlowScenario.Id, "Four players · decisions and priority", "Authored land, priority handoffs, private-choice ownership, a typed target and pending effect, then its public result.", DecisionFlowScenario.Create),
@@ -26,6 +31,7 @@ public static partial class ExperienceScenarios
         new("trigger-search.v1", "Trigger and library search", "Public priority hands off to required recipient and private library choices, then the local hand.", TriggerSearch),
         new("turn-orientation.v1", "Turn orientation · ordinary table", "A turn handoff, off-turn response, multiple defenders, target choice and extra turn.", TurnOrientationScenario.Ordinary),
         new("turn-orientation-crowded.v1", "Turn orientation · crowded table", "The same authored turn sequence over four crowded battlefields; compare stationary context.", TurnOrientationScenario.Crowded),
+        new("two-player-table.v1", "Two players · battlefield continuity", "Seven card/state groups, an eighth group, and an opposing counter change without a table-wide layout switch.", TwoPlayerTable),
         new(FourPlayerTableScenario.Id, "Four players · asymmetric table", "Ordinary boards, one crowded opponent, then a cross-seat ability and its authored current result.", FourPlayerTableScenario.Create)
     });
 
@@ -60,6 +66,40 @@ public static partial class ExperienceScenarios
 
     private static Card ManaElf() => Body("reader-elf", "Llanowar Elves", power: 1, toughness: 1)
         with { Selectable = true, Text = "{T}: Add {G}." };
+
+    private static IReadOnlyList<ExperienceStage> TwoPlayerTable()
+    {
+        Card Land(string id, string name, bool tapped = false) => Body(id, name, "Basic Land", null, null) with { Tapped = tapped };
+        var initial = Table("two-player-table", [
+            Body("duel-emeritus", "Emeritus of Ideation", power: 5, toughness: 5),
+            Body("duel-bears", "Grizzly Bears"),
+            Body("duel-study", "Rhystic Study", "Enchantment", null, null),
+            Body("duel-ring", "Sol Ring", "Artifact", null, null),
+            Land("duel-forest-a", "Forest"), Land("duel-forest-b", "Forest", true), Land("duel-island", "Island")
+        ], [Land("duel-hand-forest", "Forest"), Land("duel-hand-island", "Island"), Body("duel-hand-bears", "Grizzly Bears")], [
+            Body("duel-pir", "Pir, Imaginative Rascal", power: 1, toughness: 1),
+            Body("duel-other-toothy", "Toothy, Imaginary Friend", power: 1, toughness: 1),
+            Land("duel-other-island-a", "Island", true), Land("duel-other-island-b", "Island", true), Land("duel-other-forest", "Forest")
+        ]);
+        initial = initial with { Players = initial.Players.Take(2).ToImmutableArray() };
+        var eighth = initial with { Players = initial.Players.Select(player => player.Id != 0 ? player : player with {
+            Zones = player.Zones.Select(zone => zone.Name != "Battlefield" ? zone : zone with {
+                Cards = [.. zone.Cards, Body("duel-toothy", "Toothy, Imaginary Friend", power: 1, toughness: 1)], Count = zone.Count + 1
+            }).ToImmutableArray()
+        }).ToImmutableArray() };
+        var counters = eighth with { Players = eighth.Players.Select(player => player.Id != 1 ? player : player with {
+            Zones = player.Zones.Select(zone => zone.Name != "Battlefield" ? zone : zone with {
+                Cards = zone.Cards.Select(card => card.VisualId != "duel-other-toothy" ? card : card with {
+                    Power = 5, Toughness = 5, Counters = ImmutableDictionary<string, int>.Empty.Add("+1/+1", 4)
+                }).ToImmutableArray()
+            }).ToImmutableArray()
+        }).ToImmutableArray() };
+        return [
+            new("Seven local card/state groups", "Authored two-player snapshot before the old global packing threshold. No game actions are authorized.", initial),
+            new("An eighth local group", "Only your battlefield gains Toothy. The opponent, other role lanes and card faces should retain their framing.", eighth),
+            new("Opposing counters change", "Authored current 5/5 with four counters. Other controller territories retain their framing; no rules were simulated.", counters)
+        ];
+    }
 
     private static IReadOnlyList<ExperienceStage> AbilityFlow()
     {

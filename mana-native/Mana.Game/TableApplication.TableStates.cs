@@ -1,5 +1,6 @@
 using Mana.Contracts;
 using Mana.Magic;
+using Mana.Table.Presentation;
 using Microsoft.Xna.Framework;
 using Rectangle = Microsoft.Xna.Framework.Rectangle;
 
@@ -10,8 +11,9 @@ internal sealed partial class TableApplication
     private void DrawTableStates(GameSnapshot state, Rectangle? area = null)
     {
         if (state.States.Length == 0) return;
-        int end = area?.Right ?? (matchPresentation.Changes.Count > 0 ? 1000 : 1180);
-        int x = area?.X ?? 840, top = area?.Y ?? 12, height = area?.Height ?? 33;
+        var available = area ?? MatchHeaderLayout.TableStates;
+        int end = available.Right;
+        int x = available.X, top = available.Y, height = available.Height;
         foreach (var item in state.States) {
             string caption = PublicStatePresentation.Caption(item);
             int width = Math.Min(320, canvas.TextWidth(caption, .58f, true) + 20);

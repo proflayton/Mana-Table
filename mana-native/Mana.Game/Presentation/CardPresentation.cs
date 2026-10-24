@@ -18,6 +18,12 @@ internal sealed record CardPresentationContext(GameSnapshot? State, string Scope
         && entry.Zone == "Hand" && entry.Request.Owner == viewer.Id
         && viewer.Zone("Hand").Cards.Any(card => !card.FaceDown && CardViews.Same(card, entry.Card));
 
+    public bool CanBrowseHandSelection(PresentedCard entry) => State is { } state
+        && (state.Decision?.Intent == DecisionIntent.Selection || TableChoices.IsDirect(state))
+        && state.Viewer is { } viewer && entry.ChoiceSlot < 0
+        && entry.Zone == "Hand" && entry.Request.Owner == viewer.Id
+        && viewer.Zone("Hand").Cards.Any(card => !card.FaceDown && CardViews.Same(card, entry.Card));
+
     public Card? ChoiceFace(int slot) => State?.Decision is { } decision
         ? decision.LibraryCards.Length > 0 ? decision.LibraryCards.ElementAtOrDefault(slot)?.Card
             : decision.Choices.ElementAtOrDefault(slot) is { } choice ? CardViews.Choice(State, choice) : null
@@ -56,9 +62,10 @@ internal sealed record CardPresentationContext(GameSnapshot? State, string Scope
 /// <summary>Rest is canonical layout geometry; Entrance is an already presented source position.</summary>
 internal sealed record CardPresentationRequest(string Id, Card Card, Pose Rest, string Zone,
     int? Owner, string HitId, UiIntent Activate, Vector2? Entrance = null, float EntranceDelay = 0,
-    bool OpensZone = false, int ChoiceSlot = -1, Rectangle? ActivationBounds = null);
+    bool OpensZone = false, int ChoiceSlot = -1, Rectangle? ActivationBounds = null, float? PlayAge = null, bool RevealPlay = true,
+    Rectangle? ReadingAnchor = null);
 
-internal enum CardPresentationLayer { Table, Returning, Reader }
+internal enum CardPresentationLayer { Table, Playing, Returning, Reader }
 
 /// <summary>A prepared occurrence. Rest, painting and input share presentation-space geometry.</summary>
 internal sealed record PresentedCard(CardPresentationRequest Request,
@@ -67,10 +74,12 @@ internal sealed record PresentedCard(CardPresentationRequest Request,
     public BoardView View { get; init; } = BoardView.Identity;
     public Pose? ReaderTarget { get; init; }
     public bool Hovered { get; init; }
+    public bool Playing => Layer == CardPresentationLayer.Playing;
     public string Id => Request.Id;
     public Card Card => Request.Card;
     public string Zone => Request.Zone;
     public Pose Rest => View.Apply(Request.Rest);
+    public bool AnchorContains(Point point) => Request.ReadingAnchor is { } anchor ? View.Apply(anchor).Contains(point) : Rest.Contains(point);
     public int ChoiceSlot => Request.ChoiceSlot;
 }
 

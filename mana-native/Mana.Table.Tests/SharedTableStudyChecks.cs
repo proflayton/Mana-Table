@@ -45,9 +45,52 @@ internal static class SharedTableStudyChecks
         NameFamilies(ordinary, check);
         FocusedRows(crowded, check);
         HiddenFace(check);
+        TwoPlayerContinuity(check);
+        ResourceTurns(check);
         check(TableScene.Build(ordinary, 0, new(-100, -100), null, null, false, CardPresentation.IsResource)
                 .Seats.All(seat => seat.Battlefield.SelectMany(cluster => cluster.Cards).All(card => !card.ScanFace)),
             "The explicit study leaves the default battlefield presentation unchanged");
+    }
+
+    private static void TwoPlayerContinuity(Action<bool, string> check)
+    {
+        var stages = ExperienceScenarios.Find("two-player-table.v1").Create();
+        foreach (int viewer in stages[0].Snapshot.Players.Select(player => player.Id)) {
+            var scenes = stages.Select(stage => Build(stage.Snapshot with { ViewerId = viewer })).ToArray();
+            check(scenes.All(scene => scene.Seat(viewer).Index == 3 && scene.Seats.Single(seat => seat.PlayerId != viewer).Index == 1
+                    && scene.Seats.All(seat => !seat.IsDense) && Cards(scene).All(card => card.ScanFace)
+                    && Cards(scene).All(card => DuelTableStudy.MatchLane(scene.Seat(card.Owner).Index,
+                        BattlefieldLayout.Role(card.Card, CardPresentation.IsResource)).Contains(card.Pose.Bounds))
+                    && Cards(scene).All(card => !card.Pose.Bounds.Intersects(DuelTableStudy.ActionArea))),
+                "Both two-player viewers retain actual player IDs, top/bottom framing and source-card faces in their role lanes across the old seven-group boundary");
+            check(scenes.All(scene => !Cards(scene).Any(card => Cards(scene).Any(other => card.Owner != other.Owner
+                    && card.Pose.Bounds.Intersects(other.Pose.Bounds)))),
+                "The two-player creature rows keep opposing faces and their current stats separate");
+            var before = Cards(scenes[0]).ToDictionary(card => card.Id, card => card.Pose);
+            check(Cards(scenes[1]).Where(card => card.Owner == 1 || card.Card.Type is "Artifact" or "Enchantment" or "Basic Land")
+                    .All(card => before[card.Id] == card.Pose)
+                    && Cards(scenes[2]).Where(card => card.Owner == 0).All(card => scenes[1].BattlefieldCard(card.Owner, card.Id)!.Pose == card.Pose),
+                "Adding an eighth group changes only its controller's creature row; the opponent, unrelated role lanes and subsequent other-controller counter updates do not reframe the table");
+        }
+    }
+
+    private static void ResourceTurns(Action<bool, string> check)
+    {
+        var stages = TappedResourcesScenario.Create();
+        foreach (int viewer in stages[0].Snapshot.Players.Select(player => player.Id)) {
+            var tapped = Build(stages[0].Snapshot with { ViewerId = viewer });
+            var ready = Build(stages[2].Snapshot with { ViewerId = viewer });
+            foreach (var card in Cards(tapped).Where(card => card.Id.StartsWith("tap-land-", StringComparison.Ordinal))) {
+                var untapped = ready.BattlefieldCard(card.Owner, card.Id)!;
+                check(card.Pose.Center == untapped.Pose.Center && card.Pose.Size == untapped.Pose.Size
+                    && card.Pose.Size.Y > card.Pose.Size.X * 1.5f
+                    && MathF.Abs(MathHelper.WrapAngle(card.Pose.Angle - untapped.Pose.Angle) - MathF.PI / 2) < .001f
+                    && Math.Abs(card.Pose.Bounds.Width - untapped.Pose.Bounds.Height) <= 2
+                    && Math.Abs(card.Pose.Bounds.Height - untapped.Pose.Bounds.Width) <= 2,
+                    "Tapping a resource turns the same portrait face sideways without swapping dimensions or moving its reserved slot: " + card.Id);
+            }
+            foreach (var stage in stages) CheckFootprints(Build(stage.Snapshot with { ViewerId = viewer }), "resource turns viewer " + viewer, check);
+        }
     }
 
     private static void CheckFootprints(TableScene scene, string label, Action<bool, string> check)
@@ -59,14 +102,18 @@ internal static class SharedTableStudyChecks
             || !entry.Territory.Contains(entry.Node.Pose.Bounds)
             || !entry.Node.Pose.Contains(entry.Node.Pose.Center.ToPoint())
             || entry.Node.Pose.IsProjected || !entry.Node.ScanFace
-            || entry.Node.Pose.Angle != (entry.Node.Card.Tapped ? MathF.PI / 2 : 0));
+            || MathF.Abs(MathHelper.WrapAngle(entry.Node.Pose.Angle - SharedTableStudy.Facing(entry.Seat)
+                - (entry.Node.Card.Tapped ? MathF.PI / 2 : 0))) > .001f);
         check(outside == null,
-            "Study " + label + ": every upright or tapped face and its input geometry fit its controller's reserved role lane"
+            "Study " + label + ": every seat-facing or tapped face and its input geometry fit its controller's reserved role lane"
             + (outside == null ? "" : $"; first offender {outside.Node.Id} ({outside.Node.Card.Name}), controller {outside.Node.Owner}, seat {outside.Seat}, role {outside.Role}, bounds {outside.Node.Pose.Bounds}, lane {outside.Lane}, territory {outside.Territory}, pose {outside.Node.Pose}, corners {string.Join(";", outside.Node.Pose.Corners)}"));
         var cards = Cards(scene).ToArray();
         var overlap = cards.SelectMany(card => cards.Where(other => other.Owner != card.Owner && card.Pose.Bounds.Intersects(other.Pose.Bounds))
             .Select(other => new { First = card, Second = other })).FirstOrDefault();
         var actionOverlap = cards.FirstOrDefault(card => card.Pose.Bounds.Intersects(SharedTableStudy.ActionArea));
+        var controls = TurnControlLayout.For(TableLayout.Hero(3)).Reservations;
+        check(cards.All(card => controls.All(bounds => !card.Pose.Bounds.Intersects(bounds))),
+            "Study " + label + ": battlefield faces stay clear of the local portrait's phase and priority controls");
         check(overlap == null && actionOverlap == null,
             "Study " + label + ": controller faces remain separate from other players and the fixed action area"
             + (overlap == null ? "" : $"; {overlap.First.Id} controller {overlap.First.Owner} bounds {overlap.First.Pose.Bounds} intersects {overlap.Second.Id} controller {overlap.Second.Owner} bounds {overlap.Second.Pose.Bounds}")
@@ -133,10 +180,12 @@ internal static class SharedTableStudyChecks
                 && text.All(value => !value!.Contains("HIDDEN_", StringComparison.Ordinal)),
             "The production study painter masks a hidden printed name, artwork, cost and rules while retaining its public anonymous creature state");
         check(frame.Cards.Where(card => card.Zone == "Battlefield").All(card => {
-                int seat = frame.Scene!.Seat(card.Request.Owner!.Value).Index;
-                return SharedTableStudy.Lane(seat, BattlefieldLayout.Role(card.Card, CardPresentation.IsResource)).Contains(card.Rest.Bounds);
+                var node = frame.Scene!.BattlefieldCard(card.Request.Owner!.Value, card.Id)!;
+                var placement = node.Attachment is { } attachment ? frame.Scene.BattlefieldDrawOrder.Single(item => item.Id == attachment.RootId) : node;
+                int seat = frame.Scene.Seat(placement.Owner).Index;
+                return SharedTableStudy.Lane(seat, BattlefieldLayout.Role(placement.Card, CardPresentation.IsResource)).Contains(card.Rest.Bounds);
             }),
-            "The composed study's actual resting card/input poses remain inside their role lanes, including flying and phased state presentation");
+            "The composed study's actual resting card/input poses stay in their host's role lane, including attachments, flying and phased state presentation");
     }
 
     private static void NameFamilies(GameSnapshot baseline, Action<bool, string> check)
@@ -211,35 +260,38 @@ internal static class SharedTableStudyChecks
         check(landFamily is { Role: "Lands", CohortCount: 2, TotalCount: 2 } && landFamily.NameBounds.Height >= 23
                 && mixedNodes.All(node => node.Pose.Bounds.Width <= 57 && node.GroupFront && node.GroupCount == 1)
                 && !mixedNodes[0].Pose.Bounds.Intersects(mixedNodes[1].Pose.Bounds)
-                && landFamily.Bounds.Width <= matchingLands.BattlefieldCard(0, "compact-ready")!.StudyFamily!.Bounds.Width + 1
+                && landFamily.Bounds.Width <= 120
+                && matchingLands.BattlefieldCard(0, "compact-ready")!.StudyFamily is { CohortCount: 1, TotalCount: 2 }
                 && landFamily.Cohorts.All(cohort => cohort.MemberIds.Count == 1
                     && mixedLands.BattlefieldCard(0, cohort.FrontCardId)!.Card.Key == "action:" + cohort.FrontCardId),
-            "Tapped and untapped ordinary lands share one standard-width family with compact separate state faces, a real caption band, and each exact action key");
+            "Tapped and untapped ordinary lands share one bounded turning footprint with compact separate state faces, a real caption band, and each exact action key; "
+            + $"family {landFamily.Bounds}, caption {landFamily.NameBounds}, matching {matchingLands.BattlefieldCard(0, "compact-ready")!.StudyFamily!.BodyBounds}; "
+            + string.Join("; ", mixedNodes.Select(node => $"{node.Id}: {node.Pose.Bounds}, front {node.GroupFront}, count {node.GroupCount}")));
     }
 
     private static void FocusedRows(GameSnapshot snapshot, Action<bool, string> check)
     {
-        var state = snapshot with { Players = snapshot.Players.Select(player => player with {
+        var state = snapshot with { Players = snapshot.Players.Where(player => player.Id is 0 or 2).Select(player => player with {
             Zones = player.Zones.Select(zone => zone.Name != "Battlefield" ? zone : zone with {
                 Cards = zone.Cards.Select(card => card with { Key = "focus-action:" + card.VisualId }).ToImmutableArray()
             }).ToImmutableArray()
         }).ToImmutableArray() };
         var scene = TableScene.Build(state, 0, new(-100, -100), null, null, false,
-            CardPresentation.IsResource, sharedTableStudy: true, studyFocusedOpponent: 2);
+            CardPresentation.IsResource, sharedTableStudy: true);
         var scutes = Cards(scene).Where(node => node.Owner == 2 && node.Card.Name == "Scute Swarm").ToArray();
         var family = scutes[0].StudyFamily!;
         check(family is { TotalCount: 9, CohortCount: 4 } && family.BodyBounds.Width > family.BodyBounds.Height
                 && scutes.Count(node => node.GroupFront) == 4
                 && scutes.All(node => node.Card.Key == "focus-action:" + node.Id)
                 && family.Cohorts.SelectMany(cohort => cohort.MemberIds).Order().SequenceEqual(scutes.Select(node => node.Id).Order()),
-            "Focused rows keep all four Scute Swarm states in a compact horizontal family block without losing copies or exact action keys");
+            "Two-player rows keep all four Scute Swarm states in a compact horizontal family block without losing copies or exact action keys");
         var families = scene.Seats.SelectMany(seat => seat.Battlefield.SelectMany(cluster => cluster.Cards
             .Select(node => node.StudyFamily!).DistinctBy(item => item.Id).Select(item => new { Seat = seat.Index, Family = item }))).ToArray();
-        check(families.All(item => DuelTableStudy.Lane(item.Seat, item.Family.Role).Contains(item.Family.Bounds))
+        check(families.All(item => DuelTableStudy.MatchLane(item.Seat, item.Family.Role).Contains(item.Family.Bounds))
                 && families.All(item => !families.Any(other => other.Family.Id != item.Family.Id
                     && item.Family.Bounds.Intersects(other.Family.Bounds)))
                 && Cards(scene).All(node => node.Pose.Contains(node.Pose.Center.ToPoint())),
-            "Focused row packing reserves every family's caption and body without overlapping another family, lane or actual card target");
+            "Two-player row packing reserves every family's caption and body without overlapping another family, lane or actual card target");
     }
 
     private static GameSnapshot ReplaceField(GameSnapshot state, int owner, Card[] cards) => state with {

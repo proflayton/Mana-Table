@@ -1,3 +1,5 @@
+using Mana.Contracts;
+
 namespace Mana.Table.Interaction;
 
 internal enum ShellPage { HomeDecks, DeckPicker, Review, Connection, LobbyAi, LabGallery }
@@ -41,6 +43,7 @@ internal abstract record ShellIntent : UiIntent
     internal sealed record SelectReviewSection(string Section) : Lobby;
     internal sealed record SelectReviewCard(string CardId, string Section) : Lobby;
     internal sealed record ResizeLobby(int Players) : Lobby;
+    internal sealed record SetTempo(TempoPreset Preset, TempoExpiry Expiry) : Lobby;
     internal sealed record OpenLobbyAi(int Seat) : Lobby;
     internal sealed record SelectLobbyAi(string OpponentId) : Lobby;
     internal sealed record RemoveLobbyAi(int Seat) : Lobby;

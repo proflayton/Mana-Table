@@ -77,6 +77,7 @@ internal sealed partial class TableApplication
         int count = deck.Entries.Where(entry => entry.Section is "Commander" or "Main").Sum(entry => entry.Quantity);
         string countLabel = CommanderDeck ? $"{count} / 100 cards" : $"{count} cards";
         canvas.Text(countLabel + (DeckReady ? "" : " · Needs changes"), 94, countY, DeckReady ? Muted : Gold, .76f, 620, 1);
+        DrawDeckSaveStatus(94, countY + 27, 300);
         var bounds = new Rectangle(855, 155, 590, 600);
         bool over = !busy && bounds.Contains(pointer);
         for (int i = leaders.Length - 1; i >= 0; i--) {
@@ -93,7 +94,7 @@ internal sealed partial class TableApplication
         canvas.CenterText("Edit deck", new(950, 718, 370, 40), over ? Ink : Muted, .82f, over);
         if (!busy) hits.Add(ShellHit("edit-deck", bounds, new ShellIntent.EditDeck(true)));
         if (!DeckReady && soloTab) {
-            string issue = deck.SaveError.Length > 0 ? "Unsaved changes. Open your deck to retry." : deck.Problem.Length > 0 ? deck.Problem : "Choose a commander in your deck.";
+            string issue = DeckSaveProblem.Length > 0 ? "Unsaved changes. Open your deck to retry." : deck.Problem.Length > 0 ? deck.Problem : "Choose a commander in your deck.";
             canvas.Text(issue, 94, actionTop + 170, Gold, .82f, 620, 4);
         }
         MenuAction("review-deck", "Deck list", new(950, 765, 370, 36), new ShellIntent.ReviewDeck(true), !busy, size: .74f);
@@ -158,6 +159,7 @@ internal sealed partial class TableApplication
         canvas.Text(state.Mode == "hosting" ? "Your table" : "At the table", 90, 149, Ink, 1.8f, 800, 1, true, true);
         MenuAction("invite", "Invite friends", new(1050, 143, 230, 45), new ShellIntent.OpenConnection(), !busy);
         MenuAction("leave", "Leave table", new(1310, 143, 220, 45), new ShellIntent.LeaveLobby(), !busy);
+        DrawLobbyTempo(state);
         for (int i = 0; i < Math.Min(4, state.Seats.Length); i++) {
             var seat = state.Seats[i]; int x = 280 + i * 347, y = 390;
             bool open = seat.Type == "OPEN", ai = seat.Type == "AI";

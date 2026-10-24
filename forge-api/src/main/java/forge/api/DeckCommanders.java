@@ -9,7 +9,8 @@ import java.util.*;
 
 /** Persistent commander selection, shared by every client and match setup. */
 public final class DeckCommanders {
-    public record Choice(String id, List<String> partners) { }
+    /** Discovery metadata does not expand the in-deck compatible partner IDs. */
+    public record Choice(String id, List<String> partners, boolean canPartner, String partnerName) { }
 
     private static Map<String, PaperCard> candidates(Deck deck) {
         var cards = new TreeMap<String, PaperCard>();
@@ -27,7 +28,8 @@ public final class DeckCommanders {
         return cards.entrySet().stream().map(a -> new Choice(a.getKey(), cards.entrySet().stream()
                 .filter(b -> !a.getValue().getName().equals(b.getValue().getName())
                         && a.getValue().getRules().canBePartnerCommanders(b.getValue().getRules()))
-                .map(Map.Entry::getKey).toList())).toList();
+                .map(Map.Entry::getKey).toList(), a.getValue().getRules().canBePartnerCommander(),
+                a.getValue().getRules().getPartnerWith())).toList();
     }
 
     public static void set(DeckEditor editor, long revision, List<String> ids) {

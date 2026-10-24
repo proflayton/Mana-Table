@@ -9,10 +9,12 @@ public sealed record TableServices(IEngineCatalog Catalog, ITableSetup Tables, I
 {
     public ISourceActions? SourceActions { get; init; }
     public ICardPrintings? Printings { get; init; }
+    public IDeckTokens? Tokens { get; init; }
     public IDeckLibrary? Library { get; init; }
     public IDeckWorkshop? Workshop { get; init; }
     public IDeckAnalysis? Analysis { get; init; }
     public ITableSeatSetup? Seats { get; init; }
+    public ITableTempo? Tempo { get; init; }
     public ITableSocial? Social { get; init; }
     public IDeckVersionHistory? Versions { get; init; }
     public ExperienceLabSession? Lab { get; init; }

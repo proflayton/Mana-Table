@@ -4,11 +4,13 @@ using Rectangle = Microsoft.Xna.Framework.Rectangle;
 
 namespace Mana.Renderer;
 
-/// <summary>An explicit layout study: independent, upright controller territories.
+/// <summary>An explicit layout study: independent, seat-facing controller territories.
 /// A pending effect or another seat's density never participates in this packing.</summary>
 public static class SharedTableStudy
 {
     private static readonly string[] Roles = ["Creatures", "Support", "Lands"];
+    private const float AttachmentEdge = 36, AttachmentDrop = 8;
+    public static float Facing(int seat) => seat switch { 0 => MathF.PI / 2, 1 => MathF.PI, 2 => -MathF.PI / 2, _ => 0 };
     public static Rectangle ActionArea => new(565, 390, 470, 165);
     public static Rectangle Territory(int seat) => seat switch {
         0 => new(195, 160, 350, 470), 1 => new(510, 171, 580, 204),
@@ -26,19 +28,21 @@ public static class SharedTableStudy
         (2, _) => new(1310, 398, 94, 122),
         (_, "Creatures") => new(590, 555, 645, 84),
         (_, "Support") => new(320, 555, 260, 155),
-        _ => new(980, 646, 255, 55)
+        _ => new(980, 640, 255, 64)
     };
 
     internal static BattlefieldCluster[] Arrange(int seat, int owner, IReadOnlyList<Card> cards,
         Func<Card, bool> isResource, IReadOnlySet<string>? separate,
-        Func<string, Rectangle>? lanes = null, float faceScale = 1, bool horizontalRows = false)
+        Func<string, Rectangle>? lanes = null, float faceScale = 1, bool horizontalRows = false, bool centerRows = false,
+        BattlefieldAttachments? attachments = null, bool seatFacing = true)
     {
         faceScale = float.IsFinite(faceScale) && faceScale > 0 ? faceScale : 1;
         string Identity(Card card) => CardViews.Identity(card) is { Length: > 0 } id ? id
             : "anonymous:" + Enumerable.Range(0, cards.Count).First(index => ReferenceEquals(cards[index], card));
         // A family joins public names, not mutable characteristics. Hidden and
         // anonymous identities never acquire a family through their printed face.
-        var families = cards.GroupBy(card => card.FaceDown || string.IsNullOrWhiteSpace(card.Name)
+        var families = cards.GroupBy(card => attachments?.Under(Identity(card)).Count > 0 ? "assembly:" + Identity(card)
+                : card.FaceDown || string.IsNullOrWhiteSpace(card.Name)
                 ? "occurrence:" + Identity(card) : "name:" + card.Name, StringComparer.Ordinal)
             .Select(group => {
                 var members = group.ToArray();
@@ -50,7 +54,8 @@ public static class SharedTableStudy
                     : members.Any(isResource) ? "Lands" : "Support";
                 string name = members[0].FaceDown ? "Face-down permanent"
                     : string.IsNullOrWhiteSpace(members[0].Name) ? "Unnamed permanent" : members[0].Name;
-                return new Family(owner + ":" + group.Key, name, role, cohorts);
+                var under = attachments?.Under(Identity(members[0])) ?? [];
+                return new Family(owner + ":" + group.Key, name, role, cohorts, under.Count, under.Count == 0 ? 0 : under.Max(member => member.Depth));
             }).ToArray();
         return Roles.Select(kind => {
             var selected = families.Where(family => family.Role == kind).ToArray();
@@ -58,8 +63,22 @@ public static class SharedTableStudy
             var lane = lanes?.Invoke(kind) ?? Lane(seat, kind);
             // Pose.Bounds rounds out to integer pixels, including tap rotation.
             lane.Inflate(-2, -2);
-            var desired = (kind == "Creatures" ? new Vector2(112, 104) : new Vector2(112, 92)) * faceScale;
-            var slots = Pack(selected, lane, desired, faceScale, seat, horizontalRows);
+            float facing = seatFacing ? Facing(seat) : 0;
+            var worldCenter = lane.Center.ToVector2();
+            bool sideways = seatFacing && seat is 0 or 2;
+            if (sideways) lane = new(0, 0, lane.Height, lane.Width);
+            Vector2 Turn(Vector2 point) {
+                var local = point - lane.Center.ToVector2();
+                // Quarter turns keep exact packing bounds and pointer geometry.
+                return worldCenter + (facing == 0 ? local : facing == MathF.PI ? -local
+                    : facing > 0 ? new Vector2(-local.Y, local.X) : new Vector2(local.Y, -local.X));
+            }
+            Pose TurnPose(Pose pose) => pose with { Center = Turn(pose.Center), Angle = pose.Angle + facing };
+            Rectangle TurnBounds(Rectangle bounds) => bounds.IsEmpty ? bounds
+                : TurnPose(new(new(bounds.X + bounds.Width / 2f, bounds.Y + bounds.Height / 2f), bounds.Size.ToVector2())).Bounds;
+            var desired = (kind == "Creatures" ? new Vector2(112, seatFacing ? 128 : 104)
+                : new Vector2(112, seatFacing ? 112 : 92)) * faceScale;
+            var slots = Pack(selected, lane, desired, faceScale, seat, horizontalRows, centerRows);
             var nodes = new List<SceneCard>();
             foreach (var slot in slots) {
                 var familyNodes = new List<SceneCard>();
@@ -79,13 +98,30 @@ public static class SharedTableStudy
                         // Copy count never enlarges a cohort's footprint. All
                         // real occurrences remain, with one current front/count.
                         float advance = copies.Length > 1 ? 6 * detail * copy / (copies.Length - 1) : 0;
-                        var center = position + size / 2 + new Vector2(advance);
-                        var pose = new Pose(center, card.Tapped ? new(size.Y, size.X) : size, card.Tapped ? MathF.PI / 2 : 0);
+                        var center = position + size / 2 + new Vector2(advance) + new Vector2(slot.Family.Attachments * AttachmentEdge * detail, 0);
+                        // Resources reserve their complete turn footprint. A tap
+                        // rotates the same portrait face instead of exchanging
+                        // its dimensions and cancelling the visible silhouette.
+                        var face = kind == "Lands" ? new Vector2(size.X * 62 / 112, size.Y) : size;
+                        var pose = new Pose(center, kind == "Lands" ? face : card.Tapped ? new(size.Y, size.X) : size,
+                            card.Tapped ? MathF.PI / 2 : 0);
                         int ordinal = CardViews.Identity(card).Length == 0
                             ? Enumerable.Range(0, cards.Count).First(index => ReferenceEquals(cards[index], card)) : 0;
                         var node = SceneCard.Create(card, pose, "Battlefield", owner, ordinal, TableLayout.Hero(seat)) with {
                             ScanFace = true, Compact = true, GroupFront = copy == copies.Length - 1, GroupCount = copies.Length
                         };
+                        var under = attachments?.Under(node.Id) ?? [];
+                        // Paint deepest cards first; the front host covers their
+                        // bodies while every attachment keeps an exposed edge.
+                        for (int layer = under.Count - 1; layer >= 0; layer--) {
+                            var member = under[layer];
+                            var memberCenter = center + new Vector2(-AttachmentEdge * (layer + 1), AttachmentDrop * member.Depth) * detail;
+                            var memberPose = new Pose(memberCenter, member.Card.Tapped ? new(size.Y, size.X) : size, member.Card.Tapped ? MathF.PI / 2 : 0);
+                            familyNodes.Add(SceneCard.Create(member.Card, memberPose, "Battlefield", member.Owner, 0, TableLayout.Hero(seat)) with {
+                                ScanFace = true, Compact = true,
+                                Attachment = new(node.Id, owner, member.HostId, layer + 1, member.Depth, AttachmentEdge * detail / size.X, facing)
+                            });
+                        }
                         cohortNodes.Add(node); familyNodes.Add(node);
                     }
                     cohortPlans.Add(new(cohortNodes[^1].Id, Array.AsReadOnly(cohortNodes.Select(node => node.Id).ToArray()),
@@ -93,17 +129,19 @@ public static class SharedTableStudy
                 }
                 var extent = slot.Size;
                 var nameBounds = header > 0 ? Bounds(slot.Position, new(extent.X, header)) : Rectangle.Empty;
-                var bodyBounds = cohortPlans.Select(cohort => cohort.Bounds).Aggregate(Rectangle.Union);
+                familyNodes = familyNodes.Select(node => node with { Pose = TurnPose(node.Pose) }).ToList();
+                var bodyBounds = familyNodes.Select(node => node.Pose.Bounds).Aggregate(Rectangle.Union);
+                nameBounds = TurnBounds(nameBounds);
                 var family = new StudyBattlefieldFamily(slot.Family.Id, slot.Family.Name, kind,
                     Rectangle.Union(bodyBounds, nameBounds.IsEmpty ? bodyBounds : nameBounds), nameBounds, bodyBounds,
-                    Array.AsReadOnly(cohortPlans.ToArray()));
+                    Array.AsReadOnly(cohortPlans.Select(cohort => cohort with { Bounds = TurnBounds(cohort.Bounds) }).ToArray()));
                 nodes.AddRange(familyNodes.Select(node => node with { StudyFamily = family }));
             }
             return new BattlefieldCluster(kind, nodes.ToArray());
         }).ToArray();
     }
 
-    private sealed record Family(string Id, string Name, string Role, Card[][] Cohorts)
+    private sealed record Family(string Id, string Name, string Role, Card[][] Cohorts, int Attachments, int AttachmentDepth)
     {
         internal int Fan => Cohorts.Any(cohort => cohort.Length > 1) ? 6 : 0;
         internal int Header => Cohorts.Length > 1 ? 26 : 0;
@@ -120,7 +158,7 @@ public static class SharedTableStudy
         return new(x, y, (int)MathF.Ceiling(position.X + size.X) - x, (int)MathF.Ceiling(position.Y + size.Y) - y);
     }
     private static Vector2 FaceSize(Family family, Vector2 desired) => family.Role == "Lands"
-        ? new(desired.X * (family.Cohorts.Length > 1 ? .5f : 1), desired.X * 62 / 112) : desired;
+        ? new(desired.X * (family.Cohorts.Length > 1 ? .5f : 1)) : desired;
     private static float HeaderHeight(Family family, float detail, float headerFloor) => family.Header > 0
         ? Math.Max(family.Header * detail, headerFloor) : 0;
     private static Vector2 Shape(Family family, int columns, Vector2 desired, float faceScale, float scale, float headerFloor)
@@ -129,12 +167,12 @@ public static class SharedTableStudy
         int rows = (family.Cohorts.Length + columns - 1) / columns;
         float detail = faceScale * scale;
         float fan = family.Fan * detail, gap = 6 * detail;
-        return new(columns * (desired.X + fan) + (columns - 1) * gap,
+        return new(columns * (desired.X + fan) + (columns - 1) * gap + family.Attachments * AttachmentEdge * detail,
             rows * (desired.Y + fan) + (rows - 1) * gap
-                + (family.Header > 0 ? HeaderHeight(family, detail, headerFloor) + 4 * detail : 0));
+                + (family.Header > 0 ? HeaderHeight(family, detail, headerFloor) + 4 * detail : 0) + family.AttachmentDepth * AttachmentDrop * detail);
     }
 
-    private static Slot[] Pack(Family[] families, Rectangle lane, Vector2 desired, float faceScale, int seat, bool horizontalRows)
+    private static Slot[] Pack(Family[] families, Rectangle lane, Vector2 desired, float faceScale, int seat, bool horizontalRows, bool centerRows)
     {
         // A single-column plan is always available before trying roomier shapes.
         // This fallback preserves every cohort even beyond the readable budget.
@@ -236,7 +274,13 @@ public static class SharedTableStudy
                     Occupy(free, new(chosenArea.X, chosenArea.Y, chosenSize.X + padding, chosenSize.Y + padding));
                 }
                 if (placed.Count == families.Length) {
-                    slots = families.Select(family => placed[family.Id]).ToArray(); return true;
+                    slots = families.Select(family => placed[family.Id]).ToArray();
+                    if (centerRows) {
+                        float left = slots.Min(slot => slot.Position.X), right = slots.Max(slot => slot.Position.X + slot.Size.X);
+                        float shift = lane.Left + (lane.Width - (right - left)) / 2 - left;
+                        slots = slots.Select(slot => slot with { Position = slot.Position + new Vector2(shift, 0) }).ToArray();
+                    }
+                    return true;
                 }
             }
             slots = []; return false;

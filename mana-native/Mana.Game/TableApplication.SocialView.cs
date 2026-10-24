@@ -1,4 +1,5 @@
 using Microsoft.Xna.Framework;
+using Mana.Table.Presentation;
 using Color = Microsoft.Xna.Framework.Color;
 using Rectangle = Microsoft.Xna.Framework.Rectangle;
 
@@ -10,7 +11,9 @@ internal sealed partial class TableApplication
     private void DrawSocial()
     {
         if (!SocialAvailable) return;
-        Button("chat-toggle", conversation.Unread > 0 ? $"Chat ({conversation.Unread})" : "Table chat", match == null ? 1390 : 1052, match == null ? 17 : 12, match == null ? 164 : 126, new ShellIntent.ToggleChat(), accent: chatOpen || conversation.Unread > 0, height: 35);
+        Button("chat-toggle", conversation.Unread > 0 ? $"Chat ({conversation.Unread})" : "Table chat",
+            match == null ? new Rectangle(1390, 17, 164, 35) : MatchHeaderLayout.Chat,
+            new ShellIntent.ToggleChat(), accent: chatOpen || conversation.Unread > 0);
         if (!chatOpen && now < chatToastUntil && chatToast.Length > 0 && !conversation.Muted) {
             canvas.Panel(new(28, 66, 515, 48), new(25, 42, 53), Blue, 9);
             canvas.Text(chatToast, 42, 82, Ink, .78f, 485, 1);

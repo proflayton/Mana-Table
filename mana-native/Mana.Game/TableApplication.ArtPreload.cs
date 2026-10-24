@@ -1,4 +1,5 @@
 using Mana.Contracts;
+using Mana.Client;
 using Mana.Magic;
 
 namespace Mana.Table;
@@ -6,6 +7,7 @@ namespace Mana.Table;
 internal sealed partial class TableApplication
 {
     private GameSnapshot? artPreloadSnapshot;
+    private SourceActionView? artPreloadSourceActions;
     private (Card[] Visible, Card[] Anticipated) matchArtPreload = ([], []);
     private DeckDetails? artPreloadDeck;
     private Card[] selectedDeckArtwork = [];
@@ -19,17 +21,23 @@ internal sealed partial class TableApplication
     {
         var upcoming = SelectedDeckArtwork();
         if (match is { } state) {
-            if (ReferenceEquals(artPreloadSnapshot, state) && ReferenceEquals(matchArtPreload.Anticipated, upcoming)) return matchArtPreload;
+            var offers = ReaderActionSource() is { } source && ReaderActionsMatch(source) ? sourceActions.View : null;
+            if (ReferenceEquals(artPreloadSnapshot, state) && ReferenceEquals(artPreloadSourceActions, offers)
+                && ReferenceEquals(matchArtPreload.Anticipated, upcoming)) return matchArtPreload;
             artPreloadSnapshot = state;
+            artPreloadSourceActions = offers;
             // Use only the seat-filtered snapshot, including a current reveal
             // or search. Never infer a library order or consult another deck.
-            return matchArtPreload = (PrintableFaces(CardViews.Visible(state)).ToArray(), upcoming);
+            var linked = offers?.Actions.Select(action => action.Card).OfType<Card>() ?? [];
+            return matchArtPreload = (PrintableFaces(CardViews.Visible(state).Concat(linked)).ToArray(), upcoming);
         }
         artPreloadSnapshot = null;
+        artPreloadSourceActions = null;
 
-        var selection = deckEditor ? DeckSelection?.Card : null;
-        var catalog = deckEditor ? catalogRead.View.Value : null;
-        var printings = deckEditor && workshopDialog == "printings" ? printingRead.View.Value : null;
+        bool tokens = deckEditor && workshopTab == "tokens";
+        var selection = tokens ? SelectedToken?.Card.Card : deckEditor ? DeckSelection?.Card : null;
+        var catalog = deckEditor && !tokens ? catalogRead.View.Value : null;
+        var printings = tokens ? tokenPrintingsRead.View.Value : deckEditor && workshopDialog == "printings" ? printingRead.View.Value : null;
         var practice = deckEditor ? deckWorkspace.View.Hand : null;
         var review = deckEditor ? null : reviewCard?.Card;
         if (ReferenceEquals(artPreloadSelection, selection) && ReferenceEquals(artPreloadCatalog, catalog)
@@ -53,8 +61,9 @@ internal sealed partial class TableApplication
     {
         if (ReferenceEquals(artPreloadDeck, selectedDeckDetails)) return selectedDeckArtwork;
         artPreloadDeck = selectedDeckDetails;
-        return selectedDeckArtwork = PrintableFaces(selectedDeckDetails?.Entries
-            .OrderBy(entry => entry.Section == "Commander" ? 0 : 1).Select(entry => entry.Card) ?? []).ToArray();
+        return selectedDeckArtwork = PrintableFaces((selectedDeckDetails?.Entries
+            .OrderBy(entry => entry.Section == "Commander" ? 0 : 1).Select(entry => entry.Card) ?? [])
+            .Concat(selectedDeckDetails?.TokenPreviews ?? [])).ToArray();
     }
 
     private static IEnumerable<Card> PrintableFaces(IEnumerable<Card> cards)
