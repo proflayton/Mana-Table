@@ -81,7 +81,7 @@ internal sealed partial class TableApplication
             int right = area.Right - 4;
             int incoming = match!.Combat?.Attackers.Count(attack => attack.DefendingPlayerId == player.Id) ?? 0;
             string status = player.Eliminated ? "ELIMINATED" : incoming > 0 ? incoming + (seat == 3 ? " ATTACKING YOU" : " INCOMING")
-                : player.Priority ? "PRIORITY" : player.Id == match.ActivePlayerId ? "ACTIVE TURN" : "";
+                : player.Id == match.ActivePlayerId ? "ACTIVE TURN" : "";
             int statusWidth = status.Length > 0 ? canvas.TextWidth(status, .375f, true) + 10 : 0;
             if (statusWidth > 0) {
                 var caption = new Rectangle(right - statusWidth, area.Top, statusWidth - 2, 19);
@@ -196,7 +196,7 @@ internal sealed partial class TableApplication
         if (!dense && !own) canvas.CenterText(name + " ↗", nameplate, nameplate.Contains(pointer) ? Blue : Ink, .6f, true);
         int incoming = match.Combat?.Attackers.Count(a => a.DefendingPlayerId == player.Id) ?? 0;
         string status = player.Eliminated ? "ELIMINATED" : incoming > 0 ? incoming + (own ? " ATTACKING YOU" : " INCOMING")
-            : active && !own && match.Turn > 0 ? turnProgress?.PhaseLabel ?? match.Phase : player.Priority ? "PRIORITY" : active ? "ACTIVE TURN" : "";
+            : active && !own && match.Turn > 0 ? turnProgress?.PhaseLabel ?? match.Phase : active ? "ACTIVE TURN" : "";
         if (!own && index != 1 && hasCounters) status += (status.Length > 0 ? " · " : "") + player.Zone("Hand").Count + " in hand";
         if (!own && (!dense || active) && (!active || index == 1 || incoming > 0 || player.Eliminated)) {
             string caption = active && incoming > 0 ? (turnProgress?.PhaseLabel ?? match.Phase) + " · " + status : status;

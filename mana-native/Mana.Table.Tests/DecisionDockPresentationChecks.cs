@@ -18,35 +18,34 @@ internal static class DecisionDockPresentationChecks
         var ready = DecisionDockPresentation.From(priority, auto);
         var inspecting = DecisionDockPresentation.From(priority, auto with { PauseReason = DecisionDockPauseReason.Inspection });
         var resumed = DecisionDockPresentation.From(priority, auto);
-        check(ready.Status == DecisionDockStatus.AutoPassing && inspecting is {
+        check(ready is { Status: DecisionDockStatus.AutoPassing, Surface: DecisionDockSurface.None } && inspecting is {
                 Status: DecisionDockStatus.Priority, Headline: "Your priority", Caption: "Paused while reading",
-                PauseReason: DecisionDockPauseReason.Inspection } && resumed == ready,
-            "Reading pauses the same authorized auto window and closing the reader restores it without claiming a new action");
+                PauseReason: DecisionDockPauseReason.Inspection, Surface: DecisionDockSurface.None } && resumed == ready,
+            "Reading pauses the same authorized auto window without opening an attention surface, and closing the reader restores its permission");
 
         var blockers = new[] { DecisionDockPauseReason.Interaction, DecisionDockPauseReason.Overlay, DecisionDockPauseReason.Chat,
             DecisionDockPauseReason.CommandFailure, DecisionDockPauseReason.Presentation };
         check(blockers.All(reason => DecisionDockPresentation.From(priority, auto with {
-                PauseReason = reason, AutomaticAdvanceInFlight = true, CommandBusy = true }) is {
+                PauseReason = reason }) is {
                     Status: DecisionDockStatus.Priority } paused && paused.PauseReason == reason && paused.Caption.Length > 0),
-            "Every explicit update blocker suppresses an auto-passing claim, including a request already in flight");
+            "Every explicit update blocker suppresses automatic permission while retaining its actual pause reason");
         check(DecisionDockPresentation.From(priority, auto with { PauseReason = DecisionDockPauseReason.Preview }) is {
                 Status: DecisionDockStatus.Priority, PauseReason: DecisionDockPauseReason.Preview, Caption: "Scripted preview" },
             "An authored read-only preview names its local pause instead of claiming the game is automatically passing");
 
-        check(DecisionDockPresentation.From(priority, auto with { ObservationPending = true }) == ready
-            && DecisionDockPresentation.From(priority, auto with { CommandBusy = true }).Status == DecisionDockStatus.Submitted
-            && DecisionDockPresentation.From(priority, auto with { CommandBusy = true, AutomaticAdvanceInFlight = true }).Status == DecisionDockStatus.AutoPassing,
-            "Background polling leaves the dock unchanged while a submitted command and an automatic advance remain distinct");
+        check(DecisionDockPresentation.From(priority with { Revision = priority.Revision + 1 }, auto) == ready
+            && DecisionDockPresentation.From(priority, auto with { PauseReason = DecisionDockPauseReason.Presentation }).Surface == DecisionDockSurface.None,
+            "A fresh revision with unchanged decision facts and a presentation beat never introduce another attention surface");
 
         var ownMain = priority with { ActivePlayerId = 0, PhaseKey = "MAIN1" };
         var stop = auto with { PhaseStopKey = "MAIN1" };
-        check(DecisionDockPresentation.From(ownMain, stop) is { Headline: "Your priority", Caption: "Main 1 stop", PauseReason: DecisionDockPauseReason.PhaseStop }
+        check(DecisionDockPresentation.From(ownMain, stop) is { Headline: "Your priority", Caption: "Main 1 stop", PauseReason: DecisionDockPauseReason.PhaseStop, Surface: DecisionDockSurface.Portrait }
             && DecisionDockPresentation.From(priority, stop).Status == DecisionDockStatus.AutoPassing
             && DecisionDockPresentation.From(ownMain with { PhaseKey = "MAIN2" }, stop).Status == DecisionDockStatus.AutoPassing
             && DecisionDockPresentation.From(ownMain with { PhaseKey = "COMBAT_DAMAGE" }, auto with { PhaseStopKey = "COMBAT_BEGIN" }).Status == DecisionDockStatus.AutoPassing,
             "A named phase stop applies only to its exact phase on the viewer's turn, not another seat or all combat steps");
-        check(DecisionDockPresentation.From(priority, auto with { Automatic = false }) is { Caption: "Manual control", PauseReason: DecisionDockPauseReason.Manual }
-            && DecisionDockPresentation.From(priority, auto with { Held = true }) is { Caption: "Holding this turn", PauseReason: DecisionDockPauseReason.Held },
+        check(DecisionDockPresentation.From(priority, auto with { Automatic = false }) is { Caption: "Manual control", PauseReason: DecisionDockPauseReason.Manual, Surface: DecisionDockSurface.Portrait }
+            && DecisionDockPresentation.From(priority, auto with { Held = true }) is { Caption: "Holding this turn", PauseReason: DecisionDockPauseReason.Held, Surface: DecisionDockSurface.Portrait },
             "Manual control and a held turn identify the actual local reason for retaining priority");
 
         CheckTurnProgress(ownMain, check);
@@ -55,7 +54,7 @@ internal static class DecisionDockPresentationChecks
             Message = "Arid Mesa could be activated. This text does not explain the engine's conservative permission.",
             PriorityAbilities = [new("mesa", "mesa-key", "Arid Mesa", "Search your library.", false)] } };
         var attention = DecisionDockPresentation.From(optional, auto);
-        check(attention is { Status: DecisionDockStatus.Priority, Headline: "Your priority", Caption: "", Instruction: "" }
+        check(attention is { Status: DecisionDockStatus.Priority, Headline: "Your priority", Caption: "", Instruction: "", Surface: DecisionDockSurface.Portrait }
             && DecisionDockPresentation.From(optional with { Decision = optional.Decision! with { PriorityAbilities = [] } }, auto) == attention
             && DecisionDockPresentation.From(priority with { Decision = priority.Decision! with { OkEnabled = false } }, auto).Status == DecisionDockStatus.Priority
             && DecisionDockPresentation.From(priority with { PriorityPlayerId = 1 }, auto).Status == DecisionDockStatus.Waiting,
@@ -63,9 +62,9 @@ internal static class DecisionDockPresentationChecks
 
         var quiet = auto with { Automatic = false, QuietArmed = true, QuietCanPass = true };
         var quietWindow = optional with { Decision = optional.Decision! with { QuietYieldToken = "engine-owned-permission" } };
-        check(DecisionDockPresentation.From(quietWindow, quiet) is { Status: DecisionDockStatus.AutoPassing, Headline: "Passing for now" }
+        check(DecisionDockPresentation.From(quietWindow, quiet) is { Status: DecisionDockStatus.AutoPassing, Surface: DecisionDockSurface.Portrait }
             && DecisionDockPresentation.From(quietWindow, quiet with { PauseReason = DecisionDockPauseReason.Inspection }) is {
-                Status: DecisionDockStatus.Priority, Caption: "Paused while reading" }
+                Status: DecisionDockStatus.Priority, Caption: "Paused while reading", Surface: DecisionDockSurface.Portrait }
             && DecisionDockPresentation.From(quietWindow, quiet with { QuietCanPass = false }).Status == DecisionDockStatus.Priority
             && DecisionDockPresentation.From(optional, quiet).Status == DecisionDockStatus.Priority,
             "An explicit quiet pass needs its current engine-token permission and pauses for reading without turning ordinary legal responses into auto permission");
@@ -74,15 +73,16 @@ internal static class DecisionDockPresentationChecks
         var other = priority with { Players = namedPlayers.ToImmutableArray(), Decision = null, PriorityPlayerId = 2, DecisionOwnerId = 1, ActionClass = "mana" };
         var payment = DecisionDockPresentation.From(other, auto);
         var choosing = DecisionDockPresentation.From(other with { ActionClass = "choice" }, auto);
-        check(payment is { Status: DecisionDockStatus.Payment, ActorRole: DecisionDockActorRole.Paying, ActorId: 1,
+        check(payment is { Status: DecisionDockStatus.Payment, ActorRole: DecisionDockActorRole.Paying, ActorId: 1, Surface: DecisionDockSurface.Workspace,
                 Headline: "Mira, Weaver of Very Long Names is paying", Instruction: "", SourceCard: null, DecisionId: "", ActionLabel: "" }
-            && choosing is { Status: DecisionDockStatus.Waiting, ActorRole: DecisionDockActorRole.Choosing, ActorId: 1,
+            && choosing is { Status: DecisionDockStatus.Waiting, ActorRole: DecisionDockActorRole.Choosing, ActorId: 1, Surface: DecisionDockSurface.Workspace,
                 Headline: "Mira, Weaver of Very Long Names is choosing", Instruction: "" },
             "Another player's public paying or choosing role stays distinct from resolving and exposes neither a private prompt nor a local action");
         check(DecisionDockPresentation.From(other with { ActionClass = "attack" }, auto).ActorRole == DecisionDockActorRole.Attacking
             && DecisionDockPresentation.From(other with { ActionClass = "block" }, auto).ActorRole == DecisionDockActorRole.Blocking
             && DecisionDockPresentation.From(other with { ActionClass = "priority", PriorityPlayerId = 3, DecisionOwnerId = 3 }, quiet) is {
-                Status: DecisionDockStatus.Waiting, ActorId: 3, ActorRole: DecisionDockActorRole.Priority, Caption: "Quiet pass armed" },
+                Status: DecisionDockStatus.Waiting, ActorId: 3, ActorRole: DecisionDockActorRole.Priority, Caption: "Quiet pass armed", Surface: DecisionDockSurface.Portrait }
+            && DecisionDockPresentation.From(other with { ActionClass = "priority", PriorityPlayerId = 3, DecisionOwnerId = 3 }, auto).Surface == DecisionDockSurface.None,
             "Public combat choices and the reported responder keep their own roles while an armed quiet pass waits for another player");
 
         var currentSource = new Card { VisualId = "source-occurrence", Name = "Nicanzil, Current Conductor", Power = 7, Toughness = 8 };
@@ -95,7 +95,7 @@ internal static class DecisionDockPresentationChecks
             SourceControllerId = 0, SourceCard = currentSource with { Power = 2, Toughness = 3 }, Ok = "Confirm target",
             OkEnabled = false, QuietYieldToken = "must-not-answer-a-target" } };
         var targeting = DecisionDockPresentation.From(target, quiet);
-        check(targeting is { Status: DecisionDockStatus.Target, Headline: "Choose a target", ActorId: 0,
+        check(targeting is { Status: DecisionDockStatus.Target, Headline: "Choose a target", ActorId: 0, Surface: DecisionDockSurface.Workspace,
                 GameId: "decision-dock", DecisionId: "target-after-priority", SourceCardId: "source-occurrence", SourceControllerId: 0,
                 ActionLabel: "Confirm target", SourceCard: { Name: "Nicanzil, Current Conductor", Power: 7 } }
             && ReferenceEquals(targeting.SourceCard, currentSource) && !target.Decision!.OkEnabled,
@@ -120,9 +120,9 @@ internal static class DecisionDockPresentationChecks
         var ability = target with { ActionClass = "choice", Decision = target.Decision! with {
             Id = "choose-source-ability", Kind = "choice", Intent = DecisionIntent.General, Purpose = DecisionPurpose.AbilitySelection,
             Min = 1, Max = 1, Choices = [new(4, "Pay the reported cost: do the first action.", null), new(9, "Do the second action.", null)] } };
-        check(DecisionDockPresentation.From(ability, quiet) is { Status: DecisionDockStatus.AbilityChoice, Headline: "Choose an ability", DecisionId: "choose-source-ability" }
+        check(DecisionDockPresentation.From(ability, quiet) is { Status: DecisionDockStatus.AbilityChoice, Headline: "Choose an ability", DecisionId: "choose-source-ability", Surface: DecisionDockSurface.Workspace }
             && DecisionDockPresentation.From(target with { Decision = target.Decision! with { Intent = DecisionIntent.Mana }, ActionClass = "mana" }, auto) is {
-                Status: DecisionDockStatus.Payment, Headline: "Pay the cost", ActorRole: DecisionDockActorRole.Paying, ActorId: 0 },
+                Status: DecisionDockStatus.Payment, Headline: "Pay the cost", ActorRole: DecisionDockActorRole.Paying, ActorId: 0, Surface: DecisionDockSurface.Workspace },
             "Source ability choice and subsequent payment remain required typed steps even when quiet pass intent was armed");
 
         var pendingCard = new Card { VisualId = "public-pending-source", Name = "Toothy, Imaginary Friend" };
@@ -131,16 +131,16 @@ internal static class DecisionDockPresentationChecks
         var processing = target with { Decision = null, DecisionOwnerId = null, PriorityPlayerId = null, ActionClass = "resolving", Stack = [pending],
             Activity = [new(1, 1, "MAIN1", "changed", 1, "Unrelated nearby activity", "unrelated", "Unrelated card")] };
         var processingView = DecisionDockPresentation.From(processing, auto);
-        check(processingView is { Status: DecisionDockStatus.Resolving, SourceCard: null, SourceCardId: "", DecisionId: "", ActorId: null }
+        check(processingView is { Status: DecisionDockStatus.Resolving, SourceCard: null, SourceCardId: "", DecisionId: "", ActorId: null, Surface: DecisionDockSurface.None }
             && processingView.Pending is { Id: "public-ability", Name: "Toothy, Imaginary Friend — draw ability", ControllerId: 2 }
             && DecisionDockPresentation.From(processing with { Id = "replacement-game", Stack = [], Activity = [] }, auto) is {
                 GameId: "replacement-game", SourceCard: null, Pending: null },
             "Leaving a decision drops its source and scope immediately; only the current public stack supplies pending context, never adjacent activity or a previous game");
 
         check(DecisionDockPresentation.From(priority with { ActionClass = "choice" }, auto).Status == DecisionDockStatus.Selection
-            && DecisionDockPresentation.From(priority, auto with { PauseReason = DecisionDockPauseReason.Recovery }).Status == DecisionDockStatus.Recovery
-            && DecisionDockPresentation.From(priority with { Status = "finished", Result = "Game finished" }, auto with { CommandBusy = true }).Status == DecisionDockStatus.Finished,
-            "A reported required choice, recovery or terminal snapshot takes precedence over stale auto permission and in-flight transport facts");
+            && DecisionDockPresentation.From(priority, auto with { PauseReason = DecisionDockPauseReason.Recovery }) is { Status: DecisionDockStatus.Recovery, Surface: DecisionDockSurface.Workspace }
+            && DecisionDockPresentation.From(priority with { Status = "finished", Result = "Game finished" }, auto) is { Status: DecisionDockStatus.Finished, Surface: DecisionDockSurface.Workspace },
+            "A reported required choice, recovery or terminal snapshot takes precedence over stale automatic permission");
     }
 
     private static void CheckTurnProgress(GameSnapshot state, Action<bool, string> check)

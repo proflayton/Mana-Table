@@ -46,7 +46,7 @@ internal static class DecisionDockInteractionChecks
         }
         try {
             Tick();
-            check(view.DecisionDock is { Status: DecisionDockStatus.Priority, PauseReason: DecisionDockPauseReason.PhaseStop, Caption: "Main 1 stop" }
+            check(view.DecisionDock is { Status: DecisionDockStatus.Priority, PauseReason: DecisionDockPauseReason.PhaseStop, Caption: "Main 1 stop", Surface: DecisionDockSurface.Portrait }
                     && frame.Hits.Any(hit => hit.Id == "resume-phase-stop") && replies.Count == 0,
                 "The production dock explains the saved Main 1 stop after the last land, with no automatic gameplay reply");
             var resume = frame.Hits.Single(hit => hit.Id == "resume-phase-stop");
@@ -56,12 +56,43 @@ internal static class DecisionDockInteractionChecks
             var saved = PlayPreferences.Load(directory);
             check(!saved.Stops.Contains("MAIN1") && saved.Stops.Contains("COMBAT_BEGIN")
                     && replies.Single() is AutoPassPriority pass && pass.GameId == game && pass.DecisionId == decision
-                    && view.DecisionDock is { Status: DecisionDockStatus.AutoPassing, PauseReason: DecisionDockPauseReason.None },
+                    && view.DecisionDock is { Status: DecisionDockStatus.AutoPassing, PauseReason: DecisionDockPauseReason.None, Surface: DecisionDockSurface.None },
                 "The explicit stop-removal gesture changes only that preference; Auto uses the original authorized decision rather than confirming a phase or choosing an attack");
-            engine.Present(engine.State with { Decision = null, DecisionOwnerId = 1, PriorityPlayerId = null, ActionClass = "selection", Status = "resolving" });
+            var autoBounds = frame.Hits.Single(hit => hit.Id == "auto").Bounds;
+            var holdBounds = frame.Hits.Single(hit => hit.Id == "hold").Bounds;
+            for (int index = 0; index < 6; index++) {
+                Tick();
+                check(view.Busy && view.DecisionDock?.Surface == DecisionDockSurface.None && NoTransportLabels(frame)
+                    && !frame.Hits.Any(hit => hit.Id is "confirm" or "cancel")
+                    && frame.Hits.Single(hit => hit.Id == "auto").Bounds == autoBounds
+                    && frame.Hits.Single(hit => hit.Id == "hold").Bounds == holdBounds && replies.Count == 1,
+                    "A delayed automatic reply retains quiet presentation and fixed timing controls without exposing the submitted priority again");
+            }
+            engine.Present(engine.State with { Decision = null, DecisionOwnerId = 1, PriorityPlayerId = 1, ActionClass = "priority" });
             release.TrySetResult();
+            Until(() => !view.Busy && view.Match is { Decision: null, PriorityPlayerId: 1 }, "The automatic batch reconciles the other player's actual priority");
+            check(view.DecisionDock is { Status: DecisionDockStatus.Waiting, ActorId: 1, Surface: DecisionDockSurface.None }
+                    && NoTransportLabels(frame) && replies.Count == 1
+                    && frame.Hits.Single(hit => hit.Id == "auto").Bounds == autoBounds
+                    && frame.Hits.Single(hit => hit.Id == "hold").Bounds == holdBounds,
+                "An ordinary responder handoff changes the public actor without opening another dock or moving the local timing controls");
+
+            var observation = new TaskCompletionSource<GameSnapshot?>(TaskCreationOptions.RunContinuationsAsynchronously);
+            engine.ObserveOverride = () => observation.Task;
+            var pollingLobby = new Lobby("local", "Controlled observation", null, false, null, true, "", null, [], []);
+            view.PresentLobby(pollingLobby, false); Tick(); view.PresentLobby(pollingLobby, true);
+            check(view.Polling && view.DecisionDock?.Surface == DecisionDockSurface.None && NoTransportLabels(frame),
+                "A fresh observation of the handoff introduces no transport attention state");
+            engine.Present(engine.State);
+            observation.SetResult(engine.State);
+            Until(() => !view.Polling, "The fresh handoff observation finishes through the shared client session");
+            check(view.DecisionDock is { ActorId: 1, Surface: DecisionDockSurface.None } && NoTransportLabels(frame) && replies.Count == 1,
+                "A revision-only observation preserves the quiet handoff and cannot resubmit its consumed local priority");
+            engine.ObserveOverride = null;
+            engine.Present(engine.State with { Decision = null, DecisionOwnerId = 1, PriorityPlayerId = null, ActionClass = "selection", Status = "resolving" });
+            view.Accept(engine.State); Tick();
             Until(() => !view.Busy && view.Match?.ActionClass == "selection", "The application reconciles the next required public choice");
-            check(replies.Count == 1 && view.DecisionDock is { Status: DecisionDockStatus.Waiting, ActorId: 1, ActorRole: DecisionDockActorRole.Choosing }
+            check(replies.Count == 1 && view.DecisionDock is { Status: DecisionDockStatus.Waiting, ActorId: 1, ActorRole: DecisionDockActorRole.Choosing, Surface: DecisionDockSurface.Workspace }
                     && !frame.Hits.Any(hit => hit.Id == "confirm"),
                 "The required choice returns control to its named owner and is never consumed or shown as a disabled local confirmation");
         } finally { release.TrySetResult(); }
@@ -69,6 +100,92 @@ internal static class DecisionDockInteractionChecks
         CheckPhaseChangeDuringPress(profile, initial, check);
         CheckInspection(profile, initial, check);
         CheckPortraitControls(profile, initial, check);
+        CheckInterruptedAdvance(profile, initial, check);
+    }
+
+    internal static bool NoTransportLabels(PresentationFrame frame) => !frame.Drawing.Commands.Any(command => command switch {
+        DrawCommand.Text text => IsTransportLabel(text.Value), DrawCommand.CenterText text => IsTransportLabel(text.Value), _ => false
+    });
+    private static bool IsTransportLabel(string? value) => value is "Passing" or "Auto passing" or "Passing for now" or "Passing paused" or "Action submitted";
+
+    private static void CheckInterruptedAdvance(string profile, GameSnapshot initial, Action<bool, string> check)
+    {
+        foreach (string interruption in new[] { "hold", "rejected", "lost-acknowledgement" }) {
+            string directory = Path.Combine(profile, "decision-dock-advance-" + interruption); Directory.CreateDirectory(directory);
+            new PlayPreferences { Automatic = true, ReducedMotion = true, Sounds = false, Stops = [] }.Save(directory);
+            var engine = new InteractionScenarioEngine(); engine.Present(initial);
+            var started = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            var recovery = new TaskCompletionSource<GameSnapshot?>(TaskCreationOptions.RunContinuationsAsynchronously);
+            int replies = 0;
+            engine.ReplyOverride = async command => {
+                if (command is not AutoPassPriority || Interlocked.Increment(ref replies) != 1)
+                    throw new InvalidOperationException("The interrupted Auto window must submit exactly one scoped pass");
+                started.TrySetResult(); await release.Task;
+                if (interruption == "rejected") throw new EngineCommandRejectedException("Controlled automatic rejection");
+                if (interruption == "lost-acknowledgement") {
+                    // The engine applied the pass, but its acknowledgement was
+                    // lost. Recovery must observe the actual handoff, not retry.
+                    engine.Present(engine.State with { Decision = null, DecisionOwnerId = 1, PriorityPlayerId = 1, ActionClass = "priority" });
+                    throw new IOException("Controlled lost acknowledgement");
+                }
+            };
+            using var app = new TableApplication(TestTableServices.For(engine), directory, initialState: engine.State) { Automated = true };
+            app.Initialize(); var view = app.TestPort;
+            view.PresentLobby(new("local", "Controlled interruption", null, false, null, true, "", null, [], []), true);
+            view.SetAutomatic(true);
+            double seconds = 0; PresentationFrame frame = null!;
+            void Tick(Point? pointer = null, ButtonState left = ButtonState.Released) {
+                seconds += 1.0 / 60; var point = pointer ?? new Point(20, 60);
+                app.Update(new(TimeSpan.FromSeconds(seconds), TimeSpan.FromSeconds(1.0 / 60)),
+                    new(point.X, point.Y, 0, left, default, default, default, default), new(), new(1600, 900));
+                frame = app.ReadPresentation();
+            }
+            void Until(Func<bool> ready, string message) {
+                var deadline = DateTime.UtcNow.AddSeconds(5);
+                while (!ready() && DateTime.UtcNow < deadline) { Tick(); Thread.Yield(); }
+                check(ready(), message);
+            }
+            string Actual() => $" Actual: dock={view.DecisionDock?.Status}/{view.DecisionDock?.Surface}/{view.DecisionDock?.PauseReason};"
+                + $" busy={view.Busy}; polling={view.Polling}; recovery={view.NeedsRecovery}; replies={replies}; error='{view.Error}';"
+                + " hits=" + string.Join(',', frame.Hits.Select(hit => hit.Id));
+            try {
+                Until(() => started.Task.IsCompleted, "The " + interruption + " journey holds a real automatic pass in flight");
+                check(view.Busy && view.DecisionDock?.Surface == DecisionDockSurface.None && NoTransportLabels(frame),
+                    "An in-flight pass has no transient attention surface before " + interruption);
+                if (interruption == "hold") {
+                    var hold = frame.Hits.Single(hit => hit.Id == "hold");
+                    Tick(hold.Bounds.Center, ButtonState.Pressed); Tick(hold.Bounds.Center);
+                    check(view.Held && view.Busy && !frame.Hits.Any(hit => hit.Id is "confirm" or "cancel") && NoTransportLabels(frame),
+                        "Hold takes effect during the delayed pass without exposing a stale priority action");
+                    engine.Present(engine.State with { Decision = initial.Decision! with { CanAutoPass = true } });
+                }
+                if (interruption == "lost-acknowledgement") engine.ObserveOverride = () => recovery.Task;
+                release.TrySetResult();
+                Until(() => !view.Busy, "The interrupted pass finishes its one serialized command");
+                for (int index = 0; index < 8; index++) Tick();
+                check(replies == 1 && NoTransportLabels(frame), "The " + interruption + " outcome never replays the pass or announces transport as game state");
+                if (interruption == "hold")
+                    check(view.DecisionDock is { Status: DecisionDockStatus.Priority, Surface: DecisionDockSurface.Portrait, PauseReason: DecisionDockPauseReason.Held }
+                            && frame.Hits.Any(hit => hit.Id == "confirm") && view.Match?.Decision?.Id == engine.State.Decision?.Id && view.Error.Length == 0,
+                        "After reconciliation Hold presents the actual new local priority and its current manual action." + Actual());
+                else if (interruption == "rejected")
+                    check(view.Error == "Controlled automatic rejection" && view.DecisionDock?.PauseReason == DecisionDockPauseReason.CommandFailure
+                            && view.DecisionDock.Status != DecisionDockStatus.AutoPassing,
+                        "An explicit rejection replaces automatic feedback with its retained action error without inventing a connection loss." + Actual());
+                else {
+                    check(view.Error == "Controlled lost acknowledgement" && view.NeedsRecovery
+                            && view.DecisionDock is { Status: DecisionDockStatus.Recovery, Surface: DecisionDockSurface.Workspace }
+                            && !frame.Hits.Any(hit => hit.Id is "confirm" or "cancel"),
+                        "An uncertain acknowledgement requires recovery until fresh observation and exposes no stale game action." + Actual());
+                    recovery.SetResult(engine.State);
+                    Until(() => !view.NeedsRecovery && !view.Polling, "A fresh authoritative observation reconciles the pass whose acknowledgement was lost");
+                    check(replies == 1 && view.Match?.PriorityPlayerId == 1 && view.DecisionDock is { Surface: DecisionDockSurface.None, ActorId: 1 }
+                            && NoTransportLabels(frame),
+                        "Recovery publishes the actual opponent handoff without replaying the uncertain pass." + Actual());
+                }
+            } finally { release.TrySetResult(); recovery.TrySetResult(engine.State); }
+        }
     }
 
     private static void CheckPortraitControls(string profile, GameSnapshot initial, Action<bool, string> check)

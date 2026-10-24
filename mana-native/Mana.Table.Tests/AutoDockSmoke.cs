@@ -28,8 +28,12 @@ internal sealed class AutoDockSmoke(TableWindow.Probe view, InteractionScenarioE
     private void Check(bool value, string message) { if (!value) throw new InvalidOperationException(message); checks.Add(message); }
     private void Publish(GameSnapshot state) { scenario.Present(state); view.Accept(scenario.State); }
     private void Next() { stage++; changed = view.Now; }
+    private bool NoTransportLabels() => !view.Frame!.Drawing.Commands.Any(command => command switch {
+        DrawCommand.Text text => TransportLabel(text.Value), DrawCommand.CenterText text => TransportLabel(text.Value), _ => false
+    });
+    private static bool TransportLabel(string? value) => value is "Passing" or "Auto passing" or "Passing for now" or "Passing paused" or "Action submitted";
     private static Color[] Dock(Texture2D surface) {
-        // The status region excludes the deliberate running dots below it.
+        // The former attention region stays quiet through routine processing.
         var area = RenderViewport.ForSurface(new(surface.Width, surface.Height), 900).ToSurface(new(1266, 726, 296, 80));
         var pixels = new Color[area.Width * area.Height];
         surface.GetData(0, area, pixels, 0, pixels.Length); return pixels;
@@ -51,7 +55,9 @@ internal sealed class AutoDockSmoke(TableWindow.Probe view, InteractionScenarioE
         switch (stage) {
             case 0: view.SetAutomatic(true); Next(); break;
             case 1:
-                Check(view.DecisionDock?.Status == DecisionDockStatus.AutoPassing && !view.Hits.Any(h => h.Id is "confirm" or "cancel"), "Engine-authorized empty automatic priority exposes no enabled gameplay action buttons");
+                Check(view.DecisionDock is { Status: DecisionDockStatus.AutoPassing, Surface: DecisionDockSurface.None }
+                    && NoTransportLabels() && !view.Hits.Any(h => h.Id is "confirm" or "cancel"),
+                    "Engine-authorized empty automatic priority keeps the attention surface quiet with no Passing label or gameplay action buttons");
                 if (quiet.Length == 0) {
                     quiet = Dock(surface); autoBounds = view.Hits.Single(hit => hit.Id == "auto").Bounds;
                     holdBounds = view.Hits.Single(hit => hit.Id == "hold").Bounds;
@@ -60,20 +66,23 @@ internal sealed class AutoDockSmoke(TableWindow.Probe view, InteractionScenarioE
                 Check(quiet.SequenceEqual(Dock(surface)), "An unchanged observer snapshot preserves the actual priority status pixels");
                 Publish(state with { Decision = null, Status = "resolving", ActionClass = "resolving", PriorityPlayerId = null, DecisionOwnerId = null }); Next(); break;
             case 2:
-                Check(view.DecisionDock is { Status: DecisionDockStatus.Resolving, Headline: "Resolving", ActorId: null }
+                Check(view.DecisionDock is { Status: DecisionDockStatus.Resolving, Headline: "Resolving", ActorId: null, Surface: DecisionDockSurface.None }
+                    && NoTransportLabels()
                     && !view.Hits.Any(hit => hit.Id is "confirm" or "cancel")
                     && view.Hits.Single(hit => hit.Id == "auto").Bounds == autoBounds && view.Hits.Single(hit => hit.Id == "hold").Bounds == holdBounds,
-                    "An authoritative resolving state changes its explanation while retaining playback control positions and no gameplay action");
+                    "An authoritative resolving state retains quiet attention and playback control positions without a transport announcement");
                 Publish(state with { Status = "playing", ActionClass = "priority", PriorityPlayerId = 0, DecisionOwnerId = 0,
                     PhaseKey = "COMBAT_BEGIN", Decision = PresentationSmoke.Example().Decision }); Next(); break;
             case 3:
-                Check(view.DecisionDock is { Status: DecisionDockStatus.AutoPassing, ActorId: 0 }
+                Check(view.DecisionDock is { Status: DecisionDockStatus.AutoPassing, ActorId: 0, Surface: DecisionDockSurface.None }
+                    && NoTransportLabels()
                     && !view.Hits.Any(hit => hit.Id is "confirm" or "cancel"), "A new engine-authorized empty phase restores the actual local Auto state");
                 Check(view.Hits.Single(hit => hit.Id == "auto").Bounds == autoBounds && view.Hits.Single(hit => hit.Id == "hold").Bounds == holdBounds,
                     "Auto and Hold keep their positions between priority and processing states");
                 Publish(state with { Decision = state.Decision! with { CanAutoPass = false } }); Next(); break;
             case 4:
-                Check(view.DecisionDock?.Status == DecisionDockStatus.Priority && view.Hits.Any(h => h.Id == "confirm"), "A response requiring attention immediately restores the real action control");
+                Check(view.DecisionDock is { Status: DecisionDockStatus.Priority, Surface: DecisionDockSurface.Portrait }
+                    && view.Hits.Any(h => h.Id == "confirm"), "A response requiring attention immediately restores the real action control");
                 Capture(surface, "02-auto-response");
                 Publish(state with { Decision = state.Decision! with { CanAutoPass = true } }); Next(); break;
             case 5:
@@ -86,15 +95,16 @@ internal sealed class AutoDockSmoke(TableWindow.Probe view, InteractionScenarioE
                 Check(ClickAccepted && view.Held, "Hold click survives a decision change between pointer press and release");
                 Publish(state with { Status = "playing", ActionClass = "priority", PriorityPlayerId = 0, DecisionOwnerId = 0, Decision = PresentationSmoke.Example().Decision }); Next(); break;
             case 8:
-                Check(view.Hits.Any(h => h.Id == "confirm"), "Hold exposes manual controls even for an empty priority window");
+                Check(view.DecisionDock is { Surface: DecisionDockSurface.Portrait } && view.Hits.Any(h => h.Id == "confirm"), "Hold exposes manual controls even for an empty priority window");
                 view.SetAutomatic(false); Next(); break;
             case 9:
-                Check(view.Hits.Any(h => h.Id == "confirm"), "Full control retains every manual priority window");
+                Check(view.DecisionDock is { Surface: DecisionDockSurface.Portrait } && view.Hits.Any(h => h.Id == "confirm"), "Full control retains every manual priority window");
                 view.SetAutomatic(true);
                 Publish(state with { Turn = state.Turn + 1, ActionClass = "block", PriorityPlayerId = null,
                     Decision = state.Decision! with { Intent = DecisionIntent.Block, CanAutoPass = false } }); Next(); break;
             case 10:
-                Check(!view.Held && view.Hits.Any(h => h.Id == "confirm"), "Auto presents blocking as a required decision immediately after a turn change");
+                Check(!view.Held && view.DecisionDock is { Status: DecisionDockStatus.Block, Surface: DecisionDockSurface.Workspace }
+                    && view.Hits.Any(h => h.Id == "confirm"), "Auto presents blocking as a required decision immediately after a turn change");
                 Capture(surface, "03-auto-blockers");
                 Check(scenario.Replies.Count == 0, "Dock rendering and playback controls never submit gameplay choices");
                 File.WriteAllText(Path.Combine(view.Profile, "auto-dock-results.json"), JsonSerializer.Serialize(checks, new JsonSerializerOptions { WriteIndented = true }));

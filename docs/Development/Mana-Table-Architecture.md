@@ -312,9 +312,13 @@ or proof that another rules engine can replace Forge.
 `DecisionDockPresentation` projects the current decision and public acting seat
 with explicit local control facts. The application shares its inspection/chat/
 interaction gate between Auto dispatch and the dock; a background observation
-does not become an action or pause. `ClientSession.IsAdvancing` distinguishes an
-automatic batch from an ordinary in-flight command. These presentation facts
-grant no permission: replies still require the current engine decision and token.
+does not become an action or pause. Transport flags are excluded from this
+projection: an in-flight reply cannot replace the actual prompt with a submitted
+or passing announcement. Its explicit surface is quiet for routine automatic
+priority, beside the portrait for manual responses and bounded pass intent, and
+a workspace for required choices. Another seat's required workspace can coexist
+with the local Take control action. These presentation facts grant no permission:
+replies still require the current engine decision and token.
 It can initialize, update and compose with no `Game`, window or graphics device.
 
 The portrait turn controls shipped in 0.2.83 consume these same facts and shared

@@ -359,8 +359,10 @@ and the preference clears when your next turn starts. Hold overrides it immediat
 Triggered abilities happen automatically; answer any choices the game presents.
 For a player choice, a named recipient panel keeps the source, controller and
 purpose visible. Choose an offered name or highlighted portrait. The decision
-dock distinguishes your choice, your priority, another player's action and
-resolution; a submitted action remains acknowledged while the engine responds.
+dock distinguishes your choice, your priority and another player's required
+action. Routine automatic passes and engine replies do not open a temporary
+Passing or Action submitted panel. Auto stays beside your portrait; required
+choices, real responses and errors still appear when they need attention.
 Spells keep their source, pending effect and recipients together. Match history
 retains the public events.
 The source version names the acting player and shows why Auto is paused.
@@ -371,6 +373,9 @@ public action or turn change returns control. Take control cancels that ongoing
 intent. A single priority pass answers only the current window. Targets, library
 searches and mana payment stay at their source/decision surfaces and need their
 own answers. Moving these controls grants no permission to make those choices.
+Pass for now keeps its label and Take control position through routine handoffs
+and pauses while reading. Another player's required choice does not hide that
+cancellation control.
 Results and exact counter increments appear beside their recipients. Public
 departures move toward the actual pile; Recent changes retains further details.
 Resolution feedback distinguishes resolved and did not resolve. Draw and shuffle

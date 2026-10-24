@@ -35,6 +35,9 @@ does not establish that a person can understand or use the screen.
    likely artwork; prioritize visible and inspected cards. A background observation
    should not flicker, disable or move an unchanged control. Retain local intent
    and revalidate its exact engine permission before commitment.
+   Routine passing is a mode, not a repeating announcement. Keep timing controls
+   steady through requests and observations; reserve new attention surfaces for
+   real responses, required choices and failures.
 5. **Let the engine describe the game.** Use authoritative current characteristics,
    action handles and decision constraints. A list intended for auto-pass is not
    a complete action catalog. Simplify presentation without inventing availability,
@@ -78,6 +81,23 @@ does not establish that a person can understand or use the screen.
     Pairing guidance comes from the engine. Saving, saved, failed persistence
     and deck legality are separate facts; returning to Play must not require a
     second confirmation of edits already acknowledged by storage.
+
+## Quiet priority handoffs: 23 October 2026
+
+**Source candidate; human review pending.** Player feedback identified jarring
+passing frames. Routine handoffs changed a headline and portrait animation,
+added a Passing row, and could move feedback into the decision workspace.
+Cancelling an automatic batch could briefly substitute Action submitted for
+the real prompt while its reply was still being reconciled.
+
+The candidate separates attention from transport. Auto remains a stable portrait
+mode; routine priority and processing add no announcement. An explicit Pass for
+now keeps its heading and Take control position through other-seat priority,
+polls and temporary inspection pauses. Required choices and real responses still
+surface immediately. A small steady priority token identifies the actual
+responder; strong emphasis remains for stack interaction or local attention.
+Ignored-ability Undo remains reachable. No permission, command timing or game
+state is inferred from this quieter presentation.
 
 ## Prepared spells and paired decks: 23 October 2026
 

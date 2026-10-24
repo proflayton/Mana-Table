@@ -179,8 +179,13 @@ The existing presentation run includes `DecisionDockPresentationChecks` and the
 scoped authored `DecisionFlowLabChecks`. The production headless run includes
 `DecisionDockInteractionChecks`: an actual stop-removal gesture clears only that
 saved stop, dispatches an authorized Auto pass and leaves another player's
-required choice unanswered. Reading a current card must pause both Auto and its
-visible status. `decision-flow.v1` supplies the corresponding window-review
+required choice unanswered. Reading a current card pauses dispatch without
+introducing a temporary priority surface. Delayed replies, fresh polls, Hold,
+rejection and uncertain acknowledgements exercise the real serialized command
+path. Quiet-pass controls retain their heading and position through handoffs;
+required local targets preempt them immediately. The existing `--smoke-auto-dock`
+window journey captures routine Auto, a real response and required blockers.
+`decision-flow.v1` supplies the corresponding window-review
 sequence; authored replies and passing checks do not supply rules or UX proof.
 
 The pending-effect journey in `--smoke-headless-presentation` distinguishes a

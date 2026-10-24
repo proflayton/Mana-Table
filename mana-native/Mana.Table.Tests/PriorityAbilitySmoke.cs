@@ -66,7 +66,9 @@ internal sealed class PriorityAbilitySmoke(TableWindow.Probe view, InteractionSc
         var resources = new Mana.Table.Presentation.PresentationResources {
             Artwork = faces => new(faces.Length, artworkReady ? faces.Length : 0, 0)
         };
-        using var app = new TableApplication(TestTableServices.For(scenario), directory, initialState: scenario.State, resources: resources) { Automated = true };
+        // This authored presentation fixture must never advance its engine.
+        using var app = new TableApplication(TestTableServices.For(scenario), directory, fixture: "priority-preference-frame",
+            initialState: scenario.State, resources: resources) { Automated = true };
         app.Initialize();
         var probe = app.TestPort;
         probe.PresentLobby(new("local", "Priority artwork handoff", null, false, null, true, "", null, [], []), pausePolling: true);
@@ -83,7 +85,26 @@ internal sealed class PriorityAbilitySmoke(TableWindow.Probe view, InteractionSc
         check(!probe.ActivityOpen && !probe.PreparingTableArtwork
             && ready.Controls.Any(hit => hit.Id == "ability-pass:mesa-fetch") && scenario.Replies.Count == 0,
             "Settling initial artwork reveals the existing single-ability preference without advancing gameplay");
-        File.WriteAllText(Path.Combine(directory, "frames.json"), JsonSerializer.Serialize(new { Loading = loading, Ready = ready },
+        var ignored = scenario.State.Decision!.PriorityAbilities.Single() with { IgnoredUntilNextTurn = true };
+        scenario.Present(scenario.State with { IgnoredPriorityAbilities = [ignored],
+            Decision = scenario.State.Decision! with { CanAutoPass = true, PriorityAbilities = [] } });
+        probe.Accept(scenario.State); probe.SetAutomatic(true); Tick(1.7);
+        var ignoredFrame = app.ReadPresentation();
+        check(probe.DecisionDock?.Surface == DecisionDockSurface.None
+                && ignoredFrame.Hits.Any(hit => hit.Id == "ability-undo:mesa-fetch"
+                    && hit.Intent is Mana.Table.Interaction.MatchIntent.SetPriorityAbility { Id: "mesa-fetch", Ignored: false })
+                && !ignoredFrame.Hits.Any(hit => hit.Id is "confirm" or "quiet-priority-stop") && scenario.Replies.Count == 0,
+            "An ignored ability retains its exact Undo control during a quiet automatic window without restoring a passing panel or submitting a command");
+        scenario.Present(scenario.State with { IgnoredPriorityAbilities = [ignored, ignored with { Id = "second-ignored-ability" }] });
+        probe.Accept(scenario.State); Tick(1.8);
+        var multipleIgnoredFrame = app.ReadPresentation();
+        check(probe.DecisionDock?.Surface == DecisionDockSurface.None
+                && multipleIgnoredFrame.Hits.Any(hit => hit.Id == "ability-auto-pass-open"
+                    && hit.Intent is Mana.Table.Interaction.MatchIntent.OpenPriorityPassing)
+                && scenario.Replies.Count == 0,
+            "Several ignored abilities retain their existing scoped Edit route while ordinary Auto keeps the decision dock quiet");
+        File.WriteAllText(Path.Combine(directory, "frames.json"), JsonSerializer.Serialize(new { Loading = loading, Ready = ready,
+            Ignored = ignoredFrame.Observe(), MultipleIgnored = multipleIgnoredFrame.Observe() },
             new JsonSerializerOptions { WriteIndented = true }));
     }
 

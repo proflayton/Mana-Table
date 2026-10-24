@@ -83,6 +83,9 @@ internal static class QuietPriorityPresentationChecks
         Tick(original.Bounds.Center);
         check(frame.Hits.Any(hit => hit.Id == "quiet-priority-stop") && engine.Replies.Count == 0 && view.Polling,
             "Clicking Pass for now during polling records local intent without interleaving an engine command");
+        check(view.DecisionDock?.Surface == DecisionDockSurface.Portrait && DecisionDockInteractionChecks.NoTransportLabels(frame)
+                && frame.Hits.Single(hit => hit.Id == "quiet-priority-stop").Bounds == original.Bounds,
+            "Arming during a delayed observation keeps one portrait surface and the same cancelable input target");
         Click("quiet-priority-stop");
         check(frame.Hits.Any(hit => hit.Id == original.Id) && engine.Replies.Count == 0,
             "Take control can cancel the local quiet intent before the observation returns");
@@ -126,6 +129,10 @@ internal static class QuietPriorityPresentationChecks
         var firstRelease = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var secondStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var secondRelease = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var thirdStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var thirdRelease = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var fourthStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var fourthRelease = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         int replying = 0, observationsAtReply = 0;
         engine.ReplyOverride = async reply => {
             reply.Validate();
@@ -136,6 +143,8 @@ internal static class QuietPriorityPresentationChecks
                 replies.Enqueue(reply); observationsAtReply = engine.Observations;
                 if (replies.Count == 1) { firstStarted.SetResult(); await firstRelease.Task; }
                 else if (replies.Count == 2) { secondStarted.SetResult(); await secondRelease.Task; }
+                else if (replies.Count == 3) { thirdStarted.SetResult(); await thirdRelease.Task; }
+                else if (replies.Count == 4) { fourthStarted.SetResult(); await fourthRelease.Task; }
                 else throw new InvalidOperationException("Quiet intent submitted an unexpected extra pass");
             } finally { Interlocked.Decrement(ref replying); }
         };
@@ -161,11 +170,28 @@ internal static class QuietPriorityPresentationChecks
             while (!ready() && view.Error.Length == 0 && DateTime.UtcNow < deadline) { Tick(); Thread.Yield(); }
             check(ready() && view.Error.Length == 0, description + (view.Error.Length > 0 ? ": " + view.Error : ""));
         }
+        bool HasText(string value) => frame.Drawing.Commands.Any(command => command switch {
+            DrawCommand.Text text => text.Value == value, DrawCommand.CenterText text => text.Value == value, _ => false
+        });
+        void Click(string id) {
+            var hit = frame.Hits.Single(candidate => candidate.Id == id);
+            Tick(hit.Bounds.Center, ButtonState.Pressed); Tick(hit.Bounds.Center);
+        }
         try {
             var arm = frame.Hits.Single(hit => hit.Id == "quiet-priority-arm").Bounds.Center;
             Tick(arm, ButtonState.Pressed); Tick(arm);
             Until(() => firstStarted.Task.IsCompleted, "Clicking Pass for now submits a real quiet pass despite an available instant");
-            for (int index = 0; index < 4; index++) Tick();
+            var takeControl = frame.Hits.Single(hit => hit.Id == "quiet-priority-stop");
+            var autoBounds = frame.Hits.Single(hit => hit.Id == "auto").Bounds;
+            var holdBounds = frame.Hits.Single(hit => hit.Id == "hold").Bounds;
+            void CheckQuietSurface(string description) => check(view.DecisionDock?.Surface == DecisionDockSurface.Portrait
+                    && HasText("Pass for now") && HasText("Take control") && DecisionDockInteractionChecks.NoTransportLabels(frame)
+                    && frame.Hits.Single(hit => hit.Id == "quiet-priority-stop").Bounds == takeControl.Bounds
+                    && frame.Hits.Single(hit => hit.Id == "auto").Bounds == autoBounds
+                    && frame.Hits.Single(hit => hit.Id == "hold").Bounds == holdBounds, description);
+            for (int index = 0; index < 4; index++) {
+                Tick(); CheckQuietSurface("A delayed quiet reply retains the same Pass for now surface and cancel control");
+            }
             check(view.Busy && !view.Polling && replies.Count == 1 && engine.Observations == observationsAtReply
                 && replies.Single() is PassForNow { DecisionId: var submittedDecision } && submittedDecision == initial.Decision!.Id
                 && frame.Hits.Any(hit => hit.Id == "quiet-priority-stop"),
@@ -183,6 +209,19 @@ internal static class QuietPriorityPresentationChecks
             check(replies.Count == 1 && frame.Hits.Any(hit => hit.Id == "quiet-priority-stop")
                 && view.Match!.Activity.Select(entry => entry.Kind).SequenceEqual(["moved", "draw"]),
                 "Other-seat priority and engine-marked routine draw history retain quiet intent without submitting that seat's decision");
+            CheckQuietSurface("An opponent priority handoff preserves the local Pass for now surface while reporting the actual responder");
+
+            var freshPoll = new TaskCompletionSource<GameSnapshot?>(TaskCreationOptions.RunContinuationsAsynchronously);
+            engine.ObserveOverride = () => freshPoll.Task;
+            var pollingLobby = new Lobby("local", "Controlled quiet observation", null, false, null, true, "", null, [], []);
+            view.PresentLobby(pollingLobby, false); Tick(); view.PresentLobby(pollingLobby, true);
+            check(view.Polling, "The armed quiet continuation holds an actual fresh observation after the opponent handoff");
+            CheckQuietSurface("The armed quiet surface stays in place while the fresh handoff observation is pending");
+            engine.Present(engine.State); freshPoll.SetResult(engine.State);
+            Until(() => !view.Polling, "The armed quiet observation reconciles its current authoritative snapshot");
+            CheckQuietSurface("A fresh revision with the same quiet permission preserves heading and control geometry");
+            engine.ObserveOverride = null;
+            view.PresentLobby(pollingLobby, false);
 
             engine.Present(engine.State with { Status = "playing", Decision = null, PriorityPlayerId = null, DecisionOwnerId = 1, ActionClass = "attack",
                 Phase = "Declare attackers", PhaseKey = "COMBAT_DECLARE_ATTACKERS", Combat = new([], [], null) });
@@ -198,6 +237,7 @@ internal static class QuietPriorityPresentationChecks
             check(sent.Length == 2 && sent[1].DecisionId == nextPrompt && sent[0].DecisionId != sent[1].DecisionId
                 && sent.All(reply => reply.GameId == initial.Id && reply is PassForNow { YieldToken: "continuation-token" }) && view.Busy && !view.Polling,
                 "Both scoped local windows use the same explicitly armed engine token despite retained routine draw history");
+            CheckQuietSurface("Returning to another local quiet window never swaps the stable intent for a Passing announcement");
 
             engine.Present(engine.State with { Stack = [new("Opponent spell", "An opponent cast a spell.", false, null) { Id = "new-public-spell" }],
                 Decision = engine.State.Decision! with { QuietYieldToken = "" },
@@ -208,8 +248,46 @@ internal static class QuietPriorityPresentationChecks
                 "A new stack object interrupts quiet passing and is reconciled through the application");
             for (int index = 0; index < 12; index++) Tick();
             check(replies.Count == 2 && view.Match?.Decision?.Id == responsePrompt && engine.State.Decision?.Id == responsePrompt
+                && view.DecisionDock?.Surface == DecisionDockSurface.Portrait
                 && frame.Hits.Any(hit => hit.Id == "confirm") && !frame.Hits.Any(hit => hit.Id == "quiet-priority-stop"),
                 "The new local response remains unanswered and manually available after quiet passing stops");
-        } finally { firstRelease.TrySetResult(); secondRelease.TrySetResult(); }
+
+            engine.Present(initial); view.Accept(engine.State); Tick();
+            Click("quiet-priority-arm");
+            Until(() => thirdStarted.Task.IsCompleted, "A newly armed quiet intent reaches its next real local pass");
+            var staleCancel = frame.Hits.Single(hit => hit.Id == "quiet-priority-stop");
+            var source = engine.State.Viewer!.Zone("Hand").Cards.Single();
+            engine.Present(engine.State with { PriorityPlayerId = null, DecisionOwnerId = initial.ViewerId, ActionClass = "selection",
+                Decision = new() { Kind = "input", Intent = DecisionIntent.Selection, Purpose = DecisionPurpose.TargetSelection,
+                    SourceCardId = source.VisualId, SourceCard = source, SourceControllerId = initial.ViewerId,
+                    Min = 1, Max = 1, Ok = "Confirm target", OkEnabled = false,
+                    Message = "Choose one legal creature for the required effect.", QuietYieldToken = "continuation-token" } });
+            string targetPrompt = engine.State.Decision!.Id;
+            thirdRelease.SetResult();
+            Until(() => !view.Busy && view.Match?.Decision?.Id == targetPrompt, "The quiet worker publishes the required target immediately instead of passing it");
+            check(view.DecisionDock is { Status: DecisionDockStatus.Target, Surface: DecisionDockSurface.Workspace, DecisionId: var shownTarget,
+                        SourceCardId: var shownSource, SourceCard: { Name: "Lightning Bolt" } }
+                    && shownTarget == targetPrompt && shownSource == source.VisualId
+                    && !frame.Hits.Any(hit => hit.Id is "quiet-priority-stop" or "quiet-priority-arm" or "confirm")
+                    && !view.Activate(staleCancel) && replies.Count == 3 && DecisionDockInteractionChecks.NoTransportLabels(frame),
+                "A mandatory target replaces quiet attention with its exact source and decision, revokes the old cancel hit, and stays unanswered");
+
+            engine.Present(initial); view.Accept(engine.State); Tick();
+            Click("quiet-priority-arm");
+            Until(() => fourthStarted.Task.IsCompleted, "The Take control journey holds one final scoped quiet pass in flight");
+            Click("quiet-priority-stop");
+            check(view.Busy && !frame.Hits.Any(hit => hit.Id is "quiet-priority-stop" or "confirm"),
+                "Take control cancels the intent during the delayed reply without exposing the already submitted priority");
+            engine.Present(initial); string controlledPrompt = engine.State.Decision!.Id;
+            fourthRelease.SetResult();
+            Until(() => !view.Busy && view.Match?.Decision?.Id == controlledPrompt, "Take control reconciles the command already sent before restoring input");
+            for (int index = 0; index < 8; index++) Tick();
+            check(replies.Count == 4 && view.DecisionDock?.Surface == DecisionDockSurface.Portrait
+                    && frame.Hits.Any(hit => hit.Id == "quiet-priority-arm") && !frame.Hits.Any(hit => hit.Id == "quiet-priority-stop")
+                    && DecisionDockInteractionChecks.NoTransportLabels(frame),
+                "Take control leaves the next eligible quiet window manual and never silently rearms or resubmits it");
+        } finally {
+            firstRelease.TrySetResult(); secondRelease.TrySetResult(); thirdRelease.TrySetResult(); fourthRelease.TrySetResult();
+        }
     }
 }

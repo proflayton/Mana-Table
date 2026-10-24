@@ -3,8 +3,9 @@ using Mana.Contracts;
 namespace Mana.Magic;
 
 public enum DecisionDockPauseReason { None, Manual, Held, PhaseStop, Inspection, Interaction, Overlay, Chat, CommandFailure, Recovery, Presentation, Preview }
-public enum DecisionDockStatus { Priority, AutoPassing, Target, Payment, AbilityChoice, Selection, Attack, Block, Waiting, Resolving, Preparing, Submitted, Recovery, Finished, Watching }
+public enum DecisionDockStatus { Priority, AutoPassing, Target, Payment, AbilityChoice, Selection, Attack, Block, Waiting, Resolving, Preparing, Recovery, Finished, Watching }
 public enum DecisionDockActorRole { None, Priority, Choosing, Paying, Attacking, Blocking }
+public enum DecisionDockSurface { None, Portrait, Workspace }
 
 // Local control facts must come from the same gate used by the update loop.
 // QuietCanPass is its current engine-token check, not a catalog of legal actions.
@@ -16,16 +17,17 @@ public sealed record DecisionDockControlFacts
     public DecisionDockPauseReason PauseReason { get; init; }
     public bool QuietArmed { get; init; }
     public bool QuietCanPass { get; init; }
-    public bool AutomaticAdvanceInFlight { get; init; }
-    public bool CommandBusy { get; init; }
-    // A background observation alone must not relabel or move a current action.
-    public bool ObservationPending { get; init; }
 }
 
 public sealed record DecisionDockView(DecisionDockStatus Status, DecisionDockPauseReason PauseReason,
     string Headline, string Caption, string Instruction, DecisionDockActorRole ActorRole,
     int? ActorId, string ActorName, string SourceCardId, Card? SourceCard, int? SourceControllerId,
-    string GameId, string DecisionId, string ActionLabel, PriorityStackEntry? Pending);
+    string GameId, string DecisionId, string ActionLabel, PriorityStackEntry? Pending)
+{
+    // A reported response window need not ask for attention. Transport activity
+    // cannot introduce a new surface or replace an authoritative decision.
+    public DecisionDockSurface Surface { get; init; } = DecisionDockSurface.Workspace;
+}
 
 // Describes the current authorized snapshot, never a future resolution or a
 // reason inferred from prompt prose/activity. Labels confer no command permission;
@@ -41,13 +43,31 @@ public static class DecisionDockPresentation
         var source = decision == null ? null : CardViews.Source(state, decision);
         string sourceId = source == null ? decision?.SourceCardId ?? "" : CardViews.Identity(source);
         var pause = Pause(state, controls);
+        bool normalPass = controls.Automatic && decision is { Kind: "input", Intent: DecisionIntent.Priority, CanAutoPass: true };
+        bool quietPass = controls.QuietArmed && controls.QuietCanPass && decision is { QuietYieldToken.Length: > 0 }
+            && state.Stack.Length == 0 && state.ActivePlayerId != state.ViewerId;
+        bool routinePriority = state.Status == "playing" && state.Turn > 0 && priority.CanPass && (normalPass || quietPass);
+        bool ambientPause = pause is DecisionDockPauseReason.None or DecisionDockPauseReason.Inspection
+            or DecisionDockPauseReason.Interaction or DecisionDockPauseReason.Overlay or DecisionDockPauseReason.Chat
+            or DecisionDockPauseReason.Presentation or DecisionDockPauseReason.Preview;
+
+        DecisionDockSurface Surface(DecisionDockStatus status, DecisionDockActorRole role) => status switch {
+            DecisionDockStatus.Priority when controls.QuietArmed => DecisionDockSurface.Portrait,
+            DecisionDockStatus.Priority when routinePriority && ambientPause => DecisionDockSurface.None,
+            DecisionDockStatus.Priority => DecisionDockSurface.Portrait,
+            DecisionDockStatus.AutoPassing or DecisionDockStatus.Resolving => controls.QuietArmed ? DecisionDockSurface.Portrait : DecisionDockSurface.None,
+            DecisionDockStatus.Waiting when role == DecisionDockActorRole.Priority => controls.QuietArmed ? DecisionDockSurface.Portrait : DecisionDockSurface.None,
+            _ => DecisionDockSurface.Workspace
+        };
 
         DecisionDockView View(DecisionDockStatus status, string headline, string caption = "", string instruction = "",
             DecisionDockActorRole role = DecisionDockActorRole.None, int? actor = null, string action = "",
             bool includeSource = true, DecisionDockPauseReason? reason = null)
             => new(status, reason ?? pause, headline, caption, instruction, role, actor, Name(state, actor),
                 includeSource ? sourceId : "", includeSource ? source : null,
-                includeSource ? decision?.SourceControllerId : null, state.Id, decision?.Id ?? "", action, priority.NextToResolve);
+                includeSource ? decision?.SourceControllerId : null, state.Id, decision?.Id ?? "", action, priority.NextToResolve) {
+                    Surface = Surface(status, role)
+                };
 
         if (priority.Phase == PriorityPhase.Finished)
             return View(DecisionDockStatus.Finished, state.Status == "finished" ? "Game over" : "Game stopped",
@@ -57,8 +77,6 @@ public static class DecisionDockPresentation
         if (state.Viewer?.Eliminated == true)
             return View(DecisionDockStatus.Watching, "Watching the table", "You have been eliminated",
                 includeSource: false, reason: DecisionDockPauseReason.None);
-        if (controls.CommandBusy && !controls.AutomaticAdvanceInFlight)
-            return View(DecisionDockStatus.Submitted, "Action submitted", "Waiting for the table");
         if (priority.Phase == PriorityPhase.Starting)
             return View(DecisionDockStatus.Preparing, "Preparing the table", includeSource: false);
         if (priority.Phase == PriorityPhase.Resolving)
@@ -70,11 +88,7 @@ public static class DecisionDockPresentation
                     : priority.ResponderName + " has priority", ArmedCaption(controls, pause),
                     role: DecisionDockActorRole.Priority, actor: priority.ResponderId, includeSource: false);
 
-            bool normalPass = controls.Automatic && decision is { Kind: "input", Intent: DecisionIntent.Priority, CanAutoPass: true };
-            bool quietPass = controls.QuietArmed && controls.QuietCanPass && decision is { QuietYieldToken.Length: > 0 }
-                && state.Stack.Length == 0 && state.ActivePlayerId != state.ViewerId;
-            bool autoPassing = state.Status == "playing" && state.Turn > 0 && priority.CanPass
-                && pause == DecisionDockPauseReason.None && (normalPass || quietPass);
+            bool autoPassing = routinePriority && pause == DecisionDockPauseReason.None;
             string caption = pause != DecisionDockPauseReason.None ? PauseCaption(state, controls, pause)
                 : controls.QuietArmed && !autoPassing ? "Quiet pass armed" : "";
             return View(autoPassing ? DecisionDockStatus.AutoPassing : DecisionDockStatus.Priority,
