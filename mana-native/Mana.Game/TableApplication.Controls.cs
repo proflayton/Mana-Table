@@ -28,6 +28,9 @@ internal sealed partial class TableApplication
         if (enabled) hits.Add(new(id, ScopeFor(action), bounds, action));
     }
 
+    private void Button(string id, string label, Rectangle bounds, UiIntent action, bool enabled = true, bool accent = false)
+        => Button(id, label, bounds.X, bounds.Y, bounds.Width, action, enabled, accent, bounds.Height);
+
     private void Button(string id, string label, int x, int y, int width, UiIntent action, bool enabled = true, bool accent = false, int height = 40, bool prominent = false)
     {
         var bounds = new Rectangle(x, y, width, height);

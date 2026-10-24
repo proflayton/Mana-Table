@@ -1,6 +1,7 @@
 using Mana.Magic;
 using Mana.Contracts;
 using Mana.Renderer;
+using Mana.Table.Presentation;
 using Microsoft.Xna.Framework;
 using Color = Microsoft.Xna.Framework.Color;
 using Rectangle = Microsoft.Xna.Framework.Rectangle;
@@ -78,16 +79,18 @@ internal sealed partial class TableApplication
 
         var active = state.Players.FirstOrDefault(p => p.Id == state.ActivePlayerId);
         string label = state.Turn == 0 ? "Opening hands" : state.ActivePlayerId == state.ViewerId ? "Your turn" : active?.Name ?? "Waiting";
-        canvas.Text(label, 220, 9, Ink, .85f, 410, 1, true);
-        canvas.Text($"Turn {state.Turn}  ·  {state.Phase}", 220, 32, Muted, .6f, 410, 1);
-        Button("battlefields", "Battlefields", 650, 12, 178, new MatchIntent.OpenBattlefields(), height: 35);
+        var turn = MatchHeaderLayout.Turn;
+        var phase = MatchHeaderLayout.Phase;
+        canvas.Text(label, turn.X, turn.Y, Ink, .85f, turn.Width, 1, true);
+        canvas.Text($"Turn {state.Turn}  ·  {state.Phase}", phase.X, phase.Y, Muted, .6f, phase.Width, 1);
+        Button("battlefields", "Battlefields", MatchHeaderLayout.Battlefields, new MatchIntent.OpenBattlefields());
         DrawTableStates(state);
         DrawChangesControl();
-        Button("history", "History", 1190, 12, 110, new MatchIntent.OpenView(MatchView.History), height: 35);
-        Button("settings", "Settings", 1310, 12, 112, new MatchIntent.OpenView(MatchView.Settings), height: 35);
+        Button("history", "History", MatchHeaderLayout.History, new MatchIntent.OpenView(MatchView.History));
+        Button("settings", "Settings", MatchHeaderLayout.Settings, new MatchIntent.OpenView(MatchView.Settings));
         bool departure = session.NeedsRecovery || state.Viewer?.Eliminated == true || state.Status == "error";
-        Button(departure ? "leave-table" : "concede", departure ? "Leave table" : "Concede", 1432, 12, 143,
-            new MatchIntent.OpenView(departure ? MatchView.LeaveTable : MatchView.Concede), !busy && state.Status != "finished", height: 35);
+        Button(departure ? "leave-table" : "concede", departure ? "Leave table" : "Concede", MatchHeaderLayout.Departure,
+            new MatchIntent.OpenView(departure ? MatchView.LeaveTable : MatchView.Concede), !busy && state.Status != "finished");
 
     }
     private void DrawHand()

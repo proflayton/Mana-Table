@@ -45,6 +45,9 @@ does not establish that a person can understand or use the screen.
    it leaves its source, then move that card through the stack into its current
    destination. Compact effect panels and closing a reader must not break that
    journey. Ability references do not move their source permanent.
+   Shared screen regions need one layout owner: multiplayer chat, recent changes
+   and table-state controls reserve separate header slots even when optional
+   features appear. Review them together, including enlarged text.
 5. **Let the engine describe the game.** Use authoritative current characteristics,
    action handles and decision constraints. A list intended for auto-pass is not
    a complete action catalog. Simplify presentation without inventing availability,
@@ -88,6 +91,19 @@ does not establish that a person can understand or use the screen.
     Pairing guidance comes from the engine. Saving, saved, failed persistence
     and deck legality are separate facts; returning to Play must not require a
     second confirmation of edits already acknowledged by storage.
+
+## Connected match header: 23 October 2026
+
+**Source candidate; human review pending.** Table chat covered Recent changes
+because separate features placed controls in the same header space. Table-state
+badges could also occupy that area. One shared header layout now reserves each
+control's space, including turn and phase text. Optional content does not move
+chat or cover another action. Agent review includes the connected four-player
+header and open chat at 1000 x 740 and 1540 x 980, with normal and enlarged text.
+The existing headless presentation suite exercises their combined presence and
+actual physical pointer access; it does not supply human UX acceptance.
+
+![Connected match header with chat, recent changes and table state visible together](images/native-connected-header-2026-10-23.png)
 
 ## Physical card play: 23 October 2026
 
