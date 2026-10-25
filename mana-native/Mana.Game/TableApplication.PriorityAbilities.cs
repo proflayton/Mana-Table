@@ -12,8 +12,8 @@ internal sealed partial class TableApplication
 
     private PriorityAbility[] PriorityAbilityOptions()
     {
-        if (match is not { } state || state.Status is not ("playing" or "resolving") || state.Decision is { Task: not DecisionTask.Priority }) return [];
-        return (state.Decision?.PriorityAbilities ?? []).Concat(state.IgnoredPriorityAbilities)
+        if (match is not { } state || state.Status is not ("playing" or "resolving") || state.Decision is { Payload: not PriorityPayload }) return [];
+        return ((state.Decision?.Payload as PriorityPayload)?.Abilities ?? []).Concat(state.IgnoredPriorityAbilities)
             .Where(a => !string.IsNullOrWhiteSpace(a.Id)).DistinctBy(a => a.Id).ToArray();
     }
 
@@ -22,8 +22,8 @@ internal sealed partial class TableApplication
         StopQuietPriority();
         if (match is not { } state || state.Status is not ("playing" or "resolving")) return;
         if (ignored) {
-            if (state.Decision is not { Task: DecisionTask.Priority } prompt
-                || !prompt.PriorityAbilities.Any(a => a.Id == ability.Id)) return;
+            if (state.Decision is not { Payload: PriorityPayload priority } prompt
+                || !priority.Abilities.Any(a => a.Id == ability.Id)) return;
             Send(new IgnorePriorityAbility(state.Id, prompt.Id, ability.Id));
         } else {
             if (!state.IgnoredPriorityAbilities.Any(a => a.Id == ability.Id)) return;

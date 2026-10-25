@@ -52,8 +52,7 @@ internal sealed class PriorityAbilitySmoke(TableWindow.Probe view, InteractionSc
         return state with { ActivePlayerId = 1, Phase = "Main phase", PhaseKey = "MAIN1", Combat = null, Stack = [],
             Players = state.Players.Select(p => p.Id != state.ViewerId ? p : p with { Zones = p.Zones.Select(z => z.Name == "Battlefield" ? z with { Count = 1, Cards = [mesa] }
                 : z.Name is "Hand" or "Command" ? z with { Count = 0, Cards = [] } : z).ToImmutableArray() }).ToImmutableArray(),
-            Decision = new() { Task = DecisionTask.Priority, OkEnabled = true, CanAutoPass = false, Cancel = "End Turn", CancelEnabled = true,
-                PriorityAbilities = [new("mesa-fetch", "mesa", "Arid Mesa", mesa.Text, false)] } };
+            Decision = new Decision("", new DecisionContext(), new PriorityPayload(new DecisionReply("Confirm", true), null, CanAutoPass: false, QuietYieldToken: "", Abilities: [new("mesa-fetch", "mesa", "Arid Mesa", mesa.Text, false)])) };
     }
 
     internal static void CheckArtworkHandoff(string profile, Action<bool, string> check)
@@ -77,7 +76,7 @@ internal sealed class PriorityAbilitySmoke(TableWindow.Probe view, InteractionSc
         Tick(.1); Tick(1.5);
         var loading = app.ReadPresentation().Observe();
         check(probe.ActivityOpen && probe.PreparingTableArtwork && !probe.Busy
-            && probe.Match?.Decision?.PriorityAbilities.Length == 1
+            && probe.Match?.Decision?.Payload is PriorityPayload { Abilities.Length: 1 }
             && !loading.Controls.Any(hit => hit.Id == "ability-pass:mesa-fetch"),
             "Pending initial artwork owns the priority frame even after the command connection becomes idle");
         artworkReady = true; Tick(1.6);
@@ -85,9 +84,9 @@ internal sealed class PriorityAbilitySmoke(TableWindow.Probe view, InteractionSc
         check(!probe.ActivityOpen && !probe.PreparingTableArtwork
             && ready.Controls.Any(hit => hit.Id == "ability-pass:mesa-fetch") && scenario.Replies.Count == 0,
             "Settling initial artwork reveals the existing single-ability preference without advancing gameplay");
-        var ignored = scenario.State.Decision!.PriorityAbilities.Single() with { IgnoredUntilNextTurn = true };
+        var ignored = ((PriorityPayload)scenario.State.Decision!.Payload).Abilities.Single() with { IgnoredUntilNextTurn = true };
         scenario.Present(scenario.State with { IgnoredPriorityAbilities = [ignored],
-            Decision = scenario.State.Decision! with { CanAutoPass = true, PriorityAbilities = [] } });
+            Decision = scenario.State.Decision! with { Payload = ((PriorityPayload)(scenario.State.Decision!).Payload) with { CanAutoPass = true, Abilities = [] } } });
         probe.Accept(scenario.State); probe.SetAutomatic(true); Tick(1.7);
         var ignoredFrame = app.ReadPresentation();
         check(probe.DecisionDock?.Surface == DecisionDockSurface.None
@@ -118,12 +117,12 @@ internal sealed class PriorityAbilitySmoke(TableWindow.Probe view, InteractionSc
             case 0:
                 view.SetAutomatic(true); view.SetHeld(true);
                 Check(view.Hits.Any(h => h.Id == "ability-pass:mesa-fetch"), "A single activated ability offers pass-until-my-next-turn beside priority");
-                Check(!state.Decision!.CanAutoPass, "Arid Mesa initially prevents automatic passing");
+                Check(state.Decision?.Payload is PriorityPayload { CanAutoPass: false }, "Arid Mesa initially prevents automatic passing");
                 Press("ability-pass:mesa-fetch"); Next(); break;
             case 1: Capture(surface, "01-ability-available"); Release(); Next(); break;
             case 2:
                 Check(ClickAccepted && scenario.Replies is [IgnorePriorityAbility { AbilityId: "mesa-fetch" }], "The contextual control submits only the selected ability preference");
-                Check(state.Decision!.CanAutoPass && state.IgnoredPriorityAbilities is [{ Id: "mesa-fetch", IgnoredUntilNextTurn: true }], "Engine-authorized Auto becomes eligible after ignoring the sole response");
+                Check(state.Decision?.Payload is PriorityPayload { CanAutoPass: true } && state.IgnoredPriorityAbilities is [{ Id: "mesa-fetch", IgnoredUntilNextTurn: true }], "Engine-authorized Auto becomes eligible after ignoring the sole response");
                 Check(view.Automatic && view.Held && view.Hits.Any(h => h.Id == "confirm"), "Hold continues to expose manual priority after an ability is ignored");
                 Check(view.Hits.Any(h => h.Id == "ability-undo:mesa-fetch"), "The temporary preference has a visible Undo control");
                 Capture(surface, "02-ability-ignored-held");
@@ -138,7 +137,7 @@ internal sealed class PriorityAbilitySmoke(TableWindow.Probe view, InteractionSc
                 Check(scenario.Replies[^1] is RestorePriorityAbility, "Undo uses the match preference command rather than a gameplay decision");
                 Check(scenario.Replies.Count == 2 && state.Decision == null, "Changing the preference never activates the card or advances a decision");
                 var example = Example();
-                Publish(example with { Decision = example.Decision! with { PriorityAbilities = [example.Decision.PriorityAbilities[0], new("mesa-second", "mesa", "Arid Mesa", "A second independent ability on the same card.", false)] } });
+                Publish(example with { Decision = example.Decision! with { Payload = ((PriorityPayload)(example.Decision!).Payload) with { Abilities = [((PriorityPayload)example.Decision.Payload).Abilities[0], new("mesa-second", "mesa", "Arid Mesa", "A second independent ability on the same card.", false)] } } });
                 view.SetHeld(true); Next(); break;
             case 6:
                 Check(view.Hits.Any(h => h.Id == "ability-auto-pass-open"), "Multiple abilities open individual choices instead of a card-wide ignore");
@@ -153,7 +152,7 @@ internal sealed class PriorityAbilitySmoke(TableWindow.Probe view, InteractionSc
                 Press("ability-pass:mesa-second"); Next(); break;
             case 11: Release(); Next(); break;
             case 12:
-                Check(state.IgnoredPriorityAbilities is [{ Id: "mesa-second" }] && !state.Decision!.CanAutoPass, "Ignoring one ability does not suppress another ability on the same card");
+                Check(state.IgnoredPriorityAbilities is [{ Id: "mesa-second" }] && state.Decision?.Payload is PriorityPayload { CanAutoPass: false }, "Ignoring one ability does not suppress another ability on the same card");
                 Check(view.Hits.Any(h => h.Id == "confirm"), "Another available response still stops Auto");
                 var mesaHit = view.Hits.First(h => h.Card?.VisualId == "mesa" && h.Zone == "Battlefield");
                 Check(mesaHit.Card!.Selectable && CardActions.CanActivate(state, mesaHit.Card), "An ignored source remains available for manual activation");
@@ -162,14 +161,14 @@ internal sealed class PriorityAbilitySmoke(TableWindow.Probe view, InteractionSc
             case 13: Release(); Next(); break;
             case 14:
                 if (view.DisplayedPose("mesa") is not { Size.X: >= 400 } || !view.Hits.Any(hit => hit.Id == "read-card-action")) return;
-                Check(scenario.Replies.Count == 3 && state.Decision is { Task: DecisionTask.Priority }
+                Check(scenario.Replies.Count == 3 && state.Decision is { Payload: PriorityPayload }
                     && state.IgnoredPriorityAbilities is [{ Id: "mesa-second" }],
                     "Reading the ignored source sends no gameplay reply and preserves its independent ability preference");
                 Press("read-card-action"); Next(); break;
             case 15: Release(); Next(); break;
             case 16:
                 Check(scenario.Replies[^1] is ActivateCard reply && reply.GameId == manualGame
-                    && reply.DecisionId == manualDecision && reply.Card == manualCard && state.Decision is { Task: DecisionTask.AbilityChoice },
+                    && reply.DecisionId == manualDecision && reply.Card == manualCard && state.Decision is { Payload: AbilityChoicePayload },
                     "Explicit manual activation opens the normal ability chooser with the exact current game, decision and card scope");
                 var nextTurn = Example();
                 Publish(nextTurn with { Turn = nextTurn.Turn + 1, ActivePlayerId = nextTurn.ViewerId, IgnoredPriorityAbilities = [] }); Next(); break;

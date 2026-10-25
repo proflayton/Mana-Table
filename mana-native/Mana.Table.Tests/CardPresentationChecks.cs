@@ -91,7 +91,7 @@ internal static class CardPresentationChecks
         // Revealed choices have no persistent card id. Their authority is the
         // original decision slot, including when an obsolete face is clicked.
         var anonymous = new Card { Name = "Revealed face" };
-        var revealState = state with { Decision = new() { Id = "reveal-1", Task = DecisionTask.Reveal, Choices = [new(0, "Reveal", anonymous)] } };
+        var revealState = state with { Decision = new Decision("reveal-1", new DecisionContext(), new RevealPayload([new(null, "Reveal", anonymous)])) };
         var reveal = context with { State = revealState, Scope = "table:reveal-1", OverlayOpen = true, GalleryOpen = true };
         var choiceRequest = new CardPresentationRequest("choice-face:reveal-1:0", anonymous,
             new(new(650, 450), new(120, 168)), "Choice", null, "choice:0", UiIntent.None, ChoiceSlot: 0);
@@ -154,8 +154,7 @@ internal static class CardPresentationChecks
     private static void OpeningHandReading(Action<bool, string> check)
     {
         var card = new Card { Key = "opening-card", VisualId = "opening-face", Name = "Forest", Type = "Basic Land" };
-        var state = Snapshot(card) with { Turn = 0, Decision = new() { Id = "keep-hand", Task = DecisionTask.OpeningHand,
-            OkEnabled = true, CancelEnabled = true } };
+        var state = Snapshot(card) with { Turn = 0, Decision = new Decision("keep-hand", new DecisionContext(), new OpeningHandPayload(new DecisionReply("Confirm", true), new DecisionReply("Cancel", true), null)) };
         var context = new CardPresentationContext(state, "keep-hand", false, false, false, false);
         var owner = new CardPresentationController();
 
@@ -174,7 +173,7 @@ internal static class CardPresentationChecks
 
         var bottomCard = card with { Key = "current-bottom-card", Selectable = true };
         var bottom = context with { Scope = "bottom-hand", CompactDecision = true, State = state with { Players = Snapshot(bottomCard).Players,
-            Decision = state.Decision! with { Id = "bottom-hand", Task = DecisionTask.EntitySelection } } };
+            Decision = state.Decision! with { Id = "bottom-hand", Payload = new EntitySelectionPayload(new("Confirm", false), new("Cancel", false), [], new(1, 1)) } } };
         owner.BeginFrame(bottom, null, .016f, true);
         var candidate = owner.Prepare(request with { Card = bottomCard }); owner.EndFrame();
         var selection = new InteractionController().CardClick(bottom.State!, bottomCard);
@@ -192,7 +191,7 @@ internal static class CardPresentationChecks
         var otherZone = owner.Prepare(request with { Zone = "Command" }); owner.EndFrame();
         check(!owner.Toggle(otherZone.Hit, context),
             "The opening-hand reader exception does not extend to other zones during a general engine decision");
-        var unknown = context with { State = state with { Decision = state.Decision! with { Task = DecisionTask.Confirmation } } };
+        var unknown = context with { State = state with { Decision = state.Decision! with { Payload = new ConfirmationPayload(new("Confirm", true)) } } };
         owner.BeginFrame(unknown, null, .016f, true);
         var otherPrompt = owner.Prepare(request); owner.EndFrame();
         check(!owner.Toggle(otherPrompt.Hit, unknown),
@@ -202,14 +201,13 @@ internal static class CardPresentationChecks
     private static void ProviderNeutralReading(Action<bool, string> check)
     {
         var top = new Card { Key = "offered-top-key", VisualId = "disclosed-top", Name = "A disclosed source", Selectable = true };
-        foreach (bool capability in new[] { false, true })
-        foreach (var intent in new[] { DecisionTask.Priority, DecisionTask.Payment })
+        foreach (var payload in new DecisionPayload[] { new PriorityPayload(new("Confirm", false)), new PaymentPayload(new("Confirm", false), new("Cancel", false)) })
         foreach (string zone in new[] { "Library", "Disclosed reserve" }) {
             var state = Snapshot(top);
             state = state with { Players = [state.Viewer! with { Zones = [new(zone, 10, [], top)] }],
-                Decision = state.Decision! with { Task = intent } };
+                Decision = state.Decision! with { Payload = payload } };
             var context = new CardPresentationContext(state, state.Id + ":" + state.Decision!.Id,
-                false, false, false, false, SourceActions: capability);
+                false, false, false, false);
             var owner = new CardPresentationController();
 
             var request = new CardPresentationRequest(top.VisualId, top, new(new(700, 300), new(80, 112)),
@@ -218,17 +216,16 @@ internal static class CardPresentationChecks
             var entry = owner.Prepare(request); owner.EndFrame();
             check(entry.Hit.Zone == zone && ReferenceEquals(context.CurrentOccurrence(entry), top) && context.CanRead(entry)
                     && owner.Toggle(entry.Hit, context),
-                $"A disclosed {zone} top is readable during {intent} independently of action-query capability ({capability}), without committing input");
+                $"A disclosed {zone} top is readable during {payload.GetType().Name} without an action-query capability or committing input");
             var revoked = context with { State = state with { Players = [state.Viewer! with { Zones = [new(zone, 10, [], null)] }],
-                Decision = state.Decision with { SourceCard = top, SourceCardId = top.VisualId } } };
+                Decision = state.Decision with { Context = state.Decision.Context with { Source = new DecisionSource(top.VisualId, top, state.Decision.Context.Source?.ControllerId, (state.Decision.Context.Source?.Zone ?? "")) } } } };
             owner.BeginFrame(revoked, null, .016f, true); owner.EndFrame();
             check(!owner.HasPinnedCard && !revoked.CanRead(entry) && revoked.CurrentOccurrence(entry) == null,
                 "A retained historical source cannot restore a reader after its actual disclosed top/location disappears");
         }
 
         var ability = Snapshot(top);
-        ability = ability with { Decision = new() { Id = "ability-with-preview", Task = DecisionTask.AbilityChoice, Min = 1, Max = 1, SourceCard = top, SourceCardId = top.VisualId,
-            Choices = [new(17, "Use the offered ability", top) { CardId = top.VisualId, PlayerId = 0 }] } };
+        ability = ability with { Decision = new Decision("ability-with-preview", new DecisionContext(Source: new DecisionSource(CardId: top.VisualId, Card: top, ControllerId: 0)), new AbilityChoicePayload(new ChoiceSelection([new(17, "Use the offered ability", top) { CardId = top.VisualId }], new SelectionRange(1, 1), []))) };
         check(!TableChoices.IsDirect(ability)
                 && DecisionDockPresentation.From(ability, new()).Status == DecisionDockStatus.AbilityChoice,
             "Explicit ability-selection semantics retain their interaction route when a provider supplies card/player preview metadata");
@@ -252,30 +249,31 @@ internal static class CardPresentationChecks
             && AllocationGuide.Abilities(current with { States = [] }) == "",
             "Allocation state preserves effective ability qualifiers and explicit removal instead of reviving legacy keyword hints");
 
-        var choice = new Choice(37, "Choose this recipient", reported) { CardId = current.VisualId, Id = "recipient-7", Minimum = 1, Maximum = 7, Lethal = 4 };
-        var decision = new Decision { Id = "allocation-current", Task = DecisionTask.Allocation, Amount = 7,
-            SourceCardId = current.CombatId, SourceCard = reported, Choices = [choice] };
+        var recipient = new AllocationRecipient(37, "recipient-7", "Choose this recipient", reported, current.VisualId, null, null, null, 1, 7, 4);
+        var decision = new Decision("allocation-current", new DecisionContext(Source: new DecisionSource(CardId: current.CombatId, Card: reported)), new AllocationPayload(7, AllocationKind.Generic, "", false, [recipient]));
         var prompt = state with { Decision = decision };
         var reply = AllocationGuide.Reply(prompt, [7]);
-        check(ReferenceEquals(CardViews.Choice(prompt, choice), current)
+        check(ReferenceEquals(CardViews.Recipient(prompt, recipient), current)
             && ReferenceEquals(CardViews.Source(prompt, decision), current)
-            && ReferenceEquals(choice.Card, reported) && ReferenceEquals(decision.SourceCard, reported)
-            && choice is { Index: 37, Id: "recipient-7", Minimum: 1, Maximum: 7, Lethal: 4 }
+            && ReferenceEquals(recipient.Card, reported) && ReferenceEquals(decision.Context.Source?.Card, reported)
+            && recipient is { Index: 37, Id: "recipient-7", Minimum: 1, Maximum: 7, Lethal: 4 }
             && reply is AllocateAmounts { DecisionId: "allocation-current" } && reply.Amounts!.SequenceEqual([7]),
             "Current source and recipient display leaves original prompt indexes, handles, thresholds and scoped allocation commands intact");
 
         var anonymous = new Card { Name = reported.Name, Type = "Creature", Power = 3, Toughness = 3 };
         var removed = reported with { VisualId = "reported-only", CombatId = "reported-combat" };
+        var linkedOption = new Choice(37, recipient.Label, null) { CardId = current.VisualId };
         check(ReferenceEquals(CardViews.Current(state, anonymous), anonymous)
             && ReferenceEquals(CardViews.Current(state, removed), removed)
-            && ReferenceEquals(CardViews.Choice(state, choice with { Card = null }), current),
+            && ReferenceEquals(CardViews.Choice(state, linkedOption), current),
             "Same-name and anonymous reported faces are never rebound by name, while an explicit engine occurrence link can supply a currently disclosed face");
 
         var masked = current with { FaceDown = true, Name = "Face-down card", ArtName = "", Text = "", OtherFace = null,
             Power = 2, Toughness = 2, Counters = ImmutableDictionary<string, int>.Empty.Add("stun", 1) };
+        var disclosure = new LibraryChoice(null, recipient.Label, reported) { CardId = current.VisualId };
         var hidden = prompt with { Players = Snapshot(masked, otherCopy).Players,
-            Decision = decision with { Task = DecisionTask.Reveal, Choices = [choice] } };
-        var hiddenDisplay = CardViews.Choice(hidden, choice)!;
+            Decision = decision with { Payload = new RevealPayload([disclosure]) } };
+        var hiddenDisplay = CardViews.Disclosed(hidden, disclosure);
         var context = new CardPresentationContext(hidden, "current:reveal", true, true, false, false);
         check(ReferenceEquals(hiddenDisplay, masked) && context.ChoiceFace(0) is { FaceDown: true }
             && CardPresentation.Artwork(hiddenDisplay) == null && hiddenDisplay.Power == 2
@@ -286,5 +284,5 @@ internal static class CardPresentationChecks
     private static GameSnapshot Snapshot(params Card[] hand) => new("card-presentation", "playing", null, null,
         0, 1, "Main phase", "MAIN1", 0,
         [new(0, "You", 40, true, false, ImmutableDictionary<string, int>.Empty, [new("Hand", hand.Length, hand.ToImmutableArray(), null)])], [], null,
-        new() { Id = "priority", Task = DecisionTask.Priority });
+        new Decision("priority", new DecisionContext(), new PriorityPayload(new DecisionReply("Confirm", false), null, CanAutoPass: false, QuietYieldToken: "", Abilities: [])));
 }

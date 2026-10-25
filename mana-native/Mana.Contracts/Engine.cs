@@ -126,11 +126,6 @@ public sealed record Lobby(string Mode, string Status, string? Error, bool CanSt
     public ImmutableArray<AiOpponent> AiOpponents { get; init; } = [];
     public TempoSettings? Tempo { get; init; }
 }
-// One rules-owned task selects the interaction and the commands it may accept.
-// Provider prompt/class names never cross the game boundary.
-public enum DecisionTask { Unspecified, Priority, OpeningHand, Payment, Attack, Block,
-    TargetSelection, EntitySelection, Confirmation, AbilityChoice, Options, Ordering, Reveal, Number, Text, Allocation }
-public enum PriorityAlternative { None, UndoLastAction, PassTurn }
 public sealed record Card
 {
     public string Key { get; init; } = "";
@@ -199,27 +194,34 @@ public sealed record Player(int Id, string Name, int Life, bool Priority, bool E
 public sealed record CommanderDamage(string Name, int OwnerId, string Owner, int Damage);
 public sealed record Choice(int Index, string Label, Card? Card)
 {
+    private string label = DecisionValue.Text(Label), cardId = "", detail = "", mana = "";
+    public string Label { get => label; init => label = DecisionValue.Text(value); }
     // Optional link to an occurrence already visible on the table; never a card name.
-    public string CardId { get; init; } = "";
-    public string Detail { get; init; } = "";
-    public string Mana { get; init; } = "";
-    public string Id { get; init; } = "";
-    public int? PlayerId { get; init; }
-    public int? ControllerId { get; init; }
-    public int? OwnerId { get; init; }
-    public int? Minimum { get; init; }
-    public int? Maximum { get; init; }
-    // Required combat assignment before damage may be assigned to the defender.
-    // This is an engine threshold, not a prediction that the recipient dies.
-    public int? Lethal { get; init; }
-    public bool IsDefender { get; init; }
+    public string CardId { get => cardId; init => cardId = DecisionValue.Text(value); }
+    public string Detail { get => detail; init => detail = DecisionValue.Text(value); }
+    public string Mana { get => mana; init => mana = DecisionValue.Text(value); }
 }
-public sealed record LibraryChoice(int? Index, string Label, Card Card);
+public sealed record LibraryChoice(int? Index, string Label, Card Card)
+{
+    private string label = DecisionValue.Text(Label), cardId = "";
+    private Card card = DecisionValue.Required(Card, nameof(Card));
+    public string Label { get => label; init => label = DecisionValue.Text(value); }
+    public Card Card { get => card; init => card = DecisionValue.Required(value, nameof(Card)); }
+    // Public occurrence only; this never grants a selection or play handle.
+    public string CardId { get => cardId; init => cardId = DecisionValue.Text(value); }
+}
 // Handles identify individual engine-owned abilities, never every ability on a card.
 public sealed record PriorityAbility(string Id, string SourceCardKey, string SourceName, string Text, bool IgnoredUntilNextTurn)
 {
+    private string id = DecisionValue.Text(Id), sourceCardKey = DecisionValue.Text(SourceCardKey),
+        sourceName = DecisionValue.Text(SourceName), text = DecisionValue.Text(Text);
+    private ImmutableArray<string> eligibleHandKeys = [];
+    public string Id { get => id; init => id = DecisionValue.Text(value); }
+    public string SourceCardKey { get => sourceCardKey; init => sourceCardKey = DecisionValue.Text(value); }
+    public string SourceName { get => sourceName; init => sourceName = DecisionValue.Text(value); }
+    public string Text { get => text; init => text = DecisionValue.Text(value); }
     // Exact current-prompt handles from the actor's hand, supplied by Forge.
-    public ImmutableArray<string> EligibleHandKeys { get; init; } = [];
+    public ImmutableArray<string> EligibleHandKeys { get => eligibleHandKeys; init => eligibleHandKeys = DecisionValue.Items(value); }
     public int HandPlacementLimit { get; init; } = 1;
 }
 // Planned effect facts copied by the engine before target selection. Amount is
@@ -241,49 +243,6 @@ public sealed record CounterAddition
     public ImmutableArray<CounterIncrement> Counters { get; init; } = [];
 }
 public sealed record CounterIncrement(string Type, string Label, int Added);
-public sealed record Decision
-{
-    public string Id { get; init; } = "";
-    public DecisionTask Task { get; init; }
-    public PriorityAlternative PriorityAlternative { get; init; }
-    public string Message { get; init; } = "";
-    public string Ok { get; init; } = "Confirm";
-    public string Cancel { get; init; } = "Cancel";
-    public bool OkEnabled { get; init; }
-    public bool CancelEnabled { get; init; }
-    public bool CanAutoPass { get; init; }
-    // Separate, engine-owned permission for an explicitly chosen quiet-window yield.
-    // Empty on legacy engines, responses to a stack item, and required decisions.
-    public string QuietYieldToken { get; init; } = "";
-    public ImmutableArray<PriorityAbility> PriorityAbilities { get; init; } = [];
-    public ImmutableArray<int> PlayerChoices { get; init; } = [];
-    public ImmutableArray<Choice> Choices { get; init; } = [];
-    public int Min { get; init; }
-    public int Max { get; init; }
-    public bool Ordered => Task == DecisionTask.Ordering;
-    public bool AtLeastOne { get; init; }
-    public bool MaySkip { get; init; }
-    public int Amount { get; init; }
-    public ImmutableArray<int> Limits { get; init; } = [];
-    public string AllocationKind { get; init; } = "";
-    public string AmountLabel { get; init; } = "";
-    public string SourceCardId { get; init; } = "";
-    public int? SourceControllerId { get; init; }
-    public bool OverrideOrder { get; init; }
-    public string Initial { get; init; } = "";
-    public Card? SourceCard { get; init; }
-    public PendingEffect? Effect { get; init; }
-    public string SourceZone { get; init; } = "";
-    public string Title { get; init; } = "";
-    public bool Numeric => Task == DecisionTask.Number;
-    public ImmutableArray<LibraryChoice> LibraryCards { get; init; } = [];
-    public LibrarySearchContext? LibrarySearch { get; init; }
-    public OpeningHandContext? OpeningHand { get; init; }
-}
-// Context describes an authorized decision, never hidden library availability.
-public sealed record LibrarySearchContext(int? LibraryOwnerId, string Destination, string CardName);
-// Consequences of accepting the next redraw, before any hand card is selected.
-public sealed record OpeningHandContext(int HandSize, int NextHandSize, int CardsToReturn, bool FreeMulligan);
 public sealed record Defender(string Kind, string Id, int PlayerId, string Name);
 public sealed record AttackOption(string CardId, ImmutableArray<Defender> Defenders);
 public sealed record Attack(string CardId, int DefendingPlayerId, ImmutableArray<string> BlockerIds, ImmutableArray<string> EligibleBlockerIds)

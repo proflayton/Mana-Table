@@ -21,6 +21,7 @@ internal abstract record MatchIntent : UiIntent
     internal sealed record OpenBattlefields : MatchIntent { internal override InteractionScopeKind ScopeKind => InteractionScopeKind.Playback; }
     internal sealed record OpenStack(int Index = 0) : MatchIntent;
     internal sealed record InspectCard(Card Card) : MatchIntent;
+    internal sealed record InspectOccurrence(string Id) : MatchIntent;
     internal sealed record UseCard(Card Card, bool CloseOverlay = false, bool DismissZone = false) : MatchIntent;
     internal sealed record UseStackCard(Card Card, Card Reported, int Index, bool PayingSource) : MatchIntent;
     internal sealed record InspectDecisionSource : MatchIntent;
@@ -42,7 +43,8 @@ internal abstract record MatchIntent : UiIntent
     internal sealed record FocusInput(bool Filter) : MatchIntent;
     internal sealed record AdjustNumber(int Delta) : MatchIntent;
     internal sealed record ConfirmValue : MatchIntent;
-    internal sealed record OpenAllocation(int Index, bool Edit = false) : MatchIntent;
+    internal sealed record OpenAllocationSource : MatchIntent;
+    internal sealed record OpenAllocationRecipient(int Index, bool Edit = false) : MatchIntent;
     internal sealed record CloseAllocation : MatchIntent;
     internal sealed record ResetAllocation : MatchIntent;
     internal sealed record ConfirmAllocation : MatchIntent;

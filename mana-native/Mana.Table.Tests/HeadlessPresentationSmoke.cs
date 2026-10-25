@@ -50,11 +50,7 @@ internal static partial class HeadlessPresentationSmoke
             foreach (bool directChoices in new[] { false, true }) {
                 var handState = Example();
                 var hand = handState.Viewer!.Zone("Hand").Cards;
-                handState = handState with { Turn = 0, Combat = null, Decision = new() {
-                    Task = directChoices ? DecisionTask.Options : DecisionTask.EntitySelection,
-                    Message = "Choose a card from your hand.", Min = 1, Max = 1,
-                    Choices = directChoices ? hand.Select((card, index) => new Choice(17 + index, card.Name, card) { CardId = card.VisualId }).ToImmutableArray() : []
-                } };
+                handState = handState with { Turn = 0, Combat = null, Decision = new Decision("", new DecisionContext(Message: "Choose a card from your hand."), (directChoices) ? new OptionsPayload(new ChoiceSelection(directChoices ? hand.Select((card, index) => new Choice(17 + index, card.Name, card) { CardId = card.VisualId }).ToImmutableArray() : [], new SelectionRange(1, 1), [])) : new EntitySelectionPayload(new DecisionReply("Confirm", false), new DecisionReply("Cancel", false), [], new SelectionRange(1, 1))) };
                 using var run = new Runner(profile, directChoices ? "hand-choice-inspection" : "hand-input-inspection", handState, trace, performance);
                 run.Tick("hand-selection");
                 string initialPrompt = run.View.Match!.Decision!.Id;
@@ -164,7 +160,7 @@ internal static partial class HeadlessPresentationSmoke
                 run.ClickCard("hand-b"); run.Settle("before-stale-press");
                 var action = run.Hit("read-card-action"); var point = run.PointFor(action);
                 run.Input(point, left: ButtonState.Pressed, label: "press-old-decision");
-                run.Present(run.Engine.State with { Decision = run.Engine.State.Decision! with { Message = "A refreshed priority window." } });
+                run.Present(run.Engine.State with { Decision = run.Engine.State.Decision! with { Context = run.Engine.State.Decision!.Context with { Message = "A refreshed priority window." } } });
                 run.Input(point, label: "release-after-decision-change");
                 Check(run.Engine.Replies.Count == 1 && !run.View.Busy,
                     "Changing the authoritative decision between press and release rejects the obsolete input scope");
@@ -215,7 +211,7 @@ internal static partial class HeadlessPresentationSmoke
                     Check(drag.Anchor.Contains(release) && TableWorld.CanPlayAt(release),
                         "The one-card hand anchor overlaps the generic play area, so its actual pose must prevent a drop");
                 } else if (condition == "new-prompt") run.Present(run.Engine.State with {
-                    Decision = run.Engine.State.Decision! with { Message = "A replacement priority window." }
+                    Decision = run.Engine.State.Decision! with { Context = run.Engine.State.Decision!.Context with { Message = "A replacement priority window." } }
                 });
                 else {
                     var current = run.View.Match!;
@@ -258,11 +254,7 @@ internal static partial class HeadlessPresentationSmoke
                 run.ClickHit("close-overlay");
                 var beforeSourceChoice = run.Engine.State;
                 var choiceSource = beforeSourceChoice.Viewer!.Zone("Battlefield").Cards.Single(card => card.VisualId == "public-ward");
-                run.Present(beforeSourceChoice with { Decision = new() {
-                    Task = DecisionTask.AbilityChoice, Min = 1, Max = 1, SourceCard = choiceSource,
-                    SourceCardId = choiceSource.VisualId, SourceZone = "Battlefield", SourceControllerId = 0,
-                    Choices = [new(17, "First reported ability", null), new(42, "Second reported ability", null)]
-                } });
+                run.Present(beforeSourceChoice with { Decision = new Decision("", new DecisionContext(Source: new DecisionSource(CardId: choiceSource.VisualId, Card: choiceSource, ControllerId: 0, Zone: "Battlefield")), new AbilityChoicePayload(new ChoiceSelection([new(17, "First reported ability", null), new(42, "Second reported ability", null)], new SelectionRange(1, 1), []))) });
                 run.Tick("text-choice-with-current-source");
                 var sourceChoice = run.Engine.State;
                 var sourcePrompt = sourceChoice.Decision!;
@@ -311,7 +303,8 @@ internal static partial class HeadlessPresentationSmoke
                 Check(run.Engine.Replies.Single() is ChooseOptions compactReply
                     && compactReply.GameId == sourceGame && compactReply.DecisionId == sourceDecision && compactReply.Choices!.SequenceEqual([17]),
                     "One explicit inline ability action submits exactly its original index in the current scope without a separate confirmation");
-                run.Present(sourceChoice with { Decision = sourcePrompt with { Task = DecisionTask.Ordering } });
+                var sourceSelection = ((AbilityChoicePayload)sourcePrompt.Payload).Selection;
+                run.Present(sourceChoice with { Decision = sourcePrompt with { Payload = new OrderingPayload(sourceSelection) } });
                 run.Tick("ordered-source-choice-gallery-fallback");
                 run.ClickHit("choice:17");
                 Check(!run.Frame.Hits.Any(hit => hit.Id is "choicesfilter" or "choicesprev" or "choicesnext") && run.Frame.Hits.Any(hit => hit.Id == "choicesclear")
@@ -319,9 +312,9 @@ internal static partial class HeadlessPresentationSmoke
                     && run.Engine.Replies.Count == 1,
                     "A sparse ordered source choice retains staged selection and confirmation without irrelevant search or pagination");
                 run.Present(sourceChoice with { Decision = sourcePrompt with {
-                    Choices = sourcePrompt.Choices.Select(choice => choice with {
+                    Payload = new AbilityChoicePayload(new ChoiceSelection(sourceSelection.Choices.Select(choice => choice with {
                         Detail = string.Join(" ", Enumerable.Repeat("This authoritative ability detail must remain available without being discarded to fit a compact panel.", 40))
-                    }).ToImmutableArray()
+                    }).ToImmutableArray(), sourceSelection.Range, sourceSelection.Disclosures))
                 } });
                 run.Tick("long-ability-detail-inline");
                 Check(!run.Frame.Hits.Any(hit => hit.Id is "close-overlay" or "choicesfilter" or "choicesclear" or "choicesdone")
@@ -367,11 +360,9 @@ internal static partial class HeadlessPresentationSmoke
                     "Removing table state clears its old controls and labels without inventing a game command");
             }
 
-            var orderedCards = Example() with { Decision = new() { Task = DecisionTask.Ordering, Min = 3, Max = 3,
-                Choices = [new(7, "First private card", new() { Name = "First private card", Type = "Sorcery" }),
+            var orderedCards = Example() with { Decision = new Decision("", new DecisionContext(Source: new DecisionSource(Card: Example().Viewer!.Zone("Battlefield").Cards.Single(), ControllerId: 0)), new OrderingPayload(new ChoiceSelection([new(7, "First private card", new() { Name = "First private card", Type = "Sorcery" }),
                     new(31, "Second private card", new() { Name = "Second private card", Type = "Sorcery" }),
-                    new(9, "Third private card", new() { Name = "Third private card", Type = "Sorcery" })],
-                SourceCard = Example().Viewer!.Zone("Battlefield").Cards.Single(), SourceControllerId = 0 } };
+                    new(9, "Third private card", new() { Name = "Third private card", Type = "Sorcery" })], new SelectionRange(3, 3), []))) };
             using (var run = new Runner(profile, "sparse-private-order", orderedCards, trace, performance)) {
                 run.Tick("private-order-open");
                 Check(new[] { "choice:7", "choice:31", "choice:9", "close-overlay", "choicesclear" }.All(id => run.Frame.Hits.Any(hit => hit.Id == id))
@@ -394,9 +385,9 @@ internal static partial class HeadlessPresentationSmoke
                 Check(run.Engine.Replies.Single() is OrderOptions command && command.GameId == game && command.DecisionId == decision
                         && command.Choices.SequenceEqual([9, 7, 31]),
                     "Decluttering a private ordered choice preserves one exact scoped ordered command and its explicit final commitment");
-                var many = orderedCards with { Decision = orderedCards.Decision! with { Task = DecisionTask.Options, Min = 1, Max = 1,
-                    Choices = Enumerable.Range(0, 8).Select(index => new Choice(100 + index, "Private card " + index,
-                        new() { Name = "Private card " + index, Type = "Sorcery" })).ToImmutableArray() } };
+                var many = orderedCards with { Decision = orderedCards.Decision! with {
+                    Payload = new OptionsPayload(new ChoiceSelection(Enumerable.Range(0, 8).Select(index => new Choice(100 + index, "Private card " + index,
+                        new() { Name = "Private card " + index, Type = "Sorcery" })).ToImmutableArray(), new SelectionRange(1, 1))) } };
                 run.Present(many); run.Tick("large-private-choice");
                 Check(run.Frame.Hits.Any(hit => hit.Id == "choicesfilter") && run.Frame.Hits.Any(hit => hit.Id == "choicesnext"),
                     "A genuinely larger private choice keeps search and navigation available");
@@ -563,7 +554,7 @@ internal static partial class HeadlessPresentationSmoke
                 new("Command", 0, [], null), new("Library", 80, [], null), new("Graveyard", 0, [], null), new("Exile", 0, [], null)
             ]) { States = seat == 0 ? [new("future-track", "Momentum", "progress", 6, 6, "An unfamiliar public track.")] : [] }).ToArray();
         return new("headless-production", "playing", null, null, 0, 4, "Main phase", "MAIN1", 0, players.ToImmutableArray(), [], null,
-            new() { Task = DecisionTask.Priority, OkEnabled = true, Message = "You have priority." }) {
+            new Decision("", new DecisionContext(Message: "You have priority."), new PriorityPayload(new DecisionReply("Confirm", true), null, CanAutoPass: false, QuietYieldToken: "", Abilities: []))) {
                 States = [new("day-night", "Day", "status", null, null, "It is day for the whole table.", "day-night")]
             };
     }

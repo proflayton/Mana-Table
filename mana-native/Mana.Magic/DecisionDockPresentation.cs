@@ -6,6 +6,9 @@ public enum DecisionDockPauseReason { None, Manual, Held, PhaseStop, Inspection,
 public enum DecisionDockStatus { Priority, AutoPassing, Target, Payment, AbilityChoice, Selection, Attack, Block, Waiting, Resolving, Preparing, Recovery, Finished, Watching }
 public enum DecisionDockActorRole { None, Priority, Choosing, Paying, Attacking, Blocking }
 public enum DecisionDockSurface { None, Portrait, Workspace }
+public enum DecisionRequiredSurface { None, Source, Targets, Table, Gallery, Value, Allocation, Combat }
+[Flags]
+public enum DecisionReading { None = 0, SourceInspection = 1, OpeningHandInspection = 2, HandSelectionInspection = 4, TableInspection = 8, RevealInspection = 16 }
 
 // Local control facts must come from the same gate used by the update loop.
 // QuietCanPass is its current engine-token check, not a catalog of legal actions.
@@ -27,6 +30,10 @@ public sealed record DecisionDockView(DecisionDockStatus Status, DecisionDockPau
     // A reported response window need not ask for attention. Transport activity
     // cannot introduce a new surface or replace an authoritative decision.
     public DecisionDockSurface Surface { get; init; } = DecisionDockSurface.Workspace;
+    public DecisionRequiredSurface RequiredSurface { get; init; }
+    public DecisionReading Reading { get; init; }
+    public ChoiceSelection? Selection { get; init; }
+    public DecisionPayload? Payload { get; init; }
 }
 
 // Describes the current authorized snapshot, never a future resolution or a
@@ -41,15 +48,36 @@ public static class DecisionDockPresentation
         bool localOwner = priority.DecisionOwnerId == null || priority.DecisionOwnerId == state.ViewerId;
         var decision = localOwner ? reported : null;
         var source = decision == null ? null : CardViews.Source(state, decision);
-        string sourceId = source == null ? decision?.SourceCardId ?? "" : CardViews.Identity(source);
+        string sourceId = source == null ? decision?.Context.Source?.CardId ?? "" : CardViews.Identity(source);
         var pause = Pause(state, controls);
-        bool normalPass = controls.Automatic && decision is { Task: DecisionTask.Priority, CanAutoPass: true };
-        bool quietPass = controls.QuietArmed && controls.QuietCanPass && decision is { QuietYieldToken.Length: > 0 }
+        bool normalPass = controls.Automatic && decision is { Payload: PriorityPayload { CanAutoPass: true } };
+        bool quietPass = controls.QuietArmed && controls.QuietCanPass && decision is { Payload: PriorityPayload { QuietYieldToken.Length: > 0 } }
             && state.Stack.Length == 0 && state.ActivePlayerId != state.ViewerId;
         bool routinePriority = state.Status == "playing" && state.Turn > 0 && priority.CanPass && (normalPass || quietPass);
         bool ambientPause = pause is DecisionDockPauseReason.None or DecisionDockPauseReason.Inspection
             or DecisionDockPauseReason.Interaction or DecisionDockPauseReason.Overlay or DecisionDockPauseReason.Chat
             or DecisionDockPauseReason.Presentation or DecisionDockPauseReason.Preview;
+        var payload = pause != DecisionDockPauseReason.Recovery && state.Viewer?.Eliminated != true
+            && priority.Phase is not (PriorityPhase.Starting or PriorityPhase.Finished or PriorityPhase.Resolving) ? decision?.Payload : null;
+        var selection = payload switch { OptionsPayload options => options.Selection, OrderingPayload order => order.Selection,
+            AbilityChoicePayload ability => ability.Selection, _ => null };
+        bool direct = payload is OptionsPayload or OrderingPayload && TableChoices.IsDirect(state);
+        var requiredSurface = payload switch {
+            null or PriorityPayload => DecisionRequiredSurface.None,
+            OpeningHandPayload or ConfirmationPayload or AbilityChoicePayload or PaymentPayload => DecisionRequiredSurface.Source,
+            TargetSelectionPayload or EntitySelectionPayload => DecisionRequiredSurface.Targets,
+            OptionsPayload or OrderingPayload when direct => DecisionRequiredSurface.Table,
+            OptionsPayload or OrderingPayload or RevealPayload => DecisionRequiredSurface.Gallery,
+            NumberPayload or TextPayload => DecisionRequiredSurface.Value,
+            AllocationPayload => DecisionRequiredSurface.Allocation,
+            AttackPayload or BlockPayload => DecisionRequiredSurface.Combat,
+            _ => throw new InvalidOperationException("The payload has no prepared decision surface.")
+        };
+        var reading = (payload != null && source is { FaceDown: false } ? DecisionReading.SourceInspection : DecisionReading.None)
+            | (payload is OpeningHandPayload ? DecisionReading.OpeningHandInspection : DecisionReading.None)
+            | (payload is TargetSelectionPayload or EntitySelectionPayload || direct ? DecisionReading.HandSelectionInspection : DecisionReading.None)
+            | (decision?.Payload is null or PriorityPayload or PaymentPayload or AbilityChoicePayload ? DecisionReading.TableInspection : DecisionReading.None)
+            | (decision?.Payload is RevealPayload ? DecisionReading.RevealInspection : DecisionReading.None);
 
         DecisionDockSurface Surface(DecisionDockStatus status, DecisionDockActorRole role) => status switch {
             DecisionDockStatus.Priority when controls.QuietArmed => DecisionDockSurface.Portrait,
@@ -66,8 +94,8 @@ public static class DecisionDockPresentation
             bool includeSource = true, DecisionDockPauseReason? reason = null)
             => new(status, reason ?? pause, headline, caption, instruction, role, actor, Name(state, actor),
                 includeSource ? sourceId : "", includeSource ? source : null,
-                includeSource ? decision?.SourceControllerId : null, state.Id, decision?.Id ?? "", action, priority.NextToResolve) {
-                    Surface = Surface(status, role)
+                includeSource ? decision?.Context.Source?.ControllerId : null, state.Id, decision?.Id ?? "", action, priority.NextToResolve) {
+                    Surface = Surface(status, role), RequiredSurface = requiredSurface, Reading = reading, Selection = selection, Payload = payload
                 };
 
         if (priority.Phase == PriorityPhase.Finished)
@@ -102,8 +130,8 @@ public static class DecisionDockPresentation
         if (priority.Phase == PriorityPhase.Payment)
             return View(DecisionDockStatus.Payment, owner == state.ViewerId ? "Pay the cost"
                 : owner == null ? "Paying a cost" : priority.DecisionOwnerName + " is paying",
-                instruction: decision?.Message ?? "", role: DecisionDockActorRole.Paying, actor: owner,
-                action: decision?.Ok ?? "");
+                instruction: decision?.Context.Message ?? "", role: DecisionDockActorRole.Paying, actor: owner,
+                action: decision?.Payload is PaymentPayload payment ? payment.Pay.Label : "");
 
         if (decision == null) {
             var role = state.ActionClass switch { "attack" => DecisionDockActorRole.Attacking,
@@ -114,26 +142,26 @@ public static class DecisionDockPresentation
                 ArmedCaption(controls, pause), role: role, actor: owner, includeSource: false);
         }
 
-        var status = decision.Task switch {
-            DecisionTask.Attack => DecisionDockStatus.Attack,
-            DecisionTask.Block => DecisionDockStatus.Block,
-            DecisionTask.TargetSelection => DecisionDockStatus.Target,
-            DecisionTask.AbilityChoice => DecisionDockStatus.AbilityChoice,
+        var status = decision.Payload switch {
+            AttackPayload => DecisionDockStatus.Attack,
+            BlockPayload => DecisionDockStatus.Block,
+            TargetSelectionPayload => DecisionDockStatus.Target,
+            AbilityChoicePayload => DecisionDockStatus.AbilityChoice,
             _ => DecisionDockStatus.Selection
         };
         string heading = status switch {
             DecisionDockStatus.Attack => "Choose attackers",
             DecisionDockStatus.Block => "Choose blockers",
-            DecisionDockStatus.Target => TargetHeading(decision),
+            DecisionDockStatus.Target => TargetHeading(((TargetSelectionPayload)decision.Payload).Range),
             DecisionDockStatus.AbilityChoice => "Choose an ability",
-            _ when decision.Ordered => "Choose an order",
-            _ when decision.Numeric => "Choose a number",
+            _ when decision.Payload is OrderingPayload => "Choose an order",
+            _ when decision.Payload is NumberPayload => "Choose a number",
             _ => "Make a choice"
         };
         var actorRole = status switch { DecisionDockStatus.Attack => DecisionDockActorRole.Attacking,
             DecisionDockStatus.Block => DecisionDockActorRole.Blocking, _ => DecisionDockActorRole.Choosing };
-        return View(status, heading, instruction: decision.Message, role: actorRole, actor: state.ViewerId,
-            action: decision.Task is DecisionTask.Priority or DecisionTask.OpeningHand or DecisionTask.Payment or DecisionTask.Attack or DecisionTask.Block or DecisionTask.TargetSelection or DecisionTask.EntitySelection or DecisionTask.Confirmation ? TurnGuide.Confirm(state) : decision.Ok);
+        return View(status, heading, instruction: decision.Context.Message, role: actorRole, actor: state.ViewerId,
+            action: TurnGuide.Confirm(state));
     }
 
     private static DecisionDockPauseReason Pause(GameSnapshot state, DecisionDockControlFacts controls)
@@ -170,10 +198,10 @@ public static class DecisionDockPresentation
         _ => "Paused"
     };
 
-    private static string TargetHeading(Decision decision) => decision.Max > 1
-        ? decision.Min == decision.Max ? "Choose " + decision.Max + " targets"
-            : decision.Min > 0 ? "Choose " + decision.Min + "–" + decision.Max + " targets" : "Choose up to " + decision.Max + " targets"
-        : decision.Max == 1 && decision.Min == 0 ? "Choose up to 1 target" : "Choose a target";
+    private static string TargetHeading(SelectionRange range) => range.Max > 1
+        ? range.Min == range.Max ? "Choose " + range.Max + " targets"
+            : range.Min > 0 ? "Choose " + range.Min + "–" + range.Max + " targets" : "Choose up to " + range.Max + " targets"
+        : range.Max == 1 && range.Min == 0 ? "Choose up to 1 target" : "Choose a target";
 
     private static string Name(GameSnapshot state, int? id) => id == null ? "" : id == state.ViewerId ? "You"
         : state.Players.FirstOrDefault(player => player.Id == id)?.Name ?? "Player " + id;

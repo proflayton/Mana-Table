@@ -59,7 +59,7 @@ internal sealed partial class TableApplication
     // Printed rules text never creates a flashback, escape, or exile permission.
     private string? AvailableZone(Card card)
     {
-        if (match is not { Status: "playing", Decision: { Task: DecisionTask.Priority, Id.Length: > 0 }, Viewer.Eliminated: false } state) return null;
+        if (match is not { Status: "playing", Decision: { Payload: PriorityPayload, Id.Length: > 0 }, Viewer.Eliminated: false } state) return null;
         foreach (string zone in new[] { "Graveyard", "Exile", "Command" })
             if (state.Viewer?.Zone(zone).Cards.Any(c => CardViews.Same(c, card) && !c.FaceDown && c.Selectable && c.Key.Length > 0) == true) return zone;
         return null;

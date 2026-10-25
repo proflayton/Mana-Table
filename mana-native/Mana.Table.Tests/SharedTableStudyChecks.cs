@@ -146,7 +146,7 @@ internal static class SharedTableStudyChecks
                 && placed.Count(card => card.Id.StartsWith("copy-", StringComparison.Ordinal) && card.GroupFront) == 1
                 && placed.Where(card => !card.Id.StartsWith("copy-", StringComparison.Ordinal)).All(card => card.GroupCount == 1 && card.GroupFront),
             "The study fans equivalent copies without losing occurrences, while counters, tap, damage, phase, abilities, attachments and hidden identities retain separate current-state faces");
-        var ordered = state with { Decision = new() { Id = "order-copies", Task = DecisionTask.Ordering, Choices = copies.Take(3).Select((card, index) => new Choice(index, card.Name, card) { CardId = card.VisualId }).ToImmutableArray() } };
+        var ordered = state with { Decision = new Decision("order-copies", new DecisionContext(), new OrderingPayload(new ChoiceSelection(copies.Take(3).Select((card, index) => new Choice(index, card.Name, card) { CardId = card.VisualId }).ToImmutableArray(), new SelectionRange(0, 0), []))) };
         var choices = Cards(Build(ordered)).Where(card => card.Owner == 0 && card.Id.StartsWith("copy-", StringComparison.Ordinal)).ToArray();
         check(choices.Length == 3 && choices.All(card => card.GroupCount == 1 && card.GroupFront)
                 && choices.Select(card => card.Pose.Center).Distinct().Count() == 3,
@@ -228,9 +228,7 @@ internal static class SharedTableStudyChecks
                 && refreshed.BattlefieldCard(0, "land-ready-b")!.Card.Key == "new-prompt:land-ready-b",
             "Refreshing exact decision keys preserves family geometry while each occurrence receives only its new current action key");
         foreach (bool direct in new[] { false, true }) {
-            var choice = state with { Decision = direct ? new() { Id = "direct-land-choice", Task = DecisionTask.Options, Min = 1, Max = 1,
-                Choices = cards.Take(2).Select((card, index) => new Choice(index, card.Name, card) { CardId = card.VisualId }).ToImmutableArray()
-            } : new() { Id = "land-target", Task = DecisionTask.EntitySelection } };
+            var choice = state with { Decision = direct ? new Decision("direct-land-choice", new DecisionContext(), new OptionsPayload(new ChoiceSelection(cards.Take(2).Select((card, index) => new Choice(index, card.Name, card) { CardId = card.VisualId }).ToImmutableArray(), new SelectionRange(1, 1), []))) : new Decision("land-target", new DecisionContext(), new EntitySelectionPayload(new DecisionReply("Confirm", false), new DecisionReply("Cancel", false), [], null)) };
             var individual = Build(choice);
             var candidates = cards.Take(2).Select(card => individual.BattlefieldCard(0, card.VisualId)!).ToArray();
             check(candidates.All(node => node.GroupFront && node.GroupCount == 1)

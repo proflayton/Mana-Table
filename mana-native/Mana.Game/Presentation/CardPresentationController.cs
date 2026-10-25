@@ -118,6 +118,10 @@ internal sealed class CardPresentationController
         var entry = new PresentedCard(request, pose, hit, focused,
             (focused || pointerHover) && !request.Card.FaceDown && readable, layer)
             { View = view, ReaderTarget = focused ? readerTarget : null, Hovered = pointerHover };
+        if (!request.OpensZone && request.Activate is MatchIntent.UseCard or MatchIntent.UseStackCard
+                or MatchIntent.InspectCard or MatchIntent.ReadFocusedCard or MatchIntent.SelectChoice or MatchIntent.OpenZone or UiIntent.NoInteraction
+            && context.InspectOnClick(entry))
+            entry = entry with { Hit = hit with { Intent = new MatchIntent.InspectOccurrence(request.Id) } };
         cards.Add(entry);
         if (focused) ReaderBounds = pose.Bounds;
         return entry;
@@ -130,15 +134,7 @@ internal sealed class CardPresentationController
     public bool Toggle(Hit hit, CardPresentationContext current)
     {
         var entry = cards.LastOrDefault(card => card.Hit.Id == hit.Id && card.Hit.Scope == hit.Scope);
-        if (entry == null || entry.Card.FaceDown || !current.CanRead(entry)
-            || current.Dragging || current.CompactDecision && !current.CanBrowseHandSelection(entry)) return false;
-        if (entry.ChoiceSlot >= 0) {
-            if (current.State?.Decision?.Task != DecisionTask.Reveal) return false;
-        } else if (current.OverlayOpen
-            || !current.AbilityChoice && current.State?.Decision is { Task: not DecisionTask.Priority }
-                && current.State?.Decision?.Task != DecisionTask.Payment
-                && !current.CanBrowseOpeningHand(entry) && !current.CanBrowseHandSelection(entry)
-                && !current.CanBrowseDecisionSource(entry)) return false;
+        if (entry == null || entry.Card.FaceDown || !current.InspectOnClick(entry)) return false;
         bool close = pinnedId == entry.Id && pinnedZone == entry.Zone;
         Collapse(hit.Id);
         if (!close) {

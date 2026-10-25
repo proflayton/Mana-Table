@@ -42,7 +42,7 @@ internal sealed partial class TableApplication
             || pressed != null || dragging || previousMouse.LeftButton == ButtonState.Pressed
             || boardViewportChanged || boardPointerActivity && pointer.Y is >= 54 and < 778
             || HitAt(pointer)?.Card != null || state.Stack.Length > 0 || state.Combat != null
-            || state.Decision is { Task: not DecisionTask.Priority }
+            || state.Decision is { Payload: not PriorityPayload }
             || state.DecisionOwnerId != null && state.ActionClass is not ("priority" or "waiting");
         Vector2 target = state.ActivePlayerId == state.ViewerId ? Vector2.Zero
             : TableLayout.SeatIndex(state, state.ActivePlayerId.GetValueOrDefault(state.ViewerId)) switch {

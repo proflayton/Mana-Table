@@ -79,12 +79,12 @@ internal sealed class AutoDockSmoke(TableWindow.Probe view, InteractionScenarioE
                     && !view.Hits.Any(hit => hit.Id is "confirm" or "cancel"), "A new engine-authorized empty phase restores the actual local Auto state");
                 Check(view.Hits.Single(hit => hit.Id == "auto").Bounds == autoBounds && view.Hits.Single(hit => hit.Id == "hold").Bounds == holdBounds,
                     "Auto and Hold keep their positions between priority and processing states");
-                Publish(state with { Decision = state.Decision! with { CanAutoPass = false } }); Next(); break;
+                Publish(state with { Decision = state.Decision! with { Payload = ((PriorityPayload)(state.Decision!).Payload) with { CanAutoPass = false } } }); Next(); break;
             case 4:
                 Check(view.DecisionDock is { Status: DecisionDockStatus.Priority, Surface: DecisionDockSurface.Portrait }
                     && view.Hits.Any(h => h.Id == "confirm"), "A response requiring attention immediately restores the real action control");
                 Capture(surface, "02-auto-response");
-                Publish(state with { Decision = state.Decision! with { CanAutoPass = true } }); Next(); break;
+                Publish(state with { Decision = state.Decision! with { Payload = ((PriorityPayload)(state.Decision!).Payload) with { CanAutoPass = true } } }); Next(); break;
             case 5:
                 MouseAt(view.Hits.Single(h => h.Id == "hold").Bounds.Center, ButtonState.Pressed); Next(); break;
             case 6:
@@ -101,7 +101,7 @@ internal sealed class AutoDockSmoke(TableWindow.Probe view, InteractionScenarioE
                 Check(view.DecisionDock is { Surface: DecisionDockSurface.Portrait } && view.Hits.Any(h => h.Id == "confirm"), "Full control retains every manual priority window");
                 view.SetAutomatic(true);
                 Publish(state with { Turn = state.Turn + 1, ActionClass = "block", PriorityPlayerId = null,
-                    Decision = state.Decision! with { Task = DecisionTask.Block, CanAutoPass = false } }); Next(); break;
+                    Decision = state.Decision! with { Payload = new BlockPayload(new("Confirm", true)) } }); Next(); break;
             case 10:
                 Check(!view.Held && view.DecisionDock is { Status: DecisionDockStatus.Block, Surface: DecisionDockSurface.Workspace }
                     && view.Hits.Any(h => h.Id == "confirm"), "Auto presents blocking as a required decision immediately after a turn change");

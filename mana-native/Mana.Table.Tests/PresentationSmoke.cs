@@ -22,7 +22,7 @@ internal static class PresentationSmoke
         PublicActivityCursorChecks.Run(Check);
         MatchPresentationLifecycleChecks.Run(Check);
         DeckInteractionChecks.Run(Check);
-        DecisionDraftChecks.Run(Check);
+        DecisionSessionChecks.Run(Check);
         ImpactFeedbackChecks.Run(Check);
         CardArtPreloadChecks.Run(Check);
         PriorityAbilitySmoke.CheckArtworkHandoff(profile, Check);
@@ -74,22 +74,24 @@ internal static class PresentationSmoke
         SceneCard[] BoardCards(GameSnapshot value) => TableScene.Build(value, 0, new(-1, -1), null, null, false, CardPresentation.IsResource)
             .Battlefield(value.ViewerId).SelectMany(cluster => cluster.Cards).ToArray();
         var candidates = stableBoard.Viewer!.Zone("Battlefield").Cards.Where(c => c.VisualId != "stable-0-2").ToArray();
-        var orderedBoard = stableBoard with { Decision = new() { Id = "ordered-copies", Task = DecisionTask.Ordering, Min = 4, Max = 4, Choices = candidates.Select((card, index) => new Choice(index, card.Name, card) { CardId = card.VisualId }).ToImmutableArray() } };
+        var orderedBoard = stableBoard with { Decision = new Decision("ordered-copies", new DecisionContext(), new OrderingPayload(new ChoiceSelection(candidates.Select((card, index) => new Choice(index, card.Name, card) { CardId = card.VisualId }).ToImmutableArray(), new SelectionRange(4, 4), []))) };
         Check(BoardCards(stableBoard).Any(c => c.GroupCount == 3 && c.Card.Type == "Creature")
             && BoardCards(stableBoard).Any(c => c.GroupCount == 2 && c.Card.Type == "Basic Land"),
             "Identical creatures and resources retain normal copy grouping outside ordered choices");
         Check(BoardCards(orderedBoard).Length == 5 && candidates.All(card => BoardCards(orderedBoard).Single(c => c.Id == card.VisualId).GroupCount == 1),
             "Every linked ordered creature and resource receives a separate occurrence without dropping other cards");
-        Check(Poses(orderedBoard with { Decision = orderedBoard.Decision! with { Id = "refreshed-order", Choices = orderedBoard.Decision.Choices.Reverse().ToImmutableArray() } })
+        var ordered = ((OrderingPayload)orderedBoard.Decision!.Payload).Selection;
+        Check(Poses(orderedBoard with { Decision = orderedBoard.Decision with { Id = "refreshed-order",
+            Payload = new OrderingPayload(new(ordered.Choices.Reverse().ToImmutableArray(), ordered.Range, ordered.Disclosures)) } })
             .All(c => Poses(orderedBoard)[c.Key] == c.Value),
             "Reordering choice indices or refreshing the same candidate set never reflows ordered battlefield positions");
         Check(Poses(orderedBoard with { Decision = null }).All(c => resting[c.Key] == c.Value)
-            && Poses(orderedBoard with { Decision = orderedBoard.Decision! with { Task = DecisionTask.Options } }).All(c => resting[c.Key] == c.Value),
+            && Poses(orderedBoard with { Decision = orderedBoard.Decision! with { Payload = new OptionsPayload(ordered) } }).All(c => resting[c.Key] == c.Value),
             "Completing an order or using an unordered choice preserves the original copy grouping and poses");
         Check(TableChoices.IsDirect(orderedBoard), "Linked battlefield ordering keeps every available target on the table");
         foreach (var player in stableBoard.Players) {
             var lands = player.Zone("Battlefield").Cards.Where(c => c.Type == "Basic Land").ToArray();
-            var order = stableBoard with { Decision = new() { Task = DecisionTask.Ordering, Choices = lands.Select((card, index) => new Choice(index, card.Name, card) { CardId = card.VisualId }).ToImmutableArray() } };
+            var order = stableBoard with { Decision = new Decision("", new DecisionContext(), new OrderingPayload(new ChoiceSelection(lands.Select((card, index) => new Choice(index, card.Name, card) { CardId = card.VisualId }).ToImmutableArray(), new SelectionRange(lands.Length, lands.Length), []))) };
             var landScene = TableScene.Build(order, 0, new(-1, -1), null, null, false, CardPresentation.IsResource);
             var badges = landScene.Battlefield(player.Id).SelectMany(c => c.Cards).Where(c => lands.Any(land => land.VisualId == c.Id))
                 .Select(c => new Rectangle((int)c.Pose.Center.X - 39, c.Pose.Bounds.Top + 8, 78, 24)).ToArray();
@@ -98,9 +100,8 @@ internal static class PresentationSmoke
         }
         foreach (string zoneName in new[] { "Hand", "Command" }) {
             var linked = stableBoard.Viewer!.Zone(zoneName).Cards.Take(1).ToArray();
-            var choice = stableBoard with { Decision = new() { Task = DecisionTask.Ordering, Min = 1, Max = 1,
-                Choices = linked.Select((card, index) => new Choice(index, card.Name, card) { CardId = card.VisualId }).ToImmutableArray() } };
-            Check(linked.Length == 1 && !TableChoices.IsDirect(choice) && TableChoices.IsDirect(choice with { Decision = choice.Decision! with { Task = DecisionTask.Options } }),
+            var choice = stableBoard with { Decision = new Decision("", new DecisionContext(), new OrderingPayload(new ChoiceSelection(linked.Select((card, index) => new Choice(index, card.Name, card) { CardId = card.VisualId }).ToImmutableArray(), new SelectionRange(1, 1), []))) };
+            Check(linked.Length == 1 && !TableChoices.IsDirect(choice) && TableChoices.IsDirect(choice with { Decision = choice.Decision! with { Payload = new OptionsPayload(((OrderingPayload)choice.Decision.Payload).Selection) } }),
                 zoneName + " ordering uses the numbered gallery while unordered selections retain their existing direct behavior");
         }
         GameSnapshot EditStable(Func<Card, Card> edit) => stableBoard with { Players = stableBoard.Players.Select(p => p with { Zones = p.Zones.Select(z =>
@@ -139,16 +140,16 @@ internal static class PresentationSmoke
         var raised = CardMotion.Airborne(ground, 1, false, "flier");
         Check(raised.Center.Y < ground.Center.Y && raised.Elevation > 12 && raised.Contains(raised.Center.ToPoint()), "Airborne visuals and pointer geometry share the lifted pose");
         Check(CardMotion.Airborne(ground, 1, true, "flier") == CardMotion.Airborne(ground, 2, true, "flier"), "Reduced motion preserves flying height without bobbing");
-        Check(!TurnGuide.CanAutoPass(state with { Decision = state.Decision! with { CanAutoPass = false } }, true, false, noStops, false), "Playable responses prevent Auto");
+        Check(!TurnGuide.CanAutoPass(state with { Decision = state.Decision! with { Payload = ((PriorityPayload)(state.Decision!).Payload) with { CanAutoPass = false } } }, true, false, noStops, false), "Playable responses prevent Auto");
         Check(!TurnGuide.CanAutoPass(state, true, true, noStops, false), "Hold cancels Auto");
         Check(!TurnGuide.CanAutoPass(state, true, false, new HashSet<string> { "MAIN1" }, false), "Saved own-turn stops prevent Auto");
         Check(!TurnGuide.CanAutoPass(state, true, false, noStops, true), "Inspecting or dragging suspends Auto");
         Check(!TurnGuide.CanAutoPass(state with { Status = "finished" }, true, false, noStops, false), "Terminal snapshots never advance");
-        Check(!TurnGuide.CanAutoPass(state with { Decision = state.Decision! with { Task = DecisionTask.Options } }, true, false, noStops, false), "Required choices cannot become automatic priority");
-        var attack = state with { Decision = state.Decision! with { Task = DecisionTask.Attack }, Combat = new([], [new("elf", [new("player", "2", 2, "Second opponent"), new("card", "walker", 2, "Planeswalker")])], null) };
+        Check(!TurnGuide.CanAutoPass(state with { Decision = state.Decision! with { Payload = new OptionsPayload(new([new(0, "Offered option", null)], new(1, 1))) } }, true, false, noStops, false), "Required choices cannot become automatic priority");
+        var attack = state with { Decision = state.Decision! with { Payload = new AttackPayload(new("Confirm", true)) }, Combat = new([], [new("elf", [new("player", "2", 2, "Second opponent"), new("card", "walker", 2, "Planeswalker")])], null) };
         Check(LegalTargets.CanAttack(attack, "elf", 2) && !LegalTargets.CanAttack(attack, "elf", 1), "Only projected legal defending players accept an attack");
         Check(LegalTargets.CanAttackCard(attack, "elf", "walker") && !LegalTargets.CanAttackCard(attack, "elf", "hidden-card"), "Card defenders require an explicit legal pair");
-        var block = state with { Decision = state.Decision! with { Task = DecisionTask.Block }, Combat = new([new("opponent-creature", 0, [], ["elf"])], [], null) };
+        var block = state with { Decision = state.Decision! with { Payload = new BlockPayload(new("Confirm", true)) }, Combat = new([new("opponent-creature", 0, [], ["elf"])], [], null) };
         Check(LegalTargets.CanBlock(block, "elf", "opponent-creature") && !LegalTargets.CanBlock(block, "other", "opponent-creature"), "Block assignments use the engine's eligible pairs");
         var pose = new Pose(new(200, 200), new(60, 100), .6f);
         Check(pose.Contains(new(200, 200)) && !pose.Contains(new(pose.Bounds.Left + 1, pose.Bounds.Top + 1)), "Rotated cards hit-test their face, not their bounding rectangle");
@@ -236,7 +237,7 @@ internal static class PresentationSmoke
         Check(narrative.Last == null, "Resolution feedback cannot leak into the next match");
         var ability = state.Viewer!.Zone("Battlefield").Cards.First(c => c.Selectable);
         Check(CardActions.CanActivate(state, ability) && !CardActions.CanActivate(state, ability with { FaceDown = true }), "Activation cues require an authorized visible battlefield occurrence");
-        Check(!CardActions.CanActivate(state with { Decision = state.Decision! with { Task = DecisionTask.Block } }, ability), "A blocker selection is never advertised as activating an ability");
+        Check(!CardActions.CanActivate(state with { Decision = state.Decision! with { Payload = new BlockPayload(new("Confirm", true)) } }, ability), "A blocker selection is never advertised as activating an ability");
         var targeting = state with { Stack = [new("Ravenform", "Exile target creature", false, null) { Id = "spell", Targets = [new("card", ability.VisualId, ability.Name)] }] };
         var actionPacing = new PresentationPacing(); actionPacing.Observe(state, targeting, 10);
         Check(!actionPacing.Ready(12.4) && actionPacing.Ready(12.6), "Targeted spells get a readable telegraph before automatic resolution");
@@ -253,11 +254,13 @@ internal static class PresentationSmoke
         Fixture("card-states", StateExample());
         Fixture("commander-tax", CommanderTaxExample());
         Fixture("combat", attack);
-        Fixture("library-search", state with { Decision = new() { Id = "library-prompt", Task = DecisionTask.Options, Title = "Search your library", Message = "Choose a basic land. Only the revealed selection is available.", Min = 1, Max = 1,
-            Choices = [new(0, "Forest", Card("forest-search", "Forest", "Basic Land — Forest"))],
-            LibraryCards = [new(0, "Forest", Card("forest-search", "Forest", "Basic Land — Forest")), new(null, "Llanowar Elves", Card("elf-search", "Llanowar Elves", "Creature — Elf Druid"))] } });
-        Fixture("color-choice", state with { Decision = new() { Id = "color", Task = DecisionTask.Options, Title = "Choose a color", Message = "Add one mana of the chosen color.", Min = 1, Max = 1, Choices = new[] { "W", "U", "B", "R", "G" }.Select((c, i) => new Choice(i, c, null) { Mana = "{" + c + "}" }).ToImmutableArray() } });
-        Fixture("allocation", state with { Decision = new() { Id = "damage", Task = DecisionTask.Allocation, Message = "Assign seven damage among these targets.", Amount = 7, Limits = [7, 7, 7], Choices = [new(0, "Llanowar Elves", null), new(1, "Opponent 2", null), new(2, "Opponent 3", null)] } });
+        Fixture("library-search", state with { Decision = new Decision("library-prompt", new DecisionContext(Message: "Choose a basic land. Only the revealed selection is available.", Title: "Search your library"), new OptionsPayload(new ChoiceSelection([new(0, "Forest", Card("forest-search", "Forest", "Basic Land — Forest"))], new SelectionRange(1, 1), [new(0, "Forest", Card("forest-search", "Forest", "Basic Land — Forest")), new(null, "Llanowar Elves", Card("elf-search", "Llanowar Elves", "Creature — Elf Druid"))]))) });
+        Fixture("color-choice", state with { Decision = new Decision("color", new DecisionContext(Message: "Add one mana of the chosen color.", Title: "Choose a color"), new OptionsPayload(new ChoiceSelection(new[] { "W", "U", "B", "R", "G" }.Select((c, i) => new Choice(i, c, null) { Mana = "{" + c + "}" }).ToImmutableArray(), new SelectionRange(1, 1), []))) });
+        Fixture("allocation", state with { Decision = new Decision("damage", new DecisionContext(Message: "Assign seven damage among these targets."),
+            new AllocationPayload(7, AllocationKind.Generic, "damage", false, [
+                new(0, "", "Llanowar Elves", null, "", null, null, null, 0, 7),
+                new(1, "", "Opponent 2", null, "", 2, null, null, 0, 7),
+                new(2, "", "Opponent 3", null, "", 3, null, null, 0, 7)])) });
         File.WriteAllText(Path.Combine(profile, "presentation-results.json"), JsonSerializer.Serialize(results, options));
     }
     private static void CheckMotionTiming(Action<bool, string> Check)
@@ -321,7 +324,7 @@ internal static class PresentationSmoke
     {
         var state = Example();
         string[][] abilities = [["flying", "vigilance"], ["deathtouch", "lifelink"], ["indestructible", "reach"], ["double strike", "trample", "menace"]];
-        return state with { Decision = state.Decision! with { CanAutoPass = false }, Players = state.Players.Select(p => p with { Zones = p.Zones.Select(z => z.Name != "Battlefield" ? z : z with {
+        return state with { Decision = state.Decision! with { Payload = ((PriorityPayload)(state.Decision!).Payload) with { CanAutoPass = false } }, Players = state.Players.Select(p => p with { Zones = p.Zones.Select(z => z.Name != "Battlefield" ? z : z with {
             Cards = z.Cards.Select((c, i) => i == 0 ? c with { Name = "Teferi's Isle", Type = "Legendary Land", Text = "Phasing\nTeferi's Isle enters tapped.\n{T}: Add {U}{U}.", PhasedOut = true, Selectable = false }
                 : !c.Type.Contains("Creature") ? c : c with {
                 CombatKeywords = (abilities[(i / 2) % abilities.Length]).ToImmutableArray(), Selectable = false,
@@ -338,6 +341,6 @@ internal static class PresentationSmoke
             new("Library", 74, [], null), new("Graveyard", 1, [Card("grave-" + i, "Llanowar Elves", "Creature — Elf Druid")], null), new("Exile", 0, [], null)
         ]) { CommanderDamage = Enumerable.Range(0, 4).Where(n => n != i).Select(n => new CommanderDamage("Goreclaw, Terror of Qal Sisma", n, n == 0 ? "You" : "Opponent " + n, 0)).ToImmutableArray() }).ToArray();
         return new("presentation", "playing", null, null, 0, 17, "Main phase, precombat", "MAIN1", 0, players.ToImmutableArray(), [], null,
-            new() { Id = "p", Task = DecisionTask.Priority, Message = "You have priority.", Ok = "OK", OkEnabled = true, Cancel = "End Turn", CancelEnabled = true, CanAutoPass = true });
+            new Decision("p", new DecisionContext(Message: "You have priority."), new PriorityPayload(new DecisionReply("OK", true), null, CanAutoPass: true, QuietYieldToken: "", Abilities: [])));
     }
 }

@@ -12,7 +12,7 @@ internal sealed partial class TableApplication
     private bool QuietPriorityArmed => quietYieldToken.Length > 0;
     private bool CanOfferQuietPriority => !ExperienceLabOpen && fixture == null && !session.NeedsRecovery && !held
         && match is { } state && !(state.ActivePlayerId == state.ViewerId && preferences.Stops.Contains(state.PhaseKey))
-        && QuietPriorityPolicy.CanPass(state, state.Decision?.QuietYieldToken ?? "");
+        && state.Decision?.Payload is PriorityPayload priority && QuietPriorityPolicy.CanPass(state, priority.QuietYieldToken);
 
     private void ArmQuietPriority()
     {
@@ -21,7 +21,7 @@ internal sealed partial class TableApplication
         if (!CanOfferQuietPriority || busy || match is not { } state) return;
         session.CancelAdvance();
         quietYieldGame = state.Id; quietYieldTurn = state.Turn; quietYieldActivePlayer = state.ActivePlayerId;
-        quietYieldToken = state.Decision!.QuietYieldToken;
+        quietYieldToken = ((PriorityPayload)state.Decision!.Payload).QuietYieldToken;
         quietYieldActivity = state.Activity.Select(entry => entry.Id).DefaultIfEmpty().Max();
         error = ""; commandFailure = false;
     }

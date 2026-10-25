@@ -85,13 +85,17 @@ internal sealed class LobbySmoke(TableWindow.Probe view, ForgePaths paths) : ITa
                 var state = await seat.ObserveAsync();
                 if (state?.PhaseKey == "MAIN1") return;
                 if (state?.Decision is not { } decision) continue;
-                DecisionCommand? reply = decision.Task switch {
-                    DecisionTask.Options or DecisionTask.AbilityChoice or DecisionTask.Ordering => DecisionCommands.Choose(state, decision.Choices.Take(Math.Max(decision.Min, Math.Min(1, decision.Max))).Select(c => c.Index)),
-                    DecisionTask.Reveal => new AcknowledgeReveal(state.Id, decision.Id),
-                    _ when decision.PlayerChoices.Length > 0 => new SelectPlayer(state.Id, decision.Id, Player: decision.PlayerChoices[0]),
-                    _ when decision.OkEnabled => DecisionCommands.Confirm(state),
-                    _ => null
+                DecisionCommand? reply = decision.Payload switch {
+                    OptionsPayload options => Choose(options.Selection),
+                    AbilityChoicePayload ability => Choose(ability.Selection),
+                    OrderingPayload order => Choose(order.Selection),
+                    RevealPayload => new AcknowledgeReveal(state.Id, decision.Id),
+                    TargetSelectionPayload { Players.Length: > 0 } targets => new SelectPlayer(state.Id, decision.Id, targets.Players[0]),
+                    EntitySelectionPayload { Players.Length: > 0 } entities => new SelectPlayer(state.Id, decision.Id, entities.Players[0]),
+                    _ => DecisionCommands.Confirm(state)
                 };
+                DecisionCommand? Choose(ChoiceSelection selection) => DecisionCommands.Choose(state,
+                    selection.Choices.Take(Math.Max(selection.Range.Min, Math.Min(1, selection.Range.Max))).Select(c => c.Index));
                 if (reply != null) try { await seat.ExecuteAsync(reply); }
                     catch (InvalidOperationException ex) when (ex.Message.Contains("choice has changed")) { }
             }

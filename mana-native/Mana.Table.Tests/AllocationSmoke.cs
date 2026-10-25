@@ -2,6 +2,7 @@ using System.Collections.Immutable;
 using System.Text.Json;
 using Mana.Contracts;
 using Mana.Magic;
+using Mana.Table.Interaction;
 using Microsoft.Xna.Framework.Graphics;
 using Microsoft.Xna.Framework.Input;
 using ButtonState = Microsoft.Xna.Framework.Input.ButtonState;
@@ -42,16 +43,17 @@ internal sealed class AllocationSmoke : ITableAutomation
             Check(Has("alloc-inspect-source"), "The source card has its own inspectable art");
             Check(Enumerable.Range(0, 6).All(i => Has("alloc-inspect:" + i)), "Six individual recipient portraits are reachable on the first page");
             Check(!Has("alloc-inspect:6") && Has("alloc-next"), "A seventh recipient has an explicit next page");
-            Check(view.Match!.Decision is { Amount: 10, SourceCard: { Power: 1, Toughness: 10 } }, "The engine's damage amount stays separate from the source's current power and toughness");
-            Check(view.Match.Decision!.Choices[0].Card is { Power: 2, Toughness: 5, Damage: 3 }, "Current recipient toughness and already marked damage remain separate");
-            Check(view.Match.Decision.Choices[0].Label == view.Match.Decision.Choices[1].Label && view.Match.Decision.Choices[0].Id != view.Match.Decision.Choices[1].Id,
+            Check(view.Match!.Decision is { Payload: AllocationPayload { Amount: 10 }, Context.Source.Card: { Power: 1, Toughness: 10 } }, "The engine's damage amount stays separate from the source's current power and toughness");
+            var allocation = (AllocationPayload)view.Match.Decision!.Payload;
+            Check(allocation.Recipients[0].Card is { Power: 2, Toughness: 5, Damage: 3 }, "Current recipient toughness and already marked damage remain separate");
+            Check(allocation.Recipients[0].Label == allocation.Recipients[1].Label && allocation.Recipients[0].Id != allocation.Recipients[1].Id,
                 "Same-name recipients retain distinct prompt occurrences");
-            Check(view.Match.Decision.Choices[2].Card is { FaceDown: true, Name: "Face-down card", Power: 2, Toughness: 2 }, "An anonymous recipient keeps authorized public combat stats without exposing its identity");
+            Check(allocation.Recipients[2].Card is { FaceDown: true, Name: "Face-down card", Power: 2, Toughness: 2 }, "An anonymous recipient keeps authorized public combat stats without exposing its identity");
             Check(!Has("allocate") && view.AllocationAmounts.All(a => a == 0), "The untouched draft has no enabled Confirm action");
             Capture("01-combat-overview"); MoveInspectCaption("alloc-inspect:0"); before = scenario.Replies.Count;
         }); Click();
-        Wait(() => view.AllocationDetail == 0, 2, () => {
-            Check(view.AllocationDetail == 0 && scenario.Replies.Count == before, "Clicking the visible Inspect caption inspects the exact recipient without submitting or discarding the allocation");
+        Wait(() => view.AllocationDetail is AllocationRecipientInspection { Index: 0 }, 2, () => {
+            Check(view.AllocationDetail is AllocationRecipientInspection { Index: 0 } && scenario.Replies.Count == before, "Clicking the visible Inspect caption inspects the exact recipient without submitting or discarding the allocation");
             Capture("02-recipient-current-state"); MoveHit("alloc-back");
         }); Click();
         Step(.12, () => MoveHit("alloc-required:0")); Click();
@@ -60,7 +62,7 @@ internal sealed class AllocationSmoke : ITableAutomation
             MoveHit("alloc-inspect-source");
         }); Click();
         Step(.12, () => {
-            Check(view.AllocationDetail == -1 && view.AllocationAmounts[0] == 2, "Source inspection preserves the recipient draft");
+            Check(view.AllocationDetail is AllocationSourceInspection && view.AllocationAmounts[0] == 2, "Source inspection preserves the recipient draft");
             MoveHit("alloc-back");
         }); Click();
         Step(.12, () => MoveHit("alloc-set:0")); Click();
@@ -108,8 +110,9 @@ internal sealed class AllocationSmoke : ITableAutomation
         });
         Wait(() => Has("alloc-fill:1"), 3, () => {
             Check(view.AllocationAmounts.SequenceEqual([1, 0]), "Generic allocation initializes each explicit engine minimum");
-            Check(AllocationGuide.Unit(view.Match!.Decision!) == "+1/+1 counters" && !Has("alloc-required:0"), "Generic counter allocation uses its actual unit without invented combat thresholds");
-            Check(AllocationGuide.Stats(view.Match.Decision!.Choices[1].Card).Length == 0 && view.Match.Decision.Choices[1].Card!.Counters["LOYALTY"] == 5,
+            var allocation = (AllocationPayload)view.Match!.Decision!.Payload;
+            Check(AllocationGuide.Unit(allocation) == "+1/+1 counters" && !Has("alloc-required:0"), "Generic counter allocation uses its actual unit without invented combat thresholds");
+            Check(AllocationGuide.Stats(allocation.Recipients[1].Card).Length == 0 && allocation.Recipients[1].Card!.Counters["LOYALTY"] == 5,
                 "A planeswalker shows its public loyalty instead of invented creature stats");
             MoveHit("alloc-fill:0");
         }); Click();
@@ -121,7 +124,7 @@ internal sealed class AllocationSmoke : ITableAutomation
             Capture("05-counter-allocation"); MoveHit("alloc-inspect:1");
         }); Click();
         Step(.12, () => {
-            Check(view.AllocationDetail == 1 && view.AllocationAmounts.SequenceEqual([2, 1]), "Inspecting the planeswalker leaves all counters staged");
+            Check(view.AllocationDetail is AllocationRecipientInspection { Index: 1 } && view.AllocationAmounts.SequenceEqual([2, 1]), "Inspecting the planeswalker leaves all counters staged");
             Capture("06-planeswalker-detail"); MoveHit("alloc-back");
         }); Click();
         Step(.12, () => { Expect(); MoveHit("allocate"); });
@@ -154,30 +157,25 @@ internal sealed class AllocationSmoke : ITableAutomation
             Text = "This controlled fixture uses engine-projected current characteristics."
         };
         var source = Body("allocation-source", "Ancient Stoneguard", 1, 10) with { CombatKeywords = combat ? ["Trample"] : [], Type = combat ? "Creature" : "Artifact", Power = combat ? 1 : null, Toughness = combat ? 10 : null };
-        Choice Recipient(int index, Card card, int controller, int? lethal = null) => new(index * 3 + 4, card.Name, card) {
-            Id = "recipient-" + index, CardId = card.VisualId, ControllerId = controller, OwnerId = controller, Minimum = 0, Maximum = combat ? 10 : 3, Lethal = lethal
-        };
-        Choice[] choices = combat ? [
+        AllocationRecipient Recipient(int index, Card card, int controller, int? lethal = null, int minimum = 0, int? maximum = null)
+            => new(index * 3 + 4, "recipient-" + index, card.Name, card, card.VisualId, null,
+                controller, controller, minimum, maximum ?? (combat ? 10 : 3), lethal);
+        AllocationRecipient[] choices = combat ? [
             Recipient(0, Body("soldier-a", "Soldier", 2, 5) with { Damage = 3, CombatKeywords = ["Indestructible"], Counters = ImmutableDictionary<string, int>.Empty.Add("+1/+1", 1) }, 1, 2),
             Recipient(1, Body("soldier-b", "Soldier", 1, 1) with { CombatKeywords = ["Deathtouch"] }, 2, 1),
             Recipient(2, Body("anonymous-public", "Face-down card", 2, 2) with { FaceDown = true, Text = "", CombatKeywords = ["Ward 2"] }, 1, 2),
             Recipient(3, new() { VisualId = "walker", Name = "Wandering Adept", Type = "Planeswalker", Counters = ImmutableDictionary<string, int>.Empty.Add("LOYALTY", 4) }, 2),
             Recipient(4, Body("angel", "Serra Angel", 4, 4) with { CombatKeywords = ["Flying", "Vigilance"] }, 3),
             Recipient(5, Body("elf", "Llanowar Elves", 1, 1) with { Tapped = true }, 3),
-            new(83, "Opponent 1", null) { Id = "defending-player", PlayerId = 1, IsDefender = true, Minimum = 0, Maximum = 10 }
+            new(83, "defending-player", "Opponent 1", null, "", 1, null, null, 0, 10, null, true)
         ] : [
-            Recipient(0, Body("counter-body", "Llanowar Elves", 3, 3) with { Damage = 1, Counters = ImmutableDictionary<string, int>.Empty.Add("+1/+1", 2) }, 0) with { Minimum = 1, Maximum = 2 },
+            Recipient(0, Body("counter-body", "Llanowar Elves", 3, 3) with { Damage = 1, Counters = ImmutableDictionary<string, int>.Empty.Add("+1/+1", 2) }, 0, minimum: 1, maximum: 2),
             Recipient(1, new() { VisualId = "counter-walker", Name = "Wandering Adept", Type = "Planeswalker", Counters = ImmutableDictionary<string, int>.Empty.Add("LOYALTY", 5) }, 0)
         ];
         return state with {
             Phase = combat ? "Combat damage" : "Main phase", PhaseKey = combat ? "COMBAT_DAMAGE" : "MAIN2", Combat = null, Stack = [],
             Players = state.Players.Select(p => p with { Priority = false, Zones = p.Zones.Select(z => z.Name == "Battlefield" ? z with { Cards = [], Count = 0 } : z).ToImmutableArray() }).ToImmutableArray(),
-            Decision = new() {
-                Task = DecisionTask.Allocation, Title = combat ? "Assign combat damage" : "Distribute +1/+1 counters", AllocationKind = combat ? "combat" : "generic",
-                Message = combat ? "Ancient Stoneguard assigns damage using toughness. Choose the amount for each recipient." : "Choose where these counters go. Current power and toughness already include existing counters.",
-                AmountLabel = combat ? "combat damage" : "+1/+1 counters", Amount = combat ? 10 : 3,
-                SourceCard = source, SourceCardId = source.VisualId, SourceControllerId = 0, OverrideOrder = true, MaySkip = maySkip, Choices = choices.ToImmutableArray()
-            }
+            Decision = new Decision("", new DecisionContext(Message: combat ? "Ancient Stoneguard assigns damage using toughness. Choose the amount for each recipient." : "Choose where these counters go. Current power and toughness already include existing counters.", Title: combat ? "Assign combat damage" : "Distribute +1/+1 counters", Source: new DecisionSource(CardId: source.VisualId, Card: source, ControllerId: 0)), new AllocationPayload(combat ? 10 : 3, combat ? AllocationKind.Combat : AllocationKind.Generic, combat ? "combat damage" : "+1/+1 counters", maySkip, choices.ToImmutableArray()))
         };
     }
 

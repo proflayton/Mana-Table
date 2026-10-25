@@ -23,7 +23,7 @@ internal sealed partial class TableApplication
         if (item == null && decision == null) return null;
         bool Matches(Card card, string id) => card.VisualId == id || card.CombatId == id || CardViews.Identity(card) == id;
         var source = decision == null ? item?.Card : CardViews.Source(match, decision);
-        var counter = (decision?.Effect ?? item?.Effect)?.CounterChange?.Card;
+        var counter = ((decision?.Payload as TargetSelectionPayload)?.Effect ?? item?.Effect)?.CounterChange?.Card;
         var card = AllCards().FirstOrDefault(card => !card.FaceDown && Matches(card, reference.CardId))
             ?? (source is { FaceDown: false } && Matches(source, reference.CardId) ? source : null)
             ?? (counter is { FaceDown: false } && Matches(counter, reference.CardId) ? counter : null);
@@ -104,7 +104,7 @@ internal sealed partial class TableApplication
     private void ReadPendingReference(PendingCardReference reference, bool stackSpell)
     {
         if (ResolvePendingReference(reference) is not { } card) return;
-        if (match?.Decision?.Task is DecisionTask.TargetSelection or DecisionTask.EntitySelection && IsCardActionable(card) && (stackSpell || AllCards().Any(current => SameVisibleCard(current, card)))) {
+        if (match?.Decision?.Payload is TargetSelectionPayload or EntitySelectionPayload && IsCardActionable(card) && (stackSpell || AllCards().Any(current => SameVisibleCard(current, card)))) {
             CardClick(card); return;
         }
         if (PendingConnectionCard(CardViews.Identity(card)) is { } entry && ToggleCardReader(entry.Hit)) return;

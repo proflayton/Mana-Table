@@ -80,7 +80,7 @@ internal sealed partial class TableApplication
             canvas.Line(mark + new Vector2(3, -5), mark + new Vector2(3, 3), Gold, 1.5f);
             canvas.Polygon([mark + new Vector2(-1, 1), mark + new Vector2(6, 1), mark + new Vector2(3, 6)], Gold);
         }
-        if (TableChoices.Index(match!, card) is { } choice && match!.Decision!.Ordered && decisionDraft.Selections.Contains(choice))
+        if (TableChoices.Index(match!, card) is { } choice && decisions.Payload is OrderingPayload && decisions.Selections.Contains(choice))
             PaintChoiceOrder(choice, new(edge.Left, edge.Top, edge.Width, Math.Min(24, edge.Height)), .48f);
     }
     private void PaintAttachmentBadge(Card card, Pose pose, int owner, bool compact)

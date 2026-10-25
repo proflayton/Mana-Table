@@ -86,11 +86,12 @@ public static class CounterDamageScenario
                 new(4, 8, "MAIN1", "resolved", 0, "All Will Be One's ability resolved.", SourceId, source.Name) {
                 Outcome = "resolved", Count = added, Cause = new(SourceId, source.Name, $"Deal {added} damage.", 0, "ability", effect.Id)
             }] : [activity],
-            Decision = choosing ? new() {
-                Task = DecisionTask.TargetSelection, SourceCard = source, SourceCardId = SourceId, SourceZone = "Battlefield", SourceControllerId = 0, Effect = effect,
-                Min = 1, Max = 1, PlayerChoices = [1, 2, 3],
-                Message = "All Will Be One (62) — Whenever you put one or more counters on a permanent or player, All Will Be One deals that much damage. [Added once: You; Chandra, the Firebrand (96)]"
-            } : new() { Task = DecisionTask.Priority, OkEnabled = pending }
+            Decision = choosing
+                ? new("", new(
+                        Message: "All Will Be One (62) — Whenever you put one or more counters on a permanent or player, All Will Be One deals that much damage. [Added once: You; Chandra, the Firebrand (96)]",
+                        Source: new(SourceId, source, 0, "Battlefield")),
+                    new TargetSelectionPayload(new("Confirm", false), new("Cancel", false), new(1, 1), [1, 2, 3], effect))
+                : new("", new(), new PriorityPayload(new("Confirm", pending)))
         };
     }
 

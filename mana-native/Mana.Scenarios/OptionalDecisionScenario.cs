@@ -30,13 +30,11 @@ public static class OptionalDecisionScenario
                     "Command" => new Zone("Command", 1, [pir], null), _ => zone
                 }).ToImmutableArray()
             }).ToImmutableArray(),
-            Decision = new() {
-                Id = "optional-target", Task = DecisionTask.TargetSelection,
-                SourceCard = toothy, SourceCardId = toothy.VisualId, SourceControllerId = 0, SourceZone = "Battlefield",
-                PlayerChoices = [0, 1, 2], Min = 1, Max = 1,
-                Message = "Target player may search their library for Pir, Imaginative Rascal, reveal it, put it into their hand, then shuffle.",
-                LibrarySearch = new(null, "Hand", pir.Name)
-            }
+            Decision = new("optional-target",
+                new(Message: "Target player may search their library for Pir, Imaginative Rascal, reveal it, put it into their hand, then shuffle.",
+                    Source: new(toothy.VisualId, toothy, 0, "Battlefield")),
+                new TargetSelectionPayload(new("Confirm", false), new("Cancel", false), new(1, 1), [0, 1, 2],
+                    Search: new("Hand", pir.Name)))
         };
         GameSnapshot Offer(int viewer, int owner) => table with {
             ViewerId = viewer, DecisionOwnerId = viewer, ActionClass = "confirm",
@@ -45,12 +43,9 @@ public static class OptionalDecisionScenario
                 Zones = player.Zones.Select(zone => zone.Name != "Hand" || player.Id == viewer ? zone
                     : zone with { Cards = [] }).ToImmutableArray()
             }).ToImmutableArray(),
-            Decision = table.Decision! with {
-                Id = "optional-search-" + viewer, Task = DecisionTask.Confirmation,
-                PlayerChoices = [], Min = 0, Max = 0, OkEnabled = true, CancelEnabled = true,
-                Ok = "Search library", Cancel = "Don't search", LibrarySearch = new(owner, "Hand", pir.Name),
-                Message = "You may search your library for Pir, Imaginative Rascal, reveal it, put it into your hand, then shuffle."
-            }
+            Decision = new("optional-search-" + viewer,
+                table.Decision!.Context with { Message = "You may search your library for Pir, Imaginative Rascal, reveal it, put it into your hand, then shuffle." },
+                new ConfirmationPayload(new("Search library", true), new("Don't search", true), new(owner, "Hand", pir.Name)))
         };
         GameSnapshot Opening(bool free) => baseline with {
             Id = "optional-decisions-lab", Turn = 0, Phase = "Opening hand", PhaseKey = "",
@@ -60,12 +55,10 @@ public static class OptionalDecisionScenario
                 Zones = player.Zones.Select(zone => zone.Name is "Battlefield" or "Graveyard"
                     ? zone with { Count = 0, Cards = [], TopCard = null } : zone).ToImmutableArray()
             }).ToImmutableArray(),
-            Decision = new() {
-                Id = "optional-opening-" + free, Task = DecisionTask.OpeningHand,
-                Ok = "Keep", Cancel = "Mulligan", OkEnabled = true, CancelEnabled = true,
-                OpeningHand = new(7, free ? 7 : 6, free ? 0 : 1, free),
-                Message = "Keep your opening hand or take a mulligan."
-            }
+            Decision = new("optional-opening-" + free,
+                new(Message: "Keep your opening hand or take a mulligan."),
+                new OpeningHandPayload(new("Keep", true), new("Mulligan", true),
+                    new(7, free ? 7 : 6, free ? 0 : 1, free)))
         };
         var crowded = ClutteredChangesScenario.Initial();
         crowded = crowded with {
@@ -81,19 +74,17 @@ public static class OptionalDecisionScenario
         return [
             new("Partner: choose the target", "Real player targeting remains explicit; library gestures name the eligible owners. Pir is publicly in Command, never inferred to be absent from a hidden library.", table),
             new("Only one legal player target", "A sole legal target remains an explicit target choice. It is not silently submitted or confused with an automatic effect recipient.", table with {
-                Decision = table.Decision! with { Id = "optional-sole-target", PlayerChoices = [0] }
+                Decision = table.Decision! with { Id = "optional-sole-target",
+                    Payload = ((TargetSelectionPayload)table.Decision.Payload) with { Players = [0] } }
             }),
             new("Partner: search or decline", "The targeted player can search and shuffle even when the partner is elsewhere. Neither option is a tiny cancel control; no library contents are disclosed yet.", Offer(0, 0)),
             new("Another player receives the offer", "The optional search belongs to the chosen player, independently of the source controller. Their library is private until the actual search authorizes its contents.", Offer(1, 1)),
             new("First multiplayer mulligan", "Read any hand card without committing. Keep and the free redraw are peer actions beside the hand.", Opening(true)),
             new("A paid mulligan", "The engine supplies the next hand size and required bottom-card count; the client does not derive Commander policy.", Opening(false)),
             new("Optional effect without a search", "An ordinary confirmation retains its source and two readable alternatives without acquiring library semantics.", table with {
-                ActionClass = "confirm", Decision = new() {
-                    Id = "optional-generic", Task = DecisionTask.Confirmation, SourceCard = toothy,
-                    SourceCardId = toothy.VisualId, SourceControllerId = 0, SourceZone = "Battlefield",
-                    Ok = "Yes", Cancel = "No", OkEnabled = true, CancelEnabled = true,
-                    Message = "Use this optional effect?"
-                }
+                ActionClass = "confirm", Decision = new("optional-generic",
+                    new(Message: "Use this optional effect?", Source: new(toothy.VisualId, toothy, 0, "Battlefield")),
+                    new ConfirmationPayload(new("Yes", true), new("No", true)))
             }),
             new("Library choice on a crowded table", "The same authored search target over 480 permanents. All owners remain explicit; review readability and placement, not just counts.", crowded)
         ];

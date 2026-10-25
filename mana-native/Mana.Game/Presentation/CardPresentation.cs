@@ -9,29 +9,35 @@ namespace Mana.Table.Presentation;
 
 /// <summary>The current authority and interaction policy used to prepare cards.</summary>
 internal sealed record CardPresentationContext(GameSnapshot? State, string Scope,
-    bool OverlayOpen, bool GalleryOpen, bool Dragging, bool CompactDecision, bool AbilityChoice = false, bool SourceActions = false,
-    bool KeepBattlefieldAnchor = false, Rectangle? BattlefieldReaderAvoid = null)
+    bool OverlayOpen, bool GalleryOpen, bool Dragging, bool CompactDecision,
+    bool KeepBattlefieldAnchor = false, Rectangle? BattlefieldReaderAvoid = null, DecisionDockView? Decision = null)
 {
-    public bool OpeningHandDecision => State?.Decision is { Task: DecisionTask.OpeningHand };
+    private DecisionReadingPolicy Reading => new(Decision ?? (State == null ? null : DecisionDockPresentation.From(State, new())));
+    public bool OpeningHandDecision => Reading.Allows(DecisionReading.OpeningHandInspection);
 
     public bool CanBrowseOpeningHand(PresentedCard entry) => OpeningHandDecision && State?.Viewer is { } viewer
         && entry.Zone == "Hand" && entry.Request.Owner == viewer.Id
         && viewer.Zone("Hand").Cards.Any(card => !card.FaceDown && CardViews.Same(card, entry.Card));
 
-    public bool CanBrowseDecisionSource(PresentedCard entry) => State is { Decision: { Task: DecisionTask.Confirmation } decision } state
-        && CardViews.Source(state, decision) is { FaceDown: false } source && CardViews.Same(source, entry.Card)
+    public bool CanBrowseDecisionSource(PresentedCard entry) => Reading.Allows(DecisionReading.SourceInspection)
+        && Reading.View?.SourceCard is { FaceDown: false } source && CardViews.Same(source, entry.Card)
         && entry.ChoiceSlot < 0 && CurrentOccurrence(entry) is { FaceDown: false };
 
     public bool CanBrowseHandSelection(PresentedCard entry) => State is { } state
-        && (state.Decision?.Task is DecisionTask.TargetSelection or DecisionTask.EntitySelection || TableChoices.IsDirect(state))
+        && Reading.Allows(DecisionReading.HandSelectionInspection)
         && state.Viewer is { } viewer && entry.ChoiceSlot < 0
         && entry.Zone == "Hand" && entry.Request.Owner == viewer.Id
         && viewer.Zone("Hand").Cards.Any(card => !card.FaceDown && CardViews.Same(card, entry.Card));
 
-    public Card? ChoiceFace(int slot) => State?.Decision is { } decision
-        ? decision.LibraryCards.Length > 0 ? decision.LibraryCards.ElementAtOrDefault(slot)?.Card
-            : decision.Choices.ElementAtOrDefault(slot) is { } choice ? CardViews.Choice(State, choice) : null
-        : null;
+    public Card? ChoiceFace(int slot) => Reading.ChoiceFace(State, slot);
+
+    public bool InspectOnClick(PresentedCard entry)
+    {
+        if (!CanRead(entry) || Dragging || CompactDecision && !CanBrowseHandSelection(entry)) return false;
+        if (entry.ChoiceSlot >= 0) return Reading.Allows(DecisionReading.RevealInspection);
+        return !OverlayOpen && (Reading.Allows(DecisionReading.TableInspection) || CanBrowseOpeningHand(entry)
+            || CanBrowseHandSelection(entry) || CanBrowseDecisionSource(entry));
+    }
 
     public bool CanRead(PresentedCard entry)
     {

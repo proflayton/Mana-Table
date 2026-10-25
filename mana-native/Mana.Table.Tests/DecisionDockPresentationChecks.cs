@@ -11,8 +11,7 @@ internal static class DecisionDockPresentationChecks
         var example = PresentationSmoke.Example();
         var priority = example with {
             Id = "decision-dock", ActivePlayerId = 2, PriorityPlayerId = 0, DecisionOwnerId = 0, ActionClass = "priority",
-            Decision = new() { Id = "priority-a", Task = DecisionTask.Priority, OkEnabled = true,
-                CanAutoPass = true, Ok = "OK" }
+            Decision = new Decision("priority-a", new DecisionContext(), new PriorityPayload(new DecisionReply("OK", true), null, CanAutoPass: true, QuietYieldToken: "", Abilities: []))
         };
         var auto = new DecisionDockControlFacts();
         var ready = DecisionDockPresentation.From(priority, auto);
@@ -50,18 +49,21 @@ internal static class DecisionDockPresentationChecks
 
         CheckTurnProgress(ownMain, check);
 
-        var optional = priority with { Decision = priority.Decision! with { CanAutoPass = false,
-            Message = "Arid Mesa could be activated. This text does not explain the engine's conservative permission.",
-            PriorityAbilities = [new("mesa", "mesa-key", "Arid Mesa", "Search your library.", false)] } };
+        var optional = priority with { Decision = priority.Decision! with { Context = priority.Decision!.Context with { Message = "Arid Mesa could be activated. This text does not explain the engine's conservative permission." }, Payload = ((PriorityPayload)(priority.Decision!).Payload) with { CanAutoPass = false, Abilities = [new("mesa", "mesa-key", "Arid Mesa", "Search your library.", false)] } } };
         var attention = DecisionDockPresentation.From(optional, auto);
+        var withoutAbilities = DecisionDockPresentation.From(optional with { Decision = optional.Decision! with {
+            Payload = ((PriorityPayload)optional.Decision.Payload) with { Abilities = [] }
+        } }, auto);
         check(attention is { Status: DecisionDockStatus.Priority, Headline: "Your priority", Caption: "", Instruction: "", Surface: DecisionDockSurface.Portrait }
-            && DecisionDockPresentation.From(optional with { Decision = optional.Decision! with { PriorityAbilities = [] } }, auto) == attention
-            && DecisionDockPresentation.From(priority with { Decision = priority.Decision! with { OkEnabled = false } }, auto).Status == DecisionDockStatus.Priority
+            && withoutAbilities with { Payload = attention.Payload } == attention
+            && attention.Payload is PriorityPayload { Abilities.Length: 1 }
+            && withoutAbilities.Payload is PriorityPayload { Abilities.IsEmpty: true }
+            && DecisionDockPresentation.From(priority with { Decision = priority.Decision! with { Payload = ((PriorityPayload)priority.Decision.Payload) with { Pass = new("OK", false) } } }, auto).Status == DecisionDockStatus.Priority
             && DecisionDockPresentation.From(priority with { PriorityPlayerId = 1 }, auto).Status == DecisionDockStatus.Waiting,
             "Conservative engine permission, disabled input and a different reported responder never invent a card-specific pause reason or an auto action");
 
         var quiet = auto with { Automatic = false, QuietArmed = true, QuietCanPass = true };
-        var quietWindow = optional with { Decision = optional.Decision! with { QuietYieldToken = "engine-owned-permission" } };
+        var quietWindow = optional with { Decision = optional.Decision! with { Payload = ((PriorityPayload)(optional.Decision!).Payload) with { QuietYieldToken = "engine-owned-permission" } } };
         check(DecisionDockPresentation.From(quietWindow, quiet) is { Status: DecisionDockStatus.AutoPassing, Surface: DecisionDockSurface.Portrait }
             && DecisionDockPresentation.From(quietWindow, quiet with { PauseReason = DecisionDockPauseReason.Inspection }) is {
                 Status: DecisionDockStatus.Priority, Caption: "Paused while reading", Surface: DecisionDockSurface.Portrait }
@@ -89,37 +91,34 @@ internal static class DecisionDockPresentationChecks
         var sourcePlayers = priority.Players.Select(player => player.Id != 0 ? player : player with {
             Zones = player.Zones.Select(zone => zone.Name != "Battlefield" ? zone : zone with { Count = 1, Cards = [currentSource] }).ToImmutableArray()
         }).ToArray();
-        var target = priority with { Players = sourcePlayers.ToImmutableArray(), ActionClass = "selection", Decision = new() {
-            Id = "target-after-priority", Task = DecisionTask.TargetSelection, Message = "Select a legal target reported by the engine.", Min = 1, Max = 1, SourceCardId = currentSource.VisualId,
-            SourceControllerId = 0, SourceCard = currentSource with { Power = 2, Toughness = 3 }, Ok = "Confirm target",
-            OkEnabled = false, QuietYieldToken = "must-not-answer-a-target" } };
+        var target = priority with { Players = sourcePlayers.ToImmutableArray(), ActionClass = "selection", Decision = new Decision("target-after-priority", new DecisionContext(Message: "Select a legal target reported by the engine.", Source: new DecisionSource(CardId: currentSource.VisualId, Card: currentSource with { Power = 2, Toughness = 3 }, ControllerId: 0)), new TargetSelectionPayload(new DecisionReply("Confirm target", false), new DecisionReply("Cancel", false), new SelectionRange(1, 1), [], null, null)) };
         var targeting = DecisionDockPresentation.From(target, quiet);
         check(targeting is { Status: DecisionDockStatus.Target, Headline: "Choose a target", ActorId: 0, Surface: DecisionDockSurface.Workspace,
                 GameId: "decision-dock", DecisionId: "target-after-priority", SourceCardId: "source-occurrence", SourceControllerId: 0,
                 ActionLabel: "Confirm target", SourceCard: { Name: "Nicanzil, Current Conductor", Power: 7 } }
-            && ReferenceEquals(targeting.SourceCard, currentSource) && !target.Decision!.OkEnabled,
+            && ReferenceEquals(targeting.SourceCard, currentSource) && !((TargetSelectionPayload)target.Decision!.Payload).Complete.Enabled,
             "The priority-to-target transition binds the new exact decision and current disclosed source without changing disabled confirmation or current stats");
         check(DecisionDockPresentation.From(target with { DecisionOwnerId = 1 }, auto) is {
                 Status: DecisionDockStatus.Waiting, SourceCard: null, Instruction: "", DecisionId: "", ActionLabel: "" },
             "A different reported decision owner prevents a stale local source or private instruction from becoming that player's choice");
 
-        var unknown = target with { Decision = new() { Id = "unfamiliar-required", Task = DecisionTask.Confirmation,
-            Message = "Choose a target-looking option, then place the remaining objects in a special order.\nThe engine owns these unfamiliar constraints." } };
+        var unknown = target with { Decision = new Decision("unfamiliar-required", new DecisionContext(Message: "Choose a target-looking option, then place the remaining objects in a special order.\nThe engine owns these unfamiliar constraints."), new ConfirmationPayload(new DecisionReply("Confirm", false), null, null)) };
         var fallback = DecisionDockPresentation.From(unknown, auto);
         check(fallback is { Status: DecisionDockStatus.Selection, Headline: "Make a choice", Caption: "", SourceCard: null }
-            && fallback.Instruction == unknown.Decision!.Message && fallback.DecisionId == "unfamiliar-required"
+            && fallback.Instruction == unknown.Decision!.Context.Message && fallback.DecisionId == "unfamiliar-required"
             && !fallback.Headline.Contains("target", StringComparison.OrdinalIgnoreCase),
             "An unfamiliar required input retains its exact engine instruction separately from the concise heading and never infers a target flow from prose");
 
-        check(DecisionDockPresentation.From(target with { Decision = target.Decision! with { Min = 2, Max = 2 } }, auto).Headline == "Choose 2 targets"
-            && DecisionDockPresentation.From(target with { Decision = target.Decision! with { Min = 1, Max = 3 } }, auto).Headline == "Choose 1–3 targets"
-            && DecisionDockPresentation.From(target with { Decision = target.Decision! with { Min = 0, Max = 1 } }, auto).Headline == "Choose up to 1 target",
+        GameSnapshot Range(int min, int max) => target with { Decision = target.Decision! with { Payload = ((TargetSelectionPayload)target.Decision.Payload) with { Range = new(min, max) } } };
+        check(DecisionDockPresentation.From(Range(2, 2), auto).Headline == "Choose 2 targets"
+            && DecisionDockPresentation.From(Range(1, 3), auto).Headline == "Choose 1–3 targets"
+            && DecisionDockPresentation.From(Range(0, 1), auto).Headline == "Choose up to 1 target",
             "The task preserves exact and optional target counts from the engine without repeating or parsing its effect prose");
 
         var ability = target with { ActionClass = "choice", Decision = target.Decision! with {
-            Id = "choose-source-ability", Task = DecisionTask.AbilityChoice, Min = 1, Max = 1, Choices = [new(4, "Pay the reported cost: do the first action.", null), new(9, "Do the second action.", null)] } };
+            Id = "choose-source-ability", Payload = new AbilityChoicePayload(new([new(4, "Pay the reported cost: do the first action.", null), new(9, "Do the second action.", null)], new(1, 1))) } };
         check(DecisionDockPresentation.From(ability, quiet) is { Status: DecisionDockStatus.AbilityChoice, Headline: "Choose an ability", DecisionId: "choose-source-ability", Surface: DecisionDockSurface.Workspace }
-            && DecisionDockPresentation.From(target with { Decision = target.Decision! with { Task = DecisionTask.Payment }, ActionClass = "mana" }, auto) is {
+            && DecisionDockPresentation.From(target with { Decision = target.Decision! with { Payload = new PaymentPayload(new("Pay", true), new("Cancel", false)) }, ActionClass = "mana" }, auto) is {
                 Status: DecisionDockStatus.Payment, Headline: "Pay the cost", ActorRole: DecisionDockActorRole.Paying, ActorId: 0, Surface: DecisionDockSurface.Workspace },
             "Source ability choice and subsequent payment remain required typed steps even when quiet pass intent was armed");
 

@@ -30,10 +30,10 @@ public sealed partial class ExperienceLabSession
             SourceAction Action(string id, string text) => new(decisionId + ":" + sourceCardKey + ":" + id, "activate", text);
             SourceAction[] actions = [];
             if (Scenario.Id == DecisionFlowScenario.Id && StageIndex == 0
-                && State.Decision is { Task: DecisionTask.Priority }
+                && State.Decision is { Payload: PriorityPayload }
                 && viewer.Zone("Hand").Cards.Contains(source) && source.Selectable && source.VisualId == DecisionFlowScenario.LandId)
                 actions = [new(decisionId + ":" + sourceCardKey + ":play-forest", "play", "Play land")];
-            else if (State.Decision is { Task: DecisionTask.Priority or DecisionTask.Payment }
+            else if (State.Decision is { Payload: PriorityPayload or PaymentPayload }
                 && viewer.Zone("Battlefield").Cards.Contains(source) && source.Selectable && !source.FaceDown && !source.PhasedOut) {
                 if (source.VisualId is ClutteredChangesScenario.ActionCardId or "reader-elf" or "mana-elf" && !source.Tapped)
                     actions = [Action("green-mana", "{T}: Add {G}.")];
@@ -73,11 +73,11 @@ public sealed partial class ExperienceLabSession
                         }).ToImmutableArray()
                     }).ToImmutableArray()
                 }).ToImmutableArray(),
-                Decision = new() {
-                    Task = DecisionTask.TargetSelection, Title = "Choose a target", Message = "Choose any target for Walking Ballista's 1 damage. Removing a +1/+1 counter is the cost.",
-                    Min = 1, Max = 1, CancelEnabled = true, PlayerChoices = State.Players.Select(player => player.Id).ToImmutableArray(),
-                    SourceCard = source, SourceCardId = source.VisualId, SourceZone = "Battlefield", SourceControllerId = State.ViewerId
-                }
+                Decision = new("",
+                    new(Message: "Choose any target for Walking Ballista's 1 damage. Removing a +1/+1 counter is the cost.",
+                        Title: "Choose a target", Source: new(source.VisualId, source, State.ViewerId, "Battlefield")),
+                    new TargetSelectionPayload(new("Confirm", false), new("Cancel", true), new(1, 1),
+                        State.Players.Select(player => player.Id).ToImmutableArray()))
             });
         }
         State = State with { Players = State.Players.Select(player => player.Id != State.ViewerId ? player : player with {
@@ -95,12 +95,13 @@ public sealed partial class ExperienceLabSession
     private GameSnapshot ReplyBallistaTarget(DecisionCommand reply)
     {
         if (sourceActionParent == null) throw Unsupported();
-        if (reply is CancelSelection && State.Decision!.CancelEnabled) {
+        var targeting = State.Decision?.Payload as TargetSelectionPayload ?? throw Unsupported();
+        if (reply is CancelSelection && targeting.Cancel.Enabled) {
             var parent = sourceActionParent;
             sourceActionParent = null; ballistaTarget = null;
             return State = Stamp(parent);
         }
-        if (reply is SelectPlayer { Player: var playerId } && State.Decision!.PlayerChoices.Contains(playerId)) {
+        if (reply is SelectPlayer { Player: var playerId } && targeting.Players.Contains(playerId)) {
             var player = State.Players.Single(player => player.Id == playerId);
             ballistaTarget = new("player", playerId.ToString(System.Globalization.CultureInfo.InvariantCulture), player.Name, playerId);
         } else if (reply is SelectCard selected) {

@@ -103,19 +103,21 @@ public sealed class TableScene
         bool sharedTableStudy = false)
     {
         var hand = HandLayout.Build(state, handPage, pointer, previouslyRaised, dragged, allowHover);
-        var orderedChoices = allowInlineOrdering && state.Decision is { Task: DecisionTask.Options or DecisionTask.AbilityChoice or DecisionTask.Ordering, Ordered: true } decision
-            ? decision.Choices.Where(c => c.Card != null && !string.IsNullOrEmpty(c.CardId)).Select(c => c.CardId).ToHashSet(StringComparer.Ordinal) : null;
+        var orderedChoices = allowInlineOrdering && state.Decision?.Payload is OrderingPayload order
+            ? order.Selection.Choices.Where(choice => choice.Card != null && choice.CardId.Length > 0).Select(choice => choice.CardId).ToHashSet(StringComparer.Ordinal) : null;
         bool duel = sharedTableStudy && state.Players.Length == 2;
         var geometry = SeatGeometry.Build(state, sharedTableStudy);
         var studySeparate = orderedChoices == null ? new HashSet<string>(StringComparer.Ordinal)
             : new HashSet<string>(orderedChoices, StringComparer.Ordinal);
-        if (sharedTableStudy && state.Decision is { } required
-            && (required.Task is DecisionTask.TargetSelection or DecisionTask.EntitySelection or DecisionTask.Attack or DecisionTask.Block
-                || required.Task is DecisionTask.Options or DecisionTask.AbilityChoice or DecisionTask.Ordering or DecisionTask.Reveal)) {
+        if (sharedTableStudy && state.Decision?.Payload is { } required
+            && required is TargetSelectionPayload or EntitySelectionPayload or AttackPayload or BlockPayload or OptionsPayload or AbilityChoicePayload or OrderingPayload or RevealPayload) {
+            var choices = required switch { OptionsPayload options => options.Selection.Choices, OrderingPayload ordering => ordering.Selection.Choices,
+                AbilityChoicePayload ability => ability.Selection.Choices, _ => [] };
+            var disclosed = required is RevealPayload reveal ? reveal.Cards : [];
             foreach (var card in state.Players.SelectMany(player => player.Zone("Battlefield").Cards)
-                .Where(card => required.Task is DecisionTask.Attack or DecisionTask.Block || card.Selectable
-                    || required.Choices.Any(choice => choice.CardId == CardViews.Identity(card)
-                    || choice.Card != null && CardViews.Same(choice.Card, card)))) studySeparate.Add(CardViews.Identity(card));
+                .Where(card => required is AttackPayload or BlockPayload || card.Selectable
+                    || choices.Any(choice => choice.CardId == CardViews.Identity(card) || choice.Card != null && CardViews.Same(choice.Card, card))
+                    || disclosed.Any(face => face.CardId == CardViews.Identity(card) || CardViews.Same(face.Card, card)))) studySeparate.Add(CardViews.Identity(card));
         }
         var layout = sharedTableStudy ? null : BattlefieldLayoutContext.Build(state, orderedChoices, geometry, isResource);
         var attachments = sharedTableStudy ? BattlefieldAttachments.Build(state,

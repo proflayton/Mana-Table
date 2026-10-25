@@ -15,7 +15,7 @@ internal sealed partial class CardReadingSmoke
         Step(.1, () => {
             repliesBefore = scenario.Replies.Count;
             Move(new(10, 70));
-            Publish(scenario.State with { Decision = new() { Task = DecisionTask.Priority, OkEnabled = true },
+            Publish(scenario.State with { Decision = new Decision("", new DecisionContext(), new PriorityPayload(new DecisionReply("Confirm", true), null, CanAutoPass: false, QuietYieldToken: "", Abilities: [])),
                 Players = scenario.State.Players.Select(p => p with { Counters = ImmutableDictionary<string, int>.Empty.Add("Energy", 2), States = [
                     new("counter:energy", "Energy", "counter", 2, null, "Energy counters belong to this player."),
                     new("speed", "Speed", "progress", 1, 4, speedDetail),

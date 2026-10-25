@@ -23,7 +23,7 @@ internal static class QuietPriorityPresentationChecks
         var engine = new InteractionScenarioEngine();
         var example = PriorityAbilitySmoke.Example();
         engine.Present(example with { Id = "quiet-priority-polling", PriorityPlayerId = 0, DecisionOwnerId = 0,
-            ActionClass = "priority", Decision = example.Decision! with { QuietYieldToken = "original-token" } });
+            ActionClass = "priority", Decision = example.Decision! with { Payload = ((PriorityPayload)(example.Decision!).Payload) with { QuietYieldToken = "original-token" } } });
         using var app = new TableApplication(TestTableServices.For(engine), directory, initialState: engine.State) { Automated = true };
         app.Initialize();
         var view = app.TestPort;
@@ -93,7 +93,7 @@ internal static class QuietPriorityPresentationChecks
 
         var revokedPoll = StartPoll();
         Click(original.Id);
-        engine.Present(engine.State with { Decision = engine.State.Decision! with { QuietYieldToken = "replacement-token" } });
+        engine.Present(engine.State with { Decision = engine.State.Decision! with { Payload = ((PriorityPayload)(engine.State.Decision!).Payload) with { QuietYieldToken = "replacement-token" } } });
         CompletePoll(revokedPoll, engine.State);
         check(!frame.Hits.Any(hit => hit.Id == "quiet-priority-stop")
             && frame.Hits.Any(hit => hit.Id == original.Id) && engine.Replies.Count == 0,
@@ -101,7 +101,7 @@ internal static class QuietPriorityPresentationChecks
 
         var stalePressPoll = StartPoll();
         Tick(Hit(original.Id).Bounds.Center, ButtonState.Pressed);
-        engine.Present(engine.State with { Decision = engine.State.Decision! with { QuietYieldToken = "" } });
+        engine.Present(engine.State with { Decision = engine.State.Decision! with { Payload = ((PriorityPayload)(engine.State.Decision!).Payload) with { QuietYieldToken = "" } } });
         CompletePoll(stalePressPoll, engine.State, mouseHeld: true);
         Tick();
         check(!frame.Hits.Any(hit => hit.Id is "quiet-priority-arm" or "quiet-priority-stop") && engine.Replies.Count == 0,
@@ -122,7 +122,7 @@ internal static class QuietPriorityPresentationChecks
             Phase = "Upkeep", PhaseKey = "UPKEEP",
             Players = example.Players.Select(player => player.Id != example.ViewerId ? player : player with {
                 Zones = player.Zones.Select(zone => zone.Name == "Hand" ? zone with { Count = 1, Cards = [instant] } : zone).ToImmutableArray()
-            }).ToImmutableArray(), Decision = example.Decision! with { QuietYieldToken = "continuation-token", PriorityAbilities = [] } });
+            }).ToImmutableArray(), Decision = example.Decision! with { Payload = ((PriorityPayload)(example.Decision!).Payload) with { QuietYieldToken = "continuation-token", Abilities = [] } } });
         var initial = engine.State;
         var replies = new ConcurrentQueue<GameCommand>();
         var firstStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -240,7 +240,7 @@ internal static class QuietPriorityPresentationChecks
             CheckQuietSurface("Returning to another local quiet window never swaps the stable intent for a Passing announcement");
 
             engine.Present(engine.State with { Stack = [new("Opponent spell", "An opponent cast a spell.", false, null) { Id = "new-public-spell" }],
-                Decision = engine.State.Decision! with { QuietYieldToken = "" },
+                Decision = engine.State.Decision! with { Payload = ((PriorityPayload)(engine.State.Decision!).Payload) with { QuietYieldToken = "" } },
                 Activity = [.. routineDraw, new(3, initial.Turn, "MAIN2", "cast", 1, "An opponent cast a spell.", null, null)] });
             string responsePrompt = engine.State.Decision!.Id;
             secondRelease.SetResult();
@@ -258,9 +258,7 @@ internal static class QuietPriorityPresentationChecks
             var staleCancel = frame.Hits.Single(hit => hit.Id == "quiet-priority-stop");
             var source = engine.State.Viewer!.Zone("Hand").Cards.Single();
             engine.Present(engine.State with { PriorityPlayerId = null, DecisionOwnerId = initial.ViewerId, ActionClass = "selection",
-                Decision = new() { Task = DecisionTask.TargetSelection, SourceCardId = source.VisualId, SourceCard = source, SourceControllerId = initial.ViewerId,
-                    Min = 1, Max = 1, Ok = "Confirm target", OkEnabled = false,
-                    Message = "Choose one legal creature for the required effect.", QuietYieldToken = "continuation-token" } });
+                Decision = new Decision("", new DecisionContext(Message: "Choose one legal creature for the required effect.", Source: new DecisionSource(CardId: source.VisualId, Card: source, ControllerId: initial.ViewerId)), new TargetSelectionPayload(new DecisionReply("Confirm target", false), new DecisionReply("Cancel", false), new SelectionRange(1, 1), [], null, null)) });
             string targetPrompt = engine.State.Decision!.Id;
             thirdRelease.SetResult();
             Until(() => !view.Busy && view.Match?.Decision?.Id == targetPrompt, "The quiet worker publishes the required target immediately instead of passing it");

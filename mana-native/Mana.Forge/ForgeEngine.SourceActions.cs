@@ -4,10 +4,11 @@ namespace Mana.Forge;
 
 public sealed partial class ForgeEngine
 {
-    private string sourceActionsGame = "", sourceActionsUnsupportedGame = "";
+    private string sourceActionsUnsupportedGame = "";
     public bool SupportsSourceActions => current is { SourceActionsAvailable: true, Failure: null } owner
         && owner.Ready.Task.IsCompletedSuccessfully && !disposed
-        && (sourceActionsUnsupportedGame.Length == 0 || sourceActionsUnsupportedGame != sourceActionsGame);
+        && owner.Commands.ObservedGameId is { Length: > 0 } game
+        && (sourceActionsUnsupportedGame.Length == 0 || sourceActionsUnsupportedGame != game);
 
     public async Task<SourceActionSet> SourceActionsAsync(string gameId, string decisionId, string sourceCardKey)
     {
@@ -16,6 +17,9 @@ public sealed partial class ForgeEngine
         ArgumentException.ThrowIfNullOrWhiteSpace(sourceCardKey);
         ObjectDisposedException.ThrowIf(disposed, this);
         if (!SupportsSourceActions) throw new NotSupportedException("This rules adapter does not expose source actions.");
+        var owner = current ?? throw new IOException("The engine is not running");
+        if (!owner.Commands.CanReadSource(gameId, decisionId, sourceCardKey))
+            throw new EngineCommandRejectedException("That source does not belong to the currently observed decision.");
         SourceActionSet result;
         try {
             result = Read<SourceActionSet>(await Request("matchSourceActions", new {
@@ -28,6 +32,8 @@ public sealed partial class ForgeEngine
             sourceActionsUnsupportedGame = gameId;
             throw new NotSupportedException("This table host does not expose source actions.", error);
         }
+        if (current != owner || owner.Failure != null || !owner.Commands.CanReadSource(gameId, decisionId, sourceCardKey))
+            throw new EngineCommandRejectedException("The source action context changed. Select the current card again.");
         if (!string.Equals(result.GameId, gameId, StringComparison.Ordinal)
             || !string.Equals(result.DecisionId, decisionId, StringComparison.Ordinal)
             || !string.Equals(result.SourceCardKey, sourceCardKey, StringComparison.Ordinal))

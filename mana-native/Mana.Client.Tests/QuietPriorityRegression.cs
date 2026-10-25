@@ -28,9 +28,9 @@ internal static class QuietPriorityRegression
         new PassForNow(initial.Id, initial.Decision!.Id, YieldToken: "armed-token").Validate();
         var ordinary = new SequenceConnection(initial);
         await new DecisionAdvance(ordinary).RunAsync(initial, _ => true, (_, _) => false);
-        check(ordinary.Replies.Count == 0 && !initial.Decision!.CanAutoPass && QuietPriorityPolicy.CanPass(initial, "armed-token"),
+        check(ordinary.Replies.Count == 0 && !((PriorityPayload)initial.Decision!.Payload).CanAutoPass && QuietPriorityPolicy.CanPass(initial, "armed-token"),
             "A quiet token never broadens ordinary Auto when an instant remains available");
-        var both = initial with { Decision = initial.Decision! with { CanAutoPass = true } };
+        var both = initial with { Decision = initial.Decision! with { Payload = ((PriorityPayload)initial.Decision!.Payload) with { CanAutoPass = true } } };
         var sharedConnection = new SequenceConnection(both);
         var shared = new DecisionAdvance(sharedConnection);
         for (int iteration = 0; iteration < 4; iteration++) {
@@ -55,7 +55,7 @@ internal static class QuietPriorityRegression
 
         var refreshed = initial with { Revision = 2, PhaseKey = "COMBAT_BEGIN", Decision = initial.Decision! with { Id = "second" } };
         var cast = refreshed with { Revision = 3, Stack = [new("Opponent's spell", "", false, null) { Id = "fresh-opponent-spell" }],
-            Decision = refreshed.Decision! with { Id = "response", QuietYieldToken = "", CanAutoPass = true } };
+            Decision = refreshed.Decision! with { Id = "response", Payload = ((PriorityPayload)refreshed.Decision!.Payload) with { QuietYieldToken = "", CanAutoPass = true } } };
         var windows = new SequenceConnection(refreshed, cast);
         var observed = await new DecisionAdvance(windows).RunQuietlyAsync(initial, "armed-token", _ => true, (_, _) => false);
         check(observed == cast && windows.Replies.Count == 2
@@ -100,14 +100,13 @@ internal static class QuietPriorityRegression
         check(observed == effectDrawState && effectDrawConnection.Replies.Count == 1,
             "An ordinary effect draw interrupts the worker before it can pass another empty local window");
 
-        var replacement = refreshed with { Decision = refreshed.Decision! with { QuietYieldToken = "replacement-token" } };
+        var replacement = refreshed with { Decision = refreshed.Decision! with { Payload = ((PriorityPayload)refreshed.Decision!.Payload) with { QuietYieldToken = "replacement-token" } } };
         var revoked = new SequenceConnection(replacement);
         observed = await new DecisionAdvance(revoked).RunQuietlyAsync(initial, "armed-token", _ => true, (_, _) => false);
         check(observed == replacement && revoked.Replies.Count == 1,
             "A newly issued token ends the original quiet intent rather than silently rearming it");
 
-        var required = refreshed with { ActionClass = "choice", Decision = new() { Id = "required", Task = DecisionTask.Options, Min = 1, Max = 1,
-            QuietYieldToken = "armed-token", Choices = [new(0, "Required choice", null)] } };
+        var required = refreshed with { ActionClass = "choice", Decision = new Decision("required", new DecisionContext(), new OptionsPayload(new ChoiceSelection([new(0, "Required choice", null)], new SelectionRange(1, 1), []))) };
         var choiceConnection = new SequenceConnection(required);
         observed = await new DecisionAdvance(choiceConnection).RunQuietlyAsync(initial, "armed-token", _ => true, (_, _) => false);
         var stopped = new SequenceConnection(initial);
@@ -149,7 +148,7 @@ internal static class QuietPriorityRegression
 
     private static GameSnapshot State(string decision, string token) => new("quiet-game", "playing", null, null, 0, 7, "Main phase", "MAIN1", 1,
         [new(0, "You", 40, true, false, ImmutableDictionary<string, int>.Empty, []), new(1, "Opponent", 40, false, false, ImmutableDictionary<string, int>.Empty, [])], [], null,
-        new() { Id = decision, Task = DecisionTask.Priority, OkEnabled = true, CanAutoPass = false, QuietYieldToken = token })
+        new Decision(decision, new DecisionContext(), new PriorityPayload(new DecisionReply("Confirm", true), null, CanAutoPass: false, QuietYieldToken: token, Abilities: [])))
         { Revision = 1, PriorityPlayerId = 0, DecisionOwnerId = 0, ActionClass = "priority" };
 
     private sealed class SequenceConnection(params GameSnapshot[] snapshots) : IMatchConnection

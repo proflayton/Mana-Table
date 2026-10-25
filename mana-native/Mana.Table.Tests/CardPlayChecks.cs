@@ -84,11 +84,10 @@ internal static class CardPlayChecks
             spell = frame.Cards.Single(card => card.Id == "play-bears");
             check(!spell.Playing && Near(spell.Display, spell.Rest), "The physical spell remains on the actual stack after its reveal finishes");
             var pending = engine.State;
-            frame = Present(pending with { Decision = new() { Task = DecisionTask.TargetSelection, SourceCard = pending.Stack[0].Card,
-                Effect = new() { Kind = "damage", Amount = 1 }, Min = 1, Max = 1 } });
+            frame = Present(pending with { Decision = new Decision("", new DecisionContext(Source: new DecisionSource(Card: pending.Stack[0].Card)), new TargetSelectionPayload(new DecisionReply("Confirm", false), new DecisionReply("Cancel", false), new SelectionRange(1, 1), [], new() { Kind = "damage", Amount = 1 }, null)) });
             check(frame.Cards.Any(card => card.Id == "play-bears" && card.Zone == "Stack"),
                 "Choosing a response target retains the existing physical stack instead of discarding its motion");
-            frame = Present(pending with { Decision = new() { Task = DecisionTask.Payment, SourceCard = new() { VisualId = "response-payment", Name = "Response spell" } } });
+            frame = Present(pending with { Decision = new Decision("", new DecisionContext(Source: new DecisionSource(Card: new() { VisualId = "response-payment", Name = "Response spell" })), new PaymentPayload(new DecisionReply("Confirm", false), new DecisionReply("Cancel", false))) });
             check(frame.Cards.Count(card => card.Id == "play-bears") == 1,
                 "A separate payment preview preserves the actual pending spell with its own physical identity");
             Present(pending); frame = Settle(); spell = frame.Cards.Single(card => card.Id == "play-bears");

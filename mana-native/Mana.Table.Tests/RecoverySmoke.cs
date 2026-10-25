@@ -129,7 +129,7 @@ internal sealed class RecoverySmoke : ITableAutomation
         internal bool Active, FailReads;
         internal int Replies, Imports, Leaves;
         internal GameSnapshot State = PresentationSmoke.Example() with { Revision = 1,
-            Decision = new() { Id = "recovery-decision", Task = DecisionTask.Priority, OkEnabled = true } };
+            Decision = new Decision("recovery-decision", new DecisionContext(), new PriorityPayload(new DecisionReply("Confirm", true), null, CanAutoPass: false, QuietYieldToken: "", Abilities: [])) };
         internal Lobby Lobby => new(mode, "Connected", null, false, null, Active, "", null, [], [], "recovery-table");
         public string Name => "Recovery scenario";
         public Task InitializeAsync() => Task.CompletedTask;

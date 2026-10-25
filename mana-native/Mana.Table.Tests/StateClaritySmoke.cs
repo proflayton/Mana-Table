@@ -46,7 +46,7 @@ internal sealed class StateClaritySmoke : ITableAutomation
             Check(view.Hits.Count(h => h.Id.StartsWith("player-counters:", StringComparison.Ordinal)) == 3,
                 "Every seat with nonzero public counters has a persistent inspectable resource badge");
             Check(StateClarity.Purpose(view.Match!).Contains("target player", StringComparison.OrdinalIgnoreCase)
-                && view.Match!.Decision!.SourceCard?.Name == "Toothy, Imaginary Friend",
+                && view.Match!.Decision!.Context.Source?.Card?.Name == "Toothy, Imaginary Friend",
                 "The source and engine-owned target purpose remain available beside the named controls");
             Capture("01-public-state-and-recipients");
         });
@@ -110,7 +110,7 @@ internal sealed class StateClaritySmoke : ITableAutomation
             Capture("03-waiting-for-another-seat");
             var source = view.Match!.Viewer!.Zone("Battlefield").Cards.Single(c => c.VisualId == "clarity-source");
             Publish(view.Match with { DecisionOwnerId = 0, PriorityPlayerId = 0, ActionClass = "priority",
-                Decision = new() { Task = DecisionTask.Priority, OkEnabled = true },
+                Decision = new Decision("", new DecisionContext(), new PriorityPayload(new DecisionReply("Confirm", true), null, CanAutoPass: false, QuietYieldToken: "", Abilities: [])),
                 Stack = [new("Same source", "First public trigger.", true, source) { Id = "trigger-a", ControllerId = 1 },
                     new("Same source", "Second public trigger.", true, source) { Id = "trigger-b", ControllerId = 2 }] });
         });
@@ -187,10 +187,10 @@ internal sealed class StateClaritySmoke : ITableAutomation
             Capture("08-anonymous-public-state");
         });
         ClickHit("close-overlay");
-        Step(.1, () => Publish(Example() with { Players = view.Match!.Players, Decision = Example().Decision! with { PlayerChoices = [0, 1] } }));
+        Step(.1, () => Publish(Example() with { Players = view.Match!.Players, Decision = Example().Decision! with { Payload = ((EntitySelectionPayload)Example().Decision!.Payload) with { Players = [0, 1] } } }));
         Wait(() => RecipientHits() == 2, 3, () => MoveHit(view.Hits.Single(h => h.Id == "recipient:1")));
         Step(0, () => mouse = Mouse(ButtonState.Pressed));
-        Step(0, () => Publish(view.Match! with { Decision = view.Match!.Decision! with { PlayerChoices = [0] } }));
+        Step(0, () => Publish(view.Match! with { Decision = view.Match!.Decision! with { Payload = ((EntitySelectionPayload)view.Match.Decision.Payload) with { Players = [0] } } }));
         Step(0, () => mouse = Mouse(ButtonState.Released));
         Step(.15, () => {
             Check(scenario.Replies.Count == 1, "A recipient revoked between real press and release cannot submit through stale geometry");
@@ -218,8 +218,7 @@ internal sealed class StateClaritySmoke : ITableAutomation
             new("Hand", id == 0 ? 0 : 7, [], null), new("Library", 70, [], null), new("Graveyard", 0, [], null), new("Exile", 0, [], null), new("Command", 0, [], null)
         ]) { Counters = id == 0 ? ImmutableDictionary<string, int>.Empty.Add("Poison", 9).Add("Energy", 2) : id == 1 ? ImmutableDictionary<string, int>.Empty.Add("Experience", 3) : id == 2 ? ImmutableDictionary<string, int>.Empty.Add("Poison", 1) : ImmutableDictionary<string, int>.Empty }).ToArray();
         return new("clarity-scenario", "playing", null, null, 0, 5, "Main phase", "MAIN1", 0, players.ToImmutableArray(), [], null,
-            new() { Task = DecisionTask.EntitySelection, PlayerChoices = [0, 1, 2], SourceCard = source, SourceControllerId = 0,
-                Message = "Partner with Pir — target player may put Pir into their hand from their library, then shuffle. Choose the recipient." }) {
+            new Decision("", new DecisionContext(Message: "Partner with Pir — target player may put Pir into their hand from their library, then shuffle. Choose the recipient.", Source: new DecisionSource(Card: source, ControllerId: 0)), new EntitySelectionPayload(new DecisionReply("Confirm", false), new DecisionReply("Cancel", false), [0, 1, 2], null))) {
             DecisionOwnerId = 0, PriorityPlayerId = 0, ActionClass = "selection"
         };
     }

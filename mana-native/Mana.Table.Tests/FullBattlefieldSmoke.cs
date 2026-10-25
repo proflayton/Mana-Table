@@ -89,11 +89,11 @@ internal sealed class FullBattlefieldSmoke : ITableAutomation
                 "The local tenth creature reads first and exposes its explicit current activation");
             MoveHit("read-card-action");
         }); Click();
-        Wait(() => scenario.Replies.Count == 1 && view.Match?.Decision?.Task == DecisionTask.AbilityChoice, 3, () => {
+        Wait(() => scenario.Replies.Count == 1 && view.Match?.Decision?.Payload is AbilityChoicePayload, 3, () => {
             Check(scenario.Replies.Count == 1 && scenario.Replies[0] is ActivateCard reply
                 && reply.GameId == actionGame && reply.DecisionId == actionDecision && reply.Card == actionCard,
                 "The local tenth creature submits exactly one action scoped to its own game, decision and card handle");
-            Check(view.Match?.Decision is { Task: DecisionTask.AbilityChoice, SourceCard.VisualId: "ten-0-9" },
+            Check(view.Match?.Decision is { Context.Source.Card.VisualId: "ten-0-9", Payload: AbilityChoicePayload },
                 "The ability chooser belongs to the local tenth creature");
             Capture("04-own-tenth-action");
             Publish(Example("mixed")); MoveAway();
@@ -240,19 +240,18 @@ internal sealed class FullBattlefieldSmoke : ITableAutomation
         Step(0, () => {
             var state = Example("mixed");
             var cards = new[] { 0, 1, 4 }.Select(index => state.Viewer!.Zone("Battlefield").Cards.Single(card => card.VisualId == "mixed-0-" + index)).ToArray();
-            Publish(state with { Id = "full-battlefield-dense-order", Decision = new() { Task = DecisionTask.Ordering, Min = 3, Max = 3,
-                Message = "Choose these creatures in order.", Choices = cards.Select((card, index) => new Choice(index, card.Name,
-                    card with { Key = "", VisualId = "", CombatId = "" }) { CardId = card.VisualId }).ToImmutableArray() } });
+            Publish(state with { Id = "full-battlefield-dense-order", Decision = new Decision("", new DecisionContext(Message: "Choose these creatures in order."), new OrderingPayload(new ChoiceSelection(cards.Select((card, index) => new Choice(index, card.Name,
+                    card with { Key = "", VisualId = "", CombatId = "" }) { CardId = card.VisualId }).ToImmutableArray(), new SelectionRange(3, 3), []))) });
             MoveAway();
         });
-        Wait(() => view.Match?.Decision is { Ordered: true } && TableChoices.IsDirect(view.Match) && BattlefieldReady(20), 4, () => {
-            Check(view.Match?.Decision is { Ordered: true } && TableChoices.IsDirect(view.Match) && BattlefieldReady(20),
+        Wait(() => view.Match?.Decision?.Payload is OrderingPayload && TableChoices.IsDirect(view.Match) && BattlefieldReady(20), 4, () => {
+            Check(view.Match?.Decision?.Payload is OrderingPayload && TableChoices.IsDirect(view.Match) && BattlefieldReady(20),
                 "The fresh dense ordered decision and all twenty real occurrences must settle before clicking");
             gameId = view.Match!.Id; decisionId = view.Match.Decision!.Id;
-            Check(view.Selections.Count == 0 && view.Match.Decision.Choices.All(choice => Scene().Battlefield(0).SelectMany(cluster => cluster.Cards)
+            Check(view.Selections.Count == 0 && ((OrderingPayload)view.Match.Decision.Payload).Selection.Choices.All(choice => Scene().Battlefield(0).SelectMany(cluster => cluster.Cards)
                 .Any(node => node.Id == choice.CardId && node.Dense && !node.DenseLabels.IsEmpty)),
                 "Three ordered candidates use the actual measured dense battlefield, starting with no positions chosen");
-            MoveCard(view.Match.Decision.Choices.Single(choice => choice.Index == order[0]).CardId);
+            MoveCard(((OrderingPayload)view.Match.Decision.Payload).Selection.Choices.Single(choice => choice.Index == order[0]).CardId);
         });
         foreach (int position in Enumerable.Range(0, 3)) {
             int chosen = position;
@@ -261,7 +260,7 @@ internal sealed class FullBattlefieldSmoke : ITableAutomation
                 Check(view.Selections.SequenceEqual(order.Take(chosen + 1)) && DenseOrderBadges(order.Take(chosen + 1).ToArray())
                     && scenario.Replies.Count == 1 && view.HoverPreview == null,
                     $"Dense ordering position {chosen + 1} remains complete, exposed and compact without an automatic reply");
-                if (chosen < 2) MoveCard(view.Match!.Decision!.Choices.Single(choice => choice.Index == order[chosen + 1]).CardId);
+                if (chosen < 2) MoveCard(((OrderingPayload)view.Match!.Decision!.Payload).Selection.Choices.Single(choice => choice.Index == order[chosen + 1]).CardId);
                 else { Capture("13-dense-order-three", captureWindow: false); MoveHit("confirm"); }
             });
         }
@@ -281,7 +280,7 @@ internal sealed class FullBattlefieldSmoke : ITableAutomation
             && DenseOrderExposed(index, badge.Bounds)).All(valid => valid);
     private bool DenseOrderExposed(int index, Microsoft.Xna.Framework.Rectangle bounds)
     {
-        string cardId = view.Match!.Decision!.Choices.Single(choice => choice.Index == index).CardId;
+        string cardId = ((OrderingPayload)view.Match!.Decision!.Payload).Selection.Choices.Single(choice => choice.Index == index).CardId;
         foreach (int y in new[] { bounds.Top + 3, bounds.Center.Y, bounds.Bottom - 3 })
             for (int x = bounds.Left + 5; x < bounds.Right - 5; x += 6)
                 if (view.HitAt(SmokePointer.Table(view, Pixel(new(x, y))))?.Card?.VisualId != cardId) return false;
@@ -480,7 +479,7 @@ internal sealed class FullBattlefieldSmoke : ITableAutomation
             Defender = new("player", "0", 0, "You"), Blocked = true
         }], [], null) : null;
         return state with { Id = "full-battlefield-" + mode, Players = players.ToImmutableArray(), Combat = combat, Stack = [], Activity = [],
-            ActivePlayerId = mode == "mixed" ? 1 : 0, Decision = new() { Task = DecisionTask.Priority, Message = "You have priority.", Ok = "OK", OkEnabled = true, CanAutoPass = false } };
+            ActivePlayerId = mode == "mixed" ? 1 : 0, Decision = new Decision("", new DecisionContext(Message: "You have priority."), new PriorityPayload(new DecisionReply("OK", true), null, CanAutoPass: false, QuietYieldToken: "", Abilities: [])) };
     }
     private static GameSnapshot ReadableCrowd()
     {

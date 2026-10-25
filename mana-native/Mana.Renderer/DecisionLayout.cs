@@ -7,6 +7,6 @@ namespace Mana.Renderer;
 public static class DecisionLayout
 {
     public static bool UsesSourceWorkspace(Decision? decision) => decision is {
-        Task: DecisionTask.OpeningHand or DecisionTask.Confirmation
-    } || decision?.LibrarySearch != null;
+        Payload: OpeningHandPayload or ConfirmationPayload
+    } or { Payload: TargetSelectionPayload { Search: not null } };
 }

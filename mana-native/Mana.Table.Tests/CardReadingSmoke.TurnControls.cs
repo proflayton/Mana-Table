@@ -36,7 +36,7 @@ internal sealed partial class CardReadingSmoke
             var state = PresentationSmoke.Example();
             Publish(state with { ActivePlayerId = state.ViewerId, PhaseKey = "MAIN1", Phase = "Main phase",
                 PriorityPlayerId = state.ViewerId, DecisionOwnerId = state.ViewerId, ActionClass = "priority",
-                Decision = state.Decision! with { CanAutoPass = false, QuietYieldToken = "" },
+                Decision = state.Decision! with { Payload = ((PriorityPayload)(state.Decision!).Payload) with { CanAutoPass = false, QuietYieldToken = "" } },
                 Players = state.Players.Select(player => player.Id != state.ViewerId ? player : player with {
                     Mana = ImmutableDictionary<string, int>.Empty.Add("W", 12).Add("U", 23).Add("B", 34)
                         .Add("R", 45).Add("G", 56).Add("C", 67)
@@ -74,7 +74,7 @@ internal sealed partial class CardReadingSmoke
                     && scenario.Replies.Count == originalReplies,
                     "The opponent's actual end step leaves the saved local stop visible without lighting a false local current phase");
                 CaptureTurn("00c-turn-opponent-end");
-                Publish(scenario.State with { Decision = scenario.State.Decision! with { QuietYieldToken = "portrait-quiet-window" } });
+                Publish(scenario.State with { Decision = scenario.State.Decision! with { Payload = ((PriorityPayload)(scenario.State.Decision!).Payload) with { QuietYieldToken = "portrait-quiet-window" } } });
             }, "An opponent's end step must retain local control ownership before quiet passing");
         Prepared(() => view.Hits.Any(hit => hit.Id == "quiet-priority-arm"), 2, () => {
             CaptureTurn("00d-turn-quiet-offered");

@@ -86,12 +86,11 @@ internal sealed class HandPlacementSmoke : ITableAutomation
                 "The exact placement ability enters the stack while the hand card remains uncommitted for the response window");
             Capture("02-placement-response-window");
             var state = scenario.State;
-            scenario.PresentHandPlacement(state with { Stack = [], Decision = new() { Task = DecisionTask.Options, Min = 0, Max = 1,
-                Message = "Choose a basic Forest card from your hand, or choose none.", Choices = [new(0, "Forest", Forest())] } });
+            scenario.PresentHandPlacement(state with { Stack = [], Decision = new Decision("", new DecisionContext(Message: "Choose a basic Forest card from your hand, or choose none."), new OptionsPayload(new ChoiceSelection([new(0, "Forest", Forest())], new SelectionRange(0, 1), []))) });
             view.Accept(scenario.State); before = scenario.Replies.Count; MoveAway();
         });
         Step(.3, () => {
-            Check(view.Match?.Decision is { Task: DecisionTask.Options or DecisionTask.AbilityChoice or DecisionTask.Ordering, Min: 0, Max: 1, Choices.Length: 1 },
+            Check(view.Match?.Decision is { Payload: OptionsPayload { Selection.Range.Min: 0, Selection.Range.Max: 1, Selection.Choices.Length: 1 } or AbilityChoicePayload { Selection.Range.Min: 0, Selection.Range.Max: 1, Selection.Choices.Length: 1 } or OrderingPayload { Selection.Range.Min: 0, Selection.Range.Max: 1, Selection.Choices.Length: 1 } },
                 "When the ability resolves, the engine presents the optional hand-card decision");
             MoveHit("choice:0");
         }); Click();
@@ -154,8 +153,7 @@ internal sealed class HandPlacementSmoke : ITableAutomation
         Wait(ReplySettled, 3, () => {
             CheckPlacement("An optional placement begins through the same exact source route");
             var state = scenario.State;
-            scenario.PresentHandPlacement(state with { Stack = [], Decision = new() { Task = DecisionTask.Options, Min = 0, Max = 1,
-                Message = "Choose a basic Forest card from your hand, or choose none.", Choices = [new(0, "Forest", Forest())] } });
+            scenario.PresentHandPlacement(state with { Stack = [], Decision = new Decision("", new DecisionContext(Message: "Choose a basic Forest card from your hand, or choose none."), new OptionsPayload(new ChoiceSelection([new(0, "Forest", Forest())], new SelectionRange(0, 1), []))) });
             view.Accept(scenario.State); before = scenario.Replies.Count; MoveAway();
         });
         Step(.3, () => {
@@ -194,8 +192,7 @@ internal sealed class HandPlacementSmoke : ITableAutomation
         }); Click();
         Wait(ReplySettled, 3, () => {
             CheckPlacement("The source-aware reader submits the existing exact hand-placement permission even when the source-action list is empty");
-            scenario.PresentHandPlacement(scenario.State with { Stack = [], Decision = new() { Task = DecisionTask.Options, Min = 0, Max = 1,
-                Choices = [new(0, "Forest", Forest())] } });
+            scenario.PresentHandPlacement(scenario.State with { Stack = [], Decision = new Decision("", new DecisionContext(), new OptionsPayload(new ChoiceSelection([new(0, "Forest", Forest())], new SelectionRange(0, 1), []))) });
             view.Accept(scenario.State); before = scenario.Replies.Count; MoveAway();
         });
         Step(.3, () => MoveHit("choice:0")); Click();
@@ -271,10 +268,9 @@ internal sealed class HandPlacementSmoke : ITableAutomation
             EligibleHandKeys = [prefix + "hand-forest"], HandPlacementLimit = 1
         };
         return state with { Id = "hand-placement-scenario", Players = players.ToImmutableArray(), Stack = [], Combat = null, Activity = [], ActivePlayerId = 0,
-            Decision = new() { Task = DecisionTask.Priority, OkEnabled = true, CanAutoPass = false,
-                PriorityAbilities = mode is "zones" or "revoked" ? [] : mode == "multi"
+            Decision = new Decision("", new DecisionContext(), new PriorityPayload(new DecisionReply("Confirm", true), null, CanAutoPass: false, QuietYieldToken: "", Abilities: mode is "zones" or "revoked" ? [] : mode == "multi"
                     ? [Option("placement-a", "source-a", "Gaea's Touch"), Option("placement-b", "source-b", "Second test source")]
-                    : [Option("placement-a", "source-a", "Gaea's Touch")] } };
+                    : [Option("placement-a", "source-a", "Gaea's Touch")])) };
     }
     private bool Reading(string id) => view.DisplayedPose(id) is { Size.X: >= 400 } && view.HoverPreview is { Width: >= 400 };
     private void MoveCard(string id)

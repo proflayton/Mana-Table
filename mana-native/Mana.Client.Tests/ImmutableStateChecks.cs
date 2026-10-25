@@ -2,6 +2,7 @@ using System.Collections.Immutable;
 using System.Reflection;
 using System.Runtime.CompilerServices;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using Mana.Client;
 using Mana.Contracts;
 
@@ -36,7 +37,7 @@ internal static class ImmutableStateChecks
         Choice[] originalChoices = [new(0, "Creature", card)];
         var state = new GameSnapshot("immutable", "playing", null, null, 0, 1, "Main phase", "MAIN1", 0,
             [new(0, "You", 40, true, false, ImmutableDictionary<string, int>.Empty, [new("Battlefield", 1, originalCards.ToImmutableArray(), null)])],
-            [], null, new() { Id = "choice", Task = DecisionTask.Options, Choices = originalChoices.ToImmutableArray(), Min = 1, Max = 1 });
+            [], null, new Decision("choice", new DecisionContext(), new OptionsPayload(new ChoiceSelection(originalChoices.ToImmutableArray(), new SelectionRange(1, 1), []))));
         var client = new ClientSession(new ReadOnlyConnection(state));
         client.Accept(state);
 
@@ -44,7 +45,7 @@ internal static class ImmutableStateChecks
         originalCards[0] = card with { Name = "Replaced outside the session" };
         originalChoices[0] = new(1, "Replaced outside the session", null);
         check(client.State!.Viewer!.Zone("Battlefield").Cards[0].Name == "Creature"
-            && client.State.Decision!.Choices[0].Index == 0 && client.State.Decision.Choices[0].Card!.Counters["+1/+1"] == 2,
+            && ((OptionsPayload)client.State.Decision!.Payload).Selection.Choices[0].Index == 0 && ((OptionsPayload)client.State.Decision.Payload).Selection.Choices[0].Card!.Counters["+1/+1"] == 2,
             "Changing provider construction buffers cannot change an accepted frame or its private choices");
 
         bool listRejected = false, dictionaryRejected = false;
@@ -65,11 +66,101 @@ internal static class ImmutableStateChecks
 
         var roundTrip = JsonSerializer.Deserialize<GameSnapshot>(JsonSerializer.Serialize(state))!;
         check(roundTrip.Viewer!.Zone("Battlefield").Cards[0].Counters["+1/+1"] == 2
-            && roundTrip.Decision!.Choices[0].Card!.States!.Value[0].Key == "flying",
+            && ((OptionsPayload)roundTrip.Decision!.Payload).Selection.Choices[0].Card!.States!.Value[0].Key == "flying",
             "Immutable nested cards, counters, state descriptors and decision choices survive JSON projection");
         client.Close();
 
         CheckWorkspace(check, card);
+        CheckDecisions(check, card);
+    }
+
+    private static void CheckDecisions(Action<bool, string> check, Card card)
+    {
+        var yes = new DecisionReply("Continue", true);
+        var no = new DecisionReply("Cancel", false);
+        var choice = new Choice(7, card.Name, card) { CardId = card.VisualId };
+        var single = new ChoiceSelection([choice], new(1, 1));
+        var disclosure = new LibraryChoice(7, card.Name, card) { CardId = card.VisualId };
+        DecisionPayload[] variants = [
+            new PriorityPayload(yes, new(PriorityAlternative.PassTurn, yes), Abilities: [new("ability", card.Key, card.Name, "Ability text", false)]),
+            new OpeningHandPayload(yes, no, new(7, 6, 1, false)),
+            new PaymentPayload(yes, no), new AttackPayload(yes), new BlockPayload(yes),
+            new TargetSelectionPayload(yes, no, new(1, 1), [0], new() { Kind = "damage", Amount = 3 }, new("Hand", "Known search name")),
+            new EntitySelectionPayload(yes, no, [0]),
+            new ConfirmationPayload(yes, no, new(0, "Hand", "Known search name")),
+            new AbilityChoicePayload(single),
+            new OptionsPayload(new([choice], new(1, 1), [disclosure])),
+            new OrderingPayload(single), new RevealPayload([disclosure with { Index = null }]),
+            new NumberPayload("-4"), new TextPayload("Player's chosen words"),
+            new AllocationPayload(3, AllocationKind.Generic, "counters", false, [new(0, "recipient", card.Name, card, card.VisualId, null, 0, 0, 0, 3)])
+        ];
+        var tags = new HashSet<string>();
+        var json = new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase };
+        foreach (var payload in variants) {
+            var decision = new Decision("typed", new("Choose", "Title", new(card.VisualId, card, 0, "Battlefield")), payload);
+            string wire = JsonSerializer.Serialize(decision, json);
+            var decoded = JsonSerializer.Deserialize<Decision>(wire, json)!;
+            using var document = JsonDocument.Parse(wire);
+            tags.Add(document.RootElement.GetProperty("payload").GetProperty("type").GetString()!);
+            check(decoded.Payload.GetType() == payload.GetType() && JsonSerializer.Serialize(decoded, json) == wire,
+                payload.GetType().Name + " preserves its exact neutral JSON payload and nested immutable facts");
+            var snapshot = new GameSnapshot("prepared-union", "playing", null, null, 0, 1, "Main", "MAIN1", 0,
+                [new(0, "You", 40, true, false, ImmutableDictionary<string, int>.Empty, [])], [], null, decision) { DecisionOwnerId = 0 };
+            _ = Mana.Magic.DecisionDockPresentation.From(snapshot, new());
+        }
+        check(tags.Count == 15 && variants.Select(value => value.GetType()).ToHashSet().SetEquals(
+                typeof(DecisionPayload).GetCustomAttributes<JsonDerivedTypeAttribute>().Select(attribute => attribute.DerivedType))
+            && typeof(Decision).GetProperties().Select(property => property.Name).Order().SequenceEqual(new[] { "Context", "Id", "Payload" }),
+            "Every sealed payload has a unique JSON discriminator and the envelope has no independently writable task or legacy fields");
+        var numeric = (NumberPayload)JsonSerializer.Deserialize<Decision>(JsonSerializer.Serialize(new Decision("number", new(), new NumberPayload("-4")), json), json)!.Payload;
+        check(numeric.Range == null && ((EntitySelectionPayload)variants[6]).Range == null,
+            "An unbounded integer textbox and an entity selector without published cardinality retain absent ranges");
+
+        string[] rejectedJson = [
+            """{"id":"x","context":{},"payload":{"type":"unknown"}}""",
+            """{"id":"x","context":{},"payload":{}}""",
+            """{"id":"x","context":{},"payload":null}""",
+            """{"id":"x","context":{}}""",
+            """{"id":"x","context":null,"payload":{"type":"reveal","cards":[]}}""",
+            """{"id":"x","context":{},"payload":{"type":"priority"}}""",
+            """{"id":"x","context":{},"payload":{"type":"priority","pass":null}}""",
+            """{"id":"x","context":{},"payload":{"type":"options","selection":null}}""",
+            """{"id":"x","context":{},"payload":{"type":"ordering"}}""",
+            """{"id":"x","context":{},"payload":{"type":"reveal","cards":[null]}}""",
+            """{"id":"x","context":{},"payload":{"type":"reveal","cards":[{"index":null,"label":"Hidden","card":null}]}}""",
+            """{"id":"x","context":{},"payload":{"type":"priority","pass":{"label":"Pass","enabled":true},"alternative":{"kind":99,"reply":{"label":"Other","enabled":true}}}}"""
+        ];
+        foreach (string wire in rejectedJson) {
+            bool rejected = false;
+            try { _ = JsonSerializer.Deserialize<Decision>(wire, json); }
+            catch (Exception error) when (error is JsonException or NotSupportedException or ArgumentException) { rejected = true; }
+            check(rejected, "Malformed neutral decision JSON cannot publish a missing, unknown or null required payload value");
+        }
+        Action[] nullMutations = [
+            () => _ = new Decision("x", new(), variants[0]) with { Payload = null! },
+            () => _ = new Decision("x", new(), variants[0]) with { Context = null! },
+            () => _ = new PriorityPayload(null!),
+            () => _ = new PriorityPayload(yes) with { Pass = null! },
+            () => _ = new OpeningHandPayload(yes, no) with { Mulligan = null! },
+            () => _ = new PaymentPayload(yes, no) with { Cancel = null! },
+            () => _ = new TargetSelectionPayload(yes, no, new(1, 1), []) with { Complete = null! },
+            () => _ = new OptionsPayload(single) with { Selection = null! },
+            () => _ = disclosure with { Card = null! }
+        ];
+        foreach (var mutate in nullMutations) {
+            bool rejected = false;
+            try { mutate(); } catch (ArgumentException) { rejected = true; }
+            check(rejected, "Constructor and record-copy paths preserve required decision members");
+        }
+        check(new PriorityPayload(yes).Abilities.IsEmpty
+            && (new PriorityPayload(yes, Abilities: [new("a", "b", "c", "d", false)]) with { Abilities = default }).Abilities.IsEmpty
+            && new TargetSelectionPayload(yes, no, new(0, 1), default).Players.IsEmpty
+            && new EntitySelectionPayload(yes, no, default).Players.IsEmpty && new RevealPayload(default).Cards.IsEmpty,
+            "Absent optional arrays are safely enumerable empty values in constructors and record copies");
+        bool foreignRejected = false;
+        try { _ = new ForeignDecisionPayload(variants[0]); } catch (ArgumentException) { foreignRejected = true; }
+        check(foreignRejected && ((PriorityPayload)variants[0] with { CanAutoPass = true }).CanAutoPass,
+            "Record copies retain their sealed variant and another assembly cannot introduce a payload through the protected copy constructor");
     }
 
     private static void CheckWorkspace(Action<bool, string> check, Card card)
@@ -132,6 +223,13 @@ internal static class ImmutableStateChecks
             foreach (var element in type.GetGenericArguments()) AssertImmutable(element, visited);
             return;
         }
+        if (type == typeof(DecisionPayload)) {
+            var variants = type.GetCustomAttributes<JsonDerivedTypeAttribute>().Select(attribute => attribute.DerivedType).ToHashSet();
+            if (!variants.SetEquals(type.Assembly.GetTypes().Where(candidate => !candidate.IsAbstract && type.IsAssignableFrom(candidate))))
+                throw new Exception("The closed payload hierarchy and JSON union differ.");
+            foreach (var variant in variants) AssertImmutable(variant, visited);
+            return;
+        }
         if (type.Assembly != typeof(GameSnapshot).Assembly || !type.IsSealed || type.GetFields(BindingFlags.Instance | BindingFlags.Public).Length != 0)
             throw new Exception("Mutable or foreign state type escaped the service boundary: " + type);
         foreach (var property in type.GetProperties(BindingFlags.Instance | BindingFlags.Public)) {
@@ -146,5 +244,10 @@ internal static class ImmutableStateChecks
         public Task<GameSnapshot?> ObserveAsync() => Task.FromResult<GameSnapshot?>(state);
         public Task ExecuteAsync(GameCommand command) => throw new InvalidOperationException("No command is needed to inspect immutable state.");
         public Task ConcedeAsync(string gameId) => throw new InvalidOperationException("No command is needed to inspect immutable state.");
+    }
+
+    private sealed record ForeignDecisionPayload : DecisionPayload
+    {
+        public ForeignDecisionPayload(DecisionPayload original) : base(original) { }
     }
 }

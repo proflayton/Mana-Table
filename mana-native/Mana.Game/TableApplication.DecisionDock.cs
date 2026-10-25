@@ -41,7 +41,7 @@ internal sealed partial class TableApplication
     private void DrawDecisionDock()
     {
         var state = match!; var d = state.Decision;
-        decisionDock = DecisionDockPresentation.From(state, CurrentDecisionControls());
+        decisionDock = decisions.Presentation ?? throw new InvalidOperationException("Decision presentation was not prepared.");
         decisionTextBounds = Rectangle.Empty; decisionText = ""; decisionTextOverflow = false;
         decisionPanelBounds = new(1240, 712, 360, 188);
         if (DrawRecoveryDock(state)) return;
@@ -60,7 +60,7 @@ internal sealed partial class TableApplication
 
         DrawPortraitTurnControls();
         if (!SelectingActionTarget && DrawOptionalDecision(state)) return;
-        if (d?.LibrarySearch != null && d.Task == DecisionTask.TargetSelection) {
+        if (d?.Payload is TargetSelectionPayload { Search: not null }) {
             // Legal recipient gestures live on the actual library piles. The
             // engine still receives its current target-player selection.
             decisionPanelBounds = Rectangle.Empty;
@@ -84,7 +84,7 @@ internal sealed partial class TableApplication
         if (QuietPriorityArmed && !SelectingActionTarget) DrawPortraitPriority(decisionDock);
 
         var view = decisionDock;
-        bool recipientChoice = !SelectingActionTarget && d?.Task == DecisionTask.EntitySelection && StateClarity.Recipients(state).Length > 0;
+        bool recipientChoice = !SelectingActionTarget && d?.Payload is EntitySelectionPayload && StateClarity.Recipients(state).Length > 0;
         bool following = busy || d == null;
         var abilities = PriorityAbilityOptions();
         // A source/recipient workspace owns its effect. The dock owns the next
@@ -109,21 +109,32 @@ internal sealed partial class TableApplication
         // Preserve the prompt while its answer is reconciled. Busy state removes
         // actions without adding a competing status panel.
         if (following) return;
-        if (SelectingActionTarget) {
-            if (d!.OkEnabled) Button("confirm", d.Ok, 1266, 799, 296, new MatchIntent.ConfirmDecision(), !busy, true, 47);
-            if (d.CancelEnabled) Button("cancel", d.Cancel, 1459, d.OkEnabled ? 852 : 799, 103, new MatchIntent.CancelDecision(), !busy, height: 32);
-        } else if (recipientChoice) {
-            // The named source/portrait targets own this required choice.
-        } else if (TableChoice) {
-            Button("confirm", decisionDraft.Selections.Count == 0 && d!.Min == 0 ? "Choose none" : $"Confirm ({decisionDraft.Selections.Count}/{d!.Max})", 1266, 799, 296,
-                new MatchIntent.ConfirmSelection(), TableChoices.CanConfirm(state, decisionDraft.Selections), true, 47);
-            Button("choicesclear", "Clear", 1459, 852, 103, new MatchIntent.ClearSelection(), decisionDraft.Selections.Count > 0, height: 27);
-        } else if (d?.Task is DecisionTask.Unspecified or DecisionTask.Priority or DecisionTask.Payment or DecisionTask.Attack
-            or DecisionTask.Block or DecisionTask.TargetSelection or DecisionTask.EntitySelection) {
-            Button("confirm", view.ActionLabel, 1266, 799, 296, new MatchIntent.ConfirmDecision(), CombatGuide.CanConfirm(state), true, 47);
-            if (d.CancelEnabled) Button("cancel", d.Task == DecisionTask.Priority && d.Cancel == "End Turn" ? "Pass turn" : d.Cancel,
-                1459, 852, 103, new MatchIntent.CancelDecision(), height: 27);
-        } else if (d != null) Button("open-decision", "Make a choice", 1266, 799, 296, new MatchIntent.OpenDecision(), true, true, 47);
+        switch (view.Payload) {
+            case TargetSelectionPayload target:
+                DrawDecisionReplies(target.Complete, target.Cancel); break;
+            case EntitySelectionPayload entities when !recipientChoice:
+                DrawDecisionReplies(entities.Complete, entities.Cancel, showDisabledComplete: true); break;
+            case EntitySelectionPayload: break;
+            case OptionsPayload or OrderingPayload when view.RequiredSurface == DecisionRequiredSurface.Table:
+                var range = view.Selection!.Range;
+                Button("confirm", decisions.Selections.Count == 0 && range.Min == 0 ? "Choose none" : $"Confirm ({decisions.Selections.Count}/{range.Max})", 1266, 799, 296,
+                    new MatchIntent.ConfirmSelection(), TableChoices.CanConfirm(state, decisions.Selections), true, 47);
+                Button("choicesclear", "Clear", 1459, 852, 103, new MatchIntent.ClearSelection(), decisions.Selections.Count > 0, height: 27); break;
+            case PaymentPayload payment: DrawDecisionReplies(payment.Pay, payment.Cancel, showDisabledComplete: true); break;
+            case AttackPayload attack: DrawDecisionReplies(attack.Complete, null, showDisabledComplete: true); break;
+            case BlockPayload block: DrawDecisionReplies(block.Complete, null, showDisabledComplete: true); break;
+            case OptionsPayload or OrderingPayload or RevealPayload or NumberPayload or TextPayload or AllocationPayload:
+                Button("open-decision", "Make a choice", 1266, 799, 296, new MatchIntent.OpenDecision(), true, true, 47); break;
+            case null or PriorityPayload or OpeningHandPayload or ConfirmationPayload or AbilityChoicePayload: break;
+            default: throw new InvalidOperationException("No decision painter owns " + view.Payload.GetType().Name);
+        }
+    }
+
+    private void DrawDecisionReplies(DecisionReply complete, DecisionReply? cancel, bool showDisabledComplete = false)
+    {
+        bool showComplete = complete.Enabled || showDisabledComplete;
+        if (showComplete) Button("confirm", complete.Label, 1266, 799, 296, new MatchIntent.ConfirmDecision(), !busy && complete.Enabled && CombatGuide.CanConfirm(match!), true, 47);
+        if (cancel?.Enabled == true) Button("cancel", cancel.Label, 1459, showComplete ? 852 : 799, 103, new MatchIntent.CancelDecision(), !busy, height: 32);
     }
 
     private void DrawDecisionRole(DecisionDockView view, Vector2 center, Color accent)

@@ -3,74 +3,47 @@ using System.Collections.Immutable;
 
 namespace Mana.Magic;
 
-// Presents and validates the engine's allocation constraints. It does not
-// calculate combat damage, lethal thresholds, prevention or resulting deaths.
+// Human explanations of the same published constraints used by command permission.
 public static class AllocationGuide
 {
-    public static string Unit(Decision decision) => !string.IsNullOrWhiteSpace(decision.AmountLabel)
-        ? decision.AmountLabel.Trim() : decision.AllocationKind == "combat" ? "combat damage" : "amount";
-
-    public static int Minimum(Decision decision, int index) => Math.Max(0,
-        decision.Choices[index].Minimum ?? (decision.AtLeastOne ? 1 : 0));
-
-    public static int Maximum(Decision decision, int index) => Math.Max(0, Math.Min(decision.Amount,
-        decision.Choices[index].Maximum ?? (index < decision.Limits.Length ? decision.Limits[index] : decision.Amount)));
-
+    public static string Unit(AllocationPayload allocation) => !string.IsNullOrWhiteSpace(allocation.AmountLabel)
+        ? allocation.AmountLabel.Trim() : allocation.Kind == AllocationKind.Combat ? "combat damage" : "amount";
+    public static int Minimum(AllocationPayload allocation, int index) => allocation.Recipients[index].Minimum;
+    public static int Maximum(AllocationPayload allocation, int index) => allocation.Recipients[index].Maximum;
     public static long Total(IReadOnlyList<int> amounts) => amounts.Sum(value => (long)value);
-
-    public static string? Problem(Decision decision, IReadOnlyList<int> amounts)
+    public static string? Problem(AllocationPayload allocation, IReadOnlyList<int> amounts)
     {
-        if (decision.Task is not (DecisionTask.Allocation) || decision.Amount < 0 || amounts.Count != decision.Choices.Length)
-            return "Assign an amount to every recipient.";
-        for (int i = 0; i < amounts.Count; i++) {
-            if (amounts[i] < Minimum(decision, i)) return $"Assign at least {Minimum(decision, i)} to {Reference(decision.Choices[i], i)}.";
-            if (amounts[i] > Maximum(decision, i)) return $"{Reference(decision.Choices[i], i)} can receive at most {Maximum(decision, i)}.";
-        }
-        long remaining = decision.Amount - Total(amounts);
-        if (remaining > 0) return $"{remaining} left to assign.";
-        if (remaining < 0) return $"{-remaining} too many assigned.";
-        if (decision.AllocationKind == "combat" && decision.Choices.Where((choice, index) => choice.IsDefender && amounts[index] > 0).Any()) {
-            for (int i = 0; i < decision.Choices.Length; i++)
-                if (!decision.Choices[i].IsDefender && decision.Choices[i].Lethal is { } required && amounts[i] < required)
-                    return $"Assign at least {required} to {Reference(decision.Choices[i], i)} before the defender.";
-        }
-        return null;
+        var issue = AllocationConstraints.Check(allocation, amounts);
+        return issue?.Kind switch {
+            null => null,
+            AllocationIssueKind.MissingRecipients => "Assign an amount to every recipient.",
+            AllocationIssueKind.BelowMinimum => $"Assign at least {issue.Amount} to {Reference(allocation.Recipients[issue.Recipient], issue.Recipient)}.",
+            AllocationIssueKind.AboveMaximum => $"{Reference(allocation.Recipients[issue.Recipient], issue.Recipient)} can receive at most {issue.Amount}.",
+            AllocationIssueKind.Unassigned => $"{issue.Amount} left to assign.",
+            AllocationIssueKind.Excess => $"{issue.Amount} too many assigned.",
+            AllocationIssueKind.BeforeDefender => $"Assign at least {issue.Amount} to {Reference(allocation.Recipients[issue.Recipient], issue.Recipient)} before the defender.",
+            _ => throw new ArgumentOutOfRangeException(nameof(issue))
+        };
     }
-
     public static AllocateAmounts? Reply(GameSnapshot state, IReadOnlyList<int> amounts)
-        => state.Status == "playing" && state.Decision is { Id.Length: > 0 } decision && Problem(decision, amounts) == null
+        => state.Decision is { Id.Length: > 0, Payload: AllocationPayload } decision
+            && GameCommandPermissions.Allows(state, new AllocateAmounts(state.Id, decision.Id, amounts.ToImmutableArray()))
             ? new(state.Id, decision.Id, amounts.ToImmutableArray()) : null;
-
-    public static string Name(Choice choice, int index) => !string.IsNullOrWhiteSpace(choice.Label)
-        ? choice.Label : "Recipient " + (index + 1);
-
-    private static string Reference(Choice choice, int index) => Name(choice, index) + " (recipient " + (index + 1) + ")";
-
-    public static string Seat(GameSnapshot state, Choice choice)
+    public static string Name(AllocationRecipient recipient, int index) => !string.IsNullOrWhiteSpace(recipient.Label) ? recipient.Label : "Recipient " + (index + 1);
+    private static string Reference(AllocationRecipient recipient, int index) => Name(recipient, index) + " (recipient " + (index + 1) + ")";
+    public static string Seat(GameSnapshot state, AllocationRecipient recipient) => Seat(state, recipient.PlayerId ?? recipient.ControllerId);
+    public static string Seat(GameSnapshot state, int? playerId)
     {
-        int? id = choice.PlayerId ?? choice.ControllerId;
-        int seat = state.Players.IndexOf(state.Players.FirstOrDefault(player => player.Id == id)!);
+        int seat = state.Players.IndexOf(state.Players.FirstOrDefault(player => player.Id == playerId)!);
         return seat < 0 ? "" : (state.Players[seat].Id == state.ViewerId ? "You" : state.Players[seat].Name) + " · Seat " + (seat + 1);
     }
-
     public static string Stats(Card? card) => card == null || card.Type.Length > 0 && !card.Type.Contains("Creature", StringComparison.Ordinal)
-        ? "" : card.Power.HasValue || card.Toughness.HasValue
-        ? $"{card.Power?.ToString() ?? "?"}/{card.Toughness?.ToString() ?? "?"}"
+        ? "" : card.Power.HasValue || card.Toughness.HasValue ? $"{card.Power?.ToString() ?? "?"}/{card.Toughness?.ToString() ?? "?"}"
         : card.Type.Contains("Creature", StringComparison.Ordinal) ? "P/T unknown" : "";
-
     public static string MarkedDamage(Card? card) => card is { Damage: > 0 } ? card.Damage + " damage marked" : "";
-
     public static string Counters(Card? card) => card == null ? "" : string.Join(" · ", CardPresentation.Counters(card).Select(counter => counter.Key + ": " + counter.Value));
-
-    // Allocation snapshots expose only current, public keywords, including the
-    // anonymous characteristics of face-down battlefield permanents.
     public static string Abilities(Card? card) => card == null ? "" : string.Join(" · ", CardPresentation.AbilityLabels(card));
-
-    public static string RecipientState(Choice choice) => string.Join(" · ", new[] {
-        Stats(choice.Card), MarkedDamage(choice.Card), Counters(choice.Card), Abilities(choice.Card)
-    }.Where(value => value.Length > 0));
-
-    public static string ThresholdLabel(Decision decision, Choice choice) => decision.AllocationKind == "combat"
-        && decision.Choices.Any(recipient => recipient.IsDefender) && !choice.IsDefender && choice.Lethal is { } required
-            ? required + " required before defender" : "";
+    public static string RecipientState(AllocationRecipient recipient) => string.Join(" · ", new[] { Stats(recipient.Card), MarkedDamage(recipient.Card), Counters(recipient.Card), Abilities(recipient.Card) }.Where(value => value.Length > 0));
+    public static string ThresholdLabel(AllocationPayload allocation, AllocationRecipient recipient) => allocation.Kind == AllocationKind.Combat
+        && allocation.Recipients.Any(item => item.IsDefender) && !recipient.IsDefender && recipient.Lethal is { } required ? required + " required before defender" : "";
 }

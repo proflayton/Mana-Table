@@ -13,33 +13,50 @@ internal sealed partial class TableApplication
     // Both substantive answers share one size and one current decision scope.
     private bool DrawOptionalDecision(GameSnapshot state)
     {
-        if (state.Decision is not { Task: DecisionTask.OpeningHand or DecisionTask.Confirmation } decision
-            || session.NeedsRecovery) return false;
-        var (anchor, source, card, _) = DecisionSourceAnchor(state, decision);
-        bool opening = decision.Task == DecisionTask.OpeningHand;
-        string title, detail;
-        if (opening) {
-            title = "Your opening hand";
-            detail = decision.OpeningHand is { } hand
-                ? hand.FreeMulligan ? "Free mulligan" : $"Mulligan → keep {hand.NextHandSize}"
-                : decision.Message;
-        } else if (decision.LibrarySearch is { } search) {
-            title = card is { FaceDown: false } ? card.Name : LibraryName(state, search.LibraryOwnerId ?? state.ViewerId);
-            detail = (card is { FaceDown: false } ? LibraryName(state, search.LibraryOwnerId ?? state.ViewerId) + "\n" : "") + SearchCriterion(search);
-        } else {
-            title = card is { FaceDown: false } ? card.Name : decision.Title;
-            detail = decision.Message;
+        if (session.NeedsRecovery || state.Decision is not { } decision) return false;
+        switch (decisions.Presentation?.Payload) {
+            case OpeningHandPayload opening: DrawOpeningHand(state, decision, opening); return true;
+            case ConfirmationPayload confirmation: DrawConfirmation(state, decision, confirmation); return true;
+            default: return false;
         }
+    }
+
+    private void DrawOpeningHand(GameSnapshot state, Decision decision, OpeningHandPayload opening)
+    {
+        string detail = opening.Consequence is { } hand
+            ? hand.FreeMulligan ? "Free mulligan" : $"Mulligan \u2192 keep {hand.NextHandSize}"
+            : decision.Context.Message;
+        var keep = opening.Consequence is { } current ? opening.Keep with { Label = "Keep " + current.HandSize } : opening.Keep;
+        DrawDecisionAlternatives(state, decision, keep, opening.Mulligan, "Your opening hand", detail, true);
+    }
+
+    private void DrawConfirmation(GameSnapshot state, Decision decision, ConfirmationPayload confirmation)
+    {
+        var card = CardViews.Source(state, decision);
+        string title = card is { FaceDown: false } ? card.Name : decision.Context.Title;
+        string detail = decision.Context.Message;
+        if (confirmation.Search is { } search) {
+            string library = LibraryName(state, search.LibraryOwnerId);
+            if (title.Length == 0) title = library;
+            detail = (card is { FaceDown: false } ? library + "\n" : "") + SearchCriterion(search.CardName, search.Destination);
+        }
+        DrawDecisionAlternatives(state, decision, confirmation.Accept, confirmation.Decline, title, detail, false);
+    }
+
+    private void DrawDecisionAlternatives(GameSnapshot state, Decision decision, DecisionReply acceptReply,
+        DecisionReply? declineReply, string title, string detail, bool opening)
+    {
+        var (anchor, source, _, _) = DecisionSourceAnchor(state, decision);
         int width = opening ? 490 : 410;
         const int gap = 10, actionHeight = 52;
-        bool hasBoth = decision.OkEnabled && decision.CancelEnabled;
-        string accept = opening && decision.OpeningHand is { } openingHand ? "Keep " + openingHand.HandSize : decision.Ok;
+        bool hasBoth = acceptReply.Enabled && declineReply?.Enabled == true;
+        string accept = acceptReply.Label;
         (int TitleHeight, int TextHeight, bool FullDetails, bool Stacked, int Height) Measure(int availableWidth)
         {
             int body = detail.Length == 0 ? 0 : canvas.TextSize(detail, .77f, availableWidth - 24, 5).Y;
             int heading = title.Length == 0 ? 0 : canvas.TextSize(title, .76f, availableWidth - 24, 80, true).Y;
             bool full = detail.Length > 0 && canvas.TextSize(detail, .77f, availableWidth - 24, 80).Y > body;
-            bool stack = hasBoth && Math.Max(canvas.TextWidth(accept, .76f, true), canvas.TextWidth(decision.Cancel, .76f, true)) + 24 > (availableWidth - gap) / 2;
+            bool stack = hasBoth && Math.Max(canvas.TextWidth(accept, .76f, true), canvas.TextWidth((declineReply?.Label ?? ""), .76f, true)) + 24 > (availableWidth - gap) / 2;
             int actions = stack ? actionHeight * 2 + gap : actionHeight;
             return (heading, body, full, stack, 10 + heading + (body > 0 ? 6 + body : 0) + (full ? 36 : 0) + 12 + actions + 6);
         }
@@ -68,10 +85,10 @@ internal sealed partial class TableApplication
         int actionsHeight = text.Stacked ? actionHeight * 2 + gap : actionHeight;
         int actionY = area.Bottom - actionsHeight - 6;
         int actionWidth = hasBoth && !text.Stacked ? (width - gap) / 2 : width;
-        if (decision.OkEnabled)
+        if (acceptReply.Enabled)
             Button("confirm", accept, area.X, actionY, actionWidth, new MatchIntent.ConfirmDecision(), !busy, true, actionHeight);
-        if (decision.CancelEnabled)
-            Button("cancel", decision.Cancel, hasBoth && !text.Stacked ? area.X + actionWidth + gap : area.X,
+        if (declineReply?.Enabled == true)
+            Button("cancel", (declineReply?.Label ?? ""), hasBoth && !text.Stacked ? area.X + actionWidth + gap : area.X,
                 text.Stacked ? actionY + actionHeight + gap : actionY, actionWidth,
                 new MatchIntent.CancelDecision(), !busy, true, actionHeight);
         if (!opening && source is { } pose) {
@@ -79,19 +96,18 @@ internal sealed partial class TableApplication
             var destination = new Pose(area.Center.ToVector2(), area.Size.ToVector2()).EdgeToward(pose.Center, 5);
             canvas.Line(pose.EdgeToward(destination, 5), destination, Gold * .5f, 1.5f);
         }
-        return true;
     }
 
     private static string LibraryName(GameSnapshot state, int player) => player == state.ViewerId ? "Your library"
         : (state.Players.FirstOrDefault(candidate => candidate.Id == player)?.Name ?? "Player") + "’s library";
 
-    private static string SearchCriterion(LibrarySearchContext search)
+    private static string SearchCriterion(string cardName, string destination)
     {
-        string criterion = search.CardName.Length > 0 ? "Find " + search.CardName : "Search for a card";
-        return search.Destination.Length > 0 ? criterion + " → " + search.Destination : criterion;
+        string criterion = cardName.Length > 0 ? "Find " + cardName : "Search for a card";
+        return destination.Length > 0 ? criterion + " → " + destination : criterion;
     }
 
-    private void DrawLibrarySearchRecipients(GameSnapshot state, Decision decision, Player[] recipients)
+    private void DrawLibrarySearchRecipients(GameSnapshot state, Decision decision, TargetSelectionPayload target, Player[] recipients)
     {
         var (anchor, source, _, _) = DecisionSourceAnchor(state, decision);
         if (source is { } sourcePose) canvas.CardFrame(sourcePose with { Size = sourcePose.Size + new Vector2(7) }, Blue * .75f, 2);
@@ -115,7 +131,7 @@ internal sealed partial class TableApplication
                 canvas.Arrow(origin.EdgeToward(pose.Center, 5), pose.EdgeToward(origin.Center, 5), Blue, 10);
         }
         const int contextWidth = 410;
-        string heading = "Choose whose library", criterion = SearchCriterion(decision.LibrarySearch!);
+        string heading = "Choose whose library", criterion = SearchCriterion(target.Search!.CardName, target.Search.Destination);
         int headingHeight = canvas.TextSize(heading, .79f, contextWidth - 24, 80, true).Y;
         int criterionHeight = canvas.TextSize(criterion, .72f, contextWidth - 24, 80).Y;
         var additional = missingPiles.Select(player => (Player: player, Height: LibraryRecipientHeight(state, player, contextWidth - 12))).ToArray();

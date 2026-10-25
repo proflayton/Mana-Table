@@ -165,11 +165,11 @@ internal sealed partial class TableApplication
         internal IReadOnlyList<(string CardId, string Destination, Mana.Renderer.Pose Pose)> PublicDepartures => game.matchPresentation.Departures
             .Where(d => game.now - d.Started <= 1.5).Select(d => (d.Card.VisualId, d.Destination, game.DeparturePose(d))).ToArray();
         internal void SetAutomatic(bool value) => game.SetAutomatic(value);
-        internal IReadOnlyList<int> Selections => game.decisionDraft.Selections;
+        internal IReadOnlyList<int> Selections => game.decisions.Selections;
         internal IReadOnlyDictionary<int, ChoiceOrderBadge> ChoiceOrderBadges => game.choiceOrderBadges;
-        internal IReadOnlyList<int> AllocationAmounts => game.decisionDraft.Allocations;
-        internal int AllocationDetail => game.allocationDetail;
-        internal string? AllocationProblem => game.match?.Decision is { Task: DecisionTask.Allocation } decision ? Mana.Magic.AllocationGuide.Problem(decision, game.decisionDraft.Allocations) : null;
+        internal IReadOnlyList<int> AllocationAmounts => game.decisions.Allocations;
+        internal Mana.Table.Interaction.AllocationInspection? AllocationDetail => game.decisions.Allocation?.Inspection;
+        internal string? AllocationProblem => game.decisions.Payload is AllocationPayload allocation ? Mana.Magic.AllocationGuide.Problem(allocation, game.decisions.Allocations) : null;
         internal string Overlay => game.overlay;
         internal string? ZoneName => game.zoneName;
         internal IReadOnlyList<Hit> Hits => game.hits.Published;

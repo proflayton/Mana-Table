@@ -24,7 +24,7 @@ public static class PriorityPresentation
     public static PriorityView From(GameSnapshot state)
     {
         var decision = state.Decision;
-        bool localPriority = decision is { Task: DecisionTask.Priority };
+        bool localPriority = decision is { Payload: PriorityPayload };
         int? reportedResponder = state.PriorityPlayerId
             ?? (state.ActionClass == "priority" ? state.DecisionOwnerId : null);
         if (reportedResponder == null && state.ActionClass.Length == 0) {
@@ -34,7 +34,7 @@ public static class PriorityPresentation
         var phase = state.Status is "finished" or "error" || state.ActionClass is "finished" or "error" ? PriorityPhase.Finished
             : state.Status == "starting" || state.ActionClass == "starting" ? PriorityPhase.Starting
             : state.ActionClass == "resolving" ? PriorityPhase.Resolving
-            : state.ActionClass == "mana" || decision?.Task == DecisionTask.Payment ? PriorityPhase.Payment
+            : state.ActionClass == "mana" || decision?.Payload is PaymentPayload ? PriorityPhase.Payment
             : state.ActionClass.Length > 0 && state.ActionClass != "priority" ? PriorityPhase.Decision
             : decision != null && !localPriority ? PriorityPhase.Decision
             : state.ActionClass == "priority" || localPriority || state.ActionClass.Length == 0 && reportedResponder != null ? PriorityPhase.Response
@@ -42,7 +42,7 @@ public static class PriorityPresentation
         int? responder = phase == PriorityPhase.Response ? reportedResponder ?? (localPriority ? state.ViewerId : null) : null;
         int? owner = state.DecisionOwnerId ?? (decision != null ? state.ViewerId : null);
         bool local = phase == PriorityPhase.Response && responder == state.ViewerId;
-        bool canPass = localPriority && phase == PriorityPhase.Response && decision!.OkEnabled
+        bool canPass = decision?.Payload is PriorityPayload { Pass.Enabled: true } && phase == PriorityPhase.Response
             && (reportedResponder == null || reportedResponder == state.ViewerId)
             && (state.DecisionOwnerId == null || state.DecisionOwnerId == state.ViewerId);
         var stack = state.Stack.Select((item, index) => new PriorityStackEntry(index + 1, item.Id,
@@ -62,9 +62,9 @@ public static class PriorityPresentation
             PriorityPhase.Response when stack.Length > 0 => "Next: " + stack[0].Name + ". "
                 + (local ? "Respond or pass priority." : responder == null ? "Waiting for a response." : "Waiting for " + actor + "."),
             PriorityPhase.Response => local ? "Play a card or ability, or pass priority." : "Waiting for " + actor + ".",
-            PriorityPhase.Payment when decision is { Message.Length: > 0 } => decision.Message,
+            PriorityPhase.Payment when decision is { Context.Message.Length: > 0 } => decision.Context.Message,
             PriorityPhase.Payment => "The reported player is paying a cost.",
-            PriorityPhase.Decision when decision is { Message.Length: > 0 } => decision.Message,
+            PriorityPhase.Decision when decision is { Context.Message.Length: > 0 } => decision.Context.Message,
             PriorityPhase.Decision => "Waiting for the current choice.",
             PriorityPhase.Starting => "The game is preparing the table.",
             PriorityPhase.Finished => state.Result ?? state.Error ?? "The game has stopped.",

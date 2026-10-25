@@ -48,8 +48,8 @@ public static class ClutteredChangesScenario
             new("Command", 0, [], null), new("Library", 60, [], null), new("Graveyard", 0, [], null), new("Exile", 0, [], null)
         ])).ToArray();
         return new("cluttered-causal-changes", "playing", null, null, 0, 8, "Main phase", "MAIN1", 0, players.ToImmutableArray(), [], null,
-            new() { Task = DecisionTask.Priority, OkEnabled = true, CanAutoPass = false,
-                Message = "You have priority. Inspect any permanent, or activate Llanowar Elves to add mana." });
+            new("", new(Message: "You have priority. Inspect any permanent, or activate Llanowar Elves to add mana."),
+                new PriorityPayload(new("Confirm", true))));
     }
 
     public static GameSnapshot Earthbend(GameSnapshot before)

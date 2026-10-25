@@ -45,7 +45,7 @@ internal sealed partial class TableApplication
         DrawTurnCallout();
         if (dragging && dragSource?.Card is { } heldCard) {
             bool legal = LegalDrop(HitAt(pointer));
-            if (state.Decision?.Task is DecisionTask.Attack or DecisionTask.Block && cardPositions.TryGetValue(heldCard.CombatId, out var origin))
+            if (state.Decision?.Payload is AttackPayload or BlockPayload && cardPositions.TryGetValue(heldCard.CombatId, out var origin))
                 DrawCombatAim(origin, legal ? Blue : Muted);
             else {
                 // Keep the held occurrence in the scene, so release continues
@@ -140,7 +140,7 @@ internal sealed partial class TableApplication
             "card:" + card.Key + ":" + card.VisualId, new MatchIntent.UseCard(card),
             (displayed, focus) => {
                 if (node.Attachment != null && !focus && displayed.Size.X < 300) PaintBattlefieldAttachment(node, displayed,
-                    card.Highlighted || card.CombatId.Length > 0 && selectedCombat == card.CombatId || TableChoices.Index(match!, card) is { } choice && decisionDraft.Selections.Contains(choice), IsCardActionable(card));
+                    card.Highlighted || card.CombatId.Length > 0 && selectedCombat == card.CombatId || TableChoices.Index(match!, card) is { } choice && decisions.Selections.Contains(choice), IsCardActionable(card));
                 else PaintSceneCard(card, displayed, node.Zone, node.Owner, focus, node.Compact, node.GroupFront, node.GroupCount, node.Dense);
             }, node.Entrance, node.EntranceDelay, readingAnchor: node.Attachment?.Edge(node.Pose));
         if (!string.IsNullOrEmpty(card.CombatId)) {
@@ -155,7 +155,7 @@ internal sealed partial class TableApplication
     private void PaintSceneCard(Card card, Pose pose, string zone, int owner, bool focus, bool compact = false, bool groupFront = true, int groupCount = 1, bool dense = false)
     {
         int? choice = match == null ? null : TableChoices.Index(match, card);
-        bool selected = choice is { } index ? decisionDraft.Selections.Contains(index) : card.Highlighted || card.CombatId.Length > 0 && selectedCombat == card.CombatId;
+        bool selected = choice is { } index ? decisions.Selections.Contains(index) : card.Highlighted || card.CombatId.Length > 0 && selectedCombat == card.CombatId;
         bool legal = IsCardActionable(card);
         bool scanFace = zone == "Battlefield" && !focus && !dense && !pose.IsProjected && pose.Size.X < 300
             && tableScene?.BattlefieldCard(owner, CardViews.Identity(card)) is { ScanFace: true };
@@ -170,7 +170,7 @@ internal sealed partial class TableApplication
         if (choice != null && selected) {
             var badge = new Rectangle((int)pose.Center.X - 39, pose.Bounds.Top + 8, 78, 24);
             ExtendCardHit(card, badge);
-            if (match!.Decision!.Ordered) PaintChoiceOrder(choice.Value, badge, .48f);
+            if (decisions.Payload is OrderingPayload) PaintChoiceOrder(choice.Value, badge, .48f);
             else {
                 var mark = pose.Point(.85f, .12f);
                 canvas.Circle(mark, 9, new(19, 33, 35));
@@ -205,7 +205,7 @@ internal sealed partial class TableApplication
             canvas.CardFrame(pose with { Size = pose.Size - new Vector2(7) }, Muted * (.25f * opacity));
             var r = pose.Bounds;
             if (pose.Size.X >= 300) {
-                bool actionSpace = focus && (match?.Decision?.Task == DecisionTask.Priority && IsCardActionable(card)
+                bool actionSpace = focus && (match?.Decision?.Payload is PriorityPayload && IsCardActionable(card)
                     || AbilityActionPending && match?.Decision is { } decision
                         && CardViews.Source(match, decision) is { } source && SameVisibleCard(card, source));
                 int typeTop = actionSpace ? (int)(r.Height * .53f) : 121;
@@ -221,7 +221,7 @@ internal sealed partial class TableApplication
             }
         }
         if (legal || selected) {
-            float glow = !preferences.ReducedMotion && legal && match?.Decision?.Task == DecisionTask.Priority
+            float glow = !preferences.ReducedMotion && legal && match?.Decision?.Payload is PriorityPayload
                 ? .85f + .15f * MathF.Sin((float)now * 2.4f) : 1;
             if (selected) canvas.CardFrame(pose with { Size = pose.Size + new Vector2(6) }, Gold, 4);
             else canvas.CardAction(pose, ActionAccent, glow);
@@ -271,9 +271,10 @@ internal sealed partial class TableApplication
     private void DrawStack()
     {
         var state = match!;
+        var decision = decisions.Presentation?.Payload == null ? null : state.Decision;
         // These journeys point to the existing source and actual library piles.
         // Do not create another card copy in the center of the table.
-        if (DecisionLayout.UsesSourceWorkspace(state.Decision)) {
+        if (DecisionLayout.UsesSourceWorkspace(decision)) {
             if (state.Stack.Length > 0) { DrawStackFlow(); DrawPendingSpellCards(); }
             return;
         }
@@ -281,22 +282,22 @@ internal sealed partial class TableApplication
         // Choosing an ability has not put it on the stack. Its current card
         // remains the source on the table; do not manufacture a stack copy.
         if (state.Stack.Length == 0 && (AbilityActionPending || SelectingActionTarget)) return;
-        if (state.Stack.Length == 0 && state.Decision?.SourceCard == null) return;
-        bool payingSource = state.Decision is { Task: DecisionTask.Payment, SourceCard: not null }
-            || !SelectingActionTarget && state.Decision is { Task: DecisionTask.TargetSelection or DecisionTask.EntitySelection, SourceCard: not null, PlayerChoices.Length: > 0 };
+        if (state.Stack.Length == 0 && decision?.Context.Source?.Card == null) return;
+        bool payingSource = decision is { Payload: PaymentPayload, Context.Source.Card: not null }
+            || !SelectingActionTarget && decision is { Payload: EntitySelectionPayload { Players.Length: > 0 }, Context.Source.Card: not null };
         if (state.Stack.Length > 0 && !payingSource) { DrawStackFlow(); DrawPendingSpellCards(); return; }
         canvas.Glow(new(807, 485), new(430, 165), Blue * .17f);
         var resting = TableWorld.Card(new(6, 108), new(245, 126));
         canvas.CardFrame(resting, Gold * .12f, 1);
         var stackCards = state.Stack.Take(3).Select(s => s.Card ?? new Card { Name = s.Name, Text = s.Text, Type = s.Ability ? "Ability" : "Spell" }).ToArray();
-        if (payingSource) stackCards = [state.Decision!.SourceCard!];
-        if (stackCards.Length == 0 && state.Decision?.SourceCard is { } source) stackCards = [source];
+        if (payingSource) stackCards = [decision!.Context.Source?.Card!];
+        if (stackCards.Length == 0 && decision?.Context.Source?.Card is { } source) stackCards = [source];
         for (int i = stackCards.Length - 1; i >= 0; i--) {
             var reported = stackCards[i];
-            var card = state.Decision is { } sourceDecision && (payingSource || state.Stack.Length == 0)
+            var card = decision is { } sourceDecision && (payingSource || state.Stack.Length == 0)
                 ? CardViews.Source(state, sourceDecision) ?? stackCards[i] : CardViews.Current(state, stackCards[i]);
             bool alsoInZone = state.Players.Any(p => p.Zones.Any(z => z.Cards.Any(c => CardIdentity(c) == CardIdentity(card))));
-            string identity = payingSource ? "payment:" + state.Decision!.Id : alsoInZone ? "stack:" + (state.Stack.ElementAtOrDefault(i)?.Id ?? "source") : CardIdentity(card);
+            string identity = payingSource ? "payment:" + decision!.Id : alsoInZone ? "stack:" + (state.Stack.ElementAtOrDefault(i)?.Id ?? "source") : CardIdentity(card);
             if (identity.Length == 0) identity = "stack:" + (state.Stack.ElementAtOrDefault(i)?.Id ?? card.Name);
             Vector2 entrance = new(800, 520);
             if (card.VisualId.Length > 0) {

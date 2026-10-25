@@ -107,10 +107,11 @@ public static class FourPlayerTableScenario
                     new("Exile", 0, [], null)
                 ]);
         }).ToArray();
-        return new(Id, "playing", null, null, 0, 8, "Main phase", "MAIN1", 1, players.ToImmutableArray(), [], null, new() {
-            Task = DecisionTask.Priority, OkEnabled = false, CanAutoPass = false,
-            Message = "Authored snapshot. Inspect cards; use the stage controls to compare checkpoints."
-        }) { PriorityPlayerId = 0, DecisionOwnerId = 0, ActionClass = "priority" };
+        return new(Id, "playing", null, null, 0, 8, "Main phase", "MAIN1", 1, players.ToImmutableArray(), [], null,
+            new("", new(Message: "Authored snapshot. Inspect cards; use the stage controls to compare checkpoints."),
+                new PriorityPayload(new("Confirm", false)))) {
+            PriorityPlayerId = 0, DecisionOwnerId = 0, ActionClass = "priority"
+        };
     }
 
     private static Card[] OrdinaryField(int seat)

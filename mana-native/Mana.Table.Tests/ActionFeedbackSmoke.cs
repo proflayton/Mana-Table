@@ -85,7 +85,7 @@ internal sealed class ActionFeedbackSmoke(TableWindow.Probe view, InteractionSce
             case 10:
                 MouseAt(view.Hits.Single(h => h.Id == "read-card-action").Bounds.Center); Next(); break;
             case 11:
-                Check(scenario.Replies.Count == 1 && scenario.Replies[0] is ActivateCard && state.Decision?.Title.StartsWith("Activate ") == true,
+                Check(scenario.Replies.Count == 1 && scenario.Replies[0] is ActivateCard && state.Decision?.Context.Title.StartsWith("Activate ") == true,
                     "The reader's explicit activation routes through the scoped card command into the engine's ability chooser");
                 Capture(surface, "03-ability-choice");
                 var victim = original.Viewer!.Zone("Battlefield").Cards.Single(c => c.VisualId == "seat-0-1");

@@ -19,15 +19,15 @@ internal sealed partial class TableApplication
     private readonly List<(PresentedCard Card, Action<Pose, bool> Compose)> deferredCardComposition = [];
     private (string Scope, int Slot)? inspectedChoice;
     private bool ReadingGalleryOpen => overlay.Length == 0 && zoneName == null && DecisionModal
-        && match?.Decision?.Task is DecisionTask.Options or DecisionTask.Ordering or DecisionTask.AbilityChoice or DecisionTask.Reveal;
+        && decisions.Presentation?.RequiredSurface == DecisionRequiredSurface.Gallery;
     private bool ZoneReadingOpen => overlay.Length == 0
         && !updatesOpen && !ActivityOpen && !ExperienceOpen
         && zoneName != null && zoneName != "Battlefield";
-    private bool CompactCardDecision => !AbilityActionPending && (TableChoice
-        || match?.Decision?.Task is DecisionTask.TargetSelection or DecisionTask.EntitySelection or DecisionTask.Attack or DecisionTask.Block);
+    private bool CompactCardDecision => decisions.Presentation?.RequiredSurface is DecisionRequiredSurface.Table
+        or DecisionRequiredSurface.Targets or DecisionRequiredSurface.Combat;
     private CardPresentationContext CardContext => new(match, Scope, OverlayOpen && !BattlefieldFocused && !ZoneReadingOpen,
-        ReadingGalleryOpen, dragging, CompactCardDecision, AbilityActionPending, SourceActionsSupported, TableStudyEnabled,
-        TableStudyEnabled ? StudyActionArea : null);
+        ReadingGalleryOpen, dragging, CompactCardDecision, TableStudyEnabled,
+        TableStudyEnabled ? StudyActionArea : null, decisions.Presentation);
     private string? readingId => matchPresentation.Cards.PinnedId;
     private Rectangle? hoverPreview => matchPresentation.Cards.ReaderBounds;
     internal bool InteractivePointer => !dragging && HitAt(pointer) is { } hit
@@ -67,8 +67,8 @@ internal sealed partial class TableApplication
     private bool ReadingAbilitySource(Decision decision)
     {
         if (!AbilityActionPending || match == null || matchPresentation.Cards.Pinned is not { Zone: "Battlefield" } entry) return false;
-        string id = decision.SourceCardId.Length > 0 ? decision.SourceCardId
-            : decision.SourceCard is { VisualId.Length: > 0 } source ? source.VisualId : decision.SourceCard?.CombatId ?? "";
+        string id = decision.Context.Source?.CardId is { Length: > 0 } sourceId ? sourceId
+            : decision.Context.Source?.Card is { VisualId.Length: > 0 } source ? source.VisualId : decision.Context.Source?.Card?.CombatId ?? "";
         return CardViews.FindZoneOccurrence(match, id) is { Zone: "Battlefield", Card: { FaceDown: false } card }
             && SameVisibleCard(card, entry.Card);
     }
@@ -132,7 +132,7 @@ internal sealed partial class TableApplication
         if (CardContext.CanBrowseHandSelection(entry)) {
             if (IsCardActionable(entry.Card)) {
                 int? index = TableChoices.Index(match!, entry.Card);
-                bool selected = index is { } choice ? decisionDraft.Selections.Contains(choice) : entry.Card.Highlighted;
+                bool selected = index is { } choice ? decisions.Selections.Contains(choice) : entry.Card.Highlighted;
                 string label = selected ? "Deselect" : "Choose card";
                 Button("read-card-action", label, target.X + 8, Math.Min(840, target.Bottom - 2),
                     canvas.TextWidth(label, .76f) + 24, new MatchIntent.UseReaderCard(entry.Card), !busy, height: 30);
@@ -140,7 +140,7 @@ internal sealed partial class TableApplication
             return;
         }
         if (SourceActionsSupported) { DrawSourceReaderControls(entry); return; }
-        if (match?.Decision?.Task is DecisionTask.Priority or DecisionTask.Payment && IsCardActionable(entry.Card)) {
+        if (match?.Decision?.Payload is PriorityPayload or PaymentPayload && IsCardActionable(entry.Card)) {
             string label = entry.Zone == "Battlefield" ? "Abilities"
                 : !entry.Card.Selectable && HandPlacements.Options(match, entry.Card).Length > 0 ? "Place"
                 : entry.Card.Type.Contains("Land", StringComparison.Ordinal) ? "Play" : "Cast";

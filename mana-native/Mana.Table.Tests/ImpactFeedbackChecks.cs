@@ -165,7 +165,7 @@ internal static class ImpactFeedbackChecks
         var engine = new InteractionScenarioEngine();
         GameSnapshot Before(string name, int[] marked) => template with {
             Id = "group-damage-" + name, Stack = [], Activity = [], Combat = null,
-            Decision = new() { Task = DecisionTask.Priority },
+            Decision = new Decision("", new DecisionContext(), new PriorityPayload(new DecisionReply("Confirm", false), null, CanAutoPass: false, QuietYieldToken: "", Abilities: [])),
             Players = template.Players.Select(player => player with { Zones = player.Zones.Select(zone => zone.Name != "Battlefield" ? zone : zone with {
                 Count = player.Id == 1 ? 3 : 0,
                 Cards = (player.Id != 1 ? [] : ids.Select((id, index) => new Card {

@@ -119,12 +119,12 @@ internal static class BattlefieldFocusChecks
                 && engine.Replies.Count == 0,
             "A refreshed priority prompt keeps the same public card reader focused while rotating its actionable decision and card handles");
         Click("read-card-action");
-        Wait(() => !view.Busy && engine.Replies.Count == 1 && view.Match?.Decision?.Task == DecisionTask.AbilityChoice);
+        Wait(() => !view.Busy && engine.Replies.Count == 1 && view.Match?.Decision?.Payload is AbilityChoicePayload);
         check(engine.Replies.Single() is ActivateCard reply
                 && reply.GameId == game && reply.DecisionId == decision && reply.Card == key
-                && view.Match!.Decision is { SourceCard.VisualId: ClutteredChangesScenario.ActionCardId },
+                && view.Match!.Decision?.Context.Source?.Card?.VisualId == ClutteredChangesScenario.ActionCardId,
             "Only explicit activation submits the refreshed game/decision/card handles for the currently read Llanowar Elves");
-        string option = view.Match!.Decision!.Choices.Single().Label;
+        string option = ((AbilityChoicePayload)view.Match!.Decision!.Payload).Selection.Choices.Single().Label;
         var choice = frame.Hits.LastOrDefault(hit => hit.Id == "choice:0");
         var source = frame.Cards.SingleOrDefault(card => card.Id == ClutteredChangesScenario.ActionCardId && card.Zone == "Battlefield" && card.Focused);
         check(view.ZoneName == "Battlefield" && frame.Hits.Any(hit => hit.Id == "battlefield-focus-close")

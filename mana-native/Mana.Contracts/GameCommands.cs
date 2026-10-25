@@ -79,7 +79,7 @@ public sealed record IgnorePriorityAbility(string GameId, string DecisionId, str
 public sealed record RestorePriorityAbility(string GameId, string AbilityId) : GameCommand(GameId);
 public sealed record PassForNow(string GameId, string DecisionId, string YieldToken) : DecisionCommand(GameId, DecisionId);
 
-/// <summary>Checks only the provider's published permissions and constraints, never card rules or prose.</summary>
+/// <summary>Checks only published offers and constraints, never printed rules or prose.</summary>
 public static class GameCommandPermissions
 {
     public static bool Allows(GameSnapshot state, GameCommand command)
@@ -89,8 +89,9 @@ public static class GameCommandPermissions
         if (command is RestorePriorityAbility restore)
             return state.IgnoredPriorityAbilities.Any(ability => ability.Id == restore.AbilityId);
         if (command is not DecisionCommand scoped || state.Decision is not { } decision || scoped.DecisionId != decision.Id) return false;
-        bool priority = decision is { Task: DecisionTask.Priority };
-        bool general = decision.Task == DecisionTask.Confirmation;
+        var payload = decision.Payload;
+        if (state.DecisionOwnerId is { } owner && owner != state.ViewerId
+            || payload is PriorityPayload && state.PriorityPlayerId is { } responder && responder != state.ViewerId) return false;
         Card? Card(string key) => CardViews.Located(state).Select(item => item.Card)
             .Concat(state.Players.SelectMany(player => player.Zones).Where(zone => zone.TopCard != null).Select(zone => zone.TopCard!))
             .FirstOrDefault(card => card.Key == key && key.Length > 0);
@@ -98,145 +99,131 @@ public static class GameCommandPermissions
         bool Selectable(string key) => Card(key) is { Selectable: true };
         bool Located(string key, params string[] zones) => CardViews.Located(state).Any(item => item.Card.Key == key && zones.Contains(item.Zone));
         return command switch {
-            PassPriority => priority && decision.OkEnabled,
-            AutoPassPriority => state.Status == "playing" && priority && decision.OkEnabled && decision.CanAutoPass,
-            KeepOpeningHand => decision.Task == DecisionTask.OpeningHand && decision.OkEnabled,
-            MulliganOpeningHand => decision.Task == DecisionTask.OpeningHand && decision.CancelEnabled,
-            PayMana => decision.Task == DecisionTask.Payment && decision.OkEnabled,
-            CancelPayment => decision.Task == DecisionTask.Payment && decision.CancelEnabled,
-            CompleteAttackers => decision.Task == DecisionTask.Attack && decision.OkEnabled,
-            CompleteBlockers => decision.Task == DecisionTask.Block && decision.OkEnabled && string.IsNullOrEmpty(state.Combat?.BlockProblem),
-            CompleteSelection => decision is { Task: DecisionTask.TargetSelection or DecisionTask.EntitySelection, OkEnabled: true },
-            CancelSelection => decision.Task is DecisionTask.TargetSelection or DecisionTask.EntitySelection && decision.CancelEnabled,
-            AcceptConfirmation => general && decision.OkEnabled && decision.CancelEnabled,
-            DeclineConfirmation => general && decision.CancelEnabled,
-            AcknowledgeDecision => general && decision.OkEnabled && !decision.CancelEnabled,
-            AcknowledgeReveal => decision.Task is DecisionTask.Reveal,
-            UndoLastAction => priority && decision.CancelEnabled && decision.PriorityAlternative == PriorityAlternative.UndoLastAction,
-            PassTurn => priority && decision.CancelEnabled && decision.PriorityAlternative == PriorityAlternative.PassTurn,
-            SelectCard value => decision.Task is DecisionTask.TargetSelection or DecisionTask.EntitySelection && Selectable(value.Card),
-            PlayCard value => priority && Selectable(value.Card) && Located(value.Card, "Hand", "Command"),
-            ActivateCard value => priority && Selectable(value.Card) && Located(value.Card, "Battlefield"),
-            UseManaSource value => decision.Task == DecisionTask.Payment && CurrentSource(value.Card) is { Selectable: true },
-            SelectPlayer value => decision.Task is DecisionTask.TargetSelection or DecisionTask.EntitySelection && decision.PlayerChoices.Contains(value.Player),
-            ToggleAttackPlayer value => decision.Task == DecisionTask.Attack && Card(value.Attacker) is { CombatId: var attacker }
+            PassPriority => payload is PriorityPayload { Pass.Enabled: true },
+            AutoPassPriority => state.Status == "playing" && payload is PriorityPayload { Pass.Enabled: true, CanAutoPass: true },
+            KeepOpeningHand => payload is OpeningHandPayload { Keep.Enabled: true },
+            MulliganOpeningHand => payload is OpeningHandPayload { Mulligan.Enabled: true },
+            PayMana => payload is PaymentPayload { Pay.Enabled: true },
+            CancelPayment => payload is PaymentPayload { Cancel.Enabled: true },
+            CompleteAttackers => payload is AttackPayload { Complete.Enabled: true },
+            CompleteBlockers => payload is BlockPayload { Complete.Enabled: true } && string.IsNullOrEmpty(state.Combat?.BlockProblem),
+            CompleteSelection => payload is TargetSelectionPayload { Complete.Enabled: true } or EntitySelectionPayload { Complete.Enabled: true },
+            CancelSelection => payload is TargetSelectionPayload { Cancel.Enabled: true } or EntitySelectionPayload { Cancel.Enabled: true },
+            AcceptConfirmation => payload is ConfirmationPayload { Accept.Enabled: true, Decline: not null },
+            DeclineConfirmation => payload is ConfirmationPayload { Decline.Enabled: true },
+            AcknowledgeDecision => payload is ConfirmationPayload { Accept.Enabled: true, Decline: null },
+            AcknowledgeReveal => payload is RevealPayload,
+            UndoLastAction => payload is PriorityPayload { Alternative: { Kind: PriorityAlternative.UndoLastAction, Reply.Enabled: true } },
+            PassTurn => payload is PriorityPayload { Alternative: { Kind: PriorityAlternative.PassTurn, Reply.Enabled: true } },
+            SelectCard value => payload is TargetSelectionPayload or EntitySelectionPayload && Selectable(value.Card),
+            PlayCard value => payload is PriorityPayload && Selectable(value.Card) && Located(value.Card, "Hand", "Command"),
+            ActivateCard value => payload is PriorityPayload && Selectable(value.Card) && Located(value.Card, "Battlefield"),
+            UseManaSource value => payload is PaymentPayload && CurrentSource(value.Card) is { Selectable: true },
+            SelectPlayer value => payload switch { TargetSelectionPayload target => target.Players.Contains(value.Player),
+                EntitySelectionPayload entity => entity.Players.Contains(value.Player), _ => false },
+            ToggleAttackPlayer value => payload is AttackPayload && Card(value.Attacker) is { CombatId: var attacker }
                 && state.Combat?.AttackOptions.Any(option => option.CardId == attacker
                     && option.Defenders.Any(defender => defender.Kind == "player" && defender.PlayerId == value.Player)) == true,
-            ToggleAttackPermanent value => decision.Task == DecisionTask.Attack && Card(value.Attacker) is { CombatId: var attacker }
+            ToggleAttackPermanent value => payload is AttackPayload && Card(value.Attacker) is { CombatId: var attacker }
                 && Card(value.DefenderCard) is { CombatId: var defender }
                 && state.Combat?.AttackOptions.Any(option => option.CardId == attacker
                     && option.Defenders.Any(target => target.Kind != "player" && target.Id == defender)) == true,
-            ToggleBlock value => decision.Task == DecisionTask.Block && Card(value.Attacker) is { CombatId: var attacker }
+            ToggleBlock value => payload is BlockPayload && Card(value.Attacker) is { CombatId: var attacker }
                 && Card(value.Blocker) is { CombatId: var blocker }
                 && state.Combat?.Attackers.Any(attack => attack.CardId == attacker && attack.EligibleBlockerIds.Contains(blocker)) == true,
-            ChooseOptions value => decision.Task is DecisionTask.Options or DecisionTask.AbilityChoice && Choices(decision, value.Choices),
-            OrderOptions value => decision.Task == DecisionTask.Ordering && Choices(decision, value.Choices),
-            ChooseNumber value => decision.Task == DecisionTask.Number
-                && value.Value >= decision.Min && value.Value <= decision.Max,
-            EnterText => decision.Task == DecisionTask.Text,
-            AllocateAmounts value => Allocation(decision, value.Amounts),
-            SkipAllocation => decision.Task is DecisionTask.Allocation && decision.MaySkip,
-            UseOfferedAction value => decision.Task is DecisionTask.Priority or DecisionTask.Payment
-                && CurrentSource(value.Card) is { FaceDown: false },
-            PlaceFromHand value => state.Status == "playing" && priority
+            ChooseOptions value => payload switch { OptionsPayload options => Choices(options.Selection, value.Choices),
+                AbilityChoicePayload ability => Choices(ability.Selection, value.Choices), _ => false },
+            OrderOptions value => payload is OrderingPayload order && Choices(order.Selection, value.Choices),
+            ChooseNumber value => payload is NumberPayload number && (number.Range is not { } range || value.Value >= range.Min && value.Value <= range.Max),
+            EnterText => payload is TextPayload,
+            AllocateAmounts value => payload is AllocationPayload allocation && AllocationConstraints.Check(allocation, value.Amounts) == null,
+            SkipAllocation => payload is AllocationPayload { MaySkip: true },
+            UseOfferedAction value => payload is PriorityPayload or PaymentPayload && CurrentSource(value.Card) is { FaceDown: false },
+            PlaceFromHand value => state.Status == "playing" && payload is PriorityPayload priority
                 && state.Viewer is { } viewer && viewer.Zone("Hand").Cards.Any(card => card.Key == value.Card && !card.FaceDown)
-                && decision.PriorityAbilities.Any(ability => ability.Id == value.AbilityId && ability.SourceCardKey.Length > 0 && ability.HandPlacementLimit > 0
+                && priority.Abilities.Any(ability => ability.Id == value.AbilityId && ability.SourceCardKey.Length > 0 && ability.HandPlacementLimit > 0
                     && ability.EligibleHandKeys.Contains(value.Card)
-                    && viewer.Zone("Battlefield").Cards.Any(source => source.Key == ability.SourceCardKey
-                        && !source.FaceDown && !source.PhasedOut)),
-            IgnorePriorityAbility value => priority && decision.PriorityAbilities.Any(ability => ability.Id == value.AbilityId),
-            PassForNow value => state.Status == "playing" && priority && decision.OkEnabled && state.Turn > 0 && state.Stack.Length == 0
+                    && viewer.Zone("Battlefield").Cards.Any(source => source.Key == ability.SourceCardKey && !source.FaceDown && !source.PhasedOut)),
+            IgnorePriorityAbility value => payload is PriorityPayload priority && priority.Abilities.Any(ability => ability.Id == value.AbilityId),
+            PassForNow value => state.Status == "playing" && payload is PriorityPayload { Pass.Enabled: true } priority && state.Turn > 0 && state.Stack.Length == 0
                 && state.ActivePlayerId is { } active && active != state.ViewerId && state.Viewer?.Eliminated != true
                 && state.ActionClass is "" or "priority" && (state.PriorityPlayerId == null || state.PriorityPlayerId == state.ViewerId)
                 && (state.DecisionOwnerId == null || state.DecisionOwnerId == state.ViewerId)
-                && value.YieldToken.Length > 0 && decision.QuietYieldToken == value.YieldToken,
+                && value.YieldToken.Length > 0 && priority.QuietYieldToken == value.YieldToken,
             _ => false
         };
     }
-
-    private static bool Choices(Decision decision, ImmutableArray<int> choices) => !choices.IsDefault
-        && choices.Length >= decision.Min && choices.Length <= decision.Max && choices.Distinct().Count() == choices.Length
-        && choices.All(index => decision.Choices.Any(choice => choice.Index == index));
-
-    private static bool Allocation(Decision decision, ImmutableArray<int> amounts)
-    {
-        if (decision.Task is not (DecisionTask.Allocation) || amounts.IsDefault || amounts.Length != decision.Choices.Length
-            || amounts.Sum(value => (long)value) != decision.Amount) return false;
-        for (int index = 0; index < amounts.Length; index++) {
-            var choice = decision.Choices[index];
-            int minimum = Math.Max(0, choice.Minimum ?? (decision.AtLeastOne ? 1 : 0));
-            int maximum = Math.Max(0, Math.Min(decision.Amount, choice.Maximum
-                ?? (index < decision.Limits.Length ? decision.Limits[index] : decision.Amount)));
-            if (amounts[index] < minimum || amounts[index] > maximum) return false;
-        }
-        return decision.AllocationKind != "combat" || !decision.Choices.Where((choice, index) => choice.IsDefender && amounts[index] > 0).Any()
-            || decision.Choices.Where((choice, index) => !choice.IsDefender && choice.Lethal is { } lethal && amounts[index] < lethal).Any() == false;
-    }
+    private static bool Choices(ChoiceSelection selection, ImmutableArray<int> choices) => !choices.IsDefault
+        && choices.Length >= selection.Range.Min && choices.Length <= selection.Range.Max && choices.Distinct().Count() == choices.Length
+        && choices.All(index => selection.Choices.Any(choice => choice.Index == index));
 }
 
-/// <summary>Translates a generic gesture using the current semantic task, not a provider input class or label.</summary>
+/// <summary>Maps a gesture to the exact current payload. Unknown tasks never become acknowledgments.</summary>
 public static class DecisionCommands
 {
     public static DecisionCommand? Confirm(GameSnapshot state)
     {
         if (state.Decision is not { } decision) return null;
-        DecisionCommand command = decision switch {
-            { Task: DecisionTask.OpeningHand } => new KeepOpeningHand(state.Id, decision.Id),
-            { Task: DecisionTask.Priority } => new PassPriority(state.Id, decision.Id),
-            { Task: DecisionTask.Payment } => new PayMana(state.Id, decision.Id),
-            { Task: DecisionTask.Attack } => new CompleteAttackers(state.Id, decision.Id),
-            { Task: DecisionTask.Block } => new CompleteBlockers(state.Id, decision.Id),
-            { Task: DecisionTask.TargetSelection or DecisionTask.EntitySelection } => new CompleteSelection(state.Id, decision.Id),
-            { CancelEnabled: true } => new AcceptConfirmation(state.Id, decision.Id),
-            _ => new AcknowledgeDecision(state.Id, decision.Id)
+        DecisionCommand? command = decision.Payload switch {
+            OpeningHandPayload => new KeepOpeningHand(state.Id, decision.Id),
+            PriorityPayload => new PassPriority(state.Id, decision.Id),
+            PaymentPayload => new PayMana(state.Id, decision.Id),
+            AttackPayload => new CompleteAttackers(state.Id, decision.Id),
+            BlockPayload => new CompleteBlockers(state.Id, decision.Id),
+            TargetSelectionPayload or EntitySelectionPayload => new CompleteSelection(state.Id, decision.Id),
+            ConfirmationPayload { Decline: not null } => new AcceptConfirmation(state.Id, decision.Id),
+            ConfirmationPayload { Decline: null } => new AcknowledgeDecision(state.Id, decision.Id),
+            _ => null
         };
-        return GameCommandPermissions.Allows(state, command) ? command : null;
+        return command != null && GameCommandPermissions.Allows(state, command) ? command : null;
     }
-
     public static DecisionCommand? Cancel(GameSnapshot state)
     {
         if (state.Decision is not { } decision) return null;
-        DecisionCommand command = decision switch {
-            { Task: DecisionTask.OpeningHand } => new MulliganOpeningHand(state.Id, decision.Id),
-            { Task: DecisionTask.Priority, PriorityAlternative: PriorityAlternative.UndoLastAction } => new UndoLastAction(state.Id, decision.Id),
-            { Task: DecisionTask.Priority, PriorityAlternative: PriorityAlternative.PassTurn } => new PassTurn(state.Id, decision.Id),
-            { Task: DecisionTask.Payment } => new CancelPayment(state.Id, decision.Id),
-            { Task: DecisionTask.TargetSelection or DecisionTask.EntitySelection } => new CancelSelection(state.Id, decision.Id),
-            _ => new DeclineConfirmation(state.Id, decision.Id)
+        DecisionCommand? command = decision.Payload switch {
+            OpeningHandPayload => new MulliganOpeningHand(state.Id, decision.Id),
+            PriorityPayload { Alternative.Kind: PriorityAlternative.UndoLastAction } => new UndoLastAction(state.Id, decision.Id),
+            PriorityPayload { Alternative.Kind: PriorityAlternative.PassTurn } => new PassTurn(state.Id, decision.Id),
+            PaymentPayload => new CancelPayment(state.Id, decision.Id),
+            TargetSelectionPayload or EntitySelectionPayload => new CancelSelection(state.Id, decision.Id),
+            ConfirmationPayload { Decline: not null } => new DeclineConfirmation(state.Id, decision.Id),
+            _ => null
         };
-        return GameCommandPermissions.Allows(state, command) ? command : null;
+        return command != null && GameCommandPermissions.Allows(state, command) ? command : null;
     }
-
     public static DecisionCommand? Card(GameSnapshot state, string key)
     {
         if (state.Decision is not { } decision) return null;
-        DecisionCommand command = decision.Task switch {
-            DecisionTask.Priority when CardViews.Located(state).Any(item => item.Card.Key == key && item.Zone == "Battlefield")
+        DecisionCommand? command = decision.Payload switch {
+            PriorityPayload when CardViews.Located(state).Any(item => item.Card.Key == key && item.Zone == "Battlefield")
                 => new ActivateCard(state.Id, decision.Id, key),
-            DecisionTask.Priority => new PlayCard(state.Id, decision.Id, key),
-            DecisionTask.Payment => new UseManaSource(state.Id, decision.Id, key),
-            _ => new SelectCard(state.Id, decision.Id, key)
+            PriorityPayload => new PlayCard(state.Id, decision.Id, key),
+            PaymentPayload => new UseManaSource(state.Id, decision.Id, key),
+            TargetSelectionPayload or EntitySelectionPayload => new SelectCard(state.Id, decision.Id, key),
+            _ => null
         };
-        return GameCommandPermissions.Allows(state, command) ? command : null;
+        return command != null && GameCommandPermissions.Allows(state, command) ? command : null;
     }
-
     public static DecisionCommand? Choose(GameSnapshot state, IEnumerable<int> indexes)
     {
         if (state.Decision is not { } decision) return null;
         var choices = indexes.ToImmutableArray();
-        DecisionCommand command = decision.Task is DecisionTask.Reveal && choices.IsEmpty ? new AcknowledgeReveal(state.Id, decision.Id)
-            : decision.Ordered ? new OrderOptions(state.Id, decision.Id, choices) : new ChooseOptions(state.Id, decision.Id, choices);
-        return GameCommandPermissions.Allows(state, command) ? command : null;
+        DecisionCommand? command = decision.Payload switch {
+            RevealPayload when choices.IsEmpty => new AcknowledgeReveal(state.Id, decision.Id),
+            OrderingPayload => new OrderOptions(state.Id, decision.Id, choices),
+            OptionsPayload or AbilityChoicePayload => new ChooseOptions(state.Id, decision.Id, choices),
+            _ => null
+        };
+        return command != null && GameCommandPermissions.Allows(state, command) ? command : null;
     }
-
     public static DecisionCommand? Value(GameSnapshot state, string value)
     {
         if (state.Decision is not { } decision) return null;
-        DecisionCommand command;
-        if (decision.Task == DecisionTask.Number) {
-            if (!int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out int number)) return null;
-            command = new ChooseNumber(state.Id, decision.Id, number);
-        } else command = new EnterText(state.Id, decision.Id, value);
-        return GameCommandPermissions.Allows(state, command) ? command : null;
+        DecisionCommand? command = decision.Payload switch {
+            NumberPayload when int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out int number) => new ChooseNumber(state.Id, decision.Id, number),
+            TextPayload => new EnterText(state.Id, decision.Id, value),
+            _ => null
+        };
+        return command != null && GameCommandPermissions.Allows(state, command) ? command : null;
     }
 }

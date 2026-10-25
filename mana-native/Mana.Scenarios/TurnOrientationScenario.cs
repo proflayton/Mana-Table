@@ -75,14 +75,11 @@ public static class TurnOrientationScenario
         var choosing = combat with {
             ActionClass = "selection", PriorityPlayerId = null, DecisionOwnerId = 0,
             Players = combat.Players.Select(player => player with { Priority = false }).ToImmutableArray(),
-            Decision = new() {
-                Task = DecisionTask.Options, Title = "Choose a creature", Message = "Choose one of the shown creatures in this scripted target preview.",
-                Min = 1, Max = 1, SourceCard = growth, SourceCardId = growth.VisualId, SourceZone = "Hand", SourceControllerId = 0,
-                Choices = targetCards.Select((card, index) => new Choice(index, card.Name, card) {
-                    Id = "orientation-target-" + index, CardId = card.VisualId,
-                    ControllerId = card.VisualId == MiraTargetId ? 2 : 3, OwnerId = card.VisualId == MiraTargetId ? 2 : 3
-                }).ToImmutableArray()
-            }
+            Decision = new("", new(Message: "Choose one of the shown creatures in this scripted target preview.", Title: "Choose a creature",
+                    Source: new(growth.VisualId, growth, 0, "Hand")),
+                new OptionsPayload(new(targetCards.Select((card, index) => new Choice(index, card.Name, card) {
+                    CardId = card.VisualId
+                }).ToImmutableArray(), new(1, 1))))
         };
         var quiet = Priority(MapBattlefield(combat, card => card with {
             Attacking = false, Blocking = false, DefenderId = null, Defender = null
@@ -105,10 +102,9 @@ public static class TurnOrientationScenario
         Turn = turn, Phase = "Main phase", PhaseKey = "MAIN1", ActivePlayerId = active,
         PriorityPlayerId = responder, DecisionOwnerId = responder, ActionClass = "priority", Stack = [], Combat = null,
         Players = basis.Players.Select(player => player with { Priority = player.Id == responder }).ToImmutableArray(),
-        Decision = responder == basis.ViewerId ? new() {
-            Task = DecisionTask.Priority, OkEnabled = true, CanAutoPass = false,
-            Message = "You have priority. Use Next to continue this scripted sequence."
-        } : null
+        Decision = responder == basis.ViewerId
+            ? new("", new(Message: "You have priority. Use Next to continue this scripted sequence."), new PriorityPayload(new("Confirm", true)))
+            : null
     };
     private static GameSnapshot MapBattlefield(GameSnapshot state, Func<Card, Card> map) => state with {
         Players = state.Players.Select(player => player with {

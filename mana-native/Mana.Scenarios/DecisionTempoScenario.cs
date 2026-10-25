@@ -14,9 +14,9 @@ public static class DecisionTempoScenario
         GameSnapshot State(int owner, TempoPhase phase, long remaining) => baseline with {
             Id = "decision-tempo-lab", DecisionOwnerId = owner, PriorityPlayerId = phase == TempoPhase.Grace ? null : owner,
             ActionClass = phase == TempoPhase.Grace ? "selection" : "priority",
-            Decision = owner != baseline.ViewerId ? null : phase != TempoPhase.Grace ? baseline.Decision : new() {
-                Id = "lab-required-target", Task = DecisionTask.TargetSelection, Message = "Choose a creature", Min = 1, Max = 1
-            },
+            Decision = owner != baseline.ViewerId ? null : phase != TempoPhase.Grace ? baseline.Decision
+                : new("lab-required-target", new(Message: "Choose a creature"),
+                    new TargetSelectionPayload(new("Confirm", false), new("Cancel", false), new(1, 1), [])),
             Tempo = new(settings, [new(owner, "lab-clock-" + owner + "-" + phase, phase, remaining, 60_000, 0)])
         };
         return [new("Your decision", "The local portrait shows a quiet clock while you decide.", State(baseline.ViewerId, TempoPhase.Thinking, 55_000)),

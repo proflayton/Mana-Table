@@ -33,7 +33,7 @@ internal static class RoleLaneAvoidanceChecks
         }
 
         var initial = stages[0].Snapshot;
-        var noStack = initial with { Stack = [], Decision = initial.Decision! with { SourceCard = null } };
+        var noStack = initial with { Stack = [], Decision = initial.Decision! with { Context = initial.Decision!.Context with { Source = new DecisionSource((initial.Decision!.Context.Source?.CardId ?? ""), null, initial.Decision!.Context.Source?.ControllerId, (initial.Decision!.Context.Source?.Zone ?? "")) } } };
         var withoutStack = Build(noStack);
         var left = withoutStack.Seat(1);
         var command = left.Geometry.CommandLink;

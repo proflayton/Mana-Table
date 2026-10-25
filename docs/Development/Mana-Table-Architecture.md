@@ -71,11 +71,11 @@ never cross-provider replay commands.
 | `Mana.Magic`, `Mana.Game` and `Mana.Renderer` | Magic presentation language, local inspection/focus, gestures, grouping, layout and visual timing. These layers consume permissions; they do not establish rules legality. |
 | `Mana.Table` | Shipping composition, provider lifetime, installation health and update bootstrap. |
 
-`Decision.Purpose` describes semantic choices such as opening hands, targets and
-abilities. The Java provider classifies its actual input once and publishes its
-semantic task/purpose; the native adapter validates that combination. Unknown or
-contradictory tasks fail explicitly. Forge input-class names and context remain
-private diagnostics and never become shared decision types. A provider supplies explicit candidates,
+`Decision` carries an opaque answer scope, shared source context and one typed
+`DecisionPayload`. The Java provider classifies its actual input once; the native
+adapter constructs the corresponding payload. Unknown or contradictory tasks
+fail explicitly. Forge input-class names and context remain private diagnostics
+and never become shared decision types. A provider supplies explicit candidates,
 limits and permissions rather than asking the client to recognize card names or
 reconstruct a rule from prose.
 
@@ -282,7 +282,7 @@ views rather than independently accepting asynchronous results.
 | --- | --- |
 | `ClientSession` | Accepted engine observations, current command scopes, serialized commands and recovery. |
 | `MatchPresentationLifecycle` | One public activity cursor and the match's effects, presence, pacing, resolution, changes, impacts, mana, priority and departure feedback. A game/viewer boundary revokes readers, poses and transient feedback before baselining the next seat. |
-| `DecisionDraft` | The current game/viewer/prompt's ordered selections and bounded numeric allocations. Observing a new scope resets the draft; rendering cannot initialize or edit it. |
+| `DecisionSession` | One game/viewer/prompt's prepared presentation and applicable choice, reveal, value or allocation draft. Replacing its scope, payload family, candidates or constraints retires incompatible local state; rendering cannot initialize or edit it. |
 | `DeckInteractionState` | Analysis navigation, selected evidence, related-card filters and the workspace reader. Selection changes and deletion reset the owner; closing the editor closes its reader. |
 | `DeckWorkspaceSession` | Workshop, analysis, test history and practice results for the selected deck/revision/epoch. One refresh lifecycle coalesces requests; mutation completions require a captured stamp, and reports must match accepted workshop metadata and playable fingerprint. |
 | `LatestRead` | Replaceable catalog/printing reads. One active provider request, one latest pending intent, explicit caller-controlled start after debounce, and generation-scoped success/failure admission. Clear and close revoke late results. |
@@ -1035,29 +1035,45 @@ reading preserves the browser until an explicit use action. Eligible hand-card
 placement options, including Gaea's Touch, retain the existing `HandPlacements`
 and `UseHandPlacement` route, followed by Forge's required card selection.
 
-Target choices use the provider-neutral `DecisionTask.TargetSelection`. Their
+Target choices use the provider-neutral `TargetSelectionPayload`. Their
 source is highlighted on the table, pointer aiming links it to legal cards or
 portraits, and the dock retains engine-permitted cancellation without calling a
 mixed card/player decision "Choose a player" or synthesizing a stack card.
 
-One closed `DecisionTask` replaces the former overlapping kind, intent and purpose
-classifiers. `Mana.Forge` validates the provider's private task once; neutral
-permissions, commands and presentation consume the same discriminator. Ordering
-and numeric meaning follow the task rather than mutable parallel flags. The
-provider encodes its `expectedTask` only at the final wire boundary. No native
-component classifies Java inputs or parses prompt text to recover game meaning.
+The shared contract has fifteen sealed payload variants. Priority has pass
+permission and optional ability offers; choices have indexed options and a
+validated selection range; allocation has normalized recipients and explicit
+constraints. Those fields cannot be combined into an unrelated decision. The
+former flat field bag, task enum and independent ordering/numeric flags are gone.
+`Mana.Forge` validates the private task and constructs this contract directly from
+the immutable JSON frame. It no longer rewrites a mutable JSON tree into a match
+snapshot. The same observed frame owns source-query authority and command scope;
+failed decoding revokes both. `expectedTask` is encoded only at the final wire
+boundary. No native component parses prompt prose to recover game meaning.
 
-Optional `LibrarySearchContext` carries the resolved library owner, destination
-and public exact-name criterion. It authorizes neither private contents nor an
-answer. A null owner accompanies real player targeting; a confirmation names
-the chosen library's actual owner. The rules effect carries this context through
+`DecisionDockPresentation` prepares the applicable surface, reading permissions
+and typed selection once for the local owner. `DecisionSession` retains that
+presentation and only the draft applicable to its payload. Gallery layout and
+source placement have dedicated owners rather than sharing the general overlay
+switch. Commands still validate current scope and provider permissions at use.
+
+Number entry can have explicit bounds or no published range. Forge's numeric
+textbox publishes an initial value without bounds; the adapter preserves that
+fact instead of inventing limits. Allocation units, minima, caps, lethal thresholds
+and recipient identities belong to `AllocationPayload` and `AllocationRecipient`;
+shared constraints validate both command admission and the editable draft.
+
+`LibrarySearchTarget` carries the destination and public exact-name criterion
+while the player target remains unresolved. `LibrarySearchOffer` names the chosen
+library's actual owner at confirmation. Neither authorizes private contents or an
+answer. The rules effect carries this context through
 the human-controller input instead of dropping it at a generic confirmation.
 `OpeningHandContext` likewise comes from the active mulligan policy. The UI owns
 source/library/hand placement and peer alternative controls; the engine retains
 target legality, search optionality, hidden information and redraw policy.
 
 `TableApplication.AbilityChoices` handles genuine later single-select
-`DecisionTask.AbilityChoice` choices beside the actual source occurrence. This task includes abilities and
+`AbilityChoicePayload` choices beside the actual source occurrence. This includes abilities and
 casting modes. Pending engine input is separate from visual overlays: the table
 and source reader stay available while unrelated gameplay commands are blocked.
 An explicit action click submits its original index; optional Cancel submits an

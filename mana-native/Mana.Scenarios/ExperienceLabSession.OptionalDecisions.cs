@@ -7,7 +7,7 @@ public sealed partial class ExperienceLabSession
     private GameSnapshot ReplyOptionalDecision(DecisionCommand reply)
     {
         if (!GameCommandPermissions.Allows(State, reply)) throw Unsupported();
-        if (reply is SelectPlayer target && State.Decision?.Task == DecisionTask.TargetSelection) {
+        if (reply is SelectPlayer target && State.Decision?.Payload is TargetSelectionPayload) {
             if (target.Player == State.ViewerId) {
                 StageIndex = 2;
                 return State = Stamp(Stages[2].Snapshot);

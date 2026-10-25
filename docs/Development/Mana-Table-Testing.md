@@ -129,10 +129,14 @@ The existing seat-switch application case also checks revocation immediately
 after acceptance, before preparing another frame, so stale hit intents cannot
 survive until the next paint.
 
-`PresentationReadChecks`, `DecisionDraftChecks` and `DeckInteractionChecks` run
+`PresentationReadChecks`, `DecisionSessionChecks` and `DeckInteractionChecks` run
 in the same presentation lane. They cover repeated frame reads without advancing
 state, publication on Update, revoked or altered intents, prompt/viewer draft
 resets, bounded selections/allocations and deck navigation/reader lifetimes.
+The decision checks also replace payload families, option bounds, numeric bounds,
+initial values, recipient identities and disclosed face sets under the same prompt
+ID. Incompatible drafts and private readers must retire; unchanged observations
+must preserve the player's edits. `DecisionSession` owns that local state.
 The window only reads the prepared frame. Headless timing measures Update,
 including frame preparation; reading the cached frame is not a new composition
 or an FPS measurement. These checks supply behavior evidence, not UX acceptance.
@@ -150,6 +154,18 @@ admission, delete/restore epochs, explicit review retry, notify-first discovery,
 download cancellation races, prepared-release identity, blockers changing during
 verification, explicit restart and cancellation cleanup on shutdown. These use
 the existing runners and CI jobs; they add no JVM startup or graphics window.
+
+Its decision-contract cases cover all fifteen payload variants through JSON
+round trips, deeply immutable subtype graphs, malformed/null/unknown payload
+rejection, and closed command coverage. Allocation checks use normalized typed
+recipients and the same constraints as command admission. These are finite
+interface checks, not coverage of every Magic interaction.
+
+`NumericTextboxProducerTest` calls Forge's real numeric textbox producer and
+compares the checked-in `numeric-text-prompt.json` fixture (apart from its UUID).
+The native boundary checks decode that same fixture as unbounded integer entry
+and preserve its initial value. This runs inside the existing Java/API and native
+presentation suites rather than adding a separate process or CI job.
 Window journeys for Build/Tune/Test, printings and Updates still exercise the
 production application over those owners. Passing lifecycle checks establishes
 transition safety, not human visual clarity or approval.

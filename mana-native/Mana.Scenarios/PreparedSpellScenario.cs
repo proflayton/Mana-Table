@@ -46,12 +46,12 @@ public static class PreparedSpellScenario
                     new("Graveyard", 0, [], null), new("Exile", exile.Length, exile.ToImmutableArray(), null)
                 ]);
         }).ToImmutableArray();
-        var decision = stage == 3 ? null : targeting ? new Decision {
-            Task = DecisionTask.TargetSelection, Title = "Choose a player", Message = "Target player draws three cards.", Min = 1, Max = 1,
-            CancelEnabled = true, PlayerChoices = [0, 1, 2, 3], SourceCard = spell,
-            SourceCardId = spell.VisualId, SourceControllerId = 0, SourceZone = "Exile"
-        } : new Decision { Task = DecisionTask.Priority, OkEnabled = pending,
-            Message = pending ? "Ancestral Recall is waiting on the stack." : "You have priority." };
+        Decision? decision = stage == 3 ? null : targeting
+            ? new("", new(Message: "Target player draws three cards.", Title: "Choose a player",
+                    Source: new(spell.VisualId, spell, 0, "Exile")),
+                new TargetSelectionPayload(new("Confirm", false), new("Cancel", true), new(1, 1), [0, 1, 2, 3]))
+            : new("", new(Message: pending ? "Ancestral Recall is waiting on the stack." : "You have priority."),
+                new PriorityPayload(new("Confirm", pending)));
         return new(Id, "playing", null, null, 0, stage == 5 || preparedAgain ? 12 : 8, "Main phase", "MAIN1", 0, players,
             pending ? [new StackItem(spell.Name, "Target player draws three cards.", false, spell) {
                 Id = "prepared-recall-on-stack", ControllerId = 0,

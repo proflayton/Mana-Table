@@ -102,17 +102,17 @@ internal sealed partial class TableApplication
         if (QuietPriorityArmed || !following && CanOfferQuietPriority) {
             Button(QuietPriorityArmed ? "quiet-priority-stop" : "quiet-priority-arm", QuietPriorityArmed ? "Take control" : "Pass for now",
                 action.X, action.Y, action.Width - 48, new MatchIntent.SetQuietPriority(!QuietPriorityArmed), !busy || QuietPriorityArmed, true, action.Height);
-            if (!QuietPriorityArmed && !busy && d is { Task: DecisionTask.Priority, OkEnabled: true }) {
+            if (!QuietPriorityArmed && !busy && d is { Payload: PriorityPayload { Pass.Enabled: true } }) {
                 var center = new Vector2(action.Right - 19, action.Center.Y);
                 TurnControlIcon("confirm", center, false, new MatchIntent.SubmitCommand(new PassPriority(state.Id, d.Id)));
                 if (IsControlHovered("confirm")) DrawTurnHint("Pass priority once", center);
             }
-        } else if (!following && d is { OkEnabled: true }) {
+        } else if (!following && d?.Payload is PriorityPayload { Pass.Enabled: true }) {
             Button("confirm", view.ActionLabel, action.X, action.Y, action.Width,
                 new MatchIntent.ConfirmDecision(), CombatGuide.CanConfirm(state), true, action.Height);
         }
-        if (!following && d?.CancelEnabled == true)
-            Button("cancel", d.Cancel == "End Turn" ? "Pass turn" : d.Cancel,
+        if (!following && d?.Payload is PriorityPayload { Alternative: { Reply.Enabled: true } alternative })
+            Button("cancel", alternative.Kind == PriorityAlternative.PassTurn ? "Pass turn" : alternative.Reply.Label,
                 area.Right + 12, action.Y, Math.Min(130, 1580 - area.Right - 12),
                 new MatchIntent.CancelDecision(), height: action.Height);
     }

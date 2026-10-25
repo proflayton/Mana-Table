@@ -52,11 +52,11 @@ internal static class CleanupSmoke
                 Check(state.Viewer!.Zone("Hand").Count == 8, "Eight cards remain legal during the end step");
                 endStep = true;
             }
-            if (state.PhaseKey == "CLEANUP" && decision.Task is DecisionTask.TargetSelection or DecisionTask.EntitySelection) {
+            if (state.PhaseKey == "CLEANUP" && decision.Payload is TargetSelectionPayload or EntitySelectionPayload) {
                 Check(endStep, "Cleanup follows the end step");
                 Check(state.ActivePlayerId == state.ViewerId, "Only our own cleanup requests our discard");
                 Check(state.Viewer!.MaxHandSize == 7, "Forge's hand-size limit reaches the native contract");
-                Check(!decision.OkEnabled && !decision.CancelEnabled, "Incomplete discard cannot be confirmed or cancelled");
+                Check(DecisionCommands.Confirm(state) == null && DecisionCommands.Cancel(state) == null, "Incomplete discard cannot be confirmed or cancelled");
                 Check(auto.Update(state, true, false, noStops, false, false) is null, "Auto never answers required cleanup");
                 await File.WriteAllTextAsync(Path.Combine(paths.Profile, "cleanup-fixture.json"), JsonSerializer.Serialize(state));
                 var card = state.Viewer.Zone("Hand").Cards.First(c => c.Selectable && !c.Highlighted);
@@ -64,15 +64,15 @@ internal static class CleanupSmoke
                 Check(reply is SelectCard, "Shared card click selects a discard without a play gesture");
                 cleanup = true;
                 discardedTurn = state.Turn;
-            } else if (decision.Task is DecisionTask.Options or DecisionTask.AbilityChoice or DecisionTask.Ordering) {
-                reply = DecisionCommands.Choose(state, decision.Choices.Take(Math.Max(decision.Min, Math.Min(1, decision.Max))).Select(c => c.Index));
-            } else if (decision.Task is DecisionTask.Reveal) {
+            } else if (DecisionDockPresentation.From(state, new()).Selection is { } selection) {
+                reply = DecisionCommands.Choose(state, selection.Choices.Take(Math.Max(selection.Range.Min, Math.Min(1, selection.Range.Max))).Select(c => c.Index));
+            } else if (decision.Payload is RevealPayload) {
                 reply = new AcknowledgeReveal(state.Id, decision.Id);
-            } else if (state.Turn == 0 && decision.PlayerChoices.Length > 0) {
-                reply = new SelectPlayer(state.Id, decision.Id, Player: state.ViewerId);
+            } else if (state.Turn == 0 && StateClarity.Recipients(state) is { Length: > 0 } recipients) {
+                reply = new SelectPlayer(state.Id, decision.Id, Player: recipients.Any(player => player.Id == state.ViewerId) ? state.ViewerId : recipients[0].Id);
             } else {
                 reply = auto.Update(state, true, false, noStops, false, false)
-                    ?? (decision.OkEnabled ? DecisionCommands.Confirm(state) : null);
+                    ?? (DecisionCommands.Confirm(state) != null ? DecisionCommands.Confirm(state) : null);
             }
             if (reply is null) throw new InvalidOperationException("Unhandled cleanup scenario decision: " + JsonSerializer.Serialize(decision));
             try {
