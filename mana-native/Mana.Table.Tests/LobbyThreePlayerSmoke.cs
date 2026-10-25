@@ -160,9 +160,9 @@ internal sealed class LobbyThreePlayerSmoke : ITableAutomation, IDisposable
             } else for (int index = 0; index < seats.Length; index++) {
                 var state = openingViews[index];
                 if (state?.Decision is not { } d) continue;
-                DecisionCommand? reply = d.Kind switch {
-                    "choice" => DecisionCommands.Choose(state, d.Choices.Take(Math.Max(d.Min, Math.Min(1, d.Max))).Select(c => c.Index)),
-                    "reveal" => new AcknowledgeReveal(state.Id, d.Id),
+                DecisionCommand? reply = d.Task switch {
+                    DecisionTask.Options or DecisionTask.AbilityChoice or DecisionTask.Ordering => DecisionCommands.Choose(state, d.Choices.Take(Math.Max(d.Min, Math.Min(1, d.Max))).Select(c => c.Index)),
+                    DecisionTask.Reveal => new AcknowledgeReveal(state.Id, d.Id),
                     _ when d.PlayerChoices.Length > 0 => new SelectPlayer(state.Id, d.Id, Player: d.PlayerChoices[0]),
                     _ when d.OkEnabled => DecisionCommands.Confirm(state),
                     _ => null
@@ -176,8 +176,7 @@ internal sealed class LobbyThreePlayerSmoke : ITableAutomation, IDisposable
             + JsonSerializer.Serialize(new { firstMainObserved, latest = openingViews.Select(state => state == null ? null : new {
                 state.Id, state.ViewerId, state.Status, state.PhaseKey, state.Turn, state.ActivePlayerId,
                 state.PriorityPlayerId, state.DecisionOwnerId, state.ActionClass,
-                decision = state.Decision == null ? null : new { state.Decision.Id, state.Decision.Kind,
-                    state.Decision.Purpose, state.Decision.Intent, state.Decision.OkEnabled }
+                decision = state.Decision == null ? null : new { state.Decision.Id, state.Decision.Task, state.Decision.OkEnabled }
             }) }));
     }
     private static bool UsableFirstMain(GameSnapshot[] states)
@@ -188,7 +187,7 @@ internal sealed class LobbyThreePlayerSmoke : ITableAutomation, IDisposable
             || state.PhaseKey != "MAIN1" || state.Id != first.Id || state.Turn != first.Turn || state.ActivePlayerId != first.ActivePlayerId)) return false;
         if (states.Count(state => state.Decision != null) != 1) return false;
         var owner = states.Single(state => state.Decision != null);
-        return owner is { Decision: { Id.Length: > 0, Kind: "input", Intent: DecisionIntent.Priority, OkEnabled: true } }
+        return owner is { Decision: { Id.Length: > 0, Task: DecisionTask.Priority, OkEnabled: true } }
             && states.All(state => state.ActionClass == "priority" && state.PriorityPlayerId == owner.ViewerId && state.DecisionOwnerId == owner.ViewerId);
     }
     private void Click(string id) { Step(.1, () => MoveHit(view.Hits.Single(h => h.Id == id))); Step(0, () => mouse = Mouse(ButtonState.Pressed)); Step(0, () => mouse = Mouse()); }

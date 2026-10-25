@@ -24,17 +24,17 @@ internal static class AdvanceRegression
         Check(wire.Replies.All(r => r is AutoPassPriority) && wire.Replies.OfType<AutoPassPriority>().Select(r => r.DecisionId).Distinct().Count() == 4,
             "Every consumed window uses a distinct, engine-validated AutoPass receipt");
 
-        foreach (var intent in new[] { DecisionIntent.Attack, DecisionIntent.Block, DecisionIntent.Mana, DecisionIntent.Selection }) {
-            var required = Next(1) with { Decision = Next(1).Decision! with { Intent = intent } };
+        foreach (var task in new[] { DecisionTask.Attack, DecisionTask.Block, DecisionTask.Payment, DecisionTask.TargetSelection, DecisionTask.EntitySelection }) {
+            var required = Next(1) with { Decision = Next(1).Decision! with { Task = task } };
             wire = new(initial, required);
             result = await new DecisionAdvance(wire).RunAsync(initial, _ => true, PresentationPacing.ShouldPresent);
-            Check(result == required && wire.Replies.Count == 1, $"Even a permissive client policy cannot skip {intent}");
+            Check(result == required && wire.Replies.Count == 1, $"Even a permissive client policy cannot skip {task}");
         }
-        foreach (string kind in new[] { "choice", "reveal", "number", "text", "allocate" }) {
-            var required = Next(1) with { Decision = Next(1).Decision! with { Kind = kind } };
+        foreach (var task in new[] { DecisionTask.Options, DecisionTask.Ordering, DecisionTask.AbilityChoice, DecisionTask.Reveal, DecisionTask.Number, DecisionTask.Text, DecisionTask.Allocation }) {
+            var required = Next(1) with { Decision = Next(1).Decision! with { Task = task } };
             wire = new(initial, required);
             result = await new DecisionAdvance(wire).RunAsync(initial, _ => true, PresentationPacing.ShouldPresent);
-            Check(result == required && wire.Replies.Count == 1, $"Advance stops for a required {kind} prompt");
+            Check(result == required && wire.Replies.Count == 1, $"Advance stops for a required {task} prompt");
         }
         var stop = Next(1, "MAIN2"); wire = new(initial, stop);
         result = await new DecisionAdvance(wire).RunAsync(initial,

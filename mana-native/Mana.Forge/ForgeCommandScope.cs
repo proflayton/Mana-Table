@@ -66,16 +66,13 @@ internal sealed class ForgeCommandScope
         return args;
     }
 
-    private static string Task(Decision decision) => decision switch {
-        { Purpose: DecisionPurpose.OpeningHand } => "openingHand",
-        { Intent: DecisionIntent.Priority } => "priority",
-        { Intent: DecisionIntent.Mana } => "mana",
-        { Intent: DecisionIntent.Attack } => "attack",
-        { Intent: DecisionIntent.Block } => "block",
-        { Intent: DecisionIntent.Selection } => "selection",
-        { Kind: "text", Numeric: true } => "number",
-        { Kind: "choice" or "reveal" or "number" or "text" or "allocate" } => decision.Kind,
-        { Kind: "input", Intent: DecisionIntent.General } => "confirmation",
+    private static string Task(Decision decision) => decision.Task switch {
+        DecisionTask.OpeningHand => "openingHand", DecisionTask.Priority => "priority",
+        DecisionTask.Payment => "mana", DecisionTask.Attack => "attack", DecisionTask.Block => "block",
+        DecisionTask.TargetSelection or DecisionTask.EntitySelection => "selection",
+        DecisionTask.AbilityChoice or DecisionTask.Options or DecisionTask.Ordering => "choice",
+        DecisionTask.Reveal => "reveal", DecisionTask.Number => "number", DecisionTask.Text => "text",
+        DecisionTask.Allocation => "allocate", DecisionTask.Confirmation => "confirmation",
         _ => throw new EngineCommandRejectedException("The observed decision has no supported semantic task.")
     };
 }

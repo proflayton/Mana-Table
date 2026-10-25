@@ -47,7 +47,7 @@ public static partial class ExperienceScenarios
             PriorityPlayerId = stage == 2 ? 1 : state.ViewerId,
             ActionClass = "priority",
             Decision = stage == 2 ? null : new() {
-                Kind = "input", Intent = DecisionIntent.Priority, OkEnabled = stage == 1,
+                Task = DecisionTask.Priority, OkEnabled = stage == 1,
                 Message = stage switch {
                     0 => "Choose Walking Ballista's ability. Four colorless mana is available.",
                     1 => "The ability is waiting on the stack. Pass priority when you are ready.",

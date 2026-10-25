@@ -17,7 +17,7 @@ internal static class PriorityPresentationChecks
                 new("Partner with Pir", "Target player may search their library.", true, shared) { Id = "ability-b", ControllerId = 1 },
                 new("Counterspell", "Counter target spell.", false, null) { Id = "spell-c", ControllerId = 2 },
                 new("Lightning Bolt", "Deal 3 damage to the chosen target.", false, null) { Id = "spell-d", ControllerId = 3 }],
-            Decision = new() { Id = "priority-10", Kind = "input", Intent = DecisionIntent.Priority, OkEnabled = true }
+            Decision = new() { Id = "priority-10", Task = DecisionTask.Priority, OkEnabled = true }
         };
         bool rotation = true;
         foreach (int responder in Enumerable.Range(0, 4)) {
@@ -75,7 +75,7 @@ internal static class PriorityPresentationChecks
             "Exact stack/seat changes produce one timed transition; repeated or stale revisions cannot retrigger it, and removal is not called resolution");
 
         var search = processing with { Revision = 13, ActionClass = "selection", DecisionOwnerId = 0,
-            Decision = new() { Id = "required-search", Kind = "input", Intent = DecisionIntent.Selection, OkEnabled = true,
+            Decision = new() { Id = "required-search", Task = DecisionTask.EntitySelection, OkEnabled = true,
                 Message = "Choose a player who may search their library.", SourceCard = shared, PlayerChoices = [0, 1, 2, 3] } };
         feedback.Observe(processing, search, 6);
         var choosing = PriorityPresentation.From(search);

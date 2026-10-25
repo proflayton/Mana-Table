@@ -20,7 +20,7 @@ internal static class PresentationReadChecks
         var engine = new InteractionScenarioEngine();
         engine.Present(PresentationSmoke.Example() with {
             Id = "presentation-read", Combat = null, Stack = [],
-            Decision = new() { Kind = "choice", Min = 0, Max = 3,
+            Decision = new() { Task = DecisionTask.Options, Min = 0, Max = 3,
                 Choices = Enumerable.Range(0, 8).Select(index => new Choice(index, "Option " + index, null)).ToImmutableArray() }
         });
         using var app = new TableApplication(TestTableServices.For(engine), directory, initialState: engine.State) { Automated = true };

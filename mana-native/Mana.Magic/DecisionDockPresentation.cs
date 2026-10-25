@@ -43,7 +43,7 @@ public static class DecisionDockPresentation
         var source = decision == null ? null : CardViews.Source(state, decision);
         string sourceId = source == null ? decision?.SourceCardId ?? "" : CardViews.Identity(source);
         var pause = Pause(state, controls);
-        bool normalPass = controls.Automatic && decision is { Kind: "input", Intent: DecisionIntent.Priority, CanAutoPass: true };
+        bool normalPass = controls.Automatic && decision is { Task: DecisionTask.Priority, CanAutoPass: true };
         bool quietPass = controls.QuietArmed && controls.QuietCanPass && decision is { QuietYieldToken.Length: > 0 }
             && state.Stack.Length == 0 && state.ActivePlayerId != state.ViewerId;
         bool routinePriority = state.Status == "playing" && state.Turn > 0 && priority.CanPass && (normalPass || quietPass);
@@ -114,11 +114,11 @@ public static class DecisionDockPresentation
                 ArmedCaption(controls, pause), role: role, actor: owner, includeSource: false);
         }
 
-        var status = decision.Intent switch {
-            DecisionIntent.Attack => DecisionDockStatus.Attack,
-            DecisionIntent.Block => DecisionDockStatus.Block,
-            DecisionIntent.Selection when decision.Purpose == DecisionPurpose.TargetSelection => DecisionDockStatus.Target,
-            _ when IsAbilityChoice(decision) => DecisionDockStatus.AbilityChoice,
+        var status = decision.Task switch {
+            DecisionTask.Attack => DecisionDockStatus.Attack,
+            DecisionTask.Block => DecisionDockStatus.Block,
+            DecisionTask.TargetSelection => DecisionDockStatus.Target,
+            DecisionTask.AbilityChoice => DecisionDockStatus.AbilityChoice,
             _ => DecisionDockStatus.Selection
         };
         string heading = status switch {
@@ -133,7 +133,7 @@ public static class DecisionDockPresentation
         var actorRole = status switch { DecisionDockStatus.Attack => DecisionDockActorRole.Attacking,
             DecisionDockStatus.Block => DecisionDockActorRole.Blocking, _ => DecisionDockActorRole.Choosing };
         return View(status, heading, instruction: decision.Message, role: actorRole, actor: state.ViewerId,
-            action: decision.Kind == "input" ? TurnGuide.Confirm(state) : decision.Ok);
+            action: decision.Task is DecisionTask.Priority or DecisionTask.OpeningHand or DecisionTask.Payment or DecisionTask.Attack or DecisionTask.Block or DecisionTask.TargetSelection or DecisionTask.EntitySelection or DecisionTask.Confirmation ? TurnGuide.Confirm(state) : decision.Ok);
     }
 
     private static DecisionDockPauseReason Pause(GameSnapshot state, DecisionDockControlFacts controls)
@@ -169,10 +169,6 @@ public static class DecisionDockPresentation
         DecisionDockPauseReason.Preview => "Scripted preview",
         _ => "Paused"
     };
-
-    private static bool IsAbilityChoice(Decision decision) => decision.Kind == "choice" && decision.Purpose == DecisionPurpose.AbilitySelection
-        && !decision.Ordered && decision.Max == 1 && decision.Min is 0 or 1 && decision.Choices.Length > 0
-        && decision.LibraryCards.Length == 0;
 
     private static string TargetHeading(Decision decision) => decision.Max > 1
         ? decision.Min == decision.Max ? "Choose " + decision.Max + " targets"

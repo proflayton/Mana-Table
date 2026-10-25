@@ -100,6 +100,57 @@ does not establish that a person can understand or use the screen.
     and deck legality are separate facts; returning to Play must not require a
     second confirmation of edits already acknowledged by storage.
 
+13. **Present alternatives as game choices.** Declining an optional effect and
+    taking a mulligan are meaningful alternatives, not tiny cancellation chrome.
+    Keep both gestures readable in the relevant source or hand context. Distinguish
+    a real player target from a forced effect recipient: the former stays explicit
+    even with one legal candidate. Library actions belong at the library and name
+    its owner. An optional search must not become an automatic decline because
+    the client thinks the wanted card is elsewhere; searching and shuffling are
+    still engine actions. Reading a card never chooses one of these alternatives.
+
+## Optional decisions and library targets: 25 October 2026
+
+**Source candidate; human review pending.** The reported Partner-with interaction
+made a player target look like an unexplained portrait click, then hid No in a
+small secondary control. Keep/Mulligan shared that generic confirmation layout.
+The revised journey uses the engine's decision task and optional-search context:
+source → eligible library owner → that player's Search/Don't search choice →
+authorized library contents or a return to the game. Real targets remain explicit.
+The search may still shuffle when no matching card is found. Neither library
+availability nor the desired answer is inferred from Commander zones.
+
+Search target gestures use the actual eligible players' libraries; the optional
+offer retains its source and presents two peer actions. Opening-hand choices
+stay beside the hand, with free/paid redraw consequences supplied by the active
+engine policy. Inspecting a hand card remains separate from Keep or Mulligan.
+Other confirmations use the same alternatives without acquiring search rules.
+
+The `optional-decisions.v1` canonical case includes several legal player targets,
+one legal target, the search offer with a public command-zone partner, a search
+decided by another seat, free/paid mulligans and an ordinary confirmation. These
+are authored presentation observations, not a rules simulator. Actual Partner
+tests cover legal targets, opponent ownership, hidden information, refusal,
+searching without a matching card and shuffle behavior. Pointer checks cover
+current scopes and noncommitting inspection. Neither automated checks nor agent
+captures establish human acceptance.
+
+Agent review used the actual renderer at 1000×740 with 130% text/reduced motion
+and 1540×980 with normal motion. It caught an unreachable target surface,
+outdated source-copy reservations, narrow context, crossing connectors and a
+turn banner competing with the required choice; these were corrected before
+the captured candidate. The 480-permanent observation can be loaded directly
+with `--experience-lab optional-decisions.v1 --stage 7`. The source context and
+owner gestures remain readable there; this does not approve the overall crowded
+battlefield. One authored Cat Beast token has an artwork fallback. Real search
+and private contents still require the actual engine.
+
+![Choose a legal library directly](images/native-library-targets-2026-10-25.png)
+![Search or decline beside the source](images/native-optional-search-2026-10-25.png)
+![Keep and Mulligan beside the hand](images/native-opening-hand-2026-10-25.png)
+
+[View the authored crowded library choice](images/native-optional-crowded-2026-10-25.png).
+
 ## Lobby decision tempo: 24 October 2026
 
 **Source candidate; human review pending.** Intent: keep a friends' table moving

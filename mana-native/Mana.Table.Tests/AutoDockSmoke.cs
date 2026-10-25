@@ -101,7 +101,7 @@ internal sealed class AutoDockSmoke(TableWindow.Probe view, InteractionScenarioE
                 Check(view.DecisionDock is { Surface: DecisionDockSurface.Portrait } && view.Hits.Any(h => h.Id == "confirm"), "Full control retains every manual priority window");
                 view.SetAutomatic(true);
                 Publish(state with { Turn = state.Turn + 1, ActionClass = "block", PriorityPlayerId = null,
-                    Decision = state.Decision! with { Intent = DecisionIntent.Block, CanAutoPass = false } }); Next(); break;
+                    Decision = state.Decision! with { Task = DecisionTask.Block, CanAutoPass = false } }); Next(); break;
             case 10:
                 Check(!view.Held && view.DecisionDock is { Status: DecisionDockStatus.Block, Surface: DecisionDockSurface.Workspace }
                     && view.Hits.Any(h => h.Id == "confirm"), "Auto presents blocking as a required decision immediately after a turn change");

@@ -260,7 +260,7 @@ public sealed partial class ForgeEngine(ForgePaths paths) : ICardEngine, ITableS
         node["phase"] ??= "Starting game";
         node["phaseKey"] ??= "PREGAME";
         var prompt = node["prompt"]?.DeepClone();
-        if (prompt is not null) ForgeDecisionDecoder.Normalize(prompt);
+        if (prompt is not null) ForgeDecisionDecoder.Normalize(prompt, node["players"]);
         node["decision"] = prompt;
         // Defender IDs are numeric for players and strings for cards in Forge.
         if (node["combat"]?["attackOptions"] is JsonArray options)

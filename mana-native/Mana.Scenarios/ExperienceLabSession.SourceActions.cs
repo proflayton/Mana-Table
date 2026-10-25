@@ -30,10 +30,10 @@ public sealed partial class ExperienceLabSession
             SourceAction Action(string id, string text) => new(decisionId + ":" + sourceCardKey + ":" + id, "activate", text);
             SourceAction[] actions = [];
             if (Scenario.Id == DecisionFlowScenario.Id && StageIndex == 0
-                && State.Decision is { Kind: "input", Intent: DecisionIntent.Priority }
+                && State.Decision is { Task: DecisionTask.Priority }
                 && viewer.Zone("Hand").Cards.Contains(source) && source.Selectable && source.VisualId == DecisionFlowScenario.LandId)
                 actions = [new(decisionId + ":" + sourceCardKey + ":play-forest", "play", "Play land")];
-            else if (State.Decision is { Kind: "input", Intent: DecisionIntent.Priority or DecisionIntent.Mana }
+            else if (State.Decision is { Task: DecisionTask.Priority or DecisionTask.Payment }
                 && viewer.Zone("Battlefield").Cards.Contains(source) && source.Selectable && !source.FaceDown && !source.PhasedOut) {
                 if (source.VisualId is ClutteredChangesScenario.ActionCardId or "reader-elf" or "mana-elf" && !source.Tapped)
                     actions = [Action("green-mana", "{T}: Add {G}.")];
@@ -74,8 +74,7 @@ public sealed partial class ExperienceLabSession
                     }).ToImmutableArray()
                 }).ToImmutableArray(),
                 Decision = new() {
-                    Kind = "input", Intent = DecisionIntent.Selection, Purpose = DecisionPurpose.TargetSelection,
-                    Title = "Choose a target", Message = "Choose any target for Walking Ballista's 1 damage. Removing a +1/+1 counter is the cost.",
+                    Task = DecisionTask.TargetSelection, Title = "Choose a target", Message = "Choose any target for Walking Ballista's 1 damage. Removing a +1/+1 counter is the cost.",
                     Min = 1, Max = 1, CancelEnabled = true, PlayerChoices = State.Players.Select(player => player.Id).ToImmutableArray(),
                     SourceCard = source, SourceCardId = source.VisualId, SourceZone = "Battlefield", SourceControllerId = State.ViewerId
                 }

@@ -264,13 +264,13 @@ internal sealed partial class TableApplication
     private void DrawDecisionOverlay()
     {
         var state = match!; var d = state.Decision!;
-        if (d.Kind == "allocate") { DrawAllocation(state, d); return; }
+        if (d.Task == DecisionTask.Allocation) { DrawAllocation(state, d); return; }
         bool cards = d.LibraryCards.Length > 0 || d.Choices.Length > 0 && d.Choices.All(choice => choice.Card != null);
-        string title = d.Title.Length > 0 ? d.Title : d.Kind == "reveal" ? "Revealed cards" : d.Ordered ? "Choose an order"
+        string title = d.Title.Length > 0 ? d.Title : d.Task == DecisionTask.Reveal ? "Revealed cards" : d.Ordered ? "Choose an order"
             : cards ? d.Max == 1 ? "Choose a card" : "Choose cards" : "Make your choice";
-        ModalFrame(title, new MatchIntent.ViewBattlefield(), "View battlefield", d.Kind is "choice" or "reveal" ? 790 : 706);
+        ModalFrame(title, new MatchIntent.ViewBattlefield(), "View battlefield", d.Task is DecisionTask.Options or DecisionTask.Ordering or DecisionTask.AbilityChoice or DecisionTask.Reveal ? 790 : 706);
         canvas.Text(d.Message, 204, 181, Ink, .77f, 1185, 3);
-        if (d.Kind is "number" or "text") { DrawValueDecision(state, d); return; }
+        if (d.Task is DecisionTask.Number or DecisionTask.Text) { DrawValueDecision(state, d); return; }
         DrawChoices(state, d);
     }
     private void ToggleChoice(Decision d, int index)
@@ -301,7 +301,7 @@ internal sealed partial class TableApplication
         }
         bool cardChoices = items.Length > 0 && items.All(c => c.Card != null);
         int page = Math.Clamp(choicePage, 0, Math.Max(0, (filtered.Length - 1) / capacity));
-        string instruction = d.Kind == "reveal" ? "" : d.Ordered
+        string instruction = d.Task == DecisionTask.Reveal ? "" : d.Ordered
             ? $"Choose {d.Min}–{d.Max} in order. Selected: {decisionDraft.Selections.Count}."
             : d.Min == 1 && d.Max == 1 ? decisionDraft.Selections.Count == 0
                 ? cardChoices ? "Choose one card" : "Choose one option"
@@ -318,7 +318,7 @@ internal sealed partial class TableApplication
         foreach (var entry in pageItems) {
             var item = entry.Item;
             int index = row++; bool selected = item.Index is { } id && decisionDraft.Selections.Contains(id);
-            bool available = d.Kind != "reveal" && item.Index != null && !busy;
+            bool available = d.Task != DecisionTask.Reveal && item.Index != null && !busy;
             string buttonId = item.Index is { } cardIndex ? "choice:" + cardIndex : "reveal:" + entry.Slot;
             var captured = item;
             if (portraits) {
@@ -372,22 +372,22 @@ internal sealed partial class TableApplication
             Button("choicesfilter", choiceFilter.Length == 0 ? "Search choices…" : choiceFilter, 808, 754, 587, new MatchIntent.FocusInput(true), accent: textFocus && filterInput, height: 34);
             if (textFocus && filterInput) canvas.Text("Type to filter. Backspace edits. Escape closes the gallery.", 810, 794, Muted, .56f, 580, 1);
         }
-        if (decisionDraft.Selections.Count > 0 && d.Kind != "reveal")
+        if (decisionDraft.Selections.Count > 0 && d.Task != DecisionTask.Reveal)
             Button("choicesclear", d.Ordered ? "Reset order" : "Clear", 206, 819, 183, new MatchIntent.ClearSelection(), !busy);
-        if (d.Min == 0 && d.Kind != "reveal") Button("choice-cancel", "Choose none", 405, 819, 182, new MatchIntent.ChooseNone(), !busy);
-        Button("choicesdone", d.Kind == "reveal" ? "Continue" : d.Ordered ? "Confirm order" : cardChoices && decisionDraft.Selections.Count > 0
-            ? decisionDraft.Selections.Count == 1 ? "Confirm card" : "Confirm cards" : "Confirm selection", 1088, 814, 307, new MatchIntent.ConfirmSelection(), !busy && (d.Kind == "reveal" || decisionDraft.Selections.Count >= d.Min && decisionDraft.Selections.Count <= d.Max), true, 47);
+        if (d.Min == 0 && d.Task != DecisionTask.Reveal) Button("choice-cancel", "Choose none", 405, 819, 182, new MatchIntent.ChooseNone(), !busy);
+        Button("choicesdone", d.Task == DecisionTask.Reveal ? "Continue" : d.Ordered ? "Confirm order" : cardChoices && decisionDraft.Selections.Count > 0
+            ? decisionDraft.Selections.Count == 1 ? "Confirm card" : "Confirm cards" : "Confirm selection", 1088, 814, 307, new MatchIntent.ConfirmSelection(), !busy && (d.Task == DecisionTask.Reveal || decisionDraft.Selections.Count >= d.Min && decisionDraft.Selections.Count <= d.Max), true, 47);
     }
     private void DrawValueDecision(GameSnapshot state, Decision d)
     {
-        bool numeric = d.Kind == "number" || d.Numeric;
-        canvas.Text(numeric && d.Kind == "number" ? $"Choose a number from {d.Min} to {d.Max}." : "Enter your answer.", 228, 315, Gold, .94f, 1127, 2);
+        bool numeric = d.Task == DecisionTask.Number || d.Numeric;
+        canvas.Text(numeric && d.Task == DecisionTask.Number ? $"Choose a number from {d.Min} to {d.Max}." : "Enter your answer.", 228, 315, Gold, .94f, 1127, 2);
         Button("text-input", inputText.Length == 0 ? "Click here and type…" : inputText, 230, 399, 1100, new MatchIntent.FocusInput(false), accent: textFocus, height: 66);
-        if (d.Kind == "number") {
+        if (d.Task == DecisionTask.Number) {
             Button("number-less", "−", 232, 490, 65, new MatchIntent.AdjustNumber(-1), height: 44);
             Button("number-more", "+", 310, 490, 65, new MatchIntent.AdjustNumber(1), height: 44);
         }
-        bool valid = !numeric || int.TryParse(inputText, out int number) && (d.Kind != "number" || number >= d.Min && number <= d.Max);
+        bool valid = !numeric || int.TryParse(inputText, out int number) && (d.Task != DecisionTask.Number || number >= d.Min && number <= d.Max);
         if (!valid) canvas.Text("Enter a whole number within the permitted range.", 231, 559, Red, .78f, 1090, 2);
         Button("value", "Confirm", 1090, 718, 266, new MatchIntent.ConfirmValue(), valid && !busy, true, 54);
     }

@@ -45,7 +45,7 @@ internal sealed partial class TableApplication
         DrawTurnCallout();
         if (dragging && dragSource?.Card is { } heldCard) {
             bool legal = LegalDrop(HitAt(pointer));
-            if (state.Decision?.Intent is DecisionIntent.Attack or DecisionIntent.Block && cardPositions.TryGetValue(heldCard.CombatId, out var origin))
+            if (state.Decision?.Task is DecisionTask.Attack or DecisionTask.Block && cardPositions.TryGetValue(heldCard.CombatId, out var origin))
                 DrawCombatAim(origin, legal ? Blue : Muted);
             else {
                 // Keep the held occurrence in the scene, so release continues
@@ -205,7 +205,7 @@ internal sealed partial class TableApplication
             canvas.CardFrame(pose with { Size = pose.Size - new Vector2(7) }, Muted * (.25f * opacity));
             var r = pose.Bounds;
             if (pose.Size.X >= 300) {
-                bool actionSpace = focus && (match?.Decision?.Intent == DecisionIntent.Priority && IsCardActionable(card)
+                bool actionSpace = focus && (match?.Decision?.Task == DecisionTask.Priority && IsCardActionable(card)
                     || AbilityActionPending && match?.Decision is { } decision
                         && CardViews.Source(match, decision) is { } source && SameVisibleCard(card, source));
                 int typeTop = actionSpace ? (int)(r.Height * .53f) : 121;
@@ -221,7 +221,7 @@ internal sealed partial class TableApplication
             }
         }
         if (legal || selected) {
-            float glow = !preferences.ReducedMotion && legal && match?.Decision?.Intent == DecisionIntent.Priority
+            float glow = !preferences.ReducedMotion && legal && match?.Decision?.Task == DecisionTask.Priority
                 ? .85f + .15f * MathF.Sin((float)now * 2.4f) : 1;
             if (selected) canvas.CardFrame(pose with { Size = pose.Size + new Vector2(6) }, Gold, 4);
             else canvas.CardAction(pose, ActionAccent, glow);
@@ -271,13 +271,19 @@ internal sealed partial class TableApplication
     private void DrawStack()
     {
         var state = match!;
+        // These journeys point to the existing source and actual library piles.
+        // Do not create another card copy in the center of the table.
+        if (DecisionLayout.UsesSourceWorkspace(state.Decision)) {
+            if (state.Stack.Length > 0) { DrawStackFlow(); DrawPendingSpellCards(); }
+            return;
+        }
         if (ValuedTargetDecision) { DrawPendingSpellCards(); return; }
         // Choosing an ability has not put it on the stack. Its current card
         // remains the source on the table; do not manufacture a stack copy.
         if (state.Stack.Length == 0 && (AbilityActionPending || SelectingActionTarget)) return;
         if (state.Stack.Length == 0 && state.Decision?.SourceCard == null) return;
-        bool payingSource = state.Decision is { Intent: DecisionIntent.Mana, SourceCard: not null }
-            || !SelectingActionTarget && state.Decision is { Intent: DecisionIntent.Selection, SourceCard: not null, PlayerChoices.Length: > 0 };
+        bool payingSource = state.Decision is { Task: DecisionTask.Payment, SourceCard: not null }
+            || !SelectingActionTarget && state.Decision is { Task: DecisionTask.TargetSelection or DecisionTask.EntitySelection, SourceCard: not null, PlayerChoices.Length: > 0 };
         if (state.Stack.Length > 0 && !payingSource) { DrawStackFlow(); DrawPendingSpellCards(); return; }
         canvas.Glow(new(807, 485), new(430, 165), Blue * .17f);
         var resting = TableWorld.Card(new(6, 108), new(245, 126));

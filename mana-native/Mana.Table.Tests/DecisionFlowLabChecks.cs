@@ -33,7 +33,7 @@ internal static class DecisionFlowLabChecks
         lab.Reply(play);
         check(lab.StageIndex == 1 && lab.State.Id == initial.Id && lab.State.Viewer is { LandPlaysUsed: 1 } viewer
             && viewer.Zone("Hand").Cards.Length == 0 && viewer.Zone("Battlefield").Cards.Count(card => card.VisualId == forest.VisualId) == 1
-            && lab.State.Decision is { Intent: DecisionIntent.Priority, CanAutoPass: true },
+            && lab.State.Decision is { Task: DecisionTask.Priority, CanAutoPass: true },
             "The exact Forest reader action advances to its authored land result once and exposes the empty own priority window");
         Rejected(() => lab.Reply(play), "A delayed land action cannot consume the next decision");
         Rejected(() => lab.Reply(new AutoPassPriority(lab.State.Id, lab.State.Decision?.Id ?? "")),
@@ -50,8 +50,7 @@ internal static class DecisionFlowLabChecks
         lab.AdvanceTo(4);
         var targetState = lab.State;
         var target = targetState.Players[1].Zone("Battlefield").Cards.Single(card => card.VisualId == CounterDamageScenario.TargetId);
-        check(targetState.Decision is { Kind: "input", Intent: DecisionIntent.Selection, Purpose: DecisionPurpose.TargetSelection,
-                PlayerChoices.Length: 0, Effect.Amount: 1 }
+        check(targetState.Decision is { Task: DecisionTask.TargetSelection, PlayerChoices.Length: 0, Effect.Amount: 1 }
             && target.Selectable && targetState.Players.SelectMany(player => player.Zone("Battlefield").Cards).Count(card => card.Selectable) == 1,
             "The authored damage choice exposes only its supported Dreadmaw recipient and the captured one-counter damage value");
         Rejected(() => lab.Reply(new SelectPlayer(lab.State.Id, lab.State.Decision?.Id ?? "", 1)),

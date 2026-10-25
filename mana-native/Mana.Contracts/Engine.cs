@@ -126,9 +126,10 @@ public sealed record Lobby(string Mode, string Status, string? Error, bool CanSt
     public ImmutableArray<AiOpponent> AiOpponents { get; init; } = [];
     public TempoSettings? Tempo { get; init; }
 }
-public enum DecisionIntent { General, Priority, Attack, Block, Mana, Selection }
-// Semantic tasks belong to the game boundary. Provider prompt/class names do not.
-public enum DecisionPurpose { Unspecified, OpeningHand, TargetSelection, AbilitySelection }
+// One rules-owned task selects the interaction and the commands it may accept.
+// Provider prompt/class names never cross the game boundary.
+public enum DecisionTask { Unspecified, Priority, OpeningHand, Payment, Attack, Block,
+    TargetSelection, EntitySelection, Confirmation, AbilityChoice, Options, Ordering, Reveal, Number, Text, Allocation }
 public enum PriorityAlternative { None, UndoLastAction, PassTurn }
 public sealed record Card
 {
@@ -243,9 +244,7 @@ public sealed record CounterIncrement(string Type, string Label, int Added);
 public sealed record Decision
 {
     public string Id { get; init; } = "";
-    public string Kind { get; init; } = "";
-    public DecisionIntent Intent { get; init; }
-    public DecisionPurpose Purpose { get; init; }
+    public DecisionTask Task { get; init; }
     public PriorityAlternative PriorityAlternative { get; init; }
     public string Message { get; init; } = "";
     public string Ok { get; init; } = "Confirm";
@@ -261,7 +260,7 @@ public sealed record Decision
     public ImmutableArray<Choice> Choices { get; init; } = [];
     public int Min { get; init; }
     public int Max { get; init; }
-    public bool Ordered { get; init; }
+    public bool Ordered => Task == DecisionTask.Ordering;
     public bool AtLeastOne { get; init; }
     public bool MaySkip { get; init; }
     public int Amount { get; init; }
@@ -276,9 +275,15 @@ public sealed record Decision
     public PendingEffect? Effect { get; init; }
     public string SourceZone { get; init; } = "";
     public string Title { get; init; } = "";
-    public bool Numeric { get; init; }
+    public bool Numeric => Task == DecisionTask.Number;
     public ImmutableArray<LibraryChoice> LibraryCards { get; init; } = [];
+    public LibrarySearchContext? LibrarySearch { get; init; }
+    public OpeningHandContext? OpeningHand { get; init; }
 }
+// Context describes an authorized decision, never hidden library availability.
+public sealed record LibrarySearchContext(int? LibraryOwnerId, string Destination, string CardName);
+// Consequences of accepting the next redraw, before any hand card is selected.
+public sealed record OpeningHandContext(int HandSize, int NextHandSize, int CardsToReturn, bool FreeMulligan);
 public sealed record Defender(string Kind, string Id, int PlayerId, string Name);
 public sealed record AttackOption(string CardId, ImmutableArray<Defender> Defenders);
 public sealed record Attack(string CardId, int DefendingPlayerId, ImmutableArray<string> BlockerIds, ImmutableArray<string> EligibleBlockerIds)

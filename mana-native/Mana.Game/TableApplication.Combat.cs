@@ -13,7 +13,7 @@ internal sealed partial class TableApplication
     private string? inspectedStack;
     private string? reviewedAttacker;
     private string? CombatSource => dragging ? dragSource?.Card?.CombatId : selectedCombat;
-    private bool HasCombat => match?.Combat is { } combat && (combat.Attackers.Length > 0 || match.Decision?.Intent is DecisionIntent.Attack or DecisionIntent.Block);
+    private bool HasCombat => match?.Combat is { } combat && (combat.Attackers.Length > 0 || match.Decision?.Task is DecisionTask.Attack or DecisionTask.Block);
     private bool CombatTarget(Card card) => match is { } state && CombatSource is { } source &&
         (LegalTargets.CanAttackCard(state, source, card.CombatId) || LegalTargets.CanBlock(state, source, card.CombatId));
     private void OpenCombat(bool candidates = false) { overlay = "combat"; combatCandidates = candidates; combatPage = 0; }
@@ -46,7 +46,7 @@ internal sealed partial class TableApplication
     {
         var state = match!;
         ModalFrame(combatCandidates ? "Choose your creature" : "Combat assignments", new MatchIntent.CloseView(), "Back to table");
-        bool assigning = state.Decision?.Intent is DecisionIntent.Attack or DecisionIntent.Block;
+        bool assigning = state.Decision?.Task is DecisionTask.Attack or DecisionTask.Block;
         Button("combat-assignments", "Assignments", 205, 181, 184, new MatchIntent.SetCombatView(false), accent: !combatCandidates, height: 37);
         if (assigning) Button("combat-creatures", "Your creatures", 401, 181, 196, new MatchIntent.SetCombatView(true), accent: combatCandidates, height: 37);
         canvas.Text(state.Combat?.BlockProblem ?? (selectedCombat == null ? "Inspect any combat, including creatures outside the current battlefield page." : "Choose an attacker below to assign the selected blocker."), 205, 231, Muted, .71f, 1170, 2);
@@ -89,7 +89,7 @@ internal sealed partial class TableApplication
             if (selectedCombat != null && LegalTargets.CanBlock(state, selectedCombat, attack.CardId) && card != null) {
                 bool assigned = attack.BlockerIds.Contains(selectedCombat);
                 Button("combat-pair:" + attack.CardId, assigned ? "Remove block" : "Assign block", 1180, y + 20, 196, new MatchIntent.UseCard(card, true), !busy, true, 38);
-            } else if (state.Decision?.Intent == DecisionIntent.Attack && CombatGuide.Remove(state, attack.CardId) != null) {
+            } else if (state.Decision?.Task == DecisionTask.Attack && CombatGuide.Remove(state, attack.CardId) != null) {
                 Button("combat-recall:" + attack.CardId, "Recall attacker", 1180, y + 20, 196, new MatchIntent.RemoveCombatAssignment(attack.CardId), !busy, height: 38);
             }
         }
@@ -101,7 +101,7 @@ internal sealed partial class TableApplication
         Button("combat-prev", "Previous", 207, 736, 141, new MatchIntent.SetPage(MatchPage.Combat, combatPage - 1), combatPage > 0);
         Button("combat-next", "Next", 361, 736, 141, new MatchIntent.SetPage(MatchPage.Combat, combatPage + 1), (combatPage + 1) * count < total);
         canvas.Text($"Page {combatPage + 1} / {Math.Max(1, (total + count - 1) / count)}", 529, 748, Muted, .69f, 430, 1);
-        if (match != null && match.Decision?.Intent is DecisionIntent.Attack or DecisionIntent.Block)
+        if (match != null && match.Decision?.Task is DecisionTask.Attack or DecisionTask.Block)
             Button("combat-confirm", TurnGuide.Confirm(match), 1080, 730, 309, new MatchIntent.ConfirmDecision(true), !busy && CombatGuide.CanConfirm(match), true, 48);
     }
     private void DrawBlockerReview()

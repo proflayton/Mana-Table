@@ -135,8 +135,8 @@ internal sealed partial class CardReadingSmoke : ITableAutomation
         Step(.05, () => Buttons());
         Step(.05, () => MoveCard("hand-4")); Click();
         Step(.2, () => Check(scenario.Replies.Count == 1, "Cancelling a drag and reopening a reader cannot play the card"));
-        Step(0, () => Publish(scenario.State with { Decision = new() { Kind = "input", Intent = DecisionIntent.Selection } }));
-        Prepared(() => view.Match?.Decision is { Kind: "input", Intent: DecisionIntent.Selection } && FreshHand("hand-4", c => !c.FaceDown && c.Selectable), .5, () => MoveCard("hand-4"), "The fresh required hand selection must be visible before its click"); Click();
+        Step(0, () => Publish(scenario.State with { Decision = new() { Task = DecisionTask.EntitySelection } }));
+        Prepared(() => view.Match?.Decision is { Task: DecisionTask.EntitySelection } && FreshHand("hand-4", c => !c.FaceDown && c.Selectable), .5, () => MoveCard("hand-4"), "The fresh required hand selection must be visible before its click"); Click();
         Step(.3, () => Check(scenario.Replies.Count == 2, "Required hand selections still submit with one click"));
         Step(0, () => {
             var state = scenario.State;
@@ -172,7 +172,7 @@ internal sealed partial class CardReadingSmoke : ITableAutomation
         Step(.1, () => Check(view.ZoneName == "Graveyard" && scenario.Replies.Count == 2, "A public pile still opens its browser with a single click"));
         Step(0, () => MoveHit("close-overlay")); Click();
         Step(0, () => {
-            Publish(scenario.State with { ActivePlayerId = 1, PhaseKey = "COMBAT_END", Decision = new() { Kind = "input", Intent = DecisionIntent.Priority, CanAutoPass = false, OkEnabled = true } });
+            Publish(scenario.State with { ActivePlayerId = 1, PhaseKey = "COMBAT_END", Decision = new() { Task = DecisionTask.Priority, CanAutoPass = false, OkEnabled = true } });
             MoveHit("auto");
         }); Click();
         Step(.05, () => MoveCard("hand-0")); Click();
@@ -188,7 +188,7 @@ internal sealed partial class CardReadingSmoke : ITableAutomation
         });
         Step(0, () => Publish(scenario.State with {
             Stack = [new("Llanowar Elves", "Creature spell", false, scenario.State.Viewer!.Zone("Hand").Cards[0]) { Id = "paced-spell" }],
-            Decision = new() { Kind = "input", Intent = DecisionIntent.Priority, CanAutoPass = true, OkEnabled = true }
+            Decision = new() { Task = DecisionTask.Priority, CanAutoPass = true, OkEnabled = true }
         }));
         Step(.45, () => {
             Check(scenario.Replies.Count == 3 && view.Match?.Stack.Length == 1, "Auto keeps a new spell visible while its presentation beat plays");
@@ -214,7 +214,7 @@ internal sealed partial class CardReadingSmoke : ITableAutomation
         var card = new Card { Name = "Llanowar Elves", Type = "Creature — Elf Druid", ManaCost = "{G}", Text = "{T}: Add {G}.", Power = 1, Toughness = 1 };
         Step(0, () => {
             repliesBeforeReveal = scenario.Replies.Count;
-            Publish(scenario.State with { Decision = new() { Kind = "reveal", Title = "Revealed cards", Choices = [new(0, card.Name, card), new(1, card.Name, card with { })] } });
+            Publish(scenario.State with { Decision = new() { Task = DecisionTask.Reveal, Title = "Revealed cards", Choices = [new(0, card.Name, card), new(1, card.Name, card with { })] } });
         });
         Step(.15, () => MoveHit("choice:0"));
         Step(.25, () => Check(view.HoverPreview == null && ChoiceCompact(0), "Hovering a revealed face keeps the gallery compact")); Click();
@@ -234,7 +234,7 @@ internal sealed partial class CardReadingSmoke : ITableAutomation
         Step(.15, () => {
             Check(scenario.Replies.Count == repliesBeforeReveal + 1 && scenario.Replies[^1] is AcknowledgeReveal && view.HoverPreview == null,
                 "Only Continue acknowledges the reveal and removes its readable faces");
-            Publish(scenario.State with { Decision = new() { Kind = "reveal", LibraryCards = Enumerable.Range(0, 8).Select(i => new LibraryChoice(null, card.Name, card with { })).ToImmutableArray() } });
+            Publish(scenario.State with { Decision = new() { Task = DecisionTask.Reveal, LibraryCards = Enumerable.Range(0, 8).Select(i => new LibraryChoice(null, card.Name, card with { })).ToImmutableArray() } });
         });
         Step(.15, () => MoveHit("reveal:0")); Click();
         StepWhen(() => GalleryReadingReady(0), 3, () => {
@@ -254,11 +254,11 @@ internal sealed partial class CardReadingSmoke : ITableAutomation
         }); Click();
         StepWhen(() => GalleryReadingReady(7), 3, () => {
             Check(GalleryReadingReady(7), "Read-only faces on later gallery pages retain their own explicit reading identity");
-            Publish(scenario.State with { Decision = new() { Kind = "reveal", LibraryCards = [new(null, "Face-down card", card with { FaceDown = true, Text = "", Name = "Face-down card" })] } });
+            Publish(scenario.State with { Decision = new() { Task = DecisionTask.Reveal, LibraryCards = [new(null, "Face-down card", card with { FaceDown = true, Text = "", Name = "Face-down card" })] } });
         });
         Step(.25, () => {
             Check(view.HoverPreview == null, "Revoking a revealed face immediately removes its enlargement");
-            Publish(scenario.State with { Decision = new() { Kind = "choice", Min = 1, Max = 3,
+            Publish(scenario.State with { Decision = new() { Task = DecisionTask.Options, Min = 1, Max = 3,
                 Choices = [new(2, card.Name, card), new(5, card.Name, card with { }), new(9, card.Name, card with { })] } });
         });
         QueueSelectedGallery(card, compact: false);
@@ -270,15 +270,15 @@ internal sealed partial class CardReadingSmoke : ITableAutomation
             repliesBeforeReveal = scenario.Replies.Count;
             Move(new(10, 70));
             Publish(FocusedSeed(scenario.State, readingOnly: true) with {
-                Decision = new() { Kind = "reveal", Title = "Revealed cards", Choices = [new(0, card.Name, card), new(1, card.Name, card with { })] }
+                Decision = new() { Task = DecisionTask.Reveal, Title = "Revealed cards", Choices = [new(0, card.Name, card), new(1, card.Name, card with { })] }
             });
         });
-        Prepared(() => view.Match?.Decision?.Kind == "reveal" && view.Hits.Any(h => h.Id == "choicesdone" && view.CurrentHit(h)),
+        Prepared(() => view.Match?.Decision?.Task is DecisionTask.Reveal && view.Hits.Any(h => h.Id == "choicesdone" && view.CurrentHit(h)),
             2, () => MoveHit("choicesdone"), "The real reveal acknowledgement must be visible before its click"); Click();
         Prepared(() => scenario.Replies.Count == repliesBeforeReveal + 1 && scenario.Replies[^1] is AcknowledgeReveal
-            && view.Match?.Decision?.Kind != "reveal" && !view.Busy, 2, () => {
+            && view.Match?.Decision?.Task is not (DecisionTask.Reveal) && !view.Busy, 2, () => {
                 Move(new(10, 70));
-                Publish(scenario.State with { Decision = new() { Kind = "choice", Min = 1, Max = 3,
+                Publish(scenario.State with { Decision = new() { Task = DecisionTask.Options, Min = 1, Max = 3,
                     Choices = [new(2, card.Name, card), new(5, card.Name, card with { }), new(9, card.Name, card with { })] } });
             }, "Continue must submit its real scoped reveal acknowledgement before the selectable gallery");
         QueueSelectedGallery(card, compact: true);
@@ -334,7 +334,7 @@ internal sealed partial class CardReadingSmoke : ITableAutomation
             Check(view.HoverPreview == null && ChoiceCompact(0) && ChoiceCompact(1) && scenario.Replies.Count == repliesBeforeReveal + 1,
                 "A deselected face stays compact without a game command while the pointer remains stationary");
             Move(new(10, 70));
-            Publish(scenario.State with { Decision = new() { Kind = "choice", Min = 1, Max = 3,
+            Publish(scenario.State with { Decision = new() { Task = DecisionTask.Options, Min = 1, Max = 3,
                 LibraryCards = [new(10, card.Name, card), new(20, card.Name, card with { }), new(30, card.Name, card with { })] } });
         });
         Step(.15, () => MoveHit("choice:10"));
@@ -349,7 +349,7 @@ internal sealed partial class CardReadingSmoke : ITableAutomation
         Prepared(() => view.Overlay == "inspect", 2, () => {
             Check(view.Selections.SequenceEqual([10]) && scenario.Replies.Count == repliesBeforeReveal + 1,
                 "Inspecting a selected private library face preserves its authoritative index");
-            Publish(scenario.State with { Decision = new() { Kind = "choice", Min = 1, Max = 1,
+            Publish(scenario.State with { Decision = new() { Task = DecisionTask.Options, Min = 1, Max = 1,
                 LibraryCards = [new(10, "Face-down card", card with { Name = "Face-down card", ArtName = "", Text = "", FaceDown = true })] } });
         }, "The selected private library face must support explicit inspection");
         Prepared(() => view.Overlay.Length == 0 && view.HoverPreview == null, 2, () =>
@@ -380,7 +380,7 @@ internal sealed partial class CardReadingSmoke : ITableAutomation
             var state = FocusedSeed(PresentationSmoke.Example());
             var creature = state.Viewer!.Zone("Battlefield").Cards.Single(c => c.VisualId == battlefield);
             var neighborCard = state.Viewer.Zone("Battlefield").Cards.Single(c => c.VisualId == neighbor);
-            Publish(state with { Decision = new() { Kind = "choice", Min = 1, Max = 2, Choices = [
+            Publish(state with { Decision = new() { Task = DecisionTask.Options, Min = 1, Max = 2, Choices = [
                 new(4, creature.Name, creature) { CardId = battlefield }, new(9, neighborCard.Name, neighborCard) { CardId = neighbor }
             ] } });
             repliesBefore = scenario.Replies.Count;
@@ -438,7 +438,7 @@ internal sealed partial class CardReadingSmoke : ITableAutomation
         var card = new Card { Name = "Llanowar Elves", Type = "Creature — Elf Druid", Power = 1, Toughness = 1, Text = "{T}: Add {G}." };
         Prepared(() => !view.Busy, 2, () => {
             Move(new(10, 70));
-            Publish(scenario.State with { Decision = new() { Kind = "choice", Min = 1, Max = 3,
+            Publish(scenario.State with { Decision = new() { Task = DecisionTask.Options, Min = 1, Max = 3,
                 Choices = [new(2, card.Name, card), new(5, card.Name, card with { }), new(9, card.Name, card with { })] } });
             expectedScope = view.Scope; repliesBefore = scenario.Replies.Count;
         }, "The previous real selection reply must finish before the slow gallery handoff");
@@ -580,7 +580,7 @@ internal sealed partial class CardReadingSmoke : ITableAutomation
                 var choices = Enumerable.Range(0, 3).Select(i => new Choice(i,
                     context == "text-rows" ? "Effect " + (char)('A' + i) : cards[i].Name,
                     context == "text-rows" ? null : cards[i]) { CardId = direct ? cards[i].VisualId : "" }).ToArray();
-                Publish(state with { Decision = new() { Kind = "choice", Title = "Choose an order", Ordered = true, Min = 3, Max = 3, Choices = choices.ToImmutableArray() } });
+                Publish(state with { Decision = new() { Task = DecisionTask.Ordering, Title = "Choose an order", Min = 3, Max = 3, Choices = choices.ToImmutableArray() } });
                 repliesBefore = scenario.Replies.Count;
                 scope = view.Scope; gameId = view.Match!.Id; decisionId = view.Match.Decision!.Id;
             });
@@ -632,7 +632,7 @@ internal sealed partial class CardReadingSmoke : ITableAutomation
                 Check(scenario.Replies[^1] is OrderOptions reply && reply.GameId == gameId
                     && reply.DecisionId == decisionId && reply.Choices!.SequenceEqual(order),
                     context + ": explicit confirmation submits exact [2,0,1] with the current game and decision scope");
-                if (context == "text-rows") Publish(scenario.State with { Decision = new() { Kind = "choice", Ordered = true, Min = 0, Max = 3,
+                if (context == "text-rows") Publish(scenario.State with { Decision = new() { Task = DecisionTask.Ordering, Min = 0, Max = 3,
                     Choices = [new(0, "New effect A", null), new(1, "New effect B", null), new(2, "New effect C", null)] } });
             }, context + ": the explicit ordering command must finish");
             if (context == "text-rows") Prepared(() => view.Scope != scope && view.Selections.Count == 0 && OrderedBadgesMatch([]), 2, () =>
@@ -640,7 +640,7 @@ internal sealed partial class CardReadingSmoke : ITableAutomation
                 context + ": previous numbers must never leak into another decision");
         }
         Step(0, () => {
-            Publish(scenario.State with { Decision = new() { Kind = "choice", Ordered = true, Min = 99, Max = 99,
+            Publish(scenario.State with { Decision = new() { Task = DecisionTask.Ordering, Min = 99, Max = 99,
                 Choices = Enumerable.Range(0, 99).Select(i => new Choice(i, "Ordered item " + (i + 1), null)).ToImmutableArray() } });
         });
         Prepared(() => view.Selections.Count == 99 && view.Hits.Any(h => h.Id == "choicesfilter"), 2,

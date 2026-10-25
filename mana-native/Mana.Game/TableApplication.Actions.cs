@@ -42,8 +42,9 @@ internal sealed partial class TableApplication
     }
     private void DrawActionCallout()
     {
-        if (AbilityActionPending || SelectingActionTarget) return;
+        if (AbilityActionPending) return;
         if (DrawDecisionClarity(match!)) return;
+        if (SelectingActionTarget) return;
         // The pending-effect surface already owns the reported effect, target
         // connections and responder. Do not repeat it in a second callout.
         if (match!.Stack.Length > 0) return;

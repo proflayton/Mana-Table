@@ -7,8 +7,7 @@ public static class TableChoices
 {
     public static bool IsDirect(GameSnapshot state)
     {
-        if (state.Decision is not { Kind: "choice", Choices.Length: > 0, LibraryCards.Length: 0 } d
-            || d.Purpose == DecisionPurpose.AbilitySelection) return false;
+        if (state.Decision is not { Task: DecisionTask.Options or DecisionTask.Ordering, Choices.Length: > 0, LibraryCards.Length: 0 } d) return false;
         // Large ordered lists use the numbered gallery. This changes only the
         // choice surface; every battlefield occurrence still stays on the table.
         if (d.Ordered && d.Choices.Length > 12) return false;

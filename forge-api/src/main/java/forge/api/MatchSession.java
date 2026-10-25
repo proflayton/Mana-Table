@@ -345,6 +345,20 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
                 next.prompt.put("max", targeting.getMaxTargets());
                 var effect = pendingEffect(targeting.getSpellAbility());
                 if (effect != null) next.prompt.put("effect", effect);
+                if (targeting.getSpellAbility().getTargetRestrictions().canTgtPlayer()) {
+                    var search = librarySearch(LibrarySearchOffer.targeting(targeting.getSpellAbility()), targeting.getSpellAbility());
+                    if (search != null) next.prompt.put("librarySearch", search);
+                }
+            }
+            if (current instanceof InputConfirm confirmation && confirmation.getLibrarySearchOffer() != null) {
+                next.prompt.put("librarySearch", librarySearch(confirmation.getLibrarySearchOffer(), confirmation.getSpellAbility()));
+                next.prompt.put("ok", "Search library");
+                next.prompt.put("cancel", "Don’t search");
+            }
+            if (current instanceof InputConfirmMulligan mulligan && mulligan.getOpeningHandOffer() != null) {
+                var offer = mulligan.getOpeningHandOffer();
+                next.prompt.put("openingHand", map("handSize", offer.handSize(), "nextHandSize", offer.nextHandSize(),
+                        "cardsToReturn", offer.cardsToReturn(), "freeMulligan", offer.freeMulligan()));
             }
             if (current instanceof InputLondonMulligan mulligan) {
                 next.prompt.put("min", mulligan.getCardsToReturn());
@@ -383,6 +397,14 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
             context.put("highlighted", false);
             return context;
         });
+    }
+
+    private Map<String, Object> librarySearch(LibrarySearchOffer offer, SpellAbility ability) {
+        if (offer == null) return null;
+        CardView source = ability == null ? null : ability.getHostCard().getView();
+        boolean publicSource = source != null && source.canBeShownTo(viewer) && !source.isFaceDown();
+        return map("libraryOwnerId", offer.libraryOwnerId(), "destination", offer.destination().name(),
+                "cardName", publicSource ? offer.cardName() : "");
     }
 
     private boolean canQuietYield(Input input) {

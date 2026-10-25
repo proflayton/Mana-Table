@@ -106,7 +106,7 @@ internal static class QuietPriorityRegression
         check(observed == replacement && revoked.Replies.Count == 1,
             "A newly issued token ends the original quiet intent rather than silently rearming it");
 
-        var required = refreshed with { ActionClass = "choice", Decision = new() { Id = "required", Kind = "choice", Min = 1, Max = 1,
+        var required = refreshed with { ActionClass = "choice", Decision = new() { Id = "required", Task = DecisionTask.Options, Min = 1, Max = 1,
             QuietYieldToken = "armed-token", Choices = [new(0, "Required choice", null)] } };
         var choiceConnection = new SequenceConnection(required);
         observed = await new DecisionAdvance(choiceConnection).RunQuietlyAsync(initial, "armed-token", _ => true, (_, _) => false);
@@ -149,7 +149,7 @@ internal static class QuietPriorityRegression
 
     private static GameSnapshot State(string decision, string token) => new("quiet-game", "playing", null, null, 0, 7, "Main phase", "MAIN1", 1,
         [new(0, "You", 40, true, false, ImmutableDictionary<string, int>.Empty, []), new(1, "Opponent", 40, false, false, ImmutableDictionary<string, int>.Empty, [])], [], null,
-        new() { Id = decision, Kind = "input", Intent = DecisionIntent.Priority, OkEnabled = true, CanAutoPass = false, QuietYieldToken = token })
+        new() { Id = decision, Task = DecisionTask.Priority, OkEnabled = true, CanAutoPass = false, QuietYieldToken = token })
         { Revision = 1, PriorityPlayerId = 0, DecisionOwnerId = 0, ActionClass = "priority" };
 
     private sealed class SequenceConnection(params GameSnapshot[] snapshots) : IMatchConnection

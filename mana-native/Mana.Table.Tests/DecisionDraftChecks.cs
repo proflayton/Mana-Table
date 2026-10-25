@@ -9,7 +9,7 @@ internal static class DecisionDraftChecks
 {
     internal static void Run(Action<bool, string> check)
     {
-        var choice = State(new() { Id = "order", Kind = "choice", Ordered = true, Min = 3, Max = 3,
+        var choice = State(new() { Id = "order", Task = DecisionTask.Ordering, Min = 3, Max = 3,
             Choices = [new(7, "First", null), new(19, "Second", null), new(41, "Third", null)] });
         var draft = new DecisionDraft();
         check(draft.Observe(choice, false) && draft.Selections.SequenceEqual([7, 19, 41]),
@@ -28,7 +28,7 @@ internal static class DecisionDraftChecks
 
         var direct = new DecisionDraft(); direct.Observe(choice, true);
         check(direct.Selections.Count == 0, "An ordered direct battlefield choice waits for explicit player selections");
-        var optional = State(new() { Id = "optional", Kind = "choice", Max = 2,
+        var optional = State(new() { Id = "optional", Task = DecisionTask.Options, Max = 2,
             Choices = [new(7, "First", null), new(19, "Second", null), new(41, "Third", null)] });
         draft.Observe(optional, false);
         check(!draft.Toggle(optional, 1) && !draft.Toggle(optional, -1) && draft.Toggle(optional, 19)
@@ -52,13 +52,13 @@ internal static class DecisionDraftChecks
         var single = optional with { Decision = optional.Decision! with { Id = "single", Max = 1 } };
         draft.Observe(single, false); draft.Toggle(single, 7); draft.Toggle(single, 41);
         check(draft.Selections.SequenceEqual([41]), "Choosing a different single option replaces the previous local selection");
-        var library = State(new() { Id = "library", Kind = "choice", Max = 1,
+        var library = State(new() { Id = "library", Task = DecisionTask.Options, Max = 1,
             LibraryCards = [new(null, "Visible reference", new() { Name = "Forest" }), new(83, "Offered choice", new() { Name = "Forest" })] });
         draft.Observe(library, false);
         check(!draft.Toggle(library, 0) && !draft.Toggle(library, 1) && draft.Toggle(library, 83)
             && draft.Selections.SequenceEqual([83]),
             "A library gallery accepts the offered choice handle while reference faces and array slots grant no selection authority");
-        var allocation = State(new() { Id = "allocation", Kind = "allocate", Amount = 5,
+        var allocation = State(new() { Id = "allocation", Task = DecisionTask.Allocation, Amount = 5,
             Choices = [new(7, "Recipient A", null) { Minimum = 1, Maximum = 3 },
                 new(19, "Recipient B", null) { Minimum = 0, Maximum = 4 }] });
         draft.Observe(allocation, false);

@@ -59,6 +59,13 @@ internal sealed partial class TableApplication
         }
 
         DrawPortraitTurnControls();
+        if (!SelectingActionTarget && DrawOptionalDecision(state)) return;
+        if (d?.LibrarySearch != null && d.Task == DecisionTask.TargetSelection) {
+            // Legal recipient gestures live on the actual library piles. The
+            // engine still receives its current target-player selection.
+            decisionPanelBounds = Rectangle.Empty;
+            return;
+        }
         if (!SelectingActionTarget && decisionDock.Surface == DecisionDockSurface.None) {
             decisionPanelBounds = Rectangle.Empty;
             var ignoredAbilities = PriorityAbilityOptions().Where(ability => ability.IgnoredUntilNextTurn).ToArray();
@@ -77,7 +84,7 @@ internal sealed partial class TableApplication
         if (QuietPriorityArmed && !SelectingActionTarget) DrawPortraitPriority(decisionDock);
 
         var view = decisionDock;
-        bool recipientChoice = !SelectingActionTarget && d?.Intent == DecisionIntent.Selection && StateClarity.Recipients(state).Length > 0;
+        bool recipientChoice = !SelectingActionTarget && d?.Task == DecisionTask.EntitySelection && StateClarity.Recipients(state).Length > 0;
         bool following = busy || d == null;
         var abilities = PriorityAbilityOptions();
         // A source/recipient workspace owns its effect. The dock owns the next
@@ -111,9 +118,10 @@ internal sealed partial class TableApplication
             Button("confirm", decisionDraft.Selections.Count == 0 && d!.Min == 0 ? "Choose none" : $"Confirm ({decisionDraft.Selections.Count}/{d!.Max})", 1266, 799, 296,
                 new MatchIntent.ConfirmSelection(), TableChoices.CanConfirm(state, decisionDraft.Selections), true, 47);
             Button("choicesclear", "Clear", 1459, 852, 103, new MatchIntent.ClearSelection(), decisionDraft.Selections.Count > 0, height: 27);
-        } else if (d?.Kind == "input") {
+        } else if (d?.Task is DecisionTask.Unspecified or DecisionTask.Priority or DecisionTask.Payment or DecisionTask.Attack
+            or DecisionTask.Block or DecisionTask.TargetSelection or DecisionTask.EntitySelection) {
             Button("confirm", view.ActionLabel, 1266, 799, 296, new MatchIntent.ConfirmDecision(), CombatGuide.CanConfirm(state), true, 47);
-            if (d.CancelEnabled) Button("cancel", d.Intent == DecisionIntent.Priority && d.Cancel == "End Turn" ? "Pass turn" : d.Cancel,
+            if (d.CancelEnabled) Button("cancel", d.Task == DecisionTask.Priority && d.Cancel == "End Turn" ? "Pass turn" : d.Cancel,
                 1459, 852, 103, new MatchIntent.CancelDecision(), height: 27);
         } else if (d != null) Button("open-decision", "Make a choice", 1266, 799, 296, new MatchIntent.OpenDecision(), true, true, 47);
     }

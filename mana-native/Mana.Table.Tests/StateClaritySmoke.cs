@@ -110,7 +110,7 @@ internal sealed class StateClaritySmoke : ITableAutomation
             Capture("03-waiting-for-another-seat");
             var source = view.Match!.Viewer!.Zone("Battlefield").Cards.Single(c => c.VisualId == "clarity-source");
             Publish(view.Match with { DecisionOwnerId = 0, PriorityPlayerId = 0, ActionClass = "priority",
-                Decision = new() { Kind = "input", Intent = DecisionIntent.Priority, OkEnabled = true },
+                Decision = new() { Task = DecisionTask.Priority, OkEnabled = true },
                 Stack = [new("Same source", "First public trigger.", true, source) { Id = "trigger-a", ControllerId = 1 },
                     new("Same source", "Second public trigger.", true, source) { Id = "trigger-b", ControllerId = 2 }] });
         });
@@ -218,7 +218,7 @@ internal sealed class StateClaritySmoke : ITableAutomation
             new("Hand", id == 0 ? 0 : 7, [], null), new("Library", 70, [], null), new("Graveyard", 0, [], null), new("Exile", 0, [], null), new("Command", 0, [], null)
         ]) { Counters = id == 0 ? ImmutableDictionary<string, int>.Empty.Add("Poison", 9).Add("Energy", 2) : id == 1 ? ImmutableDictionary<string, int>.Empty.Add("Experience", 3) : id == 2 ? ImmutableDictionary<string, int>.Empty.Add("Poison", 1) : ImmutableDictionary<string, int>.Empty }).ToArray();
         return new("clarity-scenario", "playing", null, null, 0, 5, "Main phase", "MAIN1", 0, players.ToImmutableArray(), [], null,
-            new() { Kind = "input", Intent = DecisionIntent.Selection, PlayerChoices = [0, 1, 2], SourceCard = source, SourceControllerId = 0,
+            new() { Task = DecisionTask.EntitySelection, PlayerChoices = [0, 1, 2], SourceCard = source, SourceControllerId = 0,
                 Message = "Partner with Pir — target player may put Pir into their hand from their library, then shuffle. Choose the recipient." }) {
             DecisionOwnerId = 0, PriorityPlayerId = 0, ActionClass = "selection"
         };

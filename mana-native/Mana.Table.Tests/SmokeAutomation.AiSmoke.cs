@@ -86,22 +86,22 @@ internal sealed partial class SmokeAutomation
             case 6:
             case 11:
                 if (view.Match?.Decision is not { } decision) break;
-                if (view.Match.ActivePlayerId == view.Match.ViewerId && decision.Intent == DecisionIntent.Priority && view.Match.PhaseKey == "MAIN1") {
+                if (view.Match.ActivePlayerId == view.Match.ViewerId && decision.Task == DecisionTask.Priority && view.Match.PhaseKey == "MAIN1") {
                     var land = view.Match.Viewer!.Zone("Hand").Cards.FirstOrDefault(c => c.Selectable && c.Type.Contains("Land"));
                     if (land == null) throw new InvalidOperationException("UI smoke opening has no land to play");
                     click = "card:" + land.Key + ":" + land.VisualId; drag = smokeStage == 11;
                     smokeLand = land.VisualId; smokeStage = drag ? 12 : 70;
-                } else if (decision.Kind is "choice" or "reveal") {
-                    click = decision.Kind == "reveal" || view.Selections.Count >= Math.Max(decision.Min, Math.Min(1, decision.Max)) ? "choicesdone" : "choice:" + decision.Choices[0].Index;
+                } else if (decision.Task is DecisionTask.Options or DecisionTask.AbilityChoice or DecisionTask.Ordering or DecisionTask.Reveal) {
+                    click = decision.Task is DecisionTask.Reveal || view.Selections.Count >= Math.Max(decision.Min, Math.Min(1, decision.Max)) ? "choicesdone" : "choice:" + decision.Choices[0].Index;
                 } else if (decision.PlayerChoices.Length > 0) click = "player:" + (decision.PlayerChoices.Contains(view.Match.ViewerId) ? view.Match.ViewerId : decision.PlayerChoices[0]);
                 else if (decision.Cancel == "Mulligan" && decision.CancelEnabled && !view.Match.Viewer!.Zone("Hand").Cards.Any(c => c.Type.Contains("Land"))) click = "cancel";
                 else if (decision.OkEnabled) click = "confirm";
-                else if (decision.Intent == DecisionIntent.Selection && view.Match.Viewer!.Zone("Hand").Cards.FirstOrDefault(c => c.Selectable && !c.Highlighted) is { } selected) click = "card:" + selected.Key + ":" + selected.VisualId;
+                else if (decision.Task is DecisionTask.TargetSelection or DecisionTask.EntitySelection && view.Match.Viewer!.Zone("Hand").Cards.FirstOrDefault(c => c.Selectable && !c.Highlighted) is { } selected) click = "card:" + selected.Key + ":" + selected.VisualId;
                 break;
             case 70:
                 if (smokeLand == null || view.DisplayedPose(smokeLand) is not { Size.X: >= 400 }
                     || !view.Hits.Any(hit => hit.Id == "read-card-action")) break;
-                SmokeCheck(view.Match?.Decision?.Intent == DecisionIntent.Priority
+                SmokeCheck(view.Match?.Decision?.Task == DecisionTask.Priority
                     && view.Match.Viewer!.Zone("Hand").Cards.Any(card => card.VisualId == smokeLand)
                     && !view.Match.Viewer.Zone("Battlefield").Cards.Any(card => card.VisualId == smokeLand),
                     "Reading a playable hand land preserves the exact card in hand until its explicit Play action");
@@ -170,10 +170,10 @@ internal sealed partial class SmokeAutomation
         // before they enter. Resolve that real input before asserting the move.
         var d = view.Match?.Decision;
         if (d == null) return null;
-        if (d.Kind is "choice" or "reveal") return d.Kind == "reveal" || view.Selections.Count >= Math.Max(d.Min, Math.Min(1, d.Max))
+        if (d.Task is DecisionTask.Options or DecisionTask.AbilityChoice or DecisionTask.Ordering or DecisionTask.Reveal) return d.Task is DecisionTask.Reveal || view.Selections.Count >= Math.Max(d.Min, Math.Min(1, d.Max))
             ? "choicesdone" : "choice:" + d.Choices[0].Index;
-        if (d.Intent == DecisionIntent.Selection && view.AllCards().FirstOrDefault(c => c.Selectable && !c.Highlighted) is { } card) return "card:" + card.Key + ":" + card.VisualId;
-        if (d.Intent == DecisionIntent.Priority) return null;
+        if (d.Task is DecisionTask.TargetSelection or DecisionTask.EntitySelection && view.AllCards().FirstOrDefault(c => c.Selectable && !c.Highlighted) is { } card) return "card:" + card.Key + ":" + card.VisualId;
+        if (d.Task == DecisionTask.Priority) return null;
         return d.OkEnabled ? "confirm" : d.CancelEnabled ? "cancel" : null;
     }
 }

@@ -160,7 +160,7 @@ internal static class ExperienceLabChecks
                 var beforeQuery = lab.State;
                 var elf = beforeQuery.Viewer!.Zone("Battlefield").Cards.Single(card => card.VisualId == "reader-elf");
                 var offered = engine.SourceActionsAsync(game, beforeQuery.Decision!.Id, elf.Key).GetAwaiter().GetResult();
-                check(lab.StageIndex == 0 && lab.State.Decision?.Intent == DecisionIntent.Priority
+                check(lab.StageIndex == 0 && lab.State.Decision?.Task == DecisionTask.Priority
                     && ReferenceEquals(lab.State, beforeQuery) && offered.Actions is [{ Kind: "activate", Text: "{T}: Add {G}." }]
                     && offered.SourceCardKey == elf.Key && !frame.Hits.Any(hit => hit.Id == "choice:0"),
                     "The Elf action read leaves the authored priority/source unchanged and returns its one explicit mana ability");
@@ -173,7 +173,7 @@ internal static class ExperienceLabChecks
                     "The direct on-card mana action did not publish its authored result");
                 check(lab.State.Id == game && lab.State.Viewer is { } viewer
                     && viewer.Zone("Battlefield").Cards.Single(card => card.VisualId == "reader-elf").Tapped
-                    && viewer.Mana.GetValueOrDefault("G") == 1 && lab.State.Decision?.Purpose != DecisionPurpose.AbilitySelection
+                    && viewer.Mana.GetValueOrDefault("G") == 1 && lab.State.Decision?.Task != DecisionTask.AbilityChoice
                     && !frame.Hits.Any(hit => hit.Id is "choice:0" or "choicesdone")
                     && engine.SourceActionsAsync(game, lab.State.Decision!.Id,
                         viewer.Zone("Battlefield").Cards.Single(card => card.VisualId == "reader-elf").Key).GetAwaiter().GetResult().Actions.Length == 0,
@@ -199,7 +199,7 @@ internal static class ExperienceLabChecks
                         "Both original Ballista actions must be available beside its uninterrupted reader together");
                     CheckUncoveredReader(ExperienceScenarios.BallistaId, ["read-card-action", damageHit]);
                     Click(damageHit);
-                    Until(() => !app.TestPort.Busy && lab.State.Decision is { Intent: DecisionIntent.Selection, CancelEnabled: true }
+                    Until(() => !app.TestPort.Busy && lab.State.Decision is { Task: DecisionTask.TargetSelection, CancelEnabled: true }
                         && frame.Stamp.Revision == lab.State.Revision, "The damage action must enter its authored target decision");
                 }
                 OpenDamageAction();
@@ -209,7 +209,7 @@ internal static class ExperienceLabChecks
                     && lab.State.Decision!.PlayerChoices.SequenceEqual([0, 1, 2, 3]),
                     "The mixed target decision exposes actual card/player handles and leaves the counter cost unpaid until a target is committed");
                 Click("cancel");
-                Until(() => !app.TestPort.Busy && lab.State.Decision?.Intent == DecisionIntent.Priority
+                Until(() => !app.TestPort.Busy && lab.State.Decision?.Task == DecisionTask.Priority
                     && frame.Stamp.Revision == lab.State.Revision, "Target Cancel must restore the parent action window");
                 check(lab.State.Id == parent.Id && lab.StageIndex == 0 && lab.State.Stack.Length == 0
                     && lab.State.Viewer!.Mana.GetValueOrDefault("C") == 4
@@ -314,7 +314,7 @@ internal static class ExperienceLabChecks
             "Passing this viewer's priority retains the pending trigger and exposes only the next responder's public identity");
         lab.AdvanceTo(2);
         lab.Reply(new SelectPlayer(lab.State.Id, lab.State.Decision!.Id, Player: 0));
-        check(lab.State.Decision is { Kind: "choice", LibraryCards.Length: 3 }
+        check(lab.State.Decision is { Task: DecisionTask.Options or DecisionTask.AbilityChoice or DecisionTask.Ordering, LibraryCards.Length: 3 }
             && lab.State.Decision.LibraryCards.All(choice => choice.Card.VisualId.Length == 0 && choice.Card.CombatId.Length == 0),
             "Required recipient selection opens the real library-choice shape without persistent hidden-library identities");
         lab.Reply(new ChooseOptions(lab.State.Id, lab.State.Decision!.Id, Choices: [1]));

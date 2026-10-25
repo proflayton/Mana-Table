@@ -22,7 +22,7 @@ internal sealed partial class TableApplication
 
     private void OpenAllocationDetail(int index, bool edit = false)
     {
-        if (match?.Decision is not { Kind: "allocate" } d || allocationScope != Scope
+        if (match?.Decision is not { Task: DecisionTask.Allocation } d || allocationScope != Scope
             || index < -1 || index >= d.Choices.Length) return;
         allocationDetail = index;
         allocationDetailId = index < 0 ? d.SourceCardId : d.Choices[index].Id;
@@ -32,7 +32,7 @@ internal sealed partial class TableApplication
 
     private bool InspectAllocationAtPointer()
     {
-        if (!DecisionModal || match?.Decision?.Kind != "allocate") return false;
+        if (!DecisionModal || match?.Decision?.Task != DecisionTask.Allocation) return false;
         if (HitAt(pointer) is { Intent: MatchIntent.OpenAllocation open } hit && CurrentHit(hit)) {
             OpenAllocationDetail(open.Index, open.Edit); return true;
         }

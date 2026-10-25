@@ -128,7 +128,7 @@ internal sealed class PriorityFlowSmoke : ITableAutomation
             view.Accept(engine.AdvanceToRecipient());
         });
         Step(() => {
-            Check(view.Match?.Decision is { Intent: DecisionIntent.Selection } && view.PrioritySeats.Count == 0
+            Check(view.Match?.Decision is { Task: DecisionTask.EntitySelection } && view.PrioritySeats.Count == 0
                 && view.Hits.Any(hit => hit.Id == "recipient:0") && Text().Any(value => value.Contains("Search trigger (scripted)"))
                 && !Text().Contains("Pass priority"),
                 "The required recipient choice names its source, removes the priority token and exposes a direct You control");
@@ -136,7 +136,7 @@ internal sealed class PriorityFlowSmoke : ITableAutomation
             recipientDecision = view.Match!.Decision!.Id;
             Observe("required-recipient"); Capture("05-required-recipient"); MoveHit("recipient:0");
         }); Click();
-        Wait(() => !view.Busy && engine.Replies.Count == 2 && view.Match?.Decision is { Kind: "choice", LibraryCards.Length: > 0 }, () => {
+        Wait(() => !view.Busy && engine.Replies.Count == 2 && view.Match?.Decision is { Task: DecisionTask.Options or DecisionTask.AbilityChoice or DecisionTask.Ordering, LibraryCards.Length: > 0 }, () => {
             Check(engine.Replies[1] is SelectPlayer { Player: 0 } recipient
                 && recipient.DecisionId == recipientDecision && recipient.GameId == passGame,
                 "Only clicking You submits the current required recipient choice in the same game epoch");

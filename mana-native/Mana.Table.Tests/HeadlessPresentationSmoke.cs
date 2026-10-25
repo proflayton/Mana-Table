@@ -15,7 +15,7 @@ namespace Mana.Table;
 
 // Exercises the production application, composition and input paths. The
 // controlled connection validates scoped commands; it does not simulate rules.
-internal static class HeadlessPresentationSmoke
+internal static partial class HeadlessPresentationSmoke
 {
     internal static void Run(string profile)
     {
@@ -35,6 +35,7 @@ internal static class HeadlessPresentationSmoke
             DeckLibraryPresentationChecks.Run(profile, Check);
             DecisionDockInteractionChecks.Run(profile, Check);
             SemanticCommandPresentationChecks.Run(profile, Check);
+            CheckOptionalDecisions(profile, Check, trace, performance);
             CommanderInteractionChecks.Run(profile, Check);
             DisclosedSourceInteractionChecks.Run(profile, Check);
             LinkedSourceInteractionChecks.Run(profile, Check);
@@ -50,7 +51,7 @@ internal static class HeadlessPresentationSmoke
                 var handState = Example();
                 var hand = handState.Viewer!.Zone("Hand").Cards;
                 handState = handState with { Turn = 0, Combat = null, Decision = new() {
-                    Kind = directChoices ? "choice" : "input", Intent = directChoices ? DecisionIntent.General : DecisionIntent.Selection,
+                    Task = directChoices ? DecisionTask.Options : DecisionTask.EntitySelection,
                     Message = "Choose a card from your hand.", Min = 1, Max = 1,
                     Choices = directChoices ? hand.Select((card, index) => new Choice(17 + index, card.Name, card) { CardId = card.VisualId }).ToImmutableArray() : []
                 } };
@@ -258,7 +259,7 @@ internal static class HeadlessPresentationSmoke
                 var beforeSourceChoice = run.Engine.State;
                 var choiceSource = beforeSourceChoice.Viewer!.Zone("Battlefield").Cards.Single(card => card.VisualId == "public-ward");
                 run.Present(beforeSourceChoice with { Decision = new() {
-                    Kind = "choice", Purpose = DecisionPurpose.AbilitySelection, Min = 1, Max = 1, SourceCard = choiceSource,
+                    Task = DecisionTask.AbilityChoice, Min = 1, Max = 1, SourceCard = choiceSource,
                     SourceCardId = choiceSource.VisualId, SourceZone = "Battlefield", SourceControllerId = 0,
                     Choices = [new(17, "First reported ability", null), new(42, "Second reported ability", null)]
                 } });
@@ -310,7 +311,7 @@ internal static class HeadlessPresentationSmoke
                 Check(run.Engine.Replies.Single() is ChooseOptions compactReply
                     && compactReply.GameId == sourceGame && compactReply.DecisionId == sourceDecision && compactReply.Choices!.SequenceEqual([17]),
                     "One explicit inline ability action submits exactly its original index in the current scope without a separate confirmation");
-                run.Present(sourceChoice with { Decision = sourcePrompt with { Ordered = true } });
+                run.Present(sourceChoice with { Decision = sourcePrompt with { Task = DecisionTask.Ordering } });
                 run.Tick("ordered-source-choice-gallery-fallback");
                 run.ClickHit("choice:17");
                 Check(!run.Frame.Hits.Any(hit => hit.Id is "choicesfilter" or "choicesprev" or "choicesnext") && run.Frame.Hits.Any(hit => hit.Id == "choicesclear")
@@ -366,7 +367,7 @@ internal static class HeadlessPresentationSmoke
                     "Removing table state clears its old controls and labels without inventing a game command");
             }
 
-            var orderedCards = Example() with { Decision = new() { Kind = "choice", Ordered = true, Min = 3, Max = 3,
+            var orderedCards = Example() with { Decision = new() { Task = DecisionTask.Ordering, Min = 3, Max = 3,
                 Choices = [new(7, "First private card", new() { Name = "First private card", Type = "Sorcery" }),
                     new(31, "Second private card", new() { Name = "Second private card", Type = "Sorcery" }),
                     new(9, "Third private card", new() { Name = "Third private card", Type = "Sorcery" })],
@@ -393,7 +394,7 @@ internal static class HeadlessPresentationSmoke
                 Check(run.Engine.Replies.Single() is OrderOptions command && command.GameId == game && command.DecisionId == decision
                         && command.Choices.SequenceEqual([9, 7, 31]),
                     "Decluttering a private ordered choice preserves one exact scoped ordered command and its explicit final commitment");
-                var many = orderedCards with { Decision = orderedCards.Decision! with { Ordered = false, Min = 1, Max = 1,
+                var many = orderedCards with { Decision = orderedCards.Decision! with { Task = DecisionTask.Options, Min = 1, Max = 1,
                     Choices = Enumerable.Range(0, 8).Select(index => new Choice(100 + index, "Private card " + index,
                         new() { Name = "Private card " + index, Type = "Sorcery" })).ToImmutableArray() } };
                 run.Present(many); run.Tick("large-private-choice");
@@ -540,7 +541,7 @@ internal static class HeadlessPresentationSmoke
         {
             performance.Add(new { scenario, frames = updateMilliseconds.Count,
                 updateMilliseconds = updateMilliseconds.Sum(),
-                meanUpdateMilliseconds = updateMilliseconds.Average(),
+                meanUpdateMilliseconds = updateMilliseconds.Count == 0 ? 0 : updateMilliseconds.Average(),
                 note = "Update includes input, session pumping and frame preparation; this is not GPU frame rate." });
             application.Dispose();
         }
@@ -562,7 +563,7 @@ internal static class HeadlessPresentationSmoke
                 new("Command", 0, [], null), new("Library", 80, [], null), new("Graveyard", 0, [], null), new("Exile", 0, [], null)
             ]) { States = seat == 0 ? [new("future-track", "Momentum", "progress", 6, 6, "An unfamiliar public track.")] : [] }).ToArray();
         return new("headless-production", "playing", null, null, 0, 4, "Main phase", "MAIN1", 0, players.ToImmutableArray(), [], null,
-            new() { Kind = "input", Intent = DecisionIntent.Priority, OkEnabled = true, Message = "You have priority." }) {
+            new() { Task = DecisionTask.Priority, OkEnabled = true, Message = "You have priority." }) {
                 States = [new("day-night", "Day", "status", null, null, "It is day for the whole table.", "day-night")]
             };
     }

@@ -32,14 +32,14 @@ internal sealed class InteractionScenarioEngine : ICardEngine, ISourceActions
         ])).ToArray();
         state = new("interaction-scenario", "playing", null, null, 0, 5, "Declare attackers", "COMBAT_DECLARE_ATTACKERS", 0, players.ToImmutableArray(), [],
             new([], new[] { "own-0", "own-9", "own-12" }.Select(id => new AttackOption(id, [new("player", "1", 1, "Opponent 1"), new("player", "2", 2, "Opponent 2")])).ToImmutableArray(), null),
-            new() { Kind = "input", Intent = DecisionIntent.Attack, OkEnabled = true, Ok = "Confirm attackers" });
+            new() { Task = DecisionTask.Attack, OkEnabled = true, Ok = "Confirm attackers" });
         Publish();
     }
     public GameSnapshot State => state;
     internal void Present(GameSnapshot snapshot) { handPlacementDecisionId = null; state = snapshot; Publish(); }
     internal void PresentHandPlacement(GameSnapshot snapshot)
     {
-        if (snapshot.Decision is not { Kind: "choice", Ordered: false, Min: 0, Max: 1 } decision
+        if (snapshot.Decision is not { Task: DecisionTask.Options or DecisionTask.AbilityChoice or DecisionTask.Ordering, Ordered: false, Min: 0, Max: 1 } decision
             || decision.Choices.Any(choice => choice.Card == null))
             throw new ArgumentException("A hand-placement fixture requires its authored optional card choice.", nameof(snapshot));
         Present(snapshot);
@@ -81,7 +81,7 @@ internal sealed class InteractionScenarioEngine : ICardEngine, ISourceActions
             } };
         } else if (reply is ToggleAttackPlayer attack) {
             var card = Find(attack.Attacker);
-            if (state.Decision?.Intent != DecisionIntent.Attack || attack.Player is not (1 or 2) || !new[] { "own-0", "own-9", "own-12" }.Contains(card.CombatId)) throw new InvalidOperationException("Illegal attack escaped the UI");
+            if (state.Decision?.Task != DecisionTask.Attack || attack.Player is not (1 or 2) || !new[] { "own-0", "own-9", "own-12" }.Contains(card.CombatId)) throw new InvalidOperationException("Illegal attack escaped the UI");
             int defender = attack.Player;
             var existing = state.Combat!.Attackers.FirstOrDefault(a => a.CardId == card.CombatId);
             var attacks = state.Combat.Attackers.Where(a => a.CardId != card.CombatId).ToList();
@@ -89,7 +89,7 @@ internal sealed class InteractionScenarioEngine : ICardEngine, ISourceActions
             state = state with { Combat = state.Combat with { Attackers = attacks.ToImmutableArray() } };
         } else if (reply is ToggleBlock block) {
             var attacker = Find(block.Attacker); var blocker = Find(block.Blocker);
-            if (state.Decision?.Intent != DecisionIntent.Block || attacker.CombatId != "enemy-a" || blocker.CombatId is not ("own-9" or "own-12")) throw new InvalidOperationException("Illegal block escaped the UI");
+            if (state.Decision?.Task != DecisionTask.Block || attacker.CombatId != "enemy-a" || blocker.CombatId is not ("own-9" or "own-12")) throw new InvalidOperationException("Illegal block escaped the UI");
             var attacks = state.Combat!.Attackers.Select(a => {
                 if (a.CardId != attacker.CombatId) return a;
                 var blockers = a.BlockerIds.ToList(); if (!blockers.Remove(blocker.CombatId)) blockers.Add(blocker.CombatId);
@@ -106,29 +106,29 @@ internal sealed class InteractionScenarioEngine : ICardEngine, ISourceActions
         } else if (reply is SelectCard or PlayCard or ActivateCard or UseManaSource) {
             string cardKey = reply switch { SelectCard select => select.Card, PlayCard play => play.Card, ActivateCard activate => activate.Card, UseManaSource mana => mana.Card, _ => "" };
             var card = Find(cardKey);
-            if (!card.Selectable || state.Decision?.Intent is not (DecisionIntent.Priority or DecisionIntent.Selection or DecisionIntent.Mana)) throw new InvalidOperationException("Illegal card selection escaped the UI");
-            if (state.Decision.Intent is DecisionIntent.Priority or DecisionIntent.Mana) {
+            if (!card.Selectable || state.Decision?.Task is not (DecisionTask.Priority or DecisionTask.TargetSelection or DecisionTask.EntitySelection or DecisionTask.Payment)) throw new InvalidOperationException("Illegal card selection escaped the UI");
+            if (state.Decision.Task is DecisionTask.Priority or DecisionTask.Payment) {
                 if (state.Viewer!.Zone("Battlefield").Cards.Contains(card)) {
-                    state = state with { Decision = new() { Kind = "choice", Title = "Activate " + card.Name, Purpose = DecisionPurpose.AbilitySelection, SourceCard = card,
+                    state = state with { Decision = new() { Task = DecisionTask.AbilityChoice, Title = "Activate " + card.Name, SourceCard = card,
                         SourceZone = "Battlefield", Min = 0, Max = 1, Choices = [new(0, "Tap: Add one green mana", null)] } };
                 } else {
                     string source = new[] { "Hand", "Command", "Graveyard", "Exile" }.FirstOrDefault(zone => state.Viewer.Zone(zone).Cards.Contains(card))
                         ?? throw new InvalidOperationException("Unexpected scenario source " + card.VisualId);
-                    if (source is "Graveyard" or "Exile") state = state with { Decision = new() { Kind = "choice", Purpose = DecisionPurpose.AbilitySelection, SourceCard = card,
+                    if (source is "Graveyard" or "Exile") state = state with { Decision = new() { Task = DecisionTask.AbilityChoice, SourceCard = card,
                         SourceZone = source, Min = 0, Max = 1, Choices = [new(0, source == "Graveyard" ? "Flashback — pay the ability's cost" : "Play from exile — pay the cost", null)] } };
                     else state = state with { Players = state.Players.Select(p => p.Id != state.ViewerId ? p : p with { Zones = p.Zones.Select(z =>
                     z.Name == source ? z with { Count = z.Count - 1, Cards = z.Cards.Where(c => c != card).ToImmutableArray() }
                     : z.Name == "Battlefield" ? z with { Count = z.Count + 1, Cards = [.. z.Cards, card] } : z).ToImmutableArray() }).ToImmutableArray() };
                 }
             }
-        } else if (reply is SelectPlayer selectedPlayer && state.Decision is { Intent: DecisionIntent.Selection } playerChoice) {
+        } else if (reply is SelectPlayer selectedPlayer && state.Decision is { Task: DecisionTask.EntitySelection } playerChoice) {
             if (!playerChoice.PlayerChoices.Contains(selectedPlayer.Player)) throw new InvalidOperationException("Illegal player choice escaped the UI");
             state = state with { Decision = null };
-        } else if (reply is AutoPassPriority && state.Decision is { Intent: DecisionIntent.Priority, CanAutoPass: true }) {
+        } else if (reply is AutoPassPriority && state.Decision is { Task: DecisionTask.Priority, CanAutoPass: true }) {
             state = state with { Decision = null };
-        } else if (reply is ChooseOptions or OrderOptions or AcknowledgeReveal && state.Decision is { Kind: "choice" or "reveal" } decision) {
+        } else if (reply is ChooseOptions or OrderOptions or AcknowledgeReveal && state.Decision is { Task: DecisionTask.Options or DecisionTask.AbilityChoice or DecisionTask.Ordering or DecisionTask.Reveal } decision) {
             var choices = reply switch { ChooseOptions choose => choose.Choices, OrderOptions order => order.Choices, _ => [] };
-            if (choices.Length < decision.Min || choices.Length > decision.Max || decision.Kind == "choice" && decision.Ordered != (reply is OrderOptions))
+            if (choices.Length < decision.Min || choices.Length > decision.Max || decision.Task is DecisionTask.Options or DecisionTask.AbilityChoice or DecisionTask.Ordering && decision.Ordered != (reply is OrderOptions))
                 throw new InvalidOperationException("Invalid gallery selection");
             bool handPlacement = decision.Id == handPlacementDecisionId;
             if (handPlacement && choices.Length == 1) {
@@ -140,24 +140,24 @@ internal sealed class InteractionScenarioEngine : ICardEngine, ISourceActions
             }
             state = state with { Decision = null, Stack = handPlacement ? [] : state.Stack };
             handPlacementDecisionId = null;
-        } else if (reply is AllocateAmounts amounts && state.Decision is { Kind: "allocate" } allocation) {
+        } else if (reply is AllocateAmounts amounts && state.Decision is { Task: DecisionTask.Allocation } allocation) {
             if (AllocationGuide.Problem(allocation, amounts.Amounts) != null)
                 throw new InvalidOperationException("Invalid allocation escaped the UI");
             state = state with { Decision = null };
-        } else if (reply is SkipAllocation && state.Decision is { Kind: "allocate", MaySkip: true }) {
+        } else if (reply is SkipAllocation && state.Decision is { Task: DecisionTask.Allocation, MaySkip: true }) {
             state = state with { Decision = null };
         } else throw new InvalidOperationException("Unexpected scenario action: " + reply.GetType().Name);
         Replies.Add(reply); Publish(); return Task.CompletedTask;
     }
     public void BeginBlocks()
     {
-        state = state with { ActivePlayerId = 1, PhaseKey = "COMBAT_DECLARE_BLOCKERS", Phase = "Declare blockers", Decision = new() { Kind = "input", Intent = DecisionIntent.Block, OkEnabled = true },
+        state = state with { ActivePlayerId = 1, PhaseKey = "COMBAT_DECLARE_BLOCKERS", Phase = "Declare blockers", Decision = new() { Task = DecisionTask.Block, OkEnabled = true },
             Combat = new([new("enemy-a", 0, [], ["own-9", "own-12"]) { Defender = new("player", "0", 0, "You") }, new("enemy-b", 0, [], []) { Defender = new("player", "0", 0, "You"), Blocked = true }], [], null) };
         Publish();
     }
     public void Stack(params string[] ids)
     {
-        state = state with { PhaseKey = "MAIN2", Phase = "Main phase", Combat = null, Decision = new() { Kind = "input", Intent = DecisionIntent.Priority, OkEnabled = true },
+        state = state with { PhaseKey = "MAIN2", Phase = "Main phase", Combat = null, Decision = new() { Task = DecisionTask.Priority, OkEnabled = true },
             Stack = ids.Select(id => new StackItem("Ability " + id, "This is the visible description for ability " + id + ".", true, state.Players[1].Zone("Battlefield").Cards[0]) { Id = id }).ToImmutableArray() };
         Publish();
     }
@@ -165,14 +165,14 @@ internal sealed class InteractionScenarioEngine : ICardEngine, ISourceActions
     public void ChoosePlayer(params int[] players)
     {
         state = state with { PhaseKey = "MAIN1", Phase = "Main phase", ActivePlayerId = 0, Combat = null, Stack = [],
-            Decision = new() { Kind = "input", Intent = DecisionIntent.Selection, PlayerChoices = players.ToImmutableArray(),
+            Decision = new() { Task = DecisionTask.EntitySelection, PlayerChoices = players.ToImmutableArray(),
                 Message = "Bojuka Bog — Choose a player to exile their graveyard.", SourceCard = new() { Name = "Bojuka Bog", Type = "Land" } } };
         Publish();
     }
     public void ChooseCards(int min, int max, bool ordered = false)
     {
         var cards = new[] { "own-9", "own-12", "enemy-a" }.Select(id => CombatGuide.Find(state, id)!).ToArray();
-        state = state with { Combat = null, Stack = [], Decision = new() { Kind = "choice", Min = min, Max = max, Ordered = ordered,
+        state = state with { Combat = null, Stack = [], Decision = new() { Task = ordered ? DecisionTask.Ordering : DecisionTask.Options, Min = min, Max = max,
             Message = ordered ? "Choose these creatures in order." : "Choose creatures on the battlefield.",
             Choices = cards.Select((card, i) => new Choice(i, card.Name, card with { VisualId = "", Key = "", CombatId = "" }) { CardId = card.VisualId }).ToImmutableArray() } };
         Publish();

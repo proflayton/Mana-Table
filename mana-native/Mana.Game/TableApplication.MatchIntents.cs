@@ -48,7 +48,7 @@ internal sealed partial class TableApplication
                 Send(DecisionCommands.Confirm(match)); break;
             case MatchIntent.CancelDecision when match?.Decision != null: Send(DecisionCommands.Cancel(match)); break;
             case MatchIntent.ConfirmSelection when match?.Decision is { } decision:
-                textFocus = false; Send(DecisionCommands.Choose(match, decision.Kind == "reveal" ? [] : decisionDraft.Selections)); break;
+                textFocus = false; Send(DecisionCommands.Choose(match, decision.Task == DecisionTask.Reveal ? [] : decisionDraft.Selections)); break;
             case MatchIntent.ChooseNone none when match?.Decision != null:
                 if (none.CollapseReader) CollapseCardReading();
                 Send(DecisionCommands.Choose(match, [])); break;
@@ -57,7 +57,7 @@ internal sealed partial class TableApplication
             case MatchIntent.ChooseAbility choice when match?.Decision is { } decision && IsAbilityActionChoice(decision):
                 SubmitAbilityChoice(match, decision, choice.Index); break;
             case MatchIntent.FocusInput input: textFocus = true; filterInput = input.Filter; break;
-            case MatchIntent.AdjustNumber step when match?.Decision is { Kind: "number" } decision && int.TryParse(inputText, out int value):
+            case MatchIntent.AdjustNumber step when match?.Decision is { Task: DecisionTask.Number } decision && int.TryParse(inputText, out int value):
                 inputText = Math.Clamp((long)value + step.Delta, decision.Min, decision.Max).ToString(); break;
             case MatchIntent.ConfirmValue when match?.Decision != null:
                 textFocus = false; Send(DecisionCommands.Value(match, inputText)); break;

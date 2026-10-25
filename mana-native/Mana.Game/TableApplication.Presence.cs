@@ -1,3 +1,4 @@
+using Mana.Contracts;
 using Mana.Renderer;
 using Microsoft.Xna.Framework;
 using Color = Microsoft.Xna.Framework.Color;
@@ -52,6 +53,7 @@ internal sealed partial class TableApplication
     {
         var state = match!;
         if (preferences.ReducedMotion || OverlayOpen || state.Turn == 0 || state.Stack.Length > 0 || now >= turnBannerUntil || state.Status == "finished") return;
+        if (state.Decision is { Task: not DecisionTask.Priority }) return;
         float remaining = (float)(turnBannerUntil - now);
         float alpha = Math.Min(1, Math.Min((1.5f - remaining) * 6, remaining * 3));
         bool own = state.ActivePlayerId == state.ViewerId;

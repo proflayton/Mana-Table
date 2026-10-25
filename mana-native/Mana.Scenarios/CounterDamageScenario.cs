@@ -87,11 +87,10 @@ public static class CounterDamageScenario
                 Outcome = "resolved", Count = added, Cause = new(SourceId, source.Name, $"Deal {added} damage.", 0, "ability", effect.Id)
             }] : [activity],
             Decision = choosing ? new() {
-                Kind = "input", Purpose = DecisionPurpose.TargetSelection, Intent = DecisionIntent.Selection,
-                SourceCard = source, SourceCardId = SourceId, SourceZone = "Battlefield", SourceControllerId = 0, Effect = effect,
+                Task = DecisionTask.TargetSelection, SourceCard = source, SourceCardId = SourceId, SourceZone = "Battlefield", SourceControllerId = 0, Effect = effect,
                 Min = 1, Max = 1, PlayerChoices = [1, 2, 3],
                 Message = "All Will Be One (62) — Whenever you put one or more counters on a permanent or player, All Will Be One deals that much damage. [Added once: You; Chandra, the Firebrand (96)]"
-            } : new() { Kind = "input", Intent = DecisionIntent.Priority, OkEnabled = pending }
+            } : new() { Task = DecisionTask.Priority, OkEnabled = pending }
         };
     }
 

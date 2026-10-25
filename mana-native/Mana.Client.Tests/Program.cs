@@ -8,7 +8,7 @@ using System.Text.Json.Nodes;
 int checks = 0;
 void Check(bool value, string description) { if (!value) throw new Exception(description); checks++; Console.WriteLine(description); }
 var replica = new SessionReplica<GameSnapshot>(s => s.Id, s => s.Revision);
-var state = new GameSnapshot("game", "playing", null, null, 0, 1, "Main phase", "MAIN1", 0, [], [], null, new() { Id = "decision", Intent = DecisionIntent.Priority }) { Revision = 8 };
+var state = new GameSnapshot("game", "playing", null, null, 0, 1, "Main phase", "MAIN1", 0, [], [], null, new() { Id = "decision", Task = DecisionTask.Priority }) { Revision = 8 };
 Check(replica.Accept(state, 0), "First snapshot initializes a replica");
 Check(!replica.Accept(state with { Revision = 7 }, 0), "Out-of-order snapshots cannot roll back state");
 long oldEpoch = replica.Epoch; replica.BeginCommand();
@@ -21,7 +21,7 @@ Check(!CardViews.Same(first, second), "Identically named cards retain separate i
 Check(!CardViews.Same(new() { Name = "Forest" }, new() { Name = "Forest" }), "Anonymous cards are never matched by name");
 Check(CardViews.Same(first, first with { Key = "later:1" }), "A new decision handle preserves a visible occurrence");
 state = state with { Players = [new(0, "You", 40, true, false, ImmutableDictionary<string, int>.Empty, [new("Battlefield", 2, [first, second], null), new("Hand", 0, [], null)])],
-    Decision = new() { Id = "decision", Intent = DecisionIntent.Attack }, Combat = new([], [new("forest-1", [new("player", "1", 1, "Opponent")])], null) };
+    Decision = new() { Id = "decision", Task = DecisionTask.Attack }, Combat = new([], [new("forest-1", [new("player", "1", 1, "Opponent")])], null) };
 var interaction = new InteractionController();
 Check(interaction.CardClick(state, first).Effect == InteractionEffect.Select, "Click selects a projected attack source");
 var click = interaction.PlayerClick(state, 1).Reply;
@@ -51,8 +51,8 @@ Check(!report.Passed && report.Checkpoints[0].Differences.Any(d => d.Path.Starts
 await using var wrongSeat = new Oracle("wrong-seat", expected, true);
 Check(!(await ConformanceRunner.RunAsync(scenario, reference, wrongSeat)).Passed, "A private-view mismatch fails even when rules state agrees");
 Check(ConformanceRunner.CompareJson(JsonNode.Parse("{\"x\":null}"), JsonNode.Parse("{}")).Length == 1, "Missing fields differ from explicit null values");
-var passState = state with { Decision = new() { Id = "pass", Kind = "input", Intent = DecisionIntent.Priority, CanAutoPass = true, OkEnabled = true } };
-var tableChoice = state with { Decision = new() { Id = "choose", Kind = "choice", Min = 1, Max = 2,
+var passState = state with { Decision = new() { Id = "pass", Task = DecisionTask.Priority, CanAutoPass = true, OkEnabled = true } };
+var tableChoice = state with { Decision = new() { Id = "choose", Task = DecisionTask.Options, Min = 1, Max = 2,
     Choices = [new(7, first.Name, first with { VisualId = "", Key = "", CombatId = "" }) { CardId = first.VisualId }, new(9, second.Name, second) { CardId = second.VisualId }] } };
 Check(TableChoices.IsDirect(tableChoice), "Existing cards are chosen on the table without matching names");
 Check(interaction.CardClick(tableChoice, second) is { Effect: InteractionEffect.SelectChoice, ChoiceIndex: 9, Reply: null }, "Clicking the second identical card stages its authoritative index without committing");
@@ -61,9 +61,9 @@ Check(!TableChoices.IsDirect(tableChoice with { Players = [] }), "A disappeared 
 Check(!TableChoices.IsDirect(tableChoice with { Decision = tableChoice.Decision! with { Choices = [new(0, first.Name, first)] } }), "A face with no explicit occurrence link cannot select an identically named card");
 var bulkCards = Enumerable.Range(0, 50).Select(i => first with { VisualId = "bulk-" + i, CombatId = "bulk-" + i, Key = "bulk:" + i }).ToArray();
 var bulkChoice = tableChoice with { Players = [tableChoice.Viewer! with { Zones = [new("Battlefield", bulkCards.Length, bulkCards.ToImmutableArray(), null)] }],
-    Decision = tableChoice.Decision! with { Ordered = true, Choices = bulkCards.Select((card, i) => new Choice(i, card.Name, card) { CardId = card.VisualId }).ToImmutableArray() } };
+    Decision = tableChoice.Decision! with { Task = DecisionTask.Ordering, Choices = bulkCards.Select((card, i) => new Choice(i, card.Name, card) { CardId = card.VisualId }).ToImmutableArray() } };
 Check(!TableChoices.IsDirect(bulkChoice), "Ordering fifty visible occurrences uses the numbered gallery without removing cards from the battlefield");
-Check(TableChoices.IsDirect(bulkChoice with { Decision = bulkChoice.Decision! with { Ordered = false } }), "An unordered bulk selection retains its direct battlefield targets");
+Check(TableChoices.IsDirect(bulkChoice with { Decision = bulkChoice.Decision! with { Task = DecisionTask.Options } }), "An unordered bulk selection retains its direct battlefield targets");
 var tempo = new PresentationPacing();
 tempo.Observe(null, passState, 0);
 Check(!tempo.Ready(.5) && tempo.Ready(1.2), "The opening table has a readable beat before Auto");
@@ -75,7 +75,7 @@ Check(tempo.Ready(3.3), "Polling and fresh prompt handles do not restart the ani
 var attacking = casting with { Combat = new([new("attacker", 0, [], [])], [], null) };
 tempo.Observe(casting, attacking, 4);
 Check(!tempo.Ready(5.5) && tempo.Ready(5.7), "Attack declarations receive a longer beat to read the defenders");
-tempo.Observe(attacking, attacking with { Decision = new() { Kind = "input", Intent = DecisionIntent.Block } }, 5.7);
+tempo.Observe(attacking, attacking with { Decision = new() { Task = DecisionTask.Block } }, 5.7);
 Check(tempo.Ready(5.7), "A required blocking decision is immediately available during playback");
 var concealed = attacking with { Players = [state.Viewer! with { Zones = [new("Battlefield", 1, [new() { VisualId = null!, FaceDown = true }], null)] }] };
 tempo.Observe(attacking, concealed, 6);
@@ -96,8 +96,8 @@ Check(pacing.Update(passState, false, false, noStops, false, false) == null, "Fu
 Check(pacing.Update(passState, true, true, noStops, false, false) == null, "Hold prevents even an immediately eligible pass");
 Check(pacing.Update(passState, true, false, noStops, true, false) == null, "Reading or interacting with a card pauses Auto");
 Check(pacing.Update(passState with { Decision = passState.Decision! with { CanAutoPass = false } }, true, false, noStops, false, false) == null, "A newly available response stops automatic passing");
-Check(pacing.Update(passState with { Decision = passState.Decision! with { Intent = DecisionIntent.Mana } }, true, false, noStops, false, false) == null, "Required payment decisions cannot be skipped");
-Check(pacing.Update(passState with { Decision = passState.Decision! with { Intent = DecisionIntent.Block } }, true, false, noStops, false, false) == null, "Auto never confirms no blocks, even with an incorrectly permissive flag");
+Check(pacing.Update(passState with { Decision = passState.Decision! with { Task = DecisionTask.Payment } }, true, false, noStops, false, false) == null, "Required payment decisions cannot be skipped");
+Check(pacing.Update(passState with { Decision = passState.Decision! with { Task = DecisionTask.Block } }, true, false, noStops, false, false) == null, "Auto never confirms no blocks, even with an incorrectly permissive flag");
 Check(pacing.Update(tableChoice, true, false, noStops, false, false) == null, "Auto never submits a staged card choice");
 Check(pacing.Update(passState with { Status = "finished" }, true, false, noStops, false, false) == null, "Finished games never submit automatic passes");
 Check(pacing.Update(passState, true, false, noStops, false, false) is AutoPassPriority, "Leaving an inspection or Hold resumes an eligible pass immediately");

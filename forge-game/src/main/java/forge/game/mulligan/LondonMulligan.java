@@ -21,6 +21,12 @@ public class LondonMulligan extends AbstractMulligan {
     }
 
     @Override
+    public OpeningHandOffer openingHandOffer() {
+        int bottom = Math.max(0, timesMulliganed + 1 - (firstMulliganFree ? 1 : 0));
+        return openingHandOffer(player.getMaxHandSize() - bottom, bottom);
+    }
+
+    @Override
     public void mulliganDraw() {
         player.drawCards(handSizeAfterNextMulligan());
         int tuckingCards = tuckCardsDuringMulligan();

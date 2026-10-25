@@ -190,7 +190,9 @@ internal sealed partial class TableApplication
         }
         DrawDecisionClock(player, center, radius);
         var bounds = new Rectangle((int)center.X - (int)radius - 9, (int)center.Y - (int)radius - 9, (int)radius * 2 + 18, (int)radius * 2 + 18);
-        hits.Add(new("player:" + player.Id, Scope, bounds, new MatchIntent.UsePlayer(player.Id), PlayerId: player.Id, Shape: p => Vector2.DistanceSquared(p.ToVector2(), center) <= (radius + 9) * (radius + 9)));
+        UiIntent portraitIntent = LibraryRecipientTarget ? new MatchIntent.OpenPlayerDetails(player.Id) : new MatchIntent.UsePlayer(player.Id);
+        hits.Add(new("player:" + player.Id, Scope, bounds, portraitIntent, PlayerId: LibraryRecipientTarget ? null : player.Id,
+            Shape: p => Vector2.DistanceSquared(p.ToVector2(), center) <= (radius + 9) * (radius + 9)));
         string name = own ? "YOU" : localMatch && !ExperienceLabOpen
             ? "AI " + (TableLayout.SeatIndex(match, player.Id) + 1) + " · " + player.Name.Split('·')[0].Trim() : player.Name;
         int x = (int)center.X - 94, y = (int)center.Y + (own ? 44 : 41);

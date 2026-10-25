@@ -52,7 +52,7 @@ internal sealed class PriorityAbilitySmoke(TableWindow.Probe view, InteractionSc
         return state with { ActivePlayerId = 1, Phase = "Main phase", PhaseKey = "MAIN1", Combat = null, Stack = [],
             Players = state.Players.Select(p => p.Id != state.ViewerId ? p : p with { Zones = p.Zones.Select(z => z.Name == "Battlefield" ? z with { Count = 1, Cards = [mesa] }
                 : z.Name is "Hand" or "Command" ? z with { Count = 0, Cards = [] } : z).ToImmutableArray() }).ToImmutableArray(),
-            Decision = new() { Kind = "input", Intent = DecisionIntent.Priority, OkEnabled = true, CanAutoPass = false, Cancel = "End Turn", CancelEnabled = true,
+            Decision = new() { Task = DecisionTask.Priority, OkEnabled = true, CanAutoPass = false, Cancel = "End Turn", CancelEnabled = true,
                 PriorityAbilities = [new("mesa-fetch", "mesa", "Arid Mesa", mesa.Text, false)] } };
     }
 
@@ -162,14 +162,14 @@ internal sealed class PriorityAbilitySmoke(TableWindow.Probe view, InteractionSc
             case 13: Release(); Next(); break;
             case 14:
                 if (view.DisplayedPose("mesa") is not { Size.X: >= 400 } || !view.Hits.Any(hit => hit.Id == "read-card-action")) return;
-                Check(scenario.Replies.Count == 3 && state.Decision is { Intent: DecisionIntent.Priority }
+                Check(scenario.Replies.Count == 3 && state.Decision is { Task: DecisionTask.Priority }
                     && state.IgnoredPriorityAbilities is [{ Id: "mesa-second" }],
                     "Reading the ignored source sends no gameplay reply and preserves its independent ability preference");
                 Press("read-card-action"); Next(); break;
             case 15: Release(); Next(); break;
             case 16:
                 Check(scenario.Replies[^1] is ActivateCard reply && reply.GameId == manualGame
-                    && reply.DecisionId == manualDecision && reply.Card == manualCard && state.Decision is { Purpose: DecisionPurpose.AbilitySelection },
+                    && reply.DecisionId == manualDecision && reply.Card == manualCard && state.Decision is { Task: DecisionTask.AbilityChoice },
                     "Explicit manual activation opens the normal ability chooser with the exact current game, decision and card scope");
                 var nextTurn = Example();
                 Publish(nextTurn with { Turn = nextTurn.Turn + 1, ActivePlayerId = nextTurn.ViewerId, IgnoredPriorityAbilities = [] }); Next(); break;

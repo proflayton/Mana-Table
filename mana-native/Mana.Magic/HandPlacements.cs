@@ -11,7 +11,7 @@ public static class HandPlacements
 
     public static PriorityAbility[] Options(GameSnapshot state, Card clicked)
     {
-        if (state.Status != "playing" || state.Decision is not { Kind: "input", Intent: DecisionIntent.Priority } decision
+        if (state.Status != "playing" || state.Decision is not { Task: DecisionTask.Priority } decision
             || decision.Id.Length == 0 || state.Viewer is not { } viewer) return [];
         var card = viewer.Zone("Hand").Cards.FirstOrDefault(c => CardViews.Same(c, clicked));
         if (card is not { FaceDown: false, Key.Length: > 0 }) return [];

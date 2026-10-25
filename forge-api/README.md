@@ -657,6 +657,13 @@ an engine-classified `task` and `purpose`; native code consumes and validates
 these semantic fields instead of classifying Java names itself. Unknown tasks,
 task/kind contradictions and invalid purpose/alternative combinations fail at
 the native boundary rather than falling back to a generic confirmation.
+The native boundary maps these private fields once to the closed `DecisionTask`
+contract: priority, opening hand, payment, combat, target/entity selection,
+confirmation, ability/options/ordering, reveal, number, text or allocation.
+Native permission checks and presentation consume that task; they do not
+reconstruct it from parallel kind/intent/purpose classifiers. The adapter maps
+the task back to `expectedTask` only when encoding a scoped command. This is an
+in-process native contract change, not a new seat-sync or saved-data version.
 `InputPassPriority` means an optional opportunity to act, not a required payment
 or selection. Clients can explain the current `phaseKey`, but must retain the
 prompt's actual message and enabled actions for costs, discards, and combat.
@@ -795,6 +802,26 @@ supplies its visible source. These are presentation snapshots with an empty
 action `key`; they never authorize playing the source. They expire with the
 prompt. Clients may retain the presentation across the transient `resolving`
 transport snapshot, then reconcile it against the next published board.
+
+**Source candidate:** library-search targeting and optional confirmation can
+include `librarySearch: {libraryOwnerId, destination, cardName}`. A null owner
+means the target is still being chosen; a confirmation names the actual resolved
+library owner. `cardName` is an optional public exact-name criterion, not an
+availability claim. These facts come from the live effect, not formatted prompt
+text. Before acceptance this context reveals no library contents, candidate
+counts or matching-card availability. Search and decline remain separate engine
+answers. A real target is never submitted automatically, even if only one is
+legal; forced singleton effect-recipient choices retain Forge's existing path.
+Accepting a search may still shuffle when the named card is outside the library.
+Partner-with targeting may choose another legal player, whose own seat then owns
+the optional confirmation and private search.
+
+Opening-hand decisions also carry `openingHand: {handSize, nextHandSize,
+cardsToReturn, freeMulligan}` from the active mulligan policy. The counts describe
+the next redraw and its bottom-card requirement. Native code uses them to explain
+Keep/Mulligan without inferring free redraws from format or player count.
+These optional projection additions preserve existing protocol-2 answers;
+clients without the context continue using the original labels and constraints.
 
 Stack entries include an `id` for the stack instance, an `ability` flag, and a
 viewer-filtered source `card` (or null when unavailable), alongside the existing

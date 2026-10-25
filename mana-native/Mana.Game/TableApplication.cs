@@ -82,7 +82,7 @@ internal sealed partial class TableApplication : IDisposable
     private int DesignHeight => match == null ? 1000 : TableLayout.Height;
     private bool TableChoice => match != null && TableChoices.IsDirect(match);
     private bool AbilityActionPending => !session.NeedsRecovery && match?.Decision is { } decision && IsAbilityActionChoice(decision);
-    private bool DecisionModal => !session.NeedsRecovery && !TableChoice && !AbilityActionPending && !collapsedDecision && match?.Decision?.Kind is "choice" or "reveal" or "number" or "text" or "allocate";
+    private bool DecisionModal => !session.NeedsRecovery && !TableChoice && !AbilityActionPending && !collapsedDecision && match?.Decision?.Task is DecisionTask.Options or DecisionTask.Ordering or DecisionTask.AbilityChoice or DecisionTask.Reveal or DecisionTask.Number or DecisionTask.Text or DecisionTask.Allocation;
     private bool OverlayOpen => updatesOpen || ActivityOpen || ExperienceOpen || workshopDialog.Length > 0 || overlay.Length > 0 || zoneName != null || DecisionModal;
     private string Scope => match == null ? deckEditor ? DeckScope : LobbyScope + ":tempo:" + lobby?.Tempo?.Revision : session.Scope + ":viewer:" + match.ViewerId;
     private string ScopeFor(UiIntent intent) => intent.ScopeKind switch {
@@ -167,11 +167,11 @@ internal sealed partial class TableApplication : IDisposable
     {
         var prompt = match?.Decision;
         if (decisionDraft.Observe(match, TableChoice)) {
-            if (BattlefieldFocused && prompt != null && !ReadingAbilitySource(prompt) && (prompt.Kind is "choice" or "reveal" or "number" or "text" or "allocate"
-                || prompt.Intent == DecisionIntent.Selection)) { zoneName = null; CollapseCardReading(); }
+            if (BattlefieldFocused && prompt != null && !ReadingAbilitySource(prompt) && (prompt.Task is DecisionTask.Options or DecisionTask.Ordering or DecisionTask.AbilityChoice or DecisionTask.Reveal or DecisionTask.Number or DecisionTask.Text or DecisionTask.Allocation
+                || prompt.Task is DecisionTask.TargetSelection or DecisionTask.EntitySelection)) { zoneName = null; CollapseCardReading(); }
             choicePage = 0; choiceFilter = ""; selectedCombat = null;
             dragging = false; dragSource = null; ClearCardDrag(); collapsedDecision = false; textFocus = false;
-            inputText = prompt?.Kind == "number" ? prompt.Min.ToString() : prompt?.Initial ?? "";
+            inputText = prompt?.Task == DecisionTask.Number ? prompt.Min.ToString() : prompt?.Initial ?? "";
         }
     }
     internal void Update(GameTime time, MouseState mouse, KeyboardState keys, Point viewport)
@@ -248,7 +248,7 @@ internal sealed partial class TableApplication : IDisposable
                 if (match == null && !busy) { if (DismissDeckWorkspaceReading()) { } else if (workshopDialog == "printings") ClosePrintings(); else if (workshopDialog.Length > 0) workshopDialog = ""; else if (deckMenu.Length > 0) deckMenu = ""; else if (deckEditor) CloseDeckEditor(); else CloseSetupModal(); }
                 if (overlay.Length > 0) overlay = ""; else if (zoneName != null) zoneName = null;
                 else if (StudyFocusActive) SetStudyFocus(null);
-                else if (DecisionModal && match?.Decision?.Kind == "allocate" && allocationDetail >= -1) CloseAllocationDetail();
+                else if (DecisionModal && match?.Decision?.Task == DecisionTask.Allocation && allocationDetail >= -1) CloseAllocationDetail();
                 else if (DecisionModal) collapsedDecision = true;
             }
         }

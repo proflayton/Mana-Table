@@ -76,8 +76,7 @@ public static class TurnOrientationScenario
             ActionClass = "selection", PriorityPlayerId = null, DecisionOwnerId = 0,
             Players = combat.Players.Select(player => player with { Priority = false }).ToImmutableArray(),
             Decision = new() {
-                Kind = "choice", Intent = DecisionIntent.Selection,
-                Title = "Choose a creature", Message = "Choose one of the shown creatures in this scripted target preview.",
+                Task = DecisionTask.Options, Title = "Choose a creature", Message = "Choose one of the shown creatures in this scripted target preview.",
                 Min = 1, Max = 1, SourceCard = growth, SourceCardId = growth.VisualId, SourceZone = "Hand", SourceControllerId = 0,
                 Choices = targetCards.Select((card, index) => new Choice(index, card.Name, card) {
                     Id = "orientation-target-" + index, CardId = card.VisualId,
@@ -107,7 +106,7 @@ public static class TurnOrientationScenario
         PriorityPlayerId = responder, DecisionOwnerId = responder, ActionClass = "priority", Stack = [], Combat = null,
         Players = basis.Players.Select(player => player with { Priority = player.Id == responder }).ToImmutableArray(),
         Decision = responder == basis.ViewerId ? new() {
-            Kind = "input", Intent = DecisionIntent.Priority, OkEnabled = true, CanAutoPass = false,
+            Task = DecisionTask.Priority, OkEnabled = true, CanAutoPass = false,
             Message = "You have priority. Use Next to continue this scripted sequence."
         } : null
     };

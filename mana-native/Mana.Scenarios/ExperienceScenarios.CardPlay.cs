@@ -11,7 +11,7 @@ public static partial class ExperienceScenarios
         var bear = Body("play-bears", "Grizzly Bears") with { Text = "", ManaCost = "{1}{G}" };
         var ring = Body("play-ring", "Sol Ring", "Artifact", null, null) with { Text = "{T}: Add {C}{C}.", ManaCost = "{1}" };
         var initial = Table("card-play", [], [land, bear]) with { Decision = new() {
-            Kind = "input", Intent = DecisionIntent.Priority, OkEnabled = true, Ok = "Pass" } };
+            Task = DecisionTask.Priority, OkEnabled = true, Ok = "Pass" } };
         GameSnapshot Move(GameSnapshot state, int actor, Card card, string destination) => state with {
             Players = state.Players.Select(player => player.Id != actor ? player : player with {
                 Zones = player.Zones.Select(zone => {

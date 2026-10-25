@@ -89,11 +89,11 @@ internal sealed class FullBattlefieldSmoke : ITableAutomation
                 "The local tenth creature reads first and exposes its explicit current activation");
             MoveHit("read-card-action");
         }); Click();
-        Wait(() => scenario.Replies.Count == 1 && view.Match?.Decision?.Purpose == DecisionPurpose.AbilitySelection, 3, () => {
+        Wait(() => scenario.Replies.Count == 1 && view.Match?.Decision?.Task == DecisionTask.AbilityChoice, 3, () => {
             Check(scenario.Replies.Count == 1 && scenario.Replies[0] is ActivateCard reply
                 && reply.GameId == actionGame && reply.DecisionId == actionDecision && reply.Card == actionCard,
                 "The local tenth creature submits exactly one action scoped to its own game, decision and card handle");
-            Check(view.Match?.Decision is { Purpose: DecisionPurpose.AbilitySelection, SourceCard.VisualId: "ten-0-9" },
+            Check(view.Match?.Decision is { Task: DecisionTask.AbilityChoice, SourceCard.VisualId: "ten-0-9" },
                 "The ability chooser belongs to the local tenth creature");
             Capture("04-own-tenth-action");
             Publish(Example("mixed")); MoveAway();
@@ -240,7 +240,7 @@ internal sealed class FullBattlefieldSmoke : ITableAutomation
         Step(0, () => {
             var state = Example("mixed");
             var cards = new[] { 0, 1, 4 }.Select(index => state.Viewer!.Zone("Battlefield").Cards.Single(card => card.VisualId == "mixed-0-" + index)).ToArray();
-            Publish(state with { Id = "full-battlefield-dense-order", Decision = new() { Kind = "choice", Ordered = true, Min = 3, Max = 3,
+            Publish(state with { Id = "full-battlefield-dense-order", Decision = new() { Task = DecisionTask.Ordering, Min = 3, Max = 3,
                 Message = "Choose these creatures in order.", Choices = cards.Select((card, index) => new Choice(index, card.Name,
                     card with { Key = "", VisualId = "", CombatId = "" }) { CardId = card.VisualId }).ToImmutableArray() } });
             MoveAway();
@@ -480,8 +480,7 @@ internal sealed class FullBattlefieldSmoke : ITableAutomation
             Defender = new("player", "0", 0, "You"), Blocked = true
         }], [], null) : null;
         return state with { Id = "full-battlefield-" + mode, Players = players.ToImmutableArray(), Combat = combat, Stack = [], Activity = [],
-            ActivePlayerId = mode == "mixed" ? 1 : 0, Decision = new() { Kind = "input", Intent = DecisionIntent.Priority,
-                Message = "You have priority.", Ok = "OK", OkEnabled = true, CanAutoPass = false } };
+            ActivePlayerId = mode == "mixed" ? 1 : 0, Decision = new() { Task = DecisionTask.Priority, Message = "You have priority.", Ok = "OK", OkEnabled = true, CanAutoPass = false } };
     }
     private static GameSnapshot ReadableCrowd()
     {

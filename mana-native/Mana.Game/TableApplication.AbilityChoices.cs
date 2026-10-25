@@ -11,9 +11,7 @@ internal sealed partial class TableApplication
 {
     private sealed record AbilityActionText(Choice Choice, string Text, int Height);
 
-    private static bool IsAbilityActionChoice(Decision decision) => decision.Kind == "choice" && decision.Purpose == DecisionPurpose.AbilitySelection
-        && !decision.Ordered && decision.Max == 1 && decision.Min is 0 or 1 && decision.Choices.Length > 0
-        && decision.LibraryCards.Length == 0;
+    private static bool IsAbilityActionChoice(Decision decision) => decision.Task == DecisionTask.AbilityChoice;
 
     private void SubmitAbilityChoice(GameSnapshot state, Decision decision, int index)
     {
@@ -29,19 +27,7 @@ internal sealed partial class TableApplication
     {
         if (match is not { Decision: { } decision } state || !IsAbilityActionChoice(decision) || session.NeedsRecovery
             || ActivityOpen || updatesOpen || ExperienceOpen || overlay.Length > 0 || zoneName != null && !BattlefieldFocused) return null;
-        var reported = CardViews.Source(state, decision);
-        var location = reported == null ? null : CardViews.InZones(state)
-            .Where(occurrence => SameVisibleCard(occurrence.Card, reported)).Select(occurrence => (ZoneCardOccurrence?)occurrence).FirstOrDefault();
-        var source = location?.Card;
-        string identity = source == null ? "" : CardViews.Identity(source);
-        var sourcePose = location == null ? null : AbilitySourcePose(identity, location.Value.Zone, location.Value.PlayerId);
-        var owner = state.Players.FirstOrDefault(player => player.Id == location?.PlayerId)
-            ?? state.Players.FirstOrDefault(player => player.Id == decision.SourceControllerId) ?? state.Viewer;
-        var geometry = tableScene?.Seats.FirstOrDefault(seat => seat.PlayerId == owner?.Id)?.Geometry;
-        string zone = location?.Zone ?? decision.SourceZone;
-        var pile = geometry?.Piles.FirstOrDefault(candidate => candidate.Zone == zone);
-        var anchor = sourcePose?.Bounds ?? pile?.Pose.Bounds
-            ?? new Rectangle((int)(geometry?.Hero.X ?? 800) - 55, (int)(geometry?.Hero.Y ?? 744) - 55, 110, 110);
+        var (anchor, sourcePose, reported, zone) = DecisionSourceAnchor(state, decision);
         const float fontSize = .78f;
         const int padding = 12, rowGap = 8, controlsHeight = 40;
         string context = sourcePose != null ? "" : reported is { FaceDown: false } ? reported.Name
@@ -54,7 +40,7 @@ internal sealed partial class TableApplication
         int requestedHeight = controlsHeight + decision.Choices.Sum(choice => Math.Max(48,
             canvas.TextSize(Content(choice), fontSize, requestedWidth - padding * 2, 80, true).Y + padding * 2))
             + (decision.Choices.Length - 1) * rowGap;
-        var area = AbilityActionArea(anchor, requestedWidth, Math.Min(400, requestedHeight));
+        var area = DecisionActionArea(anchor, requestedWidth, Math.Min(400, requestedHeight));
         if (area.Width < 100 || area.Height < 110) return null;
         int textWidth = area.Width - padding * 2, bodyHeight = area.Height - controlsHeight;
         List<List<AbilityActionText>> pages = [[]];
@@ -108,7 +94,25 @@ internal sealed partial class TableApplication
             Button("choice-cancel", "Cancel", area.Right - 105, y, 105, new MatchIntent.ChooseNone(true), !busy, height: 32);
     }
 
-    private Pose? AbilitySourcePose(string identity, string zone, int owner)
+    private (Rectangle Anchor, Pose? Pose, Card? Card, string Zone) DecisionSourceAnchor(GameSnapshot state, Decision decision)
+    {
+        var reported = CardViews.Source(state, decision);
+        var location = reported == null ? null : CardViews.InZones(state)
+            .Where(occurrence => SameVisibleCard(occurrence.Card, reported)).Select(occurrence => (ZoneCardOccurrence?)occurrence).FirstOrDefault();
+        var source = location?.Card;
+        string identity = source == null ? "" : CardViews.Identity(source);
+        var sourcePose = location == null ? null : DecisionSourcePose(identity, location.Value.Zone, location.Value.PlayerId);
+        var owner = state.Players.FirstOrDefault(player => player.Id == location?.PlayerId)
+            ?? state.Players.FirstOrDefault(player => player.Id == decision.SourceControllerId) ?? state.Viewer;
+        var geometry = tableScene?.Seats.FirstOrDefault(seat => seat.PlayerId == owner?.Id)?.Geometry;
+        string zone = location?.Zone ?? decision.SourceZone;
+        var pile = geometry?.Piles.FirstOrDefault(candidate => candidate.Zone == zone);
+        var anchor = sourcePose?.Bounds ?? pile?.Pose.Bounds
+            ?? new Rectangle((int)(geometry?.Hero.X ?? 800) - 55, (int)(geometry?.Hero.Y ?? 744) - 55, 110, 110);
+        return (anchor, sourcePose, reported, zone);
+    }
+
+    private Pose? DecisionSourcePose(string identity, string zone, int owner)
     {
         if (tableScene == null || identity.Length == 0) return null;
         SceneCard? node = zone == "Battlefield" ? tableScene.Cohort(identity)?.Front
@@ -123,18 +127,22 @@ internal sealed partial class TableApplication
             : Mana.Table.Presentation.CardPresentationController.ReaderPose(rest, zone);
     }
 
-    private Rectangle AbilityActionArea(Rectangle anchor, int requestedWidth, int requestedHeight)
+    private Rectangle DecisionActionArea(Rectangle anchor, int requestedWidth, int requestedHeight, bool reserveBattlefield = false)
     {
         var free = new List<Rectangle> { new(20, 64, 1560, 696) };
         var source = anchor; source.Inflate(12, 12);
         var occupied = new List<Rectangle> { source, new(1240, 550, 350, 245) };
         if (match is { } state && tableScene != null) {
             occupied.AddRange(TableViewGeometry.FixedReservations(state, tableScene));
+            if (reserveBattlefield) occupied.AddRange(tableScene.BattlefieldDrawOrder.Select(card => {
+                var protectedBounds = boardView.Apply(card.Pose).Bounds; protectedBounds.Inflate(8, 8); return protectedBounds;
+            }));
             occupied.AddRange(state.Players.Select(player => PlanManaHalo(player, SeatDisplayIndex(player.Id)).Bounds).Where(bounds => !bounds.IsEmpty));
             if (TableStudyEnabled && matchPresentation.Cards.Pinned is { Zone: "Battlefield" } && anchor.Width >= 300)
                 occupied.Add(new(anchor.Right + Mana.Table.Presentation.CardPresentationController.StudyDetailsGap, anchor.Top,
                     Mana.Table.Presentation.CardPresentationController.StudyDetailsWidth, anchor.Height));
         }
+        if (reserveBattlefield) return PlaceDecisionWorkspace(anchor, requestedWidth, requestedHeight, occupied);
         foreach (var obstacle in occupied) {
             for (int index = free.Count - 1; index >= 0; index--) {
                 var area = free[index]; var overlap = Rectangle.Intersect(area, obstacle);
@@ -163,5 +171,55 @@ internal sealed partial class TableApplication
                 return Vector2.DistanceSquared(new Vector2(area.Center.X, top + height / 2), anchor.Center.ToVector2());
             })
             .ThenByDescending(area => area.Width * area.Height).FirstOrDefault();
+    }
+
+    private static Rectangle PlaceDecisionWorkspace(Rectangle anchor, int width, int height, List<Rectangle> occupied)
+    {
+        var viewport = new Rectangle(20, 64, 1560, 696);
+        width = Math.Clamp(width, 320, viewport.Width); height = Math.Clamp(height, 100, viewport.Height);
+        Rectangle At(int x, int y) => new(Math.Clamp(x, viewport.Left, viewport.Right - width),
+            Math.Clamp(y, viewport.Top, viewport.Bottom - height), width, height);
+        long Overlap(Rectangle candidate, long ceiling)
+        {
+            candidate.Inflate(8, 8);
+            long total = 0;
+            foreach (var obstacle in occupied) {
+                var overlap = Rectangle.Intersect(candidate, obstacle);
+                total += (long)overlap.Width * overlap.Height;
+                if (total >= ceiling) break;
+            }
+            return total;
+        }
+        var preferred = new[] {
+            At(anchor.Center.X - width / 2, anchor.Top - height - 16),
+            At(anchor.Left - width - 16, anchor.Center.Y - height / 2),
+            At(anchor.Right + 16, anchor.Center.Y - height / 2),
+            At(800 - width / 2, 470 - height / 2),
+            At(anchor.Center.X - width / 2, anchor.Bottom + 16)
+        };
+        var best = preferred[0]; long bestOverlap = long.MaxValue;
+        foreach (var candidate in preferred) {
+            long overlap = Overlap(candidate, bestOverlap);
+            if (overlap == 0) return candidate;
+            if (overlap < bestOverlap) { best = candidate; bestOverlap = overlap; }
+        }
+        // Nearby obstacle edges and viewport edges supplement the source/center
+        // candidates. Bound both axes so a crowded table does not multiply all
+        // permanent positions every frame. The fallback stays fully reachable
+        // when physical space requires some overlap; names never get squeezed.
+        var xs = occupied.SelectMany(obstacle => new[] { obstacle.Right + 8, obstacle.Left - width - 8 })
+            .Append(viewport.Left).Append(viewport.Right - width).Select(x => At(x, 64).X).Distinct()
+            .OrderBy(x => Math.Abs(x + width / 2 - anchor.Center.X)).Take(24)
+            .Append(viewport.Left).Append(viewport.Right - width).Distinct().ToArray();
+        var ys = occupied.SelectMany(obstacle => new[] { obstacle.Bottom + 8, obstacle.Top - height - 8 })
+            .Append(viewport.Top).Append(viewport.Bottom - height).Select(y => At(20, y).Y).Distinct()
+            .OrderBy(y => Math.Abs(y + height / 2 - anchor.Center.Y)).Take(24)
+            .Append(viewport.Top).Append(viewport.Bottom - height).Distinct().ToArray();
+        foreach (int x in xs) foreach (int y in ys) {
+            var candidate = At(x, y); long overlap = Overlap(candidate, bestOverlap);
+            if (overlap == 0) return candidate;
+            if (overlap < bestOverlap) { best = candidate; bestOverlap = overlap; }
+        }
+        return best;
     }
 }

@@ -17,4 +17,9 @@ public class ParisMulligan extends AbstractMulligan {
 
         return player.getMaxHandSize() - timesMulliganed + extraCard;
     }
+
+    @Override
+    public OpeningHandOffer openingHandOffer() {
+        return openingHandOffer(handSizeAfterNextMulligan() - 1, 0);
+    }
 }

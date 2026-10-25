@@ -108,7 +108,7 @@ public static class FourPlayerTableScenario
                 ]);
         }).ToArray();
         return new(Id, "playing", null, null, 0, 8, "Main phase", "MAIN1", 1, players.ToImmutableArray(), [], null, new() {
-            Kind = "input", Intent = DecisionIntent.Priority, OkEnabled = false, CanAutoPass = false,
+            Task = DecisionTask.Priority, OkEnabled = false, CanAutoPass = false,
             Message = "Authored snapshot. Inspect cards; use the stage controls to compare checkpoints."
         }) { PriorityPlayerId = 0, DecisionOwnerId = 0, ActionClass = "priority" };
     }

@@ -15,10 +15,10 @@ public sealed class InteractionController
         if (card == null) return new(InteractionEffect.None);
         if (TableChoices.IsDirect(state)) return TableChoices.Index(state, card) is { } index
             ? new(InteractionEffect.SelectChoice, ChoiceIndex: index) : new(InteractionEffect.None);
-        if (state.Decision?.Intent is DecisionIntent.Attack or DecisionIntent.Block) {
+        if (state.Decision?.Task is DecisionTask.Attack or DecisionTask.Block) {
             if (SelectedCombat != null && Assign(state, SelectedCombat, targetCard: card.CombatId) is { } reply) return new(InteractionEffect.Submit, reply);
             if (CombatGuide.CanSelect(state, card)) { SelectedCombat = SelectedCombat == card.CombatId ? null : card.CombatId; return new(InteractionEffect.Select); }
-        } else if (state.Decision?.Intent == DecisionIntent.Priority && !card.Selectable && HandPlacements.Options(state, card) is { Length: > 0 } placements)
+        } else if (state.Decision?.Task == DecisionTask.Priority && !card.Selectable && HandPlacements.Options(state, card) is { Length: > 0 } placements)
             return placements.Length == 1 ? new(InteractionEffect.Submit, HandPlacements.Start(state, card, placements[0].Id))
                 : new(InteractionEffect.ChooseHandPlacement);
         else if (state.Decision is { } d && card.Selectable && !string.IsNullOrEmpty(card.Key))
@@ -44,7 +44,7 @@ public sealed class InteractionController
     }
     public static DecisionCommand? Play(GameSnapshot state, Card clicked, string sourceZone = "Hand")
     {
-        if (sourceZone is not ("Hand" or "Command") || state.Decision is not { Intent: DecisionIntent.Priority } d) return null;
+        if (sourceZone is not ("Hand" or "Command") || state.Decision is not { Task: DecisionTask.Priority } d) return null;
         var card = state.Viewer?.Zone(sourceZone).Cards.FirstOrDefault(c => CardViews.Same(c, clicked) && c.Key == clicked.Key);
         if (card is { Selectable: true } && !string.IsNullOrEmpty(card.Key)) return new PlayCard(state.Id, d.Id, card.Key);
         return sourceZone == "Hand" && card != null && HandPlacements.Options(state, card) is { Length: 1 } placements ? HandPlacements.Start(state, card, placements[0].Id) : null;

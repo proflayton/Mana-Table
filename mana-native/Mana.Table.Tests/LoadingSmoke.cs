@@ -225,7 +225,7 @@ internal static class LoadingSmoke
                 Check(!view.ActivityOpen && view.Hits.Any(h => h.Id == "settings"), "A pending gameplay reply keeps the table visible without a setup-loading overlay");
                 table.Replying.SetResult();
             });
-            s.Until(() => !view.Busy && view.Match?.Decision?.Kind == "choice");
+            s.Until(() => !view.Busy && view.Match?.Decision?.Task is DecisionTask.Options or DecisionTask.AbilityChoice or DecisionTask.Ordering);
             s.Then(() => Check(!view.ActivityOpen && table.Replies == 1 && table.Scenario.Replies.Count == 1, "The gameplay reply completes normally with its own decision presentation"));
             s.Then(() => { table.Scenario.Present(PresentationSmoke.Example()); view.Accept(table.Scenario.State); view.SetAutomatic(true); });
             s.Move(new(0, 0));

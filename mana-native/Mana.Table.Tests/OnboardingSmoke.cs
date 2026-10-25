@@ -136,8 +136,8 @@ internal static class OnboardingSmoke
             s.Then(() => {
                 Check(!view.Hits.Any(hit => hit.Id == "instructions"), "Ordinary priority has no repeated prose or invisible decision-help target");
                 scenario.Present(initial with { DecisionOwnerId = initial.ViewerId, ActionClass = "selection", Decision = new() {
-                    Kind = "input", Message = "Choose the required objects in the order reported by the engine.",
-                    Intent = DecisionIntent.Selection, Ok = "Confirm choice", OkEnabled = false } });
+                    Task = DecisionTask.EntitySelection, Message = "Choose the required objects in the order reported by the engine.",
+                    Ok = "Confirm choice", OkEnabled = false } });
                 view.Accept(scenario.State); helpDecision = scenario.State.Decision!.Id;
             });
             s.Click("instructions");

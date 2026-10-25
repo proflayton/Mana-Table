@@ -11,43 +11,44 @@ using Mana.Magic;
 // The controlled provider is a finite scripted machine, not a Magic rules engine.
 internal static class InteractionContractMatrix
 {
-    private sealed record Case(string Name, Type CommandType, DecisionIntent Intent, DecisionPurpose Purpose = DecisionPurpose.Unspecified);
+    private sealed record Case(string Name, Type CommandType, DecisionTask Task);
     private static readonly Case[] Cases = [
-        new("pass-priority", typeof(PassPriority), DecisionIntent.Priority),
-        new("automatic-priority", typeof(AutoPassPriority), DecisionIntent.Priority),
-        new("keep-opening-hand", typeof(KeepOpeningHand), DecisionIntent.General, DecisionPurpose.OpeningHand),
-        new("mulligan-opening-hand", typeof(MulliganOpeningHand), DecisionIntent.General, DecisionPurpose.OpeningHand),
-        new("pay-mana", typeof(PayMana), DecisionIntent.Mana),
-        new("cancel-payment", typeof(CancelPayment), DecisionIntent.Mana),
-        new("complete-attackers", typeof(CompleteAttackers), DecisionIntent.Attack),
-        new("complete-blockers", typeof(CompleteBlockers), DecisionIntent.Block),
-        new("complete-selection", typeof(CompleteSelection), DecisionIntent.Selection),
-        new("cancel-targeting", typeof(CancelSelection), DecisionIntent.Selection, DecisionPurpose.TargetSelection),
-        new("accept-confirmation", typeof(AcceptConfirmation), DecisionIntent.General),
-        new("decline-confirmation", typeof(DeclineConfirmation), DecisionIntent.General),
-        new("acknowledge-decision", typeof(AcknowledgeDecision), DecisionIntent.General),
-        new("acknowledge-reveal", typeof(AcknowledgeReveal), DecisionIntent.General),
-        new("undo-last-action", typeof(UndoLastAction), DecisionIntent.Priority),
-        new("pass-turn", typeof(PassTurn), DecisionIntent.Priority),
-        new("select-current-card", typeof(SelectCard), DecisionIntent.Selection, DecisionPurpose.TargetSelection),
-        new("play-hand-card", typeof(PlayCard), DecisionIntent.Priority),
-        new("activate-current-card", typeof(ActivateCard), DecisionIntent.Priority),
-        new("use-mana-source", typeof(UseManaSource), DecisionIntent.Mana),
-        new("select-offered-player", typeof(SelectPlayer), DecisionIntent.Selection, DecisionPurpose.TargetSelection),
-        new("assign-attacker", typeof(ToggleAttackPlayer), DecisionIntent.Attack),
-        new("attack-permanent", typeof(ToggleAttackPermanent), DecisionIntent.Attack),
-        new("assign-blocker", typeof(ToggleBlock), DecisionIntent.Block),
-        new("choose-ability", typeof(ChooseOptions), DecisionIntent.General, DecisionPurpose.AbilitySelection),
-        new("ordered-selection", typeof(OrderOptions), DecisionIntent.General),
-        new("bounded-value", typeof(ChooseNumber), DecisionIntent.General),
-        new("enter-text", typeof(EnterText), DecisionIntent.General),
-        new("allocate-damage", typeof(AllocateAmounts), DecisionIntent.General, DecisionPurpose.TargetSelection),
-        new("skip-optional-allocation", typeof(SkipAllocation), DecisionIntent.General),
-        new("ignore-one-ability", typeof(IgnorePriorityAbility), DecisionIntent.Priority),
-        new("restore-one-ability", typeof(RestorePriorityAbility), DecisionIntent.Priority),
-        new("place-eligible-hand-card", typeof(PlaceFromHand), DecisionIntent.Priority),
-        new("yield-public-window", typeof(PassForNow), DecisionIntent.Priority),
-        new("source-action-during-payment", typeof(UseOfferedAction), DecisionIntent.Mana)
+        new("pass-priority", typeof(PassPriority), DecisionTask.Priority),
+        new("automatic-priority", typeof(AutoPassPriority), DecisionTask.Priority),
+        new("keep-opening-hand", typeof(KeepOpeningHand), DecisionTask.OpeningHand),
+        new("mulligan-opening-hand", typeof(MulliganOpeningHand), DecisionTask.OpeningHand),
+        new("pay-mana", typeof(PayMana), DecisionTask.Payment),
+        new("cancel-payment", typeof(CancelPayment), DecisionTask.Payment),
+        new("complete-attackers", typeof(CompleteAttackers), DecisionTask.Attack),
+        new("complete-blockers", typeof(CompleteBlockers), DecisionTask.Block),
+        new("complete-selection", typeof(CompleteSelection), DecisionTask.EntitySelection),
+        new("cancel-targeting", typeof(CancelSelection), DecisionTask.TargetSelection),
+        new("accept-confirmation", typeof(AcceptConfirmation), DecisionTask.Confirmation),
+        new("decline-confirmation", typeof(DeclineConfirmation), DecisionTask.Confirmation),
+        new("acknowledge-decision", typeof(AcknowledgeDecision), DecisionTask.Confirmation),
+        new("acknowledge-reveal", typeof(AcknowledgeReveal), DecisionTask.Reveal),
+        new("undo-last-action", typeof(UndoLastAction), DecisionTask.Priority),
+        new("pass-turn", typeof(PassTurn), DecisionTask.Priority),
+        new("select-current-card", typeof(SelectCard), DecisionTask.TargetSelection),
+        new("play-hand-card", typeof(PlayCard), DecisionTask.Priority),
+        new("activate-current-card", typeof(ActivateCard), DecisionTask.Priority),
+        new("use-mana-source", typeof(UseManaSource), DecisionTask.Payment),
+        new("select-offered-player", typeof(SelectPlayer), DecisionTask.TargetSelection),
+        new("assign-attacker", typeof(ToggleAttackPlayer), DecisionTask.Attack),
+        new("attack-permanent", typeof(ToggleAttackPermanent), DecisionTask.Attack),
+        new("assign-blocker", typeof(ToggleBlock), DecisionTask.Block),
+        new("choose-ability", typeof(ChooseOptions), DecisionTask.AbilityChoice),
+        new("choose-option", typeof(ChooseOptions), DecisionTask.Options),
+        new("ordered-selection", typeof(OrderOptions), DecisionTask.Ordering),
+        new("bounded-value", typeof(ChooseNumber), DecisionTask.Number),
+        new("enter-text", typeof(EnterText), DecisionTask.Text),
+        new("allocate-damage", typeof(AllocateAmounts), DecisionTask.Allocation),
+        new("skip-optional-allocation", typeof(SkipAllocation), DecisionTask.Allocation),
+        new("ignore-one-ability", typeof(IgnorePriorityAbility), DecisionTask.Priority),
+        new("restore-one-ability", typeof(RestorePriorityAbility), DecisionTask.Priority),
+        new("place-eligible-hand-card", typeof(PlaceFromHand), DecisionTask.Priority),
+        new("yield-public-window", typeof(PassForNow), DecisionTask.Priority),
+        new("source-action-during-payment", typeof(UseOfferedAction), DecisionTask.Payment)
     ];
 
     internal static async Task RunAsync(Action<bool, string> check)
@@ -55,8 +56,8 @@ internal static class InteractionContractMatrix
         var timer = Stopwatch.StartNew();
         var commandTypes = typeof(GameCommand).Assembly.GetTypes().Where(type => !type.IsAbstract && typeof(GameCommand).IsAssignableFrom(type)).OrderBy(type => type.FullName);
         check(Cases.Select(row => row.CommandType).Distinct().OrderBy(type => type.FullName).SequenceEqual(commandTypes)
-                && Covers(Cases.Select(row => row.Intent)) && Covers(Cases.Select(row => row.Purpose)),
-            "The finite interaction-contract matrix names every closed command variant, intent and purpose; it is not exhaustive rules coverage");
+                && Cases.Select(row => row.Task).Distinct().Order().SequenceEqual(Enum.GetValues<DecisionTask>().Where(task => task != DecisionTask.Unspecified).Order()),
+            "The finite interaction-contract matrix names every closed command variant and supported decision task; it is not exhaustive rules coverage");
         foreach (var row in Cases) await RunCase(row, check);
         SeededPermissions(check);
         CurrentZoneAuthority(check);
@@ -64,9 +65,6 @@ internal static class InteractionContractMatrix
         await SemanticAliases(check);
         Console.WriteLine($"Interaction-contract matrix: {Cases.Length} named cases, 48 seeded transitions; {timer.Elapsed.TotalMilliseconds:F1} ms (no JVM/GPU; not exhaustive Magic rules coverage).");
     }
-
-    private static bool Covers<T>(IEnumerable<T> covered) where T : struct, Enum =>
-        covered.Distinct().Order().SequenceEqual(Enum.GetValues<T>().Distinct().Order());
 
     private static void CurrentZoneAuthority(Action<bool, string> check)
     {
@@ -312,7 +310,7 @@ internal static class InteractionContractMatrix
             var ability = new PriorityAbility(prefix + ":ability", focus.Key, focus.Name, "An offered exact ability", false) {
                 EligibleHandKeys = [hand.Key], HandPlacementLimit = 1 };
             bool Is<T>() => row.CommandType == typeof(T);
-            var decision = new Decision { Id = prefix + ":decision", Kind = "input", Intent = row.Intent, Purpose = row.Purpose,
+            var decision = new Decision { Id = prefix + ":decision", Task = row.Task,
                 OkEnabled = true, CancelEnabled = Is<CancelSelection>() || Is<CancelPayment>() || Is<MulliganOpeningHand>()
                     || Is<AcceptConfirmation>() || Is<DeclineConfirmation>() || Is<UndoLastAction>() || Is<PassTurn>(),
                 CanAutoPass = Is<AutoPassPriority>(), MaySkip = Is<SkipAllocation>(),
@@ -321,14 +319,14 @@ internal static class InteractionContractMatrix
                 PlayerChoices = Is<SelectPlayer>() ? [1] : [],
                 Choices = [new(7, "First ability", null), new(9, "Second ability", null)],
                 Min = Is<ChooseNumber>() ? 2 : 1, Max = Is<ChooseNumber>() ? 6 : 2,
-                Numeric = Is<ChooseNumber>(), Amount = 3, Limits = [2, 3], Ordered = Is<OrderOptions>() };
-            if (Is<ChooseOptions>() || Is<OrderOptions>()) decision = decision with { Kind = "choice", Max = 1 };
-            if (Is<OrderOptions>()) decision = decision with { Min = 2, Max = 2,
+                Amount = 3, Limits = [2, 3] };
+            if (Is<ChooseOptions>()) decision = decision with { Max = 1 };
+            if (Is<OrderOptions>()) decision = decision with { Task = DecisionTask.Ordering, Min = 2, Max = 2,
                 Choices = [new(7, focus.Name, focus) { CardId = focus.VisualId }, new(9, other.Name, other) { CardId = other.VisualId }] };
-            if (Is<ChooseNumber>()) decision = decision with { Kind = "number" };
-            if (Is<EnterText>()) decision = decision with { Kind = "text", Numeric = false };
-            if (Is<AcknowledgeReveal>()) decision = decision with { Kind = "reveal" };
-            if (Is<AllocateAmounts>() || Is<SkipAllocation>()) decision = decision with { Kind = "allocate", AllocationKind = "damage",
+            if (Is<ChooseNumber>()) decision = decision with { Task = DecisionTask.Number };
+            if (Is<EnterText>()) decision = decision with { Task = DecisionTask.Text };
+            if (Is<AcknowledgeReveal>()) decision = decision with { Task = DecisionTask.Reveal };
+            if (Is<AllocateAmounts>() || Is<SkipAllocation>()) decision = decision with { Task = DecisionTask.Allocation, AllocationKind = "damage",
                 Choices = [new(0, focus.Name, focus) { CardId = focus.VisualId, Maximum = 2 },
                     new(1, enemy.Name, enemy) { CardId = enemy.VisualId, Maximum = 3 }] };
             hand = hand with { Selectable = Is<PlayCard>() };
@@ -409,14 +407,14 @@ players.ToImmutableArray(), [], combat, decision) { Revision = 8, BoardRevision 
                 ToggleAttackPermanent => after with { Combat = new([new(focus.CombatId, 1, [], []) { Defender = new("card", enemy.CombatId, 1, enemy.Name) }], [], null) },
                 ToggleBlock => after with { Combat = new([new(enemy.CombatId, 0, [focus.CombatId], []) { Blocked = true }], [], null) },
                 AutoPassPriority or PassForNow => after with { PriorityPlayerId = 1, DecisionOwnerId = null },
-                ChooseOptions or OrderOptions => after with { Decision = new() { Id = prefix + ":target-continuation", Intent = DecisionIntent.Selection,
-                    Purpose = DecisionPurpose.TargetSelection, PlayerChoices = [1] }, Notices = [Is<OrderOptions>() ? "order:9,7" : "ability:9"] },
+                ChooseOptions or OrderOptions => after with { Decision = new() { Id = prefix + ":target-continuation", Task = DecisionTask.TargetSelection,
+                    PlayerChoices = [1] }, Notices = [Is<OrderOptions>() ? "order:9,7" : "ability:9"] },
                 ChooseNumber => after with { Stack = [new("Fixture spell", "", false, focus) { Effect = new() { Kind = "damage", Amount = 4 } }] },
                 AllocateAmounts => ChangeCard(ChangeCard(after, focus.VisualId, card => card with { Damage = 2 }), enemy.VisualId, card => card with { Damage = 1 }),
                 IgnorePriorityAbility => after with { Decision = decision, IgnoredPriorityAbilities = [ability with { IgnoredUntilNextTurn = true }] },
                 RestorePriorityAbility => after with { IgnoredPriorityAbilities = [] },
-                PlaceFromHand => after with { Decision = new() { Id = prefix + ":placement-continuation", Intent = DecisionIntent.Selection,
-                    Purpose = DecisionPurpose.TargetSelection, Min = 1, Max = 1, SourceCard = focus, SourceCardId = focus.VisualId,
+                PlaceFromHand => after with { Decision = new() { Id = prefix + ":placement-continuation", Task = DecisionTask.TargetSelection,
+                    Min = 1, Max = 1, SourceCard = focus, SourceCardId = focus.VisualId,
                     Choices = [new(4, hand.Name, hand) { CardId = hand.VisualId }] } },
                 _ => after
             };

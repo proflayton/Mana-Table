@@ -257,7 +257,7 @@ internal static class DecisionDockInteractionChecks
 
         var privateCard = new Card { Name = "Disclosed search option", Type = "Creature", Text = "A scoped private library choice." };
         engine.Present(engine.State with { ActionClass = "selection", DecisionOwnerId = initial.ViewerId, PriorityPlayerId = null,
-            Decision = new() { Kind = "choice", Intent = DecisionIntent.Selection, Min = 1, Max = 1,
+            Decision = new() { Task = DecisionTask.Options, Min = 1, Max = 1,
                 Message = "Search your library for a creature.", LibraryCards = [new(7, privateCard.Name, privateCard)],
                 Choices = [new(7, privateCard.Name, privateCard)] } });
         view.Accept(engine.State); Tick();

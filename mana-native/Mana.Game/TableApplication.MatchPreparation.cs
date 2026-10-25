@@ -19,7 +19,7 @@ internal sealed partial class TableApplication
         priorityView = PriorityPresentation.From(state);
         handPage = Math.Clamp(handPage, 0, Math.Max(0, ((state.Viewer?.Zone("Hand").Cards.Length ?? 0) - 1) / 11));
         if (allocationScope != Scope) { allocationScope = Scope; CloseAllocationDetail(); }
-        if (state.Decision is not { Kind: "allocate" } allocation) CloseAllocationDetailIfOpen();
+        if (state.Decision is not { Task: DecisionTask.Allocation } allocation) CloseAllocationDetailIfOpen();
         else if (allocationDetail >= -1 && (allocationDetail < 0 ? allocationDetailId != allocation.SourceCardId
             : allocationDetail >= allocation.Choices.Length || allocationDetailId != allocation.Choices[allocationDetail].Id)) CloseAllocationDetail();
 
@@ -72,7 +72,7 @@ internal sealed partial class TableApplication
                 ? decision.LibraryCards.Select(choice => (choice.Label, HasCard: true))
                 : decision.Choices.Select(choice => (choice.Label, HasCard: CardViews.Choice(state, choice) != null));
             int count = faces.Count(choice => choice.Label.Contains(choiceFilter, StringComparison.OrdinalIgnoreCase));
-            int capacity = decision.Kind == "allocate" ? 6 : faces.Any(choice => choice.HasCard) ? 7 : 6;
+            int capacity = decision.Task == DecisionTask.Allocation ? 6 : faces.Any(choice => choice.HasCard) ? 7 : 6;
             choicePage = Math.Clamp(choicePage, 0, Math.Max(0, (count - 1) / capacity));
         }
         PrepareFocusedBattlefield();
@@ -114,7 +114,7 @@ internal sealed partial class TableApplication
         if (overlay == "changes" && CurrentChange is { } group) return ChangeReadingPages(group);
         if (overlay.Length == 0 && zoneName == "Stack" && match!.Stack.ElementAtOrDefault(zonePage) is { } item)
             return TextPages(item.Text, ReadingPageSize(1000));
-        if (DecisionModal && match?.Decision is { Kind: "allocate" } decision && allocationDetail >= -1) {
+        if (DecisionModal && match?.Decision is { Task: DecisionTask.Allocation } decision && allocationDetail >= -1) {
             var choice = allocationDetail < 0 ? null : decision.Choices.ElementAtOrDefault(allocationDetail);
             var card = choice == null ? CardViews.Source(match, decision) : CardViews.Choice(match, choice);
             return TextPages(card?.Text ?? choice?.Detail ?? "", 550);

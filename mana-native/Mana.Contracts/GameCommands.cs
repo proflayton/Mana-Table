@@ -89,8 +89,8 @@ public static class GameCommandPermissions
         if (command is RestorePriorityAbility restore)
             return state.IgnoredPriorityAbilities.Any(ability => ability.Id == restore.AbilityId);
         if (command is not DecisionCommand scoped || state.Decision is not { } decision || scoped.DecisionId != decision.Id) return false;
-        bool priority = decision is { Kind: "input", Intent: DecisionIntent.Priority };
-        bool general = decision is { Kind: "input", Intent: DecisionIntent.General, Purpose: DecisionPurpose.Unspecified };
+        bool priority = decision is { Task: DecisionTask.Priority };
+        bool general = decision.Task == DecisionTask.Confirmation;
         Card? Card(string key) => CardViews.Located(state).Select(item => item.Card)
             .Concat(state.Players.SelectMany(player => player.Zones).Where(zone => zone.TopCard != null).Select(zone => zone.TopCard!))
             .FirstOrDefault(card => card.Key == key && key.Length > 0);
@@ -100,43 +100,43 @@ public static class GameCommandPermissions
         return command switch {
             PassPriority => priority && decision.OkEnabled,
             AutoPassPriority => state.Status == "playing" && priority && decision.OkEnabled && decision.CanAutoPass,
-            KeepOpeningHand => decision.Purpose == DecisionPurpose.OpeningHand && decision.OkEnabled,
-            MulliganOpeningHand => decision.Purpose == DecisionPurpose.OpeningHand && decision.CancelEnabled,
-            PayMana => decision.Intent == DecisionIntent.Mana && decision.OkEnabled,
-            CancelPayment => decision.Intent == DecisionIntent.Mana && decision.CancelEnabled,
-            CompleteAttackers => decision.Intent == DecisionIntent.Attack && decision.OkEnabled,
-            CompleteBlockers => decision.Intent == DecisionIntent.Block && decision.OkEnabled && string.IsNullOrEmpty(state.Combat?.BlockProblem),
-            CompleteSelection => decision is { Kind: "input", Intent: DecisionIntent.Selection, OkEnabled: true },
-            CancelSelection => decision.Intent == DecisionIntent.Selection && decision.CancelEnabled,
+            KeepOpeningHand => decision.Task == DecisionTask.OpeningHand && decision.OkEnabled,
+            MulliganOpeningHand => decision.Task == DecisionTask.OpeningHand && decision.CancelEnabled,
+            PayMana => decision.Task == DecisionTask.Payment && decision.OkEnabled,
+            CancelPayment => decision.Task == DecisionTask.Payment && decision.CancelEnabled,
+            CompleteAttackers => decision.Task == DecisionTask.Attack && decision.OkEnabled,
+            CompleteBlockers => decision.Task == DecisionTask.Block && decision.OkEnabled && string.IsNullOrEmpty(state.Combat?.BlockProblem),
+            CompleteSelection => decision is { Task: DecisionTask.TargetSelection or DecisionTask.EntitySelection, OkEnabled: true },
+            CancelSelection => decision.Task is DecisionTask.TargetSelection or DecisionTask.EntitySelection && decision.CancelEnabled,
             AcceptConfirmation => general && decision.OkEnabled && decision.CancelEnabled,
             DeclineConfirmation => general && decision.CancelEnabled,
             AcknowledgeDecision => general && decision.OkEnabled && !decision.CancelEnabled,
-            AcknowledgeReveal => decision.Kind == "reveal",
+            AcknowledgeReveal => decision.Task is DecisionTask.Reveal,
             UndoLastAction => priority && decision.CancelEnabled && decision.PriorityAlternative == PriorityAlternative.UndoLastAction,
             PassTurn => priority && decision.CancelEnabled && decision.PriorityAlternative == PriorityAlternative.PassTurn,
-            SelectCard value => decision.Intent == DecisionIntent.Selection && Selectable(value.Card),
+            SelectCard value => decision.Task is DecisionTask.TargetSelection or DecisionTask.EntitySelection && Selectable(value.Card),
             PlayCard value => priority && Selectable(value.Card) && Located(value.Card, "Hand", "Command"),
             ActivateCard value => priority && Selectable(value.Card) && Located(value.Card, "Battlefield"),
-            UseManaSource value => decision.Intent == DecisionIntent.Mana && CurrentSource(value.Card) is { Selectable: true },
-            SelectPlayer value => decision.PlayerChoices.Contains(value.Player),
-            ToggleAttackPlayer value => decision.Intent == DecisionIntent.Attack && Card(value.Attacker) is { CombatId: var attacker }
+            UseManaSource value => decision.Task == DecisionTask.Payment && CurrentSource(value.Card) is { Selectable: true },
+            SelectPlayer value => decision.Task is DecisionTask.TargetSelection or DecisionTask.EntitySelection && decision.PlayerChoices.Contains(value.Player),
+            ToggleAttackPlayer value => decision.Task == DecisionTask.Attack && Card(value.Attacker) is { CombatId: var attacker }
                 && state.Combat?.AttackOptions.Any(option => option.CardId == attacker
                     && option.Defenders.Any(defender => defender.Kind == "player" && defender.PlayerId == value.Player)) == true,
-            ToggleAttackPermanent value => decision.Intent == DecisionIntent.Attack && Card(value.Attacker) is { CombatId: var attacker }
+            ToggleAttackPermanent value => decision.Task == DecisionTask.Attack && Card(value.Attacker) is { CombatId: var attacker }
                 && Card(value.DefenderCard) is { CombatId: var defender }
                 && state.Combat?.AttackOptions.Any(option => option.CardId == attacker
                     && option.Defenders.Any(target => target.Kind != "player" && target.Id == defender)) == true,
-            ToggleBlock value => decision.Intent == DecisionIntent.Block && Card(value.Attacker) is { CombatId: var attacker }
+            ToggleBlock value => decision.Task == DecisionTask.Block && Card(value.Attacker) is { CombatId: var attacker }
                 && Card(value.Blocker) is { CombatId: var blocker }
                 && state.Combat?.Attackers.Any(attack => attack.CardId == attacker && attack.EligibleBlockerIds.Contains(blocker)) == true,
-            ChooseOptions value => decision.Kind == "choice" && !decision.Ordered && Choices(decision, value.Choices),
-            OrderOptions value => decision.Kind == "choice" && decision.Ordered && Choices(decision, value.Choices),
-            ChooseNumber value => (decision.Kind == "number" || decision.Kind == "text" && decision.Numeric)
+            ChooseOptions value => decision.Task is DecisionTask.Options or DecisionTask.AbilityChoice && Choices(decision, value.Choices),
+            OrderOptions value => decision.Task == DecisionTask.Ordering && Choices(decision, value.Choices),
+            ChooseNumber value => decision.Task == DecisionTask.Number
                 && value.Value >= decision.Min && value.Value <= decision.Max,
-            EnterText => decision.Kind == "text" && !decision.Numeric,
+            EnterText => decision.Task == DecisionTask.Text,
             AllocateAmounts value => Allocation(decision, value.Amounts),
-            SkipAllocation => decision.Kind == "allocate" && decision.MaySkip,
-            UseOfferedAction value => decision.Intent is DecisionIntent.Priority or DecisionIntent.Mana
+            SkipAllocation => decision.Task is DecisionTask.Allocation && decision.MaySkip,
+            UseOfferedAction value => decision.Task is DecisionTask.Priority or DecisionTask.Payment
                 && CurrentSource(value.Card) is { FaceDown: false },
             PlaceFromHand value => state.Status == "playing" && priority
                 && state.Viewer is { } viewer && viewer.Zone("Hand").Cards.Any(card => card.Key == value.Card && !card.FaceDown)
@@ -160,7 +160,7 @@ public static class GameCommandPermissions
 
     private static bool Allocation(Decision decision, ImmutableArray<int> amounts)
     {
-        if (decision.Kind != "allocate" || amounts.IsDefault || amounts.Length != decision.Choices.Length
+        if (decision.Task is not (DecisionTask.Allocation) || amounts.IsDefault || amounts.Length != decision.Choices.Length
             || amounts.Sum(value => (long)value) != decision.Amount) return false;
         for (int index = 0; index < amounts.Length; index++) {
             var choice = decision.Choices[index];
@@ -181,12 +181,12 @@ public static class DecisionCommands
     {
         if (state.Decision is not { } decision) return null;
         DecisionCommand command = decision switch {
-            { Purpose: DecisionPurpose.OpeningHand } => new KeepOpeningHand(state.Id, decision.Id),
-            { Intent: DecisionIntent.Priority } => new PassPriority(state.Id, decision.Id),
-            { Intent: DecisionIntent.Mana } => new PayMana(state.Id, decision.Id),
-            { Intent: DecisionIntent.Attack } => new CompleteAttackers(state.Id, decision.Id),
-            { Intent: DecisionIntent.Block } => new CompleteBlockers(state.Id, decision.Id),
-            { Intent: DecisionIntent.Selection } => new CompleteSelection(state.Id, decision.Id),
+            { Task: DecisionTask.OpeningHand } => new KeepOpeningHand(state.Id, decision.Id),
+            { Task: DecisionTask.Priority } => new PassPriority(state.Id, decision.Id),
+            { Task: DecisionTask.Payment } => new PayMana(state.Id, decision.Id),
+            { Task: DecisionTask.Attack } => new CompleteAttackers(state.Id, decision.Id),
+            { Task: DecisionTask.Block } => new CompleteBlockers(state.Id, decision.Id),
+            { Task: DecisionTask.TargetSelection or DecisionTask.EntitySelection } => new CompleteSelection(state.Id, decision.Id),
             { CancelEnabled: true } => new AcceptConfirmation(state.Id, decision.Id),
             _ => new AcknowledgeDecision(state.Id, decision.Id)
         };
@@ -197,11 +197,11 @@ public static class DecisionCommands
     {
         if (state.Decision is not { } decision) return null;
         DecisionCommand command = decision switch {
-            { Purpose: DecisionPurpose.OpeningHand } => new MulliganOpeningHand(state.Id, decision.Id),
-            { Intent: DecisionIntent.Priority, PriorityAlternative: PriorityAlternative.UndoLastAction } => new UndoLastAction(state.Id, decision.Id),
-            { Intent: DecisionIntent.Priority, PriorityAlternative: PriorityAlternative.PassTurn } => new PassTurn(state.Id, decision.Id),
-            { Intent: DecisionIntent.Mana } => new CancelPayment(state.Id, decision.Id),
-            { Intent: DecisionIntent.Selection } => new CancelSelection(state.Id, decision.Id),
+            { Task: DecisionTask.OpeningHand } => new MulliganOpeningHand(state.Id, decision.Id),
+            { Task: DecisionTask.Priority, PriorityAlternative: PriorityAlternative.UndoLastAction } => new UndoLastAction(state.Id, decision.Id),
+            { Task: DecisionTask.Priority, PriorityAlternative: PriorityAlternative.PassTurn } => new PassTurn(state.Id, decision.Id),
+            { Task: DecisionTask.Payment } => new CancelPayment(state.Id, decision.Id),
+            { Task: DecisionTask.TargetSelection or DecisionTask.EntitySelection } => new CancelSelection(state.Id, decision.Id),
             _ => new DeclineConfirmation(state.Id, decision.Id)
         };
         return GameCommandPermissions.Allows(state, command) ? command : null;
@@ -210,11 +210,11 @@ public static class DecisionCommands
     public static DecisionCommand? Card(GameSnapshot state, string key)
     {
         if (state.Decision is not { } decision) return null;
-        DecisionCommand command = decision.Intent switch {
-            DecisionIntent.Priority when CardViews.Located(state).Any(item => item.Card.Key == key && item.Zone == "Battlefield")
+        DecisionCommand command = decision.Task switch {
+            DecisionTask.Priority when CardViews.Located(state).Any(item => item.Card.Key == key && item.Zone == "Battlefield")
                 => new ActivateCard(state.Id, decision.Id, key),
-            DecisionIntent.Priority => new PlayCard(state.Id, decision.Id, key),
-            DecisionIntent.Mana => new UseManaSource(state.Id, decision.Id, key),
+            DecisionTask.Priority => new PlayCard(state.Id, decision.Id, key),
+            DecisionTask.Payment => new UseManaSource(state.Id, decision.Id, key),
             _ => new SelectCard(state.Id, decision.Id, key)
         };
         return GameCommandPermissions.Allows(state, command) ? command : null;
@@ -224,7 +224,7 @@ public static class DecisionCommands
     {
         if (state.Decision is not { } decision) return null;
         var choices = indexes.ToImmutableArray();
-        DecisionCommand command = decision.Kind == "reveal" && choices.IsEmpty ? new AcknowledgeReveal(state.Id, decision.Id)
+        DecisionCommand command = decision.Task is DecisionTask.Reveal && choices.IsEmpty ? new AcknowledgeReveal(state.Id, decision.Id)
             : decision.Ordered ? new OrderOptions(state.Id, decision.Id, choices) : new ChooseOptions(state.Id, decision.Id, choices);
         return GameCommandPermissions.Allows(state, command) ? command : null;
     }
@@ -233,7 +233,7 @@ public static class DecisionCommands
     {
         if (state.Decision is not { } decision) return null;
         DecisionCommand command;
-        if (decision.Kind == "number" || decision.Numeric) {
+        if (decision.Task == DecisionTask.Number) {
             if (!int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out int number)) return null;
             command = new ChooseNumber(state.Id, decision.Id, number);
         } else command = new EnterText(state.Id, decision.Id, value);

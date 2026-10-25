@@ -36,7 +36,7 @@ internal static class ImmutableStateChecks
         Choice[] originalChoices = [new(0, "Creature", card)];
         var state = new GameSnapshot("immutable", "playing", null, null, 0, 1, "Main phase", "MAIN1", 0,
             [new(0, "You", 40, true, false, ImmutableDictionary<string, int>.Empty, [new("Battlefield", 1, originalCards.ToImmutableArray(), null)])],
-            [], null, new() { Id = "choice", Kind = "choice", Choices = originalChoices.ToImmutableArray(), Min = 1, Max = 1 });
+            [], null, new() { Id = "choice", Task = DecisionTask.Options, Choices = originalChoices.ToImmutableArray(), Min = 1, Max = 1 });
         var client = new ClientSession(new ReadOnlyConnection(state));
         client.Accept(state);
 

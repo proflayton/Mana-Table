@@ -19,12 +19,12 @@ internal sealed partial class TableApplication
     private readonly List<(PresentedCard Card, Action<Pose, bool> Compose)> deferredCardComposition = [];
     private (string Scope, int Slot)? inspectedChoice;
     private bool ReadingGalleryOpen => overlay.Length == 0 && zoneName == null && DecisionModal
-        && match?.Decision?.Kind is "choice" or "reveal";
+        && match?.Decision?.Task is DecisionTask.Options or DecisionTask.Ordering or DecisionTask.AbilityChoice or DecisionTask.Reveal;
     private bool ZoneReadingOpen => overlay.Length == 0
         && !updatesOpen && !ActivityOpen && !ExperienceOpen
         && zoneName != null && zoneName != "Battlefield";
     private bool CompactCardDecision => !AbilityActionPending && (TableChoice
-        || match?.Decision?.Intent is DecisionIntent.Selection or DecisionIntent.Attack or DecisionIntent.Block);
+        || match?.Decision?.Task is DecisionTask.TargetSelection or DecisionTask.EntitySelection or DecisionTask.Attack or DecisionTask.Block);
     private CardPresentationContext CardContext => new(match, Scope, OverlayOpen && !BattlefieldFocused && !ZoneReadingOpen,
         ReadingGalleryOpen, dragging, CompactCardDecision, AbilityActionPending, SourceActionsSupported, TableStudyEnabled,
         TableStudyEnabled ? StudyActionArea : null);
@@ -140,7 +140,7 @@ internal sealed partial class TableApplication
             return;
         }
         if (SourceActionsSupported) { DrawSourceReaderControls(entry); return; }
-        if (match?.Decision?.Intent is DecisionIntent.Priority or DecisionIntent.Mana && IsCardActionable(entry.Card)) {
+        if (match?.Decision?.Task is DecisionTask.Priority or DecisionTask.Payment && IsCardActionable(entry.Card)) {
             string label = entry.Zone == "Battlefield" ? "Abilities"
                 : !entry.Card.Selectable && HandPlacements.Options(match, entry.Card).Length > 0 ? "Place"
                 : entry.Card.Type.Contains("Land", StringComparison.Ordinal) ? "Play" : "Cast";

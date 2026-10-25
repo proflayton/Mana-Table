@@ -92,7 +92,7 @@ internal sealed partial class TableApplication
         int desiredHeight = (state.Length == 0 ? 0 : canvas.TextSize(state, .63f, desiredWidth - 8, 80, true).Y + 12)
             + options.Sum(option => canvas.TextSize(option.Text, size, desiredWidth - padding * 2, 80, true).Y + padding * 2 + gap
                 + (option.Action?.Card == null ? 0 : LinkedSpellHeaderHeight(option.Action.Card, desiredWidth)));
-        var area = AbilityActionArea(face, desiredWidth, Math.Min(face.Height, desiredHeight));
+        var area = DecisionActionArea(face, desiredWidth, Math.Min(face.Height, desiredHeight));
         if (area.IsEmpty) return;
         int width = area.Width;
         var rows = options.Select(option => {

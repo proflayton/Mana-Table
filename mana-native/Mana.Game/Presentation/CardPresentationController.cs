@@ -133,11 +133,12 @@ internal sealed class CardPresentationController
         if (entry == null || entry.Card.FaceDown || !current.CanRead(entry)
             || current.Dragging || current.CompactDecision && !current.CanBrowseHandSelection(entry)) return false;
         if (entry.ChoiceSlot >= 0) {
-            if (current.State?.Decision?.Kind != "reveal") return false;
+            if (current.State?.Decision?.Task != DecisionTask.Reveal) return false;
         } else if (current.OverlayOpen
-            || !current.AbilityChoice && current.State?.Decision is { Intent: not DecisionIntent.Priority }
-                && current.State?.Decision?.Intent != DecisionIntent.Mana
-                && !current.CanBrowseOpeningHand(entry) && !current.CanBrowseHandSelection(entry)) return false;
+            || !current.AbilityChoice && current.State?.Decision is { Task: not DecisionTask.Priority }
+                && current.State?.Decision?.Task != DecisionTask.Payment
+                && !current.CanBrowseOpeningHand(entry) && !current.CanBrowseHandSelection(entry)
+                && !current.CanBrowseDecisionSource(entry)) return false;
         bool close = pinnedId == entry.Id && pinnedZone == entry.Zone;
         Collapse(hit.Id);
         if (!close) {

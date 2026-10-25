@@ -52,7 +52,7 @@ internal static class CleanupSmoke
                 Check(state.Viewer!.Zone("Hand").Count == 8, "Eight cards remain legal during the end step");
                 endStep = true;
             }
-            if (state.PhaseKey == "CLEANUP" && decision.Intent == DecisionIntent.Selection) {
+            if (state.PhaseKey == "CLEANUP" && decision.Task is DecisionTask.TargetSelection or DecisionTask.EntitySelection) {
                 Check(endStep, "Cleanup follows the end step");
                 Check(state.ActivePlayerId == state.ViewerId, "Only our own cleanup requests our discard");
                 Check(state.Viewer!.MaxHandSize == 7, "Forge's hand-size limit reaches the native contract");
@@ -64,9 +64,9 @@ internal static class CleanupSmoke
                 Check(reply is SelectCard, "Shared card click selects a discard without a play gesture");
                 cleanup = true;
                 discardedTurn = state.Turn;
-            } else if (decision.Kind == "choice") {
+            } else if (decision.Task is DecisionTask.Options or DecisionTask.AbilityChoice or DecisionTask.Ordering) {
                 reply = DecisionCommands.Choose(state, decision.Choices.Take(Math.Max(decision.Min, Math.Min(1, decision.Max))).Select(c => c.Index));
-            } else if (decision.Kind == "reveal") {
+            } else if (decision.Task is DecisionTask.Reveal) {
                 reply = new AcknowledgeReveal(state.Id, decision.Id);
             } else if (state.Turn == 0 && decision.PlayerChoices.Length > 0) {
                 reply = new SelectPlayer(state.Id, decision.Id, Player: state.ViewerId);

@@ -169,7 +169,7 @@ internal sealed partial class TableApplication
         internal IReadOnlyDictionary<int, ChoiceOrderBadge> ChoiceOrderBadges => game.choiceOrderBadges;
         internal IReadOnlyList<int> AllocationAmounts => game.decisionDraft.Allocations;
         internal int AllocationDetail => game.allocationDetail;
-        internal string? AllocationProblem => game.match?.Decision is { Kind: "allocate" } decision ? Mana.Magic.AllocationGuide.Problem(decision, game.decisionDraft.Allocations) : null;
+        internal string? AllocationProblem => game.match?.Decision is { Task: DecisionTask.Allocation } decision ? Mana.Magic.AllocationGuide.Problem(decision, game.decisionDraft.Allocations) : null;
         internal string Overlay => game.overlay;
         internal string? ZoneName => game.zoneName;
         internal IReadOnlyList<Hit> Hits => game.hits.Published;

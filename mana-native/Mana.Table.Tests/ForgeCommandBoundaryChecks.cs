@@ -24,25 +24,61 @@ internal static class ForgeCommandBoundaryChecks
         var selection = new JsonObject { ["kind"] = "input", ["task"] = "selection", ["purpose"] = "targets",
             ["inputType"] = "UnrelatedProviderImplementation", ["context"] = "private-provider-metadata" };
         ForgeDecisionDecoder.Normalize(selection);
-        check(selection["intent"]!.GetValue<int>() == (int)DecisionIntent.Selection
-            && selection["purpose"]!.GetValue<int>() == (int)DecisionPurpose.TargetSelection
-            && !selection.ContainsKey("inputType") && !selection.ContainsKey("context") && !selection.ContainsKey("task"),
+        check(selection["task"]!.GetValue<int>() == (int)DecisionTask.TargetSelection
+            && !selection.ContainsKey("purpose") && !selection.ContainsKey("kind") && !selection.ContainsKey("intent")
+            && !selection.ContainsKey("inputType") && !selection.ContainsKey("context"),
             "The adapter consumes authoritative semantic tasks without parsing or exposing provider class names or private context");
         foreach (var invalid in new[] {
             new JsonObject { ["kind"] = "input", ["task"] = "unknown-required-task" },
             new JsonObject { ["kind"] = "choice", ["task"] = "mana" },
             new JsonObject { ["kind"] = "input", ["task"] = "openingHand", ["purpose"] = "targets" },
-            new JsonObject { ["kind"] = "input", ["task"] = "mana", ["priorityAlternative"] = "undo" }
+            new JsonObject { ["kind"] = "input", ["task"] = "mana", ["priorityAlternative"] = "undo" },
+            new JsonObject { ["kind"] = "input", ["task"] = "priority", ["ordered"] = true },
+            new JsonObject { ["kind"] = "choice", ["task"] = "choice", ["purpose"] = "abilities", ["ordered"] = true },
+            new JsonObject { ["kind"] = "choice", ["task"] = "choice", ["min"] = 2, ["max"] = 1 },
+            new JsonObject { ["kind"] = "choice", ["task"] = "choice", ["min"] = "one", ["max"] = 1 },
+            new JsonObject { ["kind"] = "number", ["task"] = "number", ["min"] = 0, ["max"] = 1.5 },
+            new JsonObject { ["kind"] = "text", ["task"] = "text", ["numeric"] = true, ["min"] = 0, ["max"] = 3 },
+            new JsonObject { ["kind"] = "choice", ["task"] = "choice", ["purpose"] = "abilities", ["min"] = 0, ["max"] = 1,
+                ["choices"] = new JsonArray(new JsonObject { ["index"] = 0, ["label"] = "Ability" }),
+                ["libraryCards"] = new JsonArray(new JsonObject { ["index"] = 0, ["label"] = "Not an ability" }) },
+            new JsonObject { ["kind"] = "input", ["task"] = "confirmation", ["librarySearch"] = new JsonObject {
+                ["libraryOwnerId"] = 99, ["destination"] = "Hand", ["cardName"] = "Named card" } },
+            new JsonObject { ["kind"] = "input", ["task"] = "priority", ["librarySearch"] = new JsonObject {
+                ["libraryOwnerId"] = null, ["destination"] = "Hand", ["cardName"] = "" } },
+            new JsonObject { ["kind"] = "input", ["task"] = "confirmation", ["openingHand"] = new JsonObject {
+                ["handSize"] = 7, ["nextHandSize"] = 7, ["cardsToReturn"] = 0, ["freeMulligan"] = true } },
+            new JsonObject { ["kind"] = "input", ["task"] = "openingHand", ["purpose"] = "openingHand", ["openingHand"] = new JsonObject {
+                ["handSize"] = 7, ["nextHandSize"] = 6, ["cardsToReturn"] = 1, ["freeMulligan"] = true } }
         }) {
             bool failed = false;
             try { ForgeDecisionDecoder.Normalize(invalid); } catch (IOException) { failed = true; }
             check(failed, "An unsupported or contradictory provider decision fails explicitly rather than becoming a generic confirmation");
         }
+        var offeredSearch = new JsonObject { ["kind"] = "input", ["task"] = "confirmation", ["librarySearch"] = new JsonObject {
+            ["libraryOwnerId"] = 1, ["destination"] = "Hand", ["cardName"] = "Named card" } };
+        ForgeDecisionDecoder.Normalize(offeredSearch, new JsonArray(new JsonObject { ["id"] = 1 }));
+        check(offeredSearch["task"]!.GetValue<int>() == (int)DecisionTask.Confirmation
+            && offeredSearch["librarySearch"]!["libraryOwnerId"]!.GetValue<int>() == 1,
+            "An optional search retains its exact public library owner without reporting private availability");
+        var ordering = new JsonObject { ["kind"] = "choice", ["task"] = "choice", ["ordered"] = true, ["min"] = 2, ["max"] = 2 };
+        ForgeDecisionDecoder.Normalize(ordering);
+        check(ordering["task"]!.GetValue<int>() == (int)DecisionTask.Ordering && !ordering.ContainsKey("ordered"),
+            "Ordering crosses the boundary as one task rather than a choice with a competing classifier");
+        var numericText = new JsonObject { ["kind"] = "text", ["task"] = "number", ["numeric"] = true, ["min"] = -2, ["max"] = 3 };
+        ForgeDecisionDecoder.Normalize(numericText);
+        check(numericText["task"]!.GetValue<int>() == (int)DecisionTask.Number && !numericText.ContainsKey("numeric"),
+            "A numeric provider textbox retains its authoritative number task and exact negative bounds without another mutable classifier");
+        var vancouver = new JsonObject { ["kind"] = "input", ["task"] = "openingHand", ["purpose"] = "openingHand", ["openingHand"] = new JsonObject {
+            ["handSize"] = 7, ["nextHandSize"] = 6, ["cardsToReturn"] = 0, ["freeMulligan"] = false } };
+        ForgeDecisionDecoder.Normalize(vancouver);
+        check(vancouver["task"]!.GetValue<int>() == (int)DecisionTask.OpeningHand,
+            "A paid Vancouver redraw may draw fewer cards directly without a London bottom requirement");
         var scope = new ForgeCommandScope();
         var source = new Card { VisualId = "visible-source", Key = "prompt:source", Name = "Source", Selectable = true };
         GameSnapshot State(Decision decision) => new("observed-game", "playing", null, null, 0, 2, "Main phase", "MAIN1", 1,
             [new(0, "You", 40, true, false, ImmutableDictionary<string, int>.Empty, [new("Battlefield", 1, [source], null)])], [], null,
-            decision with { Id = "observed-prompt", Kind = decision.Kind.Length == 0 ? "input" : decision.Kind });
+            decision with { Id = "observed-prompt" });
         void Reject(GameCommand command, string description)
         {
             bool rejected = false;
@@ -52,7 +88,7 @@ internal static class ForgeCommandBoundaryChecks
         const string game = "observed-game", prompt = "observed-prompt";
         Reject(new KeepOpeningHand(game, prompt), "The Forge command boundary requires an observation before any decision can be translated");
 
-        var opening = State(new() { Kind = "input", Purpose = DecisionPurpose.OpeningHand, OkEnabled = true, CancelEnabled = true });
+        var opening = State(new() { Task = DecisionTask.OpeningHand, OkEnabled = true, CancelEnabled = true });
         scope.Observe(opening);
         var keep = scope.Encode(new KeepOpeningHand(game, prompt));
         check((string)keep["expectedTask"]! == "openingHand" && (string)keep["action"]! == "ok",
@@ -62,7 +98,7 @@ internal static class ForgeCommandBoundaryChecks
         Reject(new KeepOpeningHand("another-game", prompt), "The adapter rejects another game's otherwise matching opening-hand command");
         Reject(new KeepOpeningHand(game, "retired-prompt"), "The adapter rejects a retired prompt before writing a wire command");
 
-        var mana = State(new() { Kind = "input", Intent = DecisionIntent.Mana, OkEnabled = true, CancelEnabled = true });
+        var mana = State(new() { Task = DecisionTask.Payment, OkEnabled = true, CancelEnabled = true });
         scope.Observe(mana);
         var payment = scope.Encode(new PayMana(game, prompt));
         check((string)payment["expectedTask"]! == "mana" && (string)payment["action"]! == "ok"
@@ -74,14 +110,14 @@ internal static class ForgeCommandBoundaryChecks
             "A mana-source gesture keeps its current disclosed card handle and semantic payment task");
 
         (Decision Decision, GameCommand Command, string Task)[] acknowledgements = [
-            (new() { Intent = DecisionIntent.Attack, OkEnabled = true }, new CompleteAttackers(game, prompt), "attack"),
-            (new() { Intent = DecisionIntent.Block, OkEnabled = true }, new CompleteBlockers(game, prompt), "block"),
-            (new() { Intent = DecisionIntent.Selection, OkEnabled = true }, new CompleteSelection(game, prompt), "selection"),
-            (new() { Intent = DecisionIntent.General, OkEnabled = true, CancelEnabled = true }, new AcceptConfirmation(game, prompt), "confirmation"),
-            (new() { Intent = DecisionIntent.General, OkEnabled = true }, new AcknowledgeDecision(game, prompt), "confirmation"),
-            (new() { Intent = DecisionIntent.Selection, CancelEnabled = true }, new CancelSelection(game, prompt), "selection"),
-            (new() { Intent = DecisionIntent.Mana, CancelEnabled = true }, new CancelPayment(game, prompt), "mana"),
-            (new() { Intent = DecisionIntent.General, CancelEnabled = true }, new DeclineConfirmation(game, prompt), "confirmation")
+            (new() { Task = DecisionTask.Attack, OkEnabled = true }, new CompleteAttackers(game, prompt), "attack"),
+            (new() { Task = DecisionTask.Block, OkEnabled = true }, new CompleteBlockers(game, prompt), "block"),
+            (new() { Task = DecisionTask.EntitySelection, OkEnabled = true }, new CompleteSelection(game, prompt), "selection"),
+            (new() { Task = DecisionTask.Confirmation, OkEnabled = true, CancelEnabled = true }, new AcceptConfirmation(game, prompt), "confirmation"),
+            (new() { Task = DecisionTask.Confirmation, OkEnabled = true }, new AcknowledgeDecision(game, prompt), "confirmation"),
+            (new() { Task = DecisionTask.EntitySelection, CancelEnabled = true }, new CancelSelection(game, prompt), "selection"),
+            (new() { Task = DecisionTask.Payment, CancelEnabled = true }, new CancelPayment(game, prompt), "mana"),
+            (new() { Task = DecisionTask.Confirmation, CancelEnabled = true }, new DeclineConfirmation(game, prompt), "confirmation")
         ];
         foreach (var row in acknowledgements) {
             scope.Observe(State(row.Decision));
@@ -91,7 +127,7 @@ internal static class ForgeCommandBoundaryChecks
             Reject(new KeepOpeningHand(game, prompt), row.Command.GetType().Name + " cannot be replaced with another task's scoped ok meaning");
         }
 
-        var priority = State(new() { Intent = DecisionIntent.Priority, OkEnabled = true, CancelEnabled = true,
+        var priority = State(new() { Task = DecisionTask.Priority, OkEnabled = true, CancelEnabled = true,
             PriorityAlternative = PriorityAlternative.PassTurn });
         scope.Observe(priority);
         var passTurn = scope.Encode(new PassTurn(game, prompt));
@@ -105,7 +141,7 @@ internal static class ForgeCommandBoundaryChecks
             "A current priority activation reaches the adapter with its original scoped source handle");
 
         int[] suppliedChoices = [3];
-        var choices = State(new() { Kind = "choice", Min = 1, Max = 1, Choices = [new(3, "Offered", null)] });
+        var choices = State(new() { Task = DecisionTask.Options, Min = 1, Max = 1, Choices = [new(3, "Offered", null)] });
         scope.Observe(choices);
         var choose = new ChooseOptions(game, prompt, suppliedChoices.ToImmutableArray());
         suppliedChoices[0] = 99;
@@ -113,7 +149,7 @@ internal static class ForgeCommandBoundaryChecks
         check(((ImmutableArray<int>)choiceWire["choices"]!).SequenceEqual([3]) && (string)choiceWire["expectedTask"]! == "choice",
             "Choice encoding retains its immutable exact offered indices and semantic task");
         Reject(new OrderOptions(game, prompt, [3]), "An unordered chooser cannot be answered through an ordered-selection command");
-        scope.Observe(State(new() { Kind = "text", Numeric = true, Min = 2, Max = 5 }));
+        scope.Observe(State(new() { Task = DecisionTask.Number, Min = 2, Max = 5 }));
         var numeric = scope.Encode(new ChooseNumber(game, prompt, 4));
         check((string)numeric["expectedTask"]! == "number" && (string)numeric["value"]! == "4",
             "A numeric text input is bound to the number task without a free-text fallback");

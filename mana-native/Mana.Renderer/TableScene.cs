@@ -103,17 +103,17 @@ public sealed class TableScene
         bool sharedTableStudy = false)
     {
         var hand = HandLayout.Build(state, handPage, pointer, previouslyRaised, dragged, allowHover);
-        var orderedChoices = allowInlineOrdering && state.Decision is { Kind: "choice", Ordered: true } decision
+        var orderedChoices = allowInlineOrdering && state.Decision is { Task: DecisionTask.Options or DecisionTask.AbilityChoice or DecisionTask.Ordering, Ordered: true } decision
             ? decision.Choices.Where(c => c.Card != null && !string.IsNullOrEmpty(c.CardId)).Select(c => c.CardId).ToHashSet(StringComparer.Ordinal) : null;
         bool duel = sharedTableStudy && state.Players.Length == 2;
         var geometry = SeatGeometry.Build(state, sharedTableStudy);
         var studySeparate = orderedChoices == null ? new HashSet<string>(StringComparer.Ordinal)
             : new HashSet<string>(orderedChoices, StringComparer.Ordinal);
         if (sharedTableStudy && state.Decision is { } required
-            && (required.Intent is DecisionIntent.Selection or DecisionIntent.Attack or DecisionIntent.Block
-                || required.Kind is "choice" or "reveal")) {
+            && (required.Task is DecisionTask.TargetSelection or DecisionTask.EntitySelection or DecisionTask.Attack or DecisionTask.Block
+                || required.Task is DecisionTask.Options or DecisionTask.AbilityChoice or DecisionTask.Ordering or DecisionTask.Reveal)) {
             foreach (var card in state.Players.SelectMany(player => player.Zone("Battlefield").Cards)
-                .Where(card => required.Intent is DecisionIntent.Attack or DecisionIntent.Block || card.Selectable
+                .Where(card => required.Task is DecisionTask.Attack or DecisionTask.Block || card.Selectable
                     || required.Choices.Any(choice => choice.CardId == CardViews.Identity(card)
                     || choice.Card != null && CardViews.Same(choice.Card, card)))) studySeparate.Add(CardViews.Identity(card));
         }

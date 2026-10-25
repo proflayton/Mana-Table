@@ -10,7 +10,7 @@ public sealed partial class ExperienceLabSession
     private SourceActionSet PreparedSpellActions(Card source)
     {
         SourceAction[] actions = [];
-        if (StageIndex is 0 or 5 && State.Decision?.Intent == DecisionIntent.Priority && !source.FaceDown) {
+        if (StageIndex is 0 or 5 && State.Decision?.Task == DecisionTask.Priority && !source.FaceDown) {
             var spell = State.Viewer!.Zone("Exile").Cards.Single();
             if (source.VisualId == PreparedSpellScenario.SourceId || source.VisualId == spell.VisualId)
                 actions = [new(State.Decision.Id + ":" + source.Key + ":" + PreparedSpellScenario.CastAction, "cast", "Ancestral Recall — {U}") {

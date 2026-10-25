@@ -25,6 +25,16 @@ public abstract class AbstractMulligan {
     public abstract boolean canMulligan();
     public abstract int handSizeAfterNextMulligan();
 
+    public OpeningHandOffer openingHandOffer() {
+        return openingHandOffer(handSizeAfterNextMulligan(), 0);
+    }
+
+    protected final OpeningHandOffer openingHandOffer(int nextHandSize, int cardsToReturn) {
+        int handSize = player.getCardsIn(ZoneType.Hand).size();
+        return new OpeningHandOffer(handSize, Math.max(0, nextHandSize), cardsToReturn,
+                nextHandSize >= handSize && cardsToReturn == 0);
+    }
+
     public int tuckCardsDuringMulligan() {
         return 0;
     }

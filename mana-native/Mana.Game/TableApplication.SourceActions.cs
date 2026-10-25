@@ -12,7 +12,7 @@ internal sealed partial class TableApplication
     private Card? ReaderActionSource()
     {
         if (!SourceActionsSupported || busy || session.NeedsRecovery || match is not { Decision: { } decision }
-            || decision.Intent is not (DecisionIntent.Priority or DecisionIntent.Mana)) return null;
+            || decision.Task is not (DecisionTask.Priority or DecisionTask.Payment)) return null;
         var current = matchPresentation.Cards.Pinned is { ChoiceSlot: < 0, Zone: not "Stack" } entry && CardContext.CanRead(entry)
             ? CardContext.CurrentOccurrence(entry) : dragging && dragSource != null ? CurrentDragCard(dragSource) : null;
         return current is { FaceDown: false, Key.Length: > 0 } ? current : null;

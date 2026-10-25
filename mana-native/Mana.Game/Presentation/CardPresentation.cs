@@ -12,14 +12,18 @@ internal sealed record CardPresentationContext(GameSnapshot? State, string Scope
     bool OverlayOpen, bool GalleryOpen, bool Dragging, bool CompactDecision, bool AbilityChoice = false, bool SourceActions = false,
     bool KeepBattlefieldAnchor = false, Rectangle? BattlefieldReaderAvoid = null)
 {
-    public bool OpeningHandDecision => State?.Decision is { Kind: "input", Purpose: DecisionPurpose.OpeningHand };
+    public bool OpeningHandDecision => State?.Decision is { Task: DecisionTask.OpeningHand };
 
     public bool CanBrowseOpeningHand(PresentedCard entry) => OpeningHandDecision && State?.Viewer is { } viewer
         && entry.Zone == "Hand" && entry.Request.Owner == viewer.Id
         && viewer.Zone("Hand").Cards.Any(card => !card.FaceDown && CardViews.Same(card, entry.Card));
 
+    public bool CanBrowseDecisionSource(PresentedCard entry) => State is { Decision: { Task: DecisionTask.Confirmation } decision } state
+        && CardViews.Source(state, decision) is { FaceDown: false } source && CardViews.Same(source, entry.Card)
+        && entry.ChoiceSlot < 0 && CurrentOccurrence(entry) is { FaceDown: false };
+
     public bool CanBrowseHandSelection(PresentedCard entry) => State is { } state
-        && (state.Decision?.Intent == DecisionIntent.Selection || TableChoices.IsDirect(state))
+        && (state.Decision?.Task is DecisionTask.TargetSelection or DecisionTask.EntitySelection || TableChoices.IsDirect(state))
         && state.Viewer is { } viewer && entry.ChoiceSlot < 0
         && entry.Zone == "Hand" && entry.Request.Owner == viewer.Id
         && viewer.Zone("Hand").Cards.Any(card => !card.FaceDown && CardViews.Same(card, entry.Card));

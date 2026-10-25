@@ -29,7 +29,7 @@ internal static class DisclosedSourceInteractionChecks
                     Cards = [], Count = zone.Name == "Library" ? 60 : 0,
                     TopCard = player.Id == 0 && zone.Name == "Library" ? top : null
                 }).ToImmutableArray() }).ToImmutableArray(),
-                Decision = new() { Id = "offered-library-prompt", Kind = "input", Intent = DecisionIntent.Priority, OkEnabled = true } };
+                Decision = new() { Id = "offered-library-prompt", Task = DecisionTask.Priority, OkEnabled = true } };
             var provider = new DisclosedSourceConnection(state);
             var setup = new InteractionScenarioEngine();
             var services = new TableServices(setup, setup, provider, setup.InitializeAsync) { SourceActions = provider };
@@ -89,13 +89,13 @@ internal static class DisclosedSourceInteractionChecks
             held = Source(); frame = Tick(held, ButtonState.Pressed); frame = Tick(new(800, 420), ButtonState.Pressed);
             frame = Tick(new(800, 420));
             var completion = DateTime.UtcNow.AddSeconds(5);
-            while ((view.Busy || view.Match?.Decision?.Intent != DecisionIntent.Mana) && DateTime.UtcNow < completion) {
+            while ((view.Busy || view.Match?.Decision?.Task != DecisionTask.Payment) && DateTime.UtcNow < completion) {
                 frame = Tick(new(20, 60)); Thread.Yield();
             }
             check(view.Error.Length == 0 && provider.Commands.Single() is UseOfferedAction command
                     && command.GameId == state.Id && command.DecisionId == state.Decision!.Id
                     && command.Card == top.Key && command.ActionId == DisclosedSourceConnection.OfferId
-                    && view.Match?.Decision is { Id: "pay-library-cast", Intent: DecisionIntent.Mana },
+                    && view.Match?.Decision is { Id: "pay-library-cast", Task: DecisionTask.Payment },
                 "A disclosed top with no generic Selectable flag drags through its exact offered command and presents required payment at " + size);
 
             var grave = top with { Key = "graveyard-current-offer", VisualId = "graveyard-source", Name = "Offered graveyard spell", Type = "Sorcery" };
@@ -138,7 +138,7 @@ internal static class DisclosedSourceInteractionChecks
             var current = State;
             var top = current.Viewer!.Zones.SelectMany(zone => zone.TopCard is { } face ? zone.Cards.Append(face) : zone.Cards)
                 .SingleOrDefault(card => card.Key == sourceCardKey);
-            if (current.Id != gameId || current.Decision is not { Intent: DecisionIntent.Priority } decision || decision.Id != decisionId
+            if (current.Id != gameId || current.Decision is not { Task: DecisionTask.Priority } decision || decision.Id != decisionId
                 || top is not { FaceDown: false } || top.Key != sourceCardKey)
                 throw new InvalidOperationException("Query did not name the current disclosed source.");
             Reads.Enqueue(sourceCardKey);
@@ -149,14 +149,13 @@ internal static class DisclosedSourceInteractionChecks
             Interlocked.Increment(ref attempts);
             var current = State;
             var top = current.Viewer!.Zone("Library").TopCard;
-            if (command is not UseOfferedAction offered || current.Decision?.Intent != DecisionIntent.Priority
+            if (command is not UseOfferedAction offered || current.Decision?.Task != DecisionTask.Priority
                 || offered.GameId != current.Id || offered.DecisionId != current.Decision.Id
                 || top is not { FaceDown: false } || offered.Card != top.Key || offered.ActionId != OfferId)
                 throw new InvalidOperationException("The provider rejected an unavailable or expired Library cast.");
             command.Validate(); Commands.Enqueue(command);
             Replace(current with { Revision = current.Revision + 1,
-                Decision = new() { Id = "pay-library-cast", Kind = "input", Intent = DecisionIntent.Mana,
-                    SourceCard = top, SourceCardId = top.VisualId, OkEnabled = false, CancelEnabled = true } });
+                Decision = new() { Id = "pay-library-cast", Task = DecisionTask.Payment, SourceCard = top, SourceCardId = top.VisualId, OkEnabled = false, CancelEnabled = true } });
             return Task.CompletedTask;
         }
     }

@@ -16,7 +16,7 @@ internal static class HandPlacementRegression
             LandPlaysUsed = 1, LandPlayLimit = 1
         };
         var state = new GameSnapshot("placement-game", "playing", null, null, 0, 1, "Main phase", "MAIN1", 0,
-            [viewer], [], null, new() { Id = "placement-prompt", Kind = "input", Intent = DecisionIntent.Priority, PriorityAbilities = [placement] });
+            [viewer], [], null, new() { Id = "placement-prompt", Task = DecisionTask.Priority, PriorityAbilities = [placement] });
         var click = new InteractionController();
         check(HandPlacements.Availability(state, forest) == "1 placement available" && HandPlacements.AllOptions(state).Length == 1,
             "One source supplying two eligible Forests is one available placement, not two land plays");
@@ -38,7 +38,7 @@ internal static class HandPlacementRegression
             && HandPlacements.Start(state, forest, "sacrifice-for-mana") == null, "A retired hand occurrence or different ability cannot borrow a placement command");
         var changed = state with { Decision = state.Decision! with { Id = "next", PriorityAbilities = [placement with { EligibleHandKeys = ["next:forest"] }] } };
         check(InteractionController.Play(changed, forest) == null, "Old hand handles cannot match new-prompt eligibility");
-        check(HandPlacements.Options(state with { Decision = state.Decision! with { Intent = DecisionIntent.Selection } }, forest).Length == 0
+        check(HandPlacements.Options(state with { Decision = state.Decision! with { Task = DecisionTask.EntitySelection } }, forest).Length == 0
             && HandPlacements.Options(state with { Status = "finished" }, forest).Length == 0, "Placement hints disappear outside their current live priority window");
         check(HandPlacements.Options(state with { Players = [viewer with { Zones = [new("Hand", 2, [forest, other], null)] }] }, forest).Length == 0,
             "A source leaving the battlefield revokes the placement affordance");

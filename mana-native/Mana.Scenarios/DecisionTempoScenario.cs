@@ -15,8 +15,7 @@ public static class DecisionTempoScenario
             Id = "decision-tempo-lab", DecisionOwnerId = owner, PriorityPlayerId = phase == TempoPhase.Grace ? null : owner,
             ActionClass = phase == TempoPhase.Grace ? "selection" : "priority",
             Decision = owner != baseline.ViewerId ? null : phase != TempoPhase.Grace ? baseline.Decision : new() {
-                Id = "lab-required-target", Kind = "input", Intent = DecisionIntent.Selection,
-                Purpose = DecisionPurpose.TargetSelection, Message = "Choose a creature", Min = 1, Max = 1
+                Id = "lab-required-target", Task = DecisionTask.TargetSelection, Message = "Choose a creature", Min = 1, Max = 1
             },
             Tempo = new(settings, [new(owner, "lab-clock-" + owner + "-" + phase, phase, remaining, 60_000, 0)])
         };

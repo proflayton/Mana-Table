@@ -26,7 +26,7 @@ internal sealed class DecisionDraft
         if (state?.Decision is { } decision) {
             if (!direct && decision.Ordered && decision.Min == decision.Choices.Length)
                 selections.AddRange(decision.Choices.Select(choice => choice.Index));
-            ReplaceAllocations(decision.Kind == "allocate"
+            ReplaceAllocations(decision.Task == DecisionTask.Allocation
                 ? decision.Choices.Select((_, index) => AllocationGuide.Minimum(decision, index)).ToArray()
                 : decision.Choices.Select(_ => decision.AtLeastOne ? 1 : 0).ToArray());
         }
@@ -49,25 +49,25 @@ internal sealed class DecisionDraft
 
     internal void ResetAllocation(GameSnapshot state)
     {
-        if (!Matches(state) || state.Decision is not { Kind: "allocate" } decision) return;
+        if (!Matches(state) || state.Decision is not { Task: DecisionTask.Allocation } decision) return;
         ReplaceAllocations(decision.Choices.Select((_, index) => AllocationGuide.Minimum(decision, index)).ToArray());
     }
     internal bool SetAllocation(GameSnapshot state, int index, int amount)
     {
-        if (!Matches(state) || state.Decision is not { Kind: "allocate" } decision || index < 0 || index >= allocations.Length
+        if (!Matches(state) || state.Decision is not { Task: DecisionTask.Allocation } decision || index < 0 || index >= allocations.Length
             || amount < AllocationGuide.Minimum(decision, index) || amount > AllocationGuide.Maximum(decision, index)) return false;
         allocations[index] = amount; return true;
     }
     internal void AdjustAllocation(GameSnapshot state, int index, int delta)
     {
-        if (!Matches(state) || state.Decision is not { Kind: "allocate" } decision || index < 0 || index >= allocations.Length) return;
+        if (!Matches(state) || state.Decision is not { Task: DecisionTask.Allocation } decision || index < 0 || index >= allocations.Length) return;
         if (delta > 0 && AllocationGuide.Total(allocations) >= decision.Amount) return;
         long amount = (long)allocations[index] + delta;
         if (amount is >= int.MinValue and <= int.MaxValue) SetAllocation(state, index, (int)amount);
     }
     internal void AssignRemaining(GameSnapshot state, int index)
     {
-        if (!Matches(state) || state.Decision is not { Kind: "allocate" } decision || index < 0 || index >= allocations.Length) return;
+        if (!Matches(state) || state.Decision is not { Task: DecisionTask.Allocation } decision || index < 0 || index >= allocations.Length) return;
         long amount = Math.Min(AllocationGuide.Maximum(decision, index), Math.Max(allocations[index],
             (long)allocations[index] + Math.Max(0, decision.Amount - AllocationGuide.Total(allocations))));
         SetAllocation(state, index, (int)amount);
@@ -78,8 +78,8 @@ internal sealed class DecisionDraft
     private void ReplaceAllocations(int[] values) { allocations = values; allocationView = Array.AsReadOnly(values); }
     private static bool SameAllocation(Decision? before, Decision? after)
     {
-        if (before?.Kind != "allocate" && after?.Kind != "allocate") return true;
-        if (before == null || after == null || before.Kind != after.Kind || before.Amount != after.Amount
+        if (before?.Task != DecisionTask.Allocation && after?.Task != DecisionTask.Allocation) return true;
+        if (before == null || after == null || before.Task != after.Task || before.Amount != after.Amount
             || before.AllocationKind != after.AllocationKind || before.AtLeastOne != after.AtLeastOne || before.MaySkip != after.MaySkip
             || before.Choices.Length != after.Choices.Length || !before.Limits.SequenceEqual(after.Limits)) return false;
         for (int index = 0; index < before.Choices.Length; index++) {

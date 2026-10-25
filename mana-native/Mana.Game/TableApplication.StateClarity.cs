@@ -25,9 +25,14 @@ internal sealed partial class TableApplication
     // engine-projected player handle; no recipient is selected automatically.
     private bool DrawDecisionClarity(GameSnapshot state)
     {
+        if (state.Decision is { Task: DecisionTask.TargetSelection, LibrarySearch: not null } libraryDecision
+            && !session.NeedsRecovery && !OverlayOpen && StateClarity.Recipients(state) is { Length: > 0 } libraries) {
+            DrawLibrarySearchRecipients(state, libraryDecision, libraries);
+            return true;
+        }
         if (SelectingActionTarget) return false;
         var recipients = StateClarity.Recipients(state);
-        if (session.NeedsRecovery || state.Status != "playing" || OverlayOpen || recipients.Length == 0 || state.Decision is not { Intent: DecisionIntent.Selection } decision)
+        if (session.NeedsRecovery || state.Status != "playing" || OverlayOpen || recipients.Length == 0 || state.Decision is not { Task: DecisionTask.TargetSelection or DecisionTask.EntitySelection } decision)
             return false;
         const int x = 545, width = 206, bottom = 548;
         const float consequenceSize = .56f;

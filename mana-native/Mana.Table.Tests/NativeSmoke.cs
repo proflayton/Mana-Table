@@ -48,14 +48,14 @@ internal static class NativeSmoke
                     fixture = state;
                     if (d == null || previous.GetValueOrDefault(i) == d.Id) continue;
                     DecisionCommand? reply = null;
-                    if (d.Kind == "choice") reply = DecisionCommands.Choose(state, d.Choices.Take(Math.Max(d.Min, Math.Min(1, d.Max))).Select(c => c.Index));
-                    else if (d.Kind == "reveal") reply = new AcknowledgeReveal(state.Id, d.Id);
-                    else if (d.Kind == "input") {
+                    if (d.Task is DecisionTask.Options or DecisionTask.AbilityChoice or DecisionTask.Ordering) reply = DecisionCommands.Choose(state, d.Choices.Take(Math.Max(d.Min, Math.Min(1, d.Max))).Select(c => c.Index));
+                    else if (d.Task is DecisionTask.Reveal) reply = new AcknowledgeReveal(state.Id, d.Id);
+                    else if (d.Task is DecisionTask.Priority or DecisionTask.OpeningHand or DecisionTask.Payment or DecisionTask.Attack or DecisionTask.Block or DecisionTask.TargetSelection or DecisionTask.EntitySelection or DecisionTask.Confirmation) {
                         var commander = state.Viewer.Zone("Command").Cards.FirstOrDefault(c => c.Selectable);
-                        if (d.Intent == DecisionIntent.Priority && commander != null) reply = new PlayCard(state.Id, d.Id, Card: commander.Key);
+                        if (d.Task == DecisionTask.Priority && commander != null) reply = new PlayCard(state.Id, d.Id, Card: commander.Key);
                         else if (d.OkEnabled) reply = DecisionCommands.Confirm(state);
                         else if (d.PlayerChoices.Length > 0) reply = new SelectPlayer(state.Id, d.Id, Player: d.PlayerChoices[0]);
-                        else if (d.Intent == DecisionIntent.Selection && state.Viewer.Zone("Hand").Cards.FirstOrDefault(c => c.Selectable && !c.Highlighted) is { } card) reply = new SelectCard(state.Id, d.Id, Card: card.Key);
+                        else if (d.Task is DecisionTask.TargetSelection or DecisionTask.EntitySelection && state.Viewer.Zone("Hand").Cards.FirstOrDefault(c => c.Selectable && !c.Highlighted) is { } card) reply = new SelectCard(state.Id, d.Id, Card: card.Key);
                     }
                     if (reply != null) {
                         try { await engines[i].ExecuteAsync(reply); previous[i] = d.Id; if (staleReply == null) { staleReply = reply; staleSeat = i; } }

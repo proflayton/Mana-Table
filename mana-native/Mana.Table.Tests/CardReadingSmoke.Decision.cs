@@ -13,7 +13,7 @@ internal sealed partial class CardReadingSmoke
         string firstHelpPage = "";
         int replies = 0;
         void PublishPurpose(string message) => Publish(scenario.State with {
-            Decision = new() { Kind = "input", Intent = DecisionIntent.Selection, Message = message, OkEnabled = true }
+            Decision = new() { Task = DecisionTask.EntitySelection, Message = message, OkEnabled = true }
         });
         bool SafeText() => view.TextScale == 1.3f && view.DecisionTextBounds is { Width: > 0, Height: > 0 } text
             && view.DecisionPanelBounds.Contains(text) && text.Bottom < 799

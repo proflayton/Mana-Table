@@ -258,8 +258,7 @@ internal static class QuietPriorityPresentationChecks
             var staleCancel = frame.Hits.Single(hit => hit.Id == "quiet-priority-stop");
             var source = engine.State.Viewer!.Zone("Hand").Cards.Single();
             engine.Present(engine.State with { PriorityPlayerId = null, DecisionOwnerId = initial.ViewerId, ActionClass = "selection",
-                Decision = new() { Kind = "input", Intent = DecisionIntent.Selection, Purpose = DecisionPurpose.TargetSelection,
-                    SourceCardId = source.VisualId, SourceCard = source, SourceControllerId = initial.ViewerId,
+                Decision = new() { Task = DecisionTask.TargetSelection, SourceCardId = source.VisualId, SourceCard = source, SourceControllerId = initial.ViewerId,
                     Min = 1, Max = 1, Ok = "Confirm target", OkEnabled = false,
                     Message = "Choose one legal creature for the required effect.", QuietYieldToken = "continuation-token" } });
             string targetPrompt = engine.State.Decision!.Id;

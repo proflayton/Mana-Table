@@ -17,7 +17,7 @@ internal sealed partial class TableApplication
     private SourceAction[] OfferedPlayOptions(Card card) => ReaderActionsMatch(card)
         ? sourceActions.View.Actions.Where(action => action.Kind is "cast" or "play").ToArray() : [];
 
-    private bool CanStartSourceDrag(Hit source) => match?.Decision?.Intent is DecisionIntent.Attack or DecisionIntent.Block
+    private bool CanStartSourceDrag(Hit source) => match?.Decision?.Task is DecisionTask.Attack or DecisionTask.Block
         || source.Zone is not ("Battlefield" or "Stack")
             && (source.Zone is "Hand" or "Command" || source.Card is { } card && OfferedPlayOptions(card).Length > 0);
 
@@ -27,7 +27,7 @@ internal sealed partial class TableApplication
 
     private DecisionCommand? PlayDragCommand(Card card, string? zone)
     {
-        if (match is not { Decision.Intent: DecisionIntent.Priority } state || zone is null or "Battlefield" or "Stack") return null;
+        if (match is not { Decision.Task: DecisionTask.Priority } state || zone is null or "Battlefield" or "Stack") return null;
         var options = OfferedPlayOptions(card);
         if (options.Length == 1 && ReaderActionContext(card) is { } context)
             return sourceActions.TryCreateCommand(context, options[0].Id);
@@ -70,7 +70,7 @@ internal sealed partial class TableApplication
 
     private void DrawHandPlayArea()
     {
-        if (!dragging || busy || session.NeedsRecovery || OverlayOpen || match is not { Decision.Intent: DecisionIntent.Priority } state
+        if (!dragging || busy || session.NeedsRecovery || OverlayOpen || match is not { Decision.Task: DecisionTask.Priority } state
             || dragSource is not { Card: { } source } || dragSource.Zone is "Battlefield" or "Stack" || dragSource.Scope != Scope) return;
         var card = CurrentDragCard(dragSource);
         if (card == null || PlayDragCommand(card, dragSource.Zone) == null && OfferedPlayOptions(card).Length < 2

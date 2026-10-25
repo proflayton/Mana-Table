@@ -8,7 +8,7 @@ namespace Mana.Table;
 internal sealed partial class TableApplication
 {
     private bool SelectingActionTarget => match?.Decision is {
-        Intent: DecisionIntent.Selection, Purpose: DecisionPurpose.TargetSelection
+        Task: DecisionTask.TargetSelection
     };
 
     private void DrawSourceTargeting()
@@ -21,6 +21,7 @@ internal sealed partial class TableApplication
                 DrawPendingCounterReceipt(pending);
             return;
         }
+        if (decision.LibrarySearch != null) return;
         var source = CardViews.Source(state, decision);
         bool valued = decision.Effect is { Kind: "damage" };
         var origin = source == null ? null : matchPresentation.Cards.Cards.LastOrDefault(card => card.Zone != "Stack" && card.ChoiceSlot < 0 && SameVisibleCard(card.Card, source));

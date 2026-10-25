@@ -104,7 +104,7 @@ internal sealed partial class TableApplication
     private void ReadPendingReference(PendingCardReference reference, bool stackSpell)
     {
         if (ResolvePendingReference(reference) is not { } card) return;
-        if (match?.Decision?.Intent == DecisionIntent.Selection && IsCardActionable(card) && (stackSpell || AllCards().Any(current => SameVisibleCard(current, card)))) {
+        if (match?.Decision?.Task is DecisionTask.TargetSelection or DecisionTask.EntitySelection && IsCardActionable(card) && (stackSpell || AllCards().Any(current => SameVisibleCard(current, card)))) {
             CardClick(card); return;
         }
         if (PendingConnectionCard(CardViews.Identity(card)) is { } entry && ToggleCardReader(entry.Hit)) return;

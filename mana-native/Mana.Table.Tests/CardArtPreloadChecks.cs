@@ -170,8 +170,7 @@ internal static class CardArtPreloadChecks
         var sample = PresentationSmoke.Example();
         Card publicFace = Face("Public commander before dealing"), privateFace = Face("Newly dealt private opening card");
         var beforeDeal = sample with { Turn = 0, Decision = new() {
-            Id = "pre-deal-starting-player", Kind = "choice", Intent = DecisionIntent.Selection,
-            Message = "Choose who starts.", Min = 1, Max = 1, Choices = [new(0, "You", null), new(1, "Opponent 1", null)]
+            Id = "pre-deal-starting-player", Task = DecisionTask.Options, Message = "Choose who starts.", Min = 1, Max = 1, Choices = [new(0, "You", null), new(1, "Opponent 1", null)]
         }, Players = sample.Players.Select(player => player.Id != sample.ViewerId ? player : player with {
             Zones = player.Zones.Select(zone => zone.Name == "Hand" ? zone with { Cards = [], Count = 0 } : zone).ToImmutableArray()
         }).ToImmutableArray() };
@@ -185,8 +184,7 @@ internal static class CardArtPreloadChecks
             "Cached public pre-deal artwork releases the required starting-player choice without waiting for a hand the choice must precede");
 
         var dealt = beforeDeal with { Revision = 2, Decision = new() {
-            Id = "opening-hand-keep", Kind = "input", Intent = DecisionIntent.Selection,
-            Message = "Keep this hand?", Ok = "Keep", OkEnabled = true, Cancel = "Mulligan", CancelEnabled = true
+            Id = "opening-hand-keep", Task = DecisionTask.OpeningHand, Message = "Keep this hand?", Ok = "Keep", OkEnabled = true, Cancel = "Mulligan", CancelEnabled = true
         }, Players = beforeDeal.Players.Select(player => player.Id != sample.ViewerId ? player : player with {
             Zones = player.Zones.Select(zone => zone.Name == "Hand" ? zone with { Cards = [privateFace], Count = 1 } : zone).ToImmutableArray()
         }).ToImmutableArray() };

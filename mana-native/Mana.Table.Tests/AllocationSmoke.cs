@@ -173,7 +173,7 @@ internal sealed class AllocationSmoke : ITableAutomation
             Phase = combat ? "Combat damage" : "Main phase", PhaseKey = combat ? "COMBAT_DAMAGE" : "MAIN2", Combat = null, Stack = [],
             Players = state.Players.Select(p => p with { Priority = false, Zones = p.Zones.Select(z => z.Name == "Battlefield" ? z with { Cards = [], Count = 0 } : z).ToImmutableArray() }).ToImmutableArray(),
             Decision = new() {
-                Kind = "allocate", Title = combat ? "Assign combat damage" : "Distribute +1/+1 counters", AllocationKind = combat ? "combat" : "generic",
+                Task = DecisionTask.Allocation, Title = combat ? "Assign combat damage" : "Distribute +1/+1 counters", AllocationKind = combat ? "combat" : "generic",
                 Message = combat ? "Ancient Stoneguard assigns damage using toughness. Choose the amount for each recipient." : "Choose where these counters go. Current power and toughness already include existing counters.",
                 AmountLabel = combat ? "combat damage" : "+1/+1 counters", Amount = combat ? 10 : 3,
                 SourceCard = source, SourceCardId = source.VisualId, SourceControllerId = 0, OverrideOrder = true, MaySkip = maySkip, Choices = choices.ToImmutableArray()

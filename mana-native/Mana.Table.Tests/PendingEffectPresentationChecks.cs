@@ -34,8 +34,7 @@ internal static class PendingEffectPresentationChecks
                     Count = zone.Name == "Battlefield" ? player.Id == 0 ? 2 : player.Id == 1 ? 1 : 0 : zone.Count,
                     Cards = zone.Name == "Battlefield" ? player.Id == 0 ? [source, recipient] : player.Id == 1 ? [target] : [] : []
                 }).ToImmutableArray() }).ToImmutableArray(),
-                Decision = new() { Kind = "input", Purpose = DecisionPurpose.TargetSelection, Intent = DecisionIntent.Selection,
-                    Message = "GENERIC_RULES_WITH_INTERNAL_ID_4242: deal that much damage. Choose a target.",
+                Decision = new() { Task = DecisionTask.TargetSelection, Message = "GENERIC_RULES_WITH_INTERNAL_ID_4242: deal that much damage. Choose a target.",
                     SourceCard = source, SourceControllerId = 0, Effect = effect, Min = 1, Max = 1,
                     PlayerChoices = [1, 2, 3], CancelEnabled = true, Cancel = "Cancel" } };
             var engine = new InteractionScenarioEngine(); engine.Present(state);
@@ -93,7 +92,7 @@ internal static class PendingEffectPresentationChecks
             Present(engine.State with { Stack = [new(source.Name, "GENERIC_RULES_WITH_INTERNAL_ID_4242", true, source) {
                     Id = "stacked-exact-trigger", ControllerId = 0, Effect = effect,
                     Targets = [new("card", target.VisualId, target.Name, 1)] }],
-                PriorityPlayerId = 0, ActionClass = "priority", Decision = new() { Kind = "input", Intent = DecisionIntent.Priority, OkEnabled = true } });
+                PriorityPlayerId = 0, ActionClass = "priority", Decision = new() { Task = DecisionTask.Priority, OkEnabled = true } });
             check(Number("3") && Receipts() >= 2 && !RawRules() && frame.Observe().Text.Any(text => text.Value == recipient.Name),
                 "The same exact amount and full counter-recipient context carry into the existing pending stack face without generic effect prose");
 

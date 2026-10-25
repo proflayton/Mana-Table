@@ -86,7 +86,7 @@ internal static class BoardViewChecks
         var body = Card("board-view-body"); var hand = Card("board-view-hand"); var commander = Card("board-view-command");
         var state = new GameSnapshot("board-reader", "playing", null, null, 0, 8, "Main phase", "MAIN1", 0,
             [new(0, "You", 40, true, false, ImmutableDictionary<string, int>.Empty, [new("Battlefield", 1, [body], null), new("Hand", 1, [hand], null), new("Command", 1, [commander], null)])],
-            [], null, new() { Id = "prompt", Kind = "input", Intent = DecisionIntent.Priority, OkEnabled = true });
+            [], null, new() { Id = "prompt", Task = DecisionTask.Priority, OkEnabled = true });
         var context = new CardPresentationContext(state, "board-reader:prompt", false, false, false, false);
         var owner = new CardPresentationController();
         var rest = new Pose(new(600, 430), new(120, 168), .15f, .8f, .0001f);

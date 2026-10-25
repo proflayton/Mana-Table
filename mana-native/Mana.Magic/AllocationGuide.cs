@@ -20,7 +20,7 @@ public static class AllocationGuide
 
     public static string? Problem(Decision decision, IReadOnlyList<int> amounts)
     {
-        if (decision.Kind != "allocate" || decision.Amount < 0 || amounts.Count != decision.Choices.Length)
+        if (decision.Task is not (DecisionTask.Allocation) || decision.Amount < 0 || amounts.Count != decision.Choices.Length)
             return "Assign an amount to every recipient.";
         for (int i = 0; i < amounts.Count; i++) {
             if (amounts[i] < Minimum(decision, i)) return $"Assign at least {Minimum(decision, i)} to {Reference(decision.Choices[i], i)}.";

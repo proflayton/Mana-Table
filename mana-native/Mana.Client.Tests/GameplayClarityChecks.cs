@@ -25,8 +25,7 @@ internal static class GameplayClarityChecks
             && !StateClarity.DecisionInstruction(state, true).Contains("resolved", StringComparison.OrdinalIgnoreCase),
             "Submitted intent is acknowledged without inventing a resolved outcome");
         var source = new Card { Name = "Toothy, Imaginary Friend", Type = "Creature", Text = "This printed text must not generate target permissions." };
-        var choice = state with { DecisionOwnerId = 10, Decision = new() { Id = "choose-1", Kind = "input", Intent = DecisionIntent.Selection,
-            Message = "Target player may search for Pir, then shuffle.", PlayerChoices = [10, 30], SourceCard = source, SourceControllerId = 20 } };
+        var choice = state with { DecisionOwnerId = 10, Decision = new() { Id = "choose-1", Task = DecisionTask.EntitySelection, Message = "Target player may search for Pir, then shuffle.", PlayerChoices = [10, 30], SourceCard = source, SourceControllerId = 20 } };
         check(StateClarity.Purpose(choice) == choice.Decision.Message && StateClarity.Source(choice).Contains("Seat 2"),
             "Required-choice purpose and source controller come from the engine rather than printed Oracle text");
         check(StateClarity.Recipients(choice).Select(p => p.Id).SequenceEqual([10, 30]),

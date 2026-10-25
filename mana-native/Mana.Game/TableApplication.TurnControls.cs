@@ -102,7 +102,7 @@ internal sealed partial class TableApplication
         if (QuietPriorityArmed || !following && CanOfferQuietPriority) {
             Button(QuietPriorityArmed ? "quiet-priority-stop" : "quiet-priority-arm", QuietPriorityArmed ? "Take control" : "Pass for now",
                 action.X, action.Y, action.Width - 48, new MatchIntent.SetQuietPriority(!QuietPriorityArmed), !busy || QuietPriorityArmed, true, action.Height);
-            if (!QuietPriorityArmed && !busy && d is { Intent: DecisionIntent.Priority, OkEnabled: true }) {
+            if (!QuietPriorityArmed && !busy && d is { Task: DecisionTask.Priority, OkEnabled: true }) {
                 var center = new Vector2(action.Right - 19, action.Center.Y);
                 TurnControlIcon("confirm", center, false, new MatchIntent.SubmitCommand(new PassPriority(state.Id, d.Id)));
                 if (IsControlHovered("confirm")) DrawTurnHint("Pass priority once", center);

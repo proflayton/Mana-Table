@@ -1035,13 +1035,29 @@ reading preserves the browser until an explicit use action. Eligible hand-card
 placement options, including Gaea's Touch, retain the existing `HandPlacements`
 and `UseHandPlacement` route, followed by Forge's required card selection.
 
-Target choices use the provider-neutral `DecisionPurpose.TargetSelection`. Their
+Target choices use the provider-neutral `DecisionTask.TargetSelection`. Their
 source is highlighted on the table, pointer aiming links it to legal cards or
 portraits, and the dock retains engine-permitted cancellation without calling a
 mixed card/player decision "Choose a player" or synthesizing a stack card.
 
+One closed `DecisionTask` replaces the former overlapping kind, intent and purpose
+classifiers. `Mana.Forge` validates the provider's private task once; neutral
+permissions, commands and presentation consume the same discriminator. Ordering
+and numeric meaning follow the task rather than mutable parallel flags. The
+provider encodes its `expectedTask` only at the final wire boundary. No native
+component classifies Java inputs or parses prompt text to recover game meaning.
+
+Optional `LibrarySearchContext` carries the resolved library owner, destination
+and public exact-name criterion. It authorizes neither private contents nor an
+answer. A null owner accompanies real player targeting; a confirmation names
+the chosen library's actual owner. The rules effect carries this context through
+the human-controller input instead of dropping it at a generic confirmation.
+`OpeningHandContext` likewise comes from the active mulligan policy. The UI owns
+source/library/hand placement and peer alternative controls; the engine retains
+target legality, search optionality, hidden information and redraw policy.
+
 `TableApplication.AbilityChoices` handles genuine later single-select
-`DecisionPurpose.AbilitySelection` choices beside the actual source occurrence. This task includes abilities and
+`DecisionTask.AbilityChoice` choices beside the actual source occurrence. This task includes abilities and
 casting modes. Pending engine input is separate from visual overlays: the table
 and source reader stay available while unrelated gameplay commands are blocked.
 An explicit action click submits its original index; optional Cancel submits an

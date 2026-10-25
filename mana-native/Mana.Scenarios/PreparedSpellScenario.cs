@@ -47,11 +47,10 @@ public static class PreparedSpellScenario
                 ]);
         }).ToImmutableArray();
         var decision = stage == 3 ? null : targeting ? new Decision {
-            Kind = "input", Intent = DecisionIntent.Selection, Purpose = DecisionPurpose.TargetSelection,
-            Title = "Choose a player", Message = "Target player draws three cards.", Min = 1, Max = 1,
+            Task = DecisionTask.TargetSelection, Title = "Choose a player", Message = "Target player draws three cards.", Min = 1, Max = 1,
             CancelEnabled = true, PlayerChoices = [0, 1, 2, 3], SourceCard = spell,
             SourceCardId = spell.VisualId, SourceControllerId = 0, SourceZone = "Exile"
-        } : new Decision { Kind = "input", Intent = DecisionIntent.Priority, OkEnabled = pending,
+        } : new Decision { Task = DecisionTask.Priority, OkEnabled = pending,
             Message = pending ? "Ancestral Recall is waiting on the stack." : "You have priority." };
         return new(Id, "playing", null, null, 0, stage == 5 || preparedAgain ? 12 : 8, "Main phase", "MAIN1", 0, players,
             pending ? [new StackItem(spell.Name, "Target player draws three cards.", false, spell) {

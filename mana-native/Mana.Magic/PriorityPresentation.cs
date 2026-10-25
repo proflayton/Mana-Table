@@ -24,7 +24,7 @@ public static class PriorityPresentation
     public static PriorityView From(GameSnapshot state)
     {
         var decision = state.Decision;
-        bool localPriority = decision is { Kind: "input", Intent: DecisionIntent.Priority };
+        bool localPriority = decision is { Task: DecisionTask.Priority };
         int? reportedResponder = state.PriorityPlayerId
             ?? (state.ActionClass == "priority" ? state.DecisionOwnerId : null);
         if (reportedResponder == null && state.ActionClass.Length == 0) {
@@ -34,7 +34,7 @@ public static class PriorityPresentation
         var phase = state.Status is "finished" or "error" || state.ActionClass is "finished" or "error" ? PriorityPhase.Finished
             : state.Status == "starting" || state.ActionClass == "starting" ? PriorityPhase.Starting
             : state.ActionClass == "resolving" ? PriorityPhase.Resolving
-            : state.ActionClass == "mana" || decision?.Intent == DecisionIntent.Mana ? PriorityPhase.Payment
+            : state.ActionClass == "mana" || decision?.Task == DecisionTask.Payment ? PriorityPhase.Payment
             : state.ActionClass.Length > 0 && state.ActionClass != "priority" ? PriorityPhase.Decision
             : decision != null && !localPriority ? PriorityPhase.Decision
             : state.ActionClass == "priority" || localPriority || state.ActionClass.Length == 0 && reportedResponder != null ? PriorityPhase.Response

@@ -85,9 +85,9 @@ internal sealed class LobbySmoke(TableWindow.Probe view, ForgePaths paths) : ITa
                 var state = await seat.ObserveAsync();
                 if (state?.PhaseKey == "MAIN1") return;
                 if (state?.Decision is not { } decision) continue;
-                DecisionCommand? reply = decision.Kind switch {
-                    "choice" => DecisionCommands.Choose(state, decision.Choices.Take(Math.Max(decision.Min, Math.Min(1, decision.Max))).Select(c => c.Index)),
-                    "reveal" => new AcknowledgeReveal(state.Id, decision.Id),
+                DecisionCommand? reply = decision.Task switch {
+                    DecisionTask.Options or DecisionTask.AbilityChoice or DecisionTask.Ordering => DecisionCommands.Choose(state, decision.Choices.Take(Math.Max(decision.Min, Math.Min(1, decision.Max))).Select(c => c.Index)),
+                    DecisionTask.Reveal => new AcknowledgeReveal(state.Id, decision.Id),
                     _ when decision.PlayerChoices.Length > 0 => new SelectPlayer(state.Id, decision.Id, Player: decision.PlayerChoices[0]),
                     _ when decision.OkEnabled => DecisionCommands.Confirm(state),
                     _ => null

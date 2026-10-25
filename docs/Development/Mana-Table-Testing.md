@@ -233,6 +233,17 @@ window journey captures routine Auto, a real response and required blockers.
 `decision-flow.v1` supplies the corresponding window-review
 sequence; authored replies and passing checks do not supply rules or UX proof.
 
+`optional-decisions.v1` covers real-player library targeting, a sole legal target,
+search/decline at another deciding seat, free/paid opening hands, a general
+confirmation and the same library choice over 480 permanents. Load stage 7
+directly for a settled crowded observation. The existing headless presentation
+lane exercises pile gestures, named choices for seats outside the rendered
+viewport, stale press/release scopes, peer alternatives, noncommitting source and
+hand reading, and actual remaining stack items. `PartnerChoiceExperienceTest`
+checks the live target → optional search → private-library journey, absence of
+a matching partner, accepted shuffle versus refusal, and Solemn Simulacrum's
+optional search without a player picker. These tests do not approve the UX.
+
 The pending-effect journey in `--smoke-headless-presentation` distinguishes a
 captured `+3` counter addition/three damage from a current total of twenty, keeps
 unknown damage unknown, preserves the context on the stack, and checks read-only

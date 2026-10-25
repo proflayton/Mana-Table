@@ -18,14 +18,14 @@ public static class StateClarity
 
     public static string DecisionStatus(GameSnapshot state, bool busy) => busy ? "ACTION SUBMITTED"
         : state.Decision == null ? state.DecisionOwnerId is { } ? "ANOTHER PLAYER IS ACTING" : "RESOLVING"
-        : state.Decision.Intent == DecisionIntent.Priority ? "YOUR PRIORITY"
-        : state.Decision.Intent == DecisionIntent.Block ? "CHOOSE YOUR BLOCKERS" : "YOUR DECISION";
+        : state.Decision.Task == DecisionTask.Priority ? "YOUR PRIORITY"
+        : state.Decision.Task == DecisionTask.Block ? "CHOOSE YOUR BLOCKERS" : "YOUR DECISION";
 
     public static string DecisionInstruction(GameSnapshot state, bool busy, string? pendingActionLabel = null)
     {
         if (busy) return string.IsNullOrWhiteSpace(pendingActionLabel) ? "Action submitted. Waiting for the game." : pendingActionLabel + " Waiting for the game.";
         if (state.Decision == null) return WaitingTitle(state);
-        if (state.Decision.Intent == DecisionIntent.Selection || state.Decision.Kind is "choice" or "reveal")
+        if (state.Decision.Task is DecisionTask.TargetSelection or DecisionTask.EntitySelection or DecisionTask.Options or DecisionTask.AbilityChoice or DecisionTask.Ordering or DecisionTask.Reveal)
             return Purpose(state);
         return TurnGuide.Instruction(state);
     }

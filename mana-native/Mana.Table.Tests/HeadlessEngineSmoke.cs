@@ -146,12 +146,12 @@ internal static class HeadlessEngineSmoke
                 if (++decisions > 80) throw new InvalidOperationException("The focused opening scenario required unexpectedly many decisions.");
                 var decision = view.Match.Decision;
                 if (mulligans == 1 && state.Turn == 0) {
-                    Check(decision is { Purpose: DecisionPurpose.OpeningHand }
+                    Check(decision is { Task: DecisionTask.OpeningHand }
                             && view.Match.Viewer!.Zone("Hand").Count == 7,
                         "The first real multiplayer mulligan redraws seven and returns to Keep without a bottom-card prompt");
                     freeMulliganObserved = true;
                 }
-                if (decision is { Kind: "input", Intent: DecisionIntent.Mana } && !paidWithForest) {
+                if (decision is { Task: DecisionTask.Payment } && !paidWithForest) {
                     Check(decision.SourceCard?.Name == "Rhys the Redeemed" && decision.Message.Length > 0,
                         "Dragging the real paid commander opens its authoritative mana-payment input with the current source and cost instruction");
                     commanderPayment = true; Save("commander-payment");
@@ -169,7 +169,7 @@ internal static class HeadlessEngineSmoke
                     paidWithForest = true;
                     continue;
                 }
-                if (!openingHandRead && decision is { Kind: "input", Purpose: DecisionPurpose.OpeningHand }) {
+                if (!openingHandRead && decision is { Task: DecisionTask.OpeningHand }) {
                     var openingCard = view.Match.Viewer!.Zone("Hand").Cards.First();
                     string game = view.Match.Id, prompt = decision.Id;
                     Click("card:" + openingCard.Key + ":" + openingCard.VisualId);
@@ -185,13 +185,13 @@ internal static class HeadlessEngineSmoke
                         "A second opening-card click collapses reading without keeping or redrawing the real hand");
                     openingHandRead = true;
                 }
-                if (decision is { Kind: "input", Purpose: DecisionPurpose.OpeningHand } && mulligans < 2) {
+                if (decision is { Task: DecisionTask.OpeningHand } && mulligans < 2) {
                     Click("cancel"); mulligans++;
                     await Idle();
                     continue;
                 }
                 if (!bottomHandRead && mulligans == 2 && state.Turn == 0
-                        && decision is { Kind: "input", Intent: DecisionIntent.Selection, OkEnabled: false }) {
+                        && decision is { Task: DecisionTask.EntitySelection, OkEnabled: false }) {
                     Check(decision.Min == 1 && decision.Max == 1,
                         "The second multiplayer mulligan projects exactly one required bottom card through the native provider");
                     var bottomCard = view.Match.Viewer!.Zone("Hand").Cards.First(card => card.Selectable);
@@ -206,7 +206,7 @@ internal static class HeadlessEngineSmoke
                     Save("bottom-hand-reader");
                     Click("read-card-action"); await Idle();
                     Save("bottom-hand-selection-observed");
-                    Check(view.Match!.Decision is { Intent: DecisionIntent.Selection, OkEnabled: true }
+                    Check(view.Match!.Decision is { Task: DecisionTask.EntitySelection, OkEnabled: true }
                             && view.Match.Viewer!.Zone("Hand").Count == count
                             && view.Match.Viewer.Zone("Hand").Cards.Any(card => card.VisualId == bottomCard.VisualId && card.Highlighted),
                         "The explicit reader choice selects the real London bottom card without removing it before final confirmation");
@@ -222,7 +222,7 @@ internal static class HeadlessEngineSmoke
                     bottomHandRead = true;
                     continue;
                 }
-                if (decision is { Kind: "input", Intent: DecisionIntent.Priority }
+                if (decision is { Task: DecisionTask.Priority }
                     && view.Match.ActivePlayerId == view.Match.ViewerId && view.Match.PhaseKey is "MAIN1" or "MAIN2") {
                     Card? playable = !landSaved ? view.Match.Viewer!.Zone("Hand").Cards.FirstOrDefault(card => card.Selectable && card.Type.Contains("Land", StringComparison.Ordinal))
                         : !commanderSaved ? view.Match.Viewer!.Zone("Command").Cards.FirstOrDefault(card => card.Selectable) : null;
@@ -230,17 +230,17 @@ internal static class HeadlessEngineSmoke
                         await PlayCard(playable, landSaved ? "Command" : "Hand"); continue;
                     }
                 }
-                if (decision.Kind is "choice" or "reveal") {
-                    int required = decision.Kind == "reveal" ? 0 : Math.Max(decision.Min, Math.Min(1, decision.Max));
+                if (decision.Task is DecisionTask.Options or DecisionTask.AbilityChoice or DecisionTask.Ordering or DecisionTask.Reveal) {
+                    int required = decision.Task is DecisionTask.Reveal ? 0 : Math.Max(decision.Min, Math.Min(1, decision.Max));
                     foreach (var choice in decision.Choices.Take(required)) Click("choice:" + choice.Index);
                     if (frame.Hits.Any(hit => hit.Id == "choicesdone")) Click("choicesdone");
                     else if (frame.Hits.Any(hit => hit.Id == "confirm")) Click("confirm");
-                    else throw new InvalidOperationException("No real confirmation control for " + decision.Kind);
+                    else throw new InvalidOperationException("No real confirmation control for " + decision.Task);
                     actions.Add(new { mode = "application-pointer", decision = decision.Id, action = "confirm projected choice", required });
-                } else if (decision.Kind is "number" or "text" && frame.Hits.Any(hit => hit.Id == "value")) {
+                } else if (decision.Task is DecisionTask.Number or DecisionTask.Text && frame.Hits.Any(hit => hit.Id == "value")) {
                     Click("value");
                     actions.Add(new { mode = "application-pointer", decision = decision.Id, action = "confirm initial projected value" });
-                } else if (decision.Kind == "input" && decision.OkEnabled && frame.Hits.Any(hit => hit.Id == "confirm")) {
+                } else if (decision.Task is DecisionTask.Priority or DecisionTask.OpeningHand or DecisionTask.Payment or DecisionTask.Attack or DecisionTask.Block or DecisionTask.TargetSelection or DecisionTask.EntitySelection or DecisionTask.Confirmation && decision.OkEnabled && frame.Hits.Any(hit => hit.Id == "confirm")) {
                     Click("confirm");
                     actions.Add(new { mode = "application-pointer", decision = decision.Id, action = "confirm current opening/priority decision" });
                 } else if (decision.PlayerChoices.Length > 0) {
@@ -388,7 +388,7 @@ internal static class HeadlessEngineSmoke
                         offeredActions = sourceActions.Actions });
                 }
                 await Idle();
-                Check(view.Match?.Decision?.Purpose != DecisionPurpose.AbilitySelection,
+                Check(view.Match?.Decision?.Task != DecisionTask.AbilityChoice,
                     "The real card gesture proceeds directly without a second generic ability choice: " + card.Name);
             }
         } catch (Exception exception) {

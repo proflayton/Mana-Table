@@ -17,6 +17,7 @@ public static partial class ExperienceScenarios
         new(AttachmentScenario.Id, "Auras and Equipment · attached stacks", "Multiple attachments, cross-controller Auras, re-equip, detach, tapping and a crowded field.", AttachmentScenario.Create),
         new(TappedResourcesScenario.Id, "Tapped resources", "Three tapped lands, one untapped, all untapped and mixed matching lands around the table.", TappedResourcesScenario.Create),
         new(DecisionTempoScenario.Id, "Decision tempo", "A quiet clock, approaching expiry, off-turn responses, required-choice grace and resolving.", DecisionTempoScenario.Create),
+        new(OptionalDecisionScenario.Id, "Optional decisions", "Partner targeting and library search, equally discoverable alternatives and opening-hand consequences.", OptionalDecisionScenario.Create),
         new("ability-choice.v1", "Llanowar Elves · make green mana", "Start before an activation, choose its ability, and see the tapped source and green mana.", AbilityFlow),
         new("ability-targeting.v1", "Walking Ballista · costs and targets", "Two on-card abilities, cancellable targeting, a pending stack ability and its authored result.", BallistaFlow),
         new(PreparedSpellScenario.Id, "Prepared spell · Emeritus of Ideation", "A prepared source, its linked spell in exile, targeting, priority and the unprepared result.", PreparedSpellScenario.Create),
@@ -61,7 +62,7 @@ public static partial class ExperienceScenarios
             new("Command", 0, [], null), new("Library", 80, [], null), new("Graveyard", 0, [], null), new("Exile", 0, [], null)
         ])).ToArray();
         return new(id, "playing", null, null, 0, 4, "Main phase", "MAIN1", 0, players.ToImmutableArray(), [], null,
-            new() { Kind = "input", Intent = DecisionIntent.Priority, OkEnabled = false, Message = "Scripted snapshot. Inspect cards, or use the stage controls." });
+            new() { Task = DecisionTask.Priority, OkEnabled = false, Message = "Scripted snapshot. Inspect cards, or use the stage controls." });
     }
 
     private static Card ManaElf() => Body("reader-elf", "Llanowar Elves", power: 1, toughness: 1)
@@ -146,7 +147,7 @@ public static partial class ExperienceScenarios
                 Cards = zone.Cards.Select(card => card.VisualId != elf.VisualId ? card : card with { Power = 6, Toughness = 6 }).ToImmutableArray()
             }).ToImmutableArray()
         }).ToImmutableArray(), Decision = new() {
-            Kind = "choice", Purpose = DecisionPurpose.AbilitySelection, Title = "Activate Llanowar Elves", Min = 0, Max = 1,
+            Task = DecisionTask.AbilityChoice, Title = "Activate Llanowar Elves", Min = 0, Max = 1,
             // Deliberately older, disclosed prompt face. The exact public source
             // occurrence must supply its current characteristics for display.
             SourceCard = elf, SourceCardId = elf.VisualId, SourceControllerId = 0, SourceZone = "Battlefield",
@@ -161,7 +162,7 @@ public static partial class ExperienceScenarios
                         Cards = zone.Cards.Select(card => card with { Selectable = true }).ToImmutableArray()
                     }).ToImmutableArray()
                 }).ToImmutableArray(), Decision = new() {
-                Kind = "input", Intent = DecisionIntent.Selection, Min = 1, Max = 2, OkEnabled = true,
+                Task = DecisionTask.EntitySelection, Min = 1, Max = 2, OkEnabled = true,
                 Message = "Scripted hand selection: choose one or two cards, then confirm. No real cards are discarded."
             } }),
             new ExperienceStage("Counters on current permanents", "The printed 1/1 Elf is currently 3/3 with two +1/+1 counters. A land and artifact carry different counter types. Read or inspect each public occurrence; these are authored snapshots, not simulated effects.", counted),
@@ -173,8 +174,8 @@ public static partial class ExperienceScenarios
         var cards = new[] { Body("order-a", "Grizzly Bears"), Body("order-b", "Grizzly Bears"), Body("order-c", "Serra Angel", power: 4, toughness: 4) };
         var state = Table("ordered", cards);
         return new[] { new ExperienceStage("Choose the complete order", "Select every occurrence. Numbers record its position; confirm records only this scripted draft.", state with {
-            Decision = new() { Kind = "choice", Title = "Order these cards", Message = "Scripted order preview. Select all three cards in your chosen order.",
-                Ordered = true, Min = 3, Max = 3, Choices = cards.Select((card, index) => new Choice(index, card.Name,
+            Decision = new() { Task = DecisionTask.Ordering, Title = "Order these cards", Message = "Scripted order preview. Select all three cards in your chosen order.",
+                Min = 3, Max = 3, Choices = cards.Select((card, index) => new Choice(index, card.Name,
                     card with { Key = "", VisualId = "", CombatId = "" }) { CardId = card.VisualId, Id = "order-choice-" + index }).ToImmutableArray() }
         }) };
     }
@@ -184,7 +185,7 @@ public static partial class ExperienceScenarios
         var state = Table("mana", [elf, Body("mana-forest", "Forest", "Basic Land", null, null)]);
         GameSnapshot Pool(ImmutableDictionary<string, int> pool) => state with { Players = state.Players.Select(player => player.Id != 0 ? player : player with { Mana = pool }).ToImmutableArray() };
         var paying = Pool(ImmutableDictionary<string, int>.Empty.Add("C", 2).Add("G", 1).Add("U", 2)) with { Decision = new() {
-            Kind = "input", Intent = DecisionIntent.Mana, OkEnabled = true, CancelEnabled = true,
+            Task = DecisionTask.Payment, OkEnabled = true, CancelEnabled = true,
             Message = "Pay {2}{G}.", SourceCard = Body("paying-cultivate", "Cultivate", "Sorcery", null, null) with { ManaCost = "{2}{G}" },
             SourceCardId = "paying-cultivate", SourceControllerId = 0, SourceZone = "Hand"
         } };
@@ -206,7 +207,7 @@ public static partial class ExperienceScenarios
             CardId = card.CombatId, ControllerId = 1, OwnerId = 1, Minimum = 0, Maximum = 10, Lethal = lethal };
         return new[] { new ExperienceStage("Assign damage", "Inspect all current stats, stage required blocker amounts, then assign the rest to the defender.", state with {
             Phase = "Combat damage", PhaseKey = "COMBAT_DAMAGE", Decision = new() {
-                Kind = "allocate", Title = "Assign combat damage", AllocationKind = "combat", AmountLabel = "combat damage", Amount = 10,
+                Task = DecisionTask.Allocation, Title = "Assign combat damage", AllocationKind = "combat", AmountLabel = "combat damage", Amount = 10,
                 SourceCard = source, SourceCardId = source.VisualId, SourceControllerId = 0, OverrideOrder = true,
                 Message = "Scripted allocation preview: 10 damage, with engine-shaped blocker thresholds. This does not simulate combat rules.",
                 Choices = [Recipient(0, marked, 2), Recipient(1, second, 1), Recipient(2, anonymous, 2),
@@ -251,7 +252,7 @@ public static partial class ExperienceScenarios
         var intervention = Body("stack-intervention-card", "Heroic Intervention", "Instant", null, null);
         var state = Table("stack-priority", [sage], opposing: [ring, bear]) with {
             PriorityPlayerId = 0, DecisionOwnerId = 0, ActionClass = "priority",
-            Decision = new() { Kind = "input", Intent = DecisionIntent.Priority, OkEnabled = true, CanAutoPass = false,
+            Decision = new() { Task = DecisionTask.Priority, OkEnabled = true, CanAutoPass = false,
                 Message = "Scripted trigger window: you have priority. Next previews the opponent's response." }
         };
         var trigger = new StackItem("Reclamation Sage", "Destroy target artifact or enchantment.", true, sage) {
@@ -302,7 +303,7 @@ public static partial class ExperienceScenarios
         };
         var state = Table("trigger-search", [source]) with {
             ActivePlayerId = 2, PriorityPlayerId = 0, DecisionOwnerId = 0, ActionClass = "priority", Decision = new() {
-                Kind = "input", Intent = DecisionIntent.Priority, OkEnabled = true,
+                Task = DecisionTask.Priority, OkEnabled = true,
                 Message = "Scripted public trigger: passing priority is separate from completing a required search choice. Use Next to inspect each handoff."
             }
         };
@@ -312,13 +313,13 @@ public static partial class ExperienceScenarios
         var pending = state with { Stack = [trigger] };
         var other = pending with { PriorityPlayerId = 1, DecisionOwnerId = 1, Decision = null };
         var recipient = state with { PriorityPlayerId = null, DecisionOwnerId = 0, ActionClass = "selection", Decision = new() {
-            Kind = "input", Intent = DecisionIntent.Selection, PlayerChoices = [0, 1, 2, 3], SourceCard = source,
+            Task = DecisionTask.EntitySelection, PlayerChoices = [0, 1, 2, 3], SourceCard = source,
             SourceCardId = source.VisualId, SourceZone = "Battlefield", SourceControllerId = 0,
             Message = "Choose a player. That player searches their library for a card."
         } };
         Card[] library = [Body("", "Forest", "Basic Land", null, null), Body("", "Island", "Basic Land", null, null), Body("", "Plains", "Basic Land", null, null)];
         var search = state with { PriorityPlayerId = null, DecisionOwnerId = 0, ActionClass = "choice", Decision = new() {
-            Kind = "choice", Title = "Search your library", Min = 1, Max = 1,
+            Task = DecisionTask.Options, Title = "Search your library", Min = 1, Max = 1,
             SourceCard = source, SourceCardId = source.VisualId, SourceZone = "Battlefield", SourceControllerId = 0,
             Message = "Choose a card to put into your hand.",
             Choices = library.Select((card, index) => new Choice(index, card.Name, card)).ToImmutableArray(),
