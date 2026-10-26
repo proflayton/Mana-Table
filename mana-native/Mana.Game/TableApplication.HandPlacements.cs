@@ -68,6 +68,7 @@ internal sealed partial class TableApplication
         ? player.Zone(zone).Cards.Count(c => AvailableZone(c) == zone) : 0;
     private void DrawZoneActionBadge(Player player, string zone, Pose pose)
     {
+        if (tableScene?.PlayAccess.Groups.Any(group => group.PlayerId == player.Id && group.Zone == zone) == true) return;
         int count = AvailableZoneCount(player, zone);
         if (count == 0) return;
         var badge = new Rectangle((int)pose.Center.X - 43, pose.Bounds.Top - 14, 86, 23);

@@ -122,7 +122,12 @@ internal sealed partial class TableApplication
             MatchIntent.PreviewPendingCard read => new PendingCardReference(read.StackId, read.CardId, read.DecisionId),
             _ => null
         };
-        if (explicitReference != null && hit != null && CurrentHit(hit) && ResolvePendingReference(explicitReference) != null) return explicitReference;
+        if (explicitReference != null && hit != null && CurrentHit(hit) && ResolvePendingReference(explicitReference) != null) {
+            if (hit.Zone == "Stack" && hit.Intent is MatchIntent.ReadPendingReference { InspectSource: true }
+                && !matchPresentation.Cards.Cards.Any(entry => entry.Zone == "Stack" && entry.Hit.Id == hit.Id
+                    && entry.Hit.Scope == hit.Scope && entry.Display.Contains(pointer))) return null;
+            return explicitReference;
+        }
         if (hit?.Card is not { FaceDown: false } card || !CurrentHit(hit)
             || hit.Zone != "Battlefield") return null;
         if (ValuedTargetDecision && match.Decision is { } decision) {

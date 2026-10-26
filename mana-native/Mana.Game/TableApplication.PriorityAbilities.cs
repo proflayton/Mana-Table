@@ -1,4 +1,5 @@
 using Mana.Contracts;
+using Mana.Magic;
 using Microsoft.Xna.Framework;
 using Color = Microsoft.Xna.Framework.Color;
 using Rectangle = Microsoft.Xna.Framework.Rectangle;
@@ -43,7 +44,10 @@ internal sealed partial class TableApplication
 
     private void DrawPriorityAbilityControl(PriorityAbility[] abilities)
     {
-        var bounds = new Rectangle(1266, 852, 296, 23);
+        if (decisionDock?.Surface == DecisionDockSurface.Portrait && decisionPanelBounds.IsEmpty) return;
+        var bounds = new Rectangle(1266, DecisionY(852), 296, 23);
+        if (tableScene?.PlayAccess.Groups.Count > 0 && (decisionDock?.Surface == DecisionDockSurface.Portrait || QuietPriorityArmed))
+            bounds.Y = Math.Min(bounds.Y, decisionPanelBounds.Top - bounds.Height - 12);
         if (abilities.Length == 1) {
             var ability = abilities[0];
             PriorityAbilityButton(ability.IgnoredUntilNextTurn ? "ability-undo:" + ability.Id : "ability-pass:" + ability.Id,

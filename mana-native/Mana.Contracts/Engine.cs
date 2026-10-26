@@ -273,6 +273,9 @@ public sealed record GameSnapshot(string Id, string Status, string? Error, strin
     public ImmutableArray<ActivityEntry> Activity { get; init; } = [];
     public ImmutableArray<string> Notices { get; init; } = [];
     public ImmutableArray<PriorityAbility> IgnoredPriorityAbilities { get; init; } = [];
+    // Only this viewer's granted plays from already disclosed external zones.
+    // Access may persist while no current decision permits starting the play.
+    public ImmutableArray<PlayAccess> PlayAccesses { get; init; } = [];
     public DecisionTempoFrame? Tempo { get; init; }
     public Player? Viewer => Players.FirstOrDefault(p => p.Id == ViewerId);
 }

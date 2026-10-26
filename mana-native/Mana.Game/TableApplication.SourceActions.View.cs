@@ -72,6 +72,7 @@ internal sealed partial class TableApplication
         if (card == null) return;
         var options = SourceReaderOptions(card);
         string state = IsStudyBattlefieldReader(entry) ? "" : SourceReaderState(card, entry.Zone);
+        state = string.Join("\n", new[] { PlayAccessState(card), state }.Where(part => part.Length > 0));
         if (sourceActions.View is { Context: { } current, Status: SourceActionStatus.Unsupported } unavailable
             && current == ReaderActionContext(card))
             state = string.Join(" · ", new[] { state, unavailable.Error }.Where(part => part.Length > 0));
@@ -89,7 +90,7 @@ internal sealed partial class TableApplication
             .Append(state).Select(text => canvas.TextWidth(text, size, true) + padding * 2)
             .DefaultIfEmpty(120).Max(), 120, 316);
         if (options.Any(option => option.Action?.Card != null)) desiredWidth = 316;
-        int desiredHeight = (state.Length == 0 ? 0 : canvas.TextSize(state, .63f, desiredWidth - 8, 80, true).Y + 12)
+        int desiredHeight = (state.Length == 0 ? 0 : canvas.TextSize(state, .63f, desiredWidth - 16, 80, true).Y + 16)
             + options.Sum(option => canvas.TextSize(option.Text, size, desiredWidth - padding * 2, 80, true).Y + padding * 2 + gap
                 + (option.Action?.Card == null ? 0 : LinkedSpellHeaderHeight(option.Action.Card, desiredWidth)));
         var area = DecisionActionArea(face, desiredWidth, Math.Min(face.Height, desiredHeight));
@@ -106,7 +107,7 @@ internal sealed partial class TableApplication
             return (Option: option, Lines: lines, Height: Math.Max(secondary ? 30 : 38, lines.Length * lineHeight + inset * 2), LinkedHeight: linkedHeight,
                 Secondary: secondary, Font: font, Inset: inset, LineHeight: lineHeight);
         }).ToArray();
-        int stateHeight = state.Length == 0 ? 0 : canvas.TextSize(state, .63f, width - 8, 80, true).Y + 12;
+        int stateHeight = state.Length == 0 ? 0 : canvas.TextSize(state, .63f, width - 16, 80, true).Y + 16;
         int contentHeight = stateHeight + rows.Sum(row => row.Height + row.LinkedHeight + gap) - (rows.Length > 0 ? gap : 0);
         int height = Math.Min(area.Height, contentHeight);
         int top = Math.Clamp(face.Center.Y - height / 2, area.Top, area.Bottom - height);
@@ -116,8 +117,10 @@ internal sealed partial class TableApplication
         hits.Add(new("source-actions-surface", Scope, sourceReaderActionsBounds, UiIntent.None, ShowPointer: false));
         int y = top - scroll;
         if (stateHeight > 0) {
-            if (y >= top && y + stateHeight <= top + height)
-                canvas.Text(state, area.X + 4, y, new(161, 228, 207), .63f, width - 8, 80, true);
+            if (y >= top && y + stateHeight <= top + height) {
+                canvas.Rounded(new(area.X, y, width, stateHeight - 4), new(13, 24, 31), 4);
+                canvas.Text(state, area.X + 8, y + 6, new(161, 228, 207), .63f, width - 16, 80, true);
+            }
             y += stateHeight;
         }
         for (int index = 0; index < rows.Length; index++) {

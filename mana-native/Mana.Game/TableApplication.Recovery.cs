@@ -8,14 +8,14 @@ internal sealed partial class TableApplication
     private bool DrawRecoveryDock(GameSnapshot state)
     {
         if (!session.NeedsRecovery) return false;
-        canvas.Text(polling ? "RECONNECTING" : "CONNECTION INTERRUPTED", 1266, 724, Red, .69f, 298, 1, true);
+        canvas.Text(polling ? "RECONNECTING" : "CONNECTION INTERRUPTED", 1266, DecisionY(724), Red, .69f, 298, 1, true);
         var age = session.LastSynchronizedAt is { } at ? Math.Max(0, (int)(clock.GetUtcNow() - at).TotalSeconds) : 0;
         canvas.Text($"Last update {age}s ago. " + (session.UncertainCommand
             ? "Checking your last action; please wait."
-            : "Reconnecting before play resumes."), 1266, 750, Ink, .75f, 295, 3);
-        Button("recovery-retry", polling ? "Checking connection…" : "Reconnect", 1266, 828, 177,
+            : "Reconnecting before play resumes."), 1266, DecisionY(750), Ink, .75f, 295, 3);
+        Button("recovery-retry", polling ? "Checking connection…" : "Reconnect", 1266, DecisionY(828), 177,
             new MatchIntent.RetryConnection(), !busy && !polling, true, 42);
-        Button("recovery-leave", localMatch ? "Exit game" : "Leave", 1450, 828, 113,
+        Button("recovery-leave", localMatch ? "Exit game" : "Leave", 1450, DecisionY(828), 113,
             new MatchIntent.OpenView(MatchView.LeaveTable), !busy, height: 42);
         return true;
     }

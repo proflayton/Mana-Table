@@ -33,6 +33,11 @@ does not establish that a person can understand or use the screen.
    Public-zone inspection also needs the relevant casting route, its cost and
    conditions, and reliable recent zone history. A public capability is distinct
    from a current legal action, especially when inspecting an opponent's card.
+   Cards granted play access belong beside the hand as recognizable cards, with
+   a visible gap and source-zone identity. Keep them present while access lasts;
+   change the playable cue when the engine permits starting that route. Reading,
+   retained access and committing a current action remain separate gestures and
+   states. A card's owner can differ from the player allowed to play it.
 4. **Keep asynchronous work from disrupting interaction.** Preload authorized
    likely artwork; prioritize visible and inspected cards. A background observation
    should not flicker, disable or move an unchanged control. Retain local intent
@@ -926,6 +931,45 @@ revocation. A face-down or otherwise private occurrence never acquires a visible
 identity, cost or ability merely because another card uses a familiar mechanic.
 This is a design requirement; generic casting-route/cost and recent-zone
 inspection have not been implemented by recording this reference.
+
+### Cards playable beside the hand
+
+**Source implementation; human review pending.** The later MTGA screenshot
+keeps its ordinary hand central and offsets the glowing exile cards to the right.
+The useful relationship is visible before opening a browser: these are additional
+plays, with a different origin from the hand.
+
+The `play-access.v1` lab applies that relationship to the four-seat table. Its
+engine-projected permissions form adjacent fans with a gap, zone identity and
+disclosed granting-source artwork. Click a card to read its full face; drag it
+onto the table to begin its current offered play. Two routes for one physical
+card remain one face with an explicit route choice. Scrolling reaches additional
+cards without resizing or paging the hand. A permission can remain present while
+timing, a land limit or another player's priority prevents starting it.
+
+The journey retains the actual zone owner, including borrowed exiled cards, and
+uses the existing current source-action catalog for commitment. Retained access
+is neither an action handle nor proof that the player can pay. Expiry and played
+cards leave the fan when the engine withdraws access. No expiry is guessed from
+rules prose. Face-down cards remain excluded by the existing disclosure boundary;
+this slice does not add private foretell faces. Prepared copies keep their
+existing permanent-linked presentation.
+
+Review the ordinary hand, source-distinct grants, off-priority reading, eleven
+cards in hand with many grants, enlarged reading, route selection and the physical
+source-to-stack-to-battlefield journey at both window sizes. Mechanical checks
+and agent inspection do not establish that a player understands the arrangement.
+
+Agent window review used real card artwork at 1000×740 with reduced motion and
+1540×980 with normal motion, both at 130% text. It exposed priority controls
+covering the reader and a moving card, repeated costs, and source text without
+enough contrast over battlefield artwork. Those findings changed the shared
+space reservation and reader composition. Header-only hover no longer opens a
+second preview after casting. Human review of this candidate is still pending.
+
+![Hand with separate source-marked access fans](images/native-play-access-table-2026-10-25.png)
+
+[View two actual cast routes beside one full card at the smaller size](images/native-play-access-routes-2026-10-25.png).
 
 ### Ability choices as readable game objects
 

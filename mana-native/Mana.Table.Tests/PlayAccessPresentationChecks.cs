@@ -1,0 +1,113 @@
+using System.Collections.Immutable;
+using Mana.Contracts;
+using Mana.Magic;
+using Mana.Renderer;
+using Mana.Scenarios;
+
+namespace Mana.Table;
+
+internal static class PlayAccessPresentationChecks
+{
+    internal static void Run(Action<bool, string> check)
+    {
+        var stages = PlayAccessScenario.Create();
+        var initial = stages[0].Snapshot;
+        var scene = Build(initial);
+        var without = Build(initial with { PlayAccesses = [] });
+        check(scene.Hand.Total == 7 && scene.Hand.Cards.Select(card => (card.Id, card.Pose))
+                .SequenceEqual(without.Hand.Cards.Select(card => (card.Id, card.Pose)))
+                && initial.Viewer!.Zone("Hand").Count == 7,
+            "Additional-zone access preserves the actual seven-card hand, hand slots and hand count");
+        var all = scene.PlayAccess.Groups.SelectMany(group => group.Cards).ToArray();
+        check(all.Any(item => item.Scene.Id == PlayAccessScenario.BorrowedId && item.Scene.Owner == 1 && item.Scene.Zone == "Exile")
+                && all.All(item => item.Scene.Card == initial.Players.Single(player => player.Id == item.Scene.Owner)
+                    .Zone(item.Scene.Zone).Cards.Single(card => card.VisualId == item.Scene.Id))
+                && all.All(item => item.Scene.Id != PlayAccessScenario.PreparedId),
+            "The adjacent fan resolves exact disclosed physical occurrences, including an opponent's exile, without copying a prepared virtual spell into the hand");
+        var chandra = scene.PlayAccess.Groups.Single(group => group.Cards.Any(item => item.Scene.Id == PlayAccessScenario.ExileSpellId));
+        var iteration = scene.PlayAccess.Groups.Single(group => group.Cards.Any(item => item.Scene.Id == PlayAccessScenario.ExileLandId));
+        check(chandra.Id != iteration.Id && chandra.SourceIds.Contains(PlayAccessScenario.ChandraId)
+                && iteration.SourceIds.Contains(PlayAccessScenario.IterationId),
+            "Different exile grants keep their source relationship instead of merging into an undifferentiated extra hand");
+        foreach (int stage in new[] { 1, 2 }) {
+            var retained = Build(stages[stage].Snapshot);
+            check(retained.PlayAccess.Groups.SelectMany(group => group.Cards).Select(item => item.Scene.Id).Order()
+                    .SequenceEqual(all.Select(item => item.Scene.Id).Order())
+                    && retained.PlayAccess.Groups.SelectMany(group => group.Cards).All(item => item.Access.Routes.All(route => !route.CanStart)),
+                "Off-priority and required-choice observations retain disclosed permissions without promoting them into current initiation authority");
+        }
+        var duplicate = Build(stages[4].Snapshot);
+        check(duplicate.PlayAccess.Groups.SelectMany(group => group.Cards).Count(item => item.Scene.Id == PlayAccessScenario.FlashbackId) == 1
+                && duplicate.PlayAccess.Groups.SelectMany(group => group.Cards).Single(item => item.Scene.Id == PlayAccessScenario.FlashbackId).Access.Routes.Length == 2,
+            "Two current cast routes describe one physical graveyard card and retain both routes for source-action discovery");
+        var revoked = Build(stages[3].Snapshot);
+        check(revoked.PlayAccess.Groups.SelectMany(group => group.Cards).All(item => item.Scene.Id != PlayAccessScenario.ExileSpellId)
+                && stages[3].Snapshot.Viewer!.Zone("Exile").Cards.Any(card => card.VisualId == PlayAccessScenario.ExileSpellId),
+            "Expiring a play grant removes the adjacent occurrence while its ordinary public exile face remains available in the actual zone");
+        var hidden = initial with { Players = initial.Players.Select(player => player.Id != 1 ? player : player with {
+            Zones = player.Zones.Select(zone => zone.Name != "Exile" ? zone : zone with { Cards = [], Count = 1 }).ToImmutableArray()
+        }).ToImmutableArray() };
+        check(Build(hidden).PlayAccess.Groups.SelectMany(group => group.Cards).All(item => item.Scene.Id != PlayAccessScenario.BorrowedId),
+            "A retained reference cannot recreate an opponent-owned face after the current snapshot withdraws its disclosure");
+        var crowded = Build(stages[5].Snapshot);
+        var scrolled = Build(stages[5].Snapshot, int.MaxValue);
+        check(crowded.Hand.Total == 11 && crowded.PlayAccess.MaximumScroll > 0
+                && scrolled.PlayAccess.Scroll == scrolled.PlayAccess.MaximumScroll
+                && scrolled.Hand.Cards.Select(card => (card.Id, card.Pose)).SequenceEqual(crowded.Hand.Cards.Select(card => (card.Id, card.Pose)))
+                && scrolled.PlayAccess.Groups.SelectMany(group => group.Cards).Last().Scene.Pose.Bounds.Intersects(scrolled.PlayAccess.Bounds),
+            "Continuous overflow reaches the last authorized occurrence while the eleven-card hand retains its own positions and count");
+
+        CheckAuthoredJourneys(check);
+    }
+
+    private static TableScene Build(GameSnapshot state, int scroll = 0) => TableScene.Build(state, 0, new(-100, -100),
+        null, null, false, CardPresentation.IsResource, playAccessScroll: scroll);
+
+    private static void CheckAuthoredJourneys(Action<bool, string> check)
+    {
+        foreach (var (id, owner, source, destination) in new[] {
+            (PlayAccessScenario.ExileSpellId, 0, "Exile", "Battlefield"),
+            (PlayAccessScenario.FlashbackId, 0, "Graveyard", "Exile"),
+            (PlayAccessScenario.BorrowedId, 1, "Exile", "Battlefield")
+        }) {
+            var lab = new ExperienceLabSession(PlayAccessScenario.Id);
+            var before = lab.State;
+            var card = before.Players.Single(player => player.Id == owner).Zone(source).Cards.Single(item => item.VisualId == id);
+            var offers = lab.SourceActions(before.Id, before.Decision!.Id, card.Key);
+            check(lab.State == before && offers.Actions.Length == 1,
+                "Reading an authored out-of-hand source obtains its current offer without casting or changing any zone");
+            var command = new UseOfferedAction(before.Id, before.Decision.Id, card.Key, offers.Actions.Single().Id);
+            lab.Reply(command);
+            check(lab.State.Stack.Single().Card?.VisualId == id
+                    && lab.State.Players.Single(player => player.Id == owner).Zone(source).Cards.All(item => item.VisualId != id)
+                    && lab.State.PlayAccesses.All(access => access.CardId != id)
+                    && lab.State.Viewer!.Zone("Hand").Count == before.Viewer!.Zone("Hand").Count,
+                "An exact current offer moves the same physical occurrence from its actual owner and zone to the stack without changing the hand");
+            bool stale = false;
+            try { lab.Reply(command); } catch (EngineCommandRejectedException) { stale = true; }
+            check(stale, "The prior source offer cannot be replayed after the cast creates a fresh response scope");
+            lab.Reply(new PassPriority(lab.State.Id, lab.State.Decision!.Id));
+            check(lab.State.Stack.IsEmpty && lab.State.Viewer!.Zone(destination).Cards.Any(item => item.VisualId == id)
+                    && lab.State.PlayAccesses.All(access => access.CardId != id),
+                "The authored stack result preserves physical identity and uses the explicit battlefield or flashback-exile destination without reviving its grant");
+        }
+        var landLab = new ExperienceLabSession(PlayAccessScenario.Id);
+        var land = landLab.State.Viewer!.Zone("Exile").Cards.Single(card => card.VisualId == PlayAccessScenario.ExileLandId);
+        var offer = landLab.SourceActions(landLab.State.Id, landLab.State.Decision!.Id, land.Key).Actions.Single();
+        landLab.Reply(new UseOfferedAction(landLab.State.Id, landLab.State.Decision!.Id, land.Key, offer.Id));
+        check(landLab.State.Stack.IsEmpty && landLab.State.Viewer!.Zone("Battlefield").Cards.Any(card => card.VisualId == land.VisualId)
+                && landLab.State.Viewer.Zone("Hand").Count == 7,
+            "The exact exiled-land offer enters the battlefield directly without fabricating a hand card or spell on the stack");
+        var multi = new ExperienceLabSession(PlayAccessScenario.Id);
+        multi.Replay(4);
+        var twice = multi.State.Viewer!.Zone("Graveyard").Cards.Single(card => card.VisualId == PlayAccessScenario.FlashbackId);
+        var routes = multi.SourceActions(multi.State.Id, multi.State.Decision!.Id, twice.Key);
+        check(routes.Actions.Length == 2 && routes.Actions.Select(action => action.Id).Distinct().Count() == 2,
+            "Multiple grants retain distinct opaque offers for one source rather than arbitrarily selecting a cast route");
+        multi.AdvanceTo(5);
+        bool invalidated = false;
+        try { multi.Reply(new UseOfferedAction(routes.GameId, routes.DecisionId, routes.SourceCardKey, routes.Actions[1].Id)); }
+        catch (EngineCommandRejectedException) { invalidated = true; }
+        check(invalidated, "A source route captured before an external observation is rejected by the current lab response scope");
+    }
+}

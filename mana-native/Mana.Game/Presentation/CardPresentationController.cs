@@ -95,7 +95,8 @@ internal sealed class CardPresentationController
         }
         var target = focused ? readerTarget!.Value : revealPlay ? PlayRevealPose : request.Rest;
         Vector2? entrance = request.Entrance is { } start && useBoardMotion ? view.Inverse(start) : request.Entrance;
-        var pose = collapse ? motion.Hold(request.Id, focused ? rest : request.Rest)
+        var pose = request.DirectPlacement ? motion.Hold(request.Id, request.Rest)
+            : collapse ? motion.Hold(request.Id, focused ? rest : request.Rest)
             : motion.Place(request.Id, target, entrance, request.EntranceDelay);
         if (useBoardMotion) pose = view.Apply(pose);
         displayedPoses[request.Id] = new(pose, useBoardMotion);
@@ -197,6 +198,10 @@ internal sealed class CardPresentationController
     public bool TryGetPose(string id, out Pose pose)
     {
         bool found = displayedPoses.TryGetValue(id, out var current); pose = current.Display; return found;
+    }
+    internal bool TryGetPreviousPose(string id, out Pose pose)
+    {
+        bool found = previousDisplayedPoses.TryGetValue(id, out var previous); pose = previous.Display; return found;
     }
     public void Reset()
     {

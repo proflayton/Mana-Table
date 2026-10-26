@@ -28,15 +28,17 @@ internal static class ForgeSnapshotDecoder
                 || decision != null && wire.DecisionOwnerId is { } chooser && chooser != wire.ViewerId
                 || decision?.Payload is PriorityPayload && wire.PriorityPlayerId is { } responder && responder != wire.ViewerId) throw Invalid();
             if (wire.States.IsDefault || wire.Activity.IsDefault || wire.Notices.IsDefault || wire.IgnoredPriorityAbilities.IsDefault) throw Invalid();
+            ValidateAccess(wire, decision);
             return new(wire.Id, wire.Status, wire.Error, wire.Result, wire.ViewerId, wire.Turn,
                 wire.Phase ?? "Starting game", wire.PhaseKey ?? "PREGAME", wire.ActivePlayerId, wire.Players,
                 wire.Stack.Select(item => item.Native()).ToImmutableArray(), wire.Combat?.Native(), decision) {
                 Revision = wire.Revision, BoardRevision = wire.BoardRevision,
                 PriorityPlayerId = wire.PriorityPlayerId, DecisionOwnerId = wire.DecisionOwnerId,
                 ActionClass = wire.ActionClass, States = wire.States, Activity = wire.Activity,
-                Notices = wire.Notices, IgnoredPriorityAbilities = wire.IgnoredPriorityAbilities, Tempo = wire.Tempo
+                Notices = wire.Notices, IgnoredPriorityAbilities = wire.IgnoredPriorityAbilities,
+                PlayAccesses = wire.PlayAccesses, Tempo = wire.Tempo
             };
-        } catch (Exception error) when (error is JsonException or InvalidOperationException or FormatException or OverflowException) {
+        } catch (Exception error) when (error is JsonException or InvalidOperationException or ArgumentException or FormatException or OverflowException) {
             throw new IOException("The rules provider published an invalid match snapshot.", error);
         }
     }
@@ -47,6 +49,25 @@ internal static class ForgeSnapshotDecoder
         _ => throw Invalid()
     };
     private static IOException Invalid() => new("The rules provider published an invalid match snapshot.");
+
+    private static void ValidateAccess(Snapshot wire, Decision? decision)
+    {
+        if (wire.PlayAccesses.IsDefault || wire.PlayAccesses.Any(access => access == null)
+            || wire.PlayAccesses.Select(access => access.CardId).Distinct(StringComparer.Ordinal).Count() != wire.PlayAccesses.Length)
+            throw Invalid();
+        bool localPriority = wire.Status == "playing" && decision?.Payload is PriorityPayload
+            && (wire.DecisionOwnerId == null || wire.DecisionOwnerId == wire.ViewerId)
+            && (wire.PriorityPlayerId == null || wire.PriorityPlayerId == wire.ViewerId);
+        foreach (var access in wire.PlayAccesses) {
+            if (access.Zone is "Hand" or "Battlefield" or "Stack" or "Command") throw Invalid();
+            var zone = wire.Players.FirstOrDefault(player => player.Id == access.PlayerId)?.Zones
+                .FirstOrDefault(candidate => candidate.Name == access.Zone);
+            var card = zone?.Cards.Append(zone.TopCard).OfType<Card>()
+                .FirstOrDefault(candidate => CardViews.Identity(candidate) == access.CardId);
+            if (card == null || card.FaceDown || access.Routes.Any(route => route.CanStart && (!localPriority || card.Key.Length == 0)))
+                throw Invalid();
+        }
+    }
 
     private sealed record Snapshot
     {
@@ -72,6 +93,7 @@ internal static class ForgeSnapshotDecoder
         public ImmutableArray<ActivityEntry> Activity { get; init; } = [];
         public ImmutableArray<string> Notices { get; init; } = [];
         public ImmutableArray<PriorityAbility> IgnoredPriorityAbilities { get; init; } = [];
+        public ImmutableArray<PlayAccess> PlayAccesses { get; init; } = [];
         public DecisionTempoFrame? Tempo { get; init; }
     }
 

@@ -71,6 +71,23 @@ Visible card snapshots add `artSet` (the edition's Scryfall code), `edition` and
 set/collector number and face; old name-only caches remain valid for unspecified
 art requests. An unavailable exact image uses the readable card fallback.
 
+Optional match `playAccesses` describes only the current viewer's retained plays
+from already disclosed external zones. Entries contain `playerId` (the physical
+zone owner), `zone`, `cardId` (the existing visual occurrence) and `routes`.
+A route contains `id`, numeric `kind` (`0` cast, `1` play land), visible
+`sourceCardId`/`sourceName`, engine `detail`, and `canStart`. Membership is distinct
+from current timing: access may remain while `canStart` is false. The latter
+reports permission to initiate a current route, not mana affordability. Resolving
+clears current-start flags without deleting retained access. No generic expiry
+text is invented; the engine removes the route when its permission ends.
+
+These display route IDs are not action handles. `matchSourceActions` and
+`useSourceAction` remain the authority for an exact current cast/play. Access
+references never disclose additional card faces, and another player's permission
+cannot populate this viewer's list. Command-zone cards retain their dedicated
+representation; prepared linked spell copies remain attached to their source
+action rather than entering this list.
+
 `multiplayerState` includes `tableId`. Pass that ID to `tableSocial` to read the
 table conversation, `tableChat` with `kind` (`chat` or `emote`) and `text` to send,
 or `tableName` with `name` to change your display name between games. Sender

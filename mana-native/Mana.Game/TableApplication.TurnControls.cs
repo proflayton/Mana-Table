@@ -79,7 +79,12 @@ internal sealed partial class TableApplication
         // can grow into the former decision area without covering mana.
         int resourceRight = manaPoolBadges.GetValueOrDefault(state.ViewerId)?.Bounds.Right ?? 0;
         area.X = Math.Clamp(Math.Max(area.X, resourceRight + 14), area.X, 1550 - area.Width);
+        var readers = matchPresentation.Cards.Cards.Where(card => card.Focused
+                || card.Layer is Presentation.CardPresentationLayer.Returning or Presentation.CardPresentationLayer.Playing)
+            .Select(card => card.Display.Bounds).Append(sourceReaderActionsBounds);
+        area = tableScene?.PlayAccess.ReservePriority(area, readers) ?? area;
         decisionPanelBounds = area; decisionTextBounds = Rectangle.Empty; decisionText = ""; decisionTextOverflow = false;
+        if (area.IsEmpty) return;
         bool stopped = view.PauseReason == DecisionDockPauseReason.PhaseStop;
         var accent = stopped || held ? Gold : QuietPriorityArmed ? Blue : PriorityAccent;
         var statusPoint = new Vector2(area.X + 8, area.Y + 10);
@@ -111,10 +116,13 @@ internal sealed partial class TableApplication
             Button("confirm", view.ActionLabel, action.X, action.Y, action.Width,
                 new MatchIntent.ConfirmDecision(), CombatGuide.CanConfirm(state), true, action.Height);
         }
-        if (!following && d?.Payload is PriorityPayload { Alternative: { Reply.Enabled: true } alternative })
+        if (!following && d?.Payload is PriorityPayload { Alternative: { Reply.Enabled: true } alternative }) {
+            bool below = tableScene?.PlayAccess.Groups.Count > 0;
             Button("cancel", alternative.Kind == PriorityAlternative.PassTurn ? "Pass turn" : alternative.Reply.Label,
-                area.Right + 12, action.Y, Math.Min(130, 1580 - area.Right - 12),
+                below ? area.X : area.Right + 12, below ? action.Bottom + 8 : action.Y,
+                below ? area.Width : Math.Min(130, 1580 - area.Right - 12),
                 new MatchIntent.CancelDecision(), height: action.Height);
+        }
     }
 
     private void TurnControlIcon(string id, Vector2 center, bool selected, UiIntent action, bool pause = false)

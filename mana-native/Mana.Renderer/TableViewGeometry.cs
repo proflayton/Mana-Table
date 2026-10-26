@@ -34,6 +34,7 @@ public static class TableViewGeometry
         var visible = state with { Players = state.Players.Where(player => scene.Seats.Any(seat => seat.PlayerId == player.Id)).ToImmutableArray() };
         var geometry = visible.Players.Select(player => scene.Seat(player.Id).Geometry).ToArray();
         return Array.AsReadOnly(BattlefieldLayoutContext.ReserveObjects(visible, geometry)
-            .Concat(new[] { new Rectangle(0, 0, 1600, 54), new Rectangle(244, 778, 970, 122) }).ToArray());
+            .Concat(new[] { new Rectangle(0, 0, 1600, 54), new Rectangle(244, 778, 970, 122) })
+            .Concat(scene.PlayAccess.Bounds.IsEmpty ? [] : new[] { scene.PlayAccess.Bounds }).ToArray());
     }
 }

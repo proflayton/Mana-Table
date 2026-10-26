@@ -76,6 +76,7 @@ internal sealed partial class TableApplication
         if (state == null || d == null || decisions.Presentation?.Payload == null || busy || session.NeedsRecovery || AbilityActionPending) return false;
         if (TableChoices.IsDirect(state)) return TableChoices.Index(state, card) != null;
         if (d.Payload is AttackPayload or BlockPayload) return CombatGuide.CanSelect(state, card) || CombatTarget(card);
+        if (d.Payload is PriorityPayload && CurrentPlayAccess(card) is { } access) return CanStartPlayAccess(access);
         return card.Selectable && !string.IsNullOrEmpty(card.Key) || HandPlacements.Options(state, card).Length > 0
             || OfferedPlayOptions(card).Length > 0;
     }
@@ -127,12 +128,19 @@ internal sealed partial class TableApplication
         if ((target == null || target.Card != null) && PlacementDropChoice()) { OpenHandPlacement(dragSource!.Card!); return true; }
         if ((target == null || target.Card != null) && dragSource is { Card: { } card } source
             && TableWorld.CanPlayAt(pointer) && OpenDraggedPlayChoices(card, source.Zone)) return true;
-        if (DropReply(target) is not { } reply) return false;
-        Send(reply); return true;
+        if (DropReply(target) is not { } reply)
+            return (target == null || target.Card != null) && TableWorld.CanPlayAt(pointer) && RetainReleasedPlay();
+        var submittedSource = dragSource!;
+        if (!Send(reply)) return false;
+        if (submittedSource.Zone is not ("Battlefield" or "Stack") && ReaderActionContext(submittedSource.Card!) is { } context)
+            releasedCardPlay = new(Scope, context, submittedSource.Zone!,
+                new(pointer.ToVector2() + new Vector2(0, -72), new(132, 185), -.025f, Elevation: 18), true);
+        return true;
     }
     private void Scroll(int direction)
     {
         if (ScrollSourceReader(direction)) return;
+        if (ScrollPlayAccess(direction)) return;
         if (ScrollFocusedBattlefield(direction)) return;
         if (chatOpen && ChatBounds.Contains(pointer)) {
             if (chatPeople) return;

@@ -31,6 +31,7 @@ internal abstract record MatchIntent : UiIntent
         internal override InteractionScopeKind ScopeKind => PageKind == MatchPage.PriorityText ? InteractionScopeKind.Playback : InteractionScopeKind.Current;
     }
     internal sealed record SetHandPage(int Page) : MatchIntent;
+    internal sealed record SetPlayAccessScroll(int Offset) : MatchIntent { internal override InteractionScopeKind ScopeKind => InteractionScopeKind.Playback; }
     internal sealed record FlipInspector : MatchIntent;
     internal sealed record SubmitCommand(GameCommand Command) : MatchIntent;
     internal sealed record ConfirmDecision(bool CloseOverlay = false) : MatchIntent;

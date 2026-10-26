@@ -138,7 +138,7 @@ internal sealed partial class TableApplication
         hits.Add(new("zone:" + player.Id + ":" + zone, Scope, geometry.HitBounds, new MatchIntent.OpenZone(player.Id, zone), Shape: geometry.Contains));
         // Browser members open their pile. A separately disclosed top remains
         // directly readable even when the rest of its zone is concealed.
-        if (top != null) DrawTableCard("pile:" + player.Id + ":" + zone + ":" + CardIdentity(top), top, pose, zone, player.Id,
+        if (top != null && !tableScene!.PlayAccess.Contains(player.Id, zone, top)) DrawTableCard("pile:" + player.Id + ":" + zone + ":" + CardIdentity(top), top, pose, zone, player.Id,
             "pile-card:" + player.Id + ":" + zone, new MatchIntent.OpenZone(player.Id, zone), (displayed, focus) => PaintCard(top, displayed, false, IsCardActionable(top), focus),
             opensZone: value.Cards.Any(card => CardViews.Same(card, top)));
         else PaintBack(pose, value.Count == 0 ? .3f : 1);

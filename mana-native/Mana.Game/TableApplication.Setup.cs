@@ -16,9 +16,10 @@ internal sealed partial class TableApplication
         decisions.Clear(); zoneName = null; selectedCombat = null;
         combatPage = 0; combatCandidates = false; inspectedStack = null; reviewedAttacker = null;
         inspectedAction = null;
-        handPage = zonePage = decisions.Page = 0; decisions.Filter = "";
+        handPage = zonePage = decisions.Page = playAccessScroll = 0; decisions.Filter = "";
         automatic = !Automated && preferences.Automatic; pressed = null;
         ClearCardReading(); ClearReaderActions();
+        releasedCardPlay = null;
         pendingPreviewReference = null; pendingPreviewBounds = null; pendingPreviewCardId = null;
         seatPortraits.Clear(); overlay = ""; inspected = null; held = false; dragging = false; dragSource = null;
         decisions.Collapsed = false; textFocus = false; previousTurn = ""; notice = ""; noticeUntil = 0;

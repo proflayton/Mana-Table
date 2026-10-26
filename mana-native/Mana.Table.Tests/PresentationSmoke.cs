@@ -18,6 +18,7 @@ internal static class PresentationSmoke
         AdvanceRegression.RunAsync(profile).GetAwaiter().GetResult();
         BitmapPixelSmoke.Run(Check);
         ForgeCommandBoundaryChecks.Run(Check);
+        PlayAccessBoundaryChecks.Run(Check);
         GameplayFeedbackChecks.Run(Check);
         PublicActivityCursorChecks.Run(Check);
         MatchPresentationLifecycleChecks.Run(Check);
@@ -31,6 +32,7 @@ internal static class PresentationSmoke
         PresentationReadChecks.Run(profile, Check);
         CardPresentationChecks.Run(Check);
         CardPlayChecks.Run(Check);
+        PlayAccessPresentationChecks.Run(Check);
         PresentationSceneChecks.Run(Check);
         DrawingFrameChecks.Run(Check);
         PublicChangeFeedbackChecks.Run(Check);

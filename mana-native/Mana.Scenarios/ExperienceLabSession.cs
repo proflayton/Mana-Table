@@ -72,6 +72,7 @@ public sealed partial class ExperienceLabSession
                 throw new EngineCommandRejectedException("This scripted snapshot changed. Use its current controls.");
             if (Scenario.Id == DecisionFlowScenario.Id) return ReplyDecisionFlow(reply);
             if (Scenario.Id == OptionalDecisionScenario.Id) return ReplyOptionalDecision(reply);
+            if (Scenario.Id == PlayAccessScenario.Id && reply is PassPriority) return ReplyPlayAccess(reply);
             var decision = State.Decision!;
             var options = decision.Payload switch {
                 OptionsPayload value => value.Selection, OrderingPayload value => value.Selection,

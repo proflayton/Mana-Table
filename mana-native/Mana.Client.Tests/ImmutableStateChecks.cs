@@ -14,7 +14,8 @@ internal static class ImmutableStateChecks
         AssertImmutable(typeof(GameSnapshot), visited);
         AssertImmutable(typeof(SourceActionSet), visited);
         check(visited.Contains(typeof(Decision)) && visited.Contains(typeof(PendingEffect))
-            && visited.Contains(typeof(Card)) && visited.Contains(typeof(ActivityEntry)),
+            && visited.Contains(typeof(Card)) && visited.Contains(typeof(ActivityEntry))
+            && visited.Contains(typeof(PlayAccess)) && visited.Contains(typeof(PlayAccessRoute)),
             "Published match state has no mutable collection or writable property anywhere in its object graph");
 
         Type[] services = [typeof(IEngineCatalog), typeof(ICardPrintings), typeof(ITableSetup), typeof(ITableSeatSetup),

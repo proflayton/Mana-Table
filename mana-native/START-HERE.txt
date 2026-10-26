@@ -282,6 +282,13 @@ card; inspecting never activates an ability or casts from a public zone.
 Zone piles open browsers containing only the cards your player can see. Your own
 graveyard, exile and command browsers can offer engine-authorized actions,
 including Flashback when available. Hidden hands show anonymous backs.
+Source-only until a release containing it is published: cards you have permission
+to play from exile, your graveyard or a disclosed library top also sit beside
+your hand. The gap, zone caption and granting source distinguish them from cards
+in hand. They remain visible while permission lasts; a current action cue means
+you can start that play, not that its mana cost is paid. Click to read, then use
+the card's offered action, or drag it onto the table. Scroll this area to reach
+additional cards. The card remains in its real zone until the engine plays it.
 Prepared-spell source access is source-only until a release containing it is
 published: a small spell marker shows a prepared permanent. Open that permanent
 to find its available spell beside the full card, with the spell's name and

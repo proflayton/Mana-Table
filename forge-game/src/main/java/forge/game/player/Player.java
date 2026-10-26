@@ -1684,16 +1684,7 @@ public class Player extends GameEntity implements Comparable<Player> {
                 return false;
             }
 
-            final boolean mayPlay = landSa == null ? !land.mayPlay(this).isEmpty() : landSa.getMayPlay() != null;
-            if (land.getOwner() != this && !mayPlay) {
-                return false;
-            }
-
-            final Zone zone = game.getZoneOf(land);
-            if (zone != null && (zone.is(ZoneType.Battlefield) || (!zone.is(ZoneType.Hand) && !mayPlay
-                    && (landSa == null || !landSa.isAlternativeCost(AlternativeCost.Mayhem))))) {
-                return false;
-            }
+            if (!hasLandPlayAccess(land, landSa)) return false;
         }
 
         // CantBeCast static abilities
@@ -1709,6 +1700,15 @@ public class Player extends GameEntity implements Comparable<Player> {
 
         // check for adjusted max lands play per turn
         return getLandsPlayedThisTurn() < getMaxLandPlays();
+    }
+
+    /** Zone and actor permission only; timing, prohibitions and land limits remain in canPlayLand. */
+    public final boolean hasLandPlayAccess(final Card land, final SpellAbility landSa) {
+        final boolean mayPlay = landSa == null ? !land.mayPlay(this).isEmpty() : landSa.getMayPlay() != null;
+        if (land.getOwner() != this && !mayPlay) return false;
+        final Zone zone = game.getZoneOf(land);
+        return zone == null || !zone.is(ZoneType.Battlefield) && (zone.is(ZoneType.Hand) || mayPlay
+                || landSa != null && landSa.isAlternativeCost(AlternativeCost.Mayhem));
     }
 
     public final int getMaxLandPlays() {

@@ -44,6 +44,7 @@ internal sealed partial class TableApplication
             case MatchIntent.ChooseRecipient choice when match != null && StateClarity.ChooseRecipient(match, choice.PlayerId) is { } reply: Send(reply); break;
             case MatchIntent.SetPage page: SetMatchPage(page.PageKind, page.Page); break;
             case MatchIntent.SetHandPage page: handPage = Math.Max(0, page.Page); break;
+            case MatchIntent.SetPlayAccessScroll scroll: playAccessScroll = Math.Clamp(scroll.Offset, 0, tableScene?.PlayAccess.MaximumScroll ?? 0); break;
             case MatchIntent.FlipInspector: inspectBack = !inspectBack; inspectPage = 0; break;
             case MatchIntent.SubmitCommand { Command: DecisionCommand command }: Send(command); break;
             case MatchIntent.SubmitCommand { Command: RestorePriorityAbility command }: session.SubmitSetting(command); break;

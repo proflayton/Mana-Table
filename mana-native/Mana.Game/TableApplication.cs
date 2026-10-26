@@ -154,6 +154,7 @@ internal sealed partial class TableApplication : IDisposable
     {
         var transition = matchPresentation.Observe(previous, state, now, boardView);
         if (transition.ScopeChanged) { ResetTableView(); tableGuideOpen = false; sceneRevealAt = now; }
+        ReconcileReleasedPlay();
         if (state?.Status == "finished" && previous?.Status != "finished") tableGuideOpen = false;
         if (transition.Notice is { } latest) { notice = latest; noticeUntil = now + 8; }
         if (transition.Finished) { overlay = "result"; zoneName = null; }
@@ -221,6 +222,7 @@ internal sealed partial class TableApplication : IDisposable
             else if (HitAt(pointer)?.Card is { } card) Inspect(card);
         }
         if (mouse.LeftButton == ButtonState.Pressed && previousMouse.LeftButton == ButtonState.Released) {
+            CancelReleasedPlayIntent();
             pressed = HitAt(pointer); pressPoint = pointer;
             if (!blockedInput && chatOpen && !ChatBounds.Contains(pointer)) chatFocus = false;
             if (!blockedInput && match == null && deckEditor && pressed?.Intent is not DeckIntent.FocusText) { deckTextFocus = ""; textFocus = false; }
@@ -247,6 +249,7 @@ internal sealed partial class TableApplication : IDisposable
         }
         if (updatesOpen && !ActivityOpen && keys.IsKeyDown(Keys.Escape) && previousKeys.IsKeyUp(Keys.Escape)) CloseAppUpdates();
         if (escapePressed && !cancelledDrag) {
+            CancelReleasedPlayIntent();
             bool closedReader = readingId != null;
             CollapseCardReading();
             dragging = false; dragSource = null; pressed = null; ClearCardDrag();
@@ -267,8 +270,11 @@ internal sealed partial class TableApplication : IDisposable
         if (match != null && !chatKeys && !textFocus && keys.IsKeyDown(Keys.F) && previousKeys.IsKeyUp(Keys.F)) UseAutomaticControl(!automatic);
         if (match != null && !chatKeys && !textFocus && keys.IsKeyDown(Keys.LeftControl) && previousKeys.IsKeyUp(Keys.LeftControl)) ToggleHoldControl();
         if (!blockedInput && !chatKeys && !textFocus && keys.IsKeyDown(Keys.F1) && previousKeys.IsKeyUp(Keys.F1)) OpenTableGuide();
+        if (!blockedInput && !chatKeys && !textFocus && keys.IsKeyDown(Keys.Left) && previousKeys.IsKeyUp(Keys.Left)) ScrollPlayAccess(1);
+        if (!blockedInput && !chatKeys && !textFocus && keys.IsKeyDown(Keys.Right) && previousKeys.IsKeyUp(Keys.Right)) ScrollPlayAccess(-1);
         int wheel = mouse.ScrollWheelValue - previousMouse.ScrollWheelValue;
         if (!blockedInput && wheel != 0) Scroll(Math.Sign(wheel));
+        ContinueReleasedPlay();
         previousMouse = mouse; previousKeys = keys;
         // Give a ready pass precedence over starting another observation. Use this
         // update's pointer position so entering a card pauses Auto before Draw.
@@ -291,18 +297,21 @@ internal sealed partial class TableApplication : IDisposable
     }
     private void SetAutomatic(bool value) { automatic = value; preferences = preferences with { Automatic = value }; SavePreferences(); }
     private void SavePreferences() { StopQuietPriority(); session.CancelAdvance(); try { preferences.Save(profile); } catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { error = "Could not save settings: " + ex.Message; } }
-    private void Send(DecisionCommand? command)
+    private bool Send(DecisionCommand? command)
     {
-        if (command == null || fixture != null || session.NeedsRecovery || match?.Id != command.GameId || match.Decision?.Id != command.DecisionId) return;
+        if (command == null || fixture != null || session.NeedsRecovery || match?.Id != command.GameId || match.Decision?.Id != command.DecisionId) return false;
         if (AbilityActionPending) {
             var ability = (AbilityChoicePayload)match.Decision!.Payload;
             if (command is not ChooseOptions { Choices: var choices }
                 || !(choices.Length == 0 && ability.Selection.Range.Min == 0
-                    || choices.Length == 1 && ability.Selection.Choices.Any(choice => choice.Index == choices[0]))) return;
+                    || choices.Length == 1 && ability.Selection.Choices.Any(choice => choice.Index == choices[0]))) return false;
         }
         if (command is not PassForNow) StopQuietPriority();
+        CancelReleasedPlayIntent();
         error = ""; commandFailure = false;
-        if (session.Submit(command)) pendingActionLabel = StateClarity.PendingActionLabel(match, command);
+        if (!session.Submit(command)) return false;
+        pendingActionLabel = StateClarity.PendingActionLabel(match, command);
+        return true;
     }
     internal PresentationFrame ReadPresentation() => Frame
         ?? throw new InvalidOperationException("Update the presentation before reading its frame.");
@@ -317,7 +326,9 @@ internal sealed partial class TableApplication : IDisposable
         ValidateStudyFocus();
         tableScene = match == null ? null : TableScene.Build(match, handPage, pointer, null,
             dragging && dragSource?.Card is { } held ? CardViews.Identity(held) : null, false, CardPresentation.IsResource,
-            denseMeasure: MeasureDenseBattlefieldLabel, allowInlineOrdering: TableChoices.IsDirect(match), sharedTableStudy: TableStudyEnabled);
+            denseMeasure: MeasureDenseBattlefieldLabel, allowInlineOrdering: TableChoices.IsDirect(match), sharedTableStudy: TableStudyEnabled,
+            playAccessScroll: playAccessScroll);
+        if (tableScene != null) playAccessScroll = tableScene.PlayAccess.Scroll;
         UpdateBoardView();
         PrepareMatchPresentation();
         BeginCardReading(frameElapsed);

@@ -1035,6 +1035,40 @@ reading preserves the browser until an explicit use action. Eligible hand-card
 placement options, including Gaea's Touch, retain the existing `HandPlacements`
 and `UseHandPlacement` route, followed by Forge's required card selection.
 
+`GameSnapshot.PlayAccesses` separately describes this viewer's retained cast or
+land-play permissions from disclosed external zones. Each entry references its
+actual zone owner, zone and occurrence; routes carry an engine identity, visible
+granting source and description. `CanStart` means the current engine input permits
+initiating that route, not that mana payment will succeed. Route IDs never become
+command handles. Permission membership can persist while another player acts or
+a required choice suspends casting, and disappears when the grant expires.
+
+Forge separates ability variant generation from current timing/payment filtering
+for this projection. Existing legal-action consumers retain their original
+filters. The native decoder requires each referenced face to be disclosed in the
+same snapshot and rejects stale, hidden or contradictory references. No extra
+faces, library order or inferred permission cross this boundary. Older producers
+that omit the additive collection retain ordinary zone inspection.
+
+`TableScene.PlayAccess` prepares adjacent card fans without changing hand
+membership or ownership. Groups retain their zone and permission-source identity;
+multiple routes do not duplicate a card. The plan owns its footprint and the
+nearby priority-control reservation. Reading and dragging reuse the ordinary
+card/source-action pipeline, including current-scope revalidation. A played
+occurrence travels from its actual displayed position into the stack. Continuous
+scrolling exposes larger groups in place; the battlefield camera does not move
+the local hand or access fans.
+
+A released play can await its one pending source query without submitting a
+speculative action. The retained intent pauses automatic passing and is cancelled
+by changed scope, permission, disclosure or a new explicit gesture. Submission
+uses the exact returned offer; multiple routes require a choice. After acceptance,
+only the disclosed card's presentation pose can survive a prompt-free resolving
+observation. Its previous command authority retires immediately. Face-down foretell
+disclosure is outside this slice. Modal cards retain their existing two-face
+reader and face-naming action; the access fan represents the physical occurrence,
+not a new per-route face preview.
+
 Target choices use the provider-neutral `TargetSelectionPayload`. Their
 source is highlighted on the table, pointer aiming links it to legal cards or
 portraits, and the dock retains engine-permitted cancellation without calling a

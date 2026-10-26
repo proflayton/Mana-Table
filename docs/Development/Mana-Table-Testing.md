@@ -260,6 +260,17 @@ checks the live target → optional search → private-library journey, absence 
 a matching partner, accepted shuffle versus refusal, and Solemn Simulacrum's
 optional search without a player picker. These tests do not approve the UX.
 
+`play-access.v1` places source-distinct exile grants, a graveyard flashback card,
+an opponent-owned exiled card and an exiled land beside the unchanged hand.
+Its eleven authored stages include retained access off priority, grant expiry,
+two routes for one card, continuous overflow, and physical stack/resolution
+transitions. `PlayAccessPresentationChecks` and the existing headless presentation
+lane cover exact source offers, noncommitting reading, scroll/drag gestures,
+withdrawn disclosure and permission between press/release, and normal/reduced
+motion. `PlayAccessTest` uses real Forge grants, flashback, library-top land
+access and same-turn Plot access. These checks establish the boundary and gesture
+behavior; inspect actual artwork at both window sizes before assessing clarity.
+
 The pending-effect journey in `--smoke-headless-presentation` distinguishes a
 captured `+3` counter addition/three damage from a current total of twenty, keeps
 unknown damage unknown, preserves the context on the stack, and checks read-only

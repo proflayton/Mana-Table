@@ -61,6 +61,7 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
     private final PlayerView viewer;
     private final MatchActivity activity;
     private final QuietYieldBaseline quietYield = new QuietYieldBaseline();
+    private final PlayAccessProjection playAccess = new PlayAccessProjection();
     private final CombatCardIds combatIds;
     private final IGuiGame gui;
     private final Object gate;
@@ -773,6 +774,7 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
     private void markBusy() {
         var next = new LinkedHashMap<>(latest);
         next.put("revision", ++revision); next.put("prompt", null); next.put("status", "resolving");
+        next.put("playAccesses", PlayAccessProjection.withoutCurrentOffers(next.get("playAccesses")));
         latest = Collections.unmodifiableMap(next);
         table.refreshDecisionState();
     }
@@ -850,6 +852,8 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
             }
         }
         if (clearPriority) next.put("priorityPlayerId", null);
+        if (!actionClass.equals("priority") || !Objects.equals(owner, viewer.getId()))
+            next.put("playAccesses", PlayAccessProjection.withoutCurrentOffers(next.get("playAccesses")));
         latest = Collections.unmodifiableMap(next);
     }
 
@@ -941,6 +945,9 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
                 "decisionOwnerId", null, "actionClass", "resolving",
                 "stack", stack, "combat", combatState(prompt), "prompt", prompt == null ? null : prompt.prompt,
                 "states", PublicStates.of(forge.game.PublicTableStates.snapshot(game)),
+                "playAccesses", playAccess.project(human.getPlayer(), allPlayers,
+                        prompt != null && prompt.input instanceof InputPassPriority && sourceInputCurrent(prompt) ? prompt.input : null,
+                        human::getCard, activity::visualId),
                 "ignoredPriorityAbilities", priorityAbilities(human.getIgnoredPriorityAbilities(), prompt),
                 "result", result, "notices", List.copyOf(notices), "activity", activityFrame.entries());
         String quietToken = quietYield.observe(snapshot, activity.quietSequence());

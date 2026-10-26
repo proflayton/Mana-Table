@@ -24,6 +24,7 @@ internal sealed partial class TableApplication
         // Queue the player's faces first; slow remote downloads must not bury the hand.
         foreach (var card in state.Viewer?.Zone("Hand").Cards ?? []) resources.Card(card);
         foreach (var card in state.Viewer?.Zone("Command").Cards ?? []) resources.Card(card);
+        foreach (var card in tableScene!.PlayAccess.Groups.SelectMany(group => group.Cards).Select(item => item.Scene.Card)) resources.Card(card);
         var opponents = TableLayout.Opponents(state);
         foreach (int i in new[] { 1, 0, 2 }) if (i < opponents.Length) DrawOpponent(opponents[i], i);
         if (state.Viewer is { } viewer) DrawLocal(viewer);
@@ -36,7 +37,7 @@ internal sealed partial class TableApplication
         DrawCombatConnections(); DrawAttachmentConnections(); DrawStack(); DrawSeatTransfers();
         DrawChangeHighlights();
         if (!BattlefieldFocused) DrawEffectTransitions();
-        DrawHand(); DrawCardEffects(); DrawDepartures();
+        DrawHand(); DrawPlayAccess(); DrawCardEffects(); DrawDepartures();
         if (!BattlefieldFocused) DrawLiftedCards();
         // Your seat stays in front of the fan and readable during card travel.
         if (state.Viewer is { } local) DrawHero(local, SeatHero(local.Id), true, 3);
@@ -50,8 +51,10 @@ internal sealed partial class TableApplication
             else {
                 // Keep the held occurrence in the scene, so release continues
                 // from the pointer instead of respawning it at the library.
-                var heldPose = matchPresentation.Cards.Hold(CardIdentity(heldCard), new(pointer.ToVector2() + new Vector2(0, -72), new(132, 185), -.025f, Elevation: 18));
-                PaintInteractionCard(heldCard, heldPose, false, legal);
+                var heldPose = new Pose(pointer.ToVector2() + new Vector2(0, -72), new(132, 185), -.025f, Elevation: 18);
+                DrawTableCard(CardIdentity(heldCard), heldCard, heldPose, dragSource!.Zone!, dragSource.PlayerId,
+                    dragSource.Id, new MatchIntent.UseCard(heldCard), (pose, _) => PaintInteractionCard(heldCard, pose, false, legal),
+                    directPlacement: true);
             }
         }
         hovered = !dragging ? HitAt(pointer)?.Card : null;
@@ -125,6 +128,8 @@ internal sealed partial class TableApplication
     private void DrawSceneCard(SceneCard node)
     {
         var card = node.Card;
+        if (node.Zone != "Battlefield" && dragging && dragSource is { Card: { } held }
+            && dragSource.Zone == node.Zone && CardViews.Same(card, held)) return;
         // The study reads a copy while the current battlefield occurrence stays
         // in place. The presentation controller includes this same anchor in
         // its scoped hit geometry, so a second click can close inspection.

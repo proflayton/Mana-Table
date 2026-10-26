@@ -77,12 +77,14 @@ public sealed class TableScene
 {
     private readonly Dictionary<int, SceneSeat> seats;
     public HandPlan Hand { get; }
+    public PlayAccessPlan PlayAccess { get; }
     public IReadOnlyList<SceneSeat> Seats { get; }
     public IReadOnlyList<SceneCard> BattlefieldDrawOrder { get; }
 
-    private TableScene(HandPlan hand, SceneSeat[] seats)
+    private TableScene(HandPlan hand, PlayAccessPlan playAccess, SceneSeat[] seats)
     {
         Hand = hand;
+        PlayAccess = playAccess;
         Seats = Array.AsReadOnly(seats);
         this.seats = seats.ToDictionary(seat => seat.PlayerId);
         BattlefieldDrawOrder = Array.AsReadOnly(seats.SelectMany(seat => seat.Battlefield).SelectMany(cluster => cluster.Cards)
@@ -100,9 +102,10 @@ public sealed class TableScene
     public static TableScene Build(GameSnapshot state, int handPage,
         Point pointer, string? previouslyRaised, string? dragged, bool allowHover, Func<Card, bool> isResource,
         Func<Card, int, bool, BattlefieldLabelMetrics>? denseMeasure = null, bool allowInlineOrdering = true,
-        bool sharedTableStudy = false)
+        bool sharedTableStudy = false, int playAccessScroll = 0)
     {
         var hand = HandLayout.Build(state, handPage, pointer, previouslyRaised, dragged, allowHover);
+        var playAccess = PlayAccessPlan.Build(state, playAccessScroll);
         var orderedChoices = allowInlineOrdering && state.Decision?.Payload is OrderingPayload order
             ? order.Selection.Choices.Where(choice => choice.Card != null && choice.CardId.Length > 0).Select(choice => choice.CardId).ToHashSet(StringComparer.Ordinal) : null;
         bool duel = sharedTableStudy && state.Players.Length == 2;
@@ -142,6 +145,6 @@ public sealed class TableScene
             seats = seats.Select(seat => new SceneSeat(seat.Geometry, all.Where(item => item.Node.Owner == seat.PlayerId)
                 .GroupBy(item => item.Kind).Select(group => new BattlefieldCluster(group.Key, group.Select(item => item.Node).ToArray())).ToArray())).ToList();
         }
-        return new(hand, seats.ToArray());
+        return new(hand, playAccess, seats.ToArray());
     }
 }
