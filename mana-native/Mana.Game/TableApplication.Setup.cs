@@ -18,6 +18,7 @@ internal sealed partial class TableApplication
         inspectedAction = null;
         zonePage = decisions.Page = 0; decisions.Filter = "";
         FoldCardCollection();
+        publicCollectionReturns.Clear();
         automatic = !Automated && preferences.Automatic; pressed = null;
         ClearCardReading(); ClearReaderActions();
         releasedCardPlay = null;

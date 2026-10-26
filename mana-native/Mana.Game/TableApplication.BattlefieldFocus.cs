@@ -23,8 +23,8 @@ internal sealed partial class TableApplication
         FocusedBattlefieldLayout.Group(player.Zone("Battlefield").Cards, CardPresentation.IsResource, matchPresentation.Changes);
     private static string BattlefieldFocusRoleLabel(string role) => role == "Lands" ? "Other lands" : role;
 
-    // This workspace paints aliases of public table objects. It never prepares
-    // a second canonical occurrence or submits an engine action when inspecting.
+    // This workspace paints aliases of public table objects. Inspection stays
+    // noncommitting; a current required candidate keeps its explicit use intent.
     private void PrepareFocusedBattlefield()
     {
         battlefieldFocusPlan = null;
@@ -118,8 +118,11 @@ internal sealed partial class TableApplication
             }
             if (over) hovered = card;
             string game = state.Id, identity = CardViews.Identity(card); int owner = player.Id;
+            MatchIntent intent = actionable && decisions.Presentation?.Payload is TargetSelectionPayload or EntitySelectionPayload
+                && DecisionCommands.Card(state, card.Key) is SelectCard
+                ? new MatchIntent.UseCard(card) : new MatchIntent.ReadFocusedCard(game, owner, identity);
             hits.Add(new("battlefield-focus-card:" + tile.Group.Id, Scope, visible,
-                new MatchIntent.ReadFocusedCard(game, owner, identity), card, "BattlefieldFocus", owner));
+                intent, card, "BattlefieldFocus", owner));
         }
         if (plan.Tiles.Count == 0)
             canvas.CenterText("No permanents on this battlefield.", BattlefieldFocusViewport, Muted, 1);

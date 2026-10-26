@@ -8,5 +8,7 @@ public static class DecisionLayout
 {
     public static bool UsesSourceWorkspace(Decision? decision) => decision is {
         Payload: OpeningHandPayload or ConfirmationPayload
-    } or { Payload: TargetSelectionPayload { Search: not null } };
+    } or { Payload: TargetSelectionPayload { Search: not null } }
+        or { Payload: EntitySelectionPayload { CounterPayment: not null } }
+        or { Payload: OptionsPayload { CounterPayment: not null } };
 }

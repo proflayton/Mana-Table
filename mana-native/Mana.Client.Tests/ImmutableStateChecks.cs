@@ -116,6 +116,40 @@ internal static class ImmutableStateChecks
         var numeric = (NumberPayload)JsonSerializer.Deserialize<Decision>(JsonSerializer.Serialize(new Decision("number", new(), new NumberPayload("-4")), json), json)!.Payload;
         check(numeric.Range == null && ((EntitySelectionPayload)variants[6]).Range == null,
             "An unbounded integer textbox and an entity selector without published cardinality retain absent ranges");
+        var counterSelection = new ChoiceSelection([new(7, "-1/-1", null), new(3, "Stun", null)], new(1, 1));
+        var paymentChoice = new CounterPaymentChoice(1, new(card.VisualId, card with { Key = "", Selectable = false }, 0, "Battlefield"),
+            [new(7, "M1M1", "-1/-1", 3), new(3, "STUN", "Stun", 1)]);
+        foreach (DecisionPayload payload in new DecisionPayload[] {
+            new EntitySelectionPayload(yes, no, [], CounterPayment: new(2, 1)),
+            new OptionsPayload(counterSelection, paymentChoice)
+        }) {
+            var supplied = new Decision("counter-payment", new(), payload);
+            string wire = JsonSerializer.Serialize(supplied, json);
+            var restored = JsonSerializer.Deserialize<Decision>(wire, json)!;
+            check(JsonSerializer.Serialize(restored, json) == wire
+                    && (restored.Payload is EntitySelectionPayload { CounterPayment: { Amount: 2, Remaining: 1 } }
+                        || restored.Payload is OptionsPayload { CounterPayment: { Amount: 1, Permanent.Card.Key: "", Options.Length: 2 } }),
+                "Immutable counter-payment progress, donor disclosure and exact offered counter types round-trip without new action handles");
+        }
+        Action[] invalidCounterPayments = [
+            () => _ = new CounterPaymentContext(0, 0),
+            () => _ = new CounterPaymentContext(1, -1),
+            () => _ = new CounterPaymentContext(1, 2),
+            () => _ = new CounterPaymentOption(0, "", "Counter", 1),
+            () => _ = new CounterPaymentOption(0, "STUN", "Stun", 0),
+            () => _ = new CounterPaymentChoice(1, new(card.VisualId, card, 0, "Battlefield"), paymentChoice.Options),
+            () => _ = new CounterPaymentChoice(1, paymentChoice.Permanent, [paymentChoice.Options[0], paymentChoice.Options[0]]),
+            () => _ = new CounterPaymentChoice(2, paymentChoice.Permanent, paymentChoice.Options),
+            () => _ = new OptionsPayload(single, paymentChoice),
+            () => _ = new OptionsPayload(new(counterSelection.Choices, new(0, 1)), paymentChoice),
+            () => _ = new OptionsPayload(new(counterSelection.Choices.Reverse().ToImmutableArray(), new(1, 1)), paymentChoice),
+            () => _ = new OptionsPayload(counterSelection, paymentChoice) with { Selection = single }
+        ];
+        foreach (var invalid in invalidCounterPayments) {
+            bool rejected = false;
+            try { invalid(); } catch (ArgumentException) { rejected = true; }
+            check(rejected, "Constructors and record copies preserve counter-payment bounds, keyless donor privacy and exact ordinary option identity");
+        }
 
         string[] rejectedJson = [
             """{"id":"x","context":{},"payload":{"type":"unknown"}}""",

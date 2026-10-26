@@ -25,6 +25,7 @@ import forge.game.event.GameEventPlayerStatsChanged;
 import forge.game.event.GameEventSnapshotRestored;
 import forge.game.card.CardView;
 import forge.game.card.Card;
+import forge.game.card.CounterType;
 import forge.game.combat.CombatUtil;
 import forge.game.player.*;
 import forge.game.spellability.SpellAbilityView;
@@ -36,6 +37,7 @@ import forge.gui.control.PlaybackSpeed;
 import forge.gui.interfaces.IGuiGame;
 import forge.item.PaperCard;
 import forge.player.PlayerControllerHuman;
+import forge.player.HumanCostDecision;
 import forge.player.PlayerZoneUpdates;
 import forge.util.FSerializableFunction;
 
@@ -162,6 +164,9 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
         gui = (IGuiGame) Proxy.newProxyInstance(IGuiGame.class.getClassLoader(), new Class<?>[]{IGuiGame.class}, (proxy, method, args) -> {
             table.enter(this);
             if (method.getName().equals("chooseColor")) return chooseColor((String) args[0], (CardView) args[1], (List<MagicColor.Color>) args[2]);
+            if (method.getName().equals("chooseCounterTypeForPayment")) return chooseCounterTypeForPayment((String) args[0],
+                    (CardView) args[1], (int) args[2], (List<CounterType>) args[3],
+                    (Map<CounterType, Integer>) args[4]);
             if (method.isDefault()) return InvocationHandler.invokeDefault(proxy, method, args);
             return invokeGui(method.getName(), args == null ? new Object[0] : args);
         });
@@ -364,6 +369,10 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
             if (current instanceof InputLondonMulligan mulligan) {
                 next.prompt.put("min", mulligan.getCardsToReturn());
                 next.prompt.put("max", mulligan.getCardsToReturn());
+            }
+            if (current instanceof HumanCostDecision.InputSelectCardToRemoveCounter counters) {
+                var payment = counters.getCounterPayment();
+                if (payment.amount() > 0) next.prompt.put("counterPayment", map("amount", payment.amount(), "remaining", payment.remaining()));
             }
             if (promptSource != null && promptSource.canBeShownTo(viewer)) {
                 next.prompt.put("sourceCard", cardState(promptSource, null));
@@ -1380,6 +1389,38 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
                 map("index", i, "label", colors.get(i).getTranslatedName(), "mana", "{" + colors.get(i).getShortName() + "}")).toList());
         var answer = await(next);
         return colors.get(answer.getAsJsonArray("choices").get(0).getAsInt());
+    }
+
+    private CounterType chooseCounterTypeForPayment(String message, CardView permanent, int amount,
+            List<CounterType> types, Map<CounterType, Integer> available) {
+        if (types.size() <= 1) return types.isEmpty() ? null : types.get(0);
+        var next = choicePrompt("choice", message, types, 1, 1, false, type -> ((CounterType) type).getName());
+        if (promptSource != null && promptSource.canBeShownTo(viewer)) {
+            next.prompt.put("sourceCard", counterPaymentCard(promptSource));
+            next.prompt.put("sourceZone", promptSource.getZone() == null ? "" : promptSource.getZone().name());
+            next.prompt.put("sourceControllerId", promptSource.getController() == null ? null : promptSource.getController().getId());
+        }
+        if (permanent != null && permanent.getZone() == ZoneType.Battlefield && isAllocationOccurrence(permanent, viewer)) {
+            var affected = map("cardId", combatIds.id(permanent), "card", counterPaymentCard(permanent),
+                    "controllerId", permanent.getController() == null ? null : permanent.getController().getId(),
+                    "zone", permanent.getZone().name());
+            var options = new ArrayList<Object>();
+            for (int index = 0; index < types.size(); index++) {
+                var type = types.get(index);
+                options.add(map("index", index, "type", type.toString(), "label", type.getName(), "available", available.get(type)));
+            }
+            next.prompt.put("counterPaymentChoice", map("amount", amount, "permanent", affected, "options", options));
+        }
+        var answer = await(next);
+        return types.get(answer.getAsJsonArray("choices").get(0).getAsInt());
+    }
+
+    private Map<String, Object> counterPaymentCard(CardView card) {
+        var details = allocationCard(card);
+        // A public face-down position has a combat ID, not a disclosed identity.
+        if (details.get("visualId") == null) details.remove("visualId");
+        if (details.get("combatId") == null) details.remove("combatId");
+        return details;
     }
 
     private List<?> choose(String title, int min, int max, List<?> choices, boolean ordered, FSerializableFunction<Object, String> display) {

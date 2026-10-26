@@ -51,7 +51,7 @@ internal sealed class CardPresentationController
         // A reader survives pointer movement, but never lost visibility or a
         // required compact interaction. Reconciliation uses the current snapshot.
         if (pinnedId != null && (current.Dragging || leavingOpeningHand || Pinned is not { } pinned
-            || current.CompactDecision && !current.CanBrowseHandSelection(pinned) || !current.CanRead(pinned))) {
+            || current.CompactDecision && !current.CanBrowseHandSelection(pinned) && !current.CanBrowsePublicCollection(pinned) || !current.CanRead(pinned))) {
             string oldId = pinnedId;
             bool relocated = current.State != null && CardViews.Located(current.State).Any(item =>
                 !item.Card.FaceDown && CardViews.Identity(item.Card) == oldId && item.Zone != pinnedZone);
@@ -194,6 +194,12 @@ internal sealed class CardPresentationController
     {
         displayedPoses[id] = new(pose, false);
         return motion.Hold(id, pose);
+    }
+    internal void ContinueReturn(string id)
+    {
+        // A collection folds toward its physical pile, retaining the last
+        // displayed geometry instead of a reader's immediate-collapse shortcut.
+        pendingCollapses.Remove(id); transitions.Remove(id);
     }
     public bool TryGetPose(string id, out Pose pose)
     {

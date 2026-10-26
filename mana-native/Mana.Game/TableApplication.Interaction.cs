@@ -65,6 +65,12 @@ internal sealed partial class TableApplication
     private void OpenZone(int player, string zone)
     {
         if (MultiplayerFocusAvailable && zone == "Battlefield") { SetStudyFocus(player); return; }
+        if (zone is "Graveyard" or "Exile") {
+            zoneName = null; overlay = "";
+            ExpandCardCollection(new CardCollectionTarget.PublicZone(player,
+                zone == "Graveyard" ? PublicInspectionZone.Graveyard : PublicInspectionZone.Exile));
+            return;
+        }
         zonePlayer = player; zoneName = zone; zonePage = 0; overlay = "";
     }
     private bool LibraryRecipientTarget => decisions.Presentation?.Payload is TargetSelectionPayload { Search: not null };

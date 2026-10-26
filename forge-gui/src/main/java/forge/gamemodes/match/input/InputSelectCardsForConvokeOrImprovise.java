@@ -57,6 +57,11 @@ public final class InputSelectCardsForConvokeOrImprovise extends InputSelectMany
     }
 
     @Override
+    protected Iterable<Card> getSelectableEntities() {
+        return availableCards;
+    }
+
+    @Override
     protected String getMessage() {
         StringBuilder sb = new StringBuilder();
         if ( FModel.getPreferences().getPrefBoolean(ForgePreferences.FPref.UI_DETAILED_SPELLDESC_IN_PROMPT) &&

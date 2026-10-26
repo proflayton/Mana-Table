@@ -73,6 +73,61 @@ internal static class ForgeCommandBoundaryChecks
             "A targeted search remains a real unresolved player decision");
         check(Decode(""" "kind":"input","task":"selection" """).Payload is EntitySelectionPayload { Range: null },
             "A current entity input with no published selection bounds retains that absence");
+        var counterProgress = Decode(""" "kind":"input","task":"selection","counterPayment":{"amount":2,"remaining":1} """);
+        check(counterProgress.Payload is EntitySelectionPayload { Range: null, CounterPayment: { Amount: 2, Remaining: 1 } },
+            "A non-mana counter payment preserves authoritative total and remaining counts without inventing target bounds");
+        check(Decode(""" "kind":"input","task":"selection","counterPayment":{"amount":2,"remaining":0} """).Payload
+                is EntitySelectionPayload { CounterPayment.Remaining: 0 },
+            "A fully allocated counter cost retains its explicit zero remaining count");
+        const string ordinaryCounterChoices = """ "kind":"choice","task":"choice","min":1,"max":1,"choices":[{"index":7,"label":"-1/-1"},{"index":3,"label":"Stun"}] """;
+        const string donor = """ {"cardId":"donor-visible","card":{"visualId":"donor-visible","key":"","name":"Current donor","power":1,"toughness":2,"counters":{"-1/-1":3,"Stun":1}},"controllerId":0,"zone":"Battlefield"} """;
+        const string counterOptions = """ [{"index":7,"type":"M1M1","label":"-1/-1","available":3},{"index":3,"type":"STUN","label":"Stun","available":1}] """;
+        const string anonymousDonor = """ {"cardId":"anonymous-position","card":{"combatId":"anonymous-position","faceDown":true,"name":"Face-down or hidden card","type":"Creature","power":2,"toughness":2},"controllerId":0,"zone":"Battlefield"} """;
+        string CounterChoice(string options = counterOptions, string permanent = donor, int amount = 1)
+            => "\"counterPaymentChoice\":{\"amount\":" + amount + ",\"permanent\":" + permanent + ",\"options\":" + options + "}";
+        var counterTypes = Decode(ordinaryCounterChoices + "," + CounterChoice()
+            + """ ,"sourceCard":{"visualId":"activation-host","key":"","name":"Ability host"},"sourceZone":"Battlefield","sourceControllerId":0 """, 0);
+        check(counterTypes.Payload is OptionsPayload { CounterPayment: { Amount: 1, Permanent: { CardId: "donor-visible", Card.Key: "" }, Options: var types } }
+                && types.Select(option => (option.Index, option.Type, option.Available)).SequenceEqual([(7, "M1M1", 3), (3, "STUN", 1)])
+                && counterTypes.Context.Source?.Card?.VisualId == "activation-host",
+            "An ordinary counter-type choice retains its current keyless donor, exact debit and legal unallocated counts at original offered indices");
+        check(Decode(ordinaryCounterChoices + "," + CounterChoice(counterOptions.Replace("\"available\":3", "\"available\":2")), 0).Payload
+                is OptionsPayload { CounterPayment: { Amount: 1, Options: [{ Available: 2 }, { Available: 1 }] } },
+            "An additional type choice keeps its one-counter debit and remaining legal availability instead of deriving them from the donor's unchanged total counters");
+        check(Decode(ordinaryCounterChoices + "," + CounterChoice(permanent: anonymousDonor), 0).Payload is OptionsPayload {
+                CounterPayment.Permanent: { CardId: "anonymous-position", Card: { FaceDown: true, VisualId: "", CombatId: "anonymous-position", Key: "" } } },
+            "A face-down battlefield donor retains only its anonymous public position and current public characteristics without inventing a face identity");
+        foreach (string invalid in new[] {
+            """ "kind":"input","task":"priority","counterPayment":{"amount":1,"remaining":1} """,
+            """ "kind":"input","task":"selection","purpose":"targets","min":1,"max":1,"counterPayment":{"amount":1,"remaining":1} """,
+            """ "kind":"input","task":"selection","counterPayment":{"amount":0,"remaining":0} """,
+            """ "kind":"input","task":"selection","counterPayment":{"amount":1,"remaining":-1} """,
+            """ "kind":"input","task":"selection","counterPayment":{"amount":1,"remaining":2} """,
+            ordinaryCounterChoices + ",\"ordered\":true," + CounterChoice(),
+            ordinaryCounterChoices + ",\"purpose\":\"abilities\"," + CounterChoice(),
+            ordinaryCounterChoices.Replace("\"min\":1", "\"min\":0") + "," + CounterChoice(),
+            ordinaryCounterChoices.Replace("\"max\":1", "\"max\":2") + "," + CounterChoice(),
+            ordinaryCounterChoices + "," + CounterChoice(amount: 0),
+            ordinaryCounterChoices + "," + CounterChoice(amount: 2),
+            ordinaryCounterChoices + "," + CounterChoice(counterOptions.Replace("\"index\":3", "\"index\":7")),
+            ordinaryCounterChoices + "," + CounterChoice(counterOptions.Replace("\"index\":3", "\"index\":9")),
+            ordinaryCounterChoices + "," + CounterChoice(counterOptions.Replace("\"available\":1", "\"available\":0")),
+            ordinaryCounterChoices + "," + CounterChoice(counterOptions.Replace("\"type\":\"STUN\"", "\"type\":\"\"")),
+            ordinaryCounterChoices + "," + CounterChoice(counterOptions.Replace("\"label\":\"Stun\"", "\"label\":\" \"")),
+            ordinaryCounterChoices + "," + CounterChoice(counterOptions.Replace("\"label\":\"Stun\"", "\"label\":\"Different label\"")),
+            ordinaryCounterChoices + "," + CounterChoice(""" [{"index":3,"type":"STUN","label":"Stun","available":1},{"index":7,"type":"M1M1","label":"-1/-1","available":3}] """),
+            ordinaryCounterChoices + "," + CounterChoice(permanent: donor.Replace("\"key\":\"\"", "\"key\":\"action-handle\"")),
+            ordinaryCounterChoices + "," + CounterChoice(permanent: donor.Replace("\"cardId\":\"donor-visible\"", "\"cardId\":\"other-occurrence\"")),
+            ordinaryCounterChoices + "," + CounterChoice(permanent: donor.Replace("\"zone\":\"Battlefield\"", "\"zone\":\"Hand\"")),
+            ordinaryCounterChoices + "," + CounterChoice(permanent: donor.Replace("\"controllerId\":0", "\"controllerId\":99")),
+            ordinaryCounterChoices + "," + CounterChoice(permanent: anonymousDonor.Replace("Face-down or hidden card", "Unrevealed printed identity")),
+            ordinaryCounterChoices + "," + CounterChoice(permanent: anonymousDonor.Replace("\"type\":\"Creature\"", "\"text\":\"Unrevealed rules\",\"type\":\"Creature\"")),
+            ordinaryCounterChoices + "," + CounterChoice(permanent: anonymousDonor.Replace("\"combatId\":\"anonymous-position\"", "\"visualId\":\"hidden-face-id\",\"combatId\":\"anonymous-position\""))
+        }) {
+            bool failed = false;
+            try { Decode(invalid, 0); } catch (IOException) { failed = true; }
+            check(failed, "Counter-payment metadata rejects incompatible tasks, contradictory counts/indices and actionable or unlinked donor faces");
+        }
         var ordering = Decode("""
             "kind":"choice","task":"choice","ordered":true,"min":2,"max":2,"choices":[{"index":7,"label":"First"},{"index":3,"label":"Second"}]
             """);
@@ -178,6 +233,15 @@ internal static class ForgeCommandBoundaryChecks
         check(((ImmutableArray<int>)chosen["choices"]!).SequenceEqual([3]) && (string)chosen["expectedTask"]! == "choice",
             "Option commands preserve exact immutable offered indices");
         Reject(new OrderOptions(game, prompt, [3]), "Unordered options cannot impersonate an ordering");
+        scope.Observe(State(counterTypes.Payload));
+        var counterCommand = scope.Encode(new ChooseOptions(game, prompt, [7]));
+        check(((ImmutableArray<int>)counterCommand["choices"]!).SequenceEqual([7]) && (string)counterCommand["expectedTask"]! == "choice",
+            "Counter payment presentation still submits only the exact ordinary current option index");
+        Reject(new SelectCard(game, prompt, source.Key), "A counter-type donor face does not authorize selecting a card from an ordinary options task");
+        var undeclaredCounterSource = State(counterProgress.Payload) with { Players = [new(0, "You", 40, true, false,
+            ImmutableDictionary<string, int>.Empty, [new("Battlefield", 1, [source with { Selectable = false }], null)])] };
+        check(!GameCommandPermissions.Allows(undeclaredCounterSource, new SelectCard(game, prompt, source.Key)),
+            "Counter-payment progress never grants SelectCard permission to an undeclared physical source");
         scope.Observe(State(new NumberPayload("", new(2, 5))));
         check((string)scope.Encode(new ChooseNumber(game, prompt, 4))["value"]! == "4", "Number encoding preserves integer wire values");
         Reject(new EnterText(game, prompt, "4"), "Number prompts do not accept a text command");

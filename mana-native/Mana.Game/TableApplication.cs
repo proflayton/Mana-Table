@@ -335,7 +335,7 @@ internal sealed partial class TableApplication : IDisposable
         tableScene = match == null ? null : TableScene.Build(match, pointer, null,
             dragging && dragSource?.Card is { } held ? CardViews.Identity(held) : null, false, CardPresentation.IsResource,
             denseMeasure: MeasureDenseBattlefieldLabel, allowInlineOrdering: TableChoices.IsDirect(match), sharedTableStudy: TableStudyEnabled,
-            spread: spreadId == null ? null : new(spreadId, spreadTarget, spreadAreaTop), spreadMeasure: MeasureSpreadPacketHeader);
+            spread: spreadCollection == null ? null : new(spreadCollection, spreadTarget, spreadAreaTop), spreadMeasure: MeasureSpreadPacketHeader);
         PrepareCardCollection();
         UpdateBoardView();
         PrepareMatchPresentation();

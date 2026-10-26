@@ -16,6 +16,7 @@ public static class PlayAccessScenario
     public const string ChandraId = "access-chandra";
     public const string IterationId = "access-iteration";
     public const string HostageId = "access-hostage-taker";
+    public const string MaskedExileId = "public-exile-masked";
 
     public static IReadOnlyList<ExperienceStage> Create()
     {
@@ -54,6 +55,23 @@ public static class PlayAccessScenario
         var flashbackPending = Cast(initial, FlashbackId);
         var flashbackResolved = Resolve(flashbackPending, FlashbackId, "Exile");
         var landPlayed = Land(initial, ExileLandId);
+        var publicZones = PublicZones(initial);
+        var publicWithdrawal = publicZones with {
+            PlayAccesses = publicZones.PlayAccesses.Where(access => access.CardId != FlashbackId).ToImmutableArray(),
+            Players = publicZones.Players.Select(player => player.Id != 0 ? player : player with {
+                Zones = player.Zones.Select(zone => zone.Name != "Graveyard" ? zone : zone with {
+                    Cards = zone.Cards.Where(card => card.VisualId != FlashbackId).ToImmutableArray(), Count = zone.Count - 1
+                }).ToImmutableArray()
+            }).ToImmutableArray()
+        };
+        var publicRequired = RetainWithoutInitiation(publicZones) with {
+            Decision = required.Decision, PriorityPlayerId = null, DecisionOwnerId = 0, ActionClass = "selection"
+        };
+        publicRequired = publicRequired with { Players = publicRequired.Players.Select(player => player.Id != 0 ? player : player with {
+            Zones = player.Zones.Select(zone => zone.Name != "Hand" ? zone : zone with {
+                Cards = zone.Cards.Select(card => card with { Selectable = true }).ToImmutableArray()
+            }).ToImmutableArray()
+        }).ToImmutableArray() };
         return [
             new("Hand and retained access", "One hand, separate exile grants, flashback and an opponent-owned exiled card. The prepared copy stays linked to Emeritus.", initial),
             new("Another player's priority", "The grants remain visible while their routes cannot start. Reading does not claim priority.", offTurn),
@@ -68,7 +86,10 @@ public static class PlayAccessScenario
             new("Land enters", "The exact land enters from its actual source zone without using the stack. This checkpoint plays the Forest granted by Expressive Iteration.", landPlayed),
             new("Thirty-seven cards in hand", "The same private hand unfolds into a physical spread. Inspect its first, middle and last occurrences without changing the hand or casting.", Many(initial, 37, 0)),
             new("Sixty cards playable elsewhere", "A thirty-seven-card hand and sixty granted occurrences remain distinct physical collections. Unfold a source packet and move across its spread.", Many(initial, 37, 56)),
-            new("Two hundred cards playable elsewhere", "A large authored permission set for reviewing source packets and spatial navigation. All faces are already disclosed; no hidden cards or rules outcomes are inferred.", Many(initial, 37, 196))
+            new("Two hundred cards playable elsewhere", "A large authored permission set for reviewing source packets and spatial navigation. All faces are already disclosed; no hidden cards or rules outcomes are inferred.", Many(initial, 37, 196)),
+            new("Inspect actual public piles", "Large graveyards and exile contain mostly unplayable cards. Open a player's actual pile to inspect its current disclosed occurrences. Masked exile and count-only zones never disclose extra faces.", publicZones),
+            new("A public face leaves", "Think Twice is no longer disclosed in the graveyard and its flashback grant is gone. A focused public-zone inspection must release its old face and action immediately.", publicWithdrawal),
+            new("A required decision interrupts inspection", "The same large public piles remain, but a new hand choice owns input. Public inspection does not become an answer to that required choice.", publicRequired)
         ];
     }
 
@@ -158,6 +179,38 @@ public static class PlayAccessScenario
             PlayAccesses = [.. state.PlayAccesses, .. extra.Select(card => new PlayAccess(0, "Exile", card.VisualId,
                 [new("overflow-" + card.VisualId, PlayAccessKind.Cast, ChandraId, "Chandra, Torch of Defiance", "Cast " + card.ManaCost, true)]))]
         };
+    }
+
+    private static GameSnapshot PublicZones(GameSnapshot state)
+    {
+        var masked = new Card { VisualId = MaskedExileId, CombatId = MaskedExileId, FaceDown = true, States = [] };
+        return state with {
+            Players = state.Players.Select(player => player with {
+                Zones = player.Zones.Select(zone => (player.Id, zone.Name) switch {
+                    (0, "Graveyard") => zone with { Cards = [.. zone.Cards, .. PublicHistory("public-local-grave", 35)], Count = 37 },
+                    (0, "Exile") => zone with { Cards = [.. zone.Cards, .. PublicHistory("public-local-exile", 33), masked], Count = 37 },
+                    (1, "Graveyard") => zone with { Cards = PublicHistory("public-opponent-grave", 11), Count = 11 },
+                    (1, "Exile") => zone with { Cards = [.. zone.Cards, .. PublicHistory("public-opponent-exile", 36)], Count = 37 },
+                    (2, "Exile") => zone with { Cards = [], Count = 6 },
+                    _ => zone
+                }).ToImmutableArray()
+            }).ToImmutableArray()
+        };
+    }
+
+    private static ImmutableArray<Card> PublicHistory(string prefix, int count)
+    {
+        (string Name, string Type, string Cost)[] faces = [
+            ("Swords to Plowshares", "Instant", "{W}"), ("Cultivate", "Sorcery", "{2}{G}"),
+            ("Counterspell", "Instant", "{U}{U}"), ("Nature's Lore", "Sorcery", "{1}{G}"),
+            ("Arcane Signet", "Artifact", "{2}"), ("Beast Within", "Instant", "{2}{G}"),
+            ("Farseek", "Sorcery", "{1}{G}"), ("Lightning Bolt", "Instant", "{R}"),
+            ("Command Tower", "Land", ""), ("Path to Exile", "Instant", "{W}")
+        ];
+        return Enumerable.Range(0, count).Select(index => {
+            var face = faces[index % faces.Length];
+            return Face(prefix + "-" + index.ToString("D2"), face.Name, face.Type, face.Cost, "");
+        }).ToImmutableArray();
     }
 
     internal static Decision Priority() => new("access-priority", new(Message: "You have priority."), new PriorityPayload(new("Pass", true)));

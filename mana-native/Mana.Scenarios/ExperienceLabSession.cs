@@ -42,6 +42,7 @@ public sealed partial class ExperienceLabSession
             abilityParent = null;
             if (Scenario.Id == "ability-targeting.v1") return AdvanceBallista(stage);
             if (Scenario.Id == PreparedSpellScenario.Id) return AdvancePreparedSpell(stage);
+            if (Scenario.Id == CounterPaymentScenario.Id) return AdvanceCounterPayment(stage);
             StageIndex = stage; return State = Stamp(Stages[stage].Snapshot);
         }
     }
@@ -72,6 +73,7 @@ public sealed partial class ExperienceLabSession
                 throw new EngineCommandRejectedException("This scripted snapshot changed. Use its current controls.");
             if (Scenario.Id == DecisionFlowScenario.Id) return ReplyDecisionFlow(reply);
             if (Scenario.Id == OptionalDecisionScenario.Id) return ReplyOptionalDecision(reply);
+            if (Scenario.Id == CounterPaymentScenario.Id) return ReplyCounterPayment(reply);
             if (Scenario.Id == PlayAccessScenario.Id && reply is PassPriority) return ReplyPlayAccess(reply);
             var decision = State.Decision!;
             var options = decision.Payload switch {

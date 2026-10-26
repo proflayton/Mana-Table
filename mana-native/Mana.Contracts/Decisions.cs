@@ -117,13 +117,14 @@ public sealed record TargetSelectionPayload(DecisionReply Complete, DecisionRepl
     public ImmutableArray<int> Players { get => players; init => players = value.IsDefault ? [] : value; }
 }
 public sealed record EntitySelectionPayload(DecisionReply Complete, DecisionReply Cancel,
-    ImmutableArray<int> Players, SelectionRange? Range = null) : DecisionPayload
+    ImmutableArray<int> Players, SelectionRange? Range = null, CounterPaymentContext? CounterPayment = null) : DecisionPayload
 {
     private DecisionReply complete = DecisionValue.Required(Complete, nameof(Complete)), cancel = DecisionValue.Required(Cancel, nameof(Cancel));
     public DecisionReply Complete { get => complete; init => complete = DecisionValue.Required(value, nameof(Complete)); }
     public DecisionReply Cancel { get => cancel; init => cancel = DecisionValue.Required(value, nameof(Cancel)); }
     private ImmutableArray<int> players = Players.IsDefault ? [] : Players;
     public ImmutableArray<int> Players { get => players; init => players = value.IsDefault ? [] : value; }
+    public CounterPaymentContext? CounterPayment { get; } = CounterPayment;
 }
 // An absent Decline is an acknowledgment, not an optional effect whose No
 // button happens to be disabled. Commands preserve that distinction.
@@ -132,10 +133,73 @@ public sealed record ConfirmationPayload(DecisionReply Accept, DecisionReply? De
     private DecisionReply accept = DecisionValue.Required(Accept, nameof(Accept));
     public DecisionReply Accept { get => accept; init => accept = DecisionValue.Required(value, nameof(Accept)); }
 }
-public sealed record OptionsPayload(ChoiceSelection Selection) : DecisionPayload
+public sealed record OptionsPayload(ChoiceSelection Selection, CounterPaymentChoice? CounterPayment = null) : DecisionPayload
 {
-    private ChoiceSelection selection = DecisionValue.Required(Selection, nameof(Selection));
-    public ChoiceSelection Selection { get => selection; init => selection = DecisionValue.Required(value, nameof(Selection)); }
+    private ChoiceSelection selection = ValidateSelection(Selection, CounterPayment);
+    public ChoiceSelection Selection { get => selection; init => selection = ValidateSelection(value, CounterPayment); }
+    public CounterPaymentChoice? CounterPayment { get; } = CounterPayment;
+    private static ChoiceSelection ValidateSelection(ChoiceSelection value, CounterPaymentChoice? payment)
+    {
+        ArgumentNullException.ThrowIfNull(value);
+        if (payment != null && (value.Range is not { Min: 1, Max: 1 } || !value.Disclosures.IsEmpty
+            || !value.Choices.Select(choice => (choice.Index, choice.Label)).SequenceEqual(payment.Options.Select(option => (option.Index, option.Label)))))
+            throw new ArgumentException("Counter payment descriptions must name the exact ordinary offered choices.", nameof(payment));
+        return value;
+    }
+}
+
+/// <summary>Authoritative non-mana payment progress; it grants no selection permission.</summary>
+public sealed record CounterPaymentContext
+{
+    public int Amount { get; }
+    public int Remaining { get; }
+    [JsonConstructor]
+    public CounterPaymentContext(int amount, int remaining)
+    {
+        if (amount <= 0 || remaining < 0 || remaining > amount) throw new ArgumentOutOfRangeException(nameof(remaining));
+        Amount = amount; Remaining = remaining;
+    }
+}
+
+public sealed record CounterPaymentOption
+{
+    public int Index { get; }
+    public string Type { get; }
+    public string Label { get; }
+    public int Available { get; }
+    [JsonConstructor]
+    public CounterPaymentOption(int index, string type, string label, int available)
+    {
+        if (index < 0 || available <= 0) throw new ArgumentOutOfRangeException(nameof(available));
+        if (string.IsNullOrWhiteSpace(type) || string.IsNullOrWhiteSpace(label)) throw new ArgumentException("A counter choice needs its type and label.");
+        Index = index; Type = type; Label = label; Available = available;
+    }
+}
+
+/// <summary>The current donor and exact debit for this one offered counter-type choice.</summary>
+public sealed record CounterPaymentChoice
+{
+    public int Amount { get; }
+    public DecisionSource Permanent { get; }
+    public ImmutableArray<CounterPaymentOption> Options { get; }
+    [JsonConstructor]
+    public CounterPaymentChoice(int amount, DecisionSource permanent, ImmutableArray<CounterPaymentOption> options)
+    {
+        ArgumentNullException.ThrowIfNull(permanent);
+        Options = DecisionValue.Items(options);
+        if (amount <= 0 || Options.IsEmpty || Options.Any(option => option.Available < amount)
+            || Options.Select(option => option.Index).Distinct().Count() != Options.Length)
+            throw new ArgumentException("A counter payment requires a positive debit and unique offered indices.");
+        if (permanent.Card is not { Key.Length: 0 } card || permanent.Zone != "Battlefield"
+            || (card.FaceDown ? !string.IsNullOrEmpty(card.VisualId) || string.IsNullOrWhiteSpace(card.CombatId) || permanent.CardId != card.CombatId
+                : string.IsNullOrWhiteSpace(card.VisualId) || permanent.CardId != card.VisualId))
+            throw new ArgumentException("A counter payment donor requires a keyless disclosed battlefield occurrence.", nameof(permanent));
+        if (card.FaceDown && (card.Name is not ("" or "Face-down card" or "Face-down or hidden card")
+            || !string.IsNullOrEmpty(card.Text) || !string.IsNullOrEmpty(card.ManaCost) || !string.IsNullOrEmpty(card.ArtName) || card.OtherFace != null
+            || !string.IsNullOrEmpty(card.ArtSet) || !string.IsNullOrEmpty(card.Edition) || !string.IsNullOrEmpty(card.CollectorNumber)))
+            throw new ArgumentException("An anonymous battlefield donor cannot disclose its printed face.", nameof(permanent));
+        Amount = amount; Permanent = permanent;
+    }
 }
 public sealed record OrderingPayload(ChoiceSelection Selection) : DecisionPayload
 {

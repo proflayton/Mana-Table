@@ -52,9 +52,9 @@ internal static class PlayAccessPresentationChecks
         foreach (int stage in new[] { 5, 11, 12, 13 }) {
             var state = stages[stage].Snapshot;
             var folded = Build(state);
-            foreach (string collection in new[] { CardSpreadPlan.HandId, CardSpreadPlan.AccessId }) {
+            foreach (var collection in new[] { CardCollectionTarget.Hand, CardCollectionTarget.Access }) {
                 var spread = Build(state, new(collection)).Spread!;
-                var originals = collection == CardSpreadPlan.HandId ? folded.Hand.Cards
+                var originals = collection == CardCollectionTarget.Hand ? folded.Hand.Cards
                     : folded.PlayAccess.Groups.SelectMany(group => group.Cards).Select(item => item.Scene).ToArray();
                 check(spread.Anchors.Select(card => (card.Id, card.Pose, card.Zone, card.Owner))
                         .SequenceEqual(originals.Select(card => (card.Id, card.Pose, card.Zone, card.Owner)))
@@ -77,11 +77,49 @@ internal static class PlayAccessPresentationChecks
             }
         }
 
+        CheckPublicZones(stages[14].Snapshot, check);
         CheckAuthoredJourneys(check);
     }
 
     private static TableScene Build(GameSnapshot state, CardSpreadRequest? spread = null) => TableScene.Build(state, new(-100, -100),
         null, null, false, CardPresentation.IsResource, spread: spread);
+
+    private static void CheckPublicZones(GameSnapshot state, Action<bool, string> check)
+    {
+        foreach (var target in new[] {
+            new CardCollectionTarget.PublicZone(0, PublicInspectionZone.Graveyard),
+            new CardCollectionTarget.PublicZone(0, PublicInspectionZone.Exile),
+            new CardCollectionTarget.PublicZone(1, PublicInspectionZone.Exile)
+        }) {
+            var current = state.Players.Single(player => player.Id == target.PlayerId).Zone(target.Zone.ToString());
+            var disclosed = current.Cards.Where(card => !card.FaceDown).ToArray();
+            var scene = Build(state, new(target));
+            var spread = scene.Spread!;
+            check(spread.Target == target
+                    && spread.WorldCards.Select(card => card.Id).Order().SequenceEqual(disclosed.Select(card => card.VisualId).Order())
+                    && spread.WorldCards.All(card => card.Owner == target.PlayerId && card.Zone == target.Zone.ToString()
+                        && current.Cards.Contains(card.Card) && !card.Card.FaceDown)
+                    && spread.WorldCards.Select(card => card.Id).Distinct().Count() == disclosed.Length
+                    && spread.WorldCards.Any(card => !card.Card.Selectable),
+                "An actual public pile unfolds all its disclosed current occurrences, including unplayable cards, with their real zone and owner and no masked face");
+            check(scene.Hand.Cards.Select(card => card.Id).SequenceEqual(state.Viewer!.Zone("Hand").Cards.Select(card => card.VisualId))
+                    && scene.PlayAccess.Groups.SelectMany(group => group.Cards).Select(item => item.Scene.Id).Order()
+                        .SequenceEqual(state.PlayAccesses.Select(access => access.CardId).Order()),
+                "Inspecting a public zone neither turns its ordinary cards into play permissions nor changes the private hand or existing grants");
+            string newest = disclosed[^1].VisualId;
+            check(spread.Cards.Single(card => card.Id == newest).Pose.Bounds.Intersects(spread.Area)
+                    && spread.View.Scale >= .85f,
+                "A large public pile opens at its newest disclosed face at reading distance instead of beginning at its oldest history");
+        }
+        foreach (var target in new[] {
+            new CardCollectionTarget.PublicZone(2, PublicInspectionZone.Exile),
+            new CardCollectionTarget.PublicZone(2, PublicInspectionZone.Graveyard)
+        }) {
+            var spread = Build(state, new(target)).Spread;
+            check(spread is { } empty && empty.Target == target && empty.WorldCards.Count == 0 && empty.Anchors.Count == 0,
+                "An empty or count-only public zone retains its inspection context without fabricating concealed card faces or source handles");
+        }
+    }
 
     private static void CheckAuthoredJourneys(Action<bool, string> check)
     {

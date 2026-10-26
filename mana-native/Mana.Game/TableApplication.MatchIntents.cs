@@ -43,7 +43,7 @@ internal sealed partial class TableApplication
             case MatchIntent.UsePlayer use: PlayerClick(use.PlayerId); break;
             case MatchIntent.ChooseRecipient choice when match != null && StateClarity.ChooseRecipient(match, choice.PlayerId) is { } reply: Send(reply); break;
             case MatchIntent.SetPage page: SetMatchPage(page.PageKind, page.Page); break;
-            case MatchIntent.ExpandCardCollection expand: ExpandCardCollection(expand.Id); break;
+            case MatchIntent.ExpandCardCollection expand: ExpandCardCollection(expand.Target); break;
             case MatchIntent.FoldCardCollection: CollapseCardReading(); FoldCardCollection(); break;
             case MatchIntent.ResetCardCollectionView: ResetCardCollectionView(); break;
             case MatchIntent.FlipInspector: inspectBack = !inspectBack; inspectPage = 0; break;
@@ -60,6 +60,9 @@ internal sealed partial class TableApplication
                 Send(DecisionCommands.Choose(match, [])); break;
             case MatchIntent.ClearSelection: decisions.ClearSelection(); break;
             case MatchIntent.SelectChoice choice when match?.Decision is { } decision: ToggleChoice(decision, choice.Index); break;
+            case MatchIntent.ChooseCounterPayment choice when match?.Decision is { Payload: OptionsPayload { CounterPayment: { } payment } } decision
+                && payment.Options.Any(option => option.Index == choice.Index):
+                Send(new ChooseOptions(match.Id, decision.Id, [choice.Index])); break;
             case MatchIntent.ChooseAbility choice when match?.Decision is { } decision && decision.Payload is AbilityChoicePayload:
                 SubmitAbilityChoice(match, decision, choice.Index); break;
             case MatchIntent.FocusInput input: textFocus = true; decisions.Filtering = input.Filter; break;

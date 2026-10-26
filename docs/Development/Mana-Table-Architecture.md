@@ -95,6 +95,19 @@ occurrence disappears. Cross-zone play gestures use a current offered cast/play
 action rather than a UI list of permitted zones. Hand-placement and Auto still
 consume their separate explicit provider permissions.
 
+Cost-selection inputs must publish the actual current selectable candidates,
+not only provide an engine-side activation callback. Missing publication caused
+Loch Mare's removable counter source to arrive as read-only after mana payment.
+`InputSelectManyBase` now requires a candidate provider and owns publication and
+cleanup once for all its concrete inputs, including counter costs and
+Convoke/Improvise/Waterbend. The native app continues to
+treat undeclared objects as read-only. Forced fixed-source/unique-counter-type
+payments are simplified inside the engine cost owner; native code never guesses
+a cost source or bypasses a real choice from formatted text.
+Legacy battlefield-focus tiles likewise preserve explicit interaction intent:
+a current required candidate gets `UseCard`; ordinary inspection keeps
+`ReadFocusedCard`. Reading is not silently turned into a command.
+
 Source-action descriptions can include a visible linked `Card` and its `Zone`.
 The face is reading material, not a second action handle. The current use is a
 prepared permanent's spell copy in exile: the client submits the original
@@ -1070,6 +1083,20 @@ current-scope revalidation. A drag retains its original expanded anchor and must
 leave it before commitment. A played occurrence then travels from its actual
 displayed position into the stack. There is no access scrollbar or hand paging.
 
+The same collection owner also handles deliberate Graveyard/Exile pile
+inspection. `CardCollectionTarget` is a closed local family for hand, access,
+one source packet or a public zone with a typed owner/zone reference. It is not
+a rules target or command. Public packets use current disclosed zone members in
+engine order and the actual pile as their origin; counts cannot produce faces.
+Current reading policy permits inspection only for that exact public collection
+during an existing required task. A new required task returns control to its
+normal decision surface without discarding the current draft. Folding retains
+only IDs/geometry and re-resolves current disclosure/location before composing
+the return through the shared card owner. A card also present in an access fan
+has one painted occurrence and returns to that current fan anchor. The Command,
+library, private-hand, stack and required-choice readers keep their separate
+semantics; this does not turn disclosed zone membership into play permission.
+
 A released play can await its one pending source query without submitting a
 speculative action. The retained intent pauses automatic passing and is cancelled
 by changed scope, permission, disclosure or a new explicit gesture. Submission
@@ -1084,6 +1111,23 @@ Target choices use the provider-neutral `TargetSelectionPayload`. Their
 source is highlighted on the table, pointer aiming links it to legal cards or
 portraits, and the dock retains engine-permitted cancellation without calling a
 mixed card/player decision "Choose a player" or synthesizing a stack card.
+
+Counter-cost selection can carry a validated `CounterPaymentContext` with total
+and remaining allocation. A subsequent `OptionsPayload.CounterPayment` describes
+the exact donor separately from the activating source, the debit of that one
+choice, and the exact offered type indices/labels/available quantities. These
+are immutable descriptions, not action handles. Face-up donors use current
+disclosed identity; face-down battlefield donors retain only their anonymous
+public position. `ChooseOptions` still answers the original scoped choice.
+Older engines without these optional fields retain the generic choice path.
+
+The counter workspace uses the existing source/donor occurrence and measured
+action placement. Choices remain on the table with current quantities beside
+the donor, rather than acquiring a gallery. Pending allocated counters are not
+subtracted from projected characteristics. The engine's completed payment
+publishes the real counter/stat changes; inspection retains the affected card's
+own receipt while deferring unrelated bursts. Placement protects the source
+before minimizing overlap with other battlefield objects.
 
 The shared contract has fifteen sealed payload variants. Priority has pass
 permission and optional ability offers; choices have indexed options and a

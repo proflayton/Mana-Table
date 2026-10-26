@@ -282,6 +282,13 @@ card; inspecting never activates an ability or casts from a public zone.
 Zone piles open browsers containing only the cards your player can see. Your own
 graveyard, exile and command browsers can offer engine-authorized actions,
 including Flashback when available. Hidden hands show anonymous backs.
+Source-only until a release containing it is published: graveyard and exile
+piles unfold into the table's card space instead of a paged browser. The heading
+identifies whose zone you are reading. Click a card to read; an offered action
+is a separate deliberate choice. Middle-click or Z focuses, middle-drag pans,
+and the wheel zooms. Escape folds back to the pile or the current play-access
+fan. A required decision keeps its draft while you inspect; a new task returns
+you to that decision. Concealed cards remain concealed.
 Source-only until a release containing it is published: cards you have permission
 to play from exile, your graveyard or a disclosed library top also sit beside
 your hand. The gap, zone caption and granting source distinguish them from cards
@@ -294,6 +301,16 @@ and the wheel zooms. Home returns to the overview. Escape or the return gesture
 folds the same cards to their original places. A large hand has no page controls.
 Large collections open at play distance; the overview is a deliberate choice.
 The card remains in its real zone until the engine plays it.
+Source-only until a release containing it is published: action rows draw mana
+and tap symbols instead of raw brace codes. Blue uses the droplet, black the
+skull, and colorless the diamond. Counter-removal costs that have a fixed source
+and one legal counter type pay without an extra source click; real choices keep
+their explicit selection. Choosing a counter type stays beside the affected
+permanent and shows the available quantity and debit. Choose that debit directly
+to continue paying. For a cost paid from another permanent, eligible cards stay
+highlighted on the battlefield; hover shows their counters, and right-click reads
+without choosing. The real counter/P/T change appears after the engine finishes
+the cost; the draw or other ability can still be pending on the stack.
 Prepared-spell source access is source-only until a release containing it is
 published: a small spell marker shows a prepared permanent. Open that permanent
 to find its available spell beside the full card, with the spell's name and

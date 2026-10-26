@@ -49,7 +49,12 @@ internal static class DecisionWorkspaceLayout
         long Overlap(Rectangle candidate, long ceiling)
         {
             candidate.Inflate(8, 8);
-            long total = 0;
+            // A required choice must not bury the object it is asking about.
+            // On a crowded table prefer overlapping unrelated background cards
+            // over the source, even when those cards occupy more total area.
+            var sourceOverlap = Rectangle.Intersect(candidate, anchor);
+            long total = (long)sourceOverlap.Width * sourceOverlap.Height * 1024
+                + (long)(Vector2.DistanceSquared(candidate.Center.ToVector2(), anchor.Center.ToVector2()) * .15f);
             foreach (var obstacle in occupied) {
                 var overlap = Rectangle.Intersect(candidate, obstacle);
                 total += (long)overlap.Width * overlap.Height;
@@ -67,7 +72,6 @@ internal static class DecisionWorkspaceLayout
         var best = preferred[0]; long bestOverlap = long.MaxValue;
         foreach (var candidate in preferred) {
             long overlap = Overlap(candidate, bestOverlap);
-            if (overlap == 0) return candidate;
             if (overlap < bestOverlap) { best = candidate; bestOverlap = overlap; }
         }
         // Nearby obstacle edges and viewport edges supplement the source/center
@@ -84,7 +88,6 @@ internal static class DecisionWorkspaceLayout
             .Append(viewport.Top).Append(viewport.Bottom - height).Distinct().ToArray();
         foreach (int x in xs) foreach (int y in ys) {
             var candidate = At(x, y); long overlap = Overlap(candidate, bestOverlap);
-            if (overlap == 0) return candidate;
             if (overlap < bestOverlap) { best = candidate; bestOverlap = overlap; }
         }
         return best;

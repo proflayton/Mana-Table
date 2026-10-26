@@ -36,6 +36,7 @@ internal static partial class HeadlessPresentationSmoke
             DecisionDockInteractionChecks.Run(profile, Check);
             SemanticCommandPresentationChecks.Run(profile, Check);
             CheckOptionalDecisions(profile, Check, trace, performance);
+            CheckCounterCost(profile, Check, trace, performance);
             CheckPlayAccess(profile, Check, trace, performance);
             CommanderInteractionChecks.Run(profile, Check);
             DisclosedSourceInteractionChecks.Run(profile, Check);

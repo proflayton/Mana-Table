@@ -3,8 +3,27 @@ using Rectangle = Microsoft.Xna.Framework.Rectangle;
 
 namespace Mana.Renderer;
 
+public enum PublicInspectionZone { Graveyard, Exile }
+
+/// <summary>A local collection reference, separate from all rules targets and action keys.</summary>
+public abstract record CardCollectionTarget
+{
+    private protected CardCollectionTarget() { }
+    public abstract string Id { get; }
+    public static CardCollectionTarget Hand { get; } = new HandCollection();
+    public static CardCollectionTarget Access { get; } = new AccessCollection();
+    public sealed record HandCollection : CardCollectionTarget { public override string Id => CardSpreadPlan.HandId; }
+    public sealed record AccessCollection : CardCollectionTarget { public override string Id => CardSpreadPlan.AccessId; }
+    public sealed record AccessPacket(string PacketId) : CardCollectionTarget { public override string Id => PacketId; }
+    public sealed record PublicZone(int PlayerId, PublicInspectionZone Zone) : CardCollectionTarget
+    {
+        public string ZoneName => Zone.ToString();
+        public override string Id => "public-zone";
+    }
+}
+
 /// <summary>A local view of existing occurrences. It cannot authorize a game action.</summary>
-public sealed record CardSpreadRequest(string Id, BoardView? View = null, int Top = 148);
+public sealed record CardSpreadRequest(CardCollectionTarget Target, BoardView? View = null, int Top = 148);
 
 public sealed record CardSpreadPacket(string Id, string Title, string Context,
     IReadOnlyList<string> SourceIds, IReadOnlyList<SceneCard> Cards);
@@ -17,7 +36,8 @@ public sealed class CardSpreadPlan
     public const string HandId = "hand", AccessId = "play-access";
     public static Rectangle Viewport => new(78, 148, 1444, 576);
     public static Vector2 CardSize => new(186, 260);
-    public string Id { get; }
+    public CardCollectionTarget Target { get; }
+    public string Id => Target.Id;
     public IReadOnlyList<SceneCard> Anchors { get; }
     public IReadOnlyList<SceneCard> WorldCards { get; }
     public IReadOnlyList<SceneCard> Cards { get; }
@@ -29,19 +49,20 @@ public sealed class CardSpreadPlan
     public BoardView InitialView { get; }
     public BoardView View { get; }
 
-    private CardSpreadPlan(string id, SceneCard[] anchors, SceneCard[] world,
-        CardSpreadSection[] sections, BoardView? requested, int top)
+    private CardSpreadPlan(CardCollectionTarget target, SceneCard[] anchors, SceneCard[] world,
+        CardSpreadSection[] sections, BoardView? requested, int top, string? initialCardId)
     {
-        Id = id; Anchors = Array.AsReadOnly(anchors); WorldCards = Array.AsReadOnly(world);
+        Target = target; Anchors = Array.AsReadOnly(anchors); WorldCards = Array.AsReadOnly(world);
         Sections = Array.AsReadOnly(sections);
         Area = new(Viewport.X, Math.Clamp(top, Viewport.Top, 330), Viewport.Width, Viewport.Bottom - Math.Clamp(top, Viewport.Top, 330));
-        WorldBounds = sections.Select(section => section.Bounds).Aggregate(Rectangle.Union);
-        Overview = BoardView.Frame(WorldBounds, Area, 1);
+        WorldBounds = sections.Length == 0 ? Rectangle.Empty : sections.Select(section => section.Bounds).Aggregate(Rectangle.Union);
+        Overview = WorldBounds.IsEmpty ? BoardView.Identity : BoardView.Frame(WorldBounds, Area, 1);
         // Large collections open at play distance. Seeing their entire extent is
         // an intentional camera gesture, never the default reading scale.
-        InitialView = Overview.Scale >= .85f ? Overview
-            : Constrain(new(Area.Center.ToVector2() - world[0].Pose.Center, 1));
-        View = Constrain(requested ?? InitialView);
+        var first = world.FirstOrDefault(card => card.Id == initialCardId) ?? world.FirstOrDefault();
+        InitialView = Overview.Scale >= .85f || first == null ? Overview
+            : Constrain(new(Area.Center.ToVector2() - first.Pose.Center, 1));
+        View = WorldBounds.IsEmpty ? BoardView.Identity : Constrain(requested ?? InitialView);
         Cards = Array.AsReadOnly(world.Select(card => card with { Pose = View.Apply(card.Pose), Entrance = null, EntranceDelay = 0 }).ToArray());
     }
 
@@ -76,12 +97,12 @@ public sealed class CardSpreadPlan
         return new(offset, scale);
     }
 
-    public static CardSpreadPlan? Build(string id, IReadOnlyList<CardSpreadPacket> packets, BoardView? view = null, int top = 148,
-        Func<CardSpreadPacket, int, int>? measureHeader = null)
+    public static CardSpreadPlan? Build(CardCollectionTarget target, IReadOnlyList<CardSpreadPacket> packets, BoardView? view = null, int top = 148,
+        Func<CardSpreadPacket, int, int>? measureHeader = null, string? initialCardId = null)
     {
         var populated = packets.Where(packet => packet.Cards.Count > 0).ToArray();
         int total = populated.Sum(packet => packet.Cards.Count);
-        if (total == 0) return null;
+        if (total == 0) return target is CardCollectionTarget.PublicZone ? new(target, [], [], [], view, top, null) : null;
         const int gap = 24, packetGap = 58, padding = 22;
         int columns = Math.Clamp((int)Math.Ceiling(Math.Sqrt(total * 1.8 * (CardSize.Y + gap) / (CardSize.X + gap))), 1, 24);
         int spreadWidth = Math.Max(Viewport.Width, (int)(columns * (CardSize.X + gap) + padding * 2));
@@ -109,6 +130,6 @@ public sealed class CardSpreadPlan
             }
             x += width + packetGap; rowBottom = Math.Max(rowBottom, bounds.Bottom);
         }
-        return new(id, populated.SelectMany(packet => packet.Cards).ToArray(), world.ToArray(), sections.ToArray(), view, top);
+        return new(target, populated.SelectMany(packet => packet.Cards).ToArray(), world.ToArray(), sections.ToArray(), view, top, initialCardId);
     }
 }

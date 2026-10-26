@@ -1006,6 +1006,143 @@ Human review of the replacement remains pending.
 
 [View a full card read from the expanded collection](images/native-play-access-routes-2026-10-25.png).
 
+### Cost payment must retain its engine intent and candidates
+
+**Source candidate; human review pending.** After selecting Loch Mare's draw
+ability and paying mana, the player saw "Make a choice" and a disabled OK.
+Clicking Loch Mare opened details. The real engine reproduction showed that its
+remove-counter cost input had not published selectable candidates, so the valid
+physical source arrived as read-only. Convoke's shared assignment input had the
+same omission. An engine-side activation callback alone was insufficient.
+
+The shared selection base now requires each concrete input to supply its exact
+legal candidates, and owns publication/cleanup itself. A new chooser cannot
+compile while omitting that candidate contract. Native code still requires current physical permission and scoped
+keys; a historical source face grants nothing. Paying a fixed source with one
+legally removable counter type now needs no redundant source-selection step.
+Mixed types and distributed payments retain their choices. This adapts the
+bounded shortcut principle from [Arena's Sylvan Library diary](https://magic.wizards.com/en/news/mtg-arena/dev-diary-sylvan-library):
+the rules owner establishes when a shortcut is equivalent and retains the
+detailed path when it is not. It is not a card-name shortcut in the renderer.
+
+The wider counter report also exposed a native routing fault in the older
+focused-battlefield workspace: a legal required target tile always opened
+details. Its tile now carries the current use intent when actually authorized;
+ordinary read intents remain noncommitting. Real engine add-counter,
+remove-counter and Proliferate cases already worked before this change. Those
+results distinguish counter rules from candidate publication and interaction
+routing; they do not establish every card interaction is covered.
+
+Passing those gates did not complete the journey. Mixed counter types still
+opened a generic full-screen options list, separating bare type names from the
+affected permanent, its counts and the reason for removing them. Counter costs
+now report typed payment progress and, for a type choice, the exact donor,
+offered indices, available counts and the debit for that single choice. The
+ability source can be a different permanent. No text parsing or frontend rules
+calculation supplies this context.
+
+The payment workspace stays beside the existing source or donor. Its legal
+permanents remain on the battlefield; hovering a donor connects it to the
+source and exposes its actual counter counts. Type choices show the available
+quantity and debit, such as `3 → 2`, at that permanent and submit that exact
+choice on release. There is no generic gallery or second confirmation. Pending
+allocations are not settled mutations: the engine applies the full cost before
+the actual counter/P/T changes appear. Inspecting a permanent now retains its
+own counter-change receipt rather than suppressing every change animation.
+
+This adapts the player's Arena Ajani reference: recognizable card, current P/T
+and exact counter details stay together. The Sylvan Library diary above supplies
+the bounded choice-to-consequence principle. Neither reference establishes a
+solution for 480 permanents. The interactive `counter-payment.v1` canonical case
+provides authored forced Loch Mare payment, two counter-type branches, a distinct
+Soul Diviner source/donor, and the same donor choice on a crowded table. It shows
+payment, pending draw and settled draw checkpoints; it does not simulate rules.
+Real Forge cost tests remain separate. Human review of this candidate is pending.
+
+The captures below use the actual native renderer, an authored interactive lab,
+cached card art, a 1000×740 window and 130% text/reduced motion. The same journeys
+were exercised at 1540×980 with normal motion, including both type branches,
+separate source/donor, inspection during payment and the crowded case. Agent
+review caught obscured sources, oversized hover space and covered portrait
+controls before the captured candidate. The crowded table remains a broader
+readability problem; completing this gesture is not approval of that layout.
+
+![Read the current donor and choose its exact counter debit](images/native-counter-payment-2026-10-25.png)
+
+![The paid counter and current stats change before the draw resolves](images/native-counter-paid-2026-10-25.png)
+
+The Breeding Pool report also exposed a presentation problem: `{U}` correctly
+means blue and `{B}` black, but action rows showed those codes as prose. Known
+mana/tap tokens now use the existing game symbol atlas, with measurement and
+wrapping shared by the drawn runs and their hit geometry. Actual source offers,
+order, complete text and command IDs remain intact; unknown tokens remain text.
+The player's card and Arena references supply the visual convention. This does
+not add inferred affordability, disabled-ability explanations or predicted mana
+production; those still require richer engine-owned descriptors.
+
+### Public piles expand into the same table space
+
+**Source candidate; human review pending.** Opening a graveyard or exile pile
+previously replaced the table with seven small cards, repeated name/cost rows
+and Previous/Next controls. The intent is to inspect an actual player's zone,
+read an occurrence, and return to the same game. Opening the pile does not mean
+choosing a target or casting a card.
+
+The game references distinguish these journeys:
+
+- A [player's original Arena graveyard capture](https://steamuserimages-a.akamaihd.net/ugc/2425840210370129478/12B05629F57967FB80B3196BFE0466638CD409BE/)
+  shows a named opponent's graveyard, five overlapping full card forms and Done,
+  without a selection instruction or Submit. This is firsthand gameplay evidence,
+  not an official image or proof of large-zone navigation.
+- [Arena's Hideaway example](https://magic.wizards.com/en/news/mtg-arena/mtg-arena-state-game-streets-new-capenna-2022-04-21)
+  shows a different purpose: the actual source ability, an explicit choice and
+  eligible card faces. Its subsequent source-linked exile placement preserves
+  the relationship. A general zone reader must not imply that every shown card
+  is an eligible play or choice.
+- Mana Table adapts the existing table camera and collection expansion to larger
+  public piles. This spatial treatment is our adaptation, using the Tabletop
+  Simulator reference above; it is not a claim that Arena solves 200-card zones.
+
+Graveyard/exile inspection uses the shared collection target, card owner and
+full-card reader. The origin is the actual pile. Zone order and separate copies
+remain intact; a large zone opens near its exposed top at play distance.
+Owner and zone identify the inspection. Counts never manufacture undisclosed
+faces, and concealed exile entries do not become readable or actionable.
+Clicking reads; only an explicit current reader action can choose or play.
+Camera gestures and returning send no command. A new required task interrupts
+inspection; reopening during an existing task preserves its local draft and
+provides a return to that task.
+
+Folding re-resolves current occurrences and returns them toward their actual
+pile or existing access fan. Its retained state is IDs and geometry, not an old
+card face or action. Lost disclosure removes the occurrence immediately.
+Command, library, private hands, stack entries and required-choice galleries
+retain their own semantics in this slice.
+
+This actual small-window capture uses the authored 37-card graveyard, enlarged
+text and reduced motion. Navigating the spread and reading a card were also
+exercised in a larger window; the observation does not approve readability at
+arbitrary scale.
+
+![The graveyard unfolds into actual cards in table space](images/native-public-pile-2026-10-25.png)
+
+### Current ability results need engine-owned presentation
+
+The Mox Amber report is a useful distinction between correct rules and unclear
+feedback. With only colorless legendary creatures/planeswalkers, activating it
+adds no mana: [the official ruling](https://magic.wizards.com/en/news/feature/dominaria-release-notes)
+explicitly distinguishes colorless from a color. The checked-in Forge script
+uses color reflection over controlled legendary creatures/planeswalkers.
+
+The general presentation gap is that current source offers expose an opaque ID,
+kind and engine prose, without separate cost/effect/current-result descriptors.
+Do not add a Mox-specific renderer rule or infer mana production from card text.
+Arena's threshold badges in the Hideaway article show the useful direction:
+engine-owned current state stays attached to the interested card. A later typed
+ability projection should distinguish displayed costs, current initiation
+permission, payment and expected results. Unavailable abilities need separate
+read-only descriptors; a missing current offer cannot establish why it is absent.
+
 ### Remaining scale patterns found in the broader audit
 
 These are source findings and follow-up design work, not claims that the whole
@@ -1015,7 +1152,7 @@ journey and an actual game reference before implementation.
 | Current pattern | Game evidence to use for the next design |
 | --- | --- |
 | The older focused-battlefield fallback arranges artwork/details in a scrolling document, separate from the newer study camera. | Extend the spatial camera journey over the same table, using the Tabletop Simulator reference above and the existing four-seat anchors. |
-| Zone readers and required-choice galleries page small groups of cards; hand choices can lose their physical context. | [Arena's Sylvan Library diary](https://magic.wizards.com/en/news/mtg-arena/dev-diary-sylvan-library) keeps eligible cards in the hand and makes the committed outcome explicit. Its shortcut is engine-validated and retains the detailed path when other effects change the rules. |
+| Required-choice galleries and the remaining special-zone readers page small groups of cards; hand choices can lose their physical context. Public graveyard/exile inspection now uses the shared spread candidate above. | [Arena's Sylvan Library diary](https://magic.wizards.com/en/news/mtg-arena/dev-diary-sylvan-library) keeps eligible cards in the hand and makes the committed outcome explicit. Its shortcut is engine-validated and retains the detailed path when other effects change the rules. |
 | Ability choices and source actions can become text rows with their own overflow. | The player's Ajani ability screenshot and [Arena's official foretell choices](https://media.wizards.com/2020/images/daily/m7g4ren4_foretell_battle.jpg) present distinct card forms with their effects, costs and availability. Adapt those game objects while preserving exact offered actions. |
 | Deeper stack inspection still falls back to sequential entries and text pages. | Use the player's stack references and the Sylvan Library screenshots: a legible ability object, source, recipients and the next meaningful decision remain together. Expansion must preserve the already-improved source/target gestures. |
 | The deck editor confines deck rows to a small central region before paging. | [Arena's June 2020 update](https://magic.wizards.com/en/news/mtg-arena/mtg-arena-state-game-june-2020-06-23) and its [official deck-editor animation](https://media.wizards.com/2020/images/daily/deck_editor.gif) expand the deck into overlapping card columns. Give deck construction its own spatial surface before shrinking more records into the existing region. |

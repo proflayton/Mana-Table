@@ -25,7 +25,9 @@ internal static class ForgeDecisionDecoder
                 || purpose == "abilities" && (task != "choice" || ordered)) throw Invalid();
             if (Present(prompt, "librarySearch") && task != "confirmation" && !(task == "selection" && purpose == "targets")
                 || Present(prompt, "openingHand") && task != "openingHand"
-                || Present(prompt, "effect") && !(task == "selection" && purpose == "targets")) throw Invalid();
+                || Present(prompt, "effect") && !(task == "selection" && purpose == "targets")
+                || Present(prompt, "counterPayment") && !(task == "selection" && purpose == "")
+                || Present(prompt, "counterPaymentChoice") && !(task == "choice" && purpose == "" && !ordered)) throw Invalid();
             string alternative = Text(prompt, "priorityAlternative"), quiet = Text(prompt, "quietYieldToken");
             if (alternative is not ("" or "none" or "undo" or "passTurn")
                 || task != "priority" && (alternative is "undo" or "passTurn" || quiet.Length != 0 || Flag(prompt, "canAutoPass"))) throw Invalid();
@@ -43,11 +45,11 @@ internal static class ForgeDecisionDecoder
                 "attack" => new AttackPayload(Ok()), "block" => new BlockPayload(Ok()),
                 "selection" when purpose == "targets" => new TargetSelectionPayload(Ok(), Cancel(), Range(prompt),
                     PlayerChoices(prompt, players), Optional<PendingEffect>(prompt, "effect"), SearchTarget(prompt)),
-                "selection" => new EntitySelectionPayload(Ok(), Cancel(), PlayerChoices(prompt, players), OptionalRange(prompt)),
+                "selection" => new EntitySelectionPayload(Ok(), Cancel(), PlayerChoices(prompt, players), OptionalRange(prompt), CounterPayment(prompt)),
                 "confirmation" => new ConfirmationPayload(Ok(), Flag(prompt, "cancelEnabled") ? Cancel() : null, SearchOffer(prompt, players)),
                 "choice" when purpose == "abilities" => new AbilityChoicePayload(Selection(prompt)),
                 "choice" when ordered => new OrderingPayload(Selection(prompt)),
-                "choice" => new OptionsPayload(Selection(prompt)),
+                "choice" => new OptionsPayload(Selection(prompt), CounterChoice(prompt, players)),
                 "reveal" => new RevealPayload(Reveal(prompt)),
                 "number" => new NumberPayload(Text(prompt, "initial"), kind == "text" ? OptionalNumberRange(prompt) : NumberRange(prompt)),
                 "text" => new TextPayload(Text(prompt, "initial")),
@@ -77,6 +79,28 @@ internal static class ForgeDecisionDecoder
         bool free = Flag(value, "freeMulligan", required: true);
         if (hand < 0 || next < 0 || next > hand || bottom < 0 || free && (bottom != 0 || next != hand)) throw Invalid();
         return new(hand, next, bottom, free);
+    }
+    private static CounterPaymentContext? CounterPayment(JsonElement prompt)
+    {
+        if (!Present(prompt, "counterPayment")) return null;
+        var value = Field(prompt, "counterPayment"); Object(value);
+        return new(Integer(value, "amount"), Integer(value, "remaining"));
+    }
+    private static CounterPaymentChoice? CounterChoice(JsonElement prompt, IReadOnlySet<int>? players)
+    {
+        if (!Present(prompt, "counterPaymentChoice")) return null;
+        var value = Field(prompt, "counterPaymentChoice"); Object(value);
+        var permanent = Field(value, "permanent"); Object(permanent);
+        var card = ReadCard(permanent, "card") ?? throw Invalid();
+        int? controller = NullableInteger(permanent, "controllerId");
+        if (controller is { } owner && (players == null || !players.Contains(owner))) throw Invalid();
+        var source = new DecisionSource(Text(permanent, "cardId", required: true), card, controller, Text(permanent, "zone", required: true));
+        var options = Array(value, "options", required: true).Select(option => {
+            Object(option);
+            return new CounterPaymentOption(Integer(option, "index"), Text(option, "type", required: true),
+                Text(option, "label", required: true), Integer(option, "available"));
+        }).ToImmutableArray();
+        return new(Integer(value, "amount"), source, options);
     }
     private static LibrarySearchTarget? SearchTarget(JsonElement prompt)
     {

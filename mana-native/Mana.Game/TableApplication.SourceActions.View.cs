@@ -86,12 +86,12 @@ internal sealed partial class TableApplication
         }
         const float size = .70f;
         const int padding = 10, gap = 8;
-        int desiredWidth = Math.Clamp(options.SelectMany(option => option.Text.Split('\n'))
-            .Append(state).Select(text => canvas.TextWidth(text, size, true) + padding * 2)
+        int desiredWidth = Math.Clamp(options.Select(option => SourceActionTextLayout.Measure(canvas, option.Text, size, 2000, true).Width + padding * 2)
+            .Append(canvas.TextWidth(state, size, true) + padding * 2)
             .DefaultIfEmpty(120).Max(), 120, 316);
         if (options.Any(option => option.Action?.Card != null)) desiredWidth = 316;
         int desiredHeight = (state.Length == 0 ? 0 : canvas.TextSize(state, .63f, desiredWidth - 16, 80, true).Y + 16)
-            + options.Sum(option => canvas.TextSize(option.Text, size, desiredWidth - padding * 2, 80, true).Y + padding * 2 + gap
+            + options.Sum(option => SourceActionTextLayout.Measure(canvas, option.Text, size, desiredWidth - padding * 2, true).Height + padding * 2 + gap
                 + (option.Action?.Card == null ? 0 : LinkedSpellHeaderHeight(option.Action.Card, desiredWidth)));
         var area = DecisionActionArea(face, desiredWidth, Math.Min(face.Height, desiredHeight));
         if (area.IsEmpty) return;
@@ -100,12 +100,10 @@ internal sealed partial class TableApplication
             bool secondary = entry.Zone == "Hand" && option.Action is { Kind: "play" };
             float font = secondary ? .62f : size;
             int inset = secondary ? 6 : padding;
-            int lineHeight = canvas.TextSize("Ag", font, width - inset * 2, 80, !secondary).Y;
-            string text = option.Text.Replace('\r', ' ').Replace('\n', ' ');
-            var lines = canvas.TextPages(text, font, width - inset * 2, lineHeight, 80, !secondary);
+            var layout = SourceActionTextLayout.Measure(canvas, option.Text, font, width - inset * 2, !secondary);
             int linkedHeight = option.Action?.Card == null ? 0 : LinkedSpellHeaderHeight(option.Action.Card, width);
-            return (Option: option, Lines: lines, Height: Math.Max(secondary ? 30 : 38, lines.Length * lineHeight + inset * 2), LinkedHeight: linkedHeight,
-                Secondary: secondary, Font: font, Inset: inset, LineHeight: lineHeight);
+            return (Option: option, Layout: layout, Height: Math.Max(secondary ? 30 : 38, layout.Height + inset * 2), LinkedHeight: linkedHeight,
+                Secondary: secondary, Font: font, Inset: inset);
         }).ToArray();
         int stateHeight = state.Length == 0 ? 0 : canvas.TextSize(state, .63f, width - 16, 80, true).Y + 16;
         int contentHeight = stateHeight + rows.Sum(row => row.Height + row.LinkedHeight + gap) - (rows.Length > 0 ? gap : 0);
@@ -143,11 +141,11 @@ internal sealed partial class TableApplication
                 if (row.Secondary) {
                     if (hover) canvas.Rounded(visible, Blue * (pressed?.Id == id && CurrentHit(pressed) ? .22f : .10f), 4);
                 } else PaintControlSurface(id, visible, new(19, 34, 41), Blue * .6f, !busy);
-                for (int line = 0; line < row.Lines.Length; line++) {
-                    int lineY = y + row.Inset + line * row.LineHeight;
-                    if (lineY >= top && lineY + row.LineHeight <= top + height)
-                        canvas.Text(row.Lines[line], area.X + row.Inset, lineY,
-                            row.Secondary ? hover ? Blue : Muted : Ink, row.Font, width - row.Inset * 2, 1, !row.Secondary);
+                for (int line = 0; line < row.Layout.Lines.Count; line++) {
+                    int lineY = y + row.Inset + line * row.Layout.LineHeight;
+                    if (lineY >= top && lineY + row.Layout.LineHeight <= top + height)
+                        PaintSourceActionLine(row.Layout, line, area.X + row.Inset, lineY,
+                            row.Secondary ? hover ? Blue : Muted : Ink, row.Font, !row.Secondary);
                 }
                 sourceReaderControls.Add(new(id, visible, option.Action, option.Retry, option.Placement));
             }
@@ -166,6 +164,30 @@ internal sealed partial class TableApplication
                 : control.Action != null ? new MatchIntent.UseSourceAction(control.Action.Id)
                 : control.Placement != null ? new MatchIntent.UseSourcePlacement(control.Placement.Id) : UiIntent.None;
             hits.Add(new(control.Id, ScopeFor(intent), control.Bounds, intent));
+        }
+    }
+
+    private void PaintSourceActionLine(SourceActionTextLayout layout, int line, int x, int y, Color color, float font, bool bold)
+    {
+        foreach (var run in layout.Lines[line]) {
+            if (run.Symbol is not { } symbol) {
+                canvas.Text(run.Text, x + run.X, y, color, font, run.Width, 1, bold);
+                continue;
+            }
+            var center = new Vector2(x + run.X + layout.SymbolSide / 2f, y + layout.LineHeight / 2f - 1);
+            if (symbol is "W" or "U" or "B" or "R" or "G" or "C") PaintManaSymbol(symbol, center, layout.SymbolSide);
+            else if (resources.ManaSymbols is { } image && SourceActionTextLayout.SymbolCrop(symbol) is var crop
+                && crop.Right <= image.Width && crop.Bottom <= image.Height)
+                canvas.Sprite(image, center, new(layout.SymbolSide), 0, Color.White, crop);
+            else if (symbol is "T" or "Q") {
+                canvas.Circle(center, layout.SymbolSide / 2f, new(196, 195, 187));
+                var direction = new Vector2(layout.SymbolSide * .23f) * (symbol == "T" ? 1 : -1);
+                canvas.Arrow(center - direction, center + direction, new(23, 28, 34), 2);
+            } else {
+                canvas.Circle(center, layout.SymbolSide / 2f, new(196, 195, 187));
+                canvas.CenterText(symbol, new((int)center.X - layout.SymbolSide / 2, (int)center.Y - layout.SymbolSide / 2,
+                    layout.SymbolSide, layout.SymbolSide), new(23, 28, 34), font, true);
+            }
         }
     }
 

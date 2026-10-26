@@ -685,6 +685,39 @@ in-process native contract change, not a new seat-sync or saved-data version.
 or selection. Clients can explain the current `phaseKey`, but must retain the
 prompt's actual message and enabled actions for costs, discards, and combat.
 
+Selection inputs used while paying costs must publish their current legal
+selectable objects when active and clear that publication on stop. A server-side
+`getActivateAction` alone does not expose a candidate to the snapshot. The
+shared `InputSelectManyBase` owns publication and cleanup; each concrete input
+must implement its candidate provider. This includes counter costs and
+Convoke/Improvise/Waterbend. Clients cannot infer permission from the source
+face, prompt prose or counters.
+A fixed-source remove-counter payment with exactly one legally removable type
+and sufficient counters has no further source/type choice and pays through the
+normal engine cost path. Mixed types, distributed payments, cancellation and
+ordinary mana payment retain their explicit current input and scoped keys.
+
+Remove-counter cost inputs additionally publish `counterPayment: {amount,
+remaining}` for a positive total counter cost: `amount` is the complete cost and
+`remaining` is its currently unallocated part. This is separate from target
+selection and never authorizes choosing the ability source automatically.
+A nontrivial counter-type payment retains ordinary `kind/task: choice`, indexed
+`choices`, and the same scoped answer, with additive `counterPaymentChoice`:
+`{amount, permanent: {cardId, card, controllerId, zone}, options: [{index, type,
+label, available}]}`. Here `amount` is the debit allocated by this one choice
+(currently one), not the total remaining payment. `available` excludes counters
+already allocated by earlier choices in the same cost. Options preserve the
+ordinary choice's indices and human-readable labels; `type` is the stable engine
+counter identifier such as `M1M1` or `STUN`.
+The affected permanent is distinct from the ability's existing `sourceCard`.
+Its viewer-filtered current face is keyless and grants no action permission.
+Only a disclosed battlefield occurrence receives this metadata. Face-up
+`cardId` matches the face's `visualId`; a face-down permanent keeps its masked
+public characteristics and anonymous `combatId`, with no disclosed `visualId`.
+Other seats do not receive the chooser's prompt or private option metadata.
+Older GUI clients use the default ordinary indexed choice; this adds no command,
+saved-data migration or seat-sync version.
+
 Synchronous dialogs publish a snapshot before waiting on a response future.
 Replies complete that future directly; controller input runs on the dedicated
 UI executor. This avoids queuing replies behind the blocked game thread. Engine

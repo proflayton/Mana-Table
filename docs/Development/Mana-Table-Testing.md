@@ -36,14 +36,15 @@ The matrix uses no JVM, graphics device or network; it prints its measured runti
 
 Real Forge goldens use the existing `canonical-interaction` TestNG group: paid
 casting/payment, private partner search, Toothy's last-known counters and draws,
-prepared-spell casting, pending versus prevented damage, combat allocation and persistent Speed. The
+prepared-spell casting, counter-source cost payment, Convoke assignment versus
+ordinary mana, pending versus prevented damage, combat allocation and persistent Speed. The
 partner search retains four recipient variants. These methods already run once
 in normal Java CI; grouping them adds no duplicate engine startups. The focused
 command selects their classes as well as the group so upstream modules do not
 start empty TestNG processes:
 
 ```powershell
-mvn -pl forge-api -am test '-Dgroups=canonical-interaction' '-Dtest=SourceActionsTest,PartnerChoiceExperienceTest,ToothyLeavesBattlefieldTest,PendingEffectTest,AllocationProjectionTest,PlayerStatesExperienceTest' '-Dsurefire.failIfNoSpecifiedTests=false'
+mvn -pl forge-api -am test '-Dgroups=canonical-interaction' '-Dtest=SourceActionsTest,PartnerChoiceExperienceTest,ToothyLeavesBattlefieldTest,CounterCostExperienceTest,PaymentCandidateExperienceTest,TargetCounterExperienceTest,PendingEffectTest,AllocationProjectionTest,PlayerStatesExperienceTest' '-Dsurefire.failIfNoSpecifiedTests=false'
 ```
 
 This is a representative real-rules lane alongside enumerated coverage of the
@@ -276,6 +277,47 @@ overview the card text is intentionally not a reading surface:
 review moving to readable scale, inspecting and playing the first, middle and
 last physical occurrences, then returning to the same source packet. A count
 of 200 represented cards cannot establish that the journey is understandable.
+
+`CounterCostExperienceTest` follows actual Loch Mare activation through mana,
+counter removal and draw, and retains explicit mixed-type/distributed choices,
+removal restrictions and cancellation. `PaymentCandidateExperienceTest` uses
+actual Convoke assignment and its zero-assignment route to ordinary mana.
+`TargetCounterExperienceTest` checks actual Battlegrowth additions, Thrull
+Parasite removal and Proliferate subset/empty choices. These distinguish
+already-working engine effects from input-publication and native routing faults.
+The existing native headless presentation lane also follows an inspected source
+through activation/payment and a keyless historical source face: missing physical
+candidate permission stays read-only; an authoritative candidate enables only
+its exact current `SelectCard`, then an explicit counter-type option. The same
+lane exercises legacy focused-battlefield selection and own/opponent counter
+targets without turning an ineligible read-only tile into a command.
+
+`CounterCostExperienceTest` also covers a two-counter cost with one counter
+allocated at a time, and a Soul Diviner host distinct from its chosen donor.
+The exported type-choice debit is one; available quantity accounts for pending
+allocation while the permanent's actual counter total stays unchanged until
+payment completes. Native decoder/immutable-state checks retain those facts,
+reject inconsistent metadata and preserve the original scoped answer.
+
+For the visual journey, launch `--experience-lab counter-payment.v1 --table-study`.
+Start at 0 for forced Loch Mare payment, 4 for mixed types, 9 for Soul Diviner,
+or 13 for the crowded donor choice. Read the source, activate, pay or select a
+donor/type, inspect the pending debit/current stats, then continue to the draw.
+Repeat both counter-type branches and each same-name donor. Use actual small
+and large windows, enlarged text and reduced/normal motion. These interactive
+checkpoints are authored; compare their semantics with real Forge tests and
+record human acceptance separately. A passing command path cannot approve the
+workspace, its source visibility or its result feedback.
+
+The same canonical case includes actual public piles with mostly unplayable
+cards, separate opponent zones, masked exile, a count-only concealed zone and
+an empty graveyard. The public-pile journeys open from the real pile, read and
+navigate without commands, preserve the exact source offer for an explicit
+play, return through current anchors, and withdraw lost disclosures/actions.
+Required-task interruption and reopening must preserve the existing decision
+draft. Counts, hidden faces and opponent ownership must never manufacture an
+action. Use actual-window captures to assess whether the purpose and physical
+return are understandable; passing these checks does not settle that question.
 
 The pending-effect journey in `--smoke-headless-presentation` distinguishes a
 captured `+3` counter addition/three damage from a current total of twenty, keeps

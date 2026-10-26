@@ -13,7 +13,9 @@ namespace Mana.Table;
 
 internal sealed partial class TableApplication
 {
-    private string? spreadId, spreadGame;
+    private CardCollectionTarget? spreadCollection;
+    private string? spreadGame, spreadDecision;
+    private string? spreadId => spreadCollection?.Id;
     private int spreadViewer;
     private BoardView? spreadTarget;
     private readonly BoardViewMotion spreadCamera = new();
@@ -32,15 +34,26 @@ internal sealed partial class TableApplication
             || presentation.Payload is OptionsPayload or OrderingPayload && presentation.Reading.HasFlag(DecisionReading.HandSelectionInspection)
             || presentation.Payload is EntitySelectionPayload && match.Viewer?.Zone("Hand").Cards.Any(card => card.Selectable) == true);
 
-    private void ExpandCardCollection(string id)
+    private bool CollectionAllowed(CardCollectionTarget target) => target switch {
+        CardCollectionTarget.HandCollection => HandCollectionAllowed,
+        CardCollectionTarget.PublicZone zone => match?.Players.Any(player => player.Id == zone.PlayerId) == true,
+        _ => AccessCollectionAllowed
+    };
+
+    private void ExpandCardCollection(CardCollectionTarget target)
     {
-        if (dragging || match == null || session.NeedsRecovery || ActivityOpen || updatesOpen || ExperienceOpen || overlay.Length > 0 || zoneName != null) return;
-        if (id == CardSpreadPlan.HandId ? !HandCollectionAllowed : !AccessCollectionAllowed) return;
-        if (id == CardSpreadPlan.HandId ? tableScene?.Hand.Total is not > 0
-            : tableScene?.PlayAccess.Groups.Any(group => id == CardSpreadPlan.AccessId || group.Id == id) != true) return;
-        if (spreadId == id) { FoldCardCollection(); return; }
-        CollapseCardReading(); CancelReleasedPlayIntent();
-        spreadId = id; spreadGame = match.Id; spreadViewer = match.ViewerId;
+        if (dragging || match == null || session.NeedsRecovery && target is not CardCollectionTarget.PublicZone
+            || ActivityOpen || updatesOpen || ExperienceOpen || overlay.Length > 0 || zoneName != null) return;
+        if (!CollectionAllowed(target)) return;
+        if (target is CardCollectionTarget.HandCollection && tableScene?.Hand.Total is not > 0) return;
+        if (target is CardCollectionTarget.AccessCollection or CardCollectionTarget.AccessPacket
+            && tableScene?.PlayAccess.Groups.Any(group => target is CardCollectionTarget.AccessCollection
+                || target is CardCollectionTarget.AccessPacket packet && group.Id == packet.PacketId) != true) return;
+        if (spreadCollection == target) { CollapseCardReading(); FoldCardCollection(); return; }
+        CollapseCardReading();
+        FoldCardCollection();
+        CancelReleasedPlayIntent();
+        spreadCollection = target; spreadGame = match.Id; spreadViewer = match.ViewerId; spreadDecision = match.Decision?.Id;
         spreadWorldTargets.Clear();
         spreadTarget = null; spreadCameraUsed = false; spreadPanning = false; spreadCamera.Reset();
         session.CancelAdvance();
@@ -48,18 +61,27 @@ internal sealed partial class TableApplication
 
     private void FoldCardCollection()
     {
-        spreadId = null; spreadTarget = null; spreadPanning = false; spreadCameraUsed = false;
+        if (CardCollectionOpen) CollapseCardReading();
+        QueuePublicCollectionReturn();
+        spreadCollection = null; spreadTarget = null; spreadPanning = false; spreadCameraUsed = false;
         spreadWorldTargets.Clear();
         spreadCamera.Reset();
     }
 
     private void ReconcileCardCollection()
     {
+        ReconcilePublicCollectionReturns();
         if (spreadId == null) return;
         if (match is not { } state || state.Id != spreadGame || state.ViewerId != spreadViewer
-            || session.NeedsRecovery || ActivityOpen || updatesOpen || ExperienceOpen || overlay.Length > 0 || zoneName != null
-            || (spreadId == CardSpreadPlan.HandId ? !HandCollectionAllowed : state.Decision?.Payload is not (null or PriorityPayload)))
+            || session.NeedsRecovery && spreadCollection is not CardCollectionTarget.PublicZone
+            || ActivityOpen || updatesOpen || ExperienceOpen || overlay.Length > 0 || zoneName != null
+            || !CollectionAllowed(spreadCollection!)
+            || spreadCollection is CardCollectionTarget.PublicZone && state.Decision?.Payload is not (null or PriorityPayload)
+                && state.Decision?.Id != spreadDecision)
+        {
+            CollapseCardReading();
             FoldCardCollection();
+        }
     }
 
     private void PrepareCardCollection()
@@ -86,11 +108,15 @@ internal sealed partial class TableApplication
     private void PrepareCardCollectionHeader()
     {
         if (!CardCollectionOpen) return;
-        spreadTitle = spreadId == CardSpreadPlan.HandId ? "Your hand"
+        spreadTitle = spreadCollection is CardCollectionTarget.PublicZone zone
+            ? zone.ZoneName + " · " + match!.Players.First(player => player.Id == zone.PlayerId).Name
+            : spreadId == CardSpreadPlan.HandId ? "Your hand"
             : string.Join(" · ", match!.PlayAccesses.Where(access => spreadId == CardSpreadPlan.AccessId
                 || tableScene?.PlayAccess.Groups.Any(group => group.Id == spreadId && group.Cards.Any(item => item.Access.CardId == access.CardId)) == true)
                 .Select(access => access.Zone).Distinct());
         spreadInstruction = "";
+        if (spreadCollection is CardCollectionTarget.PublicZone && match?.Decision?.Payload is not (null or PriorityPayload))
+            spreadInstruction = "Inspecting · return to your choice with Escape";
         if (spreadId == CardSpreadPlan.HandId && decisions.Presentation?.Payload is not (null or PriorityPayload)) {
             spreadTitle = decisions.Presentation!.Headline;
             spreadInstruction = decisions.Presentation.Instruction;
@@ -106,9 +132,9 @@ internal sealed partial class TableApplication
         => 24 + canvas.TextSize(packet.Title, .68f, Math.Max(1, width - 52), 80, true).Y
             + canvas.TextSize(packet.Context, .53f, Math.Max(1, width - 52), 80).Y + 8;
 
-    private void DrawFanUnfold(string id, Rectangle bounds, string collection, bool selected = false)
+    private void DrawFanUnfold(string id, Rectangle bounds, CardCollectionTarget collection, bool selected = false, bool showHint = true)
     {
-        bool enabled = !session.NeedsRecovery && (collection == CardSpreadPlan.HandId ? HandCollectionAllowed : AccessCollectionAllowed);
+        bool enabled = (!session.NeedsRecovery || collection is CardCollectionTarget.PublicZone) && CollectionAllowed(collection);
         bool hover = enabled && IsControlHovered(id);
         var center = bounds.Center.ToVector2();
         var ink = !enabled ? Muted * .35f : hover ? Color.White : selected ? Gold : Muted;
@@ -121,7 +147,7 @@ internal sealed partial class TableApplication
         }
         canvas.Line(center + new Vector2(0, -22), center + new Vector2(-5, -16), ink, 1.5f);
         canvas.Line(center + new Vector2(0, -22), center + new Vector2(5, -16), ink, 1.5f);
-        if (hover) canvas.Text(selected ? "Fold" : "Spread", bounds.Left - 3, bounds.Top - 22, Ink, .55f, 90, 1);
+        if (hover && showHint) canvas.Text(selected ? "Fold" : "Spread", bounds.Left - 3, bounds.Top - 22, Ink, .55f, 90, 1);
         var intent = new MatchIntent.ExpandCardCollection(collection);
         if (enabled) hits.Add(new(id, ScopeFor(intent), bounds, intent));
     }
@@ -129,6 +155,10 @@ internal sealed partial class TableApplication
     private void DrawCardCollection()
     {
         if (!CardCollectionOpen || tableScene?.Spread is not { } plan) return;
+        if (plan.WorldCards.Count == 0 && plan.Target is CardCollectionTarget.PublicZone empty) {
+            DrawEmptyPublicCollection(empty);
+            return;
+        }
         // This is the table's presentation space, not another zone browser. The
         // ordinary hand and source fans keep their fixed anchors below it.
         canvas.Fill(new(0, 54, 1600, 724), Color.Black * .57f);
@@ -137,7 +167,7 @@ internal sealed partial class TableApplication
         hits.Add(new("card-spread-table", ScopeFor(fold), new(0, 54, 1600, 724), fold, ShowPointer: false));
         canvas.Gradient(new(0, 54, 1600, plan.Area.Top - 54), new Color(7, 14, 20) * .8f, new Color(7, 14, 20) * .2f);
         string title = spreadTitle;
-        if (plan.Id != CardSpreadPlan.HandId && spreadView.Scale >= .85f) {
+        if (plan.Target is not (CardCollectionTarget.HandCollection or CardCollectionTarget.PublicZone) && spreadView.Scale >= .85f) {
             var worldCenter = spreadView.Inverse(plan.Area.Center.ToVector2());
             var section = plan.Sections.FirstOrDefault(section => section.Bounds.Contains(worldCenter.ToPoint()))
                 ?? plan.Sections.OrderBy(section => Vector2.DistanceSquared(section.Bounds.Center.ToVector2(), worldCenter)).First();
@@ -153,7 +183,8 @@ internal sealed partial class TableApplication
             DrawTableCard(world.Id, world.Card, pose, world.Zone, world.Owner,
                 "card:" + world.Card.Key + ":" + world.Card.VisualId, new MatchIntent.UseCard(world.Card),
                 (displayed, focused) => PaintSceneCard(world.Card, displayed, world.Zone, world.Owner, focused),
-                clip: plan.CameraArea, directPlacement: spreadCameraUsed && spreadView != plan.View && readingId != world.Id);
+                entrance: world.Entrance, clip: plan.CameraArea,
+                directPlacement: spreadCameraUsed && spreadView != plan.View && readingId != world.Id);
         }
         DrawLiftedCards();
         DrawReaderControls();
@@ -179,7 +210,9 @@ internal sealed partial class TableApplication
         canvas.Line(new(1479, 79), new(1493, 93), accent, 2); canvas.Line(new(1479, 93), new(1493, 79), accent, 2);
         hits.Add(new("card-spread-fold", ScopeFor(fold), close, fold));
         if (IsControlHovered("card-spread-fold")) canvas.Text("Fold · Escape", 1395, 106, Ink, .53f, 130, 1);
-        DrawFanUnfold("collection-open-anchor", plan.Id == CardSpreadPlan.HandId ? tableScene.Hand.UnfoldBounds : tableScene.PlayAccess.UnfoldBounds, plan.Id, true);
+        var anchor = plan.Target is CardCollectionTarget.PublicZone publicZone ? PublicCollectionPile(publicZone)?.Top.Bounds
+            : plan.Target is CardCollectionTarget.HandCollection ? tableScene.Hand.UnfoldBounds : tableScene.PlayAccess.UnfoldBounds;
+        if (anchor is { } bounds) DrawFanUnfold("collection-open-anchor", bounds, plan.Target, true);
     }
 
     private void DrawSpreadSources(CardSpreadPlan plan)
@@ -217,6 +250,7 @@ internal sealed partial class TableApplication
     private bool ZoomCardCollection(int direction)
     {
         if (!CardCollectionOpen || tableScene?.Spread is not { } plan || !plan.CameraArea.Contains(pointer)) return false;
+        if (plan.WorldCards.Count == 0) return true;
         if (dragging || pressed != null || readingId != null) return true;
         spreadTarget = plan.Zoom(pointer.ToVector2(), direction > 0 ? 1.24f : 1 / 1.24f); spreadCameraUsed = true;
         return true;
@@ -224,7 +258,7 @@ internal sealed partial class TableApplication
 
     private void UpdateCardCollectionPointer(MouseState mouse, KeyboardState keys)
     {
-        if (!CardCollectionOpen || tableScene?.Spread is not { } plan) return;
+        if (!CardCollectionOpen || tableScene?.Spread is not { WorldCards.Count: > 0 } plan) return;
         if (keys.IsKeyDown(Keys.Home) && previousKeys.IsKeyUp(Keys.Home) && !textFocus && !chatFocus) ResetCardCollectionView();
         if (keys.IsKeyDown(Keys.Z) && previousKeys.IsKeyUp(Keys.Z) && !textFocus && !chatFocus
             && HitAt(pointer)?.Card is { } pointed && plan.Contains(CardViews.Identity(pointed))) FocusCardCollection(CardViews.Identity(pointed));

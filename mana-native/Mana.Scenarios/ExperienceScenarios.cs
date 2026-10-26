@@ -23,6 +23,7 @@ public static partial class ExperienceScenarios
         new(PreparedSpellScenario.Id, "Prepared spell · Emeritus of Ideation", "A prepared source, its linked spell in exile, targeting, priority and the unprepared result.", PreparedSpellScenario.Create),
         new(PlayAccessScenario.Id, "Hand and cards playable elsewhere", "Source-distinct exile grants, flashback, another player's card, permission changes and an overflowing adjacent fan.", PlayAccessScenario.Create),
         new(CounterDamageScenario.Id, "Counters → damage", "Chandra's counter increment, a numbered damage choice, its pending effect and an authored result.", CounterDamageScenario.Create),
+        new(CounterPaymentScenario.Id, "Counter costs · source, choice and result", "Loch Mare, mixed counter types and Soul Diviner over ordinary and 480-permanent tables. Authored interactive checkpoints.", CounterPaymentScenario.Create),
         new(DamageResultsScenario.Id, "Damage · actual results", "Surviving recipients, death between observations and base versus actual prevented damage.", DamageResultsScenario.Create),
         new(DecisionFlowScenario.Id, "Four players · decisions and priority", "Authored land, priority handoffs, private-choice ownership, a typed target and pending effect, then its public result.", DecisionFlowScenario.Create),
         new("ordered-choice.v1", "Ordered card choices", "Same-name cards, explicit selection numbers and a complete ordered draft.", Ordered),

@@ -106,21 +106,24 @@ public sealed class TableScene
         Func<Card, int, bool, BattlefieldLabelMetrics>? denseMeasure = null, bool allowInlineOrdering = true,
         bool sharedTableStudy = false, CardSpreadRequest? spread = null, Func<CardSpreadPacket, int, int>? spreadMeasure = null)
     {
+        var geometry = SeatGeometry.Build(state, sharedTableStudy);
         var hand = HandLayout.Build(state, pointer, previouslyRaised, dragged, allowHover);
         var playAccess = PlayAccessPlan.Build(state);
-        CardSpreadPacket[] packets = spread?.Id == CardSpreadPlan.HandId
+        CardSpreadPacket[] packets = spread?.Target is CardCollectionTarget.HandCollection
             ? [new(CardSpreadPlan.HandId, "", "", [], hand.Cards)]
-            : playAccess.Groups.Where(group => spread?.Id == CardSpreadPlan.AccessId || group.Id == spread?.Id)
+            : spread?.Target is CardCollectionTarget.PublicZone publicZone ? PublicZonePacket(state, geometry, playAccess, publicZone)
+            : playAccess.Groups.Where(group => spread?.Target is CardCollectionTarget.AccessCollection
+                    || spread?.Target is CardCollectionTarget.AccessPacket packet && group.Id == packet.PacketId)
                 .Select(group => new CardSpreadPacket(group.Id,
                     string.Join(" · ", group.Cards.SelectMany(item => item.Access.Routes).Select(route => route.SourceName)
                         .Where(name => name.Length > 0).Distinct()),
                     group.Zone + (group.PlayerId == state.ViewerId ? "" : " · " + state.Players.First(player => player.Id == group.PlayerId).Name),
                     group.SourceIds, group.Cards.Select(item => item.Scene).ToArray())).ToArray();
-        var spreadPlan = spread == null ? null : CardSpreadPlan.Build(spread.Id, packets, spread.View, spread.Top, spreadMeasure);
+        var spreadPlan = spread == null ? null : CardSpreadPlan.Build(spread.Target, packets, spread.View, spread.Top, spreadMeasure,
+            spread.Target is CardCollectionTarget.PublicZone ? packets.SelectMany(packet => packet.Cards).LastOrDefault()?.Id : null);
         var orderedChoices = allowInlineOrdering && state.Decision?.Payload is OrderingPayload order
             ? order.Selection.Choices.Where(choice => choice.Card != null && choice.CardId.Length > 0).Select(choice => choice.CardId).ToHashSet(StringComparer.Ordinal) : null;
         bool duel = sharedTableStudy && state.Players.Length == 2;
-        var geometry = SeatGeometry.Build(state, sharedTableStudy);
         var studySeparate = orderedChoices == null ? new HashSet<string>(StringComparer.Ordinal)
             : new HashSet<string>(orderedChoices, StringComparer.Ordinal);
         if (sharedTableStudy && state.Decision?.Payload is { } required
@@ -157,5 +160,18 @@ public sealed class TableScene
                 .GroupBy(item => item.Kind).Select(group => new BattlefieldCluster(group.Key, group.Select(item => item.Node).ToArray())).ToArray())).ToList();
         }
         return new(hand, playAccess, seats.ToArray(), spreadPlan);
+    }
+
+    private static CardSpreadPacket[] PublicZonePacket(GameSnapshot state, IReadOnlyList<SeatGeometry> geometry,
+        PlayAccessPlan access, CardCollectionTarget.PublicZone target)
+    {
+        var zone = state.Players.FirstOrDefault(player => player.Id == target.PlayerId)?.Zone(target.ZoneName);
+        if (zone == null) return [];
+        var pile = geometry.FirstOrDefault(seat => seat.PlayerId == target.PlayerId)?.Piles.FirstOrDefault(pile => pile.Zone == target.ZoneName);
+        var anchor = pile == null ? new Pose(new(800, 744), new(49, 69)) : PileGeometry.Create(pile.Pose, zone.Count, pile.Compact).Top;
+        var cards = zone.Cards.Where(card => !card.FaceDown && CardViews.Identity(card).Length > 0).Select((card, index) => SceneCard.Create(card,
+            access.Groups.SelectMany(group => group.Cards).FirstOrDefault(item => CardViews.Same(item.Scene.Card, card))?.Scene.Pose ?? anchor,
+            target.ZoneName, target.PlayerId, index, anchor.Center)).ToArray();
+        return [new(target.Id, "", "", [], cards)];
     }
 }

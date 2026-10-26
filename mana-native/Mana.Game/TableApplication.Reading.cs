@@ -27,7 +27,8 @@ internal sealed partial class TableApplication
         or DecisionRequiredSurface.Targets or DecisionRequiredSurface.Combat;
     private CardPresentationContext CardContext => new(match, Scope, OverlayOpen && !BattlefieldFocused && !ZoneReadingOpen && !CardCollectionOpen,
         ReadingGalleryOpen, dragging, CompactCardDecision, TableStudyEnabled,
-        TableStudyEnabled ? StudyActionArea : null, decisions.Presentation);
+        TableStudyEnabled ? StudyActionArea : null, decisions.Presentation,
+        spreadCollection as CardCollectionTarget.PublicZone);
     private string? readingId => matchPresentation.Cards.PinnedId;
     private Rectangle? hoverPreview => matchPresentation.Cards.ReaderBounds;
     internal bool InteractivePointer => !dragging && HitAt(pointer) is { } hit
@@ -45,6 +46,8 @@ internal sealed partial class TableApplication
         if (BattlefieldFocused && hits.LastOrDefault(hit => hit.Contains(point)) is { } focusHit
             && focusHit.Intent is MatchIntent.FocusSurface or MatchIntent.CloseBattlefieldFocus or MatchIntent.SetBattlefieldOwner
                 or MatchIntent.ScrollBattlefieldTo or MatchIntent.ReadFocusedCard or MatchIntent.OpenStack) return focusHit;
+        if (BattlefieldFocused && hits.LastOrDefault(hit => hit.Contains(point)) is { Zone: "BattlefieldFocus", Intent: MatchIntent.UseCard } candidate)
+            return candidate;
         var top = hits.LastOrDefault(hit => hit.Contains(point));
         var resolved = matchPresentation.Cards.ResolveHit(point, hits, top, CardContext);
         if (CardCollectionOpen && resolved?.Card is { } spreadCard && SpreadContains(CardViews.Identity(spreadCard))
@@ -85,7 +88,7 @@ internal sealed partial class TableApplication
     private Pose DrawTableCard(string id, Card card, Pose rest, string zone, int? owner,
         string hitId, UiIntent activate, Action<Pose, bool> paint, Vector2? entrance = null, float entranceDelay = 0,
         bool opensZone = false, int choiceSlot = -1, Rectangle? activationBounds = null, Rectangle? readingAnchor = null, Rectangle? clip = null,
-        bool directPlacement = false)
+        bool directPlacement = false, bool registerHit = true)
     {
         if (choiceSlot < 0 && id == CardIdentity(card) && ReleasedPlayPose(card, zone) is { } submitted) {
             rest = submitted; directPlacement = true; clip = null;
@@ -101,7 +104,7 @@ internal sealed partial class TableApplication
             hit = hit with { Bounds = Rectangle.Intersect(hit.Bounds, viewport), Shape = point => viewport.Contains(point) && entry.Hit.Contains(point) };
         if (zone == "Battlefield" && choiceSlot < 0 && !entry.Focused && !BattlefieldFocused)
             hit = hit with { Bounds = Rectangle.Intersect(hit.Bounds, BoardViewport), Shape = point => BoardViewport.Contains(point) && entry.Hit.Contains(point) };
-        hits.Add(hit);
+        if (registerHit) hits.Add(hit);
         if (entry.Layer == CardPresentationLayer.Table) {
             if (clip is { } paintingClip) canvas.BeginClip(paintingClip);
             ComposeCard(entry, paint);
@@ -138,12 +141,14 @@ internal sealed partial class TableApplication
     private void DrawReaderControls()
     {
         var entry = matchPresentation.Cards.Pinned;
-        if (entry == null || CompactCardDecision && !CardContext.CanBrowseHandSelection(entry) || !CardContext.CanRead(entry)) return;
+        if (entry == null || CompactCardDecision && !CardContext.CanBrowseHandSelection(entry)
+            && !CardContext.CanBrowsePublicCollection(entry) || !CardContext.CanRead(entry)) return;
         var target = (entry.ReaderTarget ?? CardPresentationController.ReaderPose(entry.Rest, entry.Zone)).Bounds;
         if (Vector2.Distance(entry.Display.Size, target.Size.ToVector2()) > 2
             || Vector2.Distance(entry.Display.Center, target.Center.ToVector2()) > 2) return;
         if (CardContext.CanBrowseOpeningHand(entry)) return;
-        if (CardContext.CanBrowseHandSelection(entry)) {
+        if (CardContext.CanBrowseHandSelection(entry)
+            || CardContext.CanBrowsePublicCollection(entry) && match?.Decision?.Payload is not (null or PriorityPayload or PaymentPayload)) {
             if (IsCardActionable(entry.Card)) {
                 int? index = TableChoices.Index(match!, entry.Card);
                 bool selected = index is { } choice ? decisions.Selections.Contains(choice) : entry.Card.Highlighted;

@@ -30,7 +30,7 @@ internal abstract record MatchIntent : UiIntent
     internal sealed record SetPage(MatchPage PageKind, int Page) : MatchIntent {
         internal override InteractionScopeKind ScopeKind => PageKind == MatchPage.PriorityText ? InteractionScopeKind.Playback : InteractionScopeKind.Current;
     }
-    internal sealed record ExpandCardCollection(string Id) : MatchIntent { internal override InteractionScopeKind ScopeKind => InteractionScopeKind.Playback; }
+    internal sealed record ExpandCardCollection(Mana.Renderer.CardCollectionTarget Target) : MatchIntent { internal override InteractionScopeKind ScopeKind => InteractionScopeKind.Playback; }
     internal sealed record FoldCardCollection : MatchIntent { internal override InteractionScopeKind ScopeKind => InteractionScopeKind.Playback; }
     internal sealed record ResetCardCollectionView : MatchIntent { internal override InteractionScopeKind ScopeKind => InteractionScopeKind.Playback; }
     internal sealed record FlipInspector : MatchIntent;
@@ -42,6 +42,7 @@ internal abstract record MatchIntent : UiIntent
     internal sealed record ClearSelection : MatchIntent;
     internal sealed record SelectChoice(int Index) : MatchIntent;
     internal sealed record ChooseAbility(int Index) : MatchIntent;
+    internal sealed record ChooseCounterPayment(int Index) : MatchIntent;
     internal sealed record FocusInput(bool Filter) : MatchIntent;
     internal sealed record AdjustNumber(int Delta) : MatchIntent;
     internal sealed record ConfirmValue : MatchIntent;

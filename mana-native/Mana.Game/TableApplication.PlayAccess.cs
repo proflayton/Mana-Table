@@ -51,10 +51,10 @@ internal sealed partial class TableApplication
                 canvas.Line(center + new Vector2(-5, 0), center + new Vector2(0, -6), Gold, 1.5f);
             }
             if (hover) canvas.Text(source?.Name ?? group.Zone, Math.Min(1320, (int)center.X - 110), plan.Bounds.Top - 46, Ink, .57f, 260, 3, true);
-            var intent = new MatchIntent.ExpandCardCollection(group.Id);
+            var intent = new MatchIntent.ExpandCardCollection(new CardCollectionTarget.AccessPacket(group.Id));
             if (AccessCollectionAllowed) hits.Add(new(id, ScopeFor(intent), new((int)center.X - 19, (int)center.Y - 19, 38, 38), intent));
         }
-        DrawFanUnfold("play-access-unfold", plan.UnfoldBounds, CardSpreadPlan.AccessId, spreadId == CardSpreadPlan.AccessId);
+        DrawFanUnfold("play-access-unfold", plan.UnfoldBounds, CardCollectionTarget.Access, spreadCollection is CardCollectionTarget.AccessCollection);
     }
 
     private string PlayAccessState(Card card)

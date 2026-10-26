@@ -37,7 +37,7 @@ internal sealed partial class TableApplication
         DrawCombatConnections(); DrawAttachmentConnections(); DrawStack(); DrawSeatTransfers();
         DrawChangeHighlights();
         if (!BattlefieldFocused) DrawEffectTransitions();
-        DrawHand(); DrawPlayAccess(); DrawCardEffects(); DrawDepartures();
+        DrawHand(); DrawPlayAccess(); DrawPublicCollectionReturns(); DrawCardEffects(); DrawDepartures();
         if (!BattlefieldFocused && !CardCollectionOpen) DrawLiftedCards();
         // Your seat stays in front of the fan and readable during card travel.
         if (state.Viewer is { } local) DrawHero(local, SeatHero(local.Id), true, 3);
@@ -61,7 +61,7 @@ internal sealed partial class TableApplication
         if (!OverlayOpen && !CardCollectionOpen) DrawReaderControls();
         // Decision text and its controls have priority over card readers and
         // held cards. Their input regions are registered last for the same reason.
-        if (!BattlefieldFocused && !OverlayOpen && !AbilityActionPending && !CardCollectionOpen) { DrawDecisionDock(); }
+        if (!BattlefieldFocused && !OverlayOpen && !AbilityActionPending && (!CardCollectionOpen || EmptyPublicCollection)) { DrawDecisionDock(); }
         if (!BattlefieldFocused) DrawChangeCallout();
         if (!BattlefieldFocused) { DrawAbilityActions(); DrawSourceTargeting(); }
         if (!CardCollectionOpen) DrawOverlays();
@@ -120,7 +120,7 @@ internal sealed partial class TableApplication
             canvas.Text(landState, 662, 873, Ink, .63f, 456, 1);
             }
         }
-        if (HandCollectionAllowed && hand.Total > 0) DrawFanUnfold("hand-unfold", hand.UnfoldBounds, CardSpreadPlan.HandId, spreadId == CardSpreadPlan.HandId);
+        if (HandCollectionAllowed && hand.Total > 0) DrawFanUnfold("hand-unfold", hand.UnfoldBounds, CardCollectionTarget.Hand, spreadCollection is CardCollectionTarget.HandCollection);
     }
     private static string CardIdentity(Card card) => CardViews.Identity(card);
     private void DrawSceneCard(SceneCard node)

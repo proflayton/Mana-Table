@@ -108,8 +108,9 @@ internal static class DisclosedSourceInteractionChecks
             var pile = AtHit("zone:0:Graveyard"); frame = Tick(pile, ButtonState.Pressed); frame = Tick(pile);
             inspectedSource = grave; inspectedZone = "Graveyard";
             OpenReader(rightClick: true);
-            check(view.ZoneName == "Graveyard" && provider.Commands.Count == 1,
-                "Browsing and right-clicking a public zone preserves the gallery without casting its selected card at " + size);
+            check(frame.Scene?.Spread?.Target is CardCollectionTarget.PublicZone { PlayerId: 0, Zone: PublicInspectionZone.Graveyard }
+                    && provider.Commands.Count == 1,
+                "Browsing and right-clicking a public pile preserves its physical collection without casting its inspected card at " + size);
             var action = AtHit("read-card-action"); frame = Tick(action, ButtonState.Pressed);
             var revoked = state with { Revision = 6, Decision = state.Decision! with { Id = "revoked-graveyard", Context = state.Decision!.Context with { Source = new DecisionSource((state.Decision!.Context.Source?.CardId ?? ""), grave, state.Decision!.Context.Source?.ControllerId, (state.Decision!.Context.Source?.Zone ?? "")) } },
                 Players = state.Players.Select(player => player.Id != 0 ? player : player with {

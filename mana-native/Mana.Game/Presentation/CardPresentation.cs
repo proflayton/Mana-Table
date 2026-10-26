@@ -10,7 +10,8 @@ namespace Mana.Table.Presentation;
 /// <summary>The current authority and interaction policy used to prepare cards.</summary>
 internal sealed record CardPresentationContext(GameSnapshot? State, string Scope,
     bool OverlayOpen, bool GalleryOpen, bool Dragging, bool CompactDecision,
-    bool KeepBattlefieldAnchor = false, Rectangle? BattlefieldReaderAvoid = null, DecisionDockView? Decision = null)
+    bool KeepBattlefieldAnchor = false, Rectangle? BattlefieldReaderAvoid = null, DecisionDockView? Decision = null,
+    CardCollectionTarget.PublicZone? PublicCollection = null)
 {
     private DecisionReadingPolicy Reading => new(Decision ?? (State == null ? null : DecisionDockPresentation.From(State, new())));
     public bool OpeningHandDecision => Reading.Allows(DecisionReading.OpeningHandInspection);
@@ -31,18 +32,25 @@ internal sealed record CardPresentationContext(GameSnapshot? State, string Scope
 
     public Card? ChoiceFace(int slot) => Reading.ChoiceFace(State, slot);
 
+    public bool CanBrowsePublicCollection(PresentedCard entry) => PublicCollection is { } zone
+        && entry.ChoiceSlot < 0 && entry.Request.Owner == zone.PlayerId && entry.Zone == zone.ZoneName
+        && State?.Players.FirstOrDefault(player => player.Id == zone.PlayerId)?.Zone(zone.ZoneName).Cards
+            .Any(card => !card.FaceDown && CardViews.Same(card, entry.Card)) == true;
+
     public bool InspectOnClick(PresentedCard entry)
     {
-        if (!CanRead(entry) || Dragging || CompactDecision && !CanBrowseHandSelection(entry)) return false;
+        if (!CanRead(entry) || Dragging || CompactDecision && !CanBrowseHandSelection(entry) && !CanBrowsePublicCollection(entry)) return false;
         if (entry.ChoiceSlot >= 0) return Reading.Allows(DecisionReading.RevealInspection);
         return !OverlayOpen && (Reading.Allows(DecisionReading.TableInspection) || CanBrowseOpeningHand(entry)
-            || CanBrowseHandSelection(entry) || CanBrowseDecisionSource(entry));
+            || CanBrowseHandSelection(entry) || CanBrowseDecisionSource(entry) || CanBrowsePublicCollection(entry));
     }
 
     public bool CanRead(PresentedCard entry)
     {
         if (entry.Request.ChoiceSlot < 0) {
             if (OverlayOpen || State == null) return false;
+            if (PublicCollection is { } zone && entry.Request.Owner == zone.PlayerId && entry.Zone == zone.ZoneName)
+                return CanBrowsePublicCollection(entry);
             return CurrentOccurrence(entry) is { FaceDown: false };
         }
         // Anonymous revealed faces belong to an original slot in one decision.
@@ -56,6 +64,9 @@ internal sealed record CardPresentationContext(GameSnapshot? State, string Scope
     public Card? CurrentOccurrence(PresentedCard entry)
     {
         if (State == null || entry.ChoiceSlot >= 0) return null;
+        if (PublicCollection is { } zone && entry.Request.Owner == zone.PlayerId && entry.Zone == zone.ZoneName)
+            return State.Players.FirstOrDefault(player => player.Id == zone.PlayerId)?.Zone(zone.ZoneName).Cards
+                .FirstOrDefault(card => !card.FaceDown && CardViews.Same(card, entry.Card));
         return CurrentOccurrence(entry.Zone, entry.Card);
     }
 

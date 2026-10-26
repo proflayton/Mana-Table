@@ -59,6 +59,7 @@ internal sealed partial class TableApplication
         }
 
         DrawPortraitTurnControls();
+        if (DrawCounterPaymentDecision(state)) return;
         if (!SelectingActionTarget && DrawOptionalDecision(state)) return;
         if (d?.Payload is TargetSelectionPayload { Search: not null }) {
             // Legal recipient gestures live on the actual library piles. The

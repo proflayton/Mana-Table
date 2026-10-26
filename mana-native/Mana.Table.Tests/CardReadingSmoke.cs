@@ -135,9 +135,24 @@ internal sealed partial class CardReadingSmoke : ITableAutomation
         Step(.05, () => Buttons());
         Step(.05, () => MoveCard("hand-4")); Click();
         Step(.2, () => Check(scenario.Replies.Count == 1, "Cancelling a drag and reopening a reader cannot play the card"));
-        Step(0, () => Publish(scenario.State with { Decision = new Decision("", new DecisionContext(), new EntitySelectionPayload(new DecisionReply("Confirm", false), new DecisionReply("Cancel", false), [], null)) }));
+        string requiredHandGame = "", requiredHandDecision = "", requiredHandKey = "";
+        Step(0, () => {
+            Publish(scenario.State with { Decision = new Decision("", new DecisionContext(), new EntitySelectionPayload(new DecisionReply("Confirm", false), new DecisionReply("Cancel", false), [], null)) });
+            requiredHandGame = scenario.State.Id; requiredHandDecision = scenario.State.Decision!.Id;
+            requiredHandKey = scenario.State.Viewer!.Zone("Hand").Cards.Single(card => card.VisualId == "hand-4").Key;
+        });
         Prepared(() => view.Match?.Decision is { Payload: EntitySelectionPayload } && FreshHand("hand-4", c => !c.FaceDown && c.Selectable), .5, () => MoveCard("hand-4"), "The fresh required hand selection must be visible before its click"); Click();
-        Step(.3, () => Check(scenario.Replies.Count == 2, "Required hand selections still submit with one click"));
+        Prepared(() => ReadingReady("hand-4") && view.Hits.Any(hit => hit.Id == "read-card-action" && view.CurrentHit(hit)), 3, () => {
+            Check(scenario.Replies.Count == 1 && view.Match is { } current && current.Id == requiredHandGame && current.Decision?.Id == requiredHandDecision
+                && view.Selections.Count == 0,
+                "Reading a required hand candidate preserves its current decision and submits no selection before the explicit Choose card action");
+            MoveHit("read-card-action");
+        }, "The required hand reader and its explicit current Choose card action must settle before selecting"); Click();
+        Prepared(() => !view.Busy && scenario.Replies.Count == 2, 2, () => {
+            Check(scenario.Replies[^1] is SelectCard selected && selected.GameId == requiredHandGame
+                && selected.DecisionId == requiredHandDecision && selected.Card == requiredHandKey,
+                "Only the explicit Choose card action submits one exact current scoped hand selection");
+        }, "The explicit required hand choice must reconcile its single scoped selection");
         Step(0, () => {
             var state = scenario.State;
             Publish(state with { Decision = null, Players = state.Players.Select(p => p.Id != 0 ? p : p with { Zones = p.Zones.Select(z => z.Name != "Hand" ? z : z with {
@@ -169,8 +184,9 @@ internal sealed partial class CardReadingSmoke : ITableAutomation
         Step(.25, () => {
             Check(view.Hovered?.VisualId == "grave-0" && view.HoverPreview == null, "Hovering a public graveyard top card keeps its pile compact");
         }); Click();
-        Step(.1, () => Check(view.ZoneName == "Graveyard" && scenario.Replies.Count == 2, "A public pile still opens its browser with a single click"));
-        Step(0, () => MoveHit("close-overlay")); Click();
+        Step(.1, () => Check(view.Frame?.Scene?.Spread?.Target is CardCollectionTarget.PublicZone { PlayerId: 0, Zone: PublicInspectionZone.Graveyard }
+            && scenario.Replies.Count == 2, "A public pile unfolds its physical collection with a single noncommitting click"));
+        Step(0, () => MoveHit("card-spread-fold")); Click();
         Step(0, () => {
             Publish(scenario.State with { ActivePlayerId = 1, PhaseKey = "COMBAT_END", Decision = new Decision("", new DecisionContext(), new PriorityPayload(new DecisionReply("Confirm", true), null, CanAutoPass: false, QuietYieldToken: "", Abilities: [])) });
             MoveHit("auto");
@@ -216,14 +232,14 @@ internal sealed partial class CardReadingSmoke : ITableAutomation
             repliesBeforeReveal = scenario.Replies.Count;
             Publish(scenario.State with { Decision = new Decision("", new DecisionContext(Title: "Revealed cards"), new RevealPayload(((ImmutableArray<Choice>)([new(0, card.Name, card), new(1, card.Name, card with { })])).Select(choice => new LibraryChoice(null, choice.Label, choice.Card!)).ToImmutableArray())) });
         });
-        Step(.15, () => MoveHit("choice:0"));
+        Step(.15, () => MoveHit("reveal:0"));
         Step(.25, () => Check(view.HoverPreview == null && ChoiceCompact(0), "Hovering a revealed face keeps the gallery compact")); Click();
         StepWhen(() => GalleryReadingReady(0), 3, () => {
             Check(GalleryReadingReady(0),
                 "An explicit click reads an anonymous revealed face in place, painted exactly once");
             Check(scenario.Replies.Count == repliesBeforeReveal && view.Selections.Count == 0, "Reading a revealed card does not select it or advance the decision");
             Capture("05-revealed-reader");
-            MoveHit("choice:1");
+            MoveHit("reveal:1");
         }); Click();
         StepWhen(() => GalleryReadingReady(1), 3, () => {
             Check(GalleryReadingReady(1), "Identically named revealed cards remain independently readable through explicit clicks");
@@ -771,7 +787,8 @@ internal sealed partial class CardReadingSmoke : ITableAutomation
     }
     private void MoveHit(string id)
     {
-        var hit = view.Hits.Last(h => h.Id == id);
+        var hit = view.Hits.LastOrDefault(h => h.Id == id)
+            ?? throw new InvalidOperationException("Missing current card-reading target '" + id + "' in " + view.Scope);
         MoveScreen(SmokePointer.Hit(view, hit));
     }
     private void MoveReaderFace()
@@ -812,12 +829,12 @@ internal sealed partial class CardReadingSmoke : ITableAutomation
             wallSeconds = watch.Elapsed.TotalSeconds, diagnosticFrames,
             diagnosticStartedSteps, diagnosticCompletedSteps, checks = checks.Count });
     }
-    private void WriteReadingDiagnostic(string reason)
+    private void WriteReadingDiagnostic(string reason, Exception? error = null)
     {
         object? pending = steps.TryPeek(out var next) ? new { next.Delay, readiness = next.Ready != null } : null;
         var logical = SmokePointer.Table(view, new(mouse.X, mouse.Y));
         var hit = view.HitAt(logical);
-        var record = new { reason, view.Now, wallSeconds = diagnosticClock.Elapsed.TotalSeconds,
+        var record = new { reason, exception = error?.ToString(), view.Now, wallSeconds = diagnosticClock.Elapsed.TotalSeconds,
             diagnosticFrames, diagnosticStartedSteps, diagnosticCompletedSteps, queued = steps.Count,
             pending, lastStep, sincePreviousStep = view.Now - lastStep, view.Scope,
             view.Overlay, view.ZoneName, view.Error, checks, observations, timing,
@@ -898,6 +915,6 @@ internal sealed partial class CardReadingSmoke : ITableAutomation
                     physicalPointer = new { mouse.X, mouse.Y }, view.Scope, view.Overlay }); }
                 if (steps.Count == 0) FinishReading();
             }
-        } catch { WriteReadingDiagnostic("exception"); throw; }
+        } catch (Exception error) { WriteReadingDiagnostic("exception", error); throw; }
     }
 }
