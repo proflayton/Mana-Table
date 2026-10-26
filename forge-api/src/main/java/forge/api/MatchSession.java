@@ -387,8 +387,8 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
     private boolean canAutoPass(Input input) {
         var view = game.getView();
         // The controller refreshes this conservative action scan before publishing
-        // priority. It includes affordable spells/abilities in playable zones and
-        // treats scan timeouts as available actions; mana abilities alone do not count.
+        // priority. It includes planned payments and unresolved manual routes in
+        // playable zones. Timeouts remain conservative; mana abilities alone do not count.
         // Land plays and castable commanders count as actions too. A main phase
         // with no remaining play is eligible; the client applies saved phase stops.
         // Never infer this permission from card highlighting in the renderer.
@@ -919,8 +919,12 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
         }
         var stack = new ArrayList<Object>();
         var pendingEffects = new HashMap<Integer, Map<String, Object>>();
+        var stackKinds = new HashMap<Integer, String>();
         for (var instance : game.getStack()) {
-            var effect = pendingEffect(instance.getSpellAbility());
+            var ability = instance.getSpellAbility();
+            stackKinds.put(instance.getId(), ability.isTrigger() ? "triggered" : ability.isSpell() ? "spell"
+                    : ability.isActivatedAbility() ? "activated" : "ability");
+            var effect = pendingEffect(ability);
             if (effect != null) pendingEffects.put(instance.getId(), effect);
         }
         for (var item : view.getStack()) {
@@ -929,6 +933,8 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
             stack.add(map("id", item.getId(), "name", visible ? source.getCurrentState().getName() : "Face-down spell", "text", visible ? item.getText() : "",
                     "card", source != null && source.canBeShownTo(viewer) ? cardState(source, null) : null,
                     "ability", item.isAbility(),
+                    "kind", visible ? stackKinds.getOrDefault(item.getId(), item.isAbility() ? "ability" : "spell")
+                            : item.isAbility() ? "ability" : "spell",
                     "effect", visible ? pendingEffects.get(item.getId()) : null,
                     "targets", visible ? stackTargets(item) : List.of(),
                     "controller", item.getActivatingPlayer() == null ? "" : item.getActivatingPlayer().getName(),

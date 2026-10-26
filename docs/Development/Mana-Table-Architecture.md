@@ -148,6 +148,36 @@ the authority's next state. All three obey current visibility: historical facts,
 cached readers, art preloading and debug output cannot restore a face or private
 choice the viewer is no longer entitled to inspect.
 
+Payment discovery must preserve uncertainty. The bounded `AvailableActions`
+scan distinguishes a planned payment, an unavailable payment and a relevant
+manual route outside the AI planner's supported operations. The latter keeps
+the card discoverable and leaves the scan incomplete, so it cannot authorize
+automatic passing. It is not a proof that every cost can be paid. Manual routes
+are discovered once per scan, only after a failed plan; floating-mana probes
+refund partial test payments. Actual source actions, costs, recipients and
+spending restrictions still execute through the current engine input. Victory
+Chimes' choose-player-before-mana chain is the real regression: a deliberate AI
+planner exclusion had incorrectly hidden a human payment route.
+
+Stack entries now carry `StackActionKind` from the actual owned ability: spell,
+activation, trigger or an otherwise unclassified ability. Native `Ability` is
+derived from that closed kind. The private version-2 wire adds `kind`; older jars
+remain conservatively unclassified for abilities, and contradictory explicit
+classifications fail at decoding. This is additive wire data, not a new action
+capability or persisted-deck migration. It does not yet join the independent
+execution identities described below.
+
+Accepted new stack occurrence IDs drive a bounded 2.4-second announcement and
+source emphasis. Joining, repeated polls and retained history cannot restart it;
+an entire batch does not create a sequence of one timer per trigger. Hovering
+the pending effect reads the chosen spell/ability with source artwork, complete text
+and current source statistics/counters. Hovering its source or targets retains
+their separate full-card inspection. Readers resolve current stack membership
+each frame and disappear when that occurrence leaves. Emphasis gates local Auto
+and the existing bounded presentation acknowledgement; it cannot reset a host
+decision clock. Reading pauses local automatic interaction while the host's
+thinking/grace clock continues to run and enforce its configured expiry policy.
+
 `PublicActivityCursor` consumes the accepted observation's event IDs once and
 publishes one immutable `PublicActivityBatch` to the feedback consumers. The batch
 binds its new entries to the same before/after snapshots. Initial observations,

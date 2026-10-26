@@ -99,11 +99,19 @@ internal static class ForgeSnapshotDecoder
 
     private sealed record WireStackItem(string Name, string Text, bool Ability, Card? Card)
     {
+        public string Kind { get; init; } = "";
         public JsonElement Id { get; init; }
         public int? ControllerId { get; init; }
         public ImmutableArray<StackTarget> Targets { get; init; } = [];
         public PendingEffect? Effect { get; init; }
-        public StackItem Native() => new(Name, Text, Ability, Card) {
+        private StackActionKind ActionKind() => (Kind, Ability) switch {
+            ("spell" or "", false) => StackActionKind.Spell,
+            ("activated", true) => StackActionKind.ActivatedAbility,
+            ("triggered", true) => StackActionKind.TriggeredAbility,
+            ("ability" or "", true) => StackActionKind.Ability,
+            _ => throw Invalid()
+        };
+        public StackItem Native() => new(Name, Text, ActionKind(), Card) {
             Id = Identifier(Id), ControllerId = ControllerId,
             Targets = Targets.IsDefault ? throw Invalid() : Targets, Effect = Effect
         };

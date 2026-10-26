@@ -45,7 +45,7 @@ command selects their classes as well as the group so upstream modules do not
 start empty TestNG processes:
 
 ```powershell
-mvn -pl forge-api -am test '-Dgroups=canonical-interaction' '-Dtest=SourceActionsTest,PartnerChoiceExperienceTest,ToothyLeavesBattlefieldTest,CounterCostExperienceTest,PaymentCandidateExperienceTest,TargetCounterExperienceTest,PendingEffectTest,AllocationProjectionTest,PlayerStatesExperienceTest,MatchFailureTest' '-Dsurefire.failIfNoSpecifiedTests=false'
+mvn -pl forge-api -am test '-Dgroups=canonical-interaction' '-Dtest=SourceActionsTest,PartnerChoiceExperienceTest,ToothyLeavesBattlefieldTest,CounterCostExperienceTest,PaymentCandidateExperienceTest,TargetCounterExperienceTest,PendingEffectTest,AllocationProjectionTest,PlayerStatesExperienceTest,MatchFailureTest,ManaAvailabilityExperienceTest' '-Dsurefire.failIfNoSpecifiedTests=false'
 ```
 
 `MatchFailureTest` also exercises engine interruption outside that canonical
@@ -55,6 +55,17 @@ rules prototypes followed by real deck-configured token creation. The native
 `--smoke-headless-presentation` lane covers interruption with an old engine's
 stale defeat, local card inspection and a genuine completed defeat. These are
 failure/authority checks, not approval of the outcome screen's visual design.
+
+`ManaAvailabilityExperienceTest` compares current cues with actual payment using
+floating colorless mana, Wastes, mixed mana, explicit colorless requirements and
+Victory Chimes' manual recipient choice. It also follows Omnath's landfall mana
+from a real pending trigger to production, while `CounterCostExperienceTest`
+checks a paid activation's classification. `HeadlessPresentationSmoke.StackArrival`
+uses the production application to cover announcement lifetime, effect hover,
+current source state, leaving the stack, an already-running clock and provider
+classification validation. Its authored observations test presentation and
+command safety; the Java journeys supply the rules evidence. Window captures
+and human readability review remain separate.
 
 This is a representative real-rules lane alongside enumerated coverage of the
 current interaction command variants. Neither replaces visual review of the corresponding

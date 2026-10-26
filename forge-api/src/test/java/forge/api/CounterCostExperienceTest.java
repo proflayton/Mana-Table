@@ -35,6 +35,9 @@ public class CounterCostExperienceTest {
                     "Paying the fixed source's only counter type must not require selecting the source again");
             assertEquals(card(next.state(), MARE).getAsJsonObject("counters").get("-1/-1").getAsInt(), countersBefore - 1);
             assertEquals(viewer(next.state()).getAsJsonObject("mana").get("U").getAsInt(), 0, "The actual mana cost was paid");
+            var stacked = next.state().getAsJsonArray("stack").asList().stream().map(value -> value.getAsJsonObject())
+                    .filter(item -> text(item, "name").equals(MARE)).findFirst().orElseThrow();
+            assertEquals(text(stacked, "kind"), "activated", "The actual paid activation supplies its stack action kind");
             var resolved = game.until(i -> i.seat() == 0 && priority(i) && i.state().getAsJsonArray("stack").isEmpty());
             assertEquals(count(viewer(resolved.state()), "Hand"), handBefore + 1, "The exact draw ability resolves once");
             assertEquals(card(resolved.state(), MARE).getAsJsonObject("counters").get("-1/-1").getAsInt(), countersBefore - 1);
@@ -168,7 +171,10 @@ public class CounterCostExperienceTest {
                 continue;
             }
             if (!text(input.prompt(), "inputType").startsWith("InputPayMana")) return input;
-            assertTrue(game.answer(input, Map.of("action", "ok")));
+            // Auto can finish while its intermediate publication is observed.
+            // A rejected old scope means observe the new decision; the helper
+            // never replays this OK against a replacement payment or choice.
+            if (!game.answer(input, Map.of("action", "ok"))) continue;
         }
         throw new AssertionError("The actual mana payment did not complete");
     }

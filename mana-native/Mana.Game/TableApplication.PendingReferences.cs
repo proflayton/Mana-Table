@@ -1,6 +1,7 @@
 using Mana.Contracts;
 using Mana.Magic;
 using Mana.Renderer;
+using Mana.Table.Presentation;
 using Microsoft.Xna.Framework;
 using Point = Microsoft.Xna.Framework.Point;
 using Rectangle = Microsoft.Xna.Framework.Rectangle;
@@ -9,10 +10,13 @@ namespace Mana.Table;
 
 internal sealed partial class TableApplication
 {
-    private sealed record PendingCardReference(string StackId, string CardId, string DecisionId = "");
+    private sealed record PendingCardReference(string StackId, string CardId, string DecisionId = "", bool ReadEffect = false);
     private PendingCardReference? pendingPreviewReference;
     private Rectangle? pendingPreviewBounds;
     private string? pendingPreviewCardId;
+    private (string Game, int Viewer, string Id, string Name, string Text, string Type, string Cost, float Scale)? stackReadKey;
+    private Card? stackReadFace;
+    private CardRulesLayout? stackReadLayout;
 
     private Card? ResolvePendingReference(PendingCardReference reference)
     {
@@ -120,6 +124,8 @@ internal sealed partial class TableApplication
         var explicitReference = hit?.Intent switch {
             MatchIntent.ReadPendingReference read => new PendingCardReference(read.StackId, read.CardId, read.DecisionId),
             MatchIntent.PreviewPendingCard read => new PendingCardReference(read.StackId, read.CardId, read.DecisionId),
+            MatchIntent.InspectPendingEffect read when match.Stack.FirstOrDefault(item => item.Id == read.Id)?.Card is { FaceDown: false } source
+                => new PendingCardReference(read.Id, CardViews.Identity(source), ReadEffect: true),
             _ => null
         };
         if (explicitReference != null && hit != null && CurrentHit(hit) && ResolvePendingReference(explicitReference) != null) {
@@ -151,13 +157,28 @@ internal sealed partial class TableApplication
         var previous = pendingPreviewReference;
         pendingPreviewReference = reference; pendingPreviewCardId = null;
         if (reference == null || ResolvePendingReference(reference) is not { } card) { pendingPreviewBounds = null; return; }
+        var effect = reference.ReadEffect ? match!.Stack.FirstOrDefault(item => item.Id == reference.StackId) : null;
+        if (effect != null) {
+            string text = effect.Text.Length > 0 ? effect.Text : !effect.Ability ? card.Text : "Effect text not reported.";
+            string cost = effect.Ability ? "" : card.ManaCost;
+            string type = effect.Kind switch { StackActionKind.Spell => card.Type,
+                StackActionKind.TriggeredAbility => "Triggered ability", StackActionKind.ActivatedAbility => "Activated ability", _ => "Ability" };
+            var key = (match!.Id, match.ViewerId, effect.Id, effect.Name, text, type, cost, canvas.TextScale);
+            if (stackReadKey != key) {
+                // This is a read-only face for the actual stack action, not a
+                // replacement for its physical source or a new game occurrence.
+                stackReadFace = new Card { Name = effect.Name, Text = text, ManaCost = cost, Type = type };
+                stackReadLayout = CardRulesLayout.Measure(canvas, stackReadFace, 150);
+                stackReadKey = key;
+            }
+        }
         var boardCard = PendingConnectionCard(CardViews.Identity(card));
         if (boardCard != null) canvas.CardFocus(boardCard.Display, HoverAccent);
         bool CoversPendingContext(Rectangle candidate) => candidate.Intersects(decisionPanelBounds)
             || !targetingEffectBounds.IsEmpty && candidate.Intersects(targetingEffectBounds)
             || stackRows.Any(row => candidate.Intersects(row.Bounds));
-        if (reference != previous || pendingPreviewBounds == null || CoversPendingContext(pendingPreviewBounds.Value)) {
-            var size = new Point(410, 574);
+        var size = effect != null && stackReadLayout is { } layout ? new Point(layout.Width, layout.Height) : new Point(410, 574);
+        if (reference != previous || pendingPreviewBounds == null || pendingPreviewBounds.Value.Size != size || CoversPendingContext(pendingPreviewBounds.Value)) {
             var candidates = new[] { 1008, 12, 545, 1180 }.Select(x => new Rectangle(x, 82, size.X, size.Y)).ToArray();
             int Score(Rectangle candidate) {
                 // Instructions, pending values and actual answer controls take
@@ -180,7 +201,13 @@ internal sealed partial class TableApplication
             pendingPreviewBounds = (clear.Length > 0 ? clear : candidates).OrderBy(Score).First();
         }
         var bounds = pendingPreviewBounds.Value;
-        PaintReferencePreview(card, new(bounds.Center.ToVector2(), bounds.Size.ToVector2()));
+        var pose = new Pose(bounds.Center.ToVector2(), bounds.Size.ToVector2());
+        if (effect != null && stackReadFace is { } face && stackReadLayout is { } measured) {
+            PaintRulesFace(face, pose, measured, card);
+            var counters = AllocationGuide.Counters(card);
+            if (counters.Length > 0) canvas.Text(counters, bounds.Left + 20, bounds.Bottom - 48,
+                new(30, 35, 35), .62f, bounds.Width - 145, 2);
+        } else PaintReferencePreview(card, pose);
         pendingPreviewCardId = CardViews.Identity(card);
         // The read-only face absorbs input rather than passing clicks through
         // to the battlefield beneath it. It never becomes a game-card occurrence.

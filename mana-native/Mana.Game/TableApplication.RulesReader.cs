@@ -71,10 +71,10 @@ internal sealed partial class TableApplication
         return true;
     }
 
-    private void PaintRulesFace(Card card, Pose pose)
+    private void PaintRulesFace(Card card, Pose pose, CardRulesLayout? prepared = null, Card? illustration = null)
     {
         var face = pose.Bounds;
-        var layout = RulesLayout(card);
+        var layout = prepared ?? RulesLayout(card);
         var ink = new Color(30, 35, 35);
         canvas.Surface(null, pose, new(224, 220, 200));
         canvas.CardFrame(pose, Gold, 2);
@@ -88,14 +88,25 @@ internal sealed partial class TableApplication
             y += text.Height;
         }
         Paint(layout.Name, CardRulesLayout.NameFont, true);
+        if (layout.IllustrationHeight > 0) {
+            y += 12;
+            var art = new Rectangle(x, y, face.Width - 40, layout.IllustrationHeight);
+            if (illustration != null && resources.Card(illustration) is { } image) {
+                var crop = new Rectangle((int)(image.Width * .12f), (int)(image.Height * .14f),
+                    (int)(image.Width * .76f), (int)(image.Height * .38f));
+                canvas.Sprite(image, art.Center.ToVector2(), art.Size.ToVector2(), 0, Color.White, crop);
+            } else canvas.Fill(art, new(43, 58, 64));
+            y += layout.IllustrationHeight;
+        }
         if (card.ManaCost.Length > 0) { y += 6; Paint(layout.Mana, CardRulesLayout.ManaFont, false); }
         y += 8; Paint(layout.Type, CardRulesLayout.TypeFont, true);
         y += 8; canvas.Line(new(x, y), new(face.Right - 20, y), new(114, 115, 99), 1); y += 12;
         foreach (var paragraph in layout.Paragraphs) { Paint(paragraph, CardRulesLayout.RulesFont, false); y += 12; }
-        if (CardPresentation.HasCombatStats(card)) {
+        var statsCard = illustration ?? card;
+        if (CardPresentation.HasCombatStats(statsCard)) {
             var stats = new Rectangle(face.Right - 112, face.Bottom - 45, 92, 32);
             canvas.Rounded(stats, new(24, 47, 45), 4);
-            canvas.CenterText(CurrentStats(card), stats, Ink, .94f, true);
+            canvas.CenterText(CurrentStats(statsCard), stats, Ink, .94f, true);
         }
     }
 }

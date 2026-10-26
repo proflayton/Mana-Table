@@ -251,8 +251,14 @@ public sealed record Attack(string CardId, int DefendingPlayerId, ImmutableArray
     public bool Blocked { get; init; }
 }
 public sealed record Combat(ImmutableArray<Attack> Attackers, ImmutableArray<AttackOption> AttackOptions, string? BlockProblem);
-public sealed record StackItem(string Name, string Text, bool Ability, Card? Card)
+public enum StackActionKind { Spell, ActivatedAbility, TriggeredAbility, Ability }
+[method: System.Text.Json.Serialization.JsonConstructor]
+public sealed record StackItem(string Name, string Text, StackActionKind Kind, Card? Card)
 {
+    // Compatibility for authored projections that do not distinguish ability kinds.
+    public StackItem(string Name, string Text, bool Ability, Card? Card)
+        : this(Name, Text, Ability ? StackActionKind.Ability : StackActionKind.Spell, Card) { }
+    public bool Ability => Kind != StackActionKind.Spell;
     public string Id { get; init; } = "";
     public int? ControllerId { get; init; }
     public ImmutableArray<StackTarget> Targets { get; init; } = [];

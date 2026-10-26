@@ -132,6 +132,30 @@ does not establish that a person can understand or use the screen.
     [architecture migration](Mana-Table-Architecture.md#action-execution-the-next-boundary-migration)
     records the current gaps and the first real-engine journey to migrate.
 
+## Stack announcements and manual mana: 26 October 2026
+
+**Source candidate; human review pending.** The player requested emphasis when
+spells/abilities reach the stack, comparable to announcing a play at a paper
+table, plus hover reading under the table's timer. The supplied Arena references
+show source artwork and the particular ability being chosen/read. Our adaptation
+uses the existing pending-effect position: briefly announce the engine-reported
+action kind/controller and emphasize its real source. Hover the effect itself
+to read its chosen spell/ability in an illustrated card face, including readable
+spell text for full-art printings; source/target references
+retain their full-card readers. This creates no extra confirmation or rules
+command. Initial observations do not replay an announcement, repeated polls do
+not renew it, and a batch of triggers shares one emphasis interval. Host time
+continues during reading. This is a visual iteration on the current stack
+surface, not completion of the larger causal execution or table-placement work.
+
+The mana reproduction used Blasting Station with Sol Ring and Victory Chimes.
+The AI payment planner omits the choose-player chain; the human can activate it,
+choose their own recipient and pay. A failed automatic plan now preserves
+relevant manual routes as uncertain rather than proving unavailability. Actual
+payment still uses the engine; this does not make Auto handle every possible
+mana-production chain. Plain floating colorless mana, generic costs, Ultima's
+mixed cost and an explicit colorless requirement are separate real-engine cases.
+
 ## Paper table placement study: 25 October 2026
 
 The player's cropped left-side battlefield could not communicate which seat
