@@ -69,6 +69,15 @@ does not establish that a person can understand or use the screen.
    action handles and decision constraints. A list intended for auto-pass is not
    a complete action catalog. Simplify presentation without inventing availability,
    skipping required choices or hardcoding a mechanic's maximum.
+   Automated players use this boundary for the whole seat: opening hands,
+   sequencing, abilities, costs, combat and required effects. Build and validate
+   the decision framework before replacing strategy. A casual Commander policy
+   considers the public table and recent pressure; lowest life is not a complete
+   model of threat. Keep each seat's knowledge independent. Judge engaging play
+   through actual multiplayer sequences, separately from legal completion,
+   win rate or an equal distribution of targets. The
+   [AI framework and investigation](Mana-Table-AI.md) record this scope and its
+   remaining prerequisites.
 6. **Treat rejection as design evidence.** Revisit the interaction and information
    hierarchy before polishing its container. Review the actual entry, gesture,
    interruption and result with realistic art and the relevant crowded state.

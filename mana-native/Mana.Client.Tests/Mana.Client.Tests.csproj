@@ -4,5 +4,6 @@
     <ProjectReference Include="../Mana.Client/Mana.Client.csproj" />
     <ProjectReference Include="../Mana.Magic/Mana.Magic.csproj" />
     <ProjectReference Include="../Mana.Conformance/Mana.Conformance.csproj" />
+    <ProjectReference Include="../Mana.AI/Mana.AI.csproj" />
   </ItemGroup>
 </Project>

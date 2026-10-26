@@ -94,6 +94,7 @@ internal static class HeadlessEngineSmoke
                 "Switching explicit setup reports its actual deck association and rejects a same-revision write for the previous owner");
             Check((await engine.PrepareSoloAsync(deck.Id)).DeckId == deck.Id,
                 "Explicit setup can return to the requested original deck before the real match starts");
+            await AiFrameworkEngineCheck.RunAsync(engine, deck.Id, Check);
             await engine.StartSoloAsync(deck.Id, ["green", "red", "green"]);
             GameSnapshot? initial = null;
             while (initial?.Players.Length != 4 || initial.Decision == null) {

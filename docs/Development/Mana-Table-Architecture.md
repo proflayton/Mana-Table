@@ -17,11 +17,25 @@ legal rules support and competent strategy are separate concerns. The
 [multiplayer AI investigation](Mana-Table-AI.md) records the observed low-life
 targeting feedback loop, an isolated reproducible probe, and the proposed
 boundary for authorized observations, current choice domains, forecasts and
-reasoned decisions. This is proposed work, not a second installed AI runtime.
-Its first migration covers combat preference and player-targeted damage together
-and must correlate tentative evaluations with actual committed actions. It
-builds on the action-execution migration rather than reconstructing rules from
-card text or exposing live Forge objects to a nominally neutral policy.
+reasoned decisions. The scope is replacing the entire seat's strategic behavior,
+including opening hands, sequencing, payment choices, combat and required effects.
+Build the framework first; replacing targeting alone is not that migration.
+
+`Mana.AI` is the initial framework library and references only `Mana.Contracts`.
+It reuses all fifteen typed decision families and semantic commands, checks exact
+source-offer membership, owns per-input budgets and bounded seat-private history,
+and revokes late/foreign answers. A policy receives no connection. The host
+submits a one-shot handoff through its existing connection and reports acceptance,
+rejection or an uncertain receipt; acceptance never implies effect resolution.
+Unknown execution requires host recovery, not an automatic retry or concession.
+Explicit catalog completeness cannot be inferred from an auto-pass scan.
+
+The framework currently runs in conformance checks. Shipping seats still use
+Forge's AI. Complete action-domain discovery, structured effect/deck semantics,
+the causal execution model, forecasting and a complete casual policy remain
+separate prerequisites. This builds on the action-execution migration rather
+than reconstructing rules from card prose or exposing live Forge objects to a
+nominally neutral policy.
 
 ## Rules-provider boundary
 

@@ -158,6 +158,74 @@ explicitly describes social interaction and consideration of everyone's game.
 That establishes the product goal; the policy below is our proposed adaptation,
 not an existing Arena multiplayer bot algorithm.
 
+## Decision framework foundation
+
+The player's clarified scope is **all AI behavior**, with a framework built
+before replacement policies. The combat/damage findings are canonical regression
+cases, not the boundary of the new controller. A targeting-only production patch
+does not meet this scope. Shipping AI behavior has not been switched.
+
+The initial implementation is [Mana.AI](../../mana-native/Mana.AI/Mana.AI.csproj),
+a graphics-free library depending only on `Mana.Contracts`. It reuses the existing
+fifteen closed decision payloads instead of adding a second AI move protocol:
+priority, opening hands, payment, attacks, blocks, targets, entities,
+confirmations, ability/options choices, ordering, reveals, numbers, text and
+allocations. A whole-seat policy must declare every family. That declaration is
+not evidence of good strategy; unavailable situations remain explicit results.
+
+`AiDecisionFrame` binds an authorized snapshot to a game, seat, input, observation
+revision, board revision and source-offer version. Changed catalogs need a new
+offer version even within one snapshot revision. Catalogs must name the exact
+disclosed occurrence and action IDs. A policy cannot manufacture an offered route
+or turn an unspecified card click into an action. Combat requires its actual
+combat constraints. Current contract permissions still validate every answer.
+
+Priority/payment source coverage is explicitly partial by default. A complete
+domain is a provider claim requiring conformance evidence, not something the
+policy or caller can infer from an empty array, highlighted cards or `CanAutoPass`.
+Known offered actions can be used under partial coverage; passing cannot be
+justified through it. Existing per-card `ISourceActions` reads alone do not certify
+a complete domain for a seat. Complete discovery still needs provider work.
+
+`AiSeatSession` owns one game's one seat. Immutable requests contain the current
+frame, copied history, an episode seed, remaining time and a cooperative work
+allowance. Refreshing an input does not renew its budget or seed. The current
+episode is an input ID; it is not claimed to be a complete cast/cost/resolution
+episode while the engine lacks that causal identity. Cancelled, replaced, closed
+or late computations cannot publish a command. The await is time-bounded even
+if a policy fails to return; this is not a process sandbox or forced termination
+of arbitrary computation. Implementations must cooperate with cancellation/work
+limits; isolated model workers can enforce stronger resource limits later.
+
+Policies return proposals and never receive the engine connection. A ready
+proposal has one host handoff; the host uses the existing scoped command path.
+The host reports an accepted, rejected or uncertain execution receipt. An
+uncertain receipt blocks further commands until host recovery, and never means
+retry, pass, concede or defeat. A refreshed observation can arrive before the
+receipt without relabelling it as the next decision's result.
+
+History bounds both typed decision records and deduplicated observed event facts.
+It retains the proposed/accepted semantic answer and its original stamp, seed
+and policy reason separately from later observed effects. Those old handles do
+not grant current authority. Retained events omit printed names, faces and prose;
+they preserve exact typed changes/impacts and causal IDs already supplied to that
+seat. A new game/seat needs a new session. Evidence stays seat-private, not in a
+shared bot brain or a player-facing stream of explanations.
+
+The existing headless client suite covers every family plus scope/offer changes,
+work/time exhaustion, late answers, one-shot submission, uncertain acknowledgements
+and bounded private history. The existing real-engine journey also exercises a
+scripted framework policy through starting-player selection, keeping a hand and
+a current offered land action, then observes the authoritative battlefield.
+Scenario setup uses explicit test-driver passes where needed; it does not pretend
+partial action discovery authorizes AI passing. No new CI shard or JVM startup
+is added. This verifies framework mechanics, not casual play quality.
+
+There is no production strategy, deck planner, semantic-effect evaluator, belief
+model, forward simulator or bot-seat host in this first library. Those systems
+must consume the same contracts and execution lifecycle as the full replacement,
+with no fallback to Forge strategic handlers presented as our own implementation.
+
 ## Proposed AI boundary
 
 Build on the [action-execution migration](Mana-Table-Architecture.md#action-execution-the-next-boundary-migration).
@@ -184,11 +252,12 @@ flowchart LR
 | Forecast | Budgeted isolated branches, uncertainty and terminal outcomes under the seat's knowledge. Unknown hands/order use explicit hypotheses, not the live host's hidden truth. Branch handles cannot execute on the live table. |
 | Decision record | Candidate features, estimated utility, uncertainty, chosen route, tie/random seed, policy version and fallback. Link eventual execution/results separately from proposals. |
 
-These are proposed semantics, not new implemented public interfaces. A first
-implementation may run the policy in-process with the JVM for latency, but the
-policy consumes value records and returns offered IDs; Forge-specific objects,
-`AILogic` dispatch and mutations stay in the provider bridge. Replacing Forge
-then requires a conforming provider, not rewritten deck personalities or renderers.
+The decision frame/session described above is implemented; structured effect
+semantics, causal joining and forecasts in this table remain proposed. Policy
+execution currently uses the neutral .NET library in conformance checks.
+Forge-specific objects, `AILogic` dispatch and mutations stay outside that
+library. Replacing Forge then requires a conforming provider, not rewritten
+deck personalities or renderers.
 
 The current native `GameSnapshot` is an observation, not a clonable engine.
 `AvailableActions.ActionScan` is a bounded auto-pass/discoverability aid whose
@@ -235,17 +304,17 @@ including composite mechanics; do not silently substitute a known preset.
 
 ## First implementation and efficient evaluation
 
-1. **Capture committed decisions before changing policy.** Add bounded decision
-   records at actual controller commitment and correlate cast/attack events with
-   the engine's execution model. Target probes mutate tentative spell abilities;
-   logging every `canPlay`/target evaluation as an attack would manufacture a
-   harassment history. Record the current baseline and unknown reasons honestly.
-2. **Migrate combat preference and player-targeted damage together.** Introduce
-   value-only candidate context, separated tactical reasons and the bounded
-   social tie preference. Exercise both paths against the same canonical table;
-   merely changing `getWeakestOpponent` globally would break legitimate life
-   comparisons and leave independent heuristics behind. Other handlers remain
-   explicitly legacy until migrated, with coverage recorded per decision kind.
+1. **Establish the complete framework before policies.** The initial library
+   supplies typed requests, scoped proposals, budgets, history and host receipts.
+   Extend the provider with complete action domains, structured semantic facts
+   and causal execution identities before using it as an autonomous seat.
+2. **Build a full casual policy and exercise every task.** Opening hands, play
+   sequencing, abilities, costs, combat and required effects belong to the same
+   policy system. Use the combat/damage pile-on cases to verify consistent table
+   reasoning. Correlate committed actions and observed effects; target probes
+   mutate tentative abilities and must not manufacture harassment history.
+   Merely changing `getWeakestOpponent` or delegating unimplemented tasks back
+   to Forge's strategic AI does not meet the replacement goal.
 3. **Allow saved deck versions on AI seats.** Reuse deck storage/legality,
    format and partner validation. Pin the assigned version, keep Ready/host
    authority, and separate deck choice from personality/skill. Show unsupported

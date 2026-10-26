@@ -11,6 +11,22 @@ a complete engine/runtime/resource bundle.
 
 ## Canonical interaction coverage
 
+The existing graphics-free `Mana.Client.Tests` runner also checks the `Mana.AI`
+framework. Scripted policies exercise all fifteen typed decision families and
+the same contract permissions, plus source-offer membership, observation/offer
+revocation, budgets, late completions, per-seat bounded knowledge and one-shot
+host receipts. Missing strategic capabilities are explicit; these checks do not
+demonstrate a production bot or enjoyable behavior. The assembly dependency check
+keeps AI independent of Forge, rendering and the updater.
+
+The existing `--smoke-headless-engine` process runs a short scripted AI-framework
+continuation through real starting-player selection, keeping a hand and playing
+an exact offered land route before its normal application journey. It verifies
+the later authoritative battlefield rather than treating command acceptance as
+resolution. It reuses the same initialized JVM; fixture setup passes are explicit
+human test-driver commands, not AI passes inferred from incomplete discovery.
+No additional CI job or separate rules simulator is introduced.
+
 Optional decision timing runs in existing suites. `DecisionTempoTest` advances
 fake monotonic time through presentation, paused processing, simultaneous seats,
 grace, warning-only expiry and repeated unattended priority windows without
