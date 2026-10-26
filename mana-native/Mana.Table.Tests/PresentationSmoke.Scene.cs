@@ -18,7 +18,7 @@ internal static class PresentationSceneChecks
     }
 
     private static TableScene Build(GameSnapshot state, Func<Card, bool>? resource = null,
-        Func<Card, int, bool, BattlefieldLabelMetrics>? measure = null) => TableScene.Build(state, 0,
+        Func<Card, int, bool, BattlefieldLabelMetrics>? measure = null) => TableScene.Build(state,
             new(-100, -100), null, null, false, resource ?? CardPresentation.IsResource, measure);
 
     private static GameSnapshot Field(GameSnapshot state, Func<Player, Card[]> cards) => state with {
@@ -112,24 +112,21 @@ internal static class PresentationSceneChecks
     {
         var state = PresentationSmoke.Example();
         var hand = Enumerable.Range(0, 24).Select(index => new Card {
-            VisualId = "paged-" + index, Name = "Hand card " + index, Type = "Artifact"
+            VisualId = "hand-" + index, Name = "Hand card " + index, Type = "Artifact"
         }).ToArray();
         state = state with { Players = state.Players.Select(player => player.Id != state.ViewerId ? player : player with {
             Zones = player.Zones.Select(zone => zone.Name != "Hand" ? zone : zone with { Count = hand.Length, Cards = hand.ToImmutableArray() }).ToImmutableArray()
         }).ToImmutableArray() };
-        var page = TableScene.Build(state, 1, new(-100, -100), null, "paged-13", false, CardPresentation.IsResource).Hand;
-        check(page is { Page: 1, Total: 24, Raised: null } && page.Cards.Length == 10
-                && page.Cards.All(node => node.Pose == TableLayout.Hand(Array.IndexOf(hand, node.Card) - 11, 11)
-                    && node.EntranceDelay == (Array.IndexOf(hand, node.Card) - 11) * .035f),
-            "Removing a dragged hand occurrence preserves every other card's original paged pose and entrance delay");
-        var last = TableScene.Build(state, int.MaxValue, new(-100, -100), null, null, false, CardPresentation.IsResource).Hand;
-        check(last is { Page: 2, Total: 24 } && last.Cards.Select(node => node.Id).SequenceEqual(["paged-22", "paged-23"]),
-            "Hand layout clamps an outdated page without dropping the final visible occurrences");
-        Point pointer = TableLayout.Hand(2, 11).Center.ToPoint();
-        var raised = TableScene.Build(state, 0, pointer, null, null, true, CardPresentation.IsResource).Hand;
-        check(raised.Raised != null && raised.Cards.Last().Id == raised.Raised
-                && raised.Cards.Single(node => node.Id == raised.Raised).Pose.Size == new Vector2(186, 260),
-            "Explicit hover-enabled layout keeps the raised occurrence last with its original reading geometry");
+        var whole = TableScene.Build(state, new(-100, -100), null, null, false, CardPresentation.IsResource).Hand;
+        check(whole is { Total: 24, Raised: null } && whole.Cards.Length == 24
+                && whole.Cards.Select(node => node.Id).ToHashSet().SetEquals(hand.Select(CardViews.Identity))
+                && !whole.UnfoldBounds.IsEmpty,
+            "A large hand retains every physical occurrence and an explicit way to unfold it instead of paging away cards");
+        var dragging = TableScene.Build(state, new(-100, -100), null, "hand-13", false, CardPresentation.IsResource).Hand;
+        var anchors = whole.Cards.ToDictionary(node => node.Id);
+        check(dragging.Total == 24 && dragging.Cards.Length == 23 && dragging.Cards.All(node => node.Id != "hand-13"
+                && node.Pose == anchors[node.Id].Pose && node.EntranceDelay == anchors[node.Id].EntranceDelay),
+            "Lifting a card from a large hand preserves every other occurrence's anchored pose and entrance timing");
     }
 
     private static void CheckUnsupportedSeat(Action<bool, string> check)

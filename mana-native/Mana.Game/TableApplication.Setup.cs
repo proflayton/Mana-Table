@@ -16,7 +16,8 @@ internal sealed partial class TableApplication
         decisions.Clear(); zoneName = null; selectedCombat = null;
         combatPage = 0; combatCandidates = false; inspectedStack = null; reviewedAttacker = null;
         inspectedAction = null;
-        handPage = zonePage = decisions.Page = playAccessScroll = 0; decisions.Filter = "";
+        zonePage = decisions.Page = 0; decisions.Filter = "";
+        FoldCardCollection();
         automatic = !Automated && preferences.Automatic; pressed = null;
         ClearCardReading(); ClearReaderActions();
         releasedCardPlay = null;

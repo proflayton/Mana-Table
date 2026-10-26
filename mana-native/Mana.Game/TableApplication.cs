@@ -69,7 +69,7 @@ internal sealed partial class TableApplication : IDisposable
     private double noticeUntil;
     private string? selectedCombat { get => interaction.SelectedCombat; set => interaction.SelectedCombat = value; }
     private string? zoneName;
-    private int zonePlayer, zonePage, handPage, deckPage, historyPage, inspectPage;
+    private int zonePlayer, zonePage, deckPage, historyPage, inspectPage;
 
     private Card? hovered, inspected;
     private Point pointer, pressPoint;
@@ -207,6 +207,8 @@ internal sealed partial class TableApplication : IDisposable
         bool chatKeys = blockedInput || ChatKeys(keys);
         if (!chatKeys) { DeckKeys(keys); SetupKeys(keys); }
         pointer = RenderViewport.Fit(viewport, DesignHeight).ToLogical(new(mouse.X, mouse.Y));
+        ReconcileCardCollection();
+        if (!blockedInput) UpdateCardCollectionPointer(mouse, keys);
         boardPointerActivity = mouse.X != previousMouse.X || mouse.Y != previousMouse.Y
             || mouse.ScrollWheelValue != previousMouse.ScrollWheelValue || mouse.LeftButton != previousMouse.LeftButton;
         boardViewportChanged = boardViewport != viewport; boardViewport = viewport;
@@ -230,10 +232,14 @@ internal sealed partial class TableApplication : IDisposable
                 && IsCardActionable(source) && CanStartSourceDrag(sourceHit) ? pressed : null; dragging = false;
             BeginCardDrag(dragSource);
         }
-        if (mouse.LeftButton == ButtonState.Pressed && dragSource != null && dragSource.Scope == Scope && Vector2.Distance(pressPoint.ToVector2(), pointer.ToVector2()) > CardDragThreshold) {
+        if (mouse.LeftButton == ButtonState.Pressed && dragSource != null && dragSource.Scope == Scope && LeftCollectionDragOrigin
+            && Vector2.Distance(pressPoint.ToVector2(), pointer.ToVector2()) > CardDragThreshold) {
             if (!dragging) {
                 CollapseCardReading();
                 if (ZoneReadingOpen) zoneName = null;
+                // The drag origin was captured from the expanded face. Folding
+                // the view must not replace that deliberate-release boundary.
+                if (CardCollectionOpen) FoldCardCollection();
             }
             dragging = true;
         }
@@ -241,7 +247,7 @@ internal sealed partial class TableApplication : IDisposable
             var hit = HitAt(pointer);
             if (dragging) AcceptedDrag = DropCard(hit);
             else if (hit != null && pressed?.Id == hit.Id && pressed.Scope == hit.Scope && ActivateHit(hit)) AcceptedHit = hit.Id;
-            else if (pressed == null && hit == null) CollapseCardReading();
+            else if (pressed == null && hit == null) { CollapseCardReading(); FoldCardCollection(); }
             pressed = null; dragSource = null; dragging = false; ClearCardDrag();
         }
         if (experienceInput && keys.IsKeyDown(Keys.Escape) && previousKeys.IsKeyUp(Keys.Escape)) {
@@ -256,13 +262,14 @@ internal sealed partial class TableApplication : IDisposable
             if (!closedReader) {
                 selectedCombat = null; textFocus = false;
                 if (match == null && !busy) { if (DismissDeckWorkspaceReading()) { } else if (workshopDialog == "printings") ClosePrintings(); else if (workshopDialog.Length > 0) workshopDialog = ""; else if (deckMenu.Length > 0) deckMenu = ""; else if (deckEditor) CloseDeckEditor(); else CloseSetupModal(); }
-                if (overlay.Length > 0) overlay = ""; else if (zoneName != null) zoneName = null;
+                if (CardCollectionOpen) FoldCardCollection();
+                else if (overlay.Length > 0) overlay = ""; else if (zoneName != null) zoneName = null;
                 else if (StudyFocusActive) SetStudyFocus(null);
                 else if (DecisionModal && decisions.Allocation?.Inspection != null) CloseAllocationDetail();
                 else if (DecisionModal) decisions.Collapsed = true;
             }
         }
-        if (!chatKeys && !textFocus && keys.IsKeyDown(Keys.Space) && previousKeys.IsKeyUp(Keys.Space) && !OverlayOpen && !AbilityActionPending && !busy && match != null) {
+        if (!chatKeys && !textFocus && keys.IsKeyDown(Keys.Space) && previousKeys.IsKeyUp(Keys.Space) && !OverlayOpen && !CardCollectionOpen && !AbilityActionPending && !busy && match != null) {
             if (TableChoice && TableChoices.CanConfirm(match, decisions.Selections)) Send(DecisionCommands.Choose(match, decisions.Selections));
             else if (!TableChoice && CombatGuide.CanConfirm(match)) Send(DecisionCommands.Confirm(match));
         }
@@ -270,8 +277,6 @@ internal sealed partial class TableApplication : IDisposable
         if (match != null && !chatKeys && !textFocus && keys.IsKeyDown(Keys.F) && previousKeys.IsKeyUp(Keys.F)) UseAutomaticControl(!automatic);
         if (match != null && !chatKeys && !textFocus && keys.IsKeyDown(Keys.LeftControl) && previousKeys.IsKeyUp(Keys.LeftControl)) ToggleHoldControl();
         if (!blockedInput && !chatKeys && !textFocus && keys.IsKeyDown(Keys.F1) && previousKeys.IsKeyUp(Keys.F1)) OpenTableGuide();
-        if (!blockedInput && !chatKeys && !textFocus && keys.IsKeyDown(Keys.Left) && previousKeys.IsKeyUp(Keys.Left)) ScrollPlayAccess(1);
-        if (!blockedInput && !chatKeys && !textFocus && keys.IsKeyDown(Keys.Right) && previousKeys.IsKeyUp(Keys.Right)) ScrollPlayAccess(-1);
         int wheel = mouse.ScrollWheelValue - previousMouse.ScrollWheelValue;
         if (!blockedInput && wheel != 0) Scroll(Math.Sign(wheel));
         ContinueReleasedPlay();
@@ -310,6 +315,7 @@ internal sealed partial class TableApplication : IDisposable
         CancelReleasedPlayIntent();
         error = ""; commandFailure = false;
         if (!session.Submit(command)) return false;
+        if (CardCollectionOpen) FoldCardCollection();
         pendingActionLabel = StateClarity.PendingActionLabel(match, command);
         return true;
     }
@@ -324,11 +330,13 @@ internal sealed partial class TableApplication : IDisposable
         PrepareShellPresentation();
         PrepareDeckInteraction();
         ValidateStudyFocus();
-        tableScene = match == null ? null : TableScene.Build(match, handPage, pointer, null,
+        ReconcileCardCollection();
+        PrepareCardCollectionHeader();
+        tableScene = match == null ? null : TableScene.Build(match, pointer, null,
             dragging && dragSource?.Card is { } held ? CardViews.Identity(held) : null, false, CardPresentation.IsResource,
             denseMeasure: MeasureDenseBattlefieldLabel, allowInlineOrdering: TableChoices.IsDirect(match), sharedTableStudy: TableStudyEnabled,
-            playAccessScroll: playAccessScroll);
-        if (tableScene != null) playAccessScroll = tableScene.PlayAccess.Scroll;
+            spread: spreadId == null ? null : new(spreadId, spreadTarget, spreadAreaTop), spreadMeasure: MeasureSpreadPacketHeader);
+        PrepareCardCollection();
         UpdateBoardView();
         PrepareMatchPresentation();
         BeginCardReading(frameElapsed);

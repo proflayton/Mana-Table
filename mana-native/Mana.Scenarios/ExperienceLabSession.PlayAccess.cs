@@ -52,14 +52,17 @@ public sealed partial class ExperienceLabSession
         string id = spell.VisualId;
         string destination = id switch {
             PlayAccessScenario.ExileSpellId or PlayAccessScenario.BorrowedId => "Battlefield",
-            "access-hand-2" or "access-hand-4" or "access-hand-5" or "access-hand-9" or "access-hand-10" => "Battlefield",
             PlayAccessScenario.FlashbackId => "Exile",
-            _ => "Graveyard"
+            _ => AuthoredHandIndex(id) is 2 or 4 or 5 or 9 or 10 ? "Battlefield" : "Graveyard"
         };
         StageIndex = id == PlayAccessScenario.FlashbackId ? 9 : 7;
         return State = Stamp(PlayAccessScenario.Resolve(State, id, destination));
     }
 
-    private static bool HandIsLand(string id) => id is "access-hand-0" or "access-hand-1" or "access-hand-6"
-        or "access-hand-7" or "access-hand-8";
+    private static bool HandIsLand(string id) => AuthoredHandIndex(id) is 0 or 1 or 6 or 7 or 8;
+
+    // The authored hand repeats eleven explicitly declared faces. This maps its
+    // fixture occurrence to that declaration; it does not inspect card rules.
+    private static int AuthoredHandIndex(string id) => id.StartsWith("access-hand-", StringComparison.Ordinal)
+        && int.TryParse(id.AsSpan("access-hand-".Length), out int index) && index >= 0 ? index % 11 : -1;
 }

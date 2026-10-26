@@ -153,7 +153,7 @@ internal sealed class EquipmentSmoke : ITableAutomation
     private GameSnapshot ChangeCards(Func<Card, Card> edit) => view.Match! with { Players = view.Match!.Players.Select(p => p with {
         Zones = p.Zones.Select(z => z with { Cards = z.Cards.Select(edit).ToImmutableArray() }).ToImmutableArray()
     }).ToImmutableArray() };
-    private TableScene Scene() => TableScene.Build(view.Match!, 0, new(-100, -100), null, null, false, CardPresentation.IsResource);
+    private TableScene Scene() => TableScene.Build(view.Match!, new(-100, -100), null, null, false, CardPresentation.IsResource);
     private void AssertDistinctRelationships()
     {
         var scene = Scene();

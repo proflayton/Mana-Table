@@ -49,19 +49,39 @@ internal static class PlayAccessPresentationChecks
         }).ToImmutableArray() };
         check(Build(hidden).PlayAccess.Groups.SelectMany(group => group.Cards).All(item => item.Scene.Id != PlayAccessScenario.BorrowedId),
             "A retained reference cannot recreate an opponent-owned face after the current snapshot withdraws its disclosure");
-        var crowded = Build(stages[5].Snapshot);
-        var scrolled = Build(stages[5].Snapshot, int.MaxValue);
-        check(crowded.Hand.Total == 11 && crowded.PlayAccess.MaximumScroll > 0
-                && scrolled.PlayAccess.Scroll == scrolled.PlayAccess.MaximumScroll
-                && scrolled.Hand.Cards.Select(card => (card.Id, card.Pose)).SequenceEqual(crowded.Hand.Cards.Select(card => (card.Id, card.Pose)))
-                && scrolled.PlayAccess.Groups.SelectMany(group => group.Cards).Last().Scene.Pose.Bounds.Intersects(scrolled.PlayAccess.Bounds),
-            "Continuous overflow reaches the last authorized occurrence while the eleven-card hand retains its own positions and count");
+        foreach (int stage in new[] { 5, 11, 12, 13 }) {
+            var state = stages[stage].Snapshot;
+            var folded = Build(state);
+            foreach (string collection in new[] { CardSpreadPlan.HandId, CardSpreadPlan.AccessId }) {
+                var spread = Build(state, new(collection)).Spread!;
+                var originals = collection == CardSpreadPlan.HandId ? folded.Hand.Cards
+                    : folded.PlayAccess.Groups.SelectMany(group => group.Cards).Select(item => item.Scene).ToArray();
+                check(spread.Anchors.Select(card => (card.Id, card.Pose, card.Zone, card.Owner))
+                        .SequenceEqual(originals.Select(card => (card.Id, card.Pose, card.Zone, card.Owner)))
+                        && spread.WorldCards.Select(card => (card.Id, card.Card, card.Zone, card.Owner))
+                            .SequenceEqual(originals.Select(card => (card.Id, card.Card, card.Zone, card.Owner)))
+                        && folded.Hand.Cards.Select(card => card.Id).SequenceEqual(state.Viewer!.Zone("Hand").Cards.Select(card => card.VisualId)),
+                    "Unfolding preserves every original physical occurrence, real zone, owner and tucked anchor while the complete hand has no page boundary");
+                check(spread.View == spread.InitialView && spread.View.Scale >= .85f
+                        && (spread.Overview.Scale >= .85f || spread.View.Scale > spread.Overview.Scale),
+                    "A large collection opens at reading distance; fitting its entire extent is an explicit overview camera gesture");
+                foreach (int index in new[] { 0, spread.Cards.Count / 2, spread.Cards.Count - 1 }.Distinct()) {
+                    var target = spread.WorldCards[index];
+                    var focused = Build(state, new(collection, spread.Focus(target.Id))).Spread!;
+                    var face = focused.Cards.Single(card => card.Id == target.Id);
+                    check(CardSpreadPlan.Viewport.Contains(face.Pose.Bounds) && face.Pose.Size.X >= CardSpreadPlan.CardSize.X * .95f
+                            && focused.WorldCards.Select(card => (card.Id, card.Pose)).SequenceEqual(spread.WorldCards.Select(card => (card.Id, card.Pose)))
+                            && focused.Anchors.Select(card => (card.Id, card.Pose)).SequenceEqual(spread.Anchors.Select(card => (card.Id, card.Pose))),
+                        "Focusing a first, middle or last card changes only the physical collection camera and exposes its intact current face without moving its source anchor");
+                }
+            }
+        }
 
         CheckAuthoredJourneys(check);
     }
 
-    private static TableScene Build(GameSnapshot state, int scroll = 0) => TableScene.Build(state, 0, new(-100, -100),
-        null, null, false, CardPresentation.IsResource, playAccessScroll: scroll);
+    private static TableScene Build(GameSnapshot state, CardSpreadRequest? spread = null) => TableScene.Build(state, new(-100, -100),
+        null, null, false, CardPresentation.IsResource, spread: spread);
 
     private static void CheckAuthoredJourneys(Action<bool, string> check)
     {

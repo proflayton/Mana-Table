@@ -60,12 +60,15 @@ public static class PlayAccessScenario
             new("A required choice", "The current hand choice owns input. Retained permissions remain visible without becoming answers to that choice.", required),
             new("One grant expires", "Grizzly Bears remains a public exiled card, but its expired permission leaves the adjacent fan.", removed),
             new("Two routes, one physical card", "Think Twice has its own flashback and an authored Snapcaster grant. Read one occurrence to choose an exact current offer.", duplicate),
-            new("Eleven in hand and many grants", "An eleven-card hand and twenty additional exiled occurrences exercise continuous access scrolling without paging or changing hand count.", crowded),
+            new("Eleven in hand and many grants", "An eleven-card hand and twenty additional exiled occurrences retain their own hand and source packets. Unfold a packet to inspect its actual cards.", crowded),
             new("Spell on the stack", "The same physical spell leaves its actual source zone for the stack. This checkpoint starts with the exiled Grizzly Bears.", pending),
             new("Spell resolves", "The same physical card reaches its authored destination; its old permission does not return. This checkpoint puts Grizzly Bears on the battlefield.", resolved),
             new("Flashback on the stack", "The same Think Twice occurrence leaves the graveyard for the stack.", flashbackPending),
             new("Flashback resolves to exile", "The authored flashback result moves Think Twice to exile without retaining a play permission.", flashbackResolved),
-            new("Land enters", "The exact land enters from its actual source zone without using the stack. This checkpoint plays the Forest granted by Expressive Iteration.", landPlayed)
+            new("Land enters", "The exact land enters from its actual source zone without using the stack. This checkpoint plays the Forest granted by Expressive Iteration.", landPlayed),
+            new("Thirty-seven cards in hand", "The same private hand unfolds into a physical spread. Inspect its first, middle and last occurrences without changing the hand or casting.", Many(initial, 37, 0)),
+            new("Sixty cards playable elsewhere", "A thirty-seven-card hand and sixty granted occurrences remain distinct physical collections. Unfold a source packet and move across its spread.", Many(initial, 37, 56)),
+            new("Two hundred cards playable elsewhere", "A large authored permission set for reviewing source packets and spatial navigation. All faces are already disclosed; no hidden cards or rules outcomes are inferred.", Many(initial, 37, 196))
         ];
     }
 
@@ -118,8 +121,11 @@ public static class PlayAccessScenario
             ("Plains", "Basic Land — Plains", "", null, null), ("Sol Ring", "Artifact", "{1}", null, null),
             ("Wall of Blossoms", "Creature — Plant Wall", "{1}{G}", 0, 4)
         ];
-        return faces.Take(count).Select((face, index) => Face("access-hand-" + index, face.Name, face.Type, face.Cost, "", face.Power, face.Toughness)
-            with { Selectable = true }).ToImmutableArray();
+        return Enumerable.Range(0, count).Select(index => {
+            var face = faces[index % faces.Length];
+            return Face("access-hand-" + index, face.Name, face.Type, face.Cost, "", face.Power, face.Toughness)
+                with { Selectable = true };
+        }).ToImmutableArray();
     }
 
     private static GameSnapshot RetainWithoutInitiation(GameSnapshot state) => state with {
@@ -130,7 +136,7 @@ public static class PlayAccessScenario
         }).ToImmutableArray() }).ToImmutableArray()
     };
 
-    private static GameSnapshot Many(GameSnapshot state)
+    private static GameSnapshot Many(GameSnapshot state, int handCount = 11, int additionalAccess = 20)
     {
         (string Name, string Type, string Cost)[] faces = [
             ("Opt", "Instant", "{U}"), ("Consider", "Instant", "{U}"),
@@ -139,13 +145,13 @@ public static class PlayAccessScenario
             ("Brainstorm", "Instant", "{U}"), ("Faithless Looting", "Sorcery", "{R}"),
             ("Shock", "Instant", "{R}"), ("Impulse", "Instant", "{1}{U}")
         ];
-        var extra = Enumerable.Range(0, 20).Select(index => Face("access-overflow-" + index.ToString("D2"),
+        var extra = Enumerable.Range(0, additionalAccess).Select(index => Face("access-overflow-" + index.ToString("D2"),
                 faces[index % faces.Length].Name, faces[index % faces.Length].Type, faces[index % faces.Length].Cost, "")
             with { Selectable = true }).ToImmutableArray();
         return state with {
             Players = state.Players.Select(player => player.Id != 0 ? player : player with {
                 Zones = player.Zones.Select(zone => zone.Name switch {
-                    "Hand" => zone with { Cards = Hand(11), Count = 11 },
+                    "Hand" => zone with { Cards = Hand(handCount), Count = handCount },
                     "Exile" => zone with { Cards = [.. zone.Cards, .. extra], Count = zone.Count + extra.Length }, _ => zone
                 }).ToImmutableArray()
             }).ToImmutableArray(),

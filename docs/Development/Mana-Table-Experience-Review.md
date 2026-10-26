@@ -11,6 +11,14 @@ does not establish that a person can understand or use the screen.
 1. **Design the journey before its controls.** Identify the player's intent,
    source, target, gesture and visible result. Moving the same generic Activate
    button from a dialog to a corner or over the artwork does not fix its purpose.
+   Every proposal must start with observed game behavior: name the game and
+   concrete arrangement, gesture and transition being adapted, with a gameplay
+   or developer reference. Use the player's MTGA screenshots as direct evidence.
+   Explain where Mana Table differs and where the reference fails at scale.
+   General web/UI conventions and calling a widget "game-like" are not evidence.
+   Larger states call for considering an expanded play space, physical grouping
+   and camera framing before compressing cards into smaller tiles, pages or
+   scrolling containers. Visual review must exercise the whole gesture at scale.
 2. **Use the right detail for the task.** Battlefield faces prioritize identity,
    art and current characteristics; inspection preserves a recognizable full card
    with complete rules and authoritative live state.
@@ -934,7 +942,7 @@ inspection have not been implemented by recording this reference.
 
 ### Cards playable beside the hand
 
-**Source implementation; human review pending.** The later MTGA screenshot
+**Previous candidate `e7cee2635ab`: human review found issues.** The later MTGA screenshot
 keeps its ordinary hand central and offsets the glowing exile cards to the right.
 The useful relationship is visible before opening a browser: these are additional
 plays, with a different origin from the hand.
@@ -943,8 +951,10 @@ The `play-access.v1` lab applies that relationship to the four-seat table. Its
 engine-projected permissions form adjacent fans with a gap, zone identity and
 disclosed granting-source artwork. Click a card to read its full face; drag it
 onto the table to begin its current offered play. Two routes for one physical
-card remain one face with an explicit route choice. Scrolling reaches additional
-cards without resizing or paging the hand. A permission can remain present while
+card remain one face with an explicit route choice. The initial fixed scrolling
+strip was rejected as another web-style container. The ordinary hand also had
+eleven-card pagination, so replacing only the strip's scrollbar would leave the
+same structural problem. A permission can remain present while
 timing, a land limit or another player's priority prevents starting it.
 
 The journey retains the actual zone owner, including borrowed exiled cards, and
@@ -965,11 +975,50 @@ Agent window review used real card artwork at 1000×740 with reduced motion and
 covering the reader and a moving card, repeated costs, and source text without
 enough contrast over battlefield artwork. Those findings changed the shared
 space reservation and reader composition. Header-only hover no longer opens a
-second preview after casting. Human review of this candidate is still pending.
+second preview after casting. These checks did not settle the larger scale
+interaction: the player's subsequent review rejected the scrolling approach.
 
-![Hand with separate source-marked access fans](images/native-play-access-table-2026-10-25.png)
+The replacement starts from explicit game references:
 
-[View two actual cast routes beside one full card at the smaller size](images/native-play-access-routes-2026-10-25.png).
+| Observed game behavior | Adaptation for Mana Table |
+| --- | --- |
+| [Arena's documented hand postures and near-hand cards](https://magic.wizards.com/en/news/mtg-arena/mtg-arena-state-game-january-2021-01-21) keep recognizable cards and expand their arrangement for interaction. | Keep the ordinary hand and source-marked access packets anchored. Explicitly unfold the actual cards into the play space; clicking reads and dragging plays. |
+| [Arena's Battles playtests](https://magic.wizards.com/en/news/mtg-arena/we-put-battles-on-mtg-arena-what-was-that-like) investigated placement, rejected disruptive relocation during combat, and changed surrounding space to prevent paging. | Preserve physical occurrence identity, source anchors and card travel. Do not rearrange other seats when examining a local collection. |
+| [Tabletop Simulator's camera controls](https://kb.tabletopsimulator.com/player-guides/basic-controls/) support object-centered focus, middle-button pan and wheel zoom through a table. | Large collections open at play distance, with a deliberate overview and camera focus on the same arrangement. Recognizable card faces remain available without a scrollbar or page controls; click to read the full card. |
+
+The new spread is a local presentation mode over the existing card owner, not
+a dialog or another rules engine. An ordinary click reads a card. Expanding,
+camera focus and returning send no game command. A deliberate drag must leave
+the card's original expanded position before beginning its exact current offer.
+The spread folds back to its anchor on Escape or a bare-table return gesture.
+Current required decisions and disclosure changes retain their authority.
+
+The canonical case now includes 37 cards in hand and 60/200 access cards. The
+default opening preserves card size rather than fitting every card onto the
+screen. Sources form separate physical packets with artwork, full names and
+actual zone/owner context. At the explicit whole-collection overview,
+individual text is not readable; review the actual journey
+into a readable focused view and back. Neither Arena's smaller examples nor
+counting represented occurrences establishes that this works comfortably.
+Human review of the replacement remains pending.
+
+![Source-marked card packets unfolded into the table](images/native-play-access-table-2026-10-25.png)
+
+[View a full card read from the expanded collection](images/native-play-access-routes-2026-10-25.png).
+
+### Remaining scale patterns found in the broader audit
+
+These are source findings and follow-up design work, not claims that the whole
+game has been redesigned or visually accepted. Each replacement needs a complete
+journey and an actual game reference before implementation.
+
+| Current pattern | Game evidence to use for the next design |
+| --- | --- |
+| The older focused-battlefield fallback arranges artwork/details in a scrolling document, separate from the newer study camera. | Extend the spatial camera journey over the same table, using the Tabletop Simulator reference above and the existing four-seat anchors. |
+| Zone readers and required-choice galleries page small groups of cards; hand choices can lose their physical context. | [Arena's Sylvan Library diary](https://magic.wizards.com/en/news/mtg-arena/dev-diary-sylvan-library) keeps eligible cards in the hand and makes the committed outcome explicit. Its shortcut is engine-validated and retains the detailed path when other effects change the rules. |
+| Ability choices and source actions can become text rows with their own overflow. | The player's Ajani ability screenshot and [Arena's official foretell choices](https://media.wizards.com/2020/images/daily/m7g4ren4_foretell_battle.jpg) present distinct card forms with their effects, costs and availability. Adapt those game objects while preserving exact offered actions. |
+| Deeper stack inspection still falls back to sequential entries and text pages. | Use the player's stack references and the Sylvan Library screenshots: a legible ability object, source, recipients and the next meaningful decision remain together. Expansion must preserve the already-improved source/target gestures. |
+| The deck editor confines deck rows to a small central region before paging. | [Arena's June 2020 update](https://magic.wizards.com/en/news/mtg-arena/mtg-arena-state-game-june-2020-06-23) and its [official deck-editor animation](https://media.wizards.com/2020/images/daily/deck_editor.gif) expand the deck into overlapping card columns. Give deck construction its own spatial surface before shrinking more records into the existing region. |
 
 ### Ability choices as readable game objects
 

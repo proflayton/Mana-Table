@@ -177,7 +177,7 @@ internal sealed partial class TableApplication
         if (BattlefieldFocusBounds.Contains(pointer)) {
             CollapseCardReading();
             battlefieldFocusScroll = Math.Clamp(battlefieldFocusScroll - direction * 110, 0, battlefieldFocusMaximum);
-        } else if (pointer.Y > 778) handPage = Math.Max(0, handPage - direction);
+        }
         return true;
     }
 

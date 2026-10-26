@@ -30,10 +30,11 @@ internal sealed partial class TableApplication
     private Pose? DecisionSourcePose(string identity, string zone, int owner)
     {
         if (tableScene == null || identity.Length == 0) return null;
-        SceneCard? node = zone == "Battlefield" ? tableScene.Cohort(identity)?.Front
+        SceneCard? node = tableScene.Spread?.Cards.FirstOrDefault(card => card.Id == identity)
+            ?? (zone == "Battlefield" ? tableScene.Cohort(identity)?.Front
             : zone == "Hand" ? tableScene.Hand.Cards.FirstOrDefault(card => card.Id == identity)
             : tableScene.PlayAccess.Groups.SelectMany(group => group.Cards).FirstOrDefault(card => card.Scene.Id == identity)?.Scene
-            ?? (zone == "Command" ? tableScene.Seats.FirstOrDefault(seat => seat.PlayerId == owner)?.Geometry.Commanders.FirstOrDefault(card => card.Id == identity) : null);
+            ?? (zone == "Command" ? tableScene.Seats.FirstOrDefault(seat => seat.PlayerId == owner)?.Geometry.Commanders.FirstOrDefault(card => card.Id == identity) : null));
         Pose? pose = node == null ? null : BoardView.AffectsZone(zone) ? boardView.Apply(node.Pose) : node.Pose;
         if (BattlefieldFocused && zone == "Battlefield" && battlefieldFocusPlan?.Tile(identity) is { } tile) pose = tile.ArtPose;
         if (pose is not { } rest || matchPresentation.Cards.PinnedId != identity) return pose;

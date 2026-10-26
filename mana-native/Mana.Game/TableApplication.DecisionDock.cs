@@ -18,7 +18,7 @@ internal sealed partial class TableApplication
         if (ActivityOpen) return DecisionDockPauseReason.Presentation;
         if (session.NeedsRecovery) return DecisionDockPauseReason.Recovery;
         if (commandFailure && error.Length > 0) return DecisionDockPauseReason.CommandFailure;
-        if (readingId != null || HoveredPendingReference() != null) return DecisionDockPauseReason.Inspection;
+        if (readingId != null || CardCollectionOpen || HoveredPendingReference() != null) return DecisionDockPauseReason.Inspection;
         if (OverlayOpen) return DecisionDockPauseReason.Overlay;
         if (chatFocus) return DecisionDockPauseReason.Chat;
         if (AbilityActionPending || dragging || pressed != null || selectedCombat != null || AwaitingReleasedPlay) return DecisionDockPauseReason.Interaction;
@@ -116,10 +116,7 @@ internal sealed partial class TableApplication
                 DrawDecisionReplies(entities.Complete, entities.Cancel, showDisabledComplete: true); break;
             case EntitySelectionPayload: break;
             case OptionsPayload or OrderingPayload when view.RequiredSurface == DecisionRequiredSurface.Table:
-                var range = view.Selection!.Range;
-                Button("confirm", decisions.Selections.Count == 0 && range.Min == 0 ? "Choose none" : $"Confirm ({decisions.Selections.Count}/{range.Max})", 1266, DecisionY(799), 296,
-                    new MatchIntent.ConfirmSelection(), TableChoices.CanConfirm(state, decisions.Selections), true, 47);
-                Button("choicesclear", "Clear", 1459, DecisionY(852), 103, new MatchIntent.ClearSelection(), decisions.Selections.Count > 0, height: 27); break;
+                DrawSelectionCompletion(new(1266, DecisionY(799), 296, 47), new(1459, DecisionY(852), 103, 27)); break;
             case PaymentPayload payment: DrawDecisionReplies(payment.Pay, payment.Cancel, showDisabledComplete: true); break;
             case AttackPayload attack: DrawDecisionReplies(attack.Complete, null, showDisabledComplete: true); break;
             case BlockPayload block: DrawDecisionReplies(block.Complete, null, showDisabledComplete: true); break;
@@ -128,6 +125,14 @@ internal sealed partial class TableApplication
             case null or PriorityPayload or OpeningHandPayload or ConfirmationPayload or AbilityChoicePayload: break;
             default: throw new InvalidOperationException("No decision painter owns " + view.Payload.GetType().Name);
         }
+    }
+
+    private void DrawSelectionCompletion(Rectangle complete, Rectangle clear)
+    {
+        var range = decisions.Presentation!.Selection!.Range;
+        Button("confirm", decisions.Selections.Count == 0 && range.Min == 0 ? "Choose none" : $"Confirm ({decisions.Selections.Count}/{range.Max})",
+            complete, new MatchIntent.ConfirmSelection(), !busy && TableChoices.CanConfirm(match!, decisions.Selections), true);
+        Button("choicesclear", "Clear", clear, new MatchIntent.ClearSelection(), !busy && decisions.Selections.Count > 0);
     }
 
     private void DrawDecisionReplies(DecisionReply complete, DecisionReply? cancel, bool showDisabledComplete = false)

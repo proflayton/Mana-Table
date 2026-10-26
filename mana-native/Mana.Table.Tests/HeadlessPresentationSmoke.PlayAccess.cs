@@ -21,7 +21,7 @@ internal static partial class HeadlessPresentationSmoke
             foreach (string cardId in new[] { PlayAccessScenario.ExileSpellId, PlayAccessScenario.FlashbackId,
                 PlayAccessScenario.BorrowedId, PlayAccessScenario.ExileLandId }) {
                 using var run = new PlayAccessRun(profile, "access-play-" + cardId + "-" + size.X, size);
-                run.ScrollTo(cardId);
+                run.Expose(cardId);
                 var original = run.Frame.Cards.Single(card => card.Id == cardId);
                 int hand = run.Connection.State.Viewer!.Zone("Hand").Count;
                 run.ClickCard(cardId);
@@ -86,13 +86,14 @@ internal static partial class HeadlessPresentationSmoke
             using (var run = new PlayAccessRun(profile, "access-overflow-" + size.X, size, 5)) {
                 var firstHand = run.Frame.Scene!.Hand.Cards.Select(card => (card.Id, card.Pose)).ToArray();
                 string last = run.Frame.Scene.PlayAccess.Groups.SelectMany(group => group.Cards).Last().Scene.Id;
-                run.ScrollTo(last);
+                run.Unfold(CardSpreadPlan.AccessId);
+                run.FocusOccurrence(last);
                 run.ClickCard(last);
                 run.Until(() => run.Frame.Cards.Any(card => card.Id == last && card.Focused));
                 check(run.Connection.Commands.IsEmpty && run.Connection.State.Viewer!.Zone("Hand").Count == 11
                         && run.Frame.Scene!.Hand.Cards.Select(card => (card.Id, card.Pose)).SequenceEqual(firstHand)
-                        && run.Frame.Scene.PlayAccess.Scroll > 0 && !run.Frame.Hits.Any(hit => hit.Id is "play-access-next" or "play-access-prev"),
-                    "Continuous access scrolling reaches and reads the last actual card beside eleven in hand without paging, moving the hand or casting at " + size);
+                        && run.Frame.Scene.Spread?.Contains(last) == true,
+                    "Unfolding the source packet reaches and reads its last actual card beside eleven in hand without moving hand anchors or casting at " + size);
             }
             using (var run = new PlayAccessRun(profile, "access-off-priority-" + size.X, size, 1)) {
                 run.ClickCard(PlayAccessScenario.ExileSpellId);
@@ -105,7 +106,7 @@ internal static partial class HeadlessPresentationSmoke
         }
         using (var run = new PlayAccessRun(profile, "access-multiple-routes", new(1540, 980), 4)) {
             string id = PlayAccessScenario.FlashbackId;
-            run.ScrollTo(id);
+            run.Expose(id);
             var start = run.At(run.Frame.Cards.Single(card => card.Id == id).Hit);
             var drop = new Point(900, 470);
             run.Tick(start, ButtonState.Pressed); run.Tick(drop, ButtonState.Pressed);
@@ -126,7 +127,177 @@ internal static partial class HeadlessPresentationSmoke
         CheckPlayAccessDrag(profile, check);
         CheckResolvingPlayAccess(profile, check);
         CheckStackPlayAccessFocus(profile, check);
+        CheckCollectionPlayAccess(profile, check);
         performance.Add(new { scenario = "play-access.v1", note = "Finite presentation and pointer journeys; not a performance or human-clarity score." });
+    }
+
+    private static void CheckCollectionPlayAccess(string profile, Action<bool, string> check)
+    {
+        foreach (var (stage, collection, size) in new[] {
+            (11, CardSpreadPlan.HandId, new Point(1000, 740)),
+            (12, CardSpreadPlan.AccessId, new Point(1540, 980)),
+            (13, CardSpreadPlan.AccessId, new Point(1000, 740))
+        }) {
+            using var run = new PlayAccessRun(profile, "physical-collection-" + stage, size, stage);
+            var before = run.Connection.State;
+            var hand = run.Frame.Scene!.Hand.Cards.Select(card => (card.Id, card.Pose)).ToArray();
+            var source = stage == 13 ? run.Frame.Scene.PlayAccess.Groups.Single(group => group.SourceIds.Contains(PlayAccessScenario.ChandraId)) : null;
+            string collectionId = source?.Id ?? collection;
+            run.Unfold(collectionId);
+            var spread = run.Frame.Scene!.Spread!;
+            check(spread.View.Scale >= .85f && spread.View == spread.InitialView,
+                "Opening a large hand or source packet starts at readable card scale before any explicit overview gesture");
+            if (source != null) check(spread.Anchors.Select(card => card.Id).SequenceEqual(source.Cards.Select(item => item.Scene.Id))
+                    && spread.Anchors.All(card => card.Zone == source.Zone && card.Owner == source.PlayerId),
+                "Unfolding a specific grant keeps only that source packet's exact occurrences and actual owner instead of mixing in other grants or the hand");
+            var world = spread.WorldCards.Select(card => (card.Id, card.Pose)).ToArray();
+            var originals = spread.Anchors.Select(card => (card.Id, card.Zone, card.Owner)).ToArray();
+            var samples = new[] { 0, spread.Cards.Count / 2, spread.Cards.Count - 1 }.Distinct().Select(index => spread.Cards[index].Id).ToArray();
+            foreach (string id in samples) {
+                run.FocusOccurrence(id);
+                var face = run.Frame.Cards.Single(card => card.Id == id);
+                check(face.Display.Size.X >= CardSpreadPlan.CardSize.X * .94f
+                        && CardSpreadPlan.Viewport.Intersects(face.Display.Bounds)
+                        && run.Connection.State == before && run.Connection.Commands.IsEmpty,
+                    "An actual middle-click on a first, middle or last overview card focuses the same physical occurrence without choosing or playing it");
+                run.ClickCard(id);
+                run.Until(() => run.Frame.Cards.Any(card => card.Id == id && card.Focused));
+                check(run.Frame.Cards.Count(card => card.Id == id) == 1 && run.Connection.State == before
+                        && run.Connection.Commands.IsEmpty && run.View.Selections.Count == 0,
+                    "Reading first, middle and last cards in a large unfolded hand or source packet remains noncommitting and keeps one occurrence");
+                run.CloseReader();
+            }
+            if (stage == 11) {
+                run.FocusOccurrence(samples[1], keyboard: true);
+                check(run.Frame.Cards.Single(card => card.Id == samples[1]).Display.Size.X >= CardSpreadPlan.CardSize.X * .94f
+                        && run.Connection.State == before && run.Connection.Commands.IsEmpty && run.View.Selections.Count == 0,
+                    "Z focuses the physical card under the pointer from overview without reading, selecting or playing it");
+            }
+            run.FocusOccurrence(samples[1]);
+            var focused = run.Frame.Scene!.Spread!;
+            run.Tick(CardSpreadPlan.Viewport.Center, wheelDelta: 120);
+            var zoomed = run.Frame.Scene!.Spread!;
+            check(zoomed.View.Scale > focused.View.Scale && zoomed.WorldCards.Select(card => (card.Id, card.Pose)).SequenceEqual(world),
+                "The wheel zooms the physical collection camera rather than paging or replacing its cards");
+            var panStart = CardSpreadPlan.Viewport.Center;
+            run.Tick(panStart, middle: ButtonState.Pressed);
+            run.Tick(panStart + new Point(88, 36), middle: ButtonState.Pressed);
+            run.Tick(panStart + new Point(88, 36));
+            check(run.Frame.Scene!.Spread!.View != zoomed.View
+                    && run.Frame.Scene.Spread.Anchors.Select(card => (card.Id, card.Zone, card.Owner)).SequenceEqual(originals)
+                    && run.Frame.Scene.Hand.Cards.Select(card => (card.Id, card.Pose)).SequenceEqual(hand)
+                    && run.Connection.State == before && run.Connection.Commands.IsEmpty,
+                "Middle-button panning moves the camera over unchanged world cards, source anchors and the real hand without a game action");
+
+            run.FocusOccurrence(samples[1]);
+            var compact = run.Frame.Cards.Single(card => card.Id == samples[1]);
+            var start = run.CenterOrAt(compact.Hit);
+            run.Tick(start, ButtonState.Pressed); run.Tick(start + new Point(18, 0), ButtonState.Pressed); run.Tick(start + new Point(18, 0));
+            check(run.Connection.State == before && run.Connection.Commands.IsEmpty && run.Connection.Attempts == 0,
+                "Small movement inside a spread card's original source pose cannot cast, play or choose it");
+            run.Unfold(collectionId);
+            run.Tick(new(40, 100), ButtonState.Pressed); run.Tick(new(40, 100));
+            run.Until(() => run.Frame.Scene?.Spread == null);
+            check(run.Frame.Scene!.Hand.Cards.Select(card => (card.Id, card.Pose)).SequenceEqual(hand)
+                    && run.Connection.State == before && run.Connection.Commands.IsEmpty,
+                "An outside gesture folds the same physical collection back to its source anchors without changing or submitting cards");
+            run.Unfold(collectionId); run.Fold();
+            check(run.Connection.State == before && run.Connection.Commands.IsEmpty,
+                "Escape folds an unfolded collection without advancing priority or a rules decision");
+        }
+        CheckCollectionDraft(profile, check);
+        CheckCollectionExpiryMotion(profile, check);
+    }
+
+    private static void CheckCollectionExpiryMotion(string profile, Action<bool, string> check)
+    {
+        using var run = new PlayAccessRun(profile, "physical-collection-expiry-motion", new(1540, 980), 12, reduced: false);
+        run.Unfold(CardSpreadPlan.AccessId);
+        const string survivingId = "access-overflow-30";
+        run.FocusOccurrence(survivingId);
+        var before = run.Connection.State;
+        var previous = run.Frame.Cards.Single(card => card.Id == survivingId).Display;
+        var revoked = Enumerable.Range(0, 16).Select(index => "access-overflow-" + index.ToString("D2")).ToHashSet();
+        var expired = before with { Revision = before.Revision + 1,
+            PlayAccesses = before.PlayAccesses.Where(access => !revoked.Contains(access.CardId)).ToImmutableArray() };
+        run.Publish(expired);
+        var spread = run.Frame.Scene!.Spread!;
+        var target = spread.Cards.Single(card => card.Id == survivingId).Pose;
+        var first = run.Frame.Cards.Single(card => card.Id == survivingId).Display;
+        float travel = Vector2.Distance(previous.Center, target.Center);
+        check(travel > 100 && Vector2.Distance(first.Center, previous.Center) < travel * .75f
+                && Vector2.Distance(first.Center, target.Center) > travel * .2f
+                && run.Frame.Cards.Count(card => card.Id == survivingId) == 1,
+            "Permission expiry repacks a camera-focused source collection from the surviving physical card's preceding display instead of snapping to its new world target");
+        check(spread.Anchors.All(card => !revoked.Contains(card.Id))
+                && spread.WorldCards.All(card => !revoked.Contains(card.Id))
+                && run.Frame.Scene.PlayAccess.Groups.SelectMany(group => group.Cards).All(item => !revoked.Contains(item.Scene.Id))
+                && run.Frame.Hits.All(hit => hit.Card == null || !revoked.Contains(hit.Card.VisualId))
+                && expired.Viewer!.Zone("Exile").Cards.Count(card => revoked.Contains(card.VisualId)) == revoked.Count
+                && run.Connection.Commands.IsEmpty && run.Connection.Offers.IsEmpty,
+            "The same-prompt expiry immediately removes revoked access faces and pointer authority while keeping their disclosed actual-zone cards and issuing no camera-driven action query");
+        run.Until(() => run.SpreadPoseSettled(survivingId));
+        check(run.Frame.Cards.Single(card => card.Id == survivingId).Card.VisualId == survivingId
+                && run.Connection.State == expired && run.Connection.Commands.IsEmpty,
+            "The surviving occurrence completes its normal-motion repacking in the current collection without a game action or stale permission");
+    }
+
+    private static void CheckCollectionDraft(string profile, Action<bool, string> check)
+    {
+        using var run = new PlayAccessRun(profile, "physical-collection-required-draft", new(1000, 740), 11);
+        var initial = run.Connection.State;
+        var hand = initial.Viewer!.Zone("Hand").Cards;
+        var options = hand.Select((card, index) => new Choice(17 + index, card.Name, card) { CardId = card.VisualId }).ToImmutableArray();
+        var required = initial with { PriorityPlayerId = null, ActionClass = "choice",
+            Decision = new(initial.Decision!.Id + ":hand-choice", new(Message: "Choose two cards from your hand."),
+                new OptionsPayload(new(options, new(2, 2)))) };
+        run.Publish(required);
+        run.Unfold(CardSpreadPlan.HandId);
+        int middle = hand.Length / 2, originalIndex = 17 + middle;
+        string id = hand[middle].VisualId;
+        run.FocusOccurrence(id); run.ClickCard(id);
+        run.Until(() => run.Frame.Hits.Any(hit => hit.Id == "read-card-action"));
+        run.Click("read-card-action");
+        check(run.View.Selections.SequenceEqual([originalIndex]) && run.Connection.Commands.IsEmpty,
+            "The explicit hand-choice gesture stages the original offered index while a large hand remains one current required decision");
+        run.FocusOccurrence(hand[^1].VisualId); run.Fold();
+        run.Unfold(CardSpreadPlan.HandId); run.FocusOccurrence(hand[0].VisualId);
+        check(run.View.Selections.SequenceEqual([originalIndex]) && run.Connection.Commands.IsEmpty
+                && run.View.Match!.Decision!.Id == required.Decision!.Id,
+            "Overview, focus, fold and reopen preserve the same required-choice draft without confirming it or changing its original index");
+        run.FocusOccurrence(id); run.ClickCard(id);
+        run.Until(() => run.Frame.Hits.Any(hit => hit.Id == "read-card-action"));
+        var retired = run.Frame.Hits.Last(hit => hit.Id == "read-card-action");
+        var press = run.At(retired);
+        run.Tick(press, ButtonState.Pressed);
+        var withdrawn = required with { Revision = required.Revision + 1,
+            Players = required.Players.Select(player => player.Id != required.ViewerId ? player : player with {
+                Zones = player.Zones.Select(zone => zone.Name != "Hand" ? zone : zone with {
+                    Cards = zone.Cards.Where(card => card.VisualId != id).ToImmutableArray(), Count = zone.Count - 1
+                }).ToImmutableArray()
+            }).ToImmutableArray(),
+            Decision = required.Decision! with { Payload = new OptionsPayload(new(options.Where(choice => choice.Index != originalIndex).ToImmutableArray(), new(2, 2))) }
+        };
+        run.Publish(withdrawn); run.Tick(press);
+        bool publishedRetired = run.Frame.Hits.Any(hit => hit.Id == retired.Id && hit.Scope == retired.Scope && Equals(hit.Intent, retired.Intent));
+        bool activatedRetired = run.View.Activate(retired);
+        check(run.View.Selections.All(index => index != originalIndex) && run.Frame.Cards.All(card => card.Id != id)
+                && !publishedRetired && !activatedRetired && run.Connection.Commands.IsEmpty && run.Connection.Attempts == 0,
+            "Withdrawing a face and its offered choice during a pressed reader gesture removes the old occurrence and draft index without submitting a replacement choice"
+                + $" (selected={string.Join(',', run.View.Selections)}, faces={run.Frame.Cards.Count(card => card.Id == id)}, scoped={run.View.CurrentHit(retired)}, published={publishedRetired}, activated={activatedRetired}, commands={run.Connection.Commands.Count}, attempts={run.Connection.Attempts})");
+        foreach (var candidate in new[] { hand[0], hand[^1] }) {
+            run.Unfold(CardSpreadPlan.HandId); run.FocusOccurrence(candidate.VisualId); run.ClickCard(candidate.VisualId);
+            run.Until(() => run.Frame.Hits.Any(hit => hit.Id == "read-card-action"));
+            run.Click("read-card-action");
+        }
+        check(run.View.Selections.SequenceEqual([17, 17 + hand.Length - 1]) && run.Connection.Commands.IsEmpty
+                && run.Frame.Scene?.Spread?.Id == CardSpreadPlan.HandId,
+            "Two explicit hand choices remain a staged draft with their original offered indices while the physical spread is open");
+        run.Click("confirm");
+        run.Until(() => !run.View.Busy && run.Connection.Commands.Count == 1);
+        check(run.Connection.Commands.Single() is ChooseOptions chosen && chosen.DecisionId == withdrawn.Decision!.Id
+                && chosen.Choices.SequenceEqual([17, 17 + hand.Length - 1]),
+            "The shared current confirmation is reachable from the open hand spread and submits only the two explicitly chosen original indices");
     }
 
     private static void CheckStackPlayAccessFocus(string profile, Action<bool, string> check)
@@ -147,14 +318,17 @@ internal static partial class HeadlessPresentationSmoke
         check(spell.Display.Contains(click) || run.View.ReferencePreviewCardId == null && run.View.ReferencePreviewBounds == null,
             "Leaving the pointer at the actual cast-route click does not open an unsolicited stack preview outside the moving physical face");
         // The stack header is an explicit reading target larger than its art.
-        // Hovering its header-only part must not create a full-card preview.
+        // Sample its geometry without advancing the flight into that point.
         var header = run.HeaderOutsideFace(spell);
-        run.Tick(header);
+        run.Tick(header, elapsed: 0);
         clear &= ControlsClear();
-        check(run.View.ReferencePreviewCardId == null && run.View.ReferencePreviewBounds == null,
-            "A physical spell's enlarged header hit area retains explicit reading without treating empty header space as a hovered card");
+        var headerFrame = run.Frame.Cards.Single(card => card.Id == id && card.Zone == "Stack");
+        var headerHit = run.View.HitAt(header);
+        check(!headerFrame.Display.Contains(header) && run.View.ReferencePreviewCardId == null && run.View.ReferencePreviewBounds == null,
+            "A physical spell's enlarged header hit area retains explicit reading without treating empty header space as a hovered card"
+                + $" (point={header}, before={spell.Display.Center}/{spell.Display.Size}, after={headerFrame.Display.Center}/{headerFrame.Display.Size}, insideAfter={headerFrame.Display.Contains(header)}, preview={run.View.ReferencePreviewCardId}/{run.View.ReferencePreviewBounds}, hit={headerHit?.Id}/{headerHit?.Zone}/{headerHit?.Intent.GetType().Name})");
         spell = run.Frame.Cards.Single(card => card.Id == id && card.Zone == "Stack");
-        run.Tick(spell.Display.Center.ToPoint());
+        run.Tick(spell.Display.Center.ToPoint(), elapsed: 0);
         clear &= ControlsClear();
         check(run.View.ReferencePreviewCardId == id && run.View.ReferencePreviewBounds != null,
             "Hovering the actual displayed physical stack face still previews that exact current spell");
@@ -204,12 +378,16 @@ internal static partial class HeadlessPresentationSmoke
             bool multiple = result == "two-routes";
             using var run = new PlayAccessRun(profile, "access-delayed-" + result, new(1540, 980), multiple ? 4 : 0);
             string id = multiple ? PlayAccessScenario.FlashbackId : PlayAccessScenario.ExileSpellId;
-            run.ScrollTo(id);
+            run.Expose(id);
+            if (result is "one-route" or "two-routes") {
+                run.Unfold(CardSpreadPlan.AccessId);
+                run.FocusOccurrence(id);
+            }
             run.Connection.DelaySourceReads = true;
             var before = run.Connection.State;
             var source = run.Frame.Cards.Single(card => card.Id == id);
             var start = run.At(source.Hit);
-            var drop = new Point(900, 470);
+            var drop = result is "one-route" or "two-routes" ? new Point(700, 760) : new Point(900, 470);
             run.Tick(start, ButtonState.Pressed);
             run.Tick(drop, ButtonState.Pressed);
             run.Until(() => run.Connection.DeferredReads.Count == 1, drop, ButtonState.Pressed);
@@ -265,7 +443,7 @@ internal static partial class HeadlessPresentationSmoke
                 // The next explicit source read cannot complete until the old
                 // in-flight callback has retired. This supplies an observation
                 // barrier for the late result without sleeps or private hooks.
-                run.ScrollTo(PlayAccessScenario.ExileLandId);
+                run.Expose(PlayAccessScenario.ExileLandId);
                 run.ClickCard(PlayAccessScenario.ExileLandId);
                 run.Until(() => run.Frame.Cards.Any(card => card.Id == PlayAccessScenario.ExileLandId && card.Focused)
                     && run.Frame.Hits.Any(hit => hit.Id == "read-card-action"));
@@ -314,6 +492,7 @@ internal static partial class HeadlessPresentationSmoke
         private readonly TableApplication app;
         private readonly Point size;
         private double seconds;
+        private int wheel;
         internal PlayAccessConnection Connection { get; }
         internal TableApplication.Probe View => app.TestPort;
         internal PresentationFrame Frame { get; private set; } = null!;
@@ -336,11 +515,12 @@ internal static partial class HeadlessPresentationSmoke
             var at = RenderViewport.Fit(size, 900).ToPhysical(logical.ToVector2());
             return new((int)MathF.Ceiling(at.X), (int)MathF.Ceiling(at.Y));
         }
-        internal void Tick(Point logical = default, ButtonState left = ButtonState.Released, KeyboardState? keys = null)
+        internal void Tick(Point logical = default, ButtonState left = ButtonState.Released, KeyboardState? keys = null,
+            ButtonState middle = ButtonState.Released, int wheelDelta = 0, double elapsed = .05)
         {
-            seconds += .05; var at = Physical(logical);
-            app.Update(new(TimeSpan.FromSeconds(seconds), TimeSpan.FromSeconds(.05)),
-                new(at.X, at.Y, 0, left, default, default, default, default), keys ?? new(), size);
+            seconds += elapsed; var at = Physical(logical); wheel += wheelDelta;
+            app.Update(new(TimeSpan.FromSeconds(seconds), TimeSpan.FromSeconds(elapsed)),
+                new(at.X, at.Y, wheel, left, middle, default, default, default), keys ?? new(), size);
             Frame = app.ReadPresentation();
             if (View.Error.Length > 0) throw new InvalidOperationException(View.Error);
         }
@@ -383,17 +563,57 @@ internal static partial class HeadlessPresentationSmoke
         }
         internal void Click(string id) { var at = At(Frame.Hits.Last(hit => hit.Id == id)); Tick(at, ButtonState.Pressed); Tick(at); }
         internal void ClickCard(string id) => Click(Frame.Cards.Single(card => card.Id == id).Hit.Id);
-        internal void ScrollTo(string id)
+        internal void Expose(string id)
         {
-            for (int attempt = 0; attempt < 50; attempt++) {
-                if (Frame.Cards.Any(card => card.Id == id && Frame.Hits.Any(hit => hit.Id == card.Hit.Id))) {
-                    try { _ = At(Frame.Cards.Single(card => card.Id == id).Hit); return; }
-                    catch (InvalidOperationException) { }
-                }
-                var at = Frame.Scene!.PlayAccess.Bounds.Center;
-                Tick(at, keys: new(Keys.Right)); Tick(at);
+            if (Frame.Cards.Any(card => card.Id == id && Frame.Hits.Any(hit => hit.Id == card.Hit.Id))) {
+                try { _ = At(Frame.Cards.Single(card => card.Id == id).Hit); return; }
+                catch (InvalidOperationException) { }
             }
-            throw new InvalidOperationException("Continuous access scroll did not expose " + id + " at " + size);
+            string collection = Connection.State.Viewer!.Zone("Hand").Cards.Any(card => card.VisualId == id)
+                ? CardSpreadPlan.HandId : CardSpreadPlan.AccessId;
+            Unfold(collection); FocusOccurrence(id);
+        }
+        internal void CloseReader()
+        {
+            if (!Frame.Cards.Any(card => card.Focused)) return;
+            Tick(new(20, 60), keys: new(Keys.Escape)); Tick(new(20, 60));
+            Until(() => Frame.Cards.All(card => !card.Focused));
+        }
+        internal void Unfold(string collection)
+        {
+            CloseReader();
+            if (Frame.Scene?.Spread?.Id == collection) return;
+            Fold();
+            Click(collection == CardSpreadPlan.HandId ? "hand-unfold" : collection == CardSpreadPlan.AccessId
+                ? "play-access-unfold" : "play-access-source:" + collection);
+            Until(() => Frame.Scene?.Spread?.Id == collection);
+        }
+        internal void Fold()
+        {
+            CloseReader();
+            if (Frame.Scene?.Spread == null) return;
+            Tick(new(20, 60), keys: new(Keys.Escape)); Tick(new(20, 60));
+            Until(() => Frame.Scene?.Spread == null);
+        }
+        internal void FocusOccurrence(string id, bool keyboard = false)
+        {
+            CloseReader();
+            if (Frame.Scene?.Spread?.Contains(id) != true) throw new InvalidOperationException("The unfolded collection does not contain " + id);
+            Tick(new(800, 400), keys: new(Keys.Home)); Tick(new(800, 400));
+            Until(() => SpreadPoseSettled(id));
+            var card = Frame.Cards.Single(item => item.Id == id);
+            var point = At(card.Hit);
+            if (keyboard) { Tick(point, keys: new(Keys.Z)); Tick(point); }
+            else { Tick(point, middle: ButtonState.Pressed); Tick(point); }
+            Until(() => Frame.Scene!.Spread!.View.Scale >= .95f
+                && SpreadPoseSettled(id));
+        }
+        internal bool SpreadPoseSettled(string id)
+        {
+            var target = Frame.Scene!.Spread!.Cards.Single(card => card.Id == id).Pose;
+            var display = Frame.Cards.Single(card => card.Id == id).Display;
+            return Vector2.Distance(display.Center, target.Center) < 1
+                && Vector2.Distance(display.Size, target.Size) < 1;
         }
         public void Dispose() => app.Dispose();
     }
@@ -449,6 +669,14 @@ internal static partial class HeadlessPresentationSmoke
         {
             Interlocked.Increment(ref attempts);
             var current = State;
+            if (command is ChooseOptions choice) {
+                if (!GameCommandPermissions.Allows(current, choice))
+                    throw new EngineCommandRejectedException("The hand choices must satisfy this exact current offered selection.");
+                Replace(current with { Revision = current.Revision + 1, Decision = null,
+                    PriorityPlayerId = null, DecisionOwnerId = null, ActionClass = "resolving" });
+                Commands.Enqueue(command);
+                return Task.CompletedTask;
+            }
             if (command is not UseOfferedAction use || use.GameId != current.Id || current.Decision is not { } decision || use.DecisionId != decision.Id
                 || decision.Payload is not PriorityPayload || current.DecisionOwnerId != current.ViewerId || current.PriorityPlayerId != current.ViewerId
                 || !Offers.Any(offer => offer.GameId == current.Id && offer.DecisionId == decision.Id

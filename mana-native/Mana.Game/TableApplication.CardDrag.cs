@@ -9,7 +9,7 @@ namespace Mana.Table;
 
 internal sealed partial class TableApplication
 {
-    private sealed record CardPlayDragOrigin(string Scope, string HitId, Pose Anchor, bool ExpandedFace);
+    private sealed record CardPlayDragOrigin(string Scope, string HitId, Pose Anchor, bool ExpandedFace, bool FromCollection);
     private sealed record ReleasedCardPlay(string Scope, SourceActionContext Context, string Zone, Pose Pose, bool Submitted);
     private CardPlayDragOrigin? cardPlayDragOrigin;
     private ReleasedCardPlay? releasedCardPlay;
@@ -22,7 +22,7 @@ internal sealed partial class TableApplication
         ? sourceActions.View.Actions.Where(action => action.Kind is "cast" or "play").ToArray() : [];
 
     private bool CanStartSourceDrag(Hit source) => match?.Decision?.Payload is AttackPayload or BlockPayload
-        || source.Zone is not ("Battlefield" or "Stack")
+        || match?.Decision?.Payload is PriorityPayload && source.Zone is not ("Battlefield" or "Stack")
             && (source.Zone is "Hand" or "Command" || source.Card is { } card
                 && (OfferedPlayOptions(card).Length > 0 || CurrentPlayAccess(card) is { } access && CanStartPlayAccess(access)));
 
@@ -60,8 +60,10 @@ internal sealed partial class TableApplication
         // The reader is already above the table. Require deliberate movement,
         // then allow its card to land without escaping an invisible old face.
         bool expanded = entry.Focused && entry.Display.Contains(pressPoint) && !entry.Rest.Contains(pressPoint);
-        cardPlayDragOrigin = new(source.Scope, source.Id, entry.Rest, expanded);
+        cardPlayDragOrigin = new(source.Scope, source.Id, CardCollectionOpen ? entry.Display : entry.Rest, expanded, CardCollectionOpen);
     }
+
+    private bool LeftCollectionDragOrigin => cardPlayDragOrigin is not { FromCollection: true } origin || !origin.Anchor.Contains(pointer);
 
     private bool CardPlayDragMatches(CardPlayDragOrigin origin)
         => origin.Scope == Scope && dragSource?.Scope == origin.Scope && dragSource.Id == origin.HitId;

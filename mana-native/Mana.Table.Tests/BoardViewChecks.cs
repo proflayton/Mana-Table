@@ -68,7 +68,7 @@ internal static class BoardViewChecks
         var crowded = TurnOrientationScenario.Crowded()[0].Snapshot;
         bool Preserved(GameSnapshot state)
         {
-            var scene = TableScene.Build(state, 0, new(-100, -100), null, null, false, Mana.Magic.CardPresentation.IsResource);
+            var scene = TableScene.Build(state, new(-100, -100), null, null, false, Mana.Magic.CardPresentation.IsResource);
             var cards = scene.Seats.SelectMany(seat => seat.Battlefield).SelectMany(cluster => cluster.Cards).ToArray();
             var projected = cards.Select(card => card with { Pose = view.Apply(card.Pose) }).ToArray();
             return cards.Select(card => (card.Id, card.Owner, card.Zone, card.GroupCount, card.GroupFront))

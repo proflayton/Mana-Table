@@ -27,6 +27,12 @@ internal sealed partial class TableApplication
             ? hand.FreeMulligan ? "Free mulligan" : $"Mulligan \u2192 keep {hand.NextHandSize}"
             : decision.Context.Message;
         var keep = opening.Consequence is { } current ? opening.Keep with { Label = "Keep " + current.HandSize } : opening.Keep;
+        if (CardCollectionOpen) {
+            Button("confirm", keep.Label, 964, 730, 248, new MatchIntent.ConfirmDecision(), !busy && keep.Enabled, true, 44);
+            if (opening.Mulligan?.Enabled == true) Button("cancel", opening.Mulligan.Label, 1230, 730, 278,
+                new MatchIntent.CancelDecision(), !busy, true, 44);
+            return;
+        }
         DrawDecisionAlternatives(state, decision, keep, opening.Mulligan, "Your opening hand", detail, true);
     }
 

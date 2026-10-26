@@ -42,8 +42,10 @@ internal sealed partial class TableApplication
         var card = ReaderActionSource();
         if (card == null || ReaderActionContext(card) is not { } context
             || sourceActions.TryCreateCommand(context, action.Id) is not { } reply) return;
+        var source = matchPresentation.Cards.Pinned;
         if (zoneName != "Battlefield") zoneName = null;
-        Send(reply);
+        if (Send(reply) && (action.Kind is "cast" or "play") && source is { Zone: not ("Battlefield" or "Stack") })
+            releasedCardPlay = new(Scope, context, source.Zone, source.Display, true);
         CollapseCardReading(); ClearReaderActions();
     }
 

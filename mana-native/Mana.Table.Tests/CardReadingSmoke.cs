@@ -479,13 +479,13 @@ internal sealed partial class CardReadingSmoke : ITableAutomation
         Pose original = default, phaseInRest = default;
         Step(0, () => {
             Move(new(10, 70)); Publish(FocusedSeed(PresentationSmoke.StateExample()));
-            original = TableScene.Build(view.Match!, 0, new(-1, -1), null, null, false, CardPresentation.IsResource)
+            original = TableScene.Build(view.Match!, new(-1, -1), null, null, false, CardPresentation.IsResource)
                 .BattlefieldCard(0, "seat-0-1")!.Pose;
         });
         StepWhen(() => FreshOwnCard("seat-0-1", "Battlefield", c => c.CombatKeywords.Contains("flying"))
             && view.DisplayedPose("seat-0-1") is { Elevation: > 12 } flying
             && flying.Center.Y < original.Center.Y - 10, 1, () => {
-            var scene = TableScene.Build(view.Match!, 0, new(-1, -1), null, null, false, CardPresentation.IsResource);
+            var scene = TableScene.Build(view.Match!, new(-1, -1), null, null, false, CardPresentation.IsResource);
             original = scene.BattlefieldCard(0, "seat-0-1")!.Pose;
             var displayed = view.DisplayedPose("seat-0-1");
             Check(displayed is { Elevation: > 12 } && displayed.Value.Center.Y < original.Center.Y - 10, "A creature with projected flying rests above the battlefield");
@@ -545,13 +545,13 @@ internal sealed partial class CardReadingSmoke : ITableAutomation
                 Cards = z.Cards.Select(c => c.PhasedOut ? c with { PhasedOut = false, Tapped = false } : c).ToImmutableArray()
             }).ToImmutableArray() }).ToImmutableArray() });
             // Derive the target from the new untapped projection, never the old tapped cell.
-            phaseInRest = TableScene.Build(view.Match!, 0, new(-1, -1), null, null, false, CardPresentation.IsResource)
+            phaseInRest = TableScene.Build(view.Match!, new(-1, -1), null, null, false, CardPresentation.IsResource)
                 .BattlefieldCard(0, "seat-0-0")!.Pose;
         });
         StepWhen(() => FreshOwnCard("seat-0-0", "Battlefield", c => !c.PhasedOut && !c.Tapped)
             && view.DisplayedPose("seat-0-0") is { Elevation: < 1, Angle: >= -.02f and <= .02f } returned
             && Microsoft.Xna.Framework.Vector2.Distance(returned.Center, phaseInRest.Center) < 2, 1, () => {
-            var scene = TableScene.Build(view.Match!, 0, new(-1, -1), null, null, false, CardPresentation.IsResource);
+            var scene = TableScene.Build(view.Match!, new(-1, -1), null, null, false, CardPresentation.IsResource);
             var isleRest = scene.BattlefieldCard(0, "seat-0-0")!.Pose;
             Check(view.DisplayedPose("seat-0-0") is { Elevation: < 1, Angle: >= -.02f and <= .02f } pose
                 && Microsoft.Xna.Framework.Vector2.Distance(pose.Center, isleRest.Center) < 2,
@@ -669,7 +669,7 @@ internal sealed partial class CardReadingSmoke : ITableAutomation
     private bool OrderedTargetsSettled()
     {
         var state = view.Match!;
-        var scene = TableScene.Build(state, 0, new(-1, -1), null, null, false, CardPresentation.IsResource);
+        var scene = TableScene.Build(state, new(-1, -1), null, null, false, CardPresentation.IsResource);
         var nodes = state.Players.SelectMany(p => scene.Battlefield(p.Id).SelectMany(c => c.Cards)).ToArray();
         return ((OrderingPayload)state.Decision!.Payload).Selection.Choices.All(choice => nodes.SingleOrDefault(c => c.Id == choice.CardId) is { } node
             && view.DisplayedPose(choice.CardId) is { } displayed
@@ -834,7 +834,7 @@ internal sealed partial class CardReadingSmoke : ITableAutomation
             JsonSerializer.Serialize(record, new JsonSerializerOptions { WriteIndented = true, IncludeFields = true }));
     }
     private Pose? StateCreatureRest() => view.Match is { } state
-        ? TableScene.Build(state, 0, new(-1, -1), null, null, false, CardPresentation.IsResource)
+        ? TableScene.Build(state, new(-1, -1), null, null, false, CardPresentation.IsResource)
             .BattlefieldCard(0, "seat-0-1")?.Pose : null;
     private object[] ChoiceSlotDiagnostics()
     {

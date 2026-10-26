@@ -3,7 +3,7 @@ using Mana.Contracts;
 namespace Mana.Table.Interaction;
 
 internal enum MatchView { Settings, History, Help, Concede, LeaveTable, TableState }
-internal enum MatchPage { Hand, Choice, Inspect, Zone, Combat, Change, History, PriorityQueue, PriorityText, Placement, PlayerDamage, PlayerCounter, TableState, AllocationRules }
+internal enum MatchPage { Choice, Inspect, Zone, Combat, Change, History, PriorityQueue, PriorityText, Placement, PlayerDamage, PlayerCounter, TableState, AllocationRules }
 
 // Input describes a player intent. Rendering cannot retain application callbacks
 // or gain authority by choosing a debug control name.
@@ -30,8 +30,9 @@ internal abstract record MatchIntent : UiIntent
     internal sealed record SetPage(MatchPage PageKind, int Page) : MatchIntent {
         internal override InteractionScopeKind ScopeKind => PageKind == MatchPage.PriorityText ? InteractionScopeKind.Playback : InteractionScopeKind.Current;
     }
-    internal sealed record SetHandPage(int Page) : MatchIntent;
-    internal sealed record SetPlayAccessScroll(int Offset) : MatchIntent { internal override InteractionScopeKind ScopeKind => InteractionScopeKind.Playback; }
+    internal sealed record ExpandCardCollection(string Id) : MatchIntent { internal override InteractionScopeKind ScopeKind => InteractionScopeKind.Playback; }
+    internal sealed record FoldCardCollection : MatchIntent { internal override InteractionScopeKind ScopeKind => InteractionScopeKind.Playback; }
+    internal sealed record ResetCardCollectionView : MatchIntent { internal override InteractionScopeKind ScopeKind => InteractionScopeKind.Playback; }
     internal sealed record FlipInspector : MatchIntent;
     internal sealed record SubmitCommand(GameCommand Command) : MatchIntent;
     internal sealed record ConfirmDecision(bool CloseOverlay = false) : MatchIntent;

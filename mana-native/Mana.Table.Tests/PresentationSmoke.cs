@@ -62,7 +62,7 @@ internal static class PresentationSmoke
         Check(PublicResources.Mana(manaPlayer with { Mana = ImmutableDictionary<string, int>.Empty.Add("Amber", 7).Add("C", 1) })
             .Select(part => (part.Key, part.Amount)).SequenceEqual([("C", 1), ("Amber", 7)]),
             "An unfamiliar positive public resource is retained by name rather than silently dropped");
-        var scene = TableScene.Build(state, 0, new(-100, -100), null, null, false, CardPresentation.IsResource);
+        var scene = TableScene.Build(state, new(-100, -100), null, null, false, CardPresentation.IsResource);
         Check(state.Players.All(p => scene.Battlefield(p.Id).Sum(c => c.Cards.Length) == p.Zone("Battlefield").Cards.Length), "Every seat's complete public battlefield is represented without paging");
         Check(scene.Battlefield(1).Where(cluster => cluster.Kind != "Lands").SelectMany(cluster => cluster.Cards)
             .Select(c => c.Id).Distinct().Count() == 8, "Every crowded battlefield occurrence remains represented even with duplicate card names");
@@ -70,10 +70,10 @@ internal static class PresentationSmoke
             Count = 5, Cards = Enumerable.Range(0, 5).Select(i => new Card { VisualId = $"stable-{p.Id}-{i}", Name = i < 3 ? "Llanowar Elves" : "Forest",
                 Type = i < 3 ? "Creature" : "Basic Land", Power = i < 3 ? 2 : null, Toughness = i < 3 ? 2 : null }).ToImmutableArray()
         }).ToImmutableArray() }).ToImmutableArray() };
-        Dictionary<string, Pose> Poses(GameSnapshot value) => TableScene.Build(value, 0, new(-1, -1), null, null, false, CardPresentation.IsResource)
+        Dictionary<string, Pose> Poses(GameSnapshot value) => TableScene.Build(value, new(-1, -1), null, null, false, CardPresentation.IsResource)
             .Battlefield(value.ViewerId).SelectMany(c => c.Cards).ToDictionary(c => c.Id, c => c.Pose);
         var resting = Poses(stableBoard);
-        SceneCard[] BoardCards(GameSnapshot value) => TableScene.Build(value, 0, new(-1, -1), null, null, false, CardPresentation.IsResource)
+        SceneCard[] BoardCards(GameSnapshot value) => TableScene.Build(value, new(-1, -1), null, null, false, CardPresentation.IsResource)
             .Battlefield(value.ViewerId).SelectMany(cluster => cluster.Cards).ToArray();
         var candidates = stableBoard.Viewer!.Zone("Battlefield").Cards.Where(c => c.VisualId != "stable-0-2").ToArray();
         var orderedBoard = stableBoard with { Decision = new Decision("ordered-copies", new DecisionContext(), new OrderingPayload(new ChoiceSelection(candidates.Select((card, index) => new Choice(index, card.Name, card) { CardId = card.VisualId }).ToImmutableArray(), new SelectionRange(4, 4), []))) };
@@ -94,7 +94,7 @@ internal static class PresentationSmoke
         foreach (var player in stableBoard.Players) {
             var lands = player.Zone("Battlefield").Cards.Where(c => c.Type == "Basic Land").ToArray();
             var order = stableBoard with { Decision = new Decision("", new DecisionContext(), new OrderingPayload(new ChoiceSelection(lands.Select((card, index) => new Choice(index, card.Name, card) { CardId = card.VisualId }).ToImmutableArray(), new SelectionRange(lands.Length, lands.Length), []))) };
-            var landScene = TableScene.Build(order, 0, new(-1, -1), null, null, false, CardPresentation.IsResource);
+            var landScene = TableScene.Build(order, new(-1, -1), null, null, false, CardPresentation.IsResource);
             var badges = landScene.Battlefield(player.Id).SelectMany(c => c.Cards).Where(c => lands.Any(land => land.VisualId == c.Id))
                 .Select(c => new Rectangle((int)c.Pose.Center.X - 39, c.Pose.Bounds.Top + 8, 78, 24)).ToArray();
             Check(badges.Length == 2 && !badges[0].Intersects(badges[1]),

@@ -18,7 +18,6 @@ internal sealed partial class TableApplication
         if (match is not { } state) return;
         turnProgress = TurnProgressPresentation.From(state, preferences.Stops);
         priorityView = PriorityPresentation.From(state);
-        handPage = Math.Clamp(handPage, 0, Math.Max(0, ((state.Viewer?.Zone("Hand").Cards.Length ?? 0) - 1) / 11));
         if (decisions.Allocation is { } draft) {
             bool validInspection = draft.Inspection switch {
                 null => true,

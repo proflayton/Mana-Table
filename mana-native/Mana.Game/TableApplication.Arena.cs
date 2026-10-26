@@ -38,7 +38,7 @@ internal sealed partial class TableApplication
         DrawChangeHighlights();
         if (!BattlefieldFocused) DrawEffectTransitions();
         DrawHand(); DrawPlayAccess(); DrawCardEffects(); DrawDepartures();
-        if (!BattlefieldFocused) DrawLiftedCards();
+        if (!BattlefieldFocused && !CardCollectionOpen) DrawLiftedCards();
         // Your seat stays in front of the fan and readable during card travel.
         if (state.Viewer is { } local) DrawHero(local, SeatHero(local.Id), true, 3);
         DrawPriorityHandoff();
@@ -58,24 +58,25 @@ internal sealed partial class TableApplication
             }
         }
         hovered = !dragging ? HitAt(pointer)?.Card : null;
-        if (!OverlayOpen) DrawReaderControls();
+        if (!OverlayOpen && !CardCollectionOpen) DrawReaderControls();
         // Decision text and its controls have priority over card readers and
         // held cards. Their input regions are registered last for the same reason.
-        if (!BattlefieldFocused && !OverlayOpen && !AbilityActionPending) { DrawDecisionDock(); }
+        if (!BattlefieldFocused && !OverlayOpen && !AbilityActionPending && !CardCollectionOpen) { DrawDecisionDock(); }
         if (!BattlefieldFocused) DrawChangeCallout();
         if (!BattlefieldFocused) { DrawAbilityActions(); DrawSourceTargeting(); }
-        DrawOverlays();
+        if (!CardCollectionOpen) DrawOverlays();
         if (BattlefieldFocused) DrawEffectTransitions();
         DrawLiftedCards();
         DrawActualImpacts();
-        if (BattlefieldFocused && !DecisionModal && !AbilityActionPending) { DrawDecisionDock(); DrawChangeCallout(); }
+        if (BattlefieldFocused && !DecisionModal && !AbilityActionPending && !CardCollectionOpen) { DrawDecisionDock(); DrawChangeCallout(); }
         if (BattlefieldFocused) { DrawAbilityActions(); DrawSourceTargeting(); }
-        if (ReadingGalleryOpen || BattlefieldFocused || ZoneReadingOpen) DrawReaderControls();
+        if (!CardCollectionOpen && (ReadingGalleryOpen || BattlefieldFocused || ZoneReadingOpen)) DrawReaderControls();
         if (ReadingGalleryOpen) hovered = HitAt(pointer)?.Card;
         DrawPendingReferencePreview();
         DrawLinkedSpellPreview();
         DrawStudyBattlefieldName();
         DrawStudyFocusNavigation();
+        DrawCardCollection();
         DrawExperienceLabHeader();
     }
     private void DrawGameHeader()
@@ -105,7 +106,7 @@ internal sealed partial class TableApplication
     {
         var hand = tableScene!.Hand;
         canvas.Gradient(new(244, 785, 970, 115), Color.Transparent, new Color(8, 12, 20) * .85f);
-        foreach (var node in hand.Cards) DrawSceneCard(node);
+        foreach (var node in hand.Cards) if (!SpreadContains(node.Id)) DrawSceneCard(node);
         if (hand.Total == 0) canvas.CenterText("Your hand is empty", new(455, 815, 690, 65), Muted * .6f, .86f);
         string limit = match!.Viewer?.MaxHandSize is { } maximum ? $"Limit {maximum} at cleanup" : "No hand limit";
         canvas.Panel(new(263, 864, 373, 31), new Color(12, 19, 27) * .95f, new Color(62, 78, 90), 4);
@@ -119,10 +120,7 @@ internal sealed partial class TableApplication
             canvas.Text(landState, 662, 873, Ink, .63f, 456, 1);
             }
         }
-        if (hand.Total > 11) {
-            Button("handprev", "‹", 254, 789, 34, new MatchIntent.SetHandPage(hand.Page - 1), hand.Page > 0, height: 34);
-            Button("handnext", "›", 1203, 789, 34, new MatchIntent.SetHandPage(hand.Page + 1), (hand.Page + 1) * 11 < hand.Total, height: 34);
-        }
+        if (HandCollectionAllowed && hand.Total > 0) DrawFanUnfold("hand-unfold", hand.UnfoldBounds, CardSpreadPlan.HandId, spreadId == CardSpreadPlan.HandId);
     }
     private static string CardIdentity(Card card) => CardViews.Identity(card);
     private void DrawSceneCard(SceneCard node)

@@ -73,6 +73,6 @@ internal static class RoleLaneAvoidanceChecks
             "Moving an obstructed identical-copy family preserves its exact fan and single shared public-state front");
     }
 
-    private static TableScene Build(GameSnapshot state) => TableScene.Build(state, 0, new(-100, -100), null, null,
+    private static TableScene Build(GameSnapshot state) => TableScene.Build(state, new(-100, -100), null, null,
         false, CardPresentation.IsResource);
 }

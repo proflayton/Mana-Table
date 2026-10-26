@@ -145,6 +145,7 @@ internal sealed partial class TableApplication
         internal string HelpPageText => game.helpPageText;
         internal IReadOnlyList<BattlefieldLabelPaint> BattlefieldLabels(string id) => game.battlefieldLabels.TryGetValue(id, out var labels) ? labels : [];
         internal Mana.Renderer.TableScene? TableScene => game.tableScene;
+        internal Mana.Renderer.BoardView CardSpreadView => game.spreadView;
         internal void ImportFilePath(string path) => game.ImportFilePath(path);
         internal void SetConnectedTable(Lobby state) { game.localMatch = false; game.lobby = state; }
         internal bool Automatic => game.automatic;

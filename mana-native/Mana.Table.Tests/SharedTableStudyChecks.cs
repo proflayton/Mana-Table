@@ -47,7 +47,7 @@ internal static class SharedTableStudyChecks
         HiddenFace(check);
         TwoPlayerContinuity(check);
         ResourceTurns(check);
-        check(TableScene.Build(ordinary, 0, new(-100, -100), null, null, false, CardPresentation.IsResource)
+        check(TableScene.Build(ordinary, new(-100, -100), null, null, false, CardPresentation.IsResource)
                 .Seats.All(seat => seat.Battlefield.SelectMany(cluster => cluster.Cards).All(card => !card.ScanFace)),
             "The explicit study leaves the default battlefield presentation unchanged");
     }
@@ -273,7 +273,7 @@ internal static class SharedTableStudyChecks
                 Cards = zone.Cards.Select(card => card with { Key = "focus-action:" + card.VisualId }).ToImmutableArray()
             }).ToImmutableArray()
         }).ToImmutableArray() };
-        var scene = TableScene.Build(state, 0, new(-100, -100), null, null, false,
+        var scene = TableScene.Build(state, new(-100, -100), null, null, false,
             CardPresentation.IsResource, sharedTableStudy: true);
         var scutes = Cards(scene).Where(node => node.Owner == 2 && node.Card.Name == "Scute Swarm").ToArray();
         var family = scutes[0].StudyFamily!;
@@ -297,6 +297,6 @@ internal static class SharedTableStudyChecks
         }).ToImmutableArray()
     };
     private static IEnumerable<SceneCard> Cards(TableScene scene) => scene.Seats.SelectMany(seat => seat.Battlefield).SelectMany(cluster => cluster.Cards);
-    private static TableScene Build(GameSnapshot state) => TableScene.Build(state, 0, new(-100, -100), null, null,
+    private static TableScene Build(GameSnapshot state) => TableScene.Build(state, new(-100, -100), null, null,
         false, CardPresentation.IsResource, sharedTableStudy: true);
 }

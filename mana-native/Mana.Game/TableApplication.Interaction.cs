@@ -12,6 +12,7 @@ internal sealed partial class TableApplication
     {
         if (!CurrentHit(hit) || !hits.Published.Any(current => current.Id == hit.Id
             && current.Scope == hit.Scope && Equals(current.Intent, hit.Intent))) return false;
+        if (CardCollectionOpen && hit.Card is { } outside && !SpreadContains(CardViews.Identity(outside))) FoldCardCollection();
         // A pile face represents its zone on ordinary click. Explicit inspection
         // can still read that disclosed occurrence without opening the browser.
         if (matchPresentation.Cards.Cards.Any(entry => entry.Hit.Id == hit.Id && entry.Hit.Scope == hit.Scope && entry.Request.OpensZone)) {
@@ -140,7 +141,7 @@ internal sealed partial class TableApplication
     private void Scroll(int direction)
     {
         if (ScrollSourceReader(direction)) return;
-        if (ScrollPlayAccess(direction)) return;
+        if (ZoomCardCollection(direction)) return;
         if (ScrollFocusedBattlefield(direction)) return;
         if (chatOpen && ChatBounds.Contains(pointer)) {
             if (chatPeople) return;
@@ -175,6 +176,5 @@ internal sealed partial class TableApplication
         if (DecisionModal) { decisions.Page = Math.Max(0, decisions.Page - direction); return; }
         var hit = HitAt(pointer);
         if (hit?.Zone == "Battlefield") return;
-        if (hit?.Zone == "Hand" || pointer.Y > 760) handPage = Math.Max(0, handPage - direction);
     }
 }

@@ -29,7 +29,7 @@ public sealed record SceneCard(string Id, Card Card, Pose Pose, string Zone, int
     }
 }
 public sealed record PilePlan(string Zone, Pose Pose, bool Compact);
-public sealed record HandPlan(int Page, int Total, string? Raised, SceneCard[] Cards);
+public sealed record HandPlan(int Total, string? Raised, SceneCard[] Cards, Rectangle UnfoldBounds);
 
 /// <summary>A painted front and the exact public occurrences represented behind it.
 /// Membership is presentation geometry, never permission to act on a group.</summary>
@@ -78,13 +78,15 @@ public sealed class TableScene
     private readonly Dictionary<int, SceneSeat> seats;
     public HandPlan Hand { get; }
     public PlayAccessPlan PlayAccess { get; }
+    public CardSpreadPlan? Spread { get; }
     public IReadOnlyList<SceneSeat> Seats { get; }
     public IReadOnlyList<SceneCard> BattlefieldDrawOrder { get; }
 
-    private TableScene(HandPlan hand, PlayAccessPlan playAccess, SceneSeat[] seats)
+    private TableScene(HandPlan hand, PlayAccessPlan playAccess, SceneSeat[] seats, CardSpreadPlan? spread)
     {
         Hand = hand;
         PlayAccess = playAccess;
+        Spread = spread;
         Seats = Array.AsReadOnly(seats);
         this.seats = seats.ToDictionary(seat => seat.PlayerId);
         BattlefieldDrawOrder = Array.AsReadOnly(seats.SelectMany(seat => seat.Battlefield).SelectMany(cluster => cluster.Cards)
@@ -99,13 +101,22 @@ public sealed class TableScene
     public IReadOnlyList<PilePlan> Piles(int player) => Seat(player).Geometry.Piles;
     public IReadOnlyList<BattlefieldCluster> Battlefield(int player) => Seat(player).Battlefield;
 
-    public static TableScene Build(GameSnapshot state, int handPage,
+    public static TableScene Build(GameSnapshot state,
         Point pointer, string? previouslyRaised, string? dragged, bool allowHover, Func<Card, bool> isResource,
         Func<Card, int, bool, BattlefieldLabelMetrics>? denseMeasure = null, bool allowInlineOrdering = true,
-        bool sharedTableStudy = false, int playAccessScroll = 0)
+        bool sharedTableStudy = false, CardSpreadRequest? spread = null, Func<CardSpreadPacket, int, int>? spreadMeasure = null)
     {
-        var hand = HandLayout.Build(state, handPage, pointer, previouslyRaised, dragged, allowHover);
-        var playAccess = PlayAccessPlan.Build(state, playAccessScroll);
+        var hand = HandLayout.Build(state, pointer, previouslyRaised, dragged, allowHover);
+        var playAccess = PlayAccessPlan.Build(state);
+        CardSpreadPacket[] packets = spread?.Id == CardSpreadPlan.HandId
+            ? [new(CardSpreadPlan.HandId, "", "", [], hand.Cards)]
+            : playAccess.Groups.Where(group => spread?.Id == CardSpreadPlan.AccessId || group.Id == spread?.Id)
+                .Select(group => new CardSpreadPacket(group.Id,
+                    string.Join(" · ", group.Cards.SelectMany(item => item.Access.Routes).Select(route => route.SourceName)
+                        .Where(name => name.Length > 0).Distinct()),
+                    group.Zone + (group.PlayerId == state.ViewerId ? "" : " · " + state.Players.First(player => player.Id == group.PlayerId).Name),
+                    group.SourceIds, group.Cards.Select(item => item.Scene).ToArray())).ToArray();
+        var spreadPlan = spread == null ? null : CardSpreadPlan.Build(spread.Id, packets, spread.View, spread.Top, spreadMeasure);
         var orderedChoices = allowInlineOrdering && state.Decision?.Payload is OrderingPayload order
             ? order.Selection.Choices.Where(choice => choice.Card != null && choice.CardId.Length > 0).Select(choice => choice.CardId).ToHashSet(StringComparer.Ordinal) : null;
         bool duel = sharedTableStudy && state.Players.Length == 2;
@@ -145,6 +156,6 @@ public sealed class TableScene
             seats = seats.Select(seat => new SceneSeat(seat.Geometry, all.Where(item => item.Node.Owner == seat.PlayerId)
                 .GroupBy(item => item.Kind).Select(group => new BattlefieldCluster(group.Key, group.Select(item => item.Node).ToArray())).ToArray())).ToList();
         }
-        return new(hand, playAccess, seats.ToArray());
+        return new(hand, playAccess, seats.ToArray(), spreadPlan);
     }
 }

@@ -56,7 +56,7 @@ internal static class AttachmentStackChecks
         foreach (var size in new[] { new Point(1000, 740), new Point(1540, 980) }) Present(profile, stages, size, check);
     }
 
-    private static TableScene Build(GameSnapshot state) => TableScene.Build(state, 0, new(-100, -100), null, null, false,
+    private static TableScene Build(GameSnapshot state) => TableScene.Build(state, new(-100, -100), null, null, false,
         CardPresentation.IsResource, sharedTableStudy: true);
 
     private static void CheckInvalidRelations(GameSnapshot baseline, Action<bool, string> check)

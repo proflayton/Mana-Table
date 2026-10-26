@@ -25,7 +25,7 @@ internal sealed partial class TableApplication
         && zoneName != null && zoneName != "Battlefield";
     private bool CompactCardDecision => decisions.Presentation?.RequiredSurface is DecisionRequiredSurface.Table
         or DecisionRequiredSurface.Targets or DecisionRequiredSurface.Combat;
-    private CardPresentationContext CardContext => new(match, Scope, OverlayOpen && !BattlefieldFocused && !ZoneReadingOpen,
+    private CardPresentationContext CardContext => new(match, Scope, OverlayOpen && !BattlefieldFocused && !ZoneReadingOpen && !CardCollectionOpen,
         ReadingGalleryOpen, dragging, CompactCardDecision, TableStudyEnabled,
         TableStudyEnabled ? StudyActionArea : null, decisions.Presentation);
     private string? readingId => matchPresentation.Cards.PinnedId;
@@ -45,7 +45,10 @@ internal sealed partial class TableApplication
         if (BattlefieldFocused && hits.LastOrDefault(hit => hit.Contains(point)) is { } focusHit
             && focusHit.Intent is MatchIntent.FocusSurface or MatchIntent.CloseBattlefieldFocus or MatchIntent.SetBattlefieldOwner
                 or MatchIntent.ScrollBattlefieldTo or MatchIntent.ReadFocusedCard or MatchIntent.OpenStack) return focusHit;
-        var resolved = matchPresentation.Cards.ResolveHit(point, hits, hits.LastOrDefault(hit => hit.Contains(point)), CardContext);
+        var top = hits.LastOrDefault(hit => hit.Contains(point));
+        var resolved = matchPresentation.Cards.ResolveHit(point, hits, top, CardContext);
+        if (CardCollectionOpen && resolved?.Card is { } spreadCard && SpreadContains(CardViews.Identity(spreadCard))
+            && !resolved.Contains(point)) return top;
         return resolved?.Zone == "Battlefield" && !BattlefieldFocused && resolved.Id != matchPresentation.Cards.Pinned?.Hit.Id
             && !BoardViewport.Contains(point) ? null : resolved;
     }

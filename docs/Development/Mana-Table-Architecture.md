@@ -1053,11 +1053,22 @@ that omit the additive collection retain ordinary zone inspection.
 `TableScene.PlayAccess` prepares adjacent card fans without changing hand
 membership or ownership. Groups retain their zone and permission-source identity;
 multiple routes do not duplicate a card. The plan owns its footprint and the
-nearby priority-control reservation. Reading and dragging reuse the ordinary
-card/source-action pipeline, including current-scope revalidation. A played
-occurrence travels from its actual displayed position into the stack. Continuous
-scrolling exposes larger groups in place; the battlefield camera does not move
-the local hand or access fans.
+nearby priority-control reservation. The hand retains all occurrences, with no
+eleven-card page boundary. Explicit expansion prepares `CardSpreadPlan` over the
+same canonical cards. Its world arrangement, overview and focused `BoardView`
+share one pure layout for hand and access collections; camera navigation changes
+neither actual zones nor the other seats' layout. Source packets keep their full
+captions and artwork. Large collections open at play distance, with a deliberate
+overview instead of automatic shrinking. Camera painting and input cover the
+same full-width table band. Only occurrence IDs and world poses are retained to
+detect reflow; membership/layout changes restore ordinary scene motion.
+Returning restores those same
+cards to their anchors through the existing presentation owner. The spread is
+not an overlay dialog, a second renderer or another source of action authority.
+Reading and dragging reuse the ordinary card/source-action pipeline, including
+current-scope revalidation. A drag retains its original expanded anchor and must
+leave it before commitment. A played occurrence then travels from its actual
+displayed position into the stack. There is no access scrollbar or hand paging.
 
 A released play can await its one pending source query without submitting a
 speculative action. The retained intent pauses automatic passing and is cancelled
