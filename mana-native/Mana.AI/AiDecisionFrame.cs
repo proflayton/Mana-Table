@@ -72,6 +72,7 @@ public sealed class AiDecisionFrame
                     domain.Sources.SelectMany(source => source.Actions).Select(action => action.Id).Order()))
                 throw new ArgumentException("Domain semantics must describe each exact offered action once.", nameof(domain));
         }
+        AiSemanticValidation.Validate(state, Domain, Semantics);
         if (decision.Payload is AttackPayload or BlockPayload && state.Combat == null)
             throw new ArgumentException("Combat decisions require their published combat constraints.", nameof(state));
         if (decision.Payload is AttackPayload && state.Combat is { } combat

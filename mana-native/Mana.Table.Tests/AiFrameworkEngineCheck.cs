@@ -52,7 +52,7 @@ internal static class AiFrameworkEngineCheck
                 await Task.Delay(5);
             }
             check(kept && landPlayed && session!.History.Decisions.Any(record => record.Outcome == AiDecisionOutcome.Accepted
-                    && record.Answer is UseOfferedAction) && state!.Viewer!.Zone("Battlefield").Count == 1,
+                    && record.Command == nameof(UseOfferedAction)) && state!.Viewer!.Zone("Battlefield").Count == 1,
                 "The policy framework keeps a real hand and follows a current offered land route; the subsequent authoritative board establishes the result");
         } finally {
             session?.Dispose();

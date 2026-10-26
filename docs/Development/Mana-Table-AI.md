@@ -284,6 +284,103 @@ counters remain attached to the creature whose current stats changed. Replay
 those gestures on the four-seat and crowded battlefields as well; Arena's
 two-player framing does not settle our multiplayer spatial design.
 
+## AI quality work before merge or release
+
+The current change remains a draft. The player's 26 October direction is to
+develop and test the AI framework before merging or releasing it; UI clarity
+work follows that effort. Passing build checks or reaching a natural winner
+does not satisfy this quality gate.
+
+The source now separates a finite operation graph from a strategic estimate.
+Graph nodes retain their actor, source, recipient bindings, target domains,
+quantities, costs and sequence/mode/conditional links. A later effect can refer
+to the same targets or their controllers instead of independently choosing a
+beneficial recipient. Unknown quantities, token characteristics, conditions and
+resource coupling stay explicit. The adapter exports rules facts; the policy
+prices their consequences. Semantic candidate IDs do not become action handles.
+The current finite assessor estimates supported public effects and selected
+branches, and reports incomplete, unsupported or exhausted work separately.
+It is not a forward rules simulator or a forecast of opponents' responses.
+Optional optimization uses local work slices. A completed plan can retain a
+partial estimate when further search reaches its limit, without claiming an
+optimum or exhausting the whole seat episode. Required target selection reserves
+enough work to finish its known minimum, then uses current authorized candidates
+when optimization cannot continue.
+Combat comparisons use the same bounded approach: completed attack/defender
+estimates and block pairs survive a local search limit, while incomplete
+defender scans are discarded. A legal staged declaration can finish without
+spending the entire causal allowance on further tactical comparisons.
+
+Mana production preserves alternatives and simultaneous bundles. The bounded
+assignment planner chooses at most one route per physical source, keeps exact
+colored/colorless and hybrid requirements, and excludes a source reserved for
+the initiating action's tap cost. It returns a nominal witness, shortfall,
+unknown or budget result. Base action costs can be reduced or replaced, so a
+base-cost shortfall cannot certify that a cast is unavailable. The remaining
+bill in an actual payment input is stronger evidence. Source dependencies,
+spending restrictions and replacements which are not modeled remain unknown.
+Known output and a guaranteed consuming tap can still establish a nominal
+capacity upper bound for a paid filter. Insufficient capacity rules out that
+nominal assignment; sufficient capacity does not solve its dependencies.
+The policy waits on nominally unfunded optional actions, including casts with
+uncertain effective costs, rather than repeatedly opening and abandoning their
+payments. This strategic choice does not remove or relabel the provider's
+offered route. Authoritative payable knowledge overrides the estimate. Until
+effective-cost facts improve, the policy can miss discounted or alternate casts.
+
+Controlled tactical cases establish specific expectations independently of
+self-play: preserve a necessary early land when discarding, account for an
+animated land's creature body, avoid a losing first-strike/deathtouch exchange,
+block to prevent player lethal, distinguish attacks at a planeswalker, avoid
+known self-lethal bundled effects, and keep modal target requirements on the
+selected branches. Small exhaustive mana assignments provide an independent
+oracle. Enumeration and display-text transformations check that decisions
+depend on typed knowledge rather than names, prose or input order.
+
+The diverse campaign uses four shared singleton Commander deck manifests with
+normal spell/land ratios: Rhys green-white tokens, Pir/Toothy green-blue
+counters, Balmor blue-red spells, and Traxos colorless artifacts. It reuses one
+initialized JVM, rotates seats, bounds turns/time, and separates mechanical
+failures, witnessed mechanics, missing coverage and review findings. An accepted
+command is not an observed effect. A compulsory return of one's own land is a
+review finding, not proof of bad targeting. Missing rare draws are coverage gaps.
+Policy seeds are recorded; rules randomness remains uncontrolled, so rotated
+runs are not identical-shuffle paired experiments.
+
+`AiDecisionReplayCase` retains one seat's exact state, domain, semantics,
+history, evaluation seed and remaining allowance. `AiDecisionReplay` runs a
+candidate policy through the production scoped session without an engine
+connection. The native test driver accepts `--replay-ai-decision <case.json>`
+and writes a private `ai-decision-replay.json` in its disposable profile. The
+result is a proposal, never an accepted receipt or resolved outcome. Captures
+and reports are host-private. Repeating decision evaluation is distinct from
+replaying an entire rules game or reproducing wall-clock timing exactly.
+Prior commands survive serialization as immutable kind/payload evidence; they
+are not executable commands and do not grant new or historical action authority.
+
+This extends the partial-observation, offered-move and refreshed-observation
+pattern documented by the
+[Hearthstone AI Competition](https://hearthstoneai.github.io/tutorial.html).
+Its single-action simulator is a reference boundary, not Blizzard's production
+controller or a solution for Magic's nested priority/cost choices. Evaluation
+must also match the game: OpenSpiel's
+[exploitability implementation](https://github.com/google-deepmind/open_spiel/blob/master/open_spiel/python/algorithms/exploitability.py)
+explicitly restricts that metric to two-player constant-sum sequential games.
+It cannot be copied as a complete quality measure for casual four-player Commander.
+
+Before promotion, inspect captured poor decisions, retain tactical regressions,
+and distinguish remaining planning limitations from engine faults. Important
+open work includes mana-ability dependency chains, uncertain effective costs,
+joint attack/block plans and rules-provided block-repair witnesses,
+retaliation/commander-damage planning, own-deck plans,
+typed numeric purposes and X investment, conditional effects and belief/forward
+search. Human assessment of enjoyable
+opponents remains necessary; win rate or equal targeting cannot substitute.
+Ordinary damage history currently identifies its recipient separately from its
+source occurrence, but lacks an explicit event-time source controller. The
+policy must not reconstruct that historical controller from current ownership;
+its social pressure/focus estimates remain incomplete until that fact is supplied.
+
 ## Decision framework foundation
 
 The player's clarified scope is **all AI behavior**, with a framework built

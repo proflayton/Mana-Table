@@ -1,0 +1,187 @@
+using System.Collections.Immutable;
+using System.Diagnostics;
+using System.IO.Compression;
+using System.Security.Cryptography;
+using System.Text.Json;
+using Mana.AI;
+using Mana.Contracts;
+using Mana.Forge;
+
+namespace Mana.Table;
+
+internal sealed record AiCampaignLimits(int Matches, int Turns, TimeSpan MatchTime, long PolicySeed = 261027);
+internal sealed record AiCampaignResult(int Match, string StopReason, string? MechanicalFailure, int Turns, int Steps,
+    int DevelopedSeats, int Accepted, int OfferedRoutesUsed, int PublicComparisons, double ElapsedMilliseconds, object Evidence);
+
+// Sequential games reuse the existing JVM lane. Budgets stop tests explicitly;
+// the driver never fabricates a bot response or disguises a test stop as a win.
+internal static class AiEngineCampaign
+{
+    internal static async Task RunStandaloneAsync(ForgePaths paths)
+    {
+        Directory.CreateDirectory(paths.Profile);
+        await using var engine = new ForgeEngine(paths);
+        await engine.InitializeAsync();
+        File.WriteAllText(Path.Combine(paths.Profile, "campaign-runtime.json"), JsonSerializer.Serialize(new {
+            engineJar = paths.Jar, engineJarSha256 = Convert.ToHexString(SHA256.HashData(File.ReadAllBytes(paths.Jar))),
+            paths.Java, paths.Resources
+        }, new JsonSerializerOptions { WriteIndented = true }));
+        await RunAsync(engine, paths.Profile, new(2, 32, TimeSpan.FromSeconds(45)), (passed, detail) => {
+            File.AppendAllText(Path.Combine(paths.Profile, "campaign-progress.log"), detail + "\n");
+            if (!passed) throw new InvalidOperationException(detail);
+        }, paths);
+    }
+
+    internal static async Task RunAsync(ForgeEngine engine, string profile, AiCampaignLimits limits, Action<bool, string> check, ForgePaths? runtime = null)
+    {
+        if (limits.Matches is < 1 or > 16 || limits.Turns is < 8 or > 160 || limits.MatchTime <= TimeSpan.Zero)
+            throw new ArgumentOutOfRangeException(nameof(limits));
+        string directory = Path.Combine(profile, "ai-campaign"); Directory.CreateDirectory(directory);
+        CheckDisclosureBounds(check);
+        foreach (var manifest in AiCampaignDecks.All) manifest.Validate();
+        await engine.EnableAutomatedSeatsAsync();
+        var saved = new List<string>();
+        foreach (var manifest in AiCampaignDecks.All) {
+            try {
+                var imported = await engine.ImportAsync("AI campaign " + manifest.Id, manifest.List);
+                var details = await engine.OpenDeckAsync(imported.Id);
+                if (details.StructureValid == false || details.Problem.Length > 0 || !details.Issues.IsEmpty)
+                    throw new InvalidDataException("Campaign deck " + manifest.Id + " failed engine validation: " + JsonSerializer.Serialize(details.Issues) + details.Problem);
+                var committed = await engine.SaveDeckAsync(details.Id, details.Revision);
+                if (committed.SaveError.Length > 0) throw new InvalidDataException(committed.SaveError);
+                saved.Add("deck:" + details.Id);
+            } catch (Exception error) {
+                File.WriteAllText(Path.Combine(directory, "setup-failure.json"), JsonSerializer.Serialize(new {
+                    classification = "mechanical-setup-failure", manifest.Id, manifest.Hash, manifest.List, failure = error.ToString()
+                }, new JsonSerializerOptions { WriteIndented = true }));
+                throw;
+            }
+        }
+        File.WriteAllText(Path.Combine(directory, "manifest.json"), JsonSerializer.Serialize(new {
+            formatVersion = 1, audience = "host-private", deckVersion = AiCampaignDecks.Version, limits,
+            timeCutoffScope = "Checked between completed engine steps; engine requests and teardown can extend elapsed wall time.",
+            engineRandomnessControlled = false, seedScope = "Policy tie-breaking only. Forge currently uses process-global SecureRandom; these are not seeded engine replays.",
+            policy = new CasualCommanderPolicy().Descriptor.Id,
+            policyAssemblySha256 = Convert.ToHexString(SHA256.HashData(File.ReadAllBytes(typeof(CasualCommanderPolicy).Assembly.Location))),
+            engineJarSha256 = runtime == null ? null : Convert.ToHexString(SHA256.HashData(File.ReadAllBytes(runtime.Jar))),
+            decks = AiCampaignDecks.All.Select((deck, index) => new { deck.Id, deck.Hash, deck.Commanders, deck.LandCount,
+                spells = deck.SpellNames.Length, deck.IntendedMechanics, list = deck.List, handle = saved[index] })
+        }, new JsonSerializerOptions { WriteIndented = true }));
+        var results = new List<AiCampaignResult>();
+        for (int index = 0; index < limits.Matches; index++) {
+            var rotation = Enumerable.Range(0, 4).Select(seat => saved[(seat + index) % 4]).ToImmutableArray();
+            var result = await Match(engine, Path.Combine(directory, "match-" + index), index, rotation, limits);
+            results.Add(result);
+            if (result.MechanicalFailure != null) {
+                // The shared JVM may be blocked or compromised. Do not turn
+                // its follow-on connection timeouts into independent failures.
+                File.WriteAllText(Path.Combine(directory, "unrun-rotations.json"), JsonSerializer.Serialize(new {
+                    failedMatch = index, reason = "Earlier mechanical failure; the shared engine was not reused.",
+                    unrunMatches = Enumerable.Range(index + 1, limits.Matches - index - 1).ToArray()
+                }, new JsonSerializerOptions { WriteIndented = true }));
+                break;
+            }
+        }
+        File.WriteAllText(Path.Combine(directory, "summary.json"), JsonSerializer.Serialize(results, new JsonSerializerOptions { WriteIndented = true }));
+        check(results.All(result => result.MechanicalFailure == null), "Diverse AI campaign mechanical results: "
+            + string.Join("; ", results.Select(result => $"match {result.Match}: {result.MechanicalFailure ?? result.StopReason}, turn {result.Turns}, {result.Accepted} accepted commands")));
+        check(results.All(result => result.DevelopedSeats >= 3 && result.Accepted >= 12 && result.OfferedRoutesUsed >= 8 && result.PublicComparisons > 0),
+            "Every bounded diverse match develops multiple real battlefields and compares same-revision public projections; absent rare mechanics remain explicit coverage gaps.");
+    }
+
+    private static void CheckDisclosureBounds(Action<bool, string> check)
+    {
+        var face = new Card { Name = "Forest", Type = "Basic Land - Forest", ManaCost = "no cost" };
+        Player Player(int id, ImmutableArray<Card> hand, ImmutableArray<Card> library, Card? top = null) => new(id,
+            "Seat " + id, 40, false, false, ImmutableDictionary<string, int>.Empty,
+            [new("Hand", hand.Length, hand, null), new("Library", library.Length, library, top)]);
+        var revealed = new GameSnapshot("disclosure-conformance", "playing", null, null, 0, 1, "Main", "MAIN1", 0,
+            [Player(0, [], []), Player(1, [face], []), Player(2, [], [])], [], null,
+            new("disclosure", new(), new RevealPayload([new(null, face.Name, face)])));
+        check(AiCampaignVisibility.PrivateWindowsAreDisclosed(revealed),
+            "One current anonymous reveal authorizes its exact read-only face window");
+        var duplicate = revealed with { Players = [revealed.Players[0], revealed.Players[1], Player(2, [face], [])] };
+        check(!AiCampaignVisibility.PrivateWindowsAreDisclosed(duplicate)
+                && !AiCampaignVisibility.PrivateWindowsAreDisclosed(revealed with { Decision = null })
+                && !AiCampaignVisibility.PrivateWindowsAreDisclosed(revealed with {
+                    Players = [revealed.Players[0], Player(1, [face with { Key = "forged-authority" }], []), revealed.Players[2]] }),
+            "A reveal cannot authorize extra hidden copies, outlive its decision or grant action handles");
+        var top = face with { VisualId = "known-top" };
+        var look = revealed with { Decision = null, Players = [Player(0, [], [top], top), Player(1, [], []), Player(2, [], [])] };
+        check(AiCampaignVisibility.PrivateWindowsAreDisclosed(look)
+                && !AiCampaignVisibility.PrivateWindowsAreDisclosed(look, new(DecisionIntent.Search))
+                && !AiCampaignVisibility.PrivateWindowsAreDisclosed(look with {
+                    Players = [Player(0, [], [top, face], top), look.Players[1], look.Players[2]] }),
+            "An explicit top disclosure authorizes exactly its single occurrence and no remainder of the library");
+    }
+
+    private static async Task<AiCampaignResult> Match(ForgeEngine engine, string directory, int index,
+        ImmutableArray<string> decks, AiCampaignLimits limits)
+    {
+        Directory.CreateDirectory(directory);
+        File.WriteAllText(Path.Combine(directory, "match-config.json"), JsonSerializer.Serialize(new {
+            formatVersion = 1, audience = "host-private", match = index, decksInSeatOrder = decks,
+            policySeed = limits.PolicySeed + index, limits.Turns, limits.MatchTime, engineRandomnessControlled = false
+        }, new JsonSerializerOptions { WriteIndented = true }));
+        using var evidence = new AiCampaignDiagnostics(directory);
+        var provider = new AiCampaignProvider(engine, evidence);
+        await using var host = new AiTableHost(provider, _ => evidence.Record(new CasualCommanderPolicy()),
+            limits.PolicySeed + index, new(TimeSpan.FromSeconds(10), 4096));
+        await using var trace = new StreamWriter(new GZipStream(File.Create(Path.Combine(directory, "public.jsonl.gz")), CompressionLevel.Fastest));
+        var elapsed = Stopwatch.StartNew();
+        GameSnapshot? state = null;
+        int steps = 0, comparisons = 0;
+        string stop = "not-started", lastFacts = "";
+        string? failure = null;
+        var developed = new HashSet<int>();
+        try {
+            state = await engine.StartSimulationAsync(decks);
+            while (true) {
+                await host.StepAsync();
+                state = await engine.ObserveSimulationAsync() ?? throw new InvalidDataException("The campaign lost its public observation.");
+                steps++;
+                if (host.LastFault != null) throw new InvalidOperationException("Host fault: " + JsonSerializer.Serialize(host.LastFault));
+                if (state.Status == "error") throw new InvalidOperationException(state.Error ?? "Rules engine failure.");
+                if (state.ViewerId != -1 || state.Decision != null
+                    || state.Players.Any(player => !player.Zone("Hand").Cards.IsEmpty || !player.Zone("Library").Cards.IsEmpty)
+                    || CardViews.InZones(state).Any(item => item.Card.Key.Length > 0))
+                    throw new InvalidDataException("Public spectator disclosed private decision/card authority.");
+                evidence.ObservePublic(state);
+                foreach (var player in state.Players)
+                    if (player.Zone("Battlefield").Cards.Any(card => card.Type.Contains("Land", StringComparison.Ordinal))) developed.Add(player.Id);
+                foreach (var bot in provider.Last) {
+                    if (bot.State.ViewerId != bot.SeatId || !AiCampaignVisibility.PrivateWindowsAreDisclosed(bot.State, bot.Semantics))
+                        throw new InvalidDataException("Automated seat disclosed another private hand or library order.");
+                    if (state.BoardRevision == bot.State.BoardRevision && state.Id == bot.State.Id) {
+                        if (!AiWholeSeatEngineCheck.ComparePublicProjection(state, bot.State, directory))
+                            throw new InvalidDataException("Same-revision public projections diverged.");
+                        comparisons++;
+                    }
+                }
+                string facts = AiWholeSeatEngineCheck.ReplayFacts(state);
+                if (facts != lastFacts) {
+                    lastFacts = facts;
+                    await trace.WriteLineAsync(JsonSerializer.Serialize(new { step = steps, elapsedMilliseconds = elapsed.Elapsed.TotalMilliseconds, state }));
+                }
+                if (state.Status == "finished") { stop = "natural-outcome"; break; }
+                if (state.Turn >= limits.Turns) { stop = "turn-budget"; break; }
+                if (elapsed.Elapsed >= limits.MatchTime) {
+                    if (state.Turn < 8) throw new TimeoutException("The campaign did not reach two multiplayer rounds within its time budget.");
+                    stop = "time-budget"; break;
+                }
+                await Task.Delay(1);
+            }
+        } catch (Exception error) { stop = "mechanical-failure"; failure = error.ToString(); evidence.PreserveFailure(); }
+        finally {
+            File.WriteAllText(Path.Combine(directory, "private-final-observations.json"), JsonSerializer.Serialize(provider.Last));
+            if (state != null) {
+                try { await engine.StopSimulationAsync(state.Id); }
+                catch (Exception error) { stop = "mechanical-failure"; failure = (failure == null ? "" : failure + "\n") + "Simulation teardown: " + error; }
+            }
+        }
+        var result = new AiCampaignResult(index, stop, failure, state?.Turn ?? 0, steps, developed.Count,
+            evidence.Accepted, evidence.Commands.GetValueOrDefault(nameof(UseOfferedAction)), comparisons, elapsed.Elapsed.TotalMilliseconds, evidence.Summary());
+        File.WriteAllText(Path.Combine(directory, "result.json"), JsonSerializer.Serialize(result, new JsonSerializerOptions { WriteIndented = true }));
+        return result;
+    }
+}

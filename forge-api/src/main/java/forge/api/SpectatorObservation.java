@@ -81,7 +81,7 @@ final class SpectatorObservation {
                     "targets", List.copyOf(targets), "effect", null));
         }
         String result = null;
-        if (game.isGameOver() && game.getOutcome() != null) {
+        if (error == null && game.isGameOver() && game.getOutcome() != null) {
             var outcome = game.getOutcome();
             result = outcome.isDraw() ? "Draw" : outcome.getWinningLobbyPlayer() == null ? "Game over" : outcome.getWinningLobbyPlayer().getName() + " wins";
         }

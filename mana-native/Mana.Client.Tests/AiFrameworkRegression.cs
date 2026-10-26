@@ -205,7 +205,10 @@ internal static class AiFrameworkRegression
         early.Observe(new(next));
         early.Report(original, AiExecutionReceipt.Accepted);
         var receipt = early.History.Decisions.Last();
-        check(receipt.Stamp == original.Stamp && receipt.Answer == original.Command && receipt.Task == AiTask.OpeningHand && receipt.Seed == originalSeed
+        check(receipt.Stamp == original.Stamp && receipt.Command == original.Command.GetType().Name
+                && receipt.AnswerEvidence?.GetProperty("GameId").GetString() == original.Command.GameId
+                && receipt.AnswerEvidence?.GetProperty("DecisionId").GetString() == original.Command.DecisionId
+                && receipt.Task == AiTask.OpeningHand && receipt.Seed == originalSeed
                 && early.View.Status == AiSeatStatus.Idle,
             "An observation arriving before its command acknowledgement cannot reassign the receipt to the next input or pretend the effect resolved");
 

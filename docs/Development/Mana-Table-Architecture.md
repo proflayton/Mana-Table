@@ -52,6 +52,29 @@ This builds on the action-execution migration rather
 than reconstructing rules from card prose or exposing live Forge objects to a
 nominally neutral policy.
 
+Backend failure is a table interruption, separate from a player's concession.
+The provider revokes all seat inputs before terminalizing rules work and
+releasing waits. It cannot start new reveal acknowledgements during abort or
+publish a victory/defeat result for that failure; original errors stay private.
+
+The source AI semantics also retain finite operation graphs: sources, recipient
+and target-group bindings, exact/unknown quantities, costs and branch links stay
+distinct from strategic utility. `AiSemanticValidation` bounds the graph and
+checks current audience references before evaluation. Mana output alternatives
+preserve one-of colors versus simultaneous bundles. `AiManaPlanner` assigns
+nominal production once per physical source; `CasualActionAssessment` and the
+public combat exchange estimate price supported consequences with bounded work.
+Unknown adjusted costs, conditions and resource dependencies cannot become
+fabricated legality. These components remain heuristic policy inputs, separate
+from the authoritative rules provider and any future forward-model port.
+
+`AiDecisionReplayCase` captures one seat's authorized knowledge and evaluation
+allowance. Offline `AiDecisionReplay` reuses the scoped session and exact policy
+seed without receiving an engine connection. Campaign traces and replay cases
+remain private; repeating an individual proposal is not an execution receipt or
+a claim of deterministic rules-game replay. The AI change remains draft while
+policy quality and campaign evidence are developed, even if CI is green.
+
 ## Rules-provider boundary
 
 Forge is the installed rules provider; replacing it later must not require a new

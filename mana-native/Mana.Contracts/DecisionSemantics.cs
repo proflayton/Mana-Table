@@ -10,7 +10,10 @@ public enum DecisionIntent
     AddCounters, RemoveCounters, Damage, Destroy, Exile, Bounce, Counter,
     Tap, Untap, CombatDamage, NameCard
 }
-public sealed record DecisionOptionSemantics(int Index, ActionEffectKind Effect, int? Amount = null);
+public sealed record DecisionOptionSemantics(int Index, ActionEffectKind Effect, int? Amount = null)
+{
+    public ActionOperationGraph OperationGraph { get; init; } = ActionOperationGraph.Unknown;
+}
 public sealed record DecisionSemantics(DecisionIntent Intent = DecisionIntent.Unknown, int? Amount = null)
 {
     // One underlying rules decision can replace its input object while keeping
@@ -28,4 +31,6 @@ public sealed record DecisionSemantics(DecisionIntent Intent = DecisionIntent.Un
     public ImmutableArray<int> SelectedPlayers { get; init; } = [];
     public string CounterType { get; init; } = "";
     public bool SelectionIsCost { get; init; }
+    public ActionOperationGraph OperationGraph { get; init; } = ActionOperationGraph.Unknown;
+    public int? OperationId { get; init; }
 }

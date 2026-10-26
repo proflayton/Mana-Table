@@ -2,6 +2,9 @@ package forge.api;
 
 import forge.game.ability.ApiType;
 import forge.game.card.Card;
+import forge.game.card.CardView;
+import forge.game.player.Player;
+import forge.game.player.LibrarySearchOffer;
 import forge.game.cost.*;
 import forge.game.spellability.SpellAbility;
 import forge.game.zone.ZoneType;
@@ -10,6 +13,7 @@ import forge.gamemodes.match.input.InputPayMana;
 
 import java.nio.charset.StandardCharsets;
 import java.util.*;
+import java.util.function.Function;
 
 /** Rules metadata for policies. Never derive strategy from printed names or localized prose. */
 final class ActionSemantics {
@@ -20,7 +24,12 @@ final class ActionSemantics {
     }
 
     static Map<String, Object> describe(SourceActions.Action action, Input input) {
-        var result = describe(action);
+        return describe(action, input, null, null);
+    }
+
+    static Map<String, Object> describe(SourceActions.Action action, Input input, Player viewer, Function<CardView, String> identity) {
+        var result = describeAbility(action.ability(), viewer, identity);
+        result.put("actionId", action.id());
         if (input instanceof InputPayMana payment)
             result.put("paymentManaColors", ((Number) result.get("manaAmount")).intValue() <= 0
                     ? List.of() : payment.getUsableManaColors(action.ability()));
@@ -28,6 +37,10 @@ final class ActionSemantics {
     }
 
     static Map<String, Object> describeAbility(SpellAbility ability) {
+        return describeAbility(ability, null, null);
+    }
+
+    static Map<String, Object> describeAbility(SpellAbility ability, Player viewer, Function<CardView, String> identity) {
         var effects = new ArrayList<String>();
         var seen = Collections.newSetFromMap(new IdentityHashMap<SpellAbility, Boolean>());
         for (SpellAbility part = ability; part != null && seen.add(part); part = part.getSubAbility())
@@ -43,7 +56,10 @@ final class ActionSemantics {
                 && !ability.getPayCosts().canPay(ability, ability.getActivatingPlayer(), false))
             affordability = "Unavailable";
         else if (ability.isLandAbility() || ability.getPayCosts() == null
-                || !ability.getPayCosts().hasManaCost()) affordability = "Payable";
+                || ability.getPayCosts().getCostParts().isEmpty()) affordability = "Payable";
+        else if (ability.getActivatingPlayer() != null && ability.getPayCosts().getCostParts().size() == 1
+                && ability.getPayCosts().getCostParts().stream().allMatch(part -> part instanceof CostTap
+                    || part instanceof CostUntap || part instanceof CostPayLife)) affordability = "Payable";
 
         var colors = new ArrayList<String>();
         int produced = 0;
@@ -69,6 +85,9 @@ final class ActionSemantics {
         // Costs/once-per-turn restrictions still remain authority at invocation.
         result.put("repeatable", ability.isActivatedAbility());
         result.put("effectAmount", effectAmount(ability));
+        result.put("operationGraph", ActionOperationProjection.describe(ability, viewer, identity));
+        result.put("production", ManaProductionProjection.describe(ability));
+        result.put("manaCostKnowledge", "Unknown");
         return result;
     }
 
@@ -84,7 +103,7 @@ final class ActionSemantics {
         return targeted ? null : true;
     }
 
-    private static String effect(SpellAbility ability) {
+    static String effect(SpellAbility ability) {
         if (ability.isLandAbility()) return "Land";
         ApiType api = ability.getApi();
         if (api == null) return "Unknown";
@@ -95,16 +114,24 @@ final class ActionSemantics {
             case DealDamage, DamageAll, EachDamage -> "Damage";
             case Destroy, DestroyAll -> "Destroy";
             case Counter -> "CounterSpell";
-            case PutCounter, PutCounterAll, Proliferate, MultiplyCounter -> "AddCounters";
+            case PutCounter, PutCounterAll -> "AddCounters";
+            case Proliferate -> "Proliferate";
+            case MultiplyCounter -> "MultiplyCounters";
             case RemoveCounter, RemoveCounterAll -> "RemoveCounters";
             case GainLife -> "LifeGain";
             case LoseLife -> "LifeLoss";
-            case Token, Amass, Investigate -> "Token";
+            case Token, Investigate -> "Token";
+            case Amass -> "Amass";
             case Tap, TapAll -> "Tap";
             case Untap, UntapAll -> "Untap";
             case Discard -> "Discard";
             case Mill -> "Mill";
             case GainControl, GainControlVariant, ExchangeControl, ExchangeControlVariant -> "ChangeControl";
+            case Scry -> "Scry";
+            case Charm, ChooseCard, ChoosePlayer, ChooseColor, ChooseNumber, ChooseType, GenericChoice -> "Choose";
+            case Branch -> "Conditional";
+            case Repeat, RepeatEach -> "Repeat";
+            case Cleanup -> "Cleanup";
             case ChangeZone, ChangeZoneAll -> zoneEffect(ability);
             default -> "Unknown";
         };
@@ -113,31 +140,35 @@ final class ActionSemantics {
     private static String zoneEffect(SpellAbility ability) {
         // These are scripting parameters interpreted by the rules engine, not
         // card wording. Multi-zone/multi-destination scripts stay Unknown.
-        if (ability.getParamOrDefault("Origin", "").equals(ZoneType.Library.name())) return "Search";
+        if (LibrarySearchOffer.targeting(ability) != null) return "Search";
         return switch (ability.getParamOrDefault("Destination", "")) {
             case "Exile" -> "Exile";
-            case "Hand" -> "Bounce";
-            default -> "Unknown";
+            case "Hand" -> ability.getParamOrDefault("Origin", "").equals(ZoneType.Battlefield.name()) ? "Bounce" : "MoveCard";
+            default -> "MoveCard";
         };
     }
 
-    private static Integer effectAmount(SpellAbility ability) {
+    static Integer effectAmount(SpellAbility ability) {
         String key = switch (effect(ability)) {
             case "Draw" -> "NumCards";
             case "Damage" -> "NumDmg";
             case "AddCounters", "RemoveCounters" -> "CounterNum";
             case "LifeGain", "LifeLoss" -> "LifeAmount";
-            case "Token" -> "TokenAmount";
+            case "Token" -> ability.getApi() == ApiType.Investigate ? "Num" : "TokenAmount";
+            case "Amass" -> "Num";
             case "Mill" -> "NumCards";
+            case "Scry" -> "ScryNum";
+            case "Proliferate" -> "Amount";
+            case "MultiplyCounters" -> "Multiplier";
             default -> "";
         };
         if (key.isEmpty()) return null;
         // Variable amounts can depend on future choices (X, targets, paid costs).
         // Project only a literal fixed quantity rather than evaluating prematurely.
-        return integer(ability.getParamOrDefault(key, "1"));
+        return integer(ability.getParamOrDefault(key, key.equals("Multiplier") ? "2" : "1"));
     }
 
-    private static Map<String, Object> cost(CostPart part) {
+    static Map<String, Object> cost(CostPart part) {
         var result = new LinkedHashMap<String, Object>();
         String kind = part instanceof CostPartMana ? "Mana"
                 : part instanceof CostTap || part instanceof CostTapType ? "Tap"
@@ -152,6 +183,7 @@ final class ActionSemantics {
         result.put("amount", part instanceof CostPartMana mana ? mana.getMana().getGenericCost() : integer(part.getAmount()));
         result.put("fromSource", part instanceof CostTap || part instanceof CostUntap || part.payCostFromSource());
         result.put("counterType", part instanceof CostRemoveCounter remove && remove.counter != null ? remove.counter.toString()
+                : part instanceof CostRemoveAnyCounter remove && remove.counter != null ? remove.counter.toString()
                 : part instanceof CostPutCounter put && put.getCounter() != null ? put.getCounter().toString() : "");
         var symbols = new ArrayList<String>();
         if (part instanceof CostPartMana mana) mana.getMana().forEach(shard -> symbols.add(shard.toString()));

@@ -11,7 +11,7 @@ namespace Mana.AI;
 /// </summary>
 public sealed class CasualCommanderPolicy : IAiPolicy
 {
-    public AiPolicyDescriptor Descriptor { get; } = new("casual-commander.v1", AiTasks.All);
+    public AiPolicyDescriptor Descriptor { get; } = new("casual-commander.v2", AiTasks.All);
 
     public Task<AiProposal> EvaluateAsync(AiDecisionRequest request, CancellationToken cancellation)
     {
@@ -46,13 +46,22 @@ public sealed class CasualCommanderPolicy : IAiPolicy
     {
         var state = request.Frame.State;
         var offers = Offers(request).ToArray();
-        var candidates = offers.Where(offer => !offer.Semantics.ManaAbility && offer.Semantics.Affordability != ActionAffordability.Unavailable
-                && offer.Semantics.TargetsAvailable != false)
-            .Select(offer => (Offer: offer, Score: ActionScore(request, offer, offers)))
-            .Where(candidate => candidate.Score > 0)
-            .OrderByDescending(candidate => candidate.Score)
-            .ThenBy(candidate => candidate.Offer.Semantics.StableId, StringComparer.Ordinal).ToArray();
-        foreach (var candidate in candidates) {
+        var candidates = new List<(Offered Offer, double Score)>();
+        bool limited = false;
+        foreach (var offer in offers.Where(offer => !offer.Semantics.ManaAbility && offer.Semantics.Affordability != ActionAffordability.Unavailable
+                && offer.Semantics.TargetsAvailable != false
+                && !request.History.AttemptedRoutes.Contains(new(state.Turn, offer.Set.SourceCardId, offer.Semantics.StableId)))
+            .OrderBy(offer => offer.Semantics.Effect == ActionEffectKind.Land || offer.Action.Kind == "play" ? 0 : 1)
+            .ThenBy(offer => offer.Semantics.StableId, StringComparer.Ordinal).ThenBy(offer => offer.Source.VisualId, StringComparer.Ordinal)) {
+            if (request.Work.Remaining <= 4) { limited = true; break; }
+            var local = request with { Work = request.Work.CreateSlice(512, 4) };
+            double score = ActionScore(local, offer, offers);
+            if (local.Work.WasExceeded) { limited = true; continue; }
+            if (score > 0) candidates.Add((offer, score));
+        }
+        if (request.Work.WasExceeded) return Missing("work-budget");
+        foreach (var candidate in candidates.OrderByDescending(candidate => candidate.Score)
+            .ThenBy(candidate => candidate.Offer.Semantics.StableId, StringComparer.Ordinal)) {
             var offer = candidate.Offer;
             string reason = AttemptReason(state.Turn, offer.Semantics.StableId.Length > 0 ? offer.Semantics.StableId
                 : offer.Source.VisualId + ":" + offer.Action.Kind + ":" + offer.Semantics.Effect);
@@ -62,18 +71,24 @@ public sealed class CasualCommanderPolicy : IAiPolicy
             if (request.History.AttemptedRoutes.Contains(new(state.Turn, offer.Set.SourceCardId, offer.Semantics.StableId))) continue;
             return Answer(request, new UseOfferedAction(state.Id, state.Decision!.Id, offer.Set.SourceCardKey, offer.Action.Id), reason);
         }
-        return priority.Pass.Enabled ? Answer(request, new PassPriority(state.Id, state.Decision!.Id), "priority-no-profitable-route")
+        return priority.Pass.Enabled ? Answer(request, new PassPriority(state.Id, state.Decision!.Id), limited ? "priority-bounded-search" : "priority-no-profitable-route")
             : Missing("required-priority-route");
     }
 
     private static double ActionScore(AiDecisionRequest request, Offered offer, Offered[] offers)
     {
+        if (!request.Work.TrySpend()) return -1;
         var semantic = offer.Semantics;
         if (semantic.Effect == ActionEffectKind.Land || offer.Action.Kind == "play") return 1000;
-        if (semantic.Effect == ActionEffectKind.Unknown && offer.Action.Kind != "cast") return -1;
+        if (semantic.Effect == ActionEffectKind.Unknown && offer.Action.Kind != "cast" && semantic.OperationGraph.Operations.IsDefaultOrEmpty) return -1;
         var state = request.Frame.State;
         if (semantic.Affordability == ActionAffordability.Unknown && !PlausiblyFunded(request, semantic, offers)) return -1;
-        double value = semantic.Effect switch {
+        var assessment = CasualActionAssessment.Evaluate(state, semantic.OperationGraph, request.Work, offer.Source);
+        if (assessment.Status is CasualAssessmentStatus.BudgetExceeded or CasualAssessmentStatus.SearchLimited) return -1;
+        bool modeled = assessment.Status is CasualAssessmentStatus.Estimated or CasualAssessmentStatus.EstimatedPartial;
+        double value = modeled ? assessment.Value : !semantic.OperationGraph.Operations.IsDefaultOrEmpty
+            ? offer.Action.Kind == "cast" ? 2 : CasualActionAssessment.IsConservativeOwnBenefit(state, semantic.OperationGraph, request.Work) ? 1 : -1
+            : semantic.Effect switch {
             ActionEffectKind.Permanent => 8 + CasualTableAssessment.CardValue(offer.Source),
             ActionEffectKind.Draw => 8 + Math.Min(4, semantic.EffectAmount ?? 1) * 2,
             ActionEffectKind.Token => 9 + Math.Min(5, semantic.EffectAmount ?? 1),
@@ -86,44 +101,34 @@ public sealed class CasualCommanderPolicy : IAiPolicy
             ActionEffectKind.ChangeControl => 9,
             _ => offer.Action.Kind == "cast" ? 2 : -1
         };
-        if (offer.Action.Kind == "cast" && offer.Source.Power is not null) value += CasualTableAssessment.CardValue(offer.Source);
+        if (!modeled && offer.Action.Kind == "cast" && offer.Source.Power is not null) value += CasualTableAssessment.CardValue(offer.Source);
         foreach (var cost in semantic.Costs) value -= cost.Kind switch {
             ActionCostKind.Life => (cost.Amount ?? 4) * (state.Viewer!.Life < 12 ? 3 : .35),
-            ActionCostKind.Sacrifice => cost.FromSource ? CasualTableAssessment.CardValue(offer.Source) : (cost.Amount ?? 1) * 4,
+            ActionCostKind.Sacrifice => cost.FromSource ? CasualTableAssessment.OpportunityCost(state, offer.Source,
+                CardViews.FindActionSource(state, offer.Set.SourceCardKey)?.Zone ?? "Battlefield") : (cost.Amount ?? 1) * 4,
             ActionCostKind.Discard => (cost.Amount ?? 1) * 3,
             ActionCostKind.Exile => (cost.Amount ?? 1) * 2,
             ActionCostKind.Other => 8,
             _ => 0
         };
+        if (value <= 0) return value;
         return value + (semantic.Affordability == ActionAffordability.Payable ? .5 : 0)
             + CasualTableAssessment.Tie(request.Seed, offer.Semantics.StableId + offer.Source.VisualId) * .1;
     }
 
     private static bool PlausiblyFunded(AiDecisionRequest request, ActionSemantics semantic, Offered[] offers)
     {
-        long needed = semantic.Costs.Where(cost => cost.Kind == ActionCostKind.Mana)
-            .Sum(cost => (long)(cost.Amount ?? 0) + cost.ManaSymbols.Count(symbol => symbol != "{X}"));
-        if (needed == 0) return true;
-        long floating = request.Frame.State.Viewer!.Mana.Values.Sum(value => Math.Max(0L, value));
-        // Choose one production route per physical source, so a dual land is
-        // never counted twice. This is an estimate; payment remains authoritative.
-        var producers = offers.Where(offer => offer.Semantics.ManaAbility && offer.Semantics.ManaAmount > 0
-                && !offer.Source.Tapped && offer.Semantics.Affordability != ActionAffordability.Unavailable)
-            .GroupBy(offer => offer.Set.SourceCardId).ToArray();
-        long production = producers.Sum(group => (long)group.Max(offer => offer.Semantics.ManaAmount));
-        if (floating + production < needed) return false;
-        foreach (string color in new[] { "W", "U", "B", "R", "G", "C" }) {
-            int exact = semantic.Costs.Where(cost => cost.Kind == ActionCostKind.Mana)
-                .Sum(cost => cost.ManaSymbols.Count(symbol => symbol.Trim('{', '}') == color));
-            if (exact == 0) continue;
-            long available = request.Frame.State.Viewer.Mana.GetValueOrDefault(color)
-                + producers.Sum(group => (long)group.Where(offer => offer.Semantics.ManaColors.Contains(color))
-                    .Select(offer => offer.Semantics.ManaAmount).DefaultIfEmpty(0).Max());
-            if (available < exact) return false;
-        }
-        // Flexible sources, hybrid/life substitutions and coupled costs can
-        // still make this optimistic. The engine owns the actual payment plan.
-        return true;
+        var offer = offers.FirstOrDefault(offer => offer.Semantics.ActionId == semantic.ActionId);
+        var source = offer == null ? null : CardViews.FindActionSource(request.Frame.State, offer.Set.SourceCardKey);
+        int tax = source?.Zone == "Command" && offer!.Action.Kind == "cast" ? source.Value.Card.CommanderTax : 0;
+        var plan = AiManaPlanner.ForAction(request with { Work = request.Work.CreateSlice(256, reserve: 4) }, semantic, tax);
+        // Unknown production/dependencies can still justify exploration. A
+        // known nominal shortfall makes this optional strategy wait, even when
+        // the effective cost is uncertain. This is not a legality judgment: the
+        // route stays offered, and an authoritative payable route bypasses this
+        // heuristic. Effective discounts need better facts before we can plan
+        // them without repeatedly starting payments we cannot finish.
+        return plan.Status is AiManaPlanStatus.Funded or AiManaPlanStatus.Unknown;
     }
 
     private static AiProposal Opening(AiDecisionRequest request, OpeningHandPayload opening)
@@ -143,6 +148,18 @@ public sealed class CasualCommanderPolicy : IAiPolicy
     {
         var state = request.Frame.State;
         if (payment.Pay.Enabled) return Answer(request, new PayMana(state.Id, state.Decision!.Id), "payment-commit-funded-cost");
+        var funding = AiManaPlanner.ForPayment(request with { Work = request.Work.CreateSlice(256, reserve: 4) });
+        // Optional assignment optimization has its own allowance. When it runs
+        // out, the exact current offered-resource fallback can still make a
+        // legal next step; it does not turn search incompleteness into a table
+        // fault or publish a partial funding witness.
+        if (request.Work.WasExceeded) return Missing("work-budget");
+        if (funding.Status == AiManaPlanStatus.Funded && funding.Steps.FirstOrDefault() is { } step) {
+            if (step is AiManaStep.Pool pool)
+                return Answer(request, new SpendPoolMana(state.Id, state.Decision!.Id, pool.Color), "payment-follow-assignment-pool");
+            if (step is AiManaStep.Source producer)
+                return Answer(request, new UseOfferedAction(state.Id, state.Decision!.Id, producer.SourceCardKey, producer.ActionId), "payment-follow-assignment-source");
+        }
         if (!request.Frame.Domain.PoolManaColors.IsDefaultOrEmpty) {
             string color = request.Frame.Domain.PoolManaColors
                 .OrderByDescending(color => ManaFit(request.Frame.Semantics.UnpaidMana, [color]))
@@ -180,30 +197,72 @@ public sealed class CasualCommanderPolicy : IAiPolicy
         bool cost = request.Frame.Semantics.SelectionIsCost || intent is DecisionIntent.Discard or DecisionIntent.Sacrifice;
         var cards = CardViews.InZones(state).Where(item => item.Card.Selectable && item.Card.Key.Length > 0 && !item.Card.Highlighted)
             .GroupBy(item => item.Card.Key).Select(group => group.First()).ToArray();
+        int selectedCards = CardViews.InZones(state).Where(item => item.Card.Selectable && item.Card.Highlighted)
+            .Select(item => item.Card.Key).Distinct(StringComparer.Ordinal).Count();
+        int retained = (int)Math.Min(int.MaxValue, Math.Max(64L,
+            Math.Max(0L, (long)(range?.Min ?? 0) - selectedCards - request.Frame.Semantics.SelectedPlayers.Length) + 1));
         // Complete a staged selection as soon as the engine permits it. This
         // avoids toggling the same targets or paying an optional cost repeatedly.
         if (complete.Enabled && (range?.Min > 0 || cards.Length == 0 && players.IsEmpty))
             return Answer(request, new CompleteSelection(state.Id, state.Decision!.Id), "selection-complete");
-        var options = new List<(DecisionCommand Command, double Score)>();
-        foreach (var occurrence in cards) {
+        var options = new List<(DecisionCommand Command, double Score, double Tie)>();
+        bool limited = false;
+        foreach (var occurrence in cards.OrderBy(item => CardViews.Identity(item.Card), StringComparer.Ordinal)) {
+            if (request.Work.Remaining <= retained) { limited = true; break; }
+            var localWork = request.Work.CreateSlice(128, retained);
+            if (!localWork.TrySpend()) { limited = true; break; }
             var card = occurrence.Card;
-            double value = CasualTableAssessment.CardValue(card);
+            // A masked face deliberately lacks a visual identity. Its current
+            // opaque occurrence still identifies a legal recipient without
+            // disclosing the concealed printed card.
+            string identity = CardViews.Identity(card);
+            double value = cost ? CasualTableAssessment.OpportunityCost(state, card, occurrence.Zone) : CasualTableAssessment.CardValue(card);
             bool own = occurrence.PlayerId == state.ViewerId;
             double score = cost ? (own ? 100 - value : -100)
                 : IsBenefit(intent) ? (own ? 100 + value : -100)
                 : IsHarm(intent) ? (own ? -100 : 20 + value + CasualTableAssessment.OpponentScore(request, occurrence.PlayerId))
-                : 1 + CasualTableAssessment.Tie(request.Seed, card.VisualId + card.Key);
-            options.Add((new SelectCard(state.Id, state.Decision!.Id, card.Key), score));
+                : 1 + CasualTableAssessment.Tie(request.Seed, identity);
+            if (!cost && request.Frame.Semantics.OperationId is { } operation) {
+                var assessment = CasualActionAssessment.Target(state, request.Frame.Semantics.OperationGraph, operation,
+                    new(identity, SemanticEntityKind.Card, identity, ControllerId: occurrence.PlayerId), localWork,
+                    CardViews.Source(state, state.Decision!));
+                if (assessment.Status == CasualAssessmentStatus.BudgetExceeded) return Missing("work-budget");
+                if (assessment.Status == CasualAssessmentStatus.SearchLimited) { score = double.NegativeInfinity; limited = true; }
+                if (assessment.Status == CasualAssessmentStatus.Estimated) score = assessment.Value
+                    + (assessment.Value > 0 && !own ? Math.Clamp(CasualTableAssessment.OpponentScore(request, occurrence.PlayerId) * .01, 0, .25) : 0);
+            }
+            options.Add((new SelectCard(state.Id, state.Decision!.Id, card.Key), score,
+                CasualTableAssessment.Tie(request.Seed, identity)));
         }
-        foreach (int player in players.Where(player => !request.Frame.Semantics.SelectedPlayers.Contains(player))) {
+        foreach (int player in players.Where(player => !request.Frame.Semantics.SelectedPlayers.Contains(player)).Order()) {
+            if (request.Work.Remaining <= retained) { limited = true; break; }
+            var localWork = request.Work.CreateSlice(128, retained);
+            if (!localWork.TrySpend()) { limited = true; break; }
             double score = intent == DecisionIntent.StartingPlayer ? (player == state.ViewerId ? 100 : 0)
                 : IsBenefit(intent) || intent == DecisionIntent.Search ? (player == state.ViewerId ? 100 : -100)
                 : IsHarm(intent) ? CasualTableAssessment.OpponentScore(request, player)
                 : CasualTableAssessment.Tie(request.Seed, player.ToString(CultureInfo.InvariantCulture));
-            options.Add((new SelectPlayer(state.Id, state.Decision!.Id, player), score));
+            if (!cost && request.Frame.Semantics.OperationId is { } operation) {
+                var assessment = CasualActionAssessment.Target(state, request.Frame.Semantics.OperationGraph, operation,
+                    new("player:" + player, SemanticEntityKind.Player, PlayerId: player), localWork,
+                    CardViews.Source(state, state.Decision!));
+                if (assessment.Status == CasualAssessmentStatus.BudgetExceeded) return Missing("work-budget");
+                if (assessment.Status == CasualAssessmentStatus.SearchLimited) { score = double.NegativeInfinity; limited = true; }
+                if (assessment.Status == CasualAssessmentStatus.Estimated) score = assessment.Value
+                    + (assessment.Value > 0 && player != state.ViewerId ? Math.Clamp(CasualTableAssessment.OpponentScore(request, player) * .01, 0, .25) : 0);
+            }
+            options.Add((new SelectPlayer(state.Id, state.Decision!.Id, player), score,
+                CasualTableAssessment.Tie(request.Seed, player.ToString(CultureInfo.InvariantCulture))));
         }
-        var best = options.OrderByDescending(option => option.Score).FirstOrDefault();
-        if (best.Command != null && (best.Score >= 0 || !complete.Enabled)) return Answer(request, best.Command, cost ? "selection-pay-lowest-opportunity-cost" : "selection-public-effect-recipient");
+        if (options.Count == 0 && !complete.Enabled) {
+            if (cards.OrderBy(item => CardViews.Identity(item.Card), StringComparer.Ordinal).FirstOrDefault().Card is { } fallbackCard)
+                return Answer(request, new SelectCard(state.Id, state.Decision!.Id, fallbackCard.Key), "selection-required-bounded-candidate");
+            if (players.Where(player => !request.Frame.Semantics.SelectedPlayers.Contains(player)).Order().Select(player => (int?)player).FirstOrDefault() is { } fallbackPlayer)
+                return Answer(request, new SelectPlayer(state.Id, state.Decision!.Id, fallbackPlayer), "selection-required-bounded-candidate");
+        }
+        var best = options.OrderByDescending(option => option.Score).ThenBy(option => option.Tie).FirstOrDefault();
+        if (best.Command != null && (best.Score >= 0 || !complete.Enabled)) return Answer(request, best.Command,
+            limited ? "selection-bounded-known-candidate" : cost ? "selection-pay-lowest-opportunity-cost" : "selection-public-effect-recipient");
         if (complete.Enabled) return Answer(request, new CompleteSelection(state.Id, state.Decision!.Id), "selection-decline-optional-target");
         return cancel.Enabled ? Answer(request, new CancelSelection(state.Id, state.Decision!.Id), "selection-no-current-candidate") : Missing("required-selection");
     }
@@ -222,16 +281,32 @@ public sealed class CasualCommanderPolicy : IAiPolicy
     {
         var state = request.Frame.State;
         bool lose = request.Frame.Semantics.SelectionIsCost || request.Frame.Semantics.Intent is DecisionIntent.Discard or DecisionIntent.Sacrifice;
-        var ordered = selection.Choices.Select(choice => (Choice: choice, Score: ChoiceScore(request, choice, lose)))
-            .OrderByDescending(item => item.Score).ThenBy(item => item.Choice.Index).ToArray();
-        int count = ordering ? selection.Range.Max : Math.Max(selection.Range.Min, selection.Range.Max > 0 ? 1 : 0);
+        var scored = new List<(Choice Choice, double Score, bool Modeled)>();
+        foreach (var choice in selection.Choices.OrderBy(choice => choice.Index)) {
+            if (request.Work.Remaining <= 4) { scored.Add((choice, double.NegativeInfinity, false)); continue; }
+            var local = request with { Work = request.Work.CreateSlice(256, 4) };
+            double score = ChoiceScore(local, choice, lose, out bool modeled);
+            scored.Add((choice, local.Work.WasExceeded ? double.NegativeInfinity : score, modeled));
+        }
+        var ordered = scored.OrderByDescending(item => item.Score).ThenBy(item => item.Choice.Index).ToArray();
+        if (request.Work.WasExceeded) return Missing("work-budget");
+        int count = ordering ? selection.Range.Max : lose ? selection.Range.Min
+            : Math.Clamp(ordered.Count(item => item.Score > 0 && (item.Modeled
+                || item.Choice.Card != null && (IsBenefit(request.Frame.Semantics.Intent) || request.Frame.Semantics.Intent == DecisionIntent.Search))),
+                selection.Range.Min, selection.Range.Max);
         var indices = ordered.Take(count).Select(item => item.Choice.Index).ToImmutableArray();
         DecisionCommand command = ordering ? new OrderOptions(state.Id, state.Decision!.Id, indices) : new ChooseOptions(state.Id, state.Decision!.Id, indices);
         return Answer(request, command, ordering ? "order-public-card-values" : "choose-offered-effect");
     }
-    private static double ChoiceScore(AiDecisionRequest request, Choice choice, bool lose)
+    private static double ChoiceScore(AiDecisionRequest request, Choice choice, bool lose, out bool modeled)
     {
+        modeled = false;
+        if (!request.Work.TrySpend()) return double.NegativeInfinity;
         var option = request.Frame.Semantics.Options.FirstOrDefault(option => option.Index == choice.Index);
+        var assessment = CasualActionAssessment.Evaluate(request.Frame.State, option?.OperationGraph ?? ActionOperationGraph.Unknown,
+            request.Work, CardViews.Source(request.Frame.State, request.Frame.State.Decision!));
+        if (assessment.Status is CasualAssessmentStatus.BudgetExceeded or CasualAssessmentStatus.SearchLimited) return double.NegativeInfinity;
+        if (assessment.Status is CasualAssessmentStatus.Estimated or CasualAssessmentStatus.EstimatedPartial) { modeled = true; return assessment.Value; }
         double effect = option?.Effect switch {
             ActionEffectKind.Draw => 6 + (option.Amount ?? 1), ActionEffectKind.Token => 5 + (option.Amount ?? 1),
             ActionEffectKind.Permanent or ActionEffectKind.AddCounters or ActionEffectKind.Search => 5,
@@ -239,7 +314,11 @@ public sealed class CasualCommanderPolicy : IAiPolicy
             ActionEffectKind.LifeLoss or ActionEffectKind.Discard => -5,
             _ => 0
         };
-        double card = choice.Card == null ? 0 : CasualTableAssessment.CardValue(CardViews.Choice(request.Frame.State, choice) ?? choice.Card);
+        var face = CardViews.Choice(request.Frame.State, choice);
+        string zone = face == null ? "" : CardViews.FindZoneOccurrence(request.Frame.State, CardViews.Identity(face))?.Zone
+            ?? (request.Frame.Semantics.Intent == DecisionIntent.Discard ? "Hand" : "Battlefield");
+        double card = face == null ? 0 : lose ? CasualTableAssessment.OpportunityCost(request.Frame.State, face, zone)
+            : CasualTableAssessment.CardValue(face);
         double mana = choice.Mana.Length == 0 ? 0 : ManaFit(request.Frame.Semantics.UnpaidMana, [choice.Mana]) * 10;
         return effect + mana + (lose ? -card : card) + CasualTableAssessment.Tie(request.Seed, choice.Index.ToString(CultureInfo.InvariantCulture)) * .1;
     }
@@ -301,26 +380,57 @@ public sealed class CasualCommanderPolicy : IAiPolicy
                 && record.Outcome == AiDecisionOutcome.Accepted && record.ReasonCode is "combat-repair-remove" or "combat-repair-add"))
             return payload.Complete.Enabled ? Answer(request, new CompleteAttackers(state.Id, state.Decision!.Id), "combat-complete-repaired-plan") : Missing("combat-repair-completion");
         var assigned = combat.Attackers.Select(attack => attack.CardId).ToHashSet();
-        var options = new List<(DecisionCommand Command, double Score)>();
-        foreach (var attack in combat.AttackOptions.Where(attack => !assigned.Contains(attack.CardId))) {
+        var options = new List<(DecisionCommand Command, double Score, double Tie)>();
+        // Comparisons are optional optimization. Preserve enough shared work
+        // for the remaining staged declarations and the engine's joint repair
+        // witness instead of faulting an otherwise answerable large combat.
+        int retained = (int)Math.Min(int.MaxValue, Math.Max(64L,
+            2L * combat.AttackOptions.Length + combat.Attackers.Length + combat.AttackRepair.Length + 1));
+        var work = request.Work.CreateSlice(256, retained);
+        DecisionCommand? fallback = null;
+        bool limited = false;
+        foreach (var attack in combat.AttackOptions.Where(attack => !assigned.Contains(attack.CardId)).OrderBy(attack => attack.CardId, StringComparer.Ordinal)) {
             var attacker = CardViews.FindZoneOccurrence(state, attack.CardId)?.Card;
             if (attacker == null || attacker.Key.Length == 0) continue;
-            foreach (var defender in attack.Defenders) {
+            foreach (var defender in attack.Defenders.OrderBy(defender => defender.Kind, StringComparer.Ordinal).ThenBy(defender => defender.Id, StringComparer.Ordinal)) {
+                DecisionCommand? command = defender.Kind == "player"
+                    ? new ToggleAttackPlayer(state.Id, state.Decision!.Id, attacker.Key, defender.PlayerId)
+                    : CardViews.FindZoneOccurrence(state, defender.Id)?.Card is { Key.Length: > 0 } permanent
+                        ? new ToggleAttackPermanent(state.Id, state.Decision!.Id, attacker.Key, permanent.Key) : null;
+                if (command == null || !request.Frame.Allows(command)) continue;
+                fallback ??= command;
+                if (!work.TrySpend()) { limited = true; break; }
                 var enemy = state.Players.FirstOrDefault(player => player.Id == defender.PlayerId);
                 if (enemy == null) continue;
                 var blockers = enemy.Zone("Battlefield").Cards.Where(card => !card.Tapped && !card.PhasedOut && CasualTableAssessment.IsCreature(card)
-                    && (!CasualTableAssessment.HasKeyword(attacker, "flying") || CasualTableAssessment.HasKeyword(card, "flying") || CasualTableAssessment.HasKeyword(card, "reach"))).ToArray();
-                bool safelyBlocked = blockers.Any(blocker => (blocker.Power ?? 0) >= (attacker.Toughness ?? 1) - attacker.Damage
-                    && (blocker.Toughness ?? 1) - blocker.Damage > (attacker.Power ?? 0));
-                double score = safelyBlocked ? -10 : Math.Max(0, attacker.Power ?? 0) + CasualTableAssessment.OpponentScore(request, defender.PlayerId) * .1;
-                if (enemy.Life <= Math.Max(0, attacker.Power ?? 0) && blockers.Length == 0) score += 10;
-                if (defender.Kind == "player") options.Add((new ToggleAttackPlayer(state.Id, state.Decision!.Id, attacker.Key, defender.PlayerId), score));
-                else if (CardViews.FindZoneOccurrence(state, defender.Id)?.Card is { Key.Length: > 0 } permanent)
-                    options.Add((new ToggleAttackPermanent(state.Id, state.Decision!.Id, attacker.Key, permanent.Key), score + 1));
+                    && (!CasualTableAssessment.HasKeyword(attacker, "flying") || CasualTableAssessment.HasKeyword(card, "flying") || CasualTableAssessment.HasKeyword(card, "reach")))
+                    .OrderBy(card => card.VisualId, StringComparer.Ordinal).ToArray();
+                long damage = CasualTableAssessment.UnblockedDamage(attacker);
+                double score = damage;
+                // Estimate the defender's best single-creature exchange. Do
+                // not donate a body merely because a trade is technically legal.
+                foreach (var blocker in blockers) {
+                    if (!work.TrySpend()) { limited = true; break; }
+                    var exchange = CasualTableAssessment.Exchange(attacker, blocker);
+                    double trade = (exchange.BlockerDies ? CasualTableAssessment.CardValue(blocker) : 0)
+                        - (exchange.AttackerDies ? CasualTableAssessment.OpportunityCost(state, attacker, "Battlefield") + .75 : 0)
+                        + exchange.DamageToDefender * .6 - .4;
+                    score = Math.Min(score, trade);
+                    damage = Math.Min(damage, exchange.DamageToDefender);
+                }
+                // A partially inspected defender must not look artificially
+                // safe merely because its dangerous blocker was beyond the cap.
+                if (limited) break;
+                if (enemy.Life <= damage && damage > 0) score += 10;
+                score += Math.Clamp(CasualTableAssessment.OpponentScore(request, defender.PlayerId) * .025, 0, .3);
+                double tie = CasualTableAssessment.Tie(request.Seed, attacker.VisualId + ":" + defender.Kind + ":" + defender.Id);
+                options.Add((command, score, tie));
             }
+            if (limited) break;
         }
-        var best = options.OrderByDescending(item => item.Score).FirstOrDefault();
+        var best = options.OrderByDescending(item => item.Score).ThenBy(item => item.Tie).FirstOrDefault();
         if (best.Command != null && (best.Score > 0 || !payload.Complete.Enabled)) return Answer(request, best.Command, "combat-public-attack-opportunity");
+        if (!payload.Complete.Enabled && fallback != null) return Answer(request, fallback, "combat-required-offered-attack");
         return payload.Complete.Enabled ? Answer(request, new CompleteAttackers(state.Id, state.Decision!.Id), "combat-complete-attackers") : Missing("required-attacker");
     }
 
@@ -329,28 +439,46 @@ public sealed class CasualCommanderPolicy : IAiPolicy
         var state = request.Frame.State;
         var combat = state.Combat!;
         var assigned = combat.Attackers.SelectMany(attack => attack.BlockerIds).ToHashSet();
-        long incoming = combat.Attackers.Where(attack => attack.DefendingPlayerId == state.ViewerId && !attack.Blocked)
-            .Sum(attack => Math.Max(0L, CardViews.FindZoneOccurrence(state, attack.CardId)?.Card.Power ?? 0));
-        var options = new List<(DecisionCommand Command, double Score)>();
-        foreach (var attack in combat.Attackers.Where(attack => attack.DefendingPlayerId == state.ViewerId)) {
+        long incoming = combat.Attackers.Where(attack => attack.DefendingPlayerId == state.ViewerId && !attack.Blocked && attack.BlockerIds.IsEmpty
+                && (attack.Defender == null || attack.Defender.Kind == "player"))
+            .Sum(attack => CardViews.FindZoneOccurrence(state, attack.CardId)?.Card is { } card ? CasualTableAssessment.UnblockedDamage(card) : 0);
+        var options = new List<(DecisionCommand Command, double Score, double Tie)>();
+        int retained = (int)Math.Min(int.MaxValue, Math.Max(64L,
+            2L * combat.Attackers.SelectMany(attack => attack.EligibleBlockerIds).Distinct(StringComparer.Ordinal).Count() + combat.Attackers.Length + 1));
+        var work = request.Work.CreateSlice(256, retained);
+        DecisionCommand? fallback = null;
+        bool limited = false;
+        foreach (var attack in combat.Attackers.Where(attack => attack.DefendingPlayerId == state.ViewerId).OrderBy(attack => attack.CardId, StringComparer.Ordinal)) {
             if (attack.BlockerIds.Length > 0 && string.IsNullOrEmpty(combat.BlockProblem)) continue;
             var attacker = CardViews.FindZoneOccurrence(state, attack.CardId)?.Card;
             if (attacker == null || attacker.Key.Length == 0) continue;
-            foreach (string id in attack.EligibleBlockerIds.Where(id => !assigned.Contains(id))) {
+            foreach (string id in attack.EligibleBlockerIds.Where(id => !assigned.Contains(id)).Order(StringComparer.Ordinal)) {
                 var blocker = CardViews.FindZoneOccurrence(state, id)?.Card;
                 if (blocker == null || blocker.Key.Length == 0) continue;
-                bool survives = (blocker.Toughness ?? 1) - blocker.Damage > (attacker.Power ?? 0);
-                bool kills = (blocker.Power ?? 0) >= (attacker.Toughness ?? 1) - attacker.Damage || CasualTableAssessment.HasKeyword(blocker, "deathtouch");
-                double score = (survives ? 4 : -CasualTableAssessment.CardValue(blocker)) + (kills ? CasualTableAssessment.CardValue(attacker) : 0);
-                if (incoming >= state.Viewer!.Life) score += 30;
+                var command = new ToggleBlock(state.Id, state.Decision!.Id, attacker.Key, blocker.Key);
+                if (!request.Frame.Allows(command)) continue;
+                fallback ??= command;
+                if (!work.TrySpend()) { limited = true; break; }
+                var exchange = CasualTableAssessment.Exchange(attacker, blocker);
+                long prevented = attack.Defender == null || attack.Defender.Kind == "player"
+                    ? Math.Max(0, CasualTableAssessment.UnblockedDamage(attacker) - exchange.DamageToDefender) : 0;
+                double score = (exchange.BlockerDies ? -CasualTableAssessment.OpportunityCost(state, blocker, "Battlefield") : .5)
+                    + (exchange.AttackerDies ? CasualTableAssessment.CardValue(attacker) : 0);
+                if (incoming >= state.Viewer!.Life && prevented > 0)
+                    score += incoming - prevented < state.Viewer.Life ? 100 : Math.Min(50, prevented * 3);
+                else if (state.Viewer!.Life < 10) score += prevented * .4;
                 if (attack.BlockerIds.Length > 0) score -= 10;
                 if (!string.IsNullOrEmpty(combat.BlockProblem)) score += attack.BlockerIds.Length > 0 ? 20 : 1;
-                options.Add((new ToggleBlock(state.Id, state.Decision!.Id, attacker.Key, blocker.Key), score));
+                options.Add((command, score,
+                    CasualTableAssessment.Tie(request.Seed, attacker.VisualId + ":" + blocker.VisualId)));
             }
+            if (limited) break;
         }
-        var best = options.OrderByDescending(item => item.Score).ThenBy(item => CasualTableAssessment.Tie(request.Seed, item.Command.ToString())).FirstOrDefault();
+        var best = options.OrderByDescending(item => item.Score).ThenBy(item => item.Tie).FirstOrDefault();
         if (best.Command != null && (best.Score > 0 || !payload.Complete.Enabled || !string.IsNullOrEmpty(combat.BlockProblem)))
             return Answer(request, best.Command, "combat-public-defensive-trade");
+        if ((!payload.Complete.Enabled || !string.IsNullOrEmpty(combat.BlockProblem)) && fallback != null)
+            return Answer(request, fallback, "combat-required-offered-block");
         return payload.Complete.Enabled && string.IsNullOrEmpty(combat.BlockProblem)
             ? Answer(request, new CompleteBlockers(state.Id, state.Decision!.Id), "combat-complete-blockers") : Missing("required-block-assignment");
     }

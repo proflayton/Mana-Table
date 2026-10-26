@@ -11,5 +11,6 @@
   <ItemGroup>
     <Content Include="../../forge-api/src/test/resources/forge/api/annotated-toph.txt" Link="Fixtures/annotated-toph.txt" CopyToOutputDirectory="PreserveNewest" />
     <Content Include="../../forge-api/src/test/resources/forge/api/numeric-text-prompt.json" Link="Fixtures/numeric-text-prompt.json" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="../../forge-api/src/test/resources/forge/api/ai-campaign/*.txt" Link="Fixtures/AiCampaign/%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>

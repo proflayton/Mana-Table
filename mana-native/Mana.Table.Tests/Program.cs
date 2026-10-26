@@ -25,6 +25,8 @@ internal static class Program
         testRun |= args.Contains("--smoke-headless-presentation");
         testRun |= args.Contains("--smoke-headless-engine");
         testRun |= args.Contains("--smoke-whole-seat-ai");
+        testRun |= args.Contains("--replay-ai-decision");
+        testRun |= args.Contains("--smoke-ai-campaign");
         testRun |= args.Contains("--smoke-cluttered-changes") || args.Contains("--smoke-headless-clutter");
         testRun |= args.Contains("--smoke-priority-flow") || args.Contains("--smoke-headless-priority-flow");
         testRun |= args.Contains("--capture-deck-workspace");
@@ -98,6 +100,9 @@ internal static class Program
                 test.Automation = new CardReadingSmoke(test.TestPort, scenario, selectionOnly: args.Contains("--smoke-compact-selection"), statesOnly: args.Contains("--smoke-card-states"));
                 test.Run(); return 0;
             }
+            if (Arg("--replay-ai-decision") is { } decisionReplay) {
+                AiDecisionReplayCommand.RunAsync(decisionReplay, profile).GetAwaiter().GetResult(); return 0;
+            }
             var bundle = Arg("--engine-resources") ?? Path.Combine(AppContext.BaseDirectory, "engine");
             if (!Directory.Exists(bundle)) throw new IOException("Missing bundled engine. Run the native packaging script first, or pass --engine-resources pointing to the package's resources directory.");
             var backend = Arg("--engine") ?? "forge";
@@ -107,6 +112,7 @@ internal static class Program
             if (args.Contains("--smoke-engine-startup")) { EngineStartupRegression.RunAsync(paths).GetAwaiter().GetResult(); return 0; }
             if (args.Contains("--smoke-headless-engine")) { HeadlessEngineSmoke.RunAsync(paths).GetAwaiter().GetResult(); return 0; }
             if (args.Contains("--smoke-whole-seat-ai")) { AiWholeSeatEngineCheck.RunStandaloneAsync(paths, args.Contains("--ai-complete")).GetAwaiter().GetResult(); return 0; }
+            if (args.Contains("--smoke-ai-campaign")) { AiEngineCampaign.RunStandaloneAsync(paths).GetAwaiter().GetResult(); return 0; }
             if (args.Contains("--smoke")) { NativeSmoke.RunAsync(paths).GetAwaiter().GetResult(); return 0; }
             if (args.Contains("--smoke-ai")) { AiSmoke.RunAsync(paths).GetAwaiter().GetResult(); return 0; }
             if (args.Contains("--smoke-cleanup")) { CleanupSmoke.RunAsync(paths).GetAwaiter().GetResult(); return 0; }

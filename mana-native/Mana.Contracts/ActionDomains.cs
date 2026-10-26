@@ -10,7 +10,8 @@ public enum ActionEffectKind
 {
     Unknown, Permanent, Land, Mana, Draw, Damage, Destroy, Exile, Bounce,
     CounterSpell, AddCounters, RemoveCounters, LifeGain, LifeLoss, Token,
-    Tap, Untap, Search, Discard, Mill, ChangeControl
+    Tap, Untap, Search, Discard, Mill, ChangeControl,
+    Scry, Proliferate, MultiplyCounters, Choose, Conditional, Repeat, Cleanup, MoveCard, Amass
 }
 public enum ActionCostKind
 {
@@ -42,6 +43,11 @@ public sealed record ActionSemantics(string ActionId, ActionEffectKind Effect,
     public bool? TargetsAvailable { get; init; }
     public bool Repeatable { get; init; }
     public int? EffectAmount { get; init; }
+    public ActionOperationGraph OperationGraph { get; init; } = ActionOperationGraph.Unknown;
+    public ManaProduction Production { get; init; } = ManaProduction.Unknown;
+    // Base route costs are not the adjusted bill. Reductions, alternative costs
+    // and payment choices require the engine's actual payment input.
+    public SemanticKnowledge ManaCostKnowledge { get; init; }
 }
 public sealed record DecisionActionDomain(long Version, ActionDomainCoverage Coverage,
     ImmutableArray<SourceActionSet> Sources, ImmutableArray<ActionSemantics> Actions)

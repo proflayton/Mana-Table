@@ -220,16 +220,25 @@ final class MatchTable implements ManaTableSession, AutoCloseable {
     }
     @Override public void fail(Throwable error) {
         game.getAction().withState(() -> { synchronized (gate) {
+            if (closed) return;
+            closed = true;
             stopTempo();
             // A rules failure can contain a bot's private card or choice. Keep
             // the original in host diagnostics, outside every seat projection.
+            error.printStackTrace(System.err);
             Throwable publicError = error;
             if (!automated.isEmpty()) {
-                error.printStackTrace(System.err);
                 publicError = new IllegalStateException(
                         "The rules engine could not continue this game. See the host diagnostics.");
             }
-            for (var seat : seats.values()) seat.fail(publicError);
+            String failure = publicError.getMessage() == null ? publicError.getClass().getSimpleName() : publicError.getMessage();
+            for (var seat : seats.values()) seat.fail(failure);
+            // A host interruption is not a rules concession. Conceding a player
+            // can reveal their face-down cards to surviving seats and wait for
+            // new acknowledgements while this fault request owns the table.
+            // Revoke every seat first, then terminalize and release all waits.
+            if (!game.isGameOver()) game.setGameOver(GameEndReason.AllHumansLost);
+            releaseInputs();
             if (automatedOnly && spectatorState != null) {
                 // Fault text can include an internal card/choice. The public
                 // observer receives a stable diagnostic and its last board.

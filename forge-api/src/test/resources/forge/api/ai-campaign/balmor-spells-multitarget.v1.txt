@@ -1,0 +1,74 @@
+Deck
+// Lands
+16 Island
+16 Mountain
+1 Command Tower
+1 Izzet Boilerworks
+1 Swiftwater Cliffs
+1 Temple of Epiphany
+1 Shivan Reef
+1 Sulfur Falls
+// Spells
+1 Goblin Electromancer
+1 Baral, Chief of Compliance
+1 Young Pyromancer
+1 Third Path Iconoclast
+1 Storm-Kiln Artist
+1 Thermo-Alchemist
+1 Electrostatic Field
+1 Guttersnipe
+1 Kiln Fiend
+1 Wee Dragonauts
+1 Stormchaser Mage
+1 Monastery Swiftspear
+1 Ghitu Lavarunner
+1 Delver of Secrets
+1 Pteramander
+1 Cloudkin Seer
+1 Mulldrifter
+1 Archaeomancer
+1 Izzet Chronarch
+1 Murmuring Mystic
+1 Talrand, Sky Summoner
+1 Nivix Cyclops
+1 Crackling Drake
+1 Sol Ring
+1 Arcane Signet
+1 Izzet Signet
+1 Mind Stone
+1 Thought Vessel
+1 Prismatic Lens
+1 Fire Diamond
+1 Opt
+1 Ponder
+1 Preordain
+1 Brainstorm
+1 Consider
+1 Expressive Iteration
+1 Chart a Course
+1 Divination
+1 Lightning Bolt
+1 Shock
+1 Lightning Strike
+1 Abrade
+1 Flame Slash
+1 Unsummon
+1 Into the Roil
+1 Reality Shift
+1 Rapid Hybridization
+1 Counterspell
+1 Negate
+1 Essence Scatter
+1 Miscast
+1 Arcane Denial
+1 Arc Lightning
+1 Arc Trail
+1 Forked Bolt
+1 Fire // Ice
+1 Electrolyze
+1 Izzet Charm
+1 Prismari Command
+1 You Find the Villains' Lair
+1 Shattering Spree
+Commander
+1 Balmor, Battlemage Captain

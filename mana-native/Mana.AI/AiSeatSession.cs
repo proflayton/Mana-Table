@@ -90,7 +90,7 @@ public sealed class AiSeatSession : IDisposable
                 history.Observe(next.State.Activity);
                 if (episode != next.EpisodeId) {
                     episode = next.EpisodeId; episodeStarted = time.GetTimestamp();
-                    episodeSeed = unchecked(baseSeed + (seatId + 1L) * 1442695040888963407L + ++episodeSequence * 6364136223846793005L);
+                    episodeSeed = AiPolicySeeds.Episode(baseSeed, seatId, ++episodeSequence);
                     work = new(limits.WorkUnits);
                 }
             }

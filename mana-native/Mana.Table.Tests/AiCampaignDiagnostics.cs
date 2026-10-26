@@ -1,0 +1,240 @@
+using System.Collections.Immutable;
+using System.IO.Compression;
+using System.Text.Json;
+using Mana.AI;
+using Mana.Contracts;
+
+namespace Mana.Table;
+
+internal sealed record AiCampaignFinding(string Code, int Seat, int Turn, string DecisionId, string Detail);
+
+// This is evidence collection, not another strategy or a substitute rules model.
+// Full frames/history/proposals/receipts stay in a separate compressed private
+// trace so a questionable decision can be replayed through the ordinary policy.
+internal sealed class AiCampaignDiagnostics : IDisposable
+{
+    private readonly StreamWriter decisions;
+    private readonly string directory;
+    private AiDecisionReplayCase? latestCase;
+    private readonly Dictionary<int, (AiDecisionReplayCase Case, string SourceId)> initiations = [];
+    private readonly Dictionary<int, AiDecisionReplayCase> confirmations = [];
+    private readonly HashSet<(int Seat, long Event)> observedEvents = [];
+    private readonly HashSet<string> recordedFindings = [];
+    internal HashSet<string> OfferedEffects { get; } = [];
+    internal HashSet<string> SelectedEffects { get; } = [];
+    internal HashSet<string> BoardWitnesses { get; } = [];
+    internal HashSet<string> DecisionWitnesses { get; } = [];
+    internal HashSet<string> ResolvedSources { get; } = [];
+    internal HashSet<string> UnmodeledOperationSources { get; } = [];
+    internal Dictionary<string, int> Commands { get; } = [];
+    internal Dictionary<string, int> TargetRecipients { get; } = [];
+    internal List<AiCampaignFinding> Findings { get; } = [];
+    internal HashSet<AiTask> Tasks { get; } = [];
+    internal int Accepted { get; private set; }
+    internal List<string> ReplayCases { get; } = [];
+
+    internal AiCampaignDiagnostics(string directory)
+    {
+        this.directory = directory;
+        decisions = new(new GZipStream(File.Create(Path.Combine(directory, "private-decisions.jsonl.gz")), CompressionLevel.Fastest));
+    }
+
+    internal IAiPolicy Record(IAiPolicy inner) => new RecordingPolicy(inner, this);
+
+    private sealed class RecordingPolicy(IAiPolicy inner, AiCampaignDiagnostics evidence) : IAiPolicy
+    {
+        public AiPolicyDescriptor Descriptor => inner.Descriptor;
+        public async Task<AiProposal> EvaluateAsync(AiDecisionRequest request, CancellationToken cancellation)
+        {
+            var recorded = AiDecisionReplayCase.Capture(request.Frame.Stamp.SeatId + "-" + request.Frame.Stamp.DecisionId
+                + "-" + request.Frame.Stamp.Revision, inner.Descriptor.Id, request);
+            evidence.latestCase = recorded;
+            AiProposal proposal;
+            try {
+                proposal = await inner.EvaluateAsync(request, cancellation);
+            } catch (Exception error) when (error is not OperationCanceledException) {
+                // The normal session deliberately redacts model exceptions.
+                // Preserve this exact request and the original exception only
+                // in the campaign's private diagnostics before rethrowing.
+                evidence.PreserveException(recorded, error, "policy");
+                throw;
+            }
+            try { evidence.Proposal(recorded, request, proposal); }
+            catch (Exception error) {
+                evidence.PreserveException(recorded, error, "diagnostic");
+                throw;
+            }
+            return proposal;
+        }
+    }
+
+    private void PreserveException(AiDecisionReplayCase recorded, Exception error, string stage)
+    {
+        try {
+            ExportCase("last-before-mechanical-failure", recorded);
+            File.WriteAllText(Path.Combine(directory, "private-" + stage + "-exception.json"),
+                JsonSerializer.Serialize(new { recorded.Id, stage, error = error.ToString() }));
+        } catch (Exception evidenceError) {
+            // A failing diagnostic write must never replace the original
+            // exception that the caller is about to rethrow.
+            try {
+                File.WriteAllText(Path.Combine(directory, "private-diagnostic-write-exception.json"),
+                    JsonSerializer.Serialize(new { recorded.Id, stage, originalError = error.ToString(),
+                        evidenceError = evidenceError.ToString() }));
+            } catch (Exception) { }
+        }
+    }
+
+    private void Proposal(AiDecisionReplayCase recorded, AiDecisionRequest request, AiProposal proposal)
+    {
+        latestCase = recorded;
+        var frame = request.Frame;
+        var answer = proposal as AiProposal.Answer;
+        decisions.WriteLine(JsonSerializer.Serialize(new {
+            kind = "proposal", frame.Stamp, replay = recorded,
+            policy = proposal is AiProposal.Unavailable unavailable ? unavailable.Capability : null,
+            reason = answer?.ReasonCode, commandType = answer?.Command.GetType().Name,
+            command = answer == null ? (JsonElement?)null : JsonSerializer.SerializeToElement(answer.Command, answer.Command.GetType())
+        }));
+        if (answer == null) return;
+        var state = frame.State;
+        if (answer.Command is PassPriority && state.ActivePlayerId == state.ViewerId && state.PhaseKey is "MAIN1" or "MAIN2"
+                && frame.Domain.Actions.Any(action => action.Effect == ActionEffectKind.Land && action.Affordability == ActionAffordability.Payable))
+            Finding("land-offer-skipped", "Passed priority with an authoritative playable land offer; review intent before treating this as an error.");
+        if (answer.Command is CancelPayment) {
+            Finding("payment-cancelled", "The policy abandoned a started payment; inspect its exact bill and production offers.");
+            string source = state.Decision?.Context.Source?.Card?.Name ?? "unknown-source";
+            string occurrence = state.Decision?.Context.Source?.Card?.VisualId ?? "";
+            if (occurrence.Length > 0 && initiations.TryGetValue(state.ViewerId, out var initiation)
+                && initiation.SourceId == occurrence && initiation.Case.State.Turn == state.Turn)
+                ExportCase("initiation-before-cancel-" + source, initiation.Case);
+            if (occurrence.Length > 0 && confirmations.TryGetValue(state.ViewerId, out var confirmation) && confirmation.State.Turn == state.Turn
+                && confirmation.State.Decision?.Context.Source?.Card?.VisualId == occurrence)
+                ExportCase("previous-confirmation-same-source-" + source, confirmation);
+        }
+        if (!frame.Semantics.SelectionIsCost && frame.Semantics.Intent is DecisionIntent.Harm or DecisionIntent.Damage
+                or DecisionIntent.Destroy or DecisionIntent.Exile or DecisionIntent.Bounce or DecisionIntent.Tap) {
+            bool own = answer.Command is SelectPlayer player && player.Player == state.ViewerId
+                || answer.Command is SelectCard selected && state.Viewer!.Zone("Battlefield").Cards.Any(card => card.Key == selected.Card);
+            bool otherCandidate = state.Players.Where(player => player.Id != state.ViewerId)
+                .Any(player => player.Zones.SelectMany(zone => zone.Cards).Any(card => card.Selectable))
+                || (state.Decision?.Payload switch { TargetSelectionPayload target => target.Players,
+                    EntitySelectionPayload entity => entity.Players, _ => [] }).Any(player => player != state.ViewerId);
+            if (own && otherCandidate) Finding("harmful-own-target-review", "A harmful operation selected this seat's player/permanent while an opposing candidate was present; synergy can make this intentional.");
+            else if (own) DecisionWitnesses.Add("forced-own-operation");
+        }
+        void Finding(string code, string detail)
+        {
+            if (recordedFindings.Add(code + ":" + frame.Stamp.SeatId + ":" + frame.Stamp.DecisionId)) {
+                Findings.Add(new(code, frame.Stamp.SeatId, state.Turn, frame.Stamp.DecisionId, detail));
+                string source = state.Decision?.Context.Source?.Card?.Name ?? "unknown-source";
+                ExportCase(code + "-" + source, recorded);
+            }
+        }
+    }
+
+    internal void Receipt(AutomatedSeatObservation? observation, GameCommand command, bool accepted, string? error)
+    {
+        decisions.WriteLine(JsonSerializer.Serialize(new { kind = "receipt", seat = observation?.SeatId,
+            command.GameId, decision = (command as DecisionCommand)?.DecisionId, accepted, error,
+            commandType = command.GetType().Name, command = JsonSerializer.SerializeToElement(command, command.GetType()) }));
+        if (!accepted || observation == null) return;
+        Accepted++;
+        if (latestCase is { } captured && captured.State.ViewerId == observation.SeatId
+                && captured.State.Decision?.Id == (command as DecisionCommand)?.DecisionId) {
+            if (captured.State.Decision?.Payload is PriorityPayload && command is UseOfferedAction route
+                && observation.Domain.Actions.Any(action => action.ActionId == route.ActionId && !action.ManaAbility
+                    && action.Effect != ActionEffectKind.Land)
+                && observation.Domain.Sources.FirstOrDefault(source => source.Actions.Any(action => action.Id == route.ActionId)) is { } source)
+                initiations[observation.SeatId] = (captured, source.SourceCardId);
+            if (captured.State.Decision?.Payload is ConfirmationPayload && command is AcceptConfirmation)
+                confirmations[observation.SeatId] = captured;
+        }
+        Commands[command.GetType().Name] = Commands.GetValueOrDefault(command.GetType().Name) + 1;
+        if (command is UseOfferedAction use && observation.Domain.Actions.FirstOrDefault(action => action.ActionId == use.ActionId) is { } semantic)
+            foreach (var effect in semantic.Effects) SelectedEffects.Add(effect.ToString());
+        int? recipient = command is SelectPlayer player ? player.Player : command is ToggleAttackPlayer attack ? attack.Player : null;
+        if (recipient != null) {
+            string purpose = command is ToggleAttackPlayer ? "attack" : observation.Semantics.SelectionIsCost ? "cost" : observation.Semantics.Intent.ToString();
+            string key = observation.SeatId + ":" + purpose + "->" + recipient;
+            TargetRecipients[key] = TargetRecipients.GetValueOrDefault(key) + 1;
+        }
+    }
+
+    internal void Observe(AutomatedSeatObservation observation)
+    {
+        var state = observation.State;
+        if (state.Decision != null) Tasks.Add(AiTasks.From(state.Decision.Payload));
+        foreach (var action in observation.Domain.Actions) {
+            foreach (var effect in action.Effects) OfferedEffects.Add(effect.ToString());
+            if (action.OperationGraph.Knowledge != SemanticKnowledge.Known
+                || action.OperationGraph.Operations.Any(operation => operation.Knowledge != SemanticKnowledge.Known)) {
+                var source = observation.Domain.Sources.FirstOrDefault(source => source.Actions.Any(offer => offer.Id == action.ActionId));
+                string name = source == null ? "unresolved occurrence" : CardViews.FindActionSource(state, source.SourceCardKey)?.Card.Name ?? "unresolved occurrence";
+                UnmodeledOperationSources.Add(name + ":" + action.Effect + ":" + action.OperationGraph.Knowledge);
+            }
+        }
+        if (observation.Semantics.UnpaidMana.Any(symbol => symbol.Trim('{', '}') == "C")) DecisionWitnesses.Add("required-colorless-bill");
+        if (observation.Semantics.Intent == DecisionIntent.RemoveCounters && observation.Semantics.SelectionIsCost)
+            DecisionWitnesses.Add("remove-counter-cost");
+        foreach (var entry in state.Activity) {
+            if (!observedEvents.Add((observation.SeatId, entry.Id))) continue;
+            if (entry.Kind == "resolved" && entry.Outcome == "resolved" && entry.CardName is { Length: > 0 }) ResolvedSources.Add(entry.CardName);
+            if (entry.Impact is { Kind: "damage", Amount: > 0 }) BoardWitnesses.Add("reported-damage");
+            if (entry.Change is { Kind: "counters" } change && change.Before != change.After) BoardWitnesses.Add("counter-change");
+        }
+    }
+
+    internal void ObservePublic(GameSnapshot state)
+    {
+        foreach (var card in state.Players.SelectMany(player => player.Zone("Battlefield").Cards)) {
+            if (card.Type.Contains("Creature", StringComparison.Ordinal)) BoardWitnesses.Add("creature-battlefield");
+            if (card.GamePieceType == "token") BoardWitnesses.Add("token-battlefield");
+            if (card.Counters.Values.Any(value => value > 0)) BoardWitnesses.Add("counters-on-battlefield");
+            if (card.AttachedTo != null || !card.Attachments.IsEmpty) BoardWitnesses.Add("attachment-on-battlefield");
+        }
+        if (state.Combat?.Attackers.Length > 0) BoardWitnesses.Add("declared-combat");
+        if (state.Stack.Any(item => item.Targets.Length > 1)) BoardWitnesses.Add("multiple-stack-targets");
+    }
+
+    private void ExportCase(string label, AiDecisionReplayCase recorded)
+    {
+        string safe = new(label.Select(character => char.IsAsciiLetterOrDigit(character) ? character : '-').Take(96).ToArray());
+        string relative = Path.Combine("private-replays", safe + ".json");
+        if (ReplayCases.Contains(relative) || ReplayCases.Count >= 16 && label != "last-before-mechanical-failure") return;
+        Directory.CreateDirectory(Path.Combine(directory, "private-replays"));
+        File.WriteAllText(Path.Combine(directory, relative), JsonSerializer.Serialize(recorded));
+        ReplayCases.Add(relative);
+    }
+
+    internal void PreserveFailure() { if (latestCase != null) ExportCase("last-before-mechanical-failure", latestCase); }
+
+    internal object Summary() => new { OfferedEffects, SelectedEffects, BoardWitnesses, DecisionWitnesses, ResolvedSources,
+        Tasks, Accepted, Commands, TargetRecipients, UnmodeledOperationSources, findings = Findings,
+        privateReplayCases = ReplayCases,
+        missingBoardWitnesses = new[] { "creature-battlefield", "token-battlefield", "counter-change", "attachment-on-battlefield",
+            "declared-combat", "reported-damage", "multiple-stack-targets" }.Except(BoardWitnesses).ToArray(),
+        interpretation = "Offers, chosen commands, authoritative board/event witnesses and review findings are separate. A resolved source does not prove every intended effect occurred. TargetRecipients counts player choices and attacks only; their distribution does not establish social quality." };
+
+    public void Dispose() => decisions.Dispose();
+}
+
+internal sealed class AiCampaignProvider(IAutomatedSeatProvider inner, AiCampaignDiagnostics diagnostics) : IAutomatedSeatProvider
+{
+    internal ImmutableArray<AutomatedSeatObservation> Last { get; private set; } = [];
+    public Task EnableAutomatedSeatsAsync() => inner.EnableAutomatedSeatsAsync();
+    public Task ReportAutomationFaultAsync(string gameId, int seatId, string reasonCode) => inner.ReportAutomationFaultAsync(gameId, seatId, reasonCode);
+    public async Task<ImmutableArray<AutomatedSeatObservation>> ObserveAutomatedSeatsAsync()
+    {
+        Last = await inner.ObserveAutomatedSeatsAsync();
+        foreach (var observation in Last) diagnostics.Observe(observation);
+        return Last;
+    }
+    public async Task ExecuteAutomatedAsync(int seatId, GameCommand command)
+    {
+        var observation = Last.FirstOrDefault(item => item.SeatId == seatId);
+        try { await inner.ExecuteAutomatedAsync(seatId, command); }
+        catch (Exception error) { diagnostics.Receipt(observation, command, false, error.GetType().Name); throw; }
+        diagnostics.Receipt(observation, command, true, null);
+    }
+}

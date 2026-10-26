@@ -60,6 +60,13 @@ process pipe. `automatedEnable` selects external policy controllers before table
 creation. `automatedState` returns independent private seat observations and
 complete timing-legal action domains with structured costs/effects;
 `automatedAction` takes the same scoped semantic reply plus `seatId`.
+Additive operation graphs retain source/recipient/target bindings, sequence and
+mode/conditional structure, and explicit known/unknown facts. Mana production
+alternatives distinguish a choice of colors from a simultaneous bundle. These
+are nominal facts, not a legality certificate: base mana costs have unknown
+adjustment knowledge, while the current payment exposes its actual unpaid bill.
+Graphs are finite and audience-filtered; candidate references never grant action
+handles. Unmodeled conditions and resource coupling remain explicit.
 `automatedFault` stops the table with an explicit diagnostic; it never substitutes
 the legacy strategy. These commands are absent from network seat dispatch and
 cannot be addressed using a `connectionId`.

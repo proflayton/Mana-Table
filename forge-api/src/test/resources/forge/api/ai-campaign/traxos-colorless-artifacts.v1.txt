@@ -1,0 +1,75 @@
+Deck
+// Lands
+30 Wastes
+1 Buried Ruin
+1 Myriad Landscape
+1 Rogue's Passage
+1 Radiant Fountain
+1 War Room
+1 Reliquary Tower
+1 Bonders' Enclave
+1 Zhalfirin Void
+1 Crystal Vein
+1 Ghost Quarter
+// Spells
+1 Memnite
+1 Ornithopter
+1 Signal Pest
+1 Gingerbrute
+1 Sparring Construct
+1 Arcbound Worker
+1 Arcbound Stinger
+1 Myr Sire
+1 Arcbound Hybrid
+1 Steel Overseer
+1 Hangarback Walker
+1 Walking Ballista
+1 Stonecoil Serpent
+1 Ugin's Conjurant
+1 Crystalline Giant
+1 Perilous Myr
+1 Myr Retriever
+1 Junk Diver
+1 Foundry Inspector
+1 Palladium Myr
+1 Burnished Hart
+1 Solemn Simulacrum
+1 Scuttlemutt
+1 Workshop Assistant
+1 Scrap Trawler
+1 Myr Battlesphere
+1 Meteor Golem
+1 Thought-Knot Seer
+1 Endbringer
+1 Sol Ring
+1 Mind Stone
+1 Thought Vessel
+1 Prismatic Lens
+1 Everflowing Chalice
+1 Worn Powerstone
+1 Hedron Archive
+1 Thran Dynamo
+1 Dreamstone Hedron
+1 Guardian Idol
+1 Fractured Powerstone
+1 Manakin
+1 Bonesplitter
+1 Darksteel Axe
+1 Trusty Machete
+1 Short Sword
+1 Prying Blade
+1 Haunted Cloak
+1 Fleetfeather Sandals
+1 Swiftfoot Boots
+1 Spatial Contortion
+1 Warping Wail
+1 Introduction to Annihilation
+1 Scour from Existence
+1 Titan's Presence
+1 Mazemind Tome
+1 Tome of Legends
+1 Ichor Wellspring
+1 Mind's Eye
+1 Mystic Forge
+Commander
+1 Traxos, Scourge of Kroog

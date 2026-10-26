@@ -62,8 +62,7 @@ internal static class AiWholeSeatEngineCheck
                 foreach (var bot in bots) {
                     seenBots.Add(bot.SeatId);
                     bool isolated = bot.State.ViewerId == bot.SeatId
-                        && bot.State.Players.Where(player => player.Id != bot.SeatId).All(player => player.Zone("Hand").Cards.IsEmpty)
-                        && bot.State.Players.All(player => player.Zone("Library").Cards.IsEmpty);
+                        && AiCampaignVisibility.PrivateWindowsAreDisclosed(bot.State, bot.Semantics);
                     if (!isolated) RecordPrivacyContext(profile, bot);
                     privateIsolation &= isolated;
                     if (bot.State.Decision != null) observedTasks.Add(AiTasks.From(bot.State.Decision.Payload));
@@ -105,12 +104,13 @@ internal static class AiWholeSeatEngineCheck
             check(divergentCheckpoints == 0, "Every compared public projection matches at its exact board revision; see the preserved first mismatch artifact if this fails");
             check(developed.Count == 4 && (complete || commanders.Count >= 3 && lastTurn >= 20),
                 "The all-AI table advances through at least five rounds: every bot develops its battlefield and multiple command-zone commanders resolve");
-            check(spellSeen && (complete || tokenSeen) && accepted.Values.Any(record => record.Answer is UseOfferedAction)
-                    && accepted.Values.Any(record => record.Task == AiTask.Payment && record.Answer is SpendPoolMana or PayMana or UseOfferedAction),
+            check(spellSeen && (complete || tokenSeen) && accepted.Values.Any(record => record.Command == nameof(UseOfferedAction))
+                    && accepted.Values.Any(record => record.Task == AiTask.Payment
+                        && record.Command is nameof(SpendPoolMana) or nameof(PayMana) or nameof(UseOfferedAction)),
                 "The policies cast and fund real actions; authoritative battlefield state establishes a commander-created token");
             if (!complete) check(counterSeen, "A distinct dual-commander bot casts through partner/search choices and reaches authoritative Toothy counter growth");
-            check(combatSeen && accepted.Values.Any(record => record.Answer is ToggleAttackPlayer or ToggleAttackPermanent)
-                    && accepted.Values.Any(record => record.Answer is CompleteAttackers),
+            check(combatSeen && accepted.Values.Any(record => record.Command is nameof(ToggleAttackPlayer) or nameof(ToggleAttackPermanent))
+                    && accepted.Values.Any(record => record.Command == nameof(CompleteAttackers)),
                 "Whole-seat policies declare and complete real multiplayer combat without a Forge strategy controller or scripted seat responses");
             check(observedTasks.Contains(AiTask.OpeningHand) && observedTasks.Contains(AiTask.Priority)
                     && observedTasks.Contains(AiTask.Payment) && observedTasks.Contains(AiTask.Attack),
@@ -145,7 +145,7 @@ internal static class AiWholeSeatEngineCheck
         }
     }
 
-    private static string ReplayFacts(GameSnapshot state) => JsonSerializer.Serialize(new {
+    internal static string ReplayFacts(GameSnapshot state) => JsonSerializer.Serialize(new {
         state.Turn, state.PhaseKey, state.ActivePlayerId, state.Status, state.Result, state.States,
         players = state.Players.Select(player => new { player.Id, player.Life, player.Eliminated, player.Mana, player.Counters,
             player.States, player.CommanderDamage, player.LandPlaysUsed, player.LandPlayLimit, player.MaxHandSize,
@@ -157,6 +157,7 @@ internal static class AiWholeSeatEngineCheck
     {
         string path = Path.Combine(profile, "whole-seat-ai-privacy-context.json");
         if (File.Exists(path)) return;
+        File.WriteAllText(Path.Combine(profile, "whole-seat-ai-privacy-original-private.json"), JsonSerializer.Serialize(observation));
         var state = observation.State;
         var disclosures = state.Decision?.Payload switch {
             OptionsPayload options => options.Selection.Disclosures.Length,
@@ -171,7 +172,7 @@ internal static class AiWholeSeatEngineCheck
         }, new JsonSerializerOptions { WriteIndented = true }));
     }
 
-    private static bool ComparePublicProjection(GameSnapshot spectator, GameSnapshot seat, string profile)
+    internal static bool ComparePublicProjection(GameSnapshot spectator, GameSnapshot seat, string profile)
     {
         string PublicFacts(GameSnapshot state) => JsonSerializer.Serialize(state.Players.OrderBy(player => player.Id).Select(player => new {
             player.Id, player.Life, player.Eliminated,

@@ -1,7 +1,9 @@
 package forge.api;
 
 import forge.game.Game;
+import forge.game.card.CardView;
 import forge.game.cost.*;
+import forge.game.player.Player;
 import forge.game.spellability.SpellAbility;
 import forge.game.spellability.SpellAbilityView;
 import forge.gamemodes.match.input.*;
@@ -12,6 +14,10 @@ import java.util.function.Function;
 /** Exact operation context for policy decisions, never a classifier of prompt wording. */
 final class DecisionSemantics {
     static Map<String, Object> describe(Input input, Game game) {
+        return describe(input, game, null, null);
+    }
+
+    static Map<String, Object> describe(Input input, Game game, Player viewer, Function<CardView, String> identity) {
         var paying = game.costPaymentStack.peek();
         if (paying != null) {
             var result = new LinkedHashMap<String, Object>();
@@ -26,16 +32,21 @@ final class DecisionSemantics {
         SpellAbility ability = input instanceof InputSelectTargets targets ? targets.getSpellAbility()
                 : input instanceof InputSelectManyBase<?> many ? many.getSpellAbility()
                 : input instanceof InputConfirm confirm ? confirm.getSpellAbility() : null;
-        return describeAbility(ability);
+        return describeAbility(ability, viewer, identity);
     }
 
     static Map<String, Object> describeAbility(SpellAbility ability) {
+        return describeAbility(ability, null, null);
+    }
+
+    static Map<String, Object> describeAbility(SpellAbility ability, Player viewer, Function<CardView, String> identity) {
         var result = new LinkedHashMap<String, Object>();
         if (ability == null) {
             result.put("intent", "Unknown");
             return result;
         }
-        var facts = ActionSemantics.describeAbility(ability);
+        var facts = ActionSemantics.describeAbility(ability, viewer, identity);
+        result.putAll(ActionOperationProjection.describeDecision(ability, viewer, identity));
         result.put("intent", switch (String.valueOf(facts.get("effect"))) {
             case "Permanent", "Land", "Mana", "Draw", "LifeGain", "Token" -> "Benefit";
             case "Damage" -> "Damage";
@@ -59,17 +70,23 @@ final class DecisionSemantics {
     }
 
     static List<Map<String, Object>> options(List<?> choices, Function<SpellAbilityView, SpellAbility> resolve) {
+        return options(choices, resolve, null, null);
+    }
+
+    static List<Map<String, Object>> options(List<?> choices, Function<SpellAbilityView, SpellAbility> resolve,
+                                           Player viewer, Function<CardView, String> identity) {
         var options = new ArrayList<Map<String, Object>>();
         for (int index = 0; index < choices.size(); index++) {
             Object choice = choices.get(index);
             SpellAbility ability = choice instanceof SpellAbility actual ? actual
                     : choice instanceof SpellAbilityView view ? resolve.apply(view) : null;
             if (ability == null) continue;
-            var facts = ActionSemantics.describeAbility(ability);
+            var facts = ActionSemantics.describeAbility(ability, viewer, identity);
             var option = new LinkedHashMap<String, Object>();
             option.put("index", index);
             option.put("effect", facts.get("effect"));
             option.put("amount", facts.get("effectAmount"));
+            option.put("operationGraph", facts.get("operationGraph"));
             options.add(option);
         }
         return List.copyOf(options);

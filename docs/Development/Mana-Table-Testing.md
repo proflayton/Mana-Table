@@ -33,6 +33,27 @@ deck. No scripted driver answers a bot. A separate public spectator records
 the changing board and stack in `whole-seat-ai-public.jsonl`; private decision
 histories live separately in `whole-seat-ai.json`. The focused standalone option
 is `--smoke-whole-seat-ai` with the same engine and disposable-profile arguments.
+The same JVM then runs one diverse campaign match with a 16-global-turn limit
+and a 35-second progress cutoff. Its shared singleton deck manifests contain ordinary spells and
+lands for Rhys, Pir/Toothy, Balmor and Traxos, rather than land-heavy isolation
+decks. `--smoke-ai-campaign` runs two seat rotations, each with a 32-turn limit
+and a 45-second progress cutoff, in one engine process. Time cutoffs are checked
+between steps; a pending RPC or teardown can extend elapsed time. A mechanical
+failure stops subsequent rotations and records them as unrun. The campaign records deck/policy/engine
+provenance, actual public state, missing mechanic coverage, and separate review
+findings. Review findings are not automatically strategy errors: a forced
+own-land return is legitimate. Policy seeds do not control Forge's rules RNG.
+
+Private campaign evidence includes compressed decision records and standalone
+`AiDecisionReplayCase` JSON for suspicious/failing decisions. Run the native
+test driver with `--replay-ai-decision <case.json> --profile <fresh-directory>`
+to evaluate the current policy on the same authorized observation, history,
+evaluation seed and allowance. This mode needs no engine bundle and cannot
+execute a command. Its `ai-decision-replay.json` is private diagnostic output;
+an offered proposal does not imply acceptance or resolution. The graphics-free
+client suite tests replay roundtrips, scope and knowledge isolation, exhaustive
+small mana assignments, and controlled tactical/effect-graph expectations.
+
 This checks actual development, paid abilities and combat, without treating
 progress counters as evidence that the opponents are fun. Java
 `AutomatedSeatBoundaryTest`, `SourceActionDomainTest` and

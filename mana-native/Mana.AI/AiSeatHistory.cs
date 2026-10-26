@@ -6,15 +6,34 @@ using Mana.Contracts;
 namespace Mana.AI;
 
 public enum AiDecisionOutcome { Offered, Submitted, Unavailable, Invalid, Cancelled, BudgetExceeded, Accepted, Rejected, ExecutionUnknown }
-public sealed record AiDecisionRecord(AiDecisionStamp Stamp, AiTask Task, string PolicyId,
-    AiDecisionOutcome Outcome, [property: JsonIgnore] DecisionCommand? Answer, string ReasonCode, long Seed, int RemainingWork, TimeSpan Elapsed)
+public sealed record AiDecisionRecord
 {
+    public AiDecisionStamp Stamp { get; init; }
+    public AiTask Task { get; init; }
+    public string PolicyId { get; init; }
+    public AiDecisionOutcome Outcome { get; init; }
+    public string ReasonCode { get; init; }
+    public long Seed { get; init; }
+    public int RemainingWork { get; init; }
+    public TimeSpan Elapsed { get; init; }
     public AiTurnRoute? Route { get; init; }
     public string EpisodeId { get; init; } = "";
-    public string Command => Answer?.GetType().Name ?? "";
-    // Preserve concrete payload fields in diagnostic JSON without introducing
-    // a second executable command decoder or changing the provider wire format.
-    public JsonElement? AnswerEvidence => Answer == null ? null : JsonSerializer.SerializeToElement(Answer, Answer.GetType());
+    // Historical commands are immutable evidence, never executable authority.
+    // Persist these same facts for live policy requests and offline comparisons.
+    public string Command { get; init; }
+    private readonly JsonElement? answerEvidence;
+    public JsonElement? AnswerEvidence { get => answerEvidence; init => answerEvidence = value?.Clone(); }
+
+    [JsonConstructor]
+    public AiDecisionRecord(AiDecisionStamp stamp, AiTask task, string policyId, AiDecisionOutcome outcome,
+        string command, JsonElement? answerEvidence, string reasonCode, long seed, int remainingWork, TimeSpan elapsed)
+        => (Stamp, Task, PolicyId, Outcome, Command, AnswerEvidence, ReasonCode, Seed, RemainingWork, Elapsed)
+            = (stamp, task, policyId, outcome, command, answerEvidence, reasonCode, seed, remainingWork, elapsed);
+
+    public AiDecisionRecord(AiDecisionStamp stamp, AiTask task, string policyId, AiDecisionOutcome outcome,
+        DecisionCommand? answer, string reasonCode, long seed, int remainingWork, TimeSpan elapsed)
+        : this(stamp, task, policyId, outcome, answer?.GetType().Name ?? "",
+            answer == null ? null : JsonSerializer.SerializeToElement(answer, answer.GetType()), reasonCode, seed, remainingWork, elapsed) { }
 }
 
 // Retained event facts contain no card faces, prose, names or action handles.

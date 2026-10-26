@@ -552,7 +552,8 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
                             current.sourceActions.put(key, catalog);
                         }
                         sources.add(sourceCatalogState(current, catalog));
-                        for (var action : catalog.actions()) semantics.add(ActionSemantics.describe(action, current.input));
+                        for (var action : catalog.actions()) semantics.add(ActionSemantics.describe(action, current.input,
+                                human.getPlayer(), this::semanticCardId));
                     }
                     domain = map("version", version, "coverage", complete ? "Complete" : "Unsupported",
                             "sources", complete ? sources : List.of(), "actions", complete ? semantics : List.of());
@@ -583,7 +584,7 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
     private Map<String, Object> automatedSemantics(Pending current) {
         var result = map("intent", "Unknown", "amount", null, "options", List.of(), "legalTextValues", List.of(), "selectionIsCost", false);
         if (current == null) return result;
-        result.putAll(DecisionSemantics.describe(current.input, game));
+        result.putAll(DecisionSemantics.describe(current.input, game, human.getPlayer(), this::semanticCardId));
         result.put("options", current.optionSemantics);
         if (current.input instanceof InputAttack || current.input instanceof InputBlock)
             result.put("episodeId", id + ":combat:" + game.getPhaseHandler().getTurn() + ":"
@@ -611,6 +612,18 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
         return !closed && error == null && !viewer.getHasLost() && !game.isGameOver() && !inputActionQueued
                 && current.kind.equals("input") && sourceInputActive(current.input)
                 && human.getInputQueue().getInput() == current.input && human.getInputProxy().getInput() == current.input;
+    }
+
+    private String semanticCardId(CardView card) {
+        ZoneType zone = card.getZone();
+        if (zone == null || !card.canBeShownTo(viewer)) return "";
+        if (zone == ZoneType.Library && table.libraryInspectionActive()) return "";
+        if (List.of(ZoneType.Battlefield, ZoneType.Hand, ZoneType.Library, ZoneType.Graveyard, ZoneType.Exile, ZoneType.Command).contains(zone))
+            return combatIds.id(card);
+        if (zone == ZoneType.Stack && game.getView().getStack().stream().anyMatch(item -> card.equals(item.getSourceCard())))
+            return combatIds.id(card);
+        if (zone == ZoneType.Sideboard && pending != null && pending.additionalCards.containsValue(card)) return combatIds.id(card);
+        return "";
     }
 
     private static boolean sourceInputActive(Input input) {
@@ -1031,8 +1044,8 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
     private void publish(Pending prompt) { pending = prompt; table.publish(); }
 
     void publishView(long boardRevision) {
-        // Failure retains the last published board. Engine shutdown concedes
-        // seats to release waiters; those cleanup mutations are not game losses.
+        // Failure retains the last published board. The table aborts rules work
+        // and releases waiters without manufacturing player concessions.
         if (error != null) return;
         if (viewer.getHasLost() || game.isGameOver()) {
             Pending old = pending;
@@ -1351,7 +1364,7 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
     }
 
     @Override
-    public void fail(Throwable failure) { failure.printStackTrace(System.err); fail(failure.getMessage() == null ? failure.getClass().getSimpleName() : failure.getMessage()); }
+    public void fail(Throwable failure) { table.fail(failure); }
     void fail(String failure) {
         synchronized (gate) {
             if (closed) return;
@@ -1365,9 +1378,6 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
             next.put("priorityPlayerId", null); next.put("decisionOwnerId", null); next.put("actionClass", "error");
             latest = Collections.unmodifiableMap(next);
             notifyPlaytest();
-            human.concede();
-            if (!game.isGameOver()) game.setGameOver(GameEndReason.AllHumansLost);
-            human.getInputQueue().onGameOver(true);
         }
     }
 
@@ -1620,7 +1630,7 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
 
     private Pending choicePrompt(String kind, String title, List<?> choices, int min, int max, boolean ordered, FSerializableFunction<Object, String> display) {
         Pending next = new Pending(kind, null);
-        next.optionSemantics = DecisionSemantics.options(choices, human::getDecisionAbility);
+        next.optionSemantics = DecisionSemantics.options(choices, human::getDecisionAbility, human.getPlayer(), this::semanticCardId);
         next.size = choices.size(); next.min = min; next.max = max;
         var items = new ArrayList<Object>();
         for (int i = 0; i < choices.size(); i++) {
