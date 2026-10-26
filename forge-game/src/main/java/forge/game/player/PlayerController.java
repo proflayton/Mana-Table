@@ -273,6 +273,9 @@ public abstract class PlayerController {
     public abstract Object vote(SpellAbility sa, String prompt, List<Object> options, ListMultimap<Object, Player> votes, Player forPlayer, boolean optional);
 
     public abstract boolean mulliganKeepHand(Player player, int cardsToReturn);
+    public boolean mulliganKeepHand(Player player, int cardsToReturn, forge.game.mulligan.OpeningHandOffer offer) {
+        return mulliganKeepHand(player, cardsToReturn);
+    }
     public abstract CardCollectionView tuckCardsViaMulligan(CardCollectionView hand, int cardsToReturn);
 
     public abstract List<SpellAbility> chooseSpellAbilityToPlay();

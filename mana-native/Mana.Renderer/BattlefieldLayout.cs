@@ -5,30 +5,23 @@ using Rectangle = Microsoft.Xna.Framework.Rectangle;
 namespace Mana.Renderer;
 
 public sealed record BattlefieldCluster(string Kind, SceneCard[] Cards);
-public sealed record BattlefieldLabelMetrics(int Width, int RowHeight, int HeaderWidth = 0);
 
 // Packs public-state copy groups into separate role lanes. Overlap may hide art,
 // but ordinary rows reserve the inward edge used by identity and state labels.
 public static class BattlefieldLayout
 {
-    public static Rectangle DenseTerritory(int seat) => BoundedBattlefieldLayout.Territory(seat);
-    public static IReadOnlyList<Rectangle> DenseAreas(int seat) => BoundedBattlefieldLayout.Areas(seat);
-    public static BattlefieldCluster[] Build(int seat, int owner, IReadOnlyList<Card> cards, Func<Card, bool> isResource, IReadOnlySet<string>? separateOccurrences = null, GameSnapshot? state = null,
-        Func<Card, int, bool, BattlefieldLabelMetrics>? denseMeasure = null)
+    public static BattlefieldCluster[] Build(int seat, int owner, IReadOnlyList<Card> cards, Func<Card, bool> isResource, IReadOnlySet<string>? separateOccurrences = null, GameSnapshot? state = null)
     {
         var context = state == null ? BattlefieldLayoutContext.RoleLanes
             : BattlefieldLayoutContext.Build(state, separateOccurrences, SeatGeometry.Build(state), isResource);
-        return Arrange(context, seat, owner, cards, isResource, separateOccurrences, denseMeasure);
+        return Arrange(context, seat, owner, cards, isResource, separateOccurrences);
     }
 
     internal static BattlefieldCluster[] Arrange(BattlefieldLayoutContext context, int seat, int owner, IReadOnlyList<Card> cards,
-        Func<Card, bool> isResource, IReadOnlySet<string>? separateOccurrences,
-        Func<Card, int, bool, BattlefieldLabelMetrics>? denseMeasure)
+        Func<Card, bool> isResource, IReadOnlySet<string>? separateOccurrences)
     {
         if (context.PreparedRoleLanes(owner) is { } prepared) return prepared;
         var roleByCard = cards.Select(card => Role(card, isResource)).ToArray();
-        if (context.Bounded)
-            return BoundedBattlefieldLayout.Build(seat, owner, cards, roleByCard, separateOccurrences, context.Obstacles, denseMeasure);
         var occupied = roleByCard.ToHashSet(StringComparer.Ordinal);
         return new[] { "Creatures", "Support", "Lands" }.Select(kind => {
             var role = cards.Where((_, index) => roleByCard[index] == kind).ToArray();

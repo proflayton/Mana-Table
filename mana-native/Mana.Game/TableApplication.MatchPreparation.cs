@@ -1,6 +1,7 @@
 using Mana.Contracts;
 using Mana.Magic;
 using Mana.Renderer;
+using Mana.Table.Interaction;
 
 namespace Mana.Table;
 
@@ -12,16 +13,21 @@ internal sealed partial class TableApplication
     // observations, before registering the next frame's controls.
     private void PrepareMatchPresentation()
     {
-        ReconcileDecisionDraft();
+        PrepareDecisionSession();
         abilityActionPlan = null;
         if (match is not { } state) return;
         turnProgress = TurnProgressPresentation.From(state, preferences.Stops);
         priorityView = PriorityPresentation.From(state);
-        handPage = Math.Clamp(handPage, 0, Math.Max(0, ((state.Viewer?.Zone("Hand").Cards.Length ?? 0) - 1) / 11));
-        if (allocationScope != Scope) { allocationScope = Scope; CloseAllocationDetail(); }
-        if (state.Decision is not { Kind: "allocate" } allocation) CloseAllocationDetailIfOpen();
-        else if (allocationDetail >= -1 && (allocationDetail < 0 ? allocationDetailId != allocation.SourceCardId
-            : allocationDetail >= allocation.Choices.Length || allocationDetailId != allocation.Choices[allocationDetail].Id)) CloseAllocationDetail();
+        if (decisions.Allocation is { } draft) {
+            bool validInspection = draft.Inspection switch {
+                null => true,
+                AllocationSourceInspection source => source.Id == state.Decision?.Context.Source?.CardId,
+                AllocationRecipientInspection recipient => recipient.Index < draft.Payload.Recipients.Length
+                    && recipient.Id == draft.Payload.Recipients[recipient.Index].Id,
+                _ => throw new InvalidOperationException("Unknown allocation inspection")
+            };
+            if (!validInspection) CloseAllocationDetail();
+        }
 
         var player = state.Players.FirstOrDefault(player => player.Id == zonePlayer);
         if (overlay == "inspect" && inspected == null || overlay == "action" && inspectedAction == null
@@ -67,27 +73,27 @@ internal sealed partial class TableApplication
             playerCounterPage = Math.Clamp(playerCounterPage, 0, Math.Max(0, pages - 1));
             playerDamagePage = Math.Clamp(playerDamagePage, 0, Math.Max(0, (player.CommanderDamage.Length - 1) / 6));
         }
-        if (state.Decision is { } decision && !AbilityActionPending) {
-            var faces = decision.LibraryCards.Length > 0
-                ? decision.LibraryCards.Select(choice => (choice.Label, HasCard: true))
-                : decision.Choices.Select(choice => (choice.Label, HasCard: CardViews.Choice(state, choice) != null));
-            int count = faces.Count(choice => choice.Label.Contains(choiceFilter, StringComparison.OrdinalIgnoreCase));
-            int capacity = decision.Kind == "allocate" ? 6 : faces.Any(choice => choice.HasCard) ? 7 : 6;
-            choicePage = Math.Clamp(choicePage, 0, Math.Max(0, (count - 1) / capacity));
+        if (!AbilityActionPending && decisions.Gallery is { } gallery) {
+            var faces = decisions.Presentation?.Selection is { } selection
+                ? selection.Disclosures.Length > 0 ? selection.Disclosures.Where(face => decisions.Choice?.Includes(face.Index) != false)
+                    .Select(face => (face.Label, HasCard: true))
+                    : selection.Choices.Select(choice => (choice.Label, HasCard: CardViews.Choice(state, choice) != null))
+                : decisions.Payload is RevealPayload reveal ? reveal.Cards.Select(face => (face.Label, HasCard: true)) : [];
+            int count = faces.Count(face => face.Label.Contains(gallery.Filter, StringComparison.OrdinalIgnoreCase));
+            int capacity = faces.Any(face => face.HasCard) ? 7 : 6;
+            gallery.Page = Math.Clamp(gallery.Page, 0, Math.Max(0, (count - 1) / capacity));
         }
         PrepareFocusedBattlefield();
         abilityActionPlan = PrepareAbilityActionLayout();
-        if (abilityActionPlan != null) choicePage = Math.Clamp(choicePage, 0, abilityActionPlan.Pages.Count - 1);
+        if (abilityActionPlan != null) decisions.Page = Math.Clamp(decisions.Page, 0, abilityActionPlan.Pages.Count - 1);
         PrepareReaderBindings();
         matchReadingPages = PrepareMatchReadingPages();
         inspectPage = Math.Clamp(inspectPage, 0, matchReadingPages.Length - 1);
         changePage = Math.Clamp(changePage, 0, matchReadingPages.Length - 1);
         tableStatePage = Math.Clamp(tableStatePage, 0, matchReadingPages.Length - 1);
-        allocationRulesPage = Math.Clamp(allocationRulesPage, 0, matchReadingPages.Length - 1);
+        if (decisions.Allocation?.Inspection is { } inspection) inspection.RulesPage = Math.Clamp(inspection.RulesPage, 0, matchReadingPages.Length - 1);
         priorityAbilityTextPage = Math.Clamp(priorityAbilityTextPage, 0, matchReadingPages.Length - 1);
     }
-
-    private void CloseAllocationDetailIfOpen() { if (allocationDetail >= -1) CloseAllocationDetail(); }
 
     private void PrepareReaderBindings()
     {
@@ -105,7 +111,7 @@ internal sealed partial class TableApplication
         if (overlay == "action" && inspectedAction is { } action)
             return TextPages(action.Detail + "\n\nRecent table changes\n" + string.Join("\n", action.Changes), 1800);
         if (overlay == "help") {
-            string purpose = string.IsNullOrWhiteSpace(match!.Decision?.Message) ? StateClarity.DecisionInstruction(match, busy, pendingActionLabel) : match.Decision.Message;
+            string purpose = string.IsNullOrWhiteSpace(match!.Decision?.Context.Message) ? StateClarity.DecisionInstruction(match, busy, pendingActionLabel) : match.Decision.Context.Message;
             return MeasuredHelpPages(purpose + "\n\n" + (match.Combat?.BlockProblem ?? "") + "\n\n" + CardActions.Help);
         }
         if (overlay == "table-state") return TextPages(string.Join("\n\n", match!.States.Select(PublicStatePresentation.Description)), ReadingPageSize(1100));
@@ -114,10 +120,10 @@ internal sealed partial class TableApplication
         if (overlay == "changes" && CurrentChange is { } group) return ChangeReadingPages(group);
         if (overlay.Length == 0 && zoneName == "Stack" && match!.Stack.ElementAtOrDefault(zonePage) is { } item)
             return TextPages(item.Text, ReadingPageSize(1000));
-        if (DecisionModal && match?.Decision is { Kind: "allocate" } decision && allocationDetail >= -1) {
-            var choice = allocationDetail < 0 ? null : decision.Choices.ElementAtOrDefault(allocationDetail);
-            var card = choice == null ? CardViews.Source(match, decision) : CardViews.Choice(match, choice);
-            return TextPages(card?.Text ?? choice?.Detail ?? "", 550);
+        if (DecisionModal && match?.Decision is { } decision && decisions.Allocation is { Inspection: { } inspection } allocation) {
+            var recipient = inspection is AllocationRecipientInspection selected ? allocation.Payload.Recipients.ElementAtOrDefault(selected.Index) : null;
+            var card = recipient == null ? CardViews.Source(match, decision) : CardViews.Recipient(match, recipient);
+            return TextPages(card?.Text ?? "", 550);
         }
         return [""];
     }

@@ -981,7 +981,10 @@ public class ChangeZoneEffect extends SpellAbilityEffect {
                     prompt = Localizer.getInstance().getMessage("lblSearchPlayerZoneConfirm", "{player's}", Lang.joinHomogenous(origin, ZoneType::getTranslatedName).toLowerCase());
                 }
                 String message = MessageUtil.formatMessage(prompt , decider, player);
-                if (!decider.getController().confirmAction(sa, PlayerActionConfirmMode.ChangeZoneGeneral, message, null)) {
+                LibrarySearchOffer search = LibrarySearchOffer.targeting(sa);
+                Map<String, Object> decisionContext = !defined && origin.contains(ZoneType.Library) && search != null
+                        ? Map.of(LibrarySearchOffer.CONTEXT_KEY, search.forLibrary(player)) : null;
+                if (!decider.getController().confirmAction(sa, PlayerActionConfirmMode.ChangeZoneGeneral, message, decisionContext)) {
                     continue;
                 }
             }

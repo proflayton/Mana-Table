@@ -14,7 +14,7 @@ internal sealed partial class TableApplication
     private readonly Dictionary<int, string> seatPortraits = [];
     private void DrawTableSurface()
     {
-        manaPoolBadges.Clear(); manaPoolDetail = null; denseStatsBounds.Clear();
+        manaPoolBadges.Clear(); manaPoolDetail = null; battlefieldStatsBounds.Clear();
         // Neutral material studies, drawn in code. An artist can supply the
         // play-surface texture without baking cards, seating, or UI into it.
         canvas.Gradient(new(0, 0, 1600, 900), new(13, 18, 24), new(7, 11, 16));
@@ -71,31 +71,10 @@ internal sealed partial class TableApplication
     {
         canvas.BeginClip(BoardViewport);
         var plan = tableScene!.Seat(player.Id);
-        int seat = plan.Index;
         var clusters = plan.Battlefield;
-        bool dense = plan.IsDense;
         if (TableStudyEnabled) foreach (var family in clusters.SelectMany(cluster => cluster.Cards)
             .Select(node => node.StudyFamily).OfType<StudyBattlefieldFamily>().DistinctBy(family => family.Id))
                 DrawStudyFamily(family);
-        if (dense) {
-            var area = BattlefieldLayout.DenseTerritory(seat);
-            int right = area.Right - 4;
-            int incoming = match!.Combat?.Attackers.Count(attack => attack.DefendingPlayerId == player.Id) ?? 0;
-            string status = player.Eliminated ? TimedOut(player.Id) ? "TIMED OUT" : "ELIMINATED" : incoming > 0 ? incoming + (seat == 3 ? " ATTACKING YOU" : " INCOMING")
-                : player.Id == match.ActivePlayerId ? "ACTIVE TURN" : "";
-            int statusWidth = status.Length > 0 ? canvas.TextWidth(status, .375f, true) + 10 : 0;
-            if (statusWidth > 0) {
-                var caption = new Rectangle(right - statusWidth, area.Top, statusWidth - 2, 19);
-                canvas.Panel(caption, new Color(15, 24, 29) * .95f, incoming > 0 ? Red : Gold, 3);
-                canvas.Text(status, caption.X + 4, caption.Y + 1, incoming > 0 ? Red : Gold, .375f, caption.Width - 8, 1, true);
-                right -= statusWidth;
-            }
-            var identity = new Rectangle(area.Left + 4, area.Top, Math.Max(1, right - area.Left - 8), 19);
-            string owner = seat == 3 ? "YOU" : player.Name;
-            canvas.Panel(identity, new Color(15, 24, 29) * .95f, Blue, 3);
-            canvas.Text(owner, identity.X + 4, identity.Y + 1, Ink, .375f, Math.Max(1, identity.Width - 8), 1, true);
-            hits.Add(new("focus:" + player.Id, Scope, identity, new MatchIntent.OpenZone(player.Id, "Battlefield")));
-        }
         if (!TableStudyEnabled) foreach (var cluster in clusters)
             foreach (var node in cluster.Cards) DrawSceneCard(node);
         canvas.EndClip();
@@ -138,7 +117,10 @@ internal sealed partial class TableApplication
         hits.Add(new("zone:" + player.Id + ":" + zone, Scope, geometry.HitBounds, new MatchIntent.OpenZone(player.Id, zone), Shape: geometry.Contains));
         // Browser members open their pile. A separately disclosed top remains
         // directly readable even when the rest of its zone is concealed.
-        if (top != null) DrawTableCard("pile:" + player.Id + ":" + zone + ":" + CardIdentity(top), top, pose, zone, player.Id,
+        bool publicPile = zone is "Graveyard" or "Exile";
+        if (top != null && !top.FaceDown && !tableScene!.PlayAccess.Contains(player.Id, zone, top)
+            && (!publicPile || !SpreadContains(CardIdentity(top)) && !PublicCollectionReturning(player.Id, zone, top)))
+            DrawTableCard(publicPile ? CardIdentity(top) : "pile:" + player.Id + ":" + zone + ":" + CardIdentity(top), top, pose, zone, player.Id,
             "pile-card:" + player.Id + ":" + zone, new MatchIntent.OpenZone(player.Id, zone), (displayed, focus) => PaintCard(top, displayed, false, IsCardActionable(top), focus),
             opensZone: value.Cards.Any(card => CardViews.Same(card, top)));
         else PaintBack(pose, value.Count == 0 ? .3f : 1);
@@ -190,7 +172,9 @@ internal sealed partial class TableApplication
         }
         DrawDecisionClock(player, center, radius);
         var bounds = new Rectangle((int)center.X - (int)radius - 9, (int)center.Y - (int)radius - 9, (int)radius * 2 + 18, (int)radius * 2 + 18);
-        hits.Add(new("player:" + player.Id, Scope, bounds, new MatchIntent.UsePlayer(player.Id), PlayerId: player.Id, Shape: p => Vector2.DistanceSquared(p.ToVector2(), center) <= (radius + 9) * (radius + 9)));
+        UiIntent portraitIntent = LibraryRecipientTarget ? new MatchIntent.OpenPlayerDetails(player.Id) : new MatchIntent.UsePlayer(player.Id);
+        hits.Add(new("player:" + player.Id, Scope, bounds, portraitIntent, PlayerId: LibraryRecipientTarget ? null : player.Id,
+            Shape: p => Vector2.DistanceSquared(p.ToVector2(), center) <= (radius + 9) * (radius + 9)));
         string name = own ? "YOU" : localMatch && !ExperienceLabOpen
             ? "AI " + (TableLayout.SeatIndex(match, player.Id) + 1) + " · " + player.Name.Split('·')[0].Trim() : player.Name;
         int x = (int)center.X - 94, y = (int)center.Y + (own ? 44 : 41);
@@ -200,15 +184,14 @@ internal sealed partial class TableApplication
         var manaHalo = PlanManaHalo(player, own ? 3 : index);
         if (own) { x = Math.Max((int)center.X + 58, manaHalo.Bounds.Right) + 8; nameplate = new(x, y, 100, 24); }
         else if (index == 1) { x = Math.Max((int)center.X + 50, manaHalo.Bounds.Right) + 8; y = 64; nameplate = new(x, y, 188, 24); }
-        bool dense = tableScene!.Seat(player.Id).IsDense;
-        if (!dense && !own) canvas.CenterText(name + " ↗", nameplate, nameplate.Contains(pointer) ? Blue : Ink, .6f, true);
+        if (!own) canvas.CenterText(name + " ↗", nameplate, nameplate.Contains(pointer) ? Blue : Ink, .6f, true);
         int incoming = match.Combat?.Attackers.Count(a => a.DefendingPlayerId == player.Id) ?? 0;
         string status = player.Eliminated ? TimedOut(player.Id) ? "TIMED OUT" : "ELIMINATED" : incoming > 0 ? incoming + (own ? " ATTACKING YOU" : " INCOMING")
             : active && !own && match.Turn > 0 ? turnProgress?.PhaseLabel ?? match.Phase : active ? "ACTIVE TURN" : "";
         if (!own && index != 1 && hasCounters) status += (status.Length > 0 ? " · " : "") + player.Zone("Hand").Count + " in hand";
-        if (!own && !timedOut && (!dense || active) && (!active || index == 1 || incoming > 0 || player.Eliminated)) {
-            string caption = active && incoming > 0 ? (turnProgress?.PhaseLabel ?? match.Phase) + " · " + status : status;
-            canvas.Text(caption, x + 4, y + 24, incoming > 0 ? Red : Gold, .53f, 180, 3, true);
+        if (!own && !timedOut && (!TableStudyEnabled || incoming > 0 || player.Eliminated)) {
+            string caption = TableStudyEnabled ? status : active && incoming > 0 ? (turnProgress?.PhaseLabel ?? match.Phase) + " · " + status : status;
+            canvas.Text(caption, x + 4, TableStudyEnabled && index == 1 ? y + 78 : y + 24, incoming > 0 ? Red : Gold, .53f, 180, 1, true);
         }
         if (own && !timedOut && (incoming > 0 || player.Eliminated))
             canvas.CenterText(status, new((int)center.X - 94, (int)center.Y - 64, 188, 19), Red, .5f, true);
@@ -220,7 +203,21 @@ internal sealed partial class TableApplication
             DrawPublicPlayerCounters(player, counterX, counterY, index == 1 && !own ? 144 : 188, growUp: !own && index != 1);
         }
         DrawPlayerMana(player, manaHalo);
+        if (TableStudyEnabled) DrawLandState(player, own ? 3 : index, nameplate);
         if (!own) DrawOpponentPhase(player, center, index);
-        if (!own && !dense) hits.Add(new("focus:" + player.Id, Scope, nameplate, new MatchIntent.OpenZone(player.Id, "Battlefield")));
+        if (!own) hits.Add(new("focus:" + player.Id, Scope, nameplate, new MatchIntent.OpenZone(player.Id, "Battlefield")));
+    }
+
+    private void DrawLandState(Player player, int seat, Rectangle nameplate)
+    {
+        var lands = PublicResources.Lands(player);
+        var area = seat switch {
+            0 => new Rectangle(8, 463, 184, 44),
+            2 => new Rectangle(1408, 463, 184, 44),
+            1 => new Rectangle(nameplate.X, 94, 188, 44),
+            _ => new Rectangle(320, 750, 240, 44)
+        };
+        canvas.Text(lands.Total + (lands.Total == 1 ? " land" : " lands"), area.X, area.Y, Ink, .75f, area.Width, 1, true);
+        canvas.Text(lands.Untapped + " untapped · " + lands.Tapped + " tapped", area.X, area.Y + 23, Ink, .55f, area.Width, 1);
     }
 }

@@ -23,6 +23,7 @@ import forge.game.card.CardCollection;
 import forge.game.card.CardCollectionView;
 import forge.game.card.CardView;
 import forge.game.player.Player;
+import forge.game.mulligan.OpeningHandOffer;
 import forge.game.zone.ZoneType;
 import forge.player.PlayerControllerHuman;
 import forge.util.ITriggerEvent;
@@ -49,11 +50,19 @@ public class InputConfirmMulligan extends InputSyncronizedBase {
     private final CardCollection selected = new CardCollection();
     private final Player player;
     private final Player startingPlayer;
+    private final OpeningHandOffer openingHandOffer;
+
+    public final OpeningHandOffer getOpeningHandOffer() { return openingHandOffer; }
 
     public InputConfirmMulligan(final PlayerControllerHuman controller, final Player humanPlayer, final Player startsGame) {
+        this(controller, humanPlayer, startsGame, null);
+    }
+
+    public InputConfirmMulligan(final PlayerControllerHuman controller, final Player humanPlayer, final Player startsGame, final OpeningHandOffer offer) {
         super(controller);
         player = humanPlayer;
         startingPlayer = startsGame;
+        openingHandOffer = offer;
     }
 
     /** {@inheritDoc} */

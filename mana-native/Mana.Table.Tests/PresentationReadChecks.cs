@@ -20,8 +20,7 @@ internal static class PresentationReadChecks
         var engine = new InteractionScenarioEngine();
         engine.Present(PresentationSmoke.Example() with {
             Id = "presentation-read", Combat = null, Stack = [],
-            Decision = new() { Kind = "choice", Min = 0, Max = 3,
-                Choices = Enumerable.Range(0, 8).Select(index => new Choice(index, "Option " + index, null)).ToImmutableArray() }
+            Decision = new Decision("", new DecisionContext(), new OptionsPayload(new ChoiceSelection(Enumerable.Range(0, 8).Select(index => new Choice(index, "Option " + index, null)).ToImmutableArray(), new SelectionRange(0, 3), [])))
         });
         using var app = new TableApplication(TestTableServices.For(engine), directory, initialState: engine.State) { Automated = true };
         app.Initialize();
@@ -120,7 +119,7 @@ internal static class PresentationReadChecks
         var example = PriorityAbilitySmoke.Example();
         engine.Present(example with { Id = "presentation-quiet-lifetime", PriorityPlayerId = example.ViewerId,
             DecisionOwnerId = example.ViewerId, ActionClass = "priority",
-            Decision = example.Decision! with { QuietYieldToken = "original-quiet-token" } });
+            Decision = example.Decision! with { Payload = ((PriorityPayload)(example.Decision!).Payload) with { QuietYieldToken = "original-quiet-token" } } });
         using var app = new TableApplication(TestTableServices.For(engine), directory, initialState: engine.State) { Automated = true };
         app.Initialize();
         var view = app.TestPort;
@@ -138,7 +137,7 @@ internal static class PresentationReadChecks
         var frame = Tick();
         var oldArm = frame.Hits.Single(hit => hit.Id == "quiet-priority-arm");
         var refreshed = view.Match! with { Revision = view.Match!.Revision + 1,
-            Decision = view.Match.Decision! with { Id = "refreshed-quiet-arm", QuietYieldToken = "replacement-quiet-token" } };
+            Decision = view.Match.Decision! with { Id = "refreshed-quiet-arm", Payload = ((PriorityPayload)(view.Match.Decision!).Payload) with { QuietYieldToken = "replacement-quiet-token" } } };
         view.Accept(refreshed);
         check(!view.CurrentHit(oldArm) && !view.Activate(oldArm) && ReferenceEquals(view.Frame, frame)
             && engine.Replies.Count == 0 && engine.Observations == 0,

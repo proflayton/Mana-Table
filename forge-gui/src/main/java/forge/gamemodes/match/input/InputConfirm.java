@@ -20,6 +20,7 @@ package forge.gamemodes.match.input;
 import com.google.common.collect.ImmutableList;
 import forge.game.card.Card;
 import forge.game.card.CardView;
+import forge.game.player.LibrarySearchOffer;
 import forge.game.spellability.SpellAbility;
 import forge.localinstance.properties.ForgePreferences;
 import forge.model.FModel;
@@ -46,6 +47,10 @@ public class InputConfirm extends InputSyncronizedBase {
     private boolean result;
     private SpellAbility sa;
     private CardView card;
+    private final LibrarySearchOffer librarySearchOffer;
+
+    public final SpellAbility getSpellAbility() { return sa; }
+    public final LibrarySearchOffer getLibrarySearchOffer() { return librarySearchOffer; }
 
     // simple interface to hide ugliness deciding how to confirm
     public static ImmutableList<String> defaultOptions = ImmutableList.of(Localizer.getInstance().getMessage("lblYes"), Localizer.getInstance().getMessage("lblNo"));
@@ -66,6 +71,9 @@ public class InputConfirm extends InputSyncronizedBase {
          return confirm(controller, card, sa, message, true, defaultOptions);
      }
      public static boolean confirm(final PlayerControllerHuman controller, final CardView card, final SpellAbility sa, final String message, final boolean defaultIsYes, final List<String> options) {
+         return confirm(controller, card, sa, message, defaultIsYes, options, null);
+     }
+     public static boolean confirm(final PlayerControllerHuman controller, final CardView card, final SpellAbility sa, final String message, final boolean defaultIsYes, final List<String> options, final LibrarySearchOffer searchOffer) {
          if (controller.getGui().isLibgdxPort()) {
              CardView dialogCard = card;
              if (dialogCard == null && sa != null) {
@@ -79,9 +87,9 @@ public class InputConfirm extends InputSyncronizedBase {
          }
          InputConfirm inp;
          if (options.size() == 2) {
-             inp = new InputConfirm(controller, message, options.get(0), options.get(1), defaultIsYes, card, sa);
+             inp = new InputConfirm(controller, message, options.get(0), options.get(1), defaultIsYes, card, sa, searchOffer);
          } else {
-             inp = new InputConfirm(controller, message, defaultOptions.get(0), defaultOptions.get(1), defaultIsYes, card, sa);
+             inp = new InputConfirm(controller, message, defaultOptions.get(0), defaultOptions.get(1), defaultIsYes, card, sa, searchOffer);
          }
          inp.showAndWait();
          return inp.getResult();
@@ -92,6 +100,10 @@ public class InputConfirm extends InputSyncronizedBase {
     }
     public InputConfirm(final PlayerControllerHuman controller, String message0, String yesButtonText0,
                          String noButtonText0, boolean defaultYes0, CardView card0, SpellAbility sa0) {
+         this(controller, message0, yesButtonText0, noButtonText0, defaultYes0, card0, sa0, null);
+     }
+    public InputConfirm(final PlayerControllerHuman controller, String message0, String yesButtonText0,
+                         String noButtonText0, boolean defaultYes0, CardView card0, SpellAbility sa0, LibrarySearchOffer searchOffer) {
          super(controller);
          message = message0;
          yesButtonText = yesButtonText0;
@@ -100,6 +112,7 @@ public class InputConfirm extends InputSyncronizedBase {
          result = defaultYes0;
          this.sa = sa0;
          this.card = card0;
+         this.librarySearchOffer = searchOffer;
      }
 
      /** {@inheritDoc} */

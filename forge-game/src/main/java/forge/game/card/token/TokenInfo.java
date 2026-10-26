@@ -262,20 +262,30 @@ public class TokenInfo {
         }
         String edition = Objects.requireNonNullElse(editionHost, host).getSetCode();
         edition = Objects.requireNonNullElse(StaticData.instance().getCardEdition(edition).getTokenSet(script), edition);
-        var deck = owner.getRegisteredPlayer().getDeck();
+        // Rules queries (for example creature-type ranking) use ownerless
+        // prototypes. Deck cosmetics apply only to an actual registered owner.
         var database = StaticData.instance().getAllTokens();
-        boolean configured = deck.prefersLatestTokenArt() || !deck.getTokenPrintings().isEmpty();
-        // Each deck can choose different artwork for the same token. The actual
-        // PaperToken is pinned, including its collector number, for this game.
-        String pinKey = configured ? owner.getId() + ":" + script : script;
-        Map<String, PaperToken> pins = getPinsFor(game);
-        PaperToken token = pins.get(pinKey);
-        if (token == null) {
-            String preference = deck.getTokenPrintings().get(script);
-            if (preference != null) token = database.getPrinting(script, preference);
-            if (token == null && deck.prefersLatestTokenArt()) token = database.getPrintings(script).stream().findFirst().orElse(null);
-            if (token == null) token = database.getToken(script, edition);
-            if (token != null) pins.put(pinKey, token);
+        PaperToken token;
+        if (owner == null) {
+            // A rules-only preview must neither require a deck nor select the
+            // artwork that a later, actual token will use in this game.
+            token = database.getToken(script, edition);
+        } else {
+            var registered = owner.getRegisteredPlayer();
+            var deck = registered == null ? null : registered.getDeck();
+            boolean configured = deck != null && (deck.prefersLatestTokenArt() || !deck.getTokenPrintings().isEmpty());
+            // Each deck can choose different artwork for the same token. Pin
+            // the actual PaperToken, including its collector number.
+            String pinKey = configured ? owner.getId() + ":" + script : script;
+            Map<String, PaperToken> pins = getPinsFor(game);
+            token = pins.get(pinKey);
+            if (token == null) {
+                String preference = deck == null ? null : deck.getTokenPrintings().get(script);
+                if (preference != null) token = database.getPrinting(script, preference);
+                if (token == null && deck != null && deck.prefersLatestTokenArt()) token = database.getPrintings(script).stream().findFirst().orElse(null);
+                if (token == null) token = database.getToken(script, edition);
+                if (token != null) pins.put(pinKey, token);
+            }
         }
 
         if (token == null) {

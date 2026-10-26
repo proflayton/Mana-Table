@@ -13,7 +13,7 @@ internal sealed partial class CardReadingSmoke
         string firstHelpPage = "";
         int replies = 0;
         void PublishPurpose(string message) => Publish(scenario.State with {
-            Decision = new() { Kind = "input", Intent = DecisionIntent.Selection, Message = message, OkEnabled = true }
+            Decision = new Decision("", new DecisionContext(Message: message), new EntitySelectionPayload(new DecisionReply("Confirm", true), new DecisionReply("Cancel", false), [], null))
         });
         bool SafeText() => view.TextScale == 1.3f && view.DecisionTextBounds is { Width: > 0, Height: > 0 } text
             && view.DecisionPanelBounds.Contains(text) && text.Bottom < 799
@@ -23,7 +23,7 @@ internal sealed partial class CardReadingSmoke
             Move(new(10, 70)); PublishPurpose(purpose);
         });
         Prepared(() => view.DecisionText == purpose && view.DecisionTextBounds.Height > 80, 2, () => {
-            Check(SafeText() && !view.DecisionTextOverflow && view.Match!.Decision!.Message == purpose,
+            Check(SafeText() && !view.DecisionTextOverflow && view.Match!.Decision!.Context.Message == purpose,
                 "At130% a multi-line engine purpose grows above the fixed action row with its complete current text inside the decision panel");
             PublishPurpose(expanded);
         }, "The complete engine selection purpose must paint before checking its layout");
@@ -32,7 +32,7 @@ internal sealed partial class CardReadingSmoke
             int eightLines = reference.TextSize(string.Join("\n", Enumerable.Repeat("Ag", 8)), .75f, 295, 80).Y;
             Check(view.DecisionTextBounds.Height <= eightLines,
                 "The overflow preview occupies no more than eight actual rendered text lines at the active accessibility size");
-            Check(SafeText() && view.Match!.Decision!.Message == expanded && scenario.Replies.Count == replies,
+            Check(SafeText() && view.Match!.Decision!.Context.Message == expanded && scenario.Replies.Count == replies,
                 "An overlong purpose keeps the exact engine message and a bounded visible text area rather than covering action controls");
             var text = view.DecisionTextBounds;
             bool exposed = true;
@@ -48,7 +48,7 @@ internal sealed partial class CardReadingSmoke
             MoveHit("decision-read-all");
         }, "A purpose beyond eight actual text lines must expose Read all"); Click();
         Prepared(() => view.Overlay == "help", 2, () => {
-            Check(view.Match!.Decision!.Message == expanded && scenario.Replies.Count == replies
+            Check(view.Match!.Decision!.Context.Message == expanded && scenario.Replies.Count == replies
                 && view.Hits.Any(hit => hit.Id == "help-next") && view.HelpPageText.Length > 0,
                 "Read all exposes measured pages for the full current decision without submitting or changing the game choice");
             firstHelpPage = view.HelpPageText;
@@ -85,7 +85,7 @@ internal sealed partial class CardReadingSmoke
             replies = scenario.Replies.Count;
             var prompt = scenario.State.Decision!;
             sourceGame = scenario.State.Id; sourceDecision = prompt.Id;
-            sourceId = prompt.SourceCardId; sourcePhase = scenario.State.PhaseKey;
+            sourceId = (prompt.Context.Source?.CardId ?? ""); sourcePhase = scenario.State.PhaseKey;
         });
         Prepared(() => SourceSettled()
             && view.Hits.Any(hit => hit.Id == "choice:0")
@@ -99,14 +99,14 @@ internal sealed partial class CardReadingSmoke
         }, "The inline action and actual source card must be physically reachable before inspection"); RightClick();
         Prepared(() => view.Overlay == "inspect", 2, () => {
             Check(view.Match is { Decision: { } decision } current && current.Id == sourceGame && decision.Id == sourceDecision
-                && decision.SourceCardId == sourceId && view.Selections.Count == 0 && scenario.Replies.Count == replies,
+                && (decision.Context.Source?.CardId ?? "") == sourceId && view.Selections.Count == 0 && scenario.Replies.Count == replies,
                 "Right-clicking the actual source preserves the unanswered inline ability decision without choosing or activating an option");
             MoveHit("close-overlay");
         }, "The actual source card's right-click must open its details"); Click();
         Prepared(() => view.Overlay.Length == 0 && view.Hits.Any(hit => hit.Id == "choice-cancel")
             && view.Hits.Any(hit => hit.Id == "choice:0"), 2, () => {
             Check(view.Match is { Decision: { } decision } current && current.Id == sourceGame && decision.Id == sourceDecision
-                && decision.SourceCardId == sourceId && view.Selections.Count == 0 && scenario.Replies.Count == replies,
+                && (decision.Context.Source?.CardId ?? "") == sourceId && view.Selections.Count == 0 && scenario.Replies.Count == replies,
                 "Closing source details restores the same direct ability action and optional cancellation without sending a command");
             MoveHit("choice-cancel");
         }, "Source inspection must return to the original inline optional ability action"); Click();

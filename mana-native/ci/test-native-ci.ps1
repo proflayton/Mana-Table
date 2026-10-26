@@ -48,7 +48,9 @@ try {
     $env:MANA_RELEASE_VERSION = '0.2.123'
     $env:GITHUB_ENV = Join-Path $TestDirectory 'github-env.txt'
     [object[]]$inventory = & (Join-Path $PSScriptRoot 'native-ui.ps1') -ListOnly | ConvertFrom-Json
-    if ($inventory.Count -ne 10 -or @($inventory.name | Sort-Object -Unique).Count -ne 10 -or @($inventory.shard | Sort-Object -Unique).Count -ne 4) { throw 'Critical native suite discovery is incomplete or duplicated.' }
+    if ($inventory.Count -ne 12 -or @($inventory.name | Sort-Object -Unique).Count -ne 12 -or @($inventory.shard | Sort-Object -Unique).Count -ne 4 -or
+        @($inventory | Where-Object name -eq 'card-reading-1000').Count -ne 1 -or
+        @($inventory | Where-Object name -eq 'full-battlefield-1000').Count -ne 1) { throw 'Critical native suite discovery is incomplete or duplicated.' }
     $checks++
     [object[]]$inventory = & (Join-Path $PSScriptRoot 'native-ui.ps1') -ListOnly -Extended | ConvertFrom-Json
     if ($inventory.Count -ne 46 -or @($inventory.name | Sort-Object -Unique).Count -ne 46 -or @($inventory.shard | Sort-Object -Unique).Count -ne 12) { throw 'Extended native suite discovery is incomplete or duplicated.' }

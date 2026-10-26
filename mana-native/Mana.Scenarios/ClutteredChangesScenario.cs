@@ -25,7 +25,9 @@ public static class ClutteredChangesScenario
             VisualId = id, CombatId = id, Name = name, Type = type, Power = power, Toughness = toughness
         };
         Card[] Battlefield(int seat) => [
-            .. Enumerable.Range(0, 50).Select(index => New($"crowd-{seat}-cat-{index}", "Cat Beast Token", "Token Creature — Cat Beast", 2, 2)),
+            .. Enumerable.Range(0, 50).Select(index => New($"crowd-{seat}-cat-{index}", "Cat Beast Token", "Token Creature — Cat Beast", 2, 2) with {
+                GamePieceType = "token", ArtName = "Cat Beast", ArtSet = "tfdn", Edition = "FDN", CollectorNumber = "28"
+            }),
             .. Enumerable.Range(0, 40).Select(index => {
                 bool animated = index < 12;
                 int counters = animated ? 1 + index % 4 : 0;
@@ -48,8 +50,8 @@ public static class ClutteredChangesScenario
             new("Command", 0, [], null), new("Library", 60, [], null), new("Graveyard", 0, [], null), new("Exile", 0, [], null)
         ])).ToArray();
         return new("cluttered-causal-changes", "playing", null, null, 0, 8, "Main phase", "MAIN1", 0, players.ToImmutableArray(), [], null,
-            new() { Kind = "input", Intent = DecisionIntent.Priority, OkEnabled = true, CanAutoPass = false,
-                Message = "You have priority. Inspect any permanent, or activate Llanowar Elves to add mana." });
+            new("", new(Message: "You have priority. Inspect any permanent, or activate Llanowar Elves to add mana."),
+                new PriorityPayload(new("Confirm", true))));
     }
 
     public static GameSnapshot Earthbend(GameSnapshot before)

@@ -1050,6 +1050,21 @@ public class HumanCostDecision extends CostDecisionMakerBase {
         }
         list = CardLists.filter(list, CardPredicates.hasCounters());
 
+        // The player already chose this ability. A fixed source and one legal
+        // counter type contain no further payment decision; retain the normal
+        // chooser whenever types or the distribution between permanents differ.
+        if (cost.payCostFromSource()) {
+            final Card card = ability.getHostCard();
+            final List<CounterType> removableTypes = card.getCounters().elementSet().stream()
+                    .filter(typeOfCounter -> cost.counter == null || cost.counter.equals(typeOfCounter))
+                    .filter(card::canRemoveCounters).toList();
+            if (removableTypes.size() == 1 && card.getCounters(removableTypes.get(0)) >= c) {
+                final GameEntityCounterTable counters = new GameEntityCounterTable();
+                counters.put(null, card, removableTypes.get(0), c);
+                return PaymentDecision.counters(counters);
+            }
+        }
+
         final InputSelectCardToRemoveCounter inp = new InputSelectCardToRemoveCounter(controller, c, cost, cost.counter, list, ability);
         inp.setCancelAllowed(true);
         inp.showAndWait();
@@ -1082,6 +1097,17 @@ public class HumanCostDecision extends CostDecisionMakerBase {
         }
 
         @Override
+        protected Iterable<Card> getSelectableEntities() {
+            return CardLists.filter(validChoices, card -> getActivateAction(card) != null);
+        }
+
+        public record CounterPayment(int amount, int remaining) {}
+
+        public CounterPayment getCounterPayment() {
+            return new CounterPayment(max, Math.max(0, max - getDistributedCounters()));
+        }
+
+        @Override
         protected boolean onCardSelected(final Card c, final List<Card> otherCardsToSelect, final ITriggerEvent triggerEvent) {
             if (!isValidChoice(c)) {
                 return false;
@@ -1093,7 +1119,10 @@ public class HumanCostDecision extends CostDecisionMakerBase {
 
                 String prompt = Localizer.getInstance().getMessage("lblSelectCountersTypeToRemove");
 
-                cType = getController().chooseCounterType(Lists.newArrayList(cmap.elementSet()), sa, prompt, null);
+                final List<CounterType> types = cmap.elementSet().stream().filter(c::canRemoveCounters).toList();
+                final Map<CounterType, Integer> available = new LinkedHashMap<>();
+                for (CounterType type : types) available.put(type, cmap.count(type));
+                cType = getController().getGui().chooseCounterTypeForPayment(prompt, c.getView(), 1, types, available);
             }
 
             if (cType == null || !c.canRemoveCounters(cType)) {
@@ -1117,13 +1146,13 @@ public class HumanCostDecision extends CostDecisionMakerBase {
                 return null;
             }
             if (counterType != null) {
-                if (c.getCounters(counterType) <= counterTable.get(null, c, counterType)) {
+                if (!c.canRemoveCounters(counterType) || c.getCounters(counterType) <= counterTable.get(null, c, counterType)) {
                     return null;
                 }
             } else {
                 boolean found = false;
                 for (Multiset.Entry<CounterType> e : c.getCounters().entrySet()) {
-                    if (e.getCount() > counterTable.get(null, c, e.getElement())) {
+                    if (c.canRemoveCounters(e.getElement()) && e.getCount() > counterTable.get(null, c, e.getElement())) {
                         found = true;
                         break;
                     }

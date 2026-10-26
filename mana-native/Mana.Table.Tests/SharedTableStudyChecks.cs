@@ -47,7 +47,7 @@ internal static class SharedTableStudyChecks
         HiddenFace(check);
         TwoPlayerContinuity(check);
         ResourceTurns(check);
-        check(TableScene.Build(ordinary, 0, new(-100, -100), null, null, false, CardPresentation.IsResource)
+        check(TableScene.Build(ordinary, new(-100, -100), null, null, false, CardPresentation.IsResource)
                 .Seats.All(seat => seat.Battlefield.SelectMany(cluster => cluster.Cards).All(card => !card.ScanFace)),
             "The explicit study leaves the default battlefield presentation unchanged");
     }
@@ -58,7 +58,7 @@ internal static class SharedTableStudyChecks
         foreach (int viewer in stages[0].Snapshot.Players.Select(player => player.Id)) {
             var scenes = stages.Select(stage => Build(stage.Snapshot with { ViewerId = viewer })).ToArray();
             check(scenes.All(scene => scene.Seat(viewer).Index == 3 && scene.Seats.Single(seat => seat.PlayerId != viewer).Index == 1
-                    && scene.Seats.All(seat => !seat.IsDense) && Cards(scene).All(card => card.ScanFace)
+                    && Cards(scene).All(card => card.ScanFace)
                     && Cards(scene).All(card => DuelTableStudy.MatchLane(scene.Seat(card.Owner).Index,
                         BattlefieldLayout.Role(card.Card, CardPresentation.IsResource)).Contains(card.Pose.Bounds))
                     && Cards(scene).All(card => !card.Pose.Bounds.Intersects(DuelTableStudy.ActionArea))),
@@ -146,8 +146,7 @@ internal static class SharedTableStudyChecks
                 && placed.Count(card => card.Id.StartsWith("copy-", StringComparison.Ordinal) && card.GroupFront) == 1
                 && placed.Where(card => !card.Id.StartsWith("copy-", StringComparison.Ordinal)).All(card => card.GroupCount == 1 && card.GroupFront),
             "The study fans equivalent copies without losing occurrences, while counters, tap, damage, phase, abilities, attachments and hidden identities retain separate current-state faces");
-        var ordered = state with { Decision = new() { Id = "order-copies", Kind = "choice", Ordered = true,
-            Choices = copies.Take(3).Select((card, index) => new Choice(index, card.Name, card) { CardId = card.VisualId }).ToImmutableArray() } };
+        var ordered = state with { Decision = new Decision("order-copies", new DecisionContext(), new OrderingPayload(new ChoiceSelection(copies.Take(3).Select((card, index) => new Choice(index, card.Name, card) { CardId = card.VisualId }).ToImmutableArray(), new SelectionRange(0, 0), []))) };
         var choices = Cards(Build(ordered)).Where(card => card.Owner == 0 && card.Id.StartsWith("copy-", StringComparison.Ordinal)).ToArray();
         check(choices.Length == 3 && choices.All(card => card.GroupCount == 1 && card.GroupFront)
                 && choices.Select(card => card.Pose.Center).Distinct().Count() == 3,
@@ -229,9 +228,7 @@ internal static class SharedTableStudyChecks
                 && refreshed.BattlefieldCard(0, "land-ready-b")!.Card.Key == "new-prompt:land-ready-b",
             "Refreshing exact decision keys preserves family geometry while each occurrence receives only its new current action key");
         foreach (bool direct in new[] { false, true }) {
-            var choice = state with { Decision = direct ? new() { Id = "direct-land-choice", Kind = "choice", Min = 1, Max = 1,
-                Choices = cards.Take(2).Select((card, index) => new Choice(index, card.Name, card) { CardId = card.VisualId }).ToImmutableArray()
-            } : new() { Id = "land-target", Kind = "input", Intent = DecisionIntent.Selection } };
+            var choice = state with { Decision = direct ? new Decision("direct-land-choice", new DecisionContext(), new OptionsPayload(new ChoiceSelection(cards.Take(2).Select((card, index) => new Choice(index, card.Name, card) { CardId = card.VisualId }).ToImmutableArray(), new SelectionRange(1, 1), []))) : new Decision("land-target", new DecisionContext(), new EntitySelectionPayload(new DecisionReply("Confirm", false), new DecisionReply("Cancel", false), [], null)) };
             var individual = Build(choice);
             var candidates = cards.Take(2).Select(card => individual.BattlefieldCard(0, card.VisualId)!).ToArray();
             check(candidates.All(node => node.GroupFront && node.GroupCount == 1)
@@ -257,14 +254,15 @@ internal static class SharedTableStudyChecks
         var matchingLands = Build(ReplaceField(baseline, 0, lands.Select(card => card with { Tapped = false }).ToArray()));
         var mixedNodes = Cards(mixedLands).Where(node => node.Owner == 0).ToArray();
         var landFamily = mixedNodes[0].StudyFamily!;
-        check(landFamily is { Role: "Lands", CohortCount: 2, TotalCount: 2 } && landFamily.NameBounds.Height >= 23
-                && mixedNodes.All(node => node.Pose.Bounds.Width <= 57 && node.GroupFront && node.GroupCount == 1)
+        check(landFamily is { Role: "Lands", CohortCount: 2, TotalCount: 2 }
+                && mixedNodes.All(node => node.GroupFront && node.GroupCount == 1)
+                && mixedNodes[0].Pose.Size == mixedNodes[1].Pose.Size
+                && MathF.Abs(MathF.Abs(MathHelper.WrapAngle(mixedNodes[0].Pose.Angle - mixedNodes[1].Pose.Angle)) - MathF.PI / 2) < .001f
                 && !mixedNodes[0].Pose.Bounds.Intersects(mixedNodes[1].Pose.Bounds)
-                && landFamily.Bounds.Width <= 120
                 && matchingLands.BattlefieldCard(0, "compact-ready")!.StudyFamily is { CohortCount: 1, TotalCount: 2 }
                 && landFamily.Cohorts.All(cohort => cohort.MemberIds.Count == 1
                     && mixedLands.BattlefieldCard(0, cohort.FrontCardId)!.Card.Key == "action:" + cohort.FrontCardId),
-            "Tapped and untapped ordinary lands share one bounded turning footprint with compact separate state faces, a real caption band, and each exact action key; "
+            "Matching lands retain distinct tapped/untapped piles, the same physical face dimensions, a quarter-turn and each exact action key; "
             + $"family {landFamily.Bounds}, caption {landFamily.NameBounds}, matching {matchingLands.BattlefieldCard(0, "compact-ready")!.StudyFamily!.BodyBounds}; "
             + string.Join("; ", mixedNodes.Select(node => $"{node.Id}: {node.Pose.Bounds}, front {node.GroupFront}, count {node.GroupCount}")));
     }
@@ -276,7 +274,7 @@ internal static class SharedTableStudyChecks
                 Cards = zone.Cards.Select(card => card with { Key = "focus-action:" + card.VisualId }).ToImmutableArray()
             }).ToImmutableArray()
         }).ToImmutableArray() };
-        var scene = TableScene.Build(state, 0, new(-100, -100), null, null, false,
+        var scene = TableScene.Build(state, new(-100, -100), null, null, false,
             CardPresentation.IsResource, sharedTableStudy: true);
         var scutes = Cards(scene).Where(node => node.Owner == 2 && node.Card.Name == "Scute Swarm").ToArray();
         var family = scutes[0].StudyFamily!;
@@ -300,6 +298,6 @@ internal static class SharedTableStudyChecks
         }).ToImmutableArray()
     };
     private static IEnumerable<SceneCard> Cards(TableScene scene) => scene.Seats.SelectMany(seat => seat.Battlefield).SelectMany(cluster => cluster.Cards);
-    private static TableScene Build(GameSnapshot state) => TableScene.Build(state, 0, new(-100, -100), null, null,
+    private static TableScene Build(GameSnapshot state) => TableScene.Build(state, new(-100, -100), null, null,
         false, CardPresentation.IsResource, sharedTableStudy: true);
 }

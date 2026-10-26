@@ -92,7 +92,7 @@ internal sealed class ExperienceLabReplayCapture : ITableAutomation
         captures.Add(new(session.StageIndex, session.Stage.Name, label, requestedOffset, actualOffset, view.Now, wall.Elapsed.TotalSeconds,
             Path.GetFileName(surfacePath), Path.GetFileName(windowPath), Path.GetFileName(framePath), state?.Id, state?.Revision ?? 0,
             state?.Turn ?? 0, state?.ActivePlayerId, state?.ActionClass,
-            state?.PriorityPlayerId, state?.DecisionOwnerId, state?.Decision?.Kind,
+            state?.PriorityPlayerId, state?.DecisionOwnerId, state?.Decision?.Payload.GetType().Name,
             view.BoardView.Offset.X, view.BoardView.Offset.Y, view.FollowTurnEnabled, view.BoardViewLimitedByLayout,
             state?.Stack.Select(item => new StackRecord(item.Id, item.Name, item.ControllerId)).ToArray() ?? []));
         Save(null);

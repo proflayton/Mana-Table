@@ -81,6 +81,7 @@ internal sealed partial class TableApplication
                 + bodyHeight + (entry.Targets.Length > 0 ? 27 : 0) + 12, 134, 220) : 46;
             var bounds = new Rectangle(545, y, 435, height);
             canvas.Panel(bounds, new(17, 29, 36), index == 0 ? Gold * .7f : Muted * .45f, 4);
+            PaintStackArrival(entry, bounds);
             if (expanded) PaintPendingEffect(entry, index, bounds, owner, effect);
             else {
                 canvas.Circle(new(bounds.X + 17, bounds.Y + 18), 10, Muted);
@@ -96,7 +97,8 @@ internal sealed partial class TableApplication
             y = bounds.Bottom + 5;
         }
         canvas.Rounded(new(545, 285, 435, 34), new(11, 22, 28), 5);
-        canvas.Text(status, 557, 293, Gold, .56f, 411, 1, true);
+        canvas.Text(matchPresentation.StackArrivalStrength(state.Stack[0].Id, now) > 0 ? StackHeading(state.Stack[0]) : status,
+            557, 293, Gold, .56f, 411, 1, true);
         if (state.Stack.Length > capacity) {
             Button("stack-queue-prev", "‹", 905, y + 1, 32, new MatchIntent.SetPage(MatchPage.PriorityQueue, page - 1), page > 0, height: 28);
             Button("stack-queue-next", "›", 945, y + 1, 32, new MatchIntent.SetPage(MatchPage.PriorityQueue, page + 1), (page + 1) * capacity < state.Stack.Length, height: 28);
@@ -143,6 +145,8 @@ internal sealed partial class TableApplication
         int bodyY = bounds.Y + PendingEffectHeaderHeight(entry, owner);
         int targetHeight = entry.Targets.Length > 0 ? 27 : 0;
         int bodyHeight = Math.Max(25, bounds.Bottom - bodyY - targetHeight - 12);
+        hits.Add(new("stack-effect:" + entry.Id, Scope,
+            new(bounds.X + 12, bodyY, bounds.Width - 24, bodyHeight), new MatchIntent.InspectPendingEffect(entry.Id)));
         string[] pages = [];
         if (entry.Effect is { Kind: "damage" } value)
             PaintPendingDamageValue(value, new(bounds.X + 14, bodyY, bounds.Width - 28, bodyHeight));
@@ -157,8 +161,6 @@ internal sealed partial class TableApplication
         }
         if (pages.Length > 1) {
             canvas.Text("…", bounds.Right - 24, bounds.Bottom - 26, Muted, .75f, 18, 1, true);
-            string captured = entry.Id;
-            hits.Add(new("stack-effect:" + entry.Id, Scope, new(bounds.Right - 30, bounds.Bottom - 29, 28, 28), new MatchIntent.InspectPendingEffect(captured)));
         }
     }
 }

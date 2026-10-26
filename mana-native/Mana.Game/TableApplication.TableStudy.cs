@@ -22,6 +22,7 @@ internal sealed partial class TableApplication
     {
         if (!TableStudyAvailable || dragging) return;
         tableStudy = enabled;
+        manualBoardView = null; boardPanning = false;
         studyFocusOwner = null;
         ClearCardReading();
         SetTurnFollow(false);
@@ -44,7 +45,7 @@ internal sealed partial class TableApplication
                 : new(reader.Right + 12, area.Y, Math.Max(1, rightWidth), area.Height);
         }
         string owner = entry.ControllerId is { } controller ? StateClarity.PlayerName(state, controller) : "Controller not reported";
-        const string status = "Next to resolve";
+        string status = StackHeading(entry);
         var header = new Rectangle(area.X, area.Y, area.Width, 23);
         canvas.Rounded(header, new(11, 22, 28), 4);
         canvas.Text(status, header.X + 10, header.Y + 3, Gold, .52f,
@@ -56,6 +57,7 @@ internal sealed partial class TableApplication
         }
         var body = new Rectangle(area.X, header.Bottom + 2, area.Width, area.Height - header.Height - 2);
         canvas.Panel(body, new(17, 29, 36), Gold * .55f, 4);
+        PaintStackArrival(entry, body);
         var art = new Rectangle(body.X + 10, body.Y + 8, 42, 37);
         if (entry.Ability && entry.Card is { FaceDown: false } source && resources.Card(source) is { } image) {
             var crop = new Rectangle((int)(image.Width * .12f), (int)(image.Height * .14f),

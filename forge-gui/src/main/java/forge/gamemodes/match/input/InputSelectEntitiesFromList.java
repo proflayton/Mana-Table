@@ -5,7 +5,6 @@ import forge.game.ability.AbilityUtils;
 import forge.game.ability.ApiType;
 import forge.game.card.Card;
 import forge.game.card.CardLists;
-import forge.game.card.CardView;
 import forge.game.cost.CostExile;
 import forge.game.cost.CostTapType;
 import forge.game.keyword.Keyword;
@@ -18,7 +17,6 @@ import forge.util.TextUtil;
 import forge.util.collect.FCollection;
 import forge.util.collect.FCollectionView;
 
-import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
 
@@ -45,16 +43,9 @@ public class InputSelectEntitiesFromList<T extends GameEntity> extends InputSele
         }
     }
 
-    private void publishSelectables() {
-        // Input transitions clear the previous selections. Publish this input's
-        // legal cards after that transition, not while constructing the input.
-        ArrayList<CardView> vCards = new ArrayList<>();
-        for (T v : validChoices) {
-            if (v instanceof Card c) {
-                vCards.add(c.getView());
-            }
-        }
-        getController().getGui().setSelectables(vCards, this.min, this.max);
+    @Override
+    protected Iterable<T> getSelectableEntities() {
+        return validChoices;
     }
 
     @Override
@@ -154,14 +145,8 @@ public class InputSelectEntitiesFromList<T extends GameEntity> extends InputSele
         return msg.toString();
     }
 
-    @Override
-    protected void onStop() {
-        getController().getGui().clearSelectables();
-        super.onStop();
-    }
-
     /**
-     * Shows the usual card action dialog but then, if offering the "mass select" function,
+     * Updates the usual selection buttons but then, if offering the "mass select" function,
      * replaces the "cancel" button with a button that will cycle through "auto-select all
      * targets owned by player", "auto-select all valid targets", and "clear existing target
      * selections". Because the number of possible targets can be 0, simply pressing "OK"
@@ -169,9 +154,8 @@ public class InputSelectEntitiesFromList<T extends GameEntity> extends InputSele
      * button is not needed in this case.
      */
     @Override
-    public void showMessage() {
-        publishSelectables();
-        super.showMessage();
+    protected void updateSelectionButtons() {
+        super.updateSelectionButtons();
         // Use mass select mode for proliferate. If you wanted to add it to a different effect
         // the effect must allow you to select any number of targets between "none" and "all valid targets"
         if (sa != null && ApiType.Proliferate == sa.getApi() && min == 0) {

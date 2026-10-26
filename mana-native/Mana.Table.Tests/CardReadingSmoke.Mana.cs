@@ -16,7 +16,7 @@ internal sealed partial class CardReadingSmoke
         ImmutableDictionary<string, int> Pool(int colorless) => ImmutableDictionary<string, int>.Empty.Add("W", 1).Add("U", 2).Add("B", 3).Add("R", 4).Add("G", 5).Add("C", colorless);
         Step(0, () => {
             replies = scenario.Replies.Count; Move(new(10, 70));
-            Publish(scenario.State with { Decision = new() { Kind = "input", Intent = DecisionIntent.Priority, OkEnabled = true },
+            Publish(scenario.State with { Decision = new Decision("", new DecisionContext(), new PriorityPayload(new DecisionReply("Confirm", true), null, CanAutoPass: false, QuietYieldToken: "", Abilities: [])),
                 Players = scenario.State.Players.Select(player => player with { Mana = Pool(2).ToImmutableDictionary(), Counters = ImmutableDictionary<string, int>.Empty.Add("Poison", 3), States = [
                     new("speed", "Speed", "progress", 2, 4, "Public progress supplied by the game."),
                     new("counter:poison", "Poison", "counter", 3, null, "Public poison counters."),
@@ -38,18 +38,18 @@ internal sealed partial class CardReadingSmoke
                 "Inspecting an icon indicator shows exact current colorless mana and all six pool values without submitting a game action");
             MoveHit("close-overlay");
         }, "The read-only mana detail must show the current complete pool"); Click();
-        Step(0, () => Publish(scenario.State with { Decision = new() { Kind = "input", Intent = DecisionIntent.Mana, OkEnabled = true },
+        Step(0, () => Publish(scenario.State with { Decision = new Decision("", new DecisionContext(), new PaymentPayload(new DecisionReply("Confirm", true), new DecisionReply("Cancel", false))),
             Players = scenario.State.Players.Select(player => player with { Mana = Pool(1).ToImmutableDictionary() }).ToImmutableArray() }));
         Prepared(() => view.ManaPoolBadge(0)?.Parts.SingleOrDefault(part => part.Key == "C") is { Amount: "1", Delta: -1 }, 2, () => {
             lossStarted = view.ManaPoolBadge(0)!.Parts.Single(part => part.Key == "C").AnimationStarted;
-            Check(ManaGeometryReady() && view.Match?.Decision?.Intent == DecisionIntent.Mana,
+            Check(ManaGeometryReady() && view.Match?.Decision?.Payload is PaymentPayload,
                 "Paying a cost keeps every current pool visible and immediately shows the exact remaining mana with a loss pulse");
             view.Accept(scenario.State);
         }, "A payment snapshot must update pool indicators without waiting for its animation");
         Step(.04, () => {
             Check(view.ManaPoolBadge(0)!.Parts.Single(part => part.Key == "C").AnimationStarted == lossStarted,
                 "A repeated snapshot does not restart a mana transition");
-            Publish(scenario.State with { PhaseKey = "COMBAT_BEGIN", Decision = new() { Kind = "input", Intent = DecisionIntent.Priority, OkEnabled = true },
+            Publish(scenario.State with { PhaseKey = "COMBAT_BEGIN", Decision = new Decision("", new DecisionContext(), new PriorityPayload(new DecisionReply("Confirm", true), null, CanAutoPass: false, QuietYieldToken: "", Abilities: [])),
                 Players = scenario.State.Players.Select(player => player with { Mana = Pool(0).ToImmutableDictionary() }).ToImmutableArray() });
         });
         Prepared(() => view.ManaPoolBadge(0)?.Parts.SingleOrDefault(part => part.Key == "C") is { Amount: "0", Delta: -1, Opacity: < 1 }, 2, () =>

@@ -46,14 +46,11 @@ public static partial class ExperienceScenarios
             DecisionOwnerId = stage == 2 ? 1 : state.ViewerId,
             PriorityPlayerId = stage == 2 ? 1 : state.ViewerId,
             ActionClass = "priority",
-            Decision = stage == 2 ? null : new() {
-                Kind = "input", Intent = DecisionIntent.Priority, OkEnabled = stage == 1,
-                Message = stage switch {
+            Decision = stage == 2 ? null : new("", new(Message: stage switch {
                     0 => "Choose Walking Ballista's ability. Four colorless mana is available.",
                     1 => "The ability is waiting on the stack. Pass priority when you are ready.",
                     _ => adding ? "Walking Ballista now has four counters and is 4/4." : "Walking Ballista's ability dealt 1 damage to " + target.Name + "."
-                }
-            }
+                }), new PriorityPayload(new("Confirm", stage == 1)))
         };
     }
 }

@@ -7374,12 +7374,47 @@ public class Card extends GameEntity implements Comparable<Card>, IHasSVars, ITr
         return getAllPossibleAbilities(player, removeUnplayable, null);
     }
     public List<SpellAbility> getAllPossibleAbilities(final Player player, final boolean removeUnplayable, final Multimap<SpellAbility, SpellAbility> unhiddenAltCost) {
+        final List<SpellAbility> abilities = getAbilityVariants(player, unhiddenAltCost, false);
+        final Collection<SpellAbility> toRemove = Lists.newArrayListWithCapacity(abilities.size());
+        for (final SpellAbility sa : abilities) {
+            sa.setActivatingPlayer(player);
+            // fix things like retrace
+            // check only if SA can't be cast normally
+            if (!sa.canPlay(true) && (removeUnplayable || !sa.isPossible())) {
+                toRemove.add(sa);
+            }
+        }
+        abilities.removeAll(toRemove);
+        return abilities;
+    }
+
+    /**
+     * Durable play routes from this occurrence, independent of the current
+     * priority window, payment resources and per-turn play limits. This is
+     * discovery only: the input must still offer and validate an actual action.
+     */
+    public List<SpellAbility> getPlayAccessAbilities(final Player player) {
+        final List<SpellAbility> abilities = getAbilityVariants(player, null, true);
+        abilities.removeIf(sa -> {
+            sa.setActivatingPlayer(player);
+            if (sa.isLandAbility()) return !player.hasLandPlayAccess(
+                    Objects.requireNonNullElse(sa.getAlternateHost(this), this), sa);
+            return !(sa instanceof Spell spell) || !spell.hasPlayAccess(player);
+        });
+        return abilities;
+    }
+
+    private List<SpellAbility> getAbilityVariants(final Player player,
+            final Multimap<SpellAbility, SpellAbility> unhiddenAltCost, final boolean includeTimingLimitedRoutes) {
         CardState oState = getOriginalState(CardStateName.Original);
         final List<SpellAbility> abilities = Lists.newArrayList();
-        Consumer<SpellAbility> consumer = sa -> {
+        Consumer<SpellAbility> consumer = original -> {
+            // Every seat reads access. Do not change the activating player on
+            // a base ability retained by the current actor's action catalog.
+            SpellAbility sa = includeTimingLimitedRoutes ? original.copy(player) : original;
             abilities.add(sa);
             //add alternative costs as additional spell abilities
-            List<SpellAbility> altCost = GameActionUtil.getAlternativeCosts(sa, player, false);
+            List<SpellAbility> altCost = GameActionUtil.getAlternativeCosts(sa, player, false, includeTimingLimitedRoutes);
             abilities.addAll(altCost);
             if (unhiddenAltCost != null) {
                 unhiddenAltCost.putAll(sa, altCost);
@@ -7394,7 +7429,7 @@ public class Card extends GameEntity implements Comparable<Card>, IHasSVars, ITr
 
         if (isFaceDown() && isInZone(ZoneType.Exile)) {
             for (final SpellAbility sa : oState.getSpellAbilities()) {
-                abilities.addAll(GameActionUtil.getAlternativeCosts(sa, player, false));
+                abilities.addAll(GameActionUtil.getAlternativeCosts(sa, player, false, includeTimingLimitedRoutes));
             }
         }
         if (isFaceDown() && isInZone(ZoneType.Command)) {
@@ -7453,17 +7488,6 @@ public class Card extends GameEntity implements Comparable<Card>, IHasSVars, ITr
                 }
             }
         }
-
-        final Collection<SpellAbility> toRemove = Lists.newArrayListWithCapacity(abilities.size());
-        for (final SpellAbility sa : abilities) {
-            sa.setActivatingPlayer(player);
-            // fix things like retrace
-            // check only if SA can't be cast normally
-            if (!sa.canPlay(true) && (removeUnplayable || !sa.isPossible())) {
-                toRemove.add(sa);
-            }
-        }
-        abilities.removeAll(toRemove);
 
         return abilities;
     }

@@ -10,6 +10,8 @@ internal sealed partial class TableApplication
 {
     internal sealed record BattlefieldLabelPaint(string Kind, string Text, Rectangle Bounds, int MeasuredWidth, int AvailableWidth);
     private readonly Dictionary<string, List<BattlefieldLabelPaint>> battlefieldLabels = [];
+    private sealed record BattlefieldStatsPaint(Rectangle Bounds, int MeasuredWidth);
+    private readonly Dictionary<string, BattlefieldStatsPaint> battlefieldStatsBounds = [];
     private void RecordBattlefieldLabel(Card card, int owner, string kind, string text, Rectangle bounds, int measured, int available)
     {
         ExtendCardHit(card, bounds);
@@ -21,8 +23,6 @@ internal sealed partial class TableApplication
 
     private void PaintBattlefieldLabels(Card card, Pose pose, int owner, int copies)
     {
-        var node = tableScene?.BattlefieldCard(owner, CardViews.Identity(card));
-        if (node is { Dense: true }) { PaintDenseBattlefieldLabels(card, owner, node, copies); return; }
         if (pose.Bounds.Height >= 50) {
             var states = CardPresentation.Abilities(card).ToList();
             if (card.Sick && CardPresentation.HasCombatStats(card)) states.Insert(0, "summoning sick");

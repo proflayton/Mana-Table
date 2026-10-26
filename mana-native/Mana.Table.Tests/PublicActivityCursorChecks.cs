@@ -81,7 +81,7 @@ internal static class PublicActivityCursorChecks
         new PlayPreferences { Automatic = false, ReducedMotion = true, Sounds = false }.Save(directory);
         var privateFace = new Card { Key = "old-private-key", VisualId = "old-private-face", Name = "Previous viewer private face", Type = "Instant" };
         var initial = PresentationSmoke.Example() with { Activity = [], Stack = [], Combat = null,
-            Decision = new() { Id = "activity-priority", Kind = "input", Intent = DecisionIntent.Priority, OkEnabled = true } };
+            Decision = new Decision("activity-priority", new DecisionContext(), new PriorityPayload(new DecisionReply("Confirm", true), null, CanAutoPass: false, QuietYieldToken: "", Abilities: [])) };
         initial = initial with { Players = initial.Players.Select(player => player.Id != initial.ViewerId ? player : player with {
             Zones = player.Zones.Select(zone => zone.Name != "Hand" ? zone : zone with { Count = 1, Cards = [privateFace] }).ToImmutableArray()
         }).ToImmutableArray() };

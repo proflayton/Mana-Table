@@ -10,7 +10,7 @@ public sealed partial class ExperienceLabSession
     private SourceActionSet PreparedSpellActions(Card source)
     {
         SourceAction[] actions = [];
-        if (StageIndex is 0 or 5 && State.Decision?.Intent == DecisionIntent.Priority && !source.FaceDown) {
+        if (StageIndex is 0 or 5 && State.Decision?.Payload is PriorityPayload && !source.FaceDown) {
             var spell = State.Viewer!.Zone("Exile").Cards.Single();
             if (source.VisualId == PreparedSpellScenario.SourceId || source.VisualId == spell.VisualId)
                 actions = [new(State.Decision.Id + ":" + source.Key + ":" + PreparedSpellScenario.CastAction, "cast", "Ancestral Recall — {U}") {
@@ -25,7 +25,7 @@ public sealed partial class ExperienceLabSession
     {
         if (StageIndex == 1) {
             if (reply is CancelSelection) return AdvancePreparedSpell(0);
-            if (reply is SelectPlayer player && State.Decision!.PlayerChoices.Contains(player.Player)) {
+            if (reply is SelectPlayer player && State.Decision?.Payload is TargetSelectionPayload targeting && targeting.Players.Contains(player.Player)) {
                 preparedRecipient = player.Player;
                 return AdvancePreparedSpell(2);
             }

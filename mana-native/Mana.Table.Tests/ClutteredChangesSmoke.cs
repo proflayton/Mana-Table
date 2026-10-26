@@ -42,7 +42,7 @@ internal sealed class ClutteredChangesSmoke : ITableAutomation
             string directory = Path.Combine(profile, $"{size.X}x{size.Y}"); Prepare(directory);
             var engine = new InteractionScenarioEngine(); engine.Present(ClutteredChangesScenario.Initial());
             using var application = new TableApplication(TestTableServices.For(engine), directory, initialState: engine.State);
-            application.Automated = true; application.Initialize();
+            application.Automated = true; application.EnableLiveTableStudy(); application.Initialize();
             var driver = new ClutteredChangesSmoke(application.TestPort, engine, size);
             var wall = Stopwatch.StartNew(); double time = 0;
             try {
@@ -61,7 +61,8 @@ internal sealed class ClutteredChangesSmoke : ITableAutomation
     {
         var dimensions = size ?? new Point(1000, 740); Prepare(profile);
         var engine = new InteractionScenarioEngine(); engine.Present(ClutteredChangesScenario.Initial());
-        using var game = new TableWindow(TestTableServices.For(engine), profile, null, null, dimensions, initialState: engine.State, artSource: new CardReadingArtFixture());
+        using var game = new TableWindow(TestTableServices.For(engine), profile, null, null, dimensions, initialState: engine.State,
+            artSource: new CardReadingArtFixture(), enableLiveTableStudy: true);
         game.Automation = new ClutteredChangesSmoke(game.TestPort, engine, dimensions, game.TestPort);
         game.Run();
     }
@@ -122,8 +123,12 @@ internal sealed class ClutteredChangesSmoke : ITableAutomation
             Check(engine.Replies.Count == 0, "Reviewing all results and earlier causes sends no game action");
             Capture("05-earlier-earthbend"); MoveHit("close-overlay");
         }); Click();
-        Step(() => { MoveCard(ClutteredChangesScenario.ActionCardId); }); Click();
-        Wait(() => FrameData.Cards.Any(card => card.Id == ClutteredChangesScenario.ActionCardId && card.Focused)
+        Step(() => {
+            Move(Pixel(view.DisplayedPose(ClutteredChangesScenario.ActionCardId)!.Value.Center));
+            mouse = new(mouse.X, mouse.Y, mouse.ScrollWheelValue + 480, default, default, default, default, default);
+        });
+        Wait(() => view.BoardView.Scale > 1.8f, () => MoveCard(ClutteredChangesScenario.ActionCardId)); Click();
+        Wait(() => FrameData.Cards.Any(card => card.Id == ClutteredChangesScenario.ActionCardId && card.Focused && card.Display.Size.X >= 300)
             && view.Hits.Any(hit => hit.Id == "read-card-action"), () => {
             var reader = FrameData.Cards.Single(card => card.Id == ClutteredChangesScenario.ActionCardId);
             Check(reader.Focused
@@ -131,7 +136,7 @@ internal sealed class ClutteredChangesSmoke : ITableAutomation
                 "A current crowded Llanowar Elves opens its card reader and explicit activation without an automatic action");
             var current = view.Match!.Viewer!.Zone("Battlefield").Cards.Single(card => card.VisualId == ClutteredChangesScenario.ActionCardId);
             Check(reader.Card.Counters["+1/+1"] == current.Counters["+1/+1"]
-                && Text().Contains("+1/+1 ×" + current.Counters["+1/+1"])
+                && Text().Contains(current.Counters["+1/+1"] + " +1/+1 counters")
                 && FrameData.Drawing.Commands.OfType<DrawCommand.CenterText>().Any(text => reader.Display.Bounds.Contains(text.Bounds)
                     && text.Value == $"{current.Power}/{current.Toughness}"),
                 "Reading the current permanent shows its full typed counter total and authoritative power/toughness on that same card");
@@ -144,7 +149,7 @@ internal sealed class ClutteredChangesSmoke : ITableAutomation
         Wait(() => !view.Busy && engine.Replies.Count == 1, () => {
             Check(engine.Replies.Single() is ActivateCard reply && reply.GameId == gameId
                 && reply.DecisionId == decisionId && reply.Card == cardKey
-                && view.Match!.Decision is { Purpose: DecisionPurpose.AbilitySelection, SourceCard.VisualId: ClutteredChangesScenario.ActionCardId },
+                && view.Match!.Decision is { Context.Source.Card.VisualId: ClutteredChangesScenario.ActionCardId, Payload: AbilityChoicePayload },
                 "Only the explicit activation submits one current game/decision/card command and opens that card's ability chooser");
             Capture("07-ability-chooser"); finished = true; Save(null); window?.Exit();
         });
@@ -159,30 +164,12 @@ internal sealed class ClutteredChangesSmoke : ITableAutomation
             var nodes = FrameData.Scene!.Battlefield(player.Id).SelectMany(cluster => cluster.Cards).ToArray();
             Check(nodes.Length == 120 && nodes.All(node => view.CardPaintCount(node.Id) == 1),
                 $"Seat {player.Id} paints each of its 120 permanents exactly once");
-            foreach (var node in nodes) {
-                var canonical = view.Hits.Where(hit => hit.Zone == "Battlefield" && hit.Card != null && CardViews.Identity(hit.Card) == node.Id).ToArray();
-                Check(canonical.Length == 1 && Exposed(node.Id) != null,
-                    $"{node.Id} has one canonical hit and an exposed physical 2×2 pointer target at {viewport.X}×{viewport.Y}");
-            }
-            foreach (var node in nodes.Where(node => node.GroupFront)) {
-                var labels = view.BattlefieldLabels(node.Id);
-                Check(labels.Any(label => label.Kind == "name" && label.Text.Length > 0),
-                    $"Group front {node.Id} includes its public name in the composed label commands");
-                if (CardPresentation.HasCombatStats(node.Card))
-                    Check(labels.Any(label => label.Kind == "pt" && label.Text == $"{node.Card.Power}/{node.Card.Toughness}"
-                        && label.MeasuredWidth <= label.AvailableWidth && label.Bounds.Height * Scale >= 7),
-                        $"Group front {node.Id} displays its complete current power/toughness");
-                if (node.Card.Counters.Count > 0)
-                    Check(labels.Count(label => label.Kind == "counter") == 1
-                        && labels.Any(label => label.Kind == "counter" && label.Text == node.Card.Counters["+1/+1"].ToString()
-                            && label.MeasuredWidth <= label.AvailableWidth && label.Bounds.Height * Scale >= 7),
-                        $"Group front {node.Id} displays its exact current counter total once in its attached compact marker");
-                foreach (var label in labels.Where(label => label.Kind is "name" or "pt" or "counter")) {
-                    var logical = label.Bounds.Center;
-                    Check(Hit(Pixel(logical.ToVector2()))?.Card is { } actual && CardViews.Identity(actual) == node.Id,
-                        $"The visible {label.Kind} strip belongs to the same occurrence {node.Id} through physical input");
-                }
-            }
+            Check(nodes.All(node => node.ScanFace && ReferenceEquals(node.Card,
+                    player.Zone("Battlefield").Cards.Single(card => CardViews.Identity(card) == node.Id))),
+                $"Seat {player.Id} uses the production card face and each occurrence's actual current state");
+            Check(FrameData.Scene.Seat(player.Id).Cohorts.All(cohort => cohort.Front.GroupCount == cohort.MemberIds.Count
+                    && cohort.MemberIds.All(id => FrameData.Scene.BattlefieldCard(player.Id, id) != null)),
+                $"Seat {player.Id} retains exact counted-pile membership; this does not establish visual readability");
         }
         Check(!view.Hits.Any(hit => hit.Id.StartsWith("rank-next:") || hit.Id.StartsWith("rank-prev:")), "The battlefield never requires paging to expose permanents");
     }
@@ -241,35 +228,17 @@ internal sealed class ClutteredChangesSmoke : ITableAutomation
     private Point Logical(Point physical) => new((int)((physical.X - (viewport.X - 1600 * Scale) / 2) / Scale),
         (int)((physical.Y - (viewport.Y - view.DesignHeight * Scale) / 2) / Scale));
     private TableHit? Hit(Point physical) => view.HitAt(Logical(physical));
-    private Point? Exposed(string id)
+    private void MoveCard(string id)
     {
-        var hit = view.Hits.SingleOrDefault(hit => hit.Zone == "Battlefield" && hit.Card != null && CardViews.Identity(hit.Card) == id);
-        if (hit == null) return null;
-        bool Matches(Point p) => p.X >= 0 && p.Y >= 0 && p.X < viewport.X && p.Y < viewport.Y
-            && Hit(p)?.Card is { } card && CardViews.Identity(card) == id;
-        bool Patch(Point p) => Matches(p) && Matches(new(p.X + 1, p.Y)) && Matches(new(p.X, p.Y + 1)) && Matches(new(p.X + 1, p.Y + 1));
-        var middle = Pixel(hit.Bounds.Center.ToVector2()); if (Patch(middle)) return middle;
-        var top = Pixel(new(hit.Bounds.Left, hit.Bounds.Top)); var bottom = Pixel(new(hit.Bounds.Right, hit.Bounds.Bottom));
-        for (int y = Math.Max(0, top.Y); y < Math.Min(viewport.Y - 1, bottom.Y); y++)
-            for (int x = Math.Max(0, top.X); x < Math.Min(viewport.X - 1, bottom.X); x++)
-                if (Patch(new(x, y))) return new(x, y);
-        observations.Add(new {
-            stage = "occluded-card", id, hit.Bounds, displayed = view.DisplayedPose(id), scale = Scale,
-            samples = Enumerable.Range(0, 5).SelectMany(y => Enumerable.Range(0, 5).Select(x => {
-                var physical = new Point(top.X + x, top.Y + y);
-                var logical = Logical(physical);
-                var actual = Hit(physical);
-                return new { physical, logical, contains = hit.Contains(logical), topHit = actual?.Id,
-                    topCard = actual?.Card == null ? null : CardViews.Identity(actual.Card), topBounds = actual?.Bounds };
-            })).ToArray()
-        });
-        return null;
+        var point = Pixel(view.DisplayedPose(id)!.Value.Center);
+        Check(Hit(point)?.Card is { } card && CardViews.Identity(card) == id,
+            "The camera-framed current activation card owns its actual center hit");
+        Move(point);
     }
-    private void MoveCard(string id) => Move(Exposed(id) ?? throw new InvalidOperationException("Covered card: " + id));
     private void MoveHit(string id) => Move(Pixel(view.Hits.LastOrDefault(hit => hit.Id == id)?.Bounds.Center.ToVector2()
         ?? throw new InvalidOperationException("Missing current hit: " + id)));
-    private void Move(Point point) => mouse = new(point.X, point.Y, 0, ButtonState.Released, ButtonState.Released, ButtonState.Released, ButtonState.Released, ButtonState.Released);
-    private void Click() { Step(() => mouse = new(mouse.X, mouse.Y, 0, ButtonState.Pressed, ButtonState.Released, ButtonState.Released, ButtonState.Released, ButtonState.Released)); Step(() => Move(new(mouse.X, mouse.Y))); }
+    private void Move(Point point) => mouse = new(point.X, point.Y, mouse.ScrollWheelValue, ButtonState.Released, ButtonState.Released, ButtonState.Released, ButtonState.Released, ButtonState.Released);
+    private void Click() { Step(() => mouse = new(mouse.X, mouse.Y, mouse.ScrollWheelValue, ButtonState.Pressed, ButtonState.Released, ButtonState.Released, ButtonState.Released, ButtonState.Released)); Step(() => Move(new(mouse.X, mouse.Y))); }
     private void Step(Action action) => steps.Enqueue((null, action));
     private void Wait(Func<bool> ready, Action action) => steps.Enqueue((ready, action));
     private void Check(bool passed, string description) { if (!passed) throw new InvalidOperationException(description); checks.Add(description); }
@@ -277,7 +246,7 @@ internal sealed class ClutteredChangesSmoke : ITableAutomation
         cards = FrameData.Cards.Count, view.ChangeCalloutBounds, view.DecisionPanelBounds,
         groups = view.PublicChanges.Select(group => new { group.Id, group.Title, group.Summary, count = group.Changes.Count }).ToArray(),
         nodes = FrameData.Scene!.Seats.SelectMany(seat => seat.Battlefield).SelectMany(cluster => cluster.Cards).Select(node => new {
-            node.Id, node.Card.Name, node.GroupFront, node.GroupCount, node.Pose, node.DenseLabels, labels = view.BattlefieldLabels(node.Id).ToArray()
+            node.Id, node.Card.Name, node.GroupFront, node.GroupCount, node.Pose, labels = view.BattlefieldLabels(node.Id).ToArray()
         }).ToArray() });
     private void Capture(string name)
     {

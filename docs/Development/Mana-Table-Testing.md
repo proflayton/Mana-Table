@@ -36,15 +36,57 @@ The matrix uses no JVM, graphics device or network; it prints its measured runti
 
 Real Forge goldens use the existing `canonical-interaction` TestNG group: paid
 casting/payment, private partner search, Toothy's last-known counters and draws,
-prepared-spell casting, pending versus prevented damage, combat allocation and persistent Speed. The
+prepared-spell casting, counter-source cost payment, Convoke assignment versus
+ordinary mana, pending versus prevented damage, combat allocation, persistent Speed,
+and creature-type land entry with token-producing cards available for ranking. The
 partner search retains four recipient variants. These methods already run once
 in normal Java CI; grouping them adds no duplicate engine startups. The focused
 command selects their classes as well as the group so upstream modules do not
 start empty TestNG processes:
 
 ```powershell
-mvn -pl forge-api -am test '-Dgroups=canonical-interaction' '-Dtest=SourceActionsTest,PartnerChoiceExperienceTest,ToothyLeavesBattlefieldTest,PendingEffectTest,AllocationProjectionTest,PlayerStatesExperienceTest' '-Dsurefire.failIfNoSpecifiedTests=false'
+mvn -pl forge-api -am test '-Dgroups=canonical-interaction' '-Dtest=SourceActionsTest,PartnerChoiceExperienceTest,ToothyLeavesBattlefieldTest,CounterCostExperienceTest,PaymentCandidateExperienceTest,TargetCounterExperienceTest,PendingEffectTest,AllocationProjectionTest,PlayerStatesExperienceTest,MatchFailureTest,ManaAvailabilityExperienceTest' '-Dsurefire.failIfNoSpecifiedTests=false'
 ```
+
+`MatchFailureTest` also exercises engine interruption outside that canonical
+group: every seat retains its last synchronized board, has no pending answer and
+receives no defeat from cleanup concessions. `DeckTokensTest` covers ownerless
+rules prototypes followed by real deck-configured token creation. The native
+`--smoke-headless-presentation` lane covers interruption with an old engine's
+stale defeat, local card inspection and a genuine completed defeat. These are
+failure/authority checks, not approval of the outcome screen's visual design.
+
+`ManaAvailabilityExperienceTest` compares current cues with actual payment using
+floating colorless mana, Wastes, mixed mana, explicit colorless requirements and
+Victory Chimes' manual recipient choice. It also follows Omnath's landfall mana
+from a real pending trigger to production, while `CounterCostExperienceTest`
+checks a paid activation's classification. `HeadlessPresentationSmoke.StackArrival`
+uses the production application to cover announcement lifetime, effect hover,
+current source state, leaving the stack, an already-running clock and provider
+classification validation. Its authored observations test presentation and
+command safety; the Java journeys supply the rules evidence. Window captures
+and human readability review remain separate.
+The small-window full card-reading journey also runs in the fast native release
+set, sharing the AI-seat shard. It waits for the actual automatic pass after a
+visible stack announcement, rather than assuming the earlier shorter animation
+duration. The existing headless arrival check separately verifies that unchanged
+observations do not restart that announcement.
+The crowded-field window journey also joins the fast release set, sharing the
+three-player lobby shard. It uses the production battlefield faces at the former
+threshold, mixed states, duplicate tokens, distinct names and the canonical
+480-permanent checkpoint. It exercises actual player focus, wheel zoom, card
+reading, middle-drag and Home. Its occurrence checks establish retention and
+command safety; they do not establish human readability. The former dense-tile
+exposure assertions and pixel hunting are removed with that renderer.
+The same window journey includes nine lands with mixed tap states and three
+fully tapped lands at each seat. Its counts cover physical state, not mana
+availability; the presentation checks separately include animated lands,
+nonland mana sources and concealed identities. Inspect the actual counted piles
+and seat summaries in both window sizes; assertions do not approve their clarity.
+The existing cluttered-changes journey also uses the production renderer in
+headless and windowed modes. It retains the full source/delta/activation checks
+and zooms to the actual activation card before reading it; it no longer demands
+480 simultaneously exposed tiny pointer patches or labels on every overview face.
 
 This is a representative real-rules lane alongside enumerated coverage of the
 current interaction command variants. Neither replaces visual review of the corresponding
@@ -129,10 +171,22 @@ The existing seat-switch application case also checks revocation immediately
 after acceptance, before preparing another frame, so stale hit intents cannot
 survive until the next paint.
 
-`PresentationReadChecks`, `DecisionDraftChecks` and `DeckInteractionChecks` run
+`HeadlessPresentationSmoke.RulesReader` checks the counter lab's opening source
+with an ordinary center press/release, an actually empty stack, read-only rules
+flips, current counter/P/T updates, and disclosure revocation between press and
+release. Geometry and command safety checks do not establish that a player can
+discover the action. Native review should use the shipping `ExperienceLabLauncher`
+path, ordinary artwork/center clicks, both window sizes and the full payment
+continuation. Lab profiles retain `input-trace.jsonl` for physical input diagnosis.
+
+`PresentationReadChecks`, `DecisionSessionChecks` and `DeckInteractionChecks` run
 in the same presentation lane. They cover repeated frame reads without advancing
 state, publication on Update, revoked or altered intents, prompt/viewer draft
 resets, bounded selections/allocations and deck navigation/reader lifetimes.
+The decision checks also replace payload families, option bounds, numeric bounds,
+initial values, recipient identities and disclosed face sets under the same prompt
+ID. Incompatible drafts and private readers must retire; unchanged observations
+must preserve the player's edits. `DecisionSession` owns that local state.
 The window only reads the prepared frame. Headless timing measures Update,
 including frame preparation; reading the cached frame is not a new composition
 or an FPS measurement. These checks supply behavior evidence, not UX acceptance.
@@ -150,6 +204,18 @@ admission, delete/restore epochs, explicit review retry, notify-first discovery,
 download cancellation races, prepared-release identity, blockers changing during
 verification, explicit restart and cancellation cleanup on shutdown. These use
 the existing runners and CI jobs; they add no JVM startup or graphics window.
+
+Its decision-contract cases cover all fifteen payload variants through JSON
+round trips, deeply immutable subtype graphs, malformed/null/unknown payload
+rejection, and closed command coverage. Allocation checks use normalized typed
+recipients and the same constraints as command admission. These are finite
+interface checks, not coverage of every Magic interaction.
+
+`NumericTextboxProducerTest` calls Forge's real numeric textbox producer and
+compares the checked-in `numeric-text-prompt.json` fixture (apart from its UUID).
+The native boundary checks decode that same fixture as unbounded integer entry
+and preserve its initial value. This runs inside the existing Java/API and native
+presentation suites rather than adding a separate process or CI job.
 Window journeys for Build/Tune/Test, printings and Updates still exercise the
 production application over those owners. Passing lifecycle checks establishes
 transition safety, not human visual clarity or approval.
@@ -232,6 +298,75 @@ required local targets preempt them immediately. The existing `--smoke-auto-dock
 window journey captures routine Auto, a real response and required blockers.
 `decision-flow.v1` supplies the corresponding window-review
 sequence; authored replies and passing checks do not supply rules or UX proof.
+
+`optional-decisions.v1` covers real-player library targeting, a sole legal target,
+search/decline at another deciding seat, free/paid opening hands, a general
+confirmation and the same library choice over 480 permanents. Load stage 7
+directly for a settled crowded observation. The existing headless presentation
+lane exercises pile gestures, named choices for seats outside the rendered
+viewport, stale press/release scopes, peer alternatives, noncommitting source and
+hand reading, and actual remaining stack items. `PartnerChoiceExperienceTest`
+checks the live target → optional search → private-library journey, absence of
+a matching partner, accepted shuffle versus refusal, and Solemn Simulacrum's
+optional search without a player picker. These tests do not approve the UX.
+
+`play-access.v1` places source-distinct exile grants, a graveyard flashback card,
+an opponent-owned exiled card and an exiled land beside the unchanged hand.
+Its authored stages include retained access off priority, grant expiry,
+two routes for one card, physical stack/resolution transitions and larger
+collections: 37 cards in hand and 60/200 access cards. `PlayAccessPresentationChecks`
+and the existing headless presentation lane cover exact source offers,
+noncommitting reading, explicit unfold/return and spatial focus/pan/zoom gestures,
+withdrawn disclosure and permission between press/release, and normal/reduced
+motion. `PlayAccessTest` uses real Forge grants, flashback, library-top land
+access and same-turn Plot access. These checks establish the boundary and gesture
+behavior; inspect actual artwork at both window sizes before assessing clarity.
+Large collections open at play distance. At the deliberate whole-collection
+overview the card text is intentionally not a reading surface:
+review moving to readable scale, inspecting and playing the first, middle and
+last physical occurrences, then returning to the same source packet. A count
+of 200 represented cards cannot establish that the journey is understandable.
+
+`CounterCostExperienceTest` follows actual Loch Mare activation through mana,
+counter removal and draw, and retains explicit mixed-type/distributed choices,
+removal restrictions and cancellation. `PaymentCandidateExperienceTest` uses
+actual Convoke assignment and its zero-assignment route to ordinary mana.
+`TargetCounterExperienceTest` checks actual Battlegrowth additions, Thrull
+Parasite removal and Proliferate subset/empty choices. These distinguish
+already-working engine effects from input-publication and native routing faults.
+The existing native headless presentation lane also follows an inspected source
+through activation/payment and a keyless historical source face: missing physical
+candidate permission stays read-only; an authoritative candidate enables only
+its exact current `SelectCard`, then an explicit counter-type option. The same
+lane exercises legacy focused-battlefield selection and own/opponent counter
+targets without turning an ineligible read-only tile into a command.
+
+`CounterCostExperienceTest` also covers a two-counter cost with one counter
+allocated at a time, and a Soul Diviner host distinct from its chosen donor.
+The exported type-choice debit is one; available quantity accounts for pending
+allocation while the permanent's actual counter total stays unchanged until
+payment completes. Native decoder/immutable-state checks retain those facts,
+reject inconsistent metadata and preserve the original scoped answer.
+
+For the visual journey, launch `--experience-lab counter-payment.v1 --table-study`.
+Start at 0 for forced Loch Mare payment, 4 for mixed types, 9 for Soul Diviner,
+or 13 for the crowded donor choice. Read the source, activate, pay or select a
+donor/type, inspect the pending debit/current stats, then continue to the draw.
+Repeat both counter-type branches and each same-name donor. Use actual small
+and large windows, enlarged text and reduced/normal motion. These interactive
+checkpoints are authored; compare their semantics with real Forge tests and
+record human acceptance separately. A passing command path cannot approve the
+workspace, its source visibility or its result feedback.
+
+The same canonical case includes actual public piles with mostly unplayable
+cards, separate opponent zones, masked exile, a count-only concealed zone and
+an empty graveyard. The public-pile journeys open from the real pile, read and
+navigate without commands, preserve the exact source offer for an explicit
+play, return through current anchors, and withdraw lost disclosures/actions.
+Required-task interruption and reopening must preserve the existing decision
+draft. Counts, hidden faces and opponent ownership must never manufacture an
+action. Use actual-window captures to assess whether the purpose and physical
+return are understandable; passing these checks does not settle that question.
 
 The pending-effect journey in `--smoke-headless-presentation` distinguishes a
 captured `+3` counter addition/three damage from a current total of twenty, keeps
@@ -345,11 +480,12 @@ uncovered, and that a crowded field does not become overlapping transient labels
 Record graphical and human review for the exact candidate; these new journeys
 remain pending human review and release verification until that evidence exists.
 
-The equipment journey checks its attachment border at the destination pixel
-density with antialiasing coverage, alongside exact current stats, occurrence
-relationships and scoped pointer targets. A thin logical stroke need not contain
-an opaque texel of its original RGB color after MSAA. These checks establish
-rendering and input behavior, not perceived visual clarity.
+The equipment window journey uses the production renderer and `attachments.v1`.
+It reads actual exposed edges, checks the host's authoritative P/T and attached
+counters, follows re-equipping/detaching, distinguishes a tapped host from its
+Equipment, and navigates to a foreign-controlled Aura amid 480 permanents.
+It replaces the retired layout's connection-line and badge-pixel assertions;
+its real pointer gestures establish interaction behavior, not visual clarity.
 
 The existing headless presentation lane also runs `AttachmentStackChecks` over
 the production shared layout. `SharedTableStudyChecks` additionally runs the

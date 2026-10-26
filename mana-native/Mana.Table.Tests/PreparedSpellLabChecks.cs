@@ -24,7 +24,7 @@ internal static class PreparedSpellLabChecks
                 && opponent.States!.Value.Any(state => state.Key == "prepared"),
             "Canonical opponent prepared state remains public without offering the local player its cast");
         Cast();
-        check(lab.StageIndex == 1 && lab.State.Decision is { Purpose: DecisionPurpose.TargetSelection, SourceCard.Name: "Ancestral Recall" },
+        check(lab.StageIndex == 1 && lab.State.Decision is { Context.Source.Card.Name: "Ancestral Recall", Payload: TargetSelectionPayload },
             "A prepared cast reaches the authored spell's required player target rather than passing or moving the source creature");
         lab.Reply(new CancelSelection(lab.State.Id, lab.State.Decision!.Id));
         check(lab.StageIndex == 0 && Source().States!.Value.Any(state => state.Key == "prepared"),

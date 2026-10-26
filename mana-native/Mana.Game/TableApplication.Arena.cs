@@ -15,7 +15,7 @@ internal sealed partial class TableApplication
     private void DrawArena()
     {
         attachmentBadges.Clear(); attachmentConnections.Clear();
-        battlefieldLabels.Clear(); denseStatsBounds.Clear(); counterAnchors.Clear();
+        battlefieldLabels.Clear(); battlefieldStatsBounds.Clear(); counterAnchors.Clear();
         choiceOrderBadges.Clear();
         stackRows.Clear(); prioritySeats.Clear();
         changeCalloutBounds = null; highlightedChangeTargets.Clear(); highlightedChangeSource = null;
@@ -24,6 +24,7 @@ internal sealed partial class TableApplication
         // Queue the player's faces first; slow remote downloads must not bury the hand.
         foreach (var card in state.Viewer?.Zone("Hand").Cards ?? []) resources.Card(card);
         foreach (var card in state.Viewer?.Zone("Command").Cards ?? []) resources.Card(card);
+        foreach (var card in tableScene!.PlayAccess.Groups.SelectMany(group => group.Cards).Select(item => item.Scene.Card)) resources.Card(card);
         var opponents = TableLayout.Opponents(state);
         foreach (int i in new[] { 1, 0, 2 }) if (i < opponents.Length) DrawOpponent(opponents[i], i);
         if (state.Viewer is { } viewer) DrawLocal(viewer);
@@ -36,8 +37,8 @@ internal sealed partial class TableApplication
         DrawCombatConnections(); DrawAttachmentConnections(); DrawStack(); DrawSeatTransfers();
         DrawChangeHighlights();
         if (!BattlefieldFocused) DrawEffectTransitions();
-        DrawHand(); DrawCardEffects(); DrawDepartures();
-        if (!BattlefieldFocused) DrawLiftedCards();
+        DrawHand(); DrawPlayAccess(); DrawPublicCollectionReturns(); DrawCardEffects(); DrawDepartures();
+        if (!BattlefieldFocused && !CardCollectionOpen) DrawLiftedCards();
         // Your seat stays in front of the fan and readable during card travel.
         if (state.Viewer is { } local) DrawHero(local, SeatHero(local.Id), true, 3);
         DrawPriorityHandoff();
@@ -45,34 +46,37 @@ internal sealed partial class TableApplication
         DrawTurnCallout();
         if (dragging && dragSource?.Card is { } heldCard) {
             bool legal = LegalDrop(HitAt(pointer));
-            if (state.Decision?.Intent is DecisionIntent.Attack or DecisionIntent.Block && cardPositions.TryGetValue(heldCard.CombatId, out var origin))
+            if (state.Decision?.Payload is AttackPayload or BlockPayload && cardPositions.TryGetValue(heldCard.CombatId, out var origin))
                 DrawCombatAim(origin, legal ? Blue : Muted);
             else {
                 // Keep the held occurrence in the scene, so release continues
                 // from the pointer instead of respawning it at the library.
-                var heldPose = matchPresentation.Cards.Hold(CardIdentity(heldCard), new(pointer.ToVector2() + new Vector2(0, -72), new(132, 185), -.025f, Elevation: 18));
-                PaintInteractionCard(heldCard, heldPose, false, legal);
+                var heldPose = new Pose(pointer.ToVector2() + new Vector2(0, -72), new(132, 185), -.025f, Elevation: 18);
+                DrawTableCard(CardIdentity(heldCard), heldCard, heldPose, dragSource!.Zone!, dragSource.PlayerId,
+                    dragSource.Id, new MatchIntent.UseCard(heldCard), (pose, _) => PaintInteractionCard(heldCard, pose, false, legal),
+                    directPlacement: true);
             }
         }
         hovered = !dragging ? HitAt(pointer)?.Card : null;
-        if (!OverlayOpen) DrawReaderControls();
+        if (!OverlayOpen && !CardCollectionOpen) DrawReaderControls();
         // Decision text and its controls have priority over card readers and
         // held cards. Their input regions are registered last for the same reason.
-        if (!BattlefieldFocused && !OverlayOpen && !AbilityActionPending) { DrawDecisionDock(); }
+        if (!BattlefieldFocused && !OverlayOpen && !AbilityActionPending && (!CardCollectionOpen || EmptyPublicCollection)) { DrawDecisionDock(); }
         if (!BattlefieldFocused) DrawChangeCallout();
         if (!BattlefieldFocused) { DrawAbilityActions(); DrawSourceTargeting(); }
-        DrawOverlays();
+        if (!CardCollectionOpen) DrawOverlays();
         if (BattlefieldFocused) DrawEffectTransitions();
         DrawLiftedCards();
         DrawActualImpacts();
-        if (BattlefieldFocused && !DecisionModal && !AbilityActionPending) { DrawDecisionDock(); DrawChangeCallout(); }
+        if (BattlefieldFocused && !DecisionModal && !AbilityActionPending && !CardCollectionOpen) { DrawDecisionDock(); DrawChangeCallout(); }
         if (BattlefieldFocused) { DrawAbilityActions(); DrawSourceTargeting(); }
-        if (ReadingGalleryOpen || BattlefieldFocused || ZoneReadingOpen) DrawReaderControls();
+        if (!CardCollectionOpen && (ReadingGalleryOpen || BattlefieldFocused || ZoneReadingOpen)) DrawReaderControls();
         if (ReadingGalleryOpen) hovered = HitAt(pointer)?.Card;
         DrawPendingReferencePreview();
         DrawLinkedSpellPreview();
         DrawStudyBattlefieldName();
         DrawStudyFocusNavigation();
+        DrawCardCollection();
         DrawExperienceLabHeader();
     }
     private void DrawGameHeader()
@@ -102,29 +106,15 @@ internal sealed partial class TableApplication
     {
         var hand = tableScene!.Hand;
         canvas.Gradient(new(244, 785, 970, 115), Color.Transparent, new Color(8, 12, 20) * .85f);
-        foreach (var node in hand.Cards) DrawSceneCard(node);
+        foreach (var node in hand.Cards) if (!SpreadContains(node.Id)) DrawSceneCard(node);
         if (hand.Total == 0) canvas.CenterText("Your hand is empty", new(455, 815, 690, 65), Muted * .6f, .86f);
-        string limit = match!.Viewer?.MaxHandSize is { } maximum ? $"Limit {maximum} at cleanup" : "No hand limit";
-        canvas.Panel(new(263, 864, 373, 31), new Color(12, 19, 27) * .95f, new Color(62, 78, 90), 4);
-        canvas.Text($"{hand.Total} cards in hand · {limit}", 274, 873, Ink, .59f, 351, 1);
-        if (match.Viewer is { } viewer) {
-            int placements = HandPlacements.AllOptions(match).Sum(a => a.HandPlacementLimit);
-            string landState = string.Join(" · ", new[] { HandPlacements.LandPlayState(viewer), placements > 0
-                ? placements + (placements == 1 ? " placement available" : " placements available") : "" }.Where(s => s.Length > 0));
-            if (landState.Length > 0) {
-            canvas.Panel(new(650, 864, 480, 31), new Color(12, 19, 27) * .95f, new Color(62, 78, 90), 4);
-            canvas.Text(landState, 662, 873, Ink, .63f, 456, 1);
-            }
-        }
-        if (hand.Total > 11) {
-            Button("handprev", "‹", 254, 789, 34, new MatchIntent.SetHandPage(hand.Page - 1), hand.Page > 0, height: 34);
-            Button("handnext", "›", 1203, 789, 34, new MatchIntent.SetHandPage(hand.Page + 1), (hand.Page + 1) * 11 < hand.Total, height: 34);
-        }
     }
     private static string CardIdentity(Card card) => CardViews.Identity(card);
     private void DrawSceneCard(SceneCard node)
     {
         var card = node.Card;
+        if (node.Zone != "Battlefield" && dragging && dragSource is { Card: { } held }
+            && dragSource.Zone == node.Zone && CardViews.Same(card, held)) return;
         // The study reads a copy while the current battlefield occurrence stays
         // in place. The presentation controller includes this same anchor in
         // its scoped hit geometry, so a second click can close inspection.
@@ -134,14 +124,14 @@ internal sealed partial class TableApplication
             else PaintBattlefieldScanFace(card, anchor, node.Owner, false, false, false, node.GroupFront, node.GroupCount);
             canvas.CardFrame(anchor, HoverAccent * .85f, 2);
         }
-        var rest = node.Zone == "Battlefield" && !node.Dense && !node.ScanFace && (card.PhasedOut || CardPresentation.HasAbility(card, "flying"))
+        var rest = node.Zone == "Battlefield" && !node.ScanFace && (card.PhasedOut || CardPresentation.HasAbility(card, "flying"))
             ? CardMotion.Airborne(node.Pose, now, preferences.ReducedMotion, node.Id) : node.Pose;
         var pose = DrawTableCard(node.Id, card, rest, node.Zone, node.Owner,
             "card:" + card.Key + ":" + card.VisualId, new MatchIntent.UseCard(card),
             (displayed, focus) => {
                 if (node.Attachment != null && !focus && displayed.Size.X < 300) PaintBattlefieldAttachment(node, displayed,
-                    card.Highlighted || card.CombatId.Length > 0 && selectedCombat == card.CombatId || TableChoices.Index(match!, card) is { } choice && decisionDraft.Selections.Contains(choice), IsCardActionable(card));
-                else PaintSceneCard(card, displayed, node.Zone, node.Owner, focus, node.Compact, node.GroupFront, node.GroupCount, node.Dense);
+                    card.Highlighted || card.CombatId.Length > 0 && selectedCombat == card.CombatId || TableChoices.Index(match!, card) is { } choice && decisions.Selections.Contains(choice), IsCardActionable(card));
+                else PaintSceneCard(card, displayed, node.Zone, node.Owner, focus, node.Compact, node.GroupFront, node.GroupCount);
             }, node.Entrance, node.EntranceDelay, readingAnchor: node.Attachment?.Edge(node.Pose));
         if (!string.IsNullOrEmpty(card.CombatId)) {
             var anchor = node.ScanFace && readingId == node.Id ? boardView.Apply(node.Pose) : pose;
@@ -152,12 +142,12 @@ internal sealed partial class TableApplication
             cardPositions[card.CombatId] = anchor;
         }
     }
-    private void PaintSceneCard(Card card, Pose pose, string zone, int owner, bool focus, bool compact = false, bool groupFront = true, int groupCount = 1, bool dense = false)
+    private void PaintSceneCard(Card card, Pose pose, string zone, int owner, bool focus, bool compact = false, bool groupFront = true, int groupCount = 1)
     {
         int? choice = match == null ? null : TableChoices.Index(match, card);
-        bool selected = choice is { } index ? decisionDraft.Selections.Contains(index) : card.Highlighted || card.CombatId.Length > 0 && selectedCombat == card.CombatId;
+        bool selected = choice is { } index ? decisions.Selections.Contains(index) : card.Highlighted || card.CombatId.Length > 0 && selectedCombat == card.CombatId;
         bool legal = IsCardActionable(card);
-        bool scanFace = zone == "Battlefield" && !focus && !dense && !pose.IsProjected && pose.Size.X < 300
+        bool scanFace = zone == "Battlefield" && !focus && !pose.IsProjected && pose.Size.X < 300
             && tableScene?.BattlefieldCard(owner, CardViews.Identity(card)) is { ScanFace: true };
         if (zone == "Battlefield") PaintAbilityEffects(card, pose);
         if (scanFace) PaintBattlefieldScanFace(card, pose, owner, selected, legal, focus, groupFront || focus, groupCount);
@@ -170,7 +160,7 @@ internal sealed partial class TableApplication
         if (choice != null && selected) {
             var badge = new Rectangle((int)pose.Center.X - 39, pose.Bounds.Top + 8, 78, 24);
             ExtendCardHit(card, badge);
-            if (match!.Decision!.Ordered) PaintChoiceOrder(choice.Value, badge, .48f);
+            if (decisions.Payload is OrderingPayload) PaintChoiceOrder(choice.Value, badge, .48f);
             else {
                 var mark = pose.Point(.85f, .12f);
                 canvas.Circle(mark, 9, new(19, 33, 35));
@@ -205,7 +195,7 @@ internal sealed partial class TableApplication
             canvas.CardFrame(pose with { Size = pose.Size - new Vector2(7) }, Muted * (.25f * opacity));
             var r = pose.Bounds;
             if (pose.Size.X >= 300) {
-                bool actionSpace = focus && (match?.Decision?.Intent == DecisionIntent.Priority && IsCardActionable(card)
+                bool actionSpace = focus && (match?.Decision?.Payload is PriorityPayload && IsCardActionable(card)
                     || AbilityActionPending && match?.Decision is { } decision
                         && CardViews.Source(match, decision) is { } source && SameVisibleCard(card, source));
                 int typeTop = actionSpace ? (int)(r.Height * .53f) : 121;
@@ -221,7 +211,7 @@ internal sealed partial class TableApplication
             }
         }
         if (legal || selected) {
-            float glow = !preferences.ReducedMotion && legal && match?.Decision?.Intent == DecisionIntent.Priority
+            float glow = !preferences.ReducedMotion && legal && match?.Decision?.Payload is PriorityPayload
                 ? .85f + .15f * MathF.Sin((float)now * 2.4f) : 1;
             if (selected) canvas.CardFrame(pose with { Size = pose.Size + new Vector2(6) }, Gold, 4);
             else canvas.CardAction(pose, ActionAccent, glow);
@@ -271,26 +261,38 @@ internal sealed partial class TableApplication
     private void DrawStack()
     {
         var state = match!;
+        var decision = decisions.Presentation?.Payload == null ? null : state.Decision;
+        // A source reference is context, not a stack object. In particular a
+        // priority snapshot can retain the source of the preceding interaction.
+        // Only real stack entries belong in the stack presentation.
+        if (state.Stack.Length == 0 && (decision?.Payload is PriorityPayload
+            || decision?.Context.Source?.Zone == "Battlefield")) return;
+        // These journeys point to the existing source and actual library piles.
+        // Do not create another card copy in the center of the table.
+        if (DecisionLayout.UsesSourceWorkspace(decision)) {
+            if (state.Stack.Length > 0) { DrawStackFlow(); DrawPendingSpellCards(); }
+            return;
+        }
         if (ValuedTargetDecision) { DrawPendingSpellCards(); return; }
         // Choosing an ability has not put it on the stack. Its current card
         // remains the source on the table; do not manufacture a stack copy.
         if (state.Stack.Length == 0 && (AbilityActionPending || SelectingActionTarget)) return;
-        if (state.Stack.Length == 0 && state.Decision?.SourceCard == null) return;
-        bool payingSource = state.Decision is { Intent: DecisionIntent.Mana, SourceCard: not null }
-            || !SelectingActionTarget && state.Decision is { Intent: DecisionIntent.Selection, SourceCard: not null, PlayerChoices.Length: > 0 };
+        if (state.Stack.Length == 0 && decision?.Context.Source?.Card == null) return;
+        bool payingSource = decision is { Payload: PaymentPayload, Context.Source.Card: not null }
+            || !SelectingActionTarget && decision is { Payload: EntitySelectionPayload { Players.Length: > 0 }, Context.Source.Card: not null };
         if (state.Stack.Length > 0 && !payingSource) { DrawStackFlow(); DrawPendingSpellCards(); return; }
         canvas.Glow(new(807, 485), new(430, 165), Blue * .17f);
         var resting = TableWorld.Card(new(6, 108), new(245, 126));
         canvas.CardFrame(resting, Gold * .12f, 1);
         var stackCards = state.Stack.Take(3).Select(s => s.Card ?? new Card { Name = s.Name, Text = s.Text, Type = s.Ability ? "Ability" : "Spell" }).ToArray();
-        if (payingSource) stackCards = [state.Decision!.SourceCard!];
-        if (stackCards.Length == 0 && state.Decision?.SourceCard is { } source) stackCards = [source];
+        if (payingSource) stackCards = [decision!.Context.Source?.Card!];
+        if (stackCards.Length == 0 && decision?.Context.Source?.Card is { } source) stackCards = [source];
         for (int i = stackCards.Length - 1; i >= 0; i--) {
             var reported = stackCards[i];
-            var card = state.Decision is { } sourceDecision && (payingSource || state.Stack.Length == 0)
+            var card = decision is { } sourceDecision && (payingSource || state.Stack.Length == 0)
                 ? CardViews.Source(state, sourceDecision) ?? stackCards[i] : CardViews.Current(state, stackCards[i]);
             bool alsoInZone = state.Players.Any(p => p.Zones.Any(z => z.Cards.Any(c => CardIdentity(c) == CardIdentity(card))));
-            string identity = payingSource ? "payment:" + state.Decision!.Id : alsoInZone ? "stack:" + (state.Stack.ElementAtOrDefault(i)?.Id ?? "source") : CardIdentity(card);
+            string identity = payingSource ? "payment:" + decision!.Id : alsoInZone ? "stack:" + (state.Stack.ElementAtOrDefault(i)?.Id ?? "source") : CardIdentity(card);
             if (identity.Length == 0) identity = "stack:" + (state.Stack.ElementAtOrDefault(i)?.Id ?? card.Name);
             Vector2 entrance = new(800, 520);
             if (card.VisualId.Length > 0) {

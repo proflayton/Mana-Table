@@ -34,10 +34,7 @@ internal static class PendingEffectPresentationChecks
                     Count = zone.Name == "Battlefield" ? player.Id == 0 ? 2 : player.Id == 1 ? 1 : 0 : zone.Count,
                     Cards = zone.Name == "Battlefield" ? player.Id == 0 ? [source, recipient] : player.Id == 1 ? [target] : [] : []
                 }).ToImmutableArray() }).ToImmutableArray(),
-                Decision = new() { Kind = "input", Purpose = DecisionPurpose.TargetSelection, Intent = DecisionIntent.Selection,
-                    Message = "GENERIC_RULES_WITH_INTERNAL_ID_4242: deal that much damage. Choose a target.",
-                    SourceCard = source, SourceControllerId = 0, Effect = effect, Min = 1, Max = 1,
-                    PlayerChoices = [1, 2, 3], CancelEnabled = true, Cancel = "Cancel" } };
+                Decision = new Decision("", new DecisionContext(Message: "GENERIC_RULES_WITH_INTERNAL_ID_4242: deal that much damage. Choose a target.", Source: new DecisionSource(Card: source, ControllerId: 0)), new TargetSelectionPayload(new DecisionReply("Confirm", false), new DecisionReply("Cancel", true), new SelectionRange(1, 1), [1, 2, 3], effect, null)) };
             var engine = new InteractionScenarioEngine(); engine.Present(state);
             using var app = new TableApplication(TestTableServices.For(engine), directory, initialState: engine.State) { Automated = true };
             app.Initialize(); app.SetTableStudy(study);
@@ -86,14 +83,14 @@ internal static class PendingEffectPresentationChecks
             }).ToImmutableArray() }).ToImmutableArray() });
             check(Number("3") && SourceHit().Card?.Name == source.Name && frame.Observe().Text.Any(text => text.Value == recipient.Name),
                 "A currently disclosed prompt source retains its effect and exact counter-origin context after leaving the visible battlefield");
-            Present(engine.State with { Decision = engine.State.Decision! with { Effect = effect with { Amount = null, AmountBasis = "dynamic" } } });
+            Present(engine.State with { Decision = engine.State.Decision! with { Payload = ((TargetSelectionPayload)engine.State.Decision.Payload) with { Effect = effect with { Amount = null, AmountBasis = "dynamic" } } } });
             check(Number("?") && !Number("0") && !Number("3") && Receipts() >= 2,
                 "An unknown pending damage value stays unknown while its independently reported counter increment remains exact");
 
             Present(engine.State with { Stack = [new(source.Name, "GENERIC_RULES_WITH_INTERNAL_ID_4242", true, source) {
                     Id = "stacked-exact-trigger", ControllerId = 0, Effect = effect,
                     Targets = [new("card", target.VisualId, target.Name, 1)] }],
-                PriorityPlayerId = 0, ActionClass = "priority", Decision = new() { Kind = "input", Intent = DecisionIntent.Priority, OkEnabled = true } });
+                PriorityPlayerId = 0, ActionClass = "priority", Decision = new Decision("", new DecisionContext(), new PriorityPayload(new DecisionReply("Confirm", true), null, CanAutoPass: false, QuietYieldToken: "", Abilities: [])) });
             check(Number("3") && Receipts() >= 2 && !RawRules() && frame.Observe().Text.Any(text => text.Value == recipient.Name),
                 "The same exact amount and full counter-recipient context carry into the existing pending stack face without generic effect prose");
 
@@ -120,7 +117,7 @@ internal static class PendingEffectPresentationChecks
             Present(state);
             var point = TargetPoint();
             Tick(point, ButtonState.Pressed);
-            engine.Present(engine.State with { Decision = engine.State.Decision! with { Effect = effect with { Id = "replacement-trigger" } } });
+            engine.Present(engine.State with { Decision = engine.State.Decision! with { Payload = ((TargetSelectionPayload)engine.State.Decision.Payload) with { Effect = effect with { Id = "replacement-trigger" } } } });
             view.Accept(engine.State);
             Tick(point);
             check(engine.Replies.Count == 0, "A target press from the previous decision cannot submit to a replacement trigger");

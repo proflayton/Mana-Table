@@ -7,6 +7,7 @@ import forge.deck.CardPool;
 import forge.game.GameEntityView;
 import forge.game.GameView;
 import forge.game.card.CardView;
+import forge.game.card.CounterType;
 import forge.game.event.GameEvent;
 import forge.game.event.GameEventSpellAbilityCast;
 import forge.game.event.GameEventSpellRemovedFromStack;
@@ -217,6 +218,13 @@ public interface IGuiGame {
     /** Preserve the source for clients that present color choices on the table. */
     default MagicColor.Color chooseColor(String message, CardView source, List<MagicColor.Color> colors) {
         return one(message, colors);
+    }
+
+    /** One counter-payment allocation, with the affected permanent distinct from the ability source. */
+    default CounterType chooseCounterTypeForPayment(String message, CardView permanent, int amount,
+                                                    List<CounterType> types, Map<CounterType, Integer> available) {
+        if (types.size() <= 1) return types.isEmpty() ? null : types.get(0);
+        return one(message, types, CounterType::getName);
     }
 
     <T> void reveal(String message, List<T> items);

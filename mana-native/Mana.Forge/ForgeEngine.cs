@@ -2,7 +2,6 @@ using System.Collections.Concurrent;
 using System.Collections.Immutable;
 using System.Diagnostics;
 using System.Text.Json;
-using System.Text.Json.Nodes;
 using Mana.Contracts;
 
 namespace Mana.Forge;
@@ -251,27 +250,7 @@ public sealed partial class ForgeEngine(ForgePaths paths) : ICardEngine, ITableS
         var owner = current ?? throw new IOException("The engine is not running");
         var raw = await Request("matchState");
         if (current != owner || owner.Failure != null) throw new IOException("The engine is not running");
-        if (raw.ValueKind == JsonValueKind.Null) { owner.Commands.Clear(); sourceActionsGame = ""; return null; }
-        var node = JsonNode.Parse(raw.GetRawText())!.AsObject();
-        // Local games first publish a starting frame before the board exists.
-        node["players"] ??= new JsonArray();
-        node["stack"] ??= new JsonArray();
-        foreach (var entry in node["stack"]!.AsArray()) if (entry is JsonObject item) item["id"] = item["id"]?.ToString() ?? "";
-        node["phase"] ??= "Starting game";
-        node["phaseKey"] ??= "PREGAME";
-        var prompt = node["prompt"]?.DeepClone();
-        if (prompt is not null) ForgeDecisionDecoder.Normalize(prompt);
-        node["decision"] = prompt;
-        // Defender IDs are numeric for players and strings for cards in Forge.
-        if (node["combat"]?["attackOptions"] is JsonArray options)
-            foreach (var option in options) if (option?["defenders"] is JsonArray defenders)
-                foreach (var defender in defenders) if (defender is JsonObject d) d["id"] = d["id"]?.ToString() ?? "";
-        if (node["combat"]?["attackers"] is JsonArray attackers)
-            foreach (var attacker in attackers) if (attacker?["defender"] is JsonObject defender) defender["id"] = defender["id"]?.ToString() ?? "";
-        var snapshot = node.Deserialize<GameSnapshot>(Json);
-        owner.Commands.Observe(snapshot);
-        sourceActionsGame = snapshot?.Id ?? "";
-        return snapshot;
+        return owner.Commands.ObserveRaw(raw);
     }
     public async Task ExecuteAsync(GameCommand command)
     {

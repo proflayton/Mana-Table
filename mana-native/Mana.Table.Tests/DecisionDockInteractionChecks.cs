@@ -158,7 +158,7 @@ internal static class DecisionDockInteractionChecks
                     Tick(hold.Bounds.Center, ButtonState.Pressed); Tick(hold.Bounds.Center);
                     check(view.Held && view.Busy && !frame.Hits.Any(hit => hit.Id is "confirm" or "cancel") && NoTransportLabels(frame),
                         "Hold takes effect during the delayed pass without exposing a stale priority action");
-                    engine.Present(engine.State with { Decision = initial.Decision! with { CanAutoPass = true } });
+                    engine.Present(engine.State with { Decision = initial.Decision! with { Payload = ((PriorityPayload)(initial.Decision!).Payload) with { CanAutoPass = true } } });
                 }
                 if (interruption == "lost-acknowledgement") engine.ObserveOverride = () => recovery.Task;
                 release.TrySetResult();
@@ -257,9 +257,7 @@ internal static class DecisionDockInteractionChecks
 
         var privateCard = new Card { Name = "Disclosed search option", Type = "Creature", Text = "A scoped private library choice." };
         engine.Present(engine.State with { ActionClass = "selection", DecisionOwnerId = initial.ViewerId, PriorityPlayerId = null,
-            Decision = new() { Kind = "choice", Intent = DecisionIntent.Selection, Min = 1, Max = 1,
-                Message = "Search your library for a creature.", LibraryCards = [new(7, privateCard.Name, privateCard)],
-                Choices = [new(7, privateCard.Name, privateCard)] } });
+            Decision = new Decision("", new DecisionContext(Message: "Search your library for a creature."), new OptionsPayload(new ChoiceSelection([new(7, privateCard.Name, privateCard)], new SelectionRange(1, 1), [new(7, privateCard.Name, privateCard)]))) });
         view.Accept(engine.State); Tick();
         var search = view.Match!.Decision!;
         Click("close-overlay"); // The actual View battlefield gesture keeps the choice pending.
@@ -271,7 +269,7 @@ internal static class DecisionDockInteractionChecks
         check(view.Automatic && view.Held, "The portrait Hold icon pauses that mode for the current turn");
         Click("hold"); Click("auto");
         check(!view.Automatic && !view.Held && view.Match?.Decision is { } currentSearch && currentSearch.Id == search.Id
-                && currentSearch.LibraryCards.SequenceEqual(search.LibraryCards) && view.Selections.Count == 0
+                && ((OptionsPayload)currentSearch.Payload).Selection.Disclosures.SequenceEqual(((OptionsPayload)search.Payload).Selection.Disclosures) && view.Selections.Count == 0
                 && engine.Replies.Count == 0 && view.Error.Length == 0,
             "Actual Auto/Hold clicks and reversals never confirm, choose or replace the unanswered required search");
     }

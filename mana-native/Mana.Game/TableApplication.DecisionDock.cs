@@ -17,11 +17,12 @@ internal sealed partial class TableApplication
     {
         if (ActivityOpen) return DecisionDockPauseReason.Presentation;
         if (session.NeedsRecovery) return DecisionDockPauseReason.Recovery;
+        if (turnPassRequest != null) return DecisionDockPauseReason.Interaction;
         if (commandFailure && error.Length > 0) return DecisionDockPauseReason.CommandFailure;
-        if (readingId != null || HoveredPendingReference() != null) return DecisionDockPauseReason.Inspection;
+        if (readingId != null || CardCollectionOpen || HoveredPendingReference() != null) return DecisionDockPauseReason.Inspection;
         if (OverlayOpen) return DecisionDockPauseReason.Overlay;
         if (chatFocus) return DecisionDockPauseReason.Chat;
-        if (AbilityActionPending || dragging || pressed != null || selectedCombat != null) return DecisionDockPauseReason.Interaction;
+        if (AbilityActionPending || dragging || boardPanning || pressed != null || selectedCombat != null || AwaitingReleasedPlay) return DecisionDockPauseReason.Interaction;
         return DecisionDockPauseReason.None;
     }
 
@@ -41,24 +42,35 @@ internal sealed partial class TableApplication
     private void DrawDecisionDock()
     {
         var state = match!; var d = state.Decision;
-        decisionDock = DecisionDockPresentation.From(state, CurrentDecisionControls());
+        decisionDock = decisions.Presentation ?? throw new InvalidOperationException("Decision presentation was not prepared.");
         decisionTextBounds = Rectangle.Empty; decisionText = ""; decisionTextOverflow = false;
-        decisionPanelBounds = new(1240, 712, 360, 188);
+        decisionPanelBounds = new(1240, DecisionY(712), 360, 188);
         if (DrawRecoveryDock(state)) return;
         if (state.Status is "finished" or "error") {
-            canvas.Text(state.Result ?? "Game stopped", 1267, 730, Gold, 1.17f, 295, 2, true);
-            canvas.Text(state.Error ?? "You can still inspect the final battlefield.", 1267, 767, Muted, .63f, 294, 2);
-            if (localMatch || state.Status == "finished") Button("return", IsWorkshopMatch ? "Return to tune" : localMatch ? "Return to setup" : "Return to lobby", 1266, 828, 296, new MatchIntent.ReturnFromMatch(), !busy, true, 47);
-            else Button("error-leave", "Leave table", 1266, 828, 296, new MatchIntent.OpenView(MatchView.LeaveTable), !busy, true, 47);
+            bool interrupted = state.Status == "error";
+            canvas.Text(interrupted ? "Game interrupted" : state.Result ?? "Game stopped", 1267, DecisionY(730), Gold, 1.17f, 295, 2, true);
+            canvas.Text(interrupted ? "The rules engine stopped. This game could not finish."
+                : "You can still inspect the final battlefield.", 1267, DecisionY(767), Muted, .63f, 294, 3);
+            if (localMatch || state.Status == "finished") Button("return", IsWorkshopMatch ? "Return to tune" : localMatch ? "Return to setup" : "Return to lobby", 1266, DecisionY(828), 296, new MatchIntent.ReturnFromMatch(), !busy, true, 47);
+            else Button("error-leave", "Leave table", 1266, DecisionY(828), 296, new MatchIntent.OpenView(MatchView.LeaveTable), !busy, true, 47);
             return;
         }
         if (state.Viewer?.Eliminated == true) {
-            canvas.Text("Watching the table", 1266, 735, Muted, .88f, 298, 2, true);
-            Button("eliminated-leave", "Leave table", 1266, 828, 296, new MatchIntent.OpenView(MatchView.LeaveTable), !busy, height: 47);
+            canvas.Text("Watching the table", 1266, DecisionY(735), Muted, .88f, 298, 2, true);
+            Button("eliminated-leave", "Leave table", 1266, DecisionY(828), 296, new MatchIntent.OpenView(MatchView.LeaveTable), !busy, height: 47);
             return;
         }
 
         DrawPortraitTurnControls();
+        if (turnPassRequest != null) { DrawPortraitPriority(decisionDock); return; }
+        if (DrawCounterPaymentDecision(state)) return;
+        if (!SelectingActionTarget && DrawOptionalDecision(state)) return;
+        if (d?.Payload is TargetSelectionPayload { Search: not null }) {
+            // Legal recipient gestures live on the actual library piles. The
+            // engine still receives its current target-player selection.
+            decisionPanelBounds = Rectangle.Empty;
+            return;
+        }
         if (!SelectingActionTarget && decisionDock.Surface == DecisionDockSurface.None) {
             decisionPanelBounds = Rectangle.Empty;
             var ignoredAbilities = PriorityAbilityOptions().Where(ability => ability.IgnoredUntilNextTurn).ToArray();
@@ -77,14 +89,14 @@ internal sealed partial class TableApplication
         if (QuietPriorityArmed && !SelectingActionTarget) DrawPortraitPriority(decisionDock);
 
         var view = decisionDock;
-        bool recipientChoice = !SelectingActionTarget && d?.Intent == DecisionIntent.Selection && StateClarity.Recipients(state).Length > 0;
+        bool recipientChoice = !SelectingActionTarget && d?.Payload is EntitySelectionPayload && StateClarity.Recipients(state).Length > 0;
         bool following = busy || d == null;
         var abilities = PriorityAbilityOptions();
         // A source/recipient workspace owns its effect. The dock owns the next
         // gesture. Only unfamiliar required prompts retain the engine's full text.
         string instruction = ValuedTargetDecision || recipientChoice ? "" : view.Instruction;
         var layout = PlanDecisionDock(view, instruction, abilities.Length > 0);
-        canvas.Gradient(new(1240, Math.Max(55, decisionPanelBounds.Top - 24), 360, 924 - Math.Max(55, decisionPanelBounds.Top - 24)),
+        canvas.Gradient(new(1240, Math.Max(55, decisionPanelBounds.Top - 24), 360, DecisionY(924) - Math.Max(55, decisionPanelBounds.Top - 24)),
             Color.Transparent, new Color(8, 16, 21) * .95f);
         var accent = view.Status is DecisionDockStatus.Waiting or DecisionDockStatus.Resolving ? Muted
             : view.PauseReason == DecisionDockPauseReason.PhaseStop || view.PauseReason == DecisionDockPauseReason.Held ? Gold : PriorityAccent;
@@ -102,20 +114,37 @@ internal sealed partial class TableApplication
         // Preserve the prompt while its answer is reconciled. Busy state removes
         // actions without adding a competing status panel.
         if (following) return;
-        if (SelectingActionTarget) {
-            if (d!.OkEnabled) Button("confirm", d.Ok, 1266, 799, 296, new MatchIntent.ConfirmDecision(), !busy, true, 47);
-            if (d.CancelEnabled) Button("cancel", d.Cancel, 1459, d.OkEnabled ? 852 : 799, 103, new MatchIntent.CancelDecision(), !busy, height: 32);
-        } else if (recipientChoice) {
-            // The named source/portrait targets own this required choice.
-        } else if (TableChoice) {
-            Button("confirm", decisionDraft.Selections.Count == 0 && d!.Min == 0 ? "Choose none" : $"Confirm ({decisionDraft.Selections.Count}/{d!.Max})", 1266, 799, 296,
-                new MatchIntent.ConfirmSelection(), TableChoices.CanConfirm(state, decisionDraft.Selections), true, 47);
-            Button("choicesclear", "Clear", 1459, 852, 103, new MatchIntent.ClearSelection(), decisionDraft.Selections.Count > 0, height: 27);
-        } else if (d?.Kind == "input") {
-            Button("confirm", view.ActionLabel, 1266, 799, 296, new MatchIntent.ConfirmDecision(), CombatGuide.CanConfirm(state), true, 47);
-            if (d.CancelEnabled) Button("cancel", d.Intent == DecisionIntent.Priority && d.Cancel == "End Turn" ? "Pass turn" : d.Cancel,
-                1459, 852, 103, new MatchIntent.CancelDecision(), height: 27);
-        } else if (d != null) Button("open-decision", "Make a choice", 1266, 799, 296, new MatchIntent.OpenDecision(), true, true, 47);
+        switch (view.Payload) {
+            case TargetSelectionPayload target:
+                DrawDecisionReplies(target.Complete, target.Cancel); break;
+            case EntitySelectionPayload entities when !recipientChoice:
+                DrawDecisionReplies(entities.Complete, entities.Cancel, showDisabledComplete: true); break;
+            case EntitySelectionPayload: break;
+            case OptionsPayload or OrderingPayload when view.RequiredSurface == DecisionRequiredSurface.Table:
+                DrawSelectionCompletion(new(1266, DecisionY(799), 296, 47), new(1459, DecisionY(852), 103, 27)); break;
+            case PaymentPayload payment: DrawDecisionReplies(payment.Pay, payment.Cancel, showDisabledComplete: true); break;
+            case AttackPayload attack: DrawDecisionReplies(attack.Complete, null, showDisabledComplete: true); break;
+            case BlockPayload block: DrawDecisionReplies(block.Complete, null, showDisabledComplete: true); break;
+            case OptionsPayload or OrderingPayload or RevealPayload or NumberPayload or TextPayload or AllocationPayload:
+                Button("open-decision", "Make a choice", 1266, DecisionY(799), 296, new MatchIntent.OpenDecision(), true, true, 47); break;
+            case null or PriorityPayload or OpeningHandPayload or ConfirmationPayload or AbilityChoicePayload: break;
+            default: throw new InvalidOperationException("No decision painter owns " + view.Payload.GetType().Name);
+        }
+    }
+
+    private void DrawSelectionCompletion(Rectangle complete, Rectangle clear)
+    {
+        var range = decisions.Presentation!.Selection!.Range;
+        Button("confirm", decisions.Selections.Count == 0 && range.Min == 0 ? "Choose none" : $"Confirm ({decisions.Selections.Count}/{range.Max})",
+            complete, new MatchIntent.ConfirmSelection(), !busy && TableChoices.CanConfirm(match!, decisions.Selections), true);
+        Button("choicesclear", "Clear", clear, new MatchIntent.ClearSelection(), !busy && decisions.Selections.Count > 0);
+    }
+
+    private void DrawDecisionReplies(DecisionReply complete, DecisionReply? cancel, bool showDisabledComplete = false)
+    {
+        bool showComplete = complete.Enabled || showDisabledComplete;
+        if (showComplete) Button("confirm", complete.Label, 1266, DecisionY(799), 296, new MatchIntent.ConfirmDecision(), !busy && complete.Enabled && CombatGuide.CanConfirm(match!), true, 47);
+        if (cancel?.Enabled == true) Button("cancel", cancel.Label, 1459, DecisionY(showComplete ? 852 : 799), 103, new MatchIntent.CancelDecision(), !busy, height: 32);
     }
 
     private void DrawDecisionRole(DecisionDockView view, Vector2 center, Color accent)

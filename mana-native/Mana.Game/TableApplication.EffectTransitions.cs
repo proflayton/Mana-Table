@@ -18,7 +18,7 @@ internal sealed partial class TableApplication
     {
         effectTransitionFrame = EffectTransitionFrame.Empty;
         counterReceiptPaint.Clear();
-        if (OverlayOpen && !BattlefieldFocused || readingId != null || tableScene == null) return;
+        if (OverlayOpen && !BattlefieldFocused || tableScene == null) return;
         var visible = matchPresentation.Cards.Cards.Where(card => card.Zone is "Battlefield" or "Command" or "Stack" or "Graveyard" or "Exile")
             .GroupBy(card => CardViews.Identity(card.Card), StringComparer.Ordinal)
             .Where(group => group.Key.Length > 0).ToDictionary(group => group.Key,
@@ -39,6 +39,10 @@ internal sealed partial class TableApplication
         } else foreach (var cohort in tableScene.Seats.SelectMany(seat => seat.Cohorts))
             if (visible.TryGetValue(cohort.Front.Id, out var pose)) groups.Add(new(cohort.Front.Id,
                 Array.AsReadOnly(cohort.MemberIds.Where(visible.ContainsKey).ToArray()), pose, CounterLanding(cohort.Front, pose)));
+        // Inspecting a permanent must not hide its paid counter or settled
+        // increment. Keep this feedback on the card being read; defer unrelated
+        // battlefield bursts while attention is on its face.
+        if (readingId is { } inspected) groups.RemoveAll(group => !group.CardIds.Contains(inspected));
         if (matchPresentation.LatestChange is { } latest && latest.Cause?.CardId is { } sourceId
             && ChangeSourcePreview(latest) is { } sourcePreview) visible[sourceId] = sourcePreview.Pose;
         // Protect the actual decision controls. A source preview above them
@@ -48,7 +52,7 @@ internal sealed partial class TableApplication
             now, preferences.ReducedMotion, new(1240, protectedTop, 350, 900 - protectedTop));
         foreach (var source in effectTransitionFrame.Sources) {
             float radius = Math.Max(21, Math.Max(source.Pose.Size.X, source.Pose.Size.Y) / 2 + source.Expansion);
-            canvas.Ring(source.Pose.Center, radius, Gold * source.Strength, 3);
+            if (readingId != source.CardId) canvas.Ring(source.Pose.Center, radius, Gold * source.Strength, 3);
             canvas.CardFrame(source.Pose with { Size = source.Pose.Size + new Vector2(8) }, Gold * source.Strength, 3);
             var badge = source.Pose.Point(1, 0) + new Vector2(1, -2);
             canvas.Circle(badge, 8, new(26, 29, 24));

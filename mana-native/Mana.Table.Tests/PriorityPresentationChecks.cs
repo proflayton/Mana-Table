@@ -17,7 +17,7 @@ internal static class PriorityPresentationChecks
                 new("Partner with Pir", "Target player may search their library.", true, shared) { Id = "ability-b", ControllerId = 1 },
                 new("Counterspell", "Counter target spell.", false, null) { Id = "spell-c", ControllerId = 2 },
                 new("Lightning Bolt", "Deal 3 damage to the chosen target.", false, null) { Id = "spell-d", ControllerId = 3 }],
-            Decision = new() { Id = "priority-10", Kind = "input", Intent = DecisionIntent.Priority, OkEnabled = true }
+            Decision = new Decision("priority-10", new DecisionContext(), new PriorityPayload(new DecisionReply("Confirm", true), null, CanAutoPass: false, QuietYieldToken: "", Abilities: []))
         };
         bool rotation = true;
         foreach (int responder in Enumerable.Range(0, 4)) {
@@ -39,14 +39,13 @@ internal static class PriorityPresentationChecks
             Players = initial.Players.Select(player => player with { Priority = false }).ToImmutableArray() };
         check(PriorityPresentation.From(legacy).CanPass
             && !PriorityPresentation.From(initial with { PriorityPlayerId = 1 }).CanPass
-            && !PriorityPresentation.From(initial with { Decision = initial.Decision! with { OkEnabled = false } }).CanPass
+            && !PriorityPresentation.From(initial with { Decision = initial.Decision! with {
+                Payload = ((PriorityPayload)initial.Decision.Payload) with { Pass = new("Confirm", false) } } }).CanPass
             && !PriorityPresentation.From(initial with { ActionClass = "choice" }).CanPass,
             "Passing requires an enabled local priority input and matching reported seat, with an explicit legacy fallback and no pass during a choice");
 
         var plain = PriorityPresentation.From(initial);
-        var optional = PriorityPresentation.From(initial with { Decision = initial.Decision! with {
-            PriorityAbilities = [new("mesa-ability", "mesa-key", "Arid Mesa", "Pay 1 life, sacrifice: search for a land.", false)]
-        } });
+        var optional = PriorityPresentation.From(initial with { Decision = initial.Decision! with { Payload = ((PriorityPayload)(initial.Decision!).Payload) with { Abilities = [new("mesa-ability", "mesa-key", "Arid Mesa", "Pay 1 life, sacrifice: search for a land.", false)] } } });
         check(plain.Heading == optional.Heading && plain.Instruction == optional.Instruction && optional.NextToResolve?.Id == "ability-a"
             && !optional.Instruction.Contains("Arid Mesa", StringComparison.Ordinal),
             "One optional activation cannot replace the current pending effect and response-window context");
@@ -75,14 +74,13 @@ internal static class PriorityPresentationChecks
             "Exact stack/seat changes produce one timed transition; repeated or stale revisions cannot retrigger it, and removal is not called resolution");
 
         var search = processing with { Revision = 13, ActionClass = "selection", DecisionOwnerId = 0,
-            Decision = new() { Id = "required-search", Kind = "input", Intent = DecisionIntent.Selection, OkEnabled = true,
-                Message = "Choose a player who may search their library.", SourceCard = shared, PlayerChoices = [0, 1, 2, 3] } };
+            Decision = new Decision("required-search", new DecisionContext(Message: "Choose a player who may search their library.", Source: new DecisionSource(Card: shared)), new EntitySelectionPayload(new DecisionReply("Confirm", true), new DecisionReply("Cancel", false), [0, 1, 2, 3], null)) };
         feedback.Observe(processing, search, 6);
         var choosing = PriorityPresentation.From(search);
         check(plain.CanPass && plain.Instruction.Contains("pass priority", StringComparison.Ordinal)
             && !plain.Heading.Contains("resolv", StringComparison.OrdinalIgnoreCase)
             && choosing is { Phase: PriorityPhase.Decision, CanPass: false, ResponderId: null, DecisionOwnerId: 0 }
-            && choosing.Instruction == search.Decision!.Message && feedback.Latest is { Phase: PriorityPhase.Decision },
+            && choosing.Instruction == search.Decision!.Context.Message && feedback.Latest is { Phase: PriorityPhase.Decision },
             "Passing makes no promise of resolution or skipped triggers; a later required recipient/search choice becomes its own mandatory decision");
 
         feedback.Observe(search, initial with { Id = "new-game", Revision = 1 }, 7);

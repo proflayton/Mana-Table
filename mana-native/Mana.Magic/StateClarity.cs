@@ -18,14 +18,14 @@ public static class StateClarity
 
     public static string DecisionStatus(GameSnapshot state, bool busy) => busy ? "ACTION SUBMITTED"
         : state.Decision == null ? state.DecisionOwnerId is { } ? "ANOTHER PLAYER IS ACTING" : "RESOLVING"
-        : state.Decision.Intent == DecisionIntent.Priority ? "YOUR PRIORITY"
-        : state.Decision.Intent == DecisionIntent.Block ? "CHOOSE YOUR BLOCKERS" : "YOUR DECISION";
+        : state.Decision.Payload is PriorityPayload ? "YOUR PRIORITY"
+        : state.Decision.Payload is BlockPayload ? "CHOOSE YOUR BLOCKERS" : "YOUR DECISION";
 
     public static string DecisionInstruction(GameSnapshot state, bool busy, string? pendingActionLabel = null)
     {
         if (busy) return string.IsNullOrWhiteSpace(pendingActionLabel) ? "Action submitted. Waiting for the game." : pendingActionLabel + " Waiting for the game.";
         if (state.Decision == null) return WaitingTitle(state);
-        if (state.Decision.Intent == DecisionIntent.Selection || state.Decision.Kind is "choice" or "reveal")
+        if (state.Decision.Payload is TargetSelectionPayload or EntitySelectionPayload or OptionsPayload or AbilityChoicePayload or OrderingPayload or RevealPayload)
             return Purpose(state);
         return TurnGuide.Instruction(state);
     }
@@ -40,18 +40,22 @@ public static class StateClarity
         return state.Status == "starting" || state.ActionClass == "starting" ? "Preparing the table" : "The game is resolving";
     }
 
-    public static string Purpose(GameSnapshot state) => state.Decision is { Message.Length: > 0 } decision
-        ? decision.Message : state.Decision?.PlayerChoices.Length > 0 ? "Choose a highlighted player." : TurnGuide.Instruction(state);
+    public static string Purpose(GameSnapshot state) => state.Decision is { Context.Message.Length: > 0 } decision
+        ? decision.Context.Message : Recipients(state).Length > 0 ? "Choose a highlighted player." : TurnGuide.Instruction(state);
 
-    public static Player[] Recipients(GameSnapshot state) => state.Status == "playing" && state.Decision is { } decision
-        ? state.Players.Where(p => !p.Eliminated && decision.PlayerChoices.Contains(p.Id)).ToArray() : [];
+    public static Player[] Recipients(GameSnapshot state)
+    {
+        var players = state.Decision?.Payload switch { TargetSelectionPayload target => target.Players,
+            EntitySelectionPayload entity => entity.Players, _ => [] };
+        return state.Status == "playing" ? state.Players.Where(player => !player.Eliminated && players.Contains(player.Id)).ToArray() : [];
+    }
 
     public static SelectPlayer? ChooseRecipient(GameSnapshot state, int player) => state.Decision is { Id.Length: > 0 } decision
         && Recipients(state).Any(p => p.Id == player)
             ? new(state.Id, decision.Id, player) : null;
 
-    public static string Source(GameSnapshot state) => state.Decision?.SourceCard is { } source
-        ? source.Name + (state.Decision.SourceControllerId is { } controller ? " · " + SeatName(state, controller) : "") : "Current choice";
+    public static string Source(GameSnapshot state) => state.Decision?.Context.Source is { Card: { } source } context
+        ? source.Name + (context.ControllerId is { } controller ? " · " + SeatName(state, controller) : "") : "Current choice";
 
     public static string StackController(GameSnapshot state, StackItem item) => item.ControllerId is { } id ? SeatName(state, id) : "";
 
@@ -101,10 +105,18 @@ public static class StateClarity
             ChooseOptions or OrderOptions => "Submitted selection.",
             ChooseNumber or EnterText => "Submitted answer.",
             CancelPayment or CancelSelection or DeclineConfirmation or MulliganOpeningHand or UndoLastAction
-                => "Submitted " + (state.Decision?.Cancel ?? "cancel") + ".",
+                => "Submitted " + CancelLabel(state.Decision?.Payload) + ".",
             PassPriority or AutoPassPriority or KeepOpeningHand or PayMana or CompleteAttackers or CompleteBlockers
                 or CompleteSelection or AcceptConfirmation or AcknowledgeDecision => "Submitted " + TurnGuide.Confirm(state) + ".",
             _ => "Action submitted."
         };
     }
+    private static string CancelLabel(DecisionPayload? payload) => payload switch {
+        OpeningHandPayload opening => opening.Mulligan.Label,
+        PaymentPayload payment => payment.Cancel.Label,
+        TargetSelectionPayload target => target.Cancel.Label,
+        EntitySelectionPayload entity => entity.Cancel.Label,
+        ConfirmationPayload confirmation => confirmation.Decline?.Label ?? "cancel",
+        _ => "cancel"
+    };
 }

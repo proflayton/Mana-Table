@@ -6,6 +6,7 @@ import forge.game.card.CardView;
 import forge.game.player.Player;
 import forge.game.spellability.SpellAbility;
 import forge.game.zone.ZoneType;
+import forge.card.mana.ManaAtom;
 import org.tinylog.Logger;
 
 import java.util.HashSet;
@@ -43,7 +44,7 @@ public final class AvailableActions {
     }
 
     /** Full priority scan. Cards remain actionable even when a caller elects not to
-     *  stop for one of their activated abilities. A partial scan never permits Auto. */
+     *  stop for an activation. Timeout or unresolved manual payment never permits Auto. */
     public record ActionScan(Set<CardView> actionableCards, List<SpellAbility> activatedAbilities,
                              boolean hasOtherActions, boolean complete) {
         public ActionScan {
@@ -67,6 +68,8 @@ public final class AvailableActions {
         Set<CardView> visited = new HashSet<>();
         List<SpellAbility> activated = new ArrayList<>();
         boolean hasOtherActions = false;
+        boolean complete = true;
+        var paymentScan = new PaymentScan(player);
 
         for (ZoneScan scan : SCANS) {
             Iterable<Card> cards = scan.sortByCmc()
@@ -81,8 +84,10 @@ public final class AvailableActions {
                         addUnvisited(actionable, visited, player);
                         return new ActionScan(actionable, activated, hasOtherActions, false);
                     }
-                    if (ability.isManaAbility() || !canAfford(ability, player)
-                            || !ComputerUtilAbility.isFullyTargetable(ability)) continue;
+                    if (ability.isManaAbility() || !ComputerUtilAbility.isFullyTargetable(ability)) continue;
+                    var payment = paymentScan.assess(ability);
+                    if (payment == PaymentAvailability.UNAVAILABLE) continue;
+                    if (payment == PaymentAvailability.MANUAL) complete = false;
                     actionable.add(card.getView());
                     if (ability.isActivatedAbility()) {
                         activated.add(ability);
@@ -97,7 +102,7 @@ public final class AvailableActions {
                 }
             }
         }
-        return new ActionScan(actionable, activated, hasOtherActions, true);
+        return new ActionScan(actionable, activated, hasOtherActions, complete);
     }
 
     /** Run the predictive sweep under an AI controller so cost-adjustment chooseX
@@ -114,6 +119,7 @@ public final class AvailableActions {
         long deadlineNanos = System.nanoTime() + timeoutMs * 1_000_000L;
         Set<CardView> actionable = new HashSet<>();
         Set<CardView> visited = new HashSet<>();
+        var paymentScan = new PaymentScan(player);
 
         for (ZoneScan scan : SCANS) {
             Iterable<Card> cards = scan.sortByCmc()
@@ -126,7 +132,7 @@ public final class AvailableActions {
                 }
                 CardView cv = card.getView();
                 visited.add(cv);
-                if (cardHasActionable(card, player)) {
+                if (cardHasActionable(card, player, paymentScan)) {
                     actionable.add(cv);
                     if (earlyExit) return actionable;
                 }
@@ -137,9 +143,9 @@ public final class AvailableActions {
 
     // Land plays come through with no cost, no targets; spells and activated abilities (incl.
     // hand-activations like Channel) all hit the same shape: not a mana ability, affordable, targetable.
-    private static boolean cardHasActionable(Card card, Player player) {
+    private static boolean cardHasActionable(Card card, Player player, PaymentScan paymentScan) {
         for (SpellAbility sa : card.getAllPossibleAbilities(player, true)) {
-            if (!sa.isManaAbility() && canAfford(sa, player)
+            if (!sa.isManaAbility() && paymentScan.assess(sa) != PaymentAvailability.UNAVAILABLE
                     && ComputerUtilAbility.isFullyTargetable(sa)) {
                 return true;
             }
@@ -163,11 +169,58 @@ public final class AvailableActions {
         return player.getCardsIn(zone).stream().sorted(CardLists.CmcComparator).collect(Collectors.toList());
     }
 
-    private static boolean canAfford(SpellAbility sa, Player player) {
-        if (sa.getPayCosts() == null || !sa.getPayCosts().hasManaCost()) {
-            return true;
+    private enum PaymentAvailability { PAYABLE, UNAVAILABLE, MANUAL }
+
+    private static final class PaymentScan {
+        private final Player player;
+        private List<SpellAbility> manualRoutes;
+
+        private PaymentScan(Player player) { this.player = player; }
+
+        private List<SpellAbility> manualRoutes() {
+            if (manualRoutes != null) return manualRoutes;
+            manualRoutes = new ArrayList<>();
+            for (Card source : player.getCardsIn(ZoneType.Battlefield)) {
+                var planned = ComputerUtilMana.getAIPlayableMana(source);
+                for (SpellAbility mana : source.getManaAbilities()) {
+                    if (planned.contains(mana)) continue;
+                    mana.setActivatingPlayer(player);
+                    if (mana.canPlay()) manualRoutes.add(mana);
+                }
+            }
+            return manualRoutes;
         }
-        return ComputerUtilMana.canPayManaCost(sa, player, 0, false);
+
+        private PaymentAvailability assess(SpellAbility sa) {
+            if (sa.getPayCosts() == null || !sa.getPayCosts().hasManaCost()) {
+                return PaymentAvailability.PAYABLE;
+            }
+            if (ComputerUtilMana.canPayManaCost(sa, player, 0, false)) return PaymentAvailability.PAYABLE;
+            // Discover unplanned sources once per bounded priority scan. Ordinary
+            // boards incur no second cost/pool probe for each unaffordable card.
+            if (manualRoutes().isEmpty()) return PaymentAvailability.UNAVAILABLE;
+
+            // The Auto planner deliberately excludes paid mana activations and
+            // chains with a choice before production. Its failure is not proof that
+            // a human cannot pay. Keep relevant manual routes discoverable, and
+            // leave the scan incomplete so they can never authorize Auto passing.
+            var remaining = ComputerUtilMana.calculateManaCost(sa.getPayCosts(), sa, player, true, 0, false);
+            var floating = new ArrayList<forge.game.mana.Mana>();
+            try {
+                player.getManaPool().payManaCostFromPool(remaining, sa, true, floating);
+            } finally {
+                // The pool's test operation refunds a complete payment itself;
+                // partial payment remains borrowed until its caller refunds it.
+                player.getManaPool().refundMana(floating);
+            }
+            for (SpellAbility mana : manualRoutes()) {
+                for (String symbol : List.of("W", "U", "B", "R", "G", "C")) {
+                    if (mana.canProduce(symbol) && remaining.isAnyPartPayableWith(ManaAtom.fromName(symbol), player.getManaPool()))
+                        return PaymentAvailability.MANUAL;
+                }
+            }
+            return PaymentAvailability.UNAVAILABLE;
+        }
     }
 
     private static boolean checkTimeout(long deadlineNanos, long timeoutMs) {

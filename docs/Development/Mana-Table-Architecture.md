@@ -71,11 +71,11 @@ never cross-provider replay commands.
 | `Mana.Magic`, `Mana.Game` and `Mana.Renderer` | Magic presentation language, local inspection/focus, gestures, grouping, layout and visual timing. These layers consume permissions; they do not establish rules legality. |
 | `Mana.Table` | Shipping composition, provider lifetime, installation health and update bootstrap. |
 
-`Decision.Purpose` describes semantic choices such as opening hands, targets and
-abilities. The Java provider classifies its actual input once and publishes its
-semantic task/purpose; the native adapter validates that combination. Unknown or
-contradictory tasks fail explicitly. Forge input-class names and context remain
-private diagnostics and never become shared decision types. A provider supplies explicit candidates,
+`Decision` carries an opaque answer scope, shared source context and one typed
+`DecisionPayload`. The Java provider classifies its actual input once; the native
+adapter constructs the corresponding payload. Unknown or contradictory tasks
+fail explicitly. Forge input-class names and context remain private diagnostics
+and never become shared decision types. A provider supplies explicit candidates,
 limits and permissions rather than asking the client to recognize card names or
 reconstruct a rule from prose.
 
@@ -94,6 +94,19 @@ an embedded historical decision face cannot retain action authority after the
 occurrence disappears. Cross-zone play gestures use a current offered cast/play
 action rather than a UI list of permitted zones. Hand-placement and Auto still
 consume their separate explicit provider permissions.
+
+Cost-selection inputs must publish the actual current selectable candidates,
+not only provide an engine-side activation callback. Missing publication caused
+Loch Mare's removable counter source to arrive as read-only after mana payment.
+`InputSelectManyBase` now requires a candidate provider and owns publication and
+cleanup once for all its concrete inputs, including counter costs and
+Convoke/Improvise/Waterbend. The native app continues to
+treat undeclared objects as read-only. Forced fixed-source/unique-counter-type
+payments are simplified inside the engine cost owner; native code never guesses
+a cost source or bypasses a real choice from formatted text.
+Legacy battlefield-focus tiles likewise preserve explicit interaction intent:
+a current required candidate gets `UseCard`; ordinary inspection keeps
+`ReadFocusedCard`. Reading is not silently turned into a command.
 
 Source-action descriptions can include a visible linked `Card` and its `Zone`.
 The face is reading material, not a second action handle. The current use is a
@@ -135,6 +148,36 @@ the authority's next state. All three obey current visibility: historical facts,
 cached readers, art preloading and debug output cannot restore a face or private
 choice the viewer is no longer entitled to inspect.
 
+Payment discovery must preserve uncertainty. The bounded `AvailableActions`
+scan distinguishes a planned payment, an unavailable payment and a relevant
+manual route outside the AI planner's supported operations. The latter keeps
+the card discoverable and leaves the scan incomplete, so it cannot authorize
+automatic passing. It is not a proof that every cost can be paid. Manual routes
+are discovered once per scan, only after a failed plan; floating-mana probes
+refund partial test payments. Actual source actions, costs, recipients and
+spending restrictions still execute through the current engine input. Victory
+Chimes' choose-player-before-mana chain is the real regression: a deliberate AI
+planner exclusion had incorrectly hidden a human payment route.
+
+Stack entries now carry `StackActionKind` from the actual owned ability: spell,
+activation, trigger or an otherwise unclassified ability. Native `Ability` is
+derived from that closed kind. The private version-2 wire adds `kind`; older jars
+remain conservatively unclassified for abilities, and contradictory explicit
+classifications fail at decoding. This is additive wire data, not a new action
+capability or persisted-deck migration. It does not yet join the independent
+execution identities described below.
+
+Accepted new stack occurrence IDs drive a bounded 2.4-second announcement and
+source emphasis. Joining, repeated polls and retained history cannot restart it;
+an entire batch does not create a sequence of one timer per trigger. Hovering
+the pending effect reads the chosen spell/ability with source artwork, complete text
+and current source statistics/counters. Hovering its source or targets retains
+their separate full-card inspection. Readers resolve current stack membership
+each frame and disappear when that occurrence leaves. Emphasis gates local Auto
+and the existing bounded presentation acknowledgement; it cannot reset a host
+decision clock. Reading pauses local automatic interaction while the host's
+thinking/grace clock continues to run and enforce its configured expiry policy.
+
 `PublicActivityCursor` consumes the accepted observation's event IDs once and
 publishes one immutable `PublicActivityBatch` to the feedback consumers. The batch
 binds its new entries to the same before/after snapshots. Initial observations,
@@ -174,6 +217,89 @@ design inference, not a claim about complete proprietary implementations:
 - [SabberStone's public game implementation](https://github.com/HearthSim/SabberStone/blob/master/SabberStoneCore/src/Model/Game.cs)
   supplies a comparable headless input/state loop and explicit cloning/RNG policy.
   It is an independent simulator, not Hearthstone's proprietary engine.
+
+## Action execution: the next boundary migration
+
+The organizing unit is an **execution occurrence**: one particular play,
+activation, trigger or rules action progressing through the engine. A printed
+ability, a stack entry, an answer capability and a rendered card are different
+objects. The stack is one part of that execution. Mana abilities, paying costs,
+replacement effects and state-based actions also need representation when they
+do not use the stack.
+
+This is the migration target, not an assertion that the existing protocol already
+implements it. Inspection on 25 October found separate identities for
+`MatchIdentities.pendingEffect(SpellAbility)`, numeric stack instances, and
+`GameEventCause`/`MatchIdentities.effect(String)`. Only counter-change events
+currently carry that last cause; ordinary movement, damage and resolution feed
+entries do not form a complete execution trace. Typed decisions and immutable
+snapshots are useful existing boundaries, but they do not supply the missing
+relationship by themselves. Do not add a second client-side system that guesses
+these relationships from names, prompt prose, nearby events or final totals.
+
+The provider must publish the following meanings from their actual rules owners:
+
+| Meaning | Required relationship |
+| --- | --- |
+| Execution | Game-scoped occurrence ID, action kind, actor and authorized source reference. Repeated activations and copied triggers get separate occurrences. |
+| Current step | Preparation, target/mode choice, cost payment, waiting on the stack, resolution, or a terminal result. These are branching transitions, not a mandatory linear list for every action. |
+| Decision | Exact step/execution reference plus the existing current answer scope, candidates, limits and legal alternatives. Execution identity grants no command authority. |
+| Stack entry | Exact execution reference, controller, targets and response window. Joining or leaving the stack does not create an unrelated action. |
+| Cause | A reported parent execution/event and relationship, such as a trigger caused by an entry. Cost sub-actions and mana activations can nest; unrelated pending stack entries are not their parents. |
+| Committed change | Ordered event-time old/new values, affected occurrences and producing execution/step. Preserve simultaneous groups and distinguish planned values from results after replacement or prevention. |
+| Completion | Resolved, declined, cancelled, countered or failed, as applicable. Transport shutdown and engine interruption are separate from rules victory/defeat. |
+
+Capture transitions on the rules thread at play/activation setup, cost ownership,
+trigger creation, stack insertion/resolution/removal and mutation commit. Preserve
+the relationship across ability copies and reuse; a permanent's identity or a
+random ID generated independently for each mutation cannot stand in for an
+execution. Viewer filtering happens before publication, including causal links,
+private decisions and historical source faces. Observation order and revision
+remain independent of animation time. Reconnection establishes a baseline;
+replaying retained history must not replay commands or fabricate unseen steps.
+
+`Mana.Contracts` will own the immutable, provider-neutral projection. `Mana.Forge`
+translates actual engine execution into it. `Mana.Client` admits ordered
+observations and current capabilities. `Mana.Game`/`Mana.Renderer` derive source
+emphasis, legal target gestures, travel, counter/resource changes and camera
+framing from that same projection. They retain local inspection and timing only.
+The UI should not display the execution as a list of internal steps or another
+explanatory panel. The player's supplied Arena examples show the intended
+surface: a source, affected cards/players, live state and a clear current gesture.
+
+The first migration should follow one real activation through source choice,
+mana payment, counter payment, stack insertion, a response, resolution and its
+result. Extend that same journey to cancellation, a copied/repeated trigger and
+a nested mana activation. Canonical traces must execute the rules engine and
+feed the production presentation path; authored snapshots alone cannot prove
+the relationship. Keep those focused journeys fast. A state/trace assertion can
+verify authority and ordering, while human review separately judges readability.
+Remove superseded identity and inference paths as each slice migrates rather
+than maintaining a parallel presentation protocol.
+
+This design inference follows the inspected
+[Arena rules-engine account](https://magic.wizards.com/en/news/mtg-arena/on-whiteboards-naps-and-living-breakthrough)
+(rules processing and finalized legal actions) and
+[HearthSim's documented nested causal blocks](https://hearthsim.info/docs/gamestate-protocol/#blocks)
+(state changes alone do not express why they happened). The latter is independent
+protocol research, not Blizzard's description of its private implementation.
+Neither source establishes Mana Table's implementation or validates its UX.
+
+### Failure and rules-query boundaries
+
+The reported interrupted game exposed two concrete boundary violations. Creature
+type ranking deliberately constructs ownerless token prototypes, but deck-token
+art selection dereferenced their nonexistent owner. Rules-only prototypes now
+bypass deck cosmetics and per-game artwork pins. A query cannot choose the art
+of a later actual token. A real creature-type land-entry journey covers the path.
+
+`MatchSession.fail` retains its last synchronized board with no rules result.
+Finalizer concessions release engine waiters, but cannot overwrite that board or
+become defeat. Native error presentation also overrides a stale legacy defeat
+and allows local battlefield inspection. The stopped rules thread cannot resume
+that game. Technical details remain in the engine log rather than becoming its
+outcome label. This fixes the failure boundary; it does not implement the full
+execution projection described above.
 
 ## Deck and pregame journey ownership
 
@@ -282,7 +408,7 @@ views rather than independently accepting asynchronous results.
 | --- | --- |
 | `ClientSession` | Accepted engine observations, current command scopes, serialized commands and recovery. |
 | `MatchPresentationLifecycle` | One public activity cursor and the match's effects, presence, pacing, resolution, changes, impacts, mana, priority and departure feedback. A game/viewer boundary revokes readers, poses and transient feedback before baselining the next seat. |
-| `DecisionDraft` | The current game/viewer/prompt's ordered selections and bounded numeric allocations. Observing a new scope resets the draft; rendering cannot initialize or edit it. |
+| `DecisionSession` | One game/viewer/prompt's prepared presentation and applicable choice, reveal, value or allocation draft. Replacing its scope, payload family, candidates or constraints retires incompatible local state; rendering cannot initialize or edit it. |
 | `DeckInteractionState` | Analysis navigation, selected evidence, related-card filters and the workspace reader. Selection changes and deletion reset the owner; closing the editor closes its reader. |
 | `DeckWorkspaceSession` | Workshop, analysis, test history and practice results for the selected deck/revision/epoch. One refresh lifecycle coalesces requests; mutation completions require a captured stamp, and reports must match accepted workshop metadata and playable fingerprint. |
 | `LatestRead` | Replaceable catalog/printing reads. One active provider request, one latest pending intent, explicit caller-controlled start after debounce, and generation-scoped success/failure admission. Clear and close revoke late results. |
@@ -571,7 +697,7 @@ boundary. Priority handoffs alone do not move the view. Only battlefield cards,
 their board labels and connected presentation geometry participate. The hand,
 portraits, player resources, Command/Library/Graveyard/Exile controls, stack,
 decision dock and reader remain anchored. Zoom and seat orientation stay fixed.
-Two-player, reduced-motion and dense-table views remain stationary; an unsafe
+Two-player and reduced-motion automatic follow remain stationary; an unsafe
 path also leaves the view in place rather than concealing another seat or control.
 
 Hover, reading, board pointer activity, a held pointer, dragging, a modal/focused
@@ -714,14 +840,15 @@ its consequence; an eliminated seat can watch or leave.
 | `Mana.Client.Tests`, `Mana.Table.Tests` | Headless behavior checks and separate native test/automation executable |
 
 `TableScene` describes battlefield groups, command cards, piles and hand placement.
-Current native source uses `BattlefieldLayout` to include every projected
-battlefield occurrence, with ordered groups and exposed individual hit regions.
-Sparse boards keep projected role lanes. When crowding requires bounded packing,
-all seats switch together to upright cells inside separate player regions;
-`BoundedBattlefieldLayout` reserves space for piles, commanders, resources and
-controls. Dense headers carry owner/status while life, mana and player-state
-ribbons remain at their player icons. Redundant role and hero creature counts
-have been removed. Matching public-state
+Every projected battlefield occurrence retains its normal card presentation as
+the field grows. The count-triggered text-tile renderer, its label measurements,
+density flags and separate owner headers have been removed. Live games use the
+same seat-facing card families at every count; the crowded-field window check
+now uses that production path too. Wheel zoom and middle-drag pan the existing
+board transform; Home returns to the shared table. These are local camera
+gestures and never confer a game action. The hand, portraits and decision
+controls stay anchored. A new game/viewer retires the manual camera.
+Matching public-state
 copies share small fans; every occurrence stays rendered and independently hit.
 Each scene seat prepares group membership and occurrence lookup once. Effect
 transitions and impacts use the same group front and members instead of rebuilding
@@ -1035,13 +1162,121 @@ reading preserves the browser until an explicit use action. Eligible hand-card
 placement options, including Gaea's Touch, retain the existing `HandPlacements`
 and `UseHandPlacement` route, followed by Forge's required card selection.
 
-Target choices use the provider-neutral `DecisionPurpose.TargetSelection`. Their
+`GameSnapshot.PlayAccesses` separately describes this viewer's retained cast or
+land-play permissions from disclosed external zones. Each entry references its
+actual zone owner, zone and occurrence; routes carry an engine identity, visible
+granting source and description. `CanStart` means the current engine input permits
+initiating that route, not that mana payment will succeed. Route IDs never become
+command handles. Permission membership can persist while another player acts or
+a required choice suspends casting, and disappears when the grant expires.
+
+Forge separates ability variant generation from current timing/payment filtering
+for this projection. Existing legal-action consumers retain their original
+filters. The native decoder requires each referenced face to be disclosed in the
+same snapshot and rejects stale, hidden or contradictory references. No extra
+faces, library order or inferred permission cross this boundary. Older producers
+that omit the additive collection retain ordinary zone inspection.
+
+`TableScene.PlayAccess` prepares adjacent card fans without changing hand
+membership or ownership. Groups retain their zone and permission-source identity;
+multiple routes do not duplicate a card. The plan owns its footprint and the
+nearby priority-control reservation. The hand retains all occurrences, with no
+eleven-card page boundary. Explicit expansion prepares `CardSpreadPlan` over the
+same canonical cards. Its world arrangement, overview and focused `BoardView`
+share one pure layout for hand and access collections; camera navigation changes
+neither actual zones nor the other seats' layout. Source packets keep their full
+captions and artwork. Large collections open at play distance, with a deliberate
+overview instead of automatic shrinking. Camera painting and input cover the
+same full-width table band. Only occurrence IDs and world poses are retained to
+detect reflow; membership/layout changes restore ordinary scene motion.
+Returning restores those same
+cards to their anchors through the existing presentation owner. The spread is
+not an overlay dialog, a second renderer or another source of action authority.
+Reading and dragging reuse the ordinary card/source-action pipeline, including
+current-scope revalidation. A drag retains its original expanded anchor and must
+leave it before commitment. A played occurrence then travels from its actual
+displayed position into the stack. There is no access scrollbar or hand paging.
+
+The same collection owner also handles deliberate Graveyard/Exile pile
+inspection. `CardCollectionTarget` is a closed local family for hand, access,
+one source packet or a public zone with a typed owner/zone reference. It is not
+a rules target or command. Public packets use current disclosed zone members in
+engine order and the actual pile as their origin; counts cannot produce faces.
+Current reading policy permits inspection only for that exact public collection
+during an existing required task. A new required task returns control to its
+normal decision surface without discarding the current draft. Folding retains
+only IDs/geometry and re-resolves current disclosure/location before composing
+the return through the shared card owner. A card also present in an access fan
+has one painted occurrence and returns to that current fan anchor. The Command,
+library, private-hand, stack and required-choice readers keep their separate
+semantics; this does not turn disclosed zone membership into play permission.
+
+A released play can await its one pending source query without submitting a
+speculative action. The retained intent pauses automatic passing and is cancelled
+by changed scope, permission, disclosure or a new explicit gesture. Submission
+uses the exact returned offer; multiple routes require a choice. After acceptance,
+only the disclosed card's presentation pose can survive a prompt-free resolving
+observation. Its previous command authority retires immediately. Face-down foretell
+disclosure is outside this slice. Modal cards retain their existing two-face
+reader and face-naming action; the access fan represents the physical occurrence,
+not a new per-route face preview.
+
+Target choices use the provider-neutral `TargetSelectionPayload`. Their
 source is highlighted on the table, pointer aiming links it to legal cards or
 portraits, and the dock retains engine-permitted cancellation without calling a
 mixed card/player decision "Choose a player" or synthesizing a stack card.
 
+Counter-cost selection can carry a validated `CounterPaymentContext` with total
+and remaining allocation. A subsequent `OptionsPayload.CounterPayment` describes
+the exact donor separately from the activating source, the debit of that one
+choice, and the exact offered type indices/labels/available quantities. These
+are immutable descriptions, not action handles. Face-up donors use current
+disclosed identity; face-down battlefield donors retain only their anonymous
+public position. `ChooseOptions` still answers the original scoped choice.
+Older engines without these optional fields retain the generic choice path.
+
+The counter workspace uses the existing source/donor occurrence and measured
+action placement. Choices remain on the table with current quantities beside
+the donor, rather than acquiring a gallery. Pending allocated counters are not
+subtracted from projected characteristics. The engine's completed payment
+publishes the real counter/stat changes; inspection retains the affected card's
+own receipt while deferring unrelated bursts. Placement protects the source
+before minimizing overlap with other battlefield objects.
+
+The shared contract has fifteen sealed payload variants. Priority has pass
+permission and optional ability offers; choices have indexed options and a
+validated selection range; allocation has normalized recipients and explicit
+constraints. Those fields cannot be combined into an unrelated decision. The
+former flat field bag, task enum and independent ordering/numeric flags are gone.
+`Mana.Forge` validates the private task and constructs this contract directly from
+the immutable JSON frame. It no longer rewrites a mutable JSON tree into a match
+snapshot. The same observed frame owns source-query authority and command scope;
+failed decoding revokes both. `expectedTask` is encoded only at the final wire
+boundary. No native component parses prompt prose to recover game meaning.
+
+`DecisionDockPresentation` prepares the applicable surface, reading permissions
+and typed selection once for the local owner. `DecisionSession` retains that
+presentation and only the draft applicable to its payload. Gallery layout and
+source placement have dedicated owners rather than sharing the general overlay
+switch. Commands still validate current scope and provider permissions at use.
+
+Number entry can have explicit bounds or no published range. Forge's numeric
+textbox publishes an initial value without bounds; the adapter preserves that
+fact instead of inventing limits. Allocation units, minima, caps, lethal thresholds
+and recipient identities belong to `AllocationPayload` and `AllocationRecipient`;
+shared constraints validate both command admission and the editable draft.
+
+`LibrarySearchTarget` carries the destination and public exact-name criterion
+while the player target remains unresolved. `LibrarySearchOffer` names the chosen
+library's actual owner at confirmation. Neither authorizes private contents or an
+answer. The rules effect carries this context through
+the human-controller input instead of dropping it at a generic confirmation.
+`OpeningHandContext` likewise comes from the active mulligan policy. The UI owns
+source/library/hand placement and peer alternative controls; the engine retains
+target legality, search optionality, hidden information and redraw policy.
+
 `TableApplication.AbilityChoices` handles genuine later single-select
-`DecisionPurpose.AbilitySelection` choices beside the actual source occurrence. This task includes abilities and
+`AbilityChoicePayload` choices beside the actual source occurrence. This includes abilities and
 casting modes. Pending engine input is separate from visual overlays: the table
 and source reader stay available while unrelated gameplay commands are blocked.
 An explicit action click submits its original index; optional Cancel submits an

@@ -1,4 +1,5 @@
 using System.Runtime.CompilerServices;
+using System.Text.Json;
 using Mana.Contracts;
 
 [assembly: InternalsVisibleTo("Mana.Table.Tests")]
@@ -11,8 +12,29 @@ namespace Mana.Forge;
 internal sealed class ForgeCommandScope
 {
     private GameSnapshot? observed;
+    internal string ObservedGameId => Volatile.Read(ref observed)?.Id ?? "";
     internal void Observe(GameSnapshot? state) => Volatile.Write(ref observed, state);
+    internal GameSnapshot? ObserveRaw(JsonElement raw)
+    {
+        try {
+            var state = ForgeSnapshotDecoder.Decode(raw);
+            Observe(state);
+            return state;
+        } catch {
+            Clear();
+            throw;
+        }
+    }
     internal void Clear() => Volatile.Write(ref observed, null);
+    internal bool CanReadSource(string gameId, string decisionId, string key)
+    {
+        var state = Volatile.Read(ref observed);
+        return state is { Status: "playing", Decision: { Payload: PriorityPayload or PaymentPayload } decision }
+            && state.Id == gameId && decision.Id == decisionId
+            && (state.DecisionOwnerId == null || state.DecisionOwnerId == state.ViewerId)
+            && (decision.Payload is not PriorityPayload || state.PriorityPlayerId == null || state.PriorityPlayerId == state.ViewerId)
+            && CardViews.FindZoneActionSource(state, key)?.Card is { FaceDown: false };
+    }
     internal Dictionary<string, object?> Encode(GameCommand command)
     {
         command.Validate();
@@ -66,16 +88,13 @@ internal sealed class ForgeCommandScope
         return args;
     }
 
-    private static string Task(Decision decision) => decision switch {
-        { Purpose: DecisionPurpose.OpeningHand } => "openingHand",
-        { Intent: DecisionIntent.Priority } => "priority",
-        { Intent: DecisionIntent.Mana } => "mana",
-        { Intent: DecisionIntent.Attack } => "attack",
-        { Intent: DecisionIntent.Block } => "block",
-        { Intent: DecisionIntent.Selection } => "selection",
-        { Kind: "text", Numeric: true } => "number",
-        { Kind: "choice" or "reveal" or "number" or "text" or "allocate" } => decision.Kind,
-        { Kind: "input", Intent: DecisionIntent.General } => "confirmation",
+    private static string Task(Decision decision) => decision.Payload switch {
+        OpeningHandPayload => "openingHand", PriorityPayload => "priority",
+        PaymentPayload => "mana", AttackPayload => "attack", BlockPayload => "block",
+        TargetSelectionPayload or EntitySelectionPayload => "selection",
+        AbilityChoicePayload or OptionsPayload or OrderingPayload => "choice",
+        RevealPayload => "reveal", NumberPayload => "number", TextPayload => "text",
+        AllocationPayload => "allocate", ConfirmationPayload => "confirmation",
         _ => throw new EngineCommandRejectedException("The observed decision has no supported semantic task.")
     };
 }

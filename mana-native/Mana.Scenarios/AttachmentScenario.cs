@@ -39,10 +39,7 @@ public static class AttachmentScenario
         var clutter = ClutteredChangesScenario.Initial();
         var crowded = attached with { Players = attached.Players.Select(player => player with {
             Zones = player.Zones.Select(zone => zone.Name != "Battlefield" ? zone : zone with {
-                Cards = [.. zone.Cards, .. clutter.Players.Single(item => item.Id == player.Id).Zone("Battlefield").Cards.Take(120 - zone.Cards.Length)
-                    .Select(card => card.Name == "Cat Beast Token" ? card with {
-                        GamePieceType = "token", ArtName = "Cat Beast", ArtSet = "tfdn", Edition = "FDN", CollectorNumber = "28"
-                    } : card)], Count = 120
+                Cards = [.. zone.Cards, .. clutter.Players.Single(item => item.Id == player.Id).Zone("Battlefield").Cards.Take(120 - zone.Cards.Length)], Count = 120
             }).ToImmutableArray()
         }).ToImmutableArray() };
         return [new("Auras and Equipment", "Four attachments beneath Tracker, including Jitte with two counters; your Pacifism stays beneath an opponent's permanent. Read each exposed edge.", attached),

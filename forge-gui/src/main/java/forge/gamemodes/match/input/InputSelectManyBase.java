@@ -3,6 +3,7 @@ package forge.gamemodes.match.input;
 import com.google.common.collect.Iterables;
 import forge.game.GameEntity;
 import forge.game.GameEntityView;
+import forge.game.card.Card;
 import forge.game.card.CardView;
 import forge.game.spellability.SpellAbility;
 import forge.localinstance.properties.ForgePreferences;
@@ -73,8 +74,20 @@ public abstract class InputSelectManyBase<T extends GameEntity> extends InputSyn
 
     protected abstract String getMessage();
 
+    /** Current input authority, including selected entities that can be toggled off. */
+    protected abstract Iterable<? extends T> getSelectableEntities();
+
     @Override
-    public void showMessage() {
+    public final void showMessage() {
+        // Publish after this input owns the UI, never while constructing it.
+        // Every concrete selection input must provide its engine candidates.
+        final List<CardView> cards = new ArrayList<>();
+        for (T entity : getSelectableEntities()) {
+            if (entity instanceof Card selectableCard) {
+                cards.add(selectableCard.getView());
+            }
+        }
+        getController().getGui().setSelectables(cards, min, max);
         if (FModel.getPreferences().getPrefBoolean(ForgePreferences.FPref.UI_DETAILED_SPELLDESC_IN_PROMPT) &&
                 card != null) {
             final StringBuilder sb = new StringBuilder();
@@ -95,7 +108,17 @@ public abstract class InputSelectManyBase<T extends GameEntity> extends InputSyn
         } else {
             showMessage(getMessage());
         }
+        updateSelectionButtons();
+    }
+
+    protected void updateSelectionButtons() {
         getController().getGui().updateButtons(getOwner(), hasEnoughTargets(), allowCancel, true);
+    }
+
+    @Override
+    protected final void onStop() {
+        getController().getGui().clearSelectables();
+        super.onStop();
     }
 
     @Override

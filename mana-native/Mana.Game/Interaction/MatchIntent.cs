@@ -3,7 +3,7 @@ using Mana.Contracts;
 namespace Mana.Table.Interaction;
 
 internal enum MatchView { Settings, History, Help, Concede, LeaveTable, TableState }
-internal enum MatchPage { Hand, Choice, Inspect, Zone, Combat, Change, History, PriorityQueue, PriorityText, Placement, PlayerDamage, PlayerCounter, TableState, AllocationRules }
+internal enum MatchPage { Choice, Inspect, Zone, Combat, Change, History, PriorityQueue, PriorityText, Placement, PlayerDamage, PlayerCounter, TableState, AllocationRules }
 
 // Input describes a player intent. Rendering cannot retain application callbacks
 // or gain authority by choosing a debug control name.
@@ -21,6 +21,7 @@ internal abstract record MatchIntent : UiIntent
     internal sealed record OpenBattlefields : MatchIntent { internal override InteractionScopeKind ScopeKind => InteractionScopeKind.Playback; }
     internal sealed record OpenStack(int Index = 0) : MatchIntent;
     internal sealed record InspectCard(Card Card) : MatchIntent;
+    internal sealed record InspectOccurrence(string Id) : MatchIntent;
     internal sealed record UseCard(Card Card, bool CloseOverlay = false, bool DismissZone = false) : MatchIntent;
     internal sealed record UseStackCard(Card Card, Card Reported, int Index, bool PayingSource) : MatchIntent;
     internal sealed record InspectDecisionSource : MatchIntent;
@@ -29,20 +30,28 @@ internal abstract record MatchIntent : UiIntent
     internal sealed record SetPage(MatchPage PageKind, int Page) : MatchIntent {
         internal override InteractionScopeKind ScopeKind => PageKind == MatchPage.PriorityText ? InteractionScopeKind.Playback : InteractionScopeKind.Current;
     }
-    internal sealed record SetHandPage(int Page) : MatchIntent;
+    internal sealed record ExpandCardCollection(Mana.Renderer.CardCollectionTarget Target) : MatchIntent { internal override InteractionScopeKind ScopeKind => InteractionScopeKind.Playback; }
+    internal sealed record FoldCardCollection : MatchIntent { internal override InteractionScopeKind ScopeKind => InteractionScopeKind.Playback; }
+    internal sealed record ResetCardCollectionView : MatchIntent { internal override InteractionScopeKind ScopeKind => InteractionScopeKind.Playback; }
     internal sealed record FlipInspector : MatchIntent;
+    internal sealed record FlipReaderText(string Id) : MatchIntent;
     internal sealed record SubmitCommand(GameCommand Command) : MatchIntent;
     internal sealed record ConfirmDecision(bool CloseOverlay = false) : MatchIntent;
     internal sealed record CancelDecision : MatchIntent;
+    internal sealed record ConfirmTurnPass : MatchIntent;
+    internal sealed record DismissTurnPass : MatchIntent;
     internal sealed record ConfirmSelection : MatchIntent;
     internal sealed record ChooseNone(bool CollapseReader = false) : MatchIntent;
     internal sealed record ClearSelection : MatchIntent;
+    internal sealed record ToggleChoiceDisclosure : MatchIntent;
     internal sealed record SelectChoice(int Index) : MatchIntent;
     internal sealed record ChooseAbility(int Index) : MatchIntent;
+    internal sealed record ChooseCounterPayment(int Index) : MatchIntent;
     internal sealed record FocusInput(bool Filter) : MatchIntent;
     internal sealed record AdjustNumber(int Delta) : MatchIntent;
     internal sealed record ConfirmValue : MatchIntent;
-    internal sealed record OpenAllocation(int Index, bool Edit = false) : MatchIntent;
+    internal sealed record OpenAllocationSource : MatchIntent;
+    internal sealed record OpenAllocationRecipient(int Index, bool Edit = false) : MatchIntent;
     internal sealed record CloseAllocation : MatchIntent;
     internal sealed record ResetAllocation : MatchIntent;
     internal sealed record ConfirmAllocation : MatchIntent;

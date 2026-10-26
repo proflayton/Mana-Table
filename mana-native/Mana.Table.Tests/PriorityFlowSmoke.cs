@@ -128,7 +128,7 @@ internal sealed class PriorityFlowSmoke : ITableAutomation
             view.Accept(engine.AdvanceToRecipient());
         });
         Step(() => {
-            Check(view.Match?.Decision is { Intent: DecisionIntent.Selection } && view.PrioritySeats.Count == 0
+            Check(view.Match?.Decision is { Payload: EntitySelectionPayload } && view.PrioritySeats.Count == 0
                 && view.Hits.Any(hit => hit.Id == "recipient:0") && Text().Any(value => value.Contains("Search trigger (scripted)"))
                 && !Text().Contains("Pass priority"),
                 "The required recipient choice names its source, removes the priority token and exposes a direct You control");
@@ -136,12 +136,12 @@ internal sealed class PriorityFlowSmoke : ITableAutomation
             recipientDecision = view.Match!.Decision!.Id;
             Observe("required-recipient"); Capture("05-required-recipient"); MoveHit("recipient:0");
         }); Click();
-        Wait(() => !view.Busy && engine.Replies.Count == 2 && view.Match?.Decision is { Kind: "choice", LibraryCards.Length: > 0 }, () => {
+        Wait(() => !view.Busy && engine.Replies.Count == 2 && view.Match?.Decision is { Payload: OptionsPayload { Selection.Disclosures.Length: > 0 } or AbilityChoicePayload { Selection.Disclosures.Length: > 0 } or OrderingPayload { Selection.Disclosures.Length: > 0 } }, () => {
             Check(engine.Replies[1] is SelectPlayer { Player: 0 } recipient
                 && recipient.DecisionId == recipientDecision && recipient.GameId == passGame,
                 "Only clicking You submits the current required recipient choice in the same game epoch");
-            Check(view.Match!.Decision is { Min: 1, Max: 1 } && view.Match.Decision.LibraryCards.Length == 3
-                && view.Match.Decision.LibraryCards.All(item => item.Card.VisualId.Length == 0 && item.Card.Key.Length == 0)
+            Check(view.Match!.Decision is { Payload: OptionsPayload { Selection.Range: { Min: 1, Max: 1 }, Selection.Disclosures.Length: 3 } library }
+                && library.Selection.Disclosures.All(item => item.Card.VisualId.Length == 0 && item.Card.Key.Length == 0)
                 && view.PrioritySeats.Count == 0 && view.Selections.Count == 0 && !view.Hits.Any(hit => hit.Id == "choicesdone"),
                 "The library search remains a separate required selection, with private prompt-scoped faces and disabled confirmation until chosen");
             libraryDecision = view.Match.Decision!.Id;
@@ -249,7 +249,7 @@ internal sealed class PriorityFlowSmoke : ITableAutomation
             var pending = session.State.Stack[0];
             projection = session.State with {
                 Stack = [pending, .. other, pending with { Id = "second-search-ability", Name = "Second search ability" }],
-                Decision = session.State.Decision! with { PriorityAbilities = [new("optional-mesa", "optional-key", "Arid Mesa", "Search for a land.", false)] } };
+                Decision = session.State.Decision! with { Payload = ((PriorityPayload)(session.State.Decision!).Payload) with { Abilities = [new("optional-mesa", "optional-key", "Arid Mesa", "Search for a land.", false)] } } };
         }
         internal GameSnapshot AdvanceToRecipient() { projection = null; return session.AdvanceTo(2); }
         public string Name => inner.Name;

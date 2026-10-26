@@ -1,0 +1,10 @@
+{
+  "id": "numeric-text-fixture",
+  "kind": "text",
+  "message": "Choose an amount",
+  "initial": "-2",
+  "numeric": true,
+  "task": "number",
+  "purpose": "",
+  "quietYieldToken": ""
+}

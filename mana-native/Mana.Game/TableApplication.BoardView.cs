@@ -5,6 +5,7 @@ using Microsoft.Xna.Framework.Input;
 using Rectangle = Microsoft.Xna.Framework.Rectangle;
 using Point = Microsoft.Xna.Framework.Point;
 using ButtonState = Microsoft.Xna.Framework.Input.ButtonState;
+using Keys = Microsoft.Xna.Framework.Input.Keys;
 
 namespace Mana.Table;
 
@@ -15,12 +16,42 @@ internal sealed partial class TableApplication
     private BoardView boardView = BoardView.Identity;
     private bool followTurnEnabled, boardPointerActivity, boardViewportChanged;
     private Point boardViewport;
+    private BoardView? manualBoardView;
+    private bool boardPanning;
+    private Point boardPanOrigin;
+    private BoardView boardPanView;
+
+    private void UpdateBoardCamera(MouseState mouse, KeyboardState keys)
+    {
+        if (!TableStudyEnabled || CardCollectionOpen || OverlayOpen || textFocus || chatFocus || dragging || readingId != null) {
+            boardPanning = false; return;
+        }
+        if (keys.IsKeyDown(Keys.Home) && previousKeys.IsKeyUp(Keys.Home)) {
+            manualBoardView = null; boardPanning = false; SetStudyFocus(null); return;
+        }
+        // Retain pointer capture until release, including outside the board.
+        if (!BoardViewport.Contains(pointer) && !boardPanning) return;
+        int wheel = mouse.ScrollWheelValue - previousMouse.ScrollWheelValue;
+        if (wheel != 0 && pressed == null) {
+            var start = manualBoardView ?? boardView;
+            float scale = Math.Clamp(start.Scale * MathF.Pow(1.18f, wheel / 120f), .45f, 8);
+            manualBoardView = new(pointer.ToVector2() - start.Inverse(pointer.ToVector2()) * scale, scale);
+            session.CancelAdvance();
+        }
+        if (mouse.MiddleButton == ButtonState.Pressed && previousMouse.MiddleButton == ButtonState.Released) {
+            boardPanning = true; boardPanOrigin = pointer; boardPanView = manualBoardView ?? boardView;
+            session.CancelAdvance();
+        }
+        if (boardPanning && mouse.MiddleButton == ButtonState.Pressed)
+            manualBoardView = boardPanView with { Offset = boardPanView.Offset + (pointer - boardPanOrigin).ToVector2() };
+        if (mouse.MiddleButton == ButtonState.Released) boardPanning = false;
+    }
 
     private void SetTurnFollow(bool enabled)
     {
         followTurnEnabled = enabled;
         if (enabled) boardViewMotion.Resume();
-        else { boardViewMotion.Reset(); boardView = BoardView.Identity; }
+        else { manualBoardView = null; boardPanning = false; boardViewMotion.Reset(); boardView = BoardView.Identity; }
     }
 
     private void UpdateBoardView()
@@ -29,20 +60,19 @@ internal sealed partial class TableApplication
             boardViewMotion.Reset(); boardView = BoardView.Identity; return;
         }
         if (TableStudyEnabled) {
-            var targetView = StudyFocusActive
+            var targetView = manualBoardView ?? (StudyFocusActive
                 ? BoardView.Frame(SharedTableStudy.Territory(tableScene.Seat(studyFocusOwner!.Value).Index), new(195, 170, 995, 530))
-                : BoardView.Identity;
+                : BoardView.Identity);
             boardView = boardViewMotion.Navigate(state.Id, state.ViewerId, targetView, now, preferences.ReducedMotion,
                 dragging || pressed?.Card != null || readingId != null || OverlayOpen);
             return;
         }
-        bool dense = tableScene.Seats.Any(seat => seat.IsDense);
-        bool enabled = followTurnEnabled && !TableStudyEnabled && !dense && state.Players.Length is 3 or 4;
+        bool enabled = followTurnEnabled && !TableStudyEnabled && state.Players.Length is 3 or 4;
         bool blocked = OverlayOpen || readingId != null || matchPresentation.Cards.HasReaderTransition
             || pressed != null || dragging || previousMouse.LeftButton == ButtonState.Pressed
             || boardViewportChanged || boardPointerActivity && pointer.Y is >= 54 and < 778
             || HitAt(pointer)?.Card != null || state.Stack.Length > 0 || state.Combat != null
-            || state.Decision is { Intent: not DecisionIntent.Priority }
+            || state.Decision is { Payload: not PriorityPayload }
             || state.DecisionOwnerId != null && state.ActionClass is not ("priority" or "waiting");
         Vector2 target = state.ActivePlayerId == state.ViewerId ? Vector2.Zero
             : TableLayout.SeatIndex(state, state.ActivePlayerId.GetValueOrDefault(state.ViewerId)) switch {

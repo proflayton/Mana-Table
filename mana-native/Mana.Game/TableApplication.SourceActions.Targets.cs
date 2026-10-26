@@ -7,24 +7,23 @@ namespace Mana.Table;
 
 internal sealed partial class TableApplication
 {
-    private bool SelectingActionTarget => match?.Decision is {
-        Intent: DecisionIntent.Selection, Purpose: DecisionPurpose.TargetSelection
-    };
+    private bool SelectingActionTarget => decisions.Presentation?.Payload is TargetSelectionPayload;
 
     private void DrawSourceTargeting()
     {
         targetingEffectBounds = Rectangle.Empty;
         pendingCounterReceiptBounds.Clear();
         if (session.NeedsRecovery || OverlayOpen || match is not { } state) return;
-        if (!SelectingActionTarget || state.Decision is not { } decision) {
+        if (decisions.Presentation?.Payload is not TargetSelectionPayload selection || state.Decision is not { } decision) {
             if (state.Stack.FirstOrDefault()?.Effect is { Kind: "damage" } pending)
                 DrawPendingCounterReceipt(pending);
             return;
         }
+        if (selection.Search != null) return;
         var source = CardViews.Source(state, decision);
-        bool valued = decision.Effect is { Kind: "damage" };
+        bool valued = selection.Effect is { Kind: "damage" };
         var origin = source == null ? null : matchPresentation.Cards.Cards.LastOrDefault(card => card.Zone != "Stack" && card.ChoiceSlot < 0 && SameVisibleCard(card.Card, source));
-        if (valued) DrawTargetingEffect(state, decision, source);
+        if (valued) DrawTargetingEffect(state, decision, selection, source);
         if (origin == null && !valued) return;
         if (origin != null) canvas.CardFrame(origin.Display with { Size = origin.Display.Size + new Vector2(9) }, valued ? Gold : Blue, 2);
         var originPose = valued ? new Mana.Renderer.Pose(targetingEffectBounds.Center.ToVector2(), targetingEffectBounds.Size.ToVector2()) : origin!.Display;
@@ -43,7 +42,7 @@ internal sealed partial class TableApplication
                 target = effect.EdgeToward(originPose.Center, 5);
                 targetBounds = hit.Bounds;
             }
-        } else if (hit?.PlayerId is { } player && CurrentHit(hit) && decision.PlayerChoices.Contains(player) && heroPositions.TryGetValue(player, out var hero)) {
+        } else if (hit?.PlayerId is { } player && CurrentHit(hit) && selection.Players.Contains(player) && heroPositions.TryGetValue(player, out var hero)) {
             var direction = originPose.Center - hero;
             int radius = player == state.ViewerId ? 51 : 40;
             target = hero + (direction.LengthSquared() > 0 ? Vector2.Normalize(direction) : Vector2.UnitY) * radius;
@@ -52,7 +51,7 @@ internal sealed partial class TableApplication
         if (target is { } point) {
             var start = originPose.EdgeToward(point, 5);
             canvas.Arrow(start, point, valued ? Red : Blue, 10);
-            if (valued && decision.Effect is { Amount: { } amount, Distribution: not "divided" })
+            if (valued && selection.Effect is { Amount: { } amount, Distribution: not "divided" })
                 PaintPendingDamageMarker(amount, start, point, targetBounds);
         }
     }

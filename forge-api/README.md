@@ -71,6 +71,23 @@ Visible card snapshots add `artSet` (the edition's Scryfall code), `edition` and
 set/collector number and face; old name-only caches remain valid for unspecified
 art requests. An unavailable exact image uses the readable card fallback.
 
+Optional match `playAccesses` describes only the current viewer's retained plays
+from already disclosed external zones. Entries contain `playerId` (the physical
+zone owner), `zone`, `cardId` (the existing visual occurrence) and `routes`.
+A route contains `id`, numeric `kind` (`0` cast, `1` play land), visible
+`sourceCardId`/`sourceName`, engine `detail`, and `canStart`. Membership is distinct
+from current timing: access may remain while `canStart` is false. The latter
+reports permission to initiate a current route, not mana affordability. Resolving
+clears current-start flags without deleting retained access. No generic expiry
+text is invented; the engine removes the route when its permission ends.
+
+These display route IDs are not action handles. `matchSourceActions` and
+`useSourceAction` remain the authority for an exact current cast/play. Access
+references never disclose additional card faces, and another player's permission
+cannot populate this viewer's list. Command-zone cards retain their dedicated
+representation; prepared linked spell copies remain attached to their source
+action rather than entering this list.
+
 `multiplayerState` includes `tableId`. Pass that ID to `tableSocial` to read the
 table conversation, `tableChat` with `kind` (`chat` or `emote`) and `text` to send,
 or `tableName` with `name` to change your display name between games. Sender
@@ -657,9 +674,49 @@ an engine-classified `task` and `purpose`; native code consumes and validates
 these semantic fields instead of classifying Java names itself. Unknown tasks,
 task/kind contradictions and invalid purpose/alternative combinations fail at
 the native boundary rather than falling back to a generic confirmation.
+The native boundary maps these private fields once to the closed `DecisionTask`
+contract: priority, opening hand, payment, combat, target/entity selection,
+confirmation, ability/options/ordering, reveal, number, text or allocation.
+Native permission checks and presentation consume that task; they do not
+reconstruct it from parallel kind/intent/purpose classifiers. The adapter maps
+the task back to `expectedTask` only when encoding a scoped command. This is an
+in-process native contract change, not a new seat-sync or saved-data version.
 `InputPassPriority` means an optional opportunity to act, not a required payment
 or selection. Clients can explain the current `phaseKey`, but must retain the
 prompt's actual message and enabled actions for costs, discards, and combat.
+
+Selection inputs used while paying costs must publish their current legal
+selectable objects when active and clear that publication on stop. A server-side
+`getActivateAction` alone does not expose a candidate to the snapshot. The
+shared `InputSelectManyBase` owns publication and cleanup; each concrete input
+must implement its candidate provider. This includes counter costs and
+Convoke/Improvise/Waterbend. Clients cannot infer permission from the source
+face, prompt prose or counters.
+A fixed-source remove-counter payment with exactly one legally removable type
+and sufficient counters has no further source/type choice and pays through the
+normal engine cost path. Mixed types, distributed payments, cancellation and
+ordinary mana payment retain their explicit current input and scoped keys.
+
+Remove-counter cost inputs additionally publish `counterPayment: {amount,
+remaining}` for a positive total counter cost: `amount` is the complete cost and
+`remaining` is its currently unallocated part. This is separate from target
+selection and never authorizes choosing the ability source automatically.
+A nontrivial counter-type payment retains ordinary `kind/task: choice`, indexed
+`choices`, and the same scoped answer, with additive `counterPaymentChoice`:
+`{amount, permanent: {cardId, card, controllerId, zone}, options: [{index, type,
+label, available}]}`. Here `amount` is the debit allocated by this one choice
+(currently one), not the total remaining payment. `available` excludes counters
+already allocated by earlier choices in the same cost. Options preserve the
+ordinary choice's indices and human-readable labels; `type` is the stable engine
+counter identifier such as `M1M1` or `STUN`.
+The affected permanent is distinct from the ability's existing `sourceCard`.
+Its viewer-filtered current face is keyless and grants no action permission.
+Only a disclosed battlefield occurrence receives this metadata. Face-up
+`cardId` matches the face's `visualId`; a face-down permanent keeps its masked
+public characteristics and anonymous `combatId`, with no disclosed `visualId`.
+Other seats do not receive the chooser's prompt or private option metadata.
+Older GUI clients use the default ordinary indexed choice; this adds no command,
+saved-data migration or seat-sync version.
 
 Synchronous dialogs publish a snapshot before waiting on a response future.
 Replies complete that future directly; controller input runs on the dedicated
@@ -795,6 +852,26 @@ supplies its visible source. These are presentation snapshots with an empty
 action `key`; they never authorize playing the source. They expire with the
 prompt. Clients may retain the presentation across the transient `resolving`
 transport snapshot, then reconcile it against the next published board.
+
+**Source candidate:** library-search targeting and optional confirmation can
+include `librarySearch: {libraryOwnerId, destination, cardName}`. A null owner
+means the target is still being chosen; a confirmation names the actual resolved
+library owner. `cardName` is an optional public exact-name criterion, not an
+availability claim. These facts come from the live effect, not formatted prompt
+text. Before acceptance this context reveals no library contents, candidate
+counts or matching-card availability. Search and decline remain separate engine
+answers. A real target is never submitted automatically, even if only one is
+legal; forced singleton effect-recipient choices retain Forge's existing path.
+Accepting a search may still shuffle when the named card is outside the library.
+Partner-with targeting may choose another legal player, whose own seat then owns
+the optional confirmation and private search.
+
+Opening-hand decisions also carry `openingHand: {handSize, nextHandSize,
+cardsToReturn, freeMulligan}` from the active mulligan policy. The counts describe
+the next redraw and its bottom-card requirement. Native code uses them to explain
+Keep/Mulligan without inferring free redraws from format or player count.
+These optional projection additions preserve existing protocol-2 answers;
+clients without the context continue using the original labels and constraints.
 
 Stack entries include an `id` for the stack instance, an `ability` flag, and a
 viewer-filtered source `card` (or null when unavailable), alongside the existing

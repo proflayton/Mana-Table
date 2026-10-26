@@ -1,4 +1,5 @@
 using Mana.Contracts;
+using Mana.Magic;
 using Microsoft.Xna.Framework;
 using Color = Microsoft.Xna.Framework.Color;
 using Rectangle = Microsoft.Xna.Framework.Rectangle;
@@ -12,8 +13,8 @@ internal sealed partial class TableApplication
 
     private PriorityAbility[] PriorityAbilityOptions()
     {
-        if (match is not { } state || state.Status is not ("playing" or "resolving") || state.Decision is { Intent: not DecisionIntent.Priority }) return [];
-        return (state.Decision?.PriorityAbilities ?? []).Concat(state.IgnoredPriorityAbilities)
+        if (match is not { } state || state.Status is not ("playing" or "resolving") || state.Decision is { Payload: not PriorityPayload }) return [];
+        return ((state.Decision?.Payload as PriorityPayload)?.Abilities ?? []).Concat(state.IgnoredPriorityAbilities)
             .Where(a => !string.IsNullOrWhiteSpace(a.Id)).DistinctBy(a => a.Id).ToArray();
     }
 
@@ -22,8 +23,8 @@ internal sealed partial class TableApplication
         StopQuietPriority();
         if (match is not { } state || state.Status is not ("playing" or "resolving")) return;
         if (ignored) {
-            if (state.Decision is not { Intent: DecisionIntent.Priority } prompt
-                || !prompt.PriorityAbilities.Any(a => a.Id == ability.Id)) return;
+            if (state.Decision is not { Payload: PriorityPayload priority } prompt
+                || !priority.Abilities.Any(a => a.Id == ability.Id)) return;
             Send(new IgnorePriorityAbility(state.Id, prompt.Id, ability.Id));
         } else {
             if (!state.IgnoredPriorityAbilities.Any(a => a.Id == ability.Id)) return;
@@ -43,7 +44,10 @@ internal sealed partial class TableApplication
 
     private void DrawPriorityAbilityControl(PriorityAbility[] abilities)
     {
-        var bounds = new Rectangle(1266, 852, 296, 23);
+        if (decisionDock?.Surface == DecisionDockSurface.Portrait && decisionPanelBounds.IsEmpty) return;
+        var bounds = new Rectangle(1266, DecisionY(852), 296, 23);
+        if (tableScene?.PlayAccess.Groups.Count > 0 && (decisionDock?.Surface == DecisionDockSurface.Portrait || QuietPriorityArmed))
+            bounds.Y = Math.Min(bounds.Y, decisionPanelBounds.Top - bounds.Height - 12);
         if (abilities.Length == 1) {
             var ability = abilities[0];
             PriorityAbilityButton(ability.IgnoredUntilNextTurn ? "ability-undo:" + ability.Id : "ability-pass:" + ability.Id,

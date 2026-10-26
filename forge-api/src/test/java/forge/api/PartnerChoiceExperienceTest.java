@@ -1,9 +1,16 @@
 package forge.api;
 
 import com.google.gson.JsonObject;
+import forge.StaticData;
+import forge.deck.Deck;
+import forge.game.ability.AbilityFactory;
+import forge.game.card.Card;
+import forge.game.player.LibrarySearchOffer;
 import org.testng.annotations.DataProvider;
 import org.testng.annotations.Test;
 
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.*;
 
 import static forge.api.RulesScenario.*;
@@ -16,6 +23,34 @@ public class PartnerChoiceExperienceTest {
 
     @DataProvider public Object[][] partnerChoices() {
         return new Object[][] {{0, true, true}, {1, true, true}, {1, false, true}, {1, true, false}};
+    }
+
+    @Test
+    public void aLibraryOnlyOfferCannotDescribeMixedOriginsOrDefinedCardMoves() throws Exception {
+        if (StaticData.instance() == null) EngineResources.load(Path.of("../forge-gui/res"));
+        var players = List.of(MatchTable.human(new Deck(), "Constructed", "Seat 0"),
+                MatchTable.human(new Deck(), "Constructed", "Seat 1"));
+        // No rules thread is started: these descriptors examine public script
+        // parameters without making a rules choice or opening a hidden zone.
+        try (var table = new MatchTable("Constructed", players, Path.of("../forge-gui/res"),
+                Files.createTempDirectory("search-offer-descriptor"))) {
+            HeadlessPlatform.activate(table);
+            var owner = table.game.getPlayers().get(0);
+            var source = Card.fromPaperCard(StaticData.instance().getCommonCards().getCard("Solemn Simulacrum"), owner);
+            for (String scope : List.of("Origin$ Library,Graveyard", "Origin$ Graveyard,Hand,Library",
+                    "Origin$ Library | OriginAlternative$ Graveyard", "Origin$ Library | Defined$ TopOfLibrary",
+                    "Origin$ Library | NoLooking$ True")) {
+                var ability = AbilityFactory.getAbility("DB$ ChangeZone | " + scope + " | Destination$ Hand | ChangeType$ Card", source);
+                ability.setActivatingPlayer(owner);
+                assertNull(LibrarySearchOffer.targeting(ability), scope + " needs its complete native decision rather than a library-only offer");
+                assertNull(LibrarySearchOffer.optionalTrigger(ability), scope);
+            }
+            var search = AbilityFactory.getAbility("DB$ ChangeZone | Origin$ Library | Destination$ Hand | ChangeType$ Card.namedPir; Imaginative Rascal", source);
+            search.setActivatingPlayer(owner);
+            assertNull(LibrarySearchOffer.targeting(search).libraryOwnerId(), "Describing a target never preselects the recipient");
+            assertEquals(LibrarySearchOffer.optionalTrigger(search).libraryOwnerId(), Integer.valueOf(owner.getId()));
+            assertEquals(LibrarySearchOffer.optionalTrigger(search).cardName(), PIR);
+        }
     }
 
     @Test(groups = "canonical-interaction", dataProvider = "partnerChoices", timeOut = 90000)
@@ -44,6 +79,7 @@ public class PartnerChoiceExperienceTest {
                     : game.until(i -> text(i.prompt(), "inputType").equals("InputSelectTargets"));
             assertEquals(targeting.seat(), 0);
             assertSource(targeting, caster);
+            assertSearch(targeting.prompt(), null, "Hand", PIR);
             var legalPlayers = new HashSet<Integer>();
             targeting.prompt().getAsJsonArray("playerChoices").forEach(p -> legalPlayers.add(p.getAsInt()));
             assertEquals(legalPlayers, Set.of(caster, game.state(1).get("viewerId").getAsInt(), game.state(2).get("viewerId").getAsInt()),
@@ -55,6 +91,9 @@ public class PartnerChoiceExperienceTest {
             var confirm = game.until(i -> text(i.prompt(), "inputType").equals("InputConfirm"));
             assertEquals(confirm.seat(), targetSeat, "The targeted player decides whether to search");
             assertSource(confirm, caster);
+            assertSearch(confirm.prompt(), recipient, "Hand", PIR);
+            assertEquals(text(confirm.prompt(), "ok"), "Search library");
+            assertEquals(text(confirm.prompt(), "cancel"), "Don’t search");
             assertTrue(text(confirm.prompt(), "message").toLowerCase(Locale.ROOT).contains("library"));
             assertTrue(confirm.prompt().get("okEnabled").getAsBoolean());
             assertTrue(confirm.prompt().get("cancelEnabled").getAsBoolean());
@@ -112,6 +151,47 @@ public class PartnerChoiceExperienceTest {
     private static void assertSource(RulesScenario.Input input, int caster) {
         assertEquals(text(input.prompt().getAsJsonObject("sourceCard"), "name"), TOOTHY);
         assertEquals(input.prompt().get("sourceControllerId").getAsInt(), caster);
+    }
+
+    @Test(groups = "canonical-interaction", timeOut = 60000)
+    public void optionalSearchTriggerCarriesItsOwnLibraryWithoutAPlayerPicker() throws Exception {
+        try (var game = new RulesScenario("optional-search-solemn", Map.of(0, List.of("Island", "Island", "Island", "Island")),
+                "Solemn Simulacrum", "Rhys the Redeemed")) {
+            var main = game.until(i -> i.seat() == 0 && text(i.state(), "phaseKey").equals("MAIN1")
+                    && text(i.prompt(), "inputType").equals("InputPassPriority"));
+            int owner = main.state().get("viewerId").getAsInt();
+            var card = zone(viewer(main.state()), "Hand").getAsJsonArray("cards").get(0).getAsJsonObject();
+            assertTrue(game.answer(main, Map.of("action", "card", "key", text(card, "key"))));
+            var payment = game.until(i -> text(i.prompt(), "inputType").startsWith("InputPayMana"));
+            assertTrue(game.answer(payment, Map.of("action", "ok")));
+            awaitPayment(game);
+            // until deliberately rejects unhandled player inputs: the search
+            // cannot insert a redundant mandatory singleton player picker.
+            var offer = game.until(i -> text(i.prompt(), "inputType").equals("InputConfirm"));
+            assertEquals(offer.seat(), 0);
+            assertSearch(offer.prompt(), owner, "Battlefield", "");
+            assertEquals(text(offer.prompt().getAsJsonObject("sourceCard"), "name"), "Solemn Simulacrum");
+            assertEquals(text(offer.prompt(), "ok"), "Search library");
+            assertEquals(text(offer.prompt(), "cancel"), "Don’t search");
+            assertPrivateOwner(game, owner, "confirm");
+            int shuffles = eventCount(offer.state(), "shuffle");
+            assertTrue(game.answer(offer, Map.of("action", "cancel")));
+            var done = game.until(i -> text(i.prompt(), "inputType").equals("InputPassPriority")
+                    && i.state().getAsJsonArray("stack").isEmpty());
+            assertEquals(eventCount(done.state(), "shuffle"), shuffles, "Declining the optional trigger does not search or shuffle");
+        }
+    }
+
+    private static void assertSearch(JsonObject prompt, Integer owner, String destination, String cardName) {
+        var search = prompt.getAsJsonObject("librarySearch");
+        assertNotNull(search, "The engine identifies the search separately from player targeting");
+        if (owner == null) assertTrue(search.get("libraryOwnerId").isJsonNull(), "Targeting does not imply a chosen library");
+        else assertEquals(search.get("libraryOwnerId").getAsInt(), owner.intValue());
+        assertEquals(text(search, "destination"), destination);
+        assertEquals(text(search, "cardName"), cardName);
+        assertFalse(prompt.has("libraryCards"), "Search permission has not yet been accepted");
+        assertFalse(search.has("available"));
+        assertFalse(search.has("count"), "Public search intent never examines a hidden library");
     }
 
     private static void assertPrivateOwner(RulesScenario game, int owner, String actionClass) {

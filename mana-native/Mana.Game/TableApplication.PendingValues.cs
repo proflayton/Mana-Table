@@ -14,9 +14,9 @@ internal sealed partial class TableApplication
     private readonly List<Rectangle> pendingCounterReceiptBounds = [];
     private static readonly Color CounterReceiptAccent = new(154, 224, 203);
 
-    private bool ValuedTargetDecision => SelectingActionTarget && match?.Decision?.Effect is { Kind: "damage" };
+    private bool ValuedTargetDecision => decisions.Payload is TargetSelectionPayload { Effect.Kind: "damage" };
 
-    private void DrawTargetingEffect(GameSnapshot state, Decision decision, Card? source)
+    private void DrawTargetingEffect(GameSnapshot state, Decision decision, TargetSelectionPayload target, Card? source)
     {
         var area = TableStudyEnabled ? StudyActionArea : new Rectangle(545, 319, 435, 165);
         targetingEffectBounds = area;
@@ -29,7 +29,7 @@ internal sealed partial class TableApplication
         int headerHeight = Math.Max(54, nameHeight + 18);
         AddTargetingSourceReference(decision, new(art.X, area.Y + 7, area.Width - 24, headerHeight - 7));
         if (IsControlHovered("targeting-source:" + decision.Id)) canvas.CardFrame(new(art.Center.ToVector2(), art.Size.ToVector2()), HoverAccent, 2);
-        PaintPendingDamageValue(decision.Effect!, new(area.X + 12, area.Y + headerHeight,
+        PaintPendingDamageValue(target.Effect!, new(area.X + 12, area.Y + headerHeight,
             area.Width - 24, Math.Max(1, area.Height - headerHeight - 8)), decision: decision);
         if (source != null && PendingConnectionCard(CardViews.Identity(source)) is { } board) {
             var end = new Pose(area.Center.ToVector2(), area.Size.ToVector2()).EdgeToward(board.Display.Center, 4);
@@ -37,7 +37,7 @@ internal sealed partial class TableApplication
             canvas.Line(start, end, Gold * .65f, 2);
             canvas.Circle(end, 3, Gold);
         }
-        DrawPendingCounterReceipt(decision.Effect!);
+        DrawPendingCounterReceipt(target.Effect!);
     }
 
     private void PaintPendingSourceArt(Card? card, Rectangle art)

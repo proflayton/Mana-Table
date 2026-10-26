@@ -6,7 +6,7 @@ internal static class RecoveryRegression
     internal static async Task RunAsync(Action<bool, string> check)
     {
         var state = new GameSnapshot("recovery", "playing", null, null, 0, 1, "Main", "MAIN1", 0, [], [], null,
-            new() { Id = "before", Kind = "input", Intent = DecisionIntent.Priority, CanAutoPass = true, OkEnabled = true }) { Revision = 1 };
+            new Decision("before", new DecisionContext(), new PriorityPayload(new DecisionReply("Confirm", true), null, CanAutoPass: true, QuietYieldToken: "", Abilities: []))) { Revision = 1 };
         var connection = new FailingConnection(state);
         var client = new ClientSession(connection); client.Accept(state);
         var synchronized = client.LastSynchronizedAt;

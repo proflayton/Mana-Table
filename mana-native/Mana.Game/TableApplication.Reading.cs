@@ -19,15 +19,16 @@ internal sealed partial class TableApplication
     private readonly List<(PresentedCard Card, Action<Pose, bool> Compose)> deferredCardComposition = [];
     private (string Scope, int Slot)? inspectedChoice;
     private bool ReadingGalleryOpen => overlay.Length == 0 && zoneName == null && DecisionModal
-        && match?.Decision?.Kind is "choice" or "reveal";
+        && decisions.Presentation?.RequiredSurface == DecisionRequiredSurface.Gallery;
     private bool ZoneReadingOpen => overlay.Length == 0
         && !updatesOpen && !ActivityOpen && !ExperienceOpen
         && zoneName != null && zoneName != "Battlefield";
-    private bool CompactCardDecision => !AbilityActionPending && (TableChoice
-        || match?.Decision?.Intent is DecisionIntent.Selection or DecisionIntent.Attack or DecisionIntent.Block);
-    private CardPresentationContext CardContext => new(match, Scope, OverlayOpen && !BattlefieldFocused && !ZoneReadingOpen,
-        ReadingGalleryOpen, dragging, CompactCardDecision, AbilityActionPending, SourceActionsSupported, TableStudyEnabled,
-        TableStudyEnabled ? StudyActionArea : null);
+    private bool CompactCardDecision => decisions.Presentation?.RequiredSurface is DecisionRequiredSurface.Table
+        or DecisionRequiredSurface.Targets or DecisionRequiredSurface.Combat;
+    private CardPresentationContext CardContext => new(match, Scope, OverlayOpen && !BattlefieldFocused && !ZoneReadingOpen && !CardCollectionOpen,
+        ReadingGalleryOpen, dragging, CompactCardDecision, TableStudyEnabled,
+        TableStudyEnabled ? StudyActionArea : null, decisions.Presentation,
+        spreadCollection as CardCollectionTarget.PublicZone, RulesReaderSize());
     private string? readingId => matchPresentation.Cards.PinnedId;
     private Rectangle? hoverPreview => matchPresentation.Cards.ReaderBounds;
     internal bool InteractivePointer => !dragging && HitAt(pointer) is { } hit
@@ -45,7 +46,12 @@ internal sealed partial class TableApplication
         if (BattlefieldFocused && hits.LastOrDefault(hit => hit.Contains(point)) is { } focusHit
             && focusHit.Intent is MatchIntent.FocusSurface or MatchIntent.CloseBattlefieldFocus or MatchIntent.SetBattlefieldOwner
                 or MatchIntent.ScrollBattlefieldTo or MatchIntent.ReadFocusedCard or MatchIntent.OpenStack) return focusHit;
-        var resolved = matchPresentation.Cards.ResolveHit(point, hits, hits.LastOrDefault(hit => hit.Contains(point)), CardContext);
+        if (BattlefieldFocused && hits.LastOrDefault(hit => hit.Contains(point)) is { Zone: "BattlefieldFocus", Intent: MatchIntent.UseCard } candidate)
+            return candidate;
+        var top = hits.LastOrDefault(hit => hit.Contains(point));
+        var resolved = matchPresentation.Cards.ResolveHit(point, hits, top, CardContext);
+        if (CardCollectionOpen && resolved?.Card is { } spreadCard && SpreadContains(CardViews.Identity(spreadCard))
+            && !resolved.Contains(point)) return top;
         return resolved?.Zone == "Battlefield" && !BattlefieldFocused && resolved.Id != matchPresentation.Cards.Pinned?.Hit.Id
             && !BoardViewport.Contains(point) ? null : resolved;
     }
@@ -57,6 +63,7 @@ internal sealed partial class TableApplication
         pointerSurface = HitAt(pointer);
         string? hover = pointerSurface?.Id;
         matchPresentation.Cards.BeginFrame(CardContext, hover, frameElapsed, preferences.ReducedMotion, boardView);
+        if (rulesReaderId != readingId || rulesReaderGame != match?.Id) ClearRulesReader();
         deferredCardComposition.Clear();
         sourceReaderControls.Clear(); sourceReaderActionsBounds = Rectangle.Empty; sourceReaderScrollMax = 0;
         linkedSpellFaces.Clear();
@@ -67,8 +74,8 @@ internal sealed partial class TableApplication
     private bool ReadingAbilitySource(Decision decision)
     {
         if (!AbilityActionPending || match == null || matchPresentation.Cards.Pinned is not { Zone: "Battlefield" } entry) return false;
-        string id = decision.SourceCardId.Length > 0 ? decision.SourceCardId
-            : decision.SourceCard is { VisualId.Length: > 0 } source ? source.VisualId : decision.SourceCard?.CombatId ?? "";
+        string id = decision.Context.Source?.CardId is { Length: > 0 } sourceId ? sourceId
+            : decision.Context.Source?.Card is { VisualId.Length: > 0 } source ? source.VisualId : decision.Context.Source?.Card?.CombatId ?? "";
         return CardViews.FindZoneOccurrence(match, id) is { Zone: "Battlefield", Card: { FaceDown: false } card }
             && SameVisibleCard(card, entry.Card);
     }
@@ -81,18 +88,29 @@ internal sealed partial class TableApplication
 
     private Pose DrawTableCard(string id, Card card, Pose rest, string zone, int? owner,
         string hitId, UiIntent activate, Action<Pose, bool> paint, Vector2? entrance = null, float entranceDelay = 0,
-        bool opensZone = false, int choiceSlot = -1, Rectangle? activationBounds = null, Rectangle? readingAnchor = null)
+        bool opensZone = false, int choiceSlot = -1, Rectangle? activationBounds = null, Rectangle? readingAnchor = null, Rectangle? clip = null,
+        bool directPlacement = false, bool registerHit = true)
     {
+        if (choiceSlot < 0 && id == CardIdentity(card) && ReleasedPlayPose(card, zone) is { } submitted) {
+            rest = submitted; directPlacement = true; clip = null;
+        }
         var play = choiceSlot < 0 && id == CardIdentity(card) && zone is "Stack" or "Battlefield"
             ? matchPresentation.CardCues.LastOrDefault(cue => cue.Kind == CueKind.Play && cue.VisualId == id) : null;
-        if (play?.PlayerId is { } actor) entrance = SeatHand(actor);
+        if (play?.PlayerId is { } actor)
+            entrance = matchPresentation.Cards.TryGetPreviousPose(id, out var preceding) ? preceding.Center : SeatHand(actor);
         var entry = matchPresentation.Cards.Prepare(new(id, card, rest, zone, owner, hitId, activate,
-            entrance, entranceDelay, opensZone, choiceSlot, activationBounds, play == null ? null : (float)(now - play.Started), play?.Reveal ?? true, readingAnchor));
+            entrance, entranceDelay, opensZone, choiceSlot, activationBounds, play == null ? null : (float)(now - play.Started), play?.Reveal ?? true, readingAnchor, directPlacement));
         var hit = entry.Hit;
+        if (clip is { } viewport && !entry.Focused)
+            hit = hit with { Bounds = Rectangle.Intersect(hit.Bounds, viewport), Shape = point => viewport.Contains(point) && entry.Hit.Contains(point) };
         if (zone == "Battlefield" && choiceSlot < 0 && !entry.Focused && !BattlefieldFocused)
             hit = hit with { Bounds = Rectangle.Intersect(hit.Bounds, BoardViewport), Shape = point => BoardViewport.Contains(point) && entry.Hit.Contains(point) };
-        hits.Add(hit);
-        if (entry.Layer == CardPresentationLayer.Table) ComposeCard(entry, paint);
+        if (registerHit) hits.Add(hit);
+        if (entry.Layer == CardPresentationLayer.Table) {
+            if (clip is { } paintingClip) canvas.BeginClip(paintingClip);
+            ComposeCard(entry, paint);
+            if (clip != null) canvas.EndClip();
+        }
         else deferredCardComposition.Add((entry, paint));
         return entry.Display;
     }
@@ -101,7 +119,7 @@ internal sealed partial class TableApplication
     {
         bool clipped = entry.Zone == "Battlefield" && entry.Layer == CardPresentationLayer.Returning && !BattlefieldFocused;
         if (clipped) canvas.BeginClip(BoardViewport);
-        bool liveReader = DrawSourceActionReader(entry);
+        bool liveReader = DrawRulesReader(entry) || DrawSourceActionReader(entry);
         if (!liveReader) {
             if (entry.Playing) PaintInteractionCard(entry.Card, entry.Display, false, false);
             else compose(entry.Display, entry.Focused);
@@ -124,15 +142,18 @@ internal sealed partial class TableApplication
     private void DrawReaderControls()
     {
         var entry = matchPresentation.Cards.Pinned;
-        if (entry == null || CompactCardDecision && !CardContext.CanBrowseHandSelection(entry) || !CardContext.CanRead(entry)) return;
+        if (entry == null || CompactCardDecision && !CardContext.CanBrowseHandSelection(entry)
+            && !CardContext.CanBrowsePublicCollection(entry) || !CardContext.CanRead(entry)) return;
         var target = (entry.ReaderTarget ?? CardPresentationController.ReaderPose(entry.Rest, entry.Zone)).Bounds;
         if (Vector2.Distance(entry.Display.Size, target.Size.ToVector2()) > 2
             || Vector2.Distance(entry.Display.Center, target.Center.ToVector2()) > 2) return;
+        DrawRulesReaderControl(entry, target);
         if (CardContext.CanBrowseOpeningHand(entry)) return;
-        if (CardContext.CanBrowseHandSelection(entry)) {
+        if (CardContext.CanBrowseHandSelection(entry)
+            || CardContext.CanBrowsePublicCollection(entry) && match?.Decision?.Payload is not (null or PriorityPayload or PaymentPayload)) {
             if (IsCardActionable(entry.Card)) {
                 int? index = TableChoices.Index(match!, entry.Card);
-                bool selected = index is { } choice ? decisionDraft.Selections.Contains(choice) : entry.Card.Highlighted;
+                bool selected = index is { } choice ? decisions.Selections.Contains(choice) : entry.Card.Highlighted;
                 string label = selected ? "Deselect" : "Choose card";
                 Button("read-card-action", label, target.X + 8, Math.Min(840, target.Bottom - 2),
                     canvas.TextWidth(label, .76f) + 24, new MatchIntent.UseReaderCard(entry.Card), !busy, height: 30);
@@ -140,7 +161,7 @@ internal sealed partial class TableApplication
             return;
         }
         if (SourceActionsSupported) { DrawSourceReaderControls(entry); return; }
-        if (match?.Decision?.Intent is DecisionIntent.Priority or DecisionIntent.Mana && IsCardActionable(entry.Card)) {
+        if (match?.Decision?.Payload is PriorityPayload or PaymentPayload && IsCardActionable(entry.Card)) {
             string label = entry.Zone == "Battlefield" ? "Abilities"
                 : !entry.Card.Selectable && HandPlacements.Options(match, entry.Card).Length > 0 ? "Place"
                 : entry.Card.Type.Contains("Land", StringComparison.Ordinal) ? "Play" : "Cast";

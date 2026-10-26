@@ -747,19 +747,21 @@ public class PlayerControllerHuman extends PlayerController implements IGameCont
     @Override
     public boolean confirmAction(final SpellAbility sa, final PlayerActionConfirmMode mode, final String message,
                                  List<String> options, Card cardToShow, Map<String, Object> params) {
+        LibrarySearchOffer searchOffer = params != null && params.get(LibrarySearchOffer.CONTEXT_KEY) instanceof LibrarySearchOffer search
+                ? search : null;
+        List<String> labels = options.isEmpty() ? InputConfirm.defaultOptions : options;
         // Another card should be displayed in the prompt on mouse over rather than the SA source
         if (cardToShow != null) {
             tempShowCard(cardToShow);
-            boolean result = options.isEmpty() ? InputConfirm.confirm(this, cardToShow.getView(), sa, message)
-                    : InputConfirm.confirm(this, cardToShow.getView(), message, true, options);
+            boolean result = InputConfirm.confirm(this, cardToShow.getView(), sa, message, true, labels, searchOffer);
             endTempShowCards();
             recordConfirm(cardToShow.getView(), result);
             return result;
         }
 
         // The general case: display the source of the SA in the prompt on mouse over
-        final boolean result = options.isEmpty() ? InputConfirm.confirm(this, sa, message) :
-                InputConfirm.confirm(this, sa.getHostCard().getView(), sa, message, true, options);
+        final boolean result = InputConfirm.confirm(this, options.isEmpty() ? null : sa.getHostCard().getView(), sa,
+                message, true, labels, searchOffer);
         recordConfirm(sa, result);
         return result;
     }
@@ -832,7 +834,8 @@ public class PlayerControllerHuman extends PlayerController implements IGameCont
             recordConfirm(cardView, result);
             return result;
         }
-        final boolean result = InputConfirm.confirm(this, wrapper, buildQuestion.toString());
+        final boolean result = InputConfirm.confirm(this, null, wrapper, buildQuestion.toString(), true,
+                InputConfirm.defaultOptions, LibrarySearchOffer.optionalTrigger(sa));
         recordConfirm(wrapper.getCardView(), result);
         return result;
     }
@@ -1494,8 +1497,12 @@ public class PlayerControllerHuman extends PlayerController implements IGameCont
 
     @Override
     public boolean mulliganKeepHand(final Player mulliganingPlayer, int cardsToReturn) {
-        // TODO we should be passing tuckCards into Confirmation Dialog
-        final InputConfirmMulligan inp = new InputConfirmMulligan(this, player, mulliganingPlayer);
+        return mulliganKeepHand(mulliganingPlayer, cardsToReturn, null);
+    }
+
+    @Override
+    public boolean mulliganKeepHand(final Player mulliganingPlayer, int cardsToReturn, forge.game.mulligan.OpeningHandOffer offer) {
+        final InputConfirmMulligan inp = new InputConfirmMulligan(this, player, mulliganingPlayer, offer);
         inp.showAndWait();
         return inp.isKeepHand();
     }

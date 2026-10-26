@@ -86,6 +86,12 @@ public final class GameActionUtil {
      *         the provided {@link SpellAbility}.
      */
     public static List<SpellAbility> getAlternativeCosts(final SpellAbility sa, final Player activator, boolean altCostOnly) {
+        return getAlternativeCosts(sa, activator, altCostOnly, false);
+    }
+
+    /** Access discovery retains a route through timing changes; existing action callers use false. */
+    public static List<SpellAbility> getAlternativeCosts(final SpellAbility sa, final Player activator,
+            boolean altCostOnly, boolean includeTimingLimitedRoutes) {
         final List<SpellAbility> alternatives = Lists.newArrayList();
 
         Card source = sa.getHostCard();
@@ -118,11 +124,11 @@ public final class GameActionUtil {
                 for (SpellAbility newSA : StaticAbilityAlternativeCost.alternativeCosts(sa, source, activator)) {
                     alternatives.add(newSA);
                     // should only add MayPlay Zones
-                    alternatives.addAll(getMayPlaySpellOptions(newSA, source, activator, altCostOnly));
+                    alternatives.addAll(getMayPlaySpellOptions(newSA, source, activator, altCostOnly, includeTimingLimitedRoutes));
                 }
             }
 
-            alternatives.addAll(getMayPlaySpellOptions(sa, source, activator, altCostOnly));
+            alternatives.addAll(getMayPlaySpellOptions(sa, source, activator, altCostOnly, includeTimingLimitedRoutes));
 
             // need to be done there before static abilities does reset the card
             // These Keywords depend on the Mana Cost of for Split Cards
@@ -204,7 +210,7 @@ public final class GameActionUtil {
                         alternatives.add(getGraveyardSpellByKeyword(inst, sa, activator, AlternativeCost.Harmonize));
                     } else if (keyword.startsWith("Foretell")) {
                         // Foretell cast only from Exile
-                        if (!source.isInZone(ZoneType.Exile) || !source.isForetold() || source.enteredThisTurn() ||
+                        if (!source.isInZone(ZoneType.Exile) || !source.isForetold() || (!includeTimingLimitedRoutes && source.enteredThisTurn()) ||
                                 !activator.equals(source.getOwner())) {
                             continue;
                         }
@@ -227,7 +233,7 @@ public final class GameActionUtil {
 
                 // foretell by external source
                 if (source.isForetoldCostByEffect() && source.isInZone(ZoneType.Exile) && activator.equals(source.getOwner())
-                        && source.isForetold() && !source.enteredThisTurn() && !source.getManaCost().isNoCost()) {
+                        && source.isForetold() && (includeTimingLimitedRoutes || !source.enteredThisTurn()) && !source.getManaCost().isNoCost()) {
                     // Its foretell cost is equal to its mana cost reduced by {2}.
                     final SpellAbility foretold = sa.copy(activator);
                     int reduced = Math.min(2, sa.getPayCosts().getCostMana().getMana().getGenericCost());
@@ -238,7 +244,8 @@ public final class GameActionUtil {
                     alternatives.add(foretold);
                 }
 
-                if (activator.canCastSorcery() && source.isPlotted() && source.isInZone(ZoneType.Exile) && activator.equals(source.getOwner()) && !source.enteredThisTurn()) {
+                if ((includeTimingLimitedRoutes || activator.canCastSorcery()) && source.isPlotted() && source.isInZone(ZoneType.Exile)
+                        && activator.equals(source.getOwner()) && (includeTimingLimitedRoutes || !source.enteredThisTurn())) {
                     final SpellAbility plotted = sa.copyWithNoManaCost(activator);
                     plotted.setAlternativeCost(AlternativeCost.Plotted);
                     plotted.getRestrictions().setZone(ZoneType.Exile);
@@ -270,7 +277,7 @@ public final class GameActionUtil {
                             // do only non intrinsic
                             if (iSa.isSpell() && !iSa.isIntrinsic()) {
                                 alternatives.add(iSa);
-                                alternatives.addAll(getMayPlaySpellOptions(iSa, stackCopy, activator, altCostOnly));
+                                alternatives.addAll(getMayPlaySpellOptions(iSa, stackCopy, activator, altCostOnly, includeTimingLimitedRoutes));
                                 // currently only AltCost get added this way
                             }
                         }
@@ -332,6 +339,11 @@ public final class GameActionUtil {
     }
 
     public static List<SpellAbility> getMayPlaySpellOptions(final SpellAbility sa, final Card source, final Player activator, boolean altCostOnly) {
+        return getMayPlaySpellOptions(sa, source, activator, altCostOnly, false);
+    }
+
+    private static List<SpellAbility> getMayPlaySpellOptions(final SpellAbility sa, final Card source,
+            final Player activator, boolean altCostOnly, boolean includeTimingLimitedRoutes) {
         final List<SpellAbility> alternatives = Lists.newArrayList();
 
         if (sa.isSpell() && source.isInPlay()) {
@@ -340,7 +352,7 @@ public final class GameActionUtil {
 
         for (CardPlayOption o : source.mayPlay(activator)) {
             // do not appear if it can be cast with SorcerySpeed
-            if (o.getAbility().hasParam("MayPlayNotSorcerySpeed") && activator.canCastSorcery()) {
+            if (!includeTimingLimitedRoutes && o.getAbility().hasParam("MayPlayNotSorcerySpeed") && activator.canCastSorcery()) {
                 continue;
             }
             // non basic are only allowed if PayManaCost is yes

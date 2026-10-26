@@ -7,14 +7,12 @@ namespace Mana.Renderer;
 /// <summary>Table-wide inputs prepared once before arranging individual fields.</summary>
 internal sealed class BattlefieldLayoutContext
 {
-    internal static BattlefieldLayoutContext RoleLanes { get; } = new(false, []);
-    internal bool Bounded { get; }
+    internal static BattlefieldLayoutContext RoleLanes { get; } = new([]);
     internal IReadOnlyList<Rectangle> Obstacles { get; }
     private readonly IReadOnlyDictionary<int, BattlefieldCluster[]>? roleLanes;
 
-    private BattlefieldLayoutContext(bool bounded, Rectangle[] obstacles, IReadOnlyDictionary<int, BattlefieldCluster[]>? roleLanes = null)
+    private BattlefieldLayoutContext(Rectangle[] obstacles, IReadOnlyDictionary<int, BattlefieldCluster[]>? roleLanes = null)
     {
-        Bounded = bounded;
         Obstacles = Array.AsReadOnly(obstacles);
         this.roleLanes = roleLanes;
     }
@@ -23,19 +21,15 @@ internal sealed class BattlefieldLayoutContext
     internal static BattlefieldLayoutContext Build(GameSnapshot state, IReadOnlySet<string>? separate,
         IReadOnlyList<SeatGeometry> seats, Func<Card, bool>? isResource = null)
     {
-        // This is a coordinated table mode. Even seats outside the four-seat
-        // viewport keep their existing influence on mode and reserved space.
-        bool bounded = state.Players.Any(player => BattlefieldLayout.Groups(player.Zone("Battlefield").Cards, separate, 8).Length > 7);
         var obstacles = ReserveObjects(state, seats).ToArray();
-        if (bounded) return new(true, obstacles);
         // Unsupported seat geometry retains its established compatibility
         // behavior. Ordinary supported tables prepare their full-size lanes
         // once, before any seat is moved around shared protected objects.
         if (isResource == null || state.Players.Length > 4) return RoleLanes;
         var ordinary = state.Players.Select((player, index) => new RoleLaneSeat(seats[index].Index, player.Id,
             BattlefieldLayout.Arrange(RoleLanes, seats[index].Index, player.Id, player.Zone("Battlefield").Cards,
-                isResource, separate, null))).ToArray();
-        return new(false, obstacles, RoleLaneAvoidance.Arrange(ordinary, obstacles, separate));
+                isResource, separate))).ToArray();
+        return new(obstacles, RoleLaneAvoidance.Arrange(ordinary, obstacles, separate));
     }
 
     internal static IEnumerable<Rectangle> ReserveObjects(GameSnapshot state, IReadOnlyList<SeatGeometry> seats)
@@ -79,8 +73,9 @@ internal sealed class BattlefieldLayoutContext
                     : seat == 1 ? new((int)hero.X - 98, (int)hero.Y + 35, 150, 66)
                     : new((int)hero.X - 98, (int)hero.Y - 90, 196, 55);
         }
-        if (state.Stack.Length > 0 || state.Decision?.SourceCard != null) yield return new(545, 285, 435, state.Stack.Length > 1 ? 400 : 265);
+        if (state.Stack.Length > 0 || state.Decision?.Context.Source?.Card != null && !DecisionLayout.UsesSourceWorkspace(state.Decision))
+            yield return new(545, 285, 435, state.Stack.Length > 1 ? 400 : 265);
         yield return new(1240, 550, 350, 245);
-        if (state.Decision is { Kind: "choice" }) yield return new(350, 714, 370, 50);
+        if (state.Decision is { Payload: OptionsPayload or AbilityChoicePayload or OrderingPayload }) yield return new(350, 714, 370, 50);
     }
 }

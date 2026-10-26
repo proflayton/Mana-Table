@@ -17,24 +17,32 @@ internal static class AdvanceRegression
             Revision = 10 + i, PhaseKey = phase, Decision = initial.Decision! with { Id = "next-" + i }
         };
         bool CanPass(GameSnapshot s) => TurnGuide.CanAutoPass(s, true, false, new HashSet<string>(), false);
-        var response = Next(4) with { Decision = Next(4).Decision! with { CanAutoPass = false } };
+        var response = Next(4) with { Decision = Next(4).Decision! with { Payload = ((PriorityPayload)(Next(4).Decision!).Payload) with { CanAutoPass = false } } };
         var wire = new Scripted(initial, Next(1, "COMBAT_BEGIN"), Next(2, "COMBAT_END"), Next(3, "MAIN2"), response);
         var result = await new DecisionAdvance(wire).RunAsync(initial, CanPass, PresentationPacing.ShouldPresent);
         Check(result == response && wire.Replies.Count == 4, "One advance drains empty phases and returns the next playable response");
         Check(wire.Replies.All(r => r is AutoPassPriority) && wire.Replies.OfType<AutoPassPriority>().Select(r => r.DecisionId).Distinct().Count() == 4,
             "Every consumed window uses a distinct, engine-validated AutoPass receipt");
 
-        foreach (var intent in new[] { DecisionIntent.Attack, DecisionIntent.Block, DecisionIntent.Mana, DecisionIntent.Selection }) {
-            var required = Next(1) with { Decision = Next(1).Decision! with { Intent = intent } };
+        var complete = new DecisionReply("Confirm", true);
+        var cancel = new DecisionReply("Cancel", false);
+        foreach (var payload in new DecisionPayload[] { new OpeningHandPayload(complete, cancel), new ConfirmationPayload(complete, new("No", true)),
+            new AttackPayload(complete), new BlockPayload(complete),
+            new PaymentPayload(complete, cancel), new TargetSelectionPayload(complete, cancel, new(1, 1), []),
+            new EntitySelectionPayload(complete, cancel, []) }) {
+            var required = Next(1) with { Decision = Next(1).Decision! with { Payload = payload } };
             wire = new(initial, required);
             result = await new DecisionAdvance(wire).RunAsync(initial, _ => true, PresentationPacing.ShouldPresent);
-            Check(result == required && wire.Replies.Count == 1, $"Even a permissive client policy cannot skip {intent}");
+            Check(result == required && wire.Replies.Count == 1, $"Even a permissive client policy cannot skip {payload.GetType().Name}");
         }
-        foreach (string kind in new[] { "choice", "reveal", "number", "text", "allocate" }) {
-            var required = Next(1) with { Decision = Next(1).Decision! with { Kind = kind } };
+        var selection = new ChoiceSelection([new(7, "Offered option", null)], new(1, 1));
+        foreach (var payload in new DecisionPayload[] { new OptionsPayload(selection), new OrderingPayload(selection),
+            new AbilityChoicePayload(selection), new RevealPayload([]), new NumberPayload(""), new TextPayload(""),
+            new AllocationPayload(0, AllocationKind.Generic, "", false, []) }) {
+            var required = Next(1) with { Decision = Next(1).Decision! with { Payload = payload } };
             wire = new(initial, required);
             result = await new DecisionAdvance(wire).RunAsync(initial, _ => true, PresentationPacing.ShouldPresent);
-            Check(result == required && wire.Replies.Count == 1, $"Advance stops for a required {kind} prompt");
+            Check(result == required && wire.Replies.Count == 1, $"Advance stops for a required {payload.GetType().Name} prompt");
         }
         var stop = Next(1, "MAIN2"); wire = new(initial, stop);
         result = await new DecisionAdvance(wire).RunAsync(initial,

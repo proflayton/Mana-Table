@@ -272,6 +272,11 @@ abilities on the stack appear in the middle. Decks are physical piles near each
 seat. Life medallions use existing commander artwork, with a lit rim on the
 active seat. Hover highlights a card without moving or enlarging it.
 Click a card to enlarge it for reading; click it again or empty table to close.
+Source-only until a release containing it is published: choose Rules beneath
+the enlarged card, or press R, to turn it to readable engine text. Artwork/R
+turns it back. Current stats and counters remain visible. This is a reading
+gesture; it never transforms the permanent, reveals a concealed face or chooses
+an action. The view closes when the card is no longer disclosed.
 Use the opened card's current Play, Cast or ability action, or drag a playable hand
 card or your commander onto the table. Each partner commander has its own Cast
 action and commander tax. Required choices, targets and mana payments use their normal
@@ -279,9 +284,49 @@ single click and stay compact. Right-click uses the same full-card reader.
 Required selections, auxiliary views and alternate faces retain a read-only
 inspector when the table reader is unavailable. Actions stay beside the live
 card; inspecting never activates an ability or casts from a public zone.
+Battlefield cards keep the same visual form as the table grows. Use the wheel
+over the battlefield to zoom where you point, middle-drag to pan, and Home to
+return to the whole table. Your hand, portraits and decision controls stay put.
+Click an opponent's portrait/name to focus that player's field when you are not
+choosing a player target. Camera movement does not select or play a card.
 Zone piles open browsers containing only the cards your player can see. Your own
 graveyard, exile and command browsers can offer engine-authorized actions,
 including Flashback when available. Hidden hands show anonymous backs.
+Source-only until a release containing it is published: graveyard and exile
+piles unfold into the table's card space instead of a paged browser. The heading
+identifies whose zone you are reading. Click a card to read; an offered action
+is a separate deliberate choice. Middle-click or Z focuses, middle-drag pans,
+and the wheel zooms. Escape folds back to the pile or the current play-access
+fan. A required decision keeps its draft while you inspect; a new task returns
+you to that decision. Concealed cards remain concealed.
+Source-only until a release containing it is published: cards you have permission
+to play from exile, your graveyard or a disclosed library top also sit beside
+your hand. The gap, zone caption and granting source distinguish them from cards
+in hand. They remain visible while permission lasts; a current action cue means
+you can start that play, not that its mana cost is paid. Click to read, then use
+the card's offered action, or drag it onto the table. Middle-click an actual
+hand/access card to unfold its collection. H opens your hand;
+the access-zone caption opens the additional cards. Click a face to read it;
+middle-click or Z focuses the camera there, middle-drag moves through the spread,
+and the wheel zooms. Home returns to the overview. Escape or the return gesture
+folds the same cards to their original places. A large hand has no page controls.
+Large collections open at play distance; the overview is a deliberate choice.
+The card remains in its real zone until the engine plays it.
+Passing your turn before your first land play asks for confirmation beside your
+portrait. This also applies when leaving your second main phase. Keep playing
+or Escape stays on the current decision; Pass anyway continues the requested
+pass. Space does not accept this warning. Ordinary responses and going to
+combat remain unchanged. The table's decision timer continues while you choose.
+Source-only until a release containing it is published: action rows draw mana
+and tap symbols instead of raw brace codes. Blue uses the droplet, black the
+skull, and colorless the diamond. Counter-removal costs that have a fixed source
+and one legal counter type pay without an extra source click; real choices keep
+their explicit selection. Choosing a counter type stays beside the affected
+permanent and shows the available quantity and debit. Choose that debit directly
+to continue paying. For a cost paid from another permanent, eligible cards stay
+highlighted on the battlefield; hover shows their counters, and right-click reads
+without choosing. The real counter/P/T change appears after the engine finishes
+the cost; the draw or other ability can still be pending on the stack.
 Prepared-spell source access is source-only until a release containing it is
 published: a small spell marker shows a prepared permanent. Open that permanent
 to find its available spell beside the full card, with the spell's name and
@@ -304,6 +349,11 @@ The display follows the actual pool during priority, payment and those changes.
 Right-click to inspect complete rules and alternate faces during a selection.
 Card pictures download when available;
 text works offline. Choice galleries include a name filter and selection counts.
+Searches and card choices start with only cards matching the engine's condition,
+such as basic lands. Show all cards also displays other cards the effect lets
+you see; those cards can be read but cannot be selected. Matching only restores
+the focused view. Each new choice starts filtered again, without selecting or
+confirming anything for you. Read-only reveals show every disclosed card.
 Ordered choices show ORDER 1, ORDER 2, etc. on both card images and text rows;
 follow the decision's message for which end of the order is first.
 Battlefield cards in an ordered choice spread apart so their numbers stay visible;
@@ -361,6 +411,9 @@ is separate from seat direction. The two-player view keeps upright faces.
 Lands turn sideways when tapped and return upright toward their seat when
 untapped. Their art dims while tapped; compact faces reserve space for a tap
 arrow. Hover for the full name if a compact face has no room for it.
+Matching lands keep separate piles for different current states, with a count
+on repeated piles. Each seat shows its total, untapped and tapped land counts.
+These include animated lands and describe tap state, not available mana.
 Current stats already include the engine's effects; do not add an Equipment's
 printed bonus again. Re-equipping updates the same occurrences.
 Click a player's life header to inspect public counters and commander damage

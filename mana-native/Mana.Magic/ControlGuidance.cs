@@ -15,19 +15,19 @@ public static class ControlGuidance
         if (CanDecide(state)) {
             if (TableChoices.Index(state, current) != null)
                 return new("choose-target", "Choose this card", "Click this highlighted card, then confirm your choices.");
-            if (state.Decision!.Intent == DecisionIntent.Selection && current.Selectable && current.Key.Length > 0)
+            if (state.Decision!.Payload is TargetSelectionPayload or EntitySelectionPayload && current.Selectable && current.Key.Length > 0)
                 return new("choose-target", "Make your choice", "Click this highlighted card.");
             if (zone == "Battlefield" && OwnCard(state, current, zone) && CombatGuide.CanSelect(state, current)) {
-                if (state.Decision.Intent == DecisionIntent.Attack)
+                if (state.Decision.Payload is AttackPayload)
                     return staged ? AttackTarget(state, current.CombatId)
                         : new("attack", "Choose an attacker", AttackInstruction(state, current.CombatId));
-                if (state.Decision.Intent == DecisionIntent.Block)
+                if (state.Decision.Payload is BlockPayload)
                     return new("block", staged ? "Choose an attacker" : "Choose your blocker", staged
                         ? "Click a blue attacking creature to assign this blocker."
                         : "Click this creature, then a blue attacking creature.");
             }
             if (zone == "Battlefield" && CardActions.CanActivate(state, current))
-                return new("activate-ability", "Use an ability", state.Decision.Intent == DecisionIntent.Mana
+                return new("activate-ability", "Use an ability", state.Decision.Payload is PaymentPayload
                     ? "Click this card to use its available mana ability."
                     : staged ? "Choose Activate ability on the opened card." : "Click to read, then choose Activate ability.");
             if (zone == "Hand" && !current.Selectable && HandPlacements.Options(state, current) is { Length: > 0 } placements)
@@ -36,7 +36,7 @@ public static class ControlGuidance
                     : dragging ? "Release to place using " + placements[0].SourceName + "."
                     : staged ? "Use the placement action for " + placements[0].SourceName + "."
                     : "Click to read and place, or drag onto the table.");
-            if (state.Decision.Intent == DecisionIntent.Priority && current.Selectable && current.Key.Length > 0 && OwnCard(state, current, zone)) {
+            if (state.Decision.Payload is PriorityPayload && current.Selectable && current.Key.Length > 0 && OwnCard(state, current, zone)) {
                 if (zone == "Hand") return Hand(staged, dragging);
                 if (zone == "Command") return new("commander-play", "Play your commander", staged
                     ? "Choose Play card to cast your commander." : "Click to read, then choose Play card.");
@@ -50,11 +50,11 @@ public static class ControlGuidance
     {
         if (!CanDecide(state)) return null;
         var decision = state.Decision!;
-        if (decision.Intent is DecisionIntent.Attack or DecisionIntent.Block) {
+        if (decision.Payload is AttackPayload or BlockPayload) {
             var candidates = state.Viewer!.Zone("Battlefield").Cards.Where(c => CombatGuide.CanSelect(state, c)).ToArray();
             if (candidates.Length == 0) return null;
             var selected = candidates.FirstOrDefault(c => c.CombatId == selectedCombat);
-            if (decision.Intent == DecisionIntent.Attack)
+            if (decision.Payload is AttackPayload)
                 return selected != null ? AttackTarget(state, selected.CombatId)
                     : new("attack", "Choose an attacker", AttackInstruction(state, candidates[0].CombatId, "a highlighted creature"));
             return new("block", selected != null ? "Choose an attacker" : "Choose your blocker", selected != null
@@ -62,25 +62,27 @@ public static class ControlGuidance
                 : "Click your highlighted blocker, then a blue attacking creature.");
         }
         if (TableChoices.IsDirect(state)) {
-            string count = decision.Min == decision.Max ? decision.Min.ToString()
-                : decision.Min == 0 ? "up to " + decision.Max : decision.Min + "–" + decision.Max;
-            string cards = decision.Max == 1 ? "card" : "cards";
+            var range = decision.Payload switch { OptionsPayload options => options.Selection.Range, OrderingPayload order => order.Selection.Range,
+                _ => throw new InvalidOperationException("A direct table choice requires an option payload.") };
+            string count = range.Min == range.Max ? range.Min.ToString()
+                : range.Min == 0 ? "up to " + range.Max : range.Min + "–" + range.Max;
+            string cards = range.Max == 1 ? "card" : "cards";
             return new("choose-target", "Choose your cards", $"Choose {count} highlighted {cards}, then confirm.");
         }
-        if (decision.Intent == DecisionIntent.Selection) {
-            bool players = state.Players.Any(p => !p.Eliminated && decision.PlayerChoices.Contains(p.Id));
+        if (decision.Payload is TargetSelectionPayload or EntitySelectionPayload) {
+            bool players = StateClarity.Recipients(state).Length > 0;
             bool cards = CardViews.Visible(state).Any(c => !c.FaceDown && c.Selectable && c.Key.Length > 0);
             if (players || cards) return new("choose-target", "Make your choice", players && cards
                 ? "Choose a named recipient or a highlighted card." : players ? "Choose a named recipient or click a highlighted player." : "Click a highlighted card.");
             return null;
         }
-        if (decision.Intent != DecisionIntent.Priority) return null;
+        if (decision.Payload is not PriorityPayload) return null;
         var hand = state.Viewer!.Zone("Hand").Cards.FirstOrDefault(c => !c.FaceDown && c.Key.Length > 0
             && (c.Selectable || HandPlacements.Options(state, c).Length > 0));
         if (hand != null) return Card(state, hand, "Hand");
         var commander = state.Viewer.Zone("Command").Cards.FirstOrDefault(c => !c.FaceDown && c.Selectable && c.Key.Length > 0);
         if (commander != null) return Card(state, commander, "Command");
-        return decision.CanAutoPass ? new("priority-controls", "Set your pace", "Auto follows your pass settings. Hold or Ctrl keeps priority this turn.") : null;
+        return decision.Payload is PriorityPayload { CanAutoPass: true } ? new("priority-controls", "Set your pace", "Auto follows your pass settings. Hold or Ctrl keeps priority this turn.") : null;
     }
 
     private static bool CanDecide(GameSnapshot state) => state.Status == "playing" && state.Viewer is { Eliminated: false } && state.Decision != null;

@@ -66,7 +66,8 @@ public static class DecisionFlowScenario
             Status = "resolving", PriorityPlayerId = null, DecisionOwnerId = 2, ActionClass = "selection",
             Players = opponent.Players.Select(player => player with { Priority = false }).ToImmutableArray()
         };
-        var effect = sample.Decision!.Effect!;
+        var targetChoice = (TargetSelectionPayload)sample.Decision!.Payload;
+        var effect = targetChoice.Effect!;
         var counterCause = new PublicEffectCause(chandra.VisualId, chandra.Name, "Loyalty counters added", 0,
             "ability", "decision-flow-counter-origin");
         // This is a later own turn, not an effect attributed to the previous
@@ -81,7 +82,8 @@ public static class DecisionFlowScenario
                         : zone.Cards.Select(card => card.VisualId != target.VisualId ? card : target with { Selectable = true }).ToArray()).ToImmutableArray()
                 }).ToImmutableArray()
             }).ToImmutableArray(),
-            Decision = sample.Decision with { Message = "Choose a target.", PlayerChoices = [] },
+            Decision = sample.Decision with { Payload = targetChoice with { Players = [] },
+                Context = sample.Decision.Context with { Message = "Choose a target." } },
             Activity = [.. opponent.Activity,
                 new(3, 12, "MAIN1", "turn", 0, "Your turn began.", null, null),
                 new(4, 12, "MAIN1", "arrived", 0, "Chandra, the Firebrand entered the battlefield.", chandra.VisualId, chandra.Name),
@@ -128,7 +130,7 @@ public static class DecisionFlowScenario
                 new(8, 12, "MAIN1", "resolved", 1, "Giant Growth resolved.", growth.VisualId, growth.Name) { Outcome = "resolved", Detail = growth.Text }]
         };
         var result = grown with {
-            Stack = [], Decision = Priority(true) with { OkEnabled = false },
+            Stack = [], Decision = Priority(false, enabled: false),
             Players = grown.Players.Select(player => player.Id != 1 ? player : player with {
                 Zones = player.Zones.Select(zone => zone.Name != "Battlefield" ? zone : zone with {
                     Cards = zone.Cards.Select(card => card.VisualId != target.VisualId ? card : card with { Damage = 1 }).ToImmutableArray()
@@ -153,10 +155,8 @@ public static class DecisionFlowScenario
         ];
     }
 
-    private static Decision Priority(bool canAutoPass) => new() {
-        Kind = "input", Intent = DecisionIntent.Priority,
-        OkEnabled = true, CanAutoPass = canAutoPass, Message = ""
-    };
+    private static Decision Priority(bool canAutoPass, bool enabled = true) => new("", new(),
+        new PriorityPayload(new("Confirm", enabled), CanAutoPass: enabled && canAutoPass));
     private static Card Face(string id, string name, string type) => new() {
         VisualId = id, CombatId = id, Name = name, Type = type
     };

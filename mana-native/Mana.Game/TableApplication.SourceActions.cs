@@ -12,9 +12,9 @@ internal sealed partial class TableApplication
     private Card? ReaderActionSource()
     {
         if (!SourceActionsSupported || busy || session.NeedsRecovery || match is not { Decision: { } decision }
-            || decision.Intent is not (DecisionIntent.Priority or DecisionIntent.Mana)) return null;
-        var current = matchPresentation.Cards.Pinned is { ChoiceSlot: < 0, Zone: not "Stack" } entry && CardContext.CanRead(entry)
-            ? CardContext.CurrentOccurrence(entry) : dragging && dragSource != null ? CurrentDragCard(dragSource) : null;
+            || decision.Payload is not (PriorityPayload or PaymentPayload)) return null;
+        var current = ReleasedPlaySource() ?? (matchPresentation.Cards.Pinned is { ChoiceSlot: < 0, Zone: not "Stack" } entry && CardContext.CanRead(entry)
+            ? CardContext.CurrentOccurrence(entry) : dragging && dragSource != null ? CurrentDragCard(dragSource) : null);
         return current is { FaceDown: false, Key.Length: > 0 } ? current : null;
     }
 
@@ -42,8 +42,10 @@ internal sealed partial class TableApplication
         var card = ReaderActionSource();
         if (card == null || ReaderActionContext(card) is not { } context
             || sourceActions.TryCreateCommand(context, action.Id) is not { } reply) return;
+        var source = matchPresentation.Cards.Pinned;
         if (zoneName != "Battlefield") zoneName = null;
-        Send(reply);
+        if (Send(reply) && (action.Kind is "cast" or "play") && source is { Zone: not ("Battlefield" or "Stack") })
+            releasedCardPlay = new(Scope, context, source.Zone, source.Display, true);
         CollapseCardReading(); ClearReaderActions();
     }
 

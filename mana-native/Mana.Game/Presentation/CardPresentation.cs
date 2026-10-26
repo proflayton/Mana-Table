@@ -9,30 +9,48 @@ namespace Mana.Table.Presentation;
 
 /// <summary>The current authority and interaction policy used to prepare cards.</summary>
 internal sealed record CardPresentationContext(GameSnapshot? State, string Scope,
-    bool OverlayOpen, bool GalleryOpen, bool Dragging, bool CompactDecision, bool AbilityChoice = false, bool SourceActions = false,
-    bool KeepBattlefieldAnchor = false, Rectangle? BattlefieldReaderAvoid = null)
+    bool OverlayOpen, bool GalleryOpen, bool Dragging, bool CompactDecision,
+    bool KeepBattlefieldAnchor = false, Rectangle? BattlefieldReaderAvoid = null, DecisionDockView? Decision = null,
+    CardCollectionTarget.PublicZone? PublicCollection = null, Vector2? ReaderContentSize = null)
 {
-    public bool OpeningHandDecision => State?.Decision is { Kind: "input", Purpose: DecisionPurpose.OpeningHand };
+    private DecisionReadingPolicy Reading => new(Decision ?? (State == null ? null : DecisionDockPresentation.From(State, new())));
+    public bool OpeningHandDecision => Reading.Allows(DecisionReading.OpeningHandInspection);
 
     public bool CanBrowseOpeningHand(PresentedCard entry) => OpeningHandDecision && State?.Viewer is { } viewer
         && entry.Zone == "Hand" && entry.Request.Owner == viewer.Id
         && viewer.Zone("Hand").Cards.Any(card => !card.FaceDown && CardViews.Same(card, entry.Card));
 
+    public bool CanBrowseDecisionSource(PresentedCard entry) => Reading.Allows(DecisionReading.SourceInspection)
+        && Reading.View?.SourceCard is { FaceDown: false } source && CardViews.Same(source, entry.Card)
+        && entry.ChoiceSlot < 0 && CurrentOccurrence(entry) is { FaceDown: false };
+
     public bool CanBrowseHandSelection(PresentedCard entry) => State is { } state
-        && (state.Decision?.Intent == DecisionIntent.Selection || TableChoices.IsDirect(state))
+        && Reading.Allows(DecisionReading.HandSelectionInspection)
         && state.Viewer is { } viewer && entry.ChoiceSlot < 0
         && entry.Zone == "Hand" && entry.Request.Owner == viewer.Id
         && viewer.Zone("Hand").Cards.Any(card => !card.FaceDown && CardViews.Same(card, entry.Card));
 
-    public Card? ChoiceFace(int slot) => State?.Decision is { } decision
-        ? decision.LibraryCards.Length > 0 ? decision.LibraryCards.ElementAtOrDefault(slot)?.Card
-            : decision.Choices.ElementAtOrDefault(slot) is { } choice ? CardViews.Choice(State, choice) : null
-        : null;
+    public Card? ChoiceFace(int slot) => Reading.ChoiceFace(State, slot);
+
+    public bool CanBrowsePublicCollection(PresentedCard entry) => PublicCollection is { } zone
+        && entry.ChoiceSlot < 0 && entry.Request.Owner == zone.PlayerId && entry.Zone == zone.ZoneName
+        && State?.Players.FirstOrDefault(player => player.Id == zone.PlayerId)?.Zone(zone.ZoneName).Cards
+            .Any(card => !card.FaceDown && CardViews.Same(card, entry.Card)) == true;
+
+    public bool InspectOnClick(PresentedCard entry)
+    {
+        if (!CanRead(entry) || Dragging || CompactDecision && !CanBrowseHandSelection(entry) && !CanBrowsePublicCollection(entry)) return false;
+        if (entry.ChoiceSlot >= 0) return Reading.Allows(DecisionReading.RevealInspection);
+        return !OverlayOpen && (Reading.Allows(DecisionReading.TableInspection) || CanBrowseOpeningHand(entry)
+            || CanBrowseHandSelection(entry) || CanBrowseDecisionSource(entry) || CanBrowsePublicCollection(entry));
+    }
 
     public bool CanRead(PresentedCard entry)
     {
         if (entry.Request.ChoiceSlot < 0) {
             if (OverlayOpen || State == null) return false;
+            if (PublicCollection is { } zone && entry.Request.Owner == zone.PlayerId && entry.Zone == zone.ZoneName)
+                return CanBrowsePublicCollection(entry);
             return CurrentOccurrence(entry) is { FaceDown: false };
         }
         // Anonymous revealed faces belong to an original slot in one decision.
@@ -46,6 +64,9 @@ internal sealed record CardPresentationContext(GameSnapshot? State, string Scope
     public Card? CurrentOccurrence(PresentedCard entry)
     {
         if (State == null || entry.ChoiceSlot >= 0) return null;
+        if (PublicCollection is { } zone && entry.Request.Owner == zone.PlayerId && entry.Zone == zone.ZoneName)
+            return State.Players.FirstOrDefault(player => player.Id == zone.PlayerId)?.Zone(zone.ZoneName).Cards
+                .FirstOrDefault(card => !card.FaceDown && CardViews.Same(card, entry.Card));
         return CurrentOccurrence(entry.Zone, entry.Card);
     }
 
@@ -63,7 +84,7 @@ internal sealed record CardPresentationContext(GameSnapshot? State, string Scope
 internal sealed record CardPresentationRequest(string Id, Card Card, Pose Rest, string Zone,
     int? Owner, string HitId, UiIntent Activate, Vector2? Entrance = null, float EntranceDelay = 0,
     bool OpensZone = false, int ChoiceSlot = -1, Rectangle? ActivationBounds = null, float? PlayAge = null, bool RevealPlay = true,
-    Rectangle? ReadingAnchor = null);
+    Rectangle? ReadingAnchor = null, bool DirectPlacement = false);
 
 internal enum CardPresentationLayer { Table, Playing, Returning, Reader }
 

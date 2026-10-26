@@ -2,26 +2,24 @@ using Mana.Contracts;
 
 namespace Mana.Magic;
 
-/// <summary>Connects authoritative choice indices to existing table occurrences.</summary>
+/// <summary>Connects explicit option indices to already visible table occurrences.</summary>
 public static class TableChoices
 {
     public static bool IsDirect(GameSnapshot state)
     {
-        if (state.Decision is not { Kind: "choice", Choices.Length: > 0, LibraryCards.Length: 0 } d
-            || d.Purpose == DecisionPurpose.AbilitySelection) return false;
-        // Large ordered lists use the numbered gallery. This changes only the
-        // choice surface; every battlefield occurrence still stays on the table.
-        if (d.Ordered && d.Choices.Length > 12) return false;
-        // Ordered hand fans and command piles cannot expose every position
-        // badge. Keep those lists in the numbered gallery instead.
-        var cards = state.Players.SelectMany(p => p.Zones.Where(z => z.Name == "Battlefield"
-            || !d.Ordered && (z.Name == "Command" || z.Name == "Hand" && p.Id == state.ViewerId)).SelectMany(z => z.Cards)).ToArray();
-        return d.Choices.All(c => c.Card != null && !string.IsNullOrEmpty(c.CardId) && cards.Any(card => card.VisualId == c.CardId))
-            && d.Choices.Select(c => c.CardId).Distinct().Count() == d.Choices.Length;
+        var selection = state.Decision?.Payload switch { OptionsPayload options => options.Selection, OrderingPayload order => order.Selection, _ => null };
+        if (selection is not { Choices.Length: > 0, Disclosures.Length: 0 }) return false;
+        bool ordered = state.Decision!.Payload is OrderingPayload;
+        if (ordered && selection.Choices.Length > 12) return false;
+        var cards = state.Players.SelectMany(player => player.Zones.Where(zone => zone.Name == "Battlefield"
+            || !ordered && (zone.Name == "Command" || zone.Name == "Hand" && player.Id == state.ViewerId)).SelectMany(zone => zone.Cards)).ToArray();
+        return selection.Choices.All(choice => choice.Card != null && choice.CardId.Length > 0 && cards.Any(card => card.VisualId == choice.CardId))
+            && selection.Choices.Select(choice => choice.CardId).Distinct().Count() == selection.Choices.Length;
     }
-    public static int? Index(GameSnapshot state, Card card) => IsDirect(state)
-        ? state.Decision!.Choices.FirstOrDefault(c => c.CardId == card.VisualId)?.Index : null;
-    public static bool CanConfirm(GameSnapshot state, IReadOnlyCollection<int> selected) => IsDirect(state)
-        && selected.Count >= state.Decision!.Min && selected.Count <= state.Decision.Max
-        && selected.Distinct().Count() == selected.Count && selected.All(i => state.Decision.Choices.Any(c => c.Index == i));
+    public static int? Index(GameSnapshot state, Card card) => !IsDirect(state) ? null : state.Decision!.Payload switch {
+        OptionsPayload options => options.Selection.Choices.FirstOrDefault(choice => choice.CardId == card.VisualId)?.Index,
+        OrderingPayload order => order.Selection.Choices.FirstOrDefault(choice => choice.CardId == card.VisualId)?.Index,
+        _ => null
+    };
+    public static bool CanConfirm(GameSnapshot state, IReadOnlyCollection<int> selected) => IsDirect(state) && DecisionCommands.Choose(state, selected) != null;
 }

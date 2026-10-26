@@ -25,9 +25,8 @@ internal static class GameplayClarityChecks
             && !StateClarity.DecisionInstruction(state, true).Contains("resolved", StringComparison.OrdinalIgnoreCase),
             "Submitted intent is acknowledged without inventing a resolved outcome");
         var source = new Card { Name = "Toothy, Imaginary Friend", Type = "Creature", Text = "This printed text must not generate target permissions." };
-        var choice = state with { DecisionOwnerId = 10, Decision = new() { Id = "choose-1", Kind = "input", Intent = DecisionIntent.Selection,
-            Message = "Target player may search for Pir, then shuffle.", PlayerChoices = [10, 30], SourceCard = source, SourceControllerId = 20 } };
-        check(StateClarity.Purpose(choice) == choice.Decision.Message && StateClarity.Source(choice).Contains("Seat 2"),
+        var choice = state with { DecisionOwnerId = 10, Decision = new Decision("choose-1", new DecisionContext(Message: "Target player may search for Pir, then shuffle.", Source: new DecisionSource(Card: source, ControllerId: 20)), new EntitySelectionPayload(new DecisionReply("Confirm", false), new DecisionReply("Cancel", false), [10, 30], null)) };
+        check(StateClarity.Purpose(choice) == choice.Decision.Context.Message && StateClarity.Source(choice).Contains("Seat 2"),
             "Required-choice purpose and source controller come from the engine rather than printed Oracle text");
         check(StateClarity.Recipients(choice).Select(p => p.Id).SequenceEqual([10, 30]),
             "Named recipients retain legal self and other-player choices without adding another seat");
@@ -35,10 +34,10 @@ internal static class GameplayClarityChecks
             "The explicit You recipient sends the same scoped player-selection action as a portrait");
         check(StateClarity.ChooseRecipient(choice, 20) == null && StateClarity.ChooseRecipient(choice with { Decision = null }, 10) == null,
             "No player command is constructed for an unprojected recipient or retired prompt");
-        var refreshed = choice with { Decision = choice.Decision with { Id = "choose-2", PlayerChoices = [30] } };
+        var refreshed = choice with { Decision = choice.Decision with { Id = "choose-2", Payload = ((EntitySelectionPayload)choice.Decision.Payload) with { Players = [30] } } };
         check(StateClarity.ChooseRecipient(refreshed, 10) == null && StateClarity.ChooseRecipient(refreshed, 30)?.DecisionId == "choose-2",
             "Recipient refresh revokes old eligibility and uses the new exact prompt scope");
-        check(StateClarity.Recipients(state).Length == 0 && StateClarity.Purpose(state) != choice.Decision.Message,
+        check(StateClarity.Recipients(state).Length == 0 && StateClarity.Purpose(state) != choice.Decision.Context.Message,
             "A public chooser ID does not expose the other seat's private prompt or recipients");
         var stack = new StackItem("Same source", "Public trigger", true, source) { Id = "stack-2", ControllerId = 30 };
         check(StateClarity.StackController(state, stack).Contains("Seat 3") && StateClarity.StackController(state, stack with { ControllerId = 20 }).Contains("Seat 2"),

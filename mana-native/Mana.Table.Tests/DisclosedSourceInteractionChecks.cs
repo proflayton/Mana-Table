@@ -29,7 +29,7 @@ internal static class DisclosedSourceInteractionChecks
                     Cards = [], Count = zone.Name == "Library" ? 60 : 0,
                     TopCard = player.Id == 0 && zone.Name == "Library" ? top : null
                 }).ToImmutableArray() }).ToImmutableArray(),
-                Decision = new() { Id = "offered-library-prompt", Kind = "input", Intent = DecisionIntent.Priority, OkEnabled = true } };
+                Decision = new Decision("offered-library-prompt", new DecisionContext(), new PriorityPayload(new DecisionReply("Confirm", true), null, CanAutoPass: false, QuietYieldToken: "", Abilities: [])) };
             var provider = new DisclosedSourceConnection(state);
             var setup = new InteractionScenarioEngine();
             var services = new TableServices(setup, setup, provider, setup.InitializeAsync) { SourceActions = provider };
@@ -78,7 +78,7 @@ internal static class DisclosedSourceInteractionChecks
             provider.Replace(provider.State with { Revision = 2,
                 Players = provider.State.Players.Select(player => player.Id != 0 ? player : player with {
                     Zones = player.Zones.Select(zone => zone.Name != "Library" ? zone : zone with { TopCard = null }).ToImmutableArray()
-                }).ToImmutableArray(), Decision = provider.State.Decision! with { SourceCard = top, SourceCardId = top.VisualId } });
+                }).ToImmutableArray(), Decision = provider.State.Decision! with { Context = provider.State.Decision!.Context with { Source = new DecisionSource(top.VisualId, top, provider.State.Decision!.Context.Source?.ControllerId, (provider.State.Decision!.Context.Source?.Zone ?? "")) } } });
             view.Accept(provider.State); frame = Tick(new(800, 420));
             check(!app.AcceptedDrag && provider.Commands.IsEmpty && !frame.Cards.Any(card => card.Focused),
                 "Revoking the physical disclosed top cancels a held cast even while its historical decision source remains at " + size);
@@ -89,13 +89,13 @@ internal static class DisclosedSourceInteractionChecks
             held = Source(); frame = Tick(held, ButtonState.Pressed); frame = Tick(new(800, 420), ButtonState.Pressed);
             frame = Tick(new(800, 420));
             var completion = DateTime.UtcNow.AddSeconds(5);
-            while ((view.Busy || view.Match?.Decision?.Intent != DecisionIntent.Mana) && DateTime.UtcNow < completion) {
+            while ((view.Busy || view.Match?.Decision?.Payload is not PaymentPayload) && DateTime.UtcNow < completion) {
                 frame = Tick(new(20, 60)); Thread.Yield();
             }
             check(view.Error.Length == 0 && provider.Commands.Single() is UseOfferedAction command
                     && command.GameId == state.Id && command.DecisionId == state.Decision!.Id
                     && command.Card == top.Key && command.ActionId == DisclosedSourceConnection.OfferId
-                    && view.Match?.Decision is { Id: "pay-library-cast", Intent: DecisionIntent.Mana },
+                    && view.Match?.Decision is { Id: "pay-library-cast", Payload: PaymentPayload },
                 "A disclosed top with no generic Selectable flag drags through its exact offered command and presents required payment at " + size);
 
             var grave = top with { Key = "graveyard-current-offer", VisualId = "graveyard-source", Name = "Offered graveyard spell", Type = "Sorcery" };
@@ -108,10 +108,11 @@ internal static class DisclosedSourceInteractionChecks
             var pile = AtHit("zone:0:Graveyard"); frame = Tick(pile, ButtonState.Pressed); frame = Tick(pile);
             inspectedSource = grave; inspectedZone = "Graveyard";
             OpenReader(rightClick: true);
-            check(view.ZoneName == "Graveyard" && provider.Commands.Count == 1,
-                "Browsing and right-clicking a public zone preserves the gallery without casting its selected card at " + size);
+            check(frame.Scene?.Spread?.Target is CardCollectionTarget.PublicZone { PlayerId: 0, Zone: PublicInspectionZone.Graveyard }
+                    && provider.Commands.Count == 1,
+                "Browsing and right-clicking a public pile preserves its physical collection without casting its inspected card at " + size);
             var action = AtHit("read-card-action"); frame = Tick(action, ButtonState.Pressed);
-            var revoked = state with { Revision = 6, Decision = state.Decision! with { Id = "revoked-graveyard", SourceCard = grave },
+            var revoked = state with { Revision = 6, Decision = state.Decision! with { Id = "revoked-graveyard", Context = state.Decision!.Context with { Source = new DecisionSource((state.Decision!.Context.Source?.CardId ?? ""), grave, state.Decision!.Context.Source?.ControllerId, (state.Decision!.Context.Source?.Zone ?? "")) } },
                 Players = state.Players.Select(player => player.Id != 0 ? player : player with {
                     Zones = player.Zones.Select(zone => zone.Name == "Graveyard" ? zone with { Cards = [], Count = 0 } : zone).ToImmutableArray()
                 }).ToImmutableArray() };
@@ -138,7 +139,7 @@ internal static class DisclosedSourceInteractionChecks
             var current = State;
             var top = current.Viewer!.Zones.SelectMany(zone => zone.TopCard is { } face ? zone.Cards.Append(face) : zone.Cards)
                 .SingleOrDefault(card => card.Key == sourceCardKey);
-            if (current.Id != gameId || current.Decision is not { Intent: DecisionIntent.Priority } decision || decision.Id != decisionId
+            if (current.Id != gameId || current.Decision is not { Payload: PriorityPayload } decision || decision.Id != decisionId
                 || top is not { FaceDown: false } || top.Key != sourceCardKey)
                 throw new InvalidOperationException("Query did not name the current disclosed source.");
             Reads.Enqueue(sourceCardKey);
@@ -149,14 +150,13 @@ internal static class DisclosedSourceInteractionChecks
             Interlocked.Increment(ref attempts);
             var current = State;
             var top = current.Viewer!.Zone("Library").TopCard;
-            if (command is not UseOfferedAction offered || current.Decision?.Intent != DecisionIntent.Priority
+            if (command is not UseOfferedAction offered || current.Decision?.Payload is not PriorityPayload
                 || offered.GameId != current.Id || offered.DecisionId != current.Decision.Id
                 || top is not { FaceDown: false } || offered.Card != top.Key || offered.ActionId != OfferId)
                 throw new InvalidOperationException("The provider rejected an unavailable or expired Library cast.");
             command.Validate(); Commands.Enqueue(command);
             Replace(current with { Revision = current.Revision + 1,
-                Decision = new() { Id = "pay-library-cast", Kind = "input", Intent = DecisionIntent.Mana,
-                    SourceCard = top, SourceCardId = top.VisualId, OkEnabled = false, CancelEnabled = true } });
+                Decision = new Decision("pay-library-cast", new DecisionContext(Source: new DecisionSource(CardId: top.VisualId, Card: top)), new PaymentPayload(new DecisionReply("Confirm", false), new DecisionReply("Cancel", true))) });
             return Task.CompletedTask;
         }
     }

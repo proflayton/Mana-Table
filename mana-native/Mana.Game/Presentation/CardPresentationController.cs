@@ -51,7 +51,7 @@ internal sealed class CardPresentationController
         // A reader survives pointer movement, but never lost visibility or a
         // required compact interaction. Reconciliation uses the current snapshot.
         if (pinnedId != null && (current.Dragging || leavingOpeningHand || Pinned is not { } pinned
-            || current.CompactDecision && !current.CanBrowseHandSelection(pinned) || !current.CanRead(pinned))) {
+            || current.CompactDecision && !current.CanBrowseHandSelection(pinned) && !current.CanBrowsePublicCollection(pinned) || !current.CanRead(pinned))) {
             string oldId = pinnedId;
             bool relocated = current.State != null && CardViews.Located(current.State).Any(item =>
                 !item.Card.FaceDown && CardViews.Identity(item.Card) == oldId && item.Zone != pinnedZone);
@@ -77,6 +77,14 @@ internal sealed class CardPresentationController
             readerTarget ??= context.KeepBattlefieldAnchor && request.Zone == "Battlefield"
                 ? StudyReaderPose(rest, context.BattlefieldReaderAvoid)
                 : ReaderPose(rest, request.Zone);
+            var contentSize = context.ReaderContentSize ?? new Vector2(410, 574);
+            if (readerTarget.Value.Size != contentSize) {
+                var reader = readerTarget.Value;
+                float margin = context.KeepBattlefieldAnchor && request.Zone == "Battlefield" ? StudyDetailsWidth + StudyDetailsGap + 20 : 20;
+                readerTarget = reader with { Size = contentSize, Center = new(
+                    Math.Clamp(reader.Center.X, 20 + contentSize.X / 2, 1600 - margin - contentSize.X / 2),
+                    Math.Clamp(reader.Center.Y, 65 + contentSize.Y / 2, Math.Max(65 + contentSize.Y / 2, 775 - contentSize.Y / 2))) };
+            }
         }
         bool revealPlay = !reduced && !focused && !request.Card.FaceDown && request.RevealPlay
             && request.PlayAge is >= 0 and < PlayRevealSeconds;
@@ -95,7 +103,8 @@ internal sealed class CardPresentationController
         }
         var target = focused ? readerTarget!.Value : revealPlay ? PlayRevealPose : request.Rest;
         Vector2? entrance = request.Entrance is { } start && useBoardMotion ? view.Inverse(start) : request.Entrance;
-        var pose = collapse ? motion.Hold(request.Id, focused ? rest : request.Rest)
+        var pose = request.DirectPlacement ? motion.Hold(request.Id, request.Rest)
+            : collapse ? motion.Hold(request.Id, focused ? rest : request.Rest)
             : motion.Place(request.Id, target, entrance, request.EntranceDelay);
         if (useBoardMotion) pose = view.Apply(pose);
         displayedPoses[request.Id] = new(pose, useBoardMotion);
@@ -118,6 +127,10 @@ internal sealed class CardPresentationController
         var entry = new PresentedCard(request, pose, hit, focused,
             (focused || pointerHover) && !request.Card.FaceDown && readable, layer)
             { View = view, ReaderTarget = focused ? readerTarget : null, Hovered = pointerHover };
+        if (!request.OpensZone && request.Activate is MatchIntent.UseCard or MatchIntent.UseStackCard
+                or MatchIntent.InspectCard or MatchIntent.ReadFocusedCard or MatchIntent.SelectChoice or MatchIntent.OpenZone or UiIntent.NoInteraction
+            && context.InspectOnClick(entry))
+            entry = entry with { Hit = hit with { Intent = new MatchIntent.InspectOccurrence(request.Id) } };
         cards.Add(entry);
         if (focused) ReaderBounds = pose.Bounds;
         return entry;
@@ -130,14 +143,7 @@ internal sealed class CardPresentationController
     public bool Toggle(Hit hit, CardPresentationContext current)
     {
         var entry = cards.LastOrDefault(card => card.Hit.Id == hit.Id && card.Hit.Scope == hit.Scope);
-        if (entry == null || entry.Card.FaceDown || !current.CanRead(entry)
-            || current.Dragging || current.CompactDecision && !current.CanBrowseHandSelection(entry)) return false;
-        if (entry.ChoiceSlot >= 0) {
-            if (current.State?.Decision?.Kind != "reveal") return false;
-        } else if (current.OverlayOpen
-            || !current.AbilityChoice && current.State?.Decision is { Intent: not DecisionIntent.Priority }
-                && current.State?.Decision?.Intent != DecisionIntent.Mana
-                && !current.CanBrowseOpeningHand(entry) && !current.CanBrowseHandSelection(entry)) return false;
+        if (entry == null || entry.Card.FaceDown || !current.InspectOnClick(entry)) return false;
         bool close = pinnedId == entry.Id && pinnedZone == entry.Zone;
         Collapse(hit.Id);
         if (!close) {
@@ -197,9 +203,19 @@ internal sealed class CardPresentationController
         displayedPoses[id] = new(pose, false);
         return motion.Hold(id, pose);
     }
+    internal void ContinueReturn(string id)
+    {
+        // A collection folds toward its physical pile, retaining the last
+        // displayed geometry instead of a reader's immediate-collapse shortcut.
+        pendingCollapses.Remove(id); transitions.Remove(id);
+    }
     public bool TryGetPose(string id, out Pose pose)
     {
         bool found = displayedPoses.TryGetValue(id, out var current); pose = current.Display; return found;
+    }
+    internal bool TryGetPreviousPose(string id, out Pose pose)
+    {
+        bool found = previousDisplayedPoses.TryGetValue(id, out var previous); pose = previous.Display; return found;
     }
     public void Reset()
     {

@@ -47,6 +47,9 @@ public class SourceActionsTest {
             assertFalse(preview.get("highlighted").getAsBoolean());
             assertEquals(text(actions, "sourceCardId"), text(source, "visualId"));
             assertNotEquals(text(preview, "visualId"), text(source, "visualId"));
+            assertTrue(input.state().getAsJsonArray("playAccesses").asList().stream().map(value -> value.getAsJsonObject())
+                    .noneMatch(access -> text(access, "cardId").equals(text(preview, "visualId"))),
+                    "A Prepared virtual spell remains linked to its creature instead of becoming an independent exile opportunity");
             Files.writeString(game.evidence.resolve("prepared-source-actions.json"), JSON.toJson(actions));
 
             assertTrue(game.answer(input, invoke(actions, cast)));
@@ -108,7 +111,10 @@ public class SourceActionsTest {
                         : Map.of("action", "card", "key", text(card(input.state(), "Battlefield", targetCard), "key"))));
             } else {
                 assertTrue(input.prompt().get("okEnabled").getAsBoolean(), "The fixture supplies the real spell's mana cost");
-                assertTrue(game.answer(input, Map.of("action", "ok")));
+                // Auto can complete while a republished payment is being read.
+                // answer returns false only for exact stale-prompt replacement;
+                // reobserve it rather than replaying OK against a new input.
+                if (!game.answer(input, Map.of("action", "ok"))) continue;
             }
         }
         fail("The actual targeted spell did not reach the stack: " + spell);

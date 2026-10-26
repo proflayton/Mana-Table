@@ -11,6 +11,14 @@ does not establish that a person can understand or use the screen.
 1. **Design the journey before its controls.** Identify the player's intent,
    source, target, gesture and visible result. Moving the same generic Activate
    button from a dialog to a corner or over the artwork does not fix its purpose.
+   Every proposal must start with observed game behavior: name the game and
+   concrete arrangement, gesture and transition being adapted, with a gameplay
+   or developer reference. Use the player's MTGA screenshots as direct evidence.
+   Explain where Mana Table differs and where the reference fails at scale.
+   General web/UI conventions and calling a widget "game-like" are not evidence.
+   Larger states call for considering an expanded play space, physical grouping
+   and camera framing before compressing cards into smaller tiles, pages or
+   scrolling containers. Visual review must exercise the whole gesture at scale.
 2. **Use the right detail for the task.** Battlefield faces prioritize identity,
    art and current characteristics; inspection preserves a recognizable full card
    with complete rules and authoritative live state.
@@ -33,6 +41,13 @@ does not establish that a person can understand or use the screen.
    Public-zone inspection also needs the relevant casting route, its cost and
    conditions, and reliable recent zone history. A public capability is distinct
    from a current legal action, especially when inspecting an opponent's card.
+   Cards granted play access belong beside the hand as recognizable cards, with
+   a visible gap and source-zone identity. Keep them present while access lasts;
+   change the playable cue when the engine permits starting that route. Reading,
+   retained access and committing a current action remain separate gestures and
+   states. A card's owner can differ from the player allowed to play it.
+   Keep routine hand counts, cleanup limits and land-play totals out of persistent
+   footer strips. The actual hand and contextual choices take that space.
 4. **Keep asynchronous work from disrupting interaction.** Preload authorized
    likely artwork; prioritize visible and inspected cards. A background observation
    should not flicker, disable or move an unchanged control. Retain local intent
@@ -99,6 +114,220 @@ does not establish that a person can understand or use the screen.
     Pairing guidance comes from the engine. Saving, saved, failed persistence
     and deck legality are separate facts; returning to Play must not require a
     second confirmation of edits already acknowledged by storage.
+
+13. **Present alternatives as game choices.** Declining an optional effect and
+    taking a mulligan are meaningful alternatives, not tiny cancellation chrome.
+    Keep both gestures readable in the relevant source or hand context. Distinguish
+    a real player target from a forced effect recipient: the former stays explicit
+    even with one legal candidate. Library actions belong at the library and name
+    its owner. An optional search must not become an automatic decline because
+    the client thinks the wanted card is elsewhere; searching and shuffling are
+    still engine actions. Reading a card never chooses one of these alternatives.
+
+14. **Model the action's execution before presenting it.** Preparation, costs,
+    choices, triggers, response windows, resolution and resulting changes belong
+    to one engine-reported causal model. The stack is part of it; actions that
+    bypass the stack still have a lifecycle. Derive spatial feedback and current
+    gestures from that model instead of inferring the journey from prose or
+    publishing unrelated snapshots with extra explanatory labels. Keep answer
+    capabilities, historical facts and local animation state distinct. The
+    [architecture migration](Mana-Table-Architecture.md#action-execution-the-next-boundary-migration)
+    records the current gaps and the first real-engine journey to migrate.
+
+## No density rendering mode: 26 October 2026
+
+**Source candidate; human review pending.** The player rejected the crowded-field
+test window: tiny text tiles, truncated names and count-triggered presentation
+made the table impossible to understand. Its pixel-exposure assertions measured
+clickability, not comprehension. Remove that renderer and those assertions.
+Cards keep their ordinary battlefield face, seat orientation, grouping and live
+characteristics as the field grows. The tester now uses the production renderer.
+Routine arrivals keep their motion and card-frame cue; the repeated ENTERED
+text tags are removed so a mass arrival cannot cover its cards with labels.
+The player's supplied Arena examples establish card identity and stable table
+placement; paper-game references below establish separate player spaces. Our
+camera adaptation adds wheel zoom and middle-drag through that same space, with
+Home returning to the overview. Camera movement never answers a rules prompt or
+rearranges the canonical battlefield. A focused card still opens its full reader.
+The four-player/480-permanent captures need human review; retained occurrences
+and working hit tests cannot declare that view understandable. The larger
+player-local placement migration remains separate work.
+
+The player also requires land totals and tap states to be readable without
+opening cards. Their supplied Arena mana screenshots show counted matching
+land piles and physically turned tapped lands. Adapt that arrangement with
+separate current-state piles, a count attached to each repeated land pile,
+and persistent total/untapped/tapped land counts beside each seat's resources.
+Count current public land types, including animated lands in the creature row;
+exclude rocks and concealed identities. Untapped is a physical state, not an
+estimate of payable mana. A second tap-state cohort no longer halves the
+individual land face. The canonical review includes nine mixed lands and three
+fully tapped lands at every seat, with real art at both supported review sizes.
+Their screenshots, alongside the 480-permanent field, still require human review.
+
+## Choice eligibility defaults: 26 October 2026
+
+**Source candidate; human review pending.** The player requested that searches
+and selections start with their condition applied. Arena's documented
+[Learn choice](https://magic.wizards.com/en/news/mtg-arena/strixhaven-mtg-arena-digital-release-notes-2021-04-07)
+presents the relevant Lesson/discard candidates; our adaptation focuses the
+existing card-choice surface on the engine's offered indices. A basic-land
+search therefore starts with its eligible cards, including Wastes, without
+parsing names, rules prose or card types in the client. Show all cards retains
+access to other already disclosed faces without granting selection handles.
+Original reader slots, option indices and staged choices survive the view change.
+New prompts restore the default; an empty match remains empty and keeps explicit
+Choose none when permitted. Read-only reveals retain every face. Actual cards on
+the battlefield and in hand stay in place; their authoritative target cues remain.
+
+## First-land turn confirmation: 26 October 2026
+
+**Source candidate; human review pending.** Players reported accidentally ending
+their turn before playing a land. The supplied Arena screenshots put progression
+beside the player's hand/portrait. Arena also documents
+[confirming a consequential ward target](https://magic.wizards.com/en/news/mtg-arena/strixhaven-mtg-arena-digital-release-notes-2021-04-07).
+That is an analogous safeguard, not evidence of Arena's exact land-warning UI.
+Our adaptation replaces the existing portrait actions only after a manual
+Pass turn, or leaving second main with an empty stack, when the engine reports
+zero land plays this turn. Keep playing/Escape sends nothing; Pass anyway submits
+the captured command. Space cannot accept the warning, Auto waits, and host time
+continues. This does not inspect card names or infer that a land is playable.
+Unknown land-play counts, ordinary stack responses, going to combat and Undo
+retain their behavior. A changed prompt, game, viewer, turn, phase, active player
+or first land play retires the confirmation. No rules or wire change is needed.
+
+## Stack announcements and manual mana: 26 October 2026
+
+**Source candidate; human review pending.** The player requested emphasis when
+spells/abilities reach the stack, comparable to announcing a play at a paper
+table, plus hover reading under the table's timer. The supplied Arena references
+show source artwork and the particular ability being chosen/read. Our adaptation
+uses the existing pending-effect position: briefly announce the engine-reported
+action kind/controller and emphasize its real source. Hover the effect itself
+to read its chosen spell/ability in an illustrated card face, including readable
+spell text for full-art printings; source/target references
+retain their full-card readers. This creates no extra confirmation or rules
+command. Initial observations do not replay an announcement, repeated polls do
+not renew it, and a batch of triggers shares one emphasis interval. Host time
+continues during reading. This is a visual iteration on the current stack
+surface, not completion of the larger causal execution or table-placement work.
+
+The mana reproduction used Blasting Station with Sol Ring and Victory Chimes.
+The AI payment planner omits the choose-player chain; the human can activate it,
+choose their own recipient and pay. A failed automatic plan now preserves
+relevant manual routes as uncertain rather than proving unavailability. Actual
+payment still uses the engine; this does not make Auto handle every possible
+mana-production chain. Plain floating colorless mana, generic costs, Ultima's
+mixed cost and an explicit colorless requirement are separate real-engine cases.
+
+## Paper table placement study: 25 October 2026
+
+The player's cropped left-side battlefield could not communicate which seat
+controlled its cards. The code investigation found separate coordinates for
+role lanes (`SharedTableStudy`), portrait/command/piles (`SeatGeometry`) and
+camera eligibility (`BoardView`, currently battlefield only). Merely rotating
+faces does not join those disconnected groups into a player's physical space.
+
+Primary reference: Tolarian Community College's
+[Shuffle Up & Play 94](https://www.youtube.com/watch?v=qZZgj9je0BA), sampled from
+its actual gameplay storyboard sheets around 9, 24 and 40 minutes. These were
+sampled stills, not a review of the entire moving sequence. The tan/red playmat
+views show resources near the player's hands, permanents ahead, deck/piles on a
+flank, cards facing the controller, and physical mat edges separating adjacent
+players. Resource groups can overlap by state while retaining their location on
+that mat. The red-mat late-game view retains that front/back relationship as the
+number of cards grows.
+
+The intended adaptation is one player-local play area whose transform places
+its battlefield rows, resources and public piles together. The controller owns
+placement; printed ownership remains a separate rules fact. A view change should
+frame that same space rather than repack its cards or leave its piles behind.
+Hand interaction and current-decision controls can remain in screen space.
+This is a layout direction awaiting implementation and human review. Broadcast
+cuts, inserted card closeups and separate player cameras are presentation edits;
+they do not establish a continuous physical table or validate our four-seat
+camera. A small still also cannot establish tapping/dragging gestures or readable
+presentation at the extreme 480-permanent case.
+
+## Rules faces and the counter-lab entry: 25 October 2026
+
+**Source candidate; human review pending.** The player rejected the tiny
+three-backs/caret control and reported that neither Loch Mare copy was usable
+at the lab's opening checkpoint. The opening priority snapshot retained source
+context, and the renderer mistook that reference for another stack card. An
+empty stack now stays empty; a battlefield cost source also stays at its actual
+location. Center-click checks cover the real permanent, followed by its exact
+offered activation, mana payment and explicit counter-type debit. The earlier
+successful pixel-search test did not explain the player's failed gesture.
+Replaying the old preview also found an open/close trap: both copies toggle one
+reader, so clicking the other closes it and removes an ability row drawn
+elsewhere on the table. The revised ability row follows the source's current
+counter state in the same side column. The lab records press/release coordinates,
+reached control and source-action status in its isolated profile's
+`input-trace.jsonl` for further diagnosis. The player's opening journey still
+needs human replay of this candidate.
+
+The player's Arena screenshots show a recognizable full card with live P/T and
+counter/ability explanations beside it. Their later full-art feedback shows the
+limit of relying on that printed face for readable rules. Our adaptation is a
+read-only Rules/Artwork turn attached beneath the enlarged occurrence (R also
+turns it). It is distinct from Magic's transform/face-down actions and from
+choosing an ability. The current engine text is laid out at a fixed reading
+font, expanding the reader when needed; counters and authoritative stats stay
+live. Closing, changing occurrence or losing disclosure retires that local
+reading state. Reduced motion switches faces directly.
+
+For collections, [Arena's hand postures and near-hand cards](https://magic.wizards.com/en/news/mtg-arena/mtg-arena-state-game-january-2021-01-21)
+provide the source-object arrangement being adapted. Middle-clicking an actual
+hand/access card opens its spread. H and the access-zone caption provide
+alternatives. Persistent hand-count and land-play footer strips are removed,
+including the old hand-count click target. The separate tiny fan drawing is
+removed. The access layout reserves its caption before placing priority
+controls, so the new cue cannot occupy the cards' faces. Arena's smaller hand
+examples do not validate our hundreds-card camera journey; that remains a
+separate human review.
+
+## Optional decisions and library targets: 25 October 2026
+
+**Source candidate; human review pending.** The reported Partner-with interaction
+made a player target look like an unexplained portrait click, then hid No in a
+small secondary control. Keep/Mulligan shared that generic confirmation layout.
+The revised journey uses the engine's decision task and optional-search context:
+source → eligible library owner → that player's Search/Don't search choice →
+authorized library contents or a return to the game. Real targets remain explicit.
+The search may still shuffle when no matching card is found. Neither library
+availability nor the desired answer is inferred from Commander zones.
+
+Search target gestures use the actual eligible players' libraries; the optional
+offer retains its source and presents two peer actions. Opening-hand choices
+stay beside the hand, with free/paid redraw consequences supplied by the active
+engine policy. Inspecting a hand card remains separate from Keep or Mulligan.
+Other confirmations use the same alternatives without acquiring search rules.
+
+The `optional-decisions.v1` canonical case includes several legal player targets,
+one legal target, the search offer with a public command-zone partner, a search
+decided by another seat, free/paid mulligans and an ordinary confirmation. These
+are authored presentation observations, not a rules simulator. Actual Partner
+tests cover legal targets, opponent ownership, hidden information, refusal,
+searching without a matching card and shuffle behavior. Pointer checks cover
+current scopes and noncommitting inspection. Neither automated checks nor agent
+captures establish human acceptance.
+
+Agent review used the actual renderer at 1000×740 with 130% text/reduced motion
+and 1540×980 with normal motion. It caught an unreachable target surface,
+outdated source-copy reservations, narrow context, crossing connectors and a
+turn banner competing with the required choice; these were corrected before
+the captured candidate. The 480-permanent observation can be loaded directly
+with `--experience-lab optional-decisions.v1 --stage 7`. The source context and
+owner gestures remain readable there; this does not approve the overall crowded
+battlefield. One authored Cat Beast token has an artwork fallback. Real search
+and private contents still require the actual engine.
+
+![Choose a legal library directly](images/native-library-targets-2026-10-25.png)
+![Search or decline beside the source](images/native-optional-search-2026-10-25.png)
+![Keep and Mulligan beside the hand](images/native-opening-hand-2026-10-25.png)
+
+[View the authored crowded library choice](images/native-optional-crowded-2026-10-25.png).
 
 ## Lobby decision tempo: 24 October 2026
 
@@ -875,6 +1104,223 @@ revocation. A face-down or otherwise private occurrence never acquires a visible
 identity, cost or ability merely because another card uses a familiar mechanic.
 This is a design requirement; generic casting-route/cost and recent-zone
 inspection have not been implemented by recording this reference.
+
+### Cards playable beside the hand
+
+**Previous candidate `e7cee2635ab`: human review found issues.** The later MTGA screenshot
+keeps its ordinary hand central and offsets the glowing exile cards to the right.
+The useful relationship is visible before opening a browser: these are additional
+plays, with a different origin from the hand.
+
+The `play-access.v1` lab applies that relationship to the four-seat table. Its
+engine-projected permissions form adjacent fans with a gap, zone identity and
+disclosed granting-source artwork. Click a card to read its full face; drag it
+onto the table to begin its current offered play. Two routes for one physical
+card remain one face with an explicit route choice. The initial fixed scrolling
+strip was rejected as another web-style container. The ordinary hand also had
+eleven-card pagination, so replacing only the strip's scrollbar would leave the
+same structural problem. A permission can remain present while
+timing, a land limit or another player's priority prevents starting it.
+
+The journey retains the actual zone owner, including borrowed exiled cards, and
+uses the existing current source-action catalog for commitment. Retained access
+is neither an action handle nor proof that the player can pay. Expiry and played
+cards leave the fan when the engine withdraws access. No expiry is guessed from
+rules prose. Face-down cards remain excluded by the existing disclosure boundary;
+this slice does not add private foretell faces. Prepared copies keep their
+existing permanent-linked presentation.
+
+Review the ordinary hand, source-distinct grants, off-priority reading, eleven
+cards in hand with many grants, enlarged reading, route selection and the physical
+source-to-stack-to-battlefield journey at both window sizes. Mechanical checks
+and agent inspection do not establish that a player understands the arrangement.
+
+Agent window review used real card artwork at 1000×740 with reduced motion and
+1540×980 with normal motion, both at 130% text. It exposed priority controls
+covering the reader and a moving card, repeated costs, and source text without
+enough contrast over battlefield artwork. Those findings changed the shared
+space reservation and reader composition. Header-only hover no longer opens a
+second preview after casting. These checks did not settle the larger scale
+interaction: the player's subsequent review rejected the scrolling approach.
+
+The replacement starts from explicit game references:
+
+| Observed game behavior | Adaptation for Mana Table |
+| --- | --- |
+| [Arena's documented hand postures and near-hand cards](https://magic.wizards.com/en/news/mtg-arena/mtg-arena-state-game-january-2021-01-21) keep recognizable cards and expand their arrangement for interaction. | Keep the ordinary hand and source-marked access packets anchored. Explicitly unfold the actual cards into the play space; clicking reads and dragging plays. |
+| [Arena's Battles playtests](https://magic.wizards.com/en/news/mtg-arena/we-put-battles-on-mtg-arena-what-was-that-like) investigated placement, rejected disruptive relocation during combat, and changed surrounding space to prevent paging. | Preserve physical occurrence identity, source anchors and card travel. Do not rearrange other seats when examining a local collection. |
+| [Tabletop Simulator's camera controls](https://kb.tabletopsimulator.com/player-guides/basic-controls/) support object-centered focus, middle-button pan and wheel zoom through a table. | Large collections open at play distance, with a deliberate overview and camera focus on the same arrangement. Recognizable card faces remain available without a scrollbar or page controls; click to read the full card. |
+
+The new spread is a local presentation mode over the existing card owner, not
+a dialog or another rules engine. An ordinary click reads a card. Expanding,
+camera focus and returning send no game command. A deliberate drag must leave
+the card's original expanded position before beginning its exact current offer.
+The spread folds back to its anchor on Escape or a bare-table return gesture.
+Current required decisions and disclosure changes retain their authority.
+
+The canonical case now includes 37 cards in hand and 60/200 access cards. The
+default opening preserves card size rather than fitting every card onto the
+screen. Sources form separate physical packets with artwork, full names and
+actual zone/owner context. At the explicit whole-collection overview,
+individual text is not readable; review the actual journey
+into a readable focused view and back. Neither Arena's smaller examples nor
+counting represented occurrences establishes that this works comfortably.
+Human review of the replacement remains pending.
+
+![Source-marked card packets unfolded into the table](images/native-play-access-table-2026-10-25.png)
+
+[View a full card read from the expanded collection](images/native-play-access-routes-2026-10-25.png).
+
+### Cost payment must retain its engine intent and candidates
+
+**Source candidate; human review pending.** After selecting Loch Mare's draw
+ability and paying mana, the player saw "Make a choice" and a disabled OK.
+Clicking Loch Mare opened details. The real engine reproduction showed that its
+remove-counter cost input had not published selectable candidates, so the valid
+physical source arrived as read-only. Convoke's shared assignment input had the
+same omission. An engine-side activation callback alone was insufficient.
+
+The shared selection base now requires each concrete input to supply its exact
+legal candidates, and owns publication/cleanup itself. A new chooser cannot
+compile while omitting that candidate contract. Native code still requires current physical permission and scoped
+keys; a historical source face grants nothing. Paying a fixed source with one
+legally removable counter type now needs no redundant source-selection step.
+Mixed types and distributed payments retain their choices. This adapts the
+bounded shortcut principle from [Arena's Sylvan Library diary](https://magic.wizards.com/en/news/mtg-arena/dev-diary-sylvan-library):
+the rules owner establishes when a shortcut is equivalent and retains the
+detailed path when it is not. It is not a card-name shortcut in the renderer.
+
+The wider counter report also exposed a native routing fault in the older
+focused-battlefield workspace: a legal required target tile always opened
+details. Its tile now carries the current use intent when actually authorized;
+ordinary read intents remain noncommitting. Real engine add-counter,
+remove-counter and Proliferate cases already worked before this change. Those
+results distinguish counter rules from candidate publication and interaction
+routing; they do not establish every card interaction is covered.
+
+Passing those gates did not complete the journey. Mixed counter types still
+opened a generic full-screen options list, separating bare type names from the
+affected permanent, its counts and the reason for removing them. Counter costs
+now report typed payment progress and, for a type choice, the exact donor,
+offered indices, available counts and the debit for that single choice. The
+ability source can be a different permanent. No text parsing or frontend rules
+calculation supplies this context.
+
+The payment workspace stays beside the existing source or donor. Its legal
+permanents remain on the battlefield; hovering a donor connects it to the
+source and exposes its actual counter counts. Type choices show the available
+quantity and debit, such as `3 → 2`, at that permanent and submit that exact
+choice on release. There is no generic gallery or second confirmation. Pending
+allocations are not settled mutations: the engine applies the full cost before
+the actual counter/P/T changes appear. Inspecting a permanent now retains its
+own counter-change receipt rather than suppressing every change animation.
+
+This adapts the player's Arena Ajani reference: recognizable card, current P/T
+and exact counter details stay together. The Sylvan Library diary above supplies
+the bounded choice-to-consequence principle. Neither reference establishes a
+solution for 480 permanents. The interactive `counter-payment.v1` canonical case
+provides authored forced Loch Mare payment, two counter-type branches, a distinct
+Soul Diviner source/donor, and the same donor choice on a crowded table. It shows
+payment, pending draw and settled draw checkpoints; it does not simulate rules.
+Real Forge cost tests remain separate. Human review of this candidate is pending.
+
+The captures below use the actual native renderer, an authored interactive lab,
+cached card art, a 1000×740 window and 130% text/reduced motion. The same journeys
+were exercised at 1540×980 with normal motion, including both type branches,
+separate source/donor, inspection during payment and the crowded case. Agent
+review caught obscured sources, oversized hover space and covered portrait
+controls before the captured candidate. The crowded table remains a broader
+readability problem; completing this gesture is not approval of that layout.
+
+![Read the current donor and choose its exact counter debit](images/native-counter-payment-2026-10-25.png)
+
+![The paid counter and current stats change before the draw resolves](images/native-counter-paid-2026-10-25.png)
+
+The Breeding Pool report also exposed a presentation problem: `{U}` correctly
+means blue and `{B}` black, but action rows showed those codes as prose. Known
+mana/tap tokens now use the existing game symbol atlas, with measurement and
+wrapping shared by the drawn runs and their hit geometry. Actual source offers,
+order, complete text and command IDs remain intact; unknown tokens remain text.
+The player's card and Arena references supply the visual convention. This does
+not add inferred affordability, disabled-ability explanations or predicted mana
+production; those still require richer engine-owned descriptors.
+
+### Public piles expand into the same table space
+
+**Source candidate; human review pending.** Opening a graveyard or exile pile
+previously replaced the table with seven small cards, repeated name/cost rows
+and Previous/Next controls. The intent is to inspect an actual player's zone,
+read an occurrence, and return to the same game. Opening the pile does not mean
+choosing a target or casting a card.
+
+The game references distinguish these journeys:
+
+- A [player's original Arena graveyard capture](https://steamuserimages-a.akamaihd.net/ugc/2425840210370129478/12B05629F57967FB80B3196BFE0466638CD409BE/)
+  shows a named opponent's graveyard, five overlapping full card forms and Done,
+  without a selection instruction or Submit. This is firsthand gameplay evidence,
+  not an official image or proof of large-zone navigation.
+- [Arena's Hideaway example](https://magic.wizards.com/en/news/mtg-arena/mtg-arena-state-game-streets-new-capenna-2022-04-21)
+  shows a different purpose: the actual source ability, an explicit choice and
+  eligible card faces. Its subsequent source-linked exile placement preserves
+  the relationship. A general zone reader must not imply that every shown card
+  is an eligible play or choice.
+- Mana Table adapts the existing table camera and collection expansion to larger
+  public piles. This spatial treatment is our adaptation, using the Tabletop
+  Simulator reference above; it is not a claim that Arena solves 200-card zones.
+
+Graveyard/exile inspection uses the shared collection target, card owner and
+full-card reader. The origin is the actual pile. Zone order and separate copies
+remain intact; a large zone opens near its exposed top at play distance.
+Owner and zone identify the inspection. Counts never manufacture undisclosed
+faces, and concealed exile entries do not become readable or actionable.
+Clicking reads; only an explicit current reader action can choose or play.
+Camera gestures and returning send no command. A new required task interrupts
+inspection; reopening during an existing task preserves its local draft and
+provides a return to that task.
+
+Folding re-resolves current occurrences and returns them toward their actual
+pile or existing access fan. Its retained state is IDs and geometry, not an old
+card face or action. Lost disclosure removes the occurrence immediately.
+Command, library, private hands, stack entries and required-choice galleries
+retain their own semantics in this slice.
+
+This actual small-window capture uses the authored 37-card graveyard, enlarged
+text and reduced motion. Navigating the spread and reading a card were also
+exercised in a larger window; the observation does not approve readability at
+arbitrary scale.
+
+![The graveyard unfolds into actual cards in table space](images/native-public-pile-2026-10-25.png)
+
+### Current ability results need engine-owned presentation
+
+The Mox Amber report is a useful distinction between correct rules and unclear
+feedback. With only colorless legendary creatures/planeswalkers, activating it
+adds no mana: [the official ruling](https://magic.wizards.com/en/news/feature/dominaria-release-notes)
+explicitly distinguishes colorless from a color. The checked-in Forge script
+uses color reflection over controlled legendary creatures/planeswalkers.
+
+The general presentation gap is that current source offers expose an opaque ID,
+kind and engine prose, without separate cost/effect/current-result descriptors.
+Do not add a Mox-specific renderer rule or infer mana production from card text.
+Arena's threshold badges in the Hideaway article show the useful direction:
+engine-owned current state stays attached to the interested card. A later typed
+ability projection should distinguish displayed costs, current initiation
+permission, payment and expected results. Unavailable abilities need separate
+read-only descriptors; a missing current offer cannot establish why it is absent.
+
+### Remaining scale patterns found in the broader audit
+
+These are source findings and follow-up design work, not claims that the whole
+game has been redesigned or visually accepted. Each replacement needs a complete
+journey and an actual game reference before implementation.
+
+| Current pattern | Game evidence to use for the next design |
+| --- | --- |
+| The older focused-battlefield fallback arranges artwork/details in a scrolling document, separate from the newer study camera. | Extend the spatial camera journey over the same table, using the Tabletop Simulator reference above and the existing four-seat anchors. |
+| Required-choice galleries and the remaining special-zone readers page small groups of cards; hand choices can lose their physical context. Public graveyard/exile inspection now uses the shared spread candidate above. | [Arena's Sylvan Library diary](https://magic.wizards.com/en/news/mtg-arena/dev-diary-sylvan-library) keeps eligible cards in the hand and makes the committed outcome explicit. Its shortcut is engine-validated and retains the detailed path when other effects change the rules. |
+| Ability choices and source actions can become text rows with their own overflow. | The player's Ajani ability screenshot and [Arena's official foretell choices](https://media.wizards.com/2020/images/daily/m7g4ren4_foretell_battle.jpg) present distinct card forms with their effects, costs and availability. Adapt those game objects while preserving exact offered actions. |
+| Deeper stack inspection still falls back to sequential entries and text pages. | Use the player's stack references and the Sylvan Library screenshots: a legible ability object, source, recipients and the next meaningful decision remain together. Expansion must preserve the already-improved source/target gestures. |
+| The deck editor confines deck rows to a small central region before paging. | [Arena's June 2020 update](https://magic.wizards.com/en/news/mtg-arena/mtg-arena-state-game-june-2020-06-23) and its [official deck-editor animation](https://media.wizards.com/2020/images/daily/deck_editor.gif) expand the deck into overlapping card columns. Give deck construction its own spatial surface before shrinking more records into the existing region. |
 
 ### Ability choices as readable game objects
 

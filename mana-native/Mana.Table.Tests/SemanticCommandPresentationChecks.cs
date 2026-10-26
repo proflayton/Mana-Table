@@ -69,11 +69,11 @@ internal static class SemanticCommandPresentationChecks
                 "Source inspection discovers an independent provider's opaque offered action without submitting at " + viewport);
             Click("read-card-action");
             Wait(() => !view.Busy && frame.Hits.Any(hit => hit.Id == "choice:4"), "02-preview-bearing-ability");
-            check(view.Match!.Decision!.Choices.Single().Card is { Name: "Contract Current" }
+            check(((AbilityChoicePayload)view.Match!.Decision!.Payload).Selection.Choices.Single().Card is { Name: "Contract Current" }
                 && !frame.Hits.Any(hit => hit.Id == "choicesdone") && provider.Commands is [UseOfferedAction],
                 "An explicit ability choice keeps its legitimate card preview and remains a source action, not a gallery selection, at " + viewport);
             Click("choice:4");
-            Wait(() => !view.Busy && view.Match?.Decision?.Intent == DecisionIntent.Mana, "03-required-payment");
+            Wait(() => !view.Busy && view.Match?.Decision?.Payload is PaymentPayload, "03-required-payment");
             check(provider.Commands is [UseOfferedAction, ChooseOptions { Choices: [4] }]
                 && !frame.Hits.Any(hit => hit.Id == "confirm"),
                 "Choosing an ability yields an unpaid cost and cannot accidentally confirm it at " + viewport);
@@ -83,10 +83,10 @@ internal static class SemanticCommandPresentationChecks
             Click("read-card-action");
             Wait(() => !view.Busy && view.Match?.Viewer?.Mana.GetValueOrDefault("G") == 1, "05-mana-added");
             check(view.Match!.Viewer!.Zone("Battlefield").Cards.Single().Tapped
-                && view.Match.Decision?.Intent == DecisionIntent.Mana && provider.Commands.Last() is UseOfferedAction,
+                && view.Match.Decision?.Payload is PaymentPayload && provider.Commands.Last() is UseOfferedAction,
                 "The provider's exact mana action taps its own occurrence while required payment remains open at " + viewport);
             Click("confirm");
-            Wait(() => !view.Busy && view.Match?.Decision?.Purpose == DecisionPurpose.TargetSelection, "06-required-target");
+            Wait(() => !view.Busy && view.Match?.Decision?.Payload is TargetSelectionPayload, "06-required-target");
             check(provider.Commands.Last() is PayMana && view.Match!.Viewer!.Mana.GetValueOrDefault("G") == 0
                 && !frame.Hits.Any(hit => hit.Id == "confirm"),
                 "PayMana spends the floating resource and hands control to a mandatory target instead of passing priority at " + viewport);
@@ -95,12 +95,12 @@ internal static class SemanticCommandPresentationChecks
             check(provider.Commands.Last() is SelectCard && view.Match!.Stack.Single().Effect?.Amount == 3,
                 "The target gesture selects the current occurrence and retains the provider's pending base amount at " + viewport);
             Click("confirm");
-            Wait(() => !view.Busy && view.Match?.Decision?.Kind == "choice", "08-result-private-choice");
+            Wait(() => !view.Busy && view.Match?.Decision?.Payload is OptionsPayload or AbilityChoicePayload or OrderingPayload, "08-result-private-choice");
             var target = view.Match!.Players[1].Zone("Battlefield").Cards.Single();
             check(provider.Commands.Last() is PassPriority && target is { Power: 2, Toughness: 3, Damage: 2 }
                 && view.Match.Activity.Single().Impact is { Kind: "damage", Amount: 2 }
                 && view.Match.Players.Where(player => player.Id != view.Match.ViewerId).All(player => player.Zone("Hand").Cards.IsEmpty)
-                && view.Match.Decision!.Choices.Single().Card is { Key.Length: 0, VisualId.Length: 0 },
+                && ((OptionsPayload)view.Match.Decision!.Payload).Selection.Choices.Single().Card is { Key.Length: 0, VisualId.Length: 0 },
                 "Actual damage stays separate from pending base amount and current P/T; the following private choice exposes no persistent card authority at " + viewport);
 
             Click("choice:31");
@@ -110,10 +110,10 @@ internal static class SemanticCommandPresentationChecks
             provider.RefreshScope(); view.Accept(provider.State);
             frame = Tick(confirm.Bounds.Center, ButtonState.Pressed);
             frame = Tick(confirm.Bounds.Center);
-            check(provider.Commands.Length == beforeStaleRelease && view.Match!.Decision?.Kind == "choice",
+            check(provider.Commands.Length == beforeStaleRelease && view.Match!.Decision?.Payload is OptionsPayload or AbilityChoicePayload or OrderingPayload,
                 "A held private confirmation is revoked by a new decision capability before pointer release at " + viewport);
             Click("choice:31"); Click("choicesdone");
-            Wait(() => !view.Busy && view.Match?.Decision?.Intent == DecisionIntent.Priority, "09-private-choice-complete");
+            Wait(() => !view.Busy && view.Match?.Decision?.Payload is PriorityPayload, "09-private-choice-complete");
             check(provider.Commands.Last() is ChooseOptions { Choices: [31] }
                 && view.Match!.Viewer!.Zone("Hand").Cards.Single().Name == "Selected private card"
                 && view.Match.Viewer.Zone("Library").Count == 19
@@ -173,25 +173,21 @@ internal static class SemanticCommandPresentationChecks
                 switch (command) {
                     case UseOfferedAction offer when stage == 0 && offer.ActionId == CastOffer && Find(offer.Card).VisualId == SpellId:
                         var source = Object(SpellId);
-                        state = state with { Decision = new() { Kind = "choice", Purpose = DecisionPurpose.AbilitySelection,
-                            SourceCard = source, SourceCardId = SpellId, SourceZone = "Hand", Min = 1, Max = 1,
-                            Choices = [new(4, "Cast for {G}", source with { Key = "", VisualId = "", CombatId = "" })] } };
+                        state = state with { Decision = new Decision("", new DecisionContext(Source: new DecisionSource(CardId: SpellId, Card: source, Zone: "Hand")), new AbilityChoicePayload(new ChoiceSelection([new(4, "Cast for {G}", source with { Key = "", VisualId = "", CombatId = "" })], new SelectionRange(1, 1), []))) };
                         stage = 1; break;
                     case ChooseOptions { Choices: [4] } when stage == 1:
-                        state = state with { Decision = new() { Kind = "input", Intent = DecisionIntent.Mana,
-                            Message = "Pay {G}.", SourceCard = Object(SpellId), SourceCardId = SpellId } };
+                        state = state with { Decision = new Decision("", new DecisionContext(Message: "Pay {G}.", Source: new DecisionSource(CardId: SpellId, Card: Object(SpellId))), new PaymentPayload(new DecisionReply("Confirm", false), new DecisionReply("Cancel", false))) };
                         stage = 2; break;
                     case UseOfferedAction offer when stage == 2 && offer.ActionId == ManaOffer && Find(offer.Card) is { VisualId: ForestId, Tapped: false }:
                         Change(ForestId, card => card with { Tapped = true });
                         state = state with { Players = state.Players.Select(player => player.Id == 0
                             ? player with { Mana = player.Mana.SetItem("G", player.Mana.GetValueOrDefault("G") + 1) } : player).ToImmutableArray(),
-                            Decision = state.Decision! with { OkEnabled = true } };
+                            Decision = state.Decision! with { Payload = ((PaymentPayload)state.Decision.Payload) with { Pay = new("Pay", true) } } };
                         break;
                     case PayMana when stage == 2 && state.Viewer!.Mana.GetValueOrDefault("G") >= 1:
                         state = state with { Players = state.Players.Select(player => player.Id == 0
                             ? player with { Mana = player.Mana.SetItem("G", player.Mana["G"] - 1) } : player).ToImmutableArray(),
-                            Decision = new() { Kind = "input", Intent = DecisionIntent.Selection, Purpose = DecisionPurpose.TargetSelection,
-                                SourceCard = Object(SpellId), SourceCardId = SpellId, SourceZone = "Hand", Min = 1, Max = 1 } };
+                            Decision = new Decision("", new DecisionContext(Source: new DecisionSource(CardId: SpellId, Card: Object(SpellId), Zone: "Hand")), new TargetSelectionPayload(new DecisionReply("Confirm", false), new DecisionReply("Cancel", false), new SelectionRange(1, 1), [], null, null)) };
                         stage = 3; break;
                     case SelectCard selected when stage == 3 && Find(selected.Card).VisualId == TargetId:
                         targetId = Find(selected.Card).VisualId;
@@ -210,11 +206,10 @@ internal static class SemanticCommandPresentationChecks
                                 : zone.Name == "Graveyard" ? zone with { Count = zone.Count + 1, Cards = zone.Cards.Add(cast) } : zone).ToImmutableArray()
                         }).ToImmutableArray(), Activity = [new(1, 3, "MAIN1", "damage", 0, "Reported damage.", targetId, Object(targetId).Name) {
                             Impact = new("damage", dealt, targetId, Object(targetId).Name, SourceCardId: SpellId, SourceName: cast.Name)
-                        }], Decision = new() { Kind = "choice", Min = 1, Max = 1, Title = "Choose a card", SourceZone = "Library",
-                            Choices = [new(31, "Selected private card", new() { Name = "Selected private card", Type = "Land" })] } };
+                        }], Decision = new Decision("", new DecisionContext(Title: "Choose a card", Source: new DecisionSource(Zone: "Library")), new OptionsPayload(new ChoiceSelection([new(31, "Selected private card", new() { Name = "Selected private card", Type = "Land" })], new SelectionRange(1, 1), []))) };
                         stage = 5; break;
                     case ChooseOptions { Choices: [31] } when stage == 5:
-                        var selectedCard = state.Decision!.Choices.Single().Card! with { VisualId = "object|chosen", CombatId = "object|chosen" };
+                        var selectedCard = ((OptionsPayload)state.Decision!.Payload).Selection.Choices.Single().Card! with { VisualId = "object|chosen", CombatId = "object|chosen" };
                         state = state with { Players = state.Players.Select(player => player.Id != 0 ? player : player with {
                             Zones = player.Zones.Select(zone => zone.Name == "Hand" ? zone with { Count = zone.Count + 1, Cards = zone.Cards.Add(selectedCard) }
                                 : zone.Name == "Library" ? zone with { Count = zone.Count - 1 } : zone).ToImmutableArray()
@@ -228,7 +223,7 @@ internal static class SemanticCommandPresentationChecks
 
         private Card Find(string key) => state.Players.SelectMany(player => player.Zones).SelectMany(zone => zone.Cards).Single(card => card.Key == key);
         private Card Object(string id) => state.Players.SelectMany(player => player.Zones).SelectMany(zone => zone.Cards).Single(card => card.VisualId == id);
-        private static Decision Priority() => new() { Kind = "input", Intent = DecisionIntent.Priority, OkEnabled = true };
+        private static Decision Priority() => new Decision("", new DecisionContext(), new PriorityPayload(new DecisionReply("Confirm", true), null, CanAutoPass: false, QuietYieldToken: "", Abilities: []));
         private void Change(string id, Func<Card, Card> update) => state = state with { Players = state.Players.Select(player => player with {
             Zones = player.Zones.Select(zone => zone with { Cards = zone.Cards.Select(card => card.VisualId == id ? update(card) : card).ToImmutableArray() }).ToImmutableArray()
         }).ToImmutableArray() };

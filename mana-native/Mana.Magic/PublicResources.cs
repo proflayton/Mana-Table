@@ -4,6 +4,7 @@ namespace Mana.Magic;
 
 // Presentation parts, not additional game state or a replacement wire model.
 public sealed record PublicResourcePart(string Key, string Name, string Symbol, int Amount);
+public sealed record PublicLandState(int Total, int Untapped, int Tapped);
 
 public static class PublicResources
 {
@@ -26,4 +27,14 @@ public static class PublicResources
     }
 
     public static long ManaTotal(Player player) => Mana(player).Sum(part => (long)part.Amount);
+
+    // Count current public land types, including animated lands in the creature
+    // row. These are physical tap states, never a claim about payable mana.
+    public static PublicLandState Lands(Player player)
+    {
+        var lands = player.Zone("Battlefield").Cards.Where(card => !card.FaceDown
+            && card.Type.Split('—')[0].Split(' ', StringSplitOptions.RemoveEmptyEntries).Contains("Land", StringComparer.Ordinal)).ToArray();
+        int tapped = lands.Count(card => card.Tapped);
+        return new(lands.Length, lands.Length - tapped, tapped);
+    }
 }

@@ -95,7 +95,7 @@ internal sealed partial class TableApplication
             canvas.CenterText(stats, bounds, Ink, size, true);
             if (owner is { } player) {
                 RecordBattlefieldLabel(card, player, "pt", stats, bounds, statsWidth - 8, statsWidth - 8);
-                denseStatsBounds[CardViews.Identity(card)] = new(bounds, statsWidth - 8);
+                battlefieldStatsBounds[CardViews.Identity(card)] = new(bounds, statsWidth - 8);
             }
             cursor += statsWidth;
         }

@@ -59,7 +59,7 @@ internal sealed partial class TableApplication
     // Printed rules text never creates a flashback, escape, or exile permission.
     private string? AvailableZone(Card card)
     {
-        if (match is not { Status: "playing", Decision: { Kind: "input", Intent: DecisionIntent.Priority, Id.Length: > 0 }, Viewer.Eliminated: false } state) return null;
+        if (match is not { Status: "playing", Decision: { Payload: PriorityPayload, Id.Length: > 0 }, Viewer.Eliminated: false } state) return null;
         foreach (string zone in new[] { "Graveyard", "Exile", "Command" })
             if (state.Viewer?.Zone(zone).Cards.Any(c => CardViews.Same(c, card) && !c.FaceDown && c.Selectable && c.Key.Length > 0) == true) return zone;
         return null;
@@ -68,6 +68,7 @@ internal sealed partial class TableApplication
         ? player.Zone(zone).Cards.Count(c => AvailableZone(c) == zone) : 0;
     private void DrawZoneActionBadge(Player player, string zone, Pose pose)
     {
+        if (tableScene?.PlayAccess.Groups.Any(group => group.PlayerId == player.Id && group.Zone == zone) == true) return;
         int count = AvailableZoneCount(player, zone);
         if (count == 0) return;
         var badge = new Rectangle((int)pose.Center.X - 43, pose.Bounds.Top - 14, 86, 23);

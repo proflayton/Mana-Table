@@ -97,14 +97,7 @@ public abstract class Spell extends SpellAbility implements java.io.Serializable
             return null;
         }
 
-        // do performanceMode only for cases where the activator is different than controller
-        if (!Spell.performanceMode && !card.getController().equals(activator)) {
-            // always make a lki copy in this case?
-            card = CardCopyService.getLKICopy(card);
-            card.setController(activator, 0);
-        }
-
-        card = Objects.requireNonNullElse(getAlternateHost(card), card);
+        card = hostForPlayer(activator);
 
         if (!this.getRestrictions().canPlay(card, this)) {
             return null;
@@ -116,6 +109,25 @@ public abstract class Spell extends SpellAbility implements java.io.Serializable
         }
 
         return card;
+    }
+
+    /** Permission discovery uses the same acting player and alternate face as casting, without timing or payment. */
+    public boolean hasPlayAccess(final Player activator) {
+        if (activator == null || getHostCard().isInPlay()) return false;
+        Card card = hostForPlayer(activator);
+        return getRestrictions().checkZoneRestrictions(card, this)
+                && getRestrictions().checkActivatorRestrictions(card, this);
+    }
+
+    private Card hostForPlayer(final Player activator) {
+        Card card = getHostCard();
+        // An authorized foreign-owned spell is evaluated under its caster,
+        // including face-specific static permissions on the alternate host.
+        if (!Spell.performanceMode && !card.getController().equals(activator)) {
+            card = CardCopyService.getLKICopy(card);
+            card.setController(activator, 0);
+        }
+        return Objects.requireNonNullElse(getAlternateHost(card), card);
     }
 
     /** {@inheritDoc} */

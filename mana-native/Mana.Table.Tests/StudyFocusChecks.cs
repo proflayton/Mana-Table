@@ -30,11 +30,13 @@ internal static class StudyFocusChecks
         view.PresentLobby(new("local", "Controlled study", null, false, null, true, "", null, [], []), true);
         PresentationFrame frame = null!;
         double seconds = 0;
-        void Tick(Point point = default, ButtonState left = ButtonState.Released, double elapsed = .01, KeyboardState keyboard = default)
+        int wheel = 0;
+        void Tick(Point point = default, ButtonState left = ButtonState.Released, double elapsed = .01, KeyboardState keyboard = default,
+            int wheelDelta = 0, ButtonState middle = ButtonState.Released)
         {
-            seconds += elapsed;
+            seconds += elapsed; wheel += wheelDelta;
             app.Update(new(TimeSpan.FromSeconds(seconds), TimeSpan.FromSeconds(elapsed)),
-                new(point.X, point.Y, 0, left, default, default, default, default), keyboard, new(1600, 900));
+                new(point.X, point.Y, wheel, left, middle, default, default, default), keyboard, new(1600, 900));
             frame = app.ReadPresentation();
             if (view.Error.Length > 0) throw new InvalidOperationException(view.Error);
         }
@@ -113,6 +115,34 @@ internal static class StudyFocusChecks
         engine.Present(engine.State with { Id = "native-study-next-match" }); view.Accept(engine.State); Tick();
         check(view.StudyFocusOwner == null && view.BoardView.IsIdentity && Battlefield(frame.Scene!).Length == overview.Count,
             "A different game drops the previous inspection camera rather than replaying its movement");
+        // This idle authored observation has no reply capability. Arm Auto so
+        // the visible pause reason reflects camera capture rather than Manual.
+        view.SetAutomatic(true);
+        var cameraState = view.Match;
+        var handBeforeCamera = frame.Cards.Where(card => card.Zone == "Hand").Select(card => card.Rest).ToArray();
+        Tick(new(800, 400), wheelDelta: 240); Tick(elapsed: .7);
+        check(view.BoardView.Scale > 1 && ReferenceEquals(view.Match, cameraState)
+                && Battlefield(frame.Scene!).All(card => card.Pose == overview[card.Id].Pose)
+                && frame.Cards.Where(card => card.Zone == "Hand").Select(card => card.Rest).SequenceEqual(handBeforeCamera),
+            "Wheel zoom changes the shared camera while game state, canonical card poses and the local hand remain unchanged");
+        var beforePan = view.BoardView;
+        Tick(new(700, 400), middle: ButtonState.Pressed);
+        Tick(new(780, 430), middle: ButtonState.Pressed);
+        check(view.DecisionDock is { PauseReason: Mana.Magic.DecisionDockPauseReason.Interaction },
+            "An active camera drag temporarily pauses automatic advancement");
+        Tick(new(1680, 430), middle: ButtonState.Pressed); Tick(new(1680, 430)); Tick(new(1680, 430), elapsed: .7);
+        check(view.DecisionDock is { PauseReason: not Mana.Magic.DecisionDockPauseReason.Interaction },
+            "Releasing camera capture outside the board retires its interaction pause");
+        check(view.BoardView.Scale == beforePan.Scale && view.BoardView.Offset != beforePan.Offset
+                && ReferenceEquals(view.Match, cameraState) && engine.Replies.Count == 1,
+            "Middle-drag pans the normal battlefield without changing scale, decision scope or submitting another command");
+        Tick(keyboard: new(Keys.Home)); Tick(elapsed: .7);
+        check(view.BoardView.IsIdentity && engine.Replies.Count == 1,
+            "Home restores the shared table after manual camera movement without a rules action");
+        Tick(new(800, 400), wheelDelta: 240); Tick(elapsed: .7);
+        engine.Present(engine.State with { Id = "native-manual-camera-next-match" }); view.Accept(engine.State); Tick();
+        check(view.BoardView.IsIdentity && view.StudyFocusOwner == null,
+            "A new match retires the manually zoomed camera as well as seat focus");
         TwoPlayerMatch(check);
     }
     private static void TwoPlayerMatch(Action<bool, string> check)
@@ -139,7 +169,6 @@ internal static class StudyFocusChecks
             .ToDictionary(card => card.Id, card => card.Rest);
         engine.Present(stages[1].Snapshot); view.Accept(engine.State); Tick(); Tick();
         check(frame.Scene!.Seat(1).Index == 1 && frame.Scene.Seat(0).Index == 3
-                && frame.Scene.Seats.All(seat => !seat.IsDense)
                 && frame.Cards.Where(card => card.Zone == "Battlefield" && card.Request.Owner == 1).All(card => baseline[card.Id] == card.Rest)
                 && !frame.Hits.Any(hit => hit.Id is "focus:0" or "study-focus-return")
                 && engine.Replies.Count == 0,

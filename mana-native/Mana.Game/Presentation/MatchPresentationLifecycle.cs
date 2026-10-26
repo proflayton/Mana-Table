@@ -24,6 +24,7 @@ internal sealed class MatchPresentationLifecycle
     private readonly ImpactFeedback impacts = new();
     private readonly ManaPoolPresence mana = new();
     private readonly PriorityTransitionFeedback priority = new();
+    private readonly StackArrivalPresentation stackArrival = new();
     private readonly List<Departure> departures = [];
     private (string Game, int Viewer)? scope;
 
@@ -36,7 +37,8 @@ internal sealed class MatchPresentationLifecycle
     internal IReadOnlyList<ImpactCue> Impacts => impacts.Cues;
     internal PriorityTransition? PriorityTransition => priority.Latest;
     internal IReadOnlyList<Departure> Departures => departures;
-    internal bool Ready(double now) => pacing.Ready(now);
+    internal bool Ready(double now) => pacing.Ready(now) && stackArrival.Ready(now);
+    internal float StackArrivalStrength(string id, double now) => stackArrival.Strength(id, now);
     internal int PendingDraws(int player, double now) => presence.PendingDraws(player, now);
     internal ManaPoolCue? ManaCue(int player, string symbol, double now) => mana.For(player, symbol, now);
     internal IReadOnlyList<ManaPoolCue> ManaCues(int player, double now) => mana.ForPlayer(player, now);
@@ -56,6 +58,7 @@ internal sealed class MatchPresentationLifecycle
         effects.Observe(batch, now); presence.Observe(batch, now);
         actions.Observe(batch, now); changes.Observe(batch, now); impacts.Observe(batch, now);
         pacing.Observe(before, current, now); mana.Observe(before, current, now); priority.Observe(before, current, now);
+        stackArrival.Observe(before, current, now);
         ObserveDepartures(batch, now, view);
         bool comparable = before != null && before.Id == current.Id && before.ViewerId == current.ViewerId;
         return new(changed,
@@ -71,6 +74,7 @@ internal sealed class MatchPresentationLifecycle
     {
         scope = null; activity.Clear(); effects.Clear(); presence.Clear(); pacing.Reset();
         actions.Clear(); changes.Clear(); impacts.Clear(); mana.Clear(); priority.Clear();
+        stackArrival.Clear();
         departures.Clear(); Cards.Reset();
     }
 

@@ -12,6 +12,7 @@ internal sealed partial class TableApplication
     {
         if (!CurrentHit(hit) || !hits.Published.Any(current => current.Id == hit.Id
             && current.Scope == hit.Scope && Equals(current.Intent, hit.Intent))) return false;
+        if (CardCollectionOpen && hit.Card is { } outside && !SpreadContains(CardViews.Identity(outside))) FoldCardCollection();
         // A pile face represents its zone on ordinary click. Explicit inspection
         // can still read that disclosed occurrence without opening the browser.
         if (matchPresentation.Cards.Cards.Any(entry => entry.Hit.Id == hit.Id && entry.Hit.Scope == hit.Scope && entry.Request.OpensZone)) {
@@ -19,8 +20,8 @@ internal sealed partial class TableApplication
             DispatchIntent(hit.Intent);
             return true;
         }
-        if (ToggleCardReader(hit)) return true;
-        if (OverlayOpen && match?.Decision?.Intent == DecisionIntent.Priority && hit.Card is { } card
+        if (hit.Intent is MatchIntent.InspectOccurrence) { ToggleCardReader(hit); return true; }
+        if (OverlayOpen && match?.Decision?.Payload is PriorityPayload && hit.Card is { } card
                 && hit.Zone is "Hand" or "Command" or "Graveyard" or "Exile" or "Library") { Inspect(card); return true; }
         DispatchIntent(hit.Intent);
         return true;
@@ -64,17 +65,25 @@ internal sealed partial class TableApplication
     private void OpenZone(int player, string zone)
     {
         if (MultiplayerFocusAvailable && zone == "Battlefield") { SetStudyFocus(player); return; }
+        if (zone is "Graveyard" or "Exile") {
+            zoneName = null; overlay = "";
+            ExpandCardCollection(new CardCollectionTarget.PublicZone(player,
+                zone == "Graveyard" ? PublicInspectionZone.Graveyard : PublicInspectionZone.Exile));
+            return;
+        }
         zonePlayer = player; zoneName = zone; zonePage = 0; overlay = "";
     }
-    private bool IsPlayerTarget(int player) => !AbilityActionPending && (match?.Decision?.PlayerChoices.Contains(player) == true
+    private bool LibraryRecipientTarget => decisions.Presentation?.Payload is TargetSelectionPayload { Search: not null };
+    private bool IsPlayerTarget(int player) => !AbilityActionPending && !LibraryRecipientTarget && (StateClarity.Recipients(match!).Any(candidate => candidate.Id == player)
         || selectedCombat != null && match != null && LegalTargets.CanAttack(match, selectedCombat, player)
         || dragging && dragSource?.Card is { } card && match != null && LegalTargets.CanAttack(match, card.CombatId, player));
     private bool IsCardActionable(Card card)
     {
         var state = match; var d = state?.Decision;
-        if (state == null || d == null || busy || session.NeedsRecovery || AbilityActionPending) return false;
+        if (state == null || d == null || decisions.Presentation?.Payload == null || busy || session.NeedsRecovery || AbilityActionPending) return false;
         if (TableChoices.IsDirect(state)) return TableChoices.Index(state, card) != null;
-        if (d.Intent is DecisionIntent.Attack or DecisionIntent.Block) return CombatGuide.CanSelect(state, card) || CombatTarget(card);
+        if (d.Payload is AttackPayload or BlockPayload) return CombatGuide.CanSelect(state, card) || CombatTarget(card);
+        if (d.Payload is PriorityPayload && CurrentPlayAccess(card) is { } access) return CanStartPlayAccess(access);
         return card.Selectable && !string.IsNullOrEmpty(card.Key) || HandPlacements.Options(state, card).Length > 0
             || OfferedPlayOptions(card).Length > 0;
     }
@@ -85,8 +94,8 @@ internal sealed partial class TableApplication
         var result = interaction.CardClick(match, card);
         if (result.ChoiceIndex is { } index) ToggleChoice(match.Decision!, index);
         else if (result.Reply != null) {
-            if (match.Decision?.Intent == DecisionIntent.Selection) CollapseCardReading();
-            bool sourceReader = match.Decision?.Intent == DecisionIntent.Priority
+            if (match.Decision?.Payload is TargetSelectionPayload or EntitySelectionPayload) CollapseCardReading();
+            bool sourceReader = match.Decision?.Payload is PriorityPayload
                 && matchPresentation.Cards.Pinned is { Zone: "Battlefield" } entry && SameVisibleCard(entry.Card, card);
             if (!sourceReader) zoneName = null;
             Send(result.Reply);
@@ -101,6 +110,7 @@ internal sealed partial class TableApplication
             SetStudyFocus(player); return;
         }
         if (busy) return;
+        if (LibraryRecipientTarget) { zonePlayer = player; overlay = "player"; return; }
         if (session.NeedsRecovery || AbilityActionPending) { zonePlayer = player; overlay = "player"; return; }
         var result = interaction.PlayerClick(match, player);
         if (result.Reply != null) Send(result.Reply);
@@ -112,7 +122,7 @@ internal sealed partial class TableApplication
     private DecisionCommand? DropReply(Hit? target)
     {
         if (match?.Decision == null || AbilityActionPending || dragSource?.Card is not { } card || dragSource.Scope != Scope || OverlayOpen || !CanCommitCardDrag) return null;
-        return match.Decision.Intent is DecisionIntent.Attack or DecisionIntent.Block
+        return match.Decision.Payload is AttackPayload or BlockPayload
             ? InteractionController.Assign(match, card.CombatId, target?.Card == null ? target?.PlayerId : null, target?.Card?.CombatId)
             : TableWorld.CanPlayAt(pointer) && (target == null || target.Card != null) ? PlayDragCommand(card, dragSource.Zone) : null;
     }
@@ -125,12 +135,19 @@ internal sealed partial class TableApplication
         if ((target == null || target.Card != null) && PlacementDropChoice()) { OpenHandPlacement(dragSource!.Card!); return true; }
         if ((target == null || target.Card != null) && dragSource is { Card: { } card } source
             && TableWorld.CanPlayAt(pointer) && OpenDraggedPlayChoices(card, source.Zone)) return true;
-        if (DropReply(target) is not { } reply) return false;
-        Send(reply); return true;
+        if (DropReply(target) is not { } reply)
+            return (target == null || target.Card != null) && TableWorld.CanPlayAt(pointer) && RetainReleasedPlay();
+        var submittedSource = dragSource!;
+        if (!Send(reply)) return false;
+        if (submittedSource.Zone is not ("Battlefield" or "Stack") && ReaderActionContext(submittedSource.Card!) is { } context)
+            releasedCardPlay = new(Scope, context, submittedSource.Zone!,
+                new(pointer.ToVector2() + new Vector2(0, -72), new(132, 185), -.025f, Elevation: 18), true);
+        return true;
     }
     private void Scroll(int direction)
     {
         if (ScrollSourceReader(direction)) return;
+        if (ZoomCardCollection(direction)) return;
         if (ScrollFocusedBattlefield(direction)) return;
         if (chatOpen && ChatBounds.Contains(pointer)) {
             if (chatPeople) return;
@@ -161,10 +178,9 @@ internal sealed partial class TableApplication
         if (overlay == "ability-auto-pass") { priorityAbilityTextPage = Math.Max(0, priorityAbilityTextPage - direction); return; }
         if (overlay == "history") { historyPage = Math.Max(0, historyPage - direction); return; }
         if (zoneName != null) { zonePage = Math.Max(0, zonePage - direction); return; }
-        if (DecisionModal && match?.Decision?.Kind == "allocate" && allocationDetail >= -1) { allocationRulesPage = Math.Max(0, allocationRulesPage - direction); return; }
-        if (DecisionModal) { choicePage = Math.Max(0, choicePage - direction); return; }
+        if (DecisionModal && decisions.Allocation?.Inspection != null) { decisions.Allocation!.Inspection!.RulesPage = Math.Max(0, decisions.Allocation.Inspection.RulesPage - direction); return; }
+        if (DecisionModal) { decisions.Page = Math.Max(0, decisions.Page - direction); return; }
         var hit = HitAt(pointer);
         if (hit?.Zone == "Battlefield") return;
-        if (hit?.Zone == "Hand" || pointer.Y > 760) handPage = Math.Max(0, handPage - direction);
     }
 }

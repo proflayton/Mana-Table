@@ -11,11 +11,11 @@ public static class HandPlacements
 
     public static PriorityAbility[] Options(GameSnapshot state, Card clicked)
     {
-        if (state.Status != "playing" || state.Decision is not { Kind: "input", Intent: DecisionIntent.Priority } decision
+        if (state.Status != "playing" || state.Decision is not { Payload: PriorityPayload priority } decision
             || decision.Id.Length == 0 || state.Viewer is not { } viewer) return [];
         var card = viewer.Zone("Hand").Cards.FirstOrDefault(c => CardViews.Same(c, clicked));
         if (card is not { FaceDown: false, Key.Length: > 0 }) return [];
-        return decision.PriorityAbilities.Where(a => GameCommandPermissions.Allows(state,
+        return priority.Abilities.Where(a => GameCommandPermissions.Allows(state,
                 new PlaceFromHand(state.Id, decision.Id, card.Key, a.Id)))
             .DistinctBy(a => a.Id).ToArray();
     }
@@ -32,8 +32,4 @@ public static class HandPlacements
         int count = Options(state, card).Sum(a => a.HandPlacementLimit);
         return count == 0 ? "" : count + (count == 1 ? " placement available" : " placements available");
     }
-
-    public static string LandPlayState(Player player) => player.LandPlaysUsed is not { } used ? ""
-        : player.LandPlayLimit is { } limit ? $"Land plays: {Math.Max(0, used)}/{Math.Max(0, limit)} used"
-        : $"Land plays: {Math.Max(0, used)} used · unlimited";
 }

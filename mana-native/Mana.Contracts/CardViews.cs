@@ -40,8 +40,12 @@ public static class CardViews
         => CurrentFace(state, reported, occurrenceId) ?? reported;
     public static Card? Choice(GameSnapshot? state, Choice choice)
         => CurrentFace(state, choice.Card, choice.CardId) ?? choice.Card;
+    public static Card? Recipient(GameSnapshot? state, AllocationRecipient recipient)
+        => CurrentFace(state, recipient.Card, recipient.CardId) ?? recipient.Card;
+    public static Card Disclosed(GameSnapshot? state, LibraryChoice face)
+        => CurrentFace(state, face.Card, face.CardId) ?? face.Card;
     public static Card? Source(GameSnapshot? state, Decision decision)
-        => CurrentFace(state, decision.SourceCard, decision.SourceCardId) ?? decision.SourceCard;
+        => decision.Context.Source is { } source ? CurrentFace(state, source.Card, source.CardId) ?? source.Card : null;
 
     private static Card? CurrentFace(GameSnapshot? state, Card? reported, string occurrenceId)
     {
@@ -54,9 +58,18 @@ public static class CardViews
         .Concat(state.Stack.Where(s => s.Card != null).Select(s => (Card: s.Card!, Zone: "Stack")));
     public static IEnumerable<Card> Visible(GameSnapshot state) => Located(state).Select(p => p.Card)
         .Concat(state.Players.SelectMany(p => p.Zones).Where(z => z.TopCard != null).Select(z => z.TopCard!))
-        .Concat(state.Decision?.Choices.Where(c => c.Card != null).Select(c => c.Card!) ?? [])
-        .Concat(state.Decision?.LibraryCards.Select(c => c.Card) ?? [])
-        .Concat(state.Decision?.SourceCard is { } source ? [source] : []);
+        .Concat(DecisionFaces(state.Decision?.Payload))
+        .Concat(state.Decision?.Context.Source?.Card is { } source ? [source] : []);
+    private static IEnumerable<Card> DecisionFaces(DecisionPayload? payload) => payload switch {
+        OptionsPayload options => ChoiceFaces(options.Selection),
+        OrderingPayload order => ChoiceFaces(order.Selection),
+        AbilityChoicePayload ability => ChoiceFaces(ability.Selection),
+        RevealPayload reveal => reveal.Cards.Select(face => face.Card),
+        AllocationPayload allocation => allocation.Recipients.Where(recipient => recipient.Card != null).Select(recipient => recipient.Card!),
+        _ => []
+    };
+    private static IEnumerable<Card> ChoiceFaces(ChoiceSelection selection) => selection.Choices.Where(choice => choice.Card != null)
+        .Select(choice => choice.Card!).Concat(selection.Disclosures.Select(face => face.Card));
     public static string Identity(Card card) => !string.IsNullOrEmpty(card.VisualId) ? card.VisualId : !string.IsNullOrEmpty(card.CombatId) ? card.CombatId : card.Key;
     public static bool Same(Card a, Card b) => !string.IsNullOrEmpty(Identity(a)) && Identity(a) == Identity(b);
 }
