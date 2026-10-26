@@ -72,13 +72,25 @@ public final class MatchActivity {
     }
 
     synchronized String visualId(CardView card) {
-        if (!visible(card)) { if (card != null && visibleIds.remove(card) != null) identities.forget(card); return null; }
+        if (!visible(card)) {
+            String priorId = card == null ? null : visibleIds.remove(card);
+            if (priorId != null) identities.forget(card, priorId);
+            return null;
+        }
         String id = identities.id(card);
         visibleIds.put(card, id);
         return id;
     }
 
-    synchronized void refreshVisibility() { visibleIds.keySet().removeIf(card -> { if (visible(card)) return false; identities.forget(card); return true; }); }
+    synchronized void refreshVisibility() {
+        visibleIds.entrySet().removeIf(entry -> {
+            if (visible(entry.getKey())) return false;
+            // A different audience may already have observed a newer private
+            // occurrence. Revoking our old view cannot erase that generation.
+            identities.forget(entry.getKey(), entry.getValue());
+            return true;
+        });
+    }
 
     private boolean visible(CardView card) {
         return card != null && card.getZone() != null

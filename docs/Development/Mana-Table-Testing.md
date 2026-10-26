@@ -57,6 +57,13 @@ an offered proposal does not imply acceptance or resolution. The graphics-free
 client suite tests replay roundtrips, scope and knowledge isolation, exhaustive
 small mana assignments, and controlled tactical/effect-graph expectations.
 
+On failure, `private-failure-manifest.json` identifies the raw owned observation
+batch, exact seat scopes, stage and original exception before teardown. It labels
+`last-before-mechanical-failure.json` as the last policy-evaluated request, which
+can precede a frame-validation failure. The raw batch is diagnostic data without
+execution authority; it can reproduce contract validation without replaying a
+command. Secondary artifact errors do not replace the original failure.
+
 Campaign disclosure checks compare the bot's private-zone windows with its
 current disclosed faces and action permissions. They are consistency checks,
 not an independent proof that the provider correctly granted every entitlement.

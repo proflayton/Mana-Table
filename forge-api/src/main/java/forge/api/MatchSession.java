@@ -1043,6 +1043,8 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
 
     private void publish(Pending prompt) { pending = prompt; table.publish(); }
 
+    void refreshVisibility() { activity.refreshVisibility(); }
+
     void publishView(long boardRevision) {
         // Failure retains the last published board. The table aborts rules work
         // and releases waiters without manufacturing player concessions.
@@ -1055,7 +1057,6 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
         Pending prompt = pending;
         if (prompt != null) { prompt.cards.clear(); prompt.attackPairs.clear(); prompt.blockPairs.clear(); }
         var view = game.getView();
-        activity.refreshVisibility();
         var players = new ArrayList<Object>();
         var registeredPlayers = game.getRegisteredPlayers();
         var allPlayers = registeredPlayers.stream().map(Player::getView).toList();

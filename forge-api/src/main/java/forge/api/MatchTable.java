@@ -160,6 +160,11 @@ final class MatchTable implements ManaTableSession, AutoCloseable {
     void publish() {
         game.getAction().withState(() -> { synchronized (gate) {
             long revision = ++boardRevision;
+            // Rules rollback can restore a card directly to a hidden zone
+            // without a movement event. Revoke every audience's previous view
+            // before any seat allocates IDs for this publication, regardless
+            // of which seat owns the newly private occurrence.
+            for (var seat : seats.values()) seat.refreshVisibility();
             for (var seat : seats.values()) seat.publishView(revision);
             refreshDecisionState();
             if (automatedOnly) spectatorState = SpectatorObservation.project(this, revision, spectatorError);

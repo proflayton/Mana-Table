@@ -15,7 +15,7 @@ final class MatchIdentities {
     private final Map<String, String> effects = new LinkedHashMap<>();
     private final Map<SpellAbility, String> pendingEffects = new WeakHashMap<>();
     synchronized String id(CardView card) { return ids.computeIfAbsent(card, ignored -> UUID.randomUUID().toString()); }
-    synchronized void forget(CardView card) { ids.remove(card); }
+    synchronized void forget(CardView card, String priorId) { ids.remove(card, priorId); }
     synchronized String concealed(CardView card) { return concealed.computeIfAbsent(card, ignored -> UUID.randomUUID().toString()); }
     // The engine owns these abilities through targeting and stacking. Weak keys
     // preserve the same opaque identity without retaining finished abilities.

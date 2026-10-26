@@ -38,6 +38,12 @@ reentrant hold while waiting and restore them afterward. Copying several live
 views under the adapter gate alone is insufficient: a mana task can otherwise
 change a card between two audience projections. Other upstream hosts retain
 their default behavior unless they opt in and instrument their waits.
+Publication first revokes lost visibility for all seat audiences, then allocates
+identities for their new snapshots and the spectator. A stale audience can revoke
+only the identity generation it previously observed. This ordering also covers
+rules rollback which restores a card to a hidden zone without a movement event;
+later source catalogs and effect graphs must reference that same published
+occurrence. Historical activity keeps its copied event-time identities.
 
 Source native composition now owns an `AiTableHost` and a baseline
 `CasualCommanderPolicy`. A private `IAutomatedSeatProvider` supplies separately

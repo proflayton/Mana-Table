@@ -32,6 +32,8 @@ internal sealed class AiCampaignDiagnostics : IDisposable
     internal HashSet<AiTask> Tasks { get; } = [];
     internal int Accepted { get; private set; }
     internal List<string> ReplayCases { get; } = [];
+    private readonly List<string> diagnosticErrors = [];
+    private bool rawObservationsCaptured;
 
     internal AiCampaignDiagnostics(string directory)
     {
@@ -207,11 +209,55 @@ internal sealed class AiCampaignDiagnostics : IDisposable
         ReplayCases.Add(relative);
     }
 
-    internal void PreserveFailure() { if (latestCase != null) ExportCase("last-before-mechanical-failure", latestCase); }
+    internal Exception? PreserveObservations(ImmutableArray<AutomatedSeatObservation> observations)
+    {
+        try {
+            File.WriteAllText(Path.Combine(directory, "private-final-observations.json"), JsonSerializer.Serialize(observations));
+            rawObservationsCaptured = true;
+            return null;
+        } catch (Exception error) {
+            diagnosticErrors.Add("raw-observation-capture: " + error);
+            return error;
+        }
+    }
+
+    internal void PreserveFailure(Exception error, string stage, int completedSteps,
+        ImmutableArray<AutomatedSeatObservation> observations)
+    {
+        try { if (latestCase != null) ExportCase("last-before-mechanical-failure", latestCase); }
+        catch (Exception secondary) { diagnosticErrors.Add("last-policy-request-export: " + secondary); }
+        try {
+            File.WriteAllText(Path.Combine(directory, "private-failure-manifest.json"),
+                DescribeFailure(error, stage, completedSteps, observations, latestCase, rawObservationsCaptured, diagnosticErrors).GetRawText());
+        } catch (Exception secondary) { diagnosticErrors.Add("failure-manifest-export: " + secondary); }
+    }
+
+    internal static JsonElement DescribeFailure(Exception error, string stage, int completedSteps,
+        ImmutableArray<AutomatedSeatObservation> observations, AiDecisionReplayCase? lastPolicyRequest,
+        bool rawCaptured, IEnumerable<string> secondaryErrors) => JsonSerializer.SerializeToElement(new {
+            formatVersion = 1, audience = "host-private", kind = "raw-observation-failure-context", authority = "none",
+            stage, completedSteps, exception = error.ToString(),
+            rawObservation = new {
+                file = "private-final-observations.json", captured = rawCaptured, capturePhase = "before-teardown",
+                role = "last-completed-owned-observation-batch; not an executable command or policy replay",
+                scopes = observations.Select(item => new { seatId = item.SeatId, gameId = item.State.Id,
+                    viewerId = item.State.ViewerId, decisionId = item.State.Decision?.Id, revision = item.State.Revision,
+                    boardRevision = item.State.BoardRevision, offerVersion = item.Domain.Version })
+            },
+            lastPolicyRequest = lastPolicyRequest == null ? null : new {
+                file = Path.Combine("private-replays", "last-before-mechanical-failure.json"),
+                role = "last-policy-evaluated-request; not the rejected-observation artifact",
+                note = "This request may precede a frame-validation failure. Use the raw observation batch to reproduce validation.",
+                lastPolicyRequest.Id, gameId = lastPolicyRequest.State.Id, seatId = lastPolicyRequest.State.ViewerId,
+                decisionId = lastPolicyRequest.State.Decision?.Id, revision = lastPolicyRequest.State.Revision,
+                offerVersion = lastPolicyRequest.Domain.Version
+            },
+            secondaryDiagnosticErrors = secondaryErrors.ToArray()
+        });
 
     internal object Summary() => new { OfferedEffects, SelectedEffects, BoardWitnesses, DecisionWitnesses, ResolvedSources,
         Tasks, Accepted, Commands, TargetRecipients, UnmodeledOperationSources, findings = Findings,
-        privateReplayCases = ReplayCases,
+        privateReplayCases = ReplayCases, diagnosticErrors,
         missingBoardWitnesses = new[] { "creature-battlefield", "token-battlefield", "counter-change", "attachment-on-battlefield",
             "declared-combat", "reported-damage", "multiple-stack-targets" }.Except(BoardWitnesses).ToArray(),
         interpretation = "Offers, chosen commands, authoritative board/event witnesses and review findings are separate. A resolved source does not prove every intended effect occurred. TargetRecipients counts player choices and attacks only; their distribution does not establish social quality." };

@@ -14,6 +14,25 @@ import org.testng.annotations.Test;
 import static org.testng.Assert.*;
 
 public class MatchActivityTest {
+    @Test public void aLateAudienceRevocationCannotEraseANewerAuthorizedOccurrence() {
+        var owner = new PlayerView(1, null); var observer = new PlayerView(2, null);
+        var card = publicCard(207, "Private occurrence", owner);
+        var identities = new MatchIdentities();
+        var own = new MatchActivity(owner, identities); var other = new MatchActivity(observer, identities);
+        String publicId = own.visualId(card);
+        assertEquals(other.visualId(card), publicId);
+        // A permission can end without a movement event, just as cast rollback
+        // restores a zone directly. The two audiences need not refresh together.
+        card.set(TrackableProperty.Zone, ZoneType.Library);
+        own.refreshVisibility();
+        card.set(TrackableProperty.PlayerMayLook, new forge.trackable.TrackableCollection<>(owner));
+        String privateId = own.visualId(card);
+        assertNotEquals(privateId, publicId, "Concealment still revokes the previously public occurrence");
+        other.refreshVisibility();
+        assertNull(other.visualId(card));
+        assertEquals(own.visualId(card), privateId, "A stale observer must not revoke a different, newly authorized occurrence");
+    }
+
     @Test public void actualDamageKeepsItsOwnRecipientAndPublicOccurrenceAcrossDeparture() {
         var viewer = new PlayerView(1, null); var opponent = new PlayerView(2, null);
         var source = publicCard(201, "Damage source", viewer);

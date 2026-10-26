@@ -136,6 +136,21 @@ internal static class AiEngineCampaign
                 && !AiCampaignVisibility.PrivateWindowsAreDisclosed(look with {
                     Players = [Player(0, [], [top, face], top), look.Players[1], look.Players[2]] }),
             "An explicit top disclosure authorizes exactly its single occurrence and no remainder of the library");
+        var prior = new AiDecisionReplayCase(1, "previous-policy-request", "test-policy", revealed,
+            DecisionActionDomain.None, new(), new([], []), 1);
+        var rejected = revealed with { Revision = 11, Decision = revealed.Decision! with { Id = "rejected-observation" } };
+        var raw = new AutomatedSeatObservation(0, rejected,
+            DecisionActionDomain.None with { Version = 17, Sources = [new(rejected.Id, rejected.Decision!.Id, "current-key", "stale-occurrence", [])] }, new());
+        var manifest = AiCampaignDiagnostics.DescribeFailure(new InvalidOperationException("original validation failure"),
+            "host-step", 7, [raw], prior, true, ["secondary diagnostic I/O failure"]);
+        check(manifest.GetProperty("authority").GetString() == "none"
+                && manifest.GetProperty("rawObservation").GetProperty("scopes")[0].GetProperty("decisionId").GetString() == "rejected-observation"
+                && manifest.GetProperty("rawObservation").GetProperty("scopes")[0].GetProperty("offerVersion").GetInt64() == 17
+                && manifest.GetProperty("lastPolicyRequest").GetProperty("decisionId").GetString() == "disclosure"
+                && manifest.GetProperty("lastPolicyRequest").GetProperty("role").GetString()!.Contains("not the rejected-observation")
+                && manifest.GetProperty("exception").GetString()!.Contains("original validation failure")
+                && manifest.GetProperty("secondaryDiagnosticErrors")[0].GetString() == "secondary diagnostic I/O failure",
+            "Failure evidence distinguishes a raw rejected observation from the preceding policy request without granting authority or replacing the original error");
     }
 
     private static async Task<AiCampaignResult> Match(ForgeEngine engine, string directory, int index,
@@ -154,15 +169,19 @@ internal static class AiEngineCampaign
         var elapsed = Stopwatch.StartNew();
         GameSnapshot? state = null;
         int steps = 0, comparisons = 0;
-        string stop = "not-started", lastFacts = "";
+        string stop = "not-started", lastFacts = "", stage = "start-simulation";
         string? failure = null;
+        Exception? primaryFailure = null;
         var developed = new HashSet<int>();
         try {
             state = await engine.StartSimulationAsync(decks);
             while (true) {
+                stage = "host-step";
                 await host.StepAsync();
+                stage = "observe-public";
                 state = await engine.ObserveSimulationAsync() ?? throw new InvalidDataException("The campaign lost its public observation.");
                 steps++;
+                stage = "validate-public-and-private-observations";
                 if (host.LastFault != null) throw new InvalidOperationException("Host fault: " + JsonSerializer.Serialize(host.LastFault));
                 if (state.Status == "error") throw new InvalidOperationException(state.Error ?? "Rules engine failure.");
                 if (state.ViewerId != -1 || state.Decision != null
@@ -182,10 +201,12 @@ internal static class AiEngineCampaign
                     }
                 }
                 string facts = AiWholeSeatEngineCheck.ReplayFacts(state);
+                stage = "record-public-checkpoint";
                 if (facts != lastFacts) {
                     lastFacts = facts;
                     await trace.WriteLineAsync(JsonSerializer.Serialize(new { step = steps, elapsedMilliseconds = elapsed.Elapsed.TotalMilliseconds, state }));
                 }
+                stage = "check-continuation";
                 if (state.Status == "finished") { stop = "natural-outcome"; break; }
                 if (state.Turn >= limits.Turns) { stop = "turn-budget"; break; }
                 if (elapsed.Elapsed >= limits.MatchTime) {
@@ -194,12 +215,21 @@ internal static class AiEngineCampaign
                 }
                 await Task.Delay(1);
             }
-        } catch (Exception error) { stop = "mechanical-failure"; failure = error.ToString(); evidence.PreserveFailure(); }
+        } catch (Exception error) { stop = "mechanical-failure"; failure = error.ToString(); primaryFailure = error; }
         finally {
-            File.WriteAllText(Path.Combine(directory, "private-final-observations.json"), JsonSerializer.Serialize(provider.Last));
+            var captureError = evidence.PreserveObservations(provider.Last);
+            if (captureError != null && primaryFailure == null) {
+                stage = "capture-private-observations"; stop = "mechanical-failure";
+                primaryFailure = captureError; failure = captureError.ToString();
+            }
+            if (primaryFailure != null) evidence.PreserveFailure(primaryFailure, stage, steps, provider.Last);
             if (state != null) {
                 try { await engine.StopSimulationAsync(state.Id); }
-                catch (Exception error) { stop = "mechanical-failure"; failure = (failure == null ? "" : failure + "\n") + "Simulation teardown: " + error; }
+                catch (Exception error) {
+                    stop = "mechanical-failure";
+                    failure = (failure == null ? "" : failure + "\n") + "Simulation teardown: " + error;
+                    if (primaryFailure == null) evidence.PreserveFailure(error, "stop-simulation", steps, provider.Last);
+                }
             }
         }
         var result = new AiCampaignResult(index, stop, failure, state?.Turn ?? 0, steps, developed.Count,
