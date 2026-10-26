@@ -100,7 +100,7 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
     }
 
     private String gameResult() {
-        if (!game.isGameOver() || game.getOutcome() == null) return null;
+        if (error != null || !game.isGameOver() || game.getOutcome() == null) return null;
         var outcome = game.getOutcome();
         return viewer.getHasLost() ? "Defeat" : outcome.isDraw() ? "Draw"
                 : outcome.getWinningLobbyPlayer() == human.getLobbyPlayer() ? "Victory" : "Defeat";
@@ -869,6 +869,9 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
     private void publish(Pending prompt) { pending = prompt; table.publish(); }
 
     void publishView(long boardRevision) {
+        // Failure retains the last published board. Engine shutdown concedes
+        // seats to release waiters; those cleanup mutations are not game losses.
+        if (error != null) return;
         if (viewer.getHasLost() || game.isGameOver()) {
             Pending old = pending;
             pending = null;
@@ -1184,6 +1187,7 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
             pending = null;
             var next = new LinkedHashMap<>(latest);
             next.put("revision", ++revision); next.put("status", "error"); next.put("error", failure); next.put("prompt", null);
+            next.put("result", null);
             next.put("priorityPlayerId", null); next.put("decisionOwnerId", null); next.put("actionClass", "error");
             latest = Collections.unmodifiableMap(next);
             notifyPlaytest();

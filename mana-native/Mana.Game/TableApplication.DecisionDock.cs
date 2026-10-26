@@ -46,8 +46,10 @@ internal sealed partial class TableApplication
         decisionPanelBounds = new(1240, DecisionY(712), 360, 188);
         if (DrawRecoveryDock(state)) return;
         if (state.Status is "finished" or "error") {
-            canvas.Text(state.Result ?? "Game stopped", 1267, DecisionY(730), Gold, 1.17f, 295, 2, true);
-            canvas.Text(state.Error ?? "You can still inspect the final battlefield.", 1267, DecisionY(767), Muted, .63f, 294, 2);
+            bool interrupted = state.Status == "error";
+            canvas.Text(interrupted ? "Game interrupted" : state.Result ?? "Game stopped", 1267, DecisionY(730), Gold, 1.17f, 295, 2, true);
+            canvas.Text(interrupted ? "The rules engine stopped. This game could not finish."
+                : "You can still inspect the final battlefield.", 1267, DecisionY(767), Muted, .63f, 294, 3);
             if (localMatch || state.Status == "finished") Button("return", IsWorkshopMatch ? "Return to tune" : localMatch ? "Return to setup" : "Return to lobby", 1266, DecisionY(828), 296, new MatchIntent.ReturnFromMatch(), !busy, true, 47);
             else Button("error-leave", "Leave table", 1266, DecisionY(828), 296, new MatchIntent.OpenView(MatchView.LeaveTable), !busy, true, 47);
             return;

@@ -118,6 +118,27 @@ public class DeckTokensTest {
         }
     }
 
+    @Test public void ownerlessTokenPreviewsDoNotRequireOrConsumeADeckPrintingChoice() throws Exception {
+        String script = script();
+        var printings = StaticData.instance().getAllTokens().getPrintings(script);
+        var configured = deck();
+        configured.setTokenPrintings(Map.of(script, TokenDb.printingId(script, printings.get(1))));
+        try (var table = new MatchTable("Constructed", List.of(MatchTable.human(configured, "Constructed", "One"),
+                MatchTable.human(deck(), "Constructed", "Two")), RESOURCES, Files.createTempDirectory("token-preview-"))) {
+            var owner = table.game.getPlayers().get(0);
+            var source = CardFactory.getCard(StaticData.instance().getCommonCards().getCard("Felidar Retreat"), owner, table.game);
+            var ability = AbilityFactory.getAbility("DB$ Token | TokenScript$ " + script + " | TokenAmount$ 1", source);
+            var preview = TokenInfo.getProtoType(script, ability, null);
+            assertNotNull(preview, "Creature-type ranking deliberately requests a prototype without an owner");
+            assertTrue(preview.getType().hasSubtype("Cat"));
+            assertNull(preview.getOwner());
+            var actual = TokenInfo.getProtoType(script, ability, owner);
+            assertEquals(actual.getImageKey(), printings.get(1).getImageKey(false),
+                    "An ownerless preview must not replace the real player's pinned token artwork");
+            assertEquals(actual.getOwner(), owner);
+        }
+    }
+
     private static JsonObject args(Object... pairs) {
         var result = new JsonObject();
         for (int i = 0; i < pairs.length; i += 2) {

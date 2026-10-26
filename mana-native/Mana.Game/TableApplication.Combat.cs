@@ -147,13 +147,14 @@ internal sealed partial class TableApplication
     private void DrawResult()
     {
         var state = match!;
-        ModalFrame(state.Result ?? "Game finished", new MatchIntent.CloseView(), "Inspect table");
-        canvas.CenterText(state.Result == "Victory" ? "VICTORY" : state.Result == "Defeat" ? "DEFEAT" : "GAME COMPLETE", new(300, 177, 1000, 89), state.Result == "Victory" ? Gold : Ink, 2.6f, true, true);
+        bool interrupted = state.Status == "error";
+        ModalFrame(interrupted ? "Game interrupted" : state.Result ?? "Game finished", new MatchIntent.CloseView(), "Inspect table");
+        canvas.CenterText(interrupted ? "GAME INTERRUPTED" : state.Result == "Victory" ? "VICTORY" : state.Result == "Defeat" ? "DEFEAT" : "GAME COMPLETE", new(300, 177, 1000, 89), !interrupted && state.Result == "Victory" ? Gold : Ink, 2.6f, true, true);
         canvas.CenterText($"{selectedDeckDetails?.Format ?? "Commander"} · {state.Players.Length} players · Turn {state.Turn}", new(300, 276, 1000, 37), Muted, .85f);
         for (int i = 0; i < state.Players.Length; i++) {
             var player = state.Players[i]; int y = 353 + i * 70;
             canvas.Text(player.Id == state.ViewerId ? "You" : player.Name, 263, y, Ink, 1, 702, 1, true);
-            canvas.Text(player.Eliminated ? TimedOut(player.Id) ? "Timed out" : "Eliminated" : "Remaining", 973, y + 3, Muted, .8f, 195, 1);
+            canvas.Text(interrupted ? "Not completed" : player.Eliminated ? TimedOut(player.Id) ? "Timed out" : "Eliminated" : "Remaining", 973, y + 3, Muted, .8f, 195, 1);
             canvas.Text(player.Life + " life", 1183, y, Gold, .9f, 173, 1, true);
             canvas.Line(new(260, y + 47), new(1341, y + 47), Muted * .17f);
         }

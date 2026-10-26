@@ -188,6 +188,89 @@ design inference, not a claim about complete proprietary implementations:
   supplies a comparable headless input/state loop and explicit cloning/RNG policy.
   It is an independent simulator, not Hearthstone's proprietary engine.
 
+## Action execution: the next boundary migration
+
+The organizing unit is an **execution occurrence**: one particular play,
+activation, trigger or rules action progressing through the engine. A printed
+ability, a stack entry, an answer capability and a rendered card are different
+objects. The stack is one part of that execution. Mana abilities, paying costs,
+replacement effects and state-based actions also need representation when they
+do not use the stack.
+
+This is the migration target, not an assertion that the existing protocol already
+implements it. Inspection on 25 October found separate identities for
+`MatchIdentities.pendingEffect(SpellAbility)`, numeric stack instances, and
+`GameEventCause`/`MatchIdentities.effect(String)`. Only counter-change events
+currently carry that last cause; ordinary movement, damage and resolution feed
+entries do not form a complete execution trace. Typed decisions and immutable
+snapshots are useful existing boundaries, but they do not supply the missing
+relationship by themselves. Do not add a second client-side system that guesses
+these relationships from names, prompt prose, nearby events or final totals.
+
+The provider must publish the following meanings from their actual rules owners:
+
+| Meaning | Required relationship |
+| --- | --- |
+| Execution | Game-scoped occurrence ID, action kind, actor and authorized source reference. Repeated activations and copied triggers get separate occurrences. |
+| Current step | Preparation, target/mode choice, cost payment, waiting on the stack, resolution, or a terminal result. These are branching transitions, not a mandatory linear list for every action. |
+| Decision | Exact step/execution reference plus the existing current answer scope, candidates, limits and legal alternatives. Execution identity grants no command authority. |
+| Stack entry | Exact execution reference, controller, targets and response window. Joining or leaving the stack does not create an unrelated action. |
+| Cause | A reported parent execution/event and relationship, such as a trigger caused by an entry. Cost sub-actions and mana activations can nest; unrelated pending stack entries are not their parents. |
+| Committed change | Ordered event-time old/new values, affected occurrences and producing execution/step. Preserve simultaneous groups and distinguish planned values from results after replacement or prevention. |
+| Completion | Resolved, declined, cancelled, countered or failed, as applicable. Transport shutdown and engine interruption are separate from rules victory/defeat. |
+
+Capture transitions on the rules thread at play/activation setup, cost ownership,
+trigger creation, stack insertion/resolution/removal and mutation commit. Preserve
+the relationship across ability copies and reuse; a permanent's identity or a
+random ID generated independently for each mutation cannot stand in for an
+execution. Viewer filtering happens before publication, including causal links,
+private decisions and historical source faces. Observation order and revision
+remain independent of animation time. Reconnection establishes a baseline;
+replaying retained history must not replay commands or fabricate unseen steps.
+
+`Mana.Contracts` will own the immutable, provider-neutral projection. `Mana.Forge`
+translates actual engine execution into it. `Mana.Client` admits ordered
+observations and current capabilities. `Mana.Game`/`Mana.Renderer` derive source
+emphasis, legal target gestures, travel, counter/resource changes and camera
+framing from that same projection. They retain local inspection and timing only.
+The UI should not display the execution as a list of internal steps or another
+explanatory panel. The player's supplied Arena examples show the intended
+surface: a source, affected cards/players, live state and a clear current gesture.
+
+The first migration should follow one real activation through source choice,
+mana payment, counter payment, stack insertion, a response, resolution and its
+result. Extend that same journey to cancellation, a copied/repeated trigger and
+a nested mana activation. Canonical traces must execute the rules engine and
+feed the production presentation path; authored snapshots alone cannot prove
+the relationship. Keep those focused journeys fast. A state/trace assertion can
+verify authority and ordering, while human review separately judges readability.
+Remove superseded identity and inference paths as each slice migrates rather
+than maintaining a parallel presentation protocol.
+
+This design inference follows the inspected
+[Arena rules-engine account](https://magic.wizards.com/en/news/mtg-arena/on-whiteboards-naps-and-living-breakthrough)
+(rules processing and finalized legal actions) and
+[HearthSim's documented nested causal blocks](https://hearthsim.info/docs/gamestate-protocol/#blocks)
+(state changes alone do not express why they happened). The latter is independent
+protocol research, not Blizzard's description of its private implementation.
+Neither source establishes Mana Table's implementation or validates its UX.
+
+### Failure and rules-query boundaries
+
+The reported interrupted game exposed two concrete boundary violations. Creature
+type ranking deliberately constructs ownerless token prototypes, but deck-token
+art selection dereferenced their nonexistent owner. Rules-only prototypes now
+bypass deck cosmetics and per-game artwork pins. A query cannot choose the art
+of a later actual token. A real creature-type land-entry journey covers the path.
+
+`MatchSession.fail` retains its last synchronized board with no rules result.
+Finalizer concessions release engine waiters, but cannot overwrite that board or
+become defeat. Native error presentation also overrides a stale legacy defeat
+and allows local battlefield inspection. The stopped rules thread cannot resume
+that game. Technical details remain in the engine log rather than becoming its
+outcome label. This fixes the failure boundary; it does not implement the full
+execution projection described above.
+
 ## Deck and pregame journey ownership
 
 Home and pregame share a deck stage rather than a welcome page followed by a

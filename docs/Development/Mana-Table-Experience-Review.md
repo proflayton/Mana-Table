@@ -122,6 +122,45 @@ does not establish that a person can understand or use the screen.
     the client thinks the wanted card is elsewhere; searching and shuffling are
     still engine actions. Reading a card never chooses one of these alternatives.
 
+14. **Model the action's execution before presenting it.** Preparation, costs,
+    choices, triggers, response windows, resolution and resulting changes belong
+    to one engine-reported causal model. The stack is part of it; actions that
+    bypass the stack still have a lifecycle. Derive spatial feedback and current
+    gestures from that model instead of inferring the journey from prose or
+    publishing unrelated snapshots with extra explanatory labels. Keep answer
+    capabilities, historical facts and local animation state distinct. The
+    [architecture migration](Mana-Table-Architecture.md#action-execution-the-next-boundary-migration)
+    records the current gaps and the first real-engine journey to migrate.
+
+## Paper table placement study: 25 October 2026
+
+The player's cropped left-side battlefield could not communicate which seat
+controlled its cards. The code investigation found separate coordinates for
+role lanes (`SharedTableStudy`), portrait/command/piles (`SeatGeometry`) and
+camera eligibility (`BoardView`, currently battlefield only). Merely rotating
+faces does not join those disconnected groups into a player's physical space.
+
+Primary reference: Tolarian Community College's
+[Shuffle Up & Play 94](https://www.youtube.com/watch?v=qZZgj9je0BA), sampled from
+its actual gameplay storyboard sheets around 9, 24 and 40 minutes. These were
+sampled stills, not a review of the entire moving sequence. The tan/red playmat
+views show resources near the player's hands, permanents ahead, deck/piles on a
+flank, cards facing the controller, and physical mat edges separating adjacent
+players. Resource groups can overlap by state while retaining their location on
+that mat. The red-mat late-game view retains that front/back relationship as the
+number of cards grows.
+
+The intended adaptation is one player-local play area whose transform places
+its battlefield rows, resources and public piles together. The controller owns
+placement; printed ownership remains a separate rules fact. A view change should
+frame that same space rather than repack its cards or leave its piles behind.
+Hand interaction and current-decision controls can remain in screen space.
+This is a layout direction awaiting implementation and human review. Broadcast
+cuts, inserted card closeups and separate player cameras are presentation edits;
+they do not establish a continuous physical table or validate our four-seat
+camera. A small still also cannot establish tapping/dragging gestures or readable
+presentation at the extreme 480-permanent case.
+
 ## Rules faces and the counter-lab entry: 25 October 2026
 
 **Source candidate; human review pending.** The player rejected the tiny

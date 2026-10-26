@@ -37,15 +37,24 @@ The matrix uses no JVM, graphics device or network; it prints its measured runti
 Real Forge goldens use the existing `canonical-interaction` TestNG group: paid
 casting/payment, private partner search, Toothy's last-known counters and draws,
 prepared-spell casting, counter-source cost payment, Convoke assignment versus
-ordinary mana, pending versus prevented damage, combat allocation and persistent Speed. The
+ordinary mana, pending versus prevented damage, combat allocation, persistent Speed,
+and creature-type land entry with token-producing cards available for ranking. The
 partner search retains four recipient variants. These methods already run once
 in normal Java CI; grouping them adds no duplicate engine startups. The focused
 command selects their classes as well as the group so upstream modules do not
 start empty TestNG processes:
 
 ```powershell
-mvn -pl forge-api -am test '-Dgroups=canonical-interaction' '-Dtest=SourceActionsTest,PartnerChoiceExperienceTest,ToothyLeavesBattlefieldTest,CounterCostExperienceTest,PaymentCandidateExperienceTest,TargetCounterExperienceTest,PendingEffectTest,AllocationProjectionTest,PlayerStatesExperienceTest' '-Dsurefire.failIfNoSpecifiedTests=false'
+mvn -pl forge-api -am test '-Dgroups=canonical-interaction' '-Dtest=SourceActionsTest,PartnerChoiceExperienceTest,ToothyLeavesBattlefieldTest,CounterCostExperienceTest,PaymentCandidateExperienceTest,TargetCounterExperienceTest,PendingEffectTest,AllocationProjectionTest,PlayerStatesExperienceTest,MatchFailureTest' '-Dsurefire.failIfNoSpecifiedTests=false'
 ```
+
+`MatchFailureTest` also exercises engine interruption outside that canonical
+group: every seat retains its last synchronized board, has no pending answer and
+receives no defeat from cleanup concessions. `DeckTokensTest` covers ownerless
+rules prototypes followed by real deck-configured token creation. The native
+`--smoke-headless-presentation` lane covers interruption with an old engine's
+stale defeat, local card inspection and a genuine completed defeat. These are
+failure/authority checks, not approval of the outcome screen's visual design.
 
 This is a representative real-rules lane alongside enumerated coverage of the
 current interaction command variants. Neither replaces visual review of the corresponding
