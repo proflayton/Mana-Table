@@ -1,7 +1,6 @@
 using Mana.Contracts;
 using Microsoft.Xna.Framework;
 using Point = Microsoft.Xna.Framework.Point;
-using Rectangle = Microsoft.Xna.Framework.Rectangle;
 
 namespace Mana.Renderer;
 
@@ -25,7 +24,6 @@ internal static class HandLayout
                 with { EntranceDelay = Math.Min(index, 10) * .035f })
             .Where(node => CardViews.Identity(node.Card) != dragged)
             .OrderBy(node => node.Card == visible.ElementAtOrDefault(raised) ? 1 : 0).ToArray();
-        return new(hand.Length, raised < 0 ? null : CardViews.Identity(visible[raised]), cards,
-            hand.Length == 0 ? Rectangle.Empty : new(263, 864, 373, 31));
+        return new(hand.Length, raised < 0 ? null : CardViews.Identity(visible[raised]), cards);
     }
 }

@@ -300,7 +300,7 @@ your hand. The gap, zone caption and granting source distinguish them from cards
 in hand. They remain visible while permission lasts; a current action cue means
 you can start that play, not that its mana cost is paid. Click to read, then use
 the card's offered action, or drag it onto the table. Middle-click an actual
-hand/access card to unfold its collection. H or the hand count opens your hand;
+hand/access card to unfold its collection. H opens your hand;
 the access-zone caption opens the additional cards. Click a face to read it;
 middle-click or Z focuses the camera there, middle-drag moves through the spread,
 and the wheel zooms. Home returns to the overview. Escape or the return gesture

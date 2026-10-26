@@ -24,11 +24,6 @@ internal static class HandPlacementRegression
         check(reply is PlaceFromHand { GameId: "placement-game", DecisionId: "placement-prompt", Card: "prompt:forest", AbilityId: "place-forest" }
             && click.CardClick(state, forest).Reply == reply, "Blocked normal land play can use the exact projected placement through the same scoped click and drag command");
         reply!.Validate();
-        check(HandPlacements.LandPlayState(viewer) == "Land plays: 1/1 used", "A placement remains separate from the spent normal land-play allowance");
-        check(HandPlacements.LandPlayState(viewer with { LandPlayLimit = 3 }) == "Land plays: 1/3 used",
-            "Passive additional land allowances display the engine's actual limit");
-        check(HandPlacements.LandPlayState(viewer with { LandPlayLimit = null }) == "Land plays: 1 used · unlimited"
-            && HandPlacements.LandPlayState(viewer with { LandPlaysUsed = null }) == "", "Unlimited and unprojected land-play state remain distinct");
         var ignored = state with { Decision = state.Decision! with { Payload = ((PriorityPayload)state.Decision!.Payload) with { Abilities = [placement with { IgnoredUntilNextTurn = true }] } } };
         check(HandPlacements.Options(ignored, forest).Length == 1, "An Auto-pass preference does not disable a legal placement");
         var noPlacement = state with { Decision = state.Decision! with { Payload = ((PriorityPayload)state.Decision!.Payload) with { Abilities = [] } } };

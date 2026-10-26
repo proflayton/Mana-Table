@@ -46,6 +46,8 @@ does not establish that a person can understand or use the screen.
    change the playable cue when the engine permits starting that route. Reading,
    retained access and committing a current action remain separate gestures and
    states. A card's owner can differ from the player allowed to play it.
+   Keep routine hand counts, cleanup limits and land-play totals out of persistent
+   footer strips. The actual hand and contextual choices take that space.
 4. **Keep asynchronous work from disrupting interaction.** Preload authorized
    likely artwork; prioritize visible and inspected cards. A background observation
    should not flicker, disable or move an unchanged control. Retain local intent
@@ -215,8 +217,9 @@ reading state. Reduced motion switches faces directly.
 
 For collections, [Arena's hand postures and near-hand cards](https://magic.wizards.com/en/news/mtg-arena/mtg-arena-state-game-january-2021-01-21)
 provide the source-object arrangement being adapted. Middle-clicking an actual
-hand/access card opens its spread. The existing hand count (or H) and access
-zone caption provide explicit alternatives. The separate tiny fan drawing is
+hand/access card opens its spread. H and the access-zone caption provide
+alternatives. Persistent hand-count and land-play footer strips are removed,
+including the old hand-count click target. The separate tiny fan drawing is
 removed. The access layout reserves its caption before placing priority
 controls, so the new cue cannot occupy the cards' faces. Arena's smaller hand
 examples do not validate our hundreds-card camera journey; that remains a

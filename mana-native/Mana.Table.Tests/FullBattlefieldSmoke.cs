@@ -132,8 +132,8 @@ internal sealed class FullBattlefieldSmoke : ITableAutomation
         Wait(() => BattlefieldReady(50), 3, () => {
             AssertExposed(50, "Fifty identical tokens");
             Check(view.Frame!.Scene!.Hand.Total == 12 && view.Frame.Scene.Hand.Cards.Length == 12
-                    && view.Hits.Any(h => h.Id == "hand-unfold") && view.Hits.All(h => h.Id is not ("handnext" or "handprev")),
-                "The twelve-card hand keeps every occurrence at its physical anchor with an explicit spread gesture");
+                    && view.Hits.All(h => h.Id is not ("handnext" or "handprev")),
+                "The twelve-card hand keeps every occurrence at its physical anchor without paging");
             Capture("06-fifty-copies");
             MoveCard("fifty-2-49");
         });

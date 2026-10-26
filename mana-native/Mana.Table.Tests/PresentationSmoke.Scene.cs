@@ -119,9 +119,8 @@ internal static class PresentationSceneChecks
         }).ToImmutableArray() };
         var whole = TableScene.Build(state, new(-100, -100), null, null, false, CardPresentation.IsResource).Hand;
         check(whole is { Total: 24, Raised: null } && whole.Cards.Length == 24
-                && whole.Cards.Select(node => node.Id).ToHashSet().SetEquals(hand.Select(CardViews.Identity))
-                && !whole.UnfoldBounds.IsEmpty,
-            "A large hand retains every physical occurrence and an explicit way to unfold it instead of paging away cards");
+                && whole.Cards.Select(node => node.Id).ToHashSet().SetEquals(hand.Select(CardViews.Identity)),
+            "A large hand retains every physical occurrence instead of paging away cards");
         var dragging = TableScene.Build(state, new(-100, -100), null, "hand-13", false, CardPresentation.IsResource).Hand;
         var anchors = whole.Cards.ToDictionary(node => node.Id);
         check(dragging.Total == 24 && dragging.Cards.Length == 23 && dragging.Cards.All(node => node.Id != "hand-13"

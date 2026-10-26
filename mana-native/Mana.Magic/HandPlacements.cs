@@ -32,8 +32,4 @@ public static class HandPlacements
         int count = Options(state, card).Sum(a => a.HandPlacementLimit);
         return count == 0 ? "" : count + (count == 1 ? " placement available" : " placements available");
     }
-
-    public static string LandPlayState(Player player) => player.LandPlaysUsed is not { } used ? ""
-        : player.LandPlayLimit is { } limit ? $"Land plays: {Math.Max(0, used)}/{Math.Max(0, limit)} used"
-        : $"Land plays: {Math.Max(0, used)} used · unlimited";
 }

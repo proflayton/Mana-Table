@@ -735,10 +735,11 @@ internal static partial class HeadlessPresentationSmoke
             CloseReader();
             if (Frame.Scene?.Spread?.Target == collection) return;
             Fold();
-            Click(collection switch {
+            if (collection == CardCollectionTarget.Hand) {
+                Tick(new(20, 60), keys: new(Keys.H)); Tick(new(20, 60));
+            } else Click(collection switch {
                 CardCollectionTarget.AccessPacket packet => "play-access-source:" + packet.PacketId,
                 CardCollectionTarget.PublicZone zone => "zone:" + zone.PlayerId + ":" + zone.Zone,
-                _ when collection == CardCollectionTarget.Hand => "hand-unfold",
                 _ when collection == CardCollectionTarget.Access => "play-access-unfold",
                 _ => throw new InvalidOperationException("Unknown physical collection target.")
             });

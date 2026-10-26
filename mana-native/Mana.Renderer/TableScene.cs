@@ -29,7 +29,7 @@ public sealed record SceneCard(string Id, Card Card, Pose Pose, string Zone, int
     }
 }
 public sealed record PilePlan(string Zone, Pose Pose, bool Compact);
-public sealed record HandPlan(int Total, string? Raised, SceneCard[] Cards, Rectangle UnfoldBounds);
+public sealed record HandPlan(int Total, string? Raised, SceneCard[] Cards);
 
 /// <summary>A painted front and the exact public occurrences represented behind it.
 /// Membership is presentation geometry, never permission to act on a group.</summary>

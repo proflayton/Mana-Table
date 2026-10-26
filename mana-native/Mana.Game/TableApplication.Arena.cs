@@ -108,24 +108,6 @@ internal sealed partial class TableApplication
         canvas.Gradient(new(244, 785, 970, 115), Color.Transparent, new Color(8, 12, 20) * .85f);
         foreach (var node in hand.Cards) if (!SpreadContains(node.Id)) DrawSceneCard(node);
         if (hand.Total == 0) canvas.CenterText("Your hand is empty", new(455, 815, 690, 65), Muted * .6f, .86f);
-        string limit = match!.Viewer?.MaxHandSize is { } maximum ? $"Limit {maximum} at cleanup" : "No hand limit";
-        canvas.Panel(new(263, 864, 373, 31), new Color(12, 19, 27) * .95f, new Color(62, 78, 90), 4);
-        canvas.Text($"{hand.Total} cards in hand · {limit}", 274, 873, Ink, .59f, 351, 1);
-        if (HandCollectionAllowed && hand.Total > 0) {
-            var intent = new MatchIntent.ExpandCardCollection(CardCollectionTarget.Hand);
-            var bounds = hand.UnfoldBounds;
-            if (IsControlHovered("hand-unfold")) canvas.Line(new(bounds.Left + 10, bounds.Bottom - 3), new(bounds.Right - 10, bounds.Bottom - 3), Gold, 2);
-            hits.Add(new("hand-unfold", ScopeFor(intent), bounds, intent));
-        }
-        if (match.Viewer is { } viewer) {
-            int placements = HandPlacements.AllOptions(match).Sum(a => a.HandPlacementLimit);
-            string landState = string.Join(" · ", new[] { HandPlacements.LandPlayState(viewer), placements > 0
-                ? placements + (placements == 1 ? " placement available" : " placements available") : "" }.Where(s => s.Length > 0));
-            if (landState.Length > 0) {
-            canvas.Panel(new(650, 864, 480, 31), new Color(12, 19, 27) * .95f, new Color(62, 78, 90), 4);
-            canvas.Text(landState, 662, 873, Ink, .63f, 456, 1);
-            }
-        }
     }
     private static string CardIdentity(Card card) => CardViews.Identity(card);
     private void DrawSceneCard(SceneCard node)
