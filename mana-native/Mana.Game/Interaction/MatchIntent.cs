@@ -38,6 +38,8 @@ internal abstract record MatchIntent : UiIntent
     internal sealed record SubmitCommand(GameCommand Command) : MatchIntent;
     internal sealed record ConfirmDecision(bool CloseOverlay = false) : MatchIntent;
     internal sealed record CancelDecision : MatchIntent;
+    internal sealed record ConfirmTurnPass : MatchIntent;
+    internal sealed record DismissTurnPass : MatchIntent;
     internal sealed record ConfirmSelection : MatchIntent;
     internal sealed record ChooseNone(bool CollapseReader = false) : MatchIntent;
     internal sealed record ClearSelection : MatchIntent;

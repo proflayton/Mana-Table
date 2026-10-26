@@ -17,6 +17,7 @@ internal sealed partial class TableApplication
     {
         if (ActivityOpen) return DecisionDockPauseReason.Presentation;
         if (session.NeedsRecovery) return DecisionDockPauseReason.Recovery;
+        if (turnPassRequest != null) return DecisionDockPauseReason.Interaction;
         if (commandFailure && error.Length > 0) return DecisionDockPauseReason.CommandFailure;
         if (readingId != null || CardCollectionOpen || HoveredPendingReference() != null) return DecisionDockPauseReason.Inspection;
         if (OverlayOpen) return DecisionDockPauseReason.Overlay;
@@ -61,6 +62,7 @@ internal sealed partial class TableApplication
         }
 
         DrawPortraitTurnControls();
+        if (turnPassRequest != null) { DrawPortraitPriority(decisionDock); return; }
         if (DrawCounterPaymentDecision(state)) return;
         if (!SelectingActionTarget && DrawOptionalDecision(state)) return;
         if (d?.Payload is TargetSelectionPayload { Search: not null }) {

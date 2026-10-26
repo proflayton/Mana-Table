@@ -155,6 +155,7 @@ internal sealed partial class TableApplication : IDisposable
         var transition = matchPresentation.Observe(previous, state, now, boardView);
         if (transition.ScopeChanged) { ResetTableView(); tableGuideOpen = false; sceneRevealAt = now; }
         ReconcileReleasedPlay();
+        ReconcileTurnPass();
         if (state?.Status == "finished" && previous?.Status != "finished") tableGuideOpen = false;
         if (transition.Notice is { } latest) { notice = latest; noticeUntil = now + 8; }
         if (transition.Finished) { overlay = "result"; zoneName = null; }
@@ -166,6 +167,7 @@ internal sealed partial class TableApplication : IDisposable
     }
     private void PrepareDecisionSession()
     {
+        ReconcileTurnPass();
         var presentation = match == null ? null : DecisionDockPresentation.From(match, CurrentDecisionControls());
         bool changed = decisions.Observe(match, presentation?.RequiredSurface == DecisionRequiredSurface.Table);
         decisions.Presentation = presentation;
@@ -254,7 +256,9 @@ internal sealed partial class TableApplication : IDisposable
             CloseTableGuide();
         }
         if (updatesOpen && !ActivityOpen && keys.IsKeyDown(Keys.Escape) && previousKeys.IsKeyUp(Keys.Escape)) CloseAppUpdates();
-        if (escapePressed && !cancelledDrag) {
+        if (escapePressed && turnPassRequest != null) {
+            turnPassRequest = null;
+        } else if (escapePressed && !cancelledDrag) {
             CancelReleasedPlayIntent();
             bool closedReader = readingId != null;
             CollapseCardReading();
@@ -269,7 +273,7 @@ internal sealed partial class TableApplication : IDisposable
                 else if (DecisionModal) decisions.Collapsed = true;
             }
         }
-        if (!chatKeys && !textFocus && keys.IsKeyDown(Keys.Space) && previousKeys.IsKeyUp(Keys.Space) && !OverlayOpen && !CardCollectionOpen && !AbilityActionPending && !busy && match != null) {
+        if (!chatKeys && !textFocus && keys.IsKeyDown(Keys.Space) && previousKeys.IsKeyUp(Keys.Space) && !OverlayOpen && !CardCollectionOpen && !AbilityActionPending && turnPassRequest == null && !busy && match != null) {
             if (TableChoice && TableChoices.CanConfirm(match, decisions.Selections)) Send(DecisionCommands.Choose(match, decisions.Selections));
             else if (!TableChoice && CombatGuide.CanConfirm(match)) Send(DecisionCommands.Confirm(match));
         }
@@ -305,7 +309,7 @@ internal sealed partial class TableApplication : IDisposable
     }
     private void SetAutomatic(bool value) { automatic = value; preferences = preferences with { Automatic = value }; SavePreferences(); }
     private void SavePreferences() { StopQuietPriority(); session.CancelAdvance(); try { preferences.Save(profile); } catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { error = "Could not save settings: " + ex.Message; } }
-    private bool Send(DecisionCommand? command)
+    private bool Send(DecisionCommand? command, bool confirmedTurnPass = false)
     {
         if (command == null || fixture != null || session.NeedsRecovery || match?.Id != command.GameId || match.Decision?.Id != command.DecisionId) return false;
         if (AbilityActionPending) {
@@ -314,6 +318,12 @@ internal sealed partial class TableApplication : IDisposable
                 || !(choices.Length == 0 && ability.Selection.Range.Min == 0
                     || choices.Length == 1 && ability.Selection.Choices.Any(choice => choice.Index == choices[0]))) return false;
         }
+        if (!confirmedTurnPass && NeedsFirstLandConfirmation(match, command)) {
+            turnPassRequest = new(command, match.ViewerId, match.Turn, match.PhaseKey);
+            StopQuietPriority(); session.CancelAdvance();
+            return false;
+        }
+        turnPassRequest = null;
         if (command is not PassForNow) StopQuietPriority();
         CancelReleasedPlayIntent();
         error = ""; commandFailure = false;

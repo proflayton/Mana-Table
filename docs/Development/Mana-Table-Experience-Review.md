@@ -134,6 +134,22 @@ does not establish that a person can understand or use the screen.
     [architecture migration](Mana-Table-Architecture.md#action-execution-the-next-boundary-migration)
     records the current gaps and the first real-engine journey to migrate.
 
+## First-land turn confirmation: 26 October 2026
+
+**Source candidate; human review pending.** Players reported accidentally ending
+their turn before playing a land. The supplied Arena screenshots put progression
+beside the player's hand/portrait. Arena also documents
+[confirming a consequential ward target](https://magic.wizards.com/en/news/mtg-arena/strixhaven-mtg-arena-digital-release-notes-2021-04-07).
+That is an analogous safeguard, not evidence of Arena's exact land-warning UI.
+Our adaptation replaces the existing portrait actions only after a manual
+Pass turn, or leaving second main with an empty stack, when the engine reports
+zero land plays this turn. Keep playing/Escape sends nothing; Pass anyway submits
+the captured command. Space cannot accept the warning, Auto waits, and host time
+continues. This does not inspect card names or infer that a land is playable.
+Unknown land-play counts, ordinary stack responses, going to combat and Undo
+retain their behavior. A changed prompt, game, viewer, turn, phase, active player
+or first land play retires the confirmation. No rules or wire change is needed.
+
 ## Stack announcements and manual mana: 26 October 2026
 
 **Source candidate; human review pending.** The player requested emphasis when

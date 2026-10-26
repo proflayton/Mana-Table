@@ -307,6 +307,11 @@ and the wheel zooms. Home returns to the overview. Escape or the return gesture
 folds the same cards to their original places. A large hand has no page controls.
 Large collections open at play distance; the overview is a deliberate choice.
 The card remains in its real zone until the engine plays it.
+Passing your turn before your first land play asks for confirmation beside your
+portrait. This also applies when leaving your second main phase. Keep playing
+or Escape stays on the current decision; Pass anyway continues the requested
+pass. Space does not accept this warning. Ordinary responses and going to
+combat remain unchanged. The table's decision timer continues while you choose.
 Source-only until a release containing it is published: action rows draw mana
 and tap symbols instead of raw brace codes. Blue uses the droplet, black the
 skull, and colorless the diamond. Counter-removal costs that have a fixed source

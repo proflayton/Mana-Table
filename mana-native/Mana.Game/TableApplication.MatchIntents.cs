@@ -54,6 +54,8 @@ internal sealed partial class TableApplication
                 if (confirm.CloseOverlay) overlay = "";
                 Send(DecisionCommands.Confirm(match)); break;
             case MatchIntent.CancelDecision when match?.Decision != null: Send(DecisionCommands.Cancel(match)); break;
+            case MatchIntent.ConfirmTurnPass: ConfirmTurnPass(); break;
+            case MatchIntent.DismissTurnPass: turnPassRequest = null; break;
             case MatchIntent.ConfirmSelection when match?.Decision is { } decision:
                 textFocus = false; Send(DecisionCommands.Choose(match, decision.Payload is RevealPayload ? [] : decisions.Selections)); break;
             case MatchIntent.ChooseNone none when match?.Decision != null:

@@ -75,6 +75,10 @@ internal sealed partial class TableApplication
         var state = match!; var d = state.Decision;
         var layout = TurnControlLayout.For(SeatHero(state.ViewerId));
         var area = layout.PriorityArea;
+        if (turnPassRequest != null) {
+            int labelWidth = Math.Max(canvas.TextWidth("Keep playing", .76f, true), canvas.TextWidth("Pass anyway", .76f));
+            area.Width = Math.Max(area.Width, (labelWidth + 24) * 2 + 8);
+        }
         // Resource values keep their measured width. The quiet portrait action
         // can grow into the former decision area without covering mana.
         int resourceRight = manaPoolBadges.GetValueOrDefault(state.ViewerId)?.Bounds.Right ?? 0;
@@ -85,6 +89,7 @@ internal sealed partial class TableApplication
         area = tableScene?.PlayAccess.ReservePriority(area, readers) ?? area;
         decisionPanelBounds = area; decisionTextBounds = Rectangle.Empty; decisionText = ""; decisionTextOverflow = false;
         if (area.IsEmpty) return;
+        if (DrawTurnPassConfirmation(area)) return;
         bool stopped = view.PauseReason == DecisionDockPauseReason.PhaseStop;
         var accent = stopped || held ? Gold : QuietPriorityArmed ? Blue : PriorityAccent;
         var statusPoint = new Vector2(area.X + 8, area.Y + 10);
