@@ -87,29 +87,12 @@ internal sealed partial class TableApplication
     {
         string label = CardPresentation.AttachmentBadge(card);
         if (label.Length == 0) return;
-        if (pose.Size.X < 300 && tableScene?.BattlefieldCard(owner, CardViews.Identity(card)) is { Dense: true, DenseLabels.IsEmpty: true }) {
-            // The extreme face-only fallback has no room for a detached stats
-            // chip. Keep its relationship cue inside this exact face instead.
-            int side = Math.Min(10, Math.Min(pose.Bounds.Width, pose.Bounds.Height) - 2);
-            Rectangle cue = Rectangle.Empty;
-            while (side > 0) {
-                cue = new((int)pose.Center.X - side / 2, (int)pose.Center.Y - side / 2, side, side);
-                if (pose.Contains(new(cue.Left, cue.Top)) && pose.Contains(new(cue.Right - 1, cue.Top))
-                    && pose.Contains(new(cue.Left, cue.Bottom - 1)) && pose.Contains(new(cue.Right - 1, cue.Bottom - 1))) break;
-                side--;
-            }
-            if (side > 0) {
-                canvas.Panel(cue, new Color(48, 39, 22), Gold, Math.Min(3, side / 2));
-                if (card.CombatId.Length > 0) attachmentBadges[card.CombatId] = new("", cue, 0, true);
-            }
-            return;
-        }
         if (pose.Size.X < 300 && CardPresentation.HasCombatStats(card)
-            && denseStatsBounds.TryGetValue(CardViews.Identity(card), out var denseStats)) {
+            && battlefieldStatsBounds.TryGetValue(CardViews.Identity(card), out var stats)) {
             // The shared state strip already carries the relationship color.
             // Reuse its exact P/T target rather than painting another badge.
             if (card.CombatId.Length > 0) attachmentBadges[card.CombatId] = new(
-                $"{card.Power}/{card.Toughness}", denseStats.Bounds, denseStats.MeasuredWidth, true, true);
+                $"{card.Power}/{card.Toughness}", stats.Bounds, stats.MeasuredWidth, true, true);
             return;
         }
         int seat = SeatDisplayIndex(owner);

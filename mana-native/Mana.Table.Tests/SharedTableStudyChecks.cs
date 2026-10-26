@@ -58,7 +58,7 @@ internal static class SharedTableStudyChecks
         foreach (int viewer in stages[0].Snapshot.Players.Select(player => player.Id)) {
             var scenes = stages.Select(stage => Build(stage.Snapshot with { ViewerId = viewer })).ToArray();
             check(scenes.All(scene => scene.Seat(viewer).Index == 3 && scene.Seats.Single(seat => seat.PlayerId != viewer).Index == 1
-                    && scene.Seats.All(seat => !seat.IsDense) && Cards(scene).All(card => card.ScanFace)
+                    && Cards(scene).All(card => card.ScanFace)
                     && Cards(scene).All(card => DuelTableStudy.MatchLane(scene.Seat(card.Owner).Index,
                         BattlefieldLayout.Role(card.Card, CardPresentation.IsResource)).Contains(card.Pose.Bounds))
                     && Cards(scene).All(card => !card.Pose.Bounds.Intersects(DuelTableStudy.ActionArea))),
@@ -254,14 +254,15 @@ internal static class SharedTableStudyChecks
         var matchingLands = Build(ReplaceField(baseline, 0, lands.Select(card => card with { Tapped = false }).ToArray()));
         var mixedNodes = Cards(mixedLands).Where(node => node.Owner == 0).ToArray();
         var landFamily = mixedNodes[0].StudyFamily!;
-        check(landFamily is { Role: "Lands", CohortCount: 2, TotalCount: 2 } && landFamily.NameBounds.Height >= 23
-                && mixedNodes.All(node => node.Pose.Bounds.Width <= 57 && node.GroupFront && node.GroupCount == 1)
+        check(landFamily is { Role: "Lands", CohortCount: 2, TotalCount: 2 }
+                && mixedNodes.All(node => node.GroupFront && node.GroupCount == 1)
+                && mixedNodes[0].Pose.Size == mixedNodes[1].Pose.Size
+                && MathF.Abs(MathF.Abs(MathHelper.WrapAngle(mixedNodes[0].Pose.Angle - mixedNodes[1].Pose.Angle)) - MathF.PI / 2) < .001f
                 && !mixedNodes[0].Pose.Bounds.Intersects(mixedNodes[1].Pose.Bounds)
-                && landFamily.Bounds.Width <= 120
                 && matchingLands.BattlefieldCard(0, "compact-ready")!.StudyFamily is { CohortCount: 1, TotalCount: 2 }
                 && landFamily.Cohorts.All(cohort => cohort.MemberIds.Count == 1
                     && mixedLands.BattlefieldCard(0, cohort.FrontCardId)!.Card.Key == "action:" + cohort.FrontCardId),
-            "Tapped and untapped ordinary lands share one bounded turning footprint with compact separate state faces, a real caption band, and each exact action key; "
+            "Matching lands retain distinct tapped/untapped piles, the same physical face dimensions, a quarter-turn and each exact action key; "
             + $"family {landFamily.Bounds}, caption {landFamily.NameBounds}, matching {matchingLands.BattlefieldCard(0, "compact-ready")!.StudyFamily!.BodyBounds}; "
             + string.Join("; ", mixedNodes.Select(node => $"{node.Id}: {node.Pose.Bounds}, front {node.GroupFront}, count {node.GroupCount}")));
     }

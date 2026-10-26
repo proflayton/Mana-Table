@@ -284,6 +284,11 @@ single click and stay compact. Right-click uses the same full-card reader.
 Required selections, auxiliary views and alternate faces retain a read-only
 inspector when the table reader is unavailable. Actions stay beside the live
 card; inspecting never activates an ability or casts from a public zone.
+Battlefield cards keep the same visual form as the table grows. Use the wheel
+over the battlefield to zoom where you point, middle-drag to pan, and Home to
+return to the whole table. Your hand, portraits and decision controls stay put.
+Click an opponent's portrait/name to focus that player's field when you are not
+choosing a player target. Camera movement does not select or play a card.
 Zone piles open browsers containing only the cards your player can see. Your own
 graveyard, exile and command browsers can offer engine-authorized actions,
 including Flashback when available. Hidden hands show anonymous backs.
@@ -406,6 +411,9 @@ is separate from seat direction. The two-player view keeps upright faces.
 Lands turn sideways when tapped and return upright toward their seat when
 untapped. Their art dims while tapped; compact faces reserve space for a tap
 arrow. Hover for the full name if a compact face has no room for it.
+Matching lands keep separate piles for different current states, with a count
+on repeated piles. Each seat shows its total, untapped and tapped land counts.
+These include animated lands and describe tap state, not available mana.
 Current stats already include the engine's effects; do not add an Equipment's
 printed bonus again. Re-equipping updates the same occurrences.
 Click a player's life header to inspect public counters and commander damage

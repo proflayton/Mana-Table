@@ -157,8 +157,7 @@ public static class SharedTableStudy
         int x = (int)MathF.Floor(position.X), y = (int)MathF.Floor(position.Y);
         return new(x, y, (int)MathF.Ceiling(position.X + size.X) - x, (int)MathF.Ceiling(position.Y + size.Y) - y);
     }
-    private static Vector2 FaceSize(Family family, Vector2 desired) => family.Role == "Lands"
-        ? new(desired.X * (family.Cohorts.Length > 1 ? .5f : 1)) : desired;
+    private static Vector2 FaceSize(Family family, Vector2 desired) => desired;
     private static float HeaderHeight(Family family, float detail, float headerFloor) => family.Header > 0
         ? Math.Max(family.Header * detail, headerFloor) : 0;
     private static Vector2 Shape(Family family, int columns, Vector2 desired, float faceScale, float scale, float headerFloor)

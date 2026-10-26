@@ -44,7 +44,7 @@ internal sealed partial class TableApplication
                 int nameHeight = PaintBattlefieldScanName(card, owner, face, copies);
                 PaintBattlefieldScanState(card, owner, face, nameHeight, copies, tappedCue);
                 int statsHeight = CardPresentation.HasCombatStats(card) || card.Damage > 0 ? Math.Min(22, face.Height / 3) : 0;
-                if (copies > 1 && face.Top + nameHeight + 21 <= face.Bottom - statsHeight) {
+                if (!CardPresentation.IsResource(card) && copies > 1 && face.Top + nameHeight + 21 <= face.Bottom - statsHeight) {
                     string count = "×" + copies;
                     int measured = canvas.TextWidth(count, .44f, true), width = measured + 6;
                     if (width <= face.Width) {
@@ -54,6 +54,16 @@ internal sealed partial class TableApplication
                         RecordBattlefieldLabel(card, owner, "copies", count, countBounds, measured, width - 6);
                     }
                 }
+            }
+            if (CardPresentation.IsResource(card) && copies > 1) {
+                // A counted pile must remain counted when names/state consume
+                // its illustration. Keep the value attached to this exact pile.
+                string count = "×" + copies;
+                int measured = canvas.TextWidth(count, .55f, true), width = measured + 8;
+                var countBounds = new Rectangle(fullFace.Right - width, fullFace.Bottom - 21, width, 21);
+                canvas.Rounded(countBounds, new(13, 24, 30), 3);
+                canvas.CenterText(count, countBounds, Gold, .55f, true);
+                RecordBattlefieldLabel(card, owner, "copies", count, countBounds, measured, width - 8);
             }
         }
         if (legal || selected) {
@@ -72,7 +82,8 @@ internal sealed partial class TableApplication
         // Labels are painted afterward so current stats, counters and the full
         // name remain unobscured. This treatment never expands an input region.
         bool labels = face.Width >= 36 && face.Height >= 32;
-        bool sharedName = tableScene?.BattlefieldCard(owner, CardViews.Identity(card))?.StudyFamily is { CohortCount: > 1 };
+        bool sharedName = tableScene?.BattlefieldCard(owner, CardViews.Identity(card))?.StudyFamily is { CohortCount: > 1 } family
+            && StudyFamilyNameVisible(family);
         int caption = labels && !sharedName ? BattlefieldScanNameHeight(card, face, copies) : 0;
         int stats = labels && (CardPresentation.HasCombatStats(card) || card.Damage > 0) ? Math.Min(22, face.Height / 3) : 0;
         bool badges = BattlefieldScanHasBadges(card, copies);
@@ -142,7 +153,8 @@ internal sealed partial class TableApplication
         // Never turn a card's identity into a fragment or shrink its font to fit.
         // Small overview faces retain art/state; pointing at one reveals its
         // complete name at the same source without moving the card's hit target.
-        if (tableScene?.BattlefieldCard(owner, CardViews.Identity(card))?.StudyFamily is { CohortCount: > 1 }) return 0;
+        if (tableScene?.BattlefieldCard(owner, CardViews.Identity(card))?.StudyFamily is { CohortCount: > 1 } family
+            && StudyFamilyNameVisible(family)) return 0;
         int height = BattlefieldScanNameHeight(card, face, copies);
         if (height == 0) return 0;
         var bounds = new Rectangle(face.X, face.Y, face.Width, height);
@@ -204,7 +216,7 @@ internal sealed partial class TableApplication
             canvas.Panel(bounds, new(13, 24, 30), attached ? Gold : new Color(106, 135, 143), 3);
             canvas.CenterText(stats, bounds, Ink, size, true);
             RecordBattlefieldLabel(card, owner, "pt", stats, bounds, measured, width - 10);
-            denseStatsBounds[CardViews.Identity(card)] = new(bounds, measured);
+            battlefieldStatsBounds[CardViews.Identity(card)] = new(bounds, measured);
             right = bounds.Left;
         }
         if (damage.Length > 0 && right > face.Left) {

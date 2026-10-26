@@ -19,7 +19,7 @@ internal static class RoleLaneAvoidanceChecks
                 var state = stage.Snapshot with { ViewerId = viewer };
                 var scene = Build(state);
                 var cards = scene.Seats.SelectMany(seat => seat.Battlefield).SelectMany(cluster => cluster.Cards).ToArray();
-                check(cards.All(card => !card.Dense && !card.Pose.Bounds.Intersects(protectedStack)),
+                check(cards.All(card => !card.Pose.Bounds.Intersects(protectedStack)),
                     $"Ordinary {stage.Name} battlefield faces stay full-size and outside the central stack for viewer {viewer}");
                 check(cards.All(card => {
                     var player = state.Players.Single(player => player.Id == card.Owner);
@@ -67,7 +67,7 @@ internal static class RoleLaneAvoidanceChecks
                 : zone with { Count = copies.Length, Cards = copies.ToImmutableArray() }).ToImmutableArray() }).ToImmutableArray() };
         var fan = Build(withCopies).Battlefield(initial.ViewerId).SelectMany(cluster => cluster.Cards).Where(card => card.Card.Name == "Cat").ToArray();
         var rawFan = BattlefieldLayout.Build(3, initial.ViewerId, copies, CardPresentation.IsResource).SelectMany(cluster => cluster.Cards).ToArray();
-        check(fan.Length == copies.Length && fan.All(card => !card.Dense && !card.Pose.Bounds.Intersects(protectedStack))
+        check(fan.Length == copies.Length && fan.All(card => !card.Pose.Bounds.Intersects(protectedStack))
                 && fan.Select(card => card.Pose.Center - rawFan.Single(raw => raw.Id == card.Id).Pose.Center).Distinct().Count() == 1
                 && fan.Count(card => card.GroupFront) == 1 && fan.Single(card => card.GroupFront).GroupCount == copies.Length,
             "Moving an obstructed identical-copy family preserves its exact fan and single shared public-state front");

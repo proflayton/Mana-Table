@@ -134,6 +134,37 @@ does not establish that a person can understand or use the screen.
     [architecture migration](Mana-Table-Architecture.md#action-execution-the-next-boundary-migration)
     records the current gaps and the first real-engine journey to migrate.
 
+## No density rendering mode: 26 October 2026
+
+**Source candidate; human review pending.** The player rejected the crowded-field
+test window: tiny text tiles, truncated names and count-triggered presentation
+made the table impossible to understand. Its pixel-exposure assertions measured
+clickability, not comprehension. Remove that renderer and those assertions.
+Cards keep their ordinary battlefield face, seat orientation, grouping and live
+characteristics as the field grows. The tester now uses the production renderer.
+Routine arrivals keep their motion and card-frame cue; the repeated ENTERED
+text tags are removed so a mass arrival cannot cover its cards with labels.
+The player's supplied Arena examples establish card identity and stable table
+placement; paper-game references below establish separate player spaces. Our
+camera adaptation adds wheel zoom and middle-drag through that same space, with
+Home returning to the overview. Camera movement never answers a rules prompt or
+rearranges the canonical battlefield. A focused card still opens its full reader.
+The four-player/480-permanent captures need human review; retained occurrences
+and working hit tests cannot declare that view understandable. The larger
+player-local placement migration remains separate work.
+
+The player also requires land totals and tap states to be readable without
+opening cards. Their supplied Arena mana screenshots show counted matching
+land piles and physically turned tapped lands. Adapt that arrangement with
+separate current-state piles, a count attached to each repeated land pile,
+and persistent total/untapped/tapped land counts beside each seat's resources.
+Count current public land types, including animated lands in the creature row;
+exclude rocks and concealed identities. Untapped is a physical state, not an
+estimate of payable mana. A second tap-state cohort no longer halves the
+individual land face. The canonical review includes nine mixed lands and three
+fully tapped lands at every seat, with real art at both supported review sizes.
+Their screenshots, alongside the 480-permanent field, still require human review.
+
 ## Choice eligibility defaults: 26 October 2026
 
 **Source candidate; human review pending.** The player requested that searches

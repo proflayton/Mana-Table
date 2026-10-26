@@ -22,6 +22,7 @@ internal sealed partial class TableApplication
     {
         if (!TableStudyAvailable || dragging) return;
         tableStudy = enabled;
+        manualBoardView = null; boardPanning = false;
         studyFocusOwner = null;
         ClearCardReading();
         SetTurnFollow(false);

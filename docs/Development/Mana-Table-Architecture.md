@@ -697,7 +697,7 @@ boundary. Priority handoffs alone do not move the view. Only battlefield cards,
 their board labels and connected presentation geometry participate. The hand,
 portraits, player resources, Command/Library/Graveyard/Exile controls, stack,
 decision dock and reader remain anchored. Zoom and seat orientation stay fixed.
-Two-player, reduced-motion and dense-table views remain stationary; an unsafe
+Two-player and reduced-motion automatic follow remain stationary; an unsafe
 path also leaves the view in place rather than concealing another seat or control.
 
 Hover, reading, board pointer activity, a held pointer, dragging, a modal/focused
@@ -840,14 +840,15 @@ its consequence; an eliminated seat can watch or leave.
 | `Mana.Client.Tests`, `Mana.Table.Tests` | Headless behavior checks and separate native test/automation executable |
 
 `TableScene` describes battlefield groups, command cards, piles and hand placement.
-Current native source uses `BattlefieldLayout` to include every projected
-battlefield occurrence, with ordered groups and exposed individual hit regions.
-Sparse boards keep projected role lanes. When crowding requires bounded packing,
-all seats switch together to upright cells inside separate player regions;
-`BoundedBattlefieldLayout` reserves space for piles, commanders, resources and
-controls. Dense headers carry owner/status while life, mana and player-state
-ribbons remain at their player icons. Redundant role and hero creature counts
-have been removed. Matching public-state
+Every projected battlefield occurrence retains its normal card presentation as
+the field grows. The count-triggered text-tile renderer, its label measurements,
+density flags and separate owner headers have been removed. Live games use the
+same seat-facing card families at every count; the crowded-field window check
+now uses that production path too. Wheel zoom and middle-drag pan the existing
+board transform; Home returns to the shared table. These are local camera
+gestures and never confer a game action. The hand, portraits and decision
+controls stay anchored. A new game/viewer retires the manual camera.
+Matching public-state
 copies share small fans; every occurrence stays rendered and independently hit.
 Each scene seat prepares group membership and occurrence lookup once. Effect
 transitions and impacts use the same group front and members instead of rebuilding

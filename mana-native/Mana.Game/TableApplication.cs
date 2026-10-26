@@ -154,6 +154,7 @@ internal sealed partial class TableApplication : IDisposable
     {
         var transition = matchPresentation.Observe(previous, state, now, boardView);
         if (transition.ScopeChanged) { ResetTableView(); tableGuideOpen = false; sceneRevealAt = now; }
+        if (transition.ScopeChanged) { manualBoardView = null; boardPanning = false; }
         ReconcileReleasedPlay();
         ReconcileTurnPass();
         if (state?.Status == "finished" && previous?.Status != "finished") tableGuideOpen = false;
@@ -211,6 +212,7 @@ internal sealed partial class TableApplication : IDisposable
         pointer = RenderViewport.Fit(viewport, DesignHeight).ToLogical(new(mouse.X, mouse.Y));
         ReconcileCardCollection();
         if (!blockedInput) UpdateCardCollectionPointer(mouse, keys);
+        if (!blockedInput) UpdateBoardCamera(mouse, keys);
         boardPointerActivity = mouse.X != previousMouse.X || mouse.Y != previousMouse.Y
             || mouse.ScrollWheelValue != previousMouse.ScrollWheelValue || mouse.LeftButton != previousMouse.LeftButton;
         boardViewportChanged = boardViewport != viewport; boardViewport = viewport;
@@ -347,7 +349,7 @@ internal sealed partial class TableApplication : IDisposable
         PrepareCardCollectionHeader();
         tableScene = match == null ? null : TableScene.Build(match, pointer, null,
             dragging && dragSource?.Card is { } held ? CardViews.Identity(held) : null, false, CardPresentation.IsResource,
-            denseMeasure: MeasureDenseBattlefieldLabel, allowInlineOrdering: TableChoices.IsDirect(match), sharedTableStudy: TableStudyEnabled,
+            allowInlineOrdering: TableChoices.IsDirect(match), sharedTableStudy: TableStudyEnabled,
             spread: spreadCollection == null ? null : new(spreadCollection, spreadTarget, spreadAreaTop), spreadMeasure: MeasureSpreadPacketHeader);
         PrepareCardCollection();
         UpdateBoardView();

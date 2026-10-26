@@ -210,8 +210,10 @@ internal sealed partial class CardReadingSmoke : ITableAutomation
             Check(scenario.Replies.Count == 3 && view.Match?.Stack.Length == 1, "Auto keeps a new spell visible while its presentation beat plays");
             Publish(scenario.State); // A refreshed decision must not restart playback.
         });
-        Step(.9, () => Check(scenario.Replies.Count == 4 && scenario.Replies[^1] is AutoPassPriority,
-            "Auto resumes after the visible action despite intervening snapshot refreshes"));
+        Prepared(() => scenario.Replies.Count == 4, 3,
+            () => Check(scenario.Replies[^1] is AutoPassPriority,
+                "Auto resumes after the visible action despite intervening snapshot refreshes"),
+            "Auto must resume once the visible stack announcement finishes");
         QueueRevealChecks();
 
     }

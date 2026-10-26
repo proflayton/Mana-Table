@@ -11,11 +11,6 @@ public sealed record SceneCard(string Id, Card Card, Pose Pose, string Zone, int
     public bool Compact { get; init; }
     public bool GroupFront { get; init; } = true;
     public int GroupCount { get; init; } = 1;
-    public bool Dense { get; init; }
-    public Rectangle DenseLabels { get; init; }
-    public float DenseScale { get; init; } = 1;
-    public int DenseRowHeight { get; init; } = 20;
-    public bool DenseMiniature { get; init; }
     public bool ScanFace { get; init; }
     public StudyBattlefieldFamily? StudyFamily { get; init; }
     public BattlefieldAttachment? Attachment { get; init; }
@@ -45,13 +40,11 @@ public sealed class SceneSeat
     public SeatGeometry Geometry { get; }
     public IReadOnlyList<BattlefieldCluster> Battlefield { get; }
     public IReadOnlyList<BattlefieldCohort> Cohorts { get; }
-    public bool IsDense { get; }
 
     internal SceneSeat(SeatGeometry geometry, BattlefieldCluster[] battlefield)
     {
         Geometry = geometry;
         Battlefield = Array.AsReadOnly(battlefield);
-        IsDense = battlefield.Any(cluster => cluster.Cards.Any(card => card.Dense));
         var cohorts = new List<BattlefieldCohort>();
         foreach (var cluster in battlefield) {
             var members = new List<string>();
@@ -103,7 +96,7 @@ public sealed class TableScene
 
     public static TableScene Build(GameSnapshot state,
         Point pointer, string? previouslyRaised, string? dragged, bool allowHover, Func<Card, bool> isResource,
-        Func<Card, int, bool, BattlefieldLabelMetrics>? denseMeasure = null, bool allowInlineOrdering = true,
+        bool allowInlineOrdering = true,
         bool sharedTableStudy = false, CardSpreadRequest? spread = null, Func<CardSpreadPacket, int, int>? spreadMeasure = null)
     {
         var geometry = SeatGeometry.Build(state, sharedTableStudy);
@@ -149,7 +142,7 @@ public sealed class TableScene
                         duel ? role => DuelTableStudy.MatchLane(seat.Index, role) : null, duel ? 1.35f : 1,
                         horizontalRows: duel, centerRows: duel, attachments: attachments, seatFacing: !duel)
                 : BattlefieldLayout.Arrange(layout!, seat.Index, player.Id,
-                    player.Zone("Battlefield").Cards, isResource, orderedChoices, denseMeasure);
+                    player.Zone("Battlefield").Cards, isResource, orderedChoices);
             seats.Add(new(seat, clusters));
         }
         if (sharedTableStudy) {

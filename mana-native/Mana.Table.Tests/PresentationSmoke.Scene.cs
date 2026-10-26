@@ -17,9 +17,8 @@ internal static class PresentationSceneChecks
         CheckUnsupportedSeat(check);
     }
 
-    private static TableScene Build(GameSnapshot state, Func<Card, bool>? resource = null,
-        Func<Card, int, bool, BattlefieldLabelMetrics>? measure = null) => TableScene.Build(state,
-            new(-100, -100), null, null, false, resource ?? CardPresentation.IsResource, measure);
+    private static TableScene Build(GameSnapshot state, Func<Card, bool>? resource = null) => TableScene.Build(state,
+            new(-100, -100), null, null, false, resource ?? CardPresentation.IsResource);
 
     private static GameSnapshot Field(GameSnapshot state, Func<Player, Card[]> cards) => state with {
         Players = state.Players.Select(player => {
@@ -46,10 +45,9 @@ internal static class PresentationSceneChecks
                 && scene.BattlefieldCard(-1, "absent") == null
                 && scene.Seats.All(seat => seat.BattlefieldCard("absent") == null),
             "Occurrence lookup returns the exact prepared node for its owner and safely rejects missing owners or identities");
-        check(scene.Seats.All(seat => seat.IsDense == seat.Battlefield.SelectMany(cluster => cluster.Cards).Any(node => node.Dense)
-                && seat.Cohorts.SelectMany(cohort => cohort.MemberIds).Count()
+        check(scene.Seats.All(seat => seat.Cohorts.SelectMany(cohort => cohort.MemberIds).Count()
                     == state.Players.Single(player => player.Id == seat.PlayerId).Zone("Battlefield").Cards.Length),
-            "Seat density and prepared cohort membership describe the complete public battlefield");
+            "Prepared cohort membership describes the complete public battlefield");
         check(scene.Seats.All(seat => seat.Cohorts.All(cohort => cohort.Front.GroupFront
                 && cohort.MemberIds.Contains(cohort.Front.Id)
                 && cohort.MemberIds.All(id => ReferenceEquals(cohort, seat.Cohort(id)) && ReferenceEquals(cohort, scene.Cohort(id))))
@@ -61,8 +59,8 @@ internal static class PresentationSceneChecks
             Type = "Creature", Power = index, Toughness = 1
         }).ToArray());
         var geometry = SeatGeometry.Build(denseState);
-        var context = BattlefieldLayoutContext.Build(denseState, null, geometry);
-        check(context.Bounded && geometry.All(seat => seat.Commanders.All(commander => {
+        var context = BattlefieldLayoutContext.Build(denseState, null, geometry, CardPresentation.IsResource);
+        check(geometry.All(seat => seat.Commanders.All(commander => {
                 var bounds = commander.Pose.Bounds;
                 bounds.Inflate(7, 12);
                 return context.Obstacles.Contains(bounds);
@@ -84,27 +82,16 @@ internal static class PresentationSceneChecks
                 Power = index % 3 == 0 ? 2 : null, Toughness = index % 3 == 0 ? 2 : null
             }).ToArray());
             var classified = new Dictionary<Card, int>(ReferenceEqualityComparer.Instance);
-            var measured = new Dictionary<Card, int>(ReferenceEqualityComparer.Instance);
             bool Resource(Card card)
             {
                 classified[card] = classified.GetValueOrDefault(card) + 1;
                 return CardPresentation.IsResource(card);
             }
-            BattlefieldLabelMetrics Measure(Card card, int copies, bool miniature)
-            {
-                measured[card] = measured.GetValueOrDefault(card) + 1;
-                return new(137, 23);
-            }
-            var scene = Build(state, Resource, Measure);
+            var scene = Build(state, Resource);
             var cards = state.Players.SelectMany(player => player.Zone("Battlefield").Cards).ToArray();
             check(classified.Count == cards.Count(card => !card.Type.Contains("Creature", StringComparison.Ordinal))
                     && classified.Values.All(calls => calls == 1),
                 $"A {count}-card field classifies each noncreature occurrence once while creatures retain their combat role");
-            check(count == 5 ? measured.Count == 0 && scene.Seats.All(seat => !seat.IsDense)
-                    : measured.Count == cards.Length && measured.Values.All(calls => calls == 1)
-                        && scene.Seats.SelectMany(seat => seat.Battlefield).SelectMany(cluster => cluster.Cards)
-                            .All(node => node.Dense && node.DenseLabels.Width == 137 && node.DenseRowHeight == 23),
-                $"A {count}-card field keeps the coordinated layout mode and consumes each real label measurement once");
         }
     }
 
@@ -135,8 +122,8 @@ internal static class PresentationSceneChecks
         state = Field(state with { Players = [.. state.Players, .. extra] }, player => Enumerable.Range(0, player.Id == 5 ? 9 : 1)
             .Select(index => new Card { VisualId = $"extra-{player.Id}-{index}", Name = "Creature " + index, Type = "Creature", Power = 2, Toughness = 2 }).ToArray());
         var scene = Build(state);
-        check(scene.Seats.Count == 5 && scene.Seats.All(seat => seat.PlayerId != 5 && seat.IsDense)
+        check(scene.Seats.Count == 5 && scene.Seats.All(seat => seat.PlayerId != 5)
                 && scene.BattlefieldCard(5, "extra-5-0") == null,
-            "A seat outside the four-seat viewport retains its prior influence on coordinated layout without adding visible nodes");
+            "A seat outside the four-seat viewport does not add visible nodes or change another seat's rendering");
     }
 }

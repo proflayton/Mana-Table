@@ -137,11 +137,6 @@ internal sealed partial class TableApplication
             float alpha = preferences.ReducedMotion ? 1 : (float)(1 - age / 1.1);
             var color = cue.Kind == CueKind.Damage ? Red : cue.Kind == CueKind.Arrive ? Gold : Blue;
             canvas.CardFrame(pose with { Size = pose.Size + new Vector2(8 + (preferences.ReducedMotion ? 0 : (float)age * 17)) }, color * alpha, 2);
-            if (cue.Kind == CueKind.Arrive) {
-                var badge = new Microsoft.Xna.Framework.Rectangle((int)pose.Center.X - 47, pose.Bounds.Top - 24, 94, 23);
-                canvas.Panel(badge, new Color(30, 31, 22) * alpha, Gold * alpha, 4);
-                canvas.CenterText("ENTERED", badge, Gold * alpha, .5f, true);
-            }
         }
     }
     private void DrawResult()

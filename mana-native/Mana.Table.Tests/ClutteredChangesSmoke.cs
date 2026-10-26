@@ -277,7 +277,7 @@ internal sealed class ClutteredChangesSmoke : ITableAutomation
         cards = FrameData.Cards.Count, view.ChangeCalloutBounds, view.DecisionPanelBounds,
         groups = view.PublicChanges.Select(group => new { group.Id, group.Title, group.Summary, count = group.Changes.Count }).ToArray(),
         nodes = FrameData.Scene!.Seats.SelectMany(seat => seat.Battlefield).SelectMany(cluster => cluster.Cards).Select(node => new {
-            node.Id, node.Card.Name, node.GroupFront, node.GroupCount, node.Pose, node.DenseLabels, labels = view.BattlefieldLabels(node.Id).ToArray()
+            node.Id, node.Card.Name, node.GroupFront, node.GroupCount, node.Pose, labels = view.BattlefieldLabels(node.Id).ToArray()
         }).ToArray() });
     private void Capture(string name)
     {

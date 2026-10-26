@@ -25,7 +25,9 @@ public static class ClutteredChangesScenario
             VisualId = id, CombatId = id, Name = name, Type = type, Power = power, Toughness = toughness
         };
         Card[] Battlefield(int seat) => [
-            .. Enumerable.Range(0, 50).Select(index => New($"crowd-{seat}-cat-{index}", "Cat Beast Token", "Token Creature — Cat Beast", 2, 2)),
+            .. Enumerable.Range(0, 50).Select(index => New($"crowd-{seat}-cat-{index}", "Cat Beast Token", "Token Creature — Cat Beast", 2, 2) with {
+                GamePieceType = "token", ArtName = "Cat Beast", ArtSet = "tfdn", Edition = "FDN", CollectorNumber = "28"
+            }),
             .. Enumerable.Range(0, 40).Select(index => {
                 bool animated = index < 12;
                 int counters = animated ? 1 + index % 4 : 0;

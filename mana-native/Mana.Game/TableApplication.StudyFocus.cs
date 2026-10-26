@@ -35,6 +35,7 @@ internal sealed partial class TableApplication
     {
         if (!MultiplayerFocusAvailable || match == null || dragging) return;
         if (owner != null && !match.Players.Any(player => player.Id == owner)) return;
+        manualBoardView = null; boardPanning = false;
         CollapseCardReading(); ClearReaderActions();
         pressed = null; dragSource = null; ClearCardDrag();
         zoneName = null; overlay = "";

@@ -48,6 +48,18 @@ internal static class PresentationSmoke
         FocusedBattlefieldGroupingChecks.Run(Check);
         BoardViewChecks.Run(Check);
         var state = Example();
+        var landPlayer = state.Viewer! with { Zones = [new Zone("Battlefield", 6, [
+            new Card { Name = "Forest", Type = "Basic Land — Forest" },
+            new Card { Name = "Island", Type = "Basic Land — Island", Tapped = true },
+            new Card { Name = "Animated Forest", Type = "Land Creature — Forest", Power = 3, Toughness = 3, Tapped = true },
+            new Card { Name = "Sol Ring", Type = "Artifact" },
+            new Card { Name = "Land creature subtype", Type = "Creature — Land" },
+            new Card { Name = "Private land identity", Type = "Land", FaceDown = true }
+        ], null)] };
+        Check(PublicResources.Lands(landPlayer) is { Total: 3, Untapped: 1, Tapped: 2 },
+            "Land counts include current animated lands and physical tap states, excluding mana rocks, subtype words and concealed identities");
+        Check(PublicResources.Lands(landPlayer with { Zones = [] }) is { Total: 0, Untapped: 0, Tapped: 0 },
+            "A player without lands has explicit zero counts rather than an estimate of available mana");
         var manaPlayer = state.Viewer! with { Mana = ImmutableDictionary<string, int>.Empty.Add("C", 1).Add("G", 5).Add("U", 2).Add("W", 1).Add("R", 3).Add("B", 4) };
         Check(PublicResources.Mana(manaPlayer).Select(part => part.Key).SequenceEqual(["W", "U", "B", "R", "G", "C"])
             && PublicResources.Mana(manaPlayer).Single(part => part.Key == "C") is { Name: "Colorless", Symbol: "C", Amount: 1 },

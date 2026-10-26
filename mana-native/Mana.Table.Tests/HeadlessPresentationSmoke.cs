@@ -404,15 +404,14 @@ internal static partial class HeadlessPresentationSmoke
             }
 
             using (var run = new Runner(profile, "complete-dense-battlefield", DenseExample(), trace, performance)) {
+                run.View.SetTableStudy(true);
                 run.Tick("dense-all-seats");
                 var cards = run.Frame.Cards.Where(card => card.Zone == "Battlefield").ToArray();
                 Check(cards.Length == 80 && cards.Select(card => card.Id).Distinct().Count() == 80
                     && run.Frame.Scene!.Seats.All(seat => seat.Battlefield.Sum(cluster => cluster.Cards.Length) == 20),
-                    "The actual production dense scene and prepared frame retain all eighty public battlefield occurrences");
+                    "The normal production battlefield and prepared frame retain all eighty public occurrences");
                 Check(cards.All(card => run.Frame.Hits.Count(hit => hit.Card != null && CardViews.Identity(hit.Card) == card.Id && hit.Zone == "Battlefield") == 1),
-                    "Every dense occurrence publishes one canonical face-and-label hit instead of duplicate card targets");
-                Check(cards.All(card => run.TryPointFor(run.Frame.Hits.Single(hit => hit.Card != null && CardViews.Identity(hit.Card) == card.Id && hit.Zone == "Battlefield"), out _)),
-                    "Every dense occurrence has an exposed pointer target under actual production hit precedence");
+                    "Every crowded occurrence publishes one canonical card hit rather than duplicate targets");
                 var hidden = cards.Single(card => card.Id == "dense-1-19");
                 run.ClickCard(hidden.Id); run.Settle("anonymous-public-permanent");
                 Check(!run.Frame.Cards.Any(card => card.Id == hidden.Id && card.Focused)

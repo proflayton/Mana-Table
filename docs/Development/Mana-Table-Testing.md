@@ -66,6 +66,23 @@ current source state, leaving the stack, an already-running clock and provider
 classification validation. Its authored observations test presentation and
 command safety; the Java journeys supply the rules evidence. Window captures
 and human readability review remain separate.
+The small-window full card-reading journey also runs in the fast native release
+set, sharing the AI-seat shard. It waits for the actual automatic pass after a
+visible stack announcement, rather than assuming the earlier shorter animation
+duration. The existing headless arrival check separately verifies that unchanged
+observations do not restart that announcement.
+The crowded-field window journey also joins the fast release set, sharing the
+three-player lobby shard. It uses the production battlefield faces at the former
+threshold, mixed states, duplicate tokens, distinct names and the canonical
+480-permanent checkpoint. It exercises actual player focus, wheel zoom, card
+reading, middle-drag and Home. Its occurrence checks establish retention and
+command safety; they do not establish human readability. The former dense-tile
+exposure assertions and pixel hunting are removed with that renderer.
+The same window journey includes nine lands with mixed tap states and three
+fully tapped lands at each seat. Its counts cover physical state, not mana
+availability; the presentation checks separately include animated lands,
+nonland mana sources and concealed identities. Inspect the actual counted piles
+and seat summaries in both window sizes; assertions do not approve their clarity.
 
 This is a representative real-rules lane alongside enumerated coverage of the
 current interaction command variants. Neither replaces visual review of the corresponding

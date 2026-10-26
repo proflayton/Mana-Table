@@ -58,7 +58,6 @@ internal sealed partial class TableApplication
         if (TurnOrientationLab) {
             string followLabel = !followTurnEnabled ? "Try turn follow"
                 : preferences.ReducedMotion ? "Follow: reduced motion"
-                : tableScene?.Seats.Any(seat => seat.IsDense) == true ? "Follow: full table"
                 : boardViewMotion.LimitedByLayout ? "Follow: limited space" : "Follow turn: On";
             Button("lab-follow-turn", followLabel, 210, 3, 210,
                 new ShellIntent.ToggleTurnFollow(), accent: followTurnEnabled, height: 22);

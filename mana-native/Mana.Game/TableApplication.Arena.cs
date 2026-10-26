@@ -15,7 +15,7 @@ internal sealed partial class TableApplication
     private void DrawArena()
     {
         attachmentBadges.Clear(); attachmentConnections.Clear();
-        battlefieldLabels.Clear(); denseStatsBounds.Clear(); counterAnchors.Clear();
+        battlefieldLabels.Clear(); battlefieldStatsBounds.Clear(); counterAnchors.Clear();
         choiceOrderBadges.Clear();
         stackRows.Clear(); prioritySeats.Clear();
         changeCalloutBounds = null; highlightedChangeTargets.Clear(); highlightedChangeSource = null;
@@ -124,14 +124,14 @@ internal sealed partial class TableApplication
             else PaintBattlefieldScanFace(card, anchor, node.Owner, false, false, false, node.GroupFront, node.GroupCount);
             canvas.CardFrame(anchor, HoverAccent * .85f, 2);
         }
-        var rest = node.Zone == "Battlefield" && !node.Dense && !node.ScanFace && (card.PhasedOut || CardPresentation.HasAbility(card, "flying"))
+        var rest = node.Zone == "Battlefield" && !node.ScanFace && (card.PhasedOut || CardPresentation.HasAbility(card, "flying"))
             ? CardMotion.Airborne(node.Pose, now, preferences.ReducedMotion, node.Id) : node.Pose;
         var pose = DrawTableCard(node.Id, card, rest, node.Zone, node.Owner,
             "card:" + card.Key + ":" + card.VisualId, new MatchIntent.UseCard(card),
             (displayed, focus) => {
                 if (node.Attachment != null && !focus && displayed.Size.X < 300) PaintBattlefieldAttachment(node, displayed,
                     card.Highlighted || card.CombatId.Length > 0 && selectedCombat == card.CombatId || TableChoices.Index(match!, card) is { } choice && decisions.Selections.Contains(choice), IsCardActionable(card));
-                else PaintSceneCard(card, displayed, node.Zone, node.Owner, focus, node.Compact, node.GroupFront, node.GroupCount, node.Dense);
+                else PaintSceneCard(card, displayed, node.Zone, node.Owner, focus, node.Compact, node.GroupFront, node.GroupCount);
             }, node.Entrance, node.EntranceDelay, readingAnchor: node.Attachment?.Edge(node.Pose));
         if (!string.IsNullOrEmpty(card.CombatId)) {
             var anchor = node.ScanFace && readingId == node.Id ? boardView.Apply(node.Pose) : pose;
@@ -142,12 +142,12 @@ internal sealed partial class TableApplication
             cardPositions[card.CombatId] = anchor;
         }
     }
-    private void PaintSceneCard(Card card, Pose pose, string zone, int owner, bool focus, bool compact = false, bool groupFront = true, int groupCount = 1, bool dense = false)
+    private void PaintSceneCard(Card card, Pose pose, string zone, int owner, bool focus, bool compact = false, bool groupFront = true, int groupCount = 1)
     {
         int? choice = match == null ? null : TableChoices.Index(match, card);
         bool selected = choice is { } index ? decisions.Selections.Contains(index) : card.Highlighted || card.CombatId.Length > 0 && selectedCombat == card.CombatId;
         bool legal = IsCardActionable(card);
-        bool scanFace = zone == "Battlefield" && !focus && !dense && !pose.IsProjected && pose.Size.X < 300
+        bool scanFace = zone == "Battlefield" && !focus && !pose.IsProjected && pose.Size.X < 300
             && tableScene?.BattlefieldCard(owner, CardViews.Identity(card)) is { ScanFace: true };
         if (zone == "Battlefield") PaintAbilityEffects(card, pose);
         if (scanFace) PaintBattlefieldScanFace(card, pose, owner, selected, legal, focus, groupFront || focus, groupCount);

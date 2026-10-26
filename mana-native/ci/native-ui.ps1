@@ -74,8 +74,8 @@ if (-not $Extended) {
     $partitions = @(
         @('startup','loading','analysis-1000','clutter-1000'),
         @('deck-experience-1000','equipment-1000','card-states-1000','printings-1000'),
-        @('lobby-ai-1000'),
-        @('lobby-three-1000')
+        @('lobby-ai-1000','card-reading-1000'),
+        @('lobby-three-1000','full-battlefield-1000')
     )
 }
 if ($Shard -gt $partitions.Count) { throw 'The requested shard is not part of this native UI inventory.' }
