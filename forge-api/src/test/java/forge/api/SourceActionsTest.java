@@ -17,6 +17,54 @@ import static org.testng.Assert.*;
 public class SourceActionsTest {
     private static final Gson JSON = new Gson();
 
+    @Test(timeOut = 90000)
+    public void aQueuedDisplayPublicationIsDistinctFromAReadOnlySourceQuery() throws Exception {
+        try (var game = new RulesScenario("source-actions-queued-publication", Map.of(0, List.of("Forest")))) {
+            var input = main(game);
+            HeadlessPlatform.query(game.table, () -> null);
+            var commander = card(game.state(0), "Command", "Rhys the Redeemed");
+            var originalCatalog = query(game, input, commander);
+            var before = game.state(0);
+            var entered = new CountDownLatch(1);
+            var publish = new CountDownLatch(1);
+            var reader = java.util.concurrent.Executors.newSingleThreadExecutor(task -> {
+                var thread = new Thread(task, "source-read-interleaving"); thread.setDaemon(true); return thread;
+            });
+            try {
+                HeadlessPlatform.later(() -> {
+                    entered.countDown();
+                    try {
+                        if (!publish.await(3, TimeUnit.SECONDS)) throw new IllegalStateException("Test publication was not released");
+                    } catch (InterruptedException error) {
+                        Thread.currentThread().interrupt(); throw new IllegalStateException(error);
+                    }
+                    // HeadlessPlatform's ordinary completion publishes this
+                    // unchanged input, as any queued display callback would.
+                });
+                assertTrue(entered.await(3, TimeUnit.SECONDS));
+                var queuedRead = reader.submit(() -> query(game, input, commander));
+                publish.countDown();
+                var interleavedCatalog = queuedRead.get(3, TimeUnit.SECONDS);
+                var afterPublication = game.state(0);
+                assertTrue(afterPublication.get("revision").getAsLong() > before.get("revision").getAsLong(),
+                        "An independent display publication can advance revision before a queued source query runs");
+                assertEquals(text(afterPublication.getAsJsonObject("prompt"), "id"), text(input.prompt(), "id"));
+                assertEquals(interleavedCatalog, originalCatalog, "The unchanged input keeps its exact source catalog and action handles");
+                var beforeFacts = before.deepCopy(); beforeFacts.remove("revision"); beforeFacts.remove("boardRevision");
+                var afterFacts = afterPublication.deepCopy(); afterFacts.remove("revision"); afterFacts.remove("boardRevision");
+                assertEquals(afterFacts, beforeFacts, "Publishing without a game action preserves every board, mana, prompt and card-key fact");
+
+                HeadlessPlatform.query(game.table, () -> null);
+                var settled = game.state(0);
+                assertEquals(query(game, input, commander), originalCatalog);
+                assertEquals(query(game, input, commander), originalCatalog);
+                assertEquals(game.state(0), settled, "After the display queue is drained, repeated source reads preserve the exact snapshot too");
+            } finally {
+                publish.countDown(); reader.shutdownNow();
+            }
+        }
+    }
+
     @Test(groups = "canonical-interaction", timeOut = 90000)
     public void linkedPreparedSpellsCastFromTheirCreatureAndRevokeConsumedOrReplacedCopies() throws Exception {
         String creature = "Emeritus of Ideation", spell = "Ancestral Recall";
@@ -209,6 +257,7 @@ public class SourceActionsTest {
             assertTrue(game.answer(input, invoke(casts, cast)));
             var payment = game.until(next -> next.seat() == 0 && text(next.prompt(), "inputType").startsWith("InputPayMana"));
             var forest = card(payment.state(), "Battlefield", "Forest");
+            HeadlessPlatform.query(game.table, () -> null);
             var before = game.state(0);
             var mana = query(game, payment, forest);
             assertEquals(game.state(0), before);

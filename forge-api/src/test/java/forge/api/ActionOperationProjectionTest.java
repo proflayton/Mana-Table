@@ -5,7 +5,9 @@ import forge.StaticData;
 import forge.deck.Deck;
 import forge.game.ability.AbilityFactory;
 import forge.game.ability.ApiType;
+import forge.game.ability.AbilityUtils;
 import forge.game.card.Card;
+import forge.game.card.CounterEnumType;
 import forge.game.player.Player;
 import forge.game.spellability.SpellAbility;
 import forge.game.zone.ZoneType;
@@ -157,6 +159,54 @@ public class ActionOperationProjectionTest {
             var mixed = fixture.graph(ambiguous);
             assertEquals(nodes(mixed).get(0).get("originZone"), "");
             assertEquals(mixed.get("knowledge"), "Unknown", "Mixed origins never masquerade as one canonical source zone");
+        }
+    }
+
+    @Test(timeOut = 90000)
+    public void currentSourceCountersGiveBoundedNominalManaWithoutPayingOrFollowingCoupledEffects() throws Exception {
+        try (var fixture = new Fixture()) {
+            var chalice = fixture.add("Everflowing Chalice", ZoneType.Battlefield, 0);
+            var ability = chalice.getSpellAbilities().stream().filter(part -> part.getApi() == ApiType.Mana).findFirst().orElseThrow();
+            ability.setActivatingPlayer(fixture.actor());
+            var charge = CounterEnumType.CHARGE;
+            var pool = fixture.actor().getManaPool().totalMana();
+            var zero = ManaProductionProjection.describe(ability);
+            assertEquals(AbilityUtils.calculateAmount(chalice, ability.getParam("Amount"), ability), 0);
+            assertEquals(zero.get("knowledge"), "Known");
+            assertEquals(list(zero.get("alternatives")), List.of(Map.of("colors", Map.of())),
+                    "An actual uncharged Chalice has exact zero nominal output, rather than unknown capacity");
+
+            chalice.setCounters(charge, 3);
+            var three = ManaProductionProjection.describe(ability);
+            assertEquals(AbilityUtils.calculateAmount(chalice, ability.getParam("Amount"), ability), 3,
+                    "The actual rules amount matches the projected current source count");
+            assertEquals(three.get("knowledge"), "Known");
+            assertEquals(list(three.get("alternatives")), List.of(Map.of("colors", Map.of("C", 3))));
+            assertEquals(ManaProductionProjection.describe(ability), three, "Repeated projection is stable");
+            assertEquals(chalice.getCounters(charge), 3, "Reading output cannot spend counters");
+            assertFalse(chalice.isTapped(), "Reading output cannot tap the source");
+            assertEquals(fixture.actor().getManaPool().totalMana(), pool, "Reading output cannot produce mana");
+
+            var removing = AbilityFactory.getAbility("AB$ Mana | Cost$ T SubCounter<1/CHARGE> | Produced$ C | Amount$ X", chalice);
+            removing.setActivatingPlayer(fixture.actor());
+            assertEquals(ManaProductionProjection.describe(removing).get("knowledge"), "Unknown",
+                    "Counter-removal costs change the quantity before resolution and cannot reuse the current count");
+            var formula = AbilityFactory.getAbility("AB$ Mana | Cost$ T | Produced$ C | Amount$ Count$CardCounters.CHARGE/Plus.1", chalice);
+            formula.setActivatingPlayer(fixture.actor());
+            assertEquals(ManaProductionProjection.describe(formula).get("knowledge"), "Unknown",
+                    "The bounded source-counter case does not become a recursive expression evaluator");
+            chalice.setCounters(charge, 1025);
+            assertEquals(ManaProductionProjection.describe(ability).get("knowledge"), "Unknown");
+            chalice.setCounters(charge, 3);
+
+            var reflection = fixture.add("Mana Reflection", ZoneType.Battlefield, 0);
+            assertEquals(ManaProductionProjection.describe(ability).get("knowledge"), "Unknown",
+                    "An active mana replacement stays outside this current-count fact");
+            reflection.getOwner().getZone(ZoneType.Battlefield).remove(reflection);
+            assertEquals(ManaProductionProjection.describe(ability), three, "Only current active occurrences affect the conservative boundary");
+            fixture.add("Leyline of Abundance", ZoneType.Battlefield, 0);
+            assertEquals(ManaProductionProjection.describe(ability).get("knowledge"), "Unknown",
+                    "Tap-for-mana trigger coupling is not silently simulated");
         }
     }
 

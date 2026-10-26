@@ -65,6 +65,9 @@ mode/conditional structure, and explicit known/unknown facts. Mana production
 alternatives distinguish a choice of colors from a simultaneous bundle. These
 are nominal facts, not a legality certificate: base mana costs have unknown
 adjustment knowledge, while the current payment exposes its actual unpaid bill.
+A known alternative with an empty color map is exact zero production; it is
+distinct from unknown production. Supported source-counter quantities use
+current visible state only when costs and other effects cannot change that count.
 Graphs are finite and audience-filtered; candidate references never grant action
 handles. Unmodeled conditions and resource coupling remain explicit.
 `automatedFault` stops the table with an explicit diagnostic; it never substitutes

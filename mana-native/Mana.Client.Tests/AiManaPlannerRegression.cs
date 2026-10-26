@@ -38,6 +38,15 @@ internal static class AiManaPlannerRegression
         var unknown = dual with { Actions = dual.Actions.Select(action => action with { Production = ManaProduction.Unknown }).ToImmutableArray() };
         check(AiManaPlanner.Evaluate(Frame(unknown), ["{G}"]).Status == AiManaPlanStatus.Unknown,
             "An incomplete production projection remains unknown rather than a fabricated funding proof or shortfall");
+        var zero = Producer("empty-resource", ("empty", Output()));
+        var bluePair = Producer("blue-pair", ("pair", Output(("U", 2))));
+        check(AiManaPlanner.Evaluate(Frame(zero), ["{1}"]).Status == AiManaPlanStatus.Shortfall
+                && AiManaPlanner.Evaluate(Frame(zero, bluePair), ["{G}", "{G}"]).Status == AiManaPlanStatus.Shortfall,
+            "Known zero output contributes neither capacity nor uncertainty about a missing color");
+        var unknownZero = zero with { Actions = zero.Actions.Select(action => action with { Production = ManaProduction.Unknown }).ToImmutableArray() };
+        check(AiManaPlanner.Evaluate(Frame(unknownZero, bluePair), ["{G}", "{G}"]).Status == AiManaPlanStatus.Unknown
+                && AiManaPlanner.Evaluate(Frame(zero, bluePair), ["{U}", "{U}"]).Status == AiManaPlanStatus.Funded,
+            "Legacy zero metadata cannot replace unknown production, while a known empty bundle does not interfere with a real funding witness");
         var free = blue with { Actions = blue.Actions.Select(action => action with { Costs = [] }).ToImmutableArray() };
         check(AiManaPlanner.Evaluate(Frame(free), ["{U}", "{U}"]).Status == AiManaPlanStatus.Unknown,
             "A free producer's unmodeled reuse cannot be declared insufficient after assuming it activates only once");

@@ -62,7 +62,7 @@ internal static class AiWholeSeatEngineCheck
                 foreach (var bot in bots) {
                     seenBots.Add(bot.SeatId);
                     bool isolated = bot.State.ViewerId == bot.SeatId
-                        && AiCampaignVisibility.PrivateWindowsAreDisclosed(bot.State, bot.Semantics);
+                        && AiCampaignVisibility.PrivateWindowsAreDisclosed(bot.State, bot.Semantics, bot.Domain);
                     if (!isolated) RecordPrivacyContext(profile, bot);
                     privateIsolation &= isolated;
                     if (bot.State.Decision != null) observedTasks.Add(AiTasks.From(bot.State.Decision.Payload));

@@ -134,8 +134,12 @@ public static class AiManaPlanner
                 if (!taps || untaps || tap && untap) unmodeledReuse = true;
                 foreach (var output in action.Production.Alternatives) {
                     var counts = Colors.Select(color => output.Colors.GetValueOrDefault(color)).ToArray();
-                    if (counts.Any(count => count < 0) || counts.Sum(count => (long)count) is <= 0 or > 1024
+                    if (counts.Any(count => count < 0) || counts.Sum(count => (long)count) > 1024
                         || output.Colors.Keys.Any(color => !Colors.Contains(color))) { uncertain = true; continue; }
+                    // A disclosed zero bundle is complete knowledge, including
+                    // when a variable producer currently has no counters.
+                    // It contributes no route and cannot invent another color.
+                    if (counts.Sum() == 0) continue;
                     if (frame.Task == AiTask.Payment && action.PaymentManaColors is { } usable
                         && output.Colors.Any(pair => pair.Value > 0 && !usable.Contains(pair.Key))) {
                         // Keep the full bundle. An incidental unusable color is

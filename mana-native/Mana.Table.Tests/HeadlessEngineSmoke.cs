@@ -325,20 +325,32 @@ internal static class HeadlessEngineSmoke
             async Task PlayCard(Card card, string sourceZone)
             {
                 string occurrence = CardViews.Identity(card);
-                var beforeQuery = view.Match!;
-                string prompt = beforeQuery.Decision!.Id;
+                var displayedBeforeQuery = view.Match!;
+                string prompt = displayedBeforeQuery.Decision!.Id;
                 Check(engine.SupportsSourceActions, "The real rules adapter negotiates engine-owned source actions");
+                // A cached presentation can precede queued display publications.
+                // The first input-owned query drains that queue; measure read
+                // purity against a fresh authoritative baseline, as in Java.
+                var primed = await engine.SourceActionsAsync(displayedBeforeQuery.Id, prompt, card.Key);
+                var beforeQuery = await engine.ObserveAsync() ?? throw new InvalidOperationException("Priming the source read lost the game.");
                 var sourceActions = await engine.SourceActionsAsync(beforeQuery.Id, prompt, card.Key);
                 var repeated = await engine.SourceActionsAsync(beforeQuery.Id, prompt, card.Key);
                 var afterQuery = await engine.ObserveAsync() ?? throw new InvalidOperationException("The source action read lost the game.");
                 string expectedKind = sourceZone == "Battlefield" ? "activate" : card.Type.Contains("Land", StringComparison.Ordinal) ? "play" : "cast";
-                Check(sourceActions.GameId == beforeQuery.Id && sourceActions.DecisionId == prompt
+                var currentSource = afterQuery.Viewer?.Zones.SelectMany(zone => zone.Cards).Where(item => item.VisualId == card.VisualId).ToArray() ?? [];
+                bool stableRead = displayedBeforeQuery.Id == beforeQuery.Id && beforeQuery.Decision?.Id == prompt
+                    && sourceActions.GameId == beforeQuery.Id && sourceActions.DecisionId == prompt
                     && sourceActions.SourceCardKey == card.Key && sourceActions.SourceCardId == card.VisualId
                     && sourceActions.Actions.Any(action => action.Kind == expectedKind && !string.IsNullOrWhiteSpace(action.Text))
-                    && sourceActions.Actions.SequenceEqual(repeated.Actions)
+                    && primed.Actions.SequenceEqual(sourceActions.Actions) && sourceActions.Actions.SequenceEqual(repeated.Actions)
                     && afterQuery.Decision?.Id == prompt && afterQuery.Revision == beforeQuery.Revision
-                    && afterQuery.Viewer!.Zones.SelectMany(zone => zone.Cards).Single(item => item.VisualId == card.VisualId).Key == card.Key,
+                    && currentSource.Length == 1 && currentSource[0].Key == card.Key;
+                if (!stableRead)
+                    File.WriteAllText(Path.Combine(paths.Profile, "headless-engine-source-query-mismatch.json"),
+                        JsonSerializer.Serialize(new { card, sourceZone, expectedKind, displayedBeforeQuery, primed, beforeQuery, sourceActions, repeated, afterQuery }, json));
+                Check(stableRead,
                     "Reading the real source actions twice preserves full engine text, stable opaque handles and the unanswered prompt: " + card.Name);
+                view.Accept(afterQuery); frame = Tick("source-read-settled");
                 bool staleQueryRejected = false;
                 try { await engine.SourceActionsAsync(beforeQuery.Id, prompt, "expired-source-key"); }
                 catch (EngineCommandRejectedException) { staleQueryRejected = true; }

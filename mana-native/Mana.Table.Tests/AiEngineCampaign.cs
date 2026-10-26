@@ -11,7 +11,8 @@ namespace Mana.Table;
 
 internal sealed record AiCampaignLimits(int Matches, int Turns, TimeSpan MatchTime, long PolicySeed = 261027);
 internal sealed record AiCampaignResult(int Match, string StopReason, string? MechanicalFailure, int Turns, int Steps,
-    int DevelopedSeats, int Accepted, int OfferedRoutesUsed, int PublicComparisons, double ElapsedMilliseconds, object Evidence);
+    int DevelopedSeats, int Accepted, int OfferedRoutesUsed, int PublicComparisons, double ElapsedMilliseconds, object Evidence,
+    AiCampaignContinuation Continuation);
 
 // Sequential games reuse the existing JVM lane. Budgets stop tests explicitly;
 // the driver never fabricates a bot response or disguises a test stop as a win.
@@ -37,6 +38,7 @@ internal static class AiEngineCampaign
         if (limits.Matches is < 1 or > 16 || limits.Turns is < 8 or > 160 || limits.MatchTime <= TimeSpan.Zero)
             throw new ArgumentOutOfRangeException(nameof(limits));
         string directory = Path.Combine(profile, "ai-campaign"); Directory.CreateDirectory(directory);
+        AiCampaignContinuation.CheckRegression(check);
         CheckDisclosureBounds(check);
         foreach (var manifest in AiCampaignDecks.All) manifest.Validate();
         await engine.EnableAutomatedSeatsAsync();
@@ -85,6 +87,9 @@ internal static class AiEngineCampaign
         File.WriteAllText(Path.Combine(directory, "summary.json"), JsonSerializer.Serialize(results, new JsonSerializerOptions { WriteIndented = true }));
         check(results.All(result => result.MechanicalFailure == null), "Diverse AI campaign mechanical results: "
             + string.Join("; ", results.Select(result => $"match {result.Match}: {result.MechanicalFailure ?? result.StopReason}, turn {result.Turns}, {result.Accepted} accepted commands")));
+        check(results.All(result => result.Continuation.Conclusive), "Diverse AI campaign continuation results: "
+            + string.Join("; ", results.Select(result => $"match {result.Match}: {result.Continuation.Classification}, turn {result.Turns}/{limits.Turns}"))
+            + ". A time cutoff is inconclusive; historical accepted commands do not establish completion or diagnose a policy loop.");
         check(results.All(result => result.DevelopedSeats >= 3 && result.Accepted >= 12 && result.OfferedRoutesUsed >= 8 && result.PublicComparisons > 0),
             "Every bounded diverse match develops multiple real battlefields and compares same-revision public projections; absent rare mechanics remain explicit coverage gaps.");
     }
@@ -100,12 +105,30 @@ internal static class AiEngineCampaign
             new("disclosure", new(), new RevealPayload([new(null, face.Name, face)])));
         check(AiCampaignVisibility.PrivateWindowsAreDisclosed(revealed),
             "One current anonymous reveal authorizes its exact read-only face window");
-        var duplicate = revealed with { Players = [revealed.Players[0], revealed.Players[1], Player(2, [face], [])] };
+        var keyedReveal = revealed with {
+            Players = [revealed.Players[0], Player(1, [face with { Key = "opaque-read-only-key", VisualId = null!, CombatId = null! }], []), revealed.Players[2]] };
+        check(AiCampaignVisibility.PrivateWindowsAreDisclosed(keyedReveal),
+            "A current reveal's bounded face remains read-only when its projection retains an opaque key without physical identity");
+        var otherFace = new CardFace("Undisclosed reverse", "Creature", "{U}", "Undisclosed reverse rules", 1, 1, "reverse", "back");
+        bool AcceptsFace(Card candidate) => AiCampaignVisibility.PrivateWindowsAreDisclosed(revealed with {
+            Players = [revealed.Players[0], Player(1, [candidate], []), revealed.Players[2]] });
+        check(!AcceptsFace(face with { Text = "Undisclosed library card: Hidden Sentinel" })
+                && !AcceptsFace(face with { OtherFace = otherFace })
+                && !AcceptsFace(face with { Power = 4, Toughness = 4 })
+                && !AcceptsFace(face with { CombatKeywords = ["hexproof"] })
+                && !AcceptsFace(face with { States = [new("extra", "Undisclosed ability", "ability", 1, null, "Hidden rules text")] }),
+            "An anonymous face disclosure cannot authorize additional rules text, another face, statistics or readable abilities");
+        check(AcceptsFace(face with { Edition = "a different occurrence printing", CollectorNumber = "42", Tapped = true }),
+            "Anonymous face matching permits legitimate printing metadata and occurrence-state differences");
+        var duplicate = keyedReveal with { Players = [keyedReveal.Players[0], keyedReveal.Players[1], Player(2, [face], [])] };
         check(!AiCampaignVisibility.PrivateWindowsAreDisclosed(duplicate)
-                && !AiCampaignVisibility.PrivateWindowsAreDisclosed(revealed with { Decision = null })
+                && !AiCampaignVisibility.PrivateWindowsAreDisclosed(keyedReveal with { Decision = null })
+                && !AiCampaignVisibility.PrivateWindowsAreDisclosed(keyedReveal, domain: DecisionActionDomain.None with { PoolManaColors = ["U"] })
                 && !AiCampaignVisibility.PrivateWindowsAreDisclosed(revealed with {
-                    Players = [revealed.Players[0], Player(1, [face with { Key = "forged-authority" }], []), revealed.Players[2]] }),
-            "A reveal cannot authorize extra hidden copies, outlive its decision or grant action handles");
+                    Players = [revealed.Players[0], Player(1, [face with { Selectable = true }], []), revealed.Players[2]] })
+                && !AiCampaignVisibility.PrivateWindowsAreDisclosed(revealed with {
+                    Players = [revealed.Players[0], Player(1, [face with { CombatId = "undisclosed-physical-identity" }], []), revealed.Players[2]] }),
+            "A reveal cannot authorize extra hidden copies, outlive its decision, disclose physical identity or grant action permissions");
         var top = face with { VisualId = "known-top" };
         var look = revealed with { Decision = null, Players = [Player(0, [], [top], top), Player(1, [], []), Player(2, [], [])] };
         check(AiCampaignVisibility.PrivateWindowsAreDisclosed(look)
@@ -150,7 +173,7 @@ internal static class AiEngineCampaign
                 foreach (var player in state.Players)
                     if (player.Zone("Battlefield").Cards.Any(card => card.Type.Contains("Land", StringComparison.Ordinal))) developed.Add(player.Id);
                 foreach (var bot in provider.Last) {
-                    if (bot.State.ViewerId != bot.SeatId || !AiCampaignVisibility.PrivateWindowsAreDisclosed(bot.State, bot.Semantics))
+                    if (bot.State.ViewerId != bot.SeatId || !AiCampaignVisibility.PrivateWindowsAreDisclosed(bot.State, bot.Semantics, bot.Domain))
                         throw new InvalidDataException("Automated seat disclosed another private hand or library order.");
                     if (state.BoardRevision == bot.State.BoardRevision && state.Id == bot.State.Id) {
                         if (!AiWholeSeatEngineCheck.ComparePublicProjection(state, bot.State, directory))
@@ -180,7 +203,8 @@ internal static class AiEngineCampaign
             }
         }
         var result = new AiCampaignResult(index, stop, failure, state?.Turn ?? 0, steps, developed.Count,
-            evidence.Accepted, evidence.Commands.GetValueOrDefault(nameof(UseOfferedAction)), comparisons, elapsed.Elapsed.TotalMilliseconds, evidence.Summary());
+            evidence.Accepted, evidence.Commands.GetValueOrDefault(nameof(UseOfferedAction)), comparisons, elapsed.Elapsed.TotalMilliseconds, evidence.Summary(),
+            AiCampaignContinuation.Assess(stop, limits.Turns, state?.Turn ?? 0, state?.Status == "finished" && !string.IsNullOrWhiteSpace(state.Result)));
         File.WriteAllText(Path.Combine(directory, "result.json"), JsonSerializer.Serialize(result, new JsonSerializerOptions { WriteIndented = true }));
         return result;
     }

@@ -1,7 +1,13 @@
 package forge.api;
 
 import forge.game.ability.ApiType;
+import forge.game.card.CounterEnumType;
+import forge.game.cost.CostPartMana;
+import forge.game.cost.CostTap;
+import forge.game.replacement.ReplacementType;
 import forge.game.spellability.SpellAbility;
+import forge.game.trigger.TriggerType;
+import forge.game.zone.ZoneType;
 
 import java.util.*;
 
@@ -26,7 +32,7 @@ final class ManaProductionProjection {
             // Restricted spending is evaluated against the exact current bill by
             // InputPayMana. A color list alone cannot certify generic spending.
             if (!mana.getManaRestrictions().isEmpty() || !mana.getExtraManaRestriction().isEmpty()) return unknown();
-            Integer amount = integer(part.getParamOrDefault("Amount", "1"));
+            Integer amount = amount(part);
             Integer each = integer(part.getParamOrDefault("Each", "1"));
             if (amount == null || each == null || amount < 0 || each < 0) return unknown();
             String raw = mana.getOrigProduced();
@@ -87,6 +93,47 @@ final class ManaProductionProjection {
         current.remove(color); return true;
     }
     private static Map<String, Integer> bundle(String color, int amount) { return Map.of(color, amount); }
+    private static Integer amount(SpellAbility ability) {
+        String value = ability.getParamOrDefault("Amount", "1");
+        Integer literal = integer(value);
+        if (literal != null) return literal;
+        String expression = value.contains("$") ? value : ability.getSVar(value);
+        String prefix = "Count$CardCounters.";
+        if (!expression.startsWith(prefix)) return null;
+        String counter = expression.substring(prefix.length());
+        if (!counter.matches("[A-Z][A-Z0-9_]*") || !currentCounterStateIsStable(ability)) return null;
+        long count;
+        if (counter.equals("ALL")) count = ability.getHostCard().getCounters().entrySet().stream().mapToLong(entry -> entry.getCount()).sum();
+        else {
+            try { count = ability.getHostCard().getCounters(CounterEnumType.valueOf(counter)); }
+            catch (IllegalArgumentException unsupported) { return null; }
+        }
+        return count >= 0 && count <= 1024 ? (int) count : null;
+    }
+
+    private static boolean currentCounterStateIsStable(SpellAbility ability) {
+        var source = ability.getHostCard();
+        var actor = ability.getActivatingPlayer();
+        if (actor == null || source == null || source.isFaceDown() || !source.isInZone(ZoneType.Battlefield)
+                || source.getController() != actor || ability.getRootAbility() != ability || ability.getSubAbility() != null
+                || !ability.getAdditionalAbilities().isEmpty() || !ability.getAdditionalAbilityLists().isEmpty()
+                || ability.hasParam("Defined") && !ability.getParam("Defined").equals("You") || ability.getPayCosts() == null
+                || ability.getPayCosts().getCostParts().stream().filter(CostTap.class::isInstance).count() != 1
+                || ability.getPayCosts().getCostParts().stream().anyMatch(cost -> !(cost instanceof CostTap)
+                    && !(cost instanceof CostPartMana mana && mana.getMana().isZero()))) return false;
+        // This is a current public source-state fact, not a hypothetical payment
+        // or replacement simulation. Unknown interactions stay unexpanded; never
+        // inspect the original face or abilities of a concealed occurrence.
+        for (ZoneType zone : List.of(ZoneType.Battlefield, ZoneType.Command))
+            for (var card : source.getGame().getCardsIn(zone)) {
+                if (card.isFaceDown() || !card.getView().canBeShownTo(actor.getView())) return false;
+                if (card.getReplacementEffects().stream().anyMatch(replacement -> replacement.zonesCheck(card.getZone())
+                        && (replacement.getMode() == ReplacementType.ProduceMana || replacement.getMode() == ReplacementType.Tap))) return false;
+                if (card.getTriggers().stream().anyMatch(trigger -> trigger.zonesCheck(card.getZone())
+                        && Set.of(TriggerType.Taps, TriggerType.TapAll, TriggerType.TapsForMana, TriggerType.ManaAdded).contains(trigger.getMode()))) return false;
+            }
+        return true;
+    }
     private static Integer integer(String text) {
         try { return Integer.valueOf(text); } catch (NumberFormatException ignored) { return null; }
     }

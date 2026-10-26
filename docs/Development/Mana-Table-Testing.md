@@ -38,7 +38,10 @@ and a 35-second progress cutoff. Its shared singleton deck manifests contain ord
 lands for Rhys, Pir/Toothy, Balmor and Traxos, rather than land-heavy isolation
 decks. `--smoke-ai-campaign` runs two seat rotations, each with a 32-turn limit
 and a 45-second progress cutoff, in one engine process. Time cutoffs are checked
-between steps; a pending RPC or teardown can extend elapsed time. A mechanical
+between steps; a pending RPC or teardown can extend elapsed time. Reaching a
+natural outcome or the requested turn boundary completes the continuation. A
+time cutoff is inconclusive and cannot pass that gate using earlier development
+or accepted-command counts; it also does not prove a policy loop. A mechanical
 failure stops subsequent rotations and records them as unrun. The campaign records deck/policy/engine
 provenance, actual public state, missing mechanic coverage, and separate review
 findings. Review findings are not automatically strategy errors: a forced
@@ -53,6 +56,11 @@ execute a command. Its `ai-decision-replay.json` is private diagnostic output;
 an offered proposal does not imply acceptance or resolution. The graphics-free
 client suite tests replay roundtrips, scope and knowledge isolation, exhaustive
 small mana assignments, and controlled tactical/effect-graph expectations.
+
+Campaign disclosure checks compare the bot's private-zone windows with its
+current disclosed faces and action permissions. They are consistency checks,
+not an independent proof that the provider correctly granted every entitlement.
+Real rules-side privacy and revocation scenarios remain necessary.
 
 This checks actual development, paid abilities and combat, without treating
 progress counters as evidence that the opponents are fun. Java

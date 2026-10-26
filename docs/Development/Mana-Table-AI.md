@@ -333,6 +333,12 @@ instead of spending it on the outer bill. This prevents an unseeded paid source
 from being cancelled and retried through fresh inputs. These witnesses remain
 nominal: current-bill spending permissions do not certify a different nested
 bill, and restricted cross-bill dependencies still need a stronger model.
+An exact `Count$CardCounters.<built-in type or ALL>` quantity, directly or
+through one SVar, can use current visible source counters for a tap-only mana
+ability with no other effects. A disclosed empty bundle means known zero,
+not unknown production. Counter-changing costs, arithmetic, concealed sources
+and active mana/tap replacements or triggers keep this projection unknown.
+It describes nominal current output rather than simulating resolution.
 
 Controlled tactical cases establish specific expectations independently of
 self-play: preserve a necessary early land when discarding, account for an
@@ -347,7 +353,10 @@ The diverse campaign uses four shared singleton Commander deck manifests with
 normal spell/land ratios: Rhys green-white tokens, Pir/Toothy green-blue
 counters, Balmor blue-red spells, and Traxos colorless artifacts. It reuses one
 initialized JVM, rotates seats, bounds turns/time, and separates mechanical
-failures, witnessed mechanics, missing coverage and review findings. An accepted
+failures, witnessed mechanics, missing coverage and review findings. Only a
+natural outcome or the requested turn boundary completes its continuation gate;
+a time cutoff is inconclusive regardless of earlier accepted-command counts.
+It does not establish whether the unfinished turn was slow or looping. An accepted
 command is not an observed effect. A compulsory return of one's own land is a
 review finding, not proof of bad targeting. Missing rare draws are coverage gaps.
 Policy seeds are recorded; rules randomness remains uncontrolled, so rotated
@@ -393,6 +402,20 @@ Ordinary damage history currently identifies its recipient separately from its
 source occurrence, but lacks an explicit event-time source controller. The
 policy must not reconstruct that historical controller from current ownership;
 its social pressure/focus estimates remain incomplete until that fact is supplied.
+
+The next quality gates need concrete continuations, not larger action counters:
+
+| Boundary | Required regression before claiming coverage |
+| --- | --- |
+| Invocation lifetime | Start an optional action, enter nested costs and required targets, cancel and refresh inputs: all retain the correct parent allowance. A separate successful action gets a new root; another seat's choice consumes no waiting-seat active time. |
+| Resource investment | An empty variable producer never funds a cast. A funded X action chooses a useful investment and completes payment; optional costs do not spend resources that the chosen continuation still needs. |
+| Joint combat | Individually legal blocks which violate a joint requirement receive a rules-provided repair witness and finish without an assignment/undo loop. |
+| Social memory | Damage and removal retain the source controller at event time. Changing control afterward cannot rewrite who exerted that pressure. Review justified repeated threats separately from marginal pile-on. |
+
+Use exact private decision replay for the local choice and a short authoritative
+continuation for its outcome. A public campaign can discover these cases, but a
+rare draw or missing witness cannot certify their behavior. Human gameplay
+review remains a separate gate after the mechanical and tactical regressions.
 
 ## Decision framework foundation
 
@@ -491,9 +514,9 @@ flowchart LR
 | Forecast | Budgeted isolated branches, uncertainty and terminal outcomes under the seat's knowledge. Unknown hands/order use explicit hypotheses, not the live host's hidden truth. Branch handles cannot execute on the live table. |
 | Decision record | Candidate features, estimated utility, uncertainty, chosen route, tie/random seed, policy version and fallback. Link eventual execution/results separately from proposals. |
 
-The decision frame/session described above is implemented; structured effect
-semantics, causal joining and forecasts in this table remain proposed. Policy
-execution currently uses the neutral .NET library in conformance checks.
+The decision frame/session, bounded effect graphs and live whole-seat execution
+are implemented in the neutral .NET library. Semantic coverage is incomplete;
+causal joining currently covers combat, and forecasts remain proposed.
 Forge-specific objects, `AILogic` dispatch and mutations stay outside that
 library. Replacing Forge then requires a conforming provider, not rewritten
 deck personalities or renderers.
@@ -543,10 +566,11 @@ including composite mechanics; do not silently substitute a known preset.
 
 ## First implementation and efficient evaluation
 
-1. **Establish the complete framework before policies.** The initial library
-   supplies typed requests, scoped proposals, budgets, history and host receipts.
-   Extend the provider with complete action domains, structured semantic facts
-   and causal execution identities before using it as an autonomous seat.
+1. **Strengthen the framework alongside evaluation.** The library supplies typed
+   requests, scoped proposals, budgets, history and host receipts. Live seats use
+   complete action domains and bounded semantic facts. Extend invocation-level
+   execution identities beyond combat before claiming costs and nested choices
+   share one evaluation allowance.
 2. **Build a full casual policy and exercise every task.** Opening hands, play
    sequencing, abilities, costs, combat and required effects belong to the same
    policy system. Use the combat/damage pile-on cases to verify consistent table
@@ -574,10 +598,10 @@ seat cannot know must not alter its policy inputs or choices. These are semantic
 properties, not a request to enumerate all possible Magic interactions.
 
 Start with cheap fixed-state probes and short real-engine continuations. Use
-paired seeds/seat rotations for deeper self-play only where needed, with limits
-on wall time, branches and turns. The existing `MatchTable` requires a human
-seat, so all-AI evaluation needs an explicit headless runner; do not quietly
-remove that live-table invariant to get a benchmark working.
+paired seeds where rules randomness is controlled, and seat rotations for deeper
+self-play where needed, with limits on wall time, branches and turns. The
+implemented all-AI runner uses an explicit simulation capability and independent
+spectator; the live-table requirement for a human remains intact.
 
 Measure legal completion, response latency, candidate coverage, stale/fallback
 rates, concentration of discretionary pressure, reaction to changed threats and
