@@ -409,6 +409,7 @@ The next quality gates need concrete continuations, not larger action counters:
 | --- | --- |
 | Invocation lifetime | Start an optional action, enter nested costs and required targets, cancel and refresh inputs: all retain the correct parent allowance. A separate successful action gets a new root; another seat's choice consumes no waiting-seat active time. |
 | Resource investment | An empty variable producer never funds a cast. A funded X action chooses a useful investment and completes payment; optional costs do not spend resources that the chosen continuation still needs. |
+| Partial production | Represent fixed-size `ColorIdentity` mana choices as finite alternatives. One untapped producer must not motivate several unfunded casts just because that rules operator is still projected as unknown. |
 | Joint combat | Individually legal blocks which violate a joint requirement receive a rules-provided repair witness and finish without an assignment/undo loop. |
 | Social memory | Damage and removal retain the source controller at event time. Changing control afterward cannot rewrite who exerted that pressure. Review justified repeated threats separately from marginal pile-on. |
 

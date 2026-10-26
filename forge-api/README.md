@@ -70,6 +70,10 @@ distinct from unknown production. Supported source-counter quantities use
 current visible state only when costs and other effects cannot change that count.
 Graphs are finite and audience-filtered; candidate references never grant action
 handles. Unmodeled conditions and resource coupling remain explicit.
+Accepting a decision revokes its temporary hidden-card window and card keys in
+the resolving receipt, independently of queued rules cleanup. Persistent look
+permissions remain readable. Past authorized knowledge is not a current offer
+or permission to publish a library window without its owning choice.
 `automatedFault` stops the table with an explicit diagnostic; it never substitutes
 the legacy strategy. These commands are absent from network seat dispatch and
 cannot be addressed using a `connectionId`.

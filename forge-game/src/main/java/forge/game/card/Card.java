@@ -3754,6 +3754,13 @@ public class Card extends GameEntity implements Comparable<Card>, IHasSVars, ITr
         return view.mayPlayerLook(player.getView());
     }
 
+    /** Rules grants that remain when a controller's temporary decision display ends. */
+    public final boolean mayPlayerLookWithoutTemporary(final Player player) {
+        if (mayLookFaceDownExile.contains(player)) return true;
+        for (PlayerCollection players : mayLook.values()) if (players.contains(player)) return true;
+        return false;
+    }
+
     public final void addMayLookFaceDownExile(final Player p) {
         mayLookFaceDownExile.add(p);
         updateMayLook();

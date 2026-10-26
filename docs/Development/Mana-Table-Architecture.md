@@ -44,6 +44,10 @@ only the identity generation it previously observed. This ordering also covers
 rules rollback which restores a card to a hidden zone without a movement event;
 later source catalogs and effect graphs must reference that same published
 occurrence. Historical activity keeps its copied event-time identities.
+Consuming a choice also ends its temporary hidden-card window in the resolving
+receipt, before a queued rules callback removes temporary display permissions.
+Persistent rules grants, such as looking at the library's top card, remain
+readable; consumed card keys and selection flags no longer grant current offers.
 
 Source native composition now owns an `AiTableHost` and a baseline
 `CasualCommanderPolicy`. A private `IAutomatedSeatProvider` supplies separately

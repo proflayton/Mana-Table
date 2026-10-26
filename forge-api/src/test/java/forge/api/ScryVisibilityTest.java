@@ -3,6 +3,7 @@ package forge.api;
 import com.google.gson.Gson;
 import forge.game.zone.ZoneType;
 import org.testng.annotations.Test;
+import org.testng.annotations.DataProvider;
 
 import java.util.List;
 import java.util.Map;
@@ -14,6 +15,99 @@ import static org.testng.Assert.*;
 /** A known top window is distinct from inspecting an unordered library search. */
 public class ScryVisibilityTest {
     private static final Gson JSON = new Gson();
+
+    @DataProvider public Object[][] persistentTopPermissions() { return new Object[][] {{false}, {true}}; }
+
+    @Test(dataProvider = "persistentTopPermissions", timeOut = 90000)
+    public void acceptingARealPonderOrderEndsItsTemporaryWindowBeforeTheRulesThreadResumes(boolean persistentTop) throws Exception {
+        try (var scenario = new RulesScenario("ponder-consumed-window-" + persistentTop,
+                Map.of(0, persistentTop ? List.of("Island", "Mystic Forge") : List.of("Island")), "Ponder", "Rhys the Redeemed")) {
+            var main = scenario.until(input -> input.seat() == 0 && text(input.prompt(), "inputType").equals("InputPassPriority")
+                    && text(input.state(), "phaseKey").equals("MAIN1"));
+            var spell = zone(viewer(main.state()), "Hand").getAsJsonArray("cards").get(0).getAsJsonObject();
+            var catalog = JSON.toJsonTree(scenario.table.seat(0).sourceActions(request(main, Map.of("key", text(spell, "key"))))).getAsJsonObject();
+            var cast = catalog.getAsJsonArray("actions").asList().stream().map(value -> value.getAsJsonObject())
+                    .filter(action -> text(action, "kind").equals("cast")).findFirst().orElseThrow();
+            assertTrue(scenario.answer(main, Map.of("action", "useSourceAction", "key", text(spell, "key"), "actionId", text(cast, "id"))));
+            var payment = scenario.until(input -> text(input.prompt(), "inputType").startsWith("InputPayMana")
+                    && input.prompt().get("okEnabled").getAsBoolean());
+            assertTrue(scenario.answer(payment, Map.of("action", "ok")));
+            var order = scenario.until(input -> text(input.prompt(), "kind").equals("choice")
+                    && input.prompt().has("ordered") && input.prompt().get("ordered").getAsBoolean());
+            assertEquals(order.prompt().getAsJsonArray("choices").size(), 3);
+            assertEquals(zone(viewer(order.state()), "Library").getAsJsonArray("cards").size(), 3);
+            int handBefore = count(viewer(order.state()), "Hand");
+            scenario.table.game.getAction().withState(() -> {
+                assertTrue(scenario.answer(order, Map.of("choices", List.of(2, 0, 1))));
+                // Keep the rules thread behind its existing state boundary so
+                // it cannot yet call endTempShowCards or publish a new input.
+                var owner = scenario.table.game.getPlayers().get(0);
+                for (int index = 0; index < 3; index++)
+                    assertTrue(owner.getCardsIn(ZoneType.Library).get(index).mayPlayerLook(owner));
+                var busy = scenario.state(0);
+                assertTrue(busy.get("prompt").isJsonNull());
+                var library = zone(viewer(busy), "Library");
+                assertEquals(library.getAsJsonArray("cards").size(), persistentTop ? 1 : 0,
+                        "A consumed ordering scope cannot leave its temporary hidden-zone window in the resolving snapshot");
+                assertEquals(library.get("topCard").isJsonNull(), !persistentTop);
+                for (var card : library.getAsJsonArray("cards")) {
+                    var retained = card.getAsJsonObject();
+                    assertEquals(text(retained, "key"), "");
+                    assertFalse(retained.get("selectable").getAsBoolean());
+                }
+                assertEquals(count(viewer(busy), "Hand"), handBefore);
+                assertFalse(zone(viewer(busy), "Hand").getAsJsonArray("cards").isEmpty(), "The player's own hand stays readable");
+                assertThrows(IllegalArgumentException.class, () -> scenario.table.seat(0).action(request(order, Map.of("choices", List.of(0, 1, 2)))));
+            });
+            var shuffle = scenario.until(input -> text(input.prompt(), "inputType").equals("InputConfirm"));
+            assertTrue(scenario.answer(shuffle, Map.of("action", "cancel")));
+            var resolved = scenario.until(input -> input.seat() == 0 && text(input.prompt(), "inputType").equals("InputPassPriority")
+                    && input.state().getAsJsonArray("stack").isEmpty());
+            assertEquals(count(viewer(resolved.state()), "Hand"), handBefore + 1, "The real Ponder still finishes its draw after the shuffle choice");
+            assertEquals(zone(viewer(resolved.state()), "Library").getAsJsonArray("cards").size(), persistentTop ? 1 : 0);
+        }
+    }
+
+    @Test(dataProvider = "persistentTopPermissions", timeOut = 90000)
+    public void acknowledgingARealPeekEndsTemporaryOpponentHandDisclosureAndPreservesContinuousGrants(boolean persistentHand) throws Exception {
+        try (var scenario = new RulesScenario("peek-consumed-window-" + persistentHand,
+                Map.of(0, persistentHand ? List.of("Island", "Telepathy") : List.of("Island")), "Peek", "Rhys the Redeemed")) {
+            var main = scenario.until(input -> input.seat() == 0 && text(input.prompt(), "inputType").equals("InputPassPriority")
+                    && text(input.state(), "phaseKey").equals("MAIN1"));
+            var spell = zone(viewer(main.state()), "Hand").getAsJsonArray("cards").get(0).getAsJsonObject();
+            var catalog = JSON.toJsonTree(scenario.table.seat(0).sourceActions(request(main, Map.of("key", text(spell, "key"))))).getAsJsonObject();
+            var cast = catalog.getAsJsonArray("actions").get(0).getAsJsonObject();
+            assertTrue(scenario.answer(main, Map.of("action", "useSourceAction", "key", text(spell, "key"), "actionId", text(cast, "id"))));
+            var target = scenario.until(input -> text(input.prompt(), "inputType").equals("InputSelectTargets"));
+            assertTrue(scenario.answer(target, Map.of("action", "player", "playerId", 1)));
+            var payment = scenario.until(input -> text(input.prompt(), "inputType").startsWith("InputPayMana")
+                    && input.prompt().get("okEnabled").getAsBoolean());
+            assertTrue(scenario.answer(payment, Map.of("action", "ok")));
+            var reveal = scenario.until(input -> text(input.prompt(), "kind").equals("reveal"));
+            int revealed = zone(player(reveal.state(), 1), "Hand").getAsJsonArray("cards").size();
+            assertTrue(revealed > 0);
+            int ownHand = count(viewer(reveal.state()), "Hand");
+            scenario.table.game.getAction().withState(() -> {
+                assertTrue(scenario.answer(reveal, Map.of("action", "ok")));
+                var owner = scenario.table.game.getPlayers().get(0);
+                for (var card : scenario.table.game.getPlayers().get(1).getCardsIn(ZoneType.Hand))
+                    assertTrue(card.mayPlayerLook(owner), "The rules thread has not yet removed the temporary reveal permission");
+                var busy = scenario.state(0);
+                assertTrue(busy.get("prompt").isJsonNull());
+                var hand = zone(player(busy, 1), "Hand").getAsJsonArray("cards");
+                assertEquals(hand.size(), persistentHand ? revealed : 0,
+                        "Only a continuous rules grant can keep opponent-hand faces after their reveal acknowledgement ends");
+                for (var card : hand) assertEquals(text(card.getAsJsonObject(), "key"), "");
+                assertEquals(zone(viewer(busy), "Hand").getAsJsonArray("cards").size(), ownHand);
+                assertTrue(zone(viewer(busy), "Battlefield").getAsJsonArray("cards").size() >= 1, "Public permanents stay readable");
+                assertThrows(IllegalArgumentException.class, () -> scenario.table.seat(0).action(request(reveal, Map.of("action", "ok"))));
+            });
+            var resolved = scenario.until(input -> input.seat() == 0 && text(input.prompt(), "inputType").equals("InputPassPriority")
+                    && input.state().getAsJsonArray("stack").isEmpty());
+            assertEquals(count(viewer(resolved.state()), "Hand"), ownHand + 1);
+            assertEquals(zone(player(resolved.state(), 1), "Hand").getAsJsonArray("cards").size(), persistentHand ? revealed : 0);
+        }
+    }
 
     @Test(timeOut = 90000)
     public void aLookAtTopPermissionDisclosesALandWithoutGrantingAPlayAndEndsWithItsSource() throws Exception {

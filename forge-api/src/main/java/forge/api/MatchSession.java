@@ -359,8 +359,9 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
                 // task. Its input stays on the controller stack while locked,
                 // but cannot accept another choice until that task finishes.
                 // Unrelated GUI callbacks must not reopen its consumed scope.
+                Pending consumed = pending;
                 if (pending != null && pending.input == current) pending = null;
-                if (latest.get("prompt") != null) markBusy();
+                if (latest.get("prompt") != null) markBusy(consumed);
                 return;
             }
             // Unrelated GUI callbacks may refresh every seat. An unanswered
@@ -521,7 +522,7 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
                 if (current != null && current.kind.equals("input")
                         && (human.getInputQueue().getInput() != current.input || human.getInputProxy().getInput() != current.input
                             || (current.input instanceof InputPassPriority || current.input instanceof InputPayMana) && !sourceInputCurrent(current))) {
-                    if (latest.get("prompt") != null && !finished()) markBusy();
+                    if (latest.get("prompt") != null && !finished()) markBusy(current);
                     current = null;
                 }
                 var domain = map("version", sourceActionVersion.get(), "coverage", "NotApplicable", "sources", List.of(), "actions", List.of());
@@ -690,7 +691,7 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
                 validateDialog(next, request);
                 if (playerDriven) table.tempo.activity(viewer.getId());
                 pending = null;
-                markBusy();
+                markBusy(next);
                 next.response.complete(request.deepCopy());
                 return latest;
             }
@@ -789,7 +790,7 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
             if (playerDriven) table.tempo.activity(viewer.getId());
             pending = null;
             inputActionQueued = true;
-            markBusy();
+            markBusy(next);
             HeadlessPlatform.later(() -> {
                 boolean restorePriority = false;
                 try {
@@ -955,12 +956,58 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
         if (error != null) throw new IllegalStateException(error);
     }
 
-    private void markBusy() {
+    private void markBusy(Pending consumed) {
         var next = new LinkedHashMap<>(latest);
         next.put("revision", ++revision); next.put("prompt", null); next.put("status", "resolving");
+        next.put("players", resolvingPlayers(consumed));
         next.put("playAccesses", PlayAccessProjection.withoutCurrentOffers(next.get("playAccesses")));
         latest = Collections.unmodifiableMap(next);
         table.refreshDecisionState();
+    }
+
+    @SuppressWarnings("unchecked")
+    private List<Map<String, Object>> resolvingPlayers(Pending consumed) {
+        var players = new ArrayList<Map<String, Object>>();
+        for (var previous : (List<Map<String, Object>>) latest.get("players")) {
+            var player = new LinkedHashMap<>(previous);
+            var zones = new ArrayList<Map<String, Object>>();
+            for (var oldZone : (List<Map<String, Object>>) previous.get("zones")) {
+                var zone = new LinkedHashMap<>(oldZone);
+                var zoneType = ZoneType.valueOf((String) zone.get("name"));
+                var retained = new ArrayList<Map<String, Object>>();
+                Object top = null;
+                for (var oldCard : (List<Map<String, Object>>) oldZone.get("cards")) {
+                    boolean hidden = zoneType == ZoneType.Library || zoneType == ZoneType.Hand
+                            && !Objects.equals(previous.get("id"), viewer.getId())
+                            || zoneType == ZoneType.Exile && Boolean.TRUE.equals(oldCard.get("faceDown"));
+                    CardView view = consumed == null ? null : consumed.cards.get(oldCard.get("key"));
+                    if (hidden && !visibleOutsideTemporaryDecision(view, zoneType)) continue;
+                    var card = new LinkedHashMap<>(oldCard);
+                    card.put("key", ""); card.put("selectable", false); card.put("highlighted", false);
+                    var frozen = Collections.unmodifiableMap(card);
+                    retained.add(frozen);
+                    if (oldCard == oldZone.get("topCard")) top = frozen;
+                }
+                zone.put("cards", List.copyOf(retained));
+                if (oldZone.containsKey("topCard")) zone.put("topCard", top);
+                zones.add(Collections.unmodifiableMap(zone));
+            }
+            player.put("zones", List.copyOf(zones));
+            players.add(Collections.unmodifiableMap(player));
+        }
+        return List.copyOf(players);
+    }
+
+    private boolean visibleOutsideTemporaryDecision(CardView view, ZoneType zone) {
+        if (view == null || !isVisibleInZone(view, zone, viewer)) return false;
+        Card current = human.getCard(view);
+        if (current == null || !current.isInZone(zone)) return false;
+        if (current.mayPlayerLookWithoutTemporary(human.getPlayer())) return true;
+        // Preserve the engine's controlled-player viewing relationship without
+        // borrowing a temporary peek from that player's completed decision.
+        var controller = view.getController();
+        return controller != null && viewer.equals(controller.getMindSlaveMaster())
+                && (zone == ZoneType.Hand || current.mayPlayerLookWithoutTemporary(current.getController()));
     }
 
     record PublicDecision(int ownerId, String actionClass) { }
