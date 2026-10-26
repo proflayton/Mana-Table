@@ -29,7 +29,8 @@ internal sealed partial class TableApplication
         if (keys.IsKeyDown(Keys.Home) && previousKeys.IsKeyUp(Keys.Home)) {
             manualBoardView = null; boardPanning = false; SetStudyFocus(null); return;
         }
-        if (!BoardViewport.Contains(pointer)) return;
+        // Retain pointer capture until release, including outside the board.
+        if (!BoardViewport.Contains(pointer) && !boardPanning) return;
         int wheel = mouse.ScrollWheelValue - previousMouse.ScrollWheelValue;
         if (wheel != 0 && pressed == null) {
             var start = manualBoardView ?? boardView;

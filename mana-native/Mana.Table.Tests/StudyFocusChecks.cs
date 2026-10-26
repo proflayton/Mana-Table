@@ -124,7 +124,12 @@ internal static class StudyFocusChecks
             "Wheel zoom changes the shared camera while game state, canonical card poses and the local hand remain unchanged");
         var beforePan = view.BoardView;
         Tick(new(700, 400), middle: ButtonState.Pressed);
-        Tick(new(780, 430), middle: ButtonState.Pressed); Tick(new(780, 430)); Tick(elapsed: .7);
+        Tick(new(780, 430), middle: ButtonState.Pressed);
+        check(view.DecisionDock is { PauseReason: Mana.Magic.DecisionDockPauseReason.Interaction },
+            "An active camera drag temporarily pauses automatic advancement");
+        Tick(new(1680, 430), middle: ButtonState.Pressed); Tick(new(1680, 430)); Tick(new(1680, 430), elapsed: .7);
+        check(view.DecisionDock is { PauseReason: not Mana.Magic.DecisionDockPauseReason.Interaction },
+            "Releasing camera capture outside the board retires its interaction pause");
         check(view.BoardView.Scale == beforePan.Scale && view.BoardView.Offset != beforePan.Offset
                 && ReferenceEquals(view.Match, cameraState) && engine.Replies.Count == 1,
             "Middle-drag pans the normal battlefield without changing scale, decision scope or submitting another command");
