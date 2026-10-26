@@ -14,6 +14,8 @@ internal sealed class ChoiceDraft : GalleryState
 {
     internal ChoiceSelection Selection { get; }
     internal bool Ordered { get; }
+    internal bool ShowAllCards { get; set; }
+    internal bool Includes(int? index) => ShowAllCards || index.HasValue;
     internal List<int> Selected { get; } = [];
     internal IReadOnlyList<int> View { get; }
     internal ChoiceDraft(ChoiceSelection selection, bool ordered)

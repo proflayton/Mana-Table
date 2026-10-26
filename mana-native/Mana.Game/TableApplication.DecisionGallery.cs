@@ -70,10 +70,13 @@ internal sealed partial class TableApplication
         var items = disclosures.Length > 0 || selection == null
             ? disclosures.Select(c => (c.Index, c.Label, Card: (Card?)c.Card, Detail: "", Mana: "")).ToArray()
             : selection!.Choices.Select(c => (Index: (int?)c.Index, c.Label, Card: CardViews.Choice(state, c), c.Detail, c.Mana)).ToArray();
-        var filtered = items.Select((item, slot) => (Item: item, Slot: slot))
-            .Where(c => c.Item.Label.Contains(decisions.Filter, StringComparison.OrdinalIgnoreCase)).ToArray();
+        // Keep original disclosure slots: filtering cannot renumber a reader or
+        // turn a disclosed, ineligible face into an offered choice.
+        var candidates = items.Select((item, slot) => (Item: item, Slot: slot))
+            .Where(c => readOnly || decisions.Choice?.Includes(c.Item.Index) != false).ToArray();
+        var filtered = candidates.Where(c => c.Item.Label.Contains(decisions.Filter, StringComparison.OrdinalIgnoreCase)).ToArray();
         bool portraits = items.Any(c => c.Card != null); int capacity = portraits ? 7 : 6;
-        bool sparseSource = portraits && items.Length <= 4;
+        bool sparseSource = portraits && candidates.Length is > 0 and <= 4;
         var sourcePreview = !portraits || sparseSource ? CardViews.Source(state, d) : null;
         if (sourcePreview != null) {
             int sourceX = sparseSource ? 199 : 1185;
@@ -98,7 +101,7 @@ internal sealed partial class TableApplication
         canvas.Text(instruction, 206, 251, Gold, .72f, 1160, 2);
         var pageItems = filtered.Skip(page * capacity).Take(capacity).ToArray();
         int expanded = Array.FindIndex(pageItems, e => readingId == "choice-face:" + Scope + ":" + e.Slot);
-        bool sparseCards = portraits && items.Length <= capacity;
+        bool sparseCards = portraits && candidates.Length <= capacity;
         int rowWidth = expanded < 0 ? 148 + Math.Max(0, pageItems.Length - 1) * 169 : 410 + Math.Max(0, pageItems.Length - 1) * 128;
         int rowLeft = sparseCards ? sparseSource && sourcePreview != null ? 403 + (991 - rowWidth) / 2 : (1600 - rowWidth) / 2
             : expanded < 0 ? 206 : 190;
@@ -150,13 +153,17 @@ internal sealed partial class TableApplication
                 if (available) hits.Add(new(buttonId, Scope, bounds, new MatchIntent.SelectChoice(captured.Index!.Value)));
             }
         }
-        if (filtered.Length == 0) canvas.CenterText("No matching cards or choices.", new(209, 356, 1177, 90), Muted, 1);
+        if (filtered.Length == 0) canvas.CenterText(!readOnly && candidates.Length == 0 && items.Length > 0
+            ? "No cards match this choice." : "No matching cards or choices.", new(209, 356, 1177, 90), Muted, 1);
         if (filtered.Length > capacity) {
             Button("choicesprev", "‹", 206, 754, 45, new MatchIntent.SetPage(MatchPage.Choice, page - 1), page > 0, height: 34);
             Button("choicesnext", "›", 260, 754, 45, new MatchIntent.SetPage(MatchPage.Choice, page + 1), (page + 1) * capacity < filtered.Length, height: 34);
-            canvas.Text($"Page {page + 1} / {(filtered.Length + capacity - 1) / capacity}", 325, 761, Muted, .66f, 350, 1);
+            canvas.Text($"Page {page + 1} / {(filtered.Length + capacity - 1) / capacity}", 325, 761, Muted, .66f, 300, 1);
         }
-        if (items.Length > capacity) {
+        if (!readOnly && disclosures.Any(face => face.Index == null))
+            MenuAction("choices-disclosure", decisions.Choice?.ShowAllCards == true ? "Matching only" : "Show all cards",
+                new(636, 754, 160, 34), new MatchIntent.ToggleChoiceDisclosure(), size: .65f);
+        if (candidates.Length > capacity) {
             Button("choicesfilter", decisions.Filter.Length == 0 ? "Search choices…" : decisions.Filter, 808, 754, 587, new MatchIntent.FocusInput(true), accent: textFocus && decisions.Filtering, height: 34);
             if (textFocus && decisions.Filtering) canvas.Text("Type to filter. Backspace edits. Escape closes the gallery.", 810, 794, Muted, .56f, 580, 1);
         }

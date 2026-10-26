@@ -41,6 +41,7 @@ internal static partial class HeadlessPresentationSmoke
             CheckMatchFailure(profile, Check, trace, performance);
             CheckStackArrival(profile, Check, trace, performance);
             CheckTurnPass(profile, Check, trace, performance);
+            CheckChoiceEligibility(profile, Check, trace, performance);
             CheckPlayAccess(profile, Check, trace, performance);
             CommanderInteractionChecks.Run(profile, Check);
             DisclosedSourceInteractionChecks.Run(profile, Check);

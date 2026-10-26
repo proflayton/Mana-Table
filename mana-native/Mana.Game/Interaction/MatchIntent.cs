@@ -43,6 +43,7 @@ internal abstract record MatchIntent : UiIntent
     internal sealed record ConfirmSelection : MatchIntent;
     internal sealed record ChooseNone(bool CollapseReader = false) : MatchIntent;
     internal sealed record ClearSelection : MatchIntent;
+    internal sealed record ToggleChoiceDisclosure : MatchIntent;
     internal sealed record SelectChoice(int Index) : MatchIntent;
     internal sealed record ChooseAbility(int Index) : MatchIntent;
     internal sealed record ChooseCounterPayment(int Index) : MatchIntent;

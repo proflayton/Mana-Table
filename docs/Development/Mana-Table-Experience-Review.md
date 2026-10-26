@@ -134,6 +134,21 @@ does not establish that a person can understand or use the screen.
     [architecture migration](Mana-Table-Architecture.md#action-execution-the-next-boundary-migration)
     records the current gaps and the first real-engine journey to migrate.
 
+## Choice eligibility defaults: 26 October 2026
+
+**Source candidate; human review pending.** The player requested that searches
+and selections start with their condition applied. Arena's documented
+[Learn choice](https://magic.wizards.com/en/news/mtg-arena/strixhaven-mtg-arena-digital-release-notes-2021-04-07)
+presents the relevant Lesson/discard candidates; our adaptation focuses the
+existing card-choice surface on the engine's offered indices. A basic-land
+search therefore starts with its eligible cards, including Wastes, without
+parsing names, rules prose or card types in the client. Show all cards retains
+access to other already disclosed faces without granting selection handles.
+Original reader slots, option indices and staged choices survive the view change.
+New prompts restore the default; an empty match remains empty and keeps explicit
+Choose none when permitted. Read-only reveals retain every face. Actual cards on
+the battlefield and in hand stay in place; their authoritative target cues remain.
+
 ## First-land turn confirmation: 26 October 2026
 
 **Source candidate; human review pending.** Players reported accidentally ending

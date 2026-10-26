@@ -62,6 +62,8 @@ internal sealed partial class TableApplication
                 if (none.CollapseReader) CollapseCardReading();
                 Send(DecisionCommands.Choose(match, [])); break;
             case MatchIntent.ClearSelection: decisions.ClearSelection(); break;
+            case MatchIntent.ToggleChoiceDisclosure when decisions.Choice is { } choice:
+                CollapseCardReading(); choice.ShowAllCards = !choice.ShowAllCards; choice.Page = 0; break;
             case MatchIntent.SelectChoice choice when match?.Decision is { } decision: ToggleChoice(decision, choice.Index); break;
             case MatchIntent.ChooseCounterPayment choice when match?.Decision is { Payload: OptionsPayload { CounterPayment: { } payment } } decision
                 && payment.Options.Any(option => option.Index == choice.Index):

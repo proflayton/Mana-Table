@@ -75,7 +75,8 @@ internal sealed partial class TableApplication
         }
         if (!AbilityActionPending && decisions.Gallery is { } gallery) {
             var faces = decisions.Presentation?.Selection is { } selection
-                ? selection.Disclosures.Length > 0 ? selection.Disclosures.Select(face => (face.Label, HasCard: true))
+                ? selection.Disclosures.Length > 0 ? selection.Disclosures.Where(face => decisions.Choice?.Includes(face.Index) != false)
+                    .Select(face => (face.Label, HasCard: true))
                     : selection.Choices.Select(choice => (choice.Label, HasCard: CardViews.Choice(state, choice) != null))
                 : decisions.Payload is RevealPayload reveal ? reveal.Cards.Select(face => (face.Label, HasCard: true)) : [];
             int count = faces.Count(face => face.Label.Contains(gallery.Filter, StringComparison.OrdinalIgnoreCase));

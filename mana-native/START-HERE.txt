@@ -344,6 +344,11 @@ The display follows the actual pool during priority, payment and those changes.
 Right-click to inspect complete rules and alternate faces during a selection.
 Card pictures download when available;
 text works offline. Choice galleries include a name filter and selection counts.
+Searches and card choices start with only cards matching the engine's condition,
+such as basic lands. Show all cards also displays other cards the effect lets
+you see; those cards can be read but cannot be selected. Matching only restores
+the focused view. Each new choice starts filtered again, without selecting or
+confirming anything for you. Read-only reveals show every disclosed card.
 Ordered choices show ORDER 1, ORDER 2, etc. on both card images and text rows;
 follow the decision's message for which end of the order is first.
 Battlefield cards in an ordered choice spread apart so their numbers stay visible;
