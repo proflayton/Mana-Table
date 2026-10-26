@@ -257,10 +257,11 @@ internal static class ForgeCommandBoundaryChecks
         Reject(new RestorePriorityAbility(game, ignored.Id), "Removed preferences revoke captured Restore commands");
 
         JsonElement Observation(JsonElement rawPrompt, object[]? stack = null, object? combat = null,
-            int? decisionOwner = null, int? priorityPlayer = null, string status = "playing") => JsonSerializer.SerializeToElement(new {
+            int? decisionOwner = null, int? priorityPlayer = null, string status = "playing", object[]? actionSources = null) => JsonSerializer.SerializeToElement(new {
             id = game, status, viewerId = 0, turn = 2, phase = "Main phase", phaseKey = "MAIN1", activePlayerId = 1,
             players = priority.Players.Add(new(1, "Other seat", 40, false, false, ImmutableDictionary<string, int>.Empty, [])),
             stack = stack ?? [], combat, prompt = rawPrompt, decisionOwnerId = decisionOwner, priorityPlayerId = priorityPlayer,
+            actionSources = actionSources ?? [],
             decision = new { task = 999, payload = "unsolicited-native-record" }
         });
         var observed = scope.ObserveRaw(Observation(Prompt(""" "kind":"input","task":"priority","okEnabled":true"""),
@@ -275,6 +276,41 @@ internal static class ForgeCommandBoundaryChecks
             && decodedCombat.Attackers[0].Defender?.Id == "0"
             && decodedCombat.AttackOptions[0].Defenders[1].Id == "opaque-card",
             "The private envelope maps numeric stack/player IDs and opaque card IDs explicitly while ignoring unsolicited native decisions");
+        var explicitCard = new Card { Name = "Live stack source", VisualId = "live-stack-occurrence", Key = "explicit-stack-key" };
+        var explicitSource = new ActionSourceOccurrence("wire-prompt", "Stack", 0, explicitCard);
+        object liveSpell = new { id = 18, name = explicitCard.Name, text = "Public rules", ability = false, card = explicitCard with { Key = "" } };
+        var sourceState = scope.ObserveRaw(Observation(Prompt(""" "kind":"input","task":"priority","okEnabled":true"""),
+            [liveSpell], actionSources: [explicitSource]));
+        check(sourceState?.ActionSources is [{ DecisionId: "wire-prompt", Zone: "Stack", Card.Key: "explicit-stack-key" }]
+                && scope.CanReadSource(game, "wire-prompt", explicitCard.Key)
+                && (string)scope.Encode(new UseOfferedAction(game, "wire-prompt", explicitCard.Key, "offered-route"))["action"]! == "useSourceAction",
+            "The provider maps separately scoped current stack sources through the ordinary source-action command boundary");
+        scope.ObserveRaw(Observation(Prompt(""" "kind":"input","task":"priority","okEnabled":true"""),
+            [new { id = 18, name = explicitCard.Name, text = "Old face", ability = false, card = explicitCard }]));
+        check(!scope.CanReadSource(game, "wire-prompt", explicitCard.Key),
+            "A stack reading face with a captured key still cannot become a source-query capability");
+        foreach (var malformedSources in new object[][] {
+            [explicitSource with { DecisionId = "old-input" }],
+            [explicitSource with { Zone = "Library" }],
+            [explicitSource, explicitSource],
+            [explicitSource with { Zone = "Sideboard", PlayerId = 1 }],
+            [explicitSource with { Card = explicitCard with { Selectable = true } }],
+            [explicitSource with { Card = explicitCard with { FaceDown = true, Name = "Hidden identity", Text = "Private rules" } }]
+        }) {
+            bool rejected = false;
+            try { scope.ObserveRaw(Observation(Prompt(""" "kind":"input","task":"priority","okEnabled":true"""), [liveSpell], actionSources: malformedSources)); }
+            catch (IOException) { rejected = true; }
+            check(rejected && scope.ObservedGameId.Length == 0, "Malformed additional source authority revokes the observed provider scope");
+        }
+        bool historicAbilityRejected = false;
+        try { scope.ObserveRaw(Observation(Prompt(""" "kind":"input","task":"priority","okEnabled":true"""),
+            [new { id = 19, name = "Ability", text = "Historical source", ability = true, card = explicitCard with { Key = "" } }],
+            actionSources: [explicitSource])); } catch (IOException) { historicAbilityRejected = true; }
+        check(historicAbilityRejected, "A triggered or activated stack item's historical source cannot corroborate a current spell occurrence");
+        var sideboardState = scope.ObserveRaw(Observation(Prompt(""" "kind":"input","task":"priority","okEnabled":true"""),
+            actionSources: [explicitSource with { Zone = "Sideboard" }]));
+        check(sideboardState?.ActionSources.Single().Zone == "Sideboard" && scope.CanReadSource(game, "wire-prompt", explicitCard.Key),
+            "A current sideboard source is an owned decision capability rather than a public hidden-zone reveal");
         // MatchSession.markBusy publishes this exact lifecycle after answering
         // Keep/Mulligan and other inputs, before the next decision is available.
         var resolving = scope.ObserveRaw(Observation(JsonSerializer.SerializeToElement<object?>(null), status: "resolving"));

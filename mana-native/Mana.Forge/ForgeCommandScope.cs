@@ -33,7 +33,7 @@ internal sealed class ForgeCommandScope
             && state.Id == gameId && decision.Id == decisionId
             && (state.DecisionOwnerId == null || state.DecisionOwnerId == state.ViewerId)
             && (decision.Payload is not PriorityPayload || state.PriorityPlayerId == null || state.PriorityPlayerId == state.ViewerId)
-            && CardViews.FindZoneActionSource(state, key)?.Card is { FaceDown: false };
+            && CardViews.FindActionSource(state, key)?.Card is { FaceDown: false };
     }
     internal Dictionary<string, object?> Encode(GameCommand command)
     {
@@ -59,6 +59,7 @@ internal sealed class ForgeCommandScope
             case PlayCard value: Card(value.Card); break;
             case ActivateCard value: Card(value.Card); break;
             case UseManaSource value: Card(value.Card); break;
+            case SpendPoolMana value: Action("spendPoolMana"); args["manaColor"] = value.Color; break;
             case SelectPlayer value: Action("player"); args["playerId"] = value.Player; break;
             case ToggleAttackPlayer value:
                 Action("attack"); args["attackerKey"] = value.Attacker; args["defenderPlayerId"] = value.Player; break;

@@ -43,8 +43,51 @@ internal static class AiFrameworkRegression
                 .Count(type => type.IsSealed && typeof(DecisionPayload).IsAssignableFrom(type)),
             "AI conformance covers every closed engine decision family; a new family requires explicit framework coverage");
         await SourceAuthority(check);
+        AdditionalSourceAuthority(check);
         await CancellationAndBudgets(check);
         await ExecutionAndKnowledge(check);
+    }
+
+    private static void AdditionalSourceAuthority(Action<bool, string> check)
+    {
+        var state = State(new PriorityPayload(new("Pass", true)));
+        var card = new Card { Key = "stack-source", VisualId = "live-stack-id", Name = "Current stack spell" };
+        var occurrence = new ActionSourceOccurrence(state.Decision!.Id, "Stack", state.ViewerId, card);
+        var stacked = new StackItem(card.Name, "Public rules", StackActionKind.Spell, card with { Key = "" }) { Id = "stack-item" };
+        var offer = new SourceActionSet(state.Id, state.Decision.Id, card.Key, card.VisualId, [new("stack-route", "activate", "Current stack action")]);
+        var metadata = new ActionSemantics("stack-route", ActionEffectKind.AddCounters, [ActionEffectKind.AddCounters], [], ActionAffordability.Payable);
+        var domain = new DecisionActionDomain(1, ActionDomainCoverage.Complete, [offer], [metadata]);
+        var current = state with { Stack = [stacked], ActionSources = [occurrence] };
+        var frame = new AiDecisionFrame(current, domain: domain);
+        check(frame.Allows(new UseOfferedAction(state.Id, state.Decision.Id, card.Key, "stack-route"))
+                && !frame.Allows(new UseOfferedAction(state.Id, state.Decision.Id, card.Key, "invented")),
+            "A separately authorized current stack occurrence permits only its exact offered route");
+        var historical = state with { Stack = [stacked with { Card = card }], ActionSources = [] };
+        check(CardViews.FindActionSource(historical, card.Key) == null
+                && !GameCommandPermissions.Allows(historical, new UseOfferedAction(state.Id, state.Decision.Id, card.Key, "stack-route")),
+            "A keyed historical stack face still grants no current source authority");
+        var revoked = current with { Decision = new("next-input", new(), state.Decision.Payload) };
+        check(CardViews.FindActionSource(revoked, card.Key) == null
+                && !GameCommandPermissions.Allows(revoked, new UseOfferedAction(state.Id, "next-input", card.Key, "stack-route")),
+            "A source occurrence cannot survive replacement of the decision that disclosed it");
+        var sideboard = current with { Stack = [], ActionSources = [occurrence with { Zone = "Sideboard" }] };
+        check(new AiDecisionFrame(sideboard, domain: domain).Allows(new UseOfferedAction(state.Id, state.Decision.Id, card.Key, "stack-route"))
+                && CardViews.FindActionSource(sideboard with { ActionSources = [occurrence with { Zone = "Sideboard", PlayerId = 1 }] }, card.Key) == null,
+            "An explicit sideboard source belongs to the observing seat instead of opening another player's hidden sideboard");
+        foreach (var malformed in new[] {
+            current with { ActionSources = [occurrence, occurrence] },
+            current with { ActionSources = [occurrence with { DecisionId = "old-input" }] },
+            current with { Stack = [stacked with { Kind = StackActionKind.TriggeredAbility }] },
+            current with { ActionSources = [occurrence with { Card = card with { Selectable = true } }] }
+        }) {
+            bool rejected = false;
+            try { _ = new AiDecisionFrame(malformed, domain: domain); } catch (ArgumentException) { rejected = true; }
+            check(rejected, "Malformed, stale or uncorroborated additional source authority is rejected before policy evaluation");
+        }
+        bool invalidMetadata = false;
+        try { _ = new AiDecisionFrame(current, domain: domain with { Actions = [metadata with { Costs = default }] }); }
+        catch (ArgumentException) { invalidMetadata = true; }
+        check(invalidMetadata, "Malformed structured action metadata is rejected before entering a policy's cost evaluation");
     }
 
     private static async Task SourceAuthority(Action<bool, string> check)

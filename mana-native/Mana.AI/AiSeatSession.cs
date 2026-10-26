@@ -16,9 +16,11 @@ public sealed class AiSubmission
     internal long Seed { get; }
     internal int RemainingWork { get; }
     internal TimeSpan Elapsed { get; }
+    internal AiTurnRoute? Route { get; }
+    internal string EpisodeId { get; }
     internal AiSubmission(AiDecisionStamp stamp, AiTask task, DecisionCommand command, string reason,
-        long seed, int remainingWork, TimeSpan elapsed)
-        => (Stamp, Task, Command, ReasonCode, Seed, RemainingWork, Elapsed) = (stamp, task, command, reason, seed, remainingWork, elapsed);
+        long seed, int remainingWork, TimeSpan elapsed, AiTurnRoute? route, string episodeId)
+        => (Stamp, Task, Command, ReasonCode, Seed, RemainingWork, Elapsed, Route, EpisodeId) = (stamp, task, command, reason, seed, remainingWork, elapsed, route, episodeId);
 }
 
 /// <summary>
@@ -84,9 +86,10 @@ public sealed class AiSeatSession : IDisposable
                 Record(frame, AiDecisionOutcome.Cancelled, ready?.Command, "observation-revoked");
             if (next != null) {
                 watermark = next.Stamp;
+                history.ObserveTurn(next.State.Turn);
                 history.Observe(next.State.Activity);
-                if (episode != next.Stamp.DecisionId) {
-                    episode = next.Stamp.DecisionId; episodeStarted = time.GetTimestamp();
+                if (episode != next.EpisodeId) {
+                    episode = next.EpisodeId; episodeStarted = time.GetTimestamp();
                     episodeSeed = unchecked(baseSeed + (seatId + 1L) * 1442695040888963407L + ++episodeSequence * 6364136223846793005L);
                     work = new(limits.WorkUnits);
                 }
@@ -108,7 +111,7 @@ public sealed class AiSeatSession : IDisposable
             if (evaluation is { IsCompleted: false } && evaluatingStamp == frame.Stamp) return evaluation;
             var current = frame;
             TimeSpan remaining = limits.DecisionTime - time.GetElapsedTime(episodeStarted);
-            if (remaining <= TimeSpan.Zero || work.Remaining == 0) {
+            if (remaining <= TimeSpan.Zero || work.Remaining == 0 || history.RouteLimitReached) {
                 Record(current, AiDecisionOutcome.BudgetExceeded, null, "episode-budget");
                 completedStamp = current.Stamp;
                 return Task.FromResult(view = new(current.Stamp, AiSeatStatus.BudgetExceeded, "Decision budget exhausted."));
@@ -184,8 +187,14 @@ public sealed class AiSeatSession : IDisposable
                 Record(frame, AiDecisionOutcome.BudgetExceeded, ready.Command, "handoff-budget");
                 ready = null; view = new(frame.Stamp, AiSeatStatus.BudgetExceeded); return null;
             }
+            AiTurnRoute? route = null;
+            if (ready.Command is UseOfferedAction offered) {
+                var source = frame.SourceActions.First(set => set.SourceCardKey == offered.Card);
+                var semantic = frame.Domain.Actions.FirstOrDefault(action => action.ActionId == offered.ActionId);
+                if (semantic is { StableId.Length: > 0 }) route = new(frame.State.Turn, source.SourceCardId, semantic.StableId);
+            }
             submitted = new(frame.Stamp, frame.Task, ready.Command, ready.ReasonCode,
-                episodeSeed, work.Remaining, time.GetElapsedTime(episodeStarted)); ready = null;
+                episodeSeed, work.Remaining, time.GetElapsedTime(episodeStarted), route, frame.EpisodeId); ready = null;
             Record(frame, AiDecisionOutcome.Submitted, submitted.Command, submitted.ReasonCode);
             view = new(frame.Stamp, AiSeatStatus.Submitted);
             return submitted;
@@ -203,7 +212,8 @@ public sealed class AiSeatSession : IDisposable
             // Use the submitted stamp even if the engine has already published
             // the next choice. A receipt is not that next choice's outcome.
             history.Record(new(submission.Stamp, submission.Task, policyId, outcome,
-                submission.Command, submission.ReasonCode, submission.Seed, submission.RemainingWork, submission.Elapsed));
+                submission.Command, submission.ReasonCode, submission.Seed, submission.RemainingWork, submission.Elapsed) {
+                    Route = submission.Route, EpisodeId = submission.EpisodeId });
             submitted = null;
             view = receipt == AiExecutionReceipt.Unknown ? new(frame?.Stamp, AiSeatStatus.NeedsRecovery, "Execution acknowledgement is uncertain.")
                 : new(frame?.Stamp, frame?.Stamp == submission.Stamp ? AiSeatStatus.WaitingForObservation : AiSeatStatus.Idle);
@@ -212,7 +222,7 @@ public sealed class AiSeatSession : IDisposable
     }
 
     private void Record(AiDecisionFrame current, AiDecisionOutcome outcome, DecisionCommand? command, string reason) => history.Record(
-        new(current.Stamp, current.Task, policyId, outcome, command, reason, episodeSeed, work.Remaining, time.GetElapsedTime(episodeStarted)));
+        new(current.Stamp, current.Task, policyId, outcome, command, reason, episodeSeed, work.Remaining, time.GetElapsedTime(episodeStarted)) { EpisodeId = current.EpisodeId });
 
     public void Dispose()
     {
@@ -224,7 +234,7 @@ public sealed class AiSeatSession : IDisposable
                 Record(frame, AiDecisionOutcome.Cancelled, ready?.Command, "seat-closed");
             if (submitted is { } handoff)
                 history.Record(new(handoff.Stamp, handoff.Task, policyId, AiDecisionOutcome.ExecutionUnknown,
-                    handoff.Command, handoff.ReasonCode, handoff.Seed, handoff.RemainingWork, handoff.Elapsed));
+                    handoff.Command, handoff.ReasonCode, handoff.Seed, handoff.RemainingWork, handoff.Elapsed) { EpisodeId = handoff.EpisodeId });
             ready = null; frame = null; submitted = null;
             view = new(null, AiSeatStatus.Closed);
         }

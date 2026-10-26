@@ -27,6 +27,19 @@ resolution. It reuses the same initialized JVM; fixture setup passes are explici
 human test-driver commands, not AI passes inferred from incomplete discovery.
 No additional CI job or separate rules simulator is introduced.
 
+After that journey, the same JVM runs four complete `CasualCommanderPolicy`
+seats against different Commander decks, including a saved Toothy/Pir partner
+deck. No scripted driver answers a bot. A separate public spectator records
+the changing board and stack in `whole-seat-ai-public.jsonl`; private decision
+histories live separately in `whole-seat-ai.json`. The focused standalone option
+is `--smoke-whole-seat-ai` with the same engine and disposable-profile arguments.
+This checks actual development, paid abilities and combat, without treating
+progress counters as evidence that the opponents are fun. Java
+`AutomatedSeatBoundaryTest`, `SourceActionDomainTest` and
+`AutomatedPaymentJourneyTest` cover the controller role, public/private audiences,
+complete source discovery and restricted/colored/floating mana. The client runner
+also covers the host's no-replay/error handling and stable per-turn route memory.
+
 Optional decision timing runs in existing suites. `DecisionTempoTest` advances
 fake monotonic time through presentation, paused processing, simultaneous seats,
 grace, warning-only expiry and repeated unattended priority windows without

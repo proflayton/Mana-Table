@@ -396,7 +396,10 @@ public class SourceActionsTest {
         return request;
     }
     private static void await(CountDownLatch latch) {
-        try { if (!latch.await(10, TimeUnit.SECONDS)) throw new AssertionError("Input queue was not released"); }
+        var game = forge.game.GameAction.currentGame();
+        try (var suspended = game == null ? null : game.getAction().suspendState()) {
+            if (!latch.await(10, TimeUnit.SECONDS)) throw new AssertionError("Input queue was not released");
+        }
         catch (InterruptedException failure) { Thread.currentThread().interrupt(); throw new AssertionError(failure); }
     }
 }

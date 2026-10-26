@@ -11,7 +11,7 @@ point for the Windows client.
 
 ## AI policy boundary
 
-Shipping AI seats use Forge's heuristic controller with the Default profile;
+Published releases use Forge's heuristic controller with the Default profile;
 our lobby currently assigns decks through preset/opponent IDs. Deck selection,
 legal rules support and competent strategy are separate concerns. The
 [multiplayer AI investigation](Mana-Table-AI.md) records the observed low-life
@@ -30,10 +30,25 @@ rejection or an uncertain receipt; acceptance never implies effect resolution.
 Unknown execution requires host recovery, not an automatic retry or concession.
 Explicit catalog completeness cannot be inferred from an auto-pass scan.
 
-The framework currently runs in conformance checks. Shipping seats still use
-Forge's AI. Complete action-domain discovery, structured effect/deck semantics,
-the causal execution model, forecasting and a complete casual policy remain
-separate prerequisites. This builds on the action-execution migration rather
+Mana Table explicitly enables a per-game `GameAction` state boundary. Rules
+tasks, owned input work and publication acquire it before the table gate; all
+seat and spectator copies of one board revision are produced inside that same
+boundary. Latches, decision futures and synchronous UI waits release every
+reentrant hold while waiting and restore them afterward. Copying several live
+views under the adapter gate alone is insufficient: a mana task can otherwise
+change a card between two audience projections. Other upstream hosts retain
+their default behavior unless they opt in and instrument their waits.
+
+Source native composition now owns an `AiTableHost` and a baseline
+`CasualCommanderPolicy`. A private `IAutomatedSeatProvider` supplies separately
+scoped bot knowledge and complete timing-legal source domains; remote players
+and the renderer cannot access it. Normal authoritative input controllers execute
+all bot choices, including manual producer and floating-pool payment. Forge's
+strategic controller is never a fallback for that negotiated mode.
+`IAutomatedSimulation` supports explicit all-bot tables with a separate public,
+non-acting spectator. Live tables retain their human requirement. Forecasting,
+deeper deck planning and human evaluation of the policy remain future work.
+This builds on the action-execution migration rather
 than reconstructing rules from card prose or exposing live Forge objects to a
 nominally neutral policy.
 
@@ -760,7 +775,9 @@ See the [turn-orientation comparison](Mana-Table-Experience-Review.md#experiment
 for the diagnostic captures and human review needed after the layout is ready.
 
 The normal native Commander setup defaults to four seats or starts one human with
-three Forge AI opponents. A friends' host can choose two, three or four seats;
+three AI opponents. Source composition now uses the external whole-seat policies
+described above; the published installer still uses Forge strategy. A friends'
+host can choose two, three or four seats;
 three humans can play without filling a fourth seat. The builder's Test workspace
 offers two- or four-seat Commander experiments. Existing non-Commander decks use
 a two-seat AI setup.
@@ -1498,10 +1515,10 @@ flowchart LR
     Adapter <-->|private IPC| Host[DesktopEngine]
     Host --> Connection[SeatConnection]
     Connection <-->|local or TCP synchronization| Table[MatchTable]
-    Table --> Seats[MatchSession per human seat]
-    Table --> AI[Forge AI]
+    Table --> Seats[MatchSession per acting seat]
+    BotHost[Native AiTableHost] --> Policy[Mana.AI policy]
+    BotHost -->|private automated-seat port| Adapter
     Seats --> Rules[Forge rules]
-    AI --> Rules
 ```
 
 ## Where to change things
@@ -1517,7 +1534,8 @@ flowchart LR
 | Typed drawing, layout, geometry, motion and effects | `mana-native/Mana.Renderer` |
 | Shared authored experiences | `mana-native/Mana.Scenarios` |
 | Command host, deck tools and seat-filtered snapshots | `forge-api/src/main/java/forge/api` |
-| Authoritative rules, card scripts and AI | Existing Forge modules and `forge-gui/res` |
+| Authoritative rules and card scripts | Existing Forge modules and `forge-gui/res` |
+| Automated policy and seat lifecycle | `mana-native/Mana.AI`; composed by `Mana.Table` |
 
 See the [native layer map](../../mana-native/README.md#where-to-change-things)
 for project responsibilities and the [API contract](../../forge-api/README.md)

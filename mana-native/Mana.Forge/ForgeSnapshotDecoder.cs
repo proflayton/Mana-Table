@@ -10,7 +10,7 @@ internal static class ForgeSnapshotDecoder
 {
     internal static readonly JsonSerializerOptions Json = new() { PropertyNameCaseInsensitive = true };
 
-    internal static GameSnapshot? Decode(JsonElement raw)
+    internal static GameSnapshot? Decode(JsonElement raw, bool spectator = false)
     {
         if (raw.ValueKind == JsonValueKind.Null) return null;
         try {
@@ -21,13 +21,21 @@ internal static class ForgeSnapshotDecoder
                 || wire.Players.IsDefault || wire.Stack.IsDefault || wire.Players.Any(player => player == null) || wire.Stack.Any(item => item == null)
                 || wire.Players.Select(player => player.Id).Distinct().Count() != wire.Players.Length) throw Invalid();
             var players = wire.Players.Select(player => player.Id).ToImmutableHashSet();
-            if (wire.Status != "starting" && !players.Contains(wire.ViewerId)) throw Invalid();
+            if (spectator ? wire.ViewerId != -1 || wire.Prompt.ValueKind is not (JsonValueKind.Null or JsonValueKind.Undefined)
+                    : wire.Status != "starting" && !players.Contains(wire.ViewerId)) throw Invalid();
             var decision = wire.Prompt.ValueKind is JsonValueKind.Null or JsonValueKind.Undefined ? null
                 : ForgeDecisionDecoder.Decode(wire.Prompt, players);
             if (wire.Status == "resolving" && decision != null
                 || decision != null && wire.DecisionOwnerId is { } chooser && chooser != wire.ViewerId
                 || decision?.Payload is PriorityPayload && wire.PriorityPlayerId is { } responder && responder != wire.ViewerId) throw Invalid();
             if (wire.States.IsDefault || wire.Activity.IsDefault || wire.Notices.IsDefault || wire.IgnoredPriorityAbilities.IsDefault) throw Invalid();
+            ValidateActionSources(wire, decision, spectator);
+            if (spectator && (!wire.PlayAccesses.IsEmpty || !wire.Activity.IsEmpty || !wire.Notices.IsEmpty
+                || wire.Players.Any(player => player.Zones.Any(zone => zone.Name is "Hand" or "Library"
+                    && (!zone.Cards.IsEmpty || zone.TopCard != null)))
+                || wire.Players.SelectMany(player => player.Zones).SelectMany(zone => zone.Cards)
+                    .Concat(wire.Stack.Select(item => item.Card).OfType<Card>())
+                    .Any(card => card.Key.Length > 0 || card.Selectable || card.Highlighted))) throw Invalid();
             ValidateAccess(wire, decision);
             return new(wire.Id, wire.Status, wire.Error, wire.Result, wire.ViewerId, wire.Turn,
                 wire.Phase ?? "Starting game", wire.PhaseKey ?? "PREGAME", wire.ActivePlayerId, wire.Players,
@@ -36,7 +44,7 @@ internal static class ForgeSnapshotDecoder
                 PriorityPlayerId = wire.PriorityPlayerId, DecisionOwnerId = wire.DecisionOwnerId,
                 ActionClass = wire.ActionClass, States = wire.States, Activity = wire.Activity,
                 Notices = wire.Notices, IgnoredPriorityAbilities = wire.IgnoredPriorityAbilities,
-                PlayAccesses = wire.PlayAccesses, Tempo = wire.Tempo
+                PlayAccesses = wire.PlayAccesses, Tempo = wire.Tempo, ActionSources = wire.ActionSources
             };
         } catch (Exception error) when (error is JsonException or InvalidOperationException or ArgumentException or FormatException or OverflowException) {
             throw new IOException("The rules provider published an invalid match snapshot.", error);
@@ -49,6 +57,35 @@ internal static class ForgeSnapshotDecoder
         _ => throw Invalid()
     };
     private static IOException Invalid() => new("The rules provider published an invalid match snapshot.");
+
+    private static void ValidateActionSources(Snapshot wire, Decision? decision, bool spectator)
+    {
+        if (wire.ActionSources.IsDefault || wire.ActionSources.Any(source => source == null)) throw Invalid();
+        if (wire.ActionSources.IsEmpty) return;
+        if (spectator || wire.Status != "playing" || decision?.Payload is not (PriorityPayload or PaymentPayload)) throw Invalid();
+        var keys = wire.Players.SelectMany(player => player.Zones)
+            .SelectMany(zone => zone.Cards.Append(zone.TopCard).OfType<Card>()).Where(card => card.Key.Length > 0)
+            .Select(card => card.Key).ToHashSet(StringComparer.Ordinal);
+        var identities = wire.Players.SelectMany(player => player.Zones)
+            .SelectMany(zone => zone.Cards.Append(zone.TopCard).OfType<Card>()).Select(CardViews.Identity).Where(id => id.Length > 0)
+            .ToHashSet(StringComparer.Ordinal);
+        foreach (var source in wire.ActionSources) {
+            var card = source.Card;
+            if (source.DecisionId != decision.Id || source.Zone is not ("Stack" or "Sideboard")
+                || !wire.Players.Any(player => player.Id == source.PlayerId)
+                || source.Zone == "Sideboard" && source.PlayerId != wire.ViewerId
+                || card == null || string.IsNullOrWhiteSpace(card.Key) || !keys.Add(card.Key)
+                || string.IsNullOrWhiteSpace(card.VisualId) && string.IsNullOrWhiteSpace(card.CombatId)
+                || !identities.Add(CardViews.Identity(card)) || card.Selectable || card.Highlighted
+                || card.FaceDown && (card.Text.Length > 0 || card.ManaCost.Length > 0 || card.ArtName.Length > 0
+                    || card.ArtSet.Length > 0 || card.CollectorNumber.Length > 0 || card.OtherFace != null
+                    || card.Name is not ("Face-down card" or "Face-down or hidden card"))) throw Invalid();
+            // A current spell occurrence corroborates Stack authority. An
+            // activated/triggered item's historical source face does not.
+            if (source.Zone == "Stack" && !wire.Stack.Any(item => !item.Ability && item.Card is { } stacked
+                    && CardViews.Identity(stacked) == CardViews.Identity(card))) throw Invalid();
+        }
+    }
 
     private static void ValidateAccess(Snapshot wire, Decision? decision)
     {
@@ -94,6 +131,7 @@ internal static class ForgeSnapshotDecoder
         public ImmutableArray<string> Notices { get; init; } = [];
         public ImmutableArray<PriorityAbility> IgnoredPriorityAbilities { get; init; } = [];
         public ImmutableArray<PlayAccess> PlayAccesses { get; init; } = [];
+        public ImmutableArray<ActionSourceOccurrence> ActionSources { get; init; } = [];
         public DecisionTempoFrame? Tempo { get; init; }
     }
 
@@ -136,8 +174,17 @@ internal static class ForgeSnapshotDecoder
     }
     private sealed record WireCombat(ImmutableArray<WireAttack> Attackers, ImmutableArray<WireAttackOption> AttackOptions, string? BlockProblem)
     {
+        public bool AttackValid { get; init; } = true;
+        public ImmutableArray<WireAttackAssignment> AttackRepair { get; init; } = [];
         public Combat Native() => Attackers.IsDefault || AttackOptions.IsDefault ? throw Invalid() : new(
             Attackers.Select(attack => attack?.Native() ?? throw Invalid()).ToImmutableArray(),
-            AttackOptions.Select(option => option?.Native() ?? throw Invalid()).ToImmutableArray(), BlockProblem);
+            AttackOptions.Select(option => option?.Native() ?? throw Invalid()).ToImmutableArray(), BlockProblem) {
+                AttackValid = AttackValid,
+                AttackRepair = AttackRepair.IsDefault ? throw Invalid() : AttackRepair.Select(assignment => assignment?.Native() ?? throw Invalid()).ToImmutableArray()
+            };
+    }
+    private sealed record WireAttackAssignment(string CardId, WireDefender Defender)
+    {
+        public AttackAssignment Native() => new(CardId, Defender?.Native() ?? throw Invalid());
     }
 }

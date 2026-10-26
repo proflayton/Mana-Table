@@ -26,6 +26,9 @@ public final class DesktopEngine implements AutoCloseable {
     private final DeckPlaytests playtests;
     private Path resources;
     private SeatConnection match;
+    private MatchSession localMatch;
+    private boolean automated;
+    private MatchTable simulation;
     private SyncLobby multiplayer;
     private final Map<String, SyncLobby> localSeats = new LinkedHashMap<>();
 
@@ -46,7 +49,7 @@ public final class DesktopEngine implements AutoCloseable {
         var engine = new DesktopEngine(CardCatalog.fromDatabases(data.getAvailableDatabases().values()), Path.of(args[1]));
         engine.resources = Path.of(args[0]);
         engine.documents.loadAnalysisFormats(engine.resources);
-        protocol.println(JSON.toJson(Map.of("event", "ready", "printings", engine.catalog.size(), "protocolVersion", 2, "capabilities", List.of("seat-sync", "snapshots", "command-receipts", "resume", "table-social", "deck-workshop", "deck-analysis", "source-actions", "deck-library", "deck-tokens", "semantic-priority-actions", "explicit-deck-setup", "decision-tempo"))));
+        protocol.println(JSON.toJson(Map.of("event", "ready", "printings", engine.catalog.size(), "protocolVersion", 2, "capabilities", List.of("seat-sync", "snapshots", "command-receipts", "resume", "table-social", "deck-workshop", "deck-analysis", "source-actions", "deck-library", "deck-tokens", "semantic-priority-actions", "explicit-deck-setup", "decision-tempo", "automated-seats"))));
         try (engine; var input = new BufferedReader(new InputStreamReader(System.in, StandardCharsets.UTF_8))) {
             String line;
             while ((line = input.readLine()) != null) {
@@ -79,6 +82,7 @@ public final class DesktopEngine implements AutoCloseable {
         for (var seat : localSeats.values()) seat.close();
         localSeats.clear();
         if (match != null) match.close();
+        if (simulation != null) simulation.close();
         if (multiplayer != null) {
             multiplayer.close();
         }
@@ -86,6 +90,8 @@ public final class DesktopEngine implements AutoCloseable {
 
     public Object dispatch(String method, JsonObject arguments) throws Exception {
         JsonObject p = arguments == null ? new JsonObject() : arguments;
+        if (simulation != null && List.of("matchStart", "workshopStartTest", "multiplayerHost", "multiplayerJoin").contains(method))
+            throw new IllegalStateException("Stop the automated simulation before opening another table");
         if (p.has("connectionId")) {
             var seat = localSeats.get(p.get("connectionId").getAsString());
             if (seat == null) throw new IllegalArgumentException("Unknown local seat connection");
@@ -110,6 +116,44 @@ public final class DesktopEngine implements AutoCloseable {
             };
         }
         return switch (method) {
+            case "automatedEnable" -> {
+                if (!automated && (match != null && !match.finished() || multiplayer != null && multiplayer.connected()))
+                    throw new IllegalStateException("Configure automated seats before opening a table");
+                automated = true;
+                yield Map.of("enabled", true);
+            }
+            case "automatedState" -> ownedAutomatedSeats().stream().map(MatchSession::automatedObservation).toList();
+            case "automatedSimulationStart" -> {
+                if (!automated) throw new IllegalStateException("Enable the automated host before starting a simulation");
+                if (match != null && !match.finished() || multiplayer != null && multiplayer.connected())
+                    throw new IllegalStateException("Finish the current match and leave the lobby before simulating");
+                var requested = p.getAsJsonArray("decks");
+                if (requested == null || requested.size() != 4) throw new IllegalArgumentException("Choose four decks for this Commander simulation");
+                var players = new ArrayList<forge.game.player.RegisteredPlayer>();
+                for (var entry : requested) {
+                    var assigned = assignedOpponent(entry.getAsString(), "Commander");
+                    players.add(MatchTable.automated(assigned.deck(), "Commander", assigned.name()));
+                }
+                if (simulation != null) simulation.close();
+                simulation = new MatchTable("Commander", players, resources, directory.getParent(), true);
+                simulation.start();
+                yield simulation.spectatorState();
+            }
+            case "automatedSimulationState" -> simulation == null ? null : simulation.spectatorState();
+            case "automatedSimulationStop" -> {
+                if (simulation == null || !simulation.id.equals(string(p, "sessionId", ""))) throw new IllegalArgumentException("No such simulation");
+                simulation.close(); simulation = null;
+                yield Map.of("stopped", true);
+            }
+            case "automatedAction" -> ownedAutomatedSeat(p).action(p);
+            case "automatedFault" -> {
+                var owner = ownedAutomatedSeat(p);
+                String reason = string(p, "reasonCode", "unavailable");
+                if (!reason.matches("[A-Za-z0-9-]{1,96}")) throw new IllegalArgumentException("Invalid automated diagnostic code");
+                System.err.println("Mana AI stopped: game=" + string(p, "sessionId", "") + " seat=" + number(p, "seatId", -1) + " reason=" + reason);
+                owner.automationFault();
+                yield Map.of("stopped", true);
+            }
             case "deckAnalysis" -> documents.analyze(scope(p));
             case "analysisProfile" -> documents.saveAnalysisProfile(scope(p), metadataRevision(p), string(p, "fingerprint", ""), p.getAsJsonObject("profile"));
             case "analysisReview" -> documents.reviewAnalysis(scope(p), metadataRevision(p), string(p, "fingerprint", ""),
@@ -231,6 +275,7 @@ public final class DesktopEngine implements AutoCloseable {
     }
 
     private void requireIdleDeckLibrary() {
+        if (simulation != null) throw new IllegalStateException("Stop the automated simulation before deleting or restoring decks");
         if (multiplayer != null && multiplayer.connected() || localSeats.values().stream().anyMatch(SyncLobby::connected))
             throw new IllegalStateException("Leave the current lobby before deleting or restoring a saved deck.");
         if (match != null && !match.finished())
@@ -240,7 +285,7 @@ public final class DesktopEngine implements AutoCloseable {
     private SyncLobby multiplayer() {
         if (multiplayer == null) {
             if (resources == null) { throw new IllegalStateException("Engine resources are still loading"); }
-            multiplayer = new SyncLobby(resources, directory.getParent());
+            multiplayer = new SyncLobby(resources, directory.getParent(), automated);
         }
         return multiplayer;
     }
@@ -259,11 +304,40 @@ public final class DesktopEngine implements AutoCloseable {
         validateMatchStart(prepared);
         if (testId == null) playtests.interruptActive();
         if (match != null) match.close();
-        var session = MatchSession.solo(prepared.deck(), prepared.format(), opponents, resources, directory.getParent());
+        var assigned = new ArrayList<MatchSession.OpponentDeck>();
+        for (String opponent : opponents) assigned.add(assignedOpponent(opponent, prepared.format()));
+        var session = MatchSession.soloDecks(prepared.deck(), prepared.format(), assigned, resources, directory.getParent(), automated);
         try {
             if (testId != null) playtests.attach(testId, session);
             match = SeatConnection.local(session);
+            localMatch = session;
         } catch (RuntimeException error) { session.closeTable(); throw error; }
+    }
+    private List<MatchSession> ownedAutomatedSeats() {
+        if (!automated) return List.of();
+        if (simulation != null) return simulation.automatedSeats();
+        if (multiplayer != null && multiplayer.connected()) return multiplayer.automatedSeats();
+        return localMatch == null ? List.of() : localMatch.automatedSeats();
+    }
+    private MatchSession.OpponentDeck assignedOpponent(String opponent, String format) throws Exception {
+        if (!opponent.startsWith("deck:")) {
+            MatchSession.validateOpponents(format, List.of(opponent));
+            var deck = MatchSession.aiDeck(opponent, format);
+            return new MatchSession.OpponentDeck(deck, deck.getName());
+        }
+        var saved = documents.loadLobbyDeck(opponent.substring(5));
+        if (!saved.format().equals(format)) throw new IllegalArgumentException("AI decks must use this table's format");
+        var preview = MatchSetup.prepare(saved.deck(), saved.format(), "");
+        if (preview.preview().problem() != null) throw new IllegalArgumentException(preview.preview().problem());
+        return new MatchSession.OpponentDeck(preview.deck(), saved.deck().getName());
+    }
+    private MatchSession ownedAutomatedSeat(JsonObject p) {
+        int playerId = number(p, "seatId", -1);
+        String gameId = string(p, "sessionId", "");
+        return ownedAutomatedSeats().stream().filter(session -> {
+            var state = session.state();
+            return gameId.equals(state.get("id")) && Integer.valueOf(playerId).equals(state.get("viewerId"));
+        }).findFirst().orElseThrow(() -> new IllegalArgumentException("No owned automated seat in that game"));
     }
     private void validateMatchStart(DeckDocumentSession.PreparedDeck prepared) {
         if (match != null && !match.finished()) throw new IllegalStateException("Finish or concede the current match first");

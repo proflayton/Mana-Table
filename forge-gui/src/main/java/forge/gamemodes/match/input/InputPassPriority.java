@@ -39,7 +39,6 @@ import forge.player.GamePlayerUtil;
 import forge.player.PlayerControllerHuman;
 import forge.util.ITriggerEvent;
 import forge.util.Localizer;
-import forge.util.ThreadUtil;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -113,7 +112,7 @@ public class InputPassPriority extends InputSyncronizedBase {
     @Override
     public void showAndWait() {
         final FServerManager server = FServerManager.getInstance();
-        final AfkTimeout timeout = server != null
+        final AfkTimeout timeout = server != null && !getController().isExternallyAutomated()
                 ? server.armAfkTimeout(getController(), this)
                 : AfkTimeout.NOOP;
         try {
@@ -126,6 +125,12 @@ public class InputPassPriority extends InputSyncronizedBase {
     /** {@inheritDoc} */
     @Override
     public final void showMessage() {
+        if (getController().isExternallyAutomated()) {
+            // A policy owns every priority decision. Human yield preferences
+            // must not turn an explicit pass into acceptance of a suggestion.
+            showNormalPrompt();
+            return;
+        }
         if (!getController().isMacroActive() && !isAlreadyYielding()) {
             // Suppress one prompt after a yield ends — avoids "yielded → ended → yield again?" loop
             if (getController().getYieldController().getBoolPref(FPref.YIELD_SUPPRESS_AFTER_END)
@@ -309,9 +314,10 @@ public class InputPassPriority extends InputSyncronizedBase {
     public void passPriority() {
         if (isFinished()) return;
         passPriority(() -> {
-            getController().macros().addRememberedAction(new PassPriorityAction(
-                    getController().getGame().getStack().isEmpty(),
-                    getController().getGame().getPhaseHandler().getPhase()));
+            if (!getController().isExternallyAutomated())
+                getController().macros().addRememberedAction(new PassPriorityAction(
+                        getController().getGame().getStack().isEmpty(),
+                        getController().getGame().getPhaseHandler().getPhase()));
             stop();
         });
     }
@@ -342,6 +348,10 @@ public class InputPassPriority extends InputSyncronizedBase {
     }
 
     private void passPriority(final Runnable runnable) {
+        if (getController().isExternallyAutomated()) {
+            runnable.run();
+            return;
+        }
         if (FModel.getPreferences().getPrefBoolean(FPref.UI_MANA_LOST_PROMPT)) {
             //if gui player has mana floating that will be lost if phase ended right now, prompt before passing priority
             final Game game = getController().getGame();
@@ -349,7 +359,7 @@ public class InputPassPriority extends InputSyncronizedBase {
                 Player player = game.getPhaseHandler().getPriorityPlayer();
                 if (player != null && player.getManaPool().willManaBeLostAtEndOfPhase() && player.getLobbyPlayer() == GamePlayerUtil.getGuiPlayer()) {
                     //must invoke in game thread so dialog can be shown on mobile game
-                    ThreadUtil.invokeInGameThread(() -> {
+                    game.getAction().invoke(() -> {
                         Localizer localizer = Localizer.getInstance();
                         String message = localizer.getMessage("lblYouHaveManaFloatingInYourManaPoolCouldBeLostIfPassPriority");
                         if (player.getManaPool().hasBurn()) {

@@ -12,6 +12,7 @@ import forge.game.card.Card;
 import forge.game.card.CardView;
 import forge.game.card.CardCollection;
 import forge.game.mana.ManaCostBeingPaid;
+import forge.game.mana.Mana;
 import forge.game.player.PlaySpellAbility;
 import forge.game.player.Player;
 import forge.game.player.PlayerController.FullControlFlag;
@@ -134,6 +135,39 @@ public abstract class InputPayMana extends InputSyncronizedBase {
     }
 
     public boolean isPaymentActive() { return !isFinished() && !locked; }
+
+    /** A defensive copy of the current bill, after reductions and prior payment. */
+    public ManaCostBeingPaid getRemainingManaCost() {
+        return manaCost == null ? null : new ManaCostBeingPaid(manaCost);
+    }
+
+    /** Rules applicability of an exact producer to this current unpaid bill. */
+    public List<String> getUsableManaColors(SpellAbility ability) {
+        if (!isPaymentActive() || manaCost == null || ability == null || !ability.isManaAbility()) return List.of();
+        var colors = new ArrayList<String>();
+        for (byte color : ManaAtom.MANATYPES) {
+            if (manaCost.isAnyPartPayableWith(color, player.getManaPool())
+                    && ability.isManaAbilityFor(saPaidFor, color)) colors.add(MagicColor.toShortString(color));
+        }
+        return List.copyOf(colors);
+    }
+
+    /** Mirrors a color-pool gesture without paying, draining or choosing strategy. */
+    public Set<Byte> getUsablePoolManaColors() {
+        if (!isPaymentActive() || manaCost == null) return Set.of();
+        var examined = new HashSet<Byte>();
+        var colors = new LinkedHashSet<Byte>();
+        for (Mana mana : player.getManaPool()) {
+            byte color = mana.getColor();
+            if (examined.contains(color) || !mana.meetsManaRestrictions(saPaidFor)
+                    || !saPaidFor.allowsPayingWithShard(mana.getSourceCard(), color)) continue;
+            // useManaFromPool chooses this first restriction-eligible unit.
+            // A later unit of the same color may have different snow/spend data.
+            examined.add(color);
+            if (manaCost.isNeeded(mana, player.getManaPool())) colors.add(color);
+        }
+        return Collections.unmodifiableSet(colors);
+    }
 
     @Override
     public String getActivateAction(Card card) {
@@ -372,10 +406,15 @@ public abstract class InputPayMana extends InputSyncronizedBase {
     }
 
     protected boolean supportAutoPay() {
-        return true;
+        // An external policy chooses exact mana abilities through this input.
+        // Forge's Auto path installs PlayerControllerAi and must never decide
+        // costs, sacrifices or targets for that policy's seat.
+        return !getController().isExternallyAutomated();
     }
 
     protected void runAsAi(Runnable proc) {
+        if (getController().isExternallyAutomated())
+            throw new IllegalStateException("An external policy must choose its own mana payment");
         player.runWithController(proc, new PlayerControllerAi(game, player, player.getOriginalLobbyPlayer()));
     }
 

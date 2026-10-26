@@ -24,8 +24,13 @@ final class MatchTable implements ManaTableSession, AutoCloseable {
     final MatchIdentities identities = new MatchIdentities();
     private final Match match;
     private final Map<Integer, MatchSession> seats = new LinkedHashMap<>();
+    private final Map<Integer, MatchSession> automated = new LinkedHashMap<>();
+    private final Set<Integer> humanSeats = new LinkedHashSet<>();
+    private final boolean automatedOnly;
     private final ThreadLocal<MatchSession> dialogOwner = new ThreadLocal<>();
     private long boardRevision;
+    private Map<String, Object> spectatorState;
+    private String spectatorError;
     private boolean closed;
     final DecisionTempo tempo;
     private ScheduledExecutorService tempoWorker;
@@ -34,8 +39,21 @@ final class MatchTable implements ManaTableSession, AutoCloseable {
         this(format, players, resources, profile, DecisionTempo.Settings.off(), () -> System.nanoTime() / 1_000_000);
     }
 
+    /** Explicit simulation composition; live-table construction retains its human requirement. */
+    MatchTable(String format, List<RegisteredPlayer> players, Path resources, Path profile, boolean automatedOnly) {
+        this(format, players, resources, profile, DecisionTempo.Settings.off(), () -> System.nanoTime() / 1_000_000, automatedOnly);
+    }
+
     MatchTable(String format, List<RegisteredPlayer> players, Path resources, Path profile,
                DecisionTempo.Settings timing, LongSupplier monotonicMillis) {
+        this(format, players, resources, profile, timing, monotonicMillis, false);
+    }
+
+    MatchTable(String format, List<RegisteredPlayer> players, Path resources, Path profile,
+               DecisionTempo.Settings timing, LongSupplier monotonicMillis, boolean automatedOnly) {
+        if (automatedOnly && (players.size() < 2 || players.stream().anyMatch(player -> !(player.getPlayer() instanceof AutomatedLobbyPlayer))))
+            throw new IllegalArgumentException("A simulation requires at least two externally automated seats");
+        this.automatedOnly = automatedOnly;
         HeadlessPlatform.initialize(resources, profile);
         tempo = new DecisionTempo(timing, monotonicMillis);
         this.format = format;
@@ -45,16 +63,23 @@ final class MatchTable implements ManaTableSession, AutoCloseable {
         rules.setWarnAboutAICards(false);
         match = new Match(rules, players, "Mana Table");
         game = match.createGame();
+        game.getAction().enableStateBoundary();
         game.subscribeToEvents(identities);
         for (int i = 0; i < game.getPlayers().size(); i++) {
             var player = game.getPlayers().get(i);
             // Cosmetics are per registered deck; rules and live characteristics
             // still come from the exact token definition used by the effect.
             player.getRegisteredPlayer().getDeck().setPreferLatestTokenArt(true);
-            if (player.getController() instanceof PlayerControllerHuman human) seats.put(i, new MatchSession(this, human));
+            if (player.getController() instanceof PlayerControllerHuman human) {
+                var session = new MatchSession(this, human);
+                seats.put(i, session);
+                if (isAutomated(player)) automated.put(player.getId(), session);
+                else humanSeats.add(i);
+            }
             player.updateOpponentsForView();
         }
-        if (seats.isEmpty()) throw new IllegalArgumentException("A table needs at least one human seat");
+        if (!automatedOnly && humanSeats.isEmpty()) throw new IllegalArgumentException("A table needs at least one human seat");
+        if (automatedOnly) spectatorState = SpectatorObservation.project(this, 0, null);
     }
 
     static RegisteredPlayer human(Deck deck, String format, String name) {
@@ -69,13 +94,41 @@ final class MatchTable implements ManaTableSession, AutoCloseable {
                 .setPlayer(player);
     }
 
+    /** Explicitly selected before game creation; never falls back to Forge strategy. */
+    static RegisteredPlayer automated(Deck deck, String format, String name) {
+        return (format.equals("Commander") ? RegisteredPlayer.forCommander(new Deck(deck)) : new RegisteredPlayer(new Deck(deck)))
+                .setPlayer(new AutomatedLobbyPlayer(name));
+    }
+
+    static boolean isAutomated(forge.game.player.Player player) {
+        return player.getOriginalLobbyPlayer() instanceof AutomatedLobbyPlayer;
+    }
+
+    /** Private child-process host access. These are never network seat capabilities. */
+    List<MatchSession> automatedSeats() { return List.copyOf(automated.values()); }
+    boolean libraryInspectionActive() { return seats.values().stream().anyMatch(MatchSession::libraryInspectionActive); }
+
+    MatchSession automatedSeat(int playerId) {
+        var session = automated.get(playerId);
+        if (session == null) throw new IllegalArgumentException("No automated player with this ID");
+        return session;
+    }
+
     MatchSession seat(int index) {
         var seat = seats.get(index);
-        if (seat == null) throw new IllegalArgumentException("No human in this seat");
+        if (seat == null || !humanSeats.contains(index)) throw new IllegalArgumentException("No human in this seat");
         return seat;
     }
     List<Map<String, Object>> testViews() {
-        synchronized (gate) { return seats.values().stream().map(MatchSession::state).toList(); }
+        synchronized (gate) { return humanSeats.stream().map(seats::get).map(MatchSession::state).toList(); }
+    }
+
+    /** Published public audience, never an individual bot's observation. */
+    Map<String, Object> spectatorState() {
+        synchronized (gate) {
+            if (!automatedOnly) throw new IllegalStateException("This table is not a spectator simulation");
+            return spectatorState;
+        }
     }
 
     void start() {
@@ -105,11 +158,12 @@ final class MatchTable implements ManaTableSession, AutoCloseable {
 
     // Only called at controller input boundaries, while the game is waiting.
     void publish() {
-        synchronized (gate) {
+        game.getAction().withState(() -> { synchronized (gate) {
             long revision = ++boardRevision;
             for (var seat : seats.values()) seat.publishView(revision);
             refreshDecisionState();
-        }
+            if (automatedOnly) spectatorState = SpectatorObservation.project(this, revision, spectatorError);
+        } });
     }
 
     /** Public decision ownership only; a seat's options and prompt remain private. */
@@ -124,12 +178,12 @@ final class MatchTable implements ManaTableSession, AutoCloseable {
     }
 
     void tickTempo() {
-        synchronized (gate) {
+        game.getAction().withState(() -> { synchronized (gate) {
             if (closed || game.isGameOver()) return;
             for (var expiry : tempo.expired()) {
                 for (var seat : seats.values()) seat.expireTempo(expiry);
             }
-        }
+        } });
     }
     private void stopTempo() { if (tempoWorker != null) tempoWorker.shutdownNow(); }
 
@@ -139,7 +193,7 @@ final class MatchTable implements ManaTableSession, AutoCloseable {
     }
     // A controller boundary publishes the terminal board before waking the game.
     boolean finishIfNoHumans() {
-        if (!game.isGameOver() && seats.values().stream().allMatch(MatchSession::eliminated)) {
+        if (!automatedOnly && !game.isGameOver() && humanSeats.stream().map(seats::get).allMatch(MatchSession::eliminated)) {
             game.setGameOver(GameEndReason.AllHumansLost);
             return true;
         }
@@ -155,15 +209,45 @@ final class MatchTable implements ManaTableSession, AutoCloseable {
     }
     @Override public Object platformDialog(String name, Object[] args) { return owner().platformDialog(name, args); }
     @Override public void publishInput() { for (var seat : seats.values()) seat.publishInput(); }
-    @Override public void fail(Throwable error) { synchronized (gate) { stopTempo(); for (var seat : seats.values()) seat.fail(error); } }
+    @Override public void inState(Runnable action) { game.getAction().withState(action); }
+    @Override public <T> T callInState(java.util.concurrent.Callable<T> action) throws Exception { return game.getAction().callState(action); }
+    @Override public void awaitUi(java.util.concurrent.Future<?> completion) throws InterruptedException, java.util.concurrent.ExecutionException {
+        game.getAction().awaitState(completion);
+    }
+    @Override public <T> T awaitUi(java.util.concurrent.Future<T> completion, long timeout, TimeUnit unit)
+            throws InterruptedException, java.util.concurrent.ExecutionException, java.util.concurrent.TimeoutException {
+        return game.getAction().awaitState(completion, timeout, unit);
+    }
+    @Override public void fail(Throwable error) {
+        game.getAction().withState(() -> { synchronized (gate) {
+            stopTempo();
+            // A rules failure can contain a bot's private card or choice. Keep
+            // the original in host diagnostics, outside every seat projection.
+            Throwable publicError = error;
+            if (!automated.isEmpty()) {
+                error.printStackTrace(System.err);
+                publicError = new IllegalStateException(
+                        "The rules engine could not continue this game. See the host diagnostics.");
+            }
+            for (var seat : seats.values()) seat.fail(publicError);
+            if (automatedOnly && spectatorState != null) {
+                // Fault text can include an internal card/choice. The public
+                // observer receives a stable diagnostic and its last board.
+                spectatorError = "The simulation stopped because an automated decision failed.";
+                var stopped = new LinkedHashMap<>(spectatorState);
+                stopped.put("status", "error"); stopped.put("error", spectatorError);
+                spectatorState = Collections.unmodifiableMap(stopped);
+            }
+        } });
+    }
     @Override public void close() {
-        synchronized (gate) {
+        game.getAction().withState(() -> { synchronized (gate) {
             if (closed) return;
             closed = true;
             stopTempo();
             for (var seat : seats.values()) seat.cancelDecision();
             if (!game.isGameOver()) game.setGameOver(GameEndReason.AllHumansLost);
             for (var seat : seats.values()) seat.releaseInput();
-        }
+        } });
     }
 }

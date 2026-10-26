@@ -250,7 +250,14 @@ public sealed record Attack(string CardId, int DefendingPlayerId, ImmutableArray
     public Defender? Defender { get; init; }
     public bool Blocked { get; init; }
 }
-public sealed record Combat(ImmutableArray<Attack> Attackers, ImmutableArray<AttackOption> AttackOptions, string? BlockProblem);
+public sealed record AttackAssignment(string CardId, Defender Defender);
+public sealed record Combat(ImmutableArray<Attack> Attackers, ImmutableArray<AttackOption> AttackOptions, string? BlockProblem)
+{
+    public bool AttackValid { get; init; } = true;
+    // One legal witness from the rules constraint solver, not a tactical plan.
+    // It is supplied only when the current declaration fails joint constraints.
+    public ImmutableArray<AttackAssignment> AttackRepair { get; init; } = [];
+}
 public enum StackActionKind { Spell, ActivatedAbility, TriggeredAbility, Ability }
 [method: System.Text.Json.Serialization.JsonConstructor]
 public sealed record StackItem(string Name, string Text, StackActionKind Kind, Card? Card)
@@ -269,6 +276,7 @@ public sealed record GameSnapshot(string Id, string Status, string? Error, strin
     int Turn, string Phase, string PhaseKey, int? ActivePlayerId, ImmutableArray<Player> Players,
     ImmutableArray<StackItem> Stack, Combat? Combat, Decision? Decision)
 {
+    public ImmutableArray<ActionSourceOccurrence> ActionSources { get; init; } = [];
     public ImmutableArray<PublicState> States { get; init; } = [];
     public long Revision { get; init; }
     public long BoardRevision { get; init; }

@@ -1,4 +1,5 @@
 using Mana.Forge;
+using Mana.AI;
 using Mana.Client;
 using Mana.Contracts;
 using System.Text.Json;
@@ -32,6 +33,7 @@ internal static class Program
             if (backend != "forge") throw new NotSupportedException($"Engine '{backend}' is not installed. Available: forge.");
             var paths = new ForgePaths(Path.Combine(bundle, "runtime", "bin", "java.exe"), Path.Combine(bundle, "forge-engine.jar"), Path.Combine(bundle, "forge-res"), profile);
             var engine = new ForgeEngine(paths);
+            var automated = new AiTableHost(engine, _ => new CasualCommanderPolicy(), Random.Shared.NextInt64());
             try {
                 ICardArtSource? art = null;
                 if (Arg("--art-manifest") is { } manifestPath) {
@@ -39,7 +41,8 @@ internal static class Program
                     var entries = JsonSerializer.Deserialize<Dictionary<string, string>>(File.ReadAllText(manifest)) ?? throw new IOException("Invalid art manifest");
                     art = new LocalArtSource(Path.GetDirectoryName(manifest)!, entries);
                 }
-                var services = new TableServices(engine, engine, engine, engine.InitializeAsync) {
+                async Task InitializeEngine() { await engine.InitializeAsync(); await automated.StartAsync(); }
+                var services = new TableServices(engine, engine, engine, InitializeEngine) {
                     SourceActions = engine as ISourceActions, Printings = engine as ICardPrintings,
                     Tokens = engine as IDeckTokens,
                     Library = engine as IDeckLibrary, Workshop = engine as IDeckWorkshop,
@@ -52,7 +55,10 @@ internal static class Program
                         : WindowsUpdateInstaller.TryCreate(AppContext.BaseDirectory, profile), enableLiveTableStudy: !args.Contains("--classic-table"),
                     restartedAfterUpdate: ManagedInstallation.WasRestarted);
                 game.Run();
-            } finally { engine.DisposeAsync().AsTask().GetAwaiter().GetResult(); }
+            } finally {
+                automated.DisposeAsync().AsTask().GetAwaiter().GetResult();
+                engine.DisposeAsync().AsTask().GetAwaiter().GetResult();
+            }
             return 0;
         } catch (Exception ex) {
             File.WriteAllText(Path.Combine(profile, "native-error.log"), ex.ToString());

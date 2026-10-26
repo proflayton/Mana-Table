@@ -305,7 +305,9 @@ public class QuietYieldTest {
             var release = new CountDownLatch(1);
             HeadlessPlatform.later(() -> {
                 entered.countDown();
-                try { if (!release.await(10, TimeUnit.SECONDS)) throw new AssertionError("Input queue barrier expired"); }
+                try (var suspended = game.table.game.getAction().suspendState()) {
+                    if (!release.await(10, TimeUnit.SECONDS)) throw new AssertionError("Input queue barrier expired");
+                }
                 catch (InterruptedException error) { Thread.currentThread().interrupt(); throw new AssertionError(error); }
             });
             assertTrue(entered.await(5, TimeUnit.SECONDS));

@@ -1,9 +1,10 @@
-# Multiplayer AI investigation and boundary proposal
+# Multiplayer AI framework and investigation
 
 Investigated 26 October 2026 against source `c801eaf9b70b53f07f7234148def4f1811fa5db7`.
-This is an investigation and implementation proposal. Shipping AI behavior is
-unchanged. The reported live games have not been replayed, so their individual
-decisions are not diagnosed. Human review of a replacement policy is pending.
+The source implementation now includes a complete seat driver and an initial
+casual policy. This is not in the published installer yet. The reported live
+games have not been replayed, so their individual decisions are not diagnosed.
+Human review of a replacement policy is pending.
 
 ## What explains the targeting pattern
 
@@ -99,7 +100,7 @@ The generated `targeting-probe.json`, engine caches and logs stay outside source
 control. Run the probe as its own process: Forge's RNG and AI cache are global.
 This diagnostic is optional and adds no CI shard or player-facing control.
 
-## What Forge supplies, and what we currently restrict
+## What the previous controller supplied and restricted
 
 [Upstream's AI guide](https://github.com/Card-Forge/forge/blob/master/docs/AI.md)
 describes heuristic play, with stronger aggro/midrange behavior and weaker combo
@@ -113,12 +114,12 @@ hints and `SpecialCardAi` add exceptions. Missing API handlers can fall back to
 `AiDeckStatistics` derives mana/cost information from cards rather than choosing
 a separate executable strategy for each preset.
 
-Our [MatchTable.ai](../../forge-api/src/main/java/forge/api/MatchTable.java)
+The legacy [MatchTable.ai](../../forge-api/src/main/java/forge/api/MatchTable.java)
 passes a normal deck to `LobbyPlayerAi` with the `Default` profile and an empty
 simulation-option set. It also disables the rules' AI-card warning. Our
 [MatchSession](../../forge-api/src/main/java/forge/api/MatchSession.java) and
-[SyncLobby](../../forge-api/src/main/java/forge/api/SyncLobby.java) restrict deck
-selection to opponent/preset IDs. The preset list is our product restriction;
+[SyncLobby](../../forge-api/src/main/java/forge/api/SyncLobby.java) restricted deck
+selection to opponent/preset IDs. That preset list was our product restriction;
 Forge's controller already accepts a deck. Removing that restriction alone
 would not make difficult combo/control decks play well.
 
@@ -158,12 +159,137 @@ explicitly describes social interaction and consideration of everyone's game.
 That establishes the product goal; the policy below is our proposed adaptation,
 not an existing Arena multiplayer bot algorithm.
 
+## Functional seat and all-AI simulation
+
+Native composition owns `AiTableHost`; `Mana.AI` still depends only on
+`Mana.Contracts`. The host enables the rules provider's optional
+`automated-seats` capability before creating a table. Each bot uses the normal
+input/cost/target/stack machinery through an explicitly automated controller,
+with human auto-yield preferences and Forge strategic auto-payment disabled.
+`isAI` is deliberately not used for that role: upstream code uses it to select
+and cast to its own strategic controller. There is no runtime fallback to it.
+Legacy callers which never negotiate this capability retain their old behavior.
+
+`IAutomatedSeatProvider` is a host-only port. The renderer and remote seat receive
+neither bot hands nor bot commands. Each bot has its own snapshot, command scope,
+seed, history and policy evaluation. Public stack events establish observed
+outcomes; accepting a command does not establish resolution. Unknown receipts
+stop execution rather than replaying. A rejected unchanged decision or an
+unsupported policy capability produces an explicit table diagnostic instead of
+silently stalling, passing, or conceding.
+An engine failure's original exception remains in private host diagnostics;
+public seat and spectator errors cannot expose a bot's private card or choice.
+
+`DecisionActionDomain` enumerates all timing-legal routes in engine-owned source
+zones, separately from highlight/auto-pass scanning. It caches each domain for
+the current input and rules-event version. Opaque route IDs remain scoped; a
+stable route identity is used only for planning memory. Action semantics include
+effect categories, target viability, resource production and typed cost parts.
+Base costs are estimates: modifiers and commander tax are applied by the engine
+when paying. `Unknown` affordability is retained explicitly, not treated as an
+absent action. The current payment exposes exact unpaid shards, usable producer
+colors and legal floating-pool colors, including colorless. Spending existing
+pool mana is a scoped `SpendPoolMana` command. These paths do not invoke Forge's
+strategic mana planner. A face-down route is available only when the actual
+viewer's engine permission allows knowing it; its public face stays hidden.
+
+Current sources outside player-zone presentation, such as a spell with a legal
+stack activation or an owned companion, use explicit scoped `ActionSources`.
+A historical stack face alone never grants an action. Library searches expose
+their authorized, canonically indexed choices in the decision, not a parallel
+ordered library or an accidental top-card disclosure in zone state.
+
+Combat completion is also a rules fact. An invalid joint attack declaration
+includes a legal requirement witness from the engine's constraint solver; the
+policy can repair its assignments without parsing a warning or repeatedly
+accepting a rejected completion. A causal episode ID keeps the decision budget
+across replacement input handles, with distinct identities for extra combats.
+
+`CasualCommanderPolicy` handles all fifteen decision families. It uses public
+board resources, current characteristics, typed effects and recent observed
+pressure. Low life alone is not a threat bonus. It makes legal choices from the
+provider's domains, not names or rules-text matching. This is a bounded baseline,
+not a combo solver or a promise of competent play with every card. Unknown
+required effects can receive a legal generic choice; an unrestricted text task
+without a legal domain is explicitly unsupported. Activated routes are currently
+attempted conservatively once per turn. The independent per-turn attempt set
+cannot be evicted by the diagnostic ring; a hard bound stops further planning
+instead of permitting an infinite cast/cancel loop.
+
+`IAutomatedSimulation` starts an explicit four-bot Commander table. Normal live
+tables still require a human. The simulation ends through the rules engine's
+normal outcome; losing a nonexistent human does not terminate it. Its public
+spectator is an independent audience with ID -1, not one bot's private snapshot.
+It has no decision, action keys, private activity, hand faces or library order.
+Observations copy cached state published at input boundaries and cannot advance
+the game. Private seat diagnostics are retained separately from public traces.
+Card rules wording includes current granted abilities, but excludes Forge's
+unscoped remembered-object debug text, which can contain a hidden library card.
+
+The main real-game check uses four different decks: green starter, red starter,
+a saved Rhys token deck and a saved Toothy/Pir partner deck. Identical decks can
+serve a small isolation fixture; they are not the main strategy evaluation.
+Saved opponents use `deck:<saved-id>` and pass the same detached-deck format and
+Commander/partner validation as a human deck. Deck contents are pinned at start;
+the policy does not receive shuffled library order or an opponent's saved list.
+
+Run the existing native test driver with `--smoke-whole-seat-ai`, a current
+engine bundle/JAR and a fresh `--profile`. It writes `whole-seat-ai-public.jsonl`
+for public observations. `whole-seat-ai.json` and
+`whole-seat-ai-private-final-observations.json` are host-private diagnostics:
+they contain seat decisions, command evidence and failures. The same check runs after the
+normal `--smoke-headless-engine` journey in its existing JVM. Automated progress,
+privacy and legality checks remain separate from human judgments of engaging play.
+Use `--ai-complete` with the standalone mode to continue to a natural winner,
+with a two-minute/160-turn diagnostic limit. The shorter CI continuation covers
+five table rounds, paid token creation, partner searches, counters and combat.
+The policy seed is recorded; Forge's shuffle and rules randomness are not
+controlled by that seed. An archived state sequence is not a claim of identical
+engine re-execution from a seed.
+
+## Replaying state and presentation
+
+The public JSONL timeline retains complete snapshots at published board revisions,
+with a format version, host step and monotonic elapsed capture time;
+seat-private decisions and receipts have a separate diagnostic audience. Compare
+public facts only at the same game and board revision: input revisions can differ
+between seats, and two sequential reads can straddle an actual game transition.
+Agreement detects synchronization regressions; independent canonical rules
+assertions are still needed to establish that a particular result is correct.
+The public spectator currently omits activity entries and structured pending
+effects. These are sampled checkpoints, not a complete causal event stream;
+transient stack entries can occur between reads. Exact animation replay needs
+an ordered, audience-filtered event capture alongside the checkpoints.
+
+For UI regression work, the next step is feeding that timeline into the existing
+native renderer, preserving occurrence identities, camera state and elapsed animation
+time. Pair a rendered frame with its authoritative checkpoint, window size and
+input gesture. Capture both transitions and settled frames: a final battlefield
+alone cannot show whether a played card traveled through the stack, a counter
+change was visible, or a camera move preserved spatial context. The existing
+`--fixture` path can inspect a single saved snapshot without granting it action
+authority. Interactive replay must use the correct actor's filtered observation,
+not invent private choices from the public spectator.
+
+Mechanical checks can compare visible current stats/counters to their source
+occurrences, detect stale or missing objects and verify that a hit region answers
+the displayed decision. Retain representative screenshots at 1000×740 and a
+larger window, then review the source → pending effect → target → settled result
+as an actual sequence. These checks and image diffs do not establish readable
+grouping, clear attention or a pleasant game. Record human visual feedback and
+the exact candidate separately from conformance results.
+The player's MTG Arena references motivate the journeys: an announced card
+remains readable on hover, attachments sit beneath their host, and changing
+counters remain attached to the creature whose current stats changed. Replay
+those gestures on the four-seat and crowded battlefields as well; Arena's
+two-player framing does not settle our multiplayer spatial design.
+
 ## Decision framework foundation
 
 The player's clarified scope is **all AI behavior**, with a framework built
 before replacement policies. The combat/damage findings are canonical regression
 cases, not the boundary of the new controller. A targeting-only production patch
-does not meet this scope. Shipping AI behavior has not been switched.
+does not meet this scope. Published releases still predate this implementation.
 
 The initial implementation is [Mana.AI](../../mana-native/Mana.AI/Mana.AI.csproj),
 a graphics-free library depending only on `Mana.Contracts`. It reuses the existing
@@ -185,13 +311,16 @@ domain is a provider claim requiring conformance evidence, not something the
 policy or caller can infer from an empty array, highlighted cards or `CanAutoPass`.
 Known offered actions can be used under partial coverage; passing cannot be
 justified through it. Existing per-card `ISourceActions` reads alone do not certify
-a complete domain for a seat. Complete discovery still needs provider work.
+a complete domain for a seat. The automated provider supplies its separately
+verified complete discovery.
 
 `AiSeatSession` owns one game's one seat. Immutable requests contain the current
 frame, copied history, an episode seed, remaining time and a cooperative work
-allowance. Refreshing an input does not renew its budget or seed. The current
-episode is an input ID; it is not claimed to be a complete cast/cost/resolution
-episode while the engine lacks that causal identity. Cancelled, replaced, closed
+allowance. Refreshing an input does not renew its budget or seed. Where the
+provider supplies a causal episode, replacement input IDs retain that episode's
+budget. Combat declarations include the turn, phase, actor and combat ordinal;
+other inputs currently fall back to their input ID. This is not yet a complete
+cast/cost/resolution episode model. Cancelled, replaced, closed
 or late computations cannot publish a command. The await is time-bounded even
 if a policy fails to return; this is not a process sandbox or forced termination
 of arbitrary computation. Implementations must cooperate with cancellation/work
@@ -221,8 +350,8 @@ Scenario setup uses explicit test-driver passes where needed; it does not preten
 partial action discovery authorizes AI passing. No new CI shard or JVM startup
 is added. This verifies framework mechanics, not casual play quality.
 
-There is no production strategy, deck planner, semantic-effect evaluator, belief
-model, forward simulator or bot-seat host in this first library. Those systems
+The initial baseline and bot-seat host now exercise this boundary. A strategic
+deck planner, belief model and forward search are still future work. Those systems
 must consume the same contracts and execution lifecycle as the full replacement,
 with no fallback to Forge strategic handlers presented as our own implementation.
 

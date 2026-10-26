@@ -28,6 +28,9 @@ public abstract class InputSelectManyBase<T extends GameEntity> extends InputSyn
 
     protected String message = "Source-Card-Name - Select %d more card(s)";
 
+    /** The engine operation owning this selection, independent of its display message. */
+    public SpellAbility getSpellAbility() { return sa; }
+
     protected InputSelectManyBase(final PlayerControllerHuman controller, final int min, final int max) {
         super(controller);
         if (min > max) {

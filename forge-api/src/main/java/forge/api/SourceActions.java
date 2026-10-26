@@ -3,15 +3,58 @@ package forge.api;
 import forge.game.card.Card;
 import forge.game.spellability.SpellAbility;
 import forge.game.zone.ZoneType;
+import forge.game.player.Player;
+import forge.gamemodes.match.input.InputPassPriority;
+import forge.gamemodes.match.input.InputPayMana;
 import forge.gamemodes.match.input.Input;
 
 import java.util.List;
 import java.util.ArrayList;
 import java.util.UUID;
 import java.util.function.Predicate;
+import java.util.LinkedHashSet;
 
 /** Engine objects stay inside one pending input; clients receive opaque IDs and public descriptions only. */
 final class SourceActions {
+    record Domain(List<Card> sources, boolean complete) { }
+
+    /**
+     * Enumerate engine-controlled source zones, independently of the bounded
+     * presentation/highlight scan. External-zone access is the engine's own
+     * permission collection and includes command, graveyard, exile, top-card
+     * permissions, other players' playable cards and stack activations.
+     * Discovery never substitutes a strategic AI controller or chooses a route.
+     */
+    static Domain discover(Input input, Player actor, Predicate<Card> visible) {
+        if (!(input instanceof InputPassPriority || input instanceof InputPayMana))
+            return new Domain(List.of(), false);
+        var candidates = new LinkedHashSet<Card>();
+        candidates.addAll(actor.getCardsIn(ZoneType.Hand));
+        candidates.addAll(actor.getGame().getCardsIn(ZoneType.Battlefield));
+        candidates.addAll(actor.getCardsActivatableInExternalZones(true));
+        // Prepared virtual copies are invoked through their creature's catalog,
+        // as in the human path. They are not another independently keyed source.
+        for (Card battlefield : actor.getGame().getCardsIn(ZoneType.Battlefield)) {
+            Card linked = linkedSpell(battlefield);
+            if (linked != null && visible.test(battlefield)) candidates.remove(linked);
+        }
+        var sources = new ArrayList<Card>();
+        boolean complete = true;
+        for (Card card : candidates) {
+            if (card.getZone() == null) continue;
+            // The owning caller supplies the exact audience permission. The
+            // ordinary source UI excludes face-down cards; private automated
+            // seats may know their face through canFaceDownBeShownTo without
+            // disclosing that face in the public battlefield projection.
+            boolean disclosed = visible.test(card);
+            boolean offered = !input.getSourceActions(card).isEmpty();
+            boolean linked = disclosed && hasLinkedAction(input, card, visible);
+            if (!offered && !linked) continue;
+            if (disclosed) sources.add(card);
+            else complete = false;
+        }
+        return new Domain(List.copyOf(sources), complete);
+    }
     record Action(String id, SpellAbility ability, String kind, String text, Card host, long timestamp, ZoneType zone) {
         boolean matches(Card source) {
             return ability.getHostCard() == host && host.getGameTimestamp() == timestamp && host.getZone() != null

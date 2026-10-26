@@ -159,6 +159,8 @@ HandPlacementRegression.Run(Check);
 await QuietPriorityRegression.RunAsync(Check);
 await SourceActionSessionRegression.RunAsync(Check);
 await AiFrameworkRegression.RunAsync(Check);
+await AiHostRegression.RunAsync(Check);
+await AiPolicyRegression.RunAsync(Check);
 await LatestReadRegression.RunAsync(Check);
 await AppUpdateSessionRegression.RunAsync(Check);
 await DeckWorkspaceRegression.RunAsync(Check);

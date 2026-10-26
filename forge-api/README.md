@@ -54,6 +54,22 @@ The ready message advertises `protocolVersion: 2` and the `seat-sync`, `snapshot
 `command-receipts`, `resume`, `table-social`, `deck-workshop`, `deck-analysis`, and
 `semantic-priority-actions` and `explicit-deck-setup` capabilities. All connected players
 need this build; the seat synchronization handshake now uses version 3.
+
+The optional `automated-seats` capability is confined to the private desktop
+process pipe. `automatedEnable` selects external policy controllers before table
+creation. `automatedState` returns independent private seat observations and
+complete timing-legal action domains with structured costs/effects;
+`automatedAction` takes the same scoped semantic reply plus `seatId`.
+`automatedFault` stops the table with an explicit diagnostic; it never substitutes
+the legacy strategy. These commands are absent from network seat dispatch and
+cannot be addressed using a `connectionId`.
+`automatedSimulationStart` takes four Commander opponent IDs (`green`, `red`,
+compatible `preset:` IDs or `deck:<saved-id>`), creates only automated seats and
+returns a public read-only spectator. `automatedSimulationState` observes its
+cached public state; `automatedSimulationStop` requires its `sessionId`.
+Spectator ID -1 has no action keys, prompt, hand/library faces or private activity.
+Ordinary live tables retain their human-seat invariant. Existing deck files,
+network protocol and non-negotiating clients keep their previous formats.
 Printing IDs are opaque, case-sensitive identifiers; clients must round-trip them.
 `cardPrintings` takes `{cardId, offset, limit, text, finish}` (limit 1–200, default 6) and returns
 a catalog page of exact printings of that card, including alternate artwork and
@@ -190,12 +206,15 @@ before a game. `seat` is its zero-based slot index, `type` is `AI` or `OPEN`, an
 `description`); omitted AI choice uses the default. Only the host may call it,
 against the current table ID, and seat zero or a connected human is never
 replaceable. The host validates the selected deck with the same deck checks as
-other match setup. Arbitrary saved AI decks and mid-game takeover are unsupported.
+other match setup. With `automated-seats` negotiated, compatible saved decks
+also appear as `deck:<saved-id>` choices and are detached/validated at start.
+Mid-game takeover is unsupported.
 
 Lobby slots add `type: AI` and `opponentId`, retain their public `deck` name, and
 report AI readiness automatically. AI slots do not claim a human connection;
 joining takes an open human seat. Changing AI choices leaves human readiness
-unchanged. Match start uses actual Forge AI controllers with the selected decks.
+unchanged. Negotiated matches use the host's external policies through normal
+rules inputs; non-negotiating callers retain Forge AI controllers.
 Returning after a game preserves AI decks/readiness while humans ready again.
 
 ### Optional decision tempo (source candidate)

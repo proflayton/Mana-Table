@@ -151,7 +151,10 @@ public class PromptScopeRegressionTest {
     }
 
     private static void await(CountDownLatch latch) {
-        try { if (!latch.await(10, TimeUnit.SECONDS)) throw new IllegalStateException("The regression GUI barrier did not release"); }
+        var game = forge.game.GameAction.currentGame();
+        try (var suspended = game == null ? null : game.getAction().suspendState()) {
+            if (!latch.await(10, TimeUnit.SECONDS)) throw new IllegalStateException("The regression GUI barrier did not release");
+        }
         catch (InterruptedException interrupted) { Thread.currentThread().interrupt(); throw new IllegalStateException(interrupted); }
     }
 

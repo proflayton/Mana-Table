@@ -37,17 +37,31 @@ public class OpeningDrawConcessionTest {
             assertFalse(cards.isEmpty(), "The scan must reach a real card before the concession");
             var request = new JsonObject();
             request.addProperty("sessionId", text(choosing.state(), "id"));
-            try (var hook = new ZoneScan(departed, scanZone, () -> scenario.table.seat(2).concede(request))) {
+            var departingCards = new ArrayList<Card>();
+            try (var hook = new ZoneScan(departed, scanZone, () -> scenario.table.game.getAction().withState(() -> {
+                // Opening draws may replace a Card instance before the queued concession
+                // acquires state. Check cleanup of the actual occurrence, not its old LKI.
+                for (Card card : cards) {
+                    Card current = scenario.table.game.findById(card.getId());
+                    assertNotNull(current, "Every scanned card still exists before concession cleanup");
+                    departingCards.add(current);
+                }
+                scenario.table.seat(2).concede(request);
+            }))) {
                 assertTrue(scenario.answer(choosing, Map.of("action", "player", "playerId", scenario.table.game.getRegisteredPlayers().get(0).getId())));
                 var main = scenario.until(input -> input.seat() == 0
                         && text(input.state(), "phaseKey").equals("MAIN1")
                         && text(input.prompt(), "inputType").equals("InputPassPriority"));
+                hook.awaitConcession();
                 assertTrue(hook.fired.get(), "Concede during the real opening-draw replacement scan, after its first iterator element");
-                assertEquals(hook.iterated, cards.size(), "The detached iterator remains usable after the real zone is cleared");
+                assertEquals(hook.iterated, cards.size(), "The opening scan finishes once before the queued concession clears its cards");
                 assertTrue(departed.hasLost());
                 assertEquals(scenario.table.game.getPlayers().size(), 3);
+                assertEquals(departingCards.size(), cards.size());
+                for (Card card : departingCards) {
+                    assertTrue(card.getZone().is(ZoneType.None), "Each current card occurrence ceases to exist");
+                }
                 for (Card card : cards) {
-                    assertTrue(card.getZone().is(ZoneType.None));
                     assertNull(scenario.table.game.findById(card.getId()), "A copied, ceased card cannot be found in the game");
                 }
                 for (int seat = 0; seat < 4; seat++) assertPrivateZones(scenario.state(seat));
@@ -75,6 +89,8 @@ public class OpeningDrawConcessionTest {
         private final ZoneType zone;
         private final Runnable concede;
         private final AtomicBoolean fired = new AtomicBoolean();
+        private final AtomicReference<Throwable> failure = new AtomicReference<>();
+        private Thread concession;
         private int iterated;
 
         @SuppressWarnings("unchecked")
@@ -123,20 +139,26 @@ public class OpeningDrawConcessionTest {
                     iterated++;
                     if (fired.compareAndSet(false, true)) {
                         close(); // Restore the actual zone before genuine loss cleanup mutates it.
-                        var failure = new AtomicReference<Throwable>();
                         var worker = new Thread(() -> {
                             try { concede.run(); } catch (Throwable error) { failure.set(error); }
                         }, "opening-draw-api-concede");
                         worker.setDaemon(true);
+                        concession = worker;
                         worker.start();
-                        try { worker.join(5000); }
+                        try { StateBoundaryContention.await(worker, Thread.currentThread().getId()); }
                         catch (InterruptedException error) { Thread.currentThread().interrupt(); throw new AssertionError(error); }
-                        assertFalse(worker.isAlive(), "The ordinary API concession completes while the game scan is paused");
-                        if (failure.get() != null) throw new AssertionError("The real concession failed", failure.get());
+                        assertTrue(worker.isAlive(), "The ordinary API concession waits until the genuine opening scan releases state ownership");
                     }
                     return card;
                 }
             };
+        }
+
+        void awaitConcession() throws InterruptedException {
+            assertNotNull(concession, "The real scan must start the concurrent concession");
+            concession.join(5000);
+            assertFalse(concession.isAlive(), "The ordinary API concession completes after the scan reaches an input boundary");
+            if (failure.get() != null) throw new AssertionError("The real concession failed", failure.get());
         }
 
         @Override public void close() { zones.put(zone, original); }
