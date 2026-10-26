@@ -327,6 +327,12 @@ uncertain effective costs, rather than repeatedly opening and abandoning their
 payments. This strategic choice does not remove or relabel the provider's
 offered route. Authoritative payable knowledge overrides the estimate. Until
 effective-cost facts improve, the policy can miss discounted or alternate casts.
+Exploratory payment also checks a producer's own positive or unknown mana cost
+before starting another bill, and retains a nominal first unit for that cost
+instead of spending it on the outer bill. This prevents an unseeded paid source
+from being cancelled and retried through fresh inputs. These witnesses remain
+nominal: current-bill spending permissions do not certify a different nested
+bill, and restricted cross-bill dependencies still need a stronger model.
 
 Controlled tactical cases establish specific expectations independently of
 self-play: preserve a necessary early land when discarding, account for an
@@ -376,6 +382,13 @@ retaliation/commander-damage planning, own-deck plans,
 typed numeric purposes and X investment, conditional effects and belief/forward
 search. Human assessment of enjoyable
 opponents remains necessary; win rate or equal targeting cannot substitute.
+Production causal grouping currently covers combat. Other cost, target, mode
+and confirmation inputs use their pending-input scopes, so refreshed or nested
+inputs can reset the AI allowance. The next lifecycle boundary needs opaque
+invocation contexts propagated through actual rules execution and queued
+callbacks, with nested payments retaining the parent budget root. Per-seat
+active-time accounting must be separate from that causality identity so another
+player's required choice does not consume the waiting seat's allowance.
 Ordinary damage history currently identifies its recipient separately from its
 source occurrence, but lacks an explicit event-time source controller. The
 policy must not reconstruct that historical controller from current ownership;

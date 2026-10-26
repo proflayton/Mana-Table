@@ -160,21 +160,33 @@ public sealed class CasualCommanderPolicy : IAiPolicy
             if (step is AiManaStep.Source producer)
                 return Answer(request, new UseOfferedAction(state.Id, state.Decision!.Id, producer.SourceCardKey, producer.ActionId), "payment-follow-assignment-source");
         }
+        var sources = Offers(request).Where(offer => offer.Semantics.ManaAbility && offer.Semantics.ManaAmount > 0
+                && offer.Semantics.Affordability != ActionAffordability.Unavailable
+                && offer.Semantics.PaymentManaColors is not { IsEmpty: true })
+            .OrderByDescending(offer => ManaFit(request.Frame.Semantics.UnpaidMana, offer.Semantics.PaymentManaColors ?? offer.Semantics.ManaColors))
+            .ThenBy(offer => ManaCost(offer)).ThenByDescending(offer => offer.Semantics.ManaAmount)
+            .ThenBy(offer => CasualTableAssessment.Tie(request.Seed, offer.Semantics.StableId + offer.Source.VisualId)).ToArray();
+        // A producer's output cannot fund its own unpaid activation. Require a
+        // separate prerequisite witness before exploring a dependent route.
+        // Start it before spending that prerequisite pool on the outer bill.
+        foreach (var source in sources.Where(offer => HasManaPrerequisite(offer.Semantics))) {
+            if (source.Semantics.Affordability != ActionAffordability.Payable
+                && AiManaPlanner.ForAction(request with { Work = request.Work.CreateSlice(128, reserve: 4) }, source.Semantics).Status != AiManaPlanStatus.Funded)
+                continue;
+            return Answer(request, new UseOfferedAction(state.Id, state.Decision!.Id, source.Set.SourceCardKey, source.Action.Id), "payment-fund-dependent-producer");
+        }
         if (!request.Frame.Domain.PoolManaColors.IsDefaultOrEmpty) {
             string color = request.Frame.Domain.PoolManaColors
                 .OrderByDescending(color => ManaFit(request.Frame.Semantics.UnpaidMana, [color]))
                 .ThenBy(color => CasualTableAssessment.Tie(request.Seed, color)).First();
             return Answer(request, new SpendPoolMana(state.Id, state.Decision!.Id, color), "payment-spend-current-pool");
         }
-        var source = Offers(request).Where(offer => offer.Semantics.ManaAbility && offer.Semantics.ManaAmount > 0
-                && offer.Semantics.Affordability != ActionAffordability.Unavailable
-                && offer.Semantics.PaymentManaColors is not { IsEmpty: true })
-            .OrderByDescending(offer => ManaFit(request.Frame.Semantics.UnpaidMana, offer.Semantics.PaymentManaColors ?? offer.Semantics.ManaColors))
-            .ThenBy(offer => ManaCost(offer)).ThenByDescending(offer => offer.Semantics.ManaAmount)
-            .ThenBy(offer => CasualTableAssessment.Tie(request.Seed, offer.Semantics.StableId + offer.Source.VisualId)).FirstOrDefault();
-        if (source != null) return Answer(request, new UseOfferedAction(state.Id, state.Decision!.Id, source.Set.SourceCardKey, source.Action.Id), "payment-use-offered-resource");
+        var free = sources.FirstOrDefault(offer => !HasManaPrerequisite(offer.Semantics));
+        if (free != null) return Answer(request, new UseOfferedAction(state.Id, state.Decision!.Id, free.Set.SourceCardKey, free.Action.Id), "payment-use-offered-resource");
         return payment.Cancel.Enabled ? Answer(request, new CancelPayment(state.Id, state.Decision!.Id), "payment-no-funding-plan") : Missing("payment-source");
     }
+    private static bool HasManaPrerequisite(ActionSemantics semantic) => semantic.Costs.Any(cost => cost.Kind == ActionCostKind.Mana
+        && (cost.Amount != 0 || cost.ManaSymbols.Any(symbol => !int.TryParse(symbol.Trim('{', '}'), NumberStyles.None, CultureInfo.InvariantCulture, out int amount) || amount != 0)));
     private static double ManaCost(Offered offer) => offer.Semantics.Costs.Sum(cost => cost.Kind switch {
         ActionCostKind.Sacrifice => (cost.FromSource ? CasualTableAssessment.CardValue(offer.Source) : 5) + 10,
         ActionCostKind.Life => (cost.Amount ?? 4) * 2, ActionCostKind.Discard => 15,

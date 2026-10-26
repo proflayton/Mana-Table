@@ -11,6 +11,7 @@ internal static class AiPolicyRegression
         check(policy.Descriptor.Tasks.SetEquals(AiTasks.All), "The casual policy declares the complete seat rather than a targeting-only replacement");
         await EveryTask(check);
         await ActionsAndCosts(check);
+        await PaidProducerPrerequisites(check);
         await TargetsAndSocialMemory(check);
         await CombatAndAllocation(check);
         await TacticalExchangesAndResourceCosts(check);
@@ -179,6 +180,90 @@ internal static class AiPolicyRegression
             "Counter payment uses an actual offered counter type with surplus rather than an invented donor or text-derived choice");
         var partial = new AiDecisionFrame(State(new PriorityPayload(Yes)));
         check((await Evaluate(partial)).Status == AiSeatStatus.Unavailable, "A complete policy still refuses to treat partial action discovery as permission to pass");
+    }
+
+    private static async Task PaidProducerPrerequisites(Action<bool, string> check)
+    {
+        var state = State(new PaymentPayload(No, Yes));
+        var paid = Semantic("dependent", ActionEffectKind.Mana) with {
+            Affordability = ActionAffordability.Unknown, ManaAbility = true, ManaColors = ["W", "G"], PaymentManaColors = ["W", "G"], ManaAmount = 2,
+            Costs = [new(ActionCostKind.Tap, 1, true, ""), new(ActionCostKind.Mana, 1, false, "")],
+            Production = new(SemanticKnowledge.Known, [new(ImmutableDictionary<string, int>.Empty.Add("W", 1).Add("G", 1))]) };
+        var semantics = new DecisionSemantics { UnpaidMana = ["{G}", "{1}"] };
+        DecisionActionDomain PaidDomain(GameSnapshot current) => Domain(current,
+            ("own-creature", new("dependent", "activate", "Localized producer"), paid));
+        check((await Evaluate(Frame(state, PaidDomain(state), semantics))).Command is CancelPayment,
+            "A paid mana producer with no outside first unit cannot bootstrap its activation from its own nominal output");
+        var second = paid with { ActionId = "dependent-two", StableId = "dependent-two" };
+        check((await Evaluate(Frame(state, Domain(state,
+            ("own-creature", new("dependent", "activate", "First"), paid),
+            ("own-land", new("dependent-two", "activate", "Second"), second)), semantics))).Command is CancelPayment,
+            "Two paid producers without an initial unit do not recursively pretend to fund each other's activation");
+        var unknown = paid with { Costs = [new(ActionCostKind.Tap, 1, true, ""), new(ActionCostKind.Mana, null, false, "")] };
+        check((await Evaluate(Frame(state, Domain(state,
+            ("own-creature", new("dependent", "activate", "Unknown bill"), unknown)), semantics))).Command is CancelPayment,
+            "An unknown activation quantity does not justify repeatedly starting a nested payment with no prerequisite witness");
+        check((await Evaluate(Frame(state, Domain(state,
+            ("own-creature", new("dependent", "activate", "Engine payable"), paid with { Affordability = ActionAffordability.Payable })), semantics))).Command
+                is UseOfferedAction { ActionId: "dependent" },
+            "Authoritative payable producer knowledge takes precedence over the conservative nominal prerequisite guard");
+
+        var free = Semantic("first-unit", ActionEffectKind.Mana) with { Affordability = ActionAffordability.Unknown,
+            ManaAbility = true, ManaColors = ["C"], PaymentManaColors = ["C"], ManaAmount = 1,
+            Costs = [new(ActionCostKind.Tap, 1, true, "")],
+            Production = new(SemanticKnowledge.Known, [new(ImmutableDictionary<string, int>.Empty.Add("C", 1))]) };
+        var outsideSource = Frame(state, Domain(state,
+            ("own-creature", new("dependent", "activate", "Dependent"), paid),
+            ("own-land", new("first-unit", "activate", "Basic source"), free)), semantics);
+        check((await Evaluate(outsideSource)).Command is UseOfferedAction { ActionId: "dependent" },
+            "An independent basic producer can fund a paid producer's first unit without consuming the paid source's reserved tap twice");
+        var nested = Frame(state, Domain(state, ("own-land", new("first-unit", "activate", "Basic source"), free)),
+            new() { UnpaidMana = ["{1}"] });
+        check((await Evaluate(nested)).Command is UseOfferedAction { ActionId: "first-unit" },
+            "The ordinary free producer remains available to pay the dependent producer's actual nested activation bill");
+        var floating = state with { Players = state.Players.Select(player => player.Id == 0
+            ? player with { Mana = ImmutableDictionary<string, int>.Empty.Add("C", 1) } : player).ToImmutableArray() };
+        var poolDomain = PaidDomain(floating) with { PoolManaColors = ["C"] };
+        check((await Evaluate(Frame(floating, poolDomain, semantics))).Command is UseOfferedAction { ActionId: "dependent" },
+            "A proved first-unit pool funds the dependent producer before it can be spent prematurely on the outer generic requirement");
+
+        using var reused = Session();
+        reused.Observe(Frame(floating, poolDomain, semantics)); await reused.EvaluateAsync();
+        var first = reused.TakeCommand();
+        if (first != null) reused.Report(first, AiExecutionReceipt.Accepted);
+        var refreshed = floating with { Revision = 2, BoardRevision = 2, Decision = floating.Decision! with { Id = "post-untap-payment" } };
+        reused.Observe(Frame(refreshed, PaidDomain(refreshed) with { PoolManaColors = ["C"] }, semantics));
+        await reused.EvaluateAsync();
+        check(first?.Command is UseOfferedAction && reused.TakeCommand()?.Command is UseOfferedAction { ActionId: "dependent" },
+            "A newly funded occurrence of the same producer remains usable in the same turn; prerequisite checks do not impose a blanket mana-route retry ban");
+
+        var provider = new PaymentProbeProvider();
+        await using var host = new AiTableHost(provider, _ => new CasualCommanderPolicy(), 17, new(TimeSpan.FromSeconds(5), 128));
+        for (int attempt = 0; attempt < 6; attempt++) {
+            var outer = state with { Revision = attempt + 1, BoardRevision = attempt + 1,
+                Decision = state.Decision! with { Id = "fresh-outer-payment-" + attempt } };
+            provider.Observation = new(0, outer, PaidDomain(outer), semantics);
+            await host.StepAsync();
+        }
+        check(host.LastFault == null && provider.Commands.Count == 6 && provider.Commands.All(command => command is CancelPayment)
+                && host.Histories.Single().AttemptedRoutes.IsEmpty,
+            "Fresh outer payment input IDs and host episodes cannot reopen the unseeded dependent-producer loop: every observation cancels the unsupported outer bill directly");
+    }
+
+    private sealed class PaymentProbeProvider : IAutomatedSeatProvider
+    {
+        internal AutomatedSeatObservation Observation = null!;
+        internal List<GameCommand> Commands { get; } = [];
+        public Task EnableAutomatedSeatsAsync() => Task.CompletedTask;
+        public Task<ImmutableArray<AutomatedSeatObservation>> ObserveAutomatedSeatsAsync() => Task.FromResult(ImmutableArray.Create(Observation));
+        public Task ExecuteAutomatedAsync(int seatId, GameCommand command)
+        {
+            if (seatId != Observation.SeatId || command is not DecisionCommand decision
+                || !new AiDecisionFrame(Observation.State, domain: Observation.Domain, semantics: Observation.Semantics).Allows(decision))
+                throw new EngineCommandRejectedException("The payment probe received an unauthorized command.");
+            Commands.Add(command); return Task.CompletedTask;
+        }
+        public Task ReportAutomationFaultAsync(string gameId, int seatId, string reasonCode) => Task.CompletedTask;
     }
 
     private static async Task TargetsAndSocialMemory(Action<bool, string> check)
