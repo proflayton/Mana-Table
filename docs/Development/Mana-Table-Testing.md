@@ -83,6 +83,10 @@ fully tapped lands at each seat. Its counts cover physical state, not mana
 availability; the presentation checks separately include animated lands,
 nonland mana sources and concealed identities. Inspect the actual counted piles
 and seat summaries in both window sizes; assertions do not approve their clarity.
+The existing cluttered-changes journey also uses the production renderer in
+headless and windowed modes. It retains the full source/delta/activation checks
+and zooms to the actual activation card before reading it; it no longer demands
+480 simultaneously exposed tiny pointer patches or labels on every overview face.
 
 This is a representative real-rules lane alongside enumerated coverage of the
 current interaction command variants. Neither replaces visual review of the corresponding

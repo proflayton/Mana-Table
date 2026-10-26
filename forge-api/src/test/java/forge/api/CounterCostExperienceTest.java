@@ -143,7 +143,7 @@ public class CounterCostExperienceTest {
 
     private static void finishCast(RulesScenario game, String target) throws Exception {
         for (int step = 0; step < 5; step++) {
-            var input = game.until(i -> text(i.prompt(), "inputType").startsWith("InputPayMana")
+            var input = game.until(i -> text(i.prompt(), "inputType").startsWith("InputPayMana") && i.prompt().get("okEnabled").getAsBoolean()
                     || text(i.prompt(), "inputType").equals("InputSelectTargets")
                     || priority(i) && !i.state().getAsJsonArray("stack").isEmpty());
             if (priority(input)) return;
@@ -159,9 +159,11 @@ public class CounterCostExperienceTest {
 
     private static Input payAndReachCounterOrStack(RulesScenario game, String target) throws Exception {
         // Auto can republish its payment input while the UI callback is completing.
-        // Observe and answer only a fresh current scope, never replay an old OK.
+        // Observe only an enabled Auto action in a current scope. An initial
+        // payment publication can still carry disabled buttons while it opens.
+        // Never replay an old OK against a replacement choice.
         for (int step = 0; step < 8; step++) {
-            var input = game.until(i -> text(i.prompt(), "inputType").startsWith("InputPayMana")
+            var input = game.until(i -> text(i.prompt(), "inputType").startsWith("InputPayMana") && i.prompt().get("okEnabled").getAsBoolean()
                     || text(i.prompt(), "inputType").equals("InputSelectTargets")
                     || text(i.prompt(), "inputType").equals("InputSelectCardToRemoveCounter")
                     || priority(i) && !i.state().getAsJsonArray("stack").isEmpty());
