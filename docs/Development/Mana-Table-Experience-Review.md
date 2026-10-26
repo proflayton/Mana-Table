@@ -122,6 +122,43 @@ does not establish that a person can understand or use the screen.
     the client thinks the wanted card is elsewhere; searching and shuffling are
     still engine actions. Reading a card never chooses one of these alternatives.
 
+## Rules faces and the counter-lab entry: 25 October 2026
+
+**Source candidate; human review pending.** The player rejected the tiny
+three-backs/caret control and reported that neither Loch Mare copy was usable
+at the lab's opening checkpoint. The opening priority snapshot retained source
+context, and the renderer mistook that reference for another stack card. An
+empty stack now stays empty; a battlefield cost source also stays at its actual
+location. Center-click checks cover the real permanent, followed by its exact
+offered activation, mana payment and explicit counter-type debit. The earlier
+successful pixel-search test did not explain the player's failed gesture.
+Replaying the old preview also found an open/close trap: both copies toggle one
+reader, so clicking the other closes it and removes an ability row drawn
+elsewhere on the table. The revised ability row follows the source's current
+counter state in the same side column. The lab records press/release coordinates,
+reached control and source-action status in its isolated profile's
+`input-trace.jsonl` for further diagnosis. The player's opening journey still
+needs human replay of this candidate.
+
+The player's Arena screenshots show a recognizable full card with live P/T and
+counter/ability explanations beside it. Their later full-art feedback shows the
+limit of relying on that printed face for readable rules. Our adaptation is a
+read-only Rules/Artwork turn attached beneath the enlarged occurrence (R also
+turns it). It is distinct from Magic's transform/face-down actions and from
+choosing an ability. The current engine text is laid out at a fixed reading
+font, expanding the reader when needed; counters and authoritative stats stay
+live. Closing, changing occurrence or losing disclosure retires that local
+reading state. Reduced motion switches faces directly.
+
+For collections, [Arena's hand postures and near-hand cards](https://magic.wizards.com/en/news/mtg-arena/mtg-arena-state-game-january-2021-01-21)
+provide the source-object arrangement being adapted. Middle-clicking an actual
+hand/access card opens its spread. The existing hand count (or H) and access
+zone caption provide explicit alternatives. The separate tiny fan drawing is
+removed. The access layout reserves its caption before placing priority
+controls, so the new cue cannot occupy the cards' faces. Arena's smaller hand
+examples do not validate our hundreds-card camera journey; that remains a
+separate human review.
+
 ## Optional decisions and library targets: 25 October 2026
 
 **Source candidate; human review pending.** The reported Partner-with interaction

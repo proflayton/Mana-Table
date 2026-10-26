@@ -15,8 +15,8 @@ public sealed class PlayAccessPlan
     public static Rectangle Fan => new(1244, 756, 340, 144);
     public IReadOnlyList<PlayAccessGroup> Groups { get; }
     public Rectangle Bounds => Groups.Count == 0 ? Rectangle.Empty : Fan;
-    public Rectangle UnfoldBounds => Groups.Count == 0 ? Rectangle.Empty : new(1536, 756, 46, 39);
-    public int DockOffsetY => Groups.Count == 0 ? 0 : -152;
+    public Rectangle UnfoldBounds => Groups.Count == 0 ? Rectangle.Empty : new(Fan.Left + 8, Fan.Top - 27, Fan.Width - 16, 26);
+    public int DockOffsetY => Groups.Count == 0 ? 0 : UnfoldBounds.Top - 12 - 900;
     public int DockBottom => 900 + DockOffsetY;
 
     private PlayAccessPlan(PlayAccessGroup[] groups) => Groups = Array.AsReadOnly(groups);

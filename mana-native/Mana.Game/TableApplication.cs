@@ -274,12 +274,15 @@ internal sealed partial class TableApplication : IDisposable
             else if (!TableChoice && CombatGuide.CanConfirm(match)) Send(DecisionCommands.Confirm(match));
         }
         if (!chatKeys && !textFocus && keys.IsKeyDown(Keys.C) && previousKeys.IsKeyUp(Keys.C) && HasCombat && (overlay.Length == 0 || overlay == "combat")) { if (overlay == "combat") overlay = ""; else OpenCombat(); }
+        if (!chatKeys && !textFocus && !blockedInput && !OverlayOpen && keys.IsKeyDown(Keys.R) && previousKeys.IsKeyUp(Keys.R)
+            && readingId is { } reader) FlipReaderText(reader);
         if (match != null && !chatKeys && !textFocus && keys.IsKeyDown(Keys.F) && previousKeys.IsKeyUp(Keys.F)) UseAutomaticControl(!automatic);
         if (match != null && !chatKeys && !textFocus && keys.IsKeyDown(Keys.LeftControl) && previousKeys.IsKeyUp(Keys.LeftControl)) ToggleHoldControl();
         if (!blockedInput && !chatKeys && !textFocus && keys.IsKeyDown(Keys.F1) && previousKeys.IsKeyUp(Keys.F1)) OpenTableGuide();
         int wheel = mouse.ScrollWheelValue - previousMouse.ScrollWheelValue;
         if (!blockedInput && wheel != 0) Scroll(Math.Sign(wheel));
         ContinueReleasedPlay();
+        TraceLabInput(mouse, viewport);
         previousMouse = mouse; previousKeys = keys;
         // Give a ready pass precedence over starting another observation. Use this
         // update's pointer position so entering a card pauses Auto before Draw.

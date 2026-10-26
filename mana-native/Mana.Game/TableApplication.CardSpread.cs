@@ -132,26 +132,6 @@ internal sealed partial class TableApplication
         => 24 + canvas.TextSize(packet.Title, .68f, Math.Max(1, width - 52), 80, true).Y
             + canvas.TextSize(packet.Context, .53f, Math.Max(1, width - 52), 80).Y + 8;
 
-    private void DrawFanUnfold(string id, Rectangle bounds, CardCollectionTarget collection, bool selected = false, bool showHint = true)
-    {
-        bool enabled = (!session.NeedsRecovery || collection is CardCollectionTarget.PublicZone) && CollectionAllowed(collection);
-        bool hover = enabled && IsControlHovered(id);
-        var center = bounds.Center.ToVector2();
-        var ink = !enabled ? Muted * .35f : hover ? Color.White : selected ? Gold : Muted;
-        if (hover) canvas.Glow(center, new(54, 42), Gold * .18f);
-        for (int index = 0; index < 3; index++) {
-            float angle = (index - 1) * .24f;
-            var pose = new Pose(center + new Vector2((index - 1) * 7, 2), new(18, 25), angle);
-            canvas.Surface(null, pose, new(17, 29, 35));
-            canvas.CardFrame(pose, ink, 1);
-        }
-        canvas.Line(center + new Vector2(0, -22), center + new Vector2(-5, -16), ink, 1.5f);
-        canvas.Line(center + new Vector2(0, -22), center + new Vector2(5, -16), ink, 1.5f);
-        if (hover && showHint) canvas.Text(selected ? "Fold" : "Spread", bounds.Left - 3, bounds.Top - 22, Ink, .55f, 90, 1);
-        var intent = new MatchIntent.ExpandCardCollection(collection);
-        if (enabled) hits.Add(new(id, ScopeFor(intent), bounds, intent));
-    }
-
     private void DrawCardCollection()
     {
         if (!CardCollectionOpen || tableScene?.Spread is not { } plan) return;
@@ -210,9 +190,6 @@ internal sealed partial class TableApplication
         canvas.Line(new(1479, 79), new(1493, 93), accent, 2); canvas.Line(new(1479, 93), new(1493, 79), accent, 2);
         hits.Add(new("card-spread-fold", ScopeFor(fold), close, fold));
         if (IsControlHovered("card-spread-fold")) canvas.Text("Fold · Escape", 1395, 106, Ink, .53f, 130, 1);
-        var anchor = plan.Target is CardCollectionTarget.PublicZone publicZone ? PublicCollectionPile(publicZone)?.Top.Bounds
-            : plan.Target is CardCollectionTarget.HandCollection ? tableScene.Hand.UnfoldBounds : tableScene.PlayAccess.UnfoldBounds;
-        if (anchor is { } bounds) DrawFanUnfold("collection-open-anchor", bounds, plan.Target, true);
     }
 
     private void DrawSpreadSources(CardSpreadPlan plan)
@@ -258,6 +235,18 @@ internal sealed partial class TableApplication
 
     private void UpdateCardCollectionPointer(MouseState mouse, KeyboardState keys)
     {
+        if (!CardCollectionOpen && !OverlayOpen && !textFocus && !chatFocus && !dragging && pressed == null) {
+            bool middle = mouse.MiddleButton == ButtonState.Pressed && previousMouse.MiddleButton == ButtonState.Released;
+            bool handKey = keys.IsKeyDown(Keys.H) && previousKeys.IsKeyUp(Keys.H);
+            if (handKey && HandCollectionAllowed) { ExpandCardCollection(CardCollectionTarget.Hand); return; }
+            if (middle && HitAt(pointer)?.Card is { } card) {
+                if (match?.Viewer?.Zone("Hand").Cards.Any(current => CardViews.Same(current, card)) == true && HandCollectionAllowed)
+                    ExpandCardCollection(CardCollectionTarget.Hand);
+                else if (tableScene?.PlayAccess.Groups.FirstOrDefault(group => group.Cards.Any(item => CardViews.Same(item.Scene.Card, card))) is { } group)
+                    ExpandCardCollection(new CardCollectionTarget.AccessPacket(group.Id));
+                return;
+            }
+        }
         if (!CardCollectionOpen || tableScene?.Spread is not { WorldCards.Count: > 0 } plan) return;
         if (keys.IsKeyDown(Keys.Home) && previousKeys.IsKeyUp(Keys.Home) && !textFocus && !chatFocus) ResetCardCollectionView();
         if (keys.IsKeyDown(Keys.Z) && previousKeys.IsKeyUp(Keys.Z) && !textFocus && !chatFocus

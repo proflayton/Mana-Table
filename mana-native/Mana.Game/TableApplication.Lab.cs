@@ -12,6 +12,19 @@ internal sealed partial class TableApplication
     private bool ExperienceLabOpen => services.Lab != null;
     private ExperienceLabSession Lab => services.Lab ?? throw new InvalidOperationException("No experience lab session is attached.");
     private int labGalleryPage;
+    private void TraceLabInput(Microsoft.Xna.Framework.Input.MouseState mouse, Microsoft.Xna.Framework.Point viewport)
+    {
+        if (!ExperienceLabOpen || mouse.LeftButton == previousMouse.LeftButton && mouse.RightButton == previousMouse.RightButton) return;
+        var hit = HitAt(pointer);
+        try {
+            File.AppendAllText(Path.Combine(profile, "input-trace.jsonl"), System.Text.Json.JsonSerializer.Serialize(new {
+                time = now, stage = Lab.StageIndex, viewport = new { viewport.X, viewport.Y },
+                raw = new { mouse.X, mouse.Y, left = mouse.LeftButton.ToString(), right = mouse.RightButton.ToString() },
+                logical = new { pointer.X, pointer.Y }, hit = hit?.Id, intent = hit?.Intent.GetType().Name,
+                accepted = AcceptedHit, reader = readingId, actions = sourceActions.View.Status.ToString(), error
+            }) + Environment.NewLine);
+        } catch (Exception failure) when (failure is IOException or UnauthorizedAccessException) { }
+    }
     private bool TurnOrientationLab => ExperienceLabOpen && Lab.Scenario.Id.StartsWith("turn-orientation", StringComparison.Ordinal);
     private void HandleLabIntent(ShellIntent.Lab intent)
     {
@@ -100,7 +113,9 @@ internal sealed partial class TableApplication
 
 public static class ExperienceLabLauncher
 {
-    public static int Run(string[] args)
+    public static int Run(string[] args) => Run(args, null);
+
+    internal static int Run(string[] args, Action<TableWindow, ExperienceLabSession>? configure)
     {
         string profile = Path.Combine(Path.GetTempPath(), "ManaTableExperienceLab", Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(profile);
@@ -148,6 +163,7 @@ public static class ExperienceLabLauncher
                     window.TestPort.Post(() => window.TestPort.OpenBattlefield(owner));
                 }
                 if (replayCapture != null) window.Automation = new ExperienceLabReplayCapture(window, lab, replayCapture, finalStage);
+                configure?.Invoke(window, lab);
                 window.Run();
             } finally { engine.DisposeAsync().AsTask().GetAwaiter().GetResult(); }
             return 0;

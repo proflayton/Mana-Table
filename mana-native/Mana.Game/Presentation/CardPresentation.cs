@@ -11,7 +11,7 @@ namespace Mana.Table.Presentation;
 internal sealed record CardPresentationContext(GameSnapshot? State, string Scope,
     bool OverlayOpen, bool GalleryOpen, bool Dragging, bool CompactDecision,
     bool KeepBattlefieldAnchor = false, Rectangle? BattlefieldReaderAvoid = null, DecisionDockView? Decision = null,
-    CardCollectionTarget.PublicZone? PublicCollection = null)
+    CardCollectionTarget.PublicZone? PublicCollection = null, Vector2? ReaderContentSize = null)
 {
     private DecisionReadingPolicy Reading => new(Decision ?? (State == null ? null : DecisionDockPresentation.From(State, new())));
     public bool OpeningHandDecision => Reading.Allows(DecisionReading.OpeningHandInspection);

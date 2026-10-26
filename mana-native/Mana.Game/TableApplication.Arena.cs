@@ -111,6 +111,12 @@ internal sealed partial class TableApplication
         string limit = match!.Viewer?.MaxHandSize is { } maximum ? $"Limit {maximum} at cleanup" : "No hand limit";
         canvas.Panel(new(263, 864, 373, 31), new Color(12, 19, 27) * .95f, new Color(62, 78, 90), 4);
         canvas.Text($"{hand.Total} cards in hand · {limit}", 274, 873, Ink, .59f, 351, 1);
+        if (HandCollectionAllowed && hand.Total > 0) {
+            var intent = new MatchIntent.ExpandCardCollection(CardCollectionTarget.Hand);
+            var bounds = hand.UnfoldBounds;
+            if (IsControlHovered("hand-unfold")) canvas.Line(new(bounds.Left + 10, bounds.Bottom - 3), new(bounds.Right - 10, bounds.Bottom - 3), Gold, 2);
+            hits.Add(new("hand-unfold", ScopeFor(intent), bounds, intent));
+        }
         if (match.Viewer is { } viewer) {
             int placements = HandPlacements.AllOptions(match).Sum(a => a.HandPlacementLimit);
             string landState = string.Join(" · ", new[] { HandPlacements.LandPlayState(viewer), placements > 0
@@ -120,7 +126,6 @@ internal sealed partial class TableApplication
             canvas.Text(landState, 662, 873, Ink, .63f, 456, 1);
             }
         }
-        if (HandCollectionAllowed && hand.Total > 0) DrawFanUnfold("hand-unfold", hand.UnfoldBounds, CardCollectionTarget.Hand, spreadCollection is CardCollectionTarget.HandCollection);
     }
     private static string CardIdentity(Card card) => CardViews.Identity(card);
     private void DrawSceneCard(SceneCard node)
@@ -275,6 +280,11 @@ internal sealed partial class TableApplication
     {
         var state = match!;
         var decision = decisions.Presentation?.Payload == null ? null : state.Decision;
+        // A source reference is context, not a stack object. In particular a
+        // priority snapshot can retain the source of the preceding interaction.
+        // Only real stack entries belong in the stack presentation.
+        if (state.Stack.Length == 0 && (decision?.Payload is PriorityPayload
+            || decision?.Context.Source?.Zone == "Battlefield")) return;
         // These journeys point to the existing source and actual library piles.
         // Do not create another card copy in the center of the table.
         if (DecisionLayout.UsesSourceWorkspace(decision)) {

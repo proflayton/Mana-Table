@@ -26,6 +26,6 @@ internal static class HandLayout
             .Where(node => CardViews.Identity(node.Card) != dragged)
             .OrderBy(node => node.Card == visible.ElementAtOrDefault(raised) ? 1 : 0).ToArray();
         return new(hand.Length, raised < 0 ? null : CardViews.Identity(visible[raised]), cards,
-            hand.Length == 0 ? Rectangle.Empty : new(1190, 820, 46, 39));
+            hand.Length == 0 ? Rectangle.Empty : new(263, 864, 373, 31));
     }
 }

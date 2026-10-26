@@ -90,10 +90,20 @@ internal sealed partial class TableApplication
             .Append(canvas.TextWidth(state, size, true) + padding * 2)
             .DefaultIfEmpty(120).Max(), 120, 316);
         if (options.Any(option => option.Action?.Card != null)) desiredWidth = 316;
+        var stateColumn = battlefieldReaderStateBounds;
+        if (IsStudyBattlefieldReader(entry) && !stateColumn.IsEmpty && 1580 - stateColumn.Left >= 120)
+            desiredWidth = Math.Min(desiredWidth, 1580 - stateColumn.Left);
         int desiredHeight = (state.Length == 0 ? 0 : canvas.TextSize(state, .63f, desiredWidth - 16, 80, true).Y + 16)
             + options.Sum(option => SourceActionTextLayout.Measure(canvas, option.Text, size, desiredWidth - padding * 2, true).Height + padding * 2 + gap
                 + (option.Action?.Card == null ? 0 : LinkedSpellHeaderHeight(option.Action.Card, desiredWidth)));
-        var area = DecisionActionArea(face, desiredWidth, Math.Min(face.Height, desiredHeight));
+        // The live-state column already belongs to this inspected source. Put
+        // its actions directly below those facts before searching the table for
+        // free space; a detached row on the opposite side loses that connection.
+        bool besideState = IsStudyBattlefieldReader(entry) && !stateColumn.IsEmpty
+            && stateColumn.Bottom + 10 + desiredHeight <= face.Bottom
+            && stateColumn.Left + desiredWidth <= 1580;
+        var area = besideState ? new Rectangle(stateColumn.Left, stateColumn.Bottom + 10, desiredWidth, desiredHeight)
+            : DecisionActionArea(face, desiredWidth, Math.Min(face.Height, desiredHeight));
         if (area.IsEmpty) return;
         int width = area.Width;
         var rows = options.Select(option => {
@@ -108,7 +118,7 @@ internal sealed partial class TableApplication
         int stateHeight = state.Length == 0 ? 0 : canvas.TextSize(state, .63f, width - 16, 80, true).Y + 16;
         int contentHeight = stateHeight + rows.Sum(row => row.Height + row.LinkedHeight + gap) - (rows.Length > 0 ? gap : 0);
         int height = Math.Min(area.Height, contentHeight);
-        int top = Math.Clamp(face.Center.Y - height / 2, area.Top, area.Bottom - height);
+        int top = besideState ? area.Top : Math.Clamp(face.Center.Y - height / 2, area.Top, area.Bottom - height);
         sourceReaderActionsBounds = new(area.X, top, width, height);
         sourceReaderScrollMax = Math.Max(0, contentHeight - height);
         int scroll = Math.Clamp(sourceReaderScroll, 0, sourceReaderScrollMax);

@@ -89,7 +89,7 @@ internal sealed partial class TableApplication
         canvas.Line(new(pile.Top.Center.X, cue.Bottom), pile.Top.Point(.5f, 0), Gold * .7f, 1);
         canvas.Rounded(cue, new Color(11, 21, 28) * .96f, 5);
         canvas.CenterText(label, cue, Muted, .6f);
-        DrawFanUnfold("collection-open-anchor", pile.HitBounds, target, true, showHint: false);
+        canvas.CardFrame(pile.Top, Gold * .7f, 2);
         // Empty/concealed piles remain real table objects. A bare-table click
         // folds them without obscuring the current choice or inventing cards.
     }

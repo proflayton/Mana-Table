@@ -130,6 +130,14 @@ The existing seat-switch application case also checks revocation immediately
 after acceptance, before preparing another frame, so stale hit intents cannot
 survive until the next paint.
 
+`HeadlessPresentationSmoke.RulesReader` checks the counter lab's opening source
+with an ordinary center press/release, an actually empty stack, read-only rules
+flips, current counter/P/T updates, and disclosure revocation between press and
+release. Geometry and command safety checks do not establish that a player can
+discover the action. Native review should use the shipping `ExperienceLabLauncher`
+path, ordinary artwork/center clicks, both window sizes and the full payment
+continuation. Lab profiles retain `input-trace.jsonl` for physical input diagnosis.
+
 `PresentationReadChecks`, `DecisionSessionChecks` and `DeckInteractionChecks` run
 in the same presentation lane. They cover repeated frame reads without advancing
 state, publication on Update, revoked or altered intents, prompt/viewer draft

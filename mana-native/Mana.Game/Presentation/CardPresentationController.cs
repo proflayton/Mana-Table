@@ -77,6 +77,14 @@ internal sealed class CardPresentationController
             readerTarget ??= context.KeepBattlefieldAnchor && request.Zone == "Battlefield"
                 ? StudyReaderPose(rest, context.BattlefieldReaderAvoid)
                 : ReaderPose(rest, request.Zone);
+            var contentSize = context.ReaderContentSize ?? new Vector2(410, 574);
+            if (readerTarget.Value.Size != contentSize) {
+                var reader = readerTarget.Value;
+                float margin = context.KeepBattlefieldAnchor && request.Zone == "Battlefield" ? StudyDetailsWidth + StudyDetailsGap + 20 : 20;
+                readerTarget = reader with { Size = contentSize, Center = new(
+                    Math.Clamp(reader.Center.X, 20 + contentSize.X / 2, 1600 - margin - contentSize.X / 2),
+                    Math.Clamp(reader.Center.Y, 65 + contentSize.Y / 2, Math.Max(65 + contentSize.Y / 2, 775 - contentSize.Y / 2))) };
+            }
         }
         bool revealPlay = !reduced && !focused && !request.Card.FaceDown && request.RevealPlay
             && request.PlayAge is >= 0 and < PlayRevealSeconds;

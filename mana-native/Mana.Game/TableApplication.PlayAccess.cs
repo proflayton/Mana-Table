@@ -54,7 +54,12 @@ internal sealed partial class TableApplication
             var intent = new MatchIntent.ExpandCardCollection(new CardCollectionTarget.AccessPacket(group.Id));
             if (AccessCollectionAllowed) hits.Add(new(id, ScopeFor(intent), new((int)center.X - 19, (int)center.Y - 19, 38, 38), intent));
         }
-        DrawFanUnfold("play-access-unfold", plan.UnfoldBounds, CardCollectionTarget.Access, spreadCollection is CardCollectionTarget.AccessCollection);
+        string caption = string.Join(" · ", plan.Groups.Select(group => group.Zone).Distinct());
+        var captionBounds = plan.UnfoldBounds;
+        canvas.Text(caption, captionBounds.X + 4, captionBounds.Y + 4,
+            IsControlHovered("play-access-unfold") ? Color.White : Gold, .59f, captionBounds.Width - 8, 2, true);
+        var expand = new MatchIntent.ExpandCardCollection(CardCollectionTarget.Access);
+        if (AccessCollectionAllowed) hits.Add(new("play-access-unfold", ScopeFor(expand), captionBounds, expand));
     }
 
     private string PlayAccessState(Card card)

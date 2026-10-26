@@ -28,7 +28,7 @@ internal sealed partial class TableApplication
     private CardPresentationContext CardContext => new(match, Scope, OverlayOpen && !BattlefieldFocused && !ZoneReadingOpen && !CardCollectionOpen,
         ReadingGalleryOpen, dragging, CompactCardDecision, TableStudyEnabled,
         TableStudyEnabled ? StudyActionArea : null, decisions.Presentation,
-        spreadCollection as CardCollectionTarget.PublicZone);
+        spreadCollection as CardCollectionTarget.PublicZone, RulesReaderSize());
     private string? readingId => matchPresentation.Cards.PinnedId;
     private Rectangle? hoverPreview => matchPresentation.Cards.ReaderBounds;
     internal bool InteractivePointer => !dragging && HitAt(pointer) is { } hit
@@ -63,6 +63,7 @@ internal sealed partial class TableApplication
         pointerSurface = HitAt(pointer);
         string? hover = pointerSurface?.Id;
         matchPresentation.Cards.BeginFrame(CardContext, hover, frameElapsed, preferences.ReducedMotion, boardView);
+        if (rulesReaderId != readingId || rulesReaderGame != match?.Id) ClearRulesReader();
         deferredCardComposition.Clear();
         sourceReaderControls.Clear(); sourceReaderActionsBounds = Rectangle.Empty; sourceReaderScrollMax = 0;
         linkedSpellFaces.Clear();
@@ -118,7 +119,7 @@ internal sealed partial class TableApplication
     {
         bool clipped = entry.Zone == "Battlefield" && entry.Layer == CardPresentationLayer.Returning && !BattlefieldFocused;
         if (clipped) canvas.BeginClip(BoardViewport);
-        bool liveReader = DrawSourceActionReader(entry);
+        bool liveReader = DrawRulesReader(entry) || DrawSourceActionReader(entry);
         if (!liveReader) {
             if (entry.Playing) PaintInteractionCard(entry.Card, entry.Display, false, false);
             else compose(entry.Display, entry.Focused);
@@ -146,6 +147,7 @@ internal sealed partial class TableApplication
         var target = (entry.ReaderTarget ?? CardPresentationController.ReaderPose(entry.Rest, entry.Zone)).Bounds;
         if (Vector2.Distance(entry.Display.Size, target.Size.ToVector2()) > 2
             || Vector2.Distance(entry.Display.Center, target.Center.ToVector2()) > 2) return;
+        DrawRulesReaderControl(entry, target);
         if (CardContext.CanBrowseOpeningHand(entry)) return;
         if (CardContext.CanBrowseHandSelection(entry)
             || CardContext.CanBrowsePublicCollection(entry) && match?.Decision?.Payload is not (null or PriorityPayload or PaymentPayload)) {

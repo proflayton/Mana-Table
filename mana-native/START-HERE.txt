@@ -272,6 +272,11 @@ abilities on the stack appear in the middle. Decks are physical piles near each
 seat. Life medallions use existing commander artwork, with a lit rim on the
 active seat. Hover highlights a card without moving or enlarging it.
 Click a card to enlarge it for reading; click it again or empty table to close.
+Source-only until a release containing it is published: choose Rules beneath
+the enlarged card, or press R, to turn it to readable engine text. Artwork/R
+turns it back. Current stats and counters remain visible. This is a reading
+gesture; it never transforms the permanent, reveals a concealed face or chooses
+an action. The view closes when the card is no longer disclosed.
 Use the opened card's current Play, Cast or ability action, or drag a playable hand
 card or your commander onto the table. Each partner commander has its own Cast
 action and commander tax. Required choices, targets and mana payments use their normal
@@ -294,8 +299,9 @@ to play from exile, your graveyard or a disclosed library top also sit beside
 your hand. The gap, zone caption and granting source distinguish them from cards
 in hand. They remain visible while permission lasts; a current action cue means
 you can start that play, not that its mana cost is paid. Click to read, then use
-the card's offered action, or drag it onto the table. The fan gesture unfolds
-your hand or the additional cards across the table. Click a face to read it;
+the card's offered action, or drag it onto the table. Middle-click an actual
+hand/access card to unfold its collection. H or the hand count opens your hand;
+the access-zone caption opens the additional cards. Click a face to read it;
 middle-click or Z focuses the camera there, middle-drag moves through the spread,
 and the wheel zooms. Home returns to the overview. Escape or the return gesture
 folds the same cards to their original places. A large hand has no page controls.

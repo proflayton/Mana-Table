@@ -34,6 +34,7 @@ internal abstract record MatchIntent : UiIntent
     internal sealed record FoldCardCollection : MatchIntent { internal override InteractionScopeKind ScopeKind => InteractionScopeKind.Playback; }
     internal sealed record ResetCardCollectionView : MatchIntent { internal override InteractionScopeKind ScopeKind => InteractionScopeKind.Playback; }
     internal sealed record FlipInspector : MatchIntent;
+    internal sealed record FlipReaderText(string Id) : MatchIntent;
     internal sealed record SubmitCommand(GameCommand Command) : MatchIntent;
     internal sealed record ConfirmDecision(bool CloseOverlay = false) : MatchIntent;
     internal sealed record CancelDecision : MatchIntent;

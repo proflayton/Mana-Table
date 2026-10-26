@@ -47,6 +47,7 @@ internal sealed partial class TableApplication
             case MatchIntent.FoldCardCollection: CollapseCardReading(); FoldCardCollection(); break;
             case MatchIntent.ResetCardCollectionView: ResetCardCollectionView(); break;
             case MatchIntent.FlipInspector: inspectBack = !inspectBack; inspectPage = 0; break;
+            case MatchIntent.FlipReaderText flip: FlipReaderText(flip.Id); break;
             case MatchIntent.SubmitCommand { Command: DecisionCommand command }: Send(command); break;
             case MatchIntent.SubmitCommand { Command: RestorePriorityAbility command }: session.SubmitSetting(command); break;
             case MatchIntent.ConfirmDecision confirm when match?.Decision != null:

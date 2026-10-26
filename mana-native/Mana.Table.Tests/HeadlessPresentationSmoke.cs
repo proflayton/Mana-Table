@@ -37,6 +37,7 @@ internal static partial class HeadlessPresentationSmoke
             SemanticCommandPresentationChecks.Run(profile, Check);
             CheckOptionalDecisions(profile, Check, trace, performance);
             CheckCounterCost(profile, Check, trace, performance);
+            CheckRulesReader(profile, Check, trace, performance);
             CheckPlayAccess(profile, Check, trace, performance);
             CommanderInteractionChecks.Run(profile, Check);
             DisclosedSourceInteractionChecks.Run(profile, Check);
@@ -461,11 +462,11 @@ internal static partial class HeadlessPresentationSmoke
         }
         internal PresentationFrame Tick(string label) => Input(pointer, label: label);
         internal PresentationFrame Input(Point point, ButtonState left = ButtonState.Released,
-            ButtonState right = ButtonState.Released, string label = "input", KeyboardState? keys = null)
+            ButtonState right = ButtonState.Released, string label = "input", KeyboardState? keys = null, ButtonState middle = ButtonState.Released)
         {
             pointer = point; seconds += 1.0 / 60;
             var timer = Stopwatch.StartNew();
-            application.Update(Time(), new(point.X, point.Y, 0, left, ButtonState.Released, right, ButtonState.Released, ButtonState.Released), keys ?? new(), viewport);
+            application.Update(Time(), new(point.X, point.Y, 0, left, middle, right, ButtonState.Released, ButtonState.Released), keys ?? new(), viewport);
             timer.Stop(); updateMilliseconds.Add(timer.Elapsed.TotalMilliseconds);
             return ReadFrame(label);
         }
