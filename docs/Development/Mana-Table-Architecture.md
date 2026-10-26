@@ -9,6 +9,20 @@ Use the package's `SOURCE.txt`/`build.json` and release notes to identify its be
 The [native development guide](../../mana-native/README.md) is the build/run entry
 point for the Windows client.
 
+## AI policy boundary
+
+Shipping AI seats use Forge's heuristic controller with the Default profile;
+our lobby currently assigns decks through preset/opponent IDs. Deck selection,
+legal rules support and competent strategy are separate concerns. The
+[multiplayer AI investigation](Mana-Table-AI.md) records the observed low-life
+targeting feedback loop, an isolated reproducible probe, and the proposed
+boundary for authorized observations, current choice domains, forecasts and
+reasoned decisions. This is proposed work, not a second installed AI runtime.
+Its first migration covers combat preference and player-targeted damage together
+and must correlate tentative evaluations with actual committed actions. It
+builds on the action-execution migration rather than reconstructing rules from
+card text or exposing live Forge objects to a nominally neutral policy.
+
 ## Rules-provider boundary
 
 Forge is the installed rules provider; replacing it later must not require a new

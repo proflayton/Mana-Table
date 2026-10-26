@@ -26,3 +26,15 @@ The historical `Mana Table / desktop` required status now runs this small
 tool/documentation check only. App builds, native journeys and installer/update
 verification belong to the native Windows workflow. Real engine rules and wire
 behavior are covered by Java and the production native adapter's checks.
+
+## Optional AI characterization
+
+`MultiplayerAiProbe.java` calls Forge's actual combat-preference and mandatory
+damage-target selectors in a disposable, offline process. It records engine
+JAR provenance and fixed-state selection counts; it does not simulate matches,
+change the shipping policy or establish that an experience is fair. It requires
+JDK 17+ and an explicit engine/resource bundle. See the
+[AI investigation](../../docs/Development/Mana-Table-AI.md#reproduction-scope-and-provenance)
+for compilation, isolation, commands, initial results and limitations. Generated
+profiles and evidence belong under `.tools`. This optional diagnostic adds no CI
+job or runtime dependency to the game or the Node tools above.

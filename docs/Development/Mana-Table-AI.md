@@ -1,0 +1,284 @@
+# Multiplayer AI investigation and boundary proposal
+
+Investigated 26 October 2026 against source `c801eaf9b70b53f07f7234148def4f1811fa5db7`.
+This is an investigation and implementation proposal. Shipping AI behavior is
+unchanged. The reported live games have not been replayed, so their individual
+decisions are not diagnosed. Human review of a replacement policy is pending.
+
+## What explains the targeting pattern
+
+There is a concrete mechanism for multiple independent AIs to concentrate on
+one player without a shared vendetta or a human-targeting rule:
+
+- [Player](../../forge-game/src/main/java/forge/game/player/Player.java)
+  defines `getWeakestOpponent()` and `getStrongestOpponent()` using life totals.
+  These names do not mean weakest board or greatest likelihood of winning.
+  Opponents are returned in turn order relative to the acting player;
+  [PlayerCollection](../../forge-game/src/main/java/forge/game/player/PlayerCollection.java)
+  uses `Collections.min/max`, which retain the first tied element.
+- [DamageDealAi](../../forge-ai/src/main/java/forge/ai/ability/DamageDealAi.java)
+  begins `damageChoosingTargets` with the lowest-life targetable opponent.
+  Subsequent branches may instead choose a creature, planeswalker, or another
+  mandatory fallback. It is not correct to say every damage effect hits that
+  player. [DamageAiBase](../../forge-ai/src/main/java/forge/ai/ability/DamageAiBase.java)
+  also reasons about a weakest opponent when deciding whether to burn a player.
+- [AiAttackController](../../forge-ai/src/main/java/forge/ai/AiAttackController.java)
+  scores every opponent, then adds `(min(20, startingLife) - life)^2` when that
+  opponent is alive and below the threshold. At 12 life in this fixture the
+  bonus is 64, even when there is no lethal attack or threatening permanent.
+  Combat also values monarch/initiative and considers life-loss restrictions.
+  It randomly chooses among opponents within `10 + turn` of the best score.
+- [ComputerUtil.evaluateBoardPosition](../../forge-ai/src/main/java/forge/ai/ComputerUtil.java)
+  includes hand count, lands, evaluated creatures, planeswalkers, other
+  permanents and predicted damage to the AI. Combat is therefore more nuanced
+  than simply attacking the lowest life total. It still mixes threat and
+  elimination opportunity into one score.
+- The combat controller retains its chosen defender during attack planning.
+  Planeswalkers, battles, requirements and an unavailable attack can change it.
+  Several other effect handlers call the defender helper independently.
+  [DiscardAi](../../forge-ai/src/main/java/forge/ai/ability/DiscardAi.java), for
+  example, shuffles opponents for one path and prefers low life for another.
+  There is no single opponent-ranking function governing all these choices.
+
+The likely feedback loop is: an initial hit or life payment makes a player a
+preferred target for some effects; more damage lowers their life further; combat
+eventually gives them a large elimination bonus; several bots independently
+converge. This is an inference from the code and probe, not a replay of the report.
+The inspected selectors do not distinguish a human from another AI. That does
+not establish that every Forge heuristic is free of role-sensitive behavior.
+
+## Reproduction, scope and provenance
+
+[MultiplayerAiProbe.java](../../scripts/mana-table/MultiplayerAiProbe.java)
+calls the real combat-preference and mandatory damage-targeting routines in an
+isolated engine process. It creates four AI seats, empty boards/hands/libraries,
+40 starting life, main phase and turn 8. Every case resets seed 261026. Each
+actor samples the unchanged combat preference 256 times and a one-damage,
+opponent-only mandatory targeting choice 16 times. No attacks or damage resolve.
+All seats are AI; changing the low-life seat separates life preference from a
+special human or fixed absolute seat identity.
+
+| Life totals | Observation for the other three seats |
+| --- | --- |
+| 40 / 40 / 40 / 40 | Combat samples vary across opponents. Mandatory pings consistently select the first opponent in each actor's turn order. |
+| 30 / 40 / 40 / 40 | Combat remains varied. All 48 ping samples select seat 0. |
+| 12 / 40 / 40 / 40 | All 768 combat-preference samples and all 48 ping samples select seat 0. |
+| 40 / 12 / 40 / 40 | The concentration follows seat 1: all 768 combat samples and 48 pings from its opponents select it. |
+
+These are repeated selections from static fixtures, not independent games,
+population estimates, measured unfairness rates or evidence of actual attacks
+on an empty battlefield. The forced ping does not exercise payment or optional
+casting. This probe characterizes current behavior; it deliberately does not
+assert that these outcomes are desirable or lock them into regression tests.
+
+The initial run used the locally installed **0.2.122** engine, source
+`e1694825da82975798f16b55d4f6fc6c7a580f34`, with a separate disposable profile.
+The inspected combat, damage, collection, profile and controller code is
+unchanged between that source and the audited master. The `Player.java` changes
+in that interval concern land-play access, not opponent enumeration/comparison.
+This is not a claim that the latest release was exercised end to end. The output
+records the actual engine JAR path/hash, Java version, seed and fixture limits.
+
+Run against an explicit built or installed engine bundle with JDK 17+, from the
+repository root. Supply the resource directory containing `cardsfolder` and `ai`,
+usually `engine/forge-res`; do not pass the parent `engine` directory. Use a new
+profile under `.tools`, never a player's active profile:
+
+```powershell
+$engineJar = 'C:/path/to/bundle/engine/forge-engine.jar'
+$engineResources = 'C:/path/to/bundle/engine/forge-res'
+$probeClasses = "$PWD/.tools/ai-targeting/classes"
+$probeProfile = "$PWD/.tools/ai-targeting/profile"
+javac -cp $engineJar -d $probeClasses scripts/mana-table/MultiplayerAiProbe.java
+if ($LASTEXITCODE -ne 0) { throw 'AI probe compilation failed' }
+java -cp "$probeClasses;$engineJar" forge.api.MultiplayerAiProbe $engineResources $probeProfile
+if ($LASTEXITCODE -ne 0) { throw 'AI probe failed' }
+```
+
+The generated `targeting-probe.json`, engine caches and logs stay outside source
+control. Run the probe as its own process: Forge's RNG and AI cache are global.
+This diagnostic is optional and adds no CI shard or player-facing control.
+
+## What Forge supplies, and what we currently restrict
+
+[Upstream's AI guide](https://github.com/Card-Forge/forge/blob/master/docs/AI.md)
+describes heuristic play, with stronger aggro/midrange behavior and weaker combo
+play. The local [AI guide](../AI.md) provides headless self-play commands.
+
+`PlayerControllerAi` delegates decisions to `AiController`, combat controllers
+and `SpellApiToAi`. The latter dispatches semantic effect APIs such as damage,
+draw, counters, animation and zone changes to shared handlers. `AILogic` script
+hints and `SpecialCardAi` add exceptions. Missing API handlers can fall back to
+`CannotPlayAi`; legal rules support is not equivalent to competent AI support.
+`AiDeckStatistics` derives mana/cost information from cards rather than choosing
+a separate executable strategy for each preset.
+
+Our [MatchTable.ai](../../forge-api/src/main/java/forge/api/MatchTable.java)
+passes a normal deck to `LobbyPlayerAi` with the `Default` profile and an empty
+simulation-option set. It also disables the rules' AI-card warning. Our
+[MatchSession](../../forge-api/src/main/java/forge/api/MatchSession.java) and
+[SyncLobby](../../forge-api/src/main/java/forge/api/SyncLobby.java) restrict deck
+selection to opponent/preset IDs. The preset list is our product restriction;
+Forge's controller already accepts a deck. Removing that restriction alone
+would not make difficult combo/control decks play well.
+
+Forge has `SpellAbilityPicker`, `GameCopier` and `GameStateEvaluator` for search.
+We do not select hybrid/full simulation in `MatchTable.ai`. Turning it on is not
+a multiplayer/social fix: the evaluator uses its own utility, the copier has
+`PRUNE_HIDDEN_INFO = false`, and copying cards can be expensive. The existing
+controller holds live engine objects, so information isolation needs an actual
+boundary. This observation does not prove that the shipping heuristic AI uses
+every private card it can reach. Similarly, `Default.ai` enables mana smoothing,
+but `GameRules` defaults its required cheat-shuffle gate to false and our table
+does not enable it; the profile line alone does not establish cheating.
+
+`AiCardMemory` tracks tactical cards, reserved mana and revealed cards. It is
+not a table-wide model of pressure, player relationships or recent harassment.
+Adding a permanent vendetta would make the reported experience worse.
+
+## Useful reference boundaries
+
+The [Hearthstone AI Competition's tutorial](https://hearthstoneai.github.io/tutorial.html)
+separates the agent from a partially observed game, offers available moves,
+executes a move and returns a refreshed observation. Its simulator supports
+forward evaluation of offered choices. This is a useful contract pattern, not
+Blizzard's production AI implementation. It does not solve Magic's priority,
+costs, targeting chains or multiplayer social behavior.
+
+[OpenSpiel](https://openspiel.readthedocs.io/en/latest/intro.html) separates
+game dynamics, player information and algorithms, including multiplayer and
+imperfect-information settings. Its explicit
+[legal actions](https://openspiel.readthedocs.io/en/latest/api_reference/state_legal_actions.html)
+and [player information state](https://openspiel.readthedocs.io/en/latest/api_reference/state_information_state_string.html)
+are the relevant ideas. Adapting those concepts does not require replacing Forge
+with OpenSpiel or imply its algorithms immediately handle arbitrary Magic decks.
+
+[Wizards' Commander introduction](https://magic.wizards.com/en/news/feature/introduction-commander-2016-10-28)
+explicitly describes social interaction and consideration of everyone's game.
+That establishes the product goal; the policy below is our proposed adaptation,
+not an existing Arena multiplayer bot algorithm.
+
+## Proposed AI boundary
+
+Build on the [action-execution migration](Mana-Table-Architecture.md#action-execution-the-next-boundary-migration).
+The same source, costs, choices, targets, pending effects and outcomes should
+support both a human's presentation and an AI's decisions. Do not build a second
+rules model from card text or give a model arbitrary engine-object access.
+
+```mermaid
+flowchart LR
+    R[Rules provider] -->|Authorized observation and current choice domains| F[Immutable decision frame]
+    F --> P[Seat policy: tactics, deck plan, table behavior]
+    P -->|Scoped candidate choice and decision record| V[Provider validation]
+    V --> R
+    R -->|Committed action and observed outcome| H[Seat knowledge and bounded history]
+    H --> P
+```
+
+| Boundary | Required meaning |
+| --- | --- |
+| Seat observation | Authorized current state, own private cards, public history and explicitly remembered disclosures. Knowing one's own deck composition does not reveal its shuffled order. Host access to all decks or a preset ID must not reveal an opponent's hidden list. |
+| Decision frame | Actor, game/revision/answer scope, execution episode, source, mandatory/optional status, current candidate domains and constraints. Reading material never grants action authority. |
+| Action description | Structured effect/cost/target semantics and available routes, with explicit unknown/unsupported features. Preserve those routes; do not hide a card because the strategy evaluator cannot understand it. |
+| Choice proposal | One offered choice, allocation, ordering or bounded continuation, bound to its exact scope. It does not invent card IDs, targets, mana or a pass during a required choice. |
+| Forecast | Budgeted isolated branches, uncertainty and terminal outcomes under the seat's knowledge. Unknown hands/order use explicit hypotheses, not the live host's hidden truth. Branch handles cannot execute on the live table. |
+| Decision record | Candidate features, estimated utility, uncertainty, chosen route, tie/random seed, policy version and fallback. Link eventual execution/results separately from proposals. |
+
+These are proposed semantics, not new implemented public interfaces. A first
+implementation may run the policy in-process with the JVM for latency, but the
+policy consumes value records and returns offered IDs; Forge-specific objects,
+`AILogic` dispatch and mutations stay in the provider bridge. Replacing Forge
+then requires a conforming provider, not rewritten deck personalities or renderers.
+
+The current native `GameSnapshot` is an observation, not a clonable engine.
+`AvailableActions.ActionScan` is a bounded auto-pass/discoverability aid whose
+`complete` flag can be false; it is not the full AI action space. Generating all
+target permutations, X values, payment plans and attacker subsets up front is
+also impractical. Publish current choice domains incrementally, preserve engine
+constraints, and report candidate-search coverage separately from rules legality.
+An unevaluated route is not an illegal route or permission to auto-pass.
+
+## Social play without arbitrary targeting
+
+Evaluate actions, not just players. Removing a dangerous engine, attacking an
+undefended monarch and dealing one incidental damage have different purposes.
+Separate immediate danger to the bot, table-wide winning threats, profitable
+actions and genuine elimination opportunities. Life is one feature, not a
+universal ordering of opponents.
+
+Keep a small per-seat ledger of publicly observed committed pressure: incoming
+attacks, damage, removal and previous discretionary choices, with source,
+recipient, turn and reason. Decay it across turns. It can reduce repeated
+low-value pressure when comparable alternatives exist, without imposing a turn
+rotation, damage quota, permanent grudge or an invisible alliance among bots.
+Each bot's private knowledge, policy state and RNG remain independent.
+
+Forced targets, goad/attack restrictions, required defensive responses and a
+verified winning line override variety preferences. Eliminating one opponent is
+not the same as winning the game: model the remaining opponents and exposure.
+Persistent real threats can justify repeated attention. Casual table behavior
+and competitive win-seeking should be explicit policy settings, not hidden
+rubber-banding based on which seat is human.
+
+Deck understanding and personality are separate. Derive a provisional deck plan
+from the bot's own list and current effect relationships: resource development,
+card advantage, combat, tokens, counters, sacrifice, recursion and combinations.
+Update it as the game changes. Personality can tune risk and interaction timing;
+it must not require a hand-authored script for each commander or ignore legality.
+A future learned ranker or language model can suggest plans or rank offered
+choices behind this same boundary. Neither should invent executable rules.
+
+Accepting any engine-supported legal deck is an achievable input contract.
+Playing every unseen interaction expertly is not a credible blanket promise.
+Measure planning gaps, unsupported semantic features and fallback use by mechanic,
+including composite mechanics; do not silently substitute a known preset.
+
+## First implementation and efficient evaluation
+
+1. **Capture committed decisions before changing policy.** Add bounded decision
+   records at actual controller commitment and correlate cast/attack events with
+   the engine's execution model. Target probes mutate tentative spell abilities;
+   logging every `canPlay`/target evaluation as an attack would manufacture a
+   harassment history. Record the current baseline and unknown reasons honestly.
+2. **Migrate combat preference and player-targeted damage together.** Introduce
+   value-only candidate context, separated tactical reasons and the bounded
+   social tie preference. Exercise both paths against the same canonical table;
+   merely changing `getWeakestOpponent` globally would break legitimate life
+   comparisons and leave independent heuristics behind. Other handlers remain
+   explicitly legacy until migrated, with coverage recorded per decision kind.
+3. **Allow saved deck versions on AI seats.** Reuse deck storage/legality,
+   format and partner validation. Pin the assigned version, keep Ready/host
+   authority, and separate deck choice from personality/skill. Show unsupported
+   AI coverage as such instead of hiding warnings and implying expert play.
+4. **Add bounded search or learned ranking after the seam is demonstrated.**
+   Cache semantic features per relevant revision, update a small history per
+   committed event, cancel stale work and budget simulations per decision episode.
+   Safe fallback must still answer the actual legal task; inability to decide is
+   an explicit diagnostic, not a silent concession or fabricated action.
+
+Use a small reusable canonical set: equal opponents; incidental life loss;
+a low-life player beside a genuine leader; a newly emerging lethal threat;
+repeated marginal pings; forced targeting/hexproof/goad; a real finishing line;
+elimination invalidating a plan; counter-cost and multi-step targeting choices;
+and an imported partner/counter/token/recursion deck the evaluator has not seen.
+Add seat/role permutations and hidden-card/order substitutions: information the
+seat cannot know must not alter its policy inputs or choices. These are semantic
+properties, not a request to enumerate all possible Magic interactions.
+
+Start with cheap fixed-state probes and short real-engine continuations. Use
+paired seeds/seat rotations for deeper self-play only where needed, with limits
+on wall time, branches and turns. The existing `MatchTable` requires a human
+seat, so all-AI evaluation needs an explicit headless runner; do not quietly
+remove that live-table invariant to get a benchmark working.
+
+Measure legal completion, response latency, candidate coverage, stale/fallback
+rates, concentration of discretionary pressure, reaction to changed threats and
+deck-plan execution. Separate required effects and justified lethal/defensive
+choices from discretionary targeting. Wins and target-count equality cannot
+establish engaging play. Review actual four-player sequences with humans before
+calling a replacement fair or enjoyable.
+
+Decision records initially belong in local development evidence. Player-facing
+understanding should use the game's existing source/target/stack announcements
+and hover inspection. This proposal does not add a running wall of AI prose,
+extra dialogs or a promise of diplomatic deals the policy cannot honor.
