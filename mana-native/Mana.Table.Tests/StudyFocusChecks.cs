@@ -115,6 +115,9 @@ internal static class StudyFocusChecks
         engine.Present(engine.State with { Id = "native-study-next-match" }); view.Accept(engine.State); Tick();
         check(view.StudyFocusOwner == null && view.BoardView.IsIdentity && Battlefield(frame.Scene!).Length == overview.Count,
             "A different game drops the previous inspection camera rather than replaying its movement");
+        // This idle authored observation has no reply capability. Arm Auto so
+        // the visible pause reason reflects camera capture rather than Manual.
+        view.SetAutomatic(true);
         var cameraState = view.Match;
         var handBeforeCamera = frame.Cards.Where(card => card.Zone == "Hand").Select(card => card.Rest).ToArray();
         Tick(new(800, 400), wheelDelta: 240); Tick(elapsed: .7);
