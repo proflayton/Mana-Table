@@ -480,11 +480,12 @@ uncovered, and that a crowded field does not become overlapping transient labels
 Record graphical and human review for the exact candidate; these new journeys
 remain pending human review and release verification until that evidence exists.
 
-The equipment journey checks its attachment border at the destination pixel
-density with antialiasing coverage, alongside exact current stats, occurrence
-relationships and scoped pointer targets. A thin logical stroke need not contain
-an opaque texel of its original RGB color after MSAA. These checks establish
-rendering and input behavior, not perceived visual clarity.
+The equipment window journey uses the production renderer and `attachments.v1`.
+It reads actual exposed edges, checks the host's authoritative P/T and attached
+counters, follows re-equipping/detaching, distinguishes a tapped host from its
+Equipment, and navigates to a foreign-controlled Aura amid 480 permanents.
+It replaces the retired layout's connection-line and badge-pixel assertions;
+its real pointer gestures establish interaction behavior, not visual clarity.
 
 The existing headless presentation lane also runs `AttachmentStackChecks` over
 the production shared layout. `SharedTableStudyChecks` additionally runs the
