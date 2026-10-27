@@ -226,6 +226,13 @@ permission for the next choice. The mixed-hand Thought-Knot Seer fixture in
 `ScryVisibilityTest` checks eligible nonlands separately from a currently
 disclosed land, other audiences, and immediate revocation while rules cleanup
 is held. Decoder checks keep that readable land outside the selectable indices.
+An optional search confirmation may retain one independently disclosed own top
+card, with its exact readable face and no selection or source-action authority.
+That does not authorize any library contents during an entered search. The
+native disclosure regressions cover this distinction and extra-card, foreign-owner
+and mismatched-face negatives in the existing headless lane; the real
+`PlayAccessPublicationTest` checks continuous top permission before accepting a
+search and its suppression during the actual search.
 
 This checks actual development, paid abilities and combat, without treating
 progress counters as evidence that the opponents are fun. Java

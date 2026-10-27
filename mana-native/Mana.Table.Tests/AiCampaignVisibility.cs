@@ -31,7 +31,20 @@ internal static class AiCampaignVisibility
             foreach (var zone in player.Zones.Where(zone => zone.Name == "Library" || zone.Name == "Hand" && player.Id != state.ViewerId)) {
                 bool search = semantics?.Intent == DecisionIntent.Search || state.Decision?.Payload is ConfirmationPayload { Search: not null }
                     or TargetSelectionPayload { Search: not null };
-                if (search && zone.Name == "Library" && !zone.Cards.IsEmpty) return false;
+                if (search && zone.Name == "Library" && !zone.Cards.IsEmpty) {
+                    // Offering an optional search does not begin that search.
+                    // A separately disclosed own top card can remain readable
+                    // during that confirmation, without exposing its library.
+                    // Actual search choices still authorize no zone contents.
+                    if (state.Decision?.Payload is not ConfirmationPayload { Search: not null }
+                        || player.Id != state.ViewerId || zone.Cards.Length != 1
+                        || domain.Coverage != ActionDomainCoverage.NotApplicable || !domain.Sources.IsEmpty
+                        || !domain.Actions.IsEmpty || !domain.PoolManaColors.IsEmpty
+                        || zone.TopCard is not { FaceDown: false } top || string.IsNullOrEmpty(top.VisualId)
+                        || zone.Cards[0] is not { Selectable: false, Highlighted: false } card
+                        || top.VisualId != card.VisualId || !SameReadableFace(top, card)) return false;
+                    continue;
+                }
                 var source = state.Decision?.Context.Source;
                 foreach (var card in zone.Cards) {
                     if (!search && player.Id == state.ViewerId && zone.Name == "Library" && zone.Cards.Length == 1

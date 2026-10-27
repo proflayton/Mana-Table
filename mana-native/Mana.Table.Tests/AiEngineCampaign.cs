@@ -103,7 +103,7 @@ internal static class AiEngineCampaign
         return results.ToImmutableArray();
     }
 
-    private static void CheckDisclosureBounds(Action<bool, string> check)
+    internal static void CheckDisclosureBounds(Action<bool, string> check)
     {
         var face = new Card { Name = "Forest", Type = "Basic Land - Forest", ManaCost = "no cost" };
         Player Player(int id, ImmutableArray<Card> hand, ImmutableArray<Card> library, Card? top = null) => new(id,
@@ -179,6 +179,26 @@ internal static class AiEngineCampaign
                 && !AiCampaignVisibility.PrivateWindowsAreDisclosed(look with {
                     Players = [Player(0, [], [top, face], top), look.Players[1], look.Players[2]] }),
             "An explicit top disclosure authorizes exactly its single occurrence and no remainder of the library");
+        var offeredSearch = look with { Decision = new("offered-search", new(),
+            new ConfirmationPayload(new("Search library", true), new("Don't search", true), new(0, "Battlefield", ""))) };
+        bool SearchOfferAccepts(Card visible, Card? disclosed = null, int owner = 0) => AiCampaignVisibility.PrivateWindowsAreDisclosed(
+            offeredSearch with { Players = owner == 0
+                ? [Player(0, [], [visible], disclosed ?? top), Player(1, [], []), Player(2, [], [])]
+                : [Player(0, [], []), Player(1, [], [visible], disclosed ?? top), Player(2, [], [])] }, new(DecisionIntent.Search));
+        check(SearchOfferAccepts(top)
+                && !SearchOfferAccepts(top with { VisualId = "another-occurrence" })
+                && !SearchOfferAccepts(top with { Text = "Undisclosed rules" })
+                && !SearchOfferAccepts(top with { Selectable = true })
+                && !SearchOfferAccepts(top with { Highlighted = true })
+                && !SearchOfferAccepts(top, top with { FaceDown = true })
+                && !SearchOfferAccepts(top, owner: 1)
+                && !AiCampaignVisibility.PrivateWindowsAreDisclosed(offeredSearch with {
+                    Players = [Player(0, [], [top, face], top), look.Players[1], look.Players[2]] }, new(DecisionIntent.Search))
+                && !AiCampaignVisibility.PrivateWindowsAreDisclosed(offeredSearch, new(DecisionIntent.Search),
+                    DecisionActionDomain.None with { PoolManaColors = ["G"] })
+                && !AiCampaignVisibility.PrivateWindowsAreDisclosed(offeredSearch with {
+                    Decision = new("entered-search", new(), new OptionsPayload(new([new(0, top.Name, top)], new(1, 1)))) }, new(DecisionIntent.Search)),
+            "An optional search offer preserves only an independently disclosed read-only own top; entered searches, extra cards, foreign owners and action authority remain rejected");
         var prior = new AiDecisionReplayCase(1, "previous-policy-request", "test-policy", revealed,
             DecisionActionDomain.None, new(), new([], []), 1);
         var rejected = revealed with { Revision = 11, Decision = revealed.Decision! with { Id = "rejected-observation" } };

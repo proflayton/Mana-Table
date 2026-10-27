@@ -34,7 +34,8 @@ internal static partial class HeadlessPresentationSmoke
             ManaFundingWireChecks.Run(Check);
             AutomatedWireFailureChecks.Run(profile, Check);
             ManaColorPaymentWireChecks.Run(Check);
-        ManaReductionWireChecks.Run(Check);
+            ManaReductionWireChecks.Run(Check);
+            AiEngineCampaign.CheckDisclosureBounds(Check);
             PregameFlowChecks.Run(profile, Check);
             DeckLibraryPresentationChecks.Run(profile, Check);
             DecisionDockInteractionChecks.Run(profile, Check);
