@@ -442,6 +442,16 @@ application and typed-frame composition used by the real window. Preserve their
 result/trace JSON when diagnosing a failure; submitted drawing data does not
 prove that a physical window is clear or correctly clipped.
 
+The headless lane also reads a modal spell/land card, checks both offered-action
+orders and rejects a land offer replaced between press and release. It also
+checks that the reader's printed-cost caption persists after the pointer leaves
+the card; an action without cost metadata cannot borrow that printed cost. The
+GPU `--smoke-hand-placement` journey covers the same explicit land choice and
+its authored tapped result at both CI window sizes. It accepts `--art-cache`
+for local artwork review; uncached images use the deterministic fixture pattern.
+These controlled-provider checks preserve command authority without simulating
+land rules or supplying human approval of the action hierarchy.
+
 The presentation lane also runs the existing `AdvanceRegression` cases and writes
 `advance-results.json`: required decisions, visible checkpoints, stale/duplicate
 observations, bounded waiting, cancellation and retired-session results. They

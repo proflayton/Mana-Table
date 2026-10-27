@@ -107,7 +107,10 @@ internal sealed partial class TableApplication
         if (area.IsEmpty) return;
         int width = area.Width;
         var rows = options.Select(option => {
-            bool secondary = entry.Zone == "Hand" && option.Action is { Kind: "play" };
+            // An obvious land has a quiet fallback to dragging. A spell face's
+            // land route must remain discoverable, even if it is the only offer.
+            bool secondary = options.Count == 1 && entry.Zone == "Hand" && option.Action is { Kind: "play" }
+                && CardPresentation.IsResource(card);
             float font = secondary ? .62f : size;
             int inset = secondary ? 6 : padding;
             var layout = SourceActionTextLayout.Measure(canvas, option.Text, font, width - inset * 2, !secondary);

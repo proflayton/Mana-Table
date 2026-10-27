@@ -20,7 +20,10 @@ internal sealed partial class TableApplication
         public ImmutableArray<string> Symbols => Parts.Select(part => part.Symbol).ToImmutableArray();
     }
     private sealed record ManaJourneyRead(Card Source, bool Payment, ImmutableArray<ManaBillPart> Parts,
-        ManaFundingContext? Funding, ManaFundingPlan? Plan, string Advice);
+        ManaFundingContext? Funding, ManaFundingPlan? Plan, string Advice)
+    {
+        public string Caption { get; init; } = "MANA COST";
+    }
     private ManaJourneyRead? manaJourney;
     private ManaJourneyPaint? manaJourneyPaint;
     private readonly List<ManaSourcePaint> manaSourcePaint = [];
@@ -65,6 +68,10 @@ internal sealed partial class TableApplication
         var ready = ReaderActionsMatch(source);
         var options = ready ? sourceActions.View.Actions.Where(action => action.CostPreview != null).ToArray() : [];
         var pointedAction = pointerSurface?.Intent as MatchIntent.UseSourceAction;
+        // An offer without cost metadata cannot borrow the source face's printed
+        // casting cost. In particular, a land face does not cost its spell face's mana.
+        if (pointedAction != null && (!ready || sourceActions.View.Actions
+            .FirstOrDefault(action => action.Id == pointedAction.Id)?.CostPreview == null)) return;
         var offered = pointedAction == null ? options.Length == 1 ? options[0] : null
             : options.FirstOrDefault(action => action.Id == pointedAction.Id);
         if (offered?.CostPreview is { } preview) {
@@ -80,12 +87,16 @@ internal sealed partial class TableApplication
             string advice = symbols.Contains("{X}") ? "Choose X when casting"
                 : plan?.Status == ManaFundingStatus.Funded ? "Suggested taps · estimate"
                 : "Check sources manually";
-            manaJourney = new(source, false, parts, preview.Funding, plan, advice);
+            manaJourney = new(source, false, parts, preview.Funding, plan, advice) {
+                Caption = offered.Kind == "cast" ? "SPELL COST" : "MANA COST"
+            };
         } else if (source.ManaCost.Length > 0 && source.ManaCost != "no cost") {
             var symbols = ManaCostPresentation.Printed(source.ManaCost);
             if (symbols.IsEmpty) return;
             manaJourney = new(source, false, CountSymbols(symbols), null, null,
-                options.Length > 1 ? "Choose a casting mode" : ready ? "Read the current action" : "Reading sources…");
+                options.Length > 1 ? "Choose a casting mode" : ready ? "Choose an action" : "Reading sources…") {
+                Caption = "PRINTED SPELL COST"
+            };
         }
     }
 
@@ -172,7 +183,7 @@ internal sealed partial class TableApplication
         // and rules instead of opening a second inspector or resource panel.
         canvas.Gradient(area, new Color(8, 17, 23) * .96f, new Color(8, 17, 23) * .78f);
         canvas.Line(new(x + 8, y + 23), new(x + width - 8, y + 23), accent * .7f, 1);
-        canvas.Text(reducing && tokens.Length == 0 ? "COST COVERED" : journey.Payment ? "PAY REMAINING" : "MANA COST",
+        canvas.Text(reducing && tokens.Length == 0 ? "COST COVERED" : journey.Payment ? "PAY REMAINING" : journey.Caption,
             x + 9, y + 3, accent, .62f, width - 18, 1, true);
         foreach (var token in positions) {
             int sx = x + token.X, sy = y + 48 + token.Row * 42;

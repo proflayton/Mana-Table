@@ -20,7 +20,6 @@ internal sealed partial class TableApplication
         stackRows.Clear(); stackWorkloadPaint.Clear(); prioritySeats.Clear();
         changeCalloutBounds = null; highlightedChangeTargets.Clear(); highlightedChangeSource = null;
         var state = match!;
-        PrepareManaJourney();
         DrawTableSurface();
         // Queue the player's faces first; slow remote downloads must not bury the hand.
         foreach (var card in state.Viewer?.Zone("Hand").Cards ?? []) resources.Card(card);
@@ -60,6 +59,9 @@ internal sealed partial class TableApplication
         }
         hovered = !dragging ? HitAt(pointer)?.Card : null;
         if (!OverlayOpen && !CardCollectionOpen) DrawReaderControls();
+        // BeginFrame clears composed cards. Resolve the current reader and its
+        // offer only after those cards have been prepared for this frame.
+        PrepareManaJourney();
         DrawManaJourney();
         // Decision text and its controls have priority over card readers and
         // held cards. Their input regions are registered last for the same reason.

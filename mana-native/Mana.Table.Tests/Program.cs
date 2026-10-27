@@ -51,7 +51,7 @@ internal static class Program
             if (args.Contains("--smoke-priority-flow")) { PriorityFlowSmoke.Run(profile, size); return 0; }
             if (args.Contains("--smoke-recovery")) { RecoverySmoke.Run(profile, size); return 0; }
             if (args.Contains("--smoke-state-clarity")) { StateClaritySmoke.Run(profile, size); return 0; }
-            if (args.Contains("--smoke-hand-placement")) { HandPlacementSmoke.Run(profile, size); return 0; }
+            if (args.Contains("--smoke-hand-placement")) { HandPlacementSmoke.Run(profile, size, Arg("--art-cache")); return 0; }
             if (args.Contains("--smoke-allocation")) { AllocationSmoke.Run(profile, size); return 0; }
             if (args.Contains("--smoke-mana-payment")) {
                 if (args.Contains("--headless")) ManaPaymentSmoke.RunHeadless(profile, (passed, description) => {

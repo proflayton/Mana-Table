@@ -1013,6 +1013,37 @@ This acceptance covers that reader/hand-play direction. Crowded multiplayer
 clarity, other ability decisions, artwork latency and quiet-priority behavior
 retain their own review status. It does not establish release publication.
 
+### Spell or land alternatives: 27 October 2026
+
+Human review of `0.2.132+88633b4d11a630597300bc7fc5a1552f7bcba788`
+found that Bala Ged Recovery appeared unable to play as Bala Ged Sanctuary.
+The current land action was present and clickable, but inherited the quiet gray
+shortcut accepted for an ordinary land. That acceptance did not cover choosing
+between a spell and its land face.
+
+The player's supplied Arena **Choose One** ability screenshot shows meaningful
+alternatives presented together with consistent available-action emphasis;
+unavailable choices have visibly different treatment. The adaptation here keeps
+the full inspected card and its existing engine-offered actions beside it,
+rather than opening another chooser or copying Arena's full-screen arrangement.
+A sole action on an obvious land retains the accepted quiet drag fallback. A
+spell face's land route remains prominent even when it is the only available
+action. When other current actions exist, the land receives the same readable
+action surface and type size.
+An unselected printing's mana caption says Printed spell cost. Hovering an
+offer uses only that offer's cost metadata; an uncosted land or unknown ability
+must not inherit the source printing's casting cost.
+The pinned reader survives pointer movement. Its preview must use the current
+prepared reader, not disappear because the per-frame drawing list was cleared
+before the mana presentation tried to resolve its source.
+
+Journey: read the hand card without committing; compare the engine's spell and
+land offers; explicitly choose Play land; submit only that current opaque offer;
+follow the same card to its engine-reported destination. Neither gray styling
+nor printed card type establishes legality. Reading, rules inspection and stale
+gestures cannot play either face. Automated pointer and composition checks are
+separate from human review of the revised candidate, which remains pending.
+
 ## Pass for now regression: 21 October 2026
 
 Player intent is to stop acknowledging empty opponent priority windows despite
