@@ -460,6 +460,13 @@ execution. This does not claim complete coverage of replacement/state-based or
 all indirect rules paths. Extend the common hooks with observed rules journeys,
 never joins based on names, prompt prose, nearby events or final totals.
 
+A resumed input retains its rules owner. A mana-payment input belongs to the
+ability being paid for, even when a nested mana callback is publishing the input
+again. The current callback scope cannot replace that relationship. Likewise, an
+inner effect can record a declined result before cleanup; its lifecycle owner
+publishes completion only after the action's committed changes. Execution and
+activity frames must be captured coherently so completion cannot overtake them.
+
 The provider must publish the following meanings from their actual rules owners:
 
 | Meaning | Required relationship |

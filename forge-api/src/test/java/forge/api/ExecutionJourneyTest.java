@@ -19,6 +19,65 @@ public class ExecutionJourneyTest {
     private static final String MARE = "Loch Mare";
 
     @Test(groups = "canonical-interaction", timeOut = 90000)
+    public void consumingANestedManaSourceResumesItsActualUnfinishedPayment() throws Exception {
+        try (var game = new RulesScenario("execution-consuming-mana", Map.of(0,
+                List.of("Wastes", "Wastes", "Crystal Vein")), "Traxos, Scourge of Kroog", "Rhys the Redeemed")) {
+            var main = main(game);
+            var spell = zone(viewer(main.state()), "Hand").getAsJsonArray("cards").get(0).getAsJsonObject();
+            start(game, main, spell, "");
+            var payment = game.until(i -> i.seat() == 0 && mana(i));
+            String owner = execution(payment);
+            String initialScope = text(payment.prompt(), "id");
+            start(game, payment, permanent(payment.state(), "Wastes"), "Add {C}");
+            payment = game.until(i -> i.seat() == 0 && mana(i)
+                    && zone(viewer(i.state()), "Battlefield").getAsJsonArray("cards").asList().stream()
+                    .anyMatch(value -> text(value.getAsJsonObject(), "name").equals("Wastes")
+                            && value.getAsJsonObject().get("tapped").getAsBoolean()));
+            assertEquals(execution(payment), owner);
+            assertEquals(text(payment.prompt(), "executionStep"), "cost");
+            start(game, payment, permanent(payment.state(), "Crystal Vein"), "Add {C}{C}");
+            var resumed = game.until(i -> i.seat() == 0 && mana(i)
+                    && zone(viewer(i.state()), "Graveyard").getAsJsonArray("cards").asList().stream()
+                    .anyMatch(value -> text(value.getAsJsonObject(), "name").equals("Crystal Vein")));
+            assertNotEquals(text(resumed.prompt(), "id"), initialScope, "A source's sacrifice refreshes the current action scope");
+            var consumed = occurrences(resumed.state()).stream().filter(value -> text(value, "sourceName").equals("Crystal Vein"))
+                    .findFirst().orElseThrow();
+            assertEquals(text(consumed, "parentId"), owner);
+            assertEquals(text(consumed, "budgetRootId"), owner);
+            assertEquals(text(consumed, "step"), "complete");
+            assertEquals(text(consumed, "outcome"), "resolved");
+            // Reproduce the callback schedule deterministically: the real
+            // consumed source's scope is still the caller while the actual
+            // payment input regains a fresh answer capability. No rules,
+            // payment progress or authored execution records are changed.
+            var refreshed = new java.util.concurrent.atomic.AtomicReference<JsonObject>();
+            game.table.game.getAction().withState(() -> {
+                try (var callback = game.table.game.getExecutions().enterCause(text(consumed, "id"))) {
+                    game.table.seat(0).clearDecision();
+                    game.table.seat(0).publishInput();
+                    refreshed.set(game.state(0));
+                }
+            });
+            var state = refreshed.get();
+            var current = new Input(0, state, state.getAsJsonObject("prompt"));
+            assertEquals(execution(current), owner, "The restored payment belongs to the paid-for spell, never its completed mana child");
+            assertEquals(text(current.prompt(), "executionStep"), "cost");
+            assertEquals(text(occurrence(current.state(), owner), "step"), "cost");
+            assertNotEquals(text(current.prompt(), "id"), text(resumed.prompt(), "id"));
+            var remaining = zone(viewer(current.state()), "Battlefield").getAsJsonArray("cards").asList().stream()
+                    .map(value -> value.getAsJsonObject()).filter(value -> text(value, "name").equals("Wastes")
+                            && !value.get("tapped").getAsBoolean()).findFirst().orElseThrow();
+            start(game, current, remaining, "Add {C}");
+            var resolved = game.until(i -> i.seat() == 0 && priority(i) && i.state().getAsJsonArray("stack").isEmpty()
+                    && zone(viewer(i.state()), "Battlefield").getAsJsonArray("cards").asList().stream()
+                    .anyMatch(value -> text(value.getAsJsonObject(), "name").equals("Traxos, Scourge of Kroog")));
+            assertEquals(text(occurrence(resolved.state(), owner), "outcome"), "resolved");
+            assertTrue(activities(resolved.state(), owner).stream().anyMatch(value -> text(value, "kind").equals("resolved")));
+            assertThrows(IllegalArgumentException.class, () -> game.table.seat(0).action(request(resumed, Map.of("action", "ok"))));
+        }
+    }
+
+    @Test(groups = "canonical-interaction", timeOut = 90000)
     public void decliningAnOptionalTriggerRecordsItsResultButCompletesAfterStackCleanup() throws Exception {
         try (var game = new RulesScenario("execution-optional-decline", Map.of(0,
                 List.of("Soul's Attendant")), "Memnite", "Rhys the Redeemed")) {

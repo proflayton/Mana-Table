@@ -44,6 +44,11 @@ internal static class ExecutionWireChecks
                 && !GameCommandPermissions.Allows(state, new PayMana(state.Id, "activation-1"))
                 && GameCommandPermissions.Allows(state, new PayMana(state.Id, state.Decision!.Id)),
             "A historical source and execution identity reveal no inspectable card or executable offer; only the independently owned current payment can be answered");
+        var completedChildPrompt = wire.DeepClone();
+        completedChildPrompt["prompt"]!["executionId"] = "mana-1";
+        completedChildPrompt["prompt"]!["executionStep"] = "complete";
+        check(Reject(completedChildPrompt),
+            "A remaining parent payment cannot be rebound to its completed nested mana execution, even when the prompt step matches that child's terminal step");
 
         foreach (var (collection, field) in new[] { ("occurrences", "kind"), ("occurrences", "step"), ("transitions", "step") })
             foreach (string invalid in new[] { "17", "\"17\"", "\"Unknown\"", "\"Activation\"", "\"cost, choice\"", "false", "null" }) {

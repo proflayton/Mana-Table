@@ -1263,8 +1263,15 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
     }
 
     private void publish(Pending prompt) {
-        if (prompt != null && !(prompt.input instanceof InputPassPriority) && prompt.executionId == null && game.getExecutions().current() != null)
-            prompt.executionId = game.getExecutions().current().id();
+        if (prompt != null && !(prompt.input instanceof InputPassPriority) && prompt.executionId == null) {
+            // A nested source's callback can restore the outer payment before
+            // its own execution scope unwinds. The input explicitly owns the
+            // paid-for ability; the callback's current cause does not own it.
+            var execution = prompt.input instanceof InputPayMana payment
+                    ? game.getExecutions().reference(payment.getPaidForAbility())
+                    : game.getExecutions().current();
+            if (execution != null) prompt.executionId = execution.id();
+        }
         pending = prompt; table.publish();
     }
 
