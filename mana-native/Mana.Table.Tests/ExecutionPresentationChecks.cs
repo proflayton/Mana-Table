@@ -51,8 +51,8 @@ internal static class ExecutionPresentationChecks
             Activity = [cost, Event(2, activation.Id, ExecutionStep.Resolution, "draw", "You drew a card.", 1),
                 Event(3, other.Id, ExecutionStep.Resolution, "draw", "You drew cards.", 7),
                 Event(4, activation.Id, ExecutionStep.Resolution, "draw", "You drew cards.", 2),
-                Event(5, activation.Id, ExecutionStep.Complete, "resolved", "Activation resolved."),
-                Event(6, other.Id, ExecutionStep.Complete, "resolved", "Another spell resolved.")] };
+                Event(5, activation.Id, ExecutionStep.Complete, "resolved", "Activation resolved.") with { Detail = "Draw three cards." },
+                Event(6, other.Id, ExecutionStep.Complete, "resolved", "Another spell resolved.") with { Detail = "Draw seven cards." }] };
         Observe(settled, 2);
         var result = feedback.Recent.Single(item => item.ExecutionId == activation.Id);
         var otherResult = feedback.Recent.Single(item => item.ExecutionId == other.Id);
@@ -128,5 +128,63 @@ internal static class ExecutionPresentationChecks
         check(unrelatedBatch.HasHistoryGap && silent.Recent.Single(item => item.ExecutionId == activation.Id)
                 is { HistoryIncomplete: true, Changes.Length: 0 },
             "Activity loss marks every ongoing execution incomplete even before its first visible change or next transition");
+
+        var held = new StackArrivalPresentation();
+        var heldStack = settled with { Status = "resolving", Stack = [
+            new(source.Name, "Draw three cards.", StackActionKind.ActivatedAbility, null) { Id = "old-activation-stack", ExecutionId = activation.Id },
+            new("Another spell", "Draw seven cards.", StackActionKind.Spell, null) { Id = "old-spell-stack", ExecutionId = other.Id }] };
+        held.Observe(initial, heldStack, 50, settled.Activity, executions: settled.Executions!.Transitions);
+        var heldOrder = Enumerable.Range(0, 4).Select(index => held.Current(50.1 + index * 2.5)!.Id).ToArray();
+        check(heldOrder.SequenceEqual(new[] { "execution:activation:5", "execution:activation:7", "execution:other:8", "execution:other:9" }),
+            "A resolving snapshot's pinned old stack cannot promote completed casts ahead of their earlier reported resolutions");
+
+        CheckDeferredMetadata(initial, source, check);
+    }
+
+    private static void CheckDeferredMetadata(GameSnapshot initial, Card source, Action<bool, string> check)
+    {
+        var occurrence = new ExecutionOccurrence("deferred-activation", "deferred-activation", ExecutionKind.Activation, ExecutionStep.Stack) {
+            ActorPlayerId = initial.ViewerId, SourceCardId = source.VisualId, SourceName = source.Name };
+        var early = initial with { Executions = new(1, 2, [occurrence], [new(1, occurrence.Id, ExecutionStep.Preparation),
+            new(2, occurrence.Id, ExecutionStep.Stack)]) };
+        var cursor = new ExecutionCursor(); var activity = new PublicActivityCursor(); var announcements = new StackArrivalPresentation();
+        GameSnapshot? before = null;
+        void Observe(GameSnapshot state, double now)
+        {
+            var execution = cursor.Observe(state);
+            var events = activity.Observe(before, state, execution.Transitions, execution.Baseline, execution.Gap);
+            announcements.Observe(before, state, now, events.Entries, events.HasHistoryGap,
+                execution.Transitions, execution.Baseline, execution.Gap);
+            before = state;
+        }
+        Observe(initial, 60); Observe(early, 61);
+        check(announcements.PendingCount == 1 && announcements.Current(71) == null && !announcements.Ready(71),
+            "An actual stack transition waits for its exact reading material instead of showing an empty uninspectable announcement or expiring unseen");
+        var item = new StackItem(source.Name, "Draw a card.", StackActionKind.ActivatedAbility, null) {
+            Id = "late-current-stack", ExecutionId = occurrence.Id, ControllerId = initial.ViewerId };
+        var cast = new ActivityEntry(1, initial.Turn, initial.PhaseKey, "ability", initial.ViewerId,
+            "You activated an ability.", source.VisualId, source.Name) {
+                ExecutionId = occurrence.Id, ExecutionStep = ExecutionStep.Stack, StackId = item.Id };
+        var disclosed = early with { Stack = [item], Activity = [cast] };
+        Observe(disclosed, 72);
+        check(announcements.PendingCount == 1 && announcements.Current(72) is { StackId: "late-current-stack", Text: "Draw a card." }
+                && !announcements.Ready(73),
+            "Late current-stack metadata fills the same deferred execution once, exposes its exact hover reference and starts its first readable beat without another transition");
+        var resolved = disclosed with { Stack = [],
+            Executions = new(1, 4, [occurrence with { Step = ExecutionStep.Complete, Outcome = ExecutionOutcome.Resolved }],
+                [.. early.Executions!.Transitions, new(3, occurrence.Id, ExecutionStep.Resolution),
+                    new(4, occurrence.Id, ExecutionStep.Complete) { Outcome = ExecutionOutcome.Resolved }]),
+            Activity = [cast, new(2, initial.Turn, initial.PhaseKey, "resolved", initial.ViewerId, "Ability resolved.", source.VisualId, source.Name) {
+                ExecutionId = occurrence.Id, ExecutionStep = ExecutionStep.Resolution, StackId = item.Id, Detail = "Draw a card." }] };
+        Observe(resolved, 73); Observe(resolved, 73.1);
+        check(announcements.PendingCount == 2 && announcements.Current(73.1)?.Id == "execution:deferred-activation:2"
+                && announcements.Current(74.5)?.Id == "execution:deferred-activation:4" && announcements.IncompleteCount == 0,
+            "A late-readable activation keeps its full first beat, then its distinct terminal announcement, without duplicate entries or a polling timer reset");
+
+        var unavailable = new StackArrivalPresentation();
+        unavailable.Observe(initial, early, 80, executions: early.Executions.Transitions);
+        unavailable.Observe(early, resolved with { Activity = [] }, 81, executions: resolved.Executions.Transitions.Skip(2).ToImmutableArray());
+        check(unavailable.IncompleteCount == 1 && unavailable.PendingCount == 1 && unavailable.Current(81)?.EventKind == "resolved",
+            "Evicted action reading material reports incomplete history while the actual terminal fact remains readable, instead of blocking on a missing stack announcement forever");
     }
 }

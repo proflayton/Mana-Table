@@ -235,8 +235,9 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
         synchronized (gate) {
             // During AI work, publish only event-time copies. Never read a live board from IPC.
             if ("resolving".equals(latest.get("status"))) {
-                var frame = activity.frame();
-                var executionFrame = executions.frame();
+                var publication = MatchActivity.capture(activity::frame, executions::frame);
+                var frame = publication.activity();
+                var executionFrame = publication.executions();
                 var priorExecutions = latest.get("executions");
                 if (frame.revision() != activityRevision || !(priorExecutions instanceof MatchExecutions.Frame prior)
                         || executionFrame.lastSequence() != prior.lastSequence()) {
@@ -244,10 +245,7 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
                     var next = new LinkedHashMap<>(latest);
                     next.put("revision", ++revision);
                     next.put("turn", frame.turn()); next.put("phase", frame.phase()); next.put("phaseKey", frame.phaseKey());
-                    next.put("activePlayerId", frame.activePlayerId());
-                    var retained = executionFrame.occurrences().stream().map(MatchExecutions.Occurrence::id)
-                            .collect(java.util.stream.Collectors.toSet());
-                    next.put("activity", MatchActivity.retainedExecutions(frame.entries(), retained));
+                    next.put("activePlayerId", frame.activePlayerId()); next.put("activity", frame.entries());
                     next.put("executions", executionFrame);
                     latest = Collections.unmodifiableMap(next);
                 }
@@ -1354,7 +1352,8 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
         }
         String result = gameResult();
         executions.pinStack(stackExecutions.values());
-        var activityFrame = activity.frame();
+        var publication = MatchActivity.capture(activity::frame, executions::frame);
+        var activityFrame = publication.activity();
         activityRevision = activityFrame.revision();
         if (prompt != null) {
             var projectedPrompt = new LinkedHashMap<>(prompt.prompt);
@@ -1401,7 +1400,7 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
                         prompt != null && prompt.input instanceof InputPassPriority && sourceInputCurrent(prompt) ? prompt.input : null,
                         human::getCard, activity::visualId, publishedAccessCards),
                 "ignoredPriorityAbilities", priorityAbilities(human.getIgnoredPriorityAbilities(), prompt),
-                "result", result, "notices", List.copyOf(notices), "activity", activityFrame.entries(), "executions", executions.frame());
+                "result", result, "notices", List.copyOf(notices), "activity", activityFrame.entries(), "executions", publication.executions());
         String quietToken = quietYield.observe(snapshot, activity.quietSequence());
         if (prompt != null) {
             var projectedPrompt = new LinkedHashMap<>(prompt.prompt);

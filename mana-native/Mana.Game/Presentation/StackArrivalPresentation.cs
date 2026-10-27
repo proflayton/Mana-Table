@@ -10,7 +10,11 @@ internal sealed class StackArrivalPresentation
     internal const double Duration = 2.4;
     internal const int Capacity = 512;
     internal sealed record Announcement(string Id, string? StackId, string SourceId, string Name, string Text,
-        int? ControllerId, StackActionKind? Kind, string EventKind);
+        int? ControllerId, StackActionKind? Kind, string EventKind)
+    {
+        internal string ExecutionId { get; init; } = "";
+        internal bool AwaitingMetadata { get; init; }
+    }
     private readonly Queue<Announcement> pending = new();
     private readonly HashSet<string> seen = new(StringComparer.Ordinal);
     private readonly Queue<string> recent = new();
@@ -47,8 +51,11 @@ internal sealed class StackArrivalPresentation
             string key = "execution:" + occurrence.Id + ":" + transition.Sequence;
             Add(new(key, item?.Id ?? entry?.StackId, occurrence.SourceCardId ?? "", occurrence.SourceName ?? "Ability",
                 item?.Text ?? (entry?.Detail is { Length: > 0 } detail ? detail : entry?.Message ?? ""),
-                occurrence.ActorPlayerId, kind, eventKind), now);
-            if (transition.Step == ExecutionStep.Stack && item != null
+                occurrence.ActorPlayerId, kind, eventKind) {
+                    ExecutionId = occurrence.Id,
+                    AwaitingMetadata = transition.Step == ExecutionStep.Stack && item == null && string.IsNullOrWhiteSpace(entry?.Detail)
+                }, now);
+            if (transition.Step == ExecutionStep.Stack && item != null && occurrence.Step != ExecutionStep.Complete
                 && kind is StackActionKind.Spell or StackActionKind.ActivatedAbility) urgent.Add(key);
         }
         foreach (var entry in events.IsDefault ? [] : events) {
@@ -68,12 +75,47 @@ internal sealed class StackArrivalPresentation
         // old queued trigger merely because that simultaneous burst was large.
         urgent.UnionWith(arrivals.Where(item => item.ExecutionId.Length == 0 && item.Kind is StackActionKind.Spell or StackActionKind.ActivatedAbility)
             .Select(item => "stack:" + item.Id));
+        EnrichDeferred(after, urgent, now);
         Promote(urgent, now);
 
         void AddStack(StackItem item)
         {
             var source = item.Card is { FaceDown: false } card ? CardViews.Identity(card) : "";
             Add(new("stack:" + item.Id, item.Id, source, item.Name, item.Text, item.ControllerId, item.Kind, ""), now);
+        }
+    }
+
+    private void EnrichDeferred(GameSnapshot state, HashSet<string> urgent, double now)
+    {
+        bool wasWaiting = current?.AwaitingMetadata == true;
+        current = Enrich(current);
+        var queued = pending.ToArray(); pending.Clear();
+        foreach (var announcement in queued) if (Enrich(announcement) is { } ready) pending.Enqueue(ready);
+        if (current == null) current = pending.TryDequeue(out var next) ? next : null;
+        if (wasWaiting && current?.AwaitingMetadata != true) { elapsed = 0; lastTick = now; }
+
+        Announcement? Enrich(Announcement? announcement)
+        {
+            if (announcement?.AwaitingMetadata != true) return announcement;
+            var occurrence = ExecutionFrames.Find(state, announcement.ExecutionId);
+            var item = state.Stack.FirstOrDefault(item => item.ExecutionId == announcement.ExecutionId);
+            var entry = state.Activity.LastOrDefault(entry => entry.ExecutionId == announcement.ExecutionId
+                && entry.Kind is "cast" or "ability" or "triggered" or "resolved" && !string.IsNullOrWhiteSpace(entry.Detail));
+            if (item != null || entry != null) {
+                if (item != null && occurrence?.Step != ExecutionStep.Complete
+                    && announcement.Kind is StackActionKind.Spell or StackActionKind.ActivatedAbility) urgent.Add(announcement.Id);
+                return announcement with { StackId = item?.Id ?? entry?.StackId,
+                    Name = item?.Name ?? occurrence?.SourceName ?? entry?.CardName ?? announcement.Name,
+                    Text = item?.Text ?? entry!.Detail, AwaitingMetadata = false };
+            }
+            if (occurrence == null || occurrence.Step == ExecutionStep.Complete) {
+                // Retained history no longer supplies the reading material.
+                // Report that loss instead of blocking forever or painting an
+                // empty, uninspectable stack surface. The terminal fact keeps
+                // its separate ordered announcement.
+                IncompleteCount++; return null;
+            }
+            return announcement;
         }
     }
 
@@ -104,6 +146,7 @@ internal sealed class StackArrivalPresentation
     private void Tick(double now)
     {
         if (current == null) { lastTick = now; return; }
+        if (current.AwaitingMetadata) { lastTick = now; return; }
         if (!holding) elapsed += Math.Max(0, now - lastTick);
         lastTick = now;
         if (elapsed < Duration) return;
@@ -112,7 +155,7 @@ internal sealed class StackArrivalPresentation
         elapsed = 0;
     }
     internal void Hold(double now, bool value) { Tick(now); holding = value; }
-    internal Announcement? Current(double now) { Tick(now); return current; }
+    internal Announcement? Current(double now) { Tick(now); return current?.AwaitingMetadata == true ? null : current; }
     internal float Strength(string stackId, double now)
     {
         Tick(now);

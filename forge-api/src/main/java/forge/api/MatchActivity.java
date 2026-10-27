@@ -90,12 +90,7 @@ public final class MatchActivity {
     }
 
     public synchronized List<Entry> snapshot() {
-        return entries.stream().map(entry -> {
-            var reference = entry.executionId() == null ? null
-                    : executionFilter.apply(new ExecutionTracker.Reference(entry.executionId(), entry.executionStep()));
-            if (reference != null || entry.executionId() == null) return entry;
-            return withoutExecution(entry);
-        }).toList();
+        return List.copyOf(entries);
     }
 
     /** The rules stream may advance after an activity copy releases this lock.
@@ -112,6 +107,27 @@ public final class MatchActivity {
                 entry.cause(), entry.interruptsQuietYield(), entry.impact(), entry.stackId(), null, null);
     }
     public synchronized Frame frame() { return new Frame(revision, turn, phase, phaseName, activePlayerId, snapshot()); }
+
+    record Publication(Frame activity, MatchExecutions.Frame executions) { }
+
+    /** A terminal rules transition follows its synchronous committed events.
+     * Retry if the immutable execution frame changed while copying activity;
+     * otherwise completion can never overtake its draw/damage/movement facts. */
+    static Publication capture(java.util.function.Supplier<Frame> activity,
+                               java.util.function.Supplier<MatchExecutions.Frame> executions) {
+        for (;;) {
+            var before = executions.get();
+            var copied = activity.get();
+            var after = executions.get();
+            if (before == after) {
+                var retained = after.occurrences().stream().map(MatchExecutions.Occurrence::id)
+                        .collect(java.util.stream.Collectors.toSet());
+                var admitted = new Frame(copied.revision(), copied.turn(), copied.phaseKey(), copied.phase(),
+                        copied.activePlayerId(), retainedExecutions(copied.entries(), retained));
+                return new Publication(admitted, after);
+            }
+        }
+    }
 
     /** Monotonic public events, including ones that resolved between snapshots. */
     synchronized long sequence() { return sequence; }

@@ -96,8 +96,11 @@ public class ExecutionDisclosureTest {
             var live = frame.occurrences().stream().filter(value -> value.id().equals(child)).findFirst().orElseThrow();
             assertEquals(live.budgetRootId(), root);
             assertEquals(live.parentId(), root);
-            assertNull(activity.snapshot().get(0).executionId(), "An expired occurrence is not rebound to the newest effect");
-            assertNull(activity.snapshot().get(0).executionStep());
+            var stablePublication = MatchActivity.capture(activity::frame, projection::frame);
+            assertNull(stablePublication.activity().entries().get(0).executionId(), "An expired occurrence is not rebound to the newest effect");
+            assertNull(stablePublication.activity().entries().get(0).executionStep());
+            assertEquals(activity.snapshot().get(0).executionId(), expired,
+                    "The internal event-time copy never strips a reference using an unrelated live admission frame");
             // Deterministically reproduce the publication interleaving: IPC
             // already copied the event, then the rules stream evicted its ID.
             // Sanitize against that exact later frame rather than rereading

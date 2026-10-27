@@ -2,6 +2,9 @@ package forge.api;
 
 import com.google.gson.Gson;
 import com.google.gson.JsonObject;
+import com.google.common.eventbus.Subscribe;
+import forge.game.ExecutionTracker;
+import org.testng.annotations.DataProvider;
 import org.testng.annotations.Test;
 
 import java.nio.file.Files;
@@ -14,6 +17,92 @@ import static org.testng.Assert.*;
 public class ExecutionJourneyTest {
     private static final Gson JSON = new Gson();
     private static final String MARE = "Loch Mare";
+
+    @Test(groups = "canonical-interaction", timeOut = 90000)
+    public void aCompletionBetweenObservationCopiesRetriesUntilItsActualDrawAndSettlementAreIncluded() throws Exception {
+        try (var game = new RulesScenario("execution-coherent-settlement", Map.of(0,
+                List.of(MARE, "Island", "Island", "Island")), "Island", "Rhys the Redeemed", true)) {
+            var main = main(game);
+            var actor = game.table.game.getPlayers().get(0);
+            var activity = new MatchActivity(actor.getView());
+            var projection = new MatchExecutions(game.table.game.getExecutions(), actor.getView(), activity);
+            activity.executionFilter(projection::reference);
+            game.table.game.subscribeToEvents(projection); game.table.game.subscribeToEvents(activity);
+            start(game, main, permanent(main.state(), MARE), "Draw a card");
+            var payment = payment(game);
+            String id = execution(payment);
+            assertTrue(game.answer(payment, Map.of("action", "ok")));
+            var stacked = game.until(i -> i.seat() == 0 && priority(i) && i.state().getAsJsonArray("stack").size() == 1);
+            var copies = new java.util.concurrent.atomic.AtomicInteger();
+            var publication = MatchActivity.capture(() -> {
+                var copied = activity.frame();
+                if (copies.incrementAndGet() == 1) {
+                    assertTrue(copied.entries().stream().noneMatch(entry -> Objects.equals(entry.executionId(), id)
+                            && Set.of("draw", "resolved").contains(entry.kind())));
+                    assertTrue(game.answer(stacked, Map.of("action", "ok")));
+                    try {
+                        game.until(i -> i.seat() == 0 && priority(i) && i.state().getAsJsonArray("stack").isEmpty());
+                    } catch (Exception error) { throw new AssertionError(error); }
+                }
+                return copied;
+            }, projection::frame);
+            assertEquals(copies.get(), 2, "A real resolution between the two immutable frame reads forces a retry");
+            var completed = publication.executions().occurrences().stream().filter(item -> item.id().equals(id)).findFirst().orElseThrow();
+            assertEquals(completed.step(), "complete"); assertEquals(completed.outcome(), "resolved");
+            var facts = publication.activity().entries().stream().filter(entry -> Objects.equals(entry.executionId(), id)).toList();
+            assertTrue(facts.stream().anyMatch(entry -> entry.kind().equals("draw") && entry.executionStep().equals("resolution")));
+            assertTrue(facts.stream().anyMatch(entry -> entry.kind().equals("resolved") && entry.executionStep().equals("resolution")));
+        }
+    }
+
+    @DataProvider public Object[][] lostTargets() {
+        return new Object[][] {{"Giant Growth", "+3/+3", "Forest", 1, false},
+                {"Nyxborn Shieldmate", "Bestow", "Plains", 3, true},
+                {"Pouncing Shoreshark", "Mutate", "Island", 4, true}};
+    }
+
+    @Test(groups = "canonical-interaction", dataProvider = "lostTargets", timeOut = 90000)
+    public void aLostTargetCompletesOnlyAfterCleanupAndPreservesCreatureFallbacks(String spell, String route,
+                                                                                 String land, int landCount, boolean creatureFallback) throws Exception {
+        var battlefield = new ArrayList<>(Collections.nCopies(landCount, land)); battlefield.add("Grizzly Bears");
+        try (var game = new RulesScenario("execution-lost-target-" + route.replaceAll("[^A-Za-z]", ""), Map.of(0,
+                battlefield, 1, List.of("Seal of Removal")), spell, "Rhys the Redeemed")) {
+            var main = main(game);
+            var hand = zone(viewer(main.state()), "Hand").getAsJsonArray("cards").get(0).getAsJsonObject();
+            start(game, main, hand, route);
+            var target = game.until(i -> i.seat() == 0 && text(i.prompt(), "inputType").equals("InputSelectTargets"));
+            assertTrue(game.answer(target, Map.of("action", "card", "key", text(permanent(target.state(), "Grizzly Bears"), "key"))));
+            var payment = payment(game);
+            assertTrue(game.answer(payment, Map.of("action", "ok")));
+            var response = game.until(i -> i.seat() == 1 && priority(i) && i.state().getAsJsonArray("stack").size() == 1);
+            String id = text(response.state().getAsJsonArray("stack").get(0).getAsJsonObject(), "executionId");
+            var events = new ArrayList<ExecutionTracker.Committed>();
+            var listener = new Object() {
+                @Subscribe public void committed(ExecutionTracker.Committed event) {
+                    if (event.execution() != null && event.execution().id().equals(id)) events.add(event);
+                }
+            };
+            game.table.game.subscribeToEvents(listener);
+            start(game, response, permanent(response.state(), "Seal of Removal"), "Return target creature");
+            target = game.until(i -> i.seat() == 1 && text(i.prompt(), "inputType").equals("InputSelectTargets"));
+            var bear = zone(player(target.state(), 0), "Battlefield").getAsJsonArray("cards").asList().stream()
+                    .map(value -> value.getAsJsonObject()).filter(card -> text(card, "name").equals("Grizzly Bears")).findFirst().orElseThrow();
+            assertTrue(game.answer(target, Map.of("action", "card", "key", text(bear, "key"))));
+            var resolved = game.until(i -> i.seat() == 0 && priority(i) && i.state().getAsJsonArray("stack").isEmpty());
+            assertEquals(text(occurrence(resolved.state(), id), "outcome"), creatureFallback ? "resolved" : "countered");
+            assertTrue(zone(viewer(resolved.state()), creatureFallback ? "Battlefield" : "Graveyard").getAsJsonArray("cards").asList().stream()
+                    .anyMatch(value -> text(value.getAsJsonObject(), "name").equals(spell)));
+            var facts = activities(resolved.state(), id);
+            assertTrue(facts.stream().anyMatch(entry -> text(entry, "kind").equals("resolved")
+                    && text(entry, "outcome").equals(creatureFallback ? "resolved" : "notResolved")));
+            assertTrue(facts.stream().anyMatch(entry -> text(entry, "kind").equals(creatureFallback ? "arrived" : "moved")
+                    && text(entry, "cardName").equals(spell)));
+            assertFalse(events.isEmpty());
+            assertTrue(events.stream().noneMatch(event -> event.execution().step().equals("complete")),
+                    "No owned committed event, including graveyard movement and stack removal, can follow the terminal transition");
+            assertTrue(facts.stream().allMatch(entry -> !text(entry, "executionStep").equals("complete")));
+        }
+    }
 
     @Test(groups = "canonical-interaction", timeOut = 90000)
     public void concedingDuringOwnedPaymentClearsTheDecisionAndPublishesSurvivingSeats() throws Exception {

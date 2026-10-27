@@ -597,15 +597,15 @@ public class MagicStack /* extends MyObservable */ implements Iterable<SpellAbil
         final SpellAbility ability = peek().getSpellAbility();
         try (var execution = game.getExecutions().enter(ability)) {
             game.getExecutions().step(ability, RESOLUTION);
-            resolveStackOwned();
-            game.getExecutions().complete(ability, RESOLVED);
+            boolean fizzled = resolveStackOwned();
+            game.getExecutions().complete(ability, fizzled ? COUNTERED : RESOLVED);
         } catch (RuntimeException | Error failure) {
             game.getExecutions().complete(ability, FAILED);
             throw failure;
         }
     }
 
-    private void resolveStackOwned() {
+    private boolean resolveStackOwned() {
         // freeze the stack while we're in the middle of resolving
         freezeStack(null);
         setResolving(true);
@@ -637,6 +637,7 @@ public class MagicStack /* extends MyObservable */ implements Iterable<SpellAbil
             sa.getActivatingPlayer().addController(sa.getControlledByPlayer().getLeft(), sa.getControlledByPlayer().getRight());
         }
 
+        final boolean resolvesAsCreature = thisHasFizzled && (sa.isBestow() || sa.isMutate());
         if (thisHasFizzled) { // Fizzle
             if (sa.isBestow()) {
                 // 702.102e: if its target is illegal, the effect making it an Aura spell ends.
@@ -645,12 +646,14 @@ public class MagicStack /* extends MyObservable */ implements Iterable<SpellAbil
                 SpellAbility first = source.getFirstSpellAbility();
                 // need to set activating player
                 first.setActivatingPlayer(sa.getActivatingPlayer());
+                game.getExecutions().continueExecution(sa, first);
                 game.fireEvent(new GameEventCardStatsChanged(source));
                 AbilityUtils.resolve(first);
             } else if (sa.isMutate()) {
                 SpellAbility first = source.getFirstSpellAbility();
                 // need to set activating player
                 first.setActivatingPlayer(sa.getActivatingPlayer());
+                game.getExecutions().continueExecution(sa, first);
                 game.fireEvent(new GameEventCardStatsChanged(source));
                 AbilityUtils.resolve(first);
             }
@@ -673,8 +676,7 @@ public class MagicStack /* extends MyObservable */ implements Iterable<SpellAbil
             sa.setManaCostBeingPaid(null);
         }
 
-        game.fireEvent(new GameEventSpellResolved(sa, thisHasFizzled, resolvingInstance.getId()));
-        if (thisHasFizzled) game.getExecutions().complete(sa, COUNTERED);
+        game.fireEvent(new GameEventSpellResolved(sa, thisHasFizzled && !resolvesAsCreature, resolvingInstance.getId()));
 
         game.getAction().checkStaticAbilities();
 
@@ -685,6 +687,7 @@ public class MagicStack /* extends MyObservable */ implements Iterable<SpellAbil
             // assuming that if the stack is empty, no reason to hold on to old LKI data (everything is a new object)
             game.clearChangeZoneLKIInfo();
         }
+        return thisHasFizzled && !resolvesAsCreature;
     }
 
     private void finishResolving(final SpellAbility sa, final boolean fizzle) {
