@@ -11,5 +11,6 @@ public static class DecisionLayout
     } or { Payload: TargetSelectionPayload { Search: not null } }
         or { Payload: EntitySelectionPayload { CounterPayment: not null } }
         or { Payload: OptionsPayload { CounterPayment: not null } }
-        or { Payload: OptionsPayload { ManaPaymentContext: not null } };
+        or { Payload: OptionsPayload { ManaPaymentContext: not null } }
+        or { Payload: EntitySelectionPayload { ManaReduction: not null } };
 }

@@ -22,7 +22,9 @@ internal static class AiReleaseGoldens
         new("consuming-shortfall", "Traxos, Scourge of Kroog", "Wastes", ["Crystal Vein"]),
         new("optional-decline", "Rhys the Redeemed", "Forest", ["Mentor of the Meek"]),
         new("optional-pay", "Rhys the Redeemed", "Forest", ["Mentor of the Meek", "Forest"]),
-        new("flexible-output", "Balmor, Battlemage Captain", "Island", ["Temple of Epiphany", "Island", "Island", "Island"])
+        new("flexible-output", "Balmor, Battlemage Captain", "Island", ["Temple of Epiphany", "Island", "Island", "Island"]),
+        new("mana-reduction", "Kasla, the Broken Halo", "Island",
+            [.. Enumerable.Repeat("Mystic Monastery", 6), .. Enumerable.Repeat("Lightning Angel", 7)])
     ];
     internal static int ExpectedCount => Scenarios.Length;
 
@@ -72,6 +74,8 @@ internal static class AiReleaseGoldens
         int comparisons = 0, steps = 0, firstTurn = 0;
         bool setup = false, offered = false, stack = false, resolved = false, landPlayed = false, passedOffer = false, passed = false;
         bool publicCaptured = false, actualRedPool = false, actualRedBillPaid = false;
+        bool positiveReduction = false, zeroReductionWithUnusedCreature = false;
+        int maximumReductionContributors = 0;
         Exception? primaryFailure = null;
         var captureErrors = new List<string>();
         try {
@@ -124,6 +128,15 @@ internal static class AiReleaseGoldens
                         && paid.SourceCardId == target && bot.Semantics.UnpaidMana.SequenceEqual(["{U}"])
                         && provider.Accepted.Any(item => item.SourceId == flexible && item.ManaOutput?.Colors is { Count: 1 } colors
                             && colors.GetValueOrDefault("R") == 1);
+                    if (bot.SeatId == 0 && bot.State.Decision is { Payload: EntitySelectionPayload { ManaReduction: { } reduction } selection } input
+                        && CardViews.Source(bot.State, input) is { } reducingSource && CardViews.Identity(reducingSource) == target) {
+                        var candidates = bot.State.Viewer!.Zone("Battlefield").Cards.Where(card => card.Selectable).ToArray();
+                        positiveReduction |= !reduction.RemainingManaParts.IsEmpty;
+                        maximumReductionContributors = Math.Max(maximumReductionContributors, candidates.Count(card => card.Highlighted));
+                        zeroReductionWithUnusedCreature |= reduction.RemainingManaParts.IsEmpty && selection.Complete.Enabled
+                            && bot.State.Viewer.Zone("Battlefield").Cards.Any(card => card.Name == "Lightning Angel"
+                                && !card.Highlighted && !card.Tapped && !card.Selectable);
+                    }
                 }
                 diagnostics.ObservePublic(state);
                 string facts = AiWholeSeatEngineCheck.ReplayFacts(state);
@@ -197,6 +210,14 @@ internal static class AiReleaseGoldens
                             && permanent is { Power: 1, Toughness: 3 };
                         detail = "The normal policy's exact red flexible-source intent reduced the UR bill to U, an Island supplied blue, and the commander resolved without cancelling payment.";
                         break;
+                    case "mana-reduction":
+                        if (receipts.Any(item => item.Kind == nameof(CancelPayment) && item.CostOwner == target))
+                            throw new InvalidDataException("The funded mana-reduction commander payment was cancelled.");
+                        positive = cast && stack && positiveReduction && zeroReductionWithUnusedCreature && maximumReductionContributors == 6
+                            && receipts.Any(item => item.CompletedManaReduction && item.CostOwner == target)
+                            && permanent is { Power: 5, Toughness: 4 };
+                        detail = "The normal policy reduced the exact six-mana cost with creatures, completed at zero while an unused creature correctly lost contribution eligibility, and the commander resolved as a public 5/4.";
+                        break;
                     default: throw new InvalidDataException("Unknown golden scenario.");
                 }
                 if (positive && setup && comparisons > 0) { passed = true; stop = "proved-before-cleanup"; break; }
@@ -230,7 +251,8 @@ internal static class AiReleaseGoldens
         }
         var summary = diagnostics.Summary();
         if (!summary.DiagnosticErrors.IsEmpty) CaptureFailure(new IOException(string.Join("\n", summary.DiagnosticErrors)), "diagnostic-evidence-failure");
-        var evidence = JsonSerializer.SerializeToElement(new { setup, target, vein, mentor, flexible, blueSources, actualRedPool, actualRedBillPaid, offered, passedOffer, landPlayed,
+        var evidence = JsonSerializer.SerializeToElement(new { setup, target, vein, mentor, flexible, blueSources, actualRedPool, actualRedBillPaid,
+            positiveReduction, zeroReductionWithUnusedCreature, maximumReductionContributors, offered, passedOffer, landPlayed,
             stack, resolved, firstTurn, capturedBeforeCleanup = publicCaptured, finalTurn = state?.Turn, finalPhase = state?.PhaseKey,
             commands = provider.Accepted, diagnostics = summary, captureErrors, primaryFailure = primaryFailure?.ToString(), engineRandomnessControlled = false });
         var result = new AiGoldenResult(scenario.Id, passed, detail, comparisons, provider.Accepted.Count, steps,
@@ -251,7 +273,7 @@ internal static class AiReleaseGoldens
 
     private sealed record AcceptedCommand(int Seat, string Kind, int Turn, string Phase, string SourceId, string CostOwner,
         int? Number, NumericDecisionPurpose? NumericPurpose, PaymentPurpose? PaymentPurpose, int? Payer, int HandCount,
-        bool Consumed, bool Land, bool Cast, bool TargetOffered, ManaOutputChoice? ManaOutput);
+        bool Consumed, bool Land, bool Cast, bool TargetOffered, ManaOutputChoice? ManaOutput, bool CompletedManaReduction);
 
     private sealed class ReceiptProbe(AiCampaignProvider inner) : IAutomatedSeatProvider
     {
@@ -277,7 +299,8 @@ internal static class AiReleaseGoldens
                 observation.State.Viewer!.Zone("Hand").Count, action?.Costs.Any(cost => cost.Kind == ActionCostKind.Sacrifice && cost.FromSource && cost.Amount == 1) == true,
                 action?.Effect == ActionEffectKind.Land, route?.Kind == "cast",
                 observation.Domain.Sources.Any(set => set.SourceCardId == Target && set.Actions.Any(item => item.Kind == "cast")),
-                (command as UseOfferedAction)?.ManaOutput));
+                (command as UseOfferedAction)?.ManaOutput,
+                command is CompleteSelection && observation.State.Decision?.Payload is EntitySelectionPayload { ManaReduction.RemainingManaParts.IsEmpty: true }));
         }
     }
 }

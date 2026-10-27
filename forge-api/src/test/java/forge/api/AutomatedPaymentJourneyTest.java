@@ -8,6 +8,7 @@ import forge.deck.DeckSection;
 import forge.game.card.CounterEnumType;
 import forge.game.zone.ZoneType;
 import forge.gamemodes.match.input.InputPayMana;
+import forge.gamemodes.match.input.InputSelectCardsForConvokeOrImprovise;
 import forge.player.PlayerControllerHuman;
 import org.testng.annotations.DataProvider;
 import org.testng.annotations.Test;
@@ -25,6 +26,129 @@ import static org.testng.Assert.*;
 public class AutomatedPaymentJourneyTest {
     private static final Gson JSON = new Gson();
     private static final Path RESOURCES = Path.of("../forge-gui/res");
+
+    @Test(groups = "canonical-interaction", timeOut = 90000)
+    public void exactZeroConvokeProgressRetainsOneEpisodeAndCanCompleteWithUnusedEligibleCards() throws Exception {
+        if (StaticData.instance() == null) EngineResources.load(RESOURCES);
+        var human = MatchTable.human(deck("Human", "Forest"), "Commander", "Human");
+        var bot = MatchTable.automated(deck("Policy", "Scatter the Seeds"), "Commander", "Policy");
+        bot.addExtraCardsOnBattlefield(Collections.nCopies(6, StaticData.instance().getCommonCards().getCard("Elvish Mystic")));
+        try (var table = new MatchTable("Commander", List.of(human, bot), RESOURCES, Files.createTempDirectory("automated-convoke-progress"))) {
+            int policyId = table.game.getPlayers().get(1).getId(); var driver = new Driver(table, policyId); table.start();
+            var main = driver.until(input -> input.playerId == policyId && isPriority(input)
+                    && input.state.get("activePlayerId").getAsInt() == policyId && text(input.state, "phaseKey").equals("MAIN1"));
+            driver.use(main, card(main.state, "Hand", "Scatter the Seeds"), "cast");
+            var reduction = driver.until(input -> input.playerId == policyId && text(input.prompt, "inputType").equals("InputSelectCardsForConvokeOrImprovise"));
+            String episode = reductionEpisode(table, policyId);
+            assertFalse(episode.isEmpty());
+            assertEquals(reduction.prompt.getAsJsonObject("manaReduction").getAsJsonArray("remainingManaParts"),
+                    JSON.toJsonTree(List.of(Map.of("symbol", "{G}", "count", 2), Map.of("symbol", "{3}", "count", 1))));
+            for (int index = 0; index < 5; index++) {
+                var candidate = zone(viewer(reduction.state), "Battlefield").getAsJsonArray("cards").asList().stream()
+                        .map(value -> value.getAsJsonObject()).filter(value -> text(value, "name").equals("Elvish Mystic")
+                                && !value.get("highlighted").getAsBoolean()).findFirst().orElseThrow();
+                String oldScope = text(reduction.prompt, "id");
+                driver.answer(reduction, Map.of("action", "card", "key", text(candidate, "key")));
+                reduction = driver.until(input -> input.playerId == policyId && text(input.prompt, "inputType").equals("InputSelectCardsForConvokeOrImprovise")
+                        && !text(input.prompt, "id").equals(oldScope));
+                assertEquals(reductionEpisode(table, policyId), episode, "Refreshed decision scopes retain the actual cost-input episode");
+            }
+            assertTrue(reduction.prompt.getAsJsonObject("manaReduction").getAsJsonArray("remainingManaParts").isEmpty());
+            assertTrue(reduction.prompt.get("okEnabled").getAsBoolean(), "Exactly reduced costs still require the current explicit Complete action");
+            var unused = zone(viewer(reduction.state), "Battlefield").getAsJsonArray("cards").asList().stream().map(value -> value.getAsJsonObject())
+                    .filter(value -> !value.get("highlighted").getAsBoolean()).findFirst().orElseThrow();
+            assertFalse(unused.get("selectable").getAsBoolean(), "A zero-bill contributor is no longer a productive selection");
+            String zeroScope = text(reduction.prompt, "id");
+            driver.answer(reduction, Map.of("action", "card", "key", text(unused, "key")));
+            reduction = driver.until(input -> input.playerId == policyId && text(input.prompt, "inputType").equals("InputSelectCardsForConvokeOrImprovise")
+                    && !text(input.prompt, "id").equals(zeroScope));
+            assertTrue(reduction.prompt.getAsJsonObject("manaReduction").getAsJsonArray("remainingManaParts").isEmpty(), "An unusable extra click cannot reduce zero further");
+            assertEquals(zone(viewer(reduction.state), "Battlefield").getAsJsonArray("cards").asList().stream().map(value -> value.getAsJsonObject())
+                    .filter(value -> value.get("highlighted").getAsBoolean()).count(), 5L);
+            assertEquals(reductionEpisode(table, policyId), episode, "A no-progress gesture cannot refund the causal budget");
+            table.game.getAction().withState(() -> {
+                var controller = (PlayerControllerHuman)table.game.getPlayers().get(1).getController();
+                var actual = (InputSelectCardsForConvokeOrImprovise)controller.getInputQueue().getInput();
+                actual.getRemainingManaCost().increaseShard(forge.card.mana.ManaCostShard.GENERIC, 99);
+                assertTrue(actual.getRemainingManaCost().isPaid(), "The progress getter returns a defensive copy");
+            });
+            driver.answer(reduction, Map.of("action", "ok"));
+            var resolved = driver.until(input -> input.playerId == policyId && isPriority(input) && input.state.getAsJsonArray("stack").isEmpty()
+                    && zone(viewer(input.state), "Battlefield").getAsJsonArray("cards").asList().stream()
+                    .filter(value -> text(value.getAsJsonObject(), "name").contains("Saproling")).count() == 3);
+            assertEquals(zone(viewer(resolved.state), "Battlefield").getAsJsonArray("cards").asList().stream().map(value -> value.getAsJsonObject())
+                    .filter(value -> text(value, "name").equals("Elvish Mystic") && value.get("tapped").getAsBoolean()).count(), 5L);
+            assertFalse(resolved.prompt.has("manaReduction"));
+        }
+    }
+
+    @Test(groups = "canonical-interaction", timeOut = 90000)
+    public void aReentrantMulticolorConvokeChoiceRemainsObservableAndResumesTheSameCostEpisode() throws Exception {
+        if (StaticData.instance() == null) EngineResources.load(RESOURCES);
+        var human = MatchTable.human(deck("Human", "Island"), "Commander", "Human");
+        var policyDeck = deck("Policy", "Island"); policyDeck.getOrCreate(DeckSection.Commander).clear();
+        policyDeck.getOrCreate(DeckSection.Commander).add(StaticData.instance().getCommonCards().getCard("Kasla, the Broken Halo"));
+        var bot = MatchTable.automated(policyDeck, "Commander", "Policy");
+        var extras = new ArrayList<forge.item.IPaperCard>(Collections.nCopies(7, StaticData.instance().getCommonCards().getCard("Lightning Angel")));
+        extras.addAll(Collections.nCopies(6, StaticData.instance().getCommonCards().getCard("Mystic Monastery")));
+        bot.addExtraCardsOnBattlefield(extras);
+        try (var table = new MatchTable("Commander", List.of(human, bot), RESOURCES, Files.createTempDirectory("automated-nested-convoke"))) {
+            int policyId = table.game.getPlayers().get(1).getId(); var driver = new Driver(table, policyId); table.start();
+            var main = driver.until(input -> input.playerId == policyId && isPriority(input)
+                    && input.state.get("activePlayerId").getAsInt() == policyId && text(input.state, "phaseKey").equals("MAIN1"));
+            driver.use(main, card(main.state, "Command", "Kasla, the Broken Halo"), "cast");
+            var reduction = driver.until(input -> input.playerId == policyId && text(input.prompt, "inputType").equals("InputSelectCardsForConvokeOrImprovise"));
+            String episode = reductionEpisode(table, policyId);
+            driver.answer(reduction, Map.of("action", "card", "key", text(card(reduction.state, "Battlefield", "Lightning Angel"), "key")));
+            var choice = driver.until(input -> input.playerId == policyId && text(input.prompt, "context").equals("colorChoice"));
+            assertEquals(reductionEpisode(table, policyId), episode, "The private observation must be available while its UI-owned dialog awaits an answer");
+            assertFalse(choice.prompt.has("manaReduction"), "Only the current entity-selection payload owns reduction-progress authority");
+            assertEquals(text(choice.prompt.getAsJsonObject("manaPaymentContext").getAsJsonObject("source").getAsJsonObject("card"), "name"), "Kasla, the Broken Halo");
+            assertEquals(choice.prompt.getAsJsonObject("manaPaymentContext").getAsJsonArray("unpaidManaParts"),
+                    reduction.prompt.getAsJsonObject("manaReduction").getAsJsonArray("remainingManaParts"));
+            assertTrue(choice.prompt.getAsJsonArray("choices").asList().stream().map(value -> value.getAsJsonObject())
+                    .anyMatch(value -> text(value, "mana").equals("{1}")), "Colorless convoke contribution represents a generic reduction, not produced C mana");
+            Files.createDirectories(Path.of("target/rules-regressions"));
+            Files.writeString(Path.of("target/rules-regressions/convoke-owned-color-choice.json"), JSON.toJson(choice.state));
+            int white = choice.prompt.getAsJsonArray("choices").asList().stream().map(value -> value.getAsJsonObject())
+                    .filter(value -> text(value, "mana").equals("{W}")).findFirst().orElseThrow().get("index").getAsInt();
+            driver.answer(choice, Map.of("action", "choice", "choices", List.of(white)));
+            var resumed = driver.until(input -> input.playerId == policyId && text(input.prompt, "inputType").equals("InputSelectCardsForConvokeOrImprovise"));
+            assertEquals(reductionEpisode(table, policyId), episode);
+            assertFalse(resumed.prompt.getAsJsonObject("manaReduction").getAsJsonArray("remainingManaParts").asList().stream()
+                    .anyMatch(value -> text(value.getAsJsonObject(), "symbol").equals("{W}")));
+            assertThrows(IllegalArgumentException.class, () -> table.automatedSeat(policyId).action(request(choice, Map.of("action", "choice", "choices", List.of(white)))));
+            for (int generic = 0; generic < 3; generic++) {
+                var contributor = zone(viewer(resumed.state), "Battlefield").getAsJsonArray("cards").asList().stream().map(value -> value.getAsJsonObject())
+                        .filter(value -> text(value, "name").equals("Lightning Angel") && !value.get("highlighted").getAsBoolean()).findFirst().orElseThrow();
+                driver.answer(resumed, Map.of("action", "card", "key", text(contributor, "key")));
+                var genericChoice = driver.until(input -> input.playerId == policyId && text(input.prompt, "context").equals("colorChoice"));
+                assertEquals(reductionEpisode(table, policyId), episode);
+                int index = genericChoice.prompt.getAsJsonArray("choices").asList().stream().map(value -> value.getAsJsonObject())
+                        .filter(value -> text(value, "mana").equals("{1}")).findFirst().orElseThrow().get("index").getAsInt();
+                driver.answer(genericChoice, Map.of("action", "choice", "choices", List.of(index)));
+                resumed = driver.until(input -> input.playerId == policyId && text(input.prompt, "inputType").equals("InputSelectCardsForConvokeOrImprovise"));
+            }
+            var contributor = zone(viewer(resumed.state), "Battlefield").getAsJsonArray("cards").asList().stream().map(value -> value.getAsJsonObject())
+                    .filter(value -> text(value, "name").equals("Lightning Angel") && !value.get("highlighted").getAsBoolean()).findFirst().orElseThrow();
+            driver.answer(resumed, Map.of("action", "card", "key", text(contributor, "key")));
+            var coloredOnly = driver.until(input -> input.playerId == policyId && text(input.prompt, "context").equals("colorChoice"));
+            assertEquals(coloredOnly.prompt.getAsJsonArray("choices").asList().stream().map(value -> text(value.getAsJsonObject(), "mana"))
+                    .collect(java.util.stream.Collectors.toSet()), Set.of("{U}", "{R}"), "A generic contribution is not offered after all generic cost is reduced");
+            assertEquals(coloredOnly.prompt.getAsJsonObject("manaPaymentContext").getAsJsonArray("unpaidManaParts"),
+                    JSON.toJsonTree(List.of(Map.of("symbol", "{U}", "count", 1), Map.of("symbol", "{R}", "count", 1))));
+            assertEquals(text(coloredOnly.prompt.getAsJsonObject("manaPaymentContext").getAsJsonObject("source").getAsJsonObject("card"), "name"), "Kasla, the Broken Halo");
+            assertEquals(reductionEpisode(table, policyId), episode);
+            var observation = JSON.toJsonTree(table.automatedSeat(policyId).automatedObservation());
+            assertEquals(JSON.toJsonTree(table.automatedSeat(policyId).automatedObservation()), observation, "Filtering choices and reading the remaining bill cannot contribute, publish or alter the episode");
+            Files.writeString(Path.of("target/rules-regressions/convoke-colored-only-choice.json"), JSON.toJson(coloredOnly.state));
+        }
+    }
+
+    private static String reductionEpisode(MatchTable table, int policyId) {
+        var observation = JSON.toJsonTree(table.automatedSeat(policyId).automatedObservation()).getAsJsonObject();
+        return text(observation.getAsJsonObject("semantics"), "episodeId");
+    }
 
     @DataProvider public Object[][] flexibleOutputStage() { return new Object[][] {{false}, {true}}; }
 

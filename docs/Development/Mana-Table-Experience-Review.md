@@ -262,6 +262,23 @@ ability, red payment and the remaining blue. Ordinary color choices without an
 owned payment context retain their existing choice surface; no relationship is
 inferred from prompt wording.
 
+Convoke and improvise keep the same pending source and the engine's exact
+remaining bill while the player selects contributors on the table. Existing
+eligible-card and selected-card cues identify those actual objects. A present
+empty bill reads **Cost covered**; the current enabled Done action remains a
+clear final gesture. The selected contributors turn only when that continuation
+commits. This adapts the retained source/cost relationship above to a selection
+step, without inventing payment authority: a positive bill can still expose Done
+when the engine enables it, and zero never enables a disabled action. The authored
+Sprout Swarm checkpoints preserve optional Done before the full cost is covered,
+either contributor first, and undo. Finishing early retains an explicit exact
+payment checkpoint; current creature mana actions pay the remainder before the
+spell reaches the stack. A separate negative fixture checks disabled completion. Its mono-color
+contributors choose their color automatically, as the engine does. Actual nested
+multicolor contribution choices are covered by the Kasla/Lightning Angel engine
+journey and the shared source-attached color workspace. These are presentation
+fixtures, not calculations of convoke legality or efficiency.
+
 The neutral `Mana.Planning` core consumes scoped read-only funding facts, without
 policy history, action handles or automatic replies. Unknown restrictions,
 dependencies and effective costs remain uncertain; a legal manual offer stays

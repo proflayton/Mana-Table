@@ -2,6 +2,7 @@ package forge.gamemodes.match.input;
 
 import com.google.common.collect.Maps;
 import forge.card.ColorSet;
+import forge.card.MagicColor;
 import forge.card.mana.ManaCost;
 import forge.card.mana.ManaCostShard;
 import forge.game.card.Card;
@@ -58,7 +59,19 @@ public final class InputSelectCardsForConvokeOrImprovise extends InputSelectMany
 
     @Override
     protected Iterable<Card> getSelectableEntities() {
-        return availableCards;
+        return availableCards.stream().filter(card -> chosenCards.containsKey(card) || canContribute(card)).toList();
+    }
+
+    /** Ask the actual reduction rules on copies; never prompt, pay, or inspect printed text. */
+    private boolean canContribute(Card card) {
+        if (maxSelectable != null && chosenCards.size() >= maxSelectable) return false;
+        if (artifacts) return new ManaCostBeingPaid(remainingCost).payManaViaConvoke(ManaCostShard.COLORLESS.getColorMask()) != null;
+        // Every creature may pay generic; colored contributions use its current
+        // effective colors, independently of its concealed printed identity.
+        if (new ManaCostBeingPaid(remainingCost).payManaViaConvoke((byte)0) != null) return true;
+        for (byte color : MagicColor.WUBRG)
+            if (card.getColor().hasAnyColor(color) && new ManaCostBeingPaid(remainingCost).payManaViaConvoke(color) != null) return true;
+        return false;
     }
 
     @Override
@@ -84,6 +97,7 @@ public final class InputSelectCardsForConvokeOrImprovise extends InputSelectMany
         }
 
         final boolean entityWasSelected = chosenCards.containsKey(card);
+        if (!entityWasSelected && !canContribute(card)) return false;
         if (entityWasSelected) {
             final ManaCostShard color = this.chosenCards.remove(card);
             remainingCost.increaseShard(color, 1);
@@ -132,7 +146,7 @@ public final class InputSelectCardsForConvokeOrImprovise extends InputSelectMany
 
     @Override
     public String getActivateAction(final Card card) {
-        if (availableCards.contains(card)) {
+        if (availableCards.contains(card) && (chosenCards.containsKey(card) || canContribute(card))) {
             return TextUtil.concatNoSpace("tap ", cardType, " for ", description);
         }
         return null;
@@ -144,6 +158,12 @@ public final class InputSelectCardsForConvokeOrImprovise extends InputSelectMany
         }
         return chosenCards;
     }
+
+    /** Exact current reduction progress; observing it cannot select or tap a card. */
+    public ManaCostBeingPaid getRemainingManaCost() {
+        return new ManaCostBeingPaid(remainingCost);
+    }
+    public Player getPayer() { return player; }
 
     @Override
     protected boolean hasEnoughTargets() { return true; }

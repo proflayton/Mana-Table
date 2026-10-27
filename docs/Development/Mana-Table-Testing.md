@@ -79,7 +79,7 @@ uses these same provenance checks.
 
 The wrapper is a test-only launcher for controlled positions using the exact
 production engine. It is checked against the shipping JAR and never supplies a
-shipping scenario API. The existing process initializes one JVM for the seven
+shipping scenario API. The existing process initializes one JVM for the eight
 controlled native goldens and subsequent games. The release campaign uses four
 cyclic seat rotations, each bounded by 160 global turns and 180 seconds. This is
 at most twelve minutes of nominal game budget, separate from fast CI. Limits are
@@ -92,13 +92,20 @@ provider omits. It records the public state and outcome before its only
 manufacture a finish.
 
 The controlled journeys cover funded/unfunded X, funded/short consuming sources,
-optional effect-cost decline/payment, and flexible-output payment. The last
+optional effect-cost decline/payment, flexible-output payment, and mana
+contribution completion. The flexible-output journey
 starts with Temple of Epiphany and blue-only sources: the normal policy must
 execute its exact red output, shrink Balmor's actual bill from blue/red to blue,
 then pay blue and observe the same source on the stack and resolved battlefield.
 Immediate spending can consume produced mana before the next publication, so a
 transient floating red pool is not required. The fixture supplies only declared
 pregame permanents; no test driver answers the policy's choices.
+The contribution journey casts Kasla through actual convoke with six selected
+creatures and a seventh unused creature. It requires positive then exact-empty
+progress, current Done, no further contribution offer from the unused creature,
+and the same public source resolving as 5/4. Real Java checks also cover undo,
+positive bills with incompatible candidates, projection purity and a nested
+multicolor choice observed while its UI callback waits for the answer.
 
 The fixed 16-turn/35-second CI prefix and the two-rotation 32-turn/45-second smoke
 remain unchanged. Do not rerun a failed sample until one happens to pass, lower
@@ -188,6 +195,13 @@ human callback's distinct producer and original paying source. Native
 in read-only context and parent payment commands during the color choice.
 The authored child continuation retains the bill while ordinary pointer hover
 reads the producer and an offered color orb answers only the current child.
+`ManaReductionWireChecks` distinguishes unknown progress from exact zero, rejects
+injected handles and unrelated prompts, and proves that covered cost metadata
+cannot enable disabled Done or parent payment commands. The source-query
+integration journey opens the real reader and waits for its current action
+generation before establishing its strict repeated-read baseline. Cached state
+observation is not a UI-queue barrier; a rejected purity read is retained and
+fails that attempt rather than being retried unchanged.
 
 On failure, `private-failure-manifest.json` identifies the last completed raw
 observation batch, exact seat scopes, stage and original exception before teardown.

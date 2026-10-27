@@ -35,6 +35,8 @@ internal static class ForgeDecisionDecoder
                 || Present(prompt, "counterPaymentChoice") || Present(prompt, "libraryCards"))) throw Invalid();
             if (Present(prompt, "manaPaymentContext") && (task != "choice" || purpose != "" || ordered
                 || Present(prompt, "counterPaymentChoice") || Present(prompt, "disclosedCards") || Present(prompt, "libraryCards"))) throw Invalid();
+            if (Present(prompt, "manaReduction") && (task != "selection" || purpose != ""
+                || Present(prompt, "counterPayment") || Array(prompt, "playerChoices").Length != 0)) throw Invalid();
             if (task != "mana" && (Present(prompt, "unpaidMana") || Present(prompt, "unpaidManaParts") || Present(prompt, "fundingContext")
                 || Present(prompt, "usablePoolManaColors") || Present(prompt, "payerId"))) throw Invalid();
             if (Present(prompt, "unpaidMana") && Present(prompt, "unpaidManaParts")) throw Invalid();
@@ -62,7 +64,9 @@ internal static class ForgeDecisionDecoder
                 "attack" => new AttackPayload(Ok()), "block" => new BlockPayload(Ok()),
                 "selection" when purpose == "targets" => new TargetSelectionPayload(Ok(), Cancel(), Range(prompt),
                     PlayerChoices(prompt, players), Optional<PendingEffect>(prompt, "effect"), SearchTarget(prompt)),
-                "selection" => new EntitySelectionPayload(Ok(), Cancel(), PlayerChoices(prompt, players), OptionalRange(prompt), CounterPayment(prompt)),
+                "selection" => new EntitySelectionPayload(Ok(), Cancel(), PlayerChoices(prompt, players), OptionalRange(prompt), CounterPayment(prompt)) {
+                    ManaReduction = ManaReduction(prompt)
+                },
                 "confirmation" => new ConfirmationPayload(Ok(), Flag(prompt, "cancelEnabled") ? Cancel() : null, SearchOffer(prompt, players)),
                 "choice" when purpose == "abilities" => new AbilityChoicePayload(Selection(prompt)),
                 "choice" when ordered => new OrderingPayload(Selection(prompt)),
@@ -101,6 +105,14 @@ internal static class ForgeDecisionDecoder
             || context.Source?.ControllerId is { } controller && !players.Contains(controller)
             || context.Source?.Card is { } card && (card.Key.Length != 0 || card.Selectable || card.Highlighted)) throw Invalid();
         return context with { UnpaidManaParts = PaymentParts(value) };
+    }
+
+    private static ManaReductionProgress? ManaReduction(JsonElement prompt)
+    {
+        if (!Present(prompt, "manaReduction")) return null;
+        var value = Field(prompt, "manaReduction"); Object(value);
+        if (!Present(value, "remainingManaParts")) throw Invalid();
+        return value.Deserialize<ManaReductionProgress>(FundingJson) ?? throw Invalid();
     }
 
     private static ImmutableArray<ManaBillPart> PaymentParts(JsonElement prompt)

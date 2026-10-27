@@ -142,6 +142,19 @@ internal sealed class ManaPaymentSmoke : ITableAutomation
         check(view.ManaJourney is { Advice: "Use floating mana", FundingStatus: ManaFundingStatus.Funded }
             && view.ManaSources.Count == 0 && view.Hits.Any(hit => hit.Id == "mana-pool:0:C" && hit.Intent is MatchIntent.SpendFloatingMana),
             "A pool-only witness points to the actual usable glowing pip instead of asking for nonexistent lit source cards");
+        var reductionState = ManaPaymentScenario.Snapshot(14);
+        var reduction = (EntitySelectionPayload)reductionState.Decision!.Payload;
+        engine.Present(reductionState with { Decision = reductionState.Decision with { Payload = reduction with { Complete = new("Done", false) } } });
+        view.Accept(engine.State);
+        for (int step = 0; step < 10; step++) {
+            int frame = nextFrame++;
+            app.Update(new(TimeSpan.FromSeconds(frame / 60.0), TimeSpan.FromSeconds(1.0 / 60)), new(), new(), new(1600, 900));
+            app.ReadPresentation();
+        }
+        check(view.ManaJourney is { Parts.IsEmpty: true }
+            && view.Frame!.Drawing!.Commands.OfType<Mana.Renderer.DrawCommand.Text>().Any(text => text.Value == "COST COVERED")
+            && !view.Hits.Any(hit => hit.Id is "confirm" or "mana-auto" or "mana-cancel"),
+            "An exact zero contribution bill remains readable but cannot fabricate Done authority when the current completion reply is disabled");
     }
 
     private static void Prepare(string profile)
@@ -298,7 +311,106 @@ internal sealed class ManaPaymentSmoke : ITableAutomation
             Check(view.ManaJourney == null && view.Match!.Stack.Single().Card?.VisualId == ManaPaymentScenario.ColorSpell
                 && lab.ManaPaymentReplies.Count == 3 && lab.ManaPaymentReplies.Count(reply => reply is ChooseOptions) == 1,
                 "The remaining blue source turns and the same paid spell reaches the stack after one activation, one scoped color choice and one final source activation");
-            Capture("12-both-colors-paid"); Save(null); finished = true; window?.Exit();
+            Capture("12-both-colors-paid"); Load(12);
+        });
+        Wait(() => view.ManaJourney is { SourceId: ManaPaymentScenario.ConvokeSpell }
+            && view.DisplayedPose(ManaPaymentScenario.ConvokeOne) != null
+            && (window == null || lab.State.Viewer!.Zones.SelectMany(zone => zone.Cards).All(card => view.Art(card) != null)
+                && view.Art(lab.State.Decision!.Context.Source!.Card!) != null), () => {
+            Check(view.ManaJourney!.Symbols.SequenceEqual(["{1}", "{G}"])
+                && view.Hits.Any(hit => hit.Id == "confirm" && hit.Intent is MatchIntent.ConfirmDecision)
+                && !view.Hits.Any(hit => hit.Id is "mana-auto" or "mana-cancel"),
+                "An optional contribution choice keeps the exact remaining bill on the pending spell and preserves the current Done action before the full cost is covered");
+            Capture("13-convoke-cost-selection"); MoveCard(ManaPaymentScenario.ConvokeOne);
+        }); Click();
+        Wait(() => lab.StageIndex == 13 && !view.Busy && view.ManaJourney?.Symbols.SequenceEqual(["{1}"]) == true, () => {
+            Check(lab.ManaPaymentReplies[^1] is SelectCard
+                && lab.State.Viewer!.Zone("Battlefield").Cards.Single(card => card.VisualId == ManaPaymentScenario.ConvokeOne) is { Highlighted: true, Tapped: false }
+                && view.ManaJourney!.SourceId == ManaPaymentScenario.ConvokeSpell,
+                "Selecting a current highlighted creature marks its contribution and shrinks the same spell's bill without prematurely tapping the creature");
+            Capture("14-contribution-chosen"); MoveCard(ManaPaymentScenario.ConvokeTwo);
+        }); Click();
+        Wait(() => lab.StageIndex == 14 && !view.Busy && view.ManaJourney is { Parts.IsEmpty: true }
+            && view.Hits.Any(hit => hit.Id == "confirm"), () => {
+            Check(view.Frame!.Drawing!.Commands.OfType<Mana.Renderer.DrawCommand.Text>().Any(text => text.Value == "COST COVERED")
+                && view.Hits.Single(hit => hit.Id == "confirm").Bounds.Height >= 40
+                && lab.State.Viewer!.Zone("Battlefield").Cards.All(card => card.Highlighted && !card.Tapped)
+                && !view.Hits.Any(hit => hit.Id is "mana-auto" or "mana-cancel") && CaptionClearsSeat(),
+                "Exact zero contributions display Cost covered and a clear current Done gesture while preserving selection marks and the untapped creatures");
+            Check(GameCommandPermissions.Allows(lab.State, new CompleteSelection(lab.State.Id, lab.State.Decision!.Id))
+                && !GameCommandPermissions.Allows(lab.State, new PayMana(lab.State.Id, lab.State.Decision.Id)),
+                "The covered-cost surface answers only the current entity-selection continuation, never a parent PayMana input");
+            Capture("15-convoke-cost-covered"); MoveHit("confirm");
+        }); Click();
+        Wait(() => lab.StageIndex == 15 && !view.Busy && SettledTapped(ManaPaymentScenario.ConvokeOne)
+            && SettledTapped(ManaPaymentScenario.ConvokeTwo), () => {
+            Check(view.ManaJourney == null && view.Match!.Stack.Single().Card?.VisualId == ManaPaymentScenario.ConvokeSpell
+                && lab.ManaPaymentReplies.Count == 3 && lab.ManaPaymentReplies[^1] is CompleteSelection,
+                "The actual current Done gesture commits the authored contribution selection, turns both creatures and continues the same card to the stack");
+            Capture("16-convoke-committed"); Load(12);
+        });
+        Wait(() => view.ManaJourney is { SourceId: ManaPaymentScenario.ConvokeSpell }
+            && lab.StageIndex == 12 && !view.Busy, () => MoveCard(ManaPaymentScenario.ConvokeTwo)); Click();
+        Wait(() => lab.StageIndex == 16 && !view.Busy, () => {
+            Check(view.ManaJourney?.Symbols.SequenceEqual(["{1}"]) == true
+                && lab.State.Viewer!.Zone("Battlefield").Cards.Single(card => card.VisualId == ManaPaymentScenario.ConvokeTwo) is { Highlighted: true, Tapped: false },
+                "Either offered creature can contribute first, reducing the same spell's exact bill without tapping before Done");
+            Capture("17-other-contributor-first"); MoveCard(ManaPaymentScenario.ConvokeTwo);
+        }); Click();
+        Wait(() => lab.StageIndex == 12 && !view.Busy, () => {
+            Check(view.ManaJourney?.Symbols.SequenceEqual(["{1}", "{G}"]) == true
+                && lab.State.Viewer!.Zone("Battlefield").Cards.All(card => !card.Highlighted && !card.Tapped),
+                "Clicking a selected contributor undoes its contribution and restores the exact unpaid symbols");
+            MoveCard(ManaPaymentScenario.ConvokeTwo);
+        }); Click();
+        Wait(() => lab.StageIndex == 16 && !view.Busy, () => MoveCard(ManaPaymentScenario.ConvokeOne)); Click();
+        Wait(() => lab.StageIndex == 14 && !view.Busy, () => {
+            Check(view.ManaJourney is { Parts.IsEmpty: true }
+                && lab.State.Viewer!.Zone("Battlefield").Cards.All(card => card.Highlighted && !card.Tapped),
+                "Choosing the same contributors in reverse order reaches the identical covered bill and untapped selection");
+            MoveCard(ManaPaymentScenario.ConvokeOne);
+        }); Click();
+        Wait(() => lab.StageIndex == 16 && !view.Busy, () => MoveHit("confirm")); Click();
+        Wait(() => lab.StageIndex == 19 && !view.Busy && SettledTapped(ManaPaymentScenario.ConvokeTwo)
+            && view.ManaJourney?.Symbols.SequenceEqual(["{1}"]) == true, () => {
+            Check(view.Match!.Stack.IsEmpty && lab.State.Decision?.Payload is PaymentPayload
+                && lab.State.Viewer!.Zone("Battlefield").Cards.Single(card => card.VisualId == ManaPaymentScenario.ConvokeOne) is { Tapped: false, Highlighted: false }
+                && !view.Hits.Any(hit => hit.Id == "mana-cancel"),
+                "Done before zero commits only the chosen contribution and retains a real remaining-payment checkpoint before the spell can reach the stack");
+            Capture("18-optional-stop-remaining-payment"); MoveCard(ManaPaymentScenario.ConvokeOne);
+        }); Click();
+        Wait(() => ReaderReady(ManaPaymentScenario.ConvokeOne) && view.Hits.Any(hit => hit.Id == "read-card-action"), () => MoveHit("read-card-action")); Click();
+        Wait(() => lab.StageIndex == 15 && !view.Busy && SettledTapped(ManaPaymentScenario.ConvokeOne)
+            && SettledTapped(ManaPaymentScenario.ConvokeTwo), () => {
+            Check(view.ManaJourney == null && view.Match!.Stack.Single().Card?.VisualId == ManaPaymentScenario.ConvokeSpell
+                && lab.ManaPaymentReplies.Count == 7 && lab.ManaPaymentReplies[^1] is UseOfferedAction,
+                "After an early Done, the remaining untapped creature's current mana action pays the final generic bill before the same spell reaches the stack");
+            Capture("19-remaining-source-paid"); Load(12);
+        });
+        Wait(() => lab.StageIndex == 12 && !view.Busy && view.Hits.Any(hit => hit.Id == "confirm"), () => MoveHit("confirm")); Click();
+        Wait(() => lab.StageIndex == 17 && !view.Busy && view.ManaJourney?.Symbols.SequenceEqual(["{1}", "{G}"]) == true, () => {
+            Check(view.Match!.Stack.IsEmpty && lab.State.Decision?.Payload is PaymentPayload
+                && lab.State.Viewer!.Zone("Battlefield").Cards.All(card => !card.Tapped && !card.Highlighted)
+                && view.Hits.Any(hit => hit.Id == "mana-auto"),
+                "Done with no contributors preserves the entire exact bill and both untapped mana sources instead of treating optional contribution as automatic payment");
+            Capture("20-no-contribution-payment"); MoveCard(ManaPaymentScenario.ConvokeOne);
+        }); Click();
+        Wait(() => ReaderReady(ManaPaymentScenario.ConvokeOne) && view.Hits.Any(hit => hit.Id == "read-card-action"), () => MoveHit("read-card-action")); Click();
+        Wait(() => lab.StageIndex == 18 && !view.Busy && SettledTapped(ManaPaymentScenario.ConvokeOne)
+            && view.ManaJourney?.Symbols.SequenceEqual(["{1}"]) == true, () => {
+            Check(view.Match!.Stack.IsEmpty
+                && lab.State.Viewer!.Zone("Battlefield").Cards.Single(card => card.VisualId == ManaPaymentScenario.ConvokeTwo).Tapped == false,
+                "A current green mana action pays only the colored shard of the full remaining bill and leaves the other creature available for generic mana");
+            Capture("21-first-mana-source-paid"); MoveCard(ManaPaymentScenario.ConvokeTwo);
+        }); Click();
+        Wait(() => ReaderReady(ManaPaymentScenario.ConvokeTwo) && view.Hits.Any(hit => hit.Id == "read-card-action"), () => MoveHit("read-card-action")); Click();
+        Wait(() => lab.StageIndex == 15 && !view.Busy && SettledTapped(ManaPaymentScenario.ConvokeOne)
+            && SettledTapped(ManaPaymentScenario.ConvokeTwo), () => {
+            Check(view.ManaJourney == null && view.Match!.Stack.Single().Card?.VisualId == ManaPaymentScenario.ConvokeSpell
+                && lab.ManaPaymentReplies.Count == 3 && lab.ManaPaymentReplies[0] is CompleteSelection
+                && lab.ManaPaymentReplies.Skip(1).All(reply => reply is UseOfferedAction),
+                "Skipping optional contributions then using two current mana actions pays the full bill before continuing the same card to the stack");
+            Capture("22-no-contribution-fully-paid"); Save(null); finished = true; window?.Exit();
         });
     }
 

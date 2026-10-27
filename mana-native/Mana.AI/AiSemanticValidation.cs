@@ -11,6 +11,9 @@ internal static class AiSemanticValidation
     internal static void Validate(GameSnapshot state, DecisionActionDomain domain, DecisionSemantics semantics)
     {
         var context = new Context(state);
+        if (state.Decision?.Payload is EntitySelectionPayload { ManaReduction: not null } reduction
+            && (!semantics.SelectionIsCost || semantics.Intent != DecisionIntent.Tap || reduction.CounterPayment != null
+                || !reduction.Players.IsEmpty)) throw Invalid();
         if (semantics.Numeric is { } numeric) context.Numeric(state, numeric);
         if (semantics.Payment is { } payment) context.Payment(state, payment);
         context.Graph(semantics.OperationGraph, semantics.OperationId);

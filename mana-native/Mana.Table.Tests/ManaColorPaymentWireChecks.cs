@@ -31,6 +31,10 @@ internal static class ManaColorPaymentWireChecks
             && !GameCommandPermissions.Allows(state, new CancelPayment(state.Id, choice.Id))
             && !GameCommandPermissions.Allows(state, new SpendPoolMana(state.Id, choice.Id, "R")),
             "Owned payment context grants only the child's existing color options, never parent payment or pool commands");
+        var contribution = wire.DeepClone(); contribution["choices"]![0]!["mana"] = "{1}";
+        check(Decode(contribution).Payload is OptionsPayload { ManaPaymentContext: not null } contributing
+            && contributing.Selection.Choices[0].Mana == "{1}",
+            "A rules-owned generic cost contribution retains its {1} symbol rather than claiming colorless mana production");
         foreach (var mutate in new Action<JsonNode>[] {
             node => node["manaPaymentContext"]!["payerId"] = 17,
             node => node["manaPaymentContext"]!["unpaidManaParts"]![0]!["count"] = 0,
@@ -41,6 +45,7 @@ internal static class ManaColorPaymentWireChecks
             node => node["manaPaymentContext"]!["source"]!["card"]!["combatId"] = null,
             node => node["manaPaymentContext"]!["source"]!["card"]!["name"] = null,
             node => node["choices"]![0]!["mana"] = "",
+            node => node["choices"]![0]!["mana"] = "{7}",
             node => node["max"] = 2,
             node => { node["task"] = "priority"; node["kind"] = "input"; }
         }) {

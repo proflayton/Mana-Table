@@ -27,6 +27,8 @@ public sealed partial class ExperienceLabSession
                 actions = [new(prefix + "temple", "activate", "{T}: Add {U} or {R}.")];
             else if (source.VisualId == ManaPaymentScenario.Island && StageIndex == 10)
                 actions = [new(prefix + "island", "activate", "{T}: Add {U}.")];
+            else if (StageIndex is 17 or 18 or 19 && source.VisualId is ManaPaymentScenario.ConvokeOne or ManaPaymentScenario.ConvokeTwo)
+                actions = [new(prefix + "elf-green", "activate", "{T}: Add {G}.")];
         }
         return new(State.Id, State.Decision.Id, source.Key, source.VisualId, actions.ToImmutableArray()) { Revision = State.Revision };
     }
@@ -44,14 +46,33 @@ public sealed partial class ExperienceLabSession
                 6 when source.VisualId == ManaPaymentScenario.Plains => 4,
                 8 when source.VisualId == ManaPaymentScenario.Temple => 9,
                 10 when source.VisualId == ManaPaymentScenario.Island => 11,
+                17 when source.VisualId == ManaPaymentScenario.ConvokeOne => 18,
+                17 when source.VisualId == ManaPaymentScenario.ConvokeTwo => 19,
+                18 when source.VisualId == ManaPaymentScenario.ConvokeTwo => 15,
+                19 when source.VisualId == ManaPaymentScenario.ConvokeOne => 15,
                 _ => throw Unsupported()
             };
-        } else if (reply is ChooseOptions { Choices: var indices } && StageIndex == 9 && indices.SequenceEqual([11])) next = 10;
+        } else if (reply is SelectCard selected && StageIndex is 12 or 13 or 14 or 16) {
+            var source = State.Viewer!.Zone("Battlefield").Cards.SingleOrDefault(card => card.Key == selected.Card && card.Selectable) ?? throw Unsupported();
+            next = StageIndex switch {
+                12 when source.VisualId == ManaPaymentScenario.ConvokeOne => 13,
+                12 when source.VisualId == ManaPaymentScenario.ConvokeTwo => 16,
+                13 when source.VisualId == ManaPaymentScenario.ConvokeOne => 12,
+                13 when source.VisualId == ManaPaymentScenario.ConvokeTwo => 14,
+                16 when source.VisualId == ManaPaymentScenario.ConvokeTwo => 12,
+                16 when source.VisualId == ManaPaymentScenario.ConvokeOne => 14,
+                14 when source.VisualId == ManaPaymentScenario.ConvokeOne => 16,
+                14 when source.VisualId == ManaPaymentScenario.ConvokeTwo => 13,
+                _ => throw Unsupported()
+            };
+        } else if (reply is CompleteSelection && State.Decision?.Payload is EntitySelectionPayload { Complete.Enabled: true })
+            next = StageIndex switch { 12 => 17, 13 => 18, 16 => 19, 14 => 15, _ => throw Unsupported() };
+        else if (reply is ChooseOptions { Choices: var indices } && StageIndex == 9 && indices.SequenceEqual([11])) next = 10;
         else if (reply is SpendPoolMana { Color: "C" } && StageIndex == 5
             && State.Decision?.Payload is PaymentPayload { UsablePoolManaColors: var usable } && usable?.Contains("C") == true) next = 6;
         else if (reply is PassPriority && StageIndex == 3) next = 4;
-        else if (reply is PayMana && State.Decision?.Payload is PaymentPayload) next = 3;
-        else if (reply is CancelPayment && State.Decision?.Payload is PaymentPayload) next = 0;
+        else if (reply is PayMana && State.Decision?.Payload is PaymentPayload { Pay.Enabled: true }) next = StageIndex is 17 or 18 or 19 ? 15 : 3;
+        else if (reply is CancelPayment && State.Decision?.Payload is PaymentPayload { Cancel.Enabled: true }) next = 0;
         else throw Unsupported();
         manaPaymentReplies.Add(reply); StageIndex = next;
         return State = Stamp(Stages[next].Snapshot);

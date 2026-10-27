@@ -265,7 +265,7 @@ internal sealed partial class TableApplication
         var state = match!;
         var decision = decisions.Presentation?.Payload == null ? null : state.Decision;
         var paymentSource = decision?.Payload is OptionsPayload { ManaPaymentContext: { Source: { } parent } }
-            ? parent : decision?.Payload is PaymentPayload ? decision.Context.Source : null;
+            ? parent : decision?.Payload is PaymentPayload or EntitySelectionPayload { ManaReduction: not null } ? decision.Context.Source : null;
         // A source reference is context, not a stack object. In particular a
         // priority snapshot can retain the source of the preceding interaction.
         // Only real stack entries belong in the stack presentation.

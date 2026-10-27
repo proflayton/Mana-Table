@@ -18,6 +18,8 @@ final class DecisionSemantics {
     }
 
     static Map<String, Object> describe(Input input, Game game, Player viewer, Function<CardView, String> identity) {
+        if (input instanceof InputSelectCardsForConvokeOrImprovise)
+            return Map.of("intent", "Tap", "selectionIsCost", true);
         var paying = game.costPaymentStack.peek();
         if (paying != null) {
             var result = new LinkedHashMap<String, Object>();

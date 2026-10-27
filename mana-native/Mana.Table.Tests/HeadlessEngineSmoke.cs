@@ -332,20 +332,64 @@ internal static class HeadlessEngineSmoke
             async Task PlayCard(Card card, string sourceZone)
             {
                 string occurrence = CardViews.Identity(card);
-                var displayedBeforeQuery = view.Match!;
-                string prompt = displayedBeforeQuery.Decision!.Id;
-                Check(engine.SupportsSourceActions, "The real rules adapter negotiates engine-owned source actions");
-                // A cached presentation can precede queued display publications.
-                // The first input-owned query drains that queue; measure read
-                // purity against a fresh authoritative baseline, as in Java.
-                var primed = await engine.SourceActionsAsync(displayedBeforeQuery.Id, prompt, card.Key);
-                var beforeQuery = await engine.ObserveAsync() ?? throw new InvalidOperationException("Priming the source read lost the game.");
-                var sourceActions = await engine.SourceActionsAsync(beforeQuery.Id, prompt, card.Key);
-                var repeated = await engine.SourceActionsAsync(beforeQuery.Id, prompt, card.Key);
-                var afterQuery = await engine.ObserveAsync() ?? throw new InvalidOperationException("The source action read lost the game.");
+                var beforeReader = view.Match!;
+                string prompt = beforeReader.Decision!.Id;
                 string expectedKind = sourceZone == "Battlefield" ? "activate" : card.Type.Contains("Land", StringComparison.Ordinal) ? "play" : "cast";
+                Check(engine.SupportsSourceActions, "The real rules adapter negotiates engine-owned source actions");
+                var entry = frame.Cards.Single(item => item.Id == occurrence);
+                var hit = frame.Hits.Last(item => item.Id == entry.Hit.Id && item.Scope == entry.Hit.Scope);
+                Click(hit.Id);
+                frame = Tick("restore-reader-footprint"); frame = Tick("reader-settled");
+                if (!frame.Cards.Any(item => item.Id == occurrence && item.Focused)) throw new InvalidOperationException("The real card reader did not open.");
+                // Use the production reader lifecycle first. Its source session
+                // discards old generations and reads the current published
+                // revision before exposing this scoped action. A cached poll or
+                // a direct source query is not a display-queue barrier.
+                while (!frame.Hits.Any(item => item.Id == "read-card-action")) {
+                    Guard();
+                    if (view.Match?.Id != beforeReader.Id || view.Match.Decision?.Id != prompt)
+                        throw new InvalidOperationException("The decision changed before its source reader became ready.");
+                    await Task.Delay(1); frame = Tick("await-engine-source-actions");
+                }
+                var displayedBeforeQuery = view.Match!;
+                var currentBeforeQuery = displayedBeforeQuery.Viewer?.Zones.SelectMany(zone => zone.Cards)
+                    .Where(item => item.VisualId == card.VisualId).ToArray() ?? [];
+                Check(displayedBeforeQuery.Id == beforeReader.Id && displayedBeforeQuery.Decision?.Id == prompt
+                    && currentBeforeQuery.Length == 1 && currentBeforeQuery[0].Key == card.Key && !view.Busy
+                    && frame.Cards.Any(item => item.Id == occurrence && item.Focused)
+                    && frame.Hits.Any(item => item.Id == "read-card-action" && item.Intent is MatchIntent.UseSourceAction),
+                    "The actual reader exposes its current " + expectedKind + " action without answering the decision: " + card.Name);
+                SourceActionSet? primed = null, sourceActions = null, repeated = null;
+                GameSnapshot? beforeQuery = null, afterQuery = null;
+                string queryStage = "first-current-reader-query";
+                try {
+                    primed = await engine.SourceActionsAsync(displayedBeforeQuery.Id, prompt, card.Key);
+                    queryStage = "observe-read-purity-baseline";
+                    beforeQuery = await engine.ObserveAsync() ?? throw new InvalidOperationException("Reading the source lost the game.");
+                    queryStage = "second-current-reader-query";
+                    sourceActions = await engine.SourceActionsAsync(beforeQuery.Id, prompt, card.Key);
+                    queryStage = "repeated-current-reader-query";
+                    repeated = await engine.SourceActionsAsync(beforeQuery.Id, prompt, card.Key);
+                    queryStage = "observe-after-read-purity";
+                    afterQuery = await engine.ObserveAsync() ?? throw new InvalidOperationException("The source action read lost the game.");
+                } catch (Exception failure) {
+                    GameSnapshot? observedAfterFailure = null;
+                    string? observationFailure = null;
+                    try { observedAfterFailure = await engine.ObserveAsync(); }
+                    catch (Exception observationError) { observationFailure = observationError.ToString(); }
+                    try {
+                        File.WriteAllText(Path.Combine(paths.Profile, "headless-engine-source-query-rejected.json"),
+                            JsonSerializer.Serialize(new { queryStage, error = failure.ToString(), card, sourceZone, expectedKind,
+                                beforeReader, displayedBeforeQuery, primed, beforeQuery, sourceActions, repeated, afterQuery,
+                                observedAfterFailure, observationFailure }, json));
+                    } catch { /* Diagnostic I/O must preserve the actual read failure. */ }
+                    // An unexpected direct-query rejection fails this attempt.
+                    // Never retry it away or loosen the expected revision.
+                    throw;
+                }
                 var currentSource = afterQuery.Viewer?.Zones.SelectMany(zone => zone.Cards).Where(item => item.VisualId == card.VisualId).ToArray() ?? [];
                 bool stableRead = displayedBeforeQuery.Id == beforeQuery.Id && beforeQuery.Decision?.Id == prompt
+                    && beforeQuery.Revision == displayedBeforeQuery.Revision
                     && sourceActions.GameId == beforeQuery.Id && sourceActions.DecisionId == prompt
                     && sourceActions.SourceCardKey == card.Key && sourceActions.SourceCardId == card.VisualId
                     && sourceActions.Actions.Any(action => action.Kind == expectedKind && !string.IsNullOrWhiteSpace(action.Text))
@@ -363,18 +407,7 @@ internal static class HeadlessEngineSmoke
                 catch (EngineCommandRejectedException) { staleQueryRejected = true; }
                 Check(staleQueryRejected && (await engine.ObserveAsync())?.Decision?.Id == prompt,
                     "A stale source query is rejected without consuming the current game decision");
-                var entry = frame.Cards.Single(item => item.Id == occurrence);
-                var hit = frame.Hits.Last(item => item.Id == entry.Hit.Id && item.Scope == entry.Hit.Scope);
-                Click(hit.Id);
-                frame = Tick("restore-reader-footprint"); frame = Tick("reader-settled");
-                if (!frame.Cards.Any(item => item.Id == occurrence && item.Focused)) throw new InvalidOperationException("The real card reader did not open.");
-                while (!frame.Hits.Any(item => item.Id == "read-card-action")) {
-                    Guard(); await Task.Delay(1); frame = Tick("await-engine-source-actions");
-                }
                 string decisionId = view.Match!.Decision!.Id;
-                Check(view.Match.Id == beforeQuery.Id && decisionId == prompt && !view.Busy
-                    && frame.Hits.Any(hit => hit.Id == "read-card-action"),
-                    "The actual reader exposes its current " + expectedKind + " action without answering the decision: " + card.Name);
                 if (expectedKind == "play") {
                     var reader = frame.Cards.Single(item => item.Id == occurrence && item.Focused);
                     pointer = reader.Display.Center.ToPoint();

@@ -218,10 +218,28 @@ public sealed class CasualCommanderPolicy : IAiPolicy
         }
         return colored;
     }
+    private static double ManaFit(ImmutableArray<ManaBillPart> unpaid, string offered)
+    {
+        string color = offered.Trim('{', '}');
+        double colored = 0;
+        bool generic = false;
+        foreach (var part in unpaid) {
+            string[] shards = part.Symbol.Trim('{', '}').Split('/');
+            if (color is "W" or "U" or "B" or "R" or "G" or "C" && shards.Contains(color))
+                colored += (double)part.Count * 10;
+            generic |= part.Count > 0 && shards.Any(shard => int.TryParse(shard, NumberStyles.None, CultureInfo.InvariantCulture, out int amount) && amount > 0);
+        }
+        // A convoke {1} is a generic contribution, never a claim to produce or
+        // spend {C}. Preserve fixed-color needs before generic contributions.
+        return colored > 0 ? colored : generic ? 1 : 0;
+    }
 
     private static AiProposal Select(AiDecisionRequest request, DecisionReply complete, DecisionReply cancel, SelectionRange? range, ImmutableArray<int> players)
     {
         var state = request.Frame.State;
+        if (state.Decision!.Payload is EntitySelectionPayload { ManaReduction.RemainingManaParts.IsEmpty: true })
+            return complete.Enabled ? Answer(request, new CompleteSelection(state.Id, state.Decision.Id), "selection-mana-reduction-complete")
+                : Missing("mana-reduction-completion");
         var intent = EffectiveIntent(request.Frame.Semantics);
         bool cost = request.Frame.Semantics.SelectionIsCost || intent is DecisionIntent.Discard or DecisionIntent.Sacrifice;
         var cards = CardViews.InZones(state).Where(item => item.Card.Selectable && item.Card.Key.Length > 0 && !item.Card.Highlighted)
@@ -348,7 +366,8 @@ public sealed class CasualCommanderPolicy : IAiPolicy
             ?? (request.Frame.Semantics.Intent == DecisionIntent.Discard ? "Hand" : "Battlefield");
         double card = face == null ? 0 : lose ? CasualTableAssessment.OpportunityCost(request.Frame.State, face, zone)
             : CasualTableAssessment.CardValue(face);
-        double mana = choice.Mana.Length == 0 ? 0 : ManaFit(request.Frame.Semantics.UnpaidMana, [choice.Mana]) * 10;
+        double mana = choice.Mana.Length == 0 ? 0 : request.Frame.State.Decision?.Payload is OptionsPayload { ManaPaymentContext: { } payment }
+            ? ManaFit(payment.UnpaidManaParts, choice.Mana) * 10 : ManaFit(request.Frame.Semantics.UnpaidMana, [choice.Mana]) * 10;
         return effect + mana + (lose ? -card : card) + CasualTableAssessment.Tie(request.Seed, choice.Index.ToString(CultureInfo.InvariantCulture)) * .1;
     }
 

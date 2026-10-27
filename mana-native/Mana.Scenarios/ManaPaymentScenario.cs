@@ -10,6 +10,7 @@ public static class ManaPaymentScenario
     public const string Id = "mana-payment.v1";
     public const string Spell = "mana-faerie", Ring = "mana-0-ring", Dual = "mana-1-dual", Plains = "mana-2-plains";
     public const string ColorSpell = "mana-balmor", Temple = "mana-temple", Island = "mana-island";
+    public const string ConvokeSpell = "mana-sprout", ConvokeOne = "mana-llanowar", ConvokeTwo = "mana-mystic";
     public static IReadOnlyList<ExperienceStage> Create() => [
         new("Read a cost and its sources", "Hover or lift Faerie Vandal. The dual land is one source; Sol Ring produces two. Reading spends nothing.", Snapshot(0)),
         new("Pay on the same card", "The authored cast has a current {1}{U} bill. Use Sol Ring's current source action.", Snapshot(1)),
@@ -22,11 +23,20 @@ public static class ManaPaymentScenario
         new("One flexible ability", "Balmor owes {U}{R}. Temple of Epiphany offers one mana ability whose output is chosen after activation.", Snapshot(8)),
         new("Choose at the producer", "Keep Balmor's exact bill in view while choosing a current colored orb beside Temple of Epiphany. Reading a color spends nothing.", Snapshot(9)),
         new("Red paid; blue remains", "The red choice pays only the red shard. The same Balmor still owes blue, and the Island remains available.", Snapshot(10)),
-        new("Both colors paid", "The Island supplies blue; Balmor reaches the stack with both lands visibly turned.", Snapshot(11))
+        new("Both colors paid", "The Island supplies blue; Balmor reaches the stack with both lands visibly turned.", Snapshot(11)),
+        new("Contribute with creatures", "The current convoke selection shows Sprout Swarm's remaining {1}{G} beside its pending card. Select the highlighted creatures.", Snapshot(12)),
+        new("One contribution chosen", "Llanowar Elves is selected; the exact remaining bill is one generic. The creatures have not tapped yet.", Snapshot(13)),
+        new("Cost covered; finish the choice", "Both contributions cover the exact bill. Use the current Done action to commit them.", Snapshot(14)),
+        new("Contributions committed", "The selected creatures turn only when the current selection finishes; the same spell reaches the stack.", Snapshot(15)),
+        new("The other creature contributes", "Elvish Mystic contributes first. You may choose another contributor, undo this choice, or finish and pay the remaining generic mana.", Snapshot(16)),
+        new("No contributors; pay the bill", "Done with no contributors leaves the exact {1}{G} payment. Use either creature's current mana ability or Auto pay. This checkpoint does not offer cancellation.", Snapshot(17)),
+        new("Llanowar tapped; one remains", "Llanowar Elves has contributed or supplied green mana. Pay the remaining generic with Elvish Mystic's current mana ability or Auto pay.", Snapshot(18)),
+        new("Mystic tapped; one remains", "Elvish Mystic has contributed or supplied green mana. Pay the remaining generic with Llanowar Elves' current mana ability or Auto pay.", Snapshot(19))
     ];
 
     public static GameSnapshot Snapshot(int stage)
     {
+        if (stage >= 12) return ConvokeSnapshot(stage);
         if (stage >= 8) return ColorSnapshot(stage);
         Card Card(string id, string name, string type, bool tapped = false) => new() {
             Key = id, VisualId = id, CombatId = id, Name = name, ArtName = name, Type = type, Tapped = tapped,
@@ -57,6 +67,42 @@ public static class ManaPaymentScenario
                     FundingContext = Funding(bf, pool, stage == 7), UsablePoolManaColors = stage == 5 ? ["C"] : [] });
         return new("authored-mana-payment", "playing", null, null, 0, 9, "Main phase", "MAIN1", 0, players,
             stage == 3 ? [new("Faerie Vandal", spell.Text, StackActionKind.Spell, spell) { Id = "mana-faerie-stack", ControllerId = 0 }] : [], null, decision);
+    }
+
+    private static GameSnapshot ConvokeSnapshot(int stage)
+    {
+        Card Creature(string id, string name, bool selected) => new() {
+            Key = id, VisualId = id, CombatId = id, Name = name, ArtName = name, Type = "Creature — Elf Druid",
+            ManaCost = "{G}", Power = 1, Toughness = 1, Text = "{T}: Add {G}.",
+            Tapped = stage == 15 || id == ConvokeOne && stage == 18 || id == ConvokeTwo && stage == 19,
+            Highlighted = selected, Selectable = stage != 15 && !(id == ConvokeOne && stage == 18 || id == ConvokeTwo && stage == 19)
+        };
+        var one = Creature(ConvokeOne, "Llanowar Elves", stage is 13 or 14);
+        var two = Creature(ConvokeTwo, "Elvish Mystic", stage is 14 or 16);
+        var spell = new Card { VisualId = ConvokeSpell, CombatId = ConvokeSpell, Name = "Sprout Swarm", ArtName = "Sprout Swarm",
+            ManaCost = "{1}{G}", Type = "Instant", Text = "Buyback {3}\nConvoke\nCreate a 1/1 green Saproling creature token." };
+        var players = Enumerable.Range(0, 4).Select(index => new Player(index, index == 0 ? "You" : "Opponent " + index, 40, index == 0, false,
+            ImmutableDictionary<string, int>.Empty,
+            [new("Hand", index == 0 ? 0 : 6, [], null), new("Battlefield", index == 0 ? 2 : 0, index == 0 ? [one, two] : [], null),
+                new("Command", 0, [], null), new("Library", 80, [], null), new("Graveyard", 0, [], null), new("Exile", 0, [], null)])).ToImmutableArray();
+        ImmutableArray<ManaBillPart> parts = stage switch {
+            12 or 17 => [new("{1}", 1), new("{G}", 1)], 13 or 16 or 18 or 19 => [new("{1}", 1)], _ => []
+        };
+        // Contributing is optional: Done remains enabled before the whole cost
+        // is reduced. Real-engine tests own convoke eligibility and payment.
+        var source = new DecisionSource(ConvokeSpell, spell, 0, "Stack");
+        var decision = stage == 15 ? new Decision("", new(), new PriorityPayload(new("Pass", true)))
+            : stage >= 17 ? new Decision("", new(Source: source), new PaymentPayload(new("Auto", true), new("Cancel", false)) {
+                UnpaidManaParts = parts, PayerId = 0, UsablePoolManaColors = [],
+                FundingContext = new(SemanticKnowledge.Known, ImmutableDictionary<string, int>.Empty,
+                    new[] { one, two }.Where(card => !card.Tapped).Select(card => new ManaFundingSource(card.VisualId,
+                        [new([new(ActionCostKind.Tap, 1, true, "")], new(SemanticKnowledge.Known,
+                            [new(ImmutableDictionary<string, int>.Empty.Add("G", 1))]), SemanticKnowledge.Known)])).ToImmutableArray()) })
+            : new Decision("", new(Source: source),
+                new EntitySelectionPayload(new("Done", true), new("Cancel", false), [], new(0, 2)) {
+                    ManaReduction = new(parts) });
+        return new("authored-mana-payment", "playing", null, null, 0, 9, "Main phase", "MAIN1", 0, players,
+            stage == 15 ? [new(spell.Name, spell.Text, StackActionKind.Spell, spell) { Id = "mana-sprout-stack", ControllerId = 0 }] : [], null, decision);
     }
 
     private static GameSnapshot ColorSnapshot(int stage)

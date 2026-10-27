@@ -73,6 +73,14 @@ The provider revokes all seat inputs before terminalizing rules work and
 releasing waits. It cannot start new reveal acknowledgements during abort or
 publish a victory/defeat result for that failure; original errors stay private.
 
+The private automated observation port reads under the same rules-state boundary,
+without joining the UI queue. A nested choice can be published by a UI callback
+which is waiting for its answer; queueing observation behind that callback would
+prevent the bot from ever seeing it. Current input, proxy and publication-version
+checks remain mandatory. Unpublished rules changes revoke the previous input
+instead of pairing fresh actions with an older copied frame. Human source reads
+retain their independent input-owner dispatch and exact revision fences.
+
 The source AI semantics also retain finite operation graphs: sources, recipient
 and target-group bindings, exact/unknown quantities, costs and branch links stay
 distinct from strategic utility. `AiSemanticValidation` bounds the graph and
@@ -135,6 +143,17 @@ its still-owned parent: actual payer, exact remaining counted bill and original
 paying card. The ordinary decision source remains the producer. Only the child's
 offered color indices are executable; this context grants no parent Pay, Cancel,
 source activation or pool-spending command and expires with that choice.
+
+Mana contribution selections carry optional `ManaReductionProgress` on the
+current `EntitySelectionPayload`. Its counted remaining bill is shared by player
+presentation and policy: absence is unknown, while an explicit empty bill means
+the contribution goal is covered. It does not enable Done or authorize a card.
+Convoke and improvise eligibility comes from the actual input probing a defensive
+copy of its remaining bill with current card colors; already selected cards stay
+available for undo. A generic contribution uses `{1}`, distinct from producing or
+paying exact `{C}`. Nested color choices retain the same owning bill and spell.
+The AI's episode token follows the actual input through refreshed scopes and its
+nested choice, so reissued decision IDs cannot reset the causal work allowance.
 
 `AiDecisionReplayCase` captures one seat's authorized knowledge and evaluation
 allowance. Offline `AiDecisionReplay` reuses the scoped session and exact policy

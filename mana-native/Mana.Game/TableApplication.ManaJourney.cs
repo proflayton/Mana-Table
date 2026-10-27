@@ -44,6 +44,12 @@ internal sealed partial class TableApplication
             manaJourney = new(owningCostSource, true, context.UnpaidManaParts, null, null, "Choose the source's mana color");
             return;
         }
+        if (decision.Payload is EntitySelectionPayload { ManaReduction: { } reduction }
+            && decision.Context.Source?.Card is { FaceDown: false } reductionSource) {
+            manaJourney = new(reductionSource, true, reduction.RemainingManaParts, null, null,
+                reduction.RemainingManaParts.IsEmpty ? "" : "Choose highlighted cards");
+            return;
+        }
         if (decision.Payload is PaymentPayload payment && (!payment.UnpaidManaParts.IsDefaultOrEmpty || !payment.UnpaidMana.IsDefaultOrEmpty)
             && decision.Context.Source?.Card is { FaceDown: false } paying) {
             var parts = !payment.UnpaidManaParts.IsDefaultOrEmpty ? payment.UnpaidManaParts
@@ -139,9 +145,11 @@ internal sealed partial class TableApplication
             if (columnX + advance + amountWidth > width - 8 && columnX > 12) { columnX = 12; row++; }
             positions.Add((token, columnX, row)); columnX += advance + amountWidth;
         }
-        int rows = row + 1;
-        bool paymentControls = match.Decision?.Payload is PaymentPayload;
-        int height = 31 + rows * 42 + (paymentControls && journey.Payment ? 54 : 25);
+        int rows = tokens.Length == 0 ? 0 : row + 1;
+        var reductionChoice = match.Decision?.Payload as EntitySelectionPayload;
+        bool reducing = reductionChoice?.ManaReduction != null;
+        bool paymentControls = match.Decision?.Payload is PaymentPayload || reducing;
+        int height = 31 + rows * 42 + (reducing ? 68 : paymentControls && journey.Payment ? 54 : 25);
         // Optional metadata must not turn into an unbounded billboard or a
         // negative viewport clamp. Exceptionally complex bills keep the normal
         // exact engine instructions and current manual payment controls.
@@ -153,8 +161,8 @@ internal sealed partial class TableApplication
         if (matchPresentation.Cards.Pinned is { } pinned && !CardViews.Same(pinned.Card, journey.Source)) occupied.Add(pinned.Display.Bounds);
         // During a color callback the producer owns a separate nearby gesture.
         // Keep the original bill beside its own card, away from that producer.
-        bool colorChild = match.Decision?.Payload is OptionsPayload { ManaPaymentContext: not null };
-        var room = DecisionActionArea(face, width, height, reserveBattlefield: colorChild, additionalReservations: occupied);
+        bool sourceWorkspace = match.Decision?.Payload is OptionsPayload { ManaPaymentContext: not null } || reducing;
+        var room = DecisionActionArea(face, width, height, reserveBattlefield: sourceWorkspace, additionalReservations: occupied);
         if (room.Width < width || room.Height < height) return;
         int x = room.X;
         int y = Math.Clamp(entry.Display.Size.X >= 300 ? face.Top + 12 : face.Top - height - 10, room.Top, room.Bottom - height);
@@ -164,7 +172,8 @@ internal sealed partial class TableApplication
         // and rules instead of opening a second inspector or resource panel.
         canvas.Gradient(area, new Color(8, 17, 23) * .96f, new Color(8, 17, 23) * .78f);
         canvas.Line(new(x + 8, y + 23), new(x + width - 8, y + 23), accent * .7f, 1);
-        canvas.Text(journey.Payment ? "PAY REMAINING" : "MANA COST", x + 9, y + 3, accent, .62f, width - 18, 1, true);
+        canvas.Text(reducing && tokens.Length == 0 ? "COST COVERED" : journey.Payment ? "PAY REMAINING" : "MANA COST",
+            x + 9, y + 3, accent, .62f, width - 18, 1, true);
         foreach (var token in positions) {
             int sx = x + token.X, sy = y + 48 + token.Row * 42;
             PaintCostSymbol(token.Part.Symbol, new(sx + symbolSide / 2, sy), symbolSide);
@@ -179,6 +188,15 @@ internal sealed partial class TableApplication
                 new MatchIntent.ConfirmDecision(), !busy, height: 27);
             if (payment.Cancel.Enabled) Button("mana-cancel", payment.Cancel.Label, x + width - 94, controlY, 86,
                 new MatchIntent.CancelDecision(), !busy, height: 27);
+        }
+        if (reducing && reductionChoice is { } selection) {
+            int completeWidth = selection.Cancel.Enabled ? width - 110 : width - 16;
+            Button("confirm", selection.Complete.Label, x + 8, area.Bottom - 48, completeWidth,
+                new MatchIntent.ConfirmDecision(), selection.Complete.Enabled && !busy,
+                accent: true, height: 40, prominent: tokens.Length == 0 && selection.Complete.Enabled);
+            if (selection.Cancel.Enabled)
+                Button("cancel", selection.Cancel.Label, x + width - 94, area.Bottom - 41, 86,
+                    new MatchIntent.CancelDecision(), !busy, height: 27);
         }
         manaJourneyPaint = new(identity, journey.Payment, area, journey.Parts, journey.Advice, journey.Plan?.Status, entry.Zone, face);
     }

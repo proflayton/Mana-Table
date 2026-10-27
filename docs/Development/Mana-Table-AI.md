@@ -294,7 +294,7 @@ does not satisfy this quality gate.
 The [release gate matrix](Mana-Table-Testing.md#ai-release-evaluation) separates
 provider conformance, policy continuations, whole-game completion, state and
 authority integrity, and human gameplay review. The manual release evaluator
-runs seven controlled journeys followed by four cyclic seat rotations of the
+runs eight controlled journeys followed by four cyclic seat rotations of the
 varied decks in one initialized JVM. Every rotation must reach an engine outcome
 before cleanup, within the 160-turn/180-second ceilings. A cutoff remains
 inconclusive; the 45-second smoke profile is not a whole-game release test.
@@ -341,6 +341,15 @@ Planning red from a dual land and then letting an express shortcut choose blue
 would break this boundary. The flexible-output golden follows that exact case
 through the real remaining bill and resolved commander. Human source actions
 without this intent retain the actual typed color choice and its owning bill.
+Optional mana contribution uses the current public entity input's counted
+`ManaReductionProgress`. Exact empty progress plus enabled Done ends that
+selection; positive or unknown progress does not become an invented zero. The
+rules input offers only productive current contributors, retaining selected cards
+for undo. The same input's private causal token survives refreshed decision
+scopes and nested color callbacks, preserving its bounded work allowance.
+If no unselected contributor can help a positive bill, the policy can finish
+that optional selection and leave the remainder for normal payment. This does
+not relabel the remaining bill as covered or enable a disabled completion.
 Known output and a guaranteed consuming tap can still establish a nominal
 capacity upper bound for a paid filter. Insufficient capacity rules out that
 nominal assignment; sufficient capacity does not solve its dependencies.

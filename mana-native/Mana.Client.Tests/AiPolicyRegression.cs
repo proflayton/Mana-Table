@@ -1,4 +1,5 @@
 using System.Collections.Immutable;
+using System.Text.Json;
 using Mana.AI;
 using Mana.Contracts;
 
@@ -14,6 +15,7 @@ internal static class AiPolicyRegression
         await FundingCommitmentBoundary(check);
         await PaidProducerPrerequisites(check);
         await ManaOutputContinuation(check);
+        await ManaReductionContinuation(check);
         await PaymentProvenance(check);
         await TargetsAndSocialMemory(check);
         await CombatAndAllocation(check);
@@ -401,6 +403,103 @@ internal static class AiPolicyRegression
             try { (red with { ManaOutput = new(colors) }).Validate(); } catch (ArgumentException) { rejected = true; }
             check(rejected, "Malformed, empty, noncanonical or excessive output requests fail typed command validation before execution");
         }
+    }
+
+    private static async Task ManaReductionContinuation(Action<bool, string> check)
+    {
+        var positive = new EntitySelectionPayload(Yes, No, []) { ManaReduction = new([new("{G}", 1)]) };
+        var state = Battlefield(State(positive), 0, [Card("already-contributing") with { Selectable = true, Highlighted = true },
+            Card("still-available") with { Selectable = true }]);
+        var semantics = new DecisionSemantics(DecisionIntent.Tap) { SelectionIsCost = true, EpisodeId = "actual-reduction-input" };
+        check((await Evaluate(Frame(state, semantics: semantics))).Command is SelectCard { Card: "still-available-key" },
+            "An enabled optional reduction completion does not end contribution while its exact remaining bill is positive");
+        var reduced = state with { Revision = 2, BoardRevision = 2, Decision = state.Decision! with {
+            Id = "reduction-zero", Payload = positive with { ManaReduction = new([]) } } };
+        var frame = Frame(reduced, semantics: semantics);
+        check((await Evaluate(frame)).Command is CompleteSelection complete && frame.Allows(complete)
+                && !frame.Allows(complete with { DecisionId = state.Decision.Id }),
+            "An exactly empty reduction bill completes the current input even when another unselected creature remains eligible, without reviving the old scope");
+        var unknown = state with { Decision = state.Decision! with { Payload = positive with { ManaReduction = null } } };
+        check((await Evaluate(Frame(unknown, semantics: semantics))).Command is SelectCard,
+            "Missing reduction progress stays unknown instead of being interpreted as a fully paid bill");
+        var noContribution = Battlefield(state, 0, state.Viewer!.Zone("Battlefield").Cards.Select(card => card.Highlighted
+            ? card : card with { Selectable = false }).ToImmutableArray());
+        check((await Evaluate(Frame(noContribution, semantics: semantics))).Command is CompleteSelection,
+            "A positive remaining bill ends the optional reduction step when only already selected cards remain eligible, leaving ordinary payment to the engine");
+        var locked = reduced with { Decision = reduced.Decision! with { Payload = positive with { Complete = No, ManaReduction = new([]) } } };
+        check((await Evaluate(Frame(locked, semantics: semantics))).Status == AiSeatStatus.Unavailable,
+            "A fully reduced bill cannot enable a completion which the current rules input has disabled");
+        foreach (var invalid in new[] { semantics with { SelectionIsCost = false }, semantics with { Intent = DecisionIntent.Unknown } }) {
+            bool rejected = false;
+            try { _ = Frame(reduced, semantics: invalid); } catch (ArgumentException) { rejected = true; }
+            check(rejected, "A mana-reduction fact must belong to the current typed tap-cost selection before policy evaluation");
+        }
+        foreach (var parts in new ImmutableArray<ManaBillPart>[] { default, [new("{G}", 0)], [new("{G}", -1)],
+            [new("{G}", 1), new("{G}", 2)], [new("G", 1)] }) {
+            bool rejected = false;
+            try { _ = new ManaReductionProgress(parts); } catch (ArgumentException) { rejected = true; }
+            check(rejected, "Reduction progress rejects absent arrays, nonpositive counts, duplicate shards and malformed symbols without losing exact-zero meaning");
+        }
+        var large = new ManaReductionProgress([new("{G}", int.MaxValue)]);
+        check(large.RemainingManaParts is [{ Count: int.MaxValue }]
+                && JsonSerializer.Deserialize<ManaReductionProgress>(JsonSerializer.Serialize(new ManaReductionProgress([]))) is { RemainingManaParts.IsEmpty: true },
+            "Exact large counts and an exactly empty bill survive immutable reduction-progress serialization without expanding shards");
+        bool injected = false;
+        try { _ = JsonSerializer.Deserialize<ManaReductionProgress>("""{"remainingManaParts":[],"sourceCardKey":"foreign-key"}""",
+            new JsonSerializerOptions { PropertyNameCaseInsensitive = true }); } catch (JsonException) { injected = true; }
+        check(injected, "Read-only mana-reduction progress cannot smuggle another source or executable handle into the selection");
+        foreach (var construct in new Func<EntitySelectionPayload>[] {
+            () => new EntitySelectionPayload(Yes, No, [1]) { ManaReduction = new([]) },
+            () => new EntitySelectionPayload(Yes, No, [], CounterPayment: new(1, 1)) { ManaReduction = new([]) },
+            () => positive with { Players = [1] }
+        }) {
+            bool rejected = false;
+            try { _ = construct(); } catch (ArgumentException) { rejected = true; }
+            check(rejected, "Constructor and record-copy paths cannot mix mana-reduction progress with player selections or counter-payment facts");
+        }
+        bool absentParts = false;
+        try { _ = JsonSerializer.Deserialize<ManaReductionProgress>("{}"); } catch (ArgumentException) { absentParts = true; }
+        check(absentParts, "An omitted remaining-bill array is malformed rather than a claim that the mana reduction is complete");
+        var colorChoices = new ChoiceSelection([new(4, "First translated label", null) { Mana = "{U}" },
+            new(9, "Second translated label", null) { Mana = "{R}" }, new(13, "Generic contribution", null) { Mana = "{1}" }], new(1, 1));
+        var color = State(new OptionsPayload(colorChoices) { ManaPaymentContext = new(0, [new("{R}", 1), new("{2}", 1)], null) });
+        check((await Evaluate(Frame(color, semantics: new() { UnpaidMana = ["{U}"] }))).Command is ChooseOptions pick && pick.Choices.SequenceEqual([9]),
+            "A nested mana choice follows its current public counted remaining bill rather than a contradictory older private bill or generic contribution");
+        var hugeColor = color with { Decision = color.Decision! with { Payload = new OptionsPayload(colorChoices) {
+            ManaPaymentContext = new(0, [new("{R}", int.MaxValue)], null) } } };
+        check((await Evaluate(Frame(hugeColor))).Command is ChooseOptions hugePick && hugePick.Choices.SequenceEqual([9]),
+            "Counted colored demand is ranked without expanding even a maximum integer's number of shards");
+        var genericOnly = color with { Decision = color.Decision! with { Payload = new OptionsPayload(new(
+            [new Choice(2, "Generic", null) { Mana = "{1}" }, new Choice(7, "True colorless", null) { Mana = "{C}" }], new(1, 1))) {
+            ManaPaymentContext = new(0, [new("{C}", 1)], null) } } };
+        check((await Evaluate(Frame(genericOnly))).Command is ChooseOptions colorless && colorless.Choices.SequenceEqual([7]),
+            "A generic reduction contribution never substitutes for an exact true-colorless requirement");
+
+        var required = state with { Decision = state.Decision! with { Payload = positive with { Complete = No } } };
+        using var bounded = new AiSeatSession(state.Id, 0, new CasualCommanderPolicy(), 17, new(TimeSpan.FromSeconds(10), workUnits: 8));
+        int accepted = 0;
+        for (int step = 0; step < 10; step++) {
+            var next = required with { Revision = step + 1, BoardRevision = step + 1,
+                Decision = required.Decision! with { Id = "unchanged-reduction-scope-" + step } };
+            bounded.Observe(Frame(next, semantics: semantics));
+            var result = await bounded.EvaluateAsync();
+            if (result.Status == AiSeatStatus.BudgetExceeded) break;
+            var submission = bounded.TakeCommand();
+            if (submission?.Command is not SelectCard) break;
+            bounded.Report(submission, AiExecutionReceipt.Accepted); accepted++;
+        }
+        check(accepted == 8 && bounded.View.Status == AiSeatStatus.BudgetExceeded && bounded.TakeCommand() == null
+                && bounded.History.Decisions.Where(record => record.Outcome == AiDecisionOutcome.Accepted)
+                    .Select(record => record.Seed).Distinct().Count() == 1,
+            "Repeated accepted no-progress selections with fresh scopes share one actual cost episode's seed and finite work allowance");
+        var nextOperation = required with { Revision = 20, BoardRevision = 20, Decision = required.Decision! with { Id = "new-reduction-input" } };
+        bounded.Observe(Frame(nextOperation, semantics: semantics with { EpisodeId = "different-actual-reduction-input" }));
+        check((await bounded.EvaluateAsync()).Status == AiSeatStatus.Ready,
+            "A genuinely distinct reduction input receives a new allowance while refreshed scopes of the old input cannot reset it");
+        bool foreign = false;
+        try { bounded.Observe(Frame(nextOperation with { ViewerId = 1, DecisionOwnerId = 1 }, semantics: semantics)); }
+        catch (ArgumentException) { foreign = true; }
+        check(foreign, "A stable reduction episode token cannot transfer another seat's private selection facts into this session");
     }
 
     private static async Task PaymentProvenance(Action<bool, string> check)

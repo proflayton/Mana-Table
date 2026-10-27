@@ -28,6 +28,8 @@ public final class AiReleaseFixtureEngine {
             case "AI gate optional-decline" -> List.of("Mentor of the Meek");
             case "AI gate optional-pay" -> List.of("Mentor of the Meek", "Forest");
             case "AI gate flexible-output" -> List.of("Temple of Epiphany", "Island", "Island", "Island");
+            case "AI gate mana-reduction" -> List.of("Mystic Monastery", "Mystic Monastery", "Mystic Monastery", "Mystic Monastery", "Mystic Monastery", "Mystic Monastery",
+                    "Lightning Angel", "Lightning Angel", "Lightning Angel", "Lightning Angel", "Lightning Angel", "Lightning Angel", "Lightning Angel");
             default -> null;
         };
         if (extras == null) return;

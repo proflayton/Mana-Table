@@ -105,6 +105,14 @@ mana. Older public `unpaidMana` arrays remain a client compatibility input only.
 This additive private metadata needs no persisted-data migration; older
 observations without it retain unknown numeric purpose. Actual current payment
 inputs still own spending and activation authority.
+Actual Convoke, Improvise and related reduction selections additionally expose
+public `manaReduction: {remainingManaParts: [...]}` using the same counted bill.
+An absent context means unknown progress; a present empty list means the cost
+is fully reduced. Current selectable cards are productive contributors according
+to the engine's reduction rules, plus already selected cards retained for undo.
+These facts neither finish the selection nor replace its current Complete button.
+Private decision episodes follow that same actual reduction input across refreshed
+scopes and its nested color choices; a new input receives a separate episode.
 Current mana inputs can add `payment` provenance: `purpose` (`SpellCost`,
 `ActivatedAbilityCost`, `TriggeredAbilityCost`, `EffectCost` or `Unknown`), actual
 `payerId`, entitled `sourceCardId` and the input's `mandatory` fact. The current
@@ -993,6 +1001,9 @@ includes `manaPaymentContext: {payerId, unpaidManaParts, source}`. The readonly
 paid for; the ordinary choice source remains the mana producer. These fresh
 counted-bill facts grant no source or pool gesture and end with that exact choice.
 Color choices outside a payment do not inherit an earlier cost.
+Nested Convoke color choices retain their actual reduction bill through this
+same context. Their generic contribution is `{1}`, distinct from producing or
+spending `{C}`; the ordinary choice source remains the contributing creature.
 
 The match beta supports two-player Constructed and 2–6 player Commander games
 with one local human and AI opponents. `matchSetup.maxPlayers` reports the limit.

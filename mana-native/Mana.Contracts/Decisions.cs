@@ -131,8 +131,20 @@ public sealed record EntitySelectionPayload(DecisionReply Complete, DecisionRepl
     public DecisionReply Complete { get => complete; init => complete = DecisionValue.Required(value, nameof(Complete)); }
     public DecisionReply Cancel { get => cancel; init => cancel = DecisionValue.Required(value, nameof(Cancel)); }
     private ImmutableArray<int> players = Players.IsDefault ? [] : Players;
-    public ImmutableArray<int> Players { get => players; init => players = value.IsDefault ? [] : value; }
+    private ManaReductionProgress? manaReduction;
+    public ImmutableArray<int> Players { get => players; init {
+        var validated = value.IsDefault ? [] : value;
+        ValidateReduction(validated, manaReduction, CounterPayment); players = validated;
+    } }
     public CounterPaymentContext? CounterPayment { get; } = CounterPayment;
+    public ManaReductionProgress? ManaReduction { get => manaReduction; init {
+        ValidateReduction(players, value, CounterPayment); manaReduction = value;
+    } }
+    private static void ValidateReduction(ImmutableArray<int> players, ManaReductionProgress? reduction, CounterPaymentContext? counters)
+    {
+        if (reduction != null && (counters != null || !players.IsEmpty))
+            throw new ArgumentException("A mana-reduction selection retains its own card cost progress without player or counter-payment facts.", nameof(reduction));
+    }
 }
 // An absent Decline is an acknowledgment, not an optional effect whose No
 // button happens to be disabled. Commands preserve that distinction.
@@ -160,7 +172,7 @@ public sealed record OptionsPayload(ChoiceSelection Selection, CounterPaymentCho
             || !selection.Disclosures.IsEmpty || selection.Choices.IsEmpty || selection.Choices.Length > 6
             || selection.Choices.Select(choice => choice.Mana).Distinct(StringComparer.Ordinal).Count() != selection.Choices.Length
             || selection.Choices.Any(choice => choice.Card != null
-                || choice.CardId.Length > 0 || choice.Mana is not ("{W}" or "{U}" or "{B}" or "{R}" or "{G}" or "{C}"))))
+                || choice.CardId.Length > 0 || choice.Mana is not ("{W}" or "{U}" or "{B}" or "{R}" or "{G}" or "{C}" or "{1}"))))
             throw new ArgumentException("An owned mana-color choice describes exactly one of its current offered colors.", nameof(context));
     }
     private static ChoiceSelection ValidateSelection(ChoiceSelection value, CounterPaymentChoice? payment)
