@@ -37,6 +37,13 @@ internal sealed partial class TableApplication
         manaJourney = null; manaJourneyPaint = null; manaSourcePaint.Clear();
         if (match is not { Status: "playing", Viewer: not null, Decision: { } decision } state
             || session.NeedsRecovery || OverlayOpen && !BattlefieldFocused || CardCollectionOpen) return;
+        if (decision.Payload is OptionsPayload { ManaPaymentContext: { Source.Card: { FaceDown: false } owningCostSource } context }
+            && !context.UnpaidManaParts.IsDefaultOrEmpty) {
+            // The color callback owns only its offered choice. Its parent bill
+            // stays readable, without reviving parent payment authority.
+            manaJourney = new(owningCostSource, true, context.UnpaidManaParts, null, null, "Choose the source's mana color");
+            return;
+        }
         if (decision.Payload is PaymentPayload payment && (!payment.UnpaidManaParts.IsDefaultOrEmpty || !payment.UnpaidMana.IsDefaultOrEmpty)
             && decision.Context.Source?.Card is { FaceDown: false } paying) {
             var parts = !payment.UnpaidManaParts.IsDefaultOrEmpty ? payment.UnpaidManaParts
@@ -105,8 +112,12 @@ internal sealed partial class TableApplication
     private void DrawManaJourney()
     {
         if (manaJourney is not { } journey || match?.Viewer is not { } viewer) return;
-        var payer = journey.Payment && match.Decision?.Payload is PaymentPayload paymentOwner
-            ? match.Players.FirstOrDefault(player => player.Id == (paymentOwner.PayerId ?? match.ViewerId)) ?? viewer : viewer;
+        int payerId = match.Decision?.Payload switch {
+            PaymentPayload paymentOwner => paymentOwner.PayerId ?? match.ViewerId,
+            OptionsPayload { ManaPaymentContext: { } colorOwner } => colorOwner.PayerId,
+            _ => match.ViewerId
+        };
+        var payer = journey.Payment ? match.Players.FirstOrDefault(player => player.Id == payerId) ?? viewer : viewer;
         DrawManaSourceWitness(journey, payer);
         string identity = CardViews.Identity(journey.Source);
         var matching = matchPresentation.Cards.Cards.Where(card => CardViews.Same(card.Card, journey.Source)).ToArray();
@@ -129,7 +140,8 @@ internal sealed partial class TableApplication
             positions.Add((token, columnX, row)); columnX += advance + amountWidth;
         }
         int rows = row + 1;
-        int height = 31 + rows * 42 + (journey.Payment ? 54 : 25);
+        bool paymentControls = match.Decision?.Payload is PaymentPayload;
+        int height = 31 + rows * 42 + (paymentControls && journey.Payment ? 54 : 25);
         // Optional metadata must not turn into an unbounded billboard or a
         // negative viewport clamp. Exceptionally complex bills keep the normal
         // exact engine instructions and current manual payment controls.
@@ -139,7 +151,10 @@ internal sealed partial class TableApplication
             if (matchPresentation.Cards.TryGetPose(resource.SourceCardId, out var resourcePose)) occupied.Add(resourcePose.Bounds);
         if (!sourceReaderActionsBounds.IsEmpty) occupied.Add(sourceReaderActionsBounds);
         if (matchPresentation.Cards.Pinned is { } pinned && !CardViews.Same(pinned.Card, journey.Source)) occupied.Add(pinned.Display.Bounds);
-        var room = DecisionActionArea(face, width, height, additionalReservations: occupied);
+        // During a color callback the producer owns a separate nearby gesture.
+        // Keep the original bill beside its own card, away from that producer.
+        bool colorChild = match.Decision?.Payload is OptionsPayload { ManaPaymentContext: not null };
+        var room = DecisionActionArea(face, width, height, reserveBattlefield: colorChild, additionalReservations: occupied);
         if (room.Width < width || room.Height < height) return;
         int x = room.X;
         int y = Math.Clamp(entry.Display.Size.X >= 300 ? face.Top + 12 : face.Top - height - 10, room.Top, room.Bottom - height);

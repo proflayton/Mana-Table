@@ -27,6 +27,7 @@ public final class AiReleaseFixtureEngine {
             case "AI gate consuming-shortfall" -> List.of("Crystal Vein");
             case "AI gate optional-decline" -> List.of("Mentor of the Meek");
             case "AI gate optional-pay" -> List.of("Mentor of the Meek", "Forest");
+            case "AI gate flexible-output" -> List.of("Temple of Epiphany", "Island", "Island", "Island");
             default -> null;
         };
         if (extras == null) return;

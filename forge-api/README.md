@@ -691,7 +691,17 @@ has an opaque `id`, `kind` (`play`, `cast`, `activate`) and engine `text`.
 An action may additionally include `card` and `zone` for a disclosed linked spell.
 That preview has no action key or selection permission. Invoke the original
 source using `matchAction {sessionId, promptId, action: "useSourceAction", key,
-actionId}`. A prepared creature can therefore offer its actual spell copy in
+actionId}`. An exact mana action may additionally supply
+`manaOutput: {colors: {"R": 1}}`. This closed selection must match one finite
+known production alternative of that same current offered ability; it grants no
+action or source authority. Canonical positive W/U/B/R/G/C counts have a total
+limit of 1024. Validation precedes consuming the input and repeats on execution.
+The ordinary mana effect retains its selected alternative across payment and
+priority activation, including independent nested choices and simultaneous fixed
+bundles. Without this field, an explicit source action presents its genuine
+color choice instead of guessing a color from the unpaid bill. Legacy raw-card
+selection keeps its existing express-mana behavior.
+A prepared creature can therefore offer its actual spell copy in
 exile without pretending that casting is an activated ability of the creature.
 Source identity, linked occurrence, location, visibility and engine legality are
 revalidated at invocation; reading does not authorize a later changed action.
@@ -974,6 +984,15 @@ and a `mana` symbol on each choice. `sourceCard` remains an explicit snapshot of
 the source even when activation costs have sacrificed it. Answer with the
 original choice index. The shared GUI's default `chooseColor` hook delegates
 to the existing picker for other clients; the API adapter preserves the context.
+Genuine two-color choices use that same typed callback, rather than a generic
+yes/no confirmation. Singleton choices and remembered macro choices retain
+their existing engine behavior.
+When that genuine callback belongs to the currently owned mana payment, it also
+includes `manaPaymentContext: {payerId, unpaidManaParts, source}`. The readonly
+`source` (`cardId`, optional `card`, `controllerId`, `zone`) is the ability being
+paid for; the ordinary choice source remains the mana producer. These fresh
+counted-bill facts grant no source or pool gesture and end with that exact choice.
+Color choices outside a payment do not inherit an earlier cost.
 
 The match beta supports two-player Constructed and 2–6 player Commander games
 with one local human and AI opponents. `matchSetup.maxPlayers` reports the limit.

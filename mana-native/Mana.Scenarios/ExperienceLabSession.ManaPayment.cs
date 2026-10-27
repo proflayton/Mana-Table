@@ -23,6 +23,10 @@ public sealed partial class ExperienceLabSession
                 actions = [new(prefix + "blue", "activate", "{T}: Add {U}."), new(prefix + "green", "activate", "{T}: Add {G}.")];
             else if (source.VisualId == ManaPaymentScenario.Plains && StageIndex == 6)
                 actions = [new(prefix + "white", "activate", "{T}: Add {W}.")];
+            else if (source.VisualId == ManaPaymentScenario.Temple && StageIndex == 8)
+                actions = [new(prefix + "temple", "activate", "{T}: Add {U} or {R}.")];
+            else if (source.VisualId == ManaPaymentScenario.Island && StageIndex == 10)
+                actions = [new(prefix + "island", "activate", "{T}: Add {U}.")];
         }
         return new(State.Id, State.Decision.Id, source.Key, source.VisualId, actions.ToImmutableArray()) { Revision = State.Revision };
     }
@@ -38,9 +42,12 @@ public sealed partial class ExperienceLabSession
                 1 when source.VisualId == ManaPaymentScenario.Ring => 2,
                 2 when source.VisualId == ManaPaymentScenario.Dual && action.Id.EndsWith(":blue", StringComparison.Ordinal) => 3,
                 6 when source.VisualId == ManaPaymentScenario.Plains => 4,
+                8 when source.VisualId == ManaPaymentScenario.Temple => 9,
+                10 when source.VisualId == ManaPaymentScenario.Island => 11,
                 _ => throw Unsupported()
             };
-        } else if (reply is SpendPoolMana { Color: "C" } && StageIndex == 5
+        } else if (reply is ChooseOptions { Choices: var indices } && StageIndex == 9 && indices.SequenceEqual([11])) next = 10;
+        else if (reply is SpendPoolMana { Color: "C" } && StageIndex == 5
             && State.Decision?.Payload is PaymentPayload { UsablePoolManaColors: var usable } && usable?.Contains("C") == true) next = 6;
         else if (reply is PassPriority && StageIndex == 3) next = 4;
         else if (reply is PayMana && State.Decision?.Payload is PaymentPayload) next = 3;

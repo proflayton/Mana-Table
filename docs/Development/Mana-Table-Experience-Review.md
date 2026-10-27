@@ -252,6 +252,16 @@ arrive, sources turn, real floating pips change and unpaid symbols disappear;
 the paid card then continues through the stack. A currently usable floating pip
 can pay its one exact color. Other pips retain read-only inspection.
 
+A mana ability which asks for a color keeps that same pending card and exact
+bill visible. Its currently offered colored orbs sit beside the actual producer,
+linked to that land or rock. Hover reads a symbol; clicking submits its current
+offered index. The child choice has no parent Auto pay or Cancel controls. Once
+accepted, the orbs retire and the same card shows the new remaining bill. The
+authored Temple of Epiphany/Balmor continuation exercises a single flexible
+ability, red payment and the remaining blue. Ordinary color choices without an
+owned payment context retain their existing choice surface; no relationship is
+inferred from prompt wording.
+
 The neutral `Mana.Planning` core consumes scoped read-only funding facts, without
 policy history, action handles or automatic replies. Unknown restrictions,
 dependencies and effective costs remain uncertain; a legal manual offer stays
@@ -263,7 +273,8 @@ instruction and established manual controls. Old providers retain that fallback.
 Support cards use a portrait face inside their reserved footprint; tapping turns
 that same face rather than swapping dimensions and hiding the silhouette change.
 The authored `mana-payment.v1` journey covers a dual source, Sol Ring, W/U/G/C,
-generic versus colorless, a shrinking bill and a leftover floating pip. Review
+generic versus colorless, a shrinking bill, a leftover floating pip and a genuine
+owned mana-color child choice. Review
 the whole pointer sequence with actual art at 1000×740 and a larger window;
 automatic geometry/input checks do not approve its clarity.
 

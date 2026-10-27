@@ -2,6 +2,7 @@ using System.Collections.Immutable;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Mana.Contracts;
+using Mana.Planning;
 
 namespace Mana.Forge;
 
@@ -43,19 +44,12 @@ public sealed partial class ForgeEngine : IAutomatedSimulation
         if (!owner.AutomationAvailable) throw new NotSupportedException("This engine has no automated-seat port.");
         var raw = await Request("automatedState");
         if (current != owner || owner.Failure != null) throw new IOException("The engine changed during automated observation.");
-        var result = ImmutableArray.CreateBuilder<AutomatedSeatObservation>();
-        foreach (var item in raw.EnumerateArray()) {
-            int seat = item.GetProperty("seatId").GetInt32();
-            var state = ForgeSnapshotDecoder.Decode(item.GetProperty("state")) ?? throw new IOException("Missing automated seat state.");
-            var domain = item.GetProperty("domain").Deserialize<DecisionActionDomain>(AutomationJson) ?? throw new IOException("Missing action domain.");
-            var semantics = item.GetProperty("semantics").Deserialize<DecisionSemantics>(AutomationJson) ?? throw new IOException("Missing decision semantics.");
-            if (seat < 0 || seat != state.ViewerId || domain.Version < 0 || domain.Sources.IsDefault || domain.Actions.IsDefault
-                || semantics.Options.IsDefault || semantics.LegalTextValues.IsDefault || semantics.UnpaidMana.IsDefault)
-                throw new IOException("Invalid automated seat observation.");
-            result.Add(new(seat, state, domain, semantics));
+        ImmutableArray<AutomatedSeatObservation> result;
+        try { result = DecodeAutomatedObservations(raw); }
+        catch {
+            lock (automatedScopes) automatedScopes.Clear();
+            throw;
         }
-        if (result.Select(item => (item.State.Id, item.SeatId)).Distinct().Count() != result.Count)
-            throw new IOException("Duplicate automated seat observation.");
         lock (automatedScopes) {
             automatedScopes.Clear();
             foreach (var item in result) {
@@ -63,7 +57,30 @@ public sealed partial class ForgeEngine : IAutomatedSimulation
                 automatedScopes.Add((item.State.Id, item.SeatId), (scope, item.Domain));
             }
         }
-        return result.ToImmutable();
+        return result;
+    }
+
+    internal static ImmutableArray<AutomatedSeatObservation> DecodeAutomatedObservations(JsonElement raw)
+    {
+        try {
+            var result = ImmutableArray.CreateBuilder<AutomatedSeatObservation>();
+            foreach (var item in raw.EnumerateArray()) {
+                int seat = item.GetProperty("seatId").GetInt32();
+                var state = ForgeSnapshotDecoder.Decode(item.GetProperty("state")) ?? throw new IOException("Missing automated seat state.");
+                var domain = item.GetProperty("domain").Deserialize<DecisionActionDomain>(AutomationJson) ?? throw new IOException("Missing action domain.");
+                var semantics = item.GetProperty("semantics").Deserialize<DecisionSemantics>(AutomationJson) ?? throw new IOException("Missing decision semantics.");
+                if (seat < 0 || seat != state.ViewerId || domain.Version < 0 || domain.Sources.IsDefault || domain.Actions.IsDefault
+                    || semantics.Options.IsDefault || semantics.LegalTextValues.IsDefault || semantics.UnpaidMana.IsDefault)
+                    throw new IOException("Invalid automated seat observation.");
+                result.Add(new(seat, state, domain, semantics));
+            }
+            if (result.Select(item => (item.State.Id, item.SeatId)).Distinct().Count() != result.Count)
+                throw new IOException("Duplicate automated seat observation.");
+            return result.ToImmutable();
+        } catch (Exception error) when (error is IOException or JsonException or InvalidOperationException
+            or ArgumentException or FormatException or OverflowException or KeyNotFoundException) {
+            throw new ForgeAutomatedObservationException(raw, error);
+        }
     }
 
     public async Task ExecuteAutomatedAsync(int seatId, GameCommand command)
@@ -76,6 +93,10 @@ public sealed partial class ForgeEngine : IAutomatedSimulation
             if (command is UseOfferedAction offer && !currentScope.Domain.Sources.Any(source => source.SourceCardKey == offer.Card
                     && source.DecisionId == offer.DecisionId && source.Actions.Any(action => action.Id == offer.ActionId)))
                 throw new EngineCommandRejectedException("That action was not offered to this automated seat.");
+            if (command is UseOfferedAction { ManaOutput: { } output } production
+                && !currentScope.Domain.Actions.Any(action => action.ActionId == production.ActionId && action.ManaAbility
+                    && ManaFundingFacts.MatchesOutput(action.Production, output)))
+                throw new EngineCommandRejectedException("That mana output was not offered by this current ability.");
             args["seatId"] = seatId;
         }
         await Request("automatedAction", args);

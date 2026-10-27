@@ -6,6 +6,13 @@ namespace Mana.Planning;
 // Scope validation of read-only resource facts grants no execution permission.
 public static class ManaFundingFacts
 {
+    public static bool MatchesOutput(ManaProduction production, ManaOutputChoice choice)
+        => production is { Knowledge: SemanticKnowledge.Known, Alternatives.IsDefault: false }
+            && choice?.IsValid() == true && production.Alternatives.Any(alternative => alternative?.Colors is { Count: <= 6 } colors
+                && colors.All(pair => pair.Key is "W" or "U" or "B" or "R" or "G" or "C" && pair.Value >= 0)
+                && colors.Count(pair => pair.Value > 0) == choice.Colors.Count
+                && colors.Where(pair => pair.Value > 0).All(pair => choice.Colors.GetValueOrDefault(pair.Key) == pair.Value));
+
     public static void Validate(GameSnapshot state, ManaFundingContext funding, int? resourceOwnerId = null)
     {
         if (state == null) throw Invalid();

@@ -25,6 +25,7 @@ import forge.game.player.Player;
 import forge.game.player.PlayerView;
 import forge.game.player.actions.PassPriorityAction;
 import forge.game.spellability.SpellAbility;
+import forge.game.spellability.AbilityManaPart;
 import forge.game.spellability.StackItemView;
 import forge.gamemodes.match.DeclineScope;
 import forge.gamemodes.match.SuggestionType;
@@ -42,6 +43,7 @@ import forge.util.Localizer;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 
 /**
  * <p>
@@ -431,7 +433,15 @@ public class InputPassPriority extends InputSyncronizedBase {
 
     @Override
     public boolean selectAbility(final SpellAbility ab) {
+        return selectAbility(ab, null);
+    }
+
+    public boolean selectAbility(final SpellAbility ab, final Map<AbilityManaPart, String> outputChoices) {
     	if (ab != null) {
+            if (ab.isManaAbility()) {
+                for (var part : ab.getAllManaParts()) part.clearExpressChoice();
+                if (outputChoices != null) outputChoices.forEach(AbilityManaPart::setExpressChoice);
+            }
     	    chosenSa = new ArrayList<>();
             chosenSa.add(ab);
             stop();

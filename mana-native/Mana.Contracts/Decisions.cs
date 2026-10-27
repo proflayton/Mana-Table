@@ -144,8 +144,25 @@ public sealed record ConfirmationPayload(DecisionReply Accept, DecisionReply? De
 public sealed record OptionsPayload(ChoiceSelection Selection, CounterPaymentChoice? CounterPayment = null) : DecisionPayload
 {
     private ChoiceSelection selection = ValidateSelection(Selection, CounterPayment);
-    public ChoiceSelection Selection { get => selection; init => selection = ValidateSelection(value, CounterPayment); }
+    private ManaColorPaymentContext? manaPaymentContext;
+    public ChoiceSelection Selection { get => selection; init {
+        var validated = ValidateSelection(value, CounterPayment);
+        ValidateManaChoice(validated, manaPaymentContext, CounterPayment);
+        selection = validated;
+    } }
     public CounterPaymentChoice? CounterPayment { get; } = CounterPayment;
+    public ManaColorPaymentContext? ManaPaymentContext { get => manaPaymentContext; init {
+        ValidateManaChoice(selection, value, CounterPayment); manaPaymentContext = value;
+    } }
+    private static void ValidateManaChoice(ChoiceSelection selection, ManaColorPaymentContext? context, CounterPaymentChoice? counters)
+    {
+        if (context != null && (counters != null || selection.Range is not { Min: 1, Max: 1 }
+            || !selection.Disclosures.IsEmpty || selection.Choices.IsEmpty || selection.Choices.Length > 6
+            || selection.Choices.Select(choice => choice.Mana).Distinct(StringComparer.Ordinal).Count() != selection.Choices.Length
+            || selection.Choices.Any(choice => choice.Card != null
+                || choice.CardId.Length > 0 || choice.Mana is not ("{W}" or "{U}" or "{B}" or "{R}" or "{G}" or "{C}"))))
+            throw new ArgumentException("An owned mana-color choice describes exactly one of its current offered colors.", nameof(context));
+    }
     private static ChoiceSelection ValidateSelection(ChoiceSelection value, CounterPaymentChoice? payment)
     {
         ArgumentNullException.ThrowIfNull(value);

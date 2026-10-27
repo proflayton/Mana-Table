@@ -21,8 +21,10 @@ internal static class AiReleaseGoldens
         new("consuming-funded", "Traxos, Scourge of Kroog", "Wastes", ["Crystal Vein", "Wastes"]),
         new("consuming-shortfall", "Traxos, Scourge of Kroog", "Wastes", ["Crystal Vein"]),
         new("optional-decline", "Rhys the Redeemed", "Forest", ["Mentor of the Meek"]),
-        new("optional-pay", "Rhys the Redeemed", "Forest", ["Mentor of the Meek", "Forest"])
+        new("optional-pay", "Rhys the Redeemed", "Forest", ["Mentor of the Meek", "Forest"]),
+        new("flexible-output", "Balmor, Battlemage Captain", "Island", ["Temple of Epiphany", "Island", "Island", "Island"])
     ];
+    internal static int ExpectedCount => Scenarios.Length;
 
     internal static async Task<ImmutableArray<AiGoldenResult>> RunAsync(ForgeEngine engine, string profile, Action<bool, string> check)
     {
@@ -65,10 +67,11 @@ internal static class AiReleaseGoldens
         await using var trace = new StreamWriter(Path.Combine(directory, "public.jsonl"));
         var timer = Stopwatch.StartNew();
         GameSnapshot? state = null;
-        string target = "", vein = "", mentor = "", lastFacts = "", stop = "not-started", detail = "";
+        string target = "", vein = "", mentor = "", flexible = "", lastFacts = "", stop = "not-started", detail = "";
+        ImmutableArray<string> blueSources = [];
         int comparisons = 0, steps = 0, firstTurn = 0;
         bool setup = false, offered = false, stack = false, resolved = false, landPlayed = false, passedOffer = false, passed = false;
-        bool publicCaptured = false;
+        bool publicCaptured = false, actualRedPool = false, actualRedBillPaid = false;
         Exception? primaryFailure = null;
         var captureErrors = new List<string>();
         try {
@@ -92,6 +95,8 @@ internal static class AiReleaseGoldens
                 throw new InvalidDataException("Golden pregame battlefield does not match the declared test-only setup.");
             vein = extras.Where(card => card.Name == "Crystal Vein").Select(CardViews.Identity).SingleOrDefault() ?? "";
             mentor = extras.Where(card => card.Name == "Mentor of the Meek").Select(CardViews.Identity).SingleOrDefault() ?? "";
+            flexible = extras.Where(card => card.Name == "Temple of Epiphany").Select(CardViews.Identity).SingleOrDefault() ?? "";
+            blueSources = extras.Where(card => card.Name == "Island").Select(CardViews.Identity).ToImmutableArray();
             setup = true;
             while (true) {
                 state = await engine.ObserveSimulationAsync() ?? throw new InvalidDataException("Golden public state disappeared.");
@@ -113,6 +118,12 @@ internal static class AiReleaseGoldens
                         firstTurn = firstTurn == 0 ? bot.State.Turn : firstTurn;
                         offered |= bot.Domain.Sources.Any(set => set.SourceCardId == target && set.Actions.Any(action => action.Kind == "cast"));
                     }
+                    actualRedPool |= bot.SeatId == 0 && bot.Semantics.Payment is { PayerId: 0, Purpose: PaymentPurpose.SpellCost } cost
+                        && cost.SourceCardId == target && bot.State.Viewer!.Mana.GetValueOrDefault("R") > 0;
+                    actualRedBillPaid |= bot.SeatId == 0 && bot.Semantics.Payment is { PayerId: 0, Purpose: PaymentPurpose.SpellCost } paid
+                        && paid.SourceCardId == target && bot.Semantics.UnpaidMana.SequenceEqual(["{U}"])
+                        && provider.Accepted.Any(item => item.SourceId == flexible && item.ManaOutput?.Colors is { Count: 1 } colors
+                            && colors.GetValueOrDefault("R") == 1);
                 }
                 diagnostics.ObservePublic(state);
                 string facts = AiWholeSeatEngineCheck.ReplayFacts(state);
@@ -171,6 +182,17 @@ internal static class AiReleaseGoldens
                             && state.ActivePlayerId == 0 && state.Turn == firstTurn;
                         detail = "A real optional trigger cost consumed offered mana and the public hand count increased by exactly one.";
                         break;
+                    case "flexible-output":
+                        if (receipts.Any(item => item.Kind == nameof(CancelPayment) && item.CostOwner == target))
+                            throw new InvalidDataException("The flexible-output commander payment was cancelled after initiating its funded cast.");
+                        bool requestedRed = receipts.Any(item => item.SourceId == flexible && item.ManaOutput?.Colors is { Count: 1 } colors
+                            && colors.GetValueOrDefault("R") == 1);
+                        bool requestedBlue = receipts.Any(item => blueSources.Contains(item.SourceId) && item.ManaOutput?.Colors is { Count: 1 } colors
+                            && colors.GetValueOrDefault("U") == 1);
+                        positive = cast && stack && spellPayment && requestedRed && requestedBlue && actualRedBillPaid
+                            && permanent is { Power: 1, Toughness: 3 };
+                        detail = "The normal policy's exact red flexible-source intent reduced the UR bill to U, an Island supplied blue, and the commander resolved without cancelling payment.";
+                        break;
                     default: throw new InvalidDataException("Unknown golden scenario.");
                 }
                 if (positive && setup && comparisons > 0) { passed = true; stop = "proved-before-cleanup"; break; }
@@ -204,7 +226,7 @@ internal static class AiReleaseGoldens
         }
         var summary = diagnostics.Summary();
         if (!summary.DiagnosticErrors.IsEmpty) CaptureFailure(new IOException(string.Join("\n", summary.DiagnosticErrors)), "diagnostic-evidence-failure");
-        var evidence = JsonSerializer.SerializeToElement(new { setup, target, vein, mentor, offered, passedOffer, landPlayed,
+        var evidence = JsonSerializer.SerializeToElement(new { setup, target, vein, mentor, flexible, blueSources, actualRedPool, actualRedBillPaid, offered, passedOffer, landPlayed,
             stack, resolved, firstTurn, capturedBeforeCleanup = publicCaptured, finalTurn = state?.Turn, finalPhase = state?.PhaseKey,
             commands = provider.Accepted, diagnostics = summary, captureErrors, primaryFailure = primaryFailure?.ToString(), engineRandomnessControlled = false });
         var result = new AiGoldenResult(scenario.Id, passed, detail, comparisons, provider.Accepted.Count, steps,
@@ -225,7 +247,7 @@ internal static class AiReleaseGoldens
 
     private sealed record AcceptedCommand(int Seat, string Kind, int Turn, string Phase, string SourceId, string CostOwner,
         int? Number, NumericDecisionPurpose? NumericPurpose, PaymentPurpose? PaymentPurpose, int? Payer, int HandCount,
-        bool Consumed, bool Land, bool Cast, bool TargetOffered);
+        bool Consumed, bool Land, bool Cast, bool TargetOffered, ManaOutputChoice? ManaOutput);
 
     private sealed class ReceiptProbe(AiCampaignProvider inner) : IAutomatedSeatProvider
     {
@@ -250,7 +272,8 @@ internal static class AiReleaseGoldens
                 observation.Semantics.Payment?.Purpose, observation.Semantics.Payment?.PayerId,
                 observation.State.Viewer!.Zone("Hand").Count, action?.Costs.Any(cost => cost.Kind == ActionCostKind.Sacrifice && cost.FromSource && cost.Amount == 1) == true,
                 action?.Effect == ActionEffectKind.Land, route?.Kind == "cast",
-                observation.Domain.Sources.Any(set => set.SourceCardId == Target && set.Actions.Any(item => item.Kind == "cast"))));
+                observation.Domain.Sources.Any(set => set.SourceCardId == Target && set.Actions.Any(item => item.Kind == "cast")),
+                (command as UseOfferedAction)?.ManaOutput));
         }
     }
 }

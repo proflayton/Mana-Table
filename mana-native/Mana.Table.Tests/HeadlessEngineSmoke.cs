@@ -1,6 +1,7 @@
 using System.Collections.Immutable;
 using System.Diagnostics;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using Mana.Contracts;
 using Mana.Forge;
 using Mana.Magic;
@@ -348,7 +349,7 @@ internal static class HeadlessEngineSmoke
                     && sourceActions.GameId == beforeQuery.Id && sourceActions.DecisionId == prompt
                     && sourceActions.SourceCardKey == card.Key && sourceActions.SourceCardId == card.VisualId
                     && sourceActions.Actions.Any(action => action.Kind == expectedKind && !string.IsNullOrWhiteSpace(action.Text))
-                    && primed.Actions.SequenceEqual(sourceActions.Actions) && sourceActions.Actions.SequenceEqual(repeated.Actions)
+                    && SameSourceActions(primed.Actions, sourceActions.Actions) && SameSourceActions(sourceActions.Actions, repeated.Actions)
                     && afterQuery.Decision?.Id == prompt && afterQuery.Revision == beforeQuery.Revision
                     && currentSource.Length == 1 && currentSource[0].Key == card.Key;
                 if (!stableRead)
@@ -429,4 +430,10 @@ internal static class HeadlessEngineSmoke
             if (elapsed.Elapsed > TimeSpan.FromSeconds(90)) throw new TimeoutException("Real Forge opening-to-land/commander presentation exceeded its bounded smoke watchdog.");
         }
     }
+
+    // Separate wire reads allocate fresh immutable collections. Record equality
+    // compares those backing instances; read purity needs every fact's content,
+    // including current cost and resource metadata, to remain unchanged.
+    internal static bool SameSourceActions(ImmutableArray<SourceAction> first, ImmutableArray<SourceAction> second)
+        => JsonNode.DeepEquals(JsonSerializer.SerializeToNode(first), JsonSerializer.SerializeToNode(second));
 }

@@ -201,8 +201,13 @@ public abstract class InputPayMana extends InputSyncronizedBase {
 
     @Override
     public boolean selectAbility(final SpellAbility ab) {
+        return selectAbility(ab, null);
+    }
+
+    /** An exact output witness has already been checked by the owning adapter. */
+    public boolean selectAbility(final SpellAbility ab, final Map<AbilityManaPart, String> outputChoices) {
         if (ab != null && ab.isManaAbility()) {
-            return activateManaAbility(ab.getHostCard(), ab);
+            return activateManaAbility(ab.getHostCard(), ab, outputChoices, true);
         }
         return false;
     }
@@ -254,6 +259,10 @@ public abstract class InputPayMana extends InputSyncronizedBase {
         return activateManaAbility(card, null);
     }
     protected boolean activateManaAbility(final Card card, SpellAbility chosenAbility) {
+        return activateManaAbility(card, chosenAbility, null, false);
+    }
+    private boolean activateManaAbility(final Card card, SpellAbility chosenAbility,
+                                        final Map<AbilityManaPart, String> outputChoices, final boolean explicitSourceAction) {
         if (locked) {
             System.err.print("Should wait till previous call to playAbility finishes.");
             return false;
@@ -278,7 +287,7 @@ public abstract class InputPayMana extends InputSyncronizedBase {
 
         final SpellAbility chosen;
 
-        if (chosenAbility == null) {
+        if (!explicitSourceAction) {
             HashMap<SpellAbilityView, SpellAbility> abilitiesMap = new HashMap<>();
             // you can't remove unneeded abilities inside a for (am:abilities) loop :(
 
@@ -371,7 +380,14 @@ public abstract class InputPayMana extends InputSyncronizedBase {
             }
         }
 
-        chosen.setManaExpressChoice(ColorSet.fromMask(producedColorMask));
+        if (chosenAbility == null) {
+            // Legacy raw-card selection may still guess a useful color. An
+            // explicit ability selection preserves its genuine color decision.
+            chosen.setManaExpressChoice(ColorSet.fromMask(producedColorMask));
+        } else {
+            for (var part : chosen.getAllManaParts()) part.clearExpressChoice();
+            if (outputChoices != null) outputChoices.forEach(AbilityManaPart::setExpressChoice);
+        }
 
         // System.out.println("Chosen sa=" + chosen + " of " + chosen.getHostCard() + " to pay mana");
 

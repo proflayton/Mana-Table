@@ -13,6 +13,7 @@ internal static class AiPolicyRegression
         await ActionsAndCosts(check);
         await FundingCommitmentBoundary(check);
         await PaidProducerPrerequisites(check);
+        await ManaOutputContinuation(check);
         await PaymentProvenance(check);
         await TargetsAndSocialMemory(check);
         await CombatAndAllocation(check);
@@ -332,6 +333,74 @@ internal static class AiPolicyRegression
         check(host.LastFault == null && provider.Commands.Count == 6 && provider.Commands.All(command => command is CancelPayment)
                 && host.Histories.Single().AttemptedRoutes.IsEmpty,
             "Fresh outer payment input IDs and host episodes cannot reopen the unseeded dependent-producer loop: every observation cancels the unsupported outer bill directly");
+    }
+
+    private static async Task ManaOutputContinuation(Action<bool, string> check)
+    {
+        var state = Battlefield(State(new PaymentPayload(No, Yes)), 0,
+            [Card("own-land") with { Type = "Land", Power = null, Toughness = null },
+             .. Enumerable.Range(0, 3).Select(index => Card("island-" + index) with { Type = "Land", Power = null, Toughness = null })]);
+        ManaProduction Output(params (string Color, int Amount)[] units) => new(SemanticKnowledge.Known,
+            [new(units.ToImmutableDictionary(unit => unit.Color, unit => unit.Amount))]);
+        var flexible = Semantic("flexible", ActionEffectKind.Mana) with { ManaAbility = true, ManaAmount = 1,
+            Costs = [new(ActionCostKind.Tap, 1, true, "")], ManaColors = ["U", "R"], PaymentManaColors = ["U", "R"],
+            Production = new(SemanticKnowledge.Known, [new(ImmutableDictionary<string, int>.Empty.Add("U", 1)),
+                new(ImmutableDictionary<string, int>.Empty.Add("R", 1))]) };
+        var blue = Semantic("blue-unit", ActionEffectKind.Mana) with { ManaAbility = true, ManaAmount = 1,
+            Costs = [new(ActionCostKind.Tap, 1, true, "")], ManaColors = ["U"], PaymentManaColors = ["U"], Production = Output(("U", 1)) };
+        var offers = new List<(string Source, SourceAction Action, ActionSemantics Semantics)> {
+            ("own-land", new("flexible", "activate", "Blue before red in the printed route"), flexible) };
+        offers.AddRange(Enumerable.Range(0, 3).Select(index => ("island-" + index,
+            new SourceAction("blue-" + index, "activate", "Blue"), blue with { ActionId = "blue-" + index, StableId = "blue-" + index })));
+        var semantics = new DecisionSemantics { UnpaidMana = ["{U}", "{R}"] };
+        var frame = Frame(state, Domain(state, offers.ToArray()), semantics);
+        var first = await Evaluate(frame);
+        check(first.Command is UseOfferedAction { ActionId: "flexible", ManaOutput: { } chosen }
+                && chosen.Colors.Count == 1 && chosen.Colors.GetValueOrDefault("R") == 1 && frame.Allows(first.Command),
+            "Paying blue-red with one flexible blue-red source and three blue-only sources preserves the planner's exact red output through the submitted action");
+        var red = new UseOfferedAction(state.Id, state.Decision!.Id, "own-land-key", "flexible") {
+            ManaOutput = new(ImmutableDictionary<string, int>.Empty.Add("R", 1)) };
+        check(frame.Allows(red) && !frame.Allows(red with { ManaOutput = new(ImmutableDictionary<string, int>.Empty.Add("R", 2)) })
+                && !frame.Allows(red with { ManaOutput = new(ImmutableDictionary<string, int>.Empty.Add("R", 1).Add("U", 1)) })
+                && !frame.Allows(red with { ActionId = "invented" }) && !frame.Allows(red with { Card = "foreign-key" })
+                && !frame.Allows(red with { DecisionId = "old-payment" }),
+            "An output intent must equal one current offered alternative and cannot combine alternative colors or replace action, source and decision authority");
+        var unknown = frame.Domain with { Actions = frame.Domain.Actions.Select(action => action.ActionId == "flexible"
+            ? action with { Production = ManaProduction.Unknown } : action).ToImmutableArray() };
+        var unknownFrame = Frame(state, unknown, semantics);
+        check(!unknownFrame.Allows(red) && unknownFrame.Allows(red with { ManaOutput = null }),
+            "Unknown production rejects an asserted output while leaving the original uncommitted route available for an explicit current choice");
+        var notMana = frame.Domain with { Actions = frame.Domain.Actions.Select(action => action.ActionId == "flexible"
+            ? action with { ManaAbility = false } : action).ToImmutableArray() };
+        check(!Frame(state, notMana, semantics).Allows(red), "A known output recipe cannot turn a non-mana action into a mana ability");
+        var bundle = frame.Domain with { Actions = frame.Domain.Actions.Select(action => action.ActionId == "flexible"
+            ? action with { Production = Output(("W", 1), ("G", 1)) } : action).ToImmutableArray() };
+        var bundled = Frame(state, bundle, semantics);
+        check(bundled.Allows(red with { ManaOutput = new(ImmutableDictionary<string, int>.Empty.Add("W", 1).Add("G", 1)) })
+                && !bundled.Allows(red with { ManaOutput = new(ImmutableDictionary<string, int>.Empty.Add("G", 1)) }),
+            "A simultaneous fixed bundle remains one complete output choice rather than permitting an invented partial color bundle");
+        var next = state with { Revision = 2, BoardRevision = 2, Decision = state.Decision! with { Id = "after-red-source" },
+            Players = state.Players.Select(player => player.Id == 0 ? player with {
+                Mana = ImmutableDictionary<string, int>.Empty.Add("R", 1) } : player).ToImmutableArray() };
+        next = Battlefield(next, 0, next.Viewer!.Zone("Battlefield").Cards.Select(card => card.VisualId == "own-land" ? card with { Tapped = true } : card).ToImmutableArray());
+        var nextDomain = Domain(next, offers.Skip(1).ToArray()) with { PoolManaColors = ["R"] };
+        check((await Evaluate(Frame(next, nextDomain, semantics))).Command is SpendPoolMana { Color: "R" },
+            "After the exact red production is observed, the fresh payment consumes that current floating unit instead of retapping the source");
+        next = next with { Revision = 3, BoardRevision = 3, Decision = next.Decision! with { Id = "after-red-payment" },
+            Players = next.Players.Select(player => player.Id == 0 ? player with { Mana = ImmutableDictionary<string, int>.Empty } : player).ToImmutableArray() };
+        var follow = await Evaluate(Frame(next, Domain(next, offers.Skip(1).ToArray()), new() { UnpaidMana = ["{U}"] }));
+        check(follow.Command is UseOfferedAction { ManaOutput: { } output } && output.Colors.Count == 1 && output.Colors.GetValueOrDefault("U") == 1,
+            "The remaining blue payment carries its own fresh known output rather than reusing the prior red source plan");
+        var priority = state with { Decision = state.Decision! with { Payload = new PriorityPayload(Yes) } };
+        check(Frame(priority, Domain(priority, offers.ToArray())).Allows(red),
+            "The same exact offered mana alternative can be selected during priority without granting a source or action absent from that current domain");
+        foreach (var colors in new[] { ImmutableDictionary<string, int>.Empty, ImmutableDictionary<string, int>.Empty.Add("R", 0),
+            ImmutableDictionary<string, int>.Empty.Add("R", -1), ImmutableDictionary<string, int>.Empty.Add("neutral", 1),
+            ImmutableDictionary<string, int>.Empty.Add("R", 1025) }) {
+            bool rejected = false;
+            try { (red with { ManaOutput = new(colors) }).Validate(); } catch (ArgumentException) { rejected = true; }
+            check(rejected, "Malformed, empty, noncanonical or excessive output requests fail typed command validation before execution");
+        }
     }
 
     private static async Task PaymentProvenance(Action<bool, string> check)

@@ -173,7 +173,9 @@ public sealed class CasualCommanderPolicy : IAiPolicy
             if (step is AiManaStep.Pool pool)
                 return Answer(request, new SpendPoolMana(state.Id, state.Decision!.Id, pool.Color), "payment-follow-assignment-pool");
             if (step is AiManaStep.Source producer)
-                return Answer(request, new UseOfferedAction(state.Id, state.Decision!.Id, producer.SourceCardKey, producer.ActionId), "payment-follow-assignment-source");
+                return Answer(request, new UseOfferedAction(state.Id, state.Decision!.Id, producer.SourceCardKey, producer.ActionId) {
+                    ManaOutput = new(producer.Output.Where(pair => pair.Value > 0).ToImmutableDictionary())
+                }, "payment-follow-assignment-source");
         }
         var sources = Offers(request).Where(offer => offer.Semantics.ManaAbility && offer.Semantics.ManaAmount > 0
                 && offer.Semantics.Affordability != ActionAffordability.Unavailable

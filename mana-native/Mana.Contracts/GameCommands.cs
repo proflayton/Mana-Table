@@ -22,7 +22,7 @@ public abstract record GameCommand
             ChooseOptions value => ValidChoices(value.Choices), OrderOptions value => ValidChoices(value.Choices),
             AllocateAmounts value => !value.Amounts.IsDefault && value.Amounts.All(amount => amount >= 0),
             EnterText value => value.Value != null,
-            UseOfferedAction value => Present(value.Card) && Present(value.ActionId),
+            UseOfferedAction value => Present(value.Card) && Present(value.ActionId) && (value.ManaOutput == null || value.ManaOutput.IsValid()),
             PlaceFromHand value => Present(value.Card) && Present(value.AbilityId),
             IgnorePriorityAbility value => Present(value.AbilityId), RestorePriorityAbility value => Present(value.AbilityId),
             PassForNow value => Present(value.YieldToken),
@@ -75,7 +75,10 @@ public sealed record ChooseNumber(string GameId, string DecisionId, int Value) :
 public sealed record EnterText(string GameId, string DecisionId, string Value) : DecisionCommand(GameId, DecisionId);
 public sealed record AllocateAmounts(string GameId, string DecisionId, ImmutableArray<int> Amounts) : DecisionCommand(GameId, DecisionId);
 public sealed record SkipAllocation(string GameId, string DecisionId) : DecisionCommand(GameId, DecisionId);
-public sealed record UseOfferedAction(string GameId, string DecisionId, string Card, string ActionId) : DecisionCommand(GameId, DecisionId);
+public sealed record UseOfferedAction(string GameId, string DecisionId, string Card, string ActionId) : DecisionCommand(GameId, DecisionId)
+{
+    public ManaOutputChoice? ManaOutput { get; init; }
+}
 public sealed record PlaceFromHand(string GameId, string DecisionId, string Card, string AbilityId) : DecisionCommand(GameId, DecisionId);
 public sealed record IgnorePriorityAbility(string GameId, string DecisionId, string AbilityId) : DecisionCommand(GameId, DecisionId);
 public sealed record RestorePriorityAbility(string GameId, string AbilityId) : GameCommand(GameId);

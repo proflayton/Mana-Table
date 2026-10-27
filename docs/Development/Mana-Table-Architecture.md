@@ -45,6 +45,11 @@ only the identity generation it previously observed. This ordering also covers
 rules rollback which restores a card to a hidden zone without a movement event;
 later source catalogs and effect graphs must reference that same published
 occurrence. Historical activity keeps its copied event-time identities.
+Play-access projection uses the exact audience publication's disclosed-card map,
+including its existing visual identities. If a library search temporarily hides
+another seat's top card, the same publication also suppresses that card's access
+reference before allocating routes. The entitlement can return when that face is
+published again; an independent visibility guess must not leave detached access.
 Consuming a choice also ends its temporary hidden-card window in the resolving
 receipt, before a queued rules callback removes temporary display permissions.
 Persistent rules grants, such as looking at the library's top card, remain
@@ -117,6 +122,19 @@ the inspected card's mana symbols. Its witness cannot create an action handle,
 tap a source, prove adjusted affordability or disable manual play. The existing
 source, pool and Auto-pay commands retain their own current permissions. This
 keeps human previews, AI strategy and the rules provider behind distinct boundaries.
+
+A funding witness also retains its chosen production bundle at execution.
+`UseOfferedAction.ManaOutput` is optional, closed data checked against a Known,
+finite alternative of that exact current mana action before any tap or input
+mutation and again on queued execution. The Java projection retains the matching
+per-mana-part choices. It cannot grant a producer, combine alternatives or invent
+mana. Human source use without an output intent opens the actual color choice,
+including a two-color source, rather than silently selecting the first needed
+color. A nested color choice carries read-only `ManaColorPaymentContext` from
+its still-owned parent: actual payer, exact remaining counted bill and original
+paying card. The ordinary decision source remains the producer. Only the child's
+offered color indices are executable; this context grants no parent Pay, Cancel,
+source activation or pool-spending command and expires with that choice.
 
 `AiDecisionReplayCase` captures one seat's authorized knowledge and evaluation
 allowance. Offline `AiDecisionReplay` reuses the scoped session and exact policy

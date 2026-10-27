@@ -63,6 +63,7 @@ internal sealed partial class TableApplication
 
         DrawPortraitTurnControls();
         if (turnPassRequest != null) { DrawPortraitPriority(decisionDock); return; }
+        if (DrawManaColorDecision(state)) return;
         if (ManaPaymentSurface) { decisionPanelBounds = Rectangle.Empty; return; }
         if (DrawCounterPaymentDecision(state)) return;
         if (!SelectingActionTarget && DrawOptionalDecision(state)) return;

@@ -85,7 +85,8 @@ public static class CardViews
         .Concat(DecisionFaces(state.Decision?.Payload))
         .Concat(state.Decision?.Context.Source?.Card is { } source ? [source] : []);
     private static IEnumerable<Card> DecisionFaces(DecisionPayload? payload) => payload switch {
-        OptionsPayload options => ChoiceFaces(options.Selection),
+        OptionsPayload options => ChoiceFaces(options.Selection)
+            .Concat(options.ManaPaymentContext?.Source?.Card is { } paying ? [paying] : []),
         OrderingPayload order => ChoiceFaces(order.Selection),
         AbilityChoicePayload ability => ChoiceFaces(ability.Selection),
         RevealPayload reveal => reveal.Cards.Select(face => face.Card),

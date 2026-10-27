@@ -26,6 +26,56 @@ public class AutomatedPaymentJourneyTest {
     private static final Gson JSON = new Gson();
     private static final Path RESOURCES = Path.of("../forge-gui/res");
 
+    @DataProvider public Object[][] flexibleOutputStage() { return new Object[][] {{false}, {true}}; }
+
+    @Test(dataProvider = "flexibleOutputStage", groups = "canonical-interaction", timeOut = 90000)
+    public void aPlannedRedAlternativeSurvivesOrdinaryPriorityOrPaymentActivationAndCastsABlueRedCommander(boolean prefloat) throws Exception {
+        if (StaticData.instance() == null) EngineResources.load(RESOURCES);
+        var human = MatchTable.human(deck("Human", "Island"), "Commander", "Human");
+        var policyDeck = deck("Policy", "Island");
+        policyDeck.getOrCreate(DeckSection.Commander).clear();
+        policyDeck.getOrCreate(DeckSection.Commander).add(StaticData.instance().getCommonCards().getCard("Balmor, Battlemage Captain"));
+        var bot = MatchTable.automated(policyDeck, "Commander", "Policy");
+        bot.addExtraCardsOnBattlefield(List.of(StaticData.instance().getCommonCards().getCard("Temple of Epiphany"),
+                StaticData.instance().getCommonCards().getCard("Island"), StaticData.instance().getCommonCards().getCard("Island"),
+                StaticData.instance().getCommonCards().getCard("Island")));
+        try (var table = new MatchTable("Commander", List.of(human, bot), RESOURCES,
+                Files.createTempDirectory("automated-planned-red-output"))) {
+            int policyId = table.game.getPlayers().get(1).getId();
+            var driver = new Driver(table, policyId); table.start();
+            var main = driver.until(input -> input.playerId == policyId && isPriority(input)
+                    && input.state.get("activePlayerId").getAsInt() == policyId && text(input.state, "phaseKey").equals("MAIN1"));
+            if (prefloat) {
+                driver.use(main, card(main.state, "Battlefield", "Temple of Epiphany"), "activate", Map.of("R", 1));
+                main = driver.until(input -> input.playerId == policyId && isPriority(input)
+                        && viewer(input.state).getAsJsonObject("mana").get("R").getAsInt() == 1);
+            }
+            driver.use(main, card(main.state, "Command", "Balmor, Battlemage Captain"), "cast");
+            var payment = driver.until(input -> input.playerId == policyId && text(input.prompt, "inputType").startsWith("InputPayMana"));
+            if (prefloat) {
+                assertEquals(payment.prompt.getAsJsonArray("usablePoolManaColors").toString(), "[\"R\"]");
+                driver.answer(payment, Map.of("action", "spendPoolMana", "manaColor", "R"));
+            } else {
+                var observation = JSON.toJsonTree(table.automatedSeat(policyId).automatedObservation()).getAsJsonObject();
+                Files.createDirectories(Path.of("target/rules-regressions"));
+                Files.writeString(Path.of("target/rules-regressions/automated-temple-before-output.json"), JSON.toJson(observation));
+                driver.use(payment, card(payment.state, "Battlefield", "Temple of Epiphany"), "activate", Map.of("R", 1));
+            }
+            payment = driver.until(input -> input.playerId == policyId && text(input.prompt, "inputType").startsWith("InputPayMana")
+                    && input.prompt.getAsJsonArray("unpaidManaParts").equals(JSON.toJsonTree(List.of(Map.of("symbol", "{U}", "count", 1)))));
+            assertTrue(card(payment.state, "Battlefield", "Temple of Epiphany").get("tapped").getAsBoolean());
+            driver.use(payment, card(payment.state, "Battlefield", "Island"), "activate", Map.of("U", 1));
+            var resolved = driver.until(input -> input.playerId == policyId && isPriority(input) && input.state.getAsJsonArray("stack").isEmpty()
+                    && zone(viewer(input.state), "Battlefield").getAsJsonArray("cards").asList().stream()
+                    .anyMatch(value -> text(value.getAsJsonObject(), "name").equals("Balmor, Battlemage Captain")));
+            assertEquals(text(card(resolved.state, "Battlefield", "Balmor, Battlemage Captain"), "power"), "1");
+            assertEquals(zone(viewer(resolved.state), "Battlefield").getAsJsonArray("cards").asList().stream()
+                    .map(value -> value.getAsJsonObject()).filter(value -> text(value, "name").equals("Island") && value.get("tapped").getAsBoolean()).count(), 1L);
+            assertEquals(viewer(resolved.state).getAsJsonObject("mana").get("U").getAsInt(), 0);
+            assertEquals(viewer(resolved.state).getAsJsonObject("mana").get("R").getAsInt(), 0);
+        }
+    }
+
     @Test(groups = "canonical-interaction", timeOut = 90000)
     public void exactPoolPaymentCastsARealSpellAndRejectsAnUnavailableColor() throws Exception {
         if (StaticData.instance() == null) EngineResources.load(RESOURCES);
@@ -310,12 +360,17 @@ public class AutomatedPaymentJourneyTest {
             throw new AssertionError("Timed out awaiting payment publication: " + table.automatedSeat(policyId).state());
         }
         void use(Input input, JsonObject source, String kind) {
+            use(input, source, kind, null);
+        }
+        void use(Input input, JsonObject source, String kind, Map<String, Integer> output) {
             var query = request(input, Map.of("key", text(source, "key")));
             var catalog = JSON.toJsonTree(input.session.sourceActions(query)).getAsJsonObject();
             var action = catalog.getAsJsonArray("actions").asList().stream().map(value -> value.getAsJsonObject())
                     .filter(value -> text(value, "kind").equals(kind)).findFirst().orElseThrow(() ->
                             new AssertionError("Missing " + kind + " for " + source + "; catalog=" + catalog + "; state=" + input.state));
-            answer(input, Map.of("action", "useSourceAction", "key", text(source, "key"), "actionId", text(action, "id")));
+            var answer = new LinkedHashMap<String, Object>(Map.of("action", "useSourceAction", "key", text(source, "key"), "actionId", text(action, "id")));
+            if (output != null) answer.put("manaOutput", Map.of("colors", output));
+            answer(input, answer);
         }
     }
 }

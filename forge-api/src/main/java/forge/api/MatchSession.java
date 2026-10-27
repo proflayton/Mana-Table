@@ -125,6 +125,7 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
         final Set<String> poolManaColors = new HashSet<>();
         List<Map<String, Object>> optionSemantics = List.of();
         SpellAbility announcedAbility;
+        InputPayMana colorPaymentOwner;
         String announcedSymbol = "";
         Map<String, Object> cachedDomain;
         long cachedDomainVersion = -1;
@@ -732,6 +733,9 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
             Integer placementHandId = null;
             SourceActions.Catalog sourceCatalog = null;
             SourceActions.Action sourceAction = null;
+            ManaOutputChoice manaOutput = ManaOutputChoice.parse(request.get("manaOutput"));
+            if (manaOutput != null && !action.equals("useSourceAction"))
+                throw new IllegalArgumentException("A mana output belongs to an exact current source action");
             switch (action) {
                 case "spendPoolMana" -> {
                     if (!(next.input instanceof InputPayMana mana)) throw new IllegalArgumentException("Mana can only pay the current payment");
@@ -764,6 +768,9 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
                     // resolution and canPlay run on the owned input thread.
                     if (sourceAction == null || sourceCatalog.version() != sourceActionVersion.get())
                         throw new IllegalArgumentException("That source action is no longer available. Read the current card again.");
+                    // Read-only validation precedes consuming the decision or
+                    // touching express choices, mana, or the physical source.
+                    if (manaOutput != null) manaOutput.choicesFor(sourceAction.ability());
                 }
                 case "useHandPlacement" -> {
                     if (!(next.input instanceof InputPassPriority) || human.getInputQueue().getInput() != next.input
@@ -848,8 +855,15 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
                         case "card" -> human.selectCard(chosenCard, null, CARD_CLICK);
                         case "useSourceAction" -> {
                             synchronized (gate) {
-                                restorePriority = !sourceActionCurrent(next, chosenSourceCatalog, chosenSourceAction)
-                                        || !next.input.selectAbility(chosenSourceAction.ability());
+                                restorePriority = !sourceActionCurrent(next, chosenSourceCatalog, chosenSourceAction);
+                                if (!restorePriority) {
+                                    var ability = chosenSourceAction.ability();
+                                    var output = manaOutput == null ? null : ManaProductionProjection.outputChoices(ability, manaOutput.colors());
+                                    restorePriority = manaOutput != null && output == null;
+                                    if (!restorePriority) restorePriority = !(next.input instanceof InputPayMana payment
+                                            ? payment.selectAbility(ability, output)
+                                            : ((InputPassPriority)next.input).selectAbility(ability, output));
+                                }
                             }
                         }
                         case "useHandPlacement" -> restorePriority = !human.useHandPlacement(chosenPlacementAbility, chosenPlacementHandId);
@@ -1137,6 +1151,7 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
         var players = new ArrayList<Object>();
         var registeredPlayers = game.getRegisteredPlayers();
         var allPlayers = registeredPlayers.stream().map(Player::getView).toList();
+        var publishedAccessCards = new HashMap<PlayAccessProjection.PublishedOccurrence, String>();
         var statesByPlayer = new LinkedHashMap<Integer, List<PublicPlayerStates.State>>();
         for (Player player : registeredPlayers) statesByPlayer.put(player.getId(), PublicPlayerStates.of(player));
         for (PlayerView player : allPlayers) {
@@ -1151,6 +1166,9 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
                     for (CardView card : cards) if (isVisibleInZone(card, zone, viewer)) {
                     var state = cardState(card, prompt);
                     visible.add(state);
+                    if ((zone == ZoneType.Library || zone == ZoneType.Graveyard || zone == ZoneType.Exile)
+                            && !Boolean.TRUE.equals(state.get("faceDown")) && state.get("visualId") instanceof String visualId && !visualId.isBlank())
+                        publishedAccessCards.put(new PlayAccessProjection.PublishedOccurrence(player.getId(), zone, card), visualId);
                     if (zone == ZoneType.Library && card.equals(cards.get(0))) topCard = state;
                 }
                 var zoneState = map("name", zone.name(), "count", player.getZoneSize(zone), "cards", visible);
@@ -1206,11 +1224,16 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
             projectedPrompt.remove("payerId"); projectedPrompt.remove("unpaidMana");
             projectedPrompt.remove("unpaidManaParts");
             projectedPrompt.remove("fundingContext"); projectedPrompt.remove("usablePoolManaColors");
+            projectedPrompt.remove("manaPaymentContext");
             prompt.poolManaColors.clear();
             if (prompt.input instanceof InputPayMana payment && sourceInputCurrent(prompt)) {
                 projectedPrompt.putAll(ManaPaymentFacts.describe(payment, this::semanticCardId));
                 prompt.poolManaColors.addAll(payment.getUsablePoolManaColors().stream().map(MagicColor::toShortString).toList());
             }
+            if (prompt.colorPaymentOwner != null && prompt.kind.equals("choice")
+                    && "colorChoice".equals(prompt.prompt.get("context"))
+                    && human.getInputQueue().getInput() == prompt.colorPaymentOwner)
+                projectedPrompt.put("manaPaymentContext", colorPaymentContext(prompt.colorPaymentOwner));
             if (prompt.input instanceof InputPassPriority) {
                 projectedPrompt.put("priorityAbilities", priorityAbilities(human.getPriorityAbilities(), prompt));
                 projectedPrompt.put("priorityAlternative", priorityAlternative(prompt.input));
@@ -1227,7 +1250,7 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
                 "states", PublicStates.of(forge.game.PublicTableStates.snapshot(game)),
                 "playAccesses", playAccess.project(human.getPlayer(), allPlayers,
                         prompt != null && prompt.input instanceof InputPassPriority && sourceInputCurrent(prompt) ? prompt.input : null,
-                        human::getCard, activity::visualId),
+                        human::getCard, activity::visualId, publishedAccessCards),
                 "ignoredPriorityAbilities", priorityAbilities(human.getIgnoredPriorityAbilities(), prompt),
                 "result", result, "notices", List.copyOf(notices), "activity", activityFrame.entries());
         String quietToken = quietYield.observe(snapshot, activity.quietSequence());
@@ -1678,6 +1701,7 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
     private MagicColor.Color chooseColor(String message, CardView source, List<MagicColor.Color> colors) {
         var next = choicePrompt("choice", message, colors, 1, 1, false, color -> ((MagicColor.Color) color).getTranslatedName());
         next.prompt.put("context", "colorChoice");
+        if (human.getInputQueue().getInput() instanceof InputPayMana payment) next.colorPaymentOwner = payment;
         boolean visible = source != null && source.canBeShownTo(viewer);
         String name = visible && !source.isFaceDown() ? source.getCurrentState().getName() : "this card";
         next.prompt.put("title", "Choose a color for " + name);
@@ -1689,6 +1713,22 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
                 map("index", i, "label", colors.get(i).getTranslatedName(), "mana", "{" + colors.get(i).getShortName() + "}")).toList());
         var answer = await(next);
         return colors.get(answer.getAsJsonArray("choices").get(0).getAsInt());
+    }
+
+    private Map<String, Object> colorPaymentContext(InputPayMana payment) {
+        var ability = payment.getPaidForAbility();
+        var source = ability == null || ability.getHostCard() == null ? null : ability.getHostCard().getView();
+        boolean visible = source != null && source.canBeShownTo(viewer);
+        Map<String, Object> card = visible ? cardState(source, null) : null;
+        if (card != null) {
+            card.put("key", ""); card.put("selectable", false); card.put("highlighted", false);
+        }
+        String sourceId = card == null ? "" : Objects.toString(card.get("visualId"), "");
+        if (sourceId.isEmpty() && card != null) sourceId = Objects.toString(card.get("combatId"), "");
+        return map("payerId", payment.getPayer().getId(), "unpaidManaParts", ManaPaymentFacts.parts(payment.getRemainingManaCost()),
+                "source", map("cardId", sourceId, "card", card,
+                        "controllerId", visible && source.getController() != null ? source.getController().getId() : null,
+                        "zone", visible && source.getZone() != null ? source.getZone().name() : ""));
     }
 
     private CounterType chooseCounterTypeForPayment(String message, CardView permanent, int amount,

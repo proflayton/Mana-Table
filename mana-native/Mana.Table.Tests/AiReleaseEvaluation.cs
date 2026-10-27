@@ -104,9 +104,9 @@ internal static class AiReleaseEvaluation
             await using var engine = new ForgeEngine(launch);
             await engine.InitializeAsync();
             goldens = await AiReleaseGoldens.RunAsync(engine, launch.Profile, Check);
-            Check(goldens.Length == 6 && goldens.All(result => result.Passed),
-                "All six real whole-seat policy journeys completed with their required observed outcomes.");
-            if (goldens.Length != 6 || goldens.Any(result => !result.Passed))
+            Check(goldens.Length == AiReleaseGoldens.ExpectedCount && !goldens.IsEmpty && goldens.All(result => result.Passed),
+                "All declared real whole-seat policy journeys completed with their required observed outcomes.");
+            if (goldens.Length != AiReleaseGoldens.ExpectedCount || goldens.IsEmpty || goldens.Any(result => !result.Passed))
                 throw new InvalidOperationException("A golden journey failed; do not reuse its engine for release games.");
             games = await AiEngineCampaign.RunAsync(engine, launch.Profile, AiCampaignLimits.Release, Check,
                 launch with { Jar = productionJar });
@@ -130,7 +130,7 @@ internal static class AiReleaseEvaluation
         }
         bool automatedReady = runtime != null && failure == null && gates.Count > 0 && gates.All(gate => gate.Passed);
         bool allGames = games.Length == 4;
-        bool allGoldens = goldens.Length == 6 && goldens.All(result => result.Passed);
+        bool allGoldens = goldens.Length == AiReleaseGoldens.ExpectedCount && !goldens.IsEmpty && goldens.All(result => result.Passed);
         bool qualityFindings = games.Any(game => !game.Evidence.Findings.IsEmpty
             || game.Evidence.NumericInvestments.Any(investment => investment.ZeroXNonpositiveBodyReview));
         bool stateIntegrity = runtime != null && failure == null && allGames
@@ -140,8 +140,8 @@ internal static class AiReleaseEvaluation
                 && game.Evidence.StaleAuthorityProbes.Select(probe => probe.SeatId).Distinct().Count() == 4
                 && game.Evidence.StaleAuthorityProbes.All(probe => probe.ExplicitlyRejected));
         var categories = new[] {
-            new { id = "provider-conformance", status = runtime == null ? "failed" : goldens.IsEmpty ? "not-run" : goldens.Length == 6 && goldens.All(result => result.Passed) ? "passed" : "failed", evidence = "Runtime identities and real provider journeys; exact-source CI provider/rules reports remain a separate required check." },
-            new { id = "policy-continuations", status = goldens.IsEmpty ? "not-run" : !allGoldens || qualityFindings ? "failed" : allGames ? "passed" : "not-run", evidence = "Six real whole-seat policy journeys and sampled payment/zero-body review findings; a finding requires review rather than a universal legality judgment." },
+            new { id = "provider-conformance", status = runtime == null ? "failed" : goldens.IsEmpty ? "not-run" : allGoldens ? "passed" : "failed", evidence = "Runtime identities and real provider journeys; exact-source CI provider/rules reports remain a separate required check." },
+            new { id = "policy-continuations", status = goldens.IsEmpty ? "not-run" : !allGoldens || qualityFindings ? "failed" : allGames ? "passed" : "not-run", evidence = "All declared real whole-seat policy journeys and sampled payment/zero-body review findings; a finding requires review rather than a universal legality judgment." },
             new { id = "whole-game-completion", status = games.IsEmpty ? "not-run" : allGames && games.All(game => game.MechanicalFailure == null && game.Continuation.Conclusive && game.Outcome is { CapturedBeforeCleanup: true, VerifiedNaturalOutcome: true } outcome && outcome.Seats.Length == 4 && outcome.Seats.All(seat => seat.Developed)) ? "passed" : "failed", evidence = "Four cyclic varied-deck rotations; every seat develops and outcomes are captured before cleanup." },
             new { id = "state-authority-lifecycle", status = games.IsEmpty ? "not-run" : stateIntegrity ? "passed" : "failed", evidence = "Independent mechanical/privacy/public-parity, exact fresh stale challenges and diagnostic-write checks; strategic review findings are classified under policy." },
             new { id = "human-gameplay-review", status = "pending", evidence = "Review the exact candidate in actual play; automated correctness cannot supply approval." }

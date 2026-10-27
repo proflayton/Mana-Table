@@ -19,12 +19,16 @@ additional evidence for the exact candidate, alongside required source CI,
 native packaging, UI, installer and update checks. A passing short smoke game
 does not prove a whole game can finish or that an opponent is enjoyable.
 
-The manual `--evaluate-ai-release` profile runs six controlled native policy
+The manual `--evaluate-ai-release` profile runs seven controlled native policy
 journeys and four natural games using the varied deck manifests in cyclic seat
 rotations. It reuses one JVM. Each game has a 160-turn/180-second ceiling; a
 ceiling is inconclusive, never a replacement for the engine's pre-cleanup
 outcome. Preserve the first failure or cutoff. Do not retry until a sample
 passes, lower its target, or change the budget to relabel it green.
+The flexible-output journey specifically checks that the unmodified policy
+chooses red from a blue/red land for an actual blue/red bill, then pays the
+remaining blue and observes the same commander resolve. A solver's hypothetical
+assignment alone is insufficient evidence of the produced color.
 
 Retain `ai-release-evaluation.json`, the full source revision, engine artifact
 manifest, exact runtime hashes and private trace/replay locations. Record the

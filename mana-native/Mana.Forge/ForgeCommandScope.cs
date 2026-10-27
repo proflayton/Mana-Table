@@ -76,7 +76,9 @@ internal sealed class ForgeCommandScope
             case AllocateAmounts value: args["values"] = value.Amounts; break;
             case SkipAllocation: Action("skip"); break;
             case UseOfferedAction value:
-                Action("useSourceAction"); args["key"] = value.Card; args["actionId"] = value.ActionId; break;
+                Action("useSourceAction"); args["key"] = value.Card; args["actionId"] = value.ActionId;
+                if (value.ManaOutput != null) args["manaOutput"] = value.ManaOutput;
+                break;
             case PlaceFromHand value:
                 Action("useHandPlacement"); args["handKey"] = value.Card; args["abilityId"] = value.AbilityId; break;
             case IgnorePriorityAbility value:

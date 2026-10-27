@@ -3,6 +3,7 @@ using System.IO.Compression;
 using System.Text.Json;
 using Mana.AI;
 using Mana.Contracts;
+using Mana.Forge;
 
 namespace Mana.Table;
 
@@ -331,19 +332,36 @@ internal sealed class AiCampaignDiagnostics : IDisposable
     internal void PreserveFailure(Exception error, string stage, int completedSteps,
         ImmutableArray<AutomatedSeatObservation> observations)
     {
+        bool rejectedWireCaptured = false;
+        for (Exception? cause = error; cause != null; cause = cause.InnerException) {
+            if (cause is not ForgeAutomatedObservationException rejected) continue;
+            try {
+                File.WriteAllText(Path.Combine(directory, "private-rejected-observation.json"), JsonSerializer.Serialize(new {
+                    formatVersion = 1, audience = "host-private", stage = "adapter-decode", authority = "none",
+                    role = "rejected raw wire batch; not a current scope, executable command or policy replay",
+                    raw = rejected.RejectedWire
+                }));
+                rejectedWireCaptured = true;
+            } catch (Exception secondary) { diagnosticErrors.Add("rejected-wire-export: " + secondary); }
+            break;
+        }
         try { if (latestCase != null) ExportCase("last-before-mechanical-failure", latestCase); }
         catch (Exception secondary) { diagnosticErrors.Add("last-policy-request-export: " + secondary); }
         try {
             File.WriteAllText(Path.Combine(directory, "private-failure-manifest.json"),
-                DescribeFailure(error, stage, completedSteps, observations, latestCase, rawObservationsCaptured, diagnosticErrors).GetRawText());
+                DescribeFailure(error, stage, completedSteps, observations, latestCase, rawObservationsCaptured, diagnosticErrors, rejectedWireCaptured).GetRawText());
         } catch (Exception secondary) { diagnosticErrors.Add("failure-manifest-export: " + secondary); }
     }
 
     internal static JsonElement DescribeFailure(Exception error, string stage, int completedSteps,
         ImmutableArray<AutomatedSeatObservation> observations, AiDecisionReplayCase? lastPolicyRequest,
-        bool rawCaptured, IEnumerable<string> secondaryErrors) => JsonSerializer.SerializeToElement(new {
+        bool rawCaptured, IEnumerable<string> secondaryErrors, bool rejectedWireCaptured = false) => JsonSerializer.SerializeToElement(new {
             formatVersion = 1, audience = "host-private", kind = "raw-observation-failure-context", authority = "none",
             stage, completedSteps, exception = error.ToString(),
+            rejectedWireObservation = new {
+                file = "private-rejected-observation.json", captured = rejectedWireCaptured, capturePhase = "adapter-decode",
+                role = "rejected raw wire batch; not an executable command or policy replay"
+            },
             rawObservation = new {
                 file = "private-final-observations.json", captured = rawCaptured, capturePhase = "before-teardown",
                 role = "last-completed-owned-observation-batch; not an executable command or policy replay",
@@ -354,7 +372,7 @@ internal sealed class AiCampaignDiagnostics : IDisposable
             lastPolicyRequest = lastPolicyRequest == null ? null : new {
                 file = Path.Combine("private-replays", "last-before-mechanical-failure.json"),
                 role = "last-policy-evaluated-request; not the rejected-observation artifact",
-                note = "This request may precede a frame-validation failure. Use the raw observation batch to reproduce validation.",
+                note = "This request can precede the failure. Adapter decode failures require the separate rejected-wire artifact; the last completed batch may be valid.",
                 lastPolicyRequest.Id, gameId = lastPolicyRequest.State.Id, seatId = lastPolicyRequest.State.ViewerId,
                 decisionId = lastPolicyRequest.State.Decision?.Id, revision = lastPolicyRequest.State.Revision,
                 offerVersion = lastPolicyRequest.Domain.Version

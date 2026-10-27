@@ -294,7 +294,7 @@ does not satisfy this quality gate.
 The [release gate matrix](Mana-Table-Testing.md#ai-release-evaluation) separates
 provider conformance, policy continuations, whole-game completion, state and
 authority integrity, and human gameplay review. The manual release evaluator
-runs six controlled journeys followed by four cyclic seat rotations of the
+runs seven controlled journeys followed by four cyclic seat rotations of the
 varied decks in one initialized JVM. Every rotation must reach an engine outcome
 before cleanup, within the 160-turn/180-second ceilings. A cutoff remains
 inconclusive; the 45-second smoke profile is not a whole-game release test.
@@ -334,6 +334,13 @@ unknown or budget result. Base action costs can be reduced or replaced, so a
 base-cost shortfall cannot certify that a cast is unavailable. The remaining
 bill in an actual payment input is stronger evidence. Source dependencies,
 spending restrictions and replacements which are not modeled remain unknown.
+The chosen finite output travels with the exact current offered mana action as
+optional `ManaOutputChoice`; the adapter validates that whole bundle before
+mutation and the rules controller executes its matching production-part choices.
+Planning red from a dual land and then letting an express shortcut choose blue
+would break this boundary. The flexible-output golden follows that exact case
+through the real remaining bill and resolved commander. Human source actions
+without this intent retain the actual typed color choice and its owning bill.
 Known output and a guaranteed consuming tap can still establish a nominal
 capacity upper bound for a paid filter. Insufficient capacity rules out that
 nominal assignment; sufficient capacity does not solve its dependencies.

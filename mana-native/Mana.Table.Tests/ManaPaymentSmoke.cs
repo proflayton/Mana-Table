@@ -29,6 +29,8 @@ internal sealed class ManaPaymentSmoke : ITableAutomation
     private MouseState mouse;
     private double lastStep;
     private Mana.Renderer.Pose? initialRingPose;
+    private TableHit? previousManaColor;
+    private int beforeColorChoiceReplies;
     private bool finished;
     public string? ExpectedClick => null;
     public bool ClickAccepted { get; set; }
@@ -63,6 +65,16 @@ internal sealed class ManaPaymentSmoke : ITableAutomation
             }
             foreach (string description in driver.checks) check(true, description);
             CheckCountedBills(directory, check);
+            var child = ManaPaymentScenario.Snapshot(9);
+            var options = (OptionsPayload)child.Decision!.Payload;
+            var controls = new DecisionDockControlFacts { Automatic = false };
+            check(DecisionDockPresentation.From(child, controls).RequiredSurface == DecisionRequiredSurface.Source
+                && DecisionDockPresentation.From(child with { Decision = child.Decision with {
+                    Payload = options with { ManaPaymentContext = null } } }, controls).RequiredSurface == DecisionRequiredSurface.Gallery,
+                "Only an explicit owned payment context uses the source-orb surface; an ordinary same-symbol choice retains its general choice gallery");
+            check(!GameCommandPermissions.Allows(child, new PayMana(child.Id, child.Decision.Id))
+                && !GameCommandPermissions.Allows(child, new CancelPayment(child.Id, child.Decision.Id)),
+                "A child's read-only original bill grants neither payment nor cancellation authority");
         } catch (Exception error) { driver.Save(error.ToString()); throw; }
     }
 
@@ -231,7 +243,62 @@ internal sealed class ManaPaymentSmoke : ITableAutomation
                 "An uncertain funding preview keeps the engine's real manual action reachable instead of claiming the spell cannot be played");
             Check(!view.ManaJourney!.Bounds.Intersects(view.DisplayedPose(ManaPaymentScenario.Dual)!.Value.Bounds),
                 "An uncertain cost caption preserves the actual resource face even when it cannot suggest a confident source witness");
-            Capture("07-uncertain-manual-route"); Save(null); finished = true; window?.Exit();
+            Capture("07-uncertain-manual-route"); Load(8);
+        });
+        Wait(() => view.ManaJourney is { SourceId: ManaPaymentScenario.ColorSpell, Payment: true }
+            && view.DisplayedPose(ManaPaymentScenario.Temple) != null
+            && (window == null || lab.State.Viewer!.Zones.SelectMany(zone => zone.Cards).All(card => view.Art(card) != null)
+                && view.Art(lab.State.Decision!.Context.Source!.Card!) != null), () => {
+            Check(view.ManaJourney!.Symbols.SequenceEqual(["{U}", "{R}"]),
+                "A two-color bill stays on the pending paying card before activating a flexible source");
+            MoveCard(ManaPaymentScenario.Temple);
+        }); Click();
+        Wait(() => ReaderReady(ManaPaymentScenario.Temple) && view.Hits.Count(hit => hit.Id == "read-card-action") == 1, () => {
+            Capture("08-single-flexible-source"); MoveHit("read-card-action");
+        }); Click();
+        Wait(() => lab.StageIndex == 9 && !view.Busy && view.ManaColors.Count == 2
+            && view.ManaJourney is { SourceId: ManaPaymentScenario.ColorSpell, SourceZone: "Stack" }
+            && SettledTapped(ManaPaymentScenario.Temple), () => {
+            Check(view.DecisionDock?.RequiredSurface == DecisionRequiredSurface.Source
+                && view.ManaJourney!.Symbols.SequenceEqual(["{U}", "{R}"])
+                && view.Frame!.Cards.Count(card => CardViews.Identity(card.Card) == ManaPaymentScenario.ColorSpell) == 1
+                && view.ManaColors.All(choice => choice.ProducerId == ManaPaymentScenario.Temple),
+                "A genuine owned mana-color callback keeps the original pending spell and exact bill while its offered orbs remain attached to the actual producer");
+            Check(!view.Hits.Any(hit => hit.Id is "mana-auto" or "mana-cancel" or "confirm" or "cancel" or "open-decision")
+                && view.ManaColors.All(choice => !choice.Bounds.Intersects(view.ManaJourney!.Bounds)
+                    && !choice.Bounds.Intersects(view.ManaJourney.SourceBounds)) && CaptionClearsSeat() && ProducerStemClearsBill(),
+                "The child color choice has no parent payment controls or modal and preserves the paying card, symbols and portrait space");
+            var producerBounds = view.DisplayedPose(ManaPaymentScenario.Temple)!.Value.Bounds;
+            Check(view.ManaColors.Average(choice => choice.Bounds.Center.X) >= producerBounds.Left
+                && view.ManaColors.Average(choice => choice.Bounds.Center.X) <= producerBounds.Right,
+                "The color group is centered on its actual tapped producer, rather than visually attributing the choice to a neighboring land");
+            previousManaColor = view.Hits.Single(hit => hit.Id == "mana-color:11");
+            beforeColorChoiceReplies = lab.ManaPaymentReplies.Count;
+            Capture("09-color-at-producer"); MoveHit("mana-color:11");
+        });
+        Step(() => { }); Step(() => {
+            Check(lab.StageIndex == 9 && lab.ManaPaymentReplies.Count == beforeColorChoiceReplies
+                && view.ManaColors.Select(choice => choice.Mana).SequenceEqual(["{U}", "{R}"]),
+                "Hovering a current mana-color orb previews its exact offered symbol without selecting it or spending mana");
+            Capture("10-hover-red-choice");
+        }); Click();
+        Wait(() => lab.StageIndex == 10 && !view.Busy && view.ManaJourney?.Symbols.SequenceEqual(["{U}"]) == true, () => {
+            Check(lab.ManaPaymentReplies[^1] is ChooseOptions { Choices: var picked } && picked.SequenceEqual([11])
+                && view.ManaJourney!.SourceId == ManaPaymentScenario.ColorSpell && view.ManaColors.Count == 0
+                && view.Hits.Any(hit => hit.Id == "mana-auto")
+                && view.Frame!.Cards.Count(card => CardViews.Identity(card.Card) == ManaPaymentScenario.ColorSpell) == 1,
+                "Clicking red sends its current offered index directly, retires the child orbs and restores the same spell's exact remaining blue bill");
+            Check(previousManaColor != null && !view.Activate(previousManaColor)
+                && lab.ManaPaymentReplies.Count == beforeColorChoiceReplies + 1,
+                "A retained color-orb gesture cannot answer the replacement payment scope");
+            Capture("11-red-paid-blue-remains"); MoveCard(ManaPaymentScenario.Island);
+        }); Click();
+        Wait(() => ReaderReady(ManaPaymentScenario.Island) && view.Hits.Any(hit => hit.Id == "read-card-action"), () => MoveHit("read-card-action")); Click();
+        Wait(() => lab.StageIndex == 11 && !view.Busy && SettledTapped(ManaPaymentScenario.Island), () => {
+            Check(view.ManaJourney == null && view.Match!.Stack.Single().Card?.VisualId == ManaPaymentScenario.ColorSpell
+                && lab.ManaPaymentReplies.Count == 3 && lab.ManaPaymentReplies.Count(reply => reply is ChooseOptions) == 1,
+                "The remaining blue source turns and the same paid spell reaches the stack after one activation, one scoped color choice and one final source activation");
+            Capture("12-both-colors-paid"); Save(null); finished = true; window?.Exit();
         });
     }
 
@@ -240,6 +307,14 @@ internal sealed class ManaPaymentSmoke : ITableAutomation
     private bool SettledTapped(string id) => view.Frame!.Cards.FirstOrDefault(card => card.Id == id) is { Focused: false } card
         && Math.Abs(MathHelper.WrapAngle(card.Display.Angle - card.Rest.Angle)) < .01f
         && Vector2.Distance(card.Display.Size, card.Rest.Size) < 1;
+    private bool ProducerStemClearsBill()
+    {
+        var source = view.DisplayedPose(ManaPaymentScenario.Temple)!.Value;
+        var area = view.DecisionPanelBounds;
+        var end = new Mana.Renderer.Pose(area.Center.ToVector2(), area.Size.ToVector2()).EdgeToward(source.Center, 5);
+        var start = source.EdgeToward(end, 5);
+        return Enumerable.Range(0, 65).All(step => !view.ManaJourney!.Bounds.Contains(Vector2.Lerp(start, end, step / 64f)));
+    }
     private bool CaptionClearsSeat()
     {
         if (view.ManaJourney is not { } journey) return false;
@@ -261,13 +336,13 @@ internal sealed class ManaPaymentSmoke : ITableAutomation
     private void Check(bool passed, string description) { if (!passed) throw new InvalidOperationException(description); checks.Add(description); }
     private void Capture(string name)
     {
-        observations.Add(new { name, lab.StageIndex, view.ManaJourney, sources = view.ManaSources.ToArray(), view.Now });
+        observations.Add(new { name, lab.StageIndex, view.ManaJourney, sources = view.ManaSources.ToArray(), colors = view.ManaColors.ToArray(), view.Now });
         if (window == null) return;
         using var stream = File.Create(Path.Combine(view.Profile, name + ".png")); window.Surface.SaveAsPng(stream, window.Surface.Width, window.Surface.Height);
         window.CaptureWindow(Path.Combine(view.Profile, name + "-window.png"));
     }
     private void Save(string? error) => File.WriteAllText(Path.Combine(view.Profile, "mana-payment-results.json"), JsonSerializer.Serialize(new {
-        passed = error == null, error, checks, observations,
+        passed = error == null, error, checks, observations, currentManaJourney = view.ManaJourney, currentManaColors = view.ManaColors.ToArray(),
         replies = recordedReplies.Concat(lab.ManaPaymentReplies).Select(reply => new {
             kind = reply.GetType().Name, payload = JsonSerializer.SerializeToElement(reply, reply.GetType())
         }).ToArray(),

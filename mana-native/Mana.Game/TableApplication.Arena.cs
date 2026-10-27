@@ -16,7 +16,7 @@ internal sealed partial class TableApplication
     {
         attachmentBadges.Clear(); attachmentConnections.Clear();
         battlefieldLabels.Clear(); battlefieldStatsBounds.Clear(); counterAnchors.Clear();
-        choiceOrderBadges.Clear();
+        choiceOrderBadges.Clear(); manaColorPaint.Clear();
         stackRows.Clear(); prioritySeats.Clear();
         changeCalloutBounds = null; highlightedChangeTargets.Clear(); highlightedChangeSource = null;
         var state = match!;
@@ -264,14 +264,16 @@ internal sealed partial class TableApplication
     {
         var state = match!;
         var decision = decisions.Presentation?.Payload == null ? null : state.Decision;
+        var paymentSource = decision?.Payload is OptionsPayload { ManaPaymentContext: { Source: { } parent } }
+            ? parent : decision?.Payload is PaymentPayload ? decision.Context.Source : null;
         // A source reference is context, not a stack object. In particular a
         // priority snapshot can retain the source of the preceding interaction.
         // Only real stack entries belong in the stack presentation.
-        if (state.Stack.Length == 0 && (decision?.Payload is PriorityPayload
+        if (state.Stack.Length == 0 && paymentSource?.Card == null && (decision?.Payload is PriorityPayload
             || decision?.Context.Source?.Zone == "Battlefield")) return;
         // These journeys point to the existing source and actual library piles.
         // Do not create another card copy in the center of the table.
-        if (DecisionLayout.UsesSourceWorkspace(decision)) {
+        if (paymentSource?.Card == null && DecisionLayout.UsesSourceWorkspace(decision)) {
             if (state.Stack.Length > 0) { DrawStackFlow(); DrawPendingSpellCards(); }
             return;
         }
@@ -280,18 +282,19 @@ internal sealed partial class TableApplication
         // remains the source on the table; do not manufacture a stack copy.
         if (state.Stack.Length == 0 && (AbilityActionPending || SelectingActionTarget)) return;
         if (state.Stack.Length == 0 && decision?.Context.Source?.Card == null) return;
-        bool payingSource = decision is { Payload: PaymentPayload, Context.Source.Card: not null }
+        bool payingSource = paymentSource?.Card != null
             || !SelectingActionTarget && decision is { Payload: EntitySelectionPayload { Players.Length: > 0 }, Context.Source.Card: not null };
         if (state.Stack.Length > 0 && !payingSource) { DrawStackFlow(); DrawPendingSpellCards(); return; }
         canvas.Glow(new(807, 485), new(430, 165), Blue * .17f);
         var resting = TableWorld.Card(new(6, 108), new(245, 126));
         canvas.CardFrame(resting, Gold * .12f, 1);
         var stackCards = state.Stack.Take(3).Select(s => s.Card ?? new Card { Name = s.Name, Text = s.Text, Type = s.Ability ? "Ability" : "Spell" }).ToArray();
-        if (payingSource) stackCards = [decision!.Context.Source?.Card!];
+        if (payingSource) stackCards = [paymentSource?.Card ?? decision!.Context.Source?.Card!];
         if (stackCards.Length == 0 && decision?.Context.Source?.Card is { } source) stackCards = [source];
         for (int i = stackCards.Length - 1; i >= 0; i--) {
             var reported = stackCards[i];
-            var card = decision is { } sourceDecision && (payingSource || state.Stack.Length == 0)
+            var card = paymentSource?.Card is { } paying ? CardViews.Current(state, paying)
+                : decision is { } sourceDecision && (payingSource || state.Stack.Length == 0)
                 ? CardViews.Source(state, sourceDecision) ?? stackCards[i] : CardViews.Current(state, stackCards[i]);
             bool alsoInZone = state.Players.Any(p => p.Zones.Any(z => z.Cards.Any(c => CardIdentity(c) == CardIdentity(card))));
             string identity = payingSource && !alsoInZone ? CardIdentity(card) : payingSource ? "payment:" + decision!.Id

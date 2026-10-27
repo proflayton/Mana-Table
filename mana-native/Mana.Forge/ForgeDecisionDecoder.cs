@@ -33,6 +33,8 @@ internal static class ForgeDecisionDecoder
                 || Present(prompt, "counterPaymentChoice") && !(task == "choice" && purpose == "" && !ordered)) throw Invalid();
             if (Present(prompt, "disclosedCards") && (task != "choice" || purpose != "" || ordered
                 || Present(prompt, "counterPaymentChoice") || Present(prompt, "libraryCards"))) throw Invalid();
+            if (Present(prompt, "manaPaymentContext") && (task != "choice" || purpose != "" || ordered
+                || Present(prompt, "counterPaymentChoice") || Present(prompt, "disclosedCards") || Present(prompt, "libraryCards"))) throw Invalid();
             if (task != "mana" && (Present(prompt, "unpaidMana") || Present(prompt, "unpaidManaParts") || Present(prompt, "fundingContext")
                 || Present(prompt, "usablePoolManaColors") || Present(prompt, "payerId"))) throw Invalid();
             if (Present(prompt, "unpaidMana") && Present(prompt, "unpaidManaParts")) throw Invalid();
@@ -64,7 +66,9 @@ internal static class ForgeDecisionDecoder
                 "confirmation" => new ConfirmationPayload(Ok(), Flag(prompt, "cancelEnabled") ? Cancel() : null, SearchOffer(prompt, players)),
                 "choice" when purpose == "abilities" => new AbilityChoicePayload(Selection(prompt)),
                 "choice" when ordered => new OrderingPayload(Selection(prompt)),
-                "choice" => new OptionsPayload(Selection(prompt), CounterChoice(prompt, players)),
+                "choice" => new OptionsPayload(Selection(prompt), CounterChoice(prompt, players)) {
+                    ManaPaymentContext = ManaColorPayment(prompt, players)
+                },
                 "reveal" => new RevealPayload(Reveal(prompt)),
                 "number" => new NumberPayload(Text(prompt, "initial"), kind == "text" ? OptionalNumberRange(prompt) : NumberRange(prompt)),
                 "text" => new TextPayload(Text(prompt, "initial")),
@@ -83,6 +87,20 @@ internal static class ForgeDecisionDecoder
             ? value.GetString()! : throw Invalid()).ToImmutableArray();
         if (values.Length > 128 || values.Any(value => string.IsNullOrWhiteSpace(value) || value.Length > 32)) throw Invalid();
         return values;
+    }
+
+    private static ManaColorPaymentContext? ManaColorPayment(JsonElement prompt, IReadOnlySet<int>? players)
+    {
+        if (!Present(prompt, "manaPaymentContext")) return null;
+        var value = Field(prompt, "manaPaymentContext"); Object(value);
+        if (!Present(value, "unpaidManaParts")) throw Invalid();
+        int payer = Integer(value, "payerId");
+        var context = value.Deserialize<ManaColorPaymentContext>(FundingJson) ?? throw Invalid();
+        ValidateCard(context.Source?.Card);
+        if (players == null || !players.Contains(payer)
+            || context.Source?.ControllerId is { } controller && !players.Contains(controller)
+            || context.Source?.Card is { } card && (card.Key.Length != 0 || card.Selectable || card.Highlighted)) throw Invalid();
+        return context with { UnpaidManaParts = PaymentParts(value) };
     }
 
     private static ImmutableArray<ManaBillPart> PaymentParts(JsonElement prompt)
@@ -257,8 +275,12 @@ internal static class ForgeDecisionDecoder
     private static Card? ReadCard(JsonElement node, string key)
     {
         var card = Optional<Card>(node, key);
-        if (card != null && (card.Key == null || card.VisualId == null || card.CombatId == null || card.Name == null)) throw Invalid();
+        ValidateCard(card);
         return card;
+    }
+    private static void ValidateCard(Card? card)
+    {
+        if (card != null && (card.Key == null || card.VisualId == null || card.CombatId == null || card.Name == null)) throw Invalid();
     }
     private static T? Optional<T>(JsonElement node, string key) where T : class => !Present(node, key) ? null
         : Field(node, key).Deserialize<T>(ForgeSnapshotDecoder.Json) ?? throw Invalid();

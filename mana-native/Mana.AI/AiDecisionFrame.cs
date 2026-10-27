@@ -1,5 +1,6 @@
 using System.Collections.Immutable;
 using Mana.Contracts;
+using Mana.Planning;
 
 namespace Mana.AI;
 
@@ -114,7 +115,9 @@ public sealed class AiDecisionFrame
         // choose the offered route explicitly, including while paying mana.
         if (command is PlayCard or ActivateCard or UseManaSource) return false;
         if (command is UseOfferedAction offered)
-            return SourceActions.Any(set => set.SourceCardKey == offered.Card && set.Actions.Any(action => action.Id == offered.ActionId));
+            return SourceActions.Any(set => set.SourceCardKey == offered.Card && set.Actions.Any(action => action.Id == offered.ActionId))
+                && (offered.ManaOutput == null || Domain.Actions.Any(action => action.ActionId == offered.ActionId && action.ManaAbility
+                    && ManaFundingFacts.MatchesOutput(action.Production, offered.ManaOutput)));
         if (command is SpendPoolMana pool) return Domain.PoolManaColors.Contains(pool.Color);
         if (command is PassPriority or AutoPassPriority or PassTurn or PassForNow)
             return ActionCoverage == AiActionCoverage.Complete;

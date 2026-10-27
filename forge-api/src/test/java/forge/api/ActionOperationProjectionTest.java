@@ -164,6 +164,60 @@ public class ActionOperationProjectionTest {
     }
 
     @Test(timeOut = 90000)
+    public void finiteManaOutputWitnessesPreserveEachAndIndependentPartsWithoutChangingTheAbility() throws Exception {
+        try (var fixture = new Fixture()) {
+            var temple = fixture.ability("Temple of Epiphany", ApiType.Mana);
+            assertEquals(ManaProductionProjection.outputChoices(temple, Map.of("R", 1)), Map.of(temple.getManaPart(), "R"));
+            assertNull(ManaProductionProjection.outputChoices(temple, Map.of("G", 1)));
+            assertEquals(temple.getManaPart().getExpressChoice(), "", "An output query cannot commit a color");
+            var signet = fixture.ability("Simic Signet", ApiType.Mana);
+            assertEquals(ManaProductionProjection.outputChoices(signet, Map.of("U", 1, "G", 1)), Map.of(),
+                    "A simultaneous fixed bundle is not converted into a color choice");
+            assertNull(ManaProductionProjection.outputChoices(signet, Map.of("U", 1)));
+            var birds = fixture.ability("Birds of Paradise", ApiType.Mana);
+            assertEquals(ManaProductionProjection.outputChoices(birds, Map.of("G", 1)), Map.of(birds.getManaPart(), "G"));
+            var host = fixture.add("Gilded Lotus", ZoneType.Battlefield, 0);
+            var root = AbilityFactory.getAbility("AB$ Mana | Cost$ T | Produced$ Combo U R | Amount$ 2 | Each$ 3", host);
+            var sub = AbilityFactory.getAbility("DB$ Mana | Produced$ Combo W G | Amount$ 1", host);
+            root.setSubAbility((forge.game.spellability.AbilitySub)sub); root.setActivatingPlayer(fixture.actor());
+            var desired = Map.of("U", 3, "R", 3, "G", 1);
+            var production = ManaProductionProjection.describe(root);
+            var choices = ManaProductionProjection.outputChoices(root, desired);
+            assertNotNull(choices);
+            assertEquals(choices.get(root.getManaPart()), "R U", "Each multiplies two decisions into six mana, rather than expanding six decision tokens");
+            assertEquals(choices.get(sub.getManaPart()), "G", "A nested part keeps its own independent choice");
+            assertEquals(root.getManaPart().getExpressChoice(), ""); assertEquals(sub.getManaPart().getExpressChoice(), "");
+            assertEquals(ManaProductionProjection.describe(root), production);
+            var parsed = ManaOutputChoice.parse(new Gson().toJsonTree(Map.of("colors", desired)));
+            assertEquals(parsed.choicesFor(root), choices);
+            for (var malformed : List.of(Map.of("colors", Map.of("R", -1)), Map.of("colors", Map.of("r", 1)),
+                    Map.of("colors", Map.of("R", 1.5)), Map.of("colors", Map.of("R", "1")),
+                    Map.of("colors", Map.of("R", 1024, "U", 1)), Map.of("colors", Map.of()),
+                    Map.of("colors", Map.of("R", 1), "action", "cast")))
+                assertThrows(IllegalArgumentException.class, () -> ManaOutputChoice.parse(new Gson().toJsonTree(malformed)));
+            var restricted = fixture.ability("Jegantha, the Wellspring", ApiType.Mana);
+            assertNull(ManaProductionProjection.outputChoices(restricted, Map.of("W", 1, "U", 1, "B", 1, "R", 1, "G", 1)),
+                    "An unsupported production route cannot accept an exact output intent");
+
+            // This actual under-construction script is a focused rules edge,
+            // not a claim that the varied Commander campaign plays this card.
+            var skyscraper = fixture.add("Under-Construction Skyscraper", ZoneType.Battlefield, 0);
+            var abzan = AbilityFactory.getAbility(skyscraper.getSVar("ABManaAbzan"), skyscraper);
+            abzan.setActivatingPlayer(fixture.actor());
+            assertEquals(abzan.getManaPart().getComboColors(abzan), "W B G C");
+            var colorless = ManaProductionProjection.outputChoices(abzan, Map.of("C", 1));
+            assertEquals(colorless, Map.of(abzan.getManaPart(), "C"));
+            assertNull(ManaProductionProjection.outputChoices(abzan, Map.of("U", 1)));
+            colorless.forEach(forge.game.spellability.AbilityManaPart::setExpressChoice);
+            ApiType.Mana.getSpellEffect().resolve(abzan);
+            assertEquals(fixture.actor().getManaPool().getAmountOfColor((byte)forge.card.mana.ManaAtom.COLORLESS), 1,
+                    "An explicit C alternative remains colorless even when it is last in the current palette");
+            assertEquals(fixture.actor().getManaPool().totalMana(), 1);
+            assertEquals(abzan.getManaPart().getExpressChoice(), "", "The ordinary effect clears its one-use selection");
+        }
+    }
+
+    @Test(timeOut = 90000)
     public void currentSourceCountersGiveBoundedNominalManaWithoutPayingOrFollowingCoupledEffects() throws Exception {
         try (var fixture = new Fixture()) {
             var chalice = fixture.add("Everflowing Chalice", ZoneType.Battlefield, 0);

@@ -44,7 +44,7 @@ internal sealed partial class TableApplication
     }
 
     private Rectangle DecisionActionArea(Rectangle anchor, int requestedWidth, int requestedHeight, bool reserveBattlefield = false,
-        IReadOnlyList<Rectangle>? additionalReservations = null)
+        IReadOnlyList<Rectangle>? additionalReservations = null, int minimumWidth = 320, bool boundedWorkspace = false)
     {
         var source = anchor; source.Inflate(12, 12);
         var occupied = new List<Rectangle> { source, new(1240, 550, 350, 245) };
@@ -64,6 +64,6 @@ internal sealed partial class TableApplication
                 occupied.Add(new(anchor.Right + Mana.Table.Presentation.CardPresentationController.StudyDetailsGap, anchor.Top,
                     Mana.Table.Presentation.CardPresentationController.StudyDetailsWidth, anchor.Height));
         }
-        return DecisionWorkspaceLayout.Place(anchor, requestedWidth, requestedHeight, occupied, reserveBattlefield);
+        return DecisionWorkspaceLayout.Place(anchor, requestedWidth, requestedHeight, occupied, reserveBattlefield || boundedWorkspace, minimumWidth);
     }
 }

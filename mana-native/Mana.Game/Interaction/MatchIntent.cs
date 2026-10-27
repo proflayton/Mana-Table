@@ -47,6 +47,7 @@ internal abstract record MatchIntent : UiIntent
     internal sealed record SelectChoice(int Index) : MatchIntent;
     internal sealed record ChooseAbility(int Index) : MatchIntent;
     internal sealed record ChooseCounterPayment(int Index) : MatchIntent;
+    internal sealed record ChooseManaColor(int Index) : MatchIntent;
     internal sealed record FocusInput(bool Filter) : MatchIntent;
     internal sealed record AdjustNumber(int Delta) : MatchIntent;
     internal sealed record ConfirmValue : MatchIntent;

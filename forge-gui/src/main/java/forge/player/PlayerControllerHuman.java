@@ -2089,14 +2089,9 @@ public class PlayerControllerHuman extends PlayerController implements IGameCont
         if (remembered != null) {
             return remembered;
         }
-        final byte result;
-        if (choices.size() > 2) {
-            result = getGui().chooseColor(message, CardView.get(c), choices).getColorMask();
-        } else {
-            final int idxChosen = InputConfirm.confirm(this, CardView.get(c), message, true, choices.stream().map(MagicColor.Color::getTranslatedName).collect(Collectors.toList()))
-                    ? 0 : 1;
-            result = choices.get(idxChosen).getColorMask();
-        }
+        // Every genuine color selection preserves the same typed source and
+        // options. Two colors are not an unrelated yes/no confirmation.
+        final byte result = getGui().chooseColor(message, CardView.get(c), choices).getColorMask();
 
         macros().addRememberedAction(new ColorChoiceAction(result));
         return result;

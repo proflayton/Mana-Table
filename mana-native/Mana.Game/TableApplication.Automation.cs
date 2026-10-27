@@ -33,6 +33,7 @@ internal sealed partial class TableApplication
         internal IReadOnlyList<StackRowPaint> StackRows => game.stackRows;
         internal ManaJourneyPaint? ManaJourney => game.manaJourneyPaint;
         internal IReadOnlyList<ManaSourcePaint> ManaSources => game.manaSourcePaint;
+        internal IReadOnlyList<ManaColorPaint> ManaColors => game.manaColorPaint;
         internal string? ReferencePreviewCardId => game.pendingPreviewCardId;
         internal Rectangle? ReferencePreviewBounds => game.pendingPreviewBounds;
         internal IReadOnlyDictionary<int, Rectangle> PrioritySeats => game.prioritySeats;

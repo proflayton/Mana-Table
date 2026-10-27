@@ -68,6 +68,9 @@ internal sealed partial class TableApplication
             case MatchIntent.ChooseCounterPayment choice when match?.Decision is { Payload: OptionsPayload { CounterPayment: { } payment } } decision
                 && payment.Options.Any(option => option.Index == choice.Index):
                 Send(new ChooseOptions(match.Id, decision.Id, [choice.Index])); break;
+            case MatchIntent.ChooseManaColor choice when match?.Decision is { Payload: OptionsPayload { ManaPaymentContext: not null } options } decision
+                && options.Selection.Choices.Any(option => option.Index == choice.Index):
+                Send(new ChooseOptions(match.Id, decision.Id, [choice.Index])); break;
             case MatchIntent.ChooseAbility choice when match?.Decision is { } decision && decision.Payload is AbilityChoicePayload:
                 SubmitAbilityChoice(match, decision, choice.Index); break;
             case MatchIntent.FocusInput input: textFocus = true; decisions.Filtering = input.Filter; break;

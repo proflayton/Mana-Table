@@ -95,6 +95,15 @@ internal static class ManaFundingWireChecks
                     Funding: { Knowledge: SemanticKnowledge.Unknown } } }
                 && decoded.Actions.Single().CostPreview!.Funding.Sources.Single().Routes.Single().Eligibility == SemanticKnowledge.Known,
             "The production source-catalog decoder consumes actual string-enum cost, funding and eligibility facts without replacing the original action handle");
+        var repeatedRead = ForgeEngine.DecodeSourceActions(JsonSerializer.SerializeToElement(sourceWire.DeepClone()));
+        check(HeadlessEngineSmoke.SameSourceActions(decoded.Actions, repeatedRead.Actions),
+            "Repeated independent source reads preserve every action and funding fact despite freshly allocated immutable collections");
+        var changedFunding = (JsonObject)sourceWire.DeepClone();
+        changedFunding["actions"]![0]!["costPreview"]!["funding"]!["sources"]![0]!["routes"]![0]!["production"]!["alternatives"]![0]!["colors"]!["G"] = 2;
+        var changedRead = ForgeEngine.DecodeSourceActions(JsonSerializer.SerializeToElement(changedFunding));
+        check(changedRead.Actions.Single().Id == decoded.Actions.Single().Id
+                && !HeadlessEngineSmoke.SameSourceActions(decoded.Actions, changedRead.Actions),
+            "Stable opaque action handles cannot certify read purity when the offered funding output changes");
         foreach (bool routeHandle in new[] { false, true }) {
             var unsafeSource = (JsonObject)sourceWire.DeepClone();
             var preview = (JsonObject)unsafeSource["actions"]![0]!["costPreview"]!;
@@ -138,6 +147,27 @@ internal static class ManaFundingWireChecks
             var invalid = (JsonObject)countedWire.DeepClone(); invalid["prompt"]!["unpaidManaParts"] = invalidParts;
             check(Reject(invalid), "Counted bill rows reject nonpositive counts, duplicate symbols and extra executable metadata without discarding the actual payment context");
         }
+        var sourceState = state with { Players = state.Players.Select(player => player.Id == 0 ? player with {
+            Zones = player.Zones.Select(zone => zone.Name == "Battlefield" ? zone with { Cards = zone.Cards.Select(card => card with {
+                Key = "physical-mana-key", Selectable = true }).ToImmutableArray() } : zone).ToImmutableArray()
+        } : player).ToImmutableArray() };
+        var scope = new ForgeCommandScope(); scope.Observe(sourceState);
+        var intent = new UseOfferedAction(state.Id, state.Decision.Id, "physical-mana-key", "mana-route") {
+            ManaOutput = new(ImmutableDictionary<string, int>.Empty.Add("G", 1)) };
+        var encoded = JsonSerializer.SerializeToNode(scope.Encode(intent), Wire)!;
+        check(encoded["action"]!.GetValue<string>() == "useSourceAction" && encoded["key"]!.GetValue<string>() == "physical-mana-key"
+                && encoded["actionId"]!.GetValue<string>() == "mana-route" && encoded["manaOutput"]!["colors"]!["G"]!.GetValue<int>() == 1,
+            "Native transport preserves the selected output bundle as a closed typed argument on the original scoped source action");
+        check(!scope.Encode(intent with { ManaOutput = null }).ContainsKey("manaOutput"),
+            "An ordinary explicit human source action omits output intent and retains the rules engine's genuine production choice");
+        bool unsafeOutput = false;
+        try { _ = JsonSerializer.Deserialize<ManaOutputChoice>("""{"colors":{"G":1},"sourceCardKey":"invented"}""", Wire); }
+        catch (JsonException) { unsafeOutput = true; }
+        check(unsafeOutput, "The output-choice wire rejects additional source authority instead of accepting an arbitrary provider argument bag");
+        scope.Observe(sourceState with { Decision = sourceState.Decision! with { Id = "replacement-payment" } });
+        bool staleOutput = false;
+        try { scope.Encode(intent); } catch (EngineCommandRejectedException) { staleOutput = true; }
+        check(staleOutput, "A valid output bundle cannot revive its consumed decision or bypass the current native command scope");
     }
 
     private static JsonObject Observation(int payer = 0)

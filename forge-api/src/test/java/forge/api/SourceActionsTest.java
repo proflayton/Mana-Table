@@ -17,6 +17,76 @@ import static org.testng.Assert.*;
 public class SourceActionsTest {
     private static final Gson JSON = new Gson();
 
+    @Test(groups = "canonical-interaction", timeOut = 90000)
+    public void anExplicitFlexibleManaSourceLeavesItsRealColorChoiceToTheHuman() throws Exception {
+        try (var game = new RulesScenario("source-actions-explicit-mana-color", Map.of(0,
+                List.of("Temple of Epiphany", "Island", "Island", "Island")), "Island", "Balmor, Battlemage Captain")) {
+            var main = main(game);
+            var commander = query(game, main, card(main.state(), "Command", "Balmor, Battlemage Captain"));
+            assertTrue(game.answer(main, invoke(commander, castAction(commander))));
+            var payment = game.until(next -> next.seat() == 0 && text(next.prompt(), "inputType").startsWith("InputPayMana"));
+            var temple = query(game, payment, card(payment.state(), "Battlefield", "Temple of Epiphany"));
+            var ability = temple.getAsJsonArray("actions").get(0).getAsJsonObject();
+            HeadlessPlatform.query(game.table, () -> null);
+            var before = game.state(0);
+            for (var malformed : List.of(Map.of("colors", Map.of("G", 1)), Map.of("colors", Map.of("R", 0)),
+                    Map.of("colors", Map.of("R", 1025)), Map.of("colors", Map.of("R", 1), "actionId", "invented"))) {
+                var answer = new java.util.LinkedHashMap<String, Object>(invoke(temple, ability));
+                answer.put("manaOutput", malformed);
+                assertThrows(IllegalArgumentException.class, () -> game.table.seat(0).action(request(payment, answer)));
+                assertEquals(game.state(0), before, "An invalid or unoffered output cannot consume the input, tap its source or spend mana");
+            }
+            assertTrue(game.answer(payment, invoke(temple, ability)));
+            var choice = game.until(next -> next.seat() == 0 && text(next.prompt(), "context").equals("colorChoice"));
+            var options = choice.prompt().getAsJsonArray("choices").asList().stream().map(value -> value.getAsJsonObject()).toList();
+            var bill = choice.prompt().getAsJsonObject("manaPaymentContext");
+            assertNotNull(bill, "The genuine color chooser retains the actual parent cost without borrowing a past prompt");
+            assertEquals(bill.get("payerId"), choice.state().get("viewerId"));
+            assertEquals(bill.getAsJsonArray("unpaidManaParts"), payment.prompt().getAsJsonArray("unpaidManaParts"));
+            var paidFor = bill.getAsJsonObject("source");
+            assertEquals(text(paidFor, "cardId"), text(paidFor.getAsJsonObject("card"), "visualId"),
+                    "A cost source not yet on the published stack links only its existing authorized readonly portrait");
+            assertEquals(text(paidFor.getAsJsonObject("card"), "name"), "Balmor, Battlemage Captain");
+            assertEquals(text(paidFor.getAsJsonObject("card"), "key"), "");
+            assertFalse(paidFor.getAsJsonObject("card").get("selectable").getAsBoolean());
+            assertFalse(paidFor.getAsJsonObject("card").get("highlighted").getAsBoolean());
+            assertFalse(choice.prompt().has("usablePoolManaColors"), "Read-only nested context cannot mint pool-payment gestures");
+            assertEquals(options.stream().map(value -> text(value, "mana")).collect(java.util.stream.Collectors.toSet()), java.util.Set.of("{U}", "{R}"),
+                    "Explicitly selecting the flexible ability must not silently guess blue from the current UR bill");
+            Files.writeString(game.evidence.resolve("actual-human-color-choice.json"), JSON.toJson(choice.state()));
+            int red = options.stream().filter(value -> text(value, "mana").equals("{R}")).findFirst().orElseThrow().get("index").getAsInt();
+            assertTrue(game.answer(choice, Map.of("action", "choice", "choices", List.of(red))));
+            var blue = game.until(next -> next.seat() == 0 && text(next.prompt(), "inputType").startsWith("InputPayMana")
+                    && card(next.state(), "Battlefield", "Temple of Epiphany").get("tapped").getAsBoolean());
+            assertEquals(blue.prompt().getAsJsonArray("unpaidManaParts"), JSON.toJsonTree(List.of(Map.of("symbol", "{U}", "count", 1))));
+            assertFalse(blue.prompt().has("manaPaymentContext"), "The nested context is consumed with its exact color choice");
+            var island = query(game, blue, card(blue.state(), "Battlefield", "Island"));
+            assertTrue(game.answer(blue, invoke(island, island.getAsJsonArray("actions").get(0).getAsJsonObject())));
+            var resolved = game.until(next -> next.seat() == 0 && priority(next) && next.state().getAsJsonArray("stack").isEmpty()
+                    && card(next.state(), "Battlefield", "Balmor, Battlemage Captain") != null);
+            assertEquals(zone(viewer(resolved.state()), "Battlefield").getAsJsonArray("cards").asList().stream()
+                    .map(value -> value.getAsJsonObject()).filter(value -> text(value, "name").equals("Island") && value.get("tapped").getAsBoolean()).count(), 1L);
+            assertThrows(IllegalArgumentException.class, () -> game.table.seat(0).action(request(payment, invoke(temple, ability))));
+        }
+    }
+
+    @Test(groups = "canonical-interaction", timeOut = 90000)
+    public void anOrdinaryPriorityManaColorChoiceCannotInheritAPaymentContext() throws Exception {
+        try (var game = new RulesScenario("source-actions-color-without-payment", Map.of(0, List.of("Temple of Epiphany")), "Island", "Balmor, Battlemage Captain")) {
+            var main = main(game);
+            var temple = query(game, main, card(main.state(), "Battlefield", "Temple of Epiphany"));
+            assertTrue(game.answer(main, invoke(temple, temple.getAsJsonArray("actions").get(0).getAsJsonObject())));
+            var choice = game.until(next -> next.seat() == 0 && text(next.prompt(), "context").equals("colorChoice"));
+            assertFalse(choice.prompt().has("manaPaymentContext"));
+            int red = choice.prompt().getAsJsonArray("choices").asList().stream().map(value -> value.getAsJsonObject())
+                    .filter(value -> text(value, "mana").equals("{R}")).findFirst().orElseThrow().get("index").getAsInt();
+            assertTrue(game.answer(choice, Map.of("action", "choice", "choices", List.of(red))));
+            var floated = game.until(next -> next.seat() == 0 && priority(next)
+                    && viewer(next.state()).getAsJsonObject("mana").get("R").getAsInt() == 1);
+            assertFalse(floated.prompt().has("manaPaymentContext"));
+        }
+    }
+
     @Test(timeOut = 90000)
     public void aQueuedDisplayPublicationIsDistinctFromAReadOnlySourceQuery() throws Exception {
         try (var game = new RulesScenario("source-actions-queued-publication", Map.of(0, List.of("Forest")))) {
@@ -542,7 +612,9 @@ public class SourceActionsTest {
             try {
                 HeadlessPlatform.later(() -> { entered.countDown(); await(release); });
                 assertTrue(entered.await(5, TimeUnit.SECONDS));
-                assertTrue(game.answer(input, invoke(actions, action)));
+                var invocation = new java.util.LinkedHashMap<String, Object>(invoke(actions, action));
+                invocation.put("manaOutput", Map.of("colors", Map.of("C", 2)));
+                assertTrue(game.answer(input, invocation));
                 var concede = new JsonObject(); concede.addProperty("sessionId", text(input.state(), "id"));
                 game.table.seat(1).concede(concede);
                 release.countDown();

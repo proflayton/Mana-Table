@@ -6,9 +6,9 @@ namespace Mana.Table.Presentation;
 // Geometry only: the current scene owner supplies actual occupied rectangles.
 internal static class DecisionWorkspaceLayout
 {
-    internal static Rectangle Place(Rectangle anchor, int requestedWidth, int requestedHeight, IReadOnlyList<Rectangle> occupied, bool bounded)
+    internal static Rectangle Place(Rectangle anchor, int requestedWidth, int requestedHeight, IReadOnlyList<Rectangle> occupied, bool bounded, int minimumWidth = 320)
     {
-        if (bounded) return PlaceWorkspace(anchor, requestedWidth, requestedHeight, occupied);
+        if (bounded) return PlaceWorkspace(anchor, requestedWidth, requestedHeight, occupied, minimumWidth);
         var free = new List<Rectangle> { new(20, 64, 1560, 696) };
         foreach (var obstacle in occupied) {
             for (int index = free.Count - 1; index >= 0; index--) {
@@ -40,10 +40,10 @@ internal static class DecisionWorkspaceLayout
             .ThenByDescending(area => area.Width * area.Height).FirstOrDefault();
     }
 
-    private static Rectangle PlaceWorkspace(Rectangle anchor, int width, int height, IReadOnlyList<Rectangle> occupied)
+    private static Rectangle PlaceWorkspace(Rectangle anchor, int width, int height, IReadOnlyList<Rectangle> occupied, int minimumWidth)
     {
         var viewport = new Rectangle(20, 64, 1560, 696);
-        width = Math.Clamp(width, 320, viewport.Width); height = Math.Clamp(height, 100, viewport.Height);
+        width = Math.Clamp(width, Math.Clamp(minimumWidth, 1, viewport.Width), viewport.Width); height = Math.Clamp(height, 100, viewport.Height);
         Rectangle At(int x, int y) => new(Math.Clamp(x, viewport.Left, viewport.Right - width),
             Math.Clamp(y, viewport.Top, viewport.Bottom - height), width, height);
         long Overlap(Rectangle candidate, long ceiling)
