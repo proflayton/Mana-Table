@@ -22,6 +22,7 @@ internal static class PresentationSmoke
         GameplayFeedbackChecks.Run(Check);
         PublicActivityCursorChecks.Run(Check);
         MatchPresentationLifecycleChecks.Run(Check);
+        ExecutionPresentationChecks.Run(Check);
         DeckInteractionChecks.Run(Check);
         DecisionSessionChecks.Run(Check);
         ImpactFeedbackChecks.Run(Check);

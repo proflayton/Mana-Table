@@ -263,12 +263,12 @@ public class TriggerHandler {
             if ((game.getStack().isFrozen() || holdTrigger) && mode != TriggerType.TapsForMana && mode != TriggerType.ManaAdded) {
                 synchronized (waitingTriggers) {
                     if (waitingTriggers.size() < 9999) {
-                        waitingTriggers.add(new TriggerWaiting(mode, runParams));
+                        waitingTriggers.add(new TriggerWaiting(mode, runParams, game.getExecutions().currentId()));
                         return;
                     }
                 }
             }
-            runWaitingTrigger(new TriggerWaiting(mode, runParams));
+            runWaitingTrigger(new TriggerWaiting(mode, runParams, game.getExecutions().currentId()));
         }
     }
 
@@ -299,6 +299,12 @@ public class TriggerHandler {
     }
 
     private boolean runWaitingTrigger(final TriggerWaiting wt) {
+        try (var execution = game.getExecutions().enterCause(wt.getExecutionParentId())) {
+            return runWaitingTriggerOwned(wt);
+        }
+    }
+
+    private boolean runWaitingTriggerOwned(final TriggerWaiting wt) {
         final Player playerAP = game.getPhaseHandler().getPlayerTurn();
         if (playerAP == null) {
             // This should only happen outside of games, so it's safe to abort.
@@ -532,6 +538,7 @@ public class TriggerHandler {
         }
 
         final WrappedAbility wrapperAbility = new WrappedAbility(regtrig, sa, decider);
+        game.getExecutions().prepare(wrapperAbility);
         //wrapperAbility.setDescription(wrapperAbility.getStackDescription());
         //wrapperAbility.setDescription(wrapperAbility.toUnsuppressedString());
 

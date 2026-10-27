@@ -51,6 +51,9 @@ import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
 
+import static forge.game.ExecutionTracker.Outcome.*;
+import static forge.game.ExecutionTracker.Step.*;
+
 /**
  * <p>
  * SpellAbility_Requirements class.
@@ -78,6 +81,22 @@ public class PlaySpellAbility {
      *            a {@link SpellAbility} object.
      */
     public static boolean playSpellAbility(final PlayerController controller, final Player p, SpellAbility sa) {
+        if (sa.isLandAbility()) return playSpellAbilityOwned(controller, p, sa);
+        sa.setActivatingPlayer(p);
+        var executions = p.getGame().getExecutions();
+        executions.prepare(sa);
+        try (var execution = executions.enter(sa)) {
+            executions.step(sa, CHOICE);
+            boolean played = playSpellAbilityOwned(controller, p, sa);
+            if (!played) executions.complete(sa, sa.isTrigger() ? DECLINED : CANCELLED);
+            return played;
+        } catch (RuntimeException | Error failure) {
+            executions.complete(sa, FAILED);
+            throw failure;
+        }
+    }
+
+    private static boolean playSpellAbilityOwned(final PlayerController controller, final Player p, SpellAbility sa) {
         //FThreads.assertExecutedByEdt(false); //TODO: Find a new home for this.
 
         // Should I be storing state here? It should be the same as last stored state though?
@@ -95,10 +114,12 @@ public class PlaySpellAbility {
         boolean castFaceDown = sa.isCastFaceDown();
         boolean flippedToCast = sa.isSpell() && source.isFaceDown();
 
+        SpellAbility initial = sa;
         sa = chooseOptionalAdditionalCosts(p, sa);
         if (sa == null) {
             return false;
         }
+        p.getGame().getExecutions().continueExecution(initial, sa);
 
         final CardStateName oldState = source.getCurrentStateName();
         source.setSplitStateToPlayAbility(sa);
@@ -581,7 +602,25 @@ public class PlaySpellAbility {
     public final boolean playAbility(final boolean mayChooseTargets, final boolean isFree, final boolean skipStack) {
         final Player player = ability.getActivatingPlayer();
         final Game game = player.getGame();
+        var existing = game.getExecutions().occurrence(ability);
+        boolean continuingResolution = existing != null && existing.step().equals("resolution");
+        game.getExecutions().prepare(ability);
+        try (var execution = game.getExecutions().enter(ability)) {
+            boolean played = playAbilityOwned(mayChooseTargets, isFree, skipStack, continuingResolution);
+            if (!played && !continuingResolution) game.getExecutions().complete(ability, ability.isTrigger() ? DECLINED : CANCELLED);
+            return played;
+        } catch (RuntimeException | Error failure) {
+            game.getExecutions().complete(ability, FAILED);
+            throw failure;
+        }
+    }
+
+    private boolean playAbilityOwned(final boolean mayChooseTargets, final boolean isFree, final boolean skipStack, final boolean continuingResolution) {
+        final Player player = ability.getActivatingPlayer();
+        final Game game = player.getGame();
         boolean refreeze = game.getStack().isFrozen();
+
+        if (!continuingResolution) game.getExecutions().step(ability, CHOICE);
 
         if (!skipStack) {
             if (!refreeze) {
@@ -605,7 +644,9 @@ public class PlaySpellAbility {
                 }
             }
 
+            SpellAbility prior = ability;
             ability = AbilityUtils.addSpliceEffects(ability);
+            game.getExecutions().continueExecution(prior, ability);
         }
 
         // used to rollback
@@ -631,7 +672,9 @@ public class PlaySpellAbility {
         }
 
         if (ability.isSpell() && !c.isCopiedSpell()) {
+            SpellAbility prior = ability;
             ability = GameActionUtil.addExtraKeywordCost(ability);
+            game.getExecutions().continueExecution(prior, ability);
         }
 
         Cost abCost = ability.getPayCosts();
@@ -717,7 +760,9 @@ public class PlaySpellAbility {
             player.getAchievementTracker().onSpellAbilityPlayed(ability);
 
             if (skipStack) {
+                game.getExecutions().step(ability, RESOLUTION);
                 AbilityUtils.resolve(ability);
+                if (!continuingResolution) game.getExecutions().complete(ability, RESOLVED);
                 // Should unfreeze stack (but if it was a RE with a cause better to let it be handled by that)
                 if (!ability.isReplacementAbility()) {
                     game.getStack().unfreezeStack();

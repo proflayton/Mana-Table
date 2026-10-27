@@ -11,6 +11,24 @@ a complete engine/runtime/resource bundle.
 
 ## Canonical interaction coverage
 
+`Mana.Client.Tests` reports ordinary assertion failures and their stack traces to
+standard error, returning exit code 1 instead of leaving an unhandled exception
+to open a Windows crash dialog. Its `--verify-failure-reporting` flag exercises
+that failure boundary; the existing native logic CI step checks the captured
+message and exit code. Local checks should run the built DLL through `dotnet`
+with captured output and isolated artifact/profile paths.
+
+`ExecutionJourneyTest` exercises actual rules-owned activation identities through
+Loch Mare's mana/counter payment, a response, repeated activation, cancellation,
+real ability copies and draw-trigger descendants. `ExecutionWireChecks` rejects
+malformed or dangling projected references. The shared execution cursor and AI
+regressions cover sparse audience filtering, reconnect/gap baselines, parent
+budgets and time spent waiting on another seat. `ExecutionPresentationChecks`
+keeps actual costs/results separate across polls and simultaneous completions.
+The existing real-engine native smoke also performs the activation and replays
+its unchanged authorized snapshots through the production table renderer. These
+checks do not establish human readability or complete causal coverage.
+
 The existing graphics-free `Mana.Client.Tests` runner also checks the `Mana.AI`
 framework. Scripted policies exercise all fifteen typed decision families and
 the same contract permissions, plus source-offer membership, observation/offer

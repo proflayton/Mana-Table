@@ -45,10 +45,12 @@ internal sealed partial class TableApplication
         var area = TableStudyEnabled ? StudyActionArea : new Rectangle(545, 319, 435, 165);
         var heading = new Rectangle(area.X, Math.Max(64, area.Y - 88), area.Width, 28);
         string actor = announcement.ControllerId is { } controller ? StateClarity.PlayerName(match!, controller) : "A player";
-        string verb = announcement.Kind switch { StackActionKind.Spell => "Cast", StackActionKind.ActivatedAbility => "Activated",
+        string verb = announcement.EventKind switch { "resolved" => "Resolved", "cancelled" => "Cancelled", "declined" => "Declined",
+            "countered" => "Countered", "failed" => "Interrupted", "completed" => "Completed", _ => announcement.Kind switch { StackActionKind.Spell => "Cast", StackActionKind.ActivatedAbility => "Activated",
             StackActionKind.TriggeredAbility => "Triggered", _ => announcement.EventKind switch {
-                "cast" => "Cast", "ability" => "Activated", "triggered" => "Triggered", "resolved" => "Resolved", _ => "Action" } };
-        if (announcement.Kind == StackActionKind.TriggeredAbility && announcement.StackId != match!.Stack.FirstOrDefault()?.Id)
+                "cast" => "Cast", "ability" => "Activated", "triggered" => "Triggered", _ => "Action" } } };
+        if (announcement.EventKind is not ("resolved" or "cancelled" or "declined" or "countered" or "failed" or "completed")
+            && announcement.Kind == StackActionKind.TriggeredAbility && announcement.StackId != match!.Stack.FirstOrDefault()?.Id)
             verb = match.Stack.Any(item => item.Id == announcement.StackId) ? "Pending trigger" : "Earlier trigger";
         canvas.Text(verb + " · " + actor + " · " + announcement.Name, heading.X, heading.Y, Gold, .65f, heading.Width, 2, true);
         var detail = new Rectangle(heading.X, heading.Bottom + 3, heading.Width, 48);

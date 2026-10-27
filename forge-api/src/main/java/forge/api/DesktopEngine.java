@@ -23,6 +23,7 @@ public final class DesktopEngine implements AutoCloseable {
     private final CardCatalog catalog;
     private final Path directory;
     private final DeckDocumentSession documents;
+    private final AiDeckCatalog aiDecks;
     private final DeckPlaytests playtests;
     private final SimulationTableFactory simulationTables;
     private Path resources;
@@ -49,6 +50,7 @@ public final class DesktopEngine implements AutoCloseable {
         Files.createDirectories(this.directory);
         playtests = new DeckPlaytests(this.directory);
         documents = new DeckDocumentSession(catalog, this.directory, playtests);
+        aiDecks = new AiDeckCatalog(catalog, documents);
     }
 
     public static void main(String[] args) throws Exception {
@@ -255,8 +257,11 @@ public final class DesktopEngine implements AutoCloseable {
             case "multiplayerReconnect" -> multiplayer().reconnect();
             case "multiplayerReturn" -> multiplayer().returnToLobby();
             case "multiplayerClose" -> multiplayer().close();
-            case "matchOpponents" -> documents.opponents();
-            case "matchSetup" -> documents.setupView(documents.prepareSetup(string(p, "deckId", null), string(p, "commanderId", "")));
+            case "matchOpponents" -> aiDecks.choices(documents.currentFormat());
+            case "matchSetup" -> {
+                var prepared = documents.prepareSetup(string(p, "deckId", null), string(p, "commanderId", ""));
+                yield documents.setupView(prepared, aiDecks.choices(prepared.format()));
+            }
             case "matchStart" -> {
                 var prepared = documents.prepareStart(scope(p), string(p, "commanderId", ""));
                 startMatch(prepared, opponentIds(p), null);
@@ -307,7 +312,7 @@ public final class DesktopEngine implements AutoCloseable {
     private SyncLobby multiplayer() {
         if (multiplayer == null) {
             if (resources == null) { throw new IllegalStateException("Engine resources are still loading"); }
-            multiplayer = new SyncLobby(resources, directory.getParent(), automated);
+            multiplayer = new SyncLobby(resources, directory.getParent(), automated, aiDecks);
         }
         return multiplayer;
     }
@@ -342,16 +347,8 @@ public final class DesktopEngine implements AutoCloseable {
         return localMatch == null ? List.of() : localMatch.automatedSeats();
     }
     private MatchSession.OpponentDeck assignedOpponent(String opponent, String format) throws Exception {
-        if (!opponent.startsWith("deck:")) {
-            MatchSession.validateOpponents(format, List.of(opponent));
-            var deck = MatchSession.aiDeck(opponent, format);
-            return new MatchSession.OpponentDeck(deck, deck.getName());
-        }
-        var saved = documents.loadLobbyDeck(opponent.substring(5));
-        if (!saved.format().equals(format)) throw new IllegalArgumentException("AI decks must use this table's format");
-        var preview = MatchSetup.prepare(saved.deck(), saved.format(), "");
-        if (preview.preview().problem() != null) throw new IllegalArgumentException(preview.preview().problem());
-        return new MatchSession.OpponentDeck(preview.deck(), saved.deck().getName());
+        var deck = aiDecks.load(opponent, format);
+        return new MatchSession.OpponentDeck(deck, deck.getName());
     }
     private MatchSession ownedAutomatedSeat(JsonObject p) {
         int playerId = number(p, "seatId", -1);

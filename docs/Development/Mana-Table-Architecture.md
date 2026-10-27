@@ -11,9 +11,10 @@ point for the Windows client.
 
 ## AI policy boundary
 
-Published releases use Forge's heuristic controller with the Default profile;
-our lobby currently assigns decks through preset/opponent IDs. Deck selection,
-legal rules support and competent strategy are separate concerns. The
+AI seats use `Mana.AI` through the same scoped decisions as human players;
+Forge supplies the rules and current legal choices. The lobby offers bundled
+opponents and validated, committed saved decks through the same seat picker.
+Deck selection, legal rules support and competent strategy are separate concerns. The
 [multiplayer AI investigation](Mana-Table-AI.md) records the observed low-life
 targeting feedback loop, an isolated reproducible probe, and the proposed
 boundary for authorized observations, current choice domains, forecasts and
@@ -442,15 +443,22 @@ objects. The stack is one part of that execution. Mana abilities, paying costs,
 replacement effects and state-based actions also need representation when they
 do not use the stack.
 
-This is the migration target, not an assertion that the existing protocol already
-implements it. Inspection on 25 October found separate identities for
-`MatchIdentities.pendingEffect(SpellAbility)`, numeric stack instances, and
-`GameEventCause`/`MatchIdentities.effect(String)`. Only counter-change events
-currently carry that last cause; ordinary movement, damage and resolution feed
-entries do not form a complete execution trace. Typed decisions and immutable
-snapshots are useful existing boundaries, but they do not supply the missing
-relationship by themselves. Do not add a second client-side system that guesses
-these relationships from names, prompt prose, nearby events or final totals.
+The current source implements the first slice in `ExecutionTracker`: common
+spell/activation preparation, choices, costs, nested mana, stack entry,
+resolution and terminal outcomes, with distinct occurrences for real copies and
+repeated activations. Deferred triggers capture their actual parent when queued.
+The adapter's former pending-effect/counter-cause identity maps and live-stack
+cause search are removed. Current answer scopes and physical card/stack IDs keep
+their separate purposes. This is source-only until its verified release.
+
+`MatchExecutions` admits viewer-filtered occurrences and ordered transitions at
+rules emission. The optional `executions` frame joins current decisions, stack
+entries and committed activity by exact execution reference. The shared client
+cursor baselines reconnects and lost retention windows; filtered sparse sequence
+numbers do not imply missing events. Unmigrated changes retain no fabricated
+execution. This does not claim complete coverage of replacement/state-based or
+all indirect rules paths. Extend the common hooks with observed rules journeys,
+never joins based on names, prompt prose, nearby events or final totals.
 
 The provider must publish the following meanings from their actual rules owners:
 
@@ -473,7 +481,7 @@ private decisions and historical source faces. Observation order and revision
 remain independent of animation time. Reconnection establishes a baseline;
 replaying retained history must not replay commands or fabricate unseen steps.
 
-`Mana.Contracts` will own the immutable, provider-neutral projection. `Mana.Forge`
+`Mana.Contracts` owns the immutable, provider-neutral projection. `Mana.Forge`
 translates actual engine execution into it. `Mana.Client` admits ordered
 observations and current capabilities. `Mana.Game`/`Mana.Renderer` derive source
 emphasis, legal target gestures, travel, counter/resource changes and camera
@@ -482,9 +490,9 @@ The UI should not display the execution as a list of internal steps or another
 explanatory panel. The player's supplied Arena examples show the intended
 surface: a source, affected cards/players, live state and a clear current gesture.
 
-The first migration should follow one real activation through source choice,
+The first migration follows one real activation through source choice,
 mana payment, counter payment, stack insertion, a response, resolution and its
-result. Extend that same journey to cancellation, a copied/repeated trigger and
+result. Its regressions extend that journey to cancellation, a copied/repeated trigger and
 a nested mana activation. Canonical traces must execute the rules engine and
 feed the production presentation path; authored snapshots alone cannot prove
 the relationship. Keep those focused journeys fast. A state/trace assertion can

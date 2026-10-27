@@ -48,8 +48,18 @@ public sealed class AiSeatSession : IDisposable
     private AiProposal.Answer? ready;
     private AiSubmission? submitted;
     private string episode = "";
-    private long episodeStarted, episodeSequence, episodeSeed;
+    private long episodeSequence, episodeSeed;
     private AiWorkBudget work = null!;
+    private readonly Dictionary<string, Allowance> executionAllowances = new(StringComparer.Ordinal);
+    private Allowance? allowance;
+    private Allowance? evaluatingAllowance;
+    private long evaluationStarted;
+    private sealed class Allowance(long seed, int units)
+    {
+        internal long Seed { get; } = seed;
+        internal AiWorkBudget Work { get; } = new(units);
+        internal TimeSpan Elapsed { get; set; }
+    }
     private bool closed;
 
     public AiSeatSession(string gameId, int seatId, IAiPolicy policy, long seed, AiSeatLimits limits, TimeProvider? time = null)
@@ -84,14 +94,26 @@ public sealed class AiSeatSession : IDisposable
             }
             if (frame != null && view.Status is AiSeatStatus.Thinking or AiSeatStatus.Ready)
                 Record(frame, AiDecisionOutcome.Cancelled, ready?.Command, "observation-revoked");
+            FinishActiveTime();
             if (next != null) {
                 watermark = next.Stamp;
                 history.ObserveTurn(next.State.Turn);
                 history.Observe(next.State.Activity);
                 if (episode != next.EpisodeId) {
-                    episode = next.EpisodeId; episodeStarted = time.GetTimestamp();
-                    episodeSeed = AiPolicySeeds.Episode(baseSeed, seatId, ++episodeSequence);
-                    work = new(limits.WorkUnits);
+                    episode = next.EpisodeId;
+                    if (next.ExecutionBudgetRootId.Length > 0) {
+                        if (!executionAllowances.TryGetValue(next.ExecutionBudgetRootId, out allowance)) {
+                            allowance = NewAllowance(); executionAllowances.Add(next.ExecutionBudgetRootId, allowance);
+                        }
+                    } else allowance = NewAllowance();
+                    episodeSeed = allowance.Seed; work = allowance.Work;
+                }
+                // A producing occurrence can finish before a copied ability.
+                // The authoritative frame retains every active occurrence and
+                // its root, even after its completed history leaves the window.
+                if (next.State.Executions != null) {
+                    var liveRoots = ExecutionFrames.LiveBudgetRoots(next.State);
+                    foreach (var root in executionAllowances.Keys.Where(root => !liveRoots.Contains(root)).ToArray()) executionAllowances.Remove(root);
                 }
             }
             cancel = evaluationCancellation; evaluationCancellation = null;
@@ -110,7 +132,7 @@ public sealed class AiSeatSession : IDisposable
                 || completedStamp == frame.Stamp) return Task.FromResult(view);
             if (evaluation is { IsCompleted: false } && evaluatingStamp == frame.Stamp) return evaluation;
             var current = frame;
-            TimeSpan remaining = limits.DecisionTime - time.GetElapsedTime(episodeStarted);
+            TimeSpan remaining = limits.DecisionTime - Elapsed;
             if (remaining <= TimeSpan.Zero || work.Remaining == 0 || history.RouteLimitReached) {
                 Record(current, AiDecisionOutcome.BudgetExceeded, null, "episode-budget");
                 completedStamp = current.Stamp;
@@ -121,6 +143,7 @@ public sealed class AiSeatSession : IDisposable
             var request = new AiDecisionRequest(current, history.Snapshot, episodeSeed, remaining, work);
             view = new(current.Stamp, AiSeatStatus.Thinking);
             long scheduledAt = time.GetTimestamp();
+            evaluatingAllowance = allowance; evaluationStarted = scheduledAt;
             evaluation = Task.Run(() => EvaluateCoreAsync(request, cancel, scheduledAt));
             return evaluation;
         }
@@ -152,8 +175,9 @@ public sealed class AiSeatSession : IDisposable
             if (closed || frame?.Stamp != request.Frame.Stamp || !ReferenceEquals(evaluationCancellation, cancellation))
                 return new(request.Frame.Stamp, AiSeatStatus.Cancelled, "Superseded observation.");
             evaluationCancellation = null;
+            FinishActiveTime();
             completedStamp = request.Frame.Stamp;
-            if (time.GetElapsedTime(episodeStarted) >= limits.DecisionTime) {
+            if (Elapsed >= limits.DecisionTime) {
                 proposal = null; failure = AiSeatStatus.BudgetExceeded; detail = "Decision time exhausted."; reason = "time-budget";
             }
             if (proposal is AiProposal.Unavailable unavailable) {
@@ -183,7 +207,7 @@ public sealed class AiSeatSession : IDisposable
     {
         lock (gate) {
             if (closed || view.Status != AiSeatStatus.Ready || frame == null || ready == null || submitted != null) return null;
-            if (time.GetElapsedTime(episodeStarted) >= limits.DecisionTime || !frame.Allows(ready.Command)) {
+            if (Elapsed >= limits.DecisionTime || !frame.Allows(ready.Command)) {
                 Record(frame, AiDecisionOutcome.BudgetExceeded, ready.Command, "handoff-budget");
                 ready = null; view = new(frame.Stamp, AiSeatStatus.BudgetExceeded); return null;
             }
@@ -194,7 +218,7 @@ public sealed class AiSeatSession : IDisposable
                 if (semantic is { StableId.Length: > 0 }) route = new(frame.State.Turn, source.SourceCardId, semantic.StableId);
             }
             submitted = new(frame.Stamp, frame.Task, ready.Command, ready.ReasonCode,
-                episodeSeed, work.Remaining, time.GetElapsedTime(episodeStarted), route, frame.EpisodeId); ready = null;
+                episodeSeed, work.Remaining, Elapsed, route, frame.EpisodeId); ready = null;
             Record(frame, AiDecisionOutcome.Submitted, submitted.Command, submitted.ReasonCode);
             view = new(frame.Stamp, AiSeatStatus.Submitted);
             return submitted;
@@ -222,7 +246,17 @@ public sealed class AiSeatSession : IDisposable
     }
 
     private void Record(AiDecisionFrame current, AiDecisionOutcome outcome, DecisionCommand? command, string reason) => history.Record(
-        new(current.Stamp, current.Task, policyId, outcome, command, reason, episodeSeed, work.Remaining, time.GetElapsedTime(episodeStarted)) { EpisodeId = current.EpisodeId });
+        new(current.Stamp, current.Task, policyId, outcome, command, reason, episodeSeed, work.Remaining, Elapsed) { EpisodeId = current.EpisodeId });
+
+    private Allowance NewAllowance() => new(AiPolicySeeds.Episode(baseSeed, seatId, ++episodeSequence), limits.WorkUnits);
+    private TimeSpan Elapsed => (allowance?.Elapsed ?? TimeSpan.Zero)
+        + (ReferenceEquals(allowance, evaluatingAllowance) && evaluatingAllowance != null ? time.GetElapsedTime(evaluationStarted) : TimeSpan.Zero);
+    private void FinishActiveTime()
+    {
+        if (evaluatingAllowance == null) return;
+        evaluatingAllowance.Elapsed += time.GetElapsedTime(evaluationStarted);
+        evaluatingAllowance = null;
+    }
 
     public void Dispose()
     {
@@ -230,12 +264,14 @@ public sealed class AiSeatSession : IDisposable
         lock (gate) {
             if (closed) return;
             closed = true; cancel = evaluationCancellation; evaluationCancellation = null;
+            FinishActiveTime();
             if (frame != null && view.Status is AiSeatStatus.Thinking or AiSeatStatus.Ready)
                 Record(frame, AiDecisionOutcome.Cancelled, ready?.Command, "seat-closed");
             if (submitted is { } handoff)
                 history.Record(new(handoff.Stamp, handoff.Task, policyId, AiDecisionOutcome.ExecutionUnknown,
                     handoff.Command, handoff.ReasonCode, handoff.Seed, handoff.RemainingWork, handoff.Elapsed) { EpisodeId = handoff.EpisodeId });
             ready = null; frame = null; submitted = null;
+            executionAllowances.Clear();
             view = new(null, AiSeatStatus.Closed);
         }
         Cancel(cancel);

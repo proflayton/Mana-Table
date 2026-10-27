@@ -334,6 +334,9 @@ public abstract class GameEntity implements GameObject, IIdentifiable {
 
     abstract public boolean canReceiveCounters(final CounterType type);
     abstract public int subtractCounter(final CounterType counterName, final int n, final Player remover);
+    public int subtractCounter(final CounterType counterName, final int n, final Player remover, final SpellAbility cause) {
+        return subtractCounter(counterName, n, remover);
+    }
     abstract public void clearCounters();
 
     public final void addCounter(final CounterType counterType, int n, final Player source, GameEntityCounterTable table) {

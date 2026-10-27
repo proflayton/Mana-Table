@@ -111,8 +111,9 @@ internal static class ImmutableStateChecks
         }
         check(tags.Count == 15 && variants.Select(value => value.GetType()).ToHashSet().SetEquals(
                 typeof(DecisionPayload).GetCustomAttributes<JsonDerivedTypeAttribute>().Select(attribute => attribute.DerivedType))
-            && typeof(Decision).GetProperties().Select(property => property.Name).Order().SequenceEqual(new[] { "Context", "Id", "Payload" }),
-            "Every sealed payload has a unique JSON discriminator and the envelope has no independently writable task or legacy fields");
+            && typeof(Decision).GetProperties().Select(property => property.Name).Order().SequenceEqual(new[] {
+                "Context", "ExecutionId", "ExecutionStep", "Id", "Payload" }),
+            "Every sealed payload has a unique JSON discriminator; the envelope adds only rules occurrence references, with no independent task classifier or legacy fields");
         var numeric = (NumberPayload)JsonSerializer.Deserialize<Decision>(JsonSerializer.Serialize(new Decision("number", new(), new NumberPayload("-4")), json), json)!.Payload;
         check(numeric.Range == null && ((EntitySelectionPayload)variants[6]).Range == null,
             "An unbounded integer textbox and an entity selector without published cardinality retain absent ranges");

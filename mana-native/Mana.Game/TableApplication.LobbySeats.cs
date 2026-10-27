@@ -82,7 +82,7 @@ internal sealed partial class TableApplication
             canvas.Text("This seat is no longer available. Go back to see the current table.", 208, 279, Muted, .95f, 1164, 3);
             return;
         }
-        canvas.Text("The host controls this AI opponent. Choose a compatible deck; the other seats stay as they are.", 208, 240, Muted, .8f, 1164, 2);
+        canvas.Text("Choose one of the host's saved decks or a precon for this AI. The other seats stay as they are.", 208, 240, Muted, .8f, 1164, 2);
         var choices = current.AiOpponents;
         for (int i = 0; i < Math.Min(6, choices.Length - lobbyAiPage * 6); i++) {
             var choice = choices[lobbyAiPage * 6 + i];

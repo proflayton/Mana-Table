@@ -51,6 +51,14 @@ internal static class MatchPresentationLifecycleChecks
         check(owner.LastResolution?.Started == 2 && owner.LatestChange?.Updated == 2
             && owner.ManaCue(initial.ViewerId, "G", 2.1)?.Started == 2 && owner.Impacts.Single().Started == 2,
             "Polling the same accepted feed cannot replay cues or restart their timers");
+        var reconnected = changed with { Activity = [.. changed.Activity,
+            new(5, initial.Turn, initial.PhaseKey, "draw", initial.ViewerId, "Retained reconnect draw.", null, null) { Count = 3 },
+            new(6, initial.Turn, initial.PhaseKey, "life", initial.ViewerId, "Retained reconnect life change.", null, null) {
+                Impact = new("life", -2, PlayerId: initial.ViewerId) }] };
+        owner.Observe(changed, reconnected, 2.15, BoardView.Identity, new Mana.Client.ExecutionBatch([], Baseline: true));
+        check(owner.LastResolution == null && owner.Changes.Count == 0 && owner.Impacts.Count == 0
+            && owner.CardCues.Count == 0 && owner.SeatCues.Count == 0 && owner.AnnouncementCount == 0,
+            "An execution reconnect baseline clears every committed-event consumer without replaying retained draw, damage or resolution animations");
 
         var switched = changed with { ViewerId = 1, Revision = 3 };
         var switchedTransition = owner.Observe(changed, switched, 2.2, BoardView.Identity);

@@ -104,6 +104,9 @@ public class Game {
     // to execute commands for "current" phase each time state based action is checked
     public final List<GameCommand> sbaCheckedCommandList;
     public final MagicStack stack;
+    private final ExecutionTracker executions = new ExecutionTracker(this);
+
+    public ExecutionTracker getExecutions() { return executions; }
     public final CostPaymentStack costPaymentStack = new CostPaymentStack();
     private final PhaseHandler phaseHandler;
     private final StaticEffects staticEffects = new StaticEffects();
@@ -1077,6 +1080,8 @@ public class Game {
      * The events are sent to UI, log and sound system. Network listeners are under development.
      */
     public void fireEvent(final Event event) {
+        if (event instanceof forge.game.event.GameEvent committed)
+            events.post(new ExecutionTracker.Committed(committed, executions.current()));
         events.post(event);
     }
     public void subscribeToEvents(final Object subscriber) {

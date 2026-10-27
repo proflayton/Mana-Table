@@ -62,6 +62,7 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
     private final PlayerControllerHuman human;
     private final PlayerView viewer;
     private final MatchActivity activity;
+    private final MatchExecutions executions;
     private final QuietYieldBaseline quietYield = new QuietYieldBaseline();
     private final PlayAccessProjection playAccess = new PlayAccessProjection();
     private final CombatCardIds combatIds;
@@ -128,6 +129,7 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
         final List<java.util.function.Consumer<Map<String, Object>>> contextProjections = new ArrayList<>();
         List<Map<String, Object>> optionSemantics = List.of();
         SpellAbility announcedAbility;
+        String executionId;
         Input colorPaymentOwner;
         String announcedSymbol = "";
         Map<String, Object> cachedDomain;
@@ -182,7 +184,10 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
         this.game = table.game; this.format = table.format; this.human = human;
         viewer = human.getPlayer().getView();
         activity = new MatchActivity(viewer, table.identities, this::currentCardView, this::currentCardOccurrence);
+        executions = new MatchExecutions(game.getExecutions(), viewer, activity);
+        activity.executionFilter(executions::reference);
         combatIds = new CombatCardIds(viewer, activity, table.identities);
+        game.subscribeToEvents(executions);
         game.subscribeToEvents(activity);
         game.subscribeToEvents(combatIds);
         game.subscribeToEvents(this);
@@ -208,7 +213,7 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
                 "stackInterruptionVersion", table.stackInterruption.version()));
     }
 
-    void detach() { game.unsubscribeFromEvents(activity); game.unsubscribeFromEvents(combatIds); game.unsubscribeFromEvents(this); }
+    void detach() { game.unsubscribeFromEvents(activity); game.unsubscribeFromEvents(executions); game.unsubscribeFromEvents(combatIds); game.unsubscribeFromEvents(this); }
     void clearDecision() { pending = null; }
     void cancelDecision() {
         closed = true;
@@ -231,12 +236,19 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
             // During AI work, publish only event-time copies. Never read a live board from IPC.
             if ("resolving".equals(latest.get("status"))) {
                 var frame = activity.frame();
-                if (frame.revision() != activityRevision) {
+                var executionFrame = executions.frame();
+                var priorExecutions = latest.get("executions");
+                if (frame.revision() != activityRevision || !(priorExecutions instanceof MatchExecutions.Frame prior)
+                        || executionFrame.lastSequence() != prior.lastSequence()) {
                     activityRevision = frame.revision();
                     var next = new LinkedHashMap<>(latest);
                     next.put("revision", ++revision);
                     next.put("turn", frame.turn()); next.put("phase", frame.phase()); next.put("phaseKey", frame.phaseKey());
-                    next.put("activePlayerId", frame.activePlayerId()); next.put("activity", frame.entries());
+                    next.put("activePlayerId", frame.activePlayerId());
+                    var retained = executionFrame.occurrences().stream().map(MatchExecutions.Occurrence::id)
+                            .collect(java.util.stream.Collectors.toSet());
+                    next.put("activity", MatchActivity.retainedExecutions(frame.entries(), retained));
+                    next.put("executions", executionFrame);
                     latest = Collections.unmodifiableMap(next);
                 }
             }
@@ -1252,7 +1264,11 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
         latest = Collections.unmodifiableMap(next);
     }
 
-    private void publish(Pending prompt) { pending = prompt; table.publish(); }
+    private void publish(Pending prompt) {
+        if (prompt != null && !(prompt.input instanceof InputPassPriority) && prompt.executionId == null && game.getExecutions().current() != null)
+            prompt.executionId = game.getExecutions().current().id();
+        pending = prompt; table.publish();
+    }
 
     void refreshVisibility() { activity.refreshVisibility(); }
 
@@ -1311,9 +1327,12 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
         }
         var stack = new ArrayList<Object>();
         var pendingEffects = new HashMap<Integer, Map<String, Object>>();
+        var stackExecutions = new HashMap<Integer, String>();
         var stackKinds = new HashMap<Integer, String>();
         for (var instance : game.getStack()) {
             var ability = instance.getSpellAbility();
+            var execution = executions.reference(ability.getExecutionId());
+            if (execution != null) stackExecutions.put(instance.getId(), execution.id());
             stackKinds.put(instance.getId(), ability.isTrigger() ? "triggered" : ability.isSpell() ? "spell"
                     : ability.isActivatedAbility() ? "activated" : "ability");
             var effect = pendingEffect(ability);
@@ -1328,11 +1347,13 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
                     "kind", visible ? stackKinds.getOrDefault(item.getId(), item.isAbility() ? "ability" : "spell")
                             : item.isAbility() ? "ability" : "spell",
                     "effect", visible ? pendingEffects.get(item.getId()) : null,
+                    "executionId", stackExecutions.get(item.getId()),
                     "targets", visible ? stackTargets(item) : List.of(),
                     "controller", item.getActivatingPlayer() == null ? "" : item.getActivatingPlayer().getName(),
                     "controllerId", item.getActivatingPlayer() == null ? null : item.getActivatingPlayer().getId()));
         }
         String result = gameResult();
+        executions.pinStack(stackExecutions.values());
         var activityFrame = activity.frame();
         activityRevision = activityFrame.revision();
         if (prompt != null) {
@@ -1342,6 +1363,9 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
             // leave a frozen portrait on a revoked occurrence generation.
             for (var projection : prompt.contextProjections) projection.accept(projectedPrompt);
             projectedPrompt.put("task", semanticTask(prompt));
+            var execution = executions.reference(prompt.executionId);
+            projectedPrompt.put("executionId", execution == null ? null : execution.id());
+            projectedPrompt.put("executionStep", execution == null ? null : execution.step());
             projectedPrompt.put("purpose", prompt.input instanceof InputConfirmMulligan ? "openingHand"
                     : prompt.input instanceof InputSelectTargets ? "targets"
                     : Objects.equals(prompt.prompt.get("context"), "playAbility") ? "abilities" : "");
@@ -1377,7 +1401,7 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
                         prompt != null && prompt.input instanceof InputPassPriority && sourceInputCurrent(prompt) ? prompt.input : null,
                         human::getCard, activity::visualId, publishedAccessCards),
                 "ignoredPriorityAbilities", priorityAbilities(human.getIgnoredPriorityAbilities(), prompt),
-                "result", result, "notices", List.copyOf(notices), "activity", activityFrame.entries());
+                "result", result, "notices", List.copyOf(notices), "activity", activityFrame.entries(), "executions", executions.frame());
         String quietToken = quietYield.observe(snapshot, activity.quietSequence());
         if (prompt != null) {
             var projectedPrompt = new LinkedHashMap<>(prompt.prompt);

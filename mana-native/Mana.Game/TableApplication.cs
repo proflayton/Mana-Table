@@ -152,7 +152,7 @@ internal sealed partial class TableApplication : IDisposable
     private void Accept(GameSnapshot? state) => session.Accept(state);
     private void AcceptPresentation(GameSnapshot? previous, GameSnapshot? state)
     {
-        var transition = matchPresentation.Observe(previous, state, now, boardView);
+        var transition = matchPresentation.Observe(previous, state, now, boardView, session.ExecutionChanges);
         if (transition.ScopeChanged) { ResetTableView(); tableGuideOpen = false; sceneRevealAt = now; }
         if (transition.ScopeChanged) { manualBoardView = null; boardPanning = false; }
         ReconcileReleasedPlay();

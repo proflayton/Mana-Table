@@ -26,6 +26,7 @@ final class DeckDocumentSession {
     record RequestScope(String deckId, Long revision) { }
     record DocumentScope(String deckId, long revision) { }
     record SavedDeck(Deck deck, String format) { }
+    record SavedDeckReference(String id, String name, String format, String token) { }
 
     private static final class Practice {
         final List<CardCatalog.CardInfo> library = new ArrayList<>();
@@ -64,6 +65,7 @@ final class DeckDocumentSession {
 
     private record StoredDeck(int version, String name, String format, List<DeckEditor.Edit> cards, long updated, Map<String, String> tokenPrintings) { }
     private record LoadedDeck(DeckEditor editor, String format) { }
+    private record SavedDeckFile(String id, StoredDeck stored, String token) { }
     private record DeletedDeck(String deckId, String name, String restoreToken, long deletedAt) { }
 
     private final CardCatalog catalog;
@@ -360,16 +362,16 @@ final class DeckDocumentSession {
         if (requestedId != null && (active == null || !active.id.equals(requestedId))) open(requestedId);
         return capture(requireDeck(), commanderId);
     }
-    Object setupView(PreparedDeck prepared) {
+    Object setupView(PreparedDeck prepared, List<Map<String, String>> opponents) {
         var result = new LinkedHashMap<String, Object>();
         result.put("deckId", prepared.scope().deckId()); result.put("revision", prepared.scope().revision());
         result.put("name", prepared.snapshot.name()); result.put("setup", prepared.preview());
-        result.put("saveError", prepared.saveError); result.put("opponents", MatchSession.opponents(prepared.format));
+        result.put("saveError", prepared.saveError); result.put("opponents", opponents);
         result.put("maxPlayers", prepared.format.equals("Commander") ? 6 : 2);
         result.put("commanderAvailable", prepared.commanderAvailable);
         return result;
     }
-    List<Map<String, String>> opponents() { return MatchSession.opponents(active == null ? "Constructed" : active.format); }
+    String currentFormat() { return active == null ? "Constructed" : active.format; }
 
     PreparedDeck prepareStart(RequestScope scope, String commanderId) {
         var document = requireDeck(); ensureSaved();
@@ -407,8 +409,22 @@ final class DeckDocumentSession {
     }
 
     SavedDeck loadLobbyDeck(String id) throws Exception {
-        var loaded = loadStoredDeck(id);
+        return loadLobbyDeck(id, null);
+    }
+    SavedDeck loadLobbyDeck(String id, String expectedToken) throws Exception {
+        if (active != null && active.id.equals(id) && active.saveError != null)
+            throw new IllegalStateException("Save this deck before assigning it to a seat: " + active.saveError);
+        byte[] bytes = removedDecks.readSaved(id);
+        if (expectedToken != null && !expectedToken.equals(DeckLibraryTrash.token(bytes)))
+            throw new IllegalArgumentException("That saved AI deck changed. Choose it again.");
+        var loaded = loadStoredDeck(bytes);
         return new SavedDeck(loaded.editor().toDeck(), checkedFormat(loaded.format()));
+    }
+    List<SavedDeckReference> savedDeckReferences() throws Exception {
+        return readSavedDecks(new ArrayList<>()).stream()
+                .filter(saved -> active == null || !active.id.equals(saved.id()) || active.saveError == null)
+                .sorted(Comparator.comparingLong((SavedDeckFile saved) -> saved.stored().updated()).reversed())
+                .map(saved -> new SavedDeckReference(saved.id(), saved.stored().name(), saved.stored().format(), saved.token())).toList();
     }
     Object delete(String id, String libraryToken) throws Exception {
         file(id); workshop.assertWritable(id);
@@ -435,6 +451,12 @@ final class DeckDocumentSession {
     }
     Object list() throws Exception {
         var decks = new ArrayList<Map<String, Object>>(); var problems = new ArrayList<String>();
+        for (var saved : readSavedDecks(problems)) decks.add(summary(saved.id(), saved.stored(), saved.token()));
+        decks.sort(Comparator.comparingLong((Map<String, Object> deck) -> (long) deck.get("updated")).reversed());
+        return Map.of("decks", decks, "problems", problems);
+    }
+    private List<SavedDeckFile> readSavedDecks(List<String> problems) throws Exception {
+        var decks = new ArrayList<SavedDeckFile>();
         try (var files = Files.list(directory)) {
             for (Path file : files.filter(path -> path.getFileName().toString().endsWith(".json")).toList()) {
                 try {
@@ -442,15 +464,18 @@ final class DeckDocumentSession {
                     byte[] bytes = removedDecks.readSaved(id);
                     var stored = JSON.fromJson(new String(bytes, StandardCharsets.UTF_8), StoredDeck.class);
                     if (stored.version() != 1) throw new IllegalArgumentException("Unsupported version");
-                    decks.add(summary(id, stored, DeckLibraryTrash.token(bytes)));
+                    summary(id, stored, DeckLibraryTrash.token(bytes)); // Retain the saved-library schema checks.
+                    decks.add(new SavedDeckFile(id, stored, DeckLibraryTrash.token(bytes)));
                 } catch (Exception error) { problems.add(file.getFileName() + ": " + error.getMessage()); }
             }
         }
-        decks.sort(Comparator.comparingLong((Map<String, Object> deck) -> (long) deck.get("updated")).reversed());
-        return Map.of("decks", decks, "problems", problems);
+        return decks;
     }
     private LoadedDeck loadStoredDeck(String id) throws Exception {
-        var stored = JSON.fromJson(Files.readString(file(id)), StoredDeck.class);
+        return loadStoredDeck(removedDecks.readSaved(id));
+    }
+    private LoadedDeck loadStoredDeck(byte[] bytes) {
+        var stored = JSON.fromJson(new String(bytes, StandardCharsets.UTF_8), StoredDeck.class);
         if (stored.version() != 1) throw new IllegalArgumentException("Unsupported deck file version");
         var deck = new Deck(checkedName(stored.name()));
         deck.setTokenPrintings(DeckTokens.readPreferences(JSON.toJsonTree(stored.tokenPrintings())));

@@ -1228,6 +1228,15 @@ public abstract class SpellAbility extends CardTraitBase implements ISpellAbilit
         mayPlay = sta;
     }
 
+    // Rules-owned execution occurrence, deliberately independent of ability/template ID.
+    private String executionId;
+    public String getExecutionId() {
+        if (executionId != null) return executionId;
+        SpellAbility root = getRootAbility();
+        return root == this ? null : root.executionId;
+    }
+    public void setExecutionId(String value) { executionId = value; }
+
     public SpellAbility copy() {
         return copy(hostCard, false);
     }
@@ -1248,6 +1257,7 @@ public abstract class SpellAbility extends CardTraitBase implements ISpellAbilit
         try {
             clone = (SpellAbility) clone();
             clone.id = lki ? id : nextId();
+            clone.executionId = lki ? executionId : null;
 
             // don't use setHostCard to not trigger the not copied parts yet
 

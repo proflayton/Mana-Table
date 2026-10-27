@@ -38,7 +38,7 @@ final class PendingEffects {
         if (!simpleDamage(effect, root)) return null;
         Amount amount = amount(effect, root, effect.getParam("NumDmg"), new HashSet<>());
         var result = new LinkedHashMap<String, Object>();
-        result.put("id", identities.pendingEffect(root));
+        result.put("id", root.getExecutionId());
         result.put("kind", "damage");
         result.put("amount", amount.value());
         result.put("amountBasis", amount.basis());

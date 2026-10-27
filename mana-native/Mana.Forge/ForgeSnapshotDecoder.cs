@@ -47,8 +47,10 @@ internal static class ForgeSnapshotDecoder
                 PriorityPlayerId = wire.PriorityPlayerId, DecisionOwnerId = wire.DecisionOwnerId,
                 ActionClass = wire.ActionClass, States = wire.States, Activity = wire.Activity,
                 Notices = wire.Notices, IgnoredPriorityAbilities = wire.IgnoredPriorityAbilities,
-                PlayAccesses = wire.PlayAccesses, Tempo = wire.Tempo, ActionSources = wire.ActionSources
+                PlayAccesses = wire.PlayAccesses, Tempo = wire.Tempo, ActionSources = wire.ActionSources,
+                Executions = wire.Executions
             };
+            ExecutionFrames.Validate(snapshot);
             if (snapshot.Decision?.Payload is PaymentPayload payment) {
                 if (payment.FundingContext is { } funding) ManaFundingFacts.Validate(snapshot, funding, payment.PayerId);
                 var payer = snapshot.Players.FirstOrDefault(player => player.Id == (payment.PayerId ?? snapshot.ViewerId));
@@ -143,6 +145,7 @@ internal static class ForgeSnapshotDecoder
         public ImmutableArray<PlayAccess> PlayAccesses { get; init; } = [];
         public ImmutableArray<ActionSourceOccurrence> ActionSources { get; init; } = [];
         public DecisionTempoFrame? Tempo { get; init; }
+        public ExecutionFrame? Executions { get; init; }
     }
 
     private sealed record WireStackItem(string Name, string Text, bool Ability, Card? Card)
@@ -152,6 +155,7 @@ internal static class ForgeSnapshotDecoder
         public int? ControllerId { get; init; }
         public ImmutableArray<StackTarget> Targets { get; init; } = [];
         public PendingEffect? Effect { get; init; }
+        public string ExecutionId { get; init; } = "";
         private StackActionKind ActionKind() => (Kind, Ability) switch {
             ("spell" or "", false) => StackActionKind.Spell,
             ("activated", true) => StackActionKind.ActivatedAbility,
@@ -161,7 +165,7 @@ internal static class ForgeSnapshotDecoder
         };
         public StackItem Native() => new(Name, Text, ActionKind(), Card) {
             Id = Identifier(Id), ControllerId = ControllerId,
-            Targets = Targets.IsDefault ? throw Invalid() : Targets, Effect = Effect
+            Targets = Targets.IsDefault ? throw Invalid() : Targets, Effect = Effect, ExecutionId = ExecutionId ?? ""
         };
     }
 

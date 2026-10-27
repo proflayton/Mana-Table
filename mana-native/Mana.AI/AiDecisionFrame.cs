@@ -22,7 +22,9 @@ public sealed class AiDecisionFrame
     public ImmutableArray<SourceActionSet> SourceActions { get; }
     public DecisionActionDomain Domain { get; }
     public DecisionSemantics Semantics { get; }
-    public string EpisodeId => Semantics.EpisodeId.Length > 0 ? "causal:" + Semantics.EpisodeId : "input:" + Stamp.DecisionId;
+    public string ExecutionBudgetRootId => ExecutionFrames.Find(State, State.Decision?.ExecutionId)?.BudgetRootId ?? "";
+    public string EpisodeId => ExecutionBudgetRootId.Length > 0 ? "execution:" + ExecutionBudgetRootId
+        : Semantics.EpisodeId.Length > 0 ? "causal:" + Semantics.EpisodeId : "input:" + Stamp.DecisionId;
 
     public AiDecisionFrame(GameSnapshot state, long offerVersion = 0,
         AiActionCoverage actionCoverage = AiActionCoverage.Partial, ImmutableArray<SourceActionSet> sourceActions = default,
@@ -36,6 +38,7 @@ public sealed class AiDecisionFrame
             throw new ArgumentException("An AI frame needs a live, current decision belonging to its viewing seat.", nameof(state));
         if (!Enum.IsDefined(actionCoverage)) throw new ArgumentOutOfRangeException(nameof(actionCoverage));
         State = state; Task = AiTasks.From(decision.Payload);
+        ExecutionFrames.Validate(state);
         Domain = domain ?? DecisionActionDomain.None;
         Semantics = semantics ?? new();
         if (Semantics.EpisodeId == null || Semantics.EpisodeId.Length > 256 || !Enum.IsDefined(Semantics.Intent)

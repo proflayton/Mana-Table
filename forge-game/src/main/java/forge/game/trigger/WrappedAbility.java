@@ -433,6 +433,7 @@ public class WrappedAbility extends Ability {
                 decider = SpellAbilityEffect.getNewChooser(sa, decider);
             }
             if (!decider.getController().confirmTrigger(this)) {
+                game.getExecutions().complete(this, forge.game.ExecutionTracker.Outcome.DECLINED);
                 return;
             }
         }
