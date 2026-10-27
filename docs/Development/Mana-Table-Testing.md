@@ -202,6 +202,11 @@ integration journey opens the real reader and waits for its current action
 generation before establishing its strict repeated-read baseline. Cached state
 observation is not a UI-queue barrier; a rejected purity read is retained and
 fails that attempt rather than being retried unchanged.
+Golden payment and contribution witnesses come from the exact immutable frame
+used for each accepted command. A separate outer poll may miss an intermediate
+bill already answered by the policy; it is not that command's observation.
+Ordered current-cost receipts and independent public stack/battlefield results
+remain separate requirements.
 
 On failure, `private-failure-manifest.json` identifies the last completed raw
 observation batch, exact seat scopes, stage and original exception before teardown.

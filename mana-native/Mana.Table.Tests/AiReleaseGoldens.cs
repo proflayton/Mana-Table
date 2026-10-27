@@ -101,6 +101,8 @@ internal static class AiReleaseGoldens
             mentor = extras.Where(card => card.Name == "Mentor of the Meek").Select(CardViews.Identity).SingleOrDefault() ?? "";
             flexible = extras.Where(card => card.Name == "Temple of Epiphany").Select(CardViews.Identity).SingleOrDefault() ?? "";
             blueSources = extras.Where(card => card.Name == "Island").Select(CardViews.Identity).ToImmutableArray();
+            provider.ReductionCreatures = extras.Where(card => card.Name == "Lightning Angel")
+                .Select(CardViews.Identity).ToImmutableHashSet(StringComparer.Ordinal);
             setup = true;
             while (true) {
                 state = await engine.ObserveSimulationAsync() ?? throw new InvalidDataException("Golden public state disappeared.");
@@ -124,19 +126,6 @@ internal static class AiReleaseGoldens
                     }
                     actualRedPool |= bot.SeatId == 0 && bot.Semantics.Payment is { PayerId: 0, Purpose: PaymentPurpose.SpellCost } cost
                         && cost.SourceCardId == target && bot.State.Viewer!.Mana.GetValueOrDefault("R") > 0;
-                    actualRedBillPaid |= bot.SeatId == 0 && bot.Semantics.Payment is { PayerId: 0, Purpose: PaymentPurpose.SpellCost } paid
-                        && paid.SourceCardId == target && bot.Semantics.UnpaidMana.SequenceEqual(["{U}"])
-                        && provider.Accepted.Any(item => item.SourceId == flexible && item.ManaOutput?.Colors is { Count: 1 } colors
-                            && colors.GetValueOrDefault("R") == 1);
-                    if (bot.SeatId == 0 && bot.State.Decision is { Payload: EntitySelectionPayload { ManaReduction: { } reduction } selection } input
-                        && CardViews.Source(bot.State, input) is { } reducingSource && CardViews.Identity(reducingSource) == target) {
-                        var candidates = bot.State.Viewer!.Zone("Battlefield").Cards.Where(card => card.Selectable).ToArray();
-                        positiveReduction |= !reduction.RemainingManaParts.IsEmpty;
-                        maximumReductionContributors = Math.Max(maximumReductionContributors, candidates.Count(card => card.Highlighted));
-                        zeroReductionWithUnusedCreature |= reduction.RemainingManaParts.IsEmpty && selection.Complete.Enabled
-                            && bot.State.Viewer.Zone("Battlefield").Cards.Any(card => card.Name == "Lightning Angel"
-                                && !card.Highlighted && !card.Tapped && !card.Selectable);
-                    }
                 }
                 diagnostics.ObservePublic(state);
                 string facts = AiWholeSeatEngineCheck.ReplayFacts(state);
@@ -148,6 +137,16 @@ internal static class AiReleaseGoldens
                 blueSources = blueSources.Union(actor.Zone("Battlefield").Cards.Where(card => card.Name == "Island")
                     .Select(CardViews.Identity), StringComparer.Ordinal).ToImmutableArray();
                 var receipts = provider.Accepted.Where(item => item.Seat == 0).ToArray();
+                // StepAsync observes again before committing. Intermediate cost
+                // states can therefore exist only in the policy's own frame.
+                actualRedBillPaid |= HasOrderedFlexiblePayment(receipts, target, flexible, blueSources);
+                foreach (var receipt in receipts.Where(item => item.CostOwner == target && item.ManaReduction != null)) {
+                    var reduction = receipt.ManaReduction!;
+                    positiveReduction |= !reduction.RemainingManaParts.IsEmpty;
+                    maximumReductionContributors = Math.Max(maximumReductionContributors, reduction.SelectedContributors);
+                    zeroReductionWithUnusedCreature |= receipt.CompletedManaReduction && reduction.CompleteEnabled
+                        && reduction.RemainingManaParts.IsEmpty && reduction.UnusedFixtureCreature;
+                }
                 landPlayed |= receipts.Any(item => item.Land);
                 passedOffer |= receipts.Any(item => item.Kind == nameof(PassPriority) && item.TargetOffered);
                 stack |= state.Stack.Any(item => item.Kind == StackActionKind.Spell && item.Card is { } card && CardViews.Identity(card) == target);
@@ -273,11 +272,105 @@ internal static class AiReleaseGoldens
 
     private sealed record AcceptedCommand(int Seat, string Kind, int Turn, string Phase, string SourceId, string CostOwner,
         int? Number, NumericDecisionPurpose? NumericPurpose, PaymentPurpose? PaymentPurpose, int? Payer, int HandCount,
-        bool Consumed, bool Land, bool Cast, bool TargetOffered, ManaOutputChoice? ManaOutput, bool CompletedManaReduction);
+        bool Consumed, bool Land, bool Cast, bool TargetOffered, ManaOutputChoice? ManaOutput, bool CompletedManaReduction)
+    {
+        public ImmutableArray<ManaBillPart>? PaymentBill { get; init; }
+        public ReductionEvidence? ManaReduction { get; init; }
+    }
+
+    private sealed record ReductionEvidence(ImmutableArray<ManaBillPart> RemainingManaParts, bool CompleteEnabled,
+        int SelectedContributors, bool UnusedFixtureCreature);
+
+    private static ImmutableArray<ManaBillPart>? CapturePaymentBill(GameSnapshot state) =>
+        (state.Decision?.Payload as PaymentPayload)?.UnpaidManaParts;
+
+    private static ReductionEvidence? CaptureReduction(GameSnapshot state, ImmutableHashSet<string> creatures)
+    {
+        if (state.Decision?.Payload is not EntitySelectionPayload { ManaReduction: { } reduction } selection) return null;
+        var current = state.Viewer!.Zone("Battlefield").Cards.Where(card => creatures.Contains(CardViews.Identity(card))).ToArray();
+        return new(reduction.RemainingManaParts, selection.Complete.Enabled,
+            current.Count(card => card.Selectable && card.Highlighted),
+            current.Any(card => !card.Highlighted && !card.Tapped && !card.Selectable));
+    }
+
+    private static bool HasOrderedFlexiblePayment(IReadOnlyList<AcceptedCommand> receipts, string target, string flexible,
+        ImmutableArray<string> blueSources)
+    {
+        int? redTurn = null;
+        foreach (var receipt in receipts) {
+            if (receipt.Seat != 0 || receipt.Kind != nameof(UseOfferedAction) || receipt.CostOwner != target
+                || receipt.Payer != 0 || receipt.PaymentPurpose != PaymentPurpose.SpellCost) continue;
+            if (redTurn == receipt.Turn && blueSources.Contains(receipt.SourceId) && OutputIs(receipt, "U")
+                && BillIs(receipt.PaymentBill, new ManaBillPart("{U}", 1))) return true;
+            if (receipt.SourceId == flexible && OutputIs(receipt, "R")
+                && BillIs(receipt.PaymentBill, new ManaBillPart("{U}", 1), new ManaBillPart("{R}", 1))) redTurn = receipt.Turn;
+        }
+        return false;
+
+        static bool OutputIs(AcceptedCommand receipt, string color) => receipt.ManaOutput?.Colors is { Count: 1 } colors
+            && colors.GetValueOrDefault(color) == 1;
+        static bool BillIs(ImmutableArray<ManaBillPart>? actual, params ManaBillPart[] expected) => actual is { } parts
+            && !parts.IsDefault && parts.OrderBy(part => part.Symbol, StringComparer.Ordinal)
+                .SequenceEqual(expected.OrderBy(part => part.Symbol, StringComparer.Ordinal));
+    }
+
+    internal static void CheckReceiptEvidence(Action<bool, string> check)
+    {
+        AcceptedCommand Receipt(string source, string color, ImmutableArray<ManaBillPart> bill) =>
+            new(0, nameof(UseOfferedAction), 4, "MAIN1", source, "commander", null, null, PaymentPurpose.SpellCost,
+                0, 7, false, false, false, false, new(ImmutableDictionary<string, int>.Empty.Add(color, 1)), false) {
+                PaymentBill = bill
+            };
+        var red = Receipt("temple", "R", [new("{R}", 1), new("{U}", 1)]);
+        var blue = Receipt("island", "U", [new("{U}", 1)]);
+        bool Proves(params AcceptedCommand[] receipts) => HasOrderedFlexiblePayment(receipts, "commander", "temple", ["island"]);
+        check(Proves(red, blue), "Flexible-output evidence uses the accepted commands' ordered exact UR then U bills, independent of outer polling");
+        check(!Proves(blue, red) && !Proves(red, blue with { Turn = 8 })
+            && !Proves(red, blue with { PaymentBill = [new("{R}", 1)] })
+            && !Proves(red with { PaymentBill = null }, blue),
+            "Output intents alone, reversed or later-turn receipts and missing/wrong bills cannot prove a paid flexible cost");
+        foreach (var unrelated in new[] { blue with { Seat = 1 }, blue with { Payer = 1 }, blue with { CostOwner = "other" },
+            blue with { PaymentPurpose = PaymentPurpose.ActivatedAbilityCost }, blue with { SourceId = "other-source" },
+            blue with { ManaOutput = new(ImmutableDictionary<string, int>.Empty.Add("R", 1)) } })
+            check(!Proves(red, unrelated), "Flexible-output proof rejects receipts outside its exact owner, payer, spell cost and source output");
+
+        var player = new Player(0, "Actor", 40, true, false, ImmutableDictionary<string, int>.Empty, []);
+        var state = new GameSnapshot("receipt-evidence", "playing", null, null, 0, 4, "Main", "MAIN1", 0, [player], [], null,
+            new("payment-before", new(Source: new("commander")), new PaymentPayload(new("Pay", true), new("Cancel", true)) {
+                UnpaidManaParts = [new("{129}", 1), new("{U}", 3)]
+            }));
+        var capturedBill = CapturePaymentBill(state);
+        state = state with { Decision = new("payment-after", new(), new PaymentPayload(new("Pay", true), new("Cancel", true))) };
+        check(capturedBill is { } bill && bill.SequenceEqual([new("{129}", 1), new("{U}", 3)])
+            && CapturePaymentBill(state) is { IsEmpty: true },
+            "A captured pre-command payment bill stays counted and unchanged when a later observation has already consumed it");
+
+        var creatures = Enumerable.Range(0, 7).Select(index => new Card { VisualId = "contributor-" + index,
+            Selectable = index < 6, Highlighted = index < 6 }).ToImmutableArray();
+        var ids = creatures.Select(CardViews.Identity).ToImmutableHashSet(StringComparer.Ordinal);
+        state = state with { Players = [player with { Zones = [new("Battlefield", 7, creatures, null)] }],
+            Decision = new("covered-before", new(Source: new("commander")),
+                new EntitySelectionPayload(new("Done", true), new("Cancel", false), []) { ManaReduction = new([]) }) };
+        var capturedReduction = CaptureReduction(state, ids);
+        var coveredState = state;
+        state = state with { Decision = new("priority-after", new(), new PriorityPayload(new("Pass", true))) };
+        check(capturedReduction is { CompleteEnabled: true, RemainingManaParts.IsEmpty: true, SelectedContributors: 6, UnusedFixtureCreature: true }
+            && CaptureReduction(state, ids) == null,
+            "A zero-cost completion receipt retains six selected contributors and the unused ineligible creature after outer polling advances");
+        var selection = (EntitySelectionPayload)coveredState.Decision!.Payload;
+        check(CaptureReduction(coveredState with { Decision = coveredState.Decision with {
+                Payload = selection with { ManaReduction = new([new("{U}", 1)]) } } }, ids) is { RemainingManaParts.IsEmpty: false }
+            && CaptureReduction(coveredState with { Decision = coveredState.Decision with {
+                Payload = selection with { Complete = new("Done", false) } } }, ids) is { CompleteEnabled: false }
+            && CaptureReduction(coveredState with { Decision = coveredState.Decision with {
+                Payload = selection with { ManaReduction = null } } }, ids) == null,
+            "Positive, disabled and absent contribution facts remain distinct from an exact enabled zero-cost completion");
+    }
 
     private sealed class ReceiptProbe(AiCampaignProvider inner) : IAutomatedSeatProvider
     {
         internal string Target { get; set; } = "";
+        internal ImmutableHashSet<string> ReductionCreatures { get; set; } = ImmutableHashSet<string>.Empty;
         internal List<AcceptedCommand> Accepted { get; } = [];
         internal ImmutableArray<AutomatedSeatObservation> Last => inner.Last;
         public Task EnableAutomatedSeatsAsync() => inner.EnableAutomatedSeatsAsync();
@@ -292,6 +385,8 @@ internal static class AiReleaseGoldens
             string owner = observation.Semantics.Numeric?.SourceCardId ?? observation.Semantics.Payment?.SourceCardId
                 ?? observation.State.Decision?.Context.Source?.CardId ?? "";
             if (owner.Length == 0 && observation.State.Decision?.Context.Source?.Card is { } portrait) owner = CardViews.Identity(portrait);
+            var paymentBill = CapturePaymentBill(observation.State);
+            var reduction = CaptureReduction(observation.State, ReductionCreatures);
             await inner.ExecuteAutomatedAsync(seat, command);
             Accepted.Add(new(seat, command.GetType().Name, observation.State.Turn, observation.State.PhaseKey, source?.SourceCardId ?? "", owner,
                 command is ChooseNumber number ? number.Value : null, observation.Semantics.Numeric?.Purpose,
@@ -300,7 +395,9 @@ internal static class AiReleaseGoldens
                 action?.Effect == ActionEffectKind.Land, route?.Kind == "cast",
                 observation.Domain.Sources.Any(set => set.SourceCardId == Target && set.Actions.Any(item => item.Kind == "cast")),
                 (command as UseOfferedAction)?.ManaOutput,
-                command is CompleteSelection && observation.State.Decision?.Payload is EntitySelectionPayload { ManaReduction.RemainingManaParts.IsEmpty: true }));
+                command is CompleteSelection && reduction is { CompleteEnabled: true, RemainingManaParts.IsEmpty: true }) {
+                PaymentBill = paymentBill, ManaReduction = reduction
+            });
         }
     }
 }
