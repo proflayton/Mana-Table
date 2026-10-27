@@ -125,6 +125,7 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
         final Map<Integer, String> cardKeys = new HashMap<>();
         final Map<String, SourceActions.Catalog> sourceActions = new HashMap<>();
         final Set<String> poolManaColors = new HashSet<>();
+        final List<java.util.function.Consumer<Map<String, Object>>> contextProjections = new ArrayList<>();
         List<Map<String, Object>> optionSemantics = List.of();
         SpellAbility announcedAbility;
         Input colorPaymentOwner;
@@ -375,6 +376,7 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
             // Unrelated GUI callbacks may refresh every seat. An unanswered
             // controller input keeps its scope and card handles through refreshes.
             Pending next = pending != null && pending.input == current ? pending : new Pending("input", current);
+            next.contextProjections.clear();
             // Cleanup's discard input (among others) is an anonymous subclass.
             // Preserve its actual input kind instead of publishing an empty name.
             Class<?> inputClass = current.getClass();
@@ -420,11 +422,9 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
                 var payment = counters.getCounterPayment();
                 if (payment.amount() > 0) next.prompt.put("counterPayment", map("amount", payment.amount(), "remaining", payment.remaining()));
             }
-            if (promptSource != null && promptSource.canBeShownTo(viewer)) {
-                next.prompt.put("sourceCard", cardState(promptSource, null));
-                next.prompt.put("sourceZone", promptSource.getZone() == null ? "" : promptSource.getZone().name());
-                next.prompt.put("sourceControllerId", promptSource.getController() == null ? null : promptSource.getController().getId());
-            }
+            CardView inputSource = current instanceof InputPayMana payment && payment.getPaidForAbility() != null
+                    && payment.getPaidForAbility().getHostCard() != null ? payment.getPaidForAbility().getHostCard().getView() : promptSource;
+            describeSource(next, inputSource, card -> cardState(card, null), false, true, true);
             pending = next;
             publish(next);
         }
@@ -702,9 +702,10 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
     }
 
     private boolean currentCardView(CardView card) {
-        if (card == null || card.getZone() == null) return false;
-        Card current = human.getCard(card);
-        return current != null && current.getView() == card;
+        if (card == null || card.getZone() == null || card.getZone() == ZoneType.None) return false;
+        // Absence is normal for a historical portrait. Inspect current zone
+        // membership quietly instead of invoking a diagnostic failed lookup.
+        return game.getCardsIncludePhasingIn(card.getZone()).stream().anyMatch(current -> current.getView() == card);
     }
 
     private static boolean sourceInputActive(Input input) {
@@ -1314,6 +1315,10 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
         activityRevision = activityFrame.revision();
         if (prompt != null) {
             var projectedPrompt = new LinkedHashMap<>(prompt.prompt);
+            // Identity-bearing dialog facts belong to this reconciled board.
+            // Constructing them before the all-audience visibility prepass can
+            // leave a frozen portrait on a revoked occurrence generation.
+            for (var projection : prompt.contextProjections) projection.accept(projectedPrompt);
             projectedPrompt.put("task", semanticTask(prompt));
             projectedPrompt.put("purpose", prompt.input instanceof InputConfirmMulligan ? "openingHand"
                     : prompt.input instanceof InputSelectTargets ? "targets"
@@ -1782,10 +1787,7 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
                 abilities, 0, 1, false, ability -> visible ? String.valueOf(ability) : "Card ability");
         next.prompt.put("context", "playAbility");
         next.prompt.put("title", (activating ? "Activate " : "Play ") + name);
-        if (host != null && host.canBeShownTo(viewer)) {
-            next.prompt.put("sourceCard", cardState(host, null));
-            next.prompt.put("sourceZone", host.getZone() == null ? "" : host.getZone().name());
-        }
+        describeSource(next, host, card -> cardState(card, null), false, true, false);
         var items = new ArrayList<Object>();
         for (int i = 0; i < abilities.size(); i++) {
             var ability = abilities.get(i);
@@ -1820,10 +1822,7 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
         boolean visible = source != null && source.canBeShownTo(viewer);
         String name = visible && !source.isFaceDown() ? source.getCurrentState().getName() : "this card";
         next.prompt.put("title", "Choose a color for " + name);
-        if (visible) {
-            next.prompt.put("sourceCard", cardState(source, null));
-            next.prompt.put("sourceZone", source.getZone() == null ? "" : source.getZone().name());
-        }
+        describeSource(next, source, card -> cardState(card, null), false, true, false);
         next.prompt.put("choices", java.util.stream.IntStream.range(0, eligibleColors.size()).mapToObj(i ->
                 map("index", i, "label", next.colorPaymentOwner instanceof InputSelectCardsForConvokeOrImprovise
                                 && eligibleColors.get(i) == MagicColor.Color.COLORLESS ? "Generic" : eligibleColors.get(i).getTranslatedName(), "mana",
@@ -1856,24 +1855,40 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
             List<CounterType> types, Map<CounterType, Integer> available) {
         if (types.size() <= 1) return types.isEmpty() ? null : types.get(0);
         var next = choicePrompt("choice", message, types, 1, 1, false, type -> ((CounterType) type).getName());
-        if (promptSource != null && promptSource.canBeShownTo(viewer)) {
-            next.prompt.put("sourceCard", counterPaymentCard(promptSource));
-            next.prompt.put("sourceZone", promptSource.getZone() == null ? "" : promptSource.getZone().name());
-            next.prompt.put("sourceControllerId", promptSource.getController() == null ? null : promptSource.getController().getId());
-        }
+        describeSource(next, promptSource, this::counterPaymentCard, false, true, true);
         if (permanent != null && permanent.getZone() == ZoneType.Battlefield && isAllocationOccurrence(permanent, viewer)) {
-            var affected = map("cardId", combatIds.id(permanent), "card", counterPaymentCard(permanent),
-                    "controllerId", permanent.getController() == null ? null : permanent.getController().getId(),
-                    "zone", permanent.getZone().name());
             var options = new ArrayList<Object>();
             for (int index = 0; index < types.size(); index++) {
                 var type = types.get(index);
                 options.add(map("index", index, "type", type.toString(), "label", type.getName(), "available", available.get(type)));
             }
-            next.prompt.put("counterPaymentChoice", map("amount", amount, "permanent", affected, "options", options));
+            next.contextProjections.add(projected -> {
+                var affected = map("cardId", combatIds.id(permanent), "card", counterPaymentCard(permanent),
+                        "controllerId", permanent.getController() == null ? null : permanent.getController().getId(),
+                        "zone", permanent.getZone().name());
+                projected.put("counterPaymentChoice", map("amount", amount, "permanent", affected, "options", options));
+            });
         }
         var answer = await(next);
         return types.get(answer.getAsJsonArray("choices").get(0).getAsInt());
+    }
+
+    private void describeSource(Pending next, CardView source,
+            java.util.function.Function<CardView, Map<String, Object>> portrait,
+            boolean includeId, boolean includeZone, boolean includeController) {
+        next.contextProjections.add(projected -> {
+            projected.remove("sourceCard"); projected.remove("sourceCardId");
+            projected.remove("sourceZone"); projected.remove("sourceControllerId");
+            if (source == null || !source.canBeShownTo(viewer)) return;
+            var details = portrait.apply(source);
+            details.put("key", ""); details.put("selectable", false); details.put("highlighted", false);
+            projected.put("sourceCard", details);
+            String sourceId = Objects.toString(details.get("visualId"), "");
+            if (sourceId.isEmpty()) sourceId = Objects.toString(details.get("combatId"), "");
+            if (includeId && !sourceId.isEmpty()) projected.put("sourceCardId", sourceId);
+            if (includeZone) projected.put("sourceZone", source.getZone() == null ? "" : source.getZone().name());
+            if (includeController) projected.put("sourceControllerId", source.getController() == null ? null : source.getController().getId());
+        });
     }
 
     private Map<String, Object> counterPaymentCard(CardView card) {
@@ -1898,9 +1913,10 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
 
     private Pending choicePrompt(String kind, String title, List<?> choices, int min, int max, boolean ordered, FSerializableFunction<Object, String> display) {
         Pending next = new Pending(kind, null);
-        next.optionSemantics = DecisionSemantics.options(choices, human::getDecisionAbility, human.getPlayer(), this::semanticCardId);
+        next.contextProjections.add(projected -> next.optionSemantics = DecisionSemantics.options(choices,
+                human::getDecisionAbility, human.getPlayer(), this::semanticCardId));
         next.size = choices.size(); next.min = min; next.max = max;
-        var items = new ArrayList<Object>();
+        var items = new ArrayList<Map<String, Object>>();
         for (int i = 0; i < choices.size(); i++) {
             Object choice = choices.get(i);
             String label = display == null ? label(choice) : display.apply(choice);
@@ -1909,11 +1925,20 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
                 item.put("card", choiceCard(card, viewer));
                 // Link only occurrences already on this seat's table. A revealed
                 // library/opponent-hand face must never gain a persistent handle.
-                if (isTableChoice(card, viewer)) item.put("cardId", activity.visualId(card));
             }
             items.add(item);
         }
         next.prompt = map("id", next.id, "kind", kind, "message", title, "choices", items, "min", min, "max", max, "ordered", ordered);
+        if (choices.stream().anyMatch(CardView.class::isInstance)) next.contextProjections.add(projected -> {
+            var linked = new ArrayList<Object>();
+            for (int index = 0; index < items.size(); index++) {
+                var item = new LinkedHashMap<>(items.get(index));
+                if (choices.get(index) instanceof CardView card && isTableChoice(card, viewer))
+                    item.put("cardId", activity.visualId(card));
+                linked.add(item);
+            }
+            projected.put("choices", linked);
+        });
         return next;
     }
 
@@ -1983,20 +2008,14 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
         next.prompt = map("id", next.id, "kind", "number", "message", title, "min", min, "max", max);
         if (ability != null && ability.getHostCard() != null) {
             CardView source = ability.getHostCard().getView();
-            String sourceId = numericSourceId(source);
-            if (!sourceId.isEmpty()) {
-                next.prompt.put("sourceCardId", sourceId);
-                next.prompt.put("sourceCard", counterPaymentCard(source));
-                next.prompt.put("sourceZone", source.getZone().name());
-                next.prompt.put("sourceControllerId", source.getController().getId());
-            }
+            describeSource(next, source, this::counterPaymentCard, true, true, true);
         }
         return await(next).get("value").getAsInt();
     }
 
     private String numericSourceId(CardView source) {
         return source != null && source.getZone() != null && !source.isFaceDown() && source.canBeShownTo(viewer)
-                ? combatIds.id(source) : "";
+                ? Objects.toString(combatIds.id(source), "") : "";
     }
 
     private String inputText(Object[] args) {
@@ -2056,11 +2075,15 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
     private void describeAllocation(Pending next, List<?> choices, CardView source, String kind, String amountLabel) {
         next.prompt.put("allocationKind", kind);
         next.prompt.put("amountLabel", amountLabel);
+        next.contextProjections.add(projected -> projectAllocation(next, projected, choices, source));
+    }
+
+    private void projectAllocation(Pending next, Map<String, Object> projected, List<?> choices, CardView source) {
         if (source != null) {
-            next.prompt.put("sourceCard", allocationCard(source));
+            projected.put("sourceCard", allocationCard(source));
             if (isAllocationOccurrence(source, viewer)) {
-                next.prompt.put("sourceCardId", combatIds.id(source));
-                if (source.getController() != null) next.prompt.put("sourceControllerId", source.getController().getId());
+                projected.put("sourceCardId", combatIds.id(source));
+                if (source.getController() != null) projected.put("sourceControllerId", source.getController().getId());
             }
         }
         var items = new ArrayList<Object>();
@@ -2081,7 +2104,7 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
             } else if (choice instanceof PlayerView player) item.put("playerId", player.getId());
             items.add(item);
         }
-        next.prompt.put("choices", items);
+        projected.put("choices", items);
     }
 
     private Map<String, Object> allocationCard(CardView card) {

@@ -45,6 +45,12 @@ only the identity generation it previously observed. This ordering also covers
 rules rollback which restores a card to a hidden zone without a movement event;
 later source catalogs and effect graphs must reference that same published
 occurrence. Historical activity keeps its copied event-time identities.
+Pending choices retain exact source views until that post-revocation projection
+step. Source portraits, payment ownership, numeric context and allocation links
+must use the same identity generation; capturing a portrait before publication
+and computing its semantic reference afterward can produce an invalid frame.
+Readonly event history can copy an already observed anchor for that exact view,
+but cannot allocate or borrow an identity from another incarnation.
 Activity visibility retains the exact tracked `CardView` and its generation per
 physical key. A hidden historical portrait with an equal physical ID cannot
 revoke the currently published view; actual concealment and rollback still do.

@@ -26,6 +26,57 @@ public class ActionOccurrenceCoherenceTest {
 
     @DataProvider public Object[][] actors() { return new Object[][] {{0}, {1}, {2}, {3}}; }
 
+    @Test(dataProvider = "actors", timeOut = 90000)
+    public void aCommanderPaymentProjectsOneCurrentTransientStackSourceAfterAllAudienceRevocations(int actor) throws Exception {
+        var resources = Path.of("../forge-gui/res");
+        if (StaticData.instance() == null) EngineResources.load(resources);
+        var deck = new Deck("Commander payment occurrence");
+        deck.getMain().add(StaticData.instance().getCommonCards().getCard("Forest"), 99);
+        deck.getOrCreate(DeckSection.Commander).add(StaticData.instance().getCommonCards().getCard("Rhys the Redeemed"));
+        var players = java.util.stream.IntStream.range(0, 4)
+                .mapToObj(index -> MatchTable.automated(deck, "Commander", "Policy " + index)).toList();
+        players.get(actor).addExtraCardsOnBattlefield(List.of(StaticData.instance().getCommonCards().getCard("Plains")));
+        Path evidence = Path.of("target/rules-regressions/commander-payment-occurrence-" + actor);
+        Files.createDirectories(evidence);
+        try (var table = new MatchTable("Commander", players, resources, evidence, true)) {
+            table.start(); var answered = new HashMap<Integer, String>();
+            var main = until(table, answered, actor, input -> input.seat() == actor && priority(input)
+                    && input.state().get("activePlayerId").getAsInt() == actor
+                    && text(input.state(), "phaseKey").equals("MAIN1"));
+            use(table, answered, main, "Command", "Rhys the Redeemed", false);
+            var payment = until(table, answered, actor, input -> input.seat() == actor
+                    && text(input.prompt(), "inputType").startsWith("InputPayMana"));
+            assertTrue(payment.state().getAsJsonArray("stack").isEmpty(), "Paying does not yet put the spell on the actual stack");
+            for (int publication = 0; publication < 3; publication++) {
+                var batch = table.automatedSeats().stream().map(MatchSession::automatedObservation).toList();
+                Files.writeString(evidence.resolve("private-payment-observations-" + publication + ".json"), JSON.toJson(batch));
+                var owner = batch.stream().map(row -> JSON.toJsonTree(row).getAsJsonObject())
+                        .filter(row -> row.getAsJsonObject("state").get("viewerId").getAsInt() == actor).findFirst().orElseThrow();
+                var state = owner.getAsJsonObject("state"); var prompt = state.getAsJsonObject("prompt");
+                var portrait = prompt.getAsJsonObject("sourceCard");
+                assertEquals(text(portrait, "name"), "Rhys the Redeemed");
+                assertEquals(text(prompt, "sourceZone"), "Stack");
+                assertFalse(text(portrait, "visualId").isEmpty(), "The current actual payment source must stay identifiable");
+                assertEquals(text(portrait, "combatId"), text(portrait, "visualId"));
+                assertEquals(text(owner.getAsJsonObject("semantics").getAsJsonObject("payment"), "sourceCardId"),
+                        text(portrait, "visualId"), "Current payment provenance and its entitled readonly portrait must be the same occurrence");
+                assertEquals(text(portrait, "key"), ""); assertFalse(portrait.get("selectable").getAsBoolean());
+                assertFalse(portrait.get("highlighted").getAsBoolean());
+                assertEquals(JSON.toJsonTree(table.automatedSeats().stream().map(MatchSession::automatedObservation).toList()), JSON.toJsonTree(batch),
+                        "A current payment read must not change any audience's occurrence");
+                table.publish();
+            }
+            payment = until(table, answered, actor, input -> input.seat() == actor
+                    && text(input.prompt(), "inputType").startsWith("InputPayMana"));
+            use(table, answered, payment, "Battlefield", "Plains", false);
+            var resolved = until(table, answered, actor, input -> input.seat() == actor && priority(input)
+                    && input.state().getAsJsonArray("stack").isEmpty()
+                    && zone(viewer(input.state()), "Battlefield").getAsJsonArray("cards").asList().stream()
+                    .anyMatch(card -> text(card.getAsJsonObject(), "name").equals("Rhys the Redeemed")));
+            assertEquals(text(card(resolved.state(), "Battlefield", "Rhys the Redeemed"), "power"), "1");
+        }
+    }
+
     @Test(timeOut = 120000)
     public void aHistoricalWarpTriggerCannotRevokeTheCurrentPermanentOrItsTargetCandidates() throws Exception {
         var resources = Path.of("../forge-gui/res");
@@ -100,7 +151,8 @@ public class ActionOccurrenceCoherenceTest {
         throw new AssertionError("Missing fixture card " + name);
     }
     private static void use(MatchTable table, Map<Integer, String> answered, Input input, String zone, String name, boolean warp) {
-        var source = card(input.state(), zone, name);
+        var source = zone(viewer(input.state()), zone).getAsJsonArray("cards").asList().stream()
+                .map(value -> value.getAsJsonObject()).filter(value -> text(value, "name").equals(name)).findFirst().orElseThrow();
         var session = table.automatedSeat(input.seat());
         var catalog = JSON.toJsonTree(session.sourceActions(request(input, Map.of("key", text(source, "key"))))).getAsJsonObject();
         var actions = catalog.getAsJsonArray("actions");

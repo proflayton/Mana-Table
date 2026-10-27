@@ -101,6 +101,16 @@ public final class MatchActivity {
         return id;
     }
 
+    private String eventVisualId(CardView card) {
+        String current = visualId(card);
+        if (current != null || !visible(card)) return current;
+        // A real zone-change event carries the departing old CardView. History
+        // can copy its already observed anchor, but cannot create or install a
+        // live occurrence from that historical view.
+        var known = visibleIds.get(card);
+        return known != null && known.view() == card ? known.id() : null;
+    }
+
     synchronized void refreshVisibility() {
         visibleIds.entrySet().removeIf(entry -> {
             if (currentView.test(entry.getValue().view()) && visible(entry.getValue().view())) return false;
@@ -123,7 +133,7 @@ public final class MatchActivity {
     }
     private PublicEffectCause publicCause(GameEventCause cause) {
         if (cause == null || !visible(cause.card())) return null;
-        return new PublicEffectCause(visualId(cause.card()), cause.card().getCurrentState().getName(), cause.ability(),
+        return new PublicEffectCause(eventVisualId(cause.card()), cause.card().getCurrentState().getName(), cause.ability(),
                 cause.controller() == null ? null : cause.controller().getId(), cause.kind(), identities.effect(cause.instanceId()));
     }
     private boolean publicOccurrence(CardView card) {
@@ -138,10 +148,10 @@ public final class MatchActivity {
         if (card != null && !(anonymous || publicOccurrence(card) && visible(card))) return null;
         boolean disclosedSource = publicOccurrence(source) && visible(source);
         return new PublicImpact("damage", amount,
-                card == null ? null : anonymous ? identities.concealed(card) : visualId(card),
+                card == null ? null : anonymous ? identities.concealed(card) : eventVisualId(card),
                 card == null ? null : anonymous ? "Face-down card" : card.getCurrentState().getName(),
                 player == null ? null : player.getId(),
-                disclosedSource ? visualId(source) : null,
+                disclosedSource ? eventVisualId(source) : null,
                 disclosedSource ? source.getCurrentState().getName() : null,
                 null, null, damageType, combat, infect);
     }
@@ -208,7 +218,7 @@ public final class MatchActivity {
         if (interruptsQuietYield) quietSequence++;
         boolean anonymousTarget = change != null && publicFaceDown(card);
         entries.addLast(new Entry(++sequence, turn, phase, kind, player == null ? null : player.getId(),
-                message, anonymousTarget ? identities.concealed(card) : visualId(card),
+                message, anonymousTarget ? identities.concealed(card) : eventVisualId(card),
                 anonymousTarget ? "Face-down card" : visible(card) ? card.getCurrentState().getName() : null,
                 detail, outcome, count, change, cause, interruptsQuietYield, impact, stackId));
         if (cause != null && change != null && change.kind().equals("counters")) {

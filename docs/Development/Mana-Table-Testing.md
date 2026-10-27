@@ -332,7 +332,12 @@ quarantine separately from accepted replay frames and public exception text.
 simultaneous delayed/draw triggers while a Swords to Plowshares offer has current
 target candidates. Every candidate must bind to an entitled current occurrence;
 historical portraits cannot rotate its identity. `MatchActivityTest` separately
-protects equal-physical-ID historical views and real concealment. The campaign's
+protects equal-physical-ID historical views, exact event-time movement anchors
+and real concealment. The occurrence fixture also rotates a real command-zone
+Rhys cast through every seat: its transient pre-stack payment portrait must
+share its payment-owner identity after all audience visibility updates, remain
+readonly, survive repeated publications and finish through actual mana payment.
+The campaign's
 Forge-specific batch check compares same-board public occurrence projections
 before policy evaluation, rather than waiting for a policy frame to validate.
 Different private hands, game/revision boundaries and historical stack portraits

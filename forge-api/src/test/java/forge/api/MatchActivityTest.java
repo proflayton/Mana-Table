@@ -14,6 +14,40 @@ import org.testng.annotations.Test;
 import static org.testng.Assert.*;
 
 public class MatchActivityTest {
+    @Test public void aDepartingPublicViewKeepsOnlyItsPreviouslyObservedHistoryAnchor() {
+        var viewer = new PlayerView(1, null);
+        var departing = publicCard(209, "Departing permanent", viewer);
+        var current = publicCard(209, "Current exile occurrence", viewer);
+        current.set(TrackableProperty.Zone, ZoneType.Exile);
+        var actual = new java.util.concurrent.atomic.AtomicReference<>(departing);
+        var identities = new MatchIdentities();
+        var activity = new MatchActivity(viewer, identities, view -> view == actual.get());
+        activity.onGameEvent(new GameEventTurnBegan(viewer, 1));
+        String known = activity.visualId(departing);
+        actual.set(current);
+        activity.onGameEvent(new GameEventCardChangeZone(departing,
+                new ZoneView(viewer, ZoneType.Battlefield), new ZoneView(viewer, ZoneType.Exile)));
+        var movement = activity.snapshot().get(1);
+        assertEquals(movement.cardId(), known, "A genuine public movement retains its event-time animation/history anchor");
+        assertNull(activity.visualId(departing), "That readonly history reference cannot become a current snapshot identity");
+        assertEquals(activity.visualId(current), known);
+        activity.onGameEvent(new GameEventCardDamaged(departing, null, 1, GameEventCardDamaged.DamageType.Normal));
+        assertNull(activity.snapshot().get(2).cardId(), "A historical view cannot borrow a newer view's recorded anchor, even with the same physical ID");
+        assertNull(activity.snapshot().get(2).impact().cardId());
+        departing.set(TrackableProperty.Zone, null);
+        activity.refreshVisibility();
+        assertEquals(activity.visualId(current), known, "Reading or concealing a historical view cannot alter the live generation");
+        var unknown = publicCard(210, "Unobserved historical permanent", viewer);
+        activity.onGameEvent(new GameEventCardChangeZone(unknown,
+                new ZoneView(viewer, ZoneType.Battlefield), new ZoneView(viewer, ZoneType.Exile)));
+        assertNull(activity.snapshot().get(3).cardId(), "An event cannot mint a current identity for an unobserved historical portrait");
+        current.set(TrackableProperty.Zone, ZoneType.Library);
+        activity.refreshVisibility();
+        current.set(TrackableProperty.Zone, ZoneType.Exile);
+        assertNotEquals(activity.visualId(current), known, "Real concealment still revokes the current generation");
+        assertEquals(movement.cardId(), known, "Retained history is detached and never rewritten to a later generation");
+    }
+
     @Test public void aHistoricalEqualIdPortraitCannotRevokeTheCurrentVisibleOccurrence() {
         var viewer = new PlayerView(1, null);
         var current = publicCard(208, "Current permanent", viewer);
