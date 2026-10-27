@@ -364,6 +364,13 @@ generic tempo heuristic after the policy has initiated an action, not a model
 of the benefit of every X effect. Unknown numeric purposes preserve their
 ordinary initial value or minimum. Broader numeric purposes, effective costs,
 non-mana X costs and effect-sensitive investment still require richer planning.
+Before initiating an optional mana-X route, the policy also requires a nominal
+positive-X funding witness, including fixed costs and commander tax. This avoids
+casting a zero-sized X permanent simply because X=0 is legal. It is a conservative
+sequencing preference: discounts or unsupported dependencies can hide a useful
+route, and effect-specific reasons to choose zero are not modeled. The provider
+continues to offer legal zero-valued actions; policy preference grants no rules
+authority.
 
 Controlled tactical cases establish specific expectations independently of
 self-play: preserve a necessary early land when discarding, account for an

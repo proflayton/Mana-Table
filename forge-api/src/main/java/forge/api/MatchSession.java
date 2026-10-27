@@ -1537,7 +1537,28 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
 
     private List<?> chooseForEffect(String title, int min, int max, List<?> choices, DelayedReveal reveal) {
         boolean library = reveal == null ? libraryCards(choices) : reveal.getZone().equals(Set.of(ZoneType.Library)) && choices.stream().allMatch(CardView.class::isInstance);
-        if (!library) { revealDelayed(reveal); return choose(title, min, max, choices, false, null); }
+        if (!library) {
+            revealDelayed(reveal);
+            if (choices.isEmpty()) return List.of();
+            var next = choicePrompt("choice", title, choices, Math.max(0, min), Math.min(choices.size(), max < 0 ? choices.size() : max), false, null);
+            if (reveal != null) {
+                // The rules controller keeps the delayed window open through
+                // this choice. Noneligible faces are current read-only facts,
+                // not selection options or permission borrowed from an earlier
+                // reveal acknowledgement. Never attach occurrence/action IDs.
+                var disclosed = new ArrayList<Map<String, Object>>();
+                for (CardView card : new LinkedHashSet<>(reveal.getCards())) {
+                    if (choices.contains(card)) continue;
+                    var portrait = choiceCard(card, viewer);
+                    disclosed.add(map("label", portrait.get("name"), "card", portrait));
+                }
+                disclosed.sort(Comparator.comparing(item -> String.valueOf(item.get("label")), String.CASE_INSENSITIVE_ORDER));
+                if (!disclosed.isEmpty()) next.prompt.put("disclosedCards", List.copyOf(disclosed));
+            }
+            var selected = new ArrayList<Object>();
+            for (var index : await(next).getAsJsonArray("choices")) selected.add(choices.get(index.getAsInt()));
+            return selected;
+        }
         if (choices.isEmpty()) return List.of();
         // Search handles must not encode shuffled positions. Both the offered
         // indices and the response lookup use this detached canonical order.

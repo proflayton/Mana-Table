@@ -8,6 +8,7 @@ internal static class AiNumericRegression
 {
     internal static async Task RunAsync(Action<bool, string> check)
     {
+        await Initiation(check);
         var five = Funding(Enumerable.Repeat("C", 5).ToArray());
         var repeated = Numeric(five, "{X}", "{X}");
         check(await Number(Frame(repeated)) == 2,
@@ -119,6 +120,83 @@ internal static class AiNumericRegression
             Context = original.State.Decision!.Context with { Source = original.State.Decision!.Context.Source! with {
                 Card = original.State.Decision!.Context.Source!.Card! with { Key = "not-a-current-action", Selectable = true } } } } }),
             "A numeric cost portrait cannot carry fabricated action or selection authority");
+    }
+
+    private static async Task Initiation(Action<bool, string> check)
+    {
+        var unfunded = InitiationFrame(Numeric(Funding(), "{X}"), ActionAffordability.Payable);
+        check((await Evaluate(unfunded)).Command is PassPriority && unfunded.Domain.Actions[0].Affordability == ActionAffordability.Payable,
+            "A zero-X-payable permanent waits for a positive investment without removing its legal cast offer");
+        check((await Evaluate(InitiationFrame(Numeric(Funding("C"), "{X}")))).Command is UseOfferedAction { ActionId: "invest" },
+            "A genuine one-mana funding witness makes an X spell a normal optional cast candidate");
+        check((await Evaluate(InitiationFrame(Numeric(Funding("C"), "{X}", "{X}")))).Command is PassPriority
+                && (await Evaluate(InitiationFrame(Numeric(Funding("C", "C"), "{X}", "{X}")))).Command is UseOfferedAction { ActionId: "invest" },
+            "Optional initiation charges every repeated X before casting a zero-stat investment creature");
+        var fixedCost = Numeric(Funding("C", "C", "C", "C"), "{X}") with {
+            Costs = [new(ActionCostKind.Mana, 2, false, "") { ManaSymbols = ["{U}", "{X}"] }] };
+        check((await Evaluate(InitiationFrame(fixedCost))).Command is PassPriority
+                && (await Evaluate(InitiationFrame(fixedCost with { Funding = Funding("U", "C", "C") }))).Command is PassPriority
+                && (await Evaluate(InitiationFrame(fixedCost with { Funding = Funding("U", "C", "C", "C") }))).Command is UseOfferedAction { ActionId: "invest" },
+            "Initiating X requires its fixed color, fixed generic and positive variable investment in the same assignment");
+        var commander = Numeric(Funding("C", "C", "C", "C"), "{X}", "{X}");
+        check((await Evaluate(InitiationFrame(commander, commanderTax: 3))).Command is PassPriority
+                && (await Evaluate(InitiationFrame(commander with { Funding = Funding("C", "C", "C", "C", "C") }, commanderTax: 3))).Command is UseOfferedAction { ActionId: "invest" },
+            "Positive-X commander sequencing reserves commander tax instead of counting it as investment mana");
+        var coupled = Numeric(Funding("C", "C"), "{X}") with {
+            Costs = [new(ActionCostKind.Mana, 0, false, "") { ManaSymbols = ["{X}"] }, new(ActionCostKind.Sacrifice, 1, false, "")] };
+        check((await Evaluate(InitiationFrame(coupled))).Command is PassPriority,
+            "An optional X action waits when its unmodeled sacrifice cost could consume the same funding source");
+        var tapSource = Numeric(new(SemanticKnowledge.Known, ImmutableDictionary<string, int>.Empty,
+            [Resource("investment", Output(("C", 1)))]), "{X}") with { Costs = [new(ActionCostKind.Mana, 0, false, "") { ManaSymbols = ["{X}"] },
+                new(ActionCostKind.Tap, 1, true, "")] };
+        check((await Evaluate(InitiationFrame(tapSource, activation: true))).Command is PassPriority
+                && (await Evaluate(InitiationFrame(tapSource with { Funding = tapSource.Funding with {
+                    Sources = tapSource.Funding.Sources.Add(Resource("outside", Output(("C", 1)))) } }, activation: true))).Command is UseOfferedAction { ActionId: "invest" },
+            "An X activation reserves its own tap while allowing a separately funded positive investment");
+        var unknown = Numeric(Funding("C"), "{X}") with { Funding = Funding("C") with {
+            Sources = [new("resource-0", [new([new(ActionCostKind.Tap, 1, true, "")], ManaProduction.Unknown, SemanticKnowledge.Unknown)])] } };
+        check((await Evaluate(InitiationFrame(unknown))).Command is PassPriority,
+            "Unknown producer output is not a positive-X sequencing witness even though the route remains offered");
+    }
+
+    private static AiDecisionFrame InitiationFrame(NumericDecision investment,
+        ActionAffordability affordability = ActionAffordability.Unknown, int commanderTax = 0, bool activation = false)
+    {
+        const string game = "numeric-priority", input = "priority";
+        var source = new Card { Key = "investment-key", VisualId = "investment", CombatId = "investment", Name = "Zero-stat investment",
+            Type = "Artifact Creature", Power = 0, Toughness = 0, CommanderTax = commanderTax };
+        var resources = investment.Funding.Sources.Select(item => item.SourceCardId == source.VisualId ? source : new Card {
+            Key = item.SourceCardId + "-key", VisualId = item.SourceCardId, CombatId = item.SourceCardId, Name = "Mana resource", Type = "Land" }).ToImmutableArray();
+        var bystander = new Card { VisualId = "unrelated", CombatId = "unrelated", Name = "Untapped nonmana creature", Type = "Creature", Power = 1, Toughness = 1 };
+        var battlefield = resources.Add(bystander);
+        if (activation && !resources.Any(card => card.VisualId == source.VisualId)) battlefield = battlefield.Add(source);
+        var zones = ImmutableArray.Create(new Zone("Battlefield", battlefield.Length, battlefield, null));
+        if (!activation) zones = zones.Add(new(commanderTax > 0 ? "Command" : "Hand", 1, [source], null));
+        var state = new GameSnapshot(game, "playing", null, null, 0, 3, "Main", "MAIN1", 0,
+            [new(0, "Actor", 40, true, false, investment.Funding.Pool, zones),
+             new(1, "Opponent", 40, false, false, ImmutableDictionary<string, int>.Empty, [])], [], null,
+            new(input, new(), new PriorityPayload(new("Pass", true)))) {
+                Revision = 1, BoardRevision = 1, DecisionOwnerId = 0, PriorityPlayerId = 0 };
+        var sets = ImmutableArray.CreateBuilder<SourceActionSet>();
+        var actions = ImmutableArray.CreateBuilder<ActionSemantics>();
+        var offers = new Dictionary<string, List<SourceAction>>(StringComparer.Ordinal) { [source.VisualId] = [new("invest", activation ? "activate" : "cast", "Untrusted label")] };
+        actions.Add(new("invest", ActionEffectKind.Permanent, [ActionEffectKind.Permanent], investment.Costs, affordability) {
+            StableId = "invest", ManaCostKnowledge = investment.ManaCostKnowledge });
+        foreach (var resource in investment.Funding.Sources) {
+            if (!offers.TryGetValue(resource.SourceCardId, out var routes)) offers[resource.SourceCardId] = routes = [];
+            for (int route = 0; route < resource.Routes.Length; route++) {
+                string id = resource.SourceCardId + ":" + route;
+                var metadata = resource.Routes[route];
+                routes.Add(new(id, "activate", "Typed mana route"));
+                actions.Add(new(id, ActionEffectKind.Mana, [ActionEffectKind.Mana], metadata.Costs, ActionAffordability.Payable) {
+                    StableId = id, ManaAbility = true, Production = metadata.Production });
+            }
+        }
+        foreach (var entry in offers) {
+            var card = entry.Key == source.VisualId ? source : resources.Single(card => card.VisualId == entry.Key);
+            sets.Add(new(game, input, card.Key, card.VisualId, entry.Value.ToImmutableArray()));
+        }
+        return new(state, domain: new(1, ActionDomainCoverage.Complete, sets.ToImmutable(), actions.ToImmutable()));
     }
 
     private static NumericDecision Numeric(ManaFundingContext funding, params string[] symbols)

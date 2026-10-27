@@ -49,6 +49,19 @@ public static class AiManaPlanner
     public static AiManaPlan ForPayment(AiDecisionRequest request, CancellationToken cancellation = default)
         => Plan(request.Frame, request.Frame.Semantics.UnpaidMana, 0, request.Work, cancellation);
 
+    public static AiManaFundingAssessment ForActionInvestment(AiDecisionRequest request, ActionSemantics action, int x,
+        int extraGeneric = 0, CancellationToken cancellation = default)
+    {
+        if (action.ManaCostKnowledge == SemanticKnowledge.Unsupported)
+            return new(AiManaPlanStatus.Unknown, 0, "investment-cost-unsupported");
+        if (!InvestmentBill(action.Costs, x, extraGeneric, out var symbols, out int generic, out string reason))
+            return new(AiManaPlanStatus.Unknown, 0, reason);
+        string? reserved = action.Costs.Any(cost => cost.Kind == ActionCostKind.Tap && cost.FromSource && cost.Amount == 1)
+            ? request.Frame.SourceActions.FirstOrDefault(set => set.Actions.Any(offer => offer.Id == action.ActionId))?.SourceCardId : null;
+        var plan = Plan(request.Frame, symbols, generic, request.Work, cancellation, reserved);
+        return new(plan.Status, plan.WorkSpent, plan.ReasonCode);
+    }
+
     public static AiManaFundingAssessment ForNumericInvestment(AiDecisionRequest request, int x,
         int reserveGeneric = 0, CancellationToken cancellation = default)
     {
@@ -57,24 +70,34 @@ public static class AiManaPlanner
             return new(AiManaPlanStatus.Unknown, 0, "numeric-cost-purpose-unknown");
         if (numeric.ManaCostKnowledge == SemanticKnowledge.Unsupported || numeric.Funding.Knowledge == SemanticKnowledge.Unsupported)
             return new(AiManaPlanStatus.Unknown, 0, "numeric-cost-or-funding-unsupported");
-        if (numeric.Costs.Count(cost => cost.Kind == ActionCostKind.Tap && cost.Amount > 0) > 1
-            || numeric.Costs.Any(cost => cost.Kind != ActionCostKind.Mana
-                && !(cost.Kind == ActionCostKind.Tap && cost.FromSource && cost.Amount == 1)
-                && !(cost.Kind != ActionCostKind.Other && cost.Amount == 0 && cost.ManaSymbols.IsEmpty)))
-            return new(AiManaPlanStatus.Unknown, 0, "numeric-nonmana-cost-coupling");
-        var costs = numeric.Costs.Where(cost => cost.Kind == ActionCostKind.Mana).ToArray();
-        if (costs.Any(cost => cost.Amount == null)) return new(AiManaPlanStatus.Unknown, 0, "numeric-cost-quantity-unknown");
-        long generic = reserveGeneric + costs.Sum(cost => (long)cost.Amount!.Value);
-        var symbols = ImmutableArray.CreateBuilder<string>();
-        foreach (string symbol in costs.SelectMany(cost => cost.ManaSymbols)) {
-            if (symbol.Trim('{', '}') == "X") generic += x;
-            else symbols.Add(symbol);
-        }
-        if (generic > 1024) return new(AiManaPlanStatus.Unknown, 0, "mana-bill-bound");
+        if (!InvestmentBill(numeric.Costs, x, reserveGeneric, out var symbols, out int generic, out string reason))
+            return new(AiManaPlanStatus.Unknown, 0, reason);
         string? reserved = numeric.Costs.Any(cost => cost.Kind == ActionCostKind.Tap && cost.FromSource && cost.Amount == 1)
             ? numeric.SourceCardId : null;
-        var plan = Plan(null, symbols, (int)generic, request.Work, cancellation, reserved, numeric.Funding);
+        var plan = Plan(null, symbols, generic, request.Work, cancellation, reserved, numeric.Funding);
         return new(plan.Status, plan.WorkSpent, plan.ReasonCode);
+    }
+
+    private static bool InvestmentBill(ImmutableArray<ActionCost> allCosts, int x, int extraGeneric,
+        out ImmutableArray<string> symbols, out int generic, out string reason)
+    {
+        if (x < 0 || extraGeneric < 0) throw new ArgumentOutOfRangeException(nameof(x));
+        symbols = []; generic = 0; reason = "numeric-nonmana-cost-coupling";
+        if (allCosts.Count(cost => cost.Kind == ActionCostKind.Tap && cost.Amount > 0) > 1
+            || allCosts.Any(cost => cost.Kind != ActionCostKind.Mana
+                && !(cost.Kind == ActionCostKind.Tap && cost.FromSource && cost.Amount == 1)
+                && !(cost.Kind != ActionCostKind.Other && cost.Amount == 0 && cost.ManaSymbols.IsEmpty)))
+            return false;
+        var costs = allCosts.Where(cost => cost.Kind == ActionCostKind.Mana).ToArray();
+        if (costs.Any(cost => cost.Amount == null)) { reason = "numeric-cost-quantity-unknown"; return false; }
+        long amount = extraGeneric + costs.Sum(cost => (long)cost.Amount!.Value);
+        var remaining = ImmutableArray.CreateBuilder<string>();
+        foreach (string symbol in costs.SelectMany(cost => cost.ManaSymbols)) {
+            if (symbol.Trim('{', '}') == "X") amount += x;
+            else remaining.Add(symbol);
+        }
+        if (amount > 1024) { reason = "mana-bill-bound"; return false; }
+        symbols = remaining.ToImmutable(); generic = (int)amount; reason = ""; return true;
     }
 
     public static AiManaFundingAssessment EvaluateFunding(ManaFundingContext funding, IEnumerable<string> symbols,

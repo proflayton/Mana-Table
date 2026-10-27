@@ -276,7 +276,7 @@ internal sealed class AiCampaignDiagnostics : IDisposable
         privateReplayCases = ReplayCases, diagnosticErrors,
         missingBoardWitnesses = new[] { "creature-battlefield", "token-battlefield", "counter-change", "attachment-on-battlefield",
             "declared-combat", "reported-damage", "multiple-stack-targets" }.Except(BoardWitnesses).ToArray(),
-        interpretation = "Offers, chosen commands, authoritative board/event witnesses and review findings are separate. Numeric evidence separates proposed/accepted values from subsequent exact-source payment, public stack, resolution and actual statistics; a source correlation does not prove X caused every later effect. Earlier-same-source replay links do not identify which cast, ability or optional payment was cancelled. A resolved source does not prove every intended effect occurred. TargetRecipients counts player choices and attacks only; their distribution does not establish social quality." };
+        interpretation = "Offers, chosen commands, authoritative board/event witnesses and review findings are separate. Numeric evidence separates proposed/accepted values from subsequent exact-source payment inputs and owned-seat event reports; public stack and actual statistics are observed independently through the spectator. A source correlation does not prove X caused every later effect. Earlier-same-source replay links do not identify which cast, ability or optional payment was cancelled. A resolved source does not prove every intended effect occurred. TargetRecipients counts player choices and attacks only; their distribution does not establish social quality." };
 
     public void Dispose() => decisions.Dispose();
 }

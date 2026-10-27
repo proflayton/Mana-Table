@@ -34,6 +34,7 @@ internal static class ForgeCommandBoundaryChecks
         var selected = ForgeDecisionDecoder.Decode(selectionWire);
         check(selected.Payload is TargetSelectionPayload { Range: { Min: 1, Max: 1 } } && selectionWire.GetRawText() == original,
             "A direct immutable decode consumes authoritative semantics without editing JSON or exposing provider class names");
+        CurrentChoiceDisclosures(check);
         foreach (string invalid in new[] {
             """ "kind":"input","task":"unknown-required-task" """,
             """ "kind":"choice","task":"mana" """,
@@ -355,5 +356,52 @@ internal static class ForgeCommandBoundaryChecks
         bool replacementRejected = false;
         try { new ForgeCommandScope().Encode(new PassPriority(game, prompt)); } catch (EngineCommandRejectedException) { replacementRejected = true; }
         check(replacementRejected, "A replacement provider process cannot inherit command authority");
+    }
+
+    private static void CurrentChoiceDisclosures(Action<bool, string> check)
+    {
+        const string eligible = """ "kind":"choice","task":"choice","min":1,"max":1,"choices":[{"index":7,"label":"Eligible nonland","card":{"name":"Eligible nonland","type":"Creature"}}] """;
+        const string extra = """ "disclosedCards":[{"label":"Readable land","card":{"name":"Readable land","type":"Land","text":"Publicly disclosed rules"}}] """;
+        var wire = Prompt(eligible + "," + extra);
+        string original = wire.GetRawText();
+        var decision = ForgeDecisionDecoder.Decode(wire);
+        check(decision.Payload is OptionsPayload { Selection: { Choices: [{ Index: 7 }], Disclosures: [{ Index: null, CardId: "",
+                Card: { Name: "Readable land", Key: "", VisualId: "", CombatId: "", Selectable: false, Highlighted: false } }] } }
+                && wire.GetRawText() == original,
+            "A mixed-hand choice retains its additional readable land in the current prompt without altering eligible nonland indices or the wire");
+        var state = new GameSnapshot("disclosed-choice", "playing", null, null, 0, 1, "Main", "MAIN1", 0,
+            [new(0, "Actor", 40, true, false, ImmutableDictionary<string, int>.Empty, [])], [], null, decision);
+        check(GameCommandPermissions.Allows(state, new ChooseOptions(state.Id, decision.Id, [7]))
+                && !GameCommandPermissions.Allows(state, new ChooseOptions(state.Id, decision.Id, [8]))
+                && !GameCommandPermissions.Allows(state, new SelectCard(state.Id, decision.Id, "Readable land")),
+            "A current extra face grants reading only and cannot become an additional option or card-selection command");
+        _ = Decode(""" "kind":"reveal","task":"reveal","choices":[{"label":"Earlier land","card":{"name":"Earlier land","type":"Land"}}] """);
+        check(Decode(eligible).Payload is OptionsPayload { Selection.Disclosures.IsEmpty: true },
+            "A later choice does not inherit the current extra faces or permissions from an earlier reveal");
+        check(Decode(eligible + "," + extra.Replace("}]", "},{\"label\":\"Readable land\",\"card\":{\"name\":\"Readable land\",\"type\":\"Land\"}}]")).Payload
+                is OptionsPayload { Selection.Disclosures.Length: 2 },
+            "Distinct disclosed occurrences with the same printed face retain their anonymous multiplicity");
+        foreach (string invalid in new[] {
+            """ "kind":"input","task":"priority" """ + "," + extra,
+            """ "kind":"reveal","task":"reveal","choices":[] """ + "," + extra,
+            eligible + ",\"purpose\":\"abilities\"," + extra,
+            eligible + ",\"ordered\":true," + extra,
+            eligible + ",\"counterPaymentChoice\":{}," + extra,
+            eligible + ",\"libraryCards\":[]," + extra,
+            eligible + ",\"disclosedCards\":{}",
+            eligible + "," + extra.Replace("\"label\":\"Readable land\"", "\"index\":8,\"label\":\"Readable land\""),
+            eligible + "," + extra.Replace("\"label\":\"Readable land\"", "\"index\":null,\"label\":\"Readable land\""),
+            eligible + "," + extra.Replace("\"label\":\"Readable land\"", "\"cardId\":\"hidden-physical-id\",\"label\":\"Readable land\""),
+            eligible + "," + extra.Replace("\"type\":\"Land\"", "\"type\":\"Land\",\"key\":\"action-key\""),
+            eligible + "," + extra.Replace("\"type\":\"Land\"", "\"type\":\"Land\",\"visualId\":\"physical-id\""),
+            eligible + "," + extra.Replace("\"type\":\"Land\"", "\"type\":\"Land\",\"combatId\":\"physical-id\""),
+            eligible + "," + extra.Replace("\"type\":\"Land\"", "\"type\":\"Land\",\"selectable\":true"),
+            eligible + "," + extra.Replace("\"type\":\"Land\"", "\"type\":\"Land\",\"highlighted\":true"),
+            eligible + "," + extra.Replace("\"type\":\"Land\"", "\"type\":\"Land\",\"attachedTo\":{\"kind\":\"card\",\"cardId\":\"hidden-host\"}")
+        }) {
+            bool rejected = false;
+            try { Decode(invalid); } catch (IOException) { rejected = true; }
+            check(rejected, "Malformed, actionable or unrelated current-choice disclosures fail closed at the provider decoder");
+        }
     }
 }

@@ -28,6 +28,8 @@ internal static class ForgeDecisionDecoder
                 || Present(prompt, "effect") && !(task == "selection" && purpose == "targets")
                 || Present(prompt, "counterPayment") && !(task == "selection" && purpose == "")
                 || Present(prompt, "counterPaymentChoice") && !(task == "choice" && purpose == "" && !ordered)) throw Invalid();
+            if (Present(prompt, "disclosedCards") && (task != "choice" || purpose != "" || ordered
+                || Present(prompt, "counterPaymentChoice") || Present(prompt, "libraryCards"))) throw Invalid();
             string alternative = Text(prompt, "priorityAlternative"), quiet = Text(prompt, "quietYieldToken");
             if (alternative is not ("" or "none" or "undo" or "passTurn")
                 || task != "priority" && (alternative is "undo" or "passTurn" || quiet.Length != 0 || Flag(prompt, "canAutoPass"))) throw Invalid();
@@ -143,8 +145,18 @@ internal static class ForgeDecisionDecoder
                 CardId = Text(value, "cardId"), Detail = Text(value, "detail"), Mana = Text(value, "mana")
             };
         }).ToImmutableArray();
-        return new(choices, Range(prompt), Disclosures(prompt));
+        return new(choices, Range(prompt), Disclosures(prompt).AddRange(CurrentChoiceDisclosures(prompt)));
     }
+    private static ImmutableArray<LibraryChoice> CurrentChoiceDisclosures(JsonElement prompt) => Array(prompt, "disclosedCards").Select(value => {
+        Object(value);
+        // These are additional faces readable in this current choice, never
+        // eligible option indices or links to hidden physical occurrences.
+        if (value.TryGetProperty("index", out _) || value.TryGetProperty("cardId", out _)) throw Invalid();
+        var card = ReadCard(value, "card") ?? throw Invalid();
+        if (card.Key.Length != 0 || card.VisualId.Length != 0 || card.CombatId.Length != 0
+            || card.Selectable || card.Highlighted || card.AttachedTo != null || !card.Attachments.IsEmpty) throw Invalid();
+        return new LibraryChoice(null, Text(value, "label", required: true), card);
+    }).ToImmutableArray();
     private static ImmutableArray<LibraryChoice> Disclosures(JsonElement prompt) => Array(prompt, "libraryCards").Select(value => {
         Object(value);
         var card = ReadCard(value, "card") ?? throw Invalid();

@@ -110,6 +110,110 @@ public class ScryVisibilityTest {
     }
 
     @Test(timeOut = 90000)
+    public void aRealOpponentHandChoiceDisclosesOnlyItsCurrentAnonymousFacesAndRevokesThemAtAcceptance() throws Exception {
+        try (var scenario = new RulesScenario("thought-knot-current-hand-choice", Map.of(0,
+                List.of("Wastes", "Wastes", "Wastes", "Wastes")), "Thought-Knot Seer", "Traxos, Scourge of Kroog",
+                Map.of(1, List.of("Thought-Knot Seer", "Thought-Knot Seer", "Thought-Knot Seer", "Thought-Knot Seer",
+                        "Thought-Knot Seer", "Thought-Knot Seer", "Forest")))) {
+            var main = scenario.until(input -> input.seat() == 0 && text(input.prompt(), "inputType").equals("InputPassPriority")
+                    && text(input.state(), "phaseKey").equals("MAIN1"));
+            var spell = zone(viewer(main.state()), "Hand").getAsJsonArray("cards").get(0).getAsJsonObject();
+            var catalog = JSON.toJsonTree(scenario.table.seat(0).sourceActions(request(main, Map.of("key", text(spell, "key"))))).getAsJsonObject();
+            var cast = catalog.getAsJsonArray("actions").asList().stream().map(value -> value.getAsJsonObject())
+                    .filter(action -> text(action, "kind").equals("cast")).findFirst().orElseThrow();
+            assertTrue(scenario.answer(main, Map.of("action", "useSourceAction", "key", text(spell, "key"), "actionId", text(cast, "id"))));
+            var payment = scenario.until(input -> text(input.prompt(), "inputType").startsWith("InputPayMana")
+                    && input.prompt().get("okEnabled").getAsBoolean());
+            assertTrue(scenario.answer(payment, Map.of("action", "ok")));
+            var target = scenario.until(input -> text(input.prompt(), "inputType").equals("InputSelectTargets"));
+            assertTrue(scenario.answer(target, Map.of("action", "player", "playerId", 1)));
+            var choice = scenario.until(input -> text(input.prompt(), "kind").equals("reveal") || text(input.prompt(), "kind").equals("choice"));
+            int acknowledgements = 0;
+            while (text(choice.prompt(), "kind").equals("reveal")) {
+                assertTrue(++acknowledgements <= 4, "The real public hand reveal has at most one acknowledgement per audience");
+                assertTrue(scenario.answer(choice, Map.of("action", "ok")));
+                choice = scenario.until(input -> text(input.prompt(), "kind").equals("reveal") || text(input.prompt(), "kind").equals("choice"));
+            }
+            assertEquals(choice.seat(), 0);
+            assertTrue(acknowledgements > 0, "The real reveal step precedes the nonland choice");
+            var current = choice;
+            var hand = zone(player(current.state(), 1), "Hand").getAsJsonArray("cards");
+            var choices = current.prompt().getAsJsonArray("choices");
+            assertEquals(hand.size(), 7);
+            assertEquals(choices.size(), 6, "The basic land is readable but cannot be selected for this nonland effect");
+            var extras = current.prompt().getAsJsonArray("disclosedCards");
+            assertNotNull(extras, "A separate earlier reveal cannot describe this current choice's noneligible readable faces");
+            assertEquals(extras.size(), 1);
+            var extra = extras.get(0).getAsJsonObject();
+            assertFalse(extra.has("index"));
+            var land = extra.getAsJsonObject("card");
+            assertEquals(text(land, "name"), "Forest");
+            for (String forbidden : List.of("key", "visualId", "combatId", "selectable", "highlighted")) assertFalse(land.has(forbidden));
+            var disclosed = java.util.stream.Stream.concat(choices.asList().stream(), extras.asList().stream())
+                    .map(value -> text(value.getAsJsonObject().getAsJsonObject("card"), "name")).sorted().toList();
+            assertEquals(hand.asList().stream().map(value -> text(value.getAsJsonObject(), "name")).sorted().toList(), disclosed,
+                    "Current eligible choices plus noneligible disclosures justify exactly the current read-only hand multiset");
+            for (var value : hand) {
+                var card = value.getAsJsonObject();
+                assertTrue(text(card, "key").startsWith(text(current.prompt(), "id") + ":c"));
+                assertEquals(text(card, "visualId"), ""); assertEquals(text(card, "combatId"), "");
+                assertFalse(card.get("selectable").getAsBoolean()); assertFalse(card.get("highlighted").getAsBoolean());
+                assertThrows(IllegalArgumentException.class,
+                        () -> scenario.table.seat(0).sourceActions(request(current, Map.of("key", text(card, "key")))));
+            }
+            for (var value : choices) {
+                var option = value.getAsJsonObject();
+                assertEquals(text(option, "cardId"), "");
+                assertEquals(text(option.getAsJsonObject("card"), "key"), "");
+                assertEquals(text(option.getAsJsonObject("card"), "visualId"), "");
+                assertEquals(text(option.getAsJsonObject("card"), "combatId"), "");
+            }
+            scenario.rejected(current, Map.of("choices", List.of(choices.size())), "Invalid or duplicate choice");
+            for (int seat : List.of(2, 3))
+                assertTrue(zone(player(scenario.state(seat), 1), "Hand").getAsJsonArray("cards").isEmpty(),
+                        "Other audiences do not inherit the chooser's temporary window after acknowledging the public reveal");
+            assertEquals(zone(viewer(scenario.state(1)), "Hand").getAsJsonArray("cards").size(), 7);
+            scenario.table.game.getAction().withState(() -> {
+                var actor = scenario.table.game.getPlayers().get(0);
+                var actualHand = scenario.table.game.getPlayers().get(1).getCardsIn(ZoneType.Hand);
+                for (var card : actualHand) {
+                    assertTrue(card.mayPlayerLook(actor), "The blocking current choice has a real temporary rules permission");
+                    assertFalse(card.mayPlayerLookWithoutTemporary(actor));
+                }
+                var spectator = JSON.toJsonTree(SpectatorObservation.project(scenario.table,
+                        current.state().get("boardRevision").getAsLong(), null)).getAsJsonObject();
+                assertTrue(zone(player(spectator, 1), "Hand").getAsJsonArray("cards").isEmpty());
+                assertTrue(scenario.answer(current, Map.of("choices", List.of(0))));
+                for (var card : actualHand) assertTrue(card.mayPlayerLook(actor), "The held rules thread has not yet ended tempShow");
+                var consumed = scenario.state(0);
+                assertTrue(consumed.get("prompt").isJsonNull());
+                assertTrue(zone(player(consumed, 1), "Hand").getAsJsonArray("cards").isEmpty(),
+                        "Accepting the option immediately revokes its window, even before the engine thread resumes");
+                assertThrows(IllegalArgumentException.class,
+                        () -> scenario.table.seat(0).action(request(current, Map.of("choices", List.of(1)))));
+            });
+            var resolved = scenario.until(input -> text(input.prompt(), "kind").equals("reveal")
+                    || input.seat() == 0 && text(input.prompt(), "inputType").equals("InputPassPriority")
+                    && input.state().getAsJsonArray("stack").isEmpty());
+            int exileAcknowledgements = 0;
+            while (text(resolved.prompt(), "kind").equals("reveal")) {
+                assertTrue(++exileAcknowledgements <= 4, "The selected public exile has at most one acknowledgement per audience");
+                assertTrue(scenario.answer(resolved, Map.of("action", "ok")));
+                resolved = scenario.until(input -> text(input.prompt(), "kind").equals("reveal")
+                        || input.seat() == 0 && text(input.prompt(), "inputType").equals("InputPassPriority")
+                        && input.state().getAsJsonArray("stack").isEmpty());
+            }
+            assertEquals(count(player(resolved.state(), 1), "Hand"), 6);
+            assertEquals(count(player(resolved.state(), 1), "Exile"), 1, "The ordinary selected card is actually exiled");
+            assertTrue(zone(player(resolved.state(), 1), "Hand").getAsJsonArray("cards").isEmpty());
+            scenario.table.game.getAction().withState(() -> {
+                var actor = scenario.table.game.getPlayers().get(0);
+                for (var card : scenario.table.game.getPlayers().get(1).getCardsIn(ZoneType.Hand)) assertFalse(card.mayPlayerLook(actor));
+            });
+        }
+    }
+
+    @Test(timeOut = 90000)
     public void aLookAtTopPermissionDisclosesALandWithoutGrantingAPlayAndEndsWithItsSource() throws Exception {
         try (var scenario = new RulesScenario("top-look-read-only-permission", Map.of(0,
                 List.of("Mystic Forge", "Seal of Primordium")), "Wastes", "Traxos, Scourge of Kroog")) {

@@ -84,6 +84,13 @@ it can witness nominal funding but cannot certify that no other resources exist.
 This additive private metadata needs no persisted-data migration; older
 observations without it retain unknown numeric purpose. Actual current payment
 inputs still own spending and activation authority.
+Ordinary non-library effect choices may also carry current `disclosedCards`
+rows `{label, card}` for delayed-reveal faces absent from the eligible options.
+These anonymous portraits have no index, physical identity, card key or action
+permission. Native decoding places them in the current selection's read-only
+disclosures; only ordinary offered indices can be chosen. A previous reveal
+cannot supply this permission after its own scope has ended. Existing library
+choice metadata remains separate; no persisted-data migration is required.
 Accepting a decision revokes its temporary hidden-card window and card keys in
 the resolving receipt, independently of queued rules cleanup. Persistent look
 permissions remain readable. Past authorized knowledge is not a current offer

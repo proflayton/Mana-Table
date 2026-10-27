@@ -82,7 +82,16 @@ public sealed class CasualCommanderPolicy : IAiPolicy
         if (semantic.Effect == ActionEffectKind.Land || offer.Action.Kind == "play") return 1000;
         if (semantic.Effect == ActionEffectKind.Unknown && offer.Action.Kind != "cast" && semantic.OperationGraph.Operations.IsDefaultOrEmpty) return -1;
         var state = request.Frame.State;
-        if (semantic.Affordability == ActionAffordability.Unknown && !PlausiblyFunded(request, semantic, offers)) return -1;
+        bool investment = semantic.Costs.Where(cost => cost.Kind == ActionCostKind.Mana)
+            .SelectMany(cost => cost.ManaSymbols).Any(symbol => symbol.Trim('{', '}') == "X");
+        if (investment) {
+            var source = CardViews.FindActionSource(state, offer.Set.SourceCardKey);
+            int tax = source?.Zone == "Command" && offer.Action.Kind == "cast" ? source.Value.Card.CommanderTax : 0;
+            var funding = AiManaPlanner.ForActionInvestment(request with { Work = request.Work.CreateSlice(256, reserve: 4) }, semantic, 1, tax);
+            // X=0 can be rules-legal while doing little for this baseline. Wait
+            // for a positive nominal investment without removing that offer.
+            if (funding.Status != AiManaPlanStatus.Funded) return -1;
+        } else if (semantic.Affordability == ActionAffordability.Unknown && !PlausiblyFunded(request, semantic, offers)) return -1;
         var assessment = CasualActionAssessment.Evaluate(state, semantic.OperationGraph, request.Work, offer.Source);
         if (assessment.Status is CasualAssessmentStatus.BudgetExceeded or CasualAssessmentStatus.SearchLimited) return -1;
         bool modeled = assessment.Status is CasualAssessmentStatus.Estimated or CasualAssessmentStatus.EstimatedPartial;

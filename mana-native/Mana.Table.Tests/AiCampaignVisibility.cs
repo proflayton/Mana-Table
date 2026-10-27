@@ -12,54 +12,52 @@ internal static class AiCampaignVisibility
         DecisionActionDomain? domain = null)
     {
         domain ??= DecisionActionDomain.None;
-        bool readOnlyReveal = state.Decision?.Payload is RevealPayload
+        var selection = state.Decision?.Payload switch {
+            OptionsPayload options => options.Selection, OrderingPayload ordering => ordering.Selection,
+            AbilityChoicePayload ability => ability.Selection, _ => null };
+        bool readOnlyDisclosure = (state.Decision?.Payload is RevealPayload || selection != null)
             && domain.Coverage == ActionDomainCoverage.NotApplicable && domain.Sources.IsEmpty
             && domain.Actions.IsEmpty && domain.PoolManaColors.IsEmpty;
-        var anonymousReveals = state.Decision?.Payload is RevealPayload reveal
-            ? reveal.Cards.Select(face => face.Card).ToList() : [];
+        var choiceFaces = selection == null ? [] : selection.Choices.Where(choice => choice.Card != null).Select(choice => choice.Card!)
+            .Concat(selection.Disclosures.Where(face => face.Index == null
+                || !selection.Choices.Any(choice => choice.Index == face.Index && choice.Card != null)).Select(face => face.Card)).ToList();
+        var anonymousFaces = (state.Decision?.Payload is RevealPayload reveal ? reveal.Cards.Select(face => face.Card) : [])
+            .Concat(choiceFaces).Where(face => string.IsNullOrEmpty(face.VisualId) && string.IsNullOrEmpty(face.CombatId)).ToList();
+        var identifiedChoices = choiceFaces.Where(face => !string.IsNullOrEmpty(face.VisualId)).ToList();
+        if (state.Decision?.Context.Source is { Zone: "Library", Card: { } librarySource } sourceContext
+            && sourceContext.ControllerId == state.ViewerId && string.IsNullOrEmpty(librarySource.VisualId)
+            && string.IsNullOrEmpty(librarySource.CombatId)) anonymousFaces.Add(librarySource);
         foreach (var player in state.Players)
             foreach (var zone in player.Zones.Where(zone => zone.Name == "Library" || zone.Name == "Hand" && player.Id != state.ViewerId)) {
                 bool search = semantics?.Intent == DecisionIntent.Search || state.Decision?.Payload is ConfirmationPayload { Search: not null }
                     or TargetSelectionPayload { Search: not null };
                 if (search && zone.Name == "Library" && !zone.Cards.IsEmpty) return false;
-                var disclosed = new List<Card>();
                 var source = state.Decision?.Context.Source;
-                if (source?.Zone == zone.Name && source.ControllerId == player.Id && source.Card != null) disclosed.Add(source.Card);
-                var selection = state.Decision?.Payload switch {
-                    OptionsPayload options => options.Selection, OrderingPayload ordering => ordering.Selection,
-                    AbilityChoicePayload ability => ability.Selection, _ => null };
-                if (selection != null) {
-                    disclosed.AddRange(selection.Choices.Where(choice => choice.Card != null).Select(choice => choice.Card!));
-                    disclosed.AddRange(selection.Disclosures.Where(face => face.Index == null
-                        || !selection.Choices.Any(choice => choice.Index == face.Index && choice.Card != null)).Select(face => face.Card));
-                }
                 foreach (var card in zone.Cards) {
                     if (!search && player.Id == state.ViewerId && zone.Name == "Library" && zone.Cards.Length == 1
                         && zone.TopCard is { FaceDown: false } top && !string.IsNullOrEmpty(top.VisualId) && top.VisualId == card.VisualId)
                         continue; // A read-only top disclosure need not grant a playable route.
                     if (state.PlayAccesses.Any(access => access.PlayerId == player.Id && access.Zone == zone.Name
                             && access.CardId == card.VisualId && !string.IsNullOrEmpty(card.VisualId))) continue;
-                    int index = disclosed.FindIndex(face => Matches(face, card, player.Id == state.ViewerId && zone.Name == "Library"));
-                    if (index >= 0) { disclosed.RemoveAt(index); continue; }
-                    // Reveal dialogs deliberately anonymize private occurrences.
-                    // One shared multiset prevents the same face authorizing
-                    // extra copies in several players' hidden zones.
-                    // An opaque key alone grants no command under an Ack-only
-                    // reveal. Its face still consumes this shared budget; no
-                    // physical identity or selection/action permission passes.
-                    if (!readOnlyReveal || !string.IsNullOrEmpty(card.VisualId) || !string.IsNullOrEmpty(card.CombatId)
-                        || card.Selectable || card.Highlighted) return false;
-                    int revealed = anonymousReveals.FindIndex(face => Matches(face, card, true));
-                    if (revealed < 0) return false;
-                    anonymousReveals.RemoveAt(revealed);
+                    if (source?.Zone == zone.Name && source.ControllerId == player.Id && source.Card is { } sourceCard
+                        && !string.IsNullOrEmpty(sourceCard.VisualId) && sourceCard.VisualId == card.VisualId) continue;
+                    int identified = identifiedChoices.FindIndex(face => face.VisualId == card.VisualId);
+                    if (identified >= 0) { identifiedChoices.RemoveAt(identified); continue; }
+                    // Current explicit faces share one budget across all hidden
+                    // zones. Choice indices may be actionable; their anonymous
+                    // zone portraits and opaque keys grant no source authority.
+                    // Own-library ordering retains its existing disclosed
+                    // occurrence IDs. Other anonymous windows retain none.
+                    bool ownLibrary = selection != null && player.Id == state.ViewerId && zone.Name == "Library";
+                    if (!readOnlyDisclosure || card.Selectable || card.Highlighted
+                        || !ownLibrary && (!string.IsNullOrEmpty(card.VisualId) || !string.IsNullOrEmpty(card.CombatId))) return false;
+                    int disclosed = anonymousFaces.FindIndex(face => SameReadableFace(face, card));
+                    if (disclosed < 0) return false;
+                    anonymousFaces.RemoveAt(disclosed);
                 }
             }
         return true;
     }
-
-    private static bool Matches(Card face, Card occurrence, bool ownLibraryWindow) => !string.IsNullOrEmpty(face.VisualId)
-        ? face.VisualId == occurrence.VisualId
-        : ownLibraryWindow && SameReadableFace(face, occurrence);
 
     // This compares the bounded disclosed face, not the entire occurrence.
     // Printing metadata, handles, tap state and zone bookkeeping can differ

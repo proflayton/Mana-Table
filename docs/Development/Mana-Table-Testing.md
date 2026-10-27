@@ -81,6 +81,13 @@ Campaign disclosure checks compare the bot's private-zone windows with its
 current disclosed faces and action permissions. They are consistency checks,
 not an independent proof that the provider correctly granted every entitlement.
 Real rules-side privacy and revocation scenarios remain necessary.
+Current anonymous option faces and explicit read-only disclosures share one
+face/multiplicity budget across hidden zones. They do not authorize extra
+physical identities, selection flags or source catalogs. A prior reveal is not
+permission for the next choice. The mixed-hand Thought-Knot Seer fixture in
+`ScryVisibilityTest` checks eligible nonlands separately from a currently
+disclosed land, other audiences, and immediate revocation while rules cleanup
+is held. Decoder checks keep that readable land outside the selectable indices.
 
 This checks actual development, paid abilities and combat, without treating
 progress counters as evidence that the opponents are fun. Java

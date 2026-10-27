@@ -27,6 +27,7 @@ internal sealed class AiCampaignNumericInvestment
     public int Value { get; }
     public bool? Accepted { get; private set; }
     public string? ReceiptError { get; private set; }
+    public string EventAudience => "owned-seat filtered activity; stack and card observations come independently from the public spectator";
     public bool SameSourceStackObserved { get; private set; }
     public long? SameSourceCastEventId { get; private set; }
     public long? SameSourceResolvedEventId { get; private set; }
@@ -47,8 +48,14 @@ internal sealed class AiCampaignNumericInvestment
 
     internal void ObserveOwned(AutomatedSeatObservation observation)
     {
-        if (Accepted != true || observation.State.Id != GameId || observation.SeatId != SeatId
-            || observation.State.BoardRevision < BoardRevision || observation.State.Decision is not { Payload: PaymentPayload } decision
+        if (Accepted != true || observation.State.Id != GameId || observation.SeatId != SeatId || observation.State.ViewerId != SeatId
+            || observation.State.BoardRevision < BoardRevision) return;
+        foreach (var entry in observation.State.Activity) {
+            if (entry.Id <= lastPriorEvent || entry.CardId != SourceCardId) continue;
+            if (entry.Kind == "cast") SameSourceCastEventId ??= entry.Id;
+            if (entry.Kind == "resolved" && entry.Outcome == "resolved") SameSourceResolvedEventId ??= entry.Id;
+        }
+        if (observation.State.Decision is not { Payload: PaymentPayload } decision
             || !(decision.Context.Source?.CardId == SourceCardId || Matches(decision.Context.Source?.Card)) || SameSourcePaymentInputs.Count >= 16
             || !paymentStates.Add(decision.Id + ":" + string.Join(",", observation.Semantics.UnpaidMana))) return;
         SameSourcePaymentInputs.Add(new(decision.Id, observation.State.BoardRevision, observation.Semantics.UnpaidMana));
@@ -58,11 +65,6 @@ internal sealed class AiCampaignNumericInvestment
     {
         if (Accepted != true || state.ViewerId != -1 || state.Id != GameId || state.BoardRevision < BoardRevision || string.IsNullOrEmpty(SourceCardId)) return;
         if (state.Stack.Any(item => Matches(item.Card))) SameSourceStackObserved = true;
-        foreach (var entry in state.Activity) {
-            if (entry.Id <= lastPriorEvent || entry.CardId != SourceCardId) continue;
-            if (entry.Kind == "cast") SameSourceCastEventId ??= entry.Id;
-            if (entry.Kind == "resolved" && entry.Outcome == "resolved") SameSourceResolvedEventId ??= entry.Id;
-        }
         foreach (var player in state.Players)
         foreach (var zone in player.Zones)
         foreach (var card in zone.Cards.Where(Matches)) {
@@ -86,29 +88,37 @@ internal sealed class AiCampaignNumericInvestment
         var request = new AiDecisionReplayCase(1, "numeric-case", "test", choice, DecisionActionDomain.None, new(), new([], []), 1);
         var current = choice with { ViewerId = -1, BoardRevision = 3, Decision = null,
             Stack = [new(card.Name, "", StackActionKind.Spell, card)],
-            Activity = [new(8, 1, "MAIN1", "resolved", 0, "", card.VisualId, card.Name) { Outcome = "resolved" }],
+            Activity = [],
             Players = [player with { Zones = [new("Battlefield", 1,
                 [card with { Power = 2, Toughness = 2, Counters = ImmutableDictionary<string, int>.Empty.Add("P1P1", 2) }], null)] }] };
+        var owned = new AutomatedSeatObservation(0, current with { ViewerId = 0,
+            Activity = [new(8, 1, "MAIN1", "cast", 0, "", card.VisualId, card.Name),
+                new(9, 1, "MAIN1", "resolved", 0, "", card.VisualId, card.Name) { Outcome = "resolved" }] }, DecisionActionDomain.None, new());
         var evidence = new AiCampaignNumericInvestment(request, "AnnounceX", card.VisualId, 3);
         evidence.ObservePublic(current);
         check(!evidence.SameSourceStackObserved && !evidence.PositiveChoiceWithPublicResolution && evidence.PublicCardObservations.Count == 0,
             "A proposed numeric choice does not establish an accepted investment or public outcome");
         evidence.Receipt(true, null);
-        evidence.ObservePublic(choice with { ViewerId = -1, Decision = null });
-        evidence.ObservePublic(current with { Id = "other-game" });
-        evidence.ObservePublic(current with { Stack = [], Players = [player], Activity = [current.Activity[0] with { CardId = "other-source" }] });
+        evidence.ObserveOwned(owned with { State = choice });
+        evidence.ObserveOwned(owned with { State = owned.State with { Id = "other-game" } });
+        evidence.ObserveOwned(owned with { State = owned.State with {
+            Activity = [owned.State.Activity[1] with { CardId = "other-source" }] } });
         check(!evidence.SameSourceStackObserved && !evidence.PositiveChoiceWithPublicResolution,
             "Old events, another game and another source cannot certify the numeric choice's public resolution");
         evidence.ObservePublic(current);
+        check(evidence.SameSourceStackObserved && evidence.SameSourceResolvedEventId == null,
+            "A real public stack/card observation does not invent resolution events omitted by the spectator");
+        evidence.ObserveOwned(owned);
         check(evidence.PositiveChoiceWithPublicResolution && evidence.SameSourceStackObserved
-                && evidence.SameSourceResolvedEventId == 8 && evidence.PublicCardObservations is [{ Power: 2, Toughness: 2 }]
+                && evidence.SameSourceCastEventId == 8 && evidence.SameSourceResolvedEventId == 9
+                && evidence.PublicCardObservations is [{ Power: 2, Toughness: 2 }]
                 && evidence.PublicCardObservations[0].Counters["P1P1"] == 2,
-            "An accepted positive numeric choice retains separate exact-source stack, resolution and actual statistics without inventing X-sized effects");
+            "An accepted positive numeric choice retains attributed exact-source event reports and independent public statistics without inventing X-sized effects");
         var zero = new AiCampaignNumericInvestment(request, "AnnounceX", card.VisualId, 0);
-        zero.Receipt(true, null); zero.ObservePublic(current);
+        zero.Receipt(true, null); zero.ObserveOwned(owned); zero.ObservePublic(current);
         var rejected = new AiCampaignNumericInvestment(request, "AnnounceX", card.VisualId, 3);
-        rejected.Receipt(false, "rejected"); rejected.ObservePublic(current);
-        check(!zero.PositiveChoiceWithPublicResolution && zero.SameSourceResolvedEventId == 8
+        rejected.Receipt(false, "rejected"); rejected.ObserveOwned(owned); rejected.ObservePublic(current);
+        check(!zero.PositiveChoiceWithPublicResolution && zero.SameSourceResolvedEventId == 9
                 && !rejected.PositiveChoiceWithPublicResolution && rejected.PublicCardObservations.Count == 0,
             "A resolved zero choice and a rejected positive choice do not become completed positive investments");
     }

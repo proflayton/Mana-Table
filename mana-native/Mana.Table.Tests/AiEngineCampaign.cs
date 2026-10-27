@@ -130,6 +130,40 @@ internal static class AiEngineCampaign
                 && !AiCampaignVisibility.PrivateWindowsAreDisclosed(revealed with {
                     Players = [revealed.Players[0], Player(1, [face with { CombatId = "undisclosed-physical-identity" }], []), revealed.Players[2]] }),
             "A reveal cannot authorize extra hidden copies, outlive its decision, disclose physical identity or grant action permissions");
+        var keyedOptions = keyedReveal with { Decision = new("options", new(),
+            new OptionsPayload(new([new(0, face.Name, face)], new(1, 1)))) };
+        check(AiCampaignVisibility.PrivateWindowsAreDisclosed(keyedOptions),
+            "A current explicit card choice accounts for its exact anonymous read-only opponent-hand face without granting source authority");
+        var nonland = face with { Name = "Visible creature", Type = "Creature", ManaCost = "{1}", Power = 1, Toughness = 1 };
+        var mixedHand = keyedOptions with { Players = [keyedOptions.Players[0], Player(1, [face, nonland], []), keyedOptions.Players[2]],
+            Decision = new("mixed-hand", new(), new OptionsPayload(new([new(0, nonland.Name, nonland)], new(1, 1), [new(null, face.Name, face)]))) };
+        check(AiCampaignVisibility.PrivateWindowsAreDisclosed(mixedHand)
+                && !AiCampaignVisibility.PrivateWindowsAreDisclosed(mixedHand with { Decision = new("missing-extra-face", new(),
+                    new OptionsPayload(new([new(0, nonland.Name, nonland)], new(1, 1)))) })
+                && GameCommandPermissions.Allows(mixedHand, new ChooseOptions(mixedHand.Id, mixedHand.Decision!.Id, [0]))
+                && !GameCommandPermissions.Allows(mixedHand, new ChooseOptions(mixedHand.Id, mixedHand.Decision!.Id, [1])),
+            "A mixed opponent-hand choice requires explicit current extra faces while readable noneligible cards gain no choice index");
+        GameSnapshot OptionFace(Card card) => keyedOptions with {
+            Players = [keyedOptions.Players[0], Player(1, [card], []), keyedOptions.Players[2]] };
+        check(!AiCampaignVisibility.PrivateWindowsAreDisclosed(keyedOptions with { Decision = null })
+                && !AiCampaignVisibility.PrivateWindowsAreDisclosed(keyedOptions with { Decision = new("unrelated", new(),
+                    new OptionsPayload(new([new(0, "Other", face with { Name = "Other" })], new(1, 1)))) })
+                && !AiCampaignVisibility.PrivateWindowsAreDisclosed(keyedOptions with { Decision = new("entity-without-faces", new(),
+                    new EntitySelectionPayload(new("Choose", true), new("Cancel", true), [])) })
+                && !AiCampaignVisibility.PrivateWindowsAreDisclosed(OptionFace(face with { VisualId = "extra-identity" }))
+                && !AiCampaignVisibility.PrivateWindowsAreDisclosed(OptionFace(face with { Selectable = true }))
+                && !AiCampaignVisibility.PrivateWindowsAreDisclosed(OptionFace(face with { Highlighted = true }))
+                && !AiCampaignVisibility.PrivateWindowsAreDisclosed(OptionFace(face with { Text = "Undisclosed rules" }))
+                && !AiCampaignVisibility.PrivateWindowsAreDisclosed(keyedOptions, domain: DecisionActionDomain.None with {
+                    Sources = [new(keyedOptions.Id, keyedOptions.Decision!.Id, "unrelated-key", "unrelated-source", [])] }),
+            "Anonymous opponent-hand choices require the current exact readable face and exclude physical identity, selection flags and actionable source domains");
+        var ownOrdering = keyedOptions with { Players = [Player(0, [], [face with { VisualId = "owned-look" }]), Player(1, [], []), Player(2, [], [])] };
+        check(AiCampaignVisibility.PrivateWindowsAreDisclosed(ownOrdering)
+                && !AiCampaignVisibility.PrivateWindowsAreDisclosed(keyedOptions with {
+                    Players = [keyedOptions.Players[0], keyedOptions.Players[1], Player(2, [face], [])] })
+                && !AiCampaignVisibility.PrivateWindowsAreDisclosed(ownOrdering with {
+                    Players = [ownOrdering.Players[0], Player(1, [face], []), ownOrdering.Players[2]] }),
+            "Current own-library disclosure preserves its scoped identities while one shared face budget rejects extra copies across every hidden zone");
         var top = face with { VisualId = "known-top" };
         var look = revealed with { Decision = null, Players = [Player(0, [], [top], top), Player(1, [], []), Player(2, [], [])] };
         check(AiCampaignVisibility.PrivateWindowsAreDisclosed(look)
