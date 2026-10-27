@@ -207,6 +207,14 @@ used for each accepted command. A separate outer poll may miss an intermediate
 bill already answered by the policy; it is not that command's observation.
 Ordered current-cost receipts and independent public stack/battlefield results
 remain separate requirements.
+The real `PlaneswalkerCombatRegressionTest` follows lethal combat through the
+defending permanent's departure and checks every audience's surviving attacker,
+blocker relations, absent defender and continued rules progress. Native wire,
+presentation and policy checks distinguish explicit absence from the legacy
+player fallback, retain blocker links, reject malformed real identities and
+avoid player arrows, life-threat estimates or commands for the absent target.
+These regressions use the existing Java and headless lanes rather than another
+randomized deck, golden fixture or JVM.
 
 On failure, `private-failure-manifest.json` identifies the last completed raw
 observation batch, exact seat scopes, stage and original exception before teardown.

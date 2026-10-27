@@ -45,6 +45,7 @@ internal static partial class HeadlessPresentationSmoke
             CheckCounterCost(profile, Check, trace, performance);
             CheckRulesReader(profile, Check, trace, performance);
             CheckMatchFailure(profile, Check, trace, performance);
+            CheckDepartedDefender(profile, Check, trace, performance);
             CheckStackArrival(profile, Check, trace, performance);
             CheckTurnPass(profile, Check, trace, performance);
             CheckChoiceEligibility(profile, Check, trace, performance);

@@ -772,6 +772,26 @@ internal static class AiPolicyRegression
             Type = "Planeswalker", Power = null, Toughness = null }));
         check((await Evaluate(Frame(permanentAttack))).Command is CompleteBlockers,
             "Damage aimed at an owned planeswalker is not treated as immediate lethal damage to its low-life controller");
+        var departedDefender = lethal with { Combat = lethal.Combat! with { Attackers = [lethal.Combat.Attackers[0] with {
+            HasDefender = false, Defender = null }] } };
+        check((await Evaluate(Frame(departedDefender))).Command is CompleteBlockers
+            && CasualTableAssessment.Assess(departedDefender, new([], [])).Single(threat => threat.PlayerId == 1).Pressure == 0,
+            "An attacker whose defending permanent left combat cannot create lethal player damage or social pressure against its former controller");
+        var profitableWithoutDefender = BlockCase(Card("attacker", 1, 1), Card("own-creature", 8, 8));
+        profitableWithoutDefender = profitableWithoutDefender with { Combat = profitableWithoutDefender.Combat! with {
+            Attackers = [profitableWithoutDefender.Combat.Attackers[0] with { HasDefender = false }] } };
+        check((await Evaluate(Frame(profitableWithoutDefender))).Command is ToggleBlock,
+            "Losing a defender preserves the rules engine's current eligible blocker trades rather than erasing the attacker");
+        var repairingAbsence = AttackCase(Card("own-creature", 8, 8), Card("enemy", 1, 1));
+        repairingAbsence = repairingAbsence with { Combat = repairingAbsence.Combat! with {
+            Attackers = [new("own-creature", 2, [], []) { HasDefender = false }], AttackValid = false,
+            AttackRepair = [new("own-creature", new("player", "1", 1, "One"))] } };
+        check((await Evaluate(Frame(repairingAbsence))).Command is ToggleAttackPlayer { Player: 1 },
+            "Repairing an absent defender uses only the current engine witness instead of synthesizing the former controller as a target");
+        bool contradictoryAbsenceRejected = false;
+        try { Frame(departedDefender with { Combat = departedDefender.Combat! with { Attackers = [departedDefender.Combat.Attackers[0] with {
+            Defender = new("player", "0", 0, "You") }] } }); } catch (ArgumentException) { contradictoryAbsenceRejected = true; }
+        check(contradictoryAbsenceRejected, "An AI frame rejects contradictory absent-defender and current-target metadata");
         var doubleLethal = BlockCase(Card("attacker", 2, 2) with { CombatKeywords = ["double strike"] }, Card("own-creature", 1, 1));
         doubleLethal = doubleLethal with { Players = doubleLethal.Players.Select(player => player.Id == 0 ? player with { Life = 3 } : player).ToImmutableArray() };
         check((await Evaluate(Frame(doubleLethal))).Command is ToggleBlock,

@@ -137,15 +137,18 @@ final class SpectatorObservation {
         for (Card attacker : combat.getAttackers()) {
             var blockers = combat.getBlockers(attacker).stream().map(card -> id(table, card.getView())).toList();
             Player defending = combat.getDefenderPlayerByAttacker(attacker);
-            attackers.add(map("cardId", id(table, attacker.getView()), "defender", defender(table, combat.getDefenderByAttacker(attacker)),
+            var defender = combat.getDefenderByAttacker(attacker);
+            attackers.add(map("cardId", id(table, attacker.getView()), "hasDefender", CombatDefenders.isCurrent(defender),
+                    "defender", defender(table, defender),
                     "defendingPlayerId", defending == null ? null : defending.getId(), "blockerIds", blockers,
                     "blocked", combat.isBlocked(attacker), "eligibleBlockerIds", List.of()));
         }
         return map("attackingPlayerId", combat.getAttackingPlayer().getId(), "attackers", List.copyOf(attackers),
-                "defenders", combat.getDefenders().stream().map(entity -> defender(table, entity)).toList(),
+                "defenders", combat.getDefenders().stream().filter(CombatDefenders::isCurrent).map(entity -> defender(table, entity)).toList(),
                 "selectedDefender", null, "attackerCandidates", List.of(), "attackOptions", List.of(), "blockerCandidates", List.of(), "blockProblem", null);
     }
     private static Map<String, Object> defender(MatchTable table, GameEntity entity) {
+        if (!CombatDefenders.isCurrent(entity)) return null;
         if (entity instanceof Player player) return map("kind", "player", "id", player.getId(), "name", player.getName(), "playerId", player.getId());
         if (entity instanceof Card card) return map("kind", "card", "id", id(table, card.getView()),
                 "name", card.isFaceDown() ? "Face-down permanent" : card.getName(), "playerId",

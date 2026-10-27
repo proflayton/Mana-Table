@@ -241,9 +241,9 @@ internal sealed partial class TableApplication
         foreach (var attack in combat.Attackers) {
             if (!cardPositions.TryGetValue(attack.CardId, out var attacker)) continue;
             Vector2? destination = null;
-            if (attack.Defender is { Kind: "card" } defender) {
+            if (attack.HasDefender && attack.Defender is { Kind: "card" } defender) {
                 if (cardPositions.TryGetValue(defender.Id, out var target)) destination = target.EdgeToward(attacker.Center, 6);
-            } else if (heroPositions.TryGetValue(attack.DefendingPlayerId, out var player)) {
+            } else if (attack.HasDefender && heroPositions.TryGetValue(attack.DefendingPlayerId, out var player)) {
                 var delta = attacker.Center - player;
                 destination = player + (delta.LengthSquared() > 0 ? Vector2.Normalize(delta) : Vector2.UnitY) * (attack.DefendingPlayerId == match.ViewerId ? 51 : 40);
             }

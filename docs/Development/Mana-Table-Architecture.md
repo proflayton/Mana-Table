@@ -199,6 +199,14 @@ alone translates these meanings into its private wire actions. There is no
 public nullable reply bag. This does not provide live engine migration or an
 installed second rules engine.
 
+An attacker can remain in combat after its defending permanent leaves. The
+neutral `Attack.HasDefender` fact separates that state from a live target and
+from the legacy omitted `Defender` player fallback. Explicit absence preserves
+the attacker, defending-player relation and blocker links, while granting no
+target identity or command. Providers discard internal placeholder entities;
+the decoder still rejects malformed real targets and contradictory presence
+facts. Presentation and AI must not turn an absent defender into a player attack.
+
 Optional table timing has a separate `ITableTempo` port and closed neutral
 settings/clock states in `Mana.Contracts`. Lobby policy, Ready consent and
 monotonic expiry belong to the host. `DecisionTempo` owns budgets without rules

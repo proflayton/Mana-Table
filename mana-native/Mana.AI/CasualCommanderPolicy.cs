@@ -509,7 +509,7 @@ public sealed class CasualCommanderPolicy : IAiPolicy
         var state = request.Frame.State;
         var combat = state.Combat!;
         var assigned = combat.Attackers.SelectMany(attack => attack.BlockerIds).ToHashSet();
-        long incoming = combat.Attackers.Where(attack => attack.DefendingPlayerId == state.ViewerId && !attack.Blocked && attack.BlockerIds.IsEmpty
+        long incoming = combat.Attackers.Where(attack => attack.HasDefender && attack.DefendingPlayerId == state.ViewerId && !attack.Blocked && attack.BlockerIds.IsEmpty
                 && (attack.Defender == null || attack.Defender.Kind == "player"))
             .Sum(attack => CardViews.FindZoneOccurrence(state, attack.CardId)?.Card is { } card ? CasualTableAssessment.UnblockedDamage(card) : 0);
         var options = new List<(DecisionCommand Command, double Score, double Tie)>();
@@ -530,7 +530,7 @@ public sealed class CasualCommanderPolicy : IAiPolicy
                 fallback ??= command;
                 if (!work.TrySpend()) { limited = true; break; }
                 var exchange = CasualTableAssessment.Exchange(attacker, blocker);
-                long prevented = attack.Defender == null || attack.Defender.Kind == "player"
+                long prevented = attack.HasDefender && (attack.Defender == null || attack.Defender.Kind == "player")
                     ? Math.Max(0, CasualTableAssessment.UnblockedDamage(attacker) - exchange.DamageToDefender) : 0;
                 double score = (exchange.BlockerDies ? -CasualTableAssessment.OpportunityCost(state, blocker, "Battlefield") : .5)
                     + (exchange.AttackerDies ? CasualTableAssessment.CardValue(attacker) : 0);
@@ -558,6 +558,7 @@ public sealed class CasualCommanderPolicy : IAiPolicy
         var state = request.Frame.State;
         var combat = state.Combat!;
         foreach (var attack in combat.Attackers) {
+            if (!attack.HasDefender) continue;
             var desired = combat.AttackRepair.FirstOrDefault(assignment => assignment.CardId == attack.CardId);
             var current = attack.Defender ?? new Defender("player", attack.DefendingPlayerId.ToString(CultureInfo.InvariantCulture), attack.DefendingPlayerId, "");
             if (desired != null && SameDefender(current, desired.Defender)) continue;
@@ -565,7 +566,7 @@ public sealed class CasualCommanderPolicy : IAiPolicy
         }
         foreach (var desired in combat.AttackRepair) {
             var current = combat.Attackers.FirstOrDefault(attack => attack.CardId == desired.CardId);
-            if (current != null && SameDefender(current.Defender ?? new("player", current.DefendingPlayerId.ToString(CultureInfo.InvariantCulture), current.DefendingPlayerId, ""), desired.Defender)) continue;
+            if (current is { HasDefender: true } && SameDefender(current.Defender ?? new("player", current.DefendingPlayerId.ToString(CultureInfo.InvariantCulture), current.DefendingPlayerId, ""), desired.Defender)) continue;
             return AttackAssignment(request, desired.CardId, desired.Defender, "combat-repair-add");
         }
         return Missing("satisfiable-attack-repair");

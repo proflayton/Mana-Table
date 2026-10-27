@@ -1063,6 +1063,15 @@ defender, and any final block-validation problem. IDs refer to visible cards'
 `combatId`, falling back to `visualId`; face-down battlefield cards receive distinct
 opaque position handles, reset on zone changes, without exposing their identities.
 
+Each attack also reports `hasDefender`. When an attacked planeswalker or battle
+leaves combat, Forge keeps the attacking creature in combat without a current
+defender (CR 506.4c). The adapter reports `hasDefender: false` and `defender: null`,
+retaining the attacker, blockers, blocked status, and original `defendingPlayerId`
+for the blocking relation. That player is not a replacement damage recipient.
+Internal absent-target helpers receive no public card identity or name and are
+excluded from current defender choices. Clients treat an omitted `hasDefender`
+as true for older engine snapshots; false with a non-null defender is invalid.
+
 `matchAction {action: "block", attackerKey, blockerKey, sessionId, promptId}` toggles
 one block through the engine's normal input. Both card keys must belong to the
 same current prompt and form a legal or already assigned pair. The adapter rejects

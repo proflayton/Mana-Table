@@ -76,6 +76,8 @@ public sealed class AiDecisionFrame
         AiSemanticValidation.Validate(state, Domain, Semantics);
         if (decision.Payload is AttackPayload or BlockPayload && state.Combat == null)
             throw new ArgumentException("Combat decisions require their published combat constraints.", nameof(state));
+        if (state.Combat?.Attackers.Any(attack => !attack.HasDefender && attack.Defender != null) == true)
+            throw new ArgumentException("An attack without a defender cannot name a current target.", nameof(state));
         if (decision.Payload is AttackPayload && state.Combat is { } combat
             && (combat.AttackRepair.IsDefault || combat.AttackValid && !combat.AttackRepair.IsEmpty
                 || combat.AttackRepair.Any(assignment => assignment == null || string.IsNullOrWhiteSpace(assignment.CardId)

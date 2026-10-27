@@ -1309,6 +1309,7 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
         var defenders = new ArrayList<Object>();
         GameEntity selectedDefender = null;
         for (var defender : combat.getDefenders()) {
+            if (!CombatDefenders.isCurrent(defender)) continue;
             defenders.add(combatDefender(defender));
             if (attacking && highlighted.contains(GameEntityView.get(defender))) selectedDefender = defender;
         }
@@ -1319,6 +1320,7 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
                 candidates.add(combatIds.id(card.getView()));
             var legalDefenders = new ArrayList<Object>();
             for (GameEntity defender : combat.getDefenders()) {
+                if (!CombatDefenders.isCurrent(defender)) continue;
                 if (!CombatUtil.canAttack(card, defender) && !combat.isAttacking(card, defender)) continue;
                 legalDefenders.add(combatDefender(defender));
                 prompt.attackPairs.add(card.getId() + ":" + (defender instanceof Player ? "player:" : "card:") + defender.getId());
@@ -1337,8 +1339,9 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
                     prompt.blockPairs.add(attacker.getId() + ":" + blocker.getId());
                 }
             }
+            var defender = combat.getDefenderByAttacker(attacker);
             attacks.add(map("cardId", combatIds.id(attacker.getView()),
-                    "defender", combatDefender(combat.getDefenderByAttacker(attacker)),
+                    "hasDefender", CombatDefenders.isCurrent(defender), "defender", combatDefender(defender),
                     "defendingPlayerId", combat.getDefenderPlayerByAttacker(attacker) == null ? null : combat.getDefenderPlayerByAttacker(attacker).getId(),
                     "blockerIds", assigned.stream().filter(card -> card.getView().canBeShownTo(viewer)).map(card -> combatIds.id(card.getView())).toList(),
                     "blocked", combat.isBlocked(attacker), "eligibleBlockerIds", eligible));
@@ -1346,7 +1349,8 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
         boolean attackValid = !attacking || CombatUtil.validateAttackers(combat);
         var repair = new ArrayList<Object>();
         if (attacking && !attackValid) for (var entry : combat.getAttackConstraints().getLegalAttackers().getLeft().entrySet())
-            repair.add(map("cardId", combatIds.id(entry.getKey().getView()), "defender", combatDefender(entry.getValue())));
+            if (CombatDefenders.isCurrent(entry.getValue()))
+                repair.add(map("cardId", combatIds.id(entry.getKey().getView()), "defender", combatDefender(entry.getValue())));
         return map("attackingPlayerId", combat.getAttackingPlayer().getId(), "attackers", attacks,
                 "defenders", defenders, "selectedDefender", selectedDefender == null ? null : combatDefender(selectedDefender),
                 "attackerCandidates", candidates,
@@ -1357,6 +1361,10 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
     }
 
     private Map<String, Object> combatDefender(GameEntity entity) {
+        // Forge retains attackers against an internal absent-defender card when
+        // their planeswalker or battle leaves combat (CR 506.4c). It has no
+        // public occurrence and must never acquire a card identity or target.
+        if (!CombatDefenders.isCurrent(entity)) return null;
         if (entity instanceof Player player) return map("kind", "player", "id", player.getId(),
                 "name", player.getView().equals(viewer) ? "You" : player.getName(), "playerId", player.getId());
         if (entity instanceof Card card) {
@@ -1383,6 +1391,7 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
         if (card.getCounters() != null) for (var entry : card.getCounters().entrySet()) counters.put(entry.getElement().getName(), entry.getCount());
         var combat = game.getView().getCombat();
         var defender = combat == null ? null : combat.getDefender(card);
+        if (!CombatDefenders.isCurrent(defender)) defender = null;
         boolean publicFace = !hidden || card.getZone() == ZoneType.Battlefield;
         var result = map("key", key, "visualId", activity.visualId(card), "combatId", combatIds.id(card), "name", hidden ? "Face-down card" : face.getName(),
                 "type", hidden ? publicFace ? face.getType().toString() : "" : visibleType(card), "gamePieceType", gamePieceType(card, hidden),

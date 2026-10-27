@@ -172,11 +172,12 @@ internal static class ForgeSnapshotDecoder
     }
     private sealed record WireAttack(string CardId, int DefendingPlayerId, ImmutableArray<string> BlockerIds, ImmutableArray<string> EligibleBlockerIds)
     {
+        public bool HasDefender { get; init; } = true;
         public WireDefender? Defender { get; init; }
         public bool Blocked { get; init; }
-        public Attack Native() => new(CardId, DefendingPlayerId,
+        public Attack Native() => !HasDefender && Defender != null ? throw Invalid() : new(CardId, DefendingPlayerId,
             BlockerIds.IsDefault ? throw Invalid() : BlockerIds, EligibleBlockerIds.IsDefault ? throw Invalid() : EligibleBlockerIds) {
-            Defender = Defender?.Native(), Blocked = Blocked
+            HasDefender = HasDefender, Defender = Defender?.Native(), Blocked = Blocked
         };
     }
     private sealed record WireCombat(ImmutableArray<WireAttack> Attackers, ImmutableArray<WireAttackOption> AttackOptions, string? BlockProblem)

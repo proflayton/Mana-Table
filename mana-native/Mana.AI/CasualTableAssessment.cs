@@ -34,7 +34,7 @@ public static class CasualTableAssessment
                 if (actor == state.ViewerId && impact.PlayerId == player.Id) focus += recent;
             }
             if (state.Combat != null)
-                foreach (var attack in state.Combat.Attackers.Where(attack => attack.DefendingPlayerId == state.ViewerId)) {
+                foreach (var attack in state.Combat.Attackers.Where(attack => attack.HasDefender && attack.DefendingPlayerId == state.ViewerId)) {
                     var occurrence = CardViews.FindZoneOccurrence(state, attack.CardId);
                     if (occurrence?.PlayerId == player.Id) pressure += Math.Max(0, occurrence.Value.Card.Power ?? 0) * 1.5;
                 }

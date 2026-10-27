@@ -35,7 +35,7 @@ public sealed class PresentationPacing
         return beat;
     }
     private static IEnumerable<string> Combat(GameSnapshot s) => (s.Combat?.Attackers ?? []).OrderBy(a => a.CardId)
-        .Select(a => $"{a.CardId}:{a.Defender?.Kind}:{a.Defender?.Id}:{a.DefendingPlayerId}:{a.Blocked}:{string.Join(',', a.BlockerIds.Order())}");
+        .Select(a => $"{a.CardId}:{a.HasDefender}:{a.Defender?.Kind}:{a.Defender?.Id}:{a.DefendingPlayerId}:{a.Blocked}:{string.Join(',', a.BlockerIds.Order())}");
     private static string Stack(StackItem item) => item.Id + ":" + string.Join(',', item.Targets.Select(t => t.Kind + ':' + t.Id));
     private static IEnumerable<string> Seats(GameSnapshot s) => s.Players.OrderBy(p => p.Id)
         .Select(p => $"{p.Id}:{p.Life}:{p.Eliminated}:{string.Join(',', p.Mana.OrderBy(m => m.Key))}:{string.Join(',', p.Counters.OrderBy(m => m.Key))}:{string.Join(',', p.States.OrderBy(state => state.Id))}:{string.Join(',', p.Zones.OrderBy(z => z.Name).Select(z => z.Name + ':' + z.Count + ':' + string.Join(',', z.Cards.Select(c => c.VisualId).Order())))}");
