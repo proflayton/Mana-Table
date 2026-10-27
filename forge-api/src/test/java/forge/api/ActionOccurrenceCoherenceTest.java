@@ -206,7 +206,7 @@ public class ActionOccurrenceCoherenceTest {
             }
     }
 
-    private static Input until(MatchTable table, Map<Integer, String> answered, int actor, Predicate<Input> stop) throws Exception {
+    static Input until(MatchTable table, Map<Integer, String> answered, int actor, Predicate<Input> stop) throws Exception {
         long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(45);
         while (System.nanoTime() < deadline) {
             for (var seat : table.automatedSeats()) {

@@ -76,7 +76,7 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
     private boolean inputActionQueued;
     private final AtomicLong sourceActionVersion = new AtomicLong();
     private long publishedSourceActionVersion = -1;
-    private final Map<Input, String> manaReductionEpisodes = new WeakHashMap<>();
+    private final Map<Input, String> inputEpisodes = new WeakHashMap<>();
     private volatile boolean closed;
     private volatile String error;
     private long revision;
@@ -658,14 +658,15 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
             var provenance = PaymentDecisionProjection.describe(payment, this::numericSourceId);
             if (provenance != null) result.put("payment", provenance);
         }
+        // A published prompt UUID can change after every gesture while the
+        // controller still owns the same rules input. Its work allowance must
+        // follow that actual input, including its nested required GUI choices.
+        Input episodeOwner = current.input != null ? current.input : human.getInputQueue().getInput();
+        if (episodeOwner != null) result.put("episodeId", inputEpisodes.computeIfAbsent(episodeOwner,
+                ignored -> id + ":input:" + UUID.randomUUID()));
         if (current.input instanceof InputAttack || current.input instanceof InputBlock)
             result.put("episodeId", id + ":combat:" + game.getPhaseHandler().getTurn() + ":"
                     + game.getPhaseHandler().getNumCombat() + ":" + game.getPhaseHandler().getPhase().name() + ":" + viewer.getId());
-        Input reductionOwner = current.input instanceof InputSelectCardsForConvokeOrImprovise ? current.input
-                : "colorChoice".equals(current.prompt.get("context"))
-                    && human.getInputQueue().getInput() instanceof InputSelectCardsForConvokeOrImprovise reduction ? reduction : null;
-        if (reductionOwner != null) result.put("episodeId", manaReductionEpisodes.computeIfAbsent(reductionOwner,
-                ignored -> id + ":mana-reduction:" + UUID.randomUUID()));
         if (current.input instanceof InputSelectTargets targeting)
             result.put("selectedPlayers", java.util.stream.StreamSupport.stream(
                     targeting.getSpellAbility().getTargets().getTargetPlayers().spliterator(), false).map(Player::getId).toList());
@@ -817,7 +818,12 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
                 }
                 case "cancel" -> { if (!cancelEnabled) throw new IllegalArgumentException("Cancel is not available"); }
                 case "attackAll" -> { if (!(next.input instanceof InputAttack)) throw new IllegalArgumentException("Not declaring attackers"); }
-                case "card" -> { card = next.cards.get(string(request, "key")); if (card == null) throw new IllegalArgumentException("Card is not visible in this prompt"); }
+                case "card" -> {
+                    card = next.cards.get(string(request, "key"));
+                    if (card == null) throw new IllegalArgumentException("Card is not visible in this prompt");
+                    if (next.input instanceof InputSelectTargets targeting && !currentTargetCard(targeting, card))
+                        throw new IllegalArgumentException("That card cannot be selected for this choice");
+                }
                 case "useSourceAction" -> {
                     if (!sourceInputCurrent(next)) throw new IllegalArgumentException("Source actions are not available in this decision");
                     sourceCatalog = next.sourceActions.get(string(request, "key"));
@@ -894,7 +900,8 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
             HeadlessPlatform.later(() -> {
                 boolean restorePriority = false;
                 try {
-                    if (closed || viewer.getHasLost() || game.isGameOver() || human.getInputQueue().getInput() != next.input) return;
+                    if (closed || viewer.getHasLost() || game.isGameOver() || human.getInputQueue().getInput() != next.input
+                            || human.getInputProxy().getInput() != next.input) return;
                     switch (action) {
                         case "spendPoolMana" -> {
                             byte color = ManaAtom.fromName(string(request, "manaColor"));
@@ -921,7 +928,13 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
                         }
                         case "cancel" -> human.selectButtonCancel();
                         case "attackAll" -> human.alphaStrike();
-                        case "card" -> human.selectCard(chosenCard, null, CARD_CLICK);
+                        case "card" -> {
+                            restorePriority = next.input instanceof InputSelectTargets targeting && !currentTargetCard(targeting, chosenCard);
+                            if (restorePriority && human.getInputQueue().getInput() == next.input
+                                    && human.getInputProxy().getInput() == next.input)
+                                ((InputSelectTargets)next.input).showMessage();
+                            else if (!restorePriority) human.selectCard(chosenCard, null, CARD_CLICK);
+                        }
                         case "useSourceAction" -> {
                             synchronized (gate) {
                                 restorePriority = !sourceActionCurrent(next, chosenSourceCatalog, chosenSourceAction);
@@ -957,12 +970,13 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
                         // A late engine recheck may revoke this exact option. Keep
                         // the unanswered input usable; never choose a replacement.
                         if (restorePriority && !closed && !viewer.getHasLost() && !game.isGameOver()
-                                && human.getInputQueue().getInput() == next.input) {
+                                && human.getInputQueue().getInput() == next.input && human.getInputProxy().getInput() == next.input) {
                             pending = next;
                             notices.add(action.equals("passUntilPublicAction")
                                     ? "The table changed. Passing for now stopped; review the current decision."
                                     : chosenStackVersion != null ? "The stack changed. Resolve these stopped; review the current effects."
                                     : action.equals("useSourceAction") ? "That source action changed. Read the current card again."
+                                    : action.equals("card") ? "That target changed. Use the current choice."
                                     : action.startsWith("priority") ? "That priority action changed. Use the current decision."
                                     : "That hand-placement option is no longer available. Use the current prompt.");
                             while (notices.size() > 12) notices.remove(0);
@@ -973,6 +987,11 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
             });
             return latest;
         }
+    }
+
+    private boolean currentTargetCard(InputSelectTargets input, CardView view) {
+        Card card = sourceCard(view);
+        return card != null && card.getView() == view && input.canSelectCard(card);
     }
 
     private static String priorityAlternative(Input input) {

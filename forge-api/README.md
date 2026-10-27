@@ -113,6 +113,14 @@ to the engine's reduction rules, plus already selected cards retained for undo.
 These facts neither finish the selection nor replace its current Complete button.
 Private decision episodes follow that same actual reduction input across refreshed
 scopes and its nested color choices; a new input receives a separate episode.
+This ownership now applies to every actual controller Input: refreshed prompt
+UUIDs and nested GUI choices share its opaque private `episodeId`, while a new
+input receives a new token. Combat retains its existing causal declaration
+grouping. This is input lifetime, not a complete cast/cost/resolution lifecycle.
+Current target card offers use the same nonmutating joint-admissibility checks
+as an actual target click. Already selected cards remain selectable/highlighted
+for undo; they are distinct from productive additions. A Complete offer remains
+authoritative even when the maximum target count has not been reached.
 Current mana inputs can add `payment` provenance: `purpose` (`SpellCost`,
 `ActivatedAbilityCost`, `TriggeredAbilityCost`, `EffectCost` or `Unknown`), actual
 `payerId`, entitled `sourceCardId` and the input's `mandatory` fact. The current

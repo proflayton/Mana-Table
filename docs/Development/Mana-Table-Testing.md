@@ -337,6 +337,12 @@ Forge-specific batch check compares same-board public occurrence projections
 before policy evaluation, rather than waiting for a policy frame to validate.
 Different private hands, game/revision boundaries and historical stack portraits
 remain separate. This adds no second rules model or extra random campaign.
+The real multi-seat target-continuation regression checks current restrictions
+after one target is chosen, selected-card undo, pure queries, a valid subset's
+completion and its actual resulting zone changes. `AiTargetContinuationRegression`
+checks that existing policy consumes these current facts and that fresh prompt
+UUIDs cannot renew a single actual input's work allowance. These protect a
+no-progress loop independently of wall-clock campaign timeouts.
 The crowded-field window journey also joins the fast release set, sharing the
 three-player lobby shard. It uses the production battlefield faces at the former
 threshold, mixed states, duplicate tokens, distinct names and the canonical

@@ -72,7 +72,9 @@ public final class InputSelectTargets extends InputSyncronizedBase {
         // Publish after the input transition clears the previous input's targets.
         final int initialMin = numTargets != null ? numTargets : sa.getMinTargets();
         final int initialMax = numTargets != null ? numTargets : sa.getMaxTargets();
-        getController().getGui().setSelectables(CardView.getCollection(choices), initialMin, initialMax);
+        var currentChoices = new ArrayList<>(choices);
+        for (GameEntity selected : targets) if (selected instanceof Card card && !currentChoices.contains(card)) currentChoices.add(card);
+        getController().getGui().setSelectables(CardView.getCollection(currentChoices.stream().filter(this::canSelectCard).toList()), initialMin, initialMax);
         final List<GameEntityView> views = new ArrayList<>();
         for (final GameEntity c : targets) {
             if (c instanceof Card) views.add(GameEntityView.get(c));
@@ -157,44 +159,43 @@ public final class InputSelectTargets extends InputSyncronizedBase {
         this.done();
     }
 
-    @Override
-    protected boolean onCardSelected(final Card card, final List<Card> otherCardsToSelect, final ITriggerEvent triggerEvent) {
-        if (targets.contains(card)) {
-            removeTarget(card);
-            return false;
-        }
+    /** The exact current add-target checks, without changing targets or opening a dialog. */
+    public boolean canAddTarget(final Card card) {
+        return !isFinished() && card != null && !targets.contains(card) && cardTargetProblem(card) == null;
+    }
 
+    /** Selected cards remain clickable for undo, independently of adding another target. */
+    public boolean canSelectCard(final Card card) {
+        return !isFinished() && (targets.contains(card) || canAddTarget(card));
+    }
+
+    private String cardTargetProblem(final Card card) {
         // TODO should use sa.canTarget(card) instead?
         // it doesn't have messages
 
         if (sa.isSpell() && sa.getHostCard().isAura()) {
             String msg = card.cantBeAttachedMsg(sa.getHostCard(), sa);
             if (msg != null) {
-                showMessage(sa.getHostCard() + " - " + msg);
-                return false;
+                return sa.getHostCard() + " - " + msg;
             }
         }
         //If the card is not a valid target
         if (!card.canBeTargetedBy(sa)) {
-            showMessage(sa.getHostCard() + " - Cannot target this card (Shroud? Protection? Restrictions).");
-            return false;
+            return sa.getHostCard() + " - Cannot target this card (Shroud? Protection? Restrictions).";
         }
 
         // If the cards can't share a creature type
         if (tgt.isWithoutSameCreatureType() && lastTarget != null && card.sharesCreatureTypeWith(lastTarget)) {
-            showMessage(sa.getHostCard() + " - Cannot target this card (should not share a creature type)");
-            return false;
+            return sa.getHostCard() + " - Cannot target this card (should not share a creature type)";
         }
         // If the cards share a creature type
         if (tgt.isWithSameCreatureType() && lastTarget != null && !card.sharesCreatureTypeWith(lastTarget)) {
-            showMessage(sa.getHostCard() + " - Cannot target this card (should share a creature type)");
-            return false;
+            return sa.getHostCard() + " - Cannot target this card (should share a creature type)";
         }
 
         // If the cards share a card type
         if (tgt.isWithSameCardType() && lastTarget != null && !card.sharesCardTypeWith(lastTarget)) {
-            showMessage(sa.getHostCard() + " - Cannot target this card (should share a Card type)");
-            return false;
+            return sa.getHostCard() + " - Cannot target this card (should share a Card type)";
         }
 
         if (sa.hasParam("MaxTotalTargetCMC")) {
@@ -205,8 +206,7 @@ public final class InputSelectTargets extends InputSyncronizedBase {
                     soFar += card.getCMC();
                 }
                 if (soFar > maxTotalCMC) {
-                    showMessage(sa.getHostCard() + " - Cannot target this card (mana value limit exceeded)");
-                    return false;
+                    return sa.getHostCard() + " - Cannot target this card (mana value limit exceeded)";
                 }
             }
         }
@@ -219,8 +219,7 @@ public final class InputSelectTargets extends InputSyncronizedBase {
                     soFar += card.getNetPower();
                 }
                 if (soFar > maxTotalPower) {
-                    showMessage(sa.getHostCard() + " - Cannot target this card (power limit exceeded)");
-                    return false;
+                    return sa.getHostCard() + " - Cannot target this card (power limit exceeded)";
                 }
             }
         }
@@ -235,8 +234,7 @@ public final class InputSelectTargets extends InputSyncronizedBase {
                 }
             }
             if (!targetedControllers.isEmpty() && !targetedControllers.contains(card.getController())) {
-                showMessage(sa.getHostCard() + " - Cannot target this card (must have same controller)");
-                return false;
+                return sa.getHostCard() + " - Cannot target this card (must have same controller)";
             }
         }
 
@@ -250,8 +248,7 @@ public final class InputSelectTargets extends InputSyncronizedBase {
                 }
             }
             if (targetedControllers.contains(card.getController())) {
-                showMessage(sa.getHostCard() + " - Cannot target this card (must have different controllers)");
-                return false;
+                return sa.getHostCard() + " - Cannot target this card (must have different controllers)";
             }
         }
 
@@ -265,8 +262,7 @@ public final class InputSelectTargets extends InputSyncronizedBase {
                 }
             }
             if (!tgtTs.isEmpty() && !tgtTs.contains(card.getNetToughness())) {
-                showMessage(sa.getHostCard() + " - Cannot target this card (must have equal toughness)");
-                return false;
+                return sa.getHostCard() + " - Cannot target this card (must have equal toughness)";
             }
         }
 
@@ -280,22 +276,34 @@ public final class InputSelectTargets extends InputSyncronizedBase {
                 }
             }
             if (targetedCMCs.contains(card.getCMC())) {
-                showMessage(sa.getHostCard() + " - Cannot target this card (must have different mana values)");
-                return false;
+                return sa.getHostCard() + " - Cannot target this card (must have different mana values)";
             }
         }
 
         if (tgt.isDifferentNames()) {
             for (final GameObject o : targets) {
                 if (o instanceof Card c && c.sharesNameWith(card)) {
-                    showMessage(sa.getHostCard() + " - Cannot target this card (must have different names)");
-                    return false;
+                    return sa.getHostCard() + " - Cannot target this card (must have different names)";
                 }
             }
         }
 
         if (!choices.contains(card)) {
-            showMessage(sa.getHostCard() + " - The selected card is not " + Lang.nounWithAmount(1, tgt.getValidDesc()) + ".");
+            return sa.getHostCard() + " - The selected card is not " + Lang.nounWithAmount(1, tgt.getValidDesc()) + ".";
+        }
+
+        return null;
+    }
+
+    @Override
+    protected boolean onCardSelected(final Card card, final List<Card> otherCardsToSelect, final ITriggerEvent triggerEvent) {
+        if (targets.contains(card)) {
+            removeTarget(card);
+            return false;
+        }
+        String problem = cardTargetProblem(card);
+        if (problem != null) {
+            showMessage(problem);
             return false;
         }
 
@@ -320,7 +328,7 @@ public final class InputSelectTargets extends InputSyncronizedBase {
         if (!tgt.isUniqueTargets() && targets.contains(card)) {
             return null;
         }
-        if (choices.contains(card)) {
+        if (canSelectCard(card)) {
             return "select card as target";
         }
         return null;

@@ -533,13 +533,24 @@ verified complete discovery.
 frame, copied history, an episode seed, remaining time and a cooperative work
 allowance. Refreshing an input does not renew its budget or seed. Where the
 provider supplies a causal episode, replacement input IDs retain that episode's
-budget. Combat declarations include the turn, phase, actor and combat ordinal;
-other inputs currently fall back to their input ID. This is not yet a complete
+budget. Forge now assigns a stable opaque token to each actual controller Input,
+including nested GUI choices, rather than renewing it for each published prompt
+UUID. Combat declarations retain their turn/phase/actor/combat-ordinal grouping.
+Providers without episode metadata still fall back to the decision ID. This is not yet a complete
 cast/cost/resolution episode model. Cancelled, replaced, closed
 or late computations cannot publish a command. The await is time-bounded even
 if a policy fails to return; this is not a process sandbox or forced termination
 of arbitrary computation. Implementations must cooperate with cancellation/work
 limits; isolated model workers can enforce stronger resource limits later.
+
+Target offers describe current joint admissibility. `InputSelectTargets` uses
+one read-only predicate for both published additions and actual clicks, including
+controller/type/value restrictions imposed by targets already chosen. Selected
+cards remain independently available for undo. Policy consumes those facts,
+adds productive unselected targets and completes a valid subset only when the
+current Complete offer permits it. It does not parse a rejection message or
+reimplement targeting rules. A same-input refresh preserves its work/seed even
+after an unproductive gesture, preventing prompt churn from bypassing the budget.
 
 Policies return proposals and never receive the engine connection. A ready
 proposal has one host handoff; the host uses the existing scoped command path.
