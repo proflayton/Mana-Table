@@ -261,13 +261,13 @@ public class MagicStack /* extends MyObservable */ implements Iterable<SpellAbil
             game.getTriggerHandler().runTrigger(TriggerType.AbilityResolves, runParams, false);
 
             game.fireEvent(new GameEventAddLog(GameLogEntryType.MANA, source + " - " + sp));
-            game.getExecutions().complete(sp, RESOLVED);
             sp.resetOnceResolved();
 
             // parts are paid sequentially, so collect directly or some trigger might get lost
             if (game.costPaymentStack.peek() != null) {
                 game.getTriggerHandler().collectTriggerForWaiting();
             }
+            game.getExecutions().complete(sp, RESOLVED);
             return;
             }
         }
@@ -807,12 +807,12 @@ public class MagicStack /* extends MyObservable */ implements Iterable<SpellAbil
 
     public final void remove(final SpellAbilityStackInstance si) {
         var execution = game.getExecutions().occurrence(si.getSpellAbility());
-        if (execution != null && execution.step().equals("stack"))
-            game.getExecutions().complete(si.getSpellAbility(), COUNTERED);
+        boolean countered = execution != null && execution.step().equals("stack");
         stack.remove(si);
         frozenStack.remove(si);
         game.updateStackForView();
         game.fireEvent(new GameEventSpellRemovedFromStack(SpellAbilityView.get(si.getSpellAbility())));
+        if (countered) game.getExecutions().complete(si.getSpellAbility(), COUNTERED);
     }
 
     public final void remove(final Card c) {

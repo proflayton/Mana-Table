@@ -31,6 +31,8 @@ public class ExecutionDisclosureTest {
             var projection = new MatchExecutions(table.game.getExecutions(), observer.getView(), activity);
             table.game.subscribeToEvents(projection);
             var rules = table.game.getExecutions();
+            rules.complete(null, RESOLVED);
+            rules.recordOutcome(null, DECLINED);
             String hidden = rules.prepare(ability);
             rules.step(ability, CHOICE);
             assertTrue(projection.frame().occurrences().isEmpty());

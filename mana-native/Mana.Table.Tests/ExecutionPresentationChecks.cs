@@ -129,6 +129,16 @@ internal static class ExecutionPresentationChecks
                 is { HistoryIncomplete: true, Changes.Length: 0 },
             "Activity loss marks every ongoing execution incomplete even before its first visible change or next transition");
 
+        var declinedFeedback = new ActionFeedback(); var declinedActivity = new PublicActivityCursor();
+        declinedActivity.Observe(null, initial);
+        var declined = initial with { Executions = new(1, 1,
+            [other with { Outcome = ExecutionOutcome.Declined }],
+            [new(1, other.Id, ExecutionStep.Complete) { Outcome = ExecutionOutcome.Declined }]),
+            Activity = [Event(1, other.Id, ExecutionStep.Resolution, "resolved", "Another spell resolved.") with { Outcome = "resolved" }] };
+        declinedFeedback.Observe(declinedActivity.Observe(initial, declined, declined.Executions!.Transitions), 45);
+        check(declinedFeedback.Last is { Title: "Another spell declined.", Outcome: "notResolved", Changes.Length: 0 },
+            "A declined optional effect reports its actual terminal result even when the legacy engine event calls its stack cleanup a resolution");
+
         var held = new StackArrivalPresentation();
         var heldStack = settled with { Status = "resolving", Stack = [
             new(source.Name, "Draw three cards.", StackActionKind.ActivatedAbility, null) { Id = "old-activation-stack", ExecutionId = activation.Id },

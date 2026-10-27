@@ -30,6 +30,7 @@ public final class ExecutionTracker {
     public record Committed(GameEvent event, Reference execution) implements Event { }
     private final Game game;
     private final Map<String, Occurrence> occurrences = new LinkedHashMap<>();
+    private final Map<String, Outcome> semanticOutcomes = new HashMap<>();
     private final Deque<Transition> history = new ArrayDeque<>();
     private final Deque<String> executing = new ArrayDeque<>();
     private long sequence;
@@ -106,7 +107,17 @@ public final class ExecutionTracker {
     public Occurrence occurrence(String id) { return occurrences.get(id); }
 
     public void step(SpellAbility ability, Step step) { transition(ability, step.wire, null); }
-    public void complete(SpellAbility ability, Outcome outcome) { transition(ability, "complete", outcome.wire); }
+    /** An inner rules effect can decide its result before its owner finishes
+     * stack/zone cleanup. Recording that result never publishes completion. */
+    public void recordOutcome(SpellAbility ability, Outcome outcome) {
+        Occurrence current = occurrence(ability);
+        if (current != null && !current.step().equals("complete")) semanticOutcomes.put(current.id(), outcome);
+    }
+    public void complete(SpellAbility ability, Outcome outcome) {
+        if (ability == null) return;
+        Outcome recorded = semanticOutcomes.remove(ability.getExecutionId());
+        transition(ability, "complete", outcome == Outcome.RESOLVED && recorded != null ? recorded.wire : outcome.wire);
+    }
     private void transition(SpellAbility ability, String step, String outcome) {
         Occurrence prior = occurrence(ability);
         if (prior == null || prior.step().equals("complete")) return;
@@ -134,6 +145,7 @@ public final class ExecutionTracker {
         }
         retained.addAll(roots);
         occurrences.entrySet().removeIf(item -> item.getValue().step().equals("complete") && !retained.contains(item.getKey()));
+        semanticOutcomes.keySet().retainAll(occurrences.keySet());
         game.fireEvent(transition);
     }
 

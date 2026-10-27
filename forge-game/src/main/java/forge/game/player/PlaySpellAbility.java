@@ -605,17 +605,19 @@ public class PlaySpellAbility {
         var existing = game.getExecutions().occurrence(ability);
         boolean continuingResolution = existing != null && existing.step().equals("resolution");
         game.getExecutions().prepare(ability);
+        boolean lifecycleOwner = !java.util.Objects.equals(game.getExecutions().currentId(), ability.getExecutionId());
         try (var execution = game.getExecutions().enter(ability)) {
-            boolean played = playAbilityOwned(mayChooseTargets, isFree, skipStack, continuingResolution);
-            if (!played && !continuingResolution) game.getExecutions().complete(ability, ability.isTrigger() ? DECLINED : CANCELLED);
+            boolean played = playAbilityOwned(mayChooseTargets, isFree, skipStack, continuingResolution, lifecycleOwner);
+            if (!played && !continuingResolution && lifecycleOwner) game.getExecutions().complete(ability, ability.isTrigger() ? DECLINED : CANCELLED);
             return played;
         } catch (RuntimeException | Error failure) {
-            game.getExecutions().complete(ability, FAILED);
+            if (lifecycleOwner) game.getExecutions().complete(ability, FAILED);
             throw failure;
         }
     }
 
-    private boolean playAbilityOwned(final boolean mayChooseTargets, final boolean isFree, final boolean skipStack, final boolean continuingResolution) {
+    private boolean playAbilityOwned(final boolean mayChooseTargets, final boolean isFree, final boolean skipStack,
+                                     final boolean continuingResolution, final boolean lifecycleOwner) {
         final Player player = ability.getActivatingPlayer();
         final Game game = player.getGame();
         boolean refreeze = game.getStack().isFrozen();
@@ -762,11 +764,11 @@ public class PlaySpellAbility {
             if (skipStack) {
                 game.getExecutions().step(ability, RESOLUTION);
                 AbilityUtils.resolve(ability);
-                if (!continuingResolution) game.getExecutions().complete(ability, RESOLVED);
                 // Should unfreeze stack (but if it was a RE with a cause better to let it be handled by that)
                 if (!ability.isReplacementAbility()) {
                     game.getStack().unfreezeStack();
                 }
+                if (!continuingResolution && lifecycleOwner) game.getExecutions().complete(ability, RESOLVED);
             } else {
                 ensureAbilityHasDescription(ability);
                 game.getStack().addAndUnfreeze(ability);

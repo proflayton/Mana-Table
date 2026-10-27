@@ -61,7 +61,8 @@ public sealed class ActionFeedback
             var effects = (changes ?? []).Where(entry => entry.ExecutionStep != ExecutionStep.Cost).ToArray();
             var results = ChangeMessages(costs).Concat(CountedMessages(costs, after)).Select(message => "Cost: " + message)
                 .Concat(CountedMessages(effects, after)).Concat(ChangeMessages(effects)).ToArray();
-            Add(new(resolved?.Message ?? (occurrence.SourceName ?? "Ability") + " " + (transition.Outcome?.ToString().ToLowerInvariant() ?? "completed") + ".",
+            Add(new((transition.Outcome == ExecutionOutcome.Resolved ? resolved?.Message : null)
+                ?? (occurrence.SourceName ?? "Ability") + " " + (transition.Outcome?.ToString().ToLowerInvariant() ?? "completed") + ".",
                 resolved?.Detail ?? "", results, now) { ExecutionId = occurrence.Id, Outcome = outcome,
                     HistoryIncomplete = incomplete.Remove(occurrence.Id) });
         }

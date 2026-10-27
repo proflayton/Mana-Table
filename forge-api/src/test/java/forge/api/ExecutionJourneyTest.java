@@ -19,6 +19,43 @@ public class ExecutionJourneyTest {
     private static final String MARE = "Loch Mare";
 
     @Test(groups = "canonical-interaction", timeOut = 90000)
+    public void decliningAnOptionalTriggerRecordsItsResultButCompletesAfterStackCleanup() throws Exception {
+        try (var game = new RulesScenario("execution-optional-decline", Map.of(0,
+                List.of("Soul's Attendant")), "Memnite", "Rhys the Redeemed")) {
+            var main = main(game);
+            int life = viewer(main.state()).get("life").getAsInt();
+            var hand = zone(viewer(main.state()), "Hand").getAsJsonArray("cards").get(0).getAsJsonObject();
+            start(game, main, hand, "");
+            Input choice;
+            for (;;) {
+                choice = game.until(i -> i.seat() == 0 && (text(i.prompt(), "inputType").equals("InputConfirm")
+                        || mana(i) && i.prompt().get("okEnabled").getAsBoolean()));
+                if (!mana(choice)) break;
+                assertTrue(game.answer(choice, Map.of("action", "ok")));
+            }
+            String id = execution(choice);
+            assertEquals(text(occurrence(choice.state(), id), "sourceName"), "Soul's Attendant");
+            assertTrue(choice.prompt().get("cancelEnabled").getAsBoolean());
+            var events = new ArrayList<ExecutionTracker.Committed>();
+            var listener = new Object() {
+                @Subscribe public void committed(ExecutionTracker.Committed event) {
+                    if (event.execution() != null && event.execution().id().equals(id)) events.add(event);
+                }
+            };
+            game.table.game.subscribeToEvents(listener);
+            var obsolete = choice;
+            assertTrue(game.answer(choice, Map.of("action", "cancel")));
+            var settled = game.until(i -> i.seat() == 0 && priority(i) && i.state().getAsJsonArray("stack").isEmpty());
+            assertEquals(text(occurrence(settled.state(), id), "outcome"), "declined");
+            assertEquals(viewer(settled.state()).get("life").getAsInt(), life);
+            assertTrue(events.stream().anyMatch(event -> event.event() instanceof forge.game.event.GameEventSpellResolved));
+            assertTrue(events.stream().noneMatch(event -> event.execution().step().equals("complete")),
+                    "Declining cannot publish completion before its real settlement and stack removal events");
+            assertThrows(IllegalArgumentException.class, () -> game.table.seat(0).action(request(obsolete, Map.of("action", "ok"))));
+        }
+    }
+
+    @Test(groups = "canonical-interaction", timeOut = 90000)
     public void aCompletionBetweenObservationCopiesRetriesUntilItsActualDrawAndSettlementAreIncluded() throws Exception {
         try (var game = new RulesScenario("execution-coherent-settlement", Map.of(0,
                 List.of(MARE, "Island", "Island", "Island")), "Island", "Rhys the Redeemed", true)) {
