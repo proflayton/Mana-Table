@@ -30,7 +30,7 @@ Retain `ai-release-evaluation.json`, the full source revision, engine artifact
 manifest, exact runtime hashes and private trace/replay locations. Record the
 test-only fixture launcher hash separately from the shipping engine hash.
 The runner requires the exact source release package's resources and matching
-packaged AI, contract and adapter assemblies; retain the package/source receipt,
+packaged AI, shared planning, contract and adapter assemblies; retain the package/source receipt,
 resource path and build-metadata hash. Previously installed resources do not
 provide full candidate-release proof. The fixture launcher is test-only and
 must not be included in the production engine. CI runs the controlled goldens

@@ -15,7 +15,7 @@ internal sealed partial class TableApplication
     internal sealed record ManaSourcePaint(string SourceId, Rectangle Bounds,
         ImmutableDictionary<string, int> Output, bool Suggested);
     internal sealed record ManaJourneyPaint(string SourceId, bool Payment, Rectangle Bounds,
-        ImmutableArray<ManaBillPart> Parts, string Advice, ManaFundingStatus? FundingStatus)
+        ImmutableArray<ManaBillPart> Parts, string Advice, ManaFundingStatus? FundingStatus, string SourceZone, Rectangle SourceBounds)
     {
         public ImmutableArray<string> Symbols => Parts.Select(part => part.Symbol).ToImmutableArray();
     }
@@ -109,10 +109,12 @@ internal sealed partial class TableApplication
             ? match.Players.FirstOrDefault(player => player.Id == (paymentOwner.PayerId ?? match.ViewerId)) ?? viewer : viewer;
         DrawManaSourceWitness(journey, payer);
         string identity = CardViews.Identity(journey.Source);
-        var entry = matchPresentation.Cards.Cards.LastOrDefault(card => CardViews.Same(card.Card, journey.Source));
+        var matching = matchPresentation.Cards.Cards.Where(card => CardViews.Same(card.Card, journey.Source)).ToArray();
+        var entry = journey.Payment ? matching.LastOrDefault(card => card.Id == "payment:" + match.Decision!.Id)
+                ?? matching.LastOrDefault(card => card.Zone == "Stack") ?? matching.LastOrDefault()
+            : matching.LastOrDefault();
         if (entry == null || entry.Display.Bounds.IsEmpty) return;
         var face = entry.Display.Bounds;
-        bool expanded = entry.Display.Size.X >= 300;
         // Counted requirements are drawn directly. X=129 or a million repeated
         // shards must not allocate or paint one object for every mana unit.
         var tokens = journey.Parts.Where(part => part.Count > 0).ToArray();
@@ -132,14 +134,16 @@ internal sealed partial class TableApplication
         // negative viewport clamp. Exceptionally complex bills keep the normal
         // exact engine instructions and current manual payment controls.
         if (rows > 4) return;
-        int x = expanded && face.Right + width + 18 <= 1576 ? face.Right + 14
-            : Math.Clamp(face.Center.X - width / 2, 16, 1584 - width);
-        int y = expanded && x > face.Right ? Math.Clamp(face.Top + 12, 65, 884 - height)
-            : face.Top - height - 10 >= 62 ? face.Top - height - 10 : Math.Min(884 - height, face.Bottom + 10);
+        var occupied = manaSourcePaint.Select(source => source.Bounds).ToList();
+        foreach (var resource in journey.Funding?.Sources ?? [])
+            if (matchPresentation.Cards.TryGetPose(resource.SourceCardId, out var resourcePose)) occupied.Add(resourcePose.Bounds);
+        if (!sourceReaderActionsBounds.IsEmpty) occupied.Add(sourceReaderActionsBounds);
+        if (matchPresentation.Cards.Pinned is { } pinned && !CardViews.Same(pinned.Card, journey.Source)) occupied.Add(pinned.Display.Bounds);
+        var room = DecisionActionArea(face, width, height, additionalReservations: occupied);
+        if (room.Width < width || room.Height < height) return;
+        int x = room.X;
+        int y = Math.Clamp(entry.Display.Size.X >= 300 ? face.Top + 12 : face.Top - height - 10, room.Top, room.Bottom - height);
         var area = new Rectangle(x, y, width, height);
-        if (expanded && area.Intersects(sourceReaderActionsBounds) && face.Left - width - 14 >= 16) {
-            x = face.Left - width - 14; y = Math.Clamp(face.Top + 12, 65, 884 - height); area = new(x, y, width, height);
-        }
         var accent = journey.Plan?.Status == ManaFundingStatus.Funded ? new Color(135, 221, 194) : Gold;
         // The face remains the object; this small caption sits outside its art
         // and rules instead of opening a second inspector or resource panel.
@@ -161,7 +165,7 @@ internal sealed partial class TableApplication
             if (payment.Cancel.Enabled) Button("mana-cancel", payment.Cancel.Label, x + width - 94, controlY, 86,
                 new MatchIntent.CancelDecision(), !busy, height: 27);
         }
-        manaJourneyPaint = new(identity, journey.Payment, area, journey.Parts, journey.Advice, journey.Plan?.Status);
+        manaJourneyPaint = new(identity, journey.Payment, area, journey.Parts, journey.Advice, journey.Plan?.Status, entry.Zone, face);
     }
 
     private void DrawManaSourceWitness(ManaJourneyRead journey, Player viewer)

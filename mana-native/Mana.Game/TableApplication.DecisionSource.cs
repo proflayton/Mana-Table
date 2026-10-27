@@ -43,10 +43,12 @@ internal sealed partial class TableApplication
             : Mana.Table.Presentation.CardPresentationController.ReaderPose(rest, zone);
     }
 
-    private Rectangle DecisionActionArea(Rectangle anchor, int requestedWidth, int requestedHeight, bool reserveBattlefield = false)
+    private Rectangle DecisionActionArea(Rectangle anchor, int requestedWidth, int requestedHeight, bool reserveBattlefield = false,
+        IReadOnlyList<Rectangle>? additionalReservations = null)
     {
         var source = anchor; source.Inflate(12, 12);
         var occupied = new List<Rectangle> { source, new(1240, 550, 350, 245) };
+        if (additionalReservations != null) occupied.AddRange(additionalReservations);
         if (match is { } state && tableScene != null) {
             occupied.AddRange(TableViewGeometry.FixedReservations(state, tableScene));
             var turn = TurnControlLayout.For(SeatHero(state.ViewerId));

@@ -148,11 +148,13 @@ internal sealed class ManaPaymentSmoke : ITableAutomation
             Check(lab.ManaPaymentReplies.Count == 0 && view.HoverPreview == null,
                 "Hovering a hand cost reads current funding without enlarging the card, spending mana or submitting any action");
             Check(view.ManaJourney!.Symbols.SequenceEqual(["{1}", "{U}"])
+                && view.ManaSources.Count == 2
                 && view.ManaSources.Count(source => source.SourceId == ManaPaymentScenario.Dual) == 1
                 && view.ManaSources.Single(source => source.SourceId == ManaPaymentScenario.Dual).Output.GetValueOrDefault("U") == 1,
                 "A lifted cost points at one physical dual-land contribution; its two alternatives do not become two available mana");
             Check(view.ManaPoolBadge(0) is { Total: 0, Parts.Length: 0 },
                 "Suggested source output never appears as floating mana beside the portrait");
+            Check(CaptionClearsSeat(), "The lifted hand cost stays clear of the portrait, turn controls and actual floating-pool area");
             initialRingPose = view.DisplayedPose(ManaPaymentScenario.Ring);
             Capture("01-hover-cost-sources"); MoveCard(ManaPaymentScenario.Spell);
         }); Click();
@@ -187,6 +189,11 @@ internal sealed class ManaPaymentSmoke : ITableAutomation
         Wait(() => ReaderReady(ManaPaymentScenario.Dual) && view.Hits.Any(hit => hit.Id == "read-card-action"), () => {
             Check(view.Frame!.Drawing!.Commands.OfType<Mana.Renderer.DrawCommand.Text>().Any(text => text.Value?.Contains("Add") == true),
                 "A flexible mana source exposes its current symbol-bearing choices on its own readable card");
+            Check(view.ManaJourney is { SourceZone: "Stack" } bill
+                && !bill.Bounds.Intersects(view.DisplayedPose(ManaPaymentScenario.Dual)!.Value.Bounds)
+                && !view.Hits.Where(hit => hit.Id == "source-actions-surface").Any(hit => hit.Bounds.Intersects(bill.Bounds)),
+                "Reading a dual source keeps its current color choices and the pending spell's exact bill visible in separate adjacent space");
+            Capture("04b-dual-source-color-choices");
             MoveHit("read-card-action");
         }); Click();
         Wait(() => lab.StageIndex == 3 && !view.Busy && view.Match?.Stack.Length == 1, () => {
@@ -206,6 +213,8 @@ internal sealed class ManaPaymentSmoke : ITableAutomation
             && view.Hits.Any(hit => hit.Id == "mana-pool:0:C" && hit.Intent is MatchIntent.SpendFloatingMana), () => {
             Check(view.ManaJourney!.Symbols.Contains("{C}") && view.ManaJourney.Symbols.Contains("{1}"),
                 "An exact colorless requirement and a generic requirement retain different printed symbols");
+            Check(view.ManaJourney.SourceZone == "Stack" && CaptionClearsSeat(),
+                "A payment source still present in a zone anchors its bill to the pending source reference and keeps the portrait and usable pip unobscured");
             Capture("06-colorless-pip-can-pay"); MoveHit("mana-pool:0:C");
         }); Click();
         Wait(() => lab.StageIndex == 6 && !view.Busy, () => {
@@ -220,6 +229,8 @@ internal sealed class ManaPaymentSmoke : ITableAutomation
             Check(lab.State.Viewer!.Zone("Hand").Cards.Single(card => card.VisualId == ManaPaymentScenario.Spell).Selectable
                 && view.ManaJourney!.Advice == "Check sources manually",
                 "An uncertain funding preview keeps the engine's real manual action reachable instead of claiming the spell cannot be played");
+            Check(!view.ManaJourney!.Bounds.Intersects(view.DisplayedPose(ManaPaymentScenario.Dual)!.Value.Bounds),
+                "An uncertain cost caption preserves the actual resource face even when it cannot suggest a confident source witness");
             Capture("07-uncertain-manual-route"); Save(null); finished = true; window?.Exit();
         });
     }
@@ -229,6 +240,14 @@ internal sealed class ManaPaymentSmoke : ITableAutomation
     private bool SettledTapped(string id) => view.Frame!.Cards.FirstOrDefault(card => card.Id == id) is { Focused: false } card
         && Math.Abs(MathHelper.WrapAngle(card.Display.Angle - card.Rest.Angle)) < .01f
         && Vector2.Distance(card.Display.Size, card.Rest.Size) < 1;
+    private bool CaptionClearsSeat()
+    {
+        if (view.ManaJourney is not { } journey) return false;
+        var hero = view.Frame!.Scene!.Seat(view.Match!.ViewerId).Geometry.Hero;
+        return !Mana.Renderer.TurnControlLayout.For(hero).Reservations.Any(area => area.Intersects(journey.Bounds))
+            && !new Microsoft.Xna.Framework.Rectangle((int)hero.X - 58, (int)hero.Y - 58, 116, 116).Intersects(journey.Bounds)
+            && (view.ManaPoolBadge(view.Match.ViewerId) is not { } pool || !pool.Bounds.Intersects(journey.Bounds));
+    }
     private void Load(int stage) { recordedReplies.AddRange(lab.ManaPaymentReplies); lab.Replay(stage); view.Accept(lab.State); Move(new(12, 65)); }
     private float Scale => Math.Min(viewport.X / 1600f, viewport.Y / (float)view.DesignHeight);
     private Point Pixel(Vector2 logical) => new((int)MathF.Round((viewport.X - 1600 * Scale) / 2 + logical.X * Scale),
