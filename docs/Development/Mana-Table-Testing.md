@@ -27,7 +27,14 @@ resolution. It reuses the same initialized JVM; fixture setup passes are explici
 human test-driver commands, not AI passes inferred from incomplete discovery.
 No additional CI job or separate rules simulator is introduced.
 
-After that journey, the same JVM runs four complete `CasualCommanderPolicy`
+After that journey, the shipping-engine gate runs its controlled policy goldens
+before starting the stochastic games. The Pir/Toothy case guarantees the actual
+draw-trigger and counter-replacement continuation; a natural game need not spare
+that commander long enough to reproduce it. Counter events in the natural game
+remain diagnostic observations. Failure artifacts retain its public JSONL trace
+separately from private seat evidence.
+
+The same JVM then runs four complete `CasualCommanderPolicy`
 seats against different Commander decks, including a saved Toothy/Pir partner
 deck. No scripted driver answers a bot. A separate public spectator records
 the changing board and stack in `whole-seat-ai-public.jsonl`; private decision
@@ -79,7 +86,7 @@ uses these same provenance checks.
 
 The wrapper is a test-only launcher for controlled positions using the exact
 production engine. It is checked against the shipping JAR and never supplies a
-shipping scenario API. The existing process initializes one JVM for the eight
+shipping scenario API. The existing process initializes one JVM for the nine
 controlled native goldens and subsequent games. The release campaign uses four
 cyclic seat rotations, each bounded by 160 global turns and 180 seconds. This is
 at most twelve minutes of nominal game budget, separate from fast CI. Limits are
@@ -106,6 +113,11 @@ progress, current Done, no further contribution offer from the unused creature,
 and the same public source resolving as 5/4. Real Java checks also cover undo,
 positive bills with incompatible candidates, projection purity and a nested
 multicolor choice observed while its UI callback waits for the answer.
+The partner-counter golden uses a valid Pir/Toothy deck and harmless opposing
+commanders. The normal policy must pay for both real commanders, establish the
+same Toothy at zero counters, then cross the next natural draw and its trigger
+to observe exactly two +1/+1 counters and 3/3 with Pir present. No scripted seat
+answer or pre-seeded counter stands in for that continuation.
 
 The fixed 16-turn/35-second CI prefix and the two-rotation 32-turn/45-second smoke
 remain unchanged. Do not rerun a failed sample until one happens to pass, lower

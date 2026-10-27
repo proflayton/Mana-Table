@@ -278,9 +278,9 @@ internal static class HeadlessEngineSmoke
             Click("concede"); Click("confirm-concede"); await Idle(); await Refresh("finished");
             Check(view.Match is { Status: "finished", Result: "Defeat" }, "The real game concedes through production confirmation controls and publishes its result");
             Save("finished");
+            if (productionJar != null) await AiReleaseGoldens.RunAsync(engine, paths.Profile, Check);
             await AiWholeSeatEngineCheck.RunAsync(engine, paths.Profile, Check);
             await AiEngineCampaign.RunAsync(engine, paths.Profile, new(1, 16, TimeSpan.FromSeconds(35)), Check, paths);
-            if (productionJar != null) await AiReleaseGoldens.RunAsync(engine, paths.Profile, Check);
 
             GameTime Time() => new(TimeSpan.FromSeconds(seconds), TimeSpan.FromSeconds(1.0 / 60));
             PresentationFrame Tick(string stage, ButtonState left = ButtonState.Released)

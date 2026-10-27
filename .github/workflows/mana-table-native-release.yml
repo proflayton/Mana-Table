@@ -203,6 +203,7 @@ jobs:
           path: |
             dist/*-checks/**/*.json
             dist/*-checks/**/*.log
+            dist/*-checks/**/whole-seat-ai-public.jsonl
           if-no-files-found: ignore
           retention-days: 14
       - name: Share the runtime ZIP without wrapping it in another archive
