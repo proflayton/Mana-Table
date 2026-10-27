@@ -55,7 +55,8 @@ public class TriggerWaitingConcessionTest {
                     assertTrue(queue.firstStack.stream().noneMatch(frame -> frame.contains("MatchSession.concede")),
                             "The first real drain must run on the ordinary game path, before the API concession");
                     concession.start();
-                    queue.contenderBoundary = awaitBlockedOrCompleted(concession, queue.observed);
+                    StateBoundaryContention.await(concession.thread, -1);
+                    queue.contenderBoundary = "blocked-on-game-state-boundary";
                     queue.release.countDown();
                     concession.finish();
                     queue.facts.put("concessionWorkerExited", !concession.thread.isAlive());

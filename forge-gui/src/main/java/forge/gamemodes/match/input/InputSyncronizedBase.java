@@ -21,7 +21,7 @@ public abstract class InputSyncronizedBase extends InputBase implements InputSyn
     public void awaitLatchRelease() {
         FThreads.assertExecutedByEdt(false);
         netLog.trace("awaitLatchRelease() starting on {}, thread = {}", this.getClass().getSimpleName(), Thread.currentThread().getName());
-        try {
+        try (var suspended = getController().getGame().getAction().suspendState()) {
             cdlDone.await();
         } catch (final InterruptedException e) {
             BugReporter.reportException(e);

@@ -1,6 +1,7 @@
 using System.Collections.Immutable;
 using System.Diagnostics;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using Mana.Contracts;
 using Mana.Forge;
 using Mana.Magic;
@@ -16,7 +17,7 @@ namespace Mana.Table;
 /// <summary>A short real-Forge game observed and operated through production composition, without a window.</summary>
 internal static class HeadlessEngineSmoke
 {
-    internal static async Task RunAsync(ForgePaths paths)
+    internal static async Task RunAsync(ForgePaths paths, string? productionJar = null, string? sourceRevision = null, string? sourceManifest = null)
     {
         Directory.CreateDirectory(paths.Profile);
         var checks = new List<string>();
@@ -35,6 +36,11 @@ internal static class HeadlessEngineSmoke
         }
         await using var engine = new ForgeEngine(paths);
         try {
+            if (productionJar != null) {
+                var runtime = AiReleaseEvaluation.VerifyRuntime(paths, productionJar, verifyPackage: true,
+                    sourceRevision: sourceRevision, sourceManifest: sourceManifest);
+                File.WriteAllText(Path.Combine(paths.Profile, "ai-verified-runtime.json"), JsonSerializer.Serialize(runtime, json));
+            }
             await engine.InitializeAsync();
             var deck = await engine.ImportAsync("Headless production composition", "Deck\n99 Forest\nCommander\n1 Rhys the Redeemed");
             var setup = await engine.PrepareSoloAsync(deck.Id);
@@ -94,6 +100,7 @@ internal static class HeadlessEngineSmoke
                 "Switching explicit setup reports its actual deck association and rejects a same-revision write for the previous owner");
             Check((await engine.PrepareSoloAsync(deck.Id)).DeckId == deck.Id,
                 "Explicit setup can return to the requested original deck before the real match starts");
+            await AiFrameworkEngineCheck.RunAsync(engine, deck.Id, Check);
             await engine.StartSoloAsync(deck.Id, ["green", "red", "green"]);
             GameSnapshot? initial = null;
             while (initial?.Players.Length != 4 || initial.Decision == null) {
@@ -271,6 +278,9 @@ internal static class HeadlessEngineSmoke
             Click("concede"); Click("confirm-concede"); await Idle(); await Refresh("finished");
             Check(view.Match is { Status: "finished", Result: "Defeat" }, "The real game concedes through production confirmation controls and publishes its result");
             Save("finished");
+            await AiWholeSeatEngineCheck.RunAsync(engine, paths.Profile, Check);
+            await AiEngineCampaign.RunAsync(engine, paths.Profile, new(1, 16, TimeSpan.FromSeconds(35)), Check, paths);
+            if (productionJar != null) await AiReleaseGoldens.RunAsync(engine, paths.Profile, Check);
 
             GameTime Time() => new(TimeSpan.FromSeconds(seconds), TimeSpan.FromSeconds(1.0 / 60));
             PresentationFrame Tick(string stage, ButtonState left = ButtonState.Released)
@@ -322,37 +332,82 @@ internal static class HeadlessEngineSmoke
             async Task PlayCard(Card card, string sourceZone)
             {
                 string occurrence = CardViews.Identity(card);
-                var beforeQuery = view.Match!;
-                string prompt = beforeQuery.Decision!.Id;
-                Check(engine.SupportsSourceActions, "The real rules adapter negotiates engine-owned source actions");
-                var sourceActions = await engine.SourceActionsAsync(beforeQuery.Id, prompt, card.Key);
-                var repeated = await engine.SourceActionsAsync(beforeQuery.Id, prompt, card.Key);
-                var afterQuery = await engine.ObserveAsync() ?? throw new InvalidOperationException("The source action read lost the game.");
+                var beforeReader = view.Match!;
+                string prompt = beforeReader.Decision!.Id;
                 string expectedKind = sourceZone == "Battlefield" ? "activate" : card.Type.Contains("Land", StringComparison.Ordinal) ? "play" : "cast";
-                Check(sourceActions.GameId == beforeQuery.Id && sourceActions.DecisionId == prompt
-                    && sourceActions.SourceCardKey == card.Key && sourceActions.SourceCardId == card.VisualId
-                    && sourceActions.Actions.Any(action => action.Kind == expectedKind && !string.IsNullOrWhiteSpace(action.Text))
-                    && sourceActions.Actions.SequenceEqual(repeated.Actions)
-                    && afterQuery.Decision?.Id == prompt && afterQuery.Revision == beforeQuery.Revision
-                    && afterQuery.Viewer!.Zones.SelectMany(zone => zone.Cards).Single(item => item.VisualId == card.VisualId).Key == card.Key,
-                    "Reading the real source actions twice preserves full engine text, stable opaque handles and the unanswered prompt: " + card.Name);
-                bool staleQueryRejected = false;
-                try { await engine.SourceActionsAsync(beforeQuery.Id, prompt, "expired-source-key"); }
-                catch (EngineCommandRejectedException) { staleQueryRejected = true; }
-                Check(staleQueryRejected && (await engine.ObserveAsync())?.Decision?.Id == prompt,
-                    "A stale source query is rejected without consuming the current game decision");
+                Check(engine.SupportsSourceActions, "The real rules adapter negotiates engine-owned source actions");
                 var entry = frame.Cards.Single(item => item.Id == occurrence);
                 var hit = frame.Hits.Last(item => item.Id == entry.Hit.Id && item.Scope == entry.Hit.Scope);
                 Click(hit.Id);
                 frame = Tick("restore-reader-footprint"); frame = Tick("reader-settled");
                 if (!frame.Cards.Any(item => item.Id == occurrence && item.Focused)) throw new InvalidOperationException("The real card reader did not open.");
+                // Use the production reader lifecycle first. Its source session
+                // discards old generations and reads the current published
+                // revision before exposing this scoped action. A cached poll or
+                // a direct source query is not a display-queue barrier.
                 while (!frame.Hits.Any(item => item.Id == "read-card-action")) {
-                    Guard(); await Task.Delay(1); frame = Tick("await-engine-source-actions");
+                    Guard();
+                    if (view.Match?.Id != beforeReader.Id || view.Match.Decision?.Id != prompt)
+                        throw new InvalidOperationException("The decision changed before its source reader became ready.");
+                    await Task.Delay(1); frame = Tick("await-engine-source-actions");
                 }
-                string decisionId = view.Match!.Decision!.Id;
-                Check(view.Match.Id == beforeQuery.Id && decisionId == prompt && !view.Busy
-                    && frame.Hits.Any(hit => hit.Id == "read-card-action"),
+                var displayedBeforeQuery = view.Match!;
+                var currentBeforeQuery = displayedBeforeQuery.Viewer?.Zones.SelectMany(zone => zone.Cards)
+                    .Where(item => item.VisualId == card.VisualId).ToArray() ?? [];
+                Check(displayedBeforeQuery.Id == beforeReader.Id && displayedBeforeQuery.Decision?.Id == prompt
+                    && currentBeforeQuery.Length == 1 && currentBeforeQuery[0].Key == card.Key && !view.Busy
+                    && frame.Cards.Any(item => item.Id == occurrence && item.Focused)
+                    && frame.Hits.Any(item => item.Id == "read-card-action" && item.Intent is MatchIntent.UseSourceAction),
                     "The actual reader exposes its current " + expectedKind + " action without answering the decision: " + card.Name);
+                SourceActionSet? primed = null, sourceActions = null, repeated = null;
+                GameSnapshot? beforeQuery = null, afterQuery = null;
+                string queryStage = "first-current-reader-query";
+                try {
+                    primed = await engine.SourceActionsAsync(displayedBeforeQuery.Id, prompt, card.Key);
+                    queryStage = "observe-read-purity-baseline";
+                    beforeQuery = await engine.ObserveAsync() ?? throw new InvalidOperationException("Reading the source lost the game.");
+                    queryStage = "second-current-reader-query";
+                    sourceActions = await engine.SourceActionsAsync(beforeQuery.Id, prompt, card.Key);
+                    queryStage = "repeated-current-reader-query";
+                    repeated = await engine.SourceActionsAsync(beforeQuery.Id, prompt, card.Key);
+                    queryStage = "observe-after-read-purity";
+                    afterQuery = await engine.ObserveAsync() ?? throw new InvalidOperationException("The source action read lost the game.");
+                } catch (Exception failure) {
+                    GameSnapshot? observedAfterFailure = null;
+                    string? observationFailure = null;
+                    try { observedAfterFailure = await engine.ObserveAsync(); }
+                    catch (Exception observationError) { observationFailure = observationError.ToString(); }
+                    try {
+                        File.WriteAllText(Path.Combine(paths.Profile, "headless-engine-source-query-rejected.json"),
+                            JsonSerializer.Serialize(new { queryStage, error = failure.ToString(), card, sourceZone, expectedKind,
+                                beforeReader, displayedBeforeQuery, primed, beforeQuery, sourceActions, repeated, afterQuery,
+                                observedAfterFailure, observationFailure }, json));
+                    } catch { /* Diagnostic I/O must preserve the actual read failure. */ }
+                    // An unexpected direct-query rejection fails this attempt.
+                    // Never retry it away or loosen the expected revision.
+                    throw;
+                }
+                var currentSource = afterQuery.Viewer?.Zones.SelectMany(zone => zone.Cards).Where(item => item.VisualId == card.VisualId).ToArray() ?? [];
+                bool stableRead = displayedBeforeQuery.Id == beforeQuery.Id && beforeQuery.Decision?.Id == prompt
+                    && beforeQuery.Revision == displayedBeforeQuery.Revision
+                    && sourceActions.GameId == beforeQuery.Id && sourceActions.DecisionId == prompt
+                    && sourceActions.SourceCardKey == card.Key && sourceActions.SourceCardId == card.VisualId
+                    && sourceActions.Actions.Any(action => action.Kind == expectedKind && !string.IsNullOrWhiteSpace(action.Text))
+                    && SameSourceActions(primed.Actions, sourceActions.Actions) && SameSourceActions(sourceActions.Actions, repeated.Actions)
+                    && afterQuery.Decision?.Id == prompt && afterQuery.Revision == beforeQuery.Revision
+                    && currentSource.Length == 1 && currentSource[0].Key == card.Key;
+                if (!stableRead)
+                    File.WriteAllText(Path.Combine(paths.Profile, "headless-engine-source-query-mismatch.json"),
+                        JsonSerializer.Serialize(new { card, sourceZone, expectedKind, displayedBeforeQuery, primed, beforeQuery, sourceActions, repeated, afterQuery }, json));
+                Check(stableRead,
+                    "Reading the real source actions twice preserves full engine text, stable opaque handles and the unanswered prompt: " + card.Name);
+                view.Accept(afterQuery); frame = Tick("source-read-settled");
+                bool staleQueryRejected = false;
+                try { await engine.SourceActionsAsync(beforeQuery.Id, prompt, "expired-source-key"); }
+                catch (EngineCommandRejectedException) { staleQueryRejected = true; }
+                Check(staleQueryRejected && (await engine.ObserveAsync())?.Decision?.Id == prompt,
+                    "A stale source query is rejected without consuming the current game decision");
+                string decisionId = view.Match!.Decision!.Id;
                 if (expectedKind == "play") {
                     var reader = frame.Cards.Single(item => item.Id == occurrence && item.Focused);
                     pointer = reader.Display.Center.ToPoint();
@@ -408,4 +463,10 @@ internal static class HeadlessEngineSmoke
             if (elapsed.Elapsed > TimeSpan.FromSeconds(90)) throw new TimeoutException("Real Forge opening-to-land/commander presentation exceeded its bounded smoke watchdog.");
         }
     }
+
+    // Separate wire reads allocate fresh immutable collections. Record equality
+    // compares those backing instances; read purity needs every fact's content,
+    // including current cost and resource metadata, to remain unchanged.
+    internal static bool SameSourceActions(ImmutableArray<SourceAction> first, ImmutableArray<SourceAction> second)
+        => JsonNode.DeepEquals(JsonSerializer.SerializeToNode(first), JsonSerializer.SerializeToNode(second));
 }

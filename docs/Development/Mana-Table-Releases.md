@@ -11,6 +11,47 @@ also offers `ManaTable-Windows-x64.zip` for portable use and a complete matching
 `ManaTable-Source.zip`. Extract the whole portable ZIP before opening
 `ManaTable.exe`. Other operating systems are not packaged yet.
 
+## AI candidate evidence
+
+An AI candidate also needs the five gates in
+[AI release evaluation](Mana-Table-Testing.md#ai-release-evaluation). This is
+additional evidence for the exact candidate, alongside required source CI,
+native packaging, UI, installer and update checks. A passing short smoke game
+does not prove a whole game can finish or that an opponent is enjoyable.
+
+The manual `--evaluate-ai-release` profile runs eight controlled native policy
+journeys and four natural games using the varied deck manifests in cyclic seat
+rotations. It reuses one JVM. Each game has a 160-turn/180-second ceiling; a
+ceiling is inconclusive, never a replacement for the engine's pre-cleanup
+outcome. Preserve the first failure or cutoff. Do not retry until a sample
+passes, lower its target, or change the budget to relabel it green.
+The flexible-output journey specifically checks that the unmodified policy
+chooses red from a blue/red land for an actual blue/red bill, then pays the
+remaining blue and observes the same commander resolve. A solver's hypothetical
+assignment alone is insufficient evidence of the produced color.
+The contribution journey also requires actual convoke progress through zero,
+current Done and the same resolved commander; thousands of accepted card clicks
+without changing that progress cannot certify completion.
+
+Retain `ai-release-evaluation.json`, the full source revision, engine artifact
+manifest, exact runtime hashes and private trace/replay locations. Record the
+test-only fixture launcher hash separately from the shipping engine hash.
+The runner requires the exact source release package's resources and matching
+packaged AI, shared planning, contract and adapter assemblies; retain the package/source receipt,
+resource path and build-metadata hash. Previously installed resources do not
+provide full candidate-release proof. The fixture launcher is test-only and
+must not be included in the production engine. CI runs the controlled goldens
+in its existing initialized JVM; the four-game manual profile does not add a CI
+job or replace any required source or package checks.
+
+The aggregate's `automatedReady` is not approval: `releaseApproved` remains false
+and `humanGameplayReview.status` remains pending. Record a review of the tested
+candidate, actual gameplay journeys, findings and their disposition before
+promoting AI behavior. A pending review cannot be counted as a passed gate.
+Human review is not inferred from win rate, equal targeting or an automated
+report. Keep private decisions, scope handles and replays out of public release
+downloads and public issue attachments.
+
 ## Automatic native releases
 
 [Mana Table native Windows release](../../.github/workflows/mana-table-native-release.yml)

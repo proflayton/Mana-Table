@@ -60,15 +60,15 @@ public class PaperToken implements InventoryItemFromSet, IPaperCard {
         this.cardRules = c;
         this.name = c.getName();
         this.edition = edition0;
-        this.collectorNumber = collectorNumber;
+        this.collectorNumber = collectorNumber == null || collectorNumber.isBlank() ? IPaperCard.NO_COLLECTOR_NUMBER : collectorNumber;
         this.artist = artist;
 
-        if (collectorNumber != null && !collectorNumber.isEmpty() && edition != null && edition.getTokens().containsKey(imageFileName)) {
+        if (!IPaperCard.NO_COLLECTOR_NUMBER.equals(this.collectorNumber) && edition != null && edition.getTokens().containsKey(imageFileName)) {
             int idx = 0;
             // count the one with the same collectorNumber
             for (CardEdition.EditionEntry t : edition.getTokens().get(imageFileName)) {
                 ++idx;
-                if (!t.collectorNumber().equals(collectorNumber)) {
+                if (!this.collectorNumber.equals(t.collectorNumber())) {
                     continue;
                 }
                 // TODO make better image file names when collector number is known
@@ -106,7 +106,7 @@ public class PaperToken implements InventoryItemFromSet, IPaperCard {
 
     @Override
     public String getCollectorNumber() {
-        if (collectorNumber.isEmpty())
+        if (collectorNumber == null || collectorNumber.isBlank())
             return IPaperCard.NO_COLLECTOR_NUMBER;
         return collectorNumber;
     }

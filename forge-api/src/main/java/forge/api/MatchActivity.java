@@ -12,7 +12,12 @@ import java.util.*;
 public final class MatchActivity {
     public record Entry(long id, int turn, String phaseKey, String kind, Integer playerId,
                         String message, String cardId, String cardName, String detail, String outcome, int count,
-                        PublicCardChange change, PublicEffectCause cause, boolean interruptsQuietYield, PublicImpact impact) {
+                        PublicCardChange change, PublicEffectCause cause, boolean interruptsQuietYield, PublicImpact impact, String stackId) {
+        public Entry(long id, int turn, String phaseKey, String kind, Integer playerId, String message,
+                     String cardId, String cardName, String detail, String outcome, int count,
+                     PublicCardChange change, PublicEffectCause cause, boolean interruptsQuietYield, PublicImpact impact) {
+            this(id, turn, phaseKey, kind, playerId, message, cardId, cardName, detail, outcome, count, change, cause, interruptsQuietYield, impact, null);
+        }
         public Entry(long id, int turn, String phaseKey, String kind, Integer playerId, String message,
                      String cardId, String cardName, String detail, String outcome, int count,
                      PublicCardChange change, PublicEffectCause cause, boolean interruptsQuietYield) {
@@ -38,9 +43,14 @@ public final class MatchActivity {
     public record Frame(long revision, int turn, String phaseKey, String phase, Integer activePlayerId, List<Entry> entries) { }
     private final PlayerView viewer;
     private final MatchIdentities identities;
+    private final java.util.function.Predicate<CardView> currentView;
+    private final java.util.function.Function<CardView, CardView> currentOccurrence;
     private boolean ownsIdentities;
     private final Deque<Entry> entries = new ArrayDeque<>();
-    private final Map<CardView, String> visibleIds = new HashMap<>();
+    // CardView equality is physical ID only. A delayed trigger may hold a
+    // different historical view with that same ID and no current zone.
+    private record VisibleOccurrence(CardView view, String id) { }
+    private final Map<CardView, VisibleOccurrence> visibleIds = new HashMap<>();
     private final Map<Integer, Map<String, PublicPlayerStates.State>> playerStates = new HashMap<>();
     private long sequence;
     private long quietSequence;
@@ -54,7 +64,16 @@ public final class MatchActivity {
     private int ownTurns, cardsDrawn, landsPlayed, spellsCast, mulligans, commanderCasts;
 
     MatchActivity(PlayerView viewer) { this(viewer, new MatchIdentities()); ownsIdentities = true; }
-    MatchActivity(PlayerView viewer, MatchIdentities identities) { this.viewer = Objects.requireNonNull(viewer); this.identities = identities; }
+    MatchActivity(PlayerView viewer, MatchIdentities identities) { this(viewer, identities, Objects::nonNull); }
+    MatchActivity(PlayerView viewer, MatchIdentities identities, java.util.function.Predicate<CardView> currentView) {
+        this(viewer, identities, currentView, card -> currentView.test(card) ? card : null);
+    }
+    MatchActivity(PlayerView viewer, MatchIdentities identities, java.util.function.Predicate<CardView> currentView,
+            java.util.function.Function<CardView, CardView> currentOccurrence) {
+        this.viewer = Objects.requireNonNull(viewer); this.identities = identities;
+        this.currentView = Objects.requireNonNull(currentView);
+        this.currentOccurrence = Objects.requireNonNull(currentOccurrence);
+    }
 
     public synchronized List<Entry> snapshot() { return List.copyOf(entries); }
     public synchronized Frame frame() { return new Frame(revision, turn, phase, phaseName, activePlayerId, snapshot()); }
@@ -72,13 +91,49 @@ public final class MatchActivity {
     }
 
     synchronized String visualId(CardView card) {
-        if (!visible(card)) { if (card != null && visibleIds.remove(card) != null) identities.forget(card); return null; }
+        // A public historical portrait remains readable, but is neither the
+        // current occurrence nor evidence that the current one was concealed.
+        if (!currentView.test(card)) return null;
+        if (!visible(card)) {
+            var prior = card == null ? null : visibleIds.get(card);
+            if (prior != null && prior.view() == card) {
+                visibleIds.remove(card);
+                identities.forget(card, prior.id());
+            }
+            return null;
+        }
         String id = identities.id(card);
-        visibleIds.put(card, id);
+        visibleIds.put(card, new VisibleOccurrence(card, id));
         return id;
     }
 
-    synchronized void refreshVisibility() { visibleIds.keySet().removeIf(card -> { if (visible(card)) return false; identities.forget(card); return true; }); }
+    private String eventVisualId(CardView card) {
+        String current = visualId(card);
+        if (current != null || !visible(card)) return current;
+        // A real zone-change event carries the departing old CardView. History
+        // can copy its already observed anchor, but cannot create or install a
+        // live occurrence from that historical view.
+        var known = visibleIds.get(card);
+        return known != null && known.view() == card ? known.id() : null;
+    }
+
+    synchronized void refreshVisibility() {
+        visibleIds.entrySet().removeIf(entry -> {
+            var known = entry.getValue();
+            var current = currentOccurrence.apply(known.view());
+            if (current != null && visible(current)) {
+                // A public zone move replaces the engine view, not the known
+                // physical card. Only the authoritative replacement can keep
+                // that display anchor; a historical portrait cannot do so.
+                entry.setValue(new VisibleOccurrence(current, known.id()));
+                return false;
+            }
+            // A different audience may already have observed a newer private
+            // occurrence. Revoking our old view cannot erase that generation.
+            identities.forget(known.view(), known.id());
+            return true;
+        });
+    }
 
     private boolean visible(CardView card) {
         return card != null && card.getZone() != null
@@ -92,7 +147,7 @@ public final class MatchActivity {
     }
     private PublicEffectCause publicCause(GameEventCause cause) {
         if (cause == null || !visible(cause.card())) return null;
-        return new PublicEffectCause(visualId(cause.card()), cause.card().getCurrentState().getName(), cause.ability(),
+        return new PublicEffectCause(eventVisualId(cause.card()), cause.card().getCurrentState().getName(), cause.ability(),
                 cause.controller() == null ? null : cause.controller().getId(), cause.kind(), identities.effect(cause.instanceId()));
     }
     private boolean publicOccurrence(CardView card) {
@@ -107,10 +162,10 @@ public final class MatchActivity {
         if (card != null && !(anonymous || publicOccurrence(card) && visible(card))) return null;
         boolean disclosedSource = publicOccurrence(source) && visible(source);
         return new PublicImpact("damage", amount,
-                card == null ? null : anonymous ? identities.concealed(card) : visualId(card),
+                card == null ? null : anonymous ? identities.concealed(card) : eventVisualId(card),
                 card == null ? null : anonymous ? "Face-down card" : card.getCurrentState().getName(),
                 player == null ? null : player.getId(),
-                disclosedSource ? visualId(source) : null,
+                disclosedSource ? eventVisualId(source) : null,
                 disclosedSource ? source.getCurrentState().getName() : null,
                 null, null, damageType, combat, infect);
     }
@@ -168,13 +223,18 @@ public final class MatchActivity {
     }
     private void add(String kind, PlayerView player, String message, CardView card, String detail, String outcome, int count,
                      PublicCardChange change, PublicEffectCause cause, boolean interruptsQuietYield, PublicImpact impact) {
+        add(kind, player, message, card, detail, outcome, count, change, cause, interruptsQuietYield, impact, null);
+    }
+
+    private void add(String kind, PlayerView player, String message, CardView card, String detail, String outcome, int count,
+                     PublicCardChange change, PublicEffectCause cause, boolean interruptsQuietYield, PublicImpact impact, String stackId) {
         revision++;
         if (interruptsQuietYield) quietSequence++;
         boolean anonymousTarget = change != null && publicFaceDown(card);
         entries.addLast(new Entry(++sequence, turn, phase, kind, player == null ? null : player.getId(),
-                message, anonymousTarget ? identities.concealed(card) : visualId(card),
+                message, anonymousTarget ? identities.concealed(card) : eventVisualId(card),
                 anonymousTarget ? "Face-down card" : visible(card) ? card.getCurrentState().getName() : null,
-                detail, outcome, count, change, cause, interruptsQuietYield, impact));
+                detail, outcome, count, change, cause, interruptsQuietYield, impact, stackId));
         if (cause != null && change != null && change.kind().equals("counters")) {
             latestCounterCause = cause.id();
             entriesAfterLatestCounterCause = 0;
@@ -221,14 +281,16 @@ public final class MatchActivity {
                 if (card != null && card.isCommander()) commanderCasts++;
             }
             String action = e.sa().isSpell() ? " cast " : e.si().isTrigger() ? " triggered an ability of " : " activated an ability of ";
-            add(e.sa().isSpell() ? "cast" : "ability", player, playerName(player) + action + cardName(card) + ".", card);
+            add(e.sa().isSpell() ? "cast" : "ability", player, playerName(player) + action + cardName(card) + ".", card,
+                    "", "", 0, null, null, true, null, String.valueOf(e.si().getId()));
         } else if (event instanceof GameEventSpellResolved e) {
             var card = e.spell().getHostCard();
             String detail = visible(card) ? Objects.requireNonNullElse(e.stackDescription(), "") : "";
             if (visible(card) && e.spell().isSpell()) detail += "\n" + card.getCurrentState().getOracleText();
             add("resolved", card == null ? null : card.getController(), cardName(card) + (e.spell().isSpell() ? "" : "'s ability")
                     + (e.hasFizzled() ? " did not resolve." : " resolved."), card,
-                    detail, e.hasFizzled() ? "notResolved" : "resolved", 0);
+                    detail, e.hasFizzled() ? "notResolved" : "resolved", 0, null, null, true, null,
+                    e.stackInstanceId() == null ? null : String.valueOf(e.stackInstanceId()));
         } else if (event instanceof GameEventCardChangeZone e) {
             ZoneType from = e.from() == null ? null : e.from().zoneType();
             ZoneType to = e.to() == null ? null : e.to().zoneType();
@@ -294,7 +356,8 @@ public final class MatchActivity {
                     new PublicCardChange("counters", e.type().getName(), e.oldValue(), e.newValue()), cause);
         } else if (event instanceof GameEventShuffle e) {
             // A shuffle breaks identity correlation even when the new top is visible.
-            visibleIds.keySet().removeIf(card -> card.getZone() == ZoneType.Library && e.player().equals(card.getController()));
+            visibleIds.values().removeIf(occurrence -> occurrence.view().getZone() == ZoneType.Library
+                    && e.player().equals(occurrence.view().getController()));
             if (turn > 0) add("shuffle", e.player(), playerName(e.player()) + " shuffled their library.", null, "", "", 1);
         } else if (event instanceof GameEventMulligan e) {
             if (viewer.equals(e.player())) mulligans++;

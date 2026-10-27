@@ -58,6 +58,7 @@ jobs:
           name: engine-${{ github.sha }}
           path: |
             forge-api/target/forge-engine.jar
+            forge-api/target/forge-engine-fixtures.jar
             forge-api/target/ci-engine-manifest.json
           if-no-files-found: error
           compression-level: 0

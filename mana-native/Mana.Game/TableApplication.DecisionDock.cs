@@ -19,7 +19,7 @@ internal sealed partial class TableApplication
         if (session.NeedsRecovery) return DecisionDockPauseReason.Recovery;
         if (turnPassRequest != null) return DecisionDockPauseReason.Interaction;
         if (commandFailure && error.Length > 0) return DecisionDockPauseReason.CommandFailure;
-        if (readingId != null || CardCollectionOpen || HoveredPendingReference() != null) return DecisionDockPauseReason.Inspection;
+        if (readingId != null || CardCollectionOpen || expandedStackWorkload.Length > 0 || HoveredPendingReference() != null) return DecisionDockPauseReason.Inspection;
         if (OverlayOpen) return DecisionDockPauseReason.Overlay;
         if (chatFocus) return DecisionDockPauseReason.Chat;
         if (AbilityActionPending || dragging || boardPanning || pressed != null || selectedCombat != null || AwaitingReleasedPlay) return DecisionDockPauseReason.Interaction;
@@ -63,6 +63,8 @@ internal sealed partial class TableApplication
 
         DrawPortraitTurnControls();
         if (turnPassRequest != null) { DrawPortraitPriority(decisionDock); return; }
+        if (DrawManaColorDecision(state)) return;
+        if (ManaPaymentSurface) { decisionPanelBounds = Rectangle.Empty; return; }
         if (DrawCounterPaymentDecision(state)) return;
         if (!SelectingActionTarget && DrawOptionalDecision(state)) return;
         if (d?.Payload is TargetSelectionPayload { Search: not null }) {
@@ -86,7 +88,7 @@ internal sealed partial class TableApplication
 
         // Another seat's required choice does not revoke our pass intent. Keep
         // its cancellation beside our portrait while that choice owns the dock.
-        if (QuietPriorityArmed && !SelectingActionTarget) DrawPortraitPriority(decisionDock);
+        if ((QuietPriorityArmed || ResolvingCapturedStack) && !SelectingActionTarget) DrawPortraitPriority(decisionDock);
 
         var view = decisionDock;
         bool recipientChoice = !SelectingActionTarget && d?.Payload is EntitySelectionPayload && StateClarity.Recipients(state).Length > 0;

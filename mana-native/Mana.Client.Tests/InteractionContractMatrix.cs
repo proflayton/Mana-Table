@@ -33,6 +33,7 @@ internal static class InteractionContractMatrix
         new("play-hand-card", typeof(PlayCard), typeof(PriorityPayload)),
         new("activate-current-card", typeof(ActivateCard), typeof(PriorityPayload)),
         new("use-mana-source", typeof(UseManaSource), typeof(PaymentPayload)),
+        new("spend-existing-pool-mana", typeof(SpendPoolMana), typeof(PaymentPayload)),
         new("select-offered-player", typeof(SelectPlayer), typeof(TargetSelectionPayload)),
         new("assign-attacker", typeof(ToggleAttackPlayer), typeof(AttackPayload)),
         new("attack-permanent", typeof(ToggleAttackPermanent), typeof(AttackPayload)),
@@ -367,7 +368,7 @@ internal static class InteractionContractMatrix
             var decision = new Decision(prefix + ":decision", new(), payload);
             hand = hand with { Selectable = Is<PlayCard>() };
             var players = Enumerable.Range(0, 4).Select(id => new Player(id, id == 0 ? "You" : "Opponent " + id, 40,
-                id == 0, false, ImmutableDictionary<string, int>.Empty, id == 0 ? [new("Battlefield", 2, [focus, other], null), new("Hand", 1, [hand], null)]
+                id == 0, false, id == 0 && Is<SpendPoolMana>() ? ImmutableDictionary<string, int>.Empty.Add("C", 1) : ImmutableDictionary<string, int>.Empty, id == 0 ? [new("Battlefield", 2, [focus, other], null), new("Hand", 1, [hand], null)]
                     : [new("Battlefield", id == 1 ? 1 : 0, id == 1 ? [enemy] : [], null), new("Hand", 2, [], null)])).ToArray();
             Combat? combat = Is<ToggleAttackPlayer>() ? new([], [new(focus.CombatId, [new("player", "opponent-1", 1, "Opponent 1")])], null)
                 : Is<ToggleAttackPermanent>() ? new([], [new(focus.CombatId, [new("card", enemy.CombatId, 1, enemy.Name)])], null)
@@ -396,6 +397,7 @@ players.ToImmutableArray(), [], combat, decision) { Revision = 8, BoardRevision 
                 nameof(PlayCard) => new PlayCard(before.Id, decision.Id, hand.Key),
                 nameof(ActivateCard) => new ActivateCard(before.Id, decision.Id, focus.Key),
                 nameof(UseManaSource) => new UseManaSource(before.Id, decision.Id, focus.Key),
+                nameof(SpendPoolMana) => new SpendPoolMana(before.Id, decision.Id, "C"),
                 nameof(SelectPlayer) => new SelectPlayer(before.Id, decision.Id, 1),
                 nameof(ToggleAttackPlayer) => new ToggleAttackPlayer(before.Id, decision.Id, focus.Key, 1),
                 nameof(ToggleAttackPermanent) => new ToggleAttackPermanent(before.Id, decision.Id, focus.Key, enemy.Key),
@@ -418,6 +420,7 @@ players.ToImmutableArray(), [], combat, decision) { Revision = 8, BoardRevision 
                 PlayCard value => value with { Card = enemy.Key },
                 ActivateCard value => value with { Card = hand.Key },
                 UseManaSource value => value with { Card = prefix + ":private-opponent-key" },
+                SpendPoolMana value => value with { Color = "G" },
                 SelectPlayer value => value with { Player = 3 },
                 ToggleAttackPlayer value => value with { Player = 3 },
                 ToggleAttackPermanent value => value with { DefenderCard = other.Key },
@@ -439,6 +442,7 @@ players.ToImmutableArray(), [], combat, decision) { Revision = 8, BoardRevision 
             after = expected switch {
                 SelectCard or ActivateCard or UseManaSource or UseOfferedAction => ChangeCard(after, focus.VisualId, card => card with { Counters = ImmutableDictionary<string, int>.Empty.Add("fixture", 1) }),
                 SelectPlayer => after with { Players = players.Select(p => p.Id == 1 ? p with { Life = 37 } : p).ToImmutableArray() },
+                SpendPoolMana => after with { Players = players.Select(p => p.Id == 0 ? p with { Mana = p.Mana.SetItem("C", 0) } : p).ToImmutableArray() },
                 ToggleAttackPlayer => after with { Combat = new([new(focus.CombatId, 1, [], [])], [], null) },
                 ToggleAttackPermanent => after with { Combat = new([new(focus.CombatId, 1, [], []) { Defender = new("card", enemy.CombatId, 1, enemy.Name) }], [], null) },
                 ToggleBlock => after with { Combat = new([new(enemy.CombatId, 0, [focus.CombatId], []) { Blocked = true }], [], null) },

@@ -20,6 +20,8 @@ internal abstract record MatchIntent : UiIntent
     internal sealed record OpenZone(int PlayerId, string Zone) : MatchIntent;
     internal sealed record OpenBattlefields : MatchIntent { internal override InteractionScopeKind ScopeKind => InteractionScopeKind.Playback; }
     internal sealed record OpenStack(int Index = 0) : MatchIntent;
+    internal sealed record OpenStackWorkload(string Key) : MatchIntent;
+    internal sealed record CloseStackWorkload : MatchIntent;
     internal sealed record InspectCard(Card Card) : MatchIntent;
     internal sealed record InspectOccurrence(string Id) : MatchIntent;
     internal sealed record UseCard(Card Card, bool CloseOverlay = false, bool DismissZone = false) : MatchIntent;
@@ -47,6 +49,7 @@ internal abstract record MatchIntent : UiIntent
     internal sealed record SelectChoice(int Index) : MatchIntent;
     internal sealed record ChooseAbility(int Index) : MatchIntent;
     internal sealed record ChooseCounterPayment(int Index) : MatchIntent;
+    internal sealed record ChooseManaColor(int Index) : MatchIntent;
     internal sealed record FocusInput(bool Filter) : MatchIntent;
     internal sealed record AdjustNumber(int Delta) : MatchIntent;
     internal sealed record ConfirmValue : MatchIntent;
@@ -89,6 +92,7 @@ internal abstract record MatchIntent : UiIntent
     internal sealed record OpenPlayerState(int PlayerId, string StateId) : MatchIntent;
     internal sealed record OpenPlayerDetails(int PlayerId) : MatchIntent;
     internal sealed record OpenManaPool(int PlayerId) : MatchIntent;
+    internal sealed record SpendFloatingMana(string Color) : MatchIntent;
     internal sealed record OpenTableState(int Index) : MatchIntent;
     internal sealed record UseHandPlacement(Card Card, string AbilityId) : MatchIntent;
     internal sealed record CloseHandPlacement : MatchIntent;
@@ -102,6 +106,9 @@ internal abstract record MatchIntent : UiIntent
         internal override InteractionScopeKind ScopeKind => Resume ? InteractionScopeKind.PhaseStop : InteractionScopeKind.Playback;
     }
     internal sealed record SetQuietPriority(bool Armed) : MatchIntent {
+        internal override InteractionScopeKind ScopeKind => Armed ? InteractionScopeKind.Current : InteractionScopeKind.Playback;
+    }
+    internal sealed record SetStackResolution(bool Armed) : MatchIntent {
         internal override InteractionScopeKind ScopeKind => Armed ? InteractionScopeKind.Current : InteractionScopeKind.Playback;
     }
     internal sealed record ToggleReducedMotion : MatchIntent;

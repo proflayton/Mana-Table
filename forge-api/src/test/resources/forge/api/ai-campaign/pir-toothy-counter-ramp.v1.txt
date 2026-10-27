@@ -1,0 +1,74 @@
+Deck
+// Lands
+16 Forest
+16 Island
+1 Command Tower
+1 Simic Growth Chamber
+1 Thornwood Falls
+1 Temple of Mystery
+1 Breeding Pool
+1 Yavimaya Coast
+// Spells
+1 Llanowar Elves
+1 Elvish Mystic
+1 Fyndhorn Elves
+1 Birds of Paradise
+1 Arbor Elf
+1 Sakura-Tribe Elder
+1 Coiling Oracle
+1 Elvish Visionary
+1 Growth-Chamber Guardian
+1 Paradise Druid
+1 Gyre Sage
+1 Incubation Druid
+1 Rishkar, Peema Renegade
+1 Evolution Sage
+1 Forgotten Ancient
+1 Champion of Lambholt
+1 Fathom Mage
+1 Master Biomancer
+1 Hydroid Krasis
+1 Loch Mare
+1 Managorger Hydra
+1 Scavenging Ooze
+1 Reclamation Sage
+1 Acidic Slime
+1 Eternal Witness
+1 Mulldrifter
+1 Aether Adept
+1 Frilled Mystic
+1 Cultivate
+1 Kodama's Reach
+1 Rampant Growth
+1 Nature's Lore
+1 Farseek
+1 Growth Spiral
+1 Ponder
+1 Preordain
+1 Opt
+1 Brainstorm
+1 Harmonize
+1 Divination
+1 Counterspell
+1 Negate
+1 Essence Scatter
+1 Miscast
+1 Arcane Denial
+1 Beast Within
+1 Rapid Hybridization
+1 Pongify
+1 Into the Roil
+1 Hunger of the Howlpack
+1 Snakeskin Veil
+1 Inspiring Call
+1 Steady Progress
+1 Sol Ring
+1 Arcane Signet
+1 Simic Signet
+1 Mind Stone
+1 Rancor
+1 Bonesplitter
+1 Swiftfoot Boots
+Commander
+1 Pir, Imaginative Rascal
+1 Toothy, Imaginary Friend

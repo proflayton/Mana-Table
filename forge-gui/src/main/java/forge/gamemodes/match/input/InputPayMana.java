@@ -12,6 +12,7 @@ import forge.game.card.Card;
 import forge.game.card.CardView;
 import forge.game.card.CardCollection;
 import forge.game.mana.ManaCostBeingPaid;
+import forge.game.mana.Mana;
 import forge.game.player.PlaySpellAbility;
 import forge.game.player.Player;
 import forge.game.player.PlayerController.FullControlFlag;
@@ -135,6 +136,45 @@ public abstract class InputPayMana extends InputSyncronizedBase {
 
     public boolean isPaymentActive() { return !isFinished() && !locked; }
 
+    /** Current rules provenance; these facts do not grant another payment action. */
+    public SpellAbility getPaidForAbility() { return saPaidFor; }
+    public Player getPayer() { return player; }
+    public boolean isEffectPayment() { return effect; }
+    public boolean isPaymentMandatory() { return mandatory; }
+
+    /** A defensive copy of the current bill, after reductions and prior payment. */
+    public ManaCostBeingPaid getRemainingManaCost() {
+        return manaCost == null ? null : new ManaCostBeingPaid(manaCost);
+    }
+
+    /** Rules applicability of an exact producer to this current unpaid bill. */
+    public List<String> getUsableManaColors(SpellAbility ability) {
+        if (!isPaymentActive() || manaCost == null || ability == null || !ability.isManaAbility()) return List.of();
+        var colors = new ArrayList<String>();
+        for (byte color : ManaAtom.MANATYPES) {
+            if (manaCost.isAnyPartPayableWith(color, player.getManaPool())
+                    && ability.isManaAbilityFor(saPaidFor, color)) colors.add(MagicColor.toShortString(color));
+        }
+        return List.copyOf(colors);
+    }
+
+    /** Mirrors a color-pool gesture without paying, draining or choosing strategy. */
+    public Set<Byte> getUsablePoolManaColors() {
+        if (!isPaymentActive() || manaCost == null) return Set.of();
+        var examined = new HashSet<Byte>();
+        var colors = new LinkedHashSet<Byte>();
+        for (Mana mana : player.getManaPool()) {
+            byte color = mana.getColor();
+            if (examined.contains(color) || !mana.meetsManaRestrictions(saPaidFor)
+                    || !saPaidFor.allowsPayingWithShard(mana.getSourceCard(), color)) continue;
+            // useManaFromPool chooses this first restriction-eligible unit.
+            // A later unit of the same color may have different snow/spend data.
+            examined.add(color);
+            if (manaCost.isNeeded(mana, player.getManaPool())) colors.add(color);
+        }
+        return Collections.unmodifiableSet(colors);
+    }
+
     @Override
     public String getActivateAction(Card card) {
         for (SpellAbility sa : getAllManaAbilities(card)) {
@@ -161,8 +201,13 @@ public abstract class InputPayMana extends InputSyncronizedBase {
 
     @Override
     public boolean selectAbility(final SpellAbility ab) {
+        return selectAbility(ab, null);
+    }
+
+    /** An exact output witness has already been checked by the owning adapter. */
+    public boolean selectAbility(final SpellAbility ab, final Map<AbilityManaPart, String> outputChoices) {
         if (ab != null && ab.isManaAbility()) {
-            return activateManaAbility(ab.getHostCard(), ab);
+            return activateManaAbility(ab.getHostCard(), ab, outputChoices, true);
         }
         return false;
     }
@@ -214,6 +259,10 @@ public abstract class InputPayMana extends InputSyncronizedBase {
         return activateManaAbility(card, null);
     }
     protected boolean activateManaAbility(final Card card, SpellAbility chosenAbility) {
+        return activateManaAbility(card, chosenAbility, null, false);
+    }
+    private boolean activateManaAbility(final Card card, SpellAbility chosenAbility,
+                                        final Map<AbilityManaPart, String> outputChoices, final boolean explicitSourceAction) {
         if (locked) {
             System.err.print("Should wait till previous call to playAbility finishes.");
             return false;
@@ -238,7 +287,7 @@ public abstract class InputPayMana extends InputSyncronizedBase {
 
         final SpellAbility chosen;
 
-        if (chosenAbility == null) {
+        if (!explicitSourceAction) {
             HashMap<SpellAbilityView, SpellAbility> abilitiesMap = new HashMap<>();
             // you can't remove unneeded abilities inside a for (am:abilities) loop :(
 
@@ -331,7 +380,14 @@ public abstract class InputPayMana extends InputSyncronizedBase {
             }
         }
 
-        chosen.setManaExpressChoice(ColorSet.fromMask(producedColorMask));
+        if (chosenAbility == null) {
+            // Legacy raw-card selection may still guess a useful color. An
+            // explicit ability selection preserves its genuine color decision.
+            chosen.setManaExpressChoice(ColorSet.fromMask(producedColorMask));
+        } else {
+            for (var part : chosen.getAllManaParts()) part.clearExpressChoice();
+            if (outputChoices != null) outputChoices.forEach(AbilityManaPart::setExpressChoice);
+        }
 
         // System.out.println("Chosen sa=" + chosen + " of " + chosen.getHostCard() + " to pay mana");
 
@@ -372,10 +428,15 @@ public abstract class InputPayMana extends InputSyncronizedBase {
     }
 
     protected boolean supportAutoPay() {
-        return true;
+        // An external policy chooses exact mana abilities through this input.
+        // Forge's Auto path installs PlayerControllerAi and must never decide
+        // costs, sacrifices or targets for that policy's seat.
+        return !getController().isExternallyAutomated();
     }
 
     protected void runAsAi(Runnable proc) {
+        if (getController().isExternallyAutomated())
+            throw new IllegalStateException("An external policy must choose its own mana payment");
         player.runWithController(proc, new PlayerControllerAi(game, player, player.getOriginalLobbyPlayer()));
     }
 

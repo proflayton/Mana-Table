@@ -15,17 +15,19 @@ public abstract record GameCommand
         bool valid = Present(GameId) && (this is not DecisionCommand decision || Present(decision.DecisionId)) && this switch {
             SelectCard value => Present(value.Card), PlayCard value => Present(value.Card),
             ActivateCard value => Present(value.Card), UseManaSource value => Present(value.Card),
+            SpendPoolMana value => value.Color is "W" or "U" or "B" or "R" or "G" or "C",
             ToggleAttackPlayer value => Present(value.Attacker),
             ToggleAttackPermanent value => Present(value.Attacker) && Present(value.DefenderCard),
             ToggleBlock value => Present(value.Attacker) && Present(value.Blocker),
             ChooseOptions value => ValidChoices(value.Choices), OrderOptions value => ValidChoices(value.Choices),
             AllocateAmounts value => !value.Amounts.IsDefault && value.Amounts.All(amount => amount >= 0),
             EnterText value => value.Value != null,
-            UseOfferedAction value => Present(value.Card) && Present(value.ActionId),
+            UseOfferedAction value => Present(value.Card) && Present(value.ActionId) && (value.ManaOutput == null || value.ManaOutput.IsValid()),
             PlaceFromHand value => Present(value.Card) && Present(value.AbilityId),
             IgnorePriorityAbility value => Present(value.AbilityId), RestorePriorityAbility value => Present(value.AbilityId),
             PassForNow value => Present(value.YieldToken),
-            PassPriority or AutoPassPriority or KeepOpeningHand or MulliganOpeningHand or PayMana or CancelPayment
+            PassPriority value => value.StackInterruptionVersion is null or >= 0,
+            AutoPassPriority or KeepOpeningHand or MulliganOpeningHand or PayMana or CancelPayment
                 or CompleteAttackers or CompleteBlockers or CompleteSelection or CancelSelection or AcceptConfirmation
                 or DeclineConfirmation or AcknowledgeDecision or AcknowledgeReveal or UndoLastAction or PassTurn or SelectPlayer
                 or ChooseNumber or SkipAllocation => true,
@@ -43,7 +45,12 @@ public abstract record DecisionCommand : GameCommand
     private protected DecisionCommand(string gameId, string decisionId) : base(gameId) => DecisionId = decisionId;
 }
 
-public sealed record PassPriority(string GameId, string DecisionId) : DecisionCommand(GameId, DecisionId);
+public sealed record PassPriority(string GameId, string DecisionId) : DecisionCommand(GameId, DecisionId)
+{
+    // A finite stack continuation additionally guards against an intervening
+    // action or required choice, including one absent from the latest snapshot.
+    public long? StackInterruptionVersion { get; init; }
+}
 public sealed record AutoPassPriority(string GameId, string DecisionId) : DecisionCommand(GameId, DecisionId);
 public sealed record KeepOpeningHand(string GameId, string DecisionId) : DecisionCommand(GameId, DecisionId);
 public sealed record MulliganOpeningHand(string GameId, string DecisionId) : DecisionCommand(GameId, DecisionId);
@@ -63,6 +70,7 @@ public sealed record SelectCard(string GameId, string DecisionId, string Card) :
 public sealed record PlayCard(string GameId, string DecisionId, string Card) : DecisionCommand(GameId, DecisionId);
 public sealed record ActivateCard(string GameId, string DecisionId, string Card) : DecisionCommand(GameId, DecisionId);
 public sealed record UseManaSource(string GameId, string DecisionId, string Card) : DecisionCommand(GameId, DecisionId);
+public sealed record SpendPoolMana(string GameId, string DecisionId, string Color) : DecisionCommand(GameId, DecisionId);
 public sealed record SelectPlayer(string GameId, string DecisionId, int Player) : DecisionCommand(GameId, DecisionId);
 public sealed record ToggleAttackPlayer(string GameId, string DecisionId, string Attacker, int Player) : DecisionCommand(GameId, DecisionId);
 public sealed record ToggleAttackPermanent(string GameId, string DecisionId, string Attacker, string DefenderCard) : DecisionCommand(GameId, DecisionId);
@@ -73,7 +81,10 @@ public sealed record ChooseNumber(string GameId, string DecisionId, int Value) :
 public sealed record EnterText(string GameId, string DecisionId, string Value) : DecisionCommand(GameId, DecisionId);
 public sealed record AllocateAmounts(string GameId, string DecisionId, ImmutableArray<int> Amounts) : DecisionCommand(GameId, DecisionId);
 public sealed record SkipAllocation(string GameId, string DecisionId) : DecisionCommand(GameId, DecisionId);
-public sealed record UseOfferedAction(string GameId, string DecisionId, string Card, string ActionId) : DecisionCommand(GameId, DecisionId);
+public sealed record UseOfferedAction(string GameId, string DecisionId, string Card, string ActionId) : DecisionCommand(GameId, DecisionId)
+{
+    public ManaOutputChoice? ManaOutput { get; init; }
+}
 public sealed record PlaceFromHand(string GameId, string DecisionId, string Card, string AbilityId) : DecisionCommand(GameId, DecisionId);
 public sealed record IgnorePriorityAbility(string GameId, string DecisionId, string AbilityId) : DecisionCommand(GameId, DecisionId);
 public sealed record RestorePriorityAbility(string GameId, string AbilityId) : GameCommand(GameId);
@@ -95,11 +106,13 @@ public static class GameCommandPermissions
         Card? Card(string key) => CardViews.Located(state).Select(item => item.Card)
             .Concat(state.Players.SelectMany(player => player.Zones).Where(zone => zone.TopCard != null).Select(zone => zone.TopCard!))
             .FirstOrDefault(card => card.Key == key && key.Length > 0);
-        Card? CurrentSource(string key) => CardViews.FindZoneActionSource(state, key)?.Card;
+        Card? CurrentSource(string key) => CardViews.FindActionSource(state, key)?.Card;
         bool Selectable(string key) => Card(key) is { Selectable: true };
         bool Located(string key, params string[] zones) => CardViews.Located(state).Any(item => item.Card.Key == key && zones.Contains(item.Zone));
         return command switch {
-            PassPriority => payload is PriorityPayload { Pass.Enabled: true },
+            PassPriority value => payload is PriorityPayload { Pass.Enabled: true }
+                && (value.StackInterruptionVersion == null || state.Status == "playing" && state.Stack.Length > 0
+                    && value.StackInterruptionVersion == state.StackInterruptionVersion),
             AutoPassPriority => state.Status == "playing" && payload is PriorityPayload { Pass.Enabled: true, CanAutoPass: true },
             KeepOpeningHand => payload is OpeningHandPayload { Keep.Enabled: true },
             MulliganOpeningHand => payload is OpeningHandPayload { Mulligan.Enabled: true },
@@ -119,6 +132,10 @@ public static class GameCommandPermissions
             PlayCard value => payload is PriorityPayload && Selectable(value.Card) && Located(value.Card, "Hand", "Command"),
             ActivateCard value => payload is PriorityPayload && Selectable(value.Card) && Located(value.Card, "Battlefield"),
             UseManaSource value => payload is PaymentPayload && CurrentSource(value.Card) is { Selectable: true },
+            SpendPoolMana value => payload is PaymentPayload payment
+                && (payment.PayerId is { } payer ? state.Players.FirstOrDefault(player => player.Id == payer) : state.Viewer)
+                    ?.Mana.GetValueOrDefault(value.Color) > 0
+                && (payment.UsablePoolManaColors == null || payment.UsablePoolManaColors.Value.Contains(value.Color)),
             SelectPlayer value => payload switch { TargetSelectionPayload target => target.Players.Contains(value.Player),
                 EntitySelectionPayload entity => entity.Players.Contains(value.Player), _ => false },
             ToggleAttackPlayer value => payload is AttackPayload && Card(value.Attacker) is { CombatId: var attacker }
@@ -138,7 +155,12 @@ public static class GameCommandPermissions
             EnterText => payload is TextPayload,
             AllocateAmounts value => payload is AllocationPayload allocation && AllocationConstraints.Check(allocation, value.Amounts) == null,
             SkipAllocation => payload is AllocationPayload { MaySkip: true },
-            UseOfferedAction value => payload is PriorityPayload or PaymentPayload && CurrentSource(value.Card) is { FaceDown: false },
+            // An opaque route can belong to a face-down source its controller
+            // may inspect. The current exact offer, not its printed face, owns
+            // that authority; the source session/provider validates membership.
+            UseOfferedAction value => payload is PriorityPayload or PaymentPayload && CurrentSource(value.Card) is { } offeredSource
+                && (!offeredSource.FaceDown || CardViews.FindActionSource(state, value.Card) is { } opaque
+                    && opaque.PlayerId == state.ViewerId && opaque.Zone is "Battlefield" or "Exile" or "Stack" or "Sideboard"),
             PlaceFromHand value => state.Status == "playing" && payload is PriorityPayload priority
                 && state.Viewer is { } viewer && viewer.Zone("Hand").Cards.Any(card => card.Key == value.Card && !card.FaceDown)
                 && priority.Abilities.Any(ability => ability.Id == value.AbilityId && ability.SourceCardKey.Length > 0 && ability.HandPlacementLimit > 0

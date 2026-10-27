@@ -8,6 +8,9 @@ import forge.game.ability.AbilityFactory;
 import forge.game.card.CardFactory;
 import forge.game.card.token.TokenInfo;
 import forge.token.TokenDb;
+import forge.item.PaperToken;
+import forge.item.IPaperCard;
+import forge.card.CardEdition;
 import org.testng.annotations.BeforeClass;
 import org.testng.annotations.Test;
 import java.nio.file.Files;
@@ -25,6 +28,32 @@ public class DeckTokensTest {
     }
     private static CardCatalog catalog() { return new CardCatalog(List.of(StaticData.instance().getCommonCards().getCard("Felidar Retreat"))); }
     private static String script() { return DeckTokens.definitions(deck()).keySet().stream().filter(id -> id.contains("cat")).findFirst().orElseThrow(); }
+
+    @Test public void missingCollectorNumbersUseTheSentinelAndTokenRichCampaignDeckImports() throws Exception {
+        var rules = StaticData.instance().getAllTokens().getRules().get(script());
+        for (String missing : new String[] {null, "", "  "}) {
+            var token = new PaperToken(rules, CardEdition.UNKNOWN, script(), missing, "");
+            assertEquals(token.getCollectorNumber(), IPaperCard.NO_COLLECTOR_NUMBER);
+            assertNotNull(token.getImageKey(false), "An unnumbered token keeps its fallback artwork route");
+        }
+        String text;
+        try (var resource = getClass().getResourceAsStream("/forge/api/ai-campaign/rhys-token-equipment.v1.txt")) {
+            assertNotNull(resource);
+            text = new String(resource.readAllBytes(), java.nio.charset.StandardCharsets.UTF_8);
+        }
+        var preview = DeckImport.preview(text);
+        assertTrue(preview.problems().isEmpty(), preview.problems().toString());
+        assertEquals(preview.entries().stream().mapToInt(DeckEditor.Entry::quantity).sum(), 100);
+        var cards = preview.entries().stream().map(entry -> StaticData.instance().getCommonCards().getCard(entry.card().name())).toList();
+        try (var engine = new DesktopEngine(new CardCatalog(cards), Files.createTempDirectory("token-rich-campaign-import-"))) {
+            var imported = (Map<?, ?>) engine.dispatch("import", args("name", "Token campaign", "text", text, "format", "Commander"));
+            assertNotNull(imported.get("id"));
+            var editor = ((DeckEditor.Snapshot) imported.get("deck"));
+            var tokens = (DeckTokens.View) engine.dispatch("deckTokens", args("deckId", imported.get("id"), "revision", editor.revision()));
+            assertTrue(tokens.tokens().size() > 3, "The actual singleton campaign deck exposes its diverse token definitions");
+            for (var token : tokens.tokens()) assertNotNull(token.card().collectorNumber());
+        }
+    }
 
     @Test public void exactDefinitionsDefaultsAndUndoDoNotChangePlayableContent() throws Exception {
         String script = script();

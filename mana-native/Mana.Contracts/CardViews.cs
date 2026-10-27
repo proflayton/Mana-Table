@@ -33,6 +33,30 @@ public static class CardViews
         return null;
     }
 
+    public static ZoneCardOccurrence? FindActionSource(GameSnapshot state, string actionKey)
+    {
+        if (FindZoneActionSource(state, actionKey) is { } zoned) return zoned;
+        if (actionKey.Length == 0 || state.Status != "playing"
+            || state.Decision is not { Payload: PriorityPayload or PaymentPayload } decision || state.ActionSources.IsDefault) return null;
+        foreach (var source in state.ActionSources)
+            if (IsCurrentActionSource(state, source) && source.Card.Key == actionKey)
+                return new(source.PlayerId, source.Zone, source.Card);
+        return null;
+    }
+
+    public static bool IsCurrentActionSource(GameSnapshot state, ActionSourceOccurrence? source)
+    {
+        if (source == null || state.Status != "playing" || state.Decision is not { Payload: PriorityPayload or PaymentPayload } decision
+            || source.DecisionId != decision.Id || source.Zone is not ("Stack" or "Sideboard")
+            || source.Card is not { } card || string.IsNullOrWhiteSpace(card.Key)
+            || string.IsNullOrWhiteSpace(card.VisualId) && string.IsNullOrWhiteSpace(card.CombatId)
+            || card.Selectable || card.Highlighted || !state.Players.Any(player => player.Id == source.PlayerId)
+            || source.Zone == "Sideboard" && source.PlayerId != state.ViewerId
+            || InZones(state).Any(zoned => zoned.Card.Key == card.Key || Identity(zoned.Card) == Identity(card))) return false;
+        return source.Zone != "Stack" || state.Stack.Any(item => item.Kind == StackActionKind.Spell
+            && item.Card is { } stacked && Identity(stacked) == Identity(card));
+    }
+
     // Reconcile display only. Original choices, action handles and constraints
     // stay on their interaction objects. A masked current face replaces an old
     // revealed report; only the current snapshot's embedded face is a fallback.
@@ -61,7 +85,8 @@ public static class CardViews
         .Concat(DecisionFaces(state.Decision?.Payload))
         .Concat(state.Decision?.Context.Source?.Card is { } source ? [source] : []);
     private static IEnumerable<Card> DecisionFaces(DecisionPayload? payload) => payload switch {
-        OptionsPayload options => ChoiceFaces(options.Selection),
+        OptionsPayload options => ChoiceFaces(options.Selection)
+            .Concat(options.ManaPaymentContext?.Source?.Card is { } paying ? [paying] : []),
         OrderingPayload order => ChoiceFaces(order.Selection),
         AbilityChoicePayload ability => ChoiceFaces(ability.Selection),
         RevealPayload reveal => reveal.Cards.Select(face => face.Card),

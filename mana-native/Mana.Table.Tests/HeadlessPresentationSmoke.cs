@@ -30,7 +30,15 @@ internal static partial class HeadlessPresentationSmoke
             checks.Add(description);
         }
         try {
+            CheckFinishedTable(profile, Check, trace, performance);
             ProviderIsolationChecks.Run(Check);
+            ManaFundingWireChecks.Run(Check);
+            AutomatedWireFailureChecks.Run(profile, Check);
+            ManaColorPaymentWireChecks.Run(Check);
+            ManaReductionWireChecks.Run(Check);
+            AiReleaseGoldens.CheckReceiptEvidence(Check);
+            AiEngineCampaign.CheckDisclosureBounds(Check);
+            ForgePublicProjectionChecks.Run(profile, Check);
             PregameFlowChecks.Run(profile, Check);
             DeckLibraryPresentationChecks.Run(profile, Check);
             DecisionDockInteractionChecks.Run(profile, Check);
@@ -38,11 +46,15 @@ internal static partial class HeadlessPresentationSmoke
             CheckOptionalDecisions(profile, Check, trace, performance);
             CheckCounterCost(profile, Check, trace, performance);
             CheckRulesReader(profile, Check, trace, performance);
+            CheckHandSourceAlternatives(profile, Check, trace, performance);
             CheckMatchFailure(profile, Check, trace, performance);
+            CheckDepartedDefender(profile, Check, trace, performance);
             CheckStackArrival(profile, Check, trace, performance);
+            DrawTriggersSmoke.RunHeadless(profile, Check);
             CheckTurnPass(profile, Check, trace, performance);
             CheckChoiceEligibility(profile, Check, trace, performance);
             CheckPlayAccess(profile, Check, trace, performance);
+            ManaPaymentSmoke.RunHeadless(profile, Check);
             CommanderInteractionChecks.Run(profile, Check);
             DisclosedSourceInteractionChecks.Run(profile, Check);
             LinkedSourceInteractionChecks.Run(profile, Check);

@@ -21,6 +21,44 @@ import static org.assertj.core.api.Assertions.entry;
  */
 public class PlayerControllerHumanShould {
 
+    @Test
+    public void preserveTheExactAnnouncementOwnerOnlyWhileTheChoiceIsPending() {
+        HumanControlledGame g = new HumanControlledGame();
+        Card source = g.card(g.human, "Variable creature", "ManaCost:X X", "Types:Artifact Creature Construct", "PT:0/0");
+        var ability = source.getSpellAbilities().get(0);
+        ability.setActivatingPlayer(g.human);
+        org.mockito.Mockito.doAnswer(invocation -> {
+            assertThat(g.controller.getDecisionAbility(invocation.getArgument(1))).isSameAs(ability);
+            assertThat((String) invocation.getArgument(2)).isEqualTo("X");
+            assertThat((int) invocation.getArgument(3)).isZero();
+            assertThat((int) invocation.getArgument(4)).isEqualTo(Integer.MAX_VALUE);
+            return 3;
+        }).when(g.gui.asGui()).getIntegerForAnnouncement(org.mockito.ArgumentMatchers.anyString(),
+                org.mockito.ArgumentMatchers.eq(ability.getView()), org.mockito.ArgumentMatchers.eq("X"),
+                org.mockito.ArgumentMatchers.anyInt(), org.mockito.ArgumentMatchers.anyInt(),
+                org.mockito.ArgumentMatchers.anyInt(), org.mockito.ArgumentMatchers.anyBoolean());
+
+        assertThat(g.controller.announceRequirements(ability, 0, Integer.MAX_VALUE, "X")).isEqualTo(3);
+        assertThat(g.controller.getDecisionAbility(ability.getView())).isNull();
+    }
+
+    @Test
+    public void revokeTheAnnouncementOwnerWhenTheChoiceFails() {
+        HumanControlledGame g = new HumanControlledGame();
+        Card source = g.card(g.human, "Variable creature", "ManaCost:X G", "Types:Creature Beast", "PT:0/0");
+        var ability = source.getSpellAbilities().get(0);
+        ability.setActivatingPlayer(g.human);
+        org.mockito.Mockito.doThrow(new IllegalStateException("Choice failed"))
+                .when(g.gui.asGui()).getIntegerForAnnouncement(org.mockito.ArgumentMatchers.anyString(),
+                        org.mockito.ArgumentMatchers.eq(ability.getView()), org.mockito.ArgumentMatchers.eq("X"),
+                        org.mockito.ArgumentMatchers.anyInt(), org.mockito.ArgumentMatchers.anyInt(),
+                        org.mockito.ArgumentMatchers.anyInt(), org.mockito.ArgumentMatchers.anyBoolean());
+
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> g.controller.announceRequirements(ability, 0, 8, "X"))
+                .isInstanceOf(IllegalStateException.class);
+        assertThat(g.controller.getDecisionAbility(ability.getView())).isNull();
+    }
+
     // --- assignCombatDamage: when the player is asked ---
 
     @Test

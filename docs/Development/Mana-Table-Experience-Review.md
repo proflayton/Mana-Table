@@ -27,6 +27,15 @@ does not establish that a person can understand or use the screen.
    for routine gestures. A live card face can integrate changed characteristics;
    replacing it with a cropped illustration, generic prose panel and rules pages
    loses its identity.
+   Every permanent must remain a recognizable card, including mana rocks,
+   creatures, enchantments and attached cards. An upright card keeps a
+   portrait silhouette and its printing's frame; a wider illustration crop is
+   not a substitute for the card. Landscape art boxes can imply tapping even
+   before they rotate. Recover illustration context by showing the full face,
+   then preserve that same face through a real quarter turn when tapped.
+   Apply this grammar across the battlefield rather than making one card type
+   an exception. Current P/T, counters and action cues supplement the printed
+   face; a repeated name box must not replace or cover its printed identity.
    Card names are identity, not disposable summaries: never replace their endings
    with ellipses or shrink the font to squeeze them in. Reserve room for complete,
    wrapped names. A genuinely compact overview face needs a complete name on
@@ -69,6 +78,15 @@ does not establish that a person can understand or use the screen.
    action handles and decision constraints. A list intended for auto-pass is not
    a complete action catalog. Simplify presentation without inventing availability,
    skipping required choices or hardcoding a mechanic's maximum.
+   Automated players use this boundary for the whole seat: opening hands,
+   sequencing, abilities, costs, combat and required effects. Build and validate
+   the decision framework before replacing strategy. A casual Commander policy
+   considers the public table and recent pressure; lowest life is not a complete
+   model of threat. Keep each seat's knowledge independent. Judge engaging play
+   through actual multiplayer sequences, separately from legal completion,
+   win rate or an equal distribution of targets. The
+   [AI framework and investigation](Mana-Table-AI.md) record this scope and its
+   remaining prerequisites.
 6. **Treat rejection as design evidence.** Revisit the interaction and information
    hierarchy before polishing its container. Review the actual entry, gesture,
    interruption and result with realistic art and the relevant crowded state.
@@ -91,6 +109,10 @@ does not establish that a person can understand or use the screen.
    interruptible continuation. Keep every underlying trigger, target restriction,
    response window and effect in the engine. Grouping presentation does not make
    separate effects simultaneous or authorize choosing for another player.
+   Reducing repeated clicks is separate from speeding presentation. A cast,
+   activation or trigger needs a readable announcement and a connection to its
+   real result, even when no human response is available. Do not let the AI host
+   outrun a pause that only governs the local client's Auto mode.
 9. **Finish the everyday lifecycle.** Deck management includes creating, naming,
    editing, saving, importing, duplicating, exporting, deleting and recovering a
    deck. Review these ordinary journeys before describing the experience as complete.
@@ -219,6 +241,72 @@ relevant manual routes as uncertain rather than proving unavailability. Actual
 payment still uses the engine; this does not make Auto handle every possible
 mana-production chain. Plain floating colorless mana, generic costs, Ultima's
 mixed cost and an explicit colorless requirement are separate real-engine cases.
+
+## Mana · the card, its sources and the unpaid bill: 26 October 2026
+
+**Source candidate; human review pending.** The player could not tell how much
+they could pay. Floating mana, untapped source cards and a particular cost are
+different facts. The supplied Arena images keep floating pips beside the avatar
+and recognizable, counted land piles on the table. Wizards explicitly documents
+[hovering a spell or ability to preview its mana sources](https://mtgarena-support.wizards.com/hc/en-us/articles/43247211334292-Patch-Notes-2025-53-0).
+It also documents [pausing for meaningful mana-color choices](https://magic.wizards.com/en/news/mtg-arena/mtg-arena-state-game-the-brothers-war#auto-tap-flexibility).
+These are concrete interaction references; Arena's two-player space and its
+auto-tap coverage do not establish our four-seat layout or planner completeness.
+
+The journey begins with the actual hand card. Hover reads its cost and a bounded
+nominal source suggestion; clicking retains the full original card and its rules.
+Contribution pips illuminate the actual source cards or counted piles. One dual
+land remains one resource with alternatives. A rock producing two can show two;
+that output does not appear in the portrait's actual pool until the rules say so.
+Dragging or the current source action still commits the cast. During payment,
+the same source carries the exact unpaid symbols and its nearby Auto pay/Cancel
+controls. Manual source choices stay on their own cards. As accepted snapshots
+arrive, sources turn, real floating pips change and unpaid symbols disappear;
+the paid card then continues through the stack. A currently usable floating pip
+can pay its one exact color. Other pips retain read-only inspection.
+
+A mana ability which asks for a color keeps that same pending card and exact
+bill visible. Its currently offered colored orbs sit beside the actual producer,
+linked to that land or rock. Hover reads a symbol; clicking submits its current
+offered index. The child choice has no parent Auto pay or Cancel controls. Once
+accepted, the orbs retire and the same card shows the new remaining bill. The
+authored Temple of Epiphany/Balmor continuation exercises a single flexible
+ability, red payment and the remaining blue. Ordinary color choices without an
+owned payment context retain their existing choice surface; no relationship is
+inferred from prompt wording.
+
+Convoke and improvise keep the same pending source and the engine's exact
+remaining bill while the player selects contributors on the table. Existing
+eligible-card and selected-card cues identify those actual objects. A present
+empty bill reads **Cost covered**; the current enabled Done action remains a
+clear final gesture. The selected contributors turn only when that continuation
+commits. This adapts the retained source/cost relationship above to a selection
+step, without inventing payment authority: a positive bill can still expose Done
+when the engine enables it, and zero never enables a disabled action. The authored
+Sprout Swarm checkpoints preserve optional Done before the full cost is covered,
+either contributor first, and undo. Finishing early retains an explicit exact
+payment checkpoint; current creature mana actions pay the remainder before the
+spell reaches the stack. A separate negative fixture checks disabled completion. Its mono-color
+contributors choose their color automatically, as the engine does. Actual nested
+multicolor contribution choices are covered by the Kasla/Lightning Angel engine
+journey and the shared source-attached color workspace. These are presentation
+fixtures, not calculations of convoke legality or efficiency.
+
+The neutral `Mana.Planning` core consumes scoped read-only funding facts, without
+policy history, action handles or automatic replies. Unknown restrictions,
+dependencies and effective costs remain uncertain; a legal manual offer stays
+reachable. A nominal preview is not a payable-mana total or casting certificate.
+Current payment is stronger: its bill, actual payer and usable pool colors come
+from the owned engine input. Counted requirements stay exact without drawing one
+object per mana unit. Bills exceeding four readable rows keep the engine's full
+instruction and established manual controls. Old providers retain that fallback.
+Support cards use a portrait face inside their reserved footprint; tapping turns
+that same face rather than swapping dimensions and hiding the silhouette change.
+The authored `mana-payment.v1` journey covers a dual source, Sol Ring, W/U/G/C,
+generic versus colorless, a shrinking bill, a leftover floating pip and a genuine
+owned mana-color child choice. Review
+the whole pointer sequence with actual art at 1000×740 and a larger window;
+automatic geometry/input checks do not approve its clarity.
 
 ## Paper table placement study: 25 October 2026
 
@@ -924,6 +1012,37 @@ Its authored land result and separate real-Forge checks provide different eviden
 This acceptance covers that reader/hand-play direction. Crowded multiplayer
 clarity, other ability decisions, artwork latency and quiet-priority behavior
 retain their own review status. It does not establish release publication.
+
+### Spell or land alternatives: 27 October 2026
+
+Human review of `0.2.132+88633b4d11a630597300bc7fc5a1552f7bcba788`
+found that Bala Ged Recovery appeared unable to play as Bala Ged Sanctuary.
+The current land action was present and clickable, but inherited the quiet gray
+shortcut accepted for an ordinary land. That acceptance did not cover choosing
+between a spell and its land face.
+
+The player's supplied Arena **Choose One** ability screenshot shows meaningful
+alternatives presented together with consistent available-action emphasis;
+unavailable choices have visibly different treatment. The adaptation here keeps
+the full inspected card and its existing engine-offered actions beside it,
+rather than opening another chooser or copying Arena's full-screen arrangement.
+A sole action on an obvious land retains the accepted quiet drag fallback. A
+spell face's land route remains prominent even when it is the only available
+action. When other current actions exist, the land receives the same readable
+action surface and type size.
+An unselected printing's mana caption says Printed spell cost. Hovering an
+offer uses only that offer's cost metadata; an uncosted land or unknown ability
+must not inherit the source printing's casting cost.
+The pinned reader survives pointer movement. Its preview must use the current
+prepared reader, not disappear because the per-frame drawing list was cleared
+before the mana presentation tried to resolve its source.
+
+Journey: read the hand card without committing; compare the engine's spell and
+land offers; explicitly choose Play land; submit only that current opaque offer;
+follow the same card to its engine-reported destination. Neither gray styling
+nor printed card type establishes legality. Reading, rules inspection and stale
+gestures cannot play either face. Automated pointer and composition checks are
+separate from human review of the revised candidate, which remains pending.
 
 ## Pass for now regression: 21 October 2026
 
@@ -2026,3 +2145,126 @@ scope, privacy and cancellation of movement. They cannot accept comfort, clarity
 or orientation. Agent inspection can surface concerns; acceptance still requires
 people playing through the comparison. The whole-table crowded layout remains
 an open design problem regardless of the camera experiment's outcome.
+
+## Draw-trigger workload and action announcements
+
+The reported game had 71 pending entries from drawing, with Skulker and Toothy
+receiving counters while Pir changed their actual increments. The player intent
+is to let the currently known work proceed without repeatedly passing, while
+still seeing what each source does and keeping the ability to intervene.
+
+[Magic Online's gameplay guide](https://www.mtgo.com/getting-started/getting-started-tips-tricks)
+documents yielding from an ability on the stack and removing yields with a
+single control. We adapt the ability-attached context and explicit interruption,
+with consent limited to the current exact queue. Its persistent yields and
+automatic optional answers do not describe this feature. The supplied MTGA
+gameplay establishes source-art ability faces, readable hover and on-card
+results; it does not establish a four-player source-pile arrangement.
+[Arena's December 2020 developer article](https://magic.wizards.com/en/news/mtg-arena/mtg-arena-state-game-december-2020-12-07)
+also distinguishes tabletop shortcuts from the digital engine's execution of
+every trigger. That historical account is not evidence of current Arena timing
+or a reason to import its token limit.
+
+Our adaptation groups pending work by exact physical source and effect/target
+identity, including interleaved entries, while NEXT follows the real stack.
+Hover reads the exact member; opening a pile exposes separate references with
+their actual positions. Resolve these captures the current queue. Each real
+settlement remains separately presented, and Take control, a new action or a
+required choice ends the continuation. Pending counts never predict counters.
+
+PR #35's separate pacing feedback exposed an ownership gap: local Auto waited
+for visual beats while the bot host could keep advancing. Source announcements
+must survive another observation, and a new response must take attention ahead
+of older repeated-trigger notices. Announcement history has no command authority;
+current choices and current card visibility always govern interaction.
+
+Review the entire 71-entry journey at 1000×740 and 1540×980 with artwork, including
+source inspection, a deep member, a settled Pir-modified counter change, Take
+control, an opposing response and a required choice. Also review ordinary
+casts/activations through the paced host. The authored lab checkpoints establish
+presentation relationships; real Java tests supply independent rules evidence.
+Automated safety and agent visual review do not supply human approval. Human
+review of this new source iteration remains pending.
+
+## Land identity after the artwork crop: 27 October 2026
+
+**Candidate `0a0ec269955bf89a0dea26dc9906b4f79818bd15`: human review found
+issues.** The previous narrow land strips discarded most of the illustration.
+Changing those strips into 4:3 landscape illustration boxes did not solve the
+player's intent: the player said the new faces already looked tapped and wanted
+them to feel like cards. The wider crop is rejected. Its geometry checks and
+passing release scenarios establish no human acceptance of that presentation.
+
+The supplied MTGA screenshots show recognizable framed card objects, upright
+untapped faces, physical quarter turns for tapped cards, matching lands in
+offset piles, and a full original printing when inspected. Those observations
+support identity, orientation and grouping. They do not establish that copying
+Arena's cropped battlefield illustration shape alone will work at four-player
+scale. Our adaptation restores the complete land printing in its portrait card
+proportion, including its own frame, rather than substituting another art crop.
+The existing square turning reservation accommodates the same face upright and
+sideways without moving its neighbors. The original card face remains the
+source for inspection and later movement.
+
+The journey is to recognize and read a particular land, distinguish it from its
+tapped neighbors, and use only its currently offered mana action. The source is
+the exact land occurrence or matching-state pile on that player's field; the
+reading target is that card, and a mana action's target is the current payment.
+Hover reveals the full identity and clicking opens the existing full-card
+reader without committing. A current source action uses the existing scoped
+command; only the engine's accepted tap changes the card's orientation. Counts,
+state badges, action lighting and mana-source outlines stay attached to that
+same occurrence. No separate art tile, tap-shaped default face or extra control
+is introduced.
+
+**Replacement source candidate: human review pending.** Review actual artwork
+at 1000x740 and 1540x980 in the whole table and focused battlefield: one untapped
+land, the exact same card tapped, all three lands tapped, and matching mixed-state
+piles. Check that the printing's frame remains visible, upright and tapped faces
+are distinguishable relative to their seat, exact pile counts survive, and hover
+reading and current mana actions still reach the intended occurrence. Also check
+the source outlines and symbols during payment; they must not replace the card
+or cover its visible frame. Agent captures and geometry checks do not settle
+whether the result feels like a card to the player.
+
+## One physical card grammar across the battlefield: 27 October 2026
+
+**Candidate `3fcf853`: human review found issues.** The preceding land fix was
+limited to resources. The player then supplied Sol Ring as a cropped art tile
+with a separate black name box and another tiny sideways card, asking whether
+only lands had changed. Restoring a land's printing did not resolve the same
+identity problem across other permanents. That candidate is not an accepted
+battlefield presentation.
+
+The player's supplied MTGA sequences show card frames, printed name lines and
+recognizable illustrations retained together, matching-state copies offset in
+piles, tapped objects physically turned, and a complete original printing when
+read. The inspection of Ajani's Pridemate also places live counters and gained
+abilities beside that same card. We adapt that continuity across every
+battlefield role. Arena's cropped combat faces are not evidence that an isolated
+art crop with a replacement label will work on our shared four-player table.
+This change does not establish that dense fields are readable merely because
+all their objects retain the correct proportions.
+
+The player intent is to recognize an actual permanent, distinguish its current
+state, read it and then deliberately use a currently offered action. The source
+is the exact disclosed battlefield occurrence or matching-state pile; reading
+targets that card, while playing an ability targets only the engine's current
+cost or recipient choices. The settled face, seat-facing turn, tap animation,
+hover and full reader keep the same printed card. Hover exposes a complete name;
+clicking reads without committing. An accepted engine transition supplies the
+tap, counters, damage or current P/T. These live values remain visible without
+another black name strip over the printing. Choice highlights, matching-copy
+counts, mana outlines and exposed attachment edges remain attached to the same
+occurrences, with existing scoped commands and hidden-information rules intact.
+
+**Replacement source candidate: human review pending.** Review Sol Ring,
+creatures, enchantments, lands and an attached Aura or Equipment with actual art
+at 1000x740 and 1540x980, across the whole table and focused field. Compare an
+untapped card and that exact occurrence tapped, a creature with changed P/T and
+counters, an actionable source, repeated matching-state copies and an attached
+card with its own tap state. Read and close each without committing; return
+between views without replacing the object. Inspect frame, printed identity,
+state overlays, exposed attachment access and the current action/result together.
+Automation and agent captures supply geometry and interaction evidence; they do
+not approve the player's ability to recognize or understand these cards.

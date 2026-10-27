@@ -6,6 +6,7 @@
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="../Mana.Forge/Mana.Forge.csproj" />
+    <ProjectReference Include="../Mana.AI/Mana.AI.csproj" />
     <ProjectReference Include="../Mana.Game/Mana.Game.csproj" />
   </ItemGroup>
 </Project>

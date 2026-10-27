@@ -11,9 +11,21 @@ namespace Mana.Forge;
 // leak into a replacement process or survive leaving its match.
 internal sealed class ForgeCommandScope
 {
+    private readonly object observationGate = new();
     private GameSnapshot? observed;
     internal string ObservedGameId => Volatile.Read(ref observed)?.Id ?? "";
-    internal void Observe(GameSnapshot? state) => Volatile.Write(ref observed, state);
+    internal GameSnapshot? ObservedState => Volatile.Read(ref observed);
+    internal void Observe(GameSnapshot? state)
+    {
+        lock (observationGate) {
+            // Response continuations can finish out of order. The client's
+            // replica rejects older revisions; command authority must not move
+            // backward either and revive a prompt it has already replaced.
+            if (state != null && observed is { } previous && state.Id == previous.Id
+                && state.Revision < previous.Revision) return;
+            Volatile.Write(ref observed, state);
+        }
+    }
     internal GameSnapshot? ObserveRaw(JsonElement raw)
     {
         try {
@@ -25,7 +37,7 @@ internal sealed class ForgeCommandScope
             throw;
         }
     }
-    internal void Clear() => Volatile.Write(ref observed, null);
+    internal void Clear() => Observe(null);
     internal bool CanReadSource(string gameId, string decisionId, string key)
     {
         var state = Volatile.Read(ref observed);
@@ -33,7 +45,7 @@ internal sealed class ForgeCommandScope
             && state.Id == gameId && decision.Id == decisionId
             && (state.DecisionOwnerId == null || state.DecisionOwnerId == state.ViewerId)
             && (decision.Payload is not PriorityPayload || state.PriorityPlayerId == null || state.PriorityPlayerId == state.ViewerId)
-            && CardViews.FindZoneActionSource(state, key)?.Card is { FaceDown: false };
+            && CardViews.FindActionSource(state, key)?.Card is { FaceDown: false };
     }
     internal Dictionary<string, object?> Encode(GameCommand command)
     {
@@ -47,7 +59,10 @@ internal sealed class ForgeCommandScope
         void Action(string name) => args["action"] = name;
         void Card(string key) { Action("card"); args["key"] = key; }
         switch (command) {
-            case PassPriority: Action("passPriority"); break;
+            case PassPriority value:
+                Action("passPriority");
+                if (value.StackInterruptionVersion is { } version) args["stackInterruptionVersion"] = version;
+                break;
             case KeepOpeningHand or PayMana or CompleteAttackers or CompleteBlockers
                 or CompleteSelection or AcceptConfirmation or AcknowledgeDecision: Action("ok"); break;
             case MulliganOpeningHand or CancelPayment or CancelSelection or DeclineConfirmation:
@@ -59,6 +74,7 @@ internal sealed class ForgeCommandScope
             case PlayCard value: Card(value.Card); break;
             case ActivateCard value: Card(value.Card); break;
             case UseManaSource value: Card(value.Card); break;
+            case SpendPoolMana value: Action("spendPoolMana"); args["manaColor"] = value.Color; break;
             case SelectPlayer value: Action("player"); args["playerId"] = value.Player; break;
             case ToggleAttackPlayer value:
                 Action("attack"); args["attackerKey"] = value.Attacker; args["defenderPlayerId"] = value.Player; break;
@@ -74,7 +90,9 @@ internal sealed class ForgeCommandScope
             case AllocateAmounts value: args["values"] = value.Amounts; break;
             case SkipAllocation: Action("skip"); break;
             case UseOfferedAction value:
-                Action("useSourceAction"); args["key"] = value.Card; args["actionId"] = value.ActionId; break;
+                Action("useSourceAction"); args["key"] = value.Card; args["actionId"] = value.ActionId;
+                if (value.ManaOutput != null) args["manaOutput"] = value.ManaOutput;
+                break;
             case PlaceFromHand value:
                 Action("useHandPlacement"); args["handKey"] = value.Card; args["abilityId"] = value.AbilityId; break;
             case IgnorePriorityAbility value:

@@ -100,6 +100,7 @@ import java.util.*;
 import java.util.Map.Entry;
 import java.util.function.Function;
 import java.util.function.Predicate;
+import java.util.function.Supplier;
 import java.util.stream.Collectors;
 
 /**
@@ -108,6 +109,9 @@ import java.util.stream.Collectors;
  * Handles phase skips for now.
  */
 public class PlayerControllerHuman extends PlayerController implements IGameController, IHasForgeLog {
+
+    /** External policies own every strategic choice while reusing normal rules inputs. */
+    public boolean isExternallyAutomated() { return false; }
 
     /**
      * Cards this player may look at right now, for example when searching a
@@ -125,6 +129,24 @@ public class PlayerControllerHuman extends PlayerController implements IGameCont
     private final Localizer localizer = Localizer.getInstance();
 
     protected Map<SpellAbilityView, SpellAbility> spellViewCache = null;
+    private volatile Map<SpellAbilityView, ? extends SpellAbility> decisionAbilities = Map.of();
+
+    /** Exact rules ability for an option in the current blocking choice only. */
+    public SpellAbility getDecisionAbility(SpellAbilityView view) { return decisionAbilities.get(view); }
+
+    private <T> T withDecisionAbilities(Map<SpellAbilityView, ? extends SpellAbility> abilities, Supplier<T> choose) {
+        var previous = decisionAbilities;
+        decisionAbilities = Map.copyOf(abilities);
+        PlayerControllerHuman controlling = getPlayer().isControlled()
+                && getPlayer().getControllingPlayer().getController() instanceof PlayerControllerHuman controller ? controller : this;
+        var controllingPrevious = controlling.decisionAbilities;
+        controlling.decisionAbilities = decisionAbilities;
+        try { return choose.get(); }
+        finally {
+            controlling.decisionAbilities = controllingPrevious;
+            decisionAbilities = previous;
+        }
+    }
 
     public PlayerControllerHuman(final Game game0, final Player p, final LobbyPlayer lp) {
         super(game0, p, lp);
@@ -224,8 +246,8 @@ public class PlayerControllerHuman extends PlayerController implements IGameCont
         for (SpellAbility sa : abilities) {
             sa.getView().updateCanPlay(sa);
         }
-        final SpellAbilityView resultView = getGui().getAbilityToPlay(CardView.get(hostCard),
-                Lists.newArrayList(spellViewCache.keySet()), triggerEvent);
+        final SpellAbilityView resultView = withDecisionAbilities(spellViewCache,
+                () -> getGui().getAbilityToPlay(CardView.get(hostCard), Lists.newArrayList(spellViewCache.keySet()), triggerEvent));
         return resultView == null ? null : spellViewCache.get(resultView);
     }
 
@@ -387,16 +409,13 @@ public class PlayerControllerHuman extends PlayerController implements IGameCont
 
         String announceTitle = "X".equals(announce) ? ability.getParamOrDefault("XAnnounceTitle", announce) :
                 ability.getParamOrDefault("AnnounceTitle", announce);
-        if (cost != null && cost.isMandatory()) {
-            return chooseNumber(ability, localizer.getMessage("lblChooseAnnounceForCard", announceTitle,
-                    host.getTranslatedName()), min, max);
-        }
-        if ("NumTimes".equals(announce)) {
-            return getGui().getInteger(localizer.getMessage("lblHowManyTimesToPay", ability.getPayCosts().getTotalMana(),
-                    host.getTranslatedName()), min, max, min + 9);
-        }
-        return getGui().getInteger(localizer.getMessage("lblChooseAnnounceForCard", announceTitle,
-                host.getTranslatedName()), min, max, min + 9);
+        String message = "NumTimes".equals(announce)
+                ? localizer.getMessage("lblHowManyTimesToPay", ability.getPayCosts().getTotalMana(), host.getTranslatedName())
+                : localizer.getMessage("lblChooseAnnounceForCard", announceTitle, host.getTranslatedName());
+        final int maximum = max;
+        return withDecisionAbilities(Map.of(ability.getView(), ability),
+                () -> getGui().getIntegerForAnnouncement(message, ability.getView(), announce, min, maximum,
+                        min + 9, cost != null && cost.isMandatory()));
     }
 
     @Override
@@ -705,7 +724,8 @@ public class PlayerControllerHuman extends PlayerController implements IGameCont
 
         // create a mapping between a spell's view and the spell itself
         Map<SpellAbilityView, SpellAbility> spellViewCache = SpellAbilityView.getMap(spells);
-        Object choice = getGui().one(title, Lists.newArrayList(spellViewCache.keySet()));
+        Object choice = withDecisionAbilities(spellViewCache,
+                () -> getGui().one(title, Lists.newArrayList(spellViewCache.keySet())));
 
         // Human is supposed to read the message and understand from it what to choose
         return spellViewCache.get(choice);
@@ -727,7 +747,9 @@ public class PlayerControllerHuman extends PlayerController implements IGameCont
         }
 
         //override generic
-        List<SpellAbilityView> chosen = getGui().getChoices(title, num, num, Lists.newArrayList(spellViewCache.keySet()));
+        final String decisionTitle = title;
+        List<SpellAbilityView> chosen = withDecisionAbilities(spellViewCache,
+                () -> getGui().getChoices(decisionTitle, num, num, Lists.newArrayList(spellViewCache.keySet())));
 
         for (SpellAbilityView view : chosen) {
             if (spellViewCache.containsKey(view)) {
@@ -792,7 +814,7 @@ public class PlayerControllerHuman extends PlayerController implements IGameCont
     public boolean confirmTrigger(final WrappedAbility wrapper) {
         final SpellAbility sa = wrapper.getWrappedAbility();
         final Trigger regtrig = wrapper.getTrigger();
-        if (!isMacroActive()) {
+        if (!isExternallyAutomated() && !isMacroActive()) {
             AutoYieldStore.TriggerDecision decision = getTriggerDecision(wrapper.yieldKey());
             if (decision == AutoYieldStore.TriggerDecision.ACCEPT) return true;
             if (decision == AutoYieldStore.TriggerDecision.DECLINE) return false;
@@ -1519,7 +1541,7 @@ public class PlayerControllerHuman extends PlayerController implements IGameCont
         // CombatUtil.canAttack ensures we only get here when the player has a legal attacker
         // so APINA must never skip - the invocation itself is the available action. User
         // initiated yields (pass until end of turn) still skip when not-attacking is legal.
-        if (!isMacroActive() && yieldController.shouldAutoYield()) {
+        if (!isExternallyAutomated() && !isMacroActive() && yieldController.shouldAutoYield()) {
             if (CombatUtil.validateAttackers(combat)) {
                 return;
             }
@@ -1621,7 +1643,7 @@ public class PlayerControllerHuman extends PlayerController implements IGameCont
         final boolean showAutoTap = emphasized != null
                 && yieldController.getBoolPref(FPref.UI_SHOW_AUTOTAP_PREVIEW);
 
-        if (!showActionable && !showAutoTap) {
+        if (isExternallyAutomated() || !showActionable && !showAutoTap) {
             getGui().clearWeaklySelectable();
             return;
         }
@@ -1726,7 +1748,7 @@ public class PlayerControllerHuman extends PlayerController implements IGameCont
         // Compute the actionable set when APINA / suggestions / highlights need it.
         boolean highlightsEnabled = yieldController.getBoolPref(FPref.UI_SHOW_ACTIONABLE_HIGHLIGHTS);
         boolean availabilityVerified = false;
-        if (!yieldController.shouldAutoYield() && (needsAvailableActions() || highlightsEnabled)) {
+        if (!isExternallyAutomated() && !yieldController.shouldAutoYield() && (needsAvailableActions() || highlightsEnabled)) {
             // Keep highlighting all legal cards, while independently deciding which
             // activated abilities the player currently wants Auto to stop for.
             scanPriorityActions();
@@ -1738,9 +1760,9 @@ public class PlayerControllerHuman extends PlayerController implements IGameCont
 
         // yieldJustEndedFlag is read from the EDT (didYieldJustEnd); synchronized writer/reader pair handles visibility.
         // Only a real yield counts here: this tracks when one ends, and skipped phases happen every turn
-        boolean autoPassing = mayAutoPass();
+        boolean autoPassing = !isExternallyAutomated() && mayAutoPass();
         yieldController.noteMayAutoPassResult(autoPassing);
-        boolean nowMayAutoPass = autoPassing || skipsPromptForStackOrPhase();
+        boolean nowMayAutoPass = !isExternallyAutomated() && (autoPassing || skipsPromptForStackOrPhase());
 
         if (nowMayAutoPass) {
             // A skipped phase has no priority input to record its implicit pass.
@@ -2003,9 +2025,9 @@ public class PlayerControllerHuman extends PlayerController implements IGameCont
 
             SpellAbilityView a;
             if (i < min) {
-                a = getGui().one(modeTitle, choices);
+                a = withDecisionAbilities(spellViewCache, () -> getGui().one(modeTitle, choices));
             } else {
-                a = getGui().oneOrNone(modeTitle, choices);
+                a = withDecisionAbilities(spellViewCache, () -> getGui().oneOrNone(modeTitle, choices));
             }
             if (a == null) {
                 break;
@@ -2067,14 +2089,9 @@ public class PlayerControllerHuman extends PlayerController implements IGameCont
         if (remembered != null) {
             return remembered;
         }
-        final byte result;
-        if (choices.size() > 2) {
-            result = getGui().chooseColor(message, CardView.get(c), choices).getColorMask();
-        } else {
-            final int idxChosen = InputConfirm.confirm(this, CardView.get(c), message, true, choices.stream().map(MagicColor.Color::getTranslatedName).collect(Collectors.toList()))
-                    ? 0 : 1;
-            result = choices.get(idxChosen).getColorMask();
-        }
+        // Every genuine color selection preserves the same typed source and
+        // options. Two colors are not an unrelated yes/no confirmation.
+        final byte result = getGui().chooseColor(message, CardView.get(c), choices).getColorMask();
 
         macros().addRememberedAction(new ColorChoiceAction(result));
         return result;
@@ -2165,13 +2182,13 @@ public class PlayerControllerHuman extends PlayerController implements IGameCont
             return first;
         }
         String firstStr = first.toString();
-        if (possibleReplacers.stream().allMatch(re -> re == first || re.toString().equals(firstStr))) {
+        if (!isExternallyAutomated() && possibleReplacers.stream().allMatch(re -> re == first || re.toString().equals(firstStr))) {
             // return first option without prompting if all options are the same
             return first;
         }
 
         final String replacementLookupKey = describeReplacementOrder(possibleReplacers);
-        List<Integer> savedOrder = orderedReplacementLookup.get(replacementLookupKey);
+        List<Integer> savedOrder = isExternallyAutomated() ? null : orderedReplacementLookup.get(replacementLookupKey);
         if (savedOrder != null && !isValidReplacementOrder(savedOrder, possibleReplacers.size())) {
             orderedReplacementLookup.remove(replacementLookupKey);
             rememberedReplacementKeys.remove(replacementLookupKey);
@@ -2317,7 +2334,7 @@ public class PlayerControllerHuman extends PlayerController implements IGameCont
     public List<SpellAbility> orderSimultaneousSa(List<SpellAbility> activePlayerSAs) {
         if (activePlayerSAs.size() < 2)
             return activePlayerSAs;
-        boolean needPrompt = !activePlayerSAs.get(0).isTrigger();
+        boolean needPrompt = isExternallyAutomated() || !activePlayerSAs.get(0).isTrigger();
 
         final String firstStr = activePlayerSAs.get(0).toString();
         final String firstLookup = trimStackContext(firstStr);
@@ -2345,7 +2362,7 @@ public class PlayerControllerHuman extends PlayerController implements IGameCont
         }
 
         final String saLookupKeyString = saLookupKey.toString();
-        List<Integer> savedOrder = orderedSALookup.get(saLookupKeyString);
+        List<Integer> savedOrder = isExternallyAutomated() ? null : orderedSALookup.get(saLookupKeyString);
         if (savedOrder != null && savedOrder.size() != activePlayerSAs.size()) {
             orderedSALookup.remove(saLookupKeyString);
             rememberedKeys.remove(saLookupKeyString);
@@ -2380,13 +2397,13 @@ public class PlayerControllerHuman extends PlayerController implements IGameCont
 
         final IGuiGame.OrderResult<SpellAbilityView> orderResult;
         if (savedOrder != null) {
-            orderResult = getGui().order(localizer.getMessage("lblReorderSimultaneousAbilities"),
+            orderResult = withDecisionAbilities(spellViewCache, () -> getGui().order(localizer.getMessage("lblReorderSimultaneousAbilities"),
                     localizer.getMessage("lblResolveFirst"), 0, 0,
-                    Lists.newArrayList(), orderedSAVs, null, false, true);
+                    Lists.newArrayList(), orderedSAVs, null, false, true));
         } else {
-            orderResult = getGui().order(localizer.getMessage("lblSelectOrderForSimultaneousAbilities"),
+            orderResult = withDecisionAbilities(spellViewCache, () -> getGui().order(localizer.getMessage("lblSelectOrderForSimultaneousAbilities"),
                     localizer.getMessage("lblResolveFirst"), 0, 0,
-                    orderedSAVs, Lists.newArrayList(), null, false, true);
+                    orderedSAVs, Lists.newArrayList(), null, false, true));
         }
         final List<SpellAbilityView> chosen = orderResult.ordered();
         if (chosen == null) {
@@ -3700,6 +3717,8 @@ public class PlayerControllerHuman extends PlayerController implements IGameCont
         }
 
         public void askAI(boolean useSimulation) {
+            if (isExternallyAutomated())
+                throw new IllegalStateException("An external policy cannot delegate to Forge strategy");
             PlayerControllerAi ai = new PlayerControllerAi(player.getGame(), player, player.getOriginalLobbyPlayer());
             ai.getAi().setUseSimulation(AIOption.USE_FULL_SIMULATION);
             player.runWithController(() -> {
@@ -3877,7 +3896,7 @@ public class PlayerControllerHuman extends PlayerController implements IGameCont
     /** True while the player is auto-passing. Deliberately does not cover a skipped phase or an auto-yielded
      *  stack top: {@link #autoPassCancel} runs every cleanup, and cleanup is a skipped phase for most players. */
     public boolean mayAutoPass() {
-        return !isMacroActive()
+        return !isExternallyAutomated() && !isMacroActive()
                 && (yieldController.shouldAutoYield()
                 || yieldController.isAutoPassingNoActions(getLocalPlayerView()));
     }
@@ -3885,6 +3904,7 @@ public class PlayerControllerHuman extends PlayerController implements IGameCont
     /** An auto-yielded ability on top of the stack, or a phase set to be skipped with the stack empty.
      *  Reads the view, not the engine, because this also runs on network threads. */
     private boolean skipsPromptForStackOrPhase() {
+        if (isExternallyAutomated()) return false;
         if (macros != null && macros.isReplaying()) return false;
         final GameView gameView = getGui().getGameView();
         if (gameView == null) return false;
@@ -4005,6 +4025,7 @@ public class PlayerControllerHuman extends PlayerController implements IGameCont
     /** This sweep mutates the game graph, so it runs only when a preference that reads its result changes.
      *  Otherwise the value computed when the prompt was built still stands. */
     private void refreshAvailableActionsForPrompt() {
+        if (isExternallyAutomated()) return;
         if (yieldController.isYieldActive() || !needsAvailableActions()) return;
         if (!(inputProxy.getInput() instanceof InputPassPriority priority)) return;
         scanPriorityActions();

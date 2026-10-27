@@ -34,4 +34,30 @@ internal sealed partial class TableApplication
             && CardViews.Same(card.Card, source));
         if (physical != null) canvas.CardFocus(physical.Display, Gold * ((.4f + .6f * strength) * pulse));
     }
+
+    private void DrawPublicAnnouncement()
+    {
+        if (OverlayOpen || expandedStackWorkload.Length > 0 || match?.Decision is { Payload: not PriorityPayload }
+            || matchPresentation.Announcement(now) is not { } announcement) return;
+        // An ordinary single-entry surface already shows its source and effect.
+        // Repeated piles and off-turn actions need a readable current announcement.
+        if (!RepeatedStackWorkload && announcement.StackId is { } id && stackRows.Any(row => row.Id == id)) return;
+        var area = TableStudyEnabled ? StudyActionArea : new Rectangle(545, 319, 435, 165);
+        var heading = new Rectangle(area.X, Math.Max(64, area.Y - 88), area.Width, 28);
+        string actor = announcement.ControllerId is { } controller ? StateClarity.PlayerName(match!, controller) : "A player";
+        string verb = announcement.Kind switch { StackActionKind.Spell => "Cast", StackActionKind.ActivatedAbility => "Activated",
+            StackActionKind.TriggeredAbility => "Triggered", _ => announcement.EventKind switch {
+                "cast" => "Cast", "ability" => "Activated", "triggered" => "Triggered", "resolved" => "Resolved", _ => "Action" } };
+        if (announcement.Kind == StackActionKind.TriggeredAbility && announcement.StackId != match!.Stack.FirstOrDefault()?.Id)
+            verb = match.Stack.Any(item => item.Id == announcement.StackId) ? "Pending trigger" : "Earlier trigger";
+        canvas.Text(verb + " · " + actor + " · " + announcement.Name, heading.X, heading.Y, Gold, .65f, heading.Width, 2, true);
+        var detail = new Rectangle(heading.X, heading.Bottom + 3, heading.Width, 48);
+        canvas.Text(announcement.Text, detail.X, detail.Y, Ink, .62f, detail.Width, 3, true);
+        if (announcement.StackId is { } stack && match!.Stack.Any(item => item.Id == stack))
+            hits.Add(new("stack-announcement:" + stack, Scope, Rectangle.Union(heading, detail), new MatchIntent.InspectPendingEffect(stack)));
+        if (announcement.SourceId.Length > 0 && PendingConnectionCard(announcement.SourceId) is { } physical)
+            canvas.CardFocus(physical.Display, Gold);
+        if (matchPresentation.IncompleteAnnouncements > 0)
+            canvas.Text("Earlier action history is incomplete", heading.X, detail.Bottom + 3, Muted, .46f, heading.Width, 1);
+    }
 }

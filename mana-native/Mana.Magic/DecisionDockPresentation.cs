@@ -67,6 +67,7 @@ public static class DecisionDockPresentation
             OpeningHandPayload or ConfirmationPayload or AbilityChoicePayload or PaymentPayload => DecisionRequiredSurface.Source,
             TargetSelectionPayload or EntitySelectionPayload => DecisionRequiredSurface.Targets,
             OptionsPayload { CounterPayment: not null } => DecisionRequiredSurface.Source,
+            OptionsPayload { ManaPaymentContext: not null } => DecisionRequiredSurface.Source,
             OptionsPayload or OrderingPayload when direct => DecisionRequiredSurface.Table,
             OptionsPayload or OrderingPayload or RevealPayload => DecisionRequiredSurface.Gallery,
             NumberPayload or TextPayload => DecisionRequiredSurface.Value,
@@ -77,7 +78,7 @@ public static class DecisionDockPresentation
         var reading = (payload != null && source is { FaceDown: false } ? DecisionReading.SourceInspection : DecisionReading.None)
             | (payload is OpeningHandPayload ? DecisionReading.OpeningHandInspection : DecisionReading.None)
             | (payload is TargetSelectionPayload or EntitySelectionPayload || direct ? DecisionReading.HandSelectionInspection : DecisionReading.None)
-            | (decision?.Payload is null or PriorityPayload or PaymentPayload or AbilityChoicePayload or OptionsPayload { CounterPayment: not null }
+            | (decision?.Payload is null or PriorityPayload or PaymentPayload or AbilityChoicePayload or OptionsPayload { CounterPayment: not null } or OptionsPayload { ManaPaymentContext: not null }
                 ? DecisionReading.TableInspection : DecisionReading.None)
             | (decision?.Payload is RevealPayload ? DecisionReading.RevealInspection : DecisionReading.None);
 

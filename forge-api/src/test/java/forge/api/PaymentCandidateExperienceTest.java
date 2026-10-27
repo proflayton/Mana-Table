@@ -15,6 +15,53 @@ import static org.testng.Assert.*;
 public class PaymentCandidateExperienceTest {
     private static final Gson JSON = new Gson();
 
+    @Test(groups = "canonical-interaction", timeOut = 90000)
+    public void currentConvokeCandidatesExcludeWrongColorsButRetainSelectedCardsForUndo() throws Exception {
+        try (var game = new RulesScenario("payment-candidates-convoke-current-colors", Map.of(0, List.of(
+                "Merfolk of the Pearl Trident", "Merfolk of the Pearl Trident", "Merfolk of the Pearl Trident", "Merfolk of the Pearl Trident",
+                "Merfolk of the Pearl Trident", "Memnite", "Savannah Lions")), "Venerated Loxodon", "Rhys the Redeemed")) {
+            var main = game.until(input -> input.seat() == 0 && priority(input) && text(input.state(), "phaseKey").equals("MAIN1"));
+            var spell = zone(viewer(main.state()), "Hand").getAsJsonArray("cards").get(0).getAsJsonObject();
+            var catalog = JSON.toJsonTree(game.table.seat(0).sourceActions(request(main, Map.of("key", text(spell, "key"))))).getAsJsonObject();
+            assertTrue(game.answer(main, Map.of("action", "useSourceAction", "key", text(spell, "key"),
+                    "actionId", text(catalog.getAsJsonArray("actions").get(0).getAsJsonObject(), "id"))));
+            var reduction = game.until(input -> input.seat() == 0 && text(input.prompt(), "inputType").equals("InputSelectCardsForConvokeOrImprovise"));
+            for (int count = 0; count < 4; count++) {
+                var blue = zone(viewer(reduction.state()), "Battlefield").getAsJsonArray("cards").asList().stream().map(value -> value.getAsJsonObject())
+                        .filter(value -> text(value, "name").equals("Merfolk of the Pearl Trident") && !value.get("highlighted").getAsBoolean()).findFirst().orElseThrow();
+                String scope = text(reduction.prompt(), "id");
+                assertTrue(game.answer(reduction, Map.of("action", "card", "key", text(blue, "key"))));
+                reduction = game.until(input -> input.seat() == 0 && text(input.prompt(), "inputType").equals("InputSelectCardsForConvokeOrImprovise")
+                        && !text(input.prompt(), "id").equals(scope));
+            }
+            assertEquals(reduction.prompt().getAsJsonObject("manaReduction").getAsJsonArray("remainingManaParts"),
+                    JSON.toJsonTree(List.of(Map.of("symbol", "{W}", "count", 1))));
+            var currentCards = zone(viewer(reduction.state()), "Battlefield").getAsJsonArray("cards").asList().stream().map(value -> value.getAsJsonObject()).toList();
+            assertTrue(currentCards.stream().filter(card -> card.get("highlighted").getAsBoolean()).allMatch(card -> card.get("selectable").getAsBoolean()), "Selected contributors remain available for undo");
+            assertTrue(currentCards.stream().filter(card -> !card.get("highlighted").getAsBoolean() && !text(card, "name").equals("Savannah Lions"))
+                    .noneMatch(card -> card.get("selectable").getAsBoolean()), "Unselected blue and colorless creatures cannot reduce a pure white shard");
+            assertTrue(currentCards.stream().filter(card -> text(card, "name").equals("Savannah Lions")).allMatch(card -> card.get("selectable").getAsBoolean()));
+            var before = game.state(0);
+            game.table.game.getAction().withState(() -> {
+                var controller = (forge.player.PlayerControllerHuman)game.table.game.getPlayers().get(0).getController();
+                var input = (forge.gamemodes.match.input.InputSelectCardsForConvokeOrImprovise)controller.getInputQueue().getInput();
+                var selected = List.copyOf(input.getSelected());
+                var remaining = input.getRemainingManaCost().toString();
+                for (var card : game.table.game.getPlayers().get(0).getCardsIn(forge.game.zone.ZoneType.Battlefield))
+                    assertEquals(input.getActivateAction(card) != null, selected.contains(card) || card.getName().equals("Savannah Lions"));
+                assertEquals(List.copyOf(input.getSelected()), selected); assertEquals(input.getRemainingManaCost().toString(), remaining);
+            });
+            assertEquals(game.state(0), before, "Eligibility probes do not pay, select, tap, or publish a new scope");
+            var undo = currentCards.stream().filter(card -> card.get("highlighted").getAsBoolean()).findFirst().orElseThrow();
+            String scope = text(reduction.prompt(), "id");
+            assertTrue(game.answer(reduction, Map.of("action", "card", "key", text(undo, "key"))));
+            var undone = game.until(input -> input.seat() == 0 && text(input.prompt(), "inputType").equals("InputSelectCardsForConvokeOrImprovise")
+                    && !text(input.prompt(), "id").equals(scope));
+            assertTrue(zone(viewer(undone.state()), "Battlefield").getAsJsonArray("cards").asList().stream().map(value -> value.getAsJsonObject())
+                    .allMatch(card -> card.get("selectable").getAsBoolean()), "Restoring generic mana makes every unused creature productive again");
+        }
+    }
+
     @DataProvider public Object[][] convokeAnswers() { return new Object[][] {{true}, {false}}; }
 
     @Test(groups = "canonical-interaction", dataProvider = "convokeAnswers", timeOut = 90000)

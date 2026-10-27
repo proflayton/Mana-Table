@@ -11,6 +11,249 @@ a complete engine/runtime/resource bundle.
 
 ## Canonical interaction coverage
 
+The existing graphics-free `Mana.Client.Tests` runner also checks the `Mana.AI`
+framework. Scripted policies exercise all fifteen typed decision families and
+the same contract permissions, plus source-offer membership, observation/offer
+revocation, budgets, late completions, per-seat bounded knowledge and one-shot
+host receipts. Missing strategic capabilities are explicit; these checks do not
+demonstrate a production bot or enjoyable behavior. The assembly dependency check
+keeps AI independent of Forge, rendering and the updater.
+
+The existing `--smoke-headless-engine` process runs a short scripted AI-framework
+continuation through real starting-player selection, keeping a hand and playing
+an exact offered land route before its normal application journey. It verifies
+the later authoritative battlefield rather than treating command acceptance as
+resolution. It reuses the same initialized JVM; fixture setup passes are explicit
+human test-driver commands, not AI passes inferred from incomplete discovery.
+No additional CI job or separate rules simulator is introduced.
+
+After that journey, the same JVM runs four complete `CasualCommanderPolicy`
+seats against different Commander decks, including a saved Toothy/Pir partner
+deck. No scripted driver answers a bot. A separate public spectator records
+the changing board and stack in `whole-seat-ai-public.jsonl`; private decision
+histories live separately in `whole-seat-ai.json`. The focused standalone option
+is `--smoke-whole-seat-ai` with the same engine and disposable-profile arguments.
+The same JVM then runs one diverse campaign match with a 16-global-turn limit
+and a 35-second progress cutoff. Its shared singleton deck manifests contain ordinary spells and
+lands for Rhys, Pir/Toothy, Balmor and Traxos, rather than land-heavy isolation
+decks. `--smoke-ai-campaign` runs two seat rotations, each with a 32-turn limit
+and a 45-second progress cutoff, in one engine process. Time cutoffs are checked
+between steps; a pending RPC or teardown can extend elapsed time. Reaching a
+natural outcome or the requested turn boundary completes the continuation. A
+time cutoff is inconclusive and cannot pass that gate using earlier development
+or accepted-command counts; it also does not prove a policy loop. A mechanical
+failure stops subsequent rotations and records them as unrun. The campaign records deck/policy/engine
+provenance, actual public state, missing mechanic coverage, and separate review
+findings. Review findings are not automatically strategy errors: a forced
+own-land return is legitimate. Policy seeds do not control Forge's rules RNG.
+
+## AI release evaluation
+
+The short campaign checks progress. AI release evidence also needs completed
+games, controlled outcomes and recorded human review. Keep these gates separate:
+
+| Gate | Required evidence | Insufficient evidence |
+| --- | --- | --- |
+| Provider and rules conformance | Exact-source Java/native checks of real current decisions, costs, allowed resources, visibility and subsequent rules outcomes | A plausible-looking frame, accepted command or a policy's own prediction |
+| Policy and tactical continuations | Controlled production-policy journeys, including positive X investment through actual payment and outcome; deterministic funding/tactical regressions | A manually supplied X value alone, an offline proposal alone, or a rare draw absent from a campaign |
+| Whole-game completion | Four different Commander decks in four cyclic seat rotations, each reaching a verified engine outcome before cleanup | Earlier battlefield development, a turn count, a forced concede, or a stopped simulation |
+| State, authority and lifecycle integrity | Exact-board public comparisons, private-window and fault checks, plus fresh-RPC rejection of consumed scopes for every exercised seat | Cached command receipts, retained historical disclosure, or a client-only rejection before the request reaches Java |
+| Human gameplay review | Recorded review of the exact candidate and findings, with reviewer, artifact identity and disposition | Pending review, passing automation, win rate, or equal damage/target distributions |
+
+Run the manual long profile with immutable test and production artifacts in a
+new private profile:
+
+```powershell
+dotnet '<immutable-harness>/Mana.Table.Tests.dll' --evaluate-ai-release --engine-resources '<candidate-package>/engine' --engine-jar '<test-fixture-wrapper.jar>' --production-engine-jar '<shipping-engine.jar>' --source-revision '<full-40-character-commit>' --source-manifest '<ci-engine-manifest.json>' --profile '<fresh-private-profile>'
+```
+
+`--engine-resources` must identify the `engine` directory of the exact candidate's
+release package. The runner checks its `build.json` source revision, release
+marker and engine hash, and compares the packaged `Mana.AI`, `Mana.Planning`, `Mana.Contracts`
+and `Mana.Forge` assemblies with the loaded harness dependencies. It records
+the actual rules-resource path and build-metadata hash. Retain the verified
+package/source receipt which binds the complete runtime archive. An older
+installed resource bundle or a preview assembled from external resources does
+not establish exact-candidate release evidence. The packaged headless CI lane
+uses these same provenance checks.
+
+The wrapper is a test-only launcher for controlled positions using the exact
+production engine. It is checked against the shipping JAR and never supplies a
+shipping scenario API. The existing process initializes one JVM for the eight
+controlled native goldens and subsequent games. The release campaign uses four
+cyclic seat rotations, each bounded by 160 global turns and 180 seconds. This is
+at most twelve minutes of nominal game budget, separate from fast CI. Limits are
+checked between completed steps; an in-flight request and cleanup can extend
+wall-clock time. These are test limits, unrelated to a player's decision timer.
+Neither ceiling passes the natural-outcome gate. A legitimate engine-reported
+draw can pass; the driver does not invent individual loss reasons which the
+provider omits. It records the public state and outcome before its only
+`StopSimulation` cleanup call. Forced cleanup, aborts and automation faults cannot
+manufacture a finish.
+
+The controlled journeys cover funded/unfunded X, funded/short consuming sources,
+optional effect-cost decline/payment, flexible-output payment, and mana
+contribution completion. The flexible-output journey
+starts with Temple of Epiphany and blue-only sources: the normal policy must
+execute its exact red output, shrink Balmor's actual bill from blue/red to blue,
+then pay blue and observe the same source on the stack and resolved battlefield.
+Immediate spending can consume produced mana before the next publication, so a
+transient floating red pool is not required. The fixture supplies only declared
+pregame permanents; no test driver answers the policy's choices.
+The contribution journey casts Kasla through actual convoke with six selected
+creatures and a seventh unused creature. It requires positive then exact-empty
+progress, current Done, no further contribution offer from the unused creature,
+and the same public source resolving as 5/4. Real Java checks also cover undo,
+positive bills with incompatible candidates, projection purity and a nested
+multicolor choice observed while its UI callback waits for the answer.
+
+The fixed 16-turn/35-second CI prefix and the two-rotation 32-turn/45-second smoke
+remain unchanged. Do not rerun a failed sample until one happens to pass, lower
+its target, or enlarge its budget to relabel it green. Preserve the first
+failure/cutoff; investigate the actual scopes and progress. A source correction
+requires new candidate artifacts and new evidence, with prior results retained.
+
+`ai-release-evaluation.json` reports `automatedReady` separately from
+`releaseApproved`. The runner always records human gameplay review as pending
+and never approves itself. Review must identify the source commit and SHA256
+hashes of the actual production/wrapper engine, policy and test driver. The
+required source revision must match the harness's exact informational-version
+SHA. The engine artifact manifest also binds that revision to the production
+and fixture-launcher hashes and byte counts. CI supplies both arguments;
+`--source-manifest` is optional for a locally asserted run, whose weaker
+provenance is recorded separately from receipt-verified evidence. The release
+package checks still apply. A local source assertion and embedded metadata
+alone do not independently prove a clean build; retain the
+CI artifact receipt when available. Older captures with predecessor metadata
+remain diagnostics, not exact-candidate release proof. A policy seed controls
+policy choices only. Forge's rules RNG remains uncontrolled, so these rotations
+are not identical-shuffle experiments or reproducible engine replays.
+
+Policy review also holds an accepted zero-X announcement which resolved and
+whose same public source was later seen in the graveyard with nonpositive
+toughness. That observation requires an explanation of intent; it does not make
+all legal X=0 actions wrong or prove which effect caused the card's later state.
+Up to four original numeric requests are retained in `private-critical-replays`
+even when the ordinary sixteen-case replay budget is full. Mechanical state and
+authority results remain separate from these strategic review findings.
+
+Typed match results separate completion, mechanical failures, missing mechanics,
+numeric proposal/receipt/outcome facts and payment provenance. An explicit own
+optional triggered/effect-cost decline is distinct from abandoning a spell or
+activation cost. Unknown provenance remains reviewable. Release-only stale
+probes resubmit a previously accepted closed payload with a fresh transport
+request after that seat has a different decision. Any acceptance or uncertain
+transport result fails the evaluation; the probe supplies no new strategic
+answer. All private decisions, scopes, probes and replays remain private test
+artifacts and must not be attached to public release downloads.
+
+The [AI guide](Mana-Table-AI.md#ai-quality-work-before-merge-or-release) explains
+the supported scope and research basis. The
+[release guide](Mana-Table-Releases.md#ai-candidate-evidence) distinguishes this
+candidate evaluation from the required packaging/publication checks.
+
+Private campaign evidence includes compressed decision records and standalone
+`AiDecisionReplayCase` JSON for suspicious/failing decisions. Run the native
+test driver with `--replay-ai-decision <case.json> --profile <fresh-directory>`
+to evaluate the current policy on the same authorized observation, history,
+evaluation seed and allowance. This mode needs no engine bundle and cannot
+execute a command. Its `ai-decision-replay.json` is private diagnostic output;
+an offered proposal does not imply acceptance or resolution. The graphics-free
+client suite tests replay roundtrips, scope and knowledge isolation, exhaustive
+small mana assignments, and controlled tactical/effect-graph expectations.
+
+Numeric investment checks use typed announcement ownership and read-only
+funding facts. They cover fixed and repeated-X costs, physical-source reuse,
+partial/unsupported funding, bounded work and current source identity. Java's
+`NumericDecisionProjectionTest` exercises real scripts and projection purity;
+`AutomatedPaymentJourneyTest` follows an actual variable-cost cast through
+manual payment, the stack and its resolved counters. These checks share the
+existing runners and engine process paths. Campaign numeric records separately
+retain accepted choices, same-source payment/public events and observed
+counters/power/toughness; source correlation alone does not prove invocation
+ownership or that a chosen value caused every later counter. A bounded campaign
+which never draws the relevant card reports missing coverage. Cancellation
+replays link earlier same-source context, not an inferred owning cast or trigger.
+
+The same finite-resource and color-assignment oracles exercise the neutral
+`Mana.Planning` core directly and through the AI adapter. Native
+`ManaFundingWireChecks` decode actual payment/source-preview shapes and reject
+foreign resources, invented pool units, injected action handles and malformed
+metadata. Explicit current pool applicability remains distinct from legacy
+missing knowledge and from a nominal funding witness. Client-session checks
+revoke source previews on revision changes and preserve exact command permissions.
+Real Java payment journeys exercise manual source use and floating-pool spending,
+checking that each publication shrinks the unpaid bill without mutating it during
+a source-catalog read. The authored `mana-payment.v1` presentation journey uses
+those contracts and ordinary pointer input; it is not a second rules simulator.
+Its geometry and interaction assertions support actual rendered review at both
+small and large windows, which remains necessary to assess readability.
+The real two-color source journey also checks explicit output intent through
+priority and payment, invalid/stale intent rejection before mutation, and the
+human callback's distinct producer and original paying source. Native
+`ManaColorPaymentWireChecks` rejects malformed bill/payer data, action handles
+in read-only context and parent payment commands during the color choice.
+The authored child continuation retains the bill while ordinary pointer hover
+reads the producer and an offered color orb answers only the current child.
+`ManaReductionWireChecks` distinguishes unknown progress from exact zero, rejects
+injected handles and unrelated prompts, and proves that covered cost metadata
+cannot enable disabled Done or parent payment commands. The source-query
+integration journey opens the real reader and waits for its current action
+generation before establishing its strict repeated-read baseline. Cached state
+observation is not a UI-queue barrier; a rejected purity read is retained and
+fails that attempt rather than being retried unchanged.
+Golden payment and contribution witnesses come from the exact immutable frame
+used for each accepted command. A separate outer poll may miss an intermediate
+bill already answered by the policy; it is not that command's observation.
+Ordered current-cost receipts and independent public stack/battlefield results
+remain separate requirements.
+The real `PlaneswalkerCombatRegressionTest` follows lethal combat through the
+defending permanent's departure and checks every audience's surviving attacker,
+blocker relations, absent defender and continued rules progress. Native wire,
+presentation and policy checks distinguish explicit absence from the legacy
+player fallback, retain blocker links, reject malformed real identities and
+avoid player arrows, life-threat estimates or commands for the absent target.
+These regressions use the existing Java and headless lanes rather than another
+randomized deck, golden fixture or JVM.
+
+On failure, `private-failure-manifest.json` identifies the last completed raw
+observation batch, exact seat scopes, stage and original exception before teardown.
+If decoding failed before that batch could be accepted, the separate
+`private-rejected-observation.json` retains the actual rejected wire batch.
+The last completed batch can be valid and must not be mistaken for the failing
+input. Both are host-private diagnostics, never policy inputs or capabilities.
+The manifest labels
+`last-before-mechanical-failure.json` as the last policy-evaluated request, which
+can precede a frame-validation failure. The raw batch is diagnostic data without
+execution authority; it can reproduce contract validation without replaying a
+command. Secondary artifact errors do not replace the original failure.
+
+Campaign disclosure checks compare the bot's private-zone windows with its
+current disclosed faces and action permissions. They are consistency checks,
+not an independent proof that the provider correctly granted every entitlement.
+Real rules-side privacy and revocation scenarios remain necessary.
+Current anonymous option faces and explicit read-only disclosures share one
+face/multiplicity budget across hidden zones. They do not authorize extra
+physical identities, selection flags or source catalogs. A prior reveal is not
+permission for the next choice. The mixed-hand Thought-Knot Seer fixture in
+`ScryVisibilityTest` checks eligible nonlands separately from a currently
+disclosed land, other audiences, and immediate revocation while rules cleanup
+is held. Decoder checks keep that readable land outside the selectable indices.
+An optional search confirmation may retain one independently disclosed own top
+card, with its exact readable face and no selection or source-action authority.
+That does not authorize any library contents during an entered search. The
+native disclosure regressions cover this distinction and extra-card, foreign-owner
+and mismatched-face negatives in the existing headless lane; the real
+`PlayAccessPublicationTest` checks continuous top permission before accepting a
+search and its suppression during the actual search.
+
+This checks actual development, paid abilities and combat, without treating
+progress counters as evidence that the opponents are fun. Java
+`AutomatedSeatBoundaryTest`, `SourceActionDomainTest` and
+`AutomatedPaymentJourneyTest` cover the controller role, public/private audiences,
+complete source discovery and restricted/colored/floating mana. The client runner
+also covers the host's no-replay/error handling and stable per-turn route memory.
+
 Optional decision timing runs in existing suites. `DecisionTempoTest` advances
 fake monotonic time through presentation, paused processing, simultaneous seats,
 grace, warning-only expiry and repeated unattended priority windows without
@@ -71,6 +314,47 @@ set, sharing the AI-seat shard. It waits for the actual automatic pass after a
 visible stack announcement, rather than assuming the earlier shorter animation
 duration. The existing headless arrival check separately verifies that unchanged
 observations do not restart that announcement.
+
+`StackResolutionRegression` in the existing client suite exercises a frozen
+71-entry intent through individual presentation boundaries, ordinary guarded
+passes, Take control, inspection pause/resume, required choices, retargeting,
+new entries, stale scopes and connection failure. `StackResolutionTest` is the
+real Java counterpart: Blue Sun's Zenith draws 35 with Skulker, Toothy and Pir,
+creating 70 independent triggers; another real response brings the stack to 71.
+It verifies every actual resolution and Pir's resulting counters, response and
+immediate-mana interruption, and a required choice between pass acceptance and
+execution. These are authority and rules checks, not proof of readability.
+`AiHostRegression` also checks fresh authority after a public pacing beat,
+divergent viewer-local event sequences and retention of original host failures.
+`AutomatedWireFailureChecks` verifies the shipping provider's private diagnostic
+quarantine separately from accepted replay frames and public exception text.
+`ActionOccurrenceCoherenceTest` also follows an actual warped Haliya into its
+simultaneous delayed/draw triggers while a Swords to Plowshares offer has current
+target candidates. Every candidate must bind to an entitled current occurrence;
+historical portraits cannot rotate its identity. `MatchActivityTest` separately
+protects equal-physical-ID historical views, exact event-time movement anchors
+and real concealment. The occurrence fixture also rotates a real command-zone
+Rhys cast through every seat: its transient pre-stack payment portrait must
+share its payment-owner identity after all audience visibility updates, remain
+readonly, survive repeated publications and finish through actual mana payment.
+The original floating-mana lifecycle checks preserve the same card's visual
+identity from hand through payment and stack to battlefield; a missing original
+identity must fail rather than be hidden by advancing into a later turn.
+The final commander-damage loss regression checks retained final rules-zone
+views, shared public IDs and revoked input scopes. The native terminal journey
+renders the result and another terminal update with readonly legacy faces;
+active public battlefield faces missing their identity still fail the batch gate.
+The campaign's
+Forge-specific batch check compares same-board public occurrence projections
+before policy evaluation, rather than waiting for a policy frame to validate.
+Different private hands, game/revision boundaries and historical stack portraits
+remain separate. This adds no second rules model or extra random campaign.
+The real multi-seat target-continuation regression checks current restrictions
+after one target is chosen, selected-card undo, pure queries, a valid subset's
+completion and its actual resulting zone changes. `AiTargetContinuationRegression`
+checks that existing policy consumes these current facts and that fresh prompt
+UUIDs cannot renew a single actual input's work allowance. These protect a
+no-progress loop independently of wall-clock campaign timeouts.
 The crowded-field window journey also joins the fast release set, sharing the
 three-player lobby shard. It uses the production battlefield faces at the former
 threshold, mixed states, duplicate tokens, distinct names and the canonical
@@ -130,6 +414,13 @@ dotnet $driver --smoke-presentation --profile '<fresh-profile>'
 The test flags belong to `Mana.Table.Tests`, not the shipped `ManaTable.exe`.
 Choose an explicit fresh `--profile` for every independent journey.
 
+`ForgeCommandBoundaryChecks` in `--smoke-presentation` controls two observation
+completions without sleeps or a Java process: the displayed replica and provider
+command context must retain the newer revision when the older read finishes.
+The current command remains valid, the retired prompt remains rejected, and
+same-revision refresh, replacement-match revisions and foreign scopes retain
+their separate semantics.
+
 The existing `--smoke-headless-presentation` lane includes `TokenArtworkChecks`:
 enter Tokens through the production builder, save/reset exact printing choices,
 retain the save acknowledgement and card count, reject an old revision's hit,
@@ -150,6 +441,16 @@ These modes create no game window or graphics device. They exercise the same
 application and typed-frame composition used by the real window. Preserve their
 result/trace JSON when diagnosing a failure; submitted drawing data does not
 prove that a physical window is clear or correctly clipped.
+
+The headless lane also reads a modal spell/land card, checks both offered-action
+orders and rejects a land offer replaced between press and release. It also
+checks that the reader's printed-cost caption persists after the pointer leaves
+the card; an action without cost metadata cannot borrow that printed cost. The
+GPU `--smoke-hand-placement` journey covers the same explicit land choice and
+its authored tapped result at both CI window sizes. It accepts `--art-cache`
+for local artwork review; uncached images use the deterministic fixture pattern.
+These controlled-provider checks preserve command authority without simulating
+land rules or supplying human approval of the action hierarchy.
 
 The presentation lane also runs the existing `AdvanceRegression` cases and writes
 `advance-results.json`: required decisions, visible checkpoints, stale/duplicate
@@ -509,6 +810,8 @@ For a relevant graphical regression, use the same test driver, for example:
 
 ```powershell
 dotnet $driver --smoke-card-reading --size 1000x740 --profile '<fresh-profile>'
+dotnet $driver --smoke-mana-payment --size 1000x740 --profile '<fresh-profile>'
+dotnet $driver --smoke-mana-payment --headless --profile '<fresh-profile>'
 ```
 
 Other focused modes include `--smoke-priority-flow`,

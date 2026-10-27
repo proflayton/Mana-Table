@@ -29,7 +29,6 @@ import forge.player.PlayerControllerHuman;
 import forge.util.ITriggerEvent;
 import forge.util.Lang;
 import forge.util.Localizer;
-import forge.util.ThreadUtil;
 
 import java.util.List;
 
@@ -127,7 +126,7 @@ public class InputConfirmMulligan extends InputSyncronizedBase {
         //pfps leave this as is for now - it is confirming during another confirm so it might need the popup
         if (getController().getGui().confirm(cView, "Use " + cView + "'s ability?")) {
             cardSelectLocked = true;
-            ThreadUtil.invokeInGameThread(() -> {
+            player.getGame().getAction().invoke(() -> {
                 final CardCollectionView hand = c0.getController().getCardsIn(ZoneType.Hand);
                 final int handSize = hand.size();
                 for (final Card c : hand.threadSafeIterable()) {

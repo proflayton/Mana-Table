@@ -79,7 +79,7 @@ internal sealed partial class TableApplication
         ? [Lab.AdvanceTo(stage)] : Lab.Replay(stage), BattlefieldFocused ? zonePlayer : null);
     private void PresentLab(IReadOnlyList<GameSnapshot> replay, int? focusOwner = null)
     {
-        StopQuietPriority(); CollapseCardReading();
+        StopQuietPriority(); StopStackResolution(); expandedStackWorkload = ""; CollapseCardReading();
         automatic = false; overlay = ""; zoneName = null; selectedChangeId = null; changePage = 0;
         error = ""; commandFailure = false; notice = "";
         foreach (var state in replay) Accept(state);

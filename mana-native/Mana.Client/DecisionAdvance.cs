@@ -20,6 +20,41 @@ public sealed class DecisionAdvance(IMatchConnection connection)
         return await RunBatchAsync(initial, token, canContinue, shouldPresent, cancellation);
     }
 
+    public async Task<GameSnapshot?> RunStackAsync(GameSnapshot initial, StackResolutionIntent intent,
+        Func<GameSnapshot, GameSnapshot, bool> shouldPresent, CancellationToken cancellation = default)
+    {
+        ArgumentNullException.ThrowIfNull(intent);
+        var clock = Stopwatch.StartNew();
+        var state = initial;
+        int passes = 0;
+        try {
+            while (!cancellation.IsCancellationRequested) {
+                if (!intent.CanContinue(state) || shouldPresent(initial, state)) return state;
+                var command = intent.NextPass(state);
+                if (!intent.IsActive) return state;
+                if (command != null) {
+                    if (cancellation.IsCancellationRequested) return state;
+                    await connection.ExecuteAsync(command);
+                    intent.Submitted(state); passes++;
+                }
+                // Cancellation never hides the result of a pass already sent.
+                var next = await connection.ObserveAsync();
+                if (next == null) { intent.Stop(); return null; }
+                if (next.Id != state.Id) { intent.Stop(); return next; }
+                if (next.Revision >= state.Revision) state = next;
+                // Yield at every real effect boundary. The application presents
+                // its full beat before it starts another batch of this intent.
+                if (!intent.CanContinue(state) || shouldPresent(initial, state)) return state;
+                if (clock.ElapsedMilliseconds >= 350 || passes >= 32) return state;
+                if (command == null || state.Decision == null) {
+                    try { await Task.Delay(10, cancellation); }
+                    catch (OperationCanceledException) { return state; }
+                }
+            }
+            return state;
+        } catch { intent.Stop(); throw; }
+    }
+
     private async Task<GameSnapshot?> RunBatchAsync(GameSnapshot initial, string? quietToken, Func<GameSnapshot, bool> policy,
         Func<GameSnapshot, GameSnapshot, bool> shouldPresent, CancellationToken cancellation)
     {

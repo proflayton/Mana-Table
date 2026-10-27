@@ -54,6 +54,102 @@ The ready message advertises `protocolVersion: 2` and the `seat-sync`, `snapshot
 `command-receipts`, `resume`, `table-social`, `deck-workshop`, `deck-analysis`, and
 `semantic-priority-actions` and `explicit-deck-setup` capabilities. All connected players
 need this build; the seat synchronization handshake now uses version 3.
+
+The optional `automated-seats` capability is confined to the private desktop
+process pipe. `automatedEnable` selects external policy controllers before table
+creation. `automatedState` returns independent private seat observations and
+complete timing-legal action domains with structured costs/effects;
+`automatedAction` takes the same scoped semantic reply plus `seatId`.
+Additive operation graphs retain source/recipient/target bindings, sequence and
+mode/conditional structure, and explicit known/unknown facts. Mana production
+alternatives distinguish a choice of colors from a simultaneous bundle. These
+are nominal facts, not a legality certificate: base mana costs have unknown
+adjustment knowledge, while the current payment exposes its actual unpaid bill.
+A known alternative with an empty color map is exact zero production; it is
+distinct from unknown production. Supported source-counter quantities use
+current visible state only when costs and other effects cannot change that count.
+The exact `Combo ColorIdentity` operator can use the source controller's public
+commander identity, including partner unions; a colorless identity produces no
+colored mana and does not invent `{C}`. This bounded tap-only projection leaves
+spending restrictions, added effects and active mana/tap interactions unknown.
+The ambient check reads current public rules characteristics, including traits
+currently granted to face-down permanents; it never reads their concealed
+original faces. An unrelated ordinary face-down permanent does not erase known
+commander-color alternatives or an available nominal tap resource.
+Graphs are finite and audience-filtered; candidate references never grant action
+handles. Unmodeled conditions and resource coupling remain explicit.
+Private decision semantics can add `numeric` for an explicit rules announcement:
+`purpose`, entitled `sourceCardId`, declared `costs`, `manaCostKnowledge`, and
+read-only `funding`. Funding groups production routes by physical source, with
+pool counts and explicit knowledge/eligibility. It contains no action IDs or
+card keys. The initial own-battlefield/unrestricted-pool projection is partial;
+it can witness nominal funding but cannot certify that no other resources exist.
+Current mana-bearing action semantics also carry `prospectiveFunding`, using that exact
+bounded funding projection before a payment starts. It contains no future
+decision or action handles. Policies can compare the same source restrictions
+and unresolved outcome interactions before committing to a variable-cost action;
+ordinary production alternatives remain nominal facts.
+Ordinary human `sourceActions` responses expose a closed `costPreview` on those
+same already offered actions: declared `costs`, `manaCostKnowledge` and `funding`.
+The preview has no operation graph, target domain or extra action handles. The
+response's `revision` identifies the published frame; an optional request
+`expectedRevision` rejects stale reads without advancing the game. Each owned
+mana-payment prompt freshly publishes actual `payerId`, `unpaidManaParts`, `fundingContext` and
+`usablePoolManaColors`, so manual payments shrink the displayed bill and consumed
+inputs cannot retain those facts. The final adjusted bill remains authoritative.
+Each unpaid part is `{symbol,count}`: generic mana uses one numeric symbol such
+as `{129}`, while colored and hybrid symbols retain their exact multiplicity.
+Projection visits distinct shard kinds without allocating one object per unpaid
+mana. Older public `unpaidMana` arrays remain a client compatibility input only.
+`AnnounceX` comes from the controller callback, never a localized prompt label.
+This additive private metadata needs no persisted-data migration; older
+observations without it retain unknown numeric purpose. Actual current payment
+inputs still own spending and activation authority.
+Actual Convoke, Improvise and related reduction selections additionally expose
+public `manaReduction: {remainingManaParts: [...]}` using the same counted bill.
+An absent context means unknown progress; a present empty list means the cost
+is fully reduced. Current selectable cards are productive contributors according
+to the engine's reduction rules, plus already selected cards retained for undo.
+These facts neither finish the selection nor replace its current Complete button.
+Private decision episodes follow that same actual reduction input across refreshed
+scopes and its nested color choices; a new input receives a separate episode.
+This ownership now applies to every actual controller Input: refreshed prompt
+UUIDs and nested GUI choices share its opaque private `episodeId`, while a new
+input receives a new token. Combat retains its existing causal declaration
+grouping. This is input lifetime, not a complete cast/cost/resolution lifecycle.
+Current target card offers use the same nonmutating joint-admissibility checks
+as an actual target click. Already selected cards remain selectable/highlighted
+for undo; they are distinct from productive additions. A Complete offer remains
+authoritative even when the maximum target count has not been reached.
+Current mana inputs can add `payment` provenance: `purpose` (`SpellCost`,
+`ActivatedAbilityCost`, `TriggeredAbilityCost`, `EffectCost` or `Unknown`), actual
+`payerId`, entitled `sourceCardId` and the input's `mandatory` fact. The current
+unpaid symbols remain the bill; this metadata does not reuse the printed source
+cost or grant permission to spend. Canceling an optional triggered payment is
+a valid decline, distinct from abandoning a spell that the policy initiated.
+The payer can differ from a source's controller or the observing controller.
+Provenance ends with the current input; hidden source identities are not added.
+Ordinary non-library effect choices may also carry current `disclosedCards`
+rows `{label, card}` for delayed-reveal faces absent from the eligible options.
+These anonymous portraits have no index, physical identity, card key or action
+permission. Native decoding places them in the current selection's read-only
+disclosures; only ordinary offered indices can be chosen. A previous reveal
+cannot supply this permission after its own scope has ended. Existing library
+choice metadata remains separate; no persisted-data migration is required.
+Accepting a decision revokes its temporary hidden-card window and card keys in
+the resolving receipt, independently of queued rules cleanup. Persistent look
+permissions remain readable. Past authorized knowledge is not a current offer
+or permission to publish a library window without its owning choice.
+`automatedFault` stops the table with an explicit diagnostic; it never substitutes
+the legacy strategy. These commands are absent from network seat dispatch and
+cannot be addressed using a `connectionId`.
+`automatedSimulationStart` takes four Commander opponent IDs (`green`, `red`,
+compatible `preset:` IDs or `deck:<saved-id>`), creates only automated seats and
+returns a public read-only spectator. `automatedSimulationState` observes its
+cached public state; `automatedSimulationStop` requires its `sessionId`.
+Spectator ID -1 has no action keys, prompt, hand/library faces or private activity.
+Ordinary live tables retain their human-seat invariant. Existing deck files,
+network protocol and non-negotiating clients keep their previous formats.
 Printing IDs are opaque, case-sensitive identifiers; clients must round-trip them.
 `cardPrintings` takes `{cardId, offset, limit, text, finish}` (limit 1–200, default 6) and returns
 a catalog page of exact printings of that card, including alternate artwork and
@@ -125,6 +221,11 @@ with a sideboard, and verifies unknown-card detection. It does not start a match
 Tests include lightweight projections and real four-seat rules scenarios that load
 the checked-in card database. Keep the complete `forge-gui/res` directory available;
 the initial resource scan can take time. CI also tests Java 21 compatibility.
+Packaging additionally creates `forge-engine-fixtures.jar`, containing only the
+test-classpath fixture launcher. It depends on the adjacent `forge-engine.jar`
+and uses the same production controllers, protocol and rules with pregame
+registered-player setup. It is verified separately in CI and is never shipped
+inside the native application or accepted as a production fixture command.
 
 To run the private command host directly, supply the resource directory and a
 separate writable **decks directory** (not its parent profile):
@@ -190,12 +291,15 @@ before a game. `seat` is its zero-based slot index, `type` is `AI` or `OPEN`, an
 `description`); omitted AI choice uses the default. Only the host may call it,
 against the current table ID, and seat zero or a connected human is never
 replaceable. The host validates the selected deck with the same deck checks as
-other match setup. Arbitrary saved AI decks and mid-game takeover are unsupported.
+other match setup. With `automated-seats` negotiated, compatible saved decks
+also appear as `deck:<saved-id>` choices and are detached/validated at start.
+Mid-game takeover is unsupported.
 
 Lobby slots add `type: AI` and `opponentId`, retain their public `deck` name, and
 report AI readiness automatically. AI slots do not claim a human connection;
 joining takes an open human seat. Changing AI choices leaves human readiness
-unchanged. Match start uses actual Forge AI controllers with the selected decks.
+unchanged. Negotiated matches use the host's external policies through normal
+rules inputs; non-negotiating callers retain Forge AI controllers.
 Returning after a game preserves AI decks/readiness while humans ready again.
 
 ### Optional decision tempo (source candidate)
@@ -450,7 +554,14 @@ combat keywords on anonymous permanents while masking printed identity, rules
 text, mana, artwork and alternate faces. Anonymous battlefield occurrences can
 retain an opaque `combatId`; that ID never authorizes an action or identifies a
 hidden card outside its current public occurrence.
-Scoped selection keys authorize input; presentation IDs do not. The original
+Scoped selection keys authorize input; presentation IDs do not.
+Card identity fields (`key`, `visualId`, `combatId`) use empty strings when
+absent, including readonly historical faces. Native card values canonicalize
+legacy null identities without creating authority; scoped decision portraits
+still reject explicitly malformed identity fields. A finished table may retain
+exact cards from registered players' final rules zones for reading, with no
+pending choice or action domain.
+The original
 `GameStateMapper` excludes stack
 entries, combat assignments, attachments, counters, mana pools, temporary reveal
 prompts, face-down controller previews, and spectator sessions. Never serialize
@@ -603,7 +714,17 @@ has an opaque `id`, `kind` (`play`, `cast`, `activate`) and engine `text`.
 An action may additionally include `card` and `zone` for a disclosed linked spell.
 That preview has no action key or selection permission. Invoke the original
 source using `matchAction {sessionId, promptId, action: "useSourceAction", key,
-actionId}`. A prepared creature can therefore offer its actual spell copy in
+actionId}`. An exact mana action may additionally supply
+`manaOutput: {colors: {"R": 1}}`. This closed selection must match one finite
+known production alternative of that same current offered ability; it grants no
+action or source authority. Canonical positive W/U/B/R/G/C counts have a total
+limit of 1024. Validation precedes consuming the input and repeats on execution.
+The ordinary mana effect retains its selected alternative across payment and
+priority activation, including independent nested choices and simultaneous fixed
+bundles. Without this field, an explicit source action presents its genuine
+color choice instead of guessing a color from the unpaid bill. Legacy raw-card
+selection keeps its existing express-mana behavior.
+A prepared creature can therefore offer its actual spell copy in
 exile without pretending that casting is an activated ability of the creature.
 Source identity, linked occurrence, location, visibility and engine legality are
 revalidated at invocation; reading does not authorize a later changed action.
@@ -734,6 +855,36 @@ outcome or a true draw merely from their kind or prose. During `resolving`, poll
 advance `revision`, turn/phase metadata, and activity while keeping the last stable
 board. `boardRevision` changes only when a fresh board snapshot is published.
 Clients can update status and history without rebuilding cards during AI work.
+
+Cast/ability and resolution entries may carry `stackId`, copied from the exact
+engine stack instance at the event boundary. This joins an announcement to its
+actual settlement; source names, source card IDs and activity cause IDs cannot
+establish that relationship. It is historical correlation, never action authority.
+Older providers omit it and clients must retain that uncertainty.
+
+Snapshots may also carry `stackInterruptionVersion`, a table-local monotonic
+generation for new actions, required choices and rollback/restart. Resolving
+already pending entries and their resulting counter/stat changes do not advance
+it. A finite current-stack continuation sends ordinary `passPriority` with the
+optional captured generation. The adapter validates both the current prompt
+and generation at acceptance and again on the owned input executor; a mismatch
+restores priority without passing. A guarded pass requires a nonempty stack.
+The client separately freezes exact current entry IDs, order, controller, kind
+and targets, stops for any new entry or required input, and retains no intent
+after that queue empties. This grants no permission to choose targets, pay costs,
+answer another seat or accept future triggers. Legacy providers without the
+generation retain ordinary passes but cannot arm this continuation. The additions
+are optional protocol-2 data; no deck or player-save migration is required.
+
+The private `automatedState` read can be superseded while source actions are
+being discovered. That exact consistency failure returns
+`errorCode: "observation-superseded"`, with no accepted observation or command
+receipt. The native adapter revokes its automated action scopes, and the host
+waits for its next ordinary complete observation before deciding again. It does
+not repeat an action, retain a partially discovered batch or parse exception
+prose. The same message without the typed code, or that code on an action
+request, remains an ordinary failure. Other protocol/decoding/strategy failures
+still stop automation and preserve diagnostics.
 
 Visible cards also have an opaque `visualId` for animation correlation. These
 handles are discarded on hidden-zone transitions and omitted for face-down or
@@ -886,6 +1037,18 @@ and a `mana` symbol on each choice. `sourceCard` remains an explicit snapshot of
 the source even when activation costs have sacrificed it. Answer with the
 original choice index. The shared GUI's default `chooseColor` hook delegates
 to the existing picker for other clients; the API adapter preserves the context.
+Genuine two-color choices use that same typed callback, rather than a generic
+yes/no confirmation. Singleton choices and remembered macro choices retain
+their existing engine behavior.
+When that genuine callback belongs to the currently owned mana payment, it also
+includes `manaPaymentContext: {payerId, unpaidManaParts, source}`. The readonly
+`source` (`cardId`, optional `card`, `controllerId`, `zone`) is the ability being
+paid for; the ordinary choice source remains the mana producer. These fresh
+counted-bill facts grant no source or pool gesture and end with that exact choice.
+Color choices outside a payment do not inherit an earlier cost.
+Nested Convoke color choices retain their actual reduction bill through this
+same context. Their generic contribution is `{1}`, distinct from producing or
+spending `{C}`; the ordinary choice source remains the contributing creature.
 
 The match beta supports two-player Constructed and 2–6 player Commander games
 with one local human and AI opponents. `matchSetup.maxPlayers` reports the limit.
@@ -944,6 +1107,15 @@ the snapshot includes attacker candidates, legal blocker pairs, the selected
 defender, and any final block-validation problem. IDs refer to visible cards'
 `combatId`, falling back to `visualId`; face-down battlefield cards receive distinct
 opaque position handles, reset on zone changes, without exposing their identities.
+
+Each attack also reports `hasDefender`. When an attacked planeswalker or battle
+leaves combat, Forge keeps the attacking creature in combat without a current
+defender (CR 506.4c). The adapter reports `hasDefender: false` and `defender: null`,
+retaining the attacker, blockers, blocked status, and original `defendingPlayerId`
+for the blocking relation. That player is not a replacement damage recipient.
+Internal absent-target helpers receive no public card identity or name and are
+excluded from current defender choices. Clients treat an omitted `hasDefender`
+as true for older engine snapshots; false with a non-null defender is invalid.
 
 `matchAction {action: "block", attackerKey, blockerKey, sessionId, promptId}` toggles
 one block through the engine's normal input. Both card keys must belong to the

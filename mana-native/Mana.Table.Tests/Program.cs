@@ -24,6 +24,12 @@ internal static class Program
         testRun |= args.Contains("--smoke-printings");
         testRun |= args.Contains("--smoke-headless-presentation");
         testRun |= args.Contains("--smoke-headless-engine");
+        testRun |= args.Contains("--smoke-whole-seat-ai");
+        testRun |= args.Contains("--replay-ai-decision");
+        testRun |= args.Contains("--smoke-ai-campaign");
+        testRun |= args.Contains("--evaluate-ai-release");
+        testRun |= args.Contains("--smoke-mana-payment");
+        testRun |= args.Contains("--smoke-draw-triggers");
         testRun |= args.Contains("--smoke-cluttered-changes") || args.Contains("--smoke-headless-clutter");
         testRun |= args.Contains("--smoke-priority-flow") || args.Contains("--smoke-headless-priority-flow");
         testRun |= args.Contains("--capture-deck-workspace");
@@ -45,11 +51,25 @@ internal static class Program
             if (args.Contains("--smoke-priority-flow")) { PriorityFlowSmoke.Run(profile, size); return 0; }
             if (args.Contains("--smoke-recovery")) { RecoverySmoke.Run(profile, size); return 0; }
             if (args.Contains("--smoke-state-clarity")) { StateClaritySmoke.Run(profile, size); return 0; }
-            if (args.Contains("--smoke-hand-placement")) { HandPlacementSmoke.Run(profile, size); return 0; }
+            if (args.Contains("--smoke-hand-placement")) { HandPlacementSmoke.Run(profile, size, Arg("--art-cache")); return 0; }
             if (args.Contains("--smoke-allocation")) { AllocationSmoke.Run(profile, size); return 0; }
+            if (args.Contains("--smoke-mana-payment")) {
+                if (args.Contains("--headless")) ManaPaymentSmoke.RunHeadless(profile, (passed, description) => {
+                    if (!passed) throw new InvalidOperationException(description);
+                });
+                else ManaPaymentSmoke.Run(profile, size);
+                return 0;
+            }
+            if (args.Contains("--smoke-draw-triggers")) {
+                if (args.Contains("--headless")) DrawTriggersSmoke.RunHeadless(profile, (passed, description) => {
+                    if (!passed) throw new InvalidOperationException(description);
+                });
+                else DrawTriggersSmoke.Run(profile, size);
+                return 0;
+            }
             if (args.Contains("--smoke-onboarding")) { OnboardingSmoke.Run(profile, size); return 0; }
             if (args.Contains("--smoke-loading")) { LoadingSmoke.Run(profile, size); return 0; }
-            if (args.Contains("--smoke-full-battlefield")) { FullBattlefieldSmoke.Run(profile, size, args.Contains("--real-art"), args.Contains("--readable-crowd")); return 0; }
+            if (args.Contains("--smoke-full-battlefield")) { FullBattlefieldSmoke.Run(profile, size, args.Contains("--real-art"), args.Contains("--readable-crowd"), Arg("--art-cache")); return 0; }
             if (args.Contains("--smoke-commander-tax")) {
                 var scenario = new InteractionScenarioEngine(); scenario.Present(PresentationSmoke.CommanderTaxExample());
                 using var test = new TableWindow(TestTableServices.For(scenario), profile, null, null, size, initialState: scenario.State,
@@ -97,6 +117,9 @@ internal static class Program
                 test.Automation = new CardReadingSmoke(test.TestPort, scenario, selectionOnly: args.Contains("--smoke-compact-selection"), statesOnly: args.Contains("--smoke-card-states"));
                 test.Run(); return 0;
             }
+            if (Arg("--replay-ai-decision") is { } decisionReplay) {
+                AiDecisionReplayCommand.RunAsync(decisionReplay, profile).GetAwaiter().GetResult(); return 0;
+            }
             var bundle = Arg("--engine-resources") ?? Path.Combine(AppContext.BaseDirectory, "engine");
             if (!Directory.Exists(bundle)) throw new IOException("Missing bundled engine. Run the native packaging script first, or pass --engine-resources pointing to the package's resources directory.");
             var backend = Arg("--engine") ?? "forge";
@@ -104,7 +127,13 @@ internal static class Program
             var paths = new ForgePaths(Path.Combine(bundle, "runtime", "bin", "java.exe"), Arg("--engine-jar") ?? Path.Combine(bundle, "forge-engine.jar"), Path.Combine(bundle, "forge-res"), profile);
             if (args.Contains("--smoke-deck-import")) { DeckImportSmoke.Run(paths, Arg("--import-file") ?? Path.Combine(AppContext.BaseDirectory, "Fixtures", "annotated-toph.txt"), size); return 0; }
             if (args.Contains("--smoke-engine-startup")) { EngineStartupRegression.RunAsync(paths).GetAwaiter().GetResult(); return 0; }
-            if (args.Contains("--smoke-headless-engine")) { HeadlessEngineSmoke.RunAsync(paths).GetAwaiter().GetResult(); return 0; }
+            if (args.Contains("--smoke-headless-engine")) { HeadlessEngineSmoke.RunAsync(paths, Arg("--production-engine-jar"), Arg("--source-revision"), Arg("--source-manifest")).GetAwaiter().GetResult(); return 0; }
+            if (args.Contains("--smoke-whole-seat-ai")) { AiWholeSeatEngineCheck.RunStandaloneAsync(paths, args.Contains("--ai-complete")).GetAwaiter().GetResult(); return 0; }
+            if (args.Contains("--smoke-ai-campaign")) { AiEngineCampaign.RunStandaloneAsync(paths).GetAwaiter().GetResult(); return 0; }
+            if (args.Contains("--evaluate-ai-release")) { AiReleaseEvaluation.RunAsync(paths,
+                Arg("--production-engine-jar") ?? throw new ArgumentException("Release evaluation requires --production-engine-jar for exact production provenance."),
+                Arg("--source-revision") ?? throw new ArgumentException("Release evaluation requires --source-revision for the exact tested source."),
+                Arg("--source-manifest")).GetAwaiter().GetResult(); return 0; }
             if (args.Contains("--smoke")) { NativeSmoke.RunAsync(paths).GetAwaiter().GetResult(); return 0; }
             if (args.Contains("--smoke-ai")) { AiSmoke.RunAsync(paths).GetAwaiter().GetResult(); return 0; }
             if (args.Contains("--smoke-cleanup")) { CleanupSmoke.RunAsync(paths).GetAwaiter().GetResult(); return 0; }

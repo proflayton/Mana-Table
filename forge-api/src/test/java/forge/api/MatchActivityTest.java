@@ -14,6 +14,114 @@ import org.testng.annotations.Test;
 import static org.testng.Assert.*;
 
 public class MatchActivityTest {
+    @Test public void aCurrentVisibleReplacementKeepsItsDisplayAnchorWithoutGrantingHistoricalAuthority() {
+        var owner = new PlayerView(1, null); var observer = new PlayerView(2, null);
+        var hand = publicCard(211, "Known card", owner); hand.set(TrackableProperty.Zone, ZoneType.Hand);
+        var actual = new java.util.concurrent.atomic.AtomicReference<>(hand);
+        var identities = new MatchIdentities();
+        var own = new MatchActivity(owner, identities, view -> view == actual.get(), ignored -> actual.get());
+        var other = new MatchActivity(observer, identities, view -> view == actual.get(), ignored -> actual.get());
+        String anchor = own.visualId(hand); assertNull(other.visualId(hand));
+        var stack = publicCard(211, "Known card", owner); stack.set(TrackableProperty.Zone, ZoneType.Stack);
+        actual.set(stack); own.refreshVisibility(); other.refreshVisibility();
+        assertEquals(own.visualId(stack), anchor); assertEquals(other.visualId(stack), anchor);
+        assertNull(own.visualId(hand), "An earlier view does not acquire current source authority");
+        var battlefield = publicCard(211, "Known card", owner);
+        actual.set(battlefield); own.refreshVisibility(); other.refreshVisibility();
+        assertEquals(own.visualId(battlefield), anchor); assertEquals(other.visualId(battlefield), anchor);
+        stack.set(TrackableProperty.Zone, null);
+        own.refreshVisibility(); other.refreshVisibility();
+        assertEquals(own.visualId(battlefield), anchor, "Historical metadata cannot revoke the current public replacement");
+        var rollback = publicCard(211, "Known card", owner); rollback.set(TrackableProperty.Zone, ZoneType.Hand);
+        actual.set(rollback);
+        // All audiences reconcile before any one of them projects. A readable
+        // owner hand does not prevent the observer from revoking public identity.
+        own.refreshVisibility(); other.refreshVisibility();
+        String concealed = own.visualId(rollback);
+        assertNotEquals(concealed, anchor); assertNull(other.visualId(rollback));
+        assertNull(own.visualId(battlefield));
+        assertEquals(own.visualId(rollback), concealed);
+    }
+
+    @Test public void aDepartingPublicViewKeepsOnlyItsPreviouslyObservedHistoryAnchor() {
+        var viewer = new PlayerView(1, null);
+        var departing = publicCard(209, "Departing permanent", viewer);
+        var current = publicCard(209, "Current exile occurrence", viewer);
+        current.set(TrackableProperty.Zone, ZoneType.Exile);
+        var actual = new java.util.concurrent.atomic.AtomicReference<>(departing);
+        var identities = new MatchIdentities();
+        var activity = new MatchActivity(viewer, identities, view -> view == actual.get());
+        activity.onGameEvent(new GameEventTurnBegan(viewer, 1));
+        String known = activity.visualId(departing);
+        actual.set(current);
+        activity.onGameEvent(new GameEventCardChangeZone(departing,
+                new ZoneView(viewer, ZoneType.Battlefield), new ZoneView(viewer, ZoneType.Exile)));
+        var movement = activity.snapshot().get(1);
+        assertEquals(movement.cardId(), known, "A genuine public movement retains its event-time animation/history anchor");
+        assertNull(activity.visualId(departing), "That readonly history reference cannot become a current snapshot identity");
+        assertEquals(activity.visualId(current), known);
+        activity.onGameEvent(new GameEventCardDamaged(departing, null, 1, GameEventCardDamaged.DamageType.Normal));
+        assertNull(activity.snapshot().get(2).cardId(), "A historical view cannot borrow a newer view's recorded anchor, even with the same physical ID");
+        assertNull(activity.snapshot().get(2).impact().cardId());
+        departing.set(TrackableProperty.Zone, null);
+        activity.refreshVisibility();
+        assertEquals(activity.visualId(current), known, "Reading or concealing a historical view cannot alter the live generation");
+        var unknown = publicCard(210, "Unobserved historical permanent", viewer);
+        activity.onGameEvent(new GameEventCardChangeZone(unknown,
+                new ZoneView(viewer, ZoneType.Battlefield), new ZoneView(viewer, ZoneType.Exile)));
+        assertNull(activity.snapshot().get(3).cardId(), "An event cannot mint a current identity for an unobserved historical portrait");
+        current.set(TrackableProperty.Zone, ZoneType.Library);
+        activity.refreshVisibility();
+        current.set(TrackableProperty.Zone, ZoneType.Exile);
+        assertNotEquals(activity.visualId(current), known, "Real concealment still revokes the current generation");
+        assertEquals(movement.cardId(), known, "Retained history is detached and never rewritten to a later generation");
+    }
+
+    @Test public void aHistoricalEqualIdPortraitCannotRevokeTheCurrentVisibleOccurrence() {
+        var viewer = new PlayerView(1, null);
+        var current = publicCard(208, "Current permanent", viewer);
+        var historical = publicCard(208, "Historical trigger portrait", viewer);
+        assertEquals(historical, current, "Forge CardView equality deliberately identifies the physical card only");
+        var identities = new MatchIdentities();
+        var first = new MatchActivity(viewer, identities, view -> view == current);
+        var second = new MatchActivity(new PlayerView(2, null), identities, view -> view == current);
+        String currentId = first.visualId(current);
+        assertNull(first.visualId(historical), "Even a readable historical face grants no current occurrence ID");
+        assertEquals(historical.getCurrentState().getName(), "Historical trigger portrait", "The historical portrait remains readable");
+        historical.set(TrackableProperty.Zone, null);
+        assertNull(first.visualId(historical));
+        assertEquals(first.visualId(current), currentId);
+        assertEquals(second.visualId(current), currentId);
+        assertNull(second.visualId(historical));
+        first.refreshVisibility(); second.refreshVisibility();
+        assertEquals(first.visualId(current), currentId);
+        assertEquals(second.visualId(current), currentId);
+        current.set(TrackableProperty.Zone, ZoneType.Library);
+        first.refreshVisibility(); second.refreshVisibility();
+        assertNull(first.visualId(current));
+        current.set(TrackableProperty.Zone, ZoneType.Battlefield);
+        assertNotEquals(first.visualId(current), currentId, "Real concealment still revokes the current occurrence");
+    }
+
+    @Test public void aLateAudienceRevocationCannotEraseANewerAuthorizedOccurrence() {
+        var owner = new PlayerView(1, null); var observer = new PlayerView(2, null);
+        var card = publicCard(207, "Private occurrence", owner);
+        var identities = new MatchIdentities();
+        var own = new MatchActivity(owner, identities); var other = new MatchActivity(observer, identities);
+        String publicId = own.visualId(card);
+        assertEquals(other.visualId(card), publicId);
+        // A permission can end without a movement event, just as cast rollback
+        // restores a zone directly. The two audiences need not refresh together.
+        card.set(TrackableProperty.Zone, ZoneType.Library);
+        own.refreshVisibility();
+        card.set(TrackableProperty.PlayerMayLook, new forge.trackable.TrackableCollection<>(owner));
+        String privateId = own.visualId(card);
+        assertNotEquals(privateId, publicId, "Concealment still revokes the previously public occurrence");
+        other.refreshVisibility();
+        assertNull(other.visualId(card));
+        assertEquals(own.visualId(card), privateId, "A stale observer must not revoke a different, newly authorized occurrence");
+    }
+
     @Test public void actualDamageKeepsItsOwnRecipientAndPublicOccurrenceAcrossDeparture() {
         var viewer = new PlayerView(1, null); var opponent = new PlayerView(2, null);
         var source = publicCard(201, "Damage source", viewer);

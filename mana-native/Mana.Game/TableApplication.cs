@@ -293,7 +293,8 @@ internal sealed partial class TableApplication : IDisposable
         // Give a ready pass precedence over starting another observation. Use this
         // update's pointer position so entering a card pauses Auto before Draw.
         bool autoBlocked = AutomaticInteractionPause() != DecisionDockPauseReason.None;
-        bool quietReserved = UpdateQuietPriority(autoBlocked);
+        bool stackReserved = UpdateStackResolution(autoBlocked);
+        bool quietReserved = stackReserved || UpdateQuietPriority(autoBlocked);
         if (!quietReserved && (!automatic || held || autoBlocked)) session.CancelAdvance();
         if (!quietReserved && !ExperienceLabOpen && !session.NeedsRecovery && fixture == null && matchPresentation.Ready(now) && !busy && !polling
             && match is { } currentState && TurnGuide.CanAutoPass(currentState, automatic, held, preferences.Stops, autoBlocked)) {
@@ -310,7 +311,7 @@ internal sealed partial class TableApplication : IDisposable
         PreparePresentation(time);
     }
     private void SetAutomatic(bool value) { automatic = value; preferences = preferences with { Automatic = value }; SavePreferences(); }
-    private void SavePreferences() { StopQuietPriority(); session.CancelAdvance(); try { preferences.Save(profile); } catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { error = "Could not save settings: " + ex.Message; } }
+    private void SavePreferences() { StopQuietPriority(); StopStackResolution(); session.CancelAdvance(); try { preferences.Save(profile); } catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { error = "Could not save settings: " + ex.Message; } }
     private bool Send(DecisionCommand? command, bool confirmedTurnPass = false)
     {
         if (command == null || fixture != null || session.NeedsRecovery || match?.Id != command.GameId || match.Decision?.Id != command.DecisionId) return false;
@@ -326,6 +327,7 @@ internal sealed partial class TableApplication : IDisposable
             return false;
         }
         turnPassRequest = null;
+        StopStackResolution();
         if (command is not PassForNow) StopQuietPriority();
         CancelReleasedPlayIntent();
         error = ""; commandFailure = false;
@@ -342,6 +344,8 @@ internal sealed partial class TableApplication : IDisposable
         float frameElapsed = (float)(time.TotalGameTime.TotalSeconds - lastPresentationTime);
         lastPresentationTime = time.TotalGameTime.TotalSeconds;
         canvas.TextScale = preferences.TextScale;
+        matchPresentation.HoldAnnouncements(now, expandedStackWorkload.Length > 0 || match?.Decision is { Payload: not PriorityPayload }
+            || AutomaticInteractionPause() is DecisionDockPauseReason.Inspection or DecisionDockPauseReason.Overlay);
         PrepareShellPresentation();
         PrepareDeckInteraction();
         ValidateStudyFocus();

@@ -16,8 +16,8 @@ internal sealed partial class TableApplication
     {
         attachmentBadges.Clear(); attachmentConnections.Clear();
         battlefieldLabels.Clear(); battlefieldStatsBounds.Clear(); counterAnchors.Clear();
-        choiceOrderBadges.Clear();
-        stackRows.Clear(); prioritySeats.Clear();
+        choiceOrderBadges.Clear(); manaColorPaint.Clear();
+        stackRows.Clear(); stackWorkloadPaint.Clear(); prioritySeats.Clear();
         changeCalloutBounds = null; highlightedChangeTargets.Clear(); highlightedChangeSource = null;
         var state = match!;
         DrawTableSurface();
@@ -42,7 +42,7 @@ internal sealed partial class TableApplication
         // Your seat stays in front of the fan and readable during card travel.
         if (state.Viewer is { } local) DrawHero(local, SeatHero(local.Id), true, 3);
         DrawPriorityHandoff();
-        DrawGameHeader(); DrawCombatBar(); DrawActionCallout();
+        DrawGameHeader(); DrawCombatBar(); DrawActionCallout(); DrawPublicAnnouncement();
         DrawTurnCallout();
         if (dragging && dragSource?.Card is { } heldCard) {
             bool legal = LegalDrop(HitAt(pointer));
@@ -59,6 +59,10 @@ internal sealed partial class TableApplication
         }
         hovered = !dragging ? HitAt(pointer)?.Card : null;
         if (!OverlayOpen && !CardCollectionOpen) DrawReaderControls();
+        // BeginFrame clears composed cards. Resolve the current reader and its
+        // offer only after those cards have been prepared for this frame.
+        PrepareManaJourney();
+        DrawManaJourney();
         // Decision text and its controls have priority over card readers and
         // held cards. Their input regions are registered last for the same reason.
         if (!BattlefieldFocused && !OverlayOpen && !AbilityActionPending && (!CardCollectionOpen || EmptyPublicCollection)) { DrawDecisionDock(); }
@@ -205,7 +209,14 @@ internal sealed partial class TableApplication
                 canvas.Line(new(r.X + 20, r.Y + typeTop + 55), new(r.Right - 20, r.Y + typeTop + 55), Muted * (.4f * opacity));
                 canvas.Text(card.Text, r.X + 20, r.Y + typeTop + 74, Ink * opacity, .78f, r.Width - 40, Math.Max(1, (r.Height - typeTop - 99) / 27));
             } else {
-                canvas.Text(card.Name, r.X + 5, r.Y + 5, Ink * opacity, pose.Size.X > 100 ? .67f : .47f, r.Width - 10, pose.Size.X > 100 ? 3 : 2, true);
+                float nameSize = pose.Size.X > 100 ? .67f : .47f;
+                int nameWidth = r.Width - 10, nameHeight = Math.Max(0, r.Height - 37);
+                // Missing artwork must not turn identity into an ellipsis.
+                // Small battlefield cards keep the complete source hover name.
+                if (nameWidth > 0 && card.Name.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries)
+                        .All(word => canvas.TextWidth(word, nameSize, true) <= nameWidth)
+                    && canvas.TextSize(card.Name, nameSize, nameWidth, 80, true).Y <= nameHeight)
+                    canvas.Text(card.Name, r.X + 5, r.Y + 5, Ink * opacity, nameSize, nameWidth, 80, true);
                 canvas.Text(card.ManaCost == "no cost" ? "" : card.ManaCost, r.X + 5, r.Bottom - 27, Gold * opacity, .54f, r.Width - 10, 1);
                 if (pose.Size.X > 130) canvas.Text(card.Type, r.X + 6, r.Y + (int)(r.Height * .62f), Muted * opacity, .5f, r.Width - 12, 2);
             }
@@ -239,9 +250,9 @@ internal sealed partial class TableApplication
         foreach (var attack in combat.Attackers) {
             if (!cardPositions.TryGetValue(attack.CardId, out var attacker)) continue;
             Vector2? destination = null;
-            if (attack.Defender is { Kind: "card" } defender) {
+            if (attack.HasDefender && attack.Defender is { Kind: "card" } defender) {
                 if (cardPositions.TryGetValue(defender.Id, out var target)) destination = target.EdgeToward(attacker.Center, 6);
-            } else if (heroPositions.TryGetValue(attack.DefendingPlayerId, out var player)) {
+            } else if (attack.HasDefender && heroPositions.TryGetValue(attack.DefendingPlayerId, out var player)) {
                 var delta = attacker.Center - player;
                 destination = player + (delta.LengthSquared() > 0 ? Vector2.Normalize(delta) : Vector2.UnitY) * (attack.DefendingPlayerId == match.ViewerId ? 51 : 40);
             }
@@ -262,14 +273,16 @@ internal sealed partial class TableApplication
     {
         var state = match!;
         var decision = decisions.Presentation?.Payload == null ? null : state.Decision;
+        var paymentSource = decision?.Payload is OptionsPayload { ManaPaymentContext: { Source: { } parent } }
+            ? parent : decision?.Payload is PaymentPayload or EntitySelectionPayload { ManaReduction: not null } ? decision.Context.Source : null;
         // A source reference is context, not a stack object. In particular a
         // priority snapshot can retain the source of the preceding interaction.
         // Only real stack entries belong in the stack presentation.
-        if (state.Stack.Length == 0 && (decision?.Payload is PriorityPayload
+        if (state.Stack.Length == 0 && paymentSource?.Card == null && (decision?.Payload is PriorityPayload
             || decision?.Context.Source?.Zone == "Battlefield")) return;
         // These journeys point to the existing source and actual library piles.
         // Do not create another card copy in the center of the table.
-        if (DecisionLayout.UsesSourceWorkspace(decision)) {
+        if (paymentSource?.Card == null && DecisionLayout.UsesSourceWorkspace(decision)) {
             if (state.Stack.Length > 0) { DrawStackFlow(); DrawPendingSpellCards(); }
             return;
         }
@@ -278,21 +291,23 @@ internal sealed partial class TableApplication
         // remains the source on the table; do not manufacture a stack copy.
         if (state.Stack.Length == 0 && (AbilityActionPending || SelectingActionTarget)) return;
         if (state.Stack.Length == 0 && decision?.Context.Source?.Card == null) return;
-        bool payingSource = decision is { Payload: PaymentPayload, Context.Source.Card: not null }
+        bool payingSource = paymentSource?.Card != null
             || !SelectingActionTarget && decision is { Payload: EntitySelectionPayload { Players.Length: > 0 }, Context.Source.Card: not null };
         if (state.Stack.Length > 0 && !payingSource) { DrawStackFlow(); DrawPendingSpellCards(); return; }
         canvas.Glow(new(807, 485), new(430, 165), Blue * .17f);
         var resting = TableWorld.Card(new(6, 108), new(245, 126));
         canvas.CardFrame(resting, Gold * .12f, 1);
         var stackCards = state.Stack.Take(3).Select(s => s.Card ?? new Card { Name = s.Name, Text = s.Text, Type = s.Ability ? "Ability" : "Spell" }).ToArray();
-        if (payingSource) stackCards = [decision!.Context.Source?.Card!];
+        if (payingSource) stackCards = [paymentSource?.Card ?? decision!.Context.Source?.Card!];
         if (stackCards.Length == 0 && decision?.Context.Source?.Card is { } source) stackCards = [source];
         for (int i = stackCards.Length - 1; i >= 0; i--) {
             var reported = stackCards[i];
-            var card = decision is { } sourceDecision && (payingSource || state.Stack.Length == 0)
+            var card = paymentSource?.Card is { } paying ? CardViews.Current(state, paying)
+                : decision is { } sourceDecision && (payingSource || state.Stack.Length == 0)
                 ? CardViews.Source(state, sourceDecision) ?? stackCards[i] : CardViews.Current(state, stackCards[i]);
             bool alsoInZone = state.Players.Any(p => p.Zones.Any(z => z.Cards.Any(c => CardIdentity(c) == CardIdentity(card))));
-            string identity = payingSource ? "payment:" + decision!.Id : alsoInZone ? "stack:" + (state.Stack.ElementAtOrDefault(i)?.Id ?? "source") : CardIdentity(card);
+            string identity = payingSource && !alsoInZone ? CardIdentity(card) : payingSource ? "payment:" + decision!.Id
+                : alsoInZone ? "stack:" + (state.Stack.ElementAtOrDefault(i)?.Id ?? "source") : CardIdentity(card);
             if (identity.Length == 0) identity = "stack:" + (state.Stack.ElementAtOrDefault(i)?.Id ?? card.Name);
             Vector2 entrance = new(800, 520);
             if (card.VisualId.Length > 0) {

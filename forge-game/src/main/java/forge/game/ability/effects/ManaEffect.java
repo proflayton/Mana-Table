@@ -110,7 +110,12 @@ public class ManaEffect extends SpellAbilityEffect {
                             colorOptions = ColorSet
                                     .fromMask(fullOptions.getColor() & ManaAtom.fromName(colorsNeeded[nMana]));
                         }
-                        if (colorOptions.isColorless() && colorsProduced.length > 0) {
+                        if (colorsNeeded != null && colorsNeeded.length > nMana && "C".equals(colorsNeeded[nMana])
+                                && java.util.Arrays.asList(colorsProduced).contains("C")) {
+                            // An explicit colorless output is a real selection,
+                            // not the old empty-color-mask auto-pick fallback.
+                            choice = "C";
+                        } else if (colorOptions.isColorless() && colorsProduced.length > 0) {
                             // If we just need generic mana, no reason to ask the controller for a choice,
                             // just use the first possible color.
                             choice = colorsProduced[differentChoice ? nMana : 0];

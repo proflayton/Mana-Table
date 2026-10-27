@@ -134,13 +134,23 @@ internal sealed partial class CardReadingSmoke : ITableAutomation
         Step(.05, () => Move(new(1550, 80), ButtonState.Pressed));
         Step(.05, () => Buttons());
         Step(.05, () => MoveCard("hand-4")); Click();
-        Step(.2, () => Check(scenario.Replies.Count == 1, "Cancelling a drag and reopening a reader cannot play the card"));
+        Step(.2, () => Check(scenario.Replies.Count == 1, "Cancelling a drag and clicking its hand card submits no play command"));
+        // Drag cancellation above asserts noncommitment, not a pinned-reader
+        // state. Normalize either result through the real pointer before a new
+        // decision preserves this same readable hand occurrence.
+        bool closePreviousHandReader = false;
+        Prepared(() => view.HoverPreview == null || ReadingReady("hand-4"), 3, () => {
+            closePreviousHandReader = view.HoverPreview != null;
+            if (closePreviousHandReader) MoveReaderFace();
+        }, "The previous hand reader must settle or close before preparing the next decision");
+        Step(.025, () => { if (closePreviousHandReader) Buttons(ButtonState.Pressed); });
+        Step(.04, () => Buttons());
         string requiredHandGame = "", requiredHandDecision = "", requiredHandKey = "";
-        Step(0, () => {
+        Prepared(() => view.HoverPreview == null, 3, () => {
             Publish(scenario.State with { Decision = new Decision("", new DecisionContext(), new EntitySelectionPayload(new DecisionReply("Confirm", false), new DecisionReply("Cancel", false), [], null)) });
             requiredHandGame = scenario.State.Id; requiredHandDecision = scenario.State.Decision!.Id;
             requiredHandKey = scenario.State.Viewer!.Zone("Hand").Cards.Single(card => card.VisualId == "hand-4").Key;
-        });
+        }, "The previous hand reader must close before presenting the fresh required hand selection");
         Prepared(() => view.Match?.Decision is { Payload: EntitySelectionPayload } && FreshHand("hand-4", c => !c.FaceDown && c.Selectable), .5, () => MoveCard("hand-4"), "The fresh required hand selection must be visible before its click"); Click();
         Prepared(() => ReadingReady("hand-4") && view.Hits.Any(hit => hit.Id == "read-card-action" && view.CurrentHit(hit)), 3, () => {
             Check(scenario.Replies.Count == 1 && view.Match is { } current && current.Id == requiredHandGame && current.Decision?.Id == requiredHandDecision

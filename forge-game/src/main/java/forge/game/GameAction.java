@@ -68,7 +68,14 @@ import org.jgrapht.graph.DefaultEdge;
 
 import java.util.*;
 import java.util.concurrent.CancellationException;
+import java.util.concurrent.Callable;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
+import java.util.concurrent.locks.ReentrantLock;
 import java.util.function.Predicate;
+import java.util.function.Supplier;
 
 /**
  * Methods for common actions performed during a game.
@@ -77,7 +84,77 @@ import java.util.function.Predicate;
  * @version $Id$
  */
 public class GameAction {
+    private static final ThreadLocal<Game> executingGame = new ThreadLocal<>();
     private final Game game;
+    private final ReentrantLock stateBoundary = new ReentrantLock(true);
+    private volatile boolean stateBoundaryEnabled;
+
+    /** Opt-in for hosts which instrument every input and synchronous GUI wait. */
+    public void enableStateBoundary() { stateBoundaryEnabled = true; }
+
+    /** The actual game executing on this thread, including child rules tasks. */
+    public static Game currentGame() { return executingGame.get(); }
+
+    private static void restoreGame(Game previous) {
+        if (previous == null) executingGame.remove();
+        else executingGame.set(previous);
+    }
+
+    public void withState(Runnable action) {
+        Game previous = executingGame.get();
+        executingGame.set(game);
+        boolean lock = stateBoundaryEnabled;
+        if (lock) stateBoundary.lock();
+        try { action.run(); }
+        finally { if (lock) stateBoundary.unlock(); restoreGame(previous); }
+    }
+
+    public <T> T readState(Supplier<T> action) {
+        Game previous = executingGame.get();
+        executingGame.set(game);
+        boolean lock = stateBoundaryEnabled;
+        if (lock) stateBoundary.lock();
+        try { return action.get(); }
+        finally { if (lock) stateBoundary.unlock(); restoreGame(previous); }
+    }
+
+    public <T> T callState(Callable<T> action) throws Exception {
+        Game previous = executingGame.get();
+        executingGame.set(game);
+        boolean lock = stateBoundaryEnabled;
+        if (lock) stateBoundary.lock();
+        try { return action.call(); }
+        finally { if (lock) stateBoundary.unlock(); restoreGame(previous); }
+    }
+
+    /** A waiting controller yields all nested ownership, then restores it on this same thread. */
+    public StateSuspension suspendState() {
+        int holds = stateBoundaryEnabled ? stateBoundary.getHoldCount() : 0;
+        for (int index = 0; index < holds; index++) stateBoundary.unlock();
+        return new StateSuspension(holds);
+    }
+
+    public <T> T awaitState(Future<T> result) throws InterruptedException, ExecutionException {
+        try (var suspended = suspendState()) { return result.get(); }
+    }
+
+    public <T> T awaitState(Future<T> result, long timeout, TimeUnit unit)
+            throws InterruptedException, ExecutionException, TimeoutException {
+        try (var suspended = suspendState()) { return result.get(timeout, unit); }
+    }
+
+    public final class StateSuspension implements AutoCloseable {
+        private final Thread owner = Thread.currentThread();
+        private final int holds;
+        private boolean closed;
+        private StateSuspension(int holds) { this.holds = holds; }
+        @Override public void close() {
+            if (Thread.currentThread() != owner) throw new IllegalStateException("State ownership must resume on its waiting thread");
+            if (closed) return;
+            closed = true;
+            for (int index = 0; index < holds; index++) stateBoundary.lock();
+        }
+    }
 
     private boolean holdCheckingStaticAbilities = false;
 
@@ -2586,9 +2663,9 @@ public class GameAction {
     // Invokes given runnable in Game thread pool - used to start game and perform actions from UI (when game-0 waits for input)
     public void invoke(final Runnable proc) {
         if (ThreadUtil.isGameThread()) {
-            proc.run();
+            withState(proc);
         } else {
-            ThreadUtil.invokeInGameThread(proc);
+            ThreadUtil.invokeInGameThread(() -> withState(proc));
         }
     }
 

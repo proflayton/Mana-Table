@@ -1,5 +1,6 @@
 using System.Collections.Immutable;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using Mana.Contracts;
 
 namespace Mana.Forge;
@@ -8,6 +9,8 @@ namespace Mana.Forge;
 // payload directly; no mutable JSON or shared record deserializer classifies it.
 internal static class ForgeDecisionDecoder
 {
+    private static readonly JsonSerializerOptions FundingJson = new() { PropertyNameCaseInsensitive = true,
+        Converters = { new JsonStringEnumConverter() } };
     internal static Decision Decode(JsonElement prompt, IReadOnlySet<int>? players = null)
     {
         try {
@@ -28,6 +31,15 @@ internal static class ForgeDecisionDecoder
                 || Present(prompt, "effect") && !(task == "selection" && purpose == "targets")
                 || Present(prompt, "counterPayment") && !(task == "selection" && purpose == "")
                 || Present(prompt, "counterPaymentChoice") && !(task == "choice" && purpose == "" && !ordered)) throw Invalid();
+            if (Present(prompt, "disclosedCards") && (task != "choice" || purpose != "" || ordered
+                || Present(prompt, "counterPaymentChoice") || Present(prompt, "libraryCards"))) throw Invalid();
+            if (Present(prompt, "manaPaymentContext") && (task != "choice" || purpose != "" || ordered
+                || Present(prompt, "counterPaymentChoice") || Present(prompt, "disclosedCards") || Present(prompt, "libraryCards"))) throw Invalid();
+            if (Present(prompt, "manaReduction") && (task != "selection" || purpose != ""
+                || Present(prompt, "counterPayment") || Array(prompt, "playerChoices").Length != 0)) throw Invalid();
+            if (task != "mana" && (Present(prompt, "unpaidMana") || Present(prompt, "unpaidManaParts") || Present(prompt, "fundingContext")
+                || Present(prompt, "usablePoolManaColors") || Present(prompt, "payerId"))) throw Invalid();
+            if (Present(prompt, "unpaidMana") && Present(prompt, "unpaidManaParts")) throw Invalid();
             string alternative = Text(prompt, "priorityAlternative"), quiet = Text(prompt, "quietYieldToken");
             if (alternative is not ("" or "none" or "undo" or "passTurn")
                 || task != "priority" && (alternative is "undo" or "passTurn" || quiet.Length != 0 || Flag(prompt, "canAutoPass"))) throw Invalid();
@@ -41,24 +53,92 @@ internal static class ForgeDecisionDecoder
                     "passTurn" => new(PriorityAlternative.PassTurn, Cancel()), _ => null
                 }, Flag(prompt, "canAutoPass"), quiet, PriorityAbilities(prompt)),
                 "openingHand" => new OpeningHandPayload(Ok(), Cancel(), Opening(prompt)),
-                "mana" => new PaymentPayload(Ok(), Cancel()),
+                "mana" => new PaymentPayload(Ok(), Cancel()) {
+                    UnpaidMana = PaymentSymbols(prompt, "unpaidMana"),
+                    UnpaidManaParts = PaymentParts(prompt),
+                    FundingContext = Present(prompt, "fundingContext")
+                        ? Field(prompt, "fundingContext").Deserialize<ManaFundingContext>(FundingJson) ?? throw Invalid() : null,
+                    UsablePoolManaColors = Present(prompt, "usablePoolManaColors") ? PaymentColors(prompt) : null,
+                    PayerId = NullableInteger(prompt, "payerId")
+                },
                 "attack" => new AttackPayload(Ok()), "block" => new BlockPayload(Ok()),
                 "selection" when purpose == "targets" => new TargetSelectionPayload(Ok(), Cancel(), Range(prompt),
                     PlayerChoices(prompt, players), Optional<PendingEffect>(prompt, "effect"), SearchTarget(prompt)),
-                "selection" => new EntitySelectionPayload(Ok(), Cancel(), PlayerChoices(prompt, players), OptionalRange(prompt), CounterPayment(prompt)),
+                "selection" => new EntitySelectionPayload(Ok(), Cancel(), PlayerChoices(prompt, players), OptionalRange(prompt), CounterPayment(prompt)) {
+                    ManaReduction = ManaReduction(prompt)
+                },
                 "confirmation" => new ConfirmationPayload(Ok(), Flag(prompt, "cancelEnabled") ? Cancel() : null, SearchOffer(prompt, players)),
                 "choice" when purpose == "abilities" => new AbilityChoicePayload(Selection(prompt)),
                 "choice" when ordered => new OrderingPayload(Selection(prompt)),
-                "choice" => new OptionsPayload(Selection(prompt), CounterChoice(prompt, players)),
+                "choice" => new OptionsPayload(Selection(prompt), CounterChoice(prompt, players)) {
+                    ManaPaymentContext = ManaColorPayment(prompt, players)
+                },
                 "reveal" => new RevealPayload(Reveal(prompt)),
                 "number" => new NumberPayload(Text(prompt, "initial"), kind == "text" ? OptionalNumberRange(prompt) : NumberRange(prompt)),
                 "text" => new TextPayload(Text(prompt, "initial")),
                 "allocate" => Allocation(prompt), _ => throw Invalid()
             };
+            if (payload is PaymentPayload { PayerId: { } payer } && (players == null || !players.Contains(payer))) throw Invalid();
             return new(id, context, payload);
         } catch (Exception error) when (error is JsonException or InvalidOperationException or FormatException or OverflowException or ArgumentException) {
             throw new IOException("The rules provider published an invalid decision schema.", error);
         }
+    }
+
+    private static ImmutableArray<string> PaymentSymbols(JsonElement prompt, string key)
+    {
+        var values = Array(prompt, key).Select(value => value.ValueKind == JsonValueKind.String
+            ? value.GetString()! : throw Invalid()).ToImmutableArray();
+        if (values.Length > 128 || values.Any(value => string.IsNullOrWhiteSpace(value) || value.Length > 32)) throw Invalid();
+        return values;
+    }
+
+    private static ManaColorPaymentContext? ManaColorPayment(JsonElement prompt, IReadOnlySet<int>? players)
+    {
+        if (!Present(prompt, "manaPaymentContext")) return null;
+        var value = Field(prompt, "manaPaymentContext"); Object(value);
+        if (!Present(value, "unpaidManaParts")) throw Invalid();
+        int payer = Integer(value, "payerId");
+        // The nested record uses case-insensitive JSON binding. Check every
+        // supplied spelling before Card normalizes legacy null identities.
+        foreach (var source in value.EnumerateObject().Where(property => property.Name.Equals("source", StringComparison.OrdinalIgnoreCase)
+                     && property.Value.ValueKind == JsonValueKind.Object))
+            foreach (var rawCard in source.Value.EnumerateObject().Where(property => property.Name.Equals("card", StringComparison.OrdinalIgnoreCase)
+                         && property.Value.ValueKind != JsonValueKind.Null))
+                ValidateCardIdentityTypes(rawCard.Value);
+        var context = value.Deserialize<ManaColorPaymentContext>(FundingJson) ?? throw Invalid();
+        ValidateCard(context.Source?.Card);
+        if (players == null || !players.Contains(payer)
+            || context.Source?.ControllerId is { } controller && !players.Contains(controller)
+            || context.Source?.Card is { } card && (card.Key.Length != 0 || card.Selectable || card.Highlighted)) throw Invalid();
+        return context with { UnpaidManaParts = PaymentParts(value) };
+    }
+
+    private static ManaReductionProgress? ManaReduction(JsonElement prompt)
+    {
+        if (!Present(prompt, "manaReduction")) return null;
+        var value = Field(prompt, "manaReduction"); Object(value);
+        if (!Present(value, "remainingManaParts")) throw Invalid();
+        return value.Deserialize<ManaReductionProgress>(FundingJson) ?? throw Invalid();
+    }
+
+    private static ImmutableArray<ManaBillPart> PaymentParts(JsonElement prompt)
+    {
+        if (!Present(prompt, "unpaidManaParts")) return [];
+        var parts = Field(prompt, "unpaidManaParts").Deserialize<ImmutableArray<ManaBillPart>>(FundingJson);
+        if (parts.IsDefault || parts.Length > 128 || parts.Any(part => part == null || part.Count <= 0
+            || string.IsNullOrWhiteSpace(part.Symbol) || part.Symbol.Length > 32
+            || part.Symbol[0] != '{' || part.Symbol[^1] != '}' || part.Symbol.Length < 3)
+            || parts.Select(part => part.Symbol).Distinct(StringComparer.Ordinal).Count() != parts.Length) throw Invalid();
+        return parts;
+    }
+
+    private static ImmutableArray<string> PaymentColors(JsonElement prompt)
+    {
+        var values = PaymentSymbols(prompt, "usablePoolManaColors");
+        if (values.Length > 6 || values.Distinct(StringComparer.Ordinal).Count() != values.Length
+            || values.Any(value => value is not ("W" or "U" or "B" or "R" or "G" or "C"))) throw Invalid();
+        return values;
     }
 
     private static DecisionContext SourceContext(JsonElement prompt)
@@ -143,8 +223,18 @@ internal static class ForgeDecisionDecoder
                 CardId = Text(value, "cardId"), Detail = Text(value, "detail"), Mana = Text(value, "mana")
             };
         }).ToImmutableArray();
-        return new(choices, Range(prompt), Disclosures(prompt));
+        return new(choices, Range(prompt), Disclosures(prompt).AddRange(CurrentChoiceDisclosures(prompt)));
     }
+    private static ImmutableArray<LibraryChoice> CurrentChoiceDisclosures(JsonElement prompt) => Array(prompt, "disclosedCards").Select(value => {
+        Object(value);
+        // These are additional faces readable in this current choice, never
+        // eligible option indices or links to hidden physical occurrences.
+        if (value.TryGetProperty("index", out _) || value.TryGetProperty("cardId", out _)) throw Invalid();
+        var card = ReadCard(value, "card") ?? throw Invalid();
+        if (card.Key.Length != 0 || card.VisualId.Length != 0 || card.CombatId.Length != 0
+            || card.Selectable || card.Highlighted || card.AttachedTo != null || !card.Attachments.IsEmpty) throw Invalid();
+        return new LibraryChoice(null, Text(value, "label", required: true), card);
+    }).ToImmutableArray();
     private static ImmutableArray<LibraryChoice> Disclosures(JsonElement prompt) => Array(prompt, "libraryCards").Select(value => {
         Object(value);
         var card = ReadCard(value, "card") ?? throw Invalid();
@@ -203,9 +293,23 @@ internal static class ForgeDecisionDecoder
     }
     private static Card? ReadCard(JsonElement node, string key)
     {
+        if (Present(node, key)) ValidateCardIdentityTypes(Field(node, key));
         var card = Optional<Card>(node, key);
-        if (card != null && (card.Key == null || card.VisualId == null || card.CombatId == null || card.Name == null)) throw Invalid();
+        ValidateCard(card);
         return card;
+    }
+    private static void ValidateCardIdentityTypes(JsonElement card)
+    {
+        Object(card);
+        foreach (var property in card.EnumerateObject())
+            if ((property.Name.Equals("key", StringComparison.OrdinalIgnoreCase)
+                    || property.Name.Equals("visualId", StringComparison.OrdinalIgnoreCase)
+                    || property.Name.Equals("combatId", StringComparison.OrdinalIgnoreCase))
+                && property.Value.ValueKind != JsonValueKind.String) throw Invalid();
+    }
+    private static void ValidateCard(Card? card)
+    {
+        if (card != null && (card.Key == null || card.VisualId == null || card.CombatId == null || card.Name == null)) throw Invalid();
     }
     private static T? Optional<T>(JsonElement node, string key) where T : class => !Present(node, key) ? null
         : Field(node, key).Deserialize<T>(ForgeSnapshotDecoder.Json) ?? throw Invalid();

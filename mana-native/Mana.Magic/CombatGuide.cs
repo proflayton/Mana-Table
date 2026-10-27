@@ -17,6 +17,7 @@ public static class CombatGuide
         var d = state.Decision; var card = Find(state, source);
         if (d == null || card == null || !CanSelect(state, card)) return null;
         if (d.Payload is AttackPayload && state.Combat?.Attackers.FirstOrDefault(a => a.CardId == source) is { } attack) {
+            if (!attack.HasDefender) return null;
             if (attack.Defender is { Kind: "card" } defender) {
                 var target = Find(state, defender.Id);
                 return target != null && LegalTargets.CanAttackCard(state, source, defender.Id)

@@ -62,13 +62,18 @@ public interface ISourceActions
     bool SupportsSourceActions => true;
     Task<SourceActionSet> SourceActionsAsync(string gameId, string decisionId, string sourceCardKey);
 }
-public sealed record SourceActionSet(string GameId, string DecisionId, string SourceCardKey, string SourceCardId, ImmutableArray<SourceAction> Actions);
+public sealed record SourceActionSet(string GameId, string DecisionId, string SourceCardKey, string SourceCardId, ImmutableArray<SourceAction> Actions)
+{
+    // Older providers omit this field and provide no funding preview.
+    public long? Revision { get; init; }
+}
 public sealed record SourceAction(string Id, string Kind, string Text)
 {
     // A disclosed linked face is reading material, never another action handle.
     // Submission still names the source and this offer's opaque Id.
     public Card? Card { get; init; }
     public string Zone { get; init; } = "";
+    public ManaCostPreview? CostPreview { get; init; }
 }
 // Social commands have their own ordering and never advance a game decision.
 public interface ITableSocial
@@ -128,9 +133,12 @@ public sealed record Lobby(string Mode, string Status, string? Error, bool CanSt
 }
 public sealed record Card
 {
-    public string Key { get; init; } = "";
-    public string VisualId { get; init; } = "";
-    public string CombatId { get; init; } = "";
+    private string key = "", visualId = "", combatId = "";
+    // Legacy and read-only faces may have no occurrence. Keep that absence an
+    // empty string; never mint an identity or command handle while decoding it.
+    public string Key { get => key; init => key = value ?? ""; }
+    public string VisualId { get => visualId; init => visualId = value ?? ""; }
+    public string CombatId { get => combatId; init => combatId = value ?? ""; }
     public CardAttachment? AttachedTo { get; init; }
     public ImmutableArray<CardAttachment> Attachments { get; init; } = [];
     public string Name { get; init; } = "";
@@ -247,10 +255,20 @@ public sealed record Defender(string Kind, string Id, int PlayerId, string Name)
 public sealed record AttackOption(string CardId, ImmutableArray<Defender> Defenders);
 public sealed record Attack(string CardId, int DefendingPlayerId, ImmutableArray<string> BlockerIds, ImmutableArray<string> EligibleBlockerIds)
 {
+    // An attacker remains in combat after its defending permanent leaves.
+    // Missing legacy metadata still means the original player/card assignment.
+    public bool HasDefender { get; init; } = true;
     public Defender? Defender { get; init; }
     public bool Blocked { get; init; }
 }
-public sealed record Combat(ImmutableArray<Attack> Attackers, ImmutableArray<AttackOption> AttackOptions, string? BlockProblem);
+public sealed record AttackAssignment(string CardId, Defender Defender);
+public sealed record Combat(ImmutableArray<Attack> Attackers, ImmutableArray<AttackOption> AttackOptions, string? BlockProblem)
+{
+    public bool AttackValid { get; init; } = true;
+    // One legal witness from the rules constraint solver, not a tactical plan.
+    // It is supplied only when the current declaration fails joint constraints.
+    public ImmutableArray<AttackAssignment> AttackRepair { get; init; } = [];
+}
 public enum StackActionKind { Spell, ActivatedAbility, TriggeredAbility, Ability }
 [method: System.Text.Json.Serialization.JsonConstructor]
 public sealed record StackItem(string Name, string Text, StackActionKind Kind, Card? Card)
@@ -269,9 +287,13 @@ public sealed record GameSnapshot(string Id, string Status, string? Error, strin
     int Turn, string Phase, string PhaseKey, int? ActivePlayerId, ImmutableArray<Player> Players,
     ImmutableArray<StackItem> Stack, Combat? Combat, Decision? Decision)
 {
+    public ImmutableArray<ActionSourceOccurrence> ActionSources { get; init; } = [];
     public ImmutableArray<PublicState> States { get; init; } = [];
     public long Revision { get; init; }
     public long BoardRevision { get; init; }
+    // Monotonic provider fence for explicit, finite current-stack yielding.
+    // Omitted by older providers: clients must not arm that continuation.
+    public long? StackInterruptionVersion { get; init; }
     public int? PriorityPlayerId { get; init; }
     // Public acting seat only. Another seat's private prompt/options are never copied here.
     public int? DecisionOwnerId { get; init; }
@@ -287,6 +309,9 @@ public sealed record GameSnapshot(string Id, string Status, string? Error, strin
 }
 public sealed record ActivityEntry(long Id, int Turn, string PhaseKey, string Kind, int? PlayerId, string Message, string? CardId, string? CardName)
 {
+    // Exact public stack occurrence, when supplied by its cast/resolution event.
+    // Historical correlation only; never a current action handle.
+    public string? StackId { get; init; }
     // Older engines omit this field and remain conservatively interrupting.
     public bool InterruptsQuietYield { get; init; } = true;
     public string Detail { get; init; } = "";

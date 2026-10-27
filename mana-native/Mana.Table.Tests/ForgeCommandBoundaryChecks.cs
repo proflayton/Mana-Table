@@ -1,4 +1,5 @@
 using System.Collections.Immutable;
+using Mana.Client;
 using Mana.Contracts;
 using Mana.Forge;
 using System.Text.Json;
@@ -25,6 +26,7 @@ internal static class ForgeCommandBoundaryChecks
         var currentReady = JsonSerializer.SerializeToElement(new { protocolVersion = 2,
             capabilities = ForgeProtocol.RequiredCapabilities.Add("source-actions") });
         check(ForgeProtocol.ReadyCapabilities(currentReady).Contains("source-actions"), "Ready retains optional provider capabilities");
+        ObservationCompletionOrder(check).GetAwaiter().GetResult();
 
         var selectionWire = Prompt("""
             "kind":"input","task":"selection","purpose":"targets","min":1,"max":1,
@@ -34,6 +36,7 @@ internal static class ForgeCommandBoundaryChecks
         var selected = ForgeDecisionDecoder.Decode(selectionWire);
         check(selected.Payload is TargetSelectionPayload { Range: { Min: 1, Max: 1 } } && selectionWire.GetRawText() == original,
             "A direct immutable decode consumes authoritative semantics without editing JSON or exposing provider class names");
+        CurrentChoiceDisclosures(check);
         foreach (string invalid in new[] {
             """ "kind":"input","task":"unknown-required-task" """,
             """ "kind":"choice","task":"mana" """,
@@ -257,10 +260,11 @@ internal static class ForgeCommandBoundaryChecks
         Reject(new RestorePriorityAbility(game, ignored.Id), "Removed preferences revoke captured Restore commands");
 
         JsonElement Observation(JsonElement rawPrompt, object[]? stack = null, object? combat = null,
-            int? decisionOwner = null, int? priorityPlayer = null, string status = "playing") => JsonSerializer.SerializeToElement(new {
+            int? decisionOwner = null, int? priorityPlayer = null, string status = "playing", object[]? actionSources = null) => JsonSerializer.SerializeToElement(new {
             id = game, status, viewerId = 0, turn = 2, phase = "Main phase", phaseKey = "MAIN1", activePlayerId = 1,
             players = priority.Players.Add(new(1, "Other seat", 40, false, false, ImmutableDictionary<string, int>.Empty, [])),
             stack = stack ?? [], combat, prompt = rawPrompt, decisionOwnerId = decisionOwner, priorityPlayerId = priorityPlayer,
+            actionSources = actionSources ?? [],
             decision = new { task = 999, payload = "unsolicited-native-record" }
         });
         var observed = scope.ObserveRaw(Observation(Prompt(""" "kind":"input","task":"priority","okEnabled":true"""),
@@ -275,6 +279,41 @@ internal static class ForgeCommandBoundaryChecks
             && decodedCombat.Attackers[0].Defender?.Id == "0"
             && decodedCombat.AttackOptions[0].Defenders[1].Id == "opaque-card",
             "The private envelope maps numeric stack/player IDs and opaque card IDs explicitly while ignoring unsolicited native decisions");
+        var explicitCard = new Card { Name = "Live stack source", VisualId = "live-stack-occurrence", Key = "explicit-stack-key" };
+        var explicitSource = new ActionSourceOccurrence("wire-prompt", "Stack", 0, explicitCard);
+        object liveSpell = new { id = 18, name = explicitCard.Name, text = "Public rules", ability = false, card = explicitCard with { Key = "" } };
+        var sourceState = scope.ObserveRaw(Observation(Prompt(""" "kind":"input","task":"priority","okEnabled":true"""),
+            [liveSpell], actionSources: [explicitSource]));
+        check(sourceState?.ActionSources is [{ DecisionId: "wire-prompt", Zone: "Stack", Card.Key: "explicit-stack-key" }]
+                && scope.CanReadSource(game, "wire-prompt", explicitCard.Key)
+                && (string)scope.Encode(new UseOfferedAction(game, "wire-prompt", explicitCard.Key, "offered-route"))["action"]! == "useSourceAction",
+            "The provider maps separately scoped current stack sources through the ordinary source-action command boundary");
+        scope.ObserveRaw(Observation(Prompt(""" "kind":"input","task":"priority","okEnabled":true"""),
+            [new { id = 18, name = explicitCard.Name, text = "Old face", ability = false, card = explicitCard }]));
+        check(!scope.CanReadSource(game, "wire-prompt", explicitCard.Key),
+            "A stack reading face with a captured key still cannot become a source-query capability");
+        foreach (var malformedSources in new object[][] {
+            [explicitSource with { DecisionId = "old-input" }],
+            [explicitSource with { Zone = "Library" }],
+            [explicitSource, explicitSource],
+            [explicitSource with { Zone = "Sideboard", PlayerId = 1 }],
+            [explicitSource with { Card = explicitCard with { Selectable = true } }],
+            [explicitSource with { Card = explicitCard with { FaceDown = true, Name = "Hidden identity", Text = "Private rules" } }]
+        }) {
+            bool rejected = false;
+            try { scope.ObserveRaw(Observation(Prompt(""" "kind":"input","task":"priority","okEnabled":true"""), [liveSpell], actionSources: malformedSources)); }
+            catch (IOException) { rejected = true; }
+            check(rejected && scope.ObservedGameId.Length == 0, "Malformed additional source authority revokes the observed provider scope");
+        }
+        bool historicAbilityRejected = false;
+        try { scope.ObserveRaw(Observation(Prompt(""" "kind":"input","task":"priority","okEnabled":true"""),
+            [new { id = 19, name = "Ability", text = "Historical source", ability = true, card = explicitCard with { Key = "" } }],
+            actionSources: [explicitSource])); } catch (IOException) { historicAbilityRejected = true; }
+        check(historicAbilityRejected, "A triggered or activated stack item's historical source cannot corroborate a current spell occurrence");
+        var sideboardState = scope.ObserveRaw(Observation(Prompt(""" "kind":"input","task":"priority","okEnabled":true"""),
+            actionSources: [explicitSource with { Zone = "Sideboard" }]));
+        check(sideboardState?.ActionSources.Single().Zone == "Sideboard" && scope.CanReadSource(game, "wire-prompt", explicitCard.Key),
+            "A current sideboard source is an owned decision capability rather than a public hidden-zone reveal");
         // MatchSession.markBusy publishes this exact lifecycle after answering
         // Keep/Mulligan and other inputs, before the next decision is available.
         var resolving = scope.ObserveRaw(Observation(JsonSerializer.SerializeToElement<object?>(null), status: "resolving"));
@@ -319,5 +358,111 @@ internal static class ForgeCommandBoundaryChecks
         bool replacementRejected = false;
         try { new ForgeCommandScope().Encode(new PassPriority(game, prompt)); } catch (EngineCommandRejectedException) { replacementRejected = true; }
         check(replacementRejected, "A replacement provider process cannot inherit command authority");
+    }
+
+    private static async Task ObservationCompletionOrder(Action<bool, string> check)
+    {
+        const string game = "ordered-observation-game";
+        var scope = new ForgeCommandScope();
+        var replica = new SessionReplica<GameSnapshot>(state => state.Id, state => state.Revision);
+        JsonElement Wire(long revision, string prompt, string gameId = game, string? notice = null) => JsonSerializer.SerializeToElement(new {
+            id = gameId, status = "playing", viewerId = 0, revision, turn = 1,
+            phase = "Main phase", phaseKey = "MAIN1", activePlayerId = 0,
+            decisionOwnerId = 0, priorityPlayerId = 0,
+            players = new[] { new Player(0, "You", 40, true, false,
+                ImmutableDictionary<string, int>.Empty, []) },
+            stack = Array.Empty<object>(),
+            notices = notice == null ? Array.Empty<string>() : new[] { notice },
+            prompt = new { id = prompt, kind = "input", task = "priority", okEnabled = true }
+        });
+        var transitions = new ForgeCommandScope();
+        transitions.ObserveRaw(Wire(36, "refreshed-prompt"));
+        transitions.ObserveRaw(Wire(36, "refreshed-prompt", notice: "Current source facts refreshed"));
+        check(transitions.ObservedState is { Revision: 36, Notices: ["Current source facts refreshed"] }
+                && (string)transitions.Encode(new PassPriority(game, "refreshed-prompt"))["promptId"]! == "refreshed-prompt",
+            "A same-revision observation may refresh current facts without losing its exact command scope");
+        transitions.ObserveRaw(Wire(1, "replacement-prompt", gameId: "replacement-game"));
+        check(transitions.ObservedState is { Id: "replacement-game", Revision: 1 }
+                && (string)transitions.Encode(new PassPriority("replacement-game", "replacement-prompt"))["sessionId"]! == "replacement-game",
+            "A new match starts its own revision sequence instead of inheriting the preceding match's high-water mark");
+        bool previousGameRejected = false, foreignGameRejected = false;
+        try { transitions.Encode(new PassPriority(game, "refreshed-prompt")); } catch (EngineCommandRejectedException) { previousGameRejected = true; }
+        try { transitions.Encode(new PassPriority("foreign-game", "replacement-prompt")); } catch (EngineCommandRejectedException) { foreignGameRejected = true; }
+        check(previousGameRejected && foreignGameRejected,
+            "Changing matches still rejects commands from the preceding or an unrelated game");
+        // ForgeEngine.ObserveAsync awaits a RunContinuationsAsynchronously RPC
+        // completion, then calls this same ObserveRaw. The write semaphore only
+        // serializes request writes; two read continuations can finish in either
+        // order. Gates force the order without sleeps, threads or a Java process.
+        var earlier = new TaskCompletionSource<JsonElement>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var later = new TaskCompletionSource<JsonElement>(TaskCreationOptions.RunContinuationsAsynchronously);
+        async Task<GameSnapshot?> Read(Task<JsonElement> response) => scope.ObserveRaw(await response);
+        var earlierRead = Read(earlier.Task);
+        var laterRead = Read(later.Task);
+        later.SetResult(Wire(36, "current-prompt"));
+        var current = await laterRead ?? throw new InvalidOperationException("The controlled current observation disappeared.");
+        check(replica.Accept(current, replica.Epoch) && replica.Current?.Revision == 36,
+            "A controlled newer observation becomes the displayed replica before the delayed older read completes");
+        var currentCommand = new PassPriority(game, "current-prompt");
+        check((string)scope.Encode(currentCommand)["promptId"]! == currentCommand.DecisionId,
+            "The exact current displayed command is valid before completing the older read");
+
+        earlier.SetResult(Wire(35, "retired-prompt"));
+        var delayed = await earlierRead ?? throw new InvalidOperationException("The controlled delayed observation disappeared.");
+        check(!replica.Accept(delayed, replica.Epoch) && ReferenceEquals(replica.Current, current),
+            "The actual replica rejects the delayed lower revision and keeps its current displayed decision");
+        bool currentRejected = false, retiredRejected = false;
+        try { scope.Encode(currentCommand); } catch (EngineCommandRejectedException) { currentRejected = true; }
+        try { scope.Encode(new PassPriority(game, "retired-prompt")); } catch (EngineCommandRejectedException) { retiredRejected = true; }
+        check(!currentRejected && retiredRejected,
+            "Completing an older observation cannot reject the current displayed command or restore its retired prompt"
+                + $" (displayed={replica.Current!.Revision}/{replica.Current.Decision!.Id}, provider={scope.ObservedState?.Revision}/{scope.ObservedState?.Decision?.Id}, currentRejected={currentRejected}, retiredRejected={retiredRejected})");
+    }
+
+    private static void CurrentChoiceDisclosures(Action<bool, string> check)
+    {
+        const string eligible = """ "kind":"choice","task":"choice","min":1,"max":1,"choices":[{"index":7,"label":"Eligible nonland","card":{"name":"Eligible nonland","type":"Creature"}}] """;
+        const string extra = """ "disclosedCards":[{"label":"Readable land","card":{"name":"Readable land","type":"Land","text":"Publicly disclosed rules"}}] """;
+        var wire = Prompt(eligible + "," + extra);
+        string original = wire.GetRawText();
+        var decision = ForgeDecisionDecoder.Decode(wire);
+        check(decision.Payload is OptionsPayload { Selection: { Choices: [{ Index: 7 }], Disclosures: [{ Index: null, CardId: "",
+                Card: { Name: "Readable land", Key: "", VisualId: "", CombatId: "", Selectable: false, Highlighted: false } }] } }
+                && wire.GetRawText() == original,
+            "A mixed-hand choice retains its additional readable land in the current prompt without altering eligible nonland indices or the wire");
+        var state = new GameSnapshot("disclosed-choice", "playing", null, null, 0, 1, "Main", "MAIN1", 0,
+            [new(0, "Actor", 40, true, false, ImmutableDictionary<string, int>.Empty, [])], [], null, decision);
+        check(GameCommandPermissions.Allows(state, new ChooseOptions(state.Id, decision.Id, [7]))
+                && !GameCommandPermissions.Allows(state, new ChooseOptions(state.Id, decision.Id, [8]))
+                && !GameCommandPermissions.Allows(state, new SelectCard(state.Id, decision.Id, "Readable land")),
+            "A current extra face grants reading only and cannot become an additional option or card-selection command");
+        _ = Decode(""" "kind":"reveal","task":"reveal","choices":[{"label":"Earlier land","card":{"name":"Earlier land","type":"Land"}}] """);
+        check(Decode(eligible).Payload is OptionsPayload { Selection.Disclosures.IsEmpty: true },
+            "A later choice does not inherit the current extra faces or permissions from an earlier reveal");
+        check(Decode(eligible + "," + extra.Replace("}]", "},{\"label\":\"Readable land\",\"card\":{\"name\":\"Readable land\",\"type\":\"Land\"}}]")).Payload
+                is OptionsPayload { Selection.Disclosures.Length: 2 },
+            "Distinct disclosed occurrences with the same printed face retain their anonymous multiplicity");
+        foreach (string invalid in new[] {
+            """ "kind":"input","task":"priority" """ + "," + extra,
+            """ "kind":"reveal","task":"reveal","choices":[] """ + "," + extra,
+            eligible + ",\"purpose\":\"abilities\"," + extra,
+            eligible + ",\"ordered\":true," + extra,
+            eligible + ",\"counterPaymentChoice\":{}," + extra,
+            eligible + ",\"libraryCards\":[]," + extra,
+            eligible + ",\"disclosedCards\":{}",
+            eligible + "," + extra.Replace("\"label\":\"Readable land\"", "\"index\":8,\"label\":\"Readable land\""),
+            eligible + "," + extra.Replace("\"label\":\"Readable land\"", "\"index\":null,\"label\":\"Readable land\""),
+            eligible + "," + extra.Replace("\"label\":\"Readable land\"", "\"cardId\":\"hidden-physical-id\",\"label\":\"Readable land\""),
+            eligible + "," + extra.Replace("\"type\":\"Land\"", "\"type\":\"Land\",\"key\":\"action-key\""),
+            eligible + "," + extra.Replace("\"type\":\"Land\"", "\"type\":\"Land\",\"visualId\":\"physical-id\""),
+            eligible + "," + extra.Replace("\"type\":\"Land\"", "\"type\":\"Land\",\"combatId\":\"physical-id\""),
+            eligible + "," + extra.Replace("\"type\":\"Land\"", "\"type\":\"Land\",\"selectable\":true"),
+            eligible + "," + extra.Replace("\"type\":\"Land\"", "\"type\":\"Land\",\"highlighted\":true"),
+            eligible + "," + extra.Replace("\"type\":\"Land\"", "\"type\":\"Land\",\"attachedTo\":{\"kind\":\"card\",\"cardId\":\"hidden-host\"}")
+        }) {
+            bool rejected = false;
+            try { Decode(invalid); } catch (IOException) { rejected = true; }
+            check(rejected, "Malformed, actionable or unrelated current-choice disclosures fail closed at the provider decoder");
+        }
     }
 }

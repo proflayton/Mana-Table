@@ -78,16 +78,32 @@ internal static class SharedTableStudyChecks
     {
         var stages = TappedResourcesScenario.Create();
         foreach (int viewer in stages[0].Snapshot.Players.Select(player => player.Id)) {
-            var tapped = Build(stages[0].Snapshot with { ViewerId = viewer });
-            var ready = Build(stages[2].Snapshot with { ViewerId = viewer });
-            foreach (var card in Cards(tapped).Where(card => card.Id.StartsWith("tap-land-", StringComparison.Ordinal))) {
-                var untapped = ready.BattlefieldCard(card.Owner, card.Id)!;
-                check(card.Pose.Center == untapped.Pose.Center && card.Pose.Size == untapped.Pose.Size
-                    && card.Pose.Size.Y > card.Pose.Size.X * 1.5f
-                    && MathF.Abs(MathHelper.WrapAngle(card.Pose.Angle - untapped.Pose.Angle) - MathF.PI / 2) < .001f
-                    && Math.Abs(card.Pose.Bounds.Width - untapped.Pose.Bounds.Height) <= 2
-                    && Math.Abs(card.Pose.Bounds.Height - untapped.Pose.Bounds.Width) <= 2,
-                    "Tapping a resource turns the same portrait face sideways without swapping dimensions or moving its reserved slot: " + card.Id);
+            foreach (bool duel in new[] { false, true }) {
+                GameSnapshot View(GameSnapshot state) => state with { ViewerId = viewer,
+                    Players = duel ? state.Players.Where(player => player.Id == viewer || player.Id == (viewer + 2) % 4).ToImmutableArray() : state.Players };
+                GameSnapshot Tap(bool value) => View(stages[2].Snapshot) with {
+                    Players = View(stages[2].Snapshot).Players.Select(player => player with {
+                        Zones = player.Zones.Select(zone => zone.Name != "Battlefield" ? zone : zone with {
+                            Cards = zone.Cards.Select(card => card with { Tapped = value }).ToImmutableArray()
+                        }).ToImmutableArray()
+                    }).ToImmutableArray()
+                };
+                var tapped = Build(Tap(true));
+                var ready = Build(Tap(false));
+                foreach (var card in Cards(tapped).Where(card => card.Attachment == null && card.GroupFront)) {
+                    var untapped = ready.BattlefieldCard(card.Owner, card.Id)!;
+                    float aspect = card.Pose.Size.X / card.Pose.Size.Y;
+                    var uprightEnd = untapped.Pose.Point(.5f, .92f).ToPoint();
+                    var sidewaysEnd = card.Pose.Point(.5f, .92f).ToPoint();
+                    check(card.Pose.Center == untapped.Pose.Center && card.Pose.Size == untapped.Pose.Size
+                        && aspect is >= .68f and <= .76f
+                        && MathF.Abs(MathHelper.WrapAngle(card.Pose.Angle - untapped.Pose.Angle) - MathF.PI / 2) < .001f
+                        && Math.Abs(card.Pose.Bounds.Width - untapped.Pose.Bounds.Height) <= 2
+                        && Math.Abs(card.Pose.Bounds.Height - untapped.Pose.Bounds.Width) <= 2
+                        && untapped.Contains(uprightEnd) && !card.Contains(uprightEnd)
+                        && card.Contains(sidewaysEnd) && !untapped.Contains(sidewaysEnd),
+                        $"{(duel ? "Two-player" : "Four-player")} viewer {viewer}: tapping turns the same physical creature, support or land in its reserved slot; long-edge pointer targets turn with its visibly different silhouette: " + card.Id);
+                }
             }
             foreach (var stage in stages) CheckFootprints(Build(stage.Snapshot with { ViewerId = viewer }), "resource turns viewer " + viewer, check);
         }
@@ -171,13 +187,21 @@ internal static class SharedTableStudyChecks
         app.TestPort.Accept(ReplaceField(lab.State, 2, [hidden]));
         app.Update(new Microsoft.Xna.Framework.GameTime(TimeSpan.Zero, TimeSpan.Zero), new(), new(), new(1600, 900));
         var frame = app.ReadPresentation();
+        var hiddenFace = frame.Cards.Single(card => card.Id == hidden.VisualId);
+        var pointer = hiddenFace.Display.Center.ToPoint();
+        check(app.TestPort.HitAt(pointer)?.Card is { FaceDown: true } pointed && CardViews.Same(pointed, hidden),
+            "The actual anonymous permanent retains its own reachable physical card face for noncommitting hover");
+        app.Update(new Microsoft.Xna.Framework.GameTime(TimeSpan.FromSeconds(.05), TimeSpan.FromSeconds(.05)),
+            new(pointer.X, pointer.Y, 0, default, default, default, default, default), new(), new(1600, 900));
+        frame = app.ReadPresentation();
         var text = frame.Drawing.Commands.Select(command => command switch {
             DrawCommand.Text value => value.Value, DrawCommand.CenterText value => value.Value, _ => null
         }).Where(value => value != null).ToArray();
         check(app.TestPort.TableStudyEnabled && frame.Scene!.BattlefieldCard(2, hidden.VisualId) is { ScanFace: true, Card.FaceDown: true }
                 && CardPresentation.Artwork(hidden) == null && text.Contains("Face-down permanent")
+                && frame.Drawing.Commands.OfType<DrawCommand.CenterText>().Any(label => label.Value == "2/2")
                 && text.All(value => !value!.Contains("HIDDEN_", StringComparison.Ordinal)),
-            "The production study painter masks a hidden printed name, artwork, cost and rules while retaining its public anonymous creature state");
+            "Hovering the physical face-down card names only its anonymous public identity; its public 2/2 survives while printed name, artwork, cost and rules stay masked");
         check(frame.Cards.Where(card => card.Zone == "Battlefield").All(card => {
                 var node = frame.Scene!.BattlefieldCard(card.Request.Owner!.Value, card.Id)!;
                 var placement = node.Attachment is { } attachment ? frame.Scene.BattlefieldDrawOrder.Single(item => item.Id == attachment.RootId) : node;

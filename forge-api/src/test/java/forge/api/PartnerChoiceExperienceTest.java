@@ -103,6 +103,8 @@ public class PartnerChoiceExperienceTest {
             assertTrue(game.answer(confirm, Map.of("action", accept ? "ok" : "cancel")));
 
             boolean chosePir = false, sawLibrary = false;
+            Integer expectedSearchCard = null;
+            Set<Integer> handBeforeSearch = Set.of();
             RulesScenario.Input done = null;
             for (int step = 0; step < 12; step++) {
                 var next = game.until(i -> text(i.prompt(), "kind").equals("choice") || text(i.prompt(), "kind").equals("reveal")
@@ -113,12 +115,32 @@ public class PartnerChoiceExperienceTest {
                     assertEquals(next.seat(), targetSeat);
                     sawLibrary = true;
                     assertPrivateOwner(game, recipient, text(next.prompt(), "kind"));
-                    for (int seat = 0; seat < 4; seat++) if (seat != targetSeat)
-                        assertTrue(zone(player(game.state(seat), recipient), "Library").getAsJsonArray("cards").isEmpty());
+                    for (int seat = 0; seat < 4; seat++) {
+                        var library = zone(player(game.state(seat), recipient), "Library");
+                        assertTrue(library.getAsJsonArray("cards").isEmpty(),
+                                "Search access belongs to its sorted decision faces, never an ordered library-zone projection, including for the searching seat");
+                        assertTrue(library.get("topCard").isJsonNull(), "A full-library reveal does not identify its shuffled top card");
+                    }
                     if (text(next.prompt(), "kind").equals("choice")) {
-                        var pir = next.prompt().getAsJsonArray("choices").asList().stream().map(c -> c.getAsJsonObject())
-                                .filter(c -> c.has("card") && text(c.getAsJsonObject("card"), "name").equals(PIR)).findFirst().orElseThrow();
                         assertTrue(pirInLibrary, "A commander outside the library is not a search option");
+                        var recipientPlayer = game.table.game.getRegisteredPlayers().get(targetSeat);
+                        var libraryOrder = recipientPlayer.getCardsIn(forge.game.zone.ZoneType.Library).stream()
+                                .filter(card -> card.getName().equals(PIR)).toList();
+                        var canonical = libraryOrder.stream().sorted(Comparator.comparingInt(Card::getId)).toList();
+                        assertTrue(canonical.size() > 80, "The privacy regression exercises a genuine full-library search, not a small reveal");
+                        int selection = 0;
+                        for (int index = 0; index < canonical.size(); index++) if (libraryOrder.get(index).getId() != canonical.get(index).getId()) {
+                            selection = index; break;
+                        }
+                        expectedSearchCard = canonical.get(selection).getId();
+                        handBeforeSearch = recipientPlayer.getCardsIn(forge.game.zone.ZoneType.Hand).stream().map(Card::getId)
+                                .collect(java.util.stream.Collectors.toSet());
+                        var offered = next.prompt().getAsJsonArray("choices");
+                        assertEquals(offered.size(), canonical.size());
+                        var pir = offered.get(selection).getAsJsonObject();
+                        assertEquals(pir.get("index").getAsInt(), selection,
+                                "Private search handles use the same canonical candidate order as their response lookup");
+                        assertEquals(text(pir.getAsJsonObject("card"), "name"), PIR);
                         assertFalse(pir.has("cardId"));
                         assertFalse(pir.getAsJsonObject("card").has("key"), "A private search face grants no persistent action key");
                         assertTrue(game.answer(next, Map.of("choices", List.of(pir.get("index").getAsInt()))));
@@ -130,6 +152,12 @@ public class PartnerChoiceExperienceTest {
                 assertTrue(game.answer(next, Map.of("choices", List.of())));
             }
             assertNotNull(done, "The actual Partner ability must finish and restore ordinary priority");
+            if (expectedSearchCard != null) {
+                var actualHand = game.table.game.getRegisteredPlayers().get(targetSeat).getCardsIn(forge.game.zone.ZoneType.Hand).stream().map(Card::getId).toList();
+                assertFalse(handBeforeSearch.contains(expectedSearchCard));
+                assertTrue(actualHand.contains(expectedSearchCard),
+                        "The canonical search index moves that exact eligible physical card, rather than encoding its shuffled library position");
+            }
             assertEquals(chosePir, accept && pirInLibrary);
             assertEquals(sawLibrary, accept);
             int moved = accept && pirInLibrary ? 1 : 0;

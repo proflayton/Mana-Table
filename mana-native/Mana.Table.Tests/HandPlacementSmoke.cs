@@ -53,12 +53,12 @@ internal sealed class HandPlacementSmoke : ITableAutomation
         return mouse;
     }
 
-    internal static void Run(string profile, Point? size)
+    internal static void Run(string profile, Point? size, string? artCache = null)
     {
         new PlayPreferences { Automatic = false, Sounds = false }.Save(profile);
         var scenario = new InteractionScenarioEngine();
         scenario.Present(Example(scenario.State, "single"));
-        using var game = new TableWindow(TestTableServices.For(scenario), profile, null, null, size, initialState: scenario.State, artSource: new CardReadingArtFixture());
+        using var game = new TableWindow(TestTableServices.For(scenario), profile, null, null, size, initialState: scenario.State, artSource: new CardReadingArtFixture(artCache));
         game.Automation = new HandPlacementSmoke(game.TestPort, scenario);
         game.Run();
     }
@@ -186,7 +186,7 @@ internal sealed class HandPlacementSmoke : ITableAutomation
         Step(.7, () => { Expect("placement-a"); MoveCard("hand-forest"); }); Click();
         Wait(() => Reading("hand-forest") && view.Hits.Any(hit => hit.Id == "read-card-action"), 3, () => {
             Check(scenario.Replies.Count == before && sourceRead == (expectedGame, expectedDecision, expectedCard)
-                && ReaderActionText() == HandPlacements.Options(view.Match!, Forest()).Single().Text,
+                && ReaderActionText() == ActionProse(HandPlacements.Options(view.Match!, Forest()).Single().Text),
                 "A valid empty source-action read preserves the hand card's concrete engine-reported placement action without submitting anything");
             Capture("09-source-aware-hand-placement"); MoveHit("read-card-action");
         }); Click();
@@ -215,12 +215,49 @@ internal sealed class HandPlacementSmoke : ITableAutomation
         Wait(() => view.Frame!.Cards.Any(card => card.Focused && card.Card.VisualId == "own-grave" && card.Zone == "Graveyard")
             && view.Hits.Any(hit => hit.Id == "read-card-action"), 3, () => {
             var current = view.Match!.Viewer!.Zone("Graveyard").Cards.Single(card => card.VisualId == "own-grave");
-            Check(scenario.Replies.Count == before && view.ZoneName == "Graveyard" && view.Overlay.Length == 0
+            Check(scenario.Replies.Count == before && view.Frame!.Scene?.Spread?.Target is Mana.Renderer.CardCollectionTarget.PublicZone { PlayerId: 0, Zone: Mana.Renderer.PublicInspectionZone.Graveyard }
+                && view.Overlay.Length == 0
                 && sourceRead == (view.Match.Id, view.Match.Decision!.Id, current.Key)
-                && ReaderActionText() == "Cast Flashback {1}{U}, Pay 3 life: Target player draws two cards."
+                && ReaderActionText() == ActionProse("Cast Flashback {1}{U}, Pay 3 life: Target player draws two cards.")
+                && ReaderManaSymbols("1", "U")
                 && !view.Hits.Any(hit => hit.Id is "zone-use:own-grave" or "inspect-zone-use"),
                 "A source-aware graveyard card opens its actual live reader and current-key cast action without an inspector detour or a game reply");
             Capture("10-source-aware-grave-reader");
+            PublishModalLand(); before = scenario.Replies.Count; MoveAway();
+        });
+        Step(.7, () => MoveCard("modal-land")); Click();
+        Wait(() => Reading("modal-land") && view.Hits.Any(hit => hit.Id == "source-action:opaque-land-route"), 3, () => {
+            var cast = view.Hits.Single(hit => hit.Id == "read-card-action").Bounds;
+            var land = view.Hits.Single(hit => hit.Id == "source-action:opaque-land-route").Bounds;
+            var labels = view.Frame!.Observe().Text;
+            bool FullControl(Microsoft.Xna.Framework.Rectangle bounds) {
+                var text = labels.Where(text => bounds.Contains(new Point(text.Bounds.X, text.Bounds.Y))).ToArray();
+                return bounds.Height >= 38 && text.Length > 0 && text.All(line => line.Bold && line.Size >= .70f);
+            }
+            Check(scenario.Replies.Count == before && Reading("modal-land") && FullControl(cast) && FullControl(land)
+                && cast.Width == land.Width && !cast.Intersects(land)
+                && ReaderActionText() == ActionProse("Cast Return target card from your graveyard to your hand.")
+                && ReaderActionText("source-action:opaque-land-route") == ActionProse("Play land (Bala Ged Sanctuary)")
+                && labels.Any(text => text.Value == "PRINTED SPELL COST"),
+                "The modal hand card exposes its complete cast and land alternatives as separate, equally readable controls without committing either");
+            var current = view.Match!.Viewer!.Zone("Hand").Cards.Single(card => card.VisualId == "modal-land");
+            expectedGame = view.Match.Id; expectedDecision = view.Match.Decision!.Id; expectedCard = current.Key;
+            Capture("11-modal-land-alternatives"); MoveHit("source-action:opaque-land-route");
+        });
+        Step(.2, () => {
+            Check(view.ManaJourney == null && Reading("modal-land") && scenario.Replies.Count == before,
+                "Hovering the land offer removes the printed front's spell-cost preview without committing or implying a mana payment");
+            Capture("11b-hover-land");
+        }); Click();
+        Wait(() => ReplySettled() && view.Frame!.Cards.Any(card => card.Id == "modal-land" && card.Zone == "Battlefield"
+            && Microsoft.Xna.Framework.Vector2.Distance(card.Display.Center, card.Rest.Center) < 2), 3, () => {
+            Check(scenario.Replies.Count == before + 1 && scenario.Replies[^1] is UseOfferedAction reply
+                && reply.GameId == expectedGame && reply.DecisionId == expectedDecision && reply.Card == expectedCard
+                && reply.ActionId == "opaque-land-route" && view.Match!.Viewer!.Zone("Hand").Cards.All(card => card.VisualId != "modal-land")
+                && view.Match.Viewer.Zone("Battlefield").Cards.Single(card => card.VisualId == "modal-land") is { Name: "Bala Ged Sanctuary", Type: "Land", Tapped: true }
+                && view.Match.Viewer.LandPlaysUsed == 1 && view.Match.Stack.IsEmpty,
+                "The physical Play land click submits one exact scoped opaque offer and displays the same card as the authored tapped land result");
+            Capture("12-modal-land-played");
         });
         Step(.2, () => {
             Check(view.Error.Length == 0, "The complete hand and zone action journey completes without client errors");
@@ -229,12 +266,21 @@ internal sealed class HandPlacementSmoke : ITableAutomation
             view.Exit();
         });
     }
-    private string ReaderActionText()
+    private string ReaderActionText(string id = "read-card-action")
+    {
+        var bounds = view.Hits.Single(hit => hit.Id == id).Bounds;
+        // Words are separate draw commands; recognized mana tokens are sprites.
+        return ActionProse(string.Concat(view.Frame!.Observe().Text.Where(text => bounds.Contains(new Point(text.Bounds.X, text.Bounds.Y)))
+            .Select(text => text.Value)));
+    }
+    private static string ActionProse(string text) => System.Text.RegularExpressions.Regex.Replace(text, @"\{([^{}]+)\}|\s+", match =>
+        match.Groups[1].Success && Mana.Table.Presentation.SourceActionTextLayout.SymbolCrop(match.Groups[1].Value).IsEmpty ? match.Value : "");
+    private bool ReaderManaSymbols(params string[] expected)
     {
         var bounds = view.Hits.Single(hit => hit.Id == "read-card-action").Bounds;
-        // Wrapping preserves every character, including boundary whitespace.
-        return string.Concat(view.Frame!.Observe().Text.Where(text => bounds.Contains(new Point(text.Bounds.X, text.Bounds.Y)))
-            .Select(text => text.Value));
+        var crops = view.Frame!.Drawing.Commands.OfType<Mana.Renderer.DrawCommand.Sprite>()
+            .Where(sprite => bounds.Contains(sprite.Center.ToPoint())).Select(sprite => sprite.Crop);
+        return crops.SequenceEqual(expected.Select(symbol => (Microsoft.Xna.Framework.Rectangle?)Mana.Table.Presentation.SourceActionTextLayout.SymbolCrop(symbol)));
     }
     private bool ReplySettled() => scenario.Replies.Count == before + 1 && !view.Busy && view.Match?.Revision == scenario.State.Revision;
     private Card Forest() => view.Match!.Viewer!.Zone("Hand").Cards.Single(c => c.VisualId == "hand-forest");
@@ -246,6 +292,38 @@ internal sealed class HandPlacementSmoke : ITableAutomation
     private void CheckPlacement(string description) => Check(scenario.Replies.Count == before + 1 && scenario.Replies[^1] is PlaceFromHand reply && reply.GameId == expectedGame && reply.DecisionId == expectedDecision
         && reply.Card == expectedCard && reply.AbilityId == expectedAbility, description);
     private void Publish(string mode) { scenario.Present(Example(scenario.State, mode)); view.Accept(scenario.State); }
+    private void PublishModalLand()
+    {
+        var card = new Card { VisualId = "modal-land", CombatId = "modal-land", Name = "Bala Ged Recovery", Type = "Sorcery", ManaCost = "{2}{G}",
+            ArtName = "Bala Ged Recovery", ArtSet = "PLST", CollectorNumber = "ZNR-180", ArtFace = "front",
+            Text = "Return target card from your graveyard to your hand.", Selectable = true,
+            OtherFace = new("Bala Ged Sanctuary", "Land", "", "Bala Ged Sanctuary enters tapped.\n{T}: Add {G}.", null, null, "Bala Ged Recovery", "back") };
+        var state = Example(scenario.State, "revoked");
+        scenario.Present(state with { Players = state.Players.Select(player => player.Id != 0 ? player : player with {
+            LandPlaysUsed = 0, Zones = player.Zones.Select(zone => zone.Name == "Hand" ? zone with { Count = 1, Cards = [card] } : zone).ToImmutableArray()
+        }).ToImmutableArray() });
+        scenario.SourceActionRead = (game, prompt, key) => {
+            var current = scenario.State;
+            var source = current.Viewer!.Zones.SelectMany(zone => zone.Cards).Single(source => source.Key == key);
+            if (game != current.Id || prompt != current.Decision!.Id) throw new InvalidOperationException("Modal reader requested a stale scope.");
+            return new(game, prompt, key, source.VisualId, current.Viewer.Zone("Hand").Cards.Contains(source)
+                ? [new("opaque-spell-route", "cast", card.Text), new("opaque-land-route", "play", "Play land (Bala Ged Sanctuary)")] : []);
+        };
+        scenario.ReplyOverride = command => {
+            var current = scenario.State; var source = current.Viewer!.Zone("Hand").Cards.Single();
+            if (command is not UseOfferedAction { ActionId: "opaque-land-route" } use || use.Card != source.Key)
+                throw new InvalidOperationException("The modal journey selected an unoffered route.");
+            var face = source.OtherFace!;
+            var land = source with { Name = face.Name, Type = face.Type, ManaCost = face.ManaCost, Text = face.OracleText,
+                ArtName = face.ArtName, ArtFace = face.ArtFace, OtherFace = new(source.Name, source.Type, source.ManaCost, source.Text, null, null, source.Name, "front"), Tapped = true, Selectable = false };
+            scenario.Present(current with { Players = current.Players.Select(player => player.Id != 0 ? player : player with {
+                LandPlaysUsed = 1, Zones = player.Zones.Select(zone => zone.Name == "Hand" ? zone with { Count = 0, Cards = [] }
+                    : zone.Name == "Battlefield" ? zone with { Count = zone.Count + 1, Cards = [.. zone.Cards, land] } : zone).ToImmutableArray()
+            }).ToImmutableArray() });
+            scenario.Replies.Add(command); return Task.CompletedTask;
+        };
+        view.Accept(scenario.State);
+    }
     private static GameSnapshot Example(GameSnapshot previous, string mode)
     {
         var state = PresentationSmoke.Example();

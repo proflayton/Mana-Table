@@ -82,7 +82,8 @@ public class GameplayClarityProjectionTest {
                 assertEquals(text(current, "text"), ""); assertEquals(text(current, "manaCost"), "");
                 assertFalse(current.has("otherFace")); assertFalse(current.has("artName"));
                 assertFalse(current.toString().contains("Concealed"));
-                assertTrue(current.get("visualId").isJsonNull()); assertFalse(text(current, "combatId").isEmpty());
+                assertFalse(current.get("visualId").isJsonNull()); assertEquals(current.get("visualId").getAsString(), "");
+                assertFalse(text(current, "combatId").isEmpty());
             }
             var saved = table.seat(1).state();
             for (var player : table.game.getRegisteredPlayers()) player.getView().set(TrackableProperty.Counters, HashMultiset.<CounterType>create());

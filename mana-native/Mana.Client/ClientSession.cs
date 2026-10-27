@@ -14,6 +14,7 @@ public sealed class ClientSession
     private readonly TimeProvider time;
     private bool recoveryRequired;
     private CancellationTokenSource? advancing;
+    private StackResolutionIntent? stackIntent;
     private readonly Queue<RestorePriorityAbility> pendingSettings = [];
     private RestorePriorityAbility? activeSetting;
     public ClientSession(IMatchConnection connection, ITableSetup? setup = null, TimeProvider? clock = null,
@@ -49,11 +50,12 @@ public sealed class ClientSession
         while (!Busy && !NeedsRecovery && pendingSettings.TryDequeue(out var setting)) Submit(setting);
     }
     public bool Accept(GameSnapshot? state) => Accept(state, replica.Epoch);
-    public void Reset() { CancelAdvance(); SourceActions.Clear(); pendingSettings.Clear(); LastFailureWasCommand = false; replica.BeginCommand(); Accept(null); }
+    public void Reset() { StopStackResolution(); CancelAdvance(); SourceActions.Clear(); pendingSettings.Clear(); LastFailureWasCommand = false; replica.BeginCommand(); Accept(null); }
     private bool Accept(GameSnapshot? state, long epoch)
     {
         var previous = State;
         if (Closed || !replica.Accept(state, epoch)) return false;
+        if (stackIntent != null && (state == null || !stackIntent.CanContinue(state))) StopStackResolution();
         if (SourceActions.View.Context is { } context && CurrentSourceContext(state, context.SourceCardKey) != context)
             SourceActions.Clear();
         bool recovered = NeedsRecovery;
@@ -63,7 +65,11 @@ public sealed class ClientSession
         if (recovered) Recovered?.Invoke();
         return true;
     }
-    public void Run(Func<Task> operation) => Run(_ => operation());
+    public void Run(Func<Task> operation)
+    {
+        if (Busy || Closed) return;
+        StopStackResolution(); Run(_ => operation());
+    }
     private void Run(Func<long, Task> operation)
     {
         if (Busy || Closed) return;
@@ -93,6 +99,7 @@ public sealed class ClientSession
         if (command is UseOfferedAction offered && (CurrentSourceContext(State, offered.Card) is not { } context
             || SourceActions.TryCreateCommand(context, offered.ActionId) != offered)) return false;
         command.Validate();
+        StopStackResolution();
         if (command is RestorePriorityAbility restore) activeSetting = restore;
         Run(async epoch => { await connection.ExecuteAsync(command); var state = await connection.ObserveAsync(); Post(() => Accept(state, epoch)); });
         return true;
@@ -102,7 +109,7 @@ public sealed class ClientSession
     public bool SubmitSetting(RestorePriorityAbility command)
     {
         if (Closed || NeedsRecovery || State == null || !GameCommandPermissions.Allows(State, command)) return false;
-        command.Validate(); CancelAdvance();
+        command.Validate(); StopStackResolution(); CancelAdvance();
         if (activeSetting == command || pendingSettings.Contains(command)) return false;
         if (!Busy) return Submit(command);
         pendingSettings.Enqueue(command); return true;
@@ -114,9 +121,19 @@ public sealed class ClientSession
         Func<GameSnapshot, GameSnapshot, bool> shouldPresent)
         => StartAdvance(initial => QuietPriorityPolicy.CanPass(initial, token) && canContinue(initial),
             (initial, cancellation) => advance.RunQuietlyAsync(initial, token, canContinue, shouldPresent, cancellation));
-    private bool StartAdvance(Func<GameSnapshot, bool> canStart, Func<GameSnapshot, CancellationToken, Task<GameSnapshot?>> operation)
+    public bool AdvanceStack(StackResolutionIntent intent, Func<GameSnapshot, GameSnapshot, bool> shouldPresent)
+    {
+        ArgumentNullException.ThrowIfNull(intent);
+        ArgumentNullException.ThrowIfNull(shouldPresent);
+        return StartAdvance(state => intent.CanContinue(state) && state.Decision?.Payload is PriorityPayload,
+            (initial, cancellation) => advance.RunStackAsync(initial, intent, shouldPresent, cancellation), intent);
+    }
+    private bool StartAdvance(Func<GameSnapshot, bool> canStart, Func<GameSnapshot, CancellationToken, Task<GameSnapshot?>> operation,
+        StackResolutionIntent? nextStackIntent = null)
     {
         if (Busy || Polling || Closed || NeedsRecovery || State is not { } initial || !canStart(initial)) return false;
+        if (!ReferenceEquals(stackIntent, nextStackIntent)) StopStackResolution();
+        stackIntent = nextStackIntent;
         var cancellation = advancing = new CancellationTokenSource();
         Run(async epoch => {
             try {
@@ -130,6 +147,7 @@ public sealed class ClientSession
     }
     private void ReportFailure(Exception error, bool command)
     {
+        StopStackResolution();
         LastFailureWasCommand = command;
         if (State != null) {
             CancelAdvance();
@@ -145,8 +163,9 @@ public sealed class ClientSession
         if (state is not { Decision: { } decision } || key.Length == 0) return null;
         // Embedded decision/choice faces can describe history. Only a currently
         // disclosed physical occurrence can carry authority to act on a source.
-        var card = CardViews.FindZoneActionSource(state, key)?.Card;
+        var card = CardViews.FindActionSource(state, key)?.Card;
         return card is not { FaceDown: false } ? null : new(state.Id, decision.Id, state.Revision, state.ViewerId, card.Key, CardViews.Identity(card));
     }
-    public void Close() { CancelAdvance(); SourceActions.Close(); pendingSettings.Clear(); Closed = true; replica.BeginCommand(); }
+    private void StopStackResolution() { stackIntent?.Stop(); stackIntent = null; }
+    public void Close() { StopStackResolution(); CancelAdvance(); SourceActions.Close(); pendingSettings.Clear(); Closed = true; replica.BeginCommand(); }
 }

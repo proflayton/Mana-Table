@@ -82,7 +82,7 @@ internal sealed partial class TableApplication
                 .Where(value => value.Length > 0)), 309, y + 56, Gold, .66f, 375, 2);
             canvas.Text(AllocationGuide.Counters(card), 309, y + 98, Gold, .56f, 375, 1);
             string defender = attack.Defender?.Name ?? state.Players.FirstOrDefault(p => p.Id == attack.DefendingPlayerId)?.Name ?? "Defender";
-            canvas.Text("ATTACKING " + defender, 708, y + 12, Red, .66f, 443, 2, true);
+            canvas.Text(attack.HasDefender ? "ATTACKING " + defender : "DEFENDER LEFT COMBAT", 708, y + 12, Red, .66f, 443, 2, true);
             string blockers = string.Join(", ", attack.BlockerIds.Select(id => CombatGuide.Find(state, id)?.Name ?? "Blocker"));
             canvas.Text(blockers.Length > 0 ? "Blocked by " + blockers : attack.Blocked ? "Blocked · blockers have left combat" : "Unblocked", 708, y + 53, Ink, .68f, 446, 2);
             if (attack.BlockerIds.Length > 0) Button("combat-blockers:" + attack.CardId, "Review " + attack.BlockerIds.Length + " blockers", 708, y + 91, 274, new MatchIntent.ReviewBlockers(attack.CardId), height: 27);

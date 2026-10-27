@@ -7,6 +7,8 @@ internal static class SourceActionSessionRegression
 {
     internal static async Task RunAsync(Action<bool, string> check)
     {
+        await CurrentCostFacts(check);
+        CurrentPaymentPool(check);
         var first = new SourceActionContext("game", "priority", 4, 0, "source-key", "public-occurrence");
         var action = new SourceAction("opaque-action", "cast", "Cast Toothy, Imaginary Friend");
         var missing = new SourceActionSession(null, _ => throw new Exception("Unsupported provider queued work."));
@@ -204,6 +206,72 @@ internal static class SourceActionSessionRegression
             && closing.Session.View.Generation == closedGeneration && closing.Provider.Requests.Length == 1
             && closing.Session.TryCreateCommand(first, action.Id) == null,
             "A closed action session rejects future observations and late completions without resurrecting authority");
+    }
+
+    private static async Task CurrentCostFacts(Action<bool, string> check)
+    {
+        var context = new SourceActionContext("cost-facts", "same-decision", 17, 0, "source-key", "source-occurrence");
+        var funding = new ManaFundingContext(SemanticKnowledge.Unknown, ImmutableDictionary<string, int>.Empty,
+            [new("resource-occurrence", [new([new(ActionCostKind.Tap, 1, true, "")],
+                new(SemanticKnowledge.Known, [new(ImmutableDictionary<string, int>.Empty.Add("U", 1))]), SemanticKnowledge.Known)])]);
+        var facts = new ManaCostPreview([new(ActionCostKind.Mana, 1, false, "") { ManaSymbols = ["{U}"] }],
+            SemanticKnowledge.Unknown, funding);
+        var offered = new SourceAction("original-action", "cast", "Cast the current route") { CostPreview = facts };
+
+        var stale = new Driver(); stale.Session.Observe(context);
+        (await stale.Request(1)).Result.SetResult(Catalog(context, offered) with { Revision = context.Revision - 1 });
+        await stale.Until(() => stale.Session.View.Status == SourceActionStatus.Stale);
+        check(stale.Session.View.Actions.Count == 0 && stale.Session.TryCreateCommand(context, offered.Id) == null,
+            "A delayed cost preview with the same game, decision and source but an older publication revision is stale and cannot commit");
+
+        var missing = new Driver(); missing.Session.Observe(context);
+        (await missing.Request(1)).Result.SetResult(Catalog(context, offered));
+        await missing.Until(() => missing.Session.View.Status == SourceActionStatus.Failed);
+        check(missing.Session.View.Actions.Count == 0 && missing.Session.TryCreateCommand(context, offered.Id) == null,
+            "Funding metadata without a publication revision fails rather than masquerading as a legacy current action catalog");
+
+        var current = new Driver(); current.Session.Observe(context);
+        (await current.Request(1)).Result.SetResult(Catalog(context, offered) with { Revision = context.Revision });
+        await current.Until(() => current.Session.View.Status == SourceActionStatus.Ready);
+        check(current.Session.View.Actions.Single().CostPreview == facts
+                && current.Session.TryCreateCommand(context, offered.Id) == new UseOfferedAction(context.GameId, context.DecisionId, context.SourceCardKey, offered.Id)
+                && current.Session.TryCreateCommand(context, "resource-occurrence") == null
+                && current.Session.TryCreateCommand(context, "invented-action") == null,
+            "A current revision preserves immutable read-only cost facts while only the original offered action handle can create a command");
+        var next = context with { Revision = context.Revision + 1 };
+        current.Session.Observe(next);
+        check(current.Session.View.Actions.Count == 0 && current.Session.TryCreateCommand(context, offered.Id) == null,
+            "A newer publication revokes the old funding preview and its action immediately, before the replacement query completes");
+        (await current.Request(2)).Result.SetResult(Catalog(next, offered) with { Revision = context.Revision });
+        await current.Until(() => current.Session.View.Status == SourceActionStatus.Stale);
+        check(current.Session.TryCreateCommand(next, offered.Id) == null,
+            "A provider response cannot refresh old cost metadata merely by retaining the same decision and source strings");
+    }
+
+    private static void CurrentPaymentPool(Action<bool, string> check)
+    {
+        var legacy = new PaymentPayload(new("Pay", false), new("Cancel", true));
+        var state = new GameSnapshot("pool-scope", "playing", null, null, 0, 4, "Main", "MAIN1", 0,
+            [new(0, "Viewer", 40, true, false, ImmutableDictionary<string, int>.Empty.Add("U", 1).Add("C", 2), []),
+             new(1, "Actual payer", 40, false, false, ImmutableDictionary<string, int>.Empty.Add("G", 2), [])], [], null,
+            new("payment", new(), legacy)) { Revision = 8, BoardRevision = 8, DecisionOwnerId = 0 };
+        GameSnapshot With(PaymentPayload payment) => state with { Decision = state.Decision! with { Payload = payment } };
+        bool Allows(GameSnapshot observation, string color) => GameCommandPermissions.Allows(observation, new SpendPoolMana(state.Id, "payment", color));
+        check(Allows(state, "U") && Allows(state, "C") && !Allows(state, "G"),
+            "An omitted legacy applicability set retains only the viewer's actually floating mana; another player's pool is not inferred");
+        check(!Allows(With(legacy with { UsablePoolManaColors = [] }), "U")
+                && !Allows(With(legacy with { UsablePoolManaColors = [] }), "C"),
+            "An explicitly empty current payment applicability set means no floating color is usable rather than falling back to legacy counts");
+        var narrowed = With(legacy with { UsablePoolManaColors = ["U"] });
+        check(Allows(narrowed, "U") && !Allows(narrowed, "C"),
+            "A current applicable-color set rejects otherwise floating colorless units that cannot spend on this bill");
+        var foreign = With(legacy with { PayerId = 1, UsablePoolManaColors = ["G", "U"] });
+        check(Allows(foreign, "G") && !Allows(foreign, "U") && !Allows(foreign, "C")
+                && !Allows(With(legacy with { PayerId = 91, UsablePoolManaColors = ["U"] }), "U"),
+            "An explicit payer uses only that known player's current pool and cannot borrow the viewing controller's mana or name an absent payer");
+        check(!GameCommandPermissions.Allows(narrowed, new SpendPoolMana(state.Id, "old-payment", "U"))
+                && !GameCommandPermissions.Allows(narrowed with { DecisionOwnerId = 1 }, new SpendPoolMana(state.Id, "payment", "U")),
+            "Read-only payment facts preserve the exact current decision and viewing controller's command ownership checks");
     }
 
     private static SourceActionSet Catalog(SourceActionContext context, params SourceAction[] actions)

@@ -18,6 +18,7 @@ final class SyncLobby {
     private SyncTransport.Connection connection;
     private final List<Slot> slots = new ArrayList<>();
     private MatchTable table;
+    private final boolean automated;
     private TableConversation conversation = new TableConversation();
     private String format = "Constructed";
     private DecisionTempo.Settings tempo = DecisionTempo.Settings.off();
@@ -30,6 +31,10 @@ final class SyncLobby {
         Slot(String name, boolean occupied) { this.name = name; this.occupied = occupied; }
     }
     SyncLobby(Path resources, Path profile) {
+        this(resources, profile, false);
+    }
+    SyncLobby(Path resources, Path profile, boolean automated) {
+        this.automated = automated;
         this.resources = resources; this.profile = profile;
         catalog = CardCatalog.fromDatabases(forge.StaticData.instance().getAvailableDatabases().values());
         new DeckAnalysisFormats(catalog).load(resources);
@@ -54,7 +59,7 @@ final class SyncLobby {
     }
     SyncLobby localGuest() {
         if (server == null) throw new IllegalStateException("Host a table first");
-        var guest = new SyncLobby(resources, profile); guest.connection = server.joinLocal(); return guest;
+        var guest = new SyncLobby(resources, profile, automated); guest.connection = server.joinLocal(); return guest;
     }
     Object join(String address) {
         // Validate and connect before releasing a working seat. A typo must not
@@ -94,6 +99,7 @@ final class SyncLobby {
     Object reconnect() { if (connection instanceof SyncTransport.Remote remote) remote.reconnect(); return state(); }
     MatchEndpoint match() { return new SeatConnection(connection); }
     boolean connected() { return connection != null; }
+    synchronized List<MatchSession> automatedSeats() { return server == null || table == null ? List.of() : table.automatedSeats(); }
     synchronized Object testViews() {
         if (!Boolean.getBoolean("mana.test") || server == null || table == null) throw new IllegalStateException("Seat audit is available only to an isolated test host");
         return table.testViews();
@@ -158,7 +164,8 @@ final class SyncLobby {
             case "start": {
                 requireHost(seat); requireSetup(); String problem = startProblem(); if (problem != null) throw new IllegalStateException(problem);
                 List<RegisteredPlayer> players = slots.stream().map(s -> s.ai
-                        ? MatchTable.ai(s.deck, format, s.name) : MatchTable.human(s.deck, format, s.name)).toList();
+                        ? automated ? MatchTable.automated(s.deck, format, s.name) : MatchTable.ai(s.deck, format, s.name)
+                        : MatchTable.human(s.deck, format, s.name)).toList();
                 table = new MatchTable(format, players, resources, profile, tempo, () -> System.nanoTime() / 1_000_000);
                 table.start(); conversation.activity(seat, "started the game."); break;
             }

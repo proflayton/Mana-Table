@@ -38,7 +38,12 @@ internal sealed class MatchPresentationLifecycle
     internal PriorityTransition? PriorityTransition => priority.Latest;
     internal IReadOnlyList<Departure> Departures => departures;
     internal bool Ready(double now) => pacing.Ready(now) && stackArrival.Ready(now);
+    internal bool ReadyForStack(double now) => pacing.Ready(now) && stackArrival.ProgressReady(now);
     internal float StackArrivalStrength(string id, double now) => stackArrival.Strength(id, now);
+    internal StackArrivalPresentation.Announcement? Announcement(double now) => stackArrival.Current(now);
+    internal int AnnouncementCount => stackArrival.PendingCount;
+    internal int IncompleteAnnouncements => stackArrival.IncompleteCount;
+    internal void HoldAnnouncements(double now, bool holding) => stackArrival.Hold(now, holding);
     internal int PendingDraws(int player, double now) => presence.PendingDraws(player, now);
     internal ManaPoolCue? ManaCue(int player, string symbol, double now) => mana.For(player, symbol, now);
     internal IReadOnlyList<ManaPoolCue> ManaCues(int player, double now) => mana.ForPlayer(player, now);
@@ -58,7 +63,7 @@ internal sealed class MatchPresentationLifecycle
         effects.Observe(batch, now); presence.Observe(batch, now);
         actions.Observe(batch, now); changes.Observe(batch, now); impacts.Observe(batch, now);
         pacing.Observe(before, current, now); mana.Observe(before, current, now); priority.Observe(before, current, now);
-        stackArrival.Observe(before, current, now);
+        stackArrival.Observe(before, current, now, batch.Entries, batch.HasHistoryGap);
         ObserveDepartures(batch, now, view);
         bool comparable = before != null && before.Id == current.Id && before.ViewerId == current.ViewerId;
         return new(changed,

@@ -49,6 +49,12 @@ final class RulesScenario implements AutoCloseable {
     }
 
     RulesScenario(String name, Map<Integer, List<String>> battlefield, String mainCard, String commander,
+                  Map<Integer, List<String>> mainDeckOverrides) throws Exception {
+        this(name, battlefield, mainCard, List.of(commander), false, 4, DecisionTempo.Settings.off(),
+                () -> System.nanoTime() / 1_000_000, mainDeckOverrides);
+    }
+
+    RulesScenario(String name, Map<Integer, List<String>> battlefield, String mainCard, String commander,
                   boolean enableEtbCounters) throws Exception {
         this(name, battlefield, mainCard, List.of(commander), enableEtbCounters);
     }
@@ -68,6 +74,12 @@ final class RulesScenario implements AutoCloseable {
     }
     private RulesScenario(String name, Map<Integer, List<String>> battlefield, String mainCard, List<String> commanders,
                           boolean enableEtbCounters, int seatCount, DecisionTempo.Settings settings, LongSupplier time) throws Exception {
+        this(name, battlefield, mainCard, commanders, enableEtbCounters, seatCount, settings, time, Map.of());
+    }
+
+    private RulesScenario(String name, Map<Integer, List<String>> battlefield, String mainCard, List<String> commanders,
+                          boolean enableEtbCounters, int seatCount, DecisionTempo.Settings settings, LongSupplier time,
+                          Map<Integer, List<String>> mainDeckOverrides) throws Exception {
         this.seatCount = seatCount;
         if (StaticData.instance() == null) EngineResources.load(RESOURCES);
         evidence = Path.of("target/rules-regressions", name);
@@ -75,7 +87,9 @@ final class RulesScenario implements AutoCloseable {
         var players = new ArrayList<RegisteredPlayer>();
         for (int seat = 0; seat < seatCount; seat++) {
             var deck = new Deck("Rules seat " + seat);
-            deck.getMain().add(StaticData.instance().getCommonCards().getCard(mainCard), 100 - commanders.size());
+            if (mainDeckOverrides.containsKey(seat)) for (var card : mainDeckOverrides.get(seat))
+                deck.getMain().add(StaticData.instance().getCommonCards().getCard(card));
+            else deck.getMain().add(StaticData.instance().getCommonCards().getCard(mainCard), 100 - commanders.size());
             for (String commander : commanders)
                 deck.getOrCreate(DeckSection.Commander).add(StaticData.instance().getCommonCards().getCard(commander));
             var player = MatchTable.human(deck, "Commander", "Seat " + seat);

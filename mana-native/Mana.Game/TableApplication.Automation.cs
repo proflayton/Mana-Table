@@ -31,7 +31,16 @@ internal sealed partial class TableApplication
         internal Mana.Renderer.EffectTransitionFrame EffectTransitions => game.effectTransitionFrame;
         internal IReadOnlyList<CounterReceiptPaint> CounterReceipts => game.counterReceiptPaint;
         internal IReadOnlyList<StackRowPaint> StackRows => game.stackRows;
+        internal IReadOnlyList<StackWorkloadPaint> StackWorkloads => game.stackWorkloadPaint;
+        internal bool ResolvingCapturedStack => game.ResolvingCapturedStack;
+        internal int StackResolutionRemaining => game.stackResolutionIntent?.Remaining ?? 0;
+        internal int AnnouncementCount => game.matchPresentation.AnnouncementCount;
+        internal string? AnnouncementId => game.matchPresentation.Announcement(game.now)?.Id;
+        internal ManaJourneyPaint? ManaJourney => game.manaJourneyPaint;
+        internal IReadOnlyList<ManaSourcePaint> ManaSources => game.manaSourcePaint;
+        internal IReadOnlyList<ManaColorPaint> ManaColors => game.manaColorPaint;
         internal string? ReferencePreviewCardId => game.pendingPreviewCardId;
+        internal string? ReferencePreviewStackId => game.pendingPreviewReference?.StackId;
         internal Rectangle? ReferencePreviewBounds => game.pendingPreviewBounds;
         internal IReadOnlyDictionary<int, Rectangle> PrioritySeats => game.prioritySeats;
         internal Mana.Magic.TurnProgressView? TurnProgress => game.turnProgress;

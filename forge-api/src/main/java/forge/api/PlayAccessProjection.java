@@ -26,10 +26,12 @@ final class PlayAccessProjection {
         Route withoutCurrentOffer() { return canStart ? new Route(id, kind, sourceCardId, sourceName, detail, false) : this; }
     }
     record Access(int playerId, String zone, String cardId, List<Route> routes) { }
+    record PublishedOccurrence(int playerId, ZoneType zone, CardView card) { }
     private final Map<String, String> ids = new HashMap<>();
 
     List<Access> project(Player actor, Iterable<PlayerView> players, Input currentInput,
-            Function<CardView, Card> actual, Function<CardView, String> occurrence) {
+            Function<CardView, Card> actual, Function<CardView, String> occurrence,
+            Map<PublishedOccurrence, String> publishedCards) {
         var result = new ArrayList<Access>();
         var retained = new HashSet<String>();
         PlayerView viewer = actor.getView();
@@ -42,12 +44,16 @@ final class PlayAccessProjection {
                     // access is confined to the actual already-disclosed top.
                     if (face.getZone() != zone || face.isFaceDown() || !face.canBeShownTo(viewer)
                             || zone == ZoneType.Library && !face.equals(cards.get(0))) continue;
+                    // A rules grant can outlive a projection's disclosure window.
+                    // Reuse the exact occurrence already published in this
+                    // audience/zone rather than recreating a detached face or ID.
+                    String cardId = publishedCards.get(new PublishedOccurrence(owner.getId(), zone, face));
+                    if (cardId == null || cardId.isBlank()) continue;
                     Card card = actual.apply(face);
                     // Prepared copies remain reachable through their permanent;
                     // duplicating that virtual face as an independent exile card
                     // would misrepresent its engine-owned source relationship.
                     if (card == null || card.getCurrentStateName() == CardStateName.PreparedSpell) continue;
-                    String cardId = occurrence.apply(face);
                     var routes = new LinkedHashMap<String, Route>();
                     List<SpellAbility> offers = null;
                     for (SpellAbility ability : card.getPlayAccessAbilities(actor)) {

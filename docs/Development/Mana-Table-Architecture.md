@@ -9,6 +9,179 @@ Use the package's `SOURCE.txt`/`build.json` and release notes to identify its be
 The [native development guide](../../mana-native/README.md) is the build/run entry
 point for the Windows client.
 
+## AI policy boundary
+
+Published releases use Forge's heuristic controller with the Default profile;
+our lobby currently assigns decks through preset/opponent IDs. Deck selection,
+legal rules support and competent strategy are separate concerns. The
+[multiplayer AI investigation](Mana-Table-AI.md) records the observed low-life
+targeting feedback loop, an isolated reproducible probe, and the proposed
+boundary for authorized observations, current choice domains, forecasts and
+reasoned decisions. The scope is replacing the entire seat's strategic behavior,
+including opening hands, sequencing, payment choices, combat and required effects.
+Build the framework first; replacing targeting alone is not that migration.
+
+`Mana.AI` references the provider-neutral `Mana.Contracts` and `Mana.Planning`
+libraries, with no renderer or rules-engine dependency.
+It reuses all fifteen typed decision families and semantic commands, checks exact
+source-offer membership, owns per-input budgets and bounded seat-private history,
+and revokes late/foreign answers. A policy receives no connection. The host
+submits a one-shot handoff through its existing connection and reports acceptance,
+rejection or an uncertain receipt; acceptance never implies effect resolution.
+Unknown execution requires host recovery, not an automatic retry or concession.
+Explicit catalog completeness cannot be inferred from an auto-pass scan.
+
+Mana Table explicitly enables a per-game `GameAction` state boundary. Rules
+tasks, owned input work and publication acquire it before the table gate; all
+seat and spectator copies of one board revision are produced inside that same
+boundary. Latches, decision futures and synchronous UI waits release every
+reentrant hold while waiting and restore them afterward. Copying several live
+views under the adapter gate alone is insufficient: a mana task can otherwise
+change a card between two audience projections. Other upstream hosts retain
+their default behavior unless they opt in and instrument their waits.
+Publication first revokes lost visibility for all seat audiences, then allocates
+identities for their new snapshots and the spectator. A stale audience can revoke
+only the identity generation it previously observed. This ordering also covers
+rules rollback which restores a card to a hidden zone without a movement event;
+later source catalogs and effect graphs must reference that same published
+occurrence. Historical activity keeps its copied event-time identities.
+Pending choices retain exact source views until that post-revocation projection
+step. Source portraits, payment ownership, numeric context and allocation links
+must use the same identity generation; capturing a portrait before publication
+and computing its semantic reference afterward can produce an invalid frame.
+Readonly event history can copy an already observed anchor for that exact view,
+but cannot allocate or borrow an identity from another incarnation.
+Activity visibility retains the exact tracked `CardView` and its generation per
+physical key. A hidden historical portrait with an equal physical ID cannot
+revoke the currently published view; actual concealment and rollback still do.
+The visibility prepass may retain an existing display ID across an entitled
+public-zone replacement only after consulting the actual current card. This
+preserves hand-to-stack-to-battlefield tracking without making an old view
+actionable or accepting a historical graph entity.
+Finished tables may retain the last loser's actual registered-player rules zones.
+Those exact final views remain readable display state, with no pending input or
+action scope. They are distinct from a historical copy and from an active seat.
+Absent card identities use empty strings; decoding never invents identifiers.
+Operation entities canonicalize a rules card only when its game timestamp
+matches the current incarnation, and semantic references reject historical view
+objects. A retained portrait is not a current entity or a new opaque-ID allocation.
+Play-access projection uses the exact audience publication's disclosed-card map,
+including its existing visual identities. If a library search temporarily hides
+another seat's top card, the same publication also suppresses that card's access
+reference before allocating routes. The entitlement can return when that face is
+published again; an independent visibility guess must not leave detached access.
+Consuming a choice also ends its temporary hidden-card window in the resolving
+receipt, before a queued rules callback removes temporary display permissions.
+Persistent rules grants, such as looking at the library's top card, remain
+readable; consumed card keys and selection flags no longer grant current offers.
+
+Source native composition now owns an `AiTableHost` and a baseline
+`CasualCommanderPolicy`. A private `IAutomatedSeatProvider` supplies separately
+scoped bot knowledge and complete timing-legal source domains; remote players
+and the renderer cannot access it. Normal authoritative input controllers execute
+all bot choices, including manual producer and floating-pool payment. Forge's
+strategic controller is never a fallback for that negotiated mode.
+`IAutomatedSimulation` supports explicit all-bot tables with a separate public,
+non-acting spectator. Live tables retain their human requirement. Forecasting,
+deeper deck planning and human evaluation of the policy remain future work.
+This builds on the action-execution migration rather
+than reconstructing rules from card prose or exposing live Forge objects to a
+nominally neutral policy.
+
+Backend failure is a table interruption, separate from a player's concession.
+The provider revokes all seat inputs before terminalizing rules work and
+releasing waits. It cannot start new reveal acknowledgements during abort or
+publish a victory/defeat result for that failure; original errors stay private.
+
+The private automated observation port reads under the same rules-state boundary,
+without joining the UI queue. A nested choice can be published by a UI callback
+which is waiting for its answer; queueing observation behind that callback would
+prevent the bot from ever seeing it. Current input, proxy and publication-version
+checks remain mandatory. Unpublished rules changes revoke the previous input
+instead of pairing fresh actions with an older copied frame. Human source reads
+retain their independent input-owner dispatch and exact revision fences.
+
+The source AI semantics also retain finite operation graphs: sources, recipient
+and target-group bindings, exact/unknown quantities, costs and branch links stay
+distinct from strategic utility. `AiSemanticValidation` bounds the graph and
+checks current audience references before evaluation. Mana output alternatives
+preserve one-of colors versus simultaneous bundles. `Mana.Planning` owns the
+bounded funding assignment and scoped resource validation shared by bots and
+human presentation. Its witness tracks physical resources, including consuming
+sources, instead of counting each alternative as independent mana.
+`AiManaPlanner` maps current offered actions into that core;
+`CasualActionAssessment` and the
+public combat exchange estimate price supported consequences with bounded work.
+Unknown adjusted costs, conditions and resource dependencies cannot become
+fabricated legality. These components remain heuristic policy inputs, separate
+from the authoritative rules provider and any future forward-model port.
+
+Numeric announcements retain the exact callback's source and declared cost.
+`NumericDecision` distinguishes announcing X from an unrelated number. Its
+`ManaFundingContext` contains read-only physical resources and production
+alternatives, without action keys. The same assignment core evaluates those
+facts without constructing a pretend priority input or granting activation
+permission. The current Forge projection covers a partial own-battlefield and
+unrestricted-pool subset: a usable subset can witness nominal funding, but its
+absence cannot prove an overall shortfall. The actual payment remains authority.
+An optional cast or activation with unknown affordability requires a funded
+nominal witness before this baseline policy commits. Current rules-certified
+payability remains a separate fact. The prospective action and later numeric
+announcement use the same resource projection, avoiding a commitment which the
+numeric planner then cannot support. Unsupported costs remain unknown rather
+than being silently treated as free.
+
+Human source catalogs carry a smaller `ManaCostPreview`, not the bot's private
+action semantics. It contains nominal costs, cost knowledge and read-only funding
+facts bound to the observed source-query revision. Payment publications separately
+carry the current unpaid bill, actual payer, bounded funding facts and usable
+floating-pool colors. These are refreshed at the input-owner publication boundary,
+so a paid symbol disappears with the source's authoritative tap and pool change.
+The public unpaid bill counts distinct mana shards, allowing large generic or
+colored multiplicities to remain exact without allocating a symbol per unit.
+The display reads those counts directly; bounded planning can remain unknown for
+a very large bill while normal manual payment continues.
+The actual payer may differ from the viewing decision owner; resource scope does
+not grant another seat command authority. A missing field from an older provider
+remains unknown.
+
+`Mana.Game` uses the shared planner to suggest specific physical sources alongside
+the inspected card's mana symbols. Its witness cannot create an action handle,
+tap a source, prove adjusted affordability or disable manual play. The existing
+source, pool and Auto-pay commands retain their own current permissions. This
+keeps human previews, AI strategy and the rules provider behind distinct boundaries.
+
+A funding witness also retains its chosen production bundle at execution.
+`UseOfferedAction.ManaOutput` is optional, closed data checked against a Known,
+finite alternative of that exact current mana action before any tap or input
+mutation and again on queued execution. The Java projection retains the matching
+per-mana-part choices. It cannot grant a producer, combine alternatives or invent
+mana. Human source use without an output intent opens the actual color choice,
+including a two-color source, rather than silently selecting the first needed
+color. A nested color choice carries read-only `ManaColorPaymentContext` from
+its still-owned parent: actual payer, exact remaining counted bill and original
+paying card. The ordinary decision source remains the producer. Only the child's
+offered color indices are executable; this context grants no parent Pay, Cancel,
+source activation or pool-spending command and expires with that choice.
+
+Mana contribution selections carry optional `ManaReductionProgress` on the
+current `EntitySelectionPayload`. Its counted remaining bill is shared by player
+presentation and policy: absence is unknown, while an explicit empty bill means
+the contribution goal is covered. It does not enable Done or authorize a card.
+Convoke and improvise eligibility comes from the actual input probing a defensive
+copy of its remaining bill with current card colors; already selected cards stay
+available for undo. A generic contribution uses `{1}`, distinct from producing or
+paying exact `{C}`. Nested color choices retain the same owning bill and spell.
+The AI's episode token follows the actual input through refreshed scopes and its
+nested choice, so reissued decision IDs cannot reset the causal work allowance.
+
+`AiDecisionReplayCase` captures one seat's authorized knowledge and evaluation
+allowance. Offline `AiDecisionReplay` reuses the scoped session and exact policy
+seed without receiving an engine connection. Campaign traces and replay cases
+remain private; repeating an individual proposal is not an execution receipt or
+a claim of deterministic rules-game replay. The AI change remains draft while
+policy quality and campaign evidence are developed, even if CI is green.
+
 ## Rules-provider boundary
 
 Forge is the installed rules provider; replacing it later must not require a new
@@ -46,6 +219,14 @@ alone translates these meanings into its private wire actions. There is no
 public nullable reply bag. This does not provide live engine migration or an
 installed second rules engine.
 
+An attacker can remain in combat after its defending permanent leaves. The
+neutral `Attack.HasDefender` fact separates that state from a live target and
+from the legacy omitted `Defender` player fallback. Explicit absence preserves
+the attacker, defending-player relation and blocker links, while granting no
+target identity or command. Providers discard internal placeholder entities;
+the decoder still rejects malformed real targets and contradictory presence
+facts. Presentation and AI must not turn an absent defender into a player attack.
+
 Optional table timing has a separate `ITableTempo` port and closed neutral
 settings/clock states in `Mana.Contracts`. Lobby policy, Ready consent and
 monotonic expiry belong to the host. `DecisionTempo` owns budgets without rules
@@ -68,6 +249,7 @@ never cross-provider replay commands.
 | --- | --- |
 | Rules provider and adapter | Legal actions, decision constraints, costs, targets, resolution, effective state, event-time results and viewer filtering. `forge-api` and `Mana.Forge` translate Forge into the shared contracts. |
 | `Mana.Contracts` and `Mana.Client` | Provider-neutral state, scoped actions/decisions, command scheduling, observation ordering and stale-result rejection. Opaque handles grant only their declared current authority. |
+| `Mana.Planning` | Bounded read-only mana assignment and resource-scope validation shared by policy and presentation; no action execution or rules legality. |
 | `Mana.Magic`, `Mana.Game` and `Mana.Renderer` | Magic presentation language, local inspection/focus, gestures, grouping, layout and visual timing. These layers consume permissions; they do not establish rules legality. |
 | `Mana.Table` | Shipping composition, provider lifetime, installation health and update bootstrap. |
 
@@ -167,9 +349,13 @@ classifications fail at decoding. This is additive wire data, not a new action
 capability or persisted-deck migration. It does not yet join the independent
 execution identities described below.
 
-Accepted new stack occurrence IDs drive a bounded 2.4-second announcement and
-source emphasis. Joining, repeated polls and retained history cannot restart it;
-an entire batch does not create a sequence of one timer per trigger. Hovering
+Accepted new stack occurrence IDs and exact event-time `ActivityEntry.StackId`
+links drive an ordered, noninteractive announcement queue and source emphasis.
+The queue retains public identity/text only, never card faces, answer keys or
+actionable historical snapshots. Joining does not replay retained history;
+unchanged polling does not restart a beat. A bounded backlog or missing history
+is reported as incomplete rather than pretending every action was observed.
+Current required decisions remain live and take foreground immediately. Hovering
 the pending effect reads the chosen spell/ability with source artwork, complete text
 and current source statistics/counters. Hovering its source or targets retains
 their separate full-card inspection. Readers resolve current stack membership
@@ -177,6 +363,35 @@ each frame and disappear when that occurrence leaves. Emphasis gates local Auto
 and the existing bounded presentation acknowledgement; it cannot reset a host
 decision clock. Reading pauses local automatic interaction while the host's
 thinking/grace clock continues to run and enforce its configured expiry policy.
+
+Shipping composition also injects `IAiHostPacing` into `AiTableHost`. The host
+projects `AiTableProgress` (game/seat, turn, active seat, stack IDs and latest
+public action ID) for every observed bot before checking readiness. No private
+faces, offers or policy proposals cross that port. The timed implementation
+tracks each viewer's feed separately: activity sequences are audience-local and
+must not reset another seat's timer. Waiting withholds a command and re-observes
+on the next step; it never retains an answer across the beat. Headless campaigns
+use the fast default without this presentation cadence. A local client's Auto
+pause alone cannot govern AI progression or actions inside one rules execution.
+
+`IAiHostDiagnostics` is a separate host-only failure sink. Shipping composition
+retains original exception chains in `diagnostics/ai-host.log`; the provider
+quarantines the last decoded private bot batch and any rejected wire batch in
+distinct failure-only files. Those files have no replay/action authority and
+may contain private hands. Stable reason codes alone cross the public fault
+port. Storage failure cannot prevent fail-closed automation shutdown. The
+historical `provider-failed` report without its original exception cannot by
+itself establish a rules, strategy or wire-decoding cause.
+
+A real mixed-deck investigation reproduced a different boundary outcome:
+`automatedState` can lose its owned input during source discovery. The adapter
+maps only that method's typed `observation-superseded` result to
+`EngineObservationSupersededException`, clears cached source scopes, and returns
+no frame. `AiTableHost` discards that read and obtains a complete fresh batch on
+its next ordinary tick. It never retries a command or treats matching prose as
+recoverable. A stale signal during execution remains an unknown receipt and
+fails closed. This preserves the distinction between superseded observations,
+rejected commands, lost receipts and fatal provider defects.
 
 `PublicActivityCursor` consumes the accepted observation's event IDs once and
 publishes one immutable `PublicActivityBatch` to the feedback consumers. The batch
@@ -732,7 +947,9 @@ See the [turn-orientation comparison](Mana-Table-Experience-Review.md#experiment
 for the diagnostic captures and human review needed after the layout is ready.
 
 The normal native Commander setup defaults to four seats or starts one human with
-three Forge AI opponents. A friends' host can choose two, three or four seats;
+three AI opponents. Source composition now uses the external whole-seat policies
+described above; the published installer still uses Forge strategy. A friends'
+host can choose two, three or four seats;
 three humans can play without filling a fourth seat. The builder's Test workspace
 offers two- or four-seat Commander experiments. Existing non-Commander decks use
 a two-seat AI setup.
@@ -827,10 +1044,19 @@ Local action failures remain acknowledged until dismissed or a new action starts
 a successful background poll does not erase them. Host/guest departure confirms
 its consequence; an eliminated seat can watch or leave.
 
+The Forge connection's observed command context also rejects a lower revision
+within the same game. RPC read continuations may finish out of order; an older
+response must not retire the displayed current scope or restore an answered
+prompt. Equal revisions may refresh facts, a new match starts its own sequence,
+and explicit lifecycle clearing still revokes all local command authority.
+This ordering does not retry commands or relax current-offer validation.
+
 | Project | Responsibility |
 | --- | --- |
 | `Mana.Contracts` | Catalog, deck, setup and match-connection interfaces; typed seat snapshots and commands; visibility enumeration and art-source contract |
 | `Mana.Client` | Generic versioned replica, command scheduling, stale-poll protection, main-thread completion delivery and local artist asset loading |
+| `Mana.Planning` | Contracts-only bounded funding solver and scoped resource validation shared by AI and human mana presentation |
+| `Mana.AI` | Whole-seat policy, bounded knowledge, current offer mapping, strategy and automated-seat lifecycle |
 | `Mana.Magic` | Phase language, legal-target interpretation, click/drag command construction, Auto priority, Magic card classification and Magic art provider |
 | `Mana.Forge` | Process lifetime, protocol negotiation and Forge-to-contract mapping |
 | `Mana.Renderer` | GPU replay, typed draw commands, CPU font metrics, immutable table layout, projection, motion and effects |
@@ -1146,6 +1372,9 @@ which intentionally excludes mana abilities. `useSourceAction` validates the
 exact input, source instance, game version and handle before calling the engine's
 existing priority or mana-payment ability path. Costs, targets and resolution
 continue through Forge. No native rules-text parser determines legal actions.
+An optional expected revision correlates the read to its observation without
+advancing the board. A cost preview requires the reply's exact revision; a stale
+reply cannot paint a funding witness or retain current execution authority.
 
 `Mana.Client.SourceActionSession` owns read-query coalescing, catalog freshness and
 scoped reply creation; `TableApplication.SourceActions` supplies the current
@@ -1315,6 +1544,27 @@ authorize ordinary Auto. The application checks eligibility and presentation
 pauses without keeping another submitted-prompt cache or constructing a discarded
 pass command. The session owns submission and reconciliation.
 
+`StackResolutionIntent` adds a separate finite policy: capture the current exact
+stack occurrences, their order, controller, kind and targets, plus game/viewer,
+turn/phase and `StackInterruptionVersion`. It issues only currently offered,
+fenced `PassPriority`; it does not broaden Auto or reuse quiet-yield tokens.
+Surviving entries may form an order-preserving subsequence. A new entry,
+retarget, required choice, provider intervention, scope boundary or exhausted
+queue retires the intent. Mutable source characteristics do not. Each actual
+effect boundary returns to presentation; reading pauses a batch while Take
+control ends the intent. Cancellation reconciles one already-sent command.
+The Java adapter checks the fence at acceptance and again at execution to catch
+an action or required choice that appeared and disappeared between observations.
+Older providers without the fence cannot arm this feature.
+
+`StackWorkloads` is a source census over current entries, including interleaved
+triggers. Exact physical source, controller, effect and target identity bound a
+cohort. It never reorders or combines engine effects. The actual first entry
+alone determines NEXT, and expanded references retain real absolute positions.
+Pending counts are work counts, not forecasts of counters or damage: Pir's
+replacement is a concrete case where one trigger creates two counters. Actual
+settled characteristics and typed event receipts remain the result authority.
+
 `PresentationPacing` pauses for visible events, not empty phase changes. Board
 changes get 1.1 seconds, ordinary stack changes 1.25, targeted spells or retargets
 2.5, resolution 2.6, combat/damage 1.6, and turn changes 1.2. Repeated polls and
@@ -1466,14 +1716,17 @@ separate work from the existing test-only seat-view audit.
 ```mermaid
 flowchart LR
     Native[MonoGame table] --> Client[Mana.Client and Mana.Magic]
+    Native --> Planning[Mana.Planning]
     Client --> Adapter[Mana.Forge adapter]
     Adapter <-->|private IPC| Host[DesktopEngine]
     Host --> Connection[SeatConnection]
     Connection <-->|local or TCP synchronization| Table[MatchTable]
-    Table --> Seats[MatchSession per human seat]
-    Table --> AI[Forge AI]
+    Table --> Seats[MatchSession per acting seat]
+    BotHost[Native AiTableHost] --> Policy[Mana.AI policy]
+    Policy --> Planning
+    Planning --> Contracts[Mana.Contracts]
+    BotHost -->|private automated-seat port| Adapter
     Seats --> Rules[Forge rules]
-    AI --> Rules
 ```
 
 ## Where to change things
@@ -1484,12 +1737,14 @@ flowchart LR
 | Application composition and interaction | `TableApplication` and its feature partials |
 | Snapshot ordering, commands, assets and updates | `mana-native/Mana.Client` |
 | Typed DTOs and capabilities | `mana-native/Mana.Contracts` |
+| Shared bounded mana assignment and resource validation | `mana-native/Mana.Planning` |
 | Forge process and protocol mapping | `mana-native/Mana.Forge` |
 | Magic presentation and projected action guides | `mana-native/Mana.Magic` |
 | Typed drawing, layout, geometry, motion and effects | `mana-native/Mana.Renderer` |
 | Shared authored experiences | `mana-native/Mana.Scenarios` |
 | Command host, deck tools and seat-filtered snapshots | `forge-api/src/main/java/forge/api` |
-| Authoritative rules, card scripts and AI | Existing Forge modules and `forge-gui/res` |
+| Authoritative rules and card scripts | Existing Forge modules and `forge-gui/res` |
+| Automated policy and seat lifecycle | `mana-native/Mana.AI`; composed by `Mana.Table` |
 
 See the [native layer map](../../mana-native/README.md#where-to-change-things)
 for project responsibilities and the [API contract](../../forge-api/README.md)
