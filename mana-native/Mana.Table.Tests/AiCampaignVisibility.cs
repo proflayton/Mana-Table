@@ -32,11 +32,10 @@ internal static class AiCampaignVisibility
                 bool search = semantics?.Intent == DecisionIntent.Search || state.Decision?.Payload is ConfirmationPayload { Search: not null }
                     or TargetSelectionPayload { Search: not null };
                 if (search && zone.Name == "Library" && !zone.Cards.IsEmpty) {
-                    // Offering an optional search does not begin that search.
-                    // A separately disclosed own top card can remain readable
-                    // during that confirmation, without exposing its library.
+                    // A separately disclosed own top can remain readable during
+                    // search entry or cancellation, without exposing its library.
                     // Actual search choices still authorize no zone contents.
-                    if (state.Decision?.Payload is not ConfirmationPayload { Search: not null }
+                    if (state.Decision?.Payload is not ConfirmationPayload
                         || player.Id != state.ViewerId || zone.Cards.Length != 1
                         || domain.Coverage != ActionDomainCoverage.NotApplicable || !domain.Sources.IsEmpty
                         || !domain.Actions.IsEmpty || !domain.PoolManaColors.IsEmpty
