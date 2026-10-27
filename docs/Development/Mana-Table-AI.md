@@ -6,6 +6,37 @@ casual policy. This is not in the published installer yet. The reported live
 games have not been replayed, so their individual decisions are not diagnosed.
 Human review of a replacement policy is pending.
 
+## Choosing decks for AI seats
+
+Solo opponent selection and the host's existing **Add AI / Change deck** gesture
+offer valid saved or imported decks alongside the built-in precons. The host's
+saved library supplies hosted choices; a guest's local deck ID is never resolved
+against that host by accident. Both paths use `AiDeckCatalog`, the same detached
+deck preparation and format/legality validation, including dual commanders.
+Invalid, wrong-format, removed and unsuccessfully saved lists are excluded.
+
+A saved choice identifies the exact committed file version. If that file changes
+before selection, the provider rejects the old choice and the player selects the
+current version. Assigning it copies that validated deck into the AI seat;
+refreshing the lobby or subsequently editing the original does not change the
+selected snapshot. Selecting a different AI deck affects only that seat and
+preserves the humans' Ready consent. These selections live with the current
+table, including returning to its lobby; they are not persisted as application
+preferences across closing and reopening the app. Only the host receives its
+saved-deck catalog and opaque library references. Guests see the assigned seat's
+public deck name and readiness, without unselected saved names, commander labels,
+library IDs, private hands or deck contents.
+
+The player's intent is to assign an existing saved list to one AI seat: open that
+seat's existing deck picker, choose the saved list, then see its name retained at
+the seat. The human's deck and the other seats stay selected. This extends the
+existing game menu rather than introducing controls or changing its visual
+design. The [experience review](Mana-Table-Experience-Review.md) retains the
+game-reference and deck-catalog ownership guidance; a descriptor alone is not
+evidence of commander artwork. `AiDeckSelectionTest` covers real committed documents and
+host authority; `PregameFlowChecks.AiDecks` covers the production click path and
+Quick Play. Automated checks do not constitute human UX approval.
+
 ## What explains the targeting pattern
 
 There is a concrete mechanism for multiple independent AIs to concentrate on
@@ -286,15 +317,15 @@ two-player framing does not settle our multiplayer spatial design.
 
 ## AI quality work before merge or release
 
-The current change remains a draft. The player's 26 October direction is to
-develop and test the AI framework before merging or releasing it; UI clarity
-work follows that effort. Passing build checks or reaching a natural winner
-does not satisfy this quality gate.
+The released framework separates automated correctness from decision quality and
+human gameplay review. The player's 26 October direction prioritizes developing
+and testing this framework before UI clarity work. Passing build checks or
+reaching a natural winner does not establish enjoyable opponents.
 
 The [release gate matrix](Mana-Table-Testing.md#ai-release-evaluation) separates
 provider conformance, policy continuations, whole-game completion, state and
 authority integrity, and human gameplay review. The manual release evaluator
-runs eight controlled journeys followed by four cyclic seat rotations of the
+runs nine controlled journeys followed by four cyclic seat rotations of the
 varied decks in one initialized JVM. Every rotation must reach an engine outcome
 before cleanup, within the 160-turn/180-second ceilings. A cutoff remains
 inconclusive; the 45-second smoke profile is not a whole-game release test.
@@ -467,13 +498,14 @@ retaliation/commander-damage planning, own-deck plans,
 broader numeric purposes and effect-sensitive X investment, conditional effects and belief/forward
 search. Human assessment of enjoyable
 opponents remains necessary; win rate or equal targeting cannot substitute.
-Production causal grouping currently covers combat. Other cost, target, mode
-and confirmation inputs use their pending-input scopes, so refreshed or nested
-inputs can reset the AI allowance. The next lifecycle boundary needs opaque
-invocation contexts propagated through actual rules execution and queued
-callbacks, with nested payments retaining the parent budget root. Per-seat
-active-time accounting must be separate from that causality identity so another
-player's required choice does not consume the waiting seat's allowance.
+Current source extends causal grouping beyond combat with rules-owned execution
+occurrences. A decision's exact occurrence supplies its budget root across
+refreshed choices, costs and nested mana; unrelated prompts do not renew an
+already observed root's work or seed. Per-seat elapsed allowance counts active
+policy evaluation, excluding another seat's decision and ready/transport waits.
+Unmigrated inputs retain the existing combat/input fallback. This first slice is
+source-only until release and does not claim complete replacement or indirect
+rules-path coverage.
 Ordinary damage history currently identifies its recipient separately from its
 source occurrence, but lacks an explicit event-time source controller. The
 policy must not reconstruct that historical controller from current ownership;
@@ -533,11 +565,11 @@ verified complete discovery.
 frame, copied history, an episode seed, remaining time and a cooperative work
 allowance. Refreshing an input does not renew its budget or seed. Where the
 provider supplies a causal episode, replacement input IDs retain that episode's
-budget. Forge now assigns a stable opaque token to each actual controller Input,
+budget. Migrated inputs use their execution's budget root; legacy inputs retain
+a stable opaque token for each actual controller Input,
 including nested GUI choices, rather than renewing it for each published prompt
 UUID. Combat declarations retain their turn/phase/actor/combat-ordinal grouping.
-Providers without episode metadata still fall back to the decision ID. This is not yet a complete
-cast/cost/resolution episode model. Cancelled, replaced, closed
+Providers without episode metadata still fall back to the decision ID. Cancelled, replaced, closed
 or late computations cannot publish a command. The await is time-bounded even
 if a policy fails to return; this is not a process sandbox or forced termination
 of arbitrary computation. Implementations must cooperate with cancellation/work

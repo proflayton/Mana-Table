@@ -47,6 +47,8 @@ internal static class AiFrameworkRegression
         await SourceAuthority(check);
         AdditionalSourceAuthority(check);
         await CancellationAndBudgets(check);
+        await ExecutionBudgets(check);
+        await CopiedExecutionBudget(check);
         await ExecutionAndKnowledge(check);
     }
 
@@ -165,6 +167,97 @@ internal static class AiFrameworkRegression
         await wait;
         check(closed.View.Status == AiSeatStatus.Closed && closed.TakeCommand() == null,
             "Closing a seat revokes pending model work and never sends a last command");
+    }
+
+    private static async Task ExecutionBudgets(Action<bool, string> check)
+    {
+        var clock = new Clock(); var policy = new Controlled();
+        using var seat = Session(policy, clock, new(TimeSpan.FromSeconds(5), workUnits: 4));
+        var state = State(new OpeningHandPayload(new("Keep", true), new("Mulligan", true)));
+        AiDecisionFrame Frame(long revision, string execution, string root)
+        {
+            var occurrences = new List<ExecutionOccurrence> { new(root, root, ExecutionKind.Activation, ExecutionStep.Cost) };
+            if (execution != root) occurrences.Add(new(execution, root, ExecutionKind.Mana, ExecutionStep.Choice) { ParentId = root });
+            if (root == "other") occurrences.Add(new("activation", "activation", ExecutionKind.Activation, ExecutionStep.Cost));
+            else if (revision >= 3) occurrences.Add(new("other", "other", ExecutionKind.Activation, ExecutionStep.Cost));
+            var step = execution == root ? ExecutionStep.Cost : ExecutionStep.Choice;
+            return new(state with { Revision = revision, BoardRevision = revision,
+                Executions = new(1, revision, occurrences.ToImmutableArray(), []),
+                Decision = state.Decision! with { Id = "input-" + revision, ExecutionId = execution, ExecutionStep = step } });
+        }
+        seat.Observe(Frame(1, "activation", "activation"));
+        var first = seat.EvaluateAsync(); var parent = await policy.Request(1);
+        parent.Context.Work.TrySpend(2); clock.Advance(TimeSpan.FromSeconds(2));
+        parent.Result.SetResult(new AiProposal.Answer(new KeepOpeningHand(state.Id, "input-1"), "parent")); await first;
+        // Transport and another seat's required choice do not spend this seat's
+        // active policy time. A nested decision still consumes the parent's work.
+        var command = seat.TakeCommand()!; seat.Report(command, AiExecutionReceipt.Accepted);
+        seat.Observe(null); clock.Advance(TimeSpan.FromMinutes(1));
+        seat.Observe(Frame(2, "nested-mana", "activation"));
+        var second = seat.EvaluateAsync(); var nested = await policy.Request(2);
+        check(nested.Context.Seed == parent.Context.Seed && ReferenceEquals(nested.Context.Work, parent.Context.Work)
+                && nested.Context.Work.Remaining == 2 && nested.Context.RemainingTime == TimeSpan.FromSeconds(3),
+            "Nested mana and refreshed inputs share the invocation's remaining work and active time while another seat's wait costs nothing");
+        nested.Result.SetResult(new AiProposal.Answer(new KeepOpeningHand(state.Id, "input-2"), "nested")); await second;
+        command = seat.TakeCommand()!; seat.Report(command, AiExecutionReceipt.Accepted);
+        seat.Observe(Frame(3, "other", "other"));
+        var third = seat.EvaluateAsync(); var unrelated = await policy.Request(3);
+        unrelated.Result.SetResult(new AiProposal.Answer(new KeepOpeningHand(state.Id, "input-3"), "other")); await third;
+        command = seat.TakeCommand()!; seat.Report(command, AiExecutionReceipt.Accepted);
+        seat.Observe(Frame(4, "activation", "activation"));
+        var fourth = seat.EvaluateAsync(); var resumed = await policy.Request(4);
+        check(resumed.Context.Seed == parent.Context.Seed && resumed.Context.Work.Remaining == 2
+                && unrelated.Context.Seed != parent.Context.Seed && !resumed.Context.Work.TrySpend(3),
+            "Returning to a suspended execution cannot renew its allowance after an unrelated action received its own root");
+        clock.Advance(TimeSpan.FromSeconds(4));
+        resumed.Result.SetResult(new AiProposal.Answer(new KeepOpeningHand(state.Id, "input-4"), "late-root")); await fourth;
+        check(seat.View.Status == AiSeatStatus.BudgetExceeded && seat.TakeCommand() == null,
+            "An execution's accumulated policy time still rejects an over-budget result after nested and unrelated inputs");
+    }
+
+    private static async Task CopiedExecutionBudget(Action<bool, string> check)
+    {
+        var clock = new Clock(); var policy = new Controlled();
+        using var seat = Session(policy, clock, new(TimeSpan.FromSeconds(5), workUnits: 4));
+        var state = State(new OpeningHandPayload(new("Keep", true), new("Mulligan", true)));
+        var producer = new ExecutionOccurrence("completed-producer", "completed-producer", ExecutionKind.Trigger, ExecutionStep.Complete) {
+            Outcome = ExecutionOutcome.Resolved };
+        var copy = new ExecutionOccurrence("live-copy", producer.Id, ExecutionKind.Activation, ExecutionStep.Choice) { ParentId = producer.Id };
+        var other = new ExecutionOccurrence("unrelated-live-action", "unrelated-live-action", ExecutionKind.Activation, ExecutionStep.Choice);
+        AiDecisionFrame Frame(long revision, bool copied, bool childLive = true, bool retainChild = true)
+        {
+            var occurrences = new List<ExecutionOccurrence> { producer, other };
+            if (retainChild) occurrences.Add(childLive ? copy : copy with { Step = ExecutionStep.Complete, Outcome = ExecutionOutcome.Resolved });
+            return new(state with { Revision = revision, BoardRevision = revision,
+                Executions = new(1, revision, occurrences.ToImmutableArray(), []),
+                Decision = state.Decision! with { Id = "copy-input-" + revision,
+                    ExecutionId = copied ? copy.Id : other.Id, ExecutionStep = ExecutionStep.Choice } });
+        }
+        seat.Observe(Frame(1, copied: true));
+        var first = seat.EvaluateAsync(); var original = await policy.Request(1);
+        original.Context.Work.TrySpend(2); clock.Advance(TimeSpan.FromSeconds(2));
+        original.Result.SetResult(new AiProposal.Answer(new KeepOpeningHand(state.Id, "copy-input-1"), "copy-choice")); await first;
+        var submitted = seat.TakeCommand()!; seat.Report(submitted, AiExecutionReceipt.Accepted);
+        seat.Observe(Frame(2, copied: false));
+        var second = seat.EvaluateAsync(); var unrelated = await policy.Request(2);
+        unrelated.Result.SetResult(new AiProposal.Answer(new KeepOpeningHand(state.Id, "copy-input-2"), "unrelated-choice")); await second;
+        submitted = seat.TakeCommand()!; seat.Report(submitted, AiExecutionReceipt.Accepted);
+        clock.Advance(TimeSpan.FromMinutes(1));
+        seat.Observe(Frame(3, copied: true));
+        var third = seat.EvaluateAsync(); var resumed = await policy.Request(3);
+        check(resumed.Context.Seed == original.Context.Seed && ReferenceEquals(resumed.Context.Work, original.Context.Work)
+                && resumed.Context.Work.Remaining == 2 && resumed.Context.RemainingTime == TimeSpan.FromSeconds(3),
+            "A copied ability retains its producer's consumed allowance across unrelated decisions even after that producing occurrence completes");
+        resumed.Result.SetResult(new AiProposal.Answer(new KeepOpeningHand(state.Id, "copy-input-3"), "resumed-copy")); await third;
+        submitted = seat.TakeCommand()!; seat.Report(submitted, AiExecutionReceipt.Accepted);
+        var closed = Frame(4, copied: false, childLive: false);
+        seat.Observe(closed);
+        check(ExecutionFrames.LiveBudgetRoots(closed.State).SetEquals([other.Id]),
+            "The final completed copy releases its old allowance root while an unrelated action remains live");
+        var evicted = Frame(5, copied: false, childLive: false, retainChild: false);
+        seat.Observe(evicted);
+        check(ExecutionFrames.LiveBudgetRoots(evicted.State).SetEquals([other.Id]),
+            "Removing a completed copy from retained history cannot resurrect its retired allowance root");
     }
 
     private static async Task ExecutionAndKnowledge(Action<bool, string> check)

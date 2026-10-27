@@ -78,6 +78,11 @@ does not establish that a person can understand or use the screen.
    action handles and decision constraints. A list intended for auto-pass is not
    a complete action catalog. Simplify presentation without inventing availability,
    skipping required choices or hardcoding a mechanic's maximum.
+   Track one actual action through choices, costs, the stack and its committed
+   result. Its execution identity describes causality; current decision handles
+   authorize input. Costs and unrelated effects sharing a network poll must not
+   become one invented resolution. Reconnection and lost history establish a
+   baseline, with partial action history kept explicit.
    Automated players use this boundary for the whole seat: opening hands,
    sequencing, abilities, costs, combat and required effects. Build and validate
    the decision framework before replacing strategy. A casual Commander policy

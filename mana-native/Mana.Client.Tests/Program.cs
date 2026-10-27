@@ -5,6 +5,9 @@ using Mana.Magic;
 using Mana.Conformance;
 using System.Text.Json.Nodes;
 
+try {
+if (args.Contains("--verify-failure-reporting"))
+    throw new InvalidOperationException("Controlled test-runner failure reporting check.");
 int checks = 0;
 void Check(bool value, string description) { if (!value) throw new Exception(description); checks++; Console.WriteLine(description); }
 var replica = new SessionReplica<GameSnapshot>(s => s.Id, s => s.Revision);
@@ -159,6 +162,7 @@ HandPlacementRegression.Run(Check);
 await QuietPriorityRegression.RunAsync(Check);
 await StackResolutionRegression.RunAsync(Check);
 await SourceActionSessionRegression.RunAsync(Check);
+ExecutionRegression.Run(Check);
 await AiFrameworkRegression.RunAsync(Check);
 AiSemanticRegression.Run(Check);
 await AiHostRegression.RunAsync(Check);
@@ -181,6 +185,11 @@ PublicStateDescriptorChecks.Run(Check);
 DeckExperienceChecks.Run(Check);
 await PrintingArtRegression.RunAsync(Check);
 Console.WriteLine($"Passed {checks} headless checks.");
+return 0;
+} catch (Exception error) {
+    Console.Error.WriteLine(error);
+    return 1;
+}
 
 sealed class ControlledConnection : IMatchConnection
 {

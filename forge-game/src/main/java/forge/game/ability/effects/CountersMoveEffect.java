@@ -217,7 +217,7 @@ public class CountersMoveEffect extends SpellAbilityEffect {
                         0, source.getCounters(cType), params);
 
                 if (cnum > 0) {
-                    source.subtractCounter(cType, cnum, activator);
+                    source.subtractCounter(cType, cnum, activator, sa);
                     cur.addCounter(cType, cnum, activator, table);
                     game.updateLastStateForCard(cur);
                     updateSource = true;
@@ -360,7 +360,7 @@ public class CountersMoveEffect extends SpellAbilityEffect {
             cnum = Math.min(cmax, AbilityUtils.calculateAmount(host, counterNum, sa));
         }
         if (cnum > 0) {
-            src.subtractCounter(cType, cnum, activator);
+            src.subtractCounter(cType, cnum, activator, sa);
             game.updateLastStateForCard(src);
             countersToAdd.add(cType, cnum);
         }

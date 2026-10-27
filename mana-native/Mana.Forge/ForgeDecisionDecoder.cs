@@ -79,7 +79,11 @@ internal static class ForgeDecisionDecoder
                 "allocate" => Allocation(prompt), _ => throw Invalid()
             };
             if (payload is PaymentPayload { PayerId: { } payer } && (players == null || !players.Contains(payer))) throw Invalid();
-            return new(id, context, payload);
+            return new(id, context, payload) {
+                ExecutionId = Text(prompt, "executionId"),
+                ExecutionStep = Present(prompt, "executionStep")
+                    ? Field(prompt, "executionStep").Deserialize<ExecutionStep>() : null
+            };
         } catch (Exception error) when (error is JsonException or InvalidOperationException or FormatException or OverflowException or ArgumentException) {
             throw new IOException("The rules provider published an invalid decision schema.", error);
         }

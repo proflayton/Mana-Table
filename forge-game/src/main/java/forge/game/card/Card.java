@@ -1875,6 +1875,16 @@ public class Card extends GameEntity implements Comparable<Card>, IHasSVars, ITr
     }
 
     public final int subtractCounter(final CounterType counterName, final int n, final Player remover, final boolean isDamage) {
+        return subtractCounter(counterName, n, remover, isDamage, null);
+    }
+
+    @Override
+    public final int subtractCounter(final CounterType counterName, final int n, final Player remover, final SpellAbility cause) {
+        return subtractCounter(counterName, n, remover, false, cause);
+    }
+
+    private int subtractCounter(final CounterType counterName, final int n, final Player remover,
+                                final boolean isDamage, final SpellAbility cause) {
         int oldValue = getCounters(counterName);
         int newValue = max(oldValue - n, 0);
 
@@ -1918,7 +1928,7 @@ public class Card extends GameEntity implements Comparable<Card>, IHasSVars, ITr
         }
 
         // Play the Subtract Counter sound
-        getGame().fireEvent(new GameEventCardCounters(this, counterName, oldValue, newValue));
+        getGame().fireEvent(new GameEventCardCounters(this, counterName, oldValue, newValue, cause));
 
         getGame().addCounterRemovedThisTurn(counterName, this, delta);
 

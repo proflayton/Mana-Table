@@ -14,6 +14,7 @@ import java.util.concurrent.CompletableFuture;
 final class SyncLobby {
     private final Path resources, profile;
     private final CardCatalog catalog;
+    private final AiDeckCatalog aiDecks;
     private SyncTransport.Server server;
     private SyncTransport.Connection connection;
     private final List<Slot> slots = new ArrayList<>();
@@ -34,9 +35,13 @@ final class SyncLobby {
         this(resources, profile, false);
     }
     SyncLobby(Path resources, Path profile, boolean automated) {
+        this(resources, profile, automated, null);
+    }
+    SyncLobby(Path resources, Path profile, boolean automated, AiDeckCatalog aiDecks) {
         this.automated = automated;
         this.resources = resources; this.profile = profile;
         catalog = CardCatalog.fromDatabases(forge.StaticData.instance().getAvailableDatabases().values());
+        this.aiDecks = aiDecks == null ? new AiDeckCatalog(catalog, null) : aiDecks;
         new DeckAnalysisFormats(catalog).load(resources);
     }
     Object host(String format, int count, boolean autoForward) {
@@ -210,11 +215,10 @@ final class SyncLobby {
                 && (!p.get("opponentId").isJsonPrimitive() || !p.getAsJsonPrimitive("opponentId").isString()))
             throw new IllegalArgumentException("Choose an available AI deck");
         String opponent = p.has("opponentId") && !p.get("opponentId").isJsonNull() ? p.get("opponentId").getAsString() : "";
-        if (opponent.isBlank()) opponent = MatchSession.opponents(format).get(0).get("id");
-        var deck = MatchSession.aiDeck(opponent, format);
-        var rules = format.equals("Commander") ? DeckFormat.Commander : DeckFormat.Constructed;
-        String problem = DeckLegality.validate(catalog, deck, rules, rules.getDeckConformanceProblem(deck)).problem();
-        if (problem != null) throw new IllegalArgumentException("This AI deck is not legal for " + format + ": " + problem);
+        if (opponent.isBlank()) opponent = aiDecks.choices(format).get(0).get("id");
+        Deck deck;
+        try { deck = aiDecks.load(opponent, format); }
+        catch (Exception error) { throw new IllegalArgumentException(error.getMessage(), error); }
         target.ai = true; target.opponentId = opponent; target.deck = deck; target.ready = true;
         target.name = "AI opponent " + (index + 1);
         conversation.activity(host, "set seat " + (index + 1) + " to AI with " + deck.getName() + ".");
@@ -248,12 +252,12 @@ final class SyncLobby {
         result.put("mode", viewer == 0 ? "hosting" : "joined"); result.put("status", table == null ? "Connected to table." : "Game in progress.");
         result.put("hosting", viewer == 0); result.put("format", format); result.put("playerCount", slots.size()); result.put("maxPlayers", format.equals("Commander") ? 6 : 2);
         result.put("canStart", viewer == 0 && startProblem() == null); result.put("startProblem", viewer == 0 ? startProblem() : "Only the host can start the game."); result.put("matchActive", table != null);
-        result.put("aiOpponents", MatchSession.opponents(format));
+        result.put("aiOpponents", viewer == 0 ? aiDecks.choices(format) : List.of());
         var rows = new ArrayList<Map<String, Object>>();
         for (int i = 0; i < slots.size(); i++) {
             var slot = slots.get(i); var row = new LinkedHashMap<String, Object>();
             row.put("index", i); row.put("name", slot.name); row.put("type", slot.ai ? "AI" : !slot.occupied ? "OPEN" : i == viewer ? "LOCAL" : "REMOTE");
-            row.put("opponentId", slot.opponentId);
+            row.put("opponentId", viewer == 0 ? slot.opponentId : null);
             row.put("ready", slot.ready); row.put("local", i == viewer); row.put("team", i); row.put("deck", slot.deck == null ? null : slot.deck.getName()); rows.add(row);
         }
         result.put("slots", rows);

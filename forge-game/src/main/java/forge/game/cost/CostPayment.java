@@ -134,6 +134,7 @@ public class CostPayment extends ManaConversionMatrix {
     }
 
     public boolean payCost(final CostDecisionMakerBase decisionMaker) {
+        ability.getHostCard().getGame().getExecutions().step(ability, forge.game.ExecutionTracker.Step.COST);
         adjustedCost = CostAdjustment.adjust(cost, ability, decisionMaker.isEffect());
         List<CostPart> costParts = adjustedCost.getCostPartsWithZeroMana();
 

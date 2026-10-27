@@ -51,20 +51,16 @@ internal sealed partial class TableApplication
     {
         if (busy || Connected || !DeckReady || selectedDeckDetails is not { } deck || seat < 0 || seat >= (CommanderDeck ? 3 : 1)) return;
         ClearExperienceInput();
-        if (soloSetup?.DeckId != deck.Id) {
-            int generation = deckSelectionGeneration;
-            string[] previous = CurrentSoloOpponents();
-            Work(async () => {
-                var prepared = await PrepareSoloDeck(deck.Id, previous);
-                updates.Enqueue(() => {
-                    if (generation != deckSelectionGeneration) return;
-                    ApplySoloPreparation(prepared); confirmedDeckId = deck.Id;
-                    pickerSeat = seat; pickerDeleted = false; pickerSearch = ""; deckPage = 0; setupModal = "decks"; textFocus = false;
-                });
-            }, "Choosing opponents", "Finding compatible AI decks.");
-            return;
-        }
-        pickerSeat = seat; pickerDeleted = false; pickerSearch = ""; deckPage = 0; setupModal = "decks"; textFocus = false;
+        int generation = deckSelectionGeneration;
+        string[] previous = CurrentSoloOpponents();
+        Work(async () => {
+            var prepared = await PrepareSoloDeck(deck.Id, previous);
+            updates.Enqueue(() => {
+                if (generation != deckSelectionGeneration) return;
+                ApplySoloPreparation(prepared); confirmedDeckId = deck.Id;
+                pickerSeat = seat; pickerDeleted = false; pickerSearch = ""; deckPage = 0; setupModal = "decks"; textFocus = false;
+            });
+        }, "Choosing opponents", "Finding your current saved decks and compatible precons.");
     }
     private void ChoosePickerDeck(string id)
     {
@@ -81,7 +77,7 @@ internal sealed partial class TableApplication
     {
         bool opponent = pickerSeat >= 0;
         canvas.Text(opponent ? $"Choose AI opponent {pickerSeat + 1}'s deck" : "Find your next deck", 202, 179, Ink, 1.4f, 1060, 1, true);
-        string pickerHint = opponent ? "Choose this opponent's deck. The other seats stay the same."
+        string pickerHint = opponent ? "Choose a saved deck or precon for this AI. Other seats keep their decks."
             : Connected && DeckLibrary != null ? "Leave the lobby to delete or restore saved decks."
             : pickerDeleted ? "Deleted lists keep their cards and deck history. Undo returns a list to Your decks."
             : decks.Length == 0 ? "New here? Try a precon for a complete Commander deck."

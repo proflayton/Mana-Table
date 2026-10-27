@@ -16,11 +16,18 @@ public class TriggerWaiting {
     private TriggerType mode;
     private Map<AbilityKey, Object> params;
     private Map<Trigger, Player> triggers;
+    private final String executionParentId;
 
     public TriggerWaiting(TriggerType m, Map<AbilityKey, Object> p) {
+        this(m, p, null);
+    }
+    public TriggerWaiting(TriggerType m, Map<AbilityKey, Object> p, String executionParentId) {
         mode = m;
         params = p;
+        this.executionParentId = executionParentId;
     }
+
+    public String getExecutionParentId() { return executionParentId; }
 
     public TriggerType getMode() {
         return mode;

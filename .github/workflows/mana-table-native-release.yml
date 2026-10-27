@@ -58,6 +58,12 @@ jobs:
         run: |
           dotnet run --project mana-native/Mana.Client.Tests/Mana.Client.Tests.csproj -c Release
           if ($LASTEXITCODE -ne 0) { throw 'Native client logic checks failed.' }
+          $failureLog = Join-Path $env:RUNNER_TEMP 'mana-client-test-controlled-failure.log'
+          dotnet run --project mana-native/Mana.Client.Tests/Mana.Client.Tests.csproj -c Release --no-build -- --verify-failure-reporting 2> $failureLog
+          if ($LASTEXITCODE -ne 1 -or (Get-Content -LiteralPath $failureLog -Raw) -notmatch 'Controlled test-runner failure reporting check\.') {
+            throw 'A failed test must log its exception and exit with code 1.'
+          }
+          $global:LASTEXITCODE = 0
       - name: Verify compact script packaging on Windows PowerShell
         run: |
           powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File mana-native/test-package-resources.ps1

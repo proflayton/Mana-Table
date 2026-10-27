@@ -13,12 +13,13 @@ namespace Mana.Table;
 
 // Controlled setup/connection checks cover command ordering and commitment.
 // These do not simulate game rules or approve the visual home composition.
-internal static class PregameFlowChecks
+internal static partial class PregameFlowChecks
 {
     internal static void Run(string profile, Action<bool, string> check)
     {
         CheckDeckEditing(profile, check);
         CheckMissingPartner(profile, check);
+        CheckSavedAiDecks(profile, check);
         var solo = new PregameEngine();
         solo.Preparing = new(TaskCreationOptions.RunContinuationsAsynchronously);
         using (var run = new Runner(profile, "quick-solo", solo, check)) {
@@ -294,7 +295,7 @@ internal static class PregameFlowChecks
         public Task<string> ExportDeckAsync(string id, long revision) => Unsupported<string>();
     }
 
-    private sealed class PregameEngine : ICardEngine, ITableTempo
+    private sealed partial class PregameEngine : ICardEngine, ITableTempo
     {
         internal ConcurrentQueue<string> Calls { get; } = new();
         internal string? AcknowledgedTempo;
@@ -333,7 +334,7 @@ internal static class PregameFlowChecks
                 Invalid == "draft" ? "The saved draft is incomplete." : "", Invalid == "save" ? "The last save failed." : ""));
         }
         internal SoloSetup Setup(string id) => new(id, "Deck " + id,
-            [new("ai-self", "Deck " + id, ""), new("ai-1", "Other deck one", ""), new("ai-2", "Other deck two", "")]) { MaxPlayers = 4 };
+            [new("ai-self", "Deck " + id, ""), new("ai-1", "Other deck one", ""), new("ai-2", "Other deck two", ""), .. AdditionalAiDecks]) { MaxPlayers = 4 };
         public Task<SoloSetup> PrepareSoloAsync(string id) { Calls.Enqueue("prepare:" + id); Interlocked.Increment(ref prepares); return Preparing?.Task ?? Task.FromResult(Setup(id)); }
         public Task StartSoloAsync(string id, ImmutableArray<string> opponents) {
             if (id is not ("a" or "b") || opponents.Length != 3 || opponents.Any(opponent => !Setup(id).Opponents.Any(available => available.Id == opponent)))
@@ -346,7 +347,7 @@ internal static class PregameFlowChecks
             Calls.Enqueue("host:" + players);
             lobby = new("hosting", "Open", null, false, "Open seats", false, "disabled", null, [],
                 Enumerable.Range(0, players).Select(index => new Seat(index, index == 0 ? "You" : "Open", index == 0 ? "HUMAN" : "OPEN", null, false, index == 0)).ToImmutableArray(), "pregame-table") {
-                    Tempo = new(TempoPreset.Off, TempoExpiry.Pass, 0, 60, "initial-policy")
+                    Tempo = new(TempoPreset.Off, TempoExpiry.Pass, 0, 60, "initial-policy"), AiOpponents = AdditionalAiDecks
                 };
             return Task.FromResult(lobby);
         }

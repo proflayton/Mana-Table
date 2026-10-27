@@ -169,7 +169,7 @@ public class CountersRemoveEffect extends SpellAbilityEffect {
             final Zone zone = game.getZoneOf(gameCard);
             if (type.equals("All")) {
                 for (Multiset.Entry<CounterType> e : Lists.newArrayList(gameCard.getCounters().entrySet())) {
-                    totalRemoved += gameCard.subtractCounter(e.getElement(), e.getCount(), activator);
+                    totalRemoved += gameCard.subtractCounter(e.getElement(), e.getCount(), activator, sa);
                 }
                 game.updateLastStateForCard(gameCard);
             } else if (type.equals("Any")) {
@@ -200,7 +200,7 @@ public class CountersRemoveEffect extends SpellAbilityEffect {
                     removeFromCard = pc.chooseNumber(sa, Localizer.getInstance().getMessage("lblSelectRemoveCountersNumberOfTarget", type), 0, removeFromCard, params);
                 }
                 if (removeFromCard > 0) {
-                    gameCard.subtractCounter(counterType, removeFromCard, activator);
+                    gameCard.subtractCounter(counterType, removeFromCard, activator, sa);
                     if (rememberRemoved) {
                         for (int i = 0; i < removeFromCard; i++) {
                             // TODO might need to be more specific
@@ -261,7 +261,7 @@ public class CountersRemoveEffect extends SpellAbilityEffect {
 
             if (chosenAmount > 0) {
                 removed += chosenAmount;
-                entity.subtractCounter(chosenType, chosenAmount, activator);
+                entity.subtractCounter(chosenType, chosenAmount, activator, sa);
                 if (entity instanceof Card gameCard) {
                     game.updateLastStateForCard(gameCard);
                 }

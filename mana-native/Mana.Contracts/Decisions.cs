@@ -7,6 +7,9 @@ namespace Mana.Contracts;
 // writable classifier or forwarding collection of task-specific fields.
 public sealed record Decision
 {
+    private string executionId = "";
+    public string ExecutionId { get => executionId; init => executionId = value ?? ""; }
+    public ExecutionStep? ExecutionStep { get; init; }
     private string id = "";
     public string Id { get => id; init => id = DecisionValue.Required(value, nameof(Id)); }
     private DecisionContext context = null!;

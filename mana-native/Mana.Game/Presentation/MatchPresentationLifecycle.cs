@@ -1,4 +1,5 @@
 using Mana.Contracts;
+using Mana.Client;
 using Mana.Magic;
 using Mana.Renderer;
 
@@ -48,7 +49,7 @@ internal sealed class MatchPresentationLifecycle
     internal ManaPoolCue? ManaCue(int player, string symbol, double now) => mana.For(player, symbol, now);
     internal IReadOnlyList<ManaPoolCue> ManaCues(int player, double now) => mana.ForPlayer(player, now);
 
-    internal Transition Observe(GameSnapshot? previous, GameSnapshot? current, double now, BoardView view)
+    internal Transition Observe(GameSnapshot? previous, GameSnapshot? current, double now, BoardView view, ExecutionBatch? execution = null)
     {
         var nextScope = current == null ? ((string Game, int Viewer)?)null : (current.Id, current.ViewerId);
         bool changed = scope != nextScope;
@@ -59,11 +60,12 @@ internal sealed class MatchPresentationLifecycle
         // No consumer may compare against another viewer's historical snapshot,
         // even when the engine's game identity has not changed.
         var before = changed ? null : previous;
-        var batch = activity.Observe(before, current);
+        var batch = activity.Observe(before, current, execution?.Transitions ?? [], execution?.Baseline ?? false, execution?.Gap ?? false);
         effects.Observe(batch, now); presence.Observe(batch, now);
         actions.Observe(batch, now); changes.Observe(batch, now); impacts.Observe(batch, now);
         pacing.Observe(before, current, now); mana.Observe(before, current, now); priority.Observe(before, current, now);
-        stackArrival.Observe(before, current, now, batch.Entries, batch.HasHistoryGap);
+        stackArrival.Observe(before, current, now, batch.Entries, batch.HasHistoryGap,
+            batch.Executions, batch.ExecutionBaseline, batch.ExecutionGap);
         ObserveDepartures(batch, now, view);
         bool comparable = before != null && before.Id == current.Id && before.ViewerId == current.ViewerId;
         return new(changed,

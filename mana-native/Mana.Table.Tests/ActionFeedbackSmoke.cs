@@ -109,7 +109,7 @@ internal sealed class ActionFeedbackSmoke(TableWindow.Probe view, InteractionSce
                         new(3, state.Turn, state.PhaseKey, "resolved", 1, "Ravenform resolved.", "raven", "Ravenform") { Detail = state.Stack[0].Text, Outcome = "resolved" }] });
                 Next(); break;
             case 13:
-                Check(view.LastResolution is { Title: "Ravenform resolved.", Changes.Length: 2 }, "Resolution feedback keeps both the removal and newly created token visible as recent changes");
+                Check(view.LastResolution is { Title: "Ravenform resolved.", Changes.Length: 0 }, "Legacy resolution feedback does not assign same-poll removal and token events without a reported execution relationship");
                 Check(view.LastResolution!.Detail.Contains("1/1 blue Bird"), "The resolved effect retains its public explanation for review");
                 Check(view.Match!.Viewer!.Zone("Battlefield").Cards.All(card => card.VisualId != "seat-0-1")
                     && view.Match.Viewer.Zone("Battlefield").Cards.Any(card => card.VisualId == "new-bird" && card.Power == 1 && card.Toughness == 1)

@@ -49,6 +49,9 @@ import java.util.concurrent.LinkedBlockingDeque;
 import java.util.function.Predicate;
 import java.util.stream.Collectors;
 
+import static forge.game.ExecutionTracker.Outcome.*;
+import static forge.game.ExecutionTracker.Step.*;
+
 /**
  * <p>
  * MagicStack class.
@@ -198,6 +201,17 @@ public class MagicStack /* extends MyObservable */ implements Iterable<SpellAbil
     }
 
     public final void add(SpellAbility sp, SpellAbilityStackInstance si, int id) {
+        if (sp.getActivatingPlayer() == null) sp.setActivatingPlayer(sp.getHostCard().getController());
+        game.getExecutions().prepare(sp);
+        try (var execution = game.getExecutions().enter(sp)) {
+            addOwned(sp, si, id);
+        } catch (RuntimeException | Error failure) {
+            game.getExecutions().complete(sp, FAILED);
+            throw failure;
+        }
+    }
+
+    private void addOwned(SpellAbility sp, SpellAbilityStackInstance si, int id) {
         final Card source = sp.getHostCard();
 
         // if activating player slips through the cracks, assign activating
@@ -207,6 +221,7 @@ public class MagicStack /* extends MyObservable */ implements Iterable<SpellAbil
             System.out.println(source.getName() + " - activatingPlayer not set before adding to stack.");
         }
         Player activator = sp.getActivatingPlayer();
+        game.getExecutions().prepare(sp);
 
         // Stop infinite loop. E.g. Scalelord Reckoner mirrormatch with only triggering targets is a draw.
         if (game.getStack().size() > 999) {
@@ -221,6 +236,7 @@ public class MagicStack /* extends MyObservable */ implements Iterable<SpellAbil
 
         // Mana Abilities go straight through
         if (sp.isManaAbility()) {
+            try (var execution = game.getExecutions().enter(sp)) {
             // this can matter, if e.g. Vhal, Candlekeep Researcher toughness changes from tapping
             game.getAction().checkStaticAbilities();
 
@@ -237,6 +253,7 @@ public class MagicStack /* extends MyObservable */ implements Iterable<SpellAbil
                 game.getTriggerHandler().runTrigger(TriggerType.AbilityCast, runParams, true);
             }
 
+            game.getExecutions().step(sp, RESOLUTION);
             AbilityUtils.resolve(sp);
 
             runParams = AbilityKey.mapFromCard(source);
@@ -250,7 +267,9 @@ public class MagicStack /* extends MyObservable */ implements Iterable<SpellAbil
             if (game.costPaymentStack.peek() != null) {
                 game.getTriggerHandler().collectTriggerForWaiting();
             }
+            game.getExecutions().complete(sp, RESOLVED);
             return;
+            }
         }
 
         if (sp.isSpell()) {
@@ -273,11 +292,16 @@ public class MagicStack /* extends MyObservable */ implements Iterable<SpellAbil
             String str = source + " - [Couldn't add to stack, failed to target] - " + sp.getDescription();
             System.err.println(str + sp.getAllTargetChoices());
             game.fireEvent(new GameEventAddLog(GameLogEntryType.STACK_ADD, str));
+            game.getExecutions().complete(sp, FAILED);
             return;
         }
 
         if (sp instanceof AbilityStatic || (sp.isTrigger() && sp.getTrigger().getOverridingAbility() instanceof AbilityStatic)) {
-            AbilityUtils.resolve(sp);
+            try (var execution = game.getExecutions().enter(sp)) {
+                game.getExecutions().step(sp, RESOLUTION);
+                AbilityUtils.resolve(sp);
+                game.getExecutions().complete(sp, RESOLVED);
+            }
             // AbilityStatic should do nothing below
             return;
         }
@@ -286,6 +310,8 @@ public class MagicStack /* extends MyObservable */ implements Iterable<SpellAbil
             // if not already copied use a fresh instance
             SpellAbility original = sp;
             sp = sp.copy(sp.getHostCard(), activator, false, true);
+            game.getExecutions().continueExecution(original, sp);
+            original.setExecutionId(null);
             sp.setOriginalAbility(original);
             original.clearTargets();
             original.setXManaCostPaid(null);
@@ -466,6 +492,7 @@ public class MagicStack /* extends MyObservable */ implements Iterable<SpellAbil
         si = si == null ? new SpellAbilityStackInstance(sp, id) : si;
 
         stack.addFirst(si);
+        game.getExecutions().step(sp, STACK);
         int stackIndex = stack.size() - 1;
 
         int distinctSources = 0;
@@ -567,6 +594,18 @@ public class MagicStack /* extends MyObservable */ implements Iterable<SpellAbil
     }
 
     public final void resolveStack() {
+        final SpellAbility ability = peek().getSpellAbility();
+        try (var execution = game.getExecutions().enter(ability)) {
+            game.getExecutions().step(ability, RESOLUTION);
+            boolean fizzled = resolveStackOwned();
+            game.getExecutions().complete(ability, fizzled ? COUNTERED : RESOLVED);
+        } catch (RuntimeException | Error failure) {
+            game.getExecutions().complete(ability, FAILED);
+            throw failure;
+        }
+    }
+
+    private boolean resolveStackOwned() {
         // freeze the stack while we're in the middle of resolving
         freezeStack(null);
         setResolving(true);
@@ -598,6 +637,7 @@ public class MagicStack /* extends MyObservable */ implements Iterable<SpellAbil
             sa.getActivatingPlayer().addController(sa.getControlledByPlayer().getLeft(), sa.getControlledByPlayer().getRight());
         }
 
+        final boolean resolvesAsCreature = thisHasFizzled && (sa.isBestow() || sa.isMutate());
         if (thisHasFizzled) { // Fizzle
             if (sa.isBestow()) {
                 // 702.102e: if its target is illegal, the effect making it an Aura spell ends.
@@ -606,12 +646,14 @@ public class MagicStack /* extends MyObservable */ implements Iterable<SpellAbil
                 SpellAbility first = source.getFirstSpellAbility();
                 // need to set activating player
                 first.setActivatingPlayer(sa.getActivatingPlayer());
+                game.getExecutions().continueExecution(sa, first);
                 game.fireEvent(new GameEventCardStatsChanged(source));
                 AbilityUtils.resolve(first);
             } else if (sa.isMutate()) {
                 SpellAbility first = source.getFirstSpellAbility();
                 // need to set activating player
                 first.setActivatingPlayer(sa.getActivatingPlayer());
+                game.getExecutions().continueExecution(sa, first);
                 game.fireEvent(new GameEventCardStatsChanged(source));
                 AbilityUtils.resolve(first);
             }
@@ -634,7 +676,7 @@ public class MagicStack /* extends MyObservable */ implements Iterable<SpellAbil
             sa.setManaCostBeingPaid(null);
         }
 
-        game.fireEvent(new GameEventSpellResolved(sa, thisHasFizzled, resolvingInstance.getId()));
+        game.fireEvent(new GameEventSpellResolved(sa, thisHasFizzled && !resolvesAsCreature, resolvingInstance.getId()));
 
         game.getAction().checkStaticAbilities();
 
@@ -645,6 +687,7 @@ public class MagicStack /* extends MyObservable */ implements Iterable<SpellAbil
             // assuming that if the stack is empty, no reason to hold on to old LKI data (everything is a new object)
             game.clearChangeZoneLKIInfo();
         }
+        return thisHasFizzled && !resolvesAsCreature;
     }
 
     private void finishResolving(final SpellAbility sa, final boolean fizzle) {
@@ -763,10 +806,13 @@ public class MagicStack /* extends MyObservable */ implements Iterable<SpellAbil
     }
 
     public final void remove(final SpellAbilityStackInstance si) {
+        var execution = game.getExecutions().occurrence(si.getSpellAbility());
+        boolean countered = execution != null && execution.step().equals("stack");
         stack.remove(si);
         frozenStack.remove(si);
         game.updateStackForView();
         game.fireEvent(new GameEventSpellRemovedFromStack(SpellAbilityView.get(si.getSpellAbility())));
+        if (countered) game.getExecutions().complete(si.getSpellAbility(), COUNTERED);
     }
 
     public final void remove(final Card c) {

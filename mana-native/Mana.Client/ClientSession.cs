@@ -10,6 +10,7 @@ public sealed class ClientSession
     private readonly ITableSetup? setup;
     private readonly ConcurrentQueue<Action> completions = new();
     private readonly SessionReplica<GameSnapshot> replica = new(s => s.Id, s => s.Revision);
+    private readonly ExecutionCursor executions = new();
     private readonly DecisionAdvance advance;
     private readonly TimeProvider time;
     private bool recoveryRequired;
@@ -28,6 +29,7 @@ public sealed class ClientSession
     }
     public SourceActionSession SourceActions { get; }
     public GameSnapshot? State => replica.Current;
+    public ExecutionBatch ExecutionChanges { get; private set; } = ExecutionBatch.Empty;
     public string Scope => (State?.Id ?? "lobby") + ":" + (State?.Decision?.Id ?? "");
     public bool Busy { get; private set; }
     public bool IsAdvancing => advancing is { IsCancellationRequested: false };
@@ -54,11 +56,14 @@ public sealed class ClientSession
     private bool Accept(GameSnapshot? state, long epoch)
     {
         var previous = State;
-        if (Closed || !replica.Accept(state, epoch)) return false;
+        if (Closed || epoch != replica.Epoch || state != null && previous != null && state.Id == previous.Id && state.Revision < previous.Revision) return false;
+        executions.Validate(state);
+        if (!replica.Accept(state, epoch)) return false;
         if (stackIntent != null && (state == null || !stackIntent.CanContinue(state))) StopStackResolution();
         if (SourceActions.View.Context is { } context && CurrentSourceContext(state, context.SourceCardKey) != context)
             SourceActions.Clear();
         bool recovered = NeedsRecovery;
+        ExecutionChanges = executions.Observe(state, baseline: recovered);
         LastSynchronizedAt = time.GetUtcNow();
         recoveryRequired = UncertainCommand = false; LastConnectionError = "";
         Changed?.Invoke(previous, state);

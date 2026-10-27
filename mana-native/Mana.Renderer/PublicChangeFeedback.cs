@@ -32,12 +32,13 @@ public sealed class PublicChangeFeedback
     public void Clear() => groups.Clear();
     public void Observe(PublicActivityBatch activity, double now)
     {
-        if (activity.IsBaseline) Clear();
+        if (activity.IsBaseline || activity.ExecutionBaseline) { Clear(); return; }
         foreach (var entry in activity.Entries.Where(entry => entry.Change is { Kind: "counters" }
             && entry.CardId is { Length: > 0 })) {
             var change = entry.Change!;
             if (change.Before == change.After) continue;
-            string key = entry.Cause?.Id is { Length: > 0 } causeId ? "cause:" + causeId : "event:" + entry.Id;
+            string key = entry.ExecutionId.Length > 0 ? "execution:" + entry.ExecutionId
+                : entry.Cause?.Id is { Length: > 0 } causeId ? "cause:" + causeId : "event:" + entry.Id;
             var cue = new CounterChangeCue(entry.Id, entry.CardId!, entry.CardName ?? "Permanent", change, entry.Cause, now);
             int index = groups.FindIndex(group => group.Id == key);
             if (index < 0) groups.Add(new(key, entry.Cause, Array.AsReadOnly(new[] { cue }), now));

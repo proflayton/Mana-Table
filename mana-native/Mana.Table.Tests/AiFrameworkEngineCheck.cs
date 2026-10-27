@@ -56,8 +56,10 @@ internal static class AiFrameworkEngineCheck
                 "The policy framework keeps a real hand and follows a current offered land route; the subsequent authoritative board establishes the result");
         } finally {
             session?.Dispose();
-            if (state != null) await engine.ConcedeAsync(state.Id);
         }
+        // A failed fixture is torn down by its engine owner. A secondary
+        // concession failure must not replace the original contract failure.
+        if (state != null) await engine.ConcedeAsync(state.Id);
     }
 
     private sealed class ScriptedPolicy : IAiPolicy

@@ -1,7 +1,7 @@
 # Mana Table engine API
 
 Mana Table includes a native desktop deck workshop and playable match table,
-backed by Forge's existing rules and AI.
+backed by Forge's rules and Mana Table's whole-seat AI policy.
 `forge-api` supplies catalog, deck, and match hooks. It depends on the shared
 `forge-gui` module (including the human controller), `forge-ai`, `forge-game`, and
 `forge-core`. It creates no Swing or LibGDX UI; `HeadlessPlatform` supplies the
@@ -861,6 +861,35 @@ engine stack instance at the event boundary. This joins an announcement to its
 actual settlement; source names, source card IDs and activity cause IDs cannot
 establish that relationship. It is historical correlation, never action authority.
 Older providers omit it and clients must retain that uncertainty.
+
+### Execution occurrences
+
+Current source adds an optional `executions` snapshot frame. This is a read-only
+projection of actual rules execution, separate from command/decision authority:
+
+- `firstSequence`/`lastSequence` bound the provider's retained transition window.
+  Audience filtering can leave sparse visible sequence numbers.
+- `occurrences` carry opaque `id`, `parentId`, `budgetRootId`, `kind`, actor and
+  authorized source anchors, current `step`, and a terminal `outcome` when known.
+  A copied trigger or repeated activation has a distinct ID. Nested mana payment
+  keeps the initiating action's budget root; a triggered action has its own root.
+- `transitions` carry ordered `sequence`, `executionId`, `step` and optional
+  terminal `outcome`. Steps are `preparation`, `choice`, `cost`, `stack`,
+  `resolution`, `complete`; kinds are `spell`, `activation`, `trigger`, `mana`,
+  `rules`. Outcomes are `resolved`, `declined`, `cancelled`, `countered`, `failed`.
+- Current prompts and historical activity may carry `executionId` and
+  `executionStep`; stack entries may carry `executionId`. These references join
+  only included, audience-authorized occurrences. Hidden ancestry is redacted.
+
+The client admits transitions once. Reconnection and an expired retention window
+establish a baseline rather than replaying old casts or inventing missing steps.
+Historical source anchors supply neither card-selection handles nor permission
+to read a currently hidden face. Old providers can omit the entire frame and
+references; unmigrated engine paths omit references too. Clients must not join
+legacy changes by shared polling time, card names or nearby stack entries.
+No persisted data or command protocol version changes. Provider assemblies must
+rebuild for the additive immutable native projection. Complete replacement and
+state-based-action coverage remains outside this first migration slice.
 
 Snapshots may also carry `stackInterruptionVersion`, a table-local monotonic
 generation for new actions, required choices and rollback/restart. Resolving

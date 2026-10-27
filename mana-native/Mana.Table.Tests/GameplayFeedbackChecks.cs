@@ -97,8 +97,8 @@ internal static class GameplayFeedbackChecks
             new(2, state.Turn, state.PhaseKey, "resolved", state.ViewerId, "A creature resolved.", null, null) { Outcome = "resolved" }] };
         feedback.Observe(feedbackActivity.Observe(state, started), 20);
         check(feedback.LastPublicOutcome is { Messages: ["Your Speed is now 1/4."] }
-            && feedback.Last?.Changes.FirstOrDefault() == "Your Speed is now 1/4.",
-            "A reported player-state change stays visible when its source resolves in the same poll");
+            && feedback.Last is { Changes.Length: 0 },
+            "An unattributed player-state change remains visible without assigning it to a resolution sharing the poll");
         feedback.Observe(feedbackActivity.Observe(started, started with { Revision = started.Revision + 1 }), 21);
         check(feedback.LastPublicOutcome?.Started == 20 && feedback.Last?.Started == 20,
             "Repeated snapshots cannot replay or prolong a player-state transition");
@@ -149,12 +149,12 @@ internal static class GameplayFeedbackChecks
         check(feedback.LastPublicOutcome?.Started == feedback.Last?.Started,
             "A resolution and its draw events can be published in the same observed frame");
         check(feedback.Last is { Title: "Toothy's ability resolved.", Heading: "JUST RESOLVED" } resolved
-            && resolved.Detail.Contains("+1/+1 counter") && resolved.Changes.FirstOrDefault() == "You drew 3 cards."
-            && resolved.Changes.Count(c => c.Contains("drew")) == 1,
-            "The visible first resolution result retains the exact three-card draw batch and source instead of one deduplicated draw or an earlier zone move");
+            && resolved.Detail.Contains("+1/+1 counter") && resolved.Changes.Length == 0
+            && feedback.LastPublicOutcome is { Messages: ["You drew 3 cards."] },
+            "Legacy resolution text and exact public draw totals remain separate without an execution relationship");
         feedback.Observe(feedbackActivity.Observe(draw, draw with { Revision = draw.Revision + 1 }), 11);
         check(feedback.Last?.Started == 10 && feedback.LastPublicOutcome?.Started == 10
-            && feedback.Last.Changes.FirstOrDefault() == "You drew 3 cards.",
+            && feedback.Last.Changes.Length == 0,
             "Reobserving a resolution does not replay, prolong or add its draw total again");
         var unrelated = draw with { Activity = [.. draw.Activity,
             new(9, state.Turn, state.PhaseKey, "resolved", state.ViewerId, "Sol Ring's ability resolved.", null, "Sol Ring") { Outcome = "resolved" }] };
@@ -166,15 +166,14 @@ internal static class GameplayFeedbackChecks
             new(10, state.Turn, state.PhaseKey, "draw", 1, "Opponent drew cards.", null, null) { Count = 2 },
             new(11, state.Turn, state.PhaseKey, "resolved", 1, "Divination resolved.", null, "Divination") { Outcome = "resolved" }] };
         feedback.Observe(feedbackActivity.Observe(unrelated, spell), 13);
-        check(feedback.Last is { Title: "Divination resolved.", Changes.Length: 1 } spellResult
-            && spellResult.Changes[0].Contains("Seat 2 drew 2 cards."),
-            "A spell resolving in the same poll as a counted draw keeps the opponent's explicit total and seat");
+        check(feedback.Last is { Title: "Divination resolved.", Changes.Length: 0 }
+            && feedback.LastPublicOutcome!.Messages.Single().Contains("Seat 2 drew 2 cards."),
+            "An unrelated resolution cannot claim a legacy draw sharing its poll; the public total and seat remain visible");
         var tutor = spell with { Activity = [.. spell.Activity,
             new(12, state.Turn, state.PhaseKey, "moved", state.ViewerId, "A card moved from library to hand.", null, null),
             new(13, state.Turn, state.PhaseKey, "resolved", state.ViewerId, "Search spell resolved.", null, "Search spell") { Outcome = "resolved" }] };
         feedback.Observe(feedbackActivity.Observe(spell, tutor), 14);
-        check(feedback.Last is { Changes.Length: 1 } tutorResult
-            && tutorResult.Changes[0] == "A card moved from library to hand."
+        check(feedback.Last is { Changes.Length: 0 }
             && feedback.LastPublicOutcome?.Started == 13,
             "A library-to-hand move is never inferred to be a draw or given an older spell's counted draw result");
     }

@@ -281,6 +281,8 @@ public sealed record StackItem(string Name, string Text, StackActionKind Kind, C
     public int? ControllerId { get; init; }
     public ImmutableArray<StackTarget> Targets { get; init; } = [];
     public PendingEffect? Effect { get; init; }
+    private string executionId = "";
+    public string ExecutionId { get => executionId; init => executionId = value ?? ""; }
 }
 public sealed record StackTarget(string Kind, string Id, string Name, int? PlayerId = null);
 public sealed record GameSnapshot(string Id, string Status, string? Error, string? Result, int ViewerId,
@@ -299,6 +301,7 @@ public sealed record GameSnapshot(string Id, string Status, string? Error, strin
     public int? DecisionOwnerId { get; init; }
     public string ActionClass { get; init; } = "";
     public ImmutableArray<ActivityEntry> Activity { get; init; } = [];
+    public ExecutionFrame? Executions { get; init; }
     public ImmutableArray<string> Notices { get; init; } = [];
     public ImmutableArray<PriorityAbility> IgnoredPriorityAbilities { get; init; } = [];
     // Only this viewer's granted plays from already disclosed external zones.
@@ -320,6 +323,9 @@ public sealed record ActivityEntry(long Id, int Turn, string PhaseKey, string Ki
     public PublicCardChange? Change { get; init; }
     public PublicEffectCause? Cause { get; init; }
     public PublicImpact? Impact { get; init; }
+    private string executionId = "";
+    public string ExecutionId { get => executionId; init => executionId = value ?? ""; }
+    public ExecutionStep? ExecutionStep { get; init; }
 }
 // Event-time results. Damage is the reported amount dealt, not a pending estimate
 // or a life-total difference; life is a separate signed old-to-new transition.

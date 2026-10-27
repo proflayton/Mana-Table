@@ -31,9 +31,11 @@ public final class AiReleaseFixtureEngine {
             case "AI gate mana-reduction" -> List.of("Mystic Monastery", "Mystic Monastery", "Mystic Monastery", "Mystic Monastery", "Mystic Monastery", "Mystic Monastery",
                     "Lightning Angel", "Lightning Angel", "Lightning Angel", "Lightning Angel", "Lightning Angel", "Lightning Angel", "Lightning Angel");
             case "AI gate partner-draw-counters" -> List.of("Island", "Island", "Island", "Island", "Island", "Forest", "Forest", "Forest");
+            case "Execution journey Loch Mare" -> List.of("Loch Mare", "Island", "Island", "Island");
             default -> null;
         };
         if (extras == null) return;
+        if (name.equals("Execution journey Loch Mare")) players.get(0).setEnableETBCountersEffect(true);
         // The deck is a valid Commander deck, not a truncated test library.
         // Setup occurs before constructing a table; no live game edits or synthetic replies.
         List<IPaperCard> cards = new ArrayList<>();

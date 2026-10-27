@@ -1,6 +1,7 @@
 package forge.api;
 
 import com.google.common.eventbus.Subscribe;
+import forge.game.ExecutionTracker;
 import forge.game.card.CardView;
 import forge.game.event.*;
 import forge.game.player.PlayerView;
@@ -12,7 +13,14 @@ import java.util.*;
 public final class MatchActivity {
     public record Entry(long id, int turn, String phaseKey, String kind, Integer playerId,
                         String message, String cardId, String cardName, String detail, String outcome, int count,
-                        PublicCardChange change, PublicEffectCause cause, boolean interruptsQuietYield, PublicImpact impact, String stackId) {
+                        PublicCardChange change, PublicEffectCause cause, boolean interruptsQuietYield, PublicImpact impact, String stackId,
+                        String executionId, String executionStep) {
+        public Entry(long id, int turn, String phaseKey, String kind, Integer playerId, String message,
+                     String cardId, String cardName, String detail, String outcome, int count,
+                     PublicCardChange change, PublicEffectCause cause, boolean interruptsQuietYield, PublicImpact impact, String stackId) {
+            this(id, turn, phaseKey, kind, playerId, message, cardId, cardName, detail, outcome, count,
+                    change, cause, interruptsQuietYield, impact, stackId, null, null);
+        }
         public Entry(long id, int turn, String phaseKey, String kind, Integer playerId, String message,
                      String cardId, String cardName, String detail, String outcome, int count,
                      PublicCardChange change, PublicEffectCause cause, boolean interruptsQuietYield, PublicImpact impact) {
@@ -62,6 +70,12 @@ public final class MatchActivity {
     private String latestCounterCause;
     private int entriesAfterLatestCounterCause;
     private int ownTurns, cardsDrawn, landsPlayed, spellsCast, mulligans, commanderCasts;
+    private ExecutionTracker.Reference eventExecution;
+    private java.util.function.Function<ExecutionTracker.Reference, ExecutionTracker.Reference> executionFilter = ignored -> null;
+
+    void executionFilter(java.util.function.Function<ExecutionTracker.Reference, ExecutionTracker.Reference> filter) {
+        executionFilter = filter;
+    }
 
     MatchActivity(PlayerView viewer) { this(viewer, new MatchIdentities()); ownsIdentities = true; }
     MatchActivity(PlayerView viewer, MatchIdentities identities) { this(viewer, identities, Objects::nonNull); }
@@ -75,8 +89,45 @@ public final class MatchActivity {
         this.currentOccurrence = Objects.requireNonNull(currentOccurrence);
     }
 
-    public synchronized List<Entry> snapshot() { return List.copyOf(entries); }
+    public synchronized List<Entry> snapshot() {
+        return List.copyOf(entries);
+    }
+
+    /** The rules stream may advance after an activity copy releases this lock.
+     * Retire references against the exact immutable frame being published, not
+     * another live admission lookup. Keep the historical result unchanged. */
+    static List<Entry> retainedExecutions(List<Entry> copied, Set<String> retained) {
+        return copied.stream().map(entry -> entry.executionId() == null || retained.contains(entry.executionId())
+                ? entry : withoutExecution(entry)).toList();
+    }
+
+    private static Entry withoutExecution(Entry entry) {
+        return new Entry(entry.id(), entry.turn(), entry.phaseKey(), entry.kind(), entry.playerId(), entry.message(),
+                entry.cardId(), entry.cardName(), entry.detail(), entry.outcome(), entry.count(), entry.change(),
+                entry.cause(), entry.interruptsQuietYield(), entry.impact(), entry.stackId(), null, null);
+    }
     public synchronized Frame frame() { return new Frame(revision, turn, phase, phaseName, activePlayerId, snapshot()); }
+
+    record Publication(Frame activity, MatchExecutions.Frame executions) { }
+
+    /** A terminal rules transition follows its synchronous committed events.
+     * Retry if the immutable execution frame changed while copying activity;
+     * otherwise completion can never overtake its draw/damage/movement facts. */
+    static Publication capture(java.util.function.Supplier<Frame> activity,
+                               java.util.function.Supplier<MatchExecutions.Frame> executions) {
+        for (;;) {
+            var before = executions.get();
+            var copied = activity.get();
+            var after = executions.get();
+            if (before == after) {
+                var retained = after.occurrences().stream().map(MatchExecutions.Occurrence::id)
+                        .collect(java.util.stream.Collectors.toSet());
+                var admitted = new Frame(copied.revision(), copied.turn(), copied.phaseKey(), copied.phase(),
+                        copied.activePlayerId(), retainedExecutions(copied.entries(), retained));
+                return new Publication(admitted, after);
+            }
+        }
+    }
 
     /** Monotonic public events, including ones that resolved between snapshots. */
     synchronized long sequence() { return sequence; }
@@ -148,7 +199,7 @@ public final class MatchActivity {
     private PublicEffectCause publicCause(GameEventCause cause) {
         if (cause == null || !visible(cause.card())) return null;
         return new PublicEffectCause(eventVisualId(cause.card()), cause.card().getCurrentState().getName(), cause.ability(),
-                cause.controller() == null ? null : cause.controller().getId(), cause.kind(), identities.effect(cause.instanceId()));
+                cause.controller() == null ? null : cause.controller().getId(), cause.kind(), cause.instanceId());
     }
     private boolean publicOccurrence(CardView card) {
         return card != null && card.getZone() != null && switch (card.getZone()) {
@@ -231,10 +282,12 @@ public final class MatchActivity {
         revision++;
         if (interruptsQuietYield) quietSequence++;
         boolean anonymousTarget = change != null && publicFaceDown(card);
+        var execution = executionFilter.apply(eventExecution);
         entries.addLast(new Entry(++sequence, turn, phase, kind, player == null ? null : player.getId(),
                 message, anonymousTarget ? identities.concealed(card) : eventVisualId(card),
                 anonymousTarget ? "Face-down card" : visible(card) ? card.getCurrentState().getName() : null,
-                detail, outcome, count, change, cause, interruptsQuietYield, impact, stackId));
+                detail, outcome, count, change, cause, interruptsQuietYield, impact, stackId,
+                execution == null ? null : execution.id(), execution == null ? null : execution.step()));
         if (cause != null && change != null && change.kind().equals("counters")) {
             latestCounterCause = cause.id();
             entriesAfterLatestCounterCause = 0;
@@ -252,7 +305,13 @@ public final class MatchActivity {
         }
     }
 
-    @Subscribe
+    @Subscribe public synchronized void committed(ExecutionTracker.Committed committed) {
+        var prior = eventExecution;
+        eventExecution = committed.execution();
+        try { onGameEvent(committed.event()); }
+        finally { eventExecution = prior; }
+    }
+
     public synchronized void onGameEvent(GameEvent event) {
         if (ownsIdentities) {
             if (event instanceof GameEventCardChangeZone moved) identities.moved(moved);
