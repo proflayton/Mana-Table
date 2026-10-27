@@ -9,16 +9,20 @@ using Mana.Forge;
 
 namespace Mana.Table;
 
-internal sealed record AiCampaignLimits(int Matches, int Turns, TimeSpan MatchTime, long PolicySeed = 261027);
 internal sealed record AiCampaignResult(int Match, string StopReason, string? MechanicalFailure, int Turns, int Steps,
-    int DevelopedSeats, int Accepted, int OfferedRoutesUsed, int PublicComparisons, double ElapsedMilliseconds, object Evidence,
-    AiCampaignContinuation Continuation);
+    int DevelopedSeats, int Accepted, int OfferedRoutesUsed, int PublicComparisons, double ElapsedMilliseconds, AiCampaignEvidence Evidence,
+    AiCampaignContinuation Continuation)
+{
+    public string Profile { get; init; } = "smoke";
+    public AiCampaignGoal Goal { get; init; }
+    public AiCampaignOutcomeProof? Outcome { get; init; }
+}
 
 // Sequential games reuse the existing JVM lane. Budgets stop tests explicitly;
 // the driver never fabricates a bot response or disguises a test stop as a win.
 internal static class AiEngineCampaign
 {
-    internal static async Task RunStandaloneAsync(ForgePaths paths)
+    internal static async Task RunStandaloneAsync(ForgePaths paths, AiCampaignLimits? limits = null)
     {
         Directory.CreateDirectory(paths.Profile);
         await using var engine = new ForgeEngine(paths);
@@ -27,19 +31,22 @@ internal static class AiEngineCampaign
             engineJar = paths.Jar, engineJarSha256 = Convert.ToHexString(SHA256.HashData(File.ReadAllBytes(paths.Jar))),
             paths.Java, paths.Resources
         }, new JsonSerializerOptions { WriteIndented = true }));
-        await RunAsync(engine, paths.Profile, new(2, 32, TimeSpan.FromSeconds(45)), (passed, detail) => {
+        await RunAsync(engine, paths.Profile, limits ?? AiCampaignLimits.Smoke, (passed, detail) => {
             File.AppendAllText(Path.Combine(paths.Profile, "campaign-progress.log"), detail + "\n");
             if (!passed) throw new InvalidOperationException(detail);
         }, paths);
     }
 
-    internal static async Task RunAsync(ForgeEngine engine, string profile, AiCampaignLimits limits, Action<bool, string> check, ForgePaths? runtime = null)
+    internal static async Task<ImmutableArray<AiCampaignResult>> RunAsync(ForgeEngine engine, string profile, AiCampaignLimits limits, Action<bool, string> check, ForgePaths? runtime = null)
     {
-        if (limits.Matches is < 1 or > 16 || limits.Turns is < 8 or > 160 || limits.MatchTime <= TimeSpan.Zero)
+        if (limits.Matches is < 1 or > 16 || limits.Turns is < 8 or > 160 || limits.MatchTime <= TimeSpan.Zero
+            || !Enum.IsDefined(limits.Goal) || string.IsNullOrWhiteSpace(limits.Profile))
             throw new ArgumentOutOfRangeException(nameof(limits));
         string directory = Path.Combine(profile, "ai-campaign"); Directory.CreateDirectory(directory);
         AiCampaignContinuation.CheckRegression(check);
         AiCampaignNumericInvestment.CheckRegression(check);
+        AiCampaignPaymentCancellation.CheckRegression(check);
+        await AiCampaignStaleAuthority.CheckRegressionAsync(check);
         CheckDisclosureBounds(check);
         foreach (var manifest in AiCampaignDecks.All) manifest.Validate();
         await engine.EnableAutomatedSeatsAsync();
@@ -89,10 +96,11 @@ internal static class AiEngineCampaign
         check(results.All(result => result.MechanicalFailure == null), "Diverse AI campaign mechanical results: "
             + string.Join("; ", results.Select(result => $"match {result.Match}: {result.MechanicalFailure ?? result.StopReason}, turn {result.Turns}, {result.Accepted} accepted commands")));
         check(results.All(result => result.Continuation.Conclusive), "Diverse AI campaign continuation results: "
-            + string.Join("; ", results.Select(result => $"match {result.Match}: {result.Continuation.Classification}, turn {result.Turns}/{limits.Turns}"))
+            + string.Join("; ", results.Select(result => $"match {result.Match}: {result.Continuation.Classification}, turn {result.Turns}/{limits.Turns}, goal {limits.Goal}"))
             + ". A time cutoff is inconclusive; historical accepted commands do not establish completion or diagnose a policy loop.");
         check(results.All(result => result.DevelopedSeats >= 3 && result.Accepted >= 12 && result.OfferedRoutesUsed >= 8 && result.PublicComparisons > 0),
             "Every bounded diverse match develops multiple real battlefields and compares same-revision public projections; absent rare mechanics remain explicit coverage gaps.");
+        return results.ToImmutableArray();
     }
 
     private static void CheckDisclosureBounds(Action<bool, string> check)
@@ -194,10 +202,11 @@ internal static class AiEngineCampaign
         Directory.CreateDirectory(directory);
         File.WriteAllText(Path.Combine(directory, "match-config.json"), JsonSerializer.Serialize(new {
             formatVersion = 1, audience = "host-private", match = index, decksInSeatOrder = decks,
-            policySeed = limits.PolicySeed + index, limits.Turns, limits.MatchTime, engineRandomnessControlled = false
+            policySeed = limits.PolicySeed + index, limits.Turns, limits.MatchTime, limits.Profile, limits.Goal, engineRandomnessControlled = false
         }, new JsonSerializerOptions { WriteIndented = true }));
         using var evidence = new AiCampaignDiagnostics(directory);
-        var provider = new AiCampaignProvider(engine, evidence);
+        var provider = new AiCampaignProvider(engine, evidence, limits.Goal == AiCampaignGoal.NaturalOutcome
+            ? engine.ReplayPriorAutomatedCommandForCheckAsync : null);
         await using var host = new AiTableHost(provider, _ => evidence.Record(new CasualCommanderPolicy()),
             limits.PolicySeed + index, new(TimeSpan.FromSeconds(10), 4096));
         await using var trace = new StreamWriter(new GZipStream(File.Create(Path.Combine(directory, "public.jsonl.gz")), CompressionLevel.Fastest));
@@ -208,6 +217,7 @@ internal static class AiEngineCampaign
         string? failure = null;
         Exception? primaryFailure = null;
         var developed = new HashSet<int>();
+        AiCampaignOutcomeProof? outcome = null;
         try {
             state = await engine.StartSimulationAsync(decks);
             while (true) {
@@ -245,13 +255,22 @@ internal static class AiEngineCampaign
                 if (state.Status == "finished") { stop = "natural-outcome"; break; }
                 if (state.Turn >= limits.Turns) { stop = "turn-budget"; break; }
                 if (elapsed.Elapsed >= limits.MatchTime) {
-                    if (state.Turn < 8) throw new TimeoutException("The campaign did not reach two multiplayer rounds within its time budget.");
+                    if (limits.Goal == AiCampaignGoal.RequestedTurns && state.Turn < 8)
+                        throw new TimeoutException("The campaign did not reach two multiplayer rounds within its time budget.");
                     stop = "time-budget"; break;
                 }
                 await Task.Delay(1);
             }
         } catch (Exception error) { stop = "mechanical-failure"; failure = error.ToString(); primaryFailure = error; }
         finally {
+            // Prove the observed end before the only lifecycle intervention.
+            // A later StopSimulation result can never become a natural finish.
+            outcome = AiCampaignOutcomeProof.Capture(state, stop, host.LastFault, developed, provider.Last);
+            var outcomeCaptureError = evidence.PreserveOutcome(outcome, state);
+            if (outcomeCaptureError != null && primaryFailure == null) {
+                stage = "capture-public-outcome"; stop = "mechanical-failure";
+                primaryFailure = outcomeCaptureError; failure = outcomeCaptureError.ToString();
+            }
             var captureError = evidence.PreserveObservations(provider.Last);
             if (captureError != null && primaryFailure == null) {
                 stage = "capture-private-observations"; stop = "mechanical-failure";
@@ -269,7 +288,8 @@ internal static class AiEngineCampaign
         }
         var result = new AiCampaignResult(index, stop, failure, state?.Turn ?? 0, steps, developed.Count,
             evidence.Accepted, evidence.Commands.GetValueOrDefault(nameof(UseOfferedAction)), comparisons, elapsed.Elapsed.TotalMilliseconds, evidence.Summary(),
-            AiCampaignContinuation.Assess(stop, limits.Turns, state?.Turn ?? 0, state?.Status == "finished" && !string.IsNullOrWhiteSpace(state.Result)));
+            AiCampaignContinuation.Assess(stop, limits.Turns, state?.Turn ?? 0, outcome?.VerifiedNaturalOutcome == true, limits.Goal)) {
+                Profile = limits.Profile, Goal = limits.Goal, Outcome = outcome };
         File.WriteAllText(Path.Combine(directory, "result.json"), JsonSerializer.Serialize(result, new JsonSerializerOptions { WriteIndented = true }));
         return result;
     }

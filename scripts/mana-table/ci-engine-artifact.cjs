@@ -13,22 +13,25 @@ async function identity(file) {
   for await (const chunk of fs.createReadStream(file)) hash.update(chunk);
   return { bytes: stat.size, sha256: hash.digest('hex') };
 }
-async function create(jar, manifest, revision, head) {
+async function create(jar, fixtureLauncher, manifest, revision, head) {
   requireRevision(revision);
   if (head !== revision) throw new Error('Checkout does not match the expected source revision.');
-  const record = { schemaVersion: 1, sourceRevision: revision, engine: await identity(jar) };
+  const record = { schemaVersion: 2, sourceRevision: revision, engine: await identity(jar), fixtureLauncher: await identity(fixtureLauncher) };
   fs.writeFileSync(manifest, JSON.stringify(record, null, 2) + '\n', { flag: 'wx' });
   return record;
 }
-async function verify(jar, manifest, revision, head) {
+async function verify(jar, fixtureLauncher, manifest, revision, head) {
   requireRevision(revision);
   if (head !== revision) throw new Error('Checkout does not match the expected source revision.');
   const stat = fs.lstatSync(manifest);
   if (!stat.isFile() || stat.isSymbolicLink() || stat.size > 16384) throw new Error('Invalid engine artifact manifest.');
   const record = JSON.parse(fs.readFileSync(manifest, 'utf8'));
-  if (record.schemaVersion !== 1 || record.sourceRevision !== revision) throw new Error('Engine artifact belongs to another source revision.');
+  if (record.schemaVersion !== 2 || record.sourceRevision !== revision) throw new Error('Engine artifact belongs to another source revision or verification schema.');
   const actual = await identity(jar);
   if (record.engine?.bytes !== actual.bytes || record.engine?.sha256 !== actual.sha256) throw new Error('Engine artifact bytes differ from the verified build.');
+  const actualLauncher = await identity(fixtureLauncher);
+  if (record.fixtureLauncher?.bytes !== actualLauncher.bytes || record.fixtureLauncher?.sha256 !== actualLauncher.sha256)
+    throw new Error('Fixture launcher bytes differ from the verified build.');
   return record;
 }
 async function main(args) {
@@ -39,8 +42,9 @@ async function main(args) {
   if (operation === 'create' && execFileSync('git', ['-c', 'core.excludesfile=', 'status', '--porcelain', '--untracked-files=all'],
     { cwd: repository, encoding: 'utf8', windowsHide: true }).trim()) throw new Error('Engine artifacts must be produced from a clean source checkout.');
   const target = path.join(repository, 'forge-api/target');
-  const record = await ({ create, verify }[operation])(path.join(target, 'forge-engine.jar'), path.join(target, 'ci-engine-manifest.json'), revision, head);
-  console.log(`Engine ${operation}: ${record.sourceRevision} / ${record.engine.sha256} / ${record.engine.bytes} bytes`);
+  const record = await ({ create, verify }[operation])(path.join(target, 'forge-engine.jar'), path.join(target, 'forge-engine-fixtures.jar'),
+    path.join(target, 'ci-engine-manifest.json'), revision, head);
+  console.log(`Engine ${operation}: ${record.sourceRevision} / ${record.engine.sha256} / ${record.engine.bytes} bytes; fixture launcher ${record.fixtureLauncher.sha256}`);
 }
 if (require.main === module) main(process.argv.slice(2)).catch(error => { console.error(error.message); process.exitCode = 1; });
 module.exports = { create, verify };

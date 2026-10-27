@@ -11,6 +11,7 @@ internal static class AiSemanticValidation
     {
         var context = new Context(state);
         if (semantics.Numeric is { } numeric) context.Numeric(state, numeric);
+        if (semantics.Payment is { } payment) context.Payment(state, payment);
         context.Graph(semantics.OperationGraph, semantics.OperationId);
         foreach (var option in semantics.Options) context.Graph(option.OperationGraph);
         foreach (var action in domain.Actions) {
@@ -79,6 +80,18 @@ internal static class AiSemanticValidation
                     Costs(route.Costs); Production(route.Production);
                 }
             }
+        }
+
+        internal void Payment(GameSnapshot state, PaymentDecision payment)
+        {
+            if (state.Decision?.Payload is not PaymentPayload payload || !Enum.IsDefined(payment.Purpose)
+                || !players.Contains(payment.PayerId)
+                || string.IsNullOrWhiteSpace(payment.SourceCardId) || !occurrences.Contains(payment.SourceCardId)
+                || payment.Mandatory && payload.Cancel.Enabled) throw Invalid();
+            if (state.Decision.Context.Source is not { } owner || owner.CardId != payment.SourceCardId
+                && (owner.Card == null || CardViews.Identity(owner.Card) != payment.SourceCardId)) throw Invalid();
+            if (owner.Card is { } portrait && (portrait.FaceDown || !string.IsNullOrEmpty(portrait.Key)
+                || portrait.Selectable || portrait.Highlighted)) throw Invalid();
         }
 
         internal void Graph(ActionOperationGraph? graph, int? active = null)

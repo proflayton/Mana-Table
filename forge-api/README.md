@@ -84,6 +84,14 @@ it can witness nominal funding but cannot certify that no other resources exist.
 This additive private metadata needs no persisted-data migration; older
 observations without it retain unknown numeric purpose. Actual current payment
 inputs still own spending and activation authority.
+Current mana inputs can add `payment` provenance: `purpose` (`SpellCost`,
+`ActivatedAbilityCost`, `TriggeredAbilityCost`, `EffectCost` or `Unknown`), actual
+`payerId`, entitled `sourceCardId` and the input's `mandatory` fact. The current
+unpaid symbols remain the bill; this metadata does not reuse the printed source
+cost or grant permission to spend. Canceling an optional triggered payment is
+a valid decline, distinct from abandoning a spell that the policy initiated.
+The payer can differ from a source's controller or the observing controller.
+Provenance ends with the current input; hidden source identities are not added.
 Ordinary non-library effect choices may also carry current `disclosedCards`
 rows `{label, card}` for delayed-reveal faces absent from the eligible options.
 These anonymous portraits have no index, physical identity, card key or action
@@ -176,6 +184,11 @@ with a sideboard, and verifies unknown-card detection. It does not start a match
 Tests include lightweight projections and real four-seat rules scenarios that load
 the checked-in card database. Keep the complete `forge-gui/res` directory available;
 the initial resource scan can take time. CI also tests Java 21 compatibility.
+Packaging additionally creates `forge-engine-fixtures.jar`, containing only the
+test-classpath fixture launcher. It depends on the adjacent `forge-engine.jar`
+and uses the same production controllers, protocol and rules with pregame
+registered-player setup. It is verified separately in CI and is never shipped
+inside the native application or accepted as a production fixture command.
 
 To run the private command host directly, supply the resource directory and a
 separate writable **decks directory** (not its parent profile):

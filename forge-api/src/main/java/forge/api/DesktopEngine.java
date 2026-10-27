@@ -24,6 +24,7 @@ public final class DesktopEngine implements AutoCloseable {
     private final Path directory;
     private final DeckDocumentSession documents;
     private final DeckPlaytests playtests;
+    private final SimulationTableFactory simulationTables;
     private Path resources;
     private SeatConnection match;
     private MatchSession localMatch;
@@ -33,7 +34,17 @@ public final class DesktopEngine implements AutoCloseable {
     private final Map<String, SyncLobby> localSeats = new LinkedHashMap<>();
 
     public DesktopEngine(CardCatalog catalog, Path directory) throws Exception {
+        this(catalog, directory, (players, resources, profile) -> new MatchTable("Commander", players, resources, profile, true));
+    }
+
+    @FunctionalInterface
+    interface SimulationTableFactory {
+        MatchTable create(List<forge.game.player.RegisteredPlayer> players, Path resources, Path profile);
+    }
+
+    DesktopEngine(CardCatalog catalog, Path directory, SimulationTableFactory simulationTables) throws Exception {
         this.catalog = catalog;
+        this.simulationTables = java.util.Objects.requireNonNull(simulationTables);
         this.directory = directory.toAbsolutePath().normalize();
         Files.createDirectories(this.directory);
         playtests = new DeckPlaytests(this.directory);
@@ -41,12 +52,16 @@ public final class DesktopEngine implements AutoCloseable {
     }
 
     public static void main(String[] args) throws Exception {
+        run(args, (players, resources, profile) -> new MatchTable("Commander", players, resources, profile, true));
+    }
+
+    static void run(String[] args, SimulationTableFactory simulationTables) throws Exception {
         if (args.length != 2) { throw new IllegalArgumentException("Expected resource and deck directories"); }
         PrintStream protocol = System.out;
         System.setOut(System.err); // Forge diagnostics must never corrupt the JSON protocol.
         protocol.println(JSON.toJson(Map.of("event", "loading", "message", "Loading Forge card library…")));
         var data = EngineResources.load(Path.of(args[0]));
-        var engine = new DesktopEngine(CardCatalog.fromDatabases(data.getAvailableDatabases().values()), Path.of(args[1]));
+        var engine = new DesktopEngine(CardCatalog.fromDatabases(data.getAvailableDatabases().values()), Path.of(args[1]), simulationTables);
         engine.resources = Path.of(args[0]);
         engine.documents.loadAnalysisFormats(engine.resources);
         protocol.println(JSON.toJson(Map.of("event", "ready", "printings", engine.catalog.size(), "protocolVersion", 2, "capabilities", List.of("seat-sync", "snapshots", "command-receipts", "resume", "table-social", "deck-workshop", "deck-analysis", "source-actions", "deck-library", "deck-tokens", "semantic-priority-actions", "explicit-deck-setup", "decision-tempo", "automated-seats"))));
@@ -135,7 +150,7 @@ public final class DesktopEngine implements AutoCloseable {
                     players.add(MatchTable.automated(assigned.deck(), "Commander", assigned.name()));
                 }
                 if (simulation != null) simulation.close();
-                simulation = new MatchTable("Commander", players, resources, directory.getParent(), true);
+                simulation = simulationTables.create(players, resources, directory.getParent());
                 simulation.start();
                 yield simulation.spectatorState();
             }

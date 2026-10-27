@@ -7,6 +7,9 @@ import forge.deck.Deck;
 import forge.deck.DeckSection;
 import forge.game.card.CounterEnumType;
 import forge.game.zone.ZoneType;
+import forge.gamemodes.match.input.InputPayMana;
+import forge.player.PlayerControllerHuman;
+import org.testng.annotations.DataProvider;
 import org.testng.annotations.Test;
 
 import java.nio.file.Files;
@@ -47,6 +50,7 @@ public class AutomatedPaymentJourneyTest {
                     && text(input.prompt, "inputType").startsWith("InputPayMana"));
             assertFalse(payment.prompt.get("okEnabled").getAsBoolean(), "A policy cannot invoke Forge's Auto payment");
             var observation = JSON.toJsonTree(table.automatedSeat(policyId).automatedObservation()).getAsJsonObject();
+            assertPaymentOwner(observation, "SpellCost", policyId);
             assertEquals(observation.getAsJsonObject("domain").getAsJsonArray("poolManaColors").toString(), "[\"C\"]");
             var before = table.automatedSeat(policyId).state();
             assertThrows(IllegalArgumentException.class, () -> table.automatedSeat(policyId).action(
@@ -121,6 +125,7 @@ public class AutomatedPaymentJourneyTest {
             assertEquals(stale.getMessage(), "That choice has changed. Use the current prompt.");
             assertEquals(table.automatedSeat(policyId).state(), beforeStale, "An expired numeric scope cannot revise the investment");
             var paying = JSON.toJsonTree(table.automatedSeat(policyId).automatedObservation()).getAsJsonObject();
+            assertPaymentOwner(paying, "SpellCost", policyId);
             assertFalse(paying.getAsJsonObject("semantics").has("numeric"), "The announcement context ends when its decision is consumed");
             assertEquals(paying.getAsJsonObject("semantics").getAsJsonArray("unpaidMana").size(), 4, "XX with X=2 costs four mana");
             for (int resource = 0; resource < 4; resource++) {
@@ -151,6 +156,81 @@ public class AutomatedPaymentJourneyTest {
                 assertEquals(actual.getNetPower(), 2); assertEquals(actual.getNetToughness(), 2);
             });
         }
+    }
+
+    @DataProvider public Object[][] optionalFunding() { return new Object[][] {{false}, {true}}; }
+
+    @Test(dataProvider = "optionalFunding", groups = "canonical-interaction", timeOut = 90000)
+    public void aRealOptionalTriggeredPaymentOwnsItsCurrentBillAndCanBeDeclinedWithoutInventingACast(boolean funded) throws Exception {
+        if (StaticData.instance() == null) EngineResources.load(RESOURCES);
+        var human = MatchTable.human(deck("Human", "Forest"), "Commander", "Human");
+        var bot = MatchTable.automated(deck("Policy", "Memnite"), "Commander", "Policy");
+        var permanents = new ArrayList<forge.item.IPaperCard>();
+        permanents.add(StaticData.instance().getCommonCards().getCard("Mentor of the Meek"));
+        if (funded) permanents.add(StaticData.instance().getCommonCards().getCard("Forest"));
+        bot.addExtraCardsOnBattlefield(permanents);
+        try (var table = new MatchTable("Commander", List.of(human, bot), RESOURCES,
+                Files.createTempDirectory("automated-optional-trigger-payment"))) {
+            int policyId = table.game.getPlayers().get(1).getId();
+            var driver = new Driver(table, policyId);
+            table.start();
+            var main = driver.until(input -> input.playerId == policyId && isPriority(input)
+                    && input.state.get("activePlayerId").getAsInt() == policyId
+                    && text(input.state, "phaseKey").equals("MAIN1"));
+            driver.use(main, card(main.state, "Hand", "Memnite"), "cast");
+            // The rules deliberately go straight to this optional trigger's
+            // payment. No artificial confirm/accept step belongs before it.
+            var payment = driver.until(input -> input.playerId == policyId
+                    && text(input.prompt, "inputType").startsWith("InputPayMana"));
+            var observation = JSON.toJsonTree(table.automatedSeat(policyId).automatedObservation()).getAsJsonObject();
+            assertPaymentOwner(observation, "TriggeredAbilityCost", policyId);
+            assertEquals(text(payment.prompt.getAsJsonObject("sourceCard"), "name"), "Mentor of the Meek");
+            assertEquals(observation.getAsJsonObject("semantics").getAsJsonArray("unpaidMana").toString(), "[\"{1}\"]");
+            assertFalse(observation.getAsJsonObject("semantics").getAsJsonObject("payment").get("mandatory").getAsBoolean());
+            assertTrue(payment.prompt.get("cancelEnabled").getAsBoolean());
+            assertFalse(payment.prompt.get("okEnabled").getAsBoolean(), "Forge Auto never pays for the policy");
+            int beforeHand = count(viewer(payment.state), "Hand");
+            table.game.getAction().withState(() -> {
+                var payer = table.game.getRegisteredPlayers().get(1);
+                var controller = (PlayerControllerHuman)payer.getController();
+                var input = (InputPayMana)controller.getInputQueue().getInput();
+                assertSame(input.getPayer(), payer);
+                assertTrue(input.getPaidForAbility().isTrigger());
+                var activator = input.getPaidForAbility().getActivatingPlayer();
+                int poolBefore = payer.getManaPool().totalMana();
+                assertNull(PaymentDecisionProjection.describe(input, card -> ""), "An unentitled source cannot mint payment identity metadata");
+                assertEquals(PaymentDecisionProjection.describe(input, table.identities::id),
+                        PaymentDecisionProjection.describe(input, table.identities::id));
+                assertSame(input.getPaidForAbility().getActivatingPlayer(), activator);
+                assertEquals(payer.getManaPool().totalMana(), poolBefore);
+            });
+            if (funded) {
+                driver.use(payment, card(payment.state, "Battlefield", "Forest"), "activate");
+                driver.awaitState(state -> tappedForests(state) == 1);
+            } else {
+                assertTrue(observation.getAsJsonObject("domain").getAsJsonArray("sources").isEmpty());
+                assertTrue(observation.getAsJsonObject("domain").getAsJsonArray("poolManaColors").isEmpty());
+                driver.answer(payment, Map.of("action", "cancel"));
+            }
+            var resolved = driver.until(input -> input.playerId == policyId && isPriority(input)
+                    && input.state.getAsJsonArray("stack").isEmpty());
+            assertEquals(count(viewer(resolved.state), "Hand"), beforeHand + (funded ? 1 : 0));
+            assertNotNull(card(resolved.state, "Battlefield", "Memnite"));
+            var after = JSON.toJsonTree(table.automatedSeat(policyId).automatedObservation()).getAsJsonObject();
+            assertFalse(after.getAsJsonObject("semantics").has("payment"), "Payment provenance ends with its owned input");
+            assertThrows(IllegalArgumentException.class,
+                    () -> table.automatedSeat(policyId).action(request(payment, Map.of("action", "cancel"))));
+        }
+    }
+
+    private static void assertPaymentOwner(JsonObject observation, String purpose, int payerId) {
+        var payment = observation.getAsJsonObject("semantics").getAsJsonObject("payment");
+        assertNotNull(payment, "The current payment must retain typed rules provenance");
+        assertEquals(text(payment, "purpose"), purpose);
+        assertEquals(payment.get("payerId").getAsInt(), payerId);
+        assertFalse(text(payment, "sourceCardId").isEmpty());
+        assertEquals(text(payment, "sourceCardId"), text(observation.getAsJsonObject("state").getAsJsonObject("prompt")
+                .getAsJsonObject("sourceCard"), "combatId"));
     }
 
     private static long tappedForests(JsonObject state) {

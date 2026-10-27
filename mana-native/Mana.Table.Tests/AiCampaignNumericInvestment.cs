@@ -7,6 +7,15 @@ namespace Mana.Table;
 internal sealed record AiCampaignNumericPaymentInput(string DecisionId, long BoardRevision, ImmutableArray<string> UnpaidMana);
 internal sealed record AiCampaignNumericPublicCard(long BoardRevision, int ControllerId, string Zone,
     int? Power, int? Toughness, ImmutableDictionary<string, int> Counters);
+internal sealed record AiCampaignNumericInvestmentEvidence(string GameId, string ReplayCaseId, int SeatId,
+    string DecisionId, long Revision, long BoardRevision, string Purpose, string SourceCardId, string SourceName,
+    int Value, bool? Accepted, string? ReceiptError, bool SameSourceStackObserved, long? SameSourceCastEventId,
+    long? SameSourceResolvedEventId, ImmutableArray<AiCampaignNumericPaymentInput> SameSourcePaymentInputs,
+    ImmutableArray<AiCampaignNumericPublicCard> PublicCardObservations)
+{
+    public string EventAudience => "owned-seat filtered activity; stack and card observations come independently from the public spectator";
+    public bool PositiveChoiceWithPublicResolution => Value > 0 && Accepted == true && SameSourceResolvedEventId != null;
+}
 
 // A choice, its receipt and subsequent source observations are separate facts.
 // Even an exact source match does not prove that X caused every later effect.
@@ -45,6 +54,10 @@ internal sealed class AiCampaignNumericInvestment
     }
 
     internal void Receipt(bool accepted, string? error) { Accepted = accepted; ReceiptError = error; }
+
+    internal AiCampaignNumericInvestmentEvidence Snapshot() => new(GameId, ReplayCaseId, SeatId, DecisionId,
+        Revision, BoardRevision, Purpose, SourceCardId, SourceName, Value, Accepted, ReceiptError, SameSourceStackObserved,
+        SameSourceCastEventId, SameSourceResolvedEventId, SameSourcePaymentInputs.ToImmutableArray(), PublicCardObservations.ToImmutableArray());
 
     internal void ObserveOwned(AutomatedSeatObservation observation)
     {
@@ -121,5 +134,10 @@ internal sealed class AiCampaignNumericInvestment
         check(!zero.PositiveChoiceWithPublicResolution && zero.SameSourceResolvedEventId == 9
                 && !rejected.PositiveChoiceWithPublicResolution && rejected.PublicCardObservations.Count == 0,
             "A resolved zero choice and a rejected positive choice do not become completed positive investments");
+        var snapshot = System.Text.Json.JsonSerializer.Deserialize<AiCampaignNumericInvestmentEvidence>(
+            System.Text.Json.JsonSerializer.Serialize(evidence.Snapshot()))!;
+        check(snapshot.PositiveChoiceWithPublicResolution && snapshot.Value == 3
+                && snapshot.PublicCardObservations is [{ Power: 2, Toughness: 2 }] && snapshot.SameSourceResolvedEventId == 9,
+            "Persisted numeric evidence retains immutable receipt/event/public-outcome facts for the release aggregate without inventing X-sized statistics");
     }
 }

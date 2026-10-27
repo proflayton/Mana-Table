@@ -16,7 +16,7 @@ namespace Mana.Table;
 /// <summary>A short real-Forge game observed and operated through production composition, without a window.</summary>
 internal static class HeadlessEngineSmoke
 {
-    internal static async Task RunAsync(ForgePaths paths)
+    internal static async Task RunAsync(ForgePaths paths, string? productionJar = null, string? sourceRevision = null, string? sourceManifest = null)
     {
         Directory.CreateDirectory(paths.Profile);
         var checks = new List<string>();
@@ -35,6 +35,11 @@ internal static class HeadlessEngineSmoke
         }
         await using var engine = new ForgeEngine(paths);
         try {
+            if (productionJar != null) {
+                var runtime = AiReleaseEvaluation.VerifyRuntime(paths, productionJar, verifyPackage: true,
+                    sourceRevision: sourceRevision, sourceManifest: sourceManifest);
+                File.WriteAllText(Path.Combine(paths.Profile, "ai-verified-runtime.json"), JsonSerializer.Serialize(runtime, json));
+            }
             await engine.InitializeAsync();
             var deck = await engine.ImportAsync("Headless production composition", "Deck\n99 Forest\nCommander\n1 Rhys the Redeemed");
             var setup = await engine.PrepareSoloAsync(deck.Id);
@@ -274,6 +279,7 @@ internal static class HeadlessEngineSmoke
             Save("finished");
             await AiWholeSeatEngineCheck.RunAsync(engine, paths.Profile, Check);
             await AiEngineCampaign.RunAsync(engine, paths.Profile, new(1, 16, TimeSpan.FromSeconds(35)), Check, paths);
+            if (productionJar != null) await AiReleaseGoldens.RunAsync(engine, paths.Profile, Check);
 
             GameTime Time() => new(TimeSpan.FromSeconds(seconds), TimeSpan.FromSeconds(1.0 / 60));
             PresentationFrame Tick(string stage, ButtonState left = ButtonState.Released)

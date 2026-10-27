@@ -47,6 +47,87 @@ provenance, actual public state, missing mechanic coverage, and separate review
 findings. Review findings are not automatically strategy errors: a forced
 own-land return is legitimate. Policy seeds do not control Forge's rules RNG.
 
+## AI release evaluation
+
+The short campaign checks progress. AI release evidence also needs completed
+games, controlled outcomes and recorded human review. Keep these gates separate:
+
+| Gate | Required evidence | Insufficient evidence |
+| --- | --- | --- |
+| Provider and rules conformance | Exact-source Java/native checks of real current decisions, costs, allowed resources, visibility and subsequent rules outcomes | A plausible-looking frame, accepted command or a policy's own prediction |
+| Policy and tactical continuations | Controlled production-policy journeys, including positive X investment through actual payment and outcome; deterministic funding/tactical regressions | A manually supplied X value alone, an offline proposal alone, or a rare draw absent from a campaign |
+| Whole-game completion | Four different Commander decks in four cyclic seat rotations, each reaching a verified engine outcome before cleanup | Earlier battlefield development, a turn count, a forced concede, or a stopped simulation |
+| State, authority and lifecycle integrity | Exact-board public comparisons, private-window and fault checks, plus fresh-RPC rejection of consumed scopes for every exercised seat | Cached command receipts, retained historical disclosure, or a client-only rejection before the request reaches Java |
+| Human gameplay review | Recorded review of the exact candidate and findings, with reviewer, artifact identity and disposition | Pending review, passing automation, win rate, or equal damage/target distributions |
+
+Run the manual long profile with immutable test and production artifacts in a
+new private profile:
+
+```powershell
+dotnet '<immutable-harness>/Mana.Table.Tests.dll' --evaluate-ai-release --engine-resources '<candidate-package>/engine' --engine-jar '<test-fixture-wrapper.jar>' --production-engine-jar '<shipping-engine.jar>' --source-revision '<full-40-character-commit>' --source-manifest '<ci-engine-manifest.json>' --profile '<fresh-private-profile>'
+```
+
+`--engine-resources` must identify the `engine` directory of the exact candidate's
+release package. The runner checks its `build.json` source revision, release
+marker and engine hash, and compares the packaged `Mana.AI`, `Mana.Contracts`
+and `Mana.Forge` assemblies with the loaded harness dependencies. It records
+the actual rules-resource path and build-metadata hash. Retain the verified
+package/source receipt which binds the complete runtime archive. An older
+installed resource bundle or a preview assembled from external resources does
+not establish exact-candidate release evidence. The packaged headless CI lane
+uses these same provenance checks.
+
+The wrapper is a test-only launcher for controlled positions using the exact
+production engine. It is checked against the shipping JAR and never supplies a
+shipping scenario API. The existing process initializes one JVM for the six
+controlled native goldens and subsequent games. The release campaign uses four
+cyclic seat rotations, each bounded by 160 global turns and 180 seconds. This is
+at most twelve minutes of nominal game budget, separate from fast CI. Limits are
+checked between completed steps; an in-flight request and cleanup can extend
+wall-clock time. These are test limits, unrelated to a player's decision timer.
+Neither ceiling passes the natural-outcome gate. A legitimate engine-reported
+draw can pass; the driver does not invent individual loss reasons which the
+provider omits. It records the public state and outcome before its only
+`StopSimulation` cleanup call. Forced cleanup, aborts and automation faults cannot
+manufacture a finish.
+
+The fixed 16-turn/35-second CI prefix and the two-rotation 32-turn/45-second smoke
+remain unchanged. Do not rerun a failed sample until one happens to pass, lower
+its target, or enlarge its budget to relabel it green. Preserve the first
+failure/cutoff; investigate the actual scopes and progress. A source correction
+requires new candidate artifacts and new evidence, with prior results retained.
+
+`ai-release-evaluation.json` reports `automatedReady` separately from
+`releaseApproved`. The runner always records human gameplay review as pending
+and never approves itself. Review must identify the source commit and SHA256
+hashes of the actual production/wrapper engine, policy and test driver. The
+required source revision must match the harness's exact informational-version
+SHA. The engine artifact manifest also binds that revision to the production
+and fixture-launcher hashes and byte counts. CI supplies both arguments;
+`--source-manifest` is optional for a locally asserted run, whose weaker
+provenance is recorded separately from receipt-verified evidence. The release
+package checks still apply. A local source assertion and embedded metadata
+alone do not independently prove a clean build; retain the
+CI artifact receipt when available. Older captures with predecessor metadata
+remain diagnostics, not exact-candidate release proof. A policy seed controls
+policy choices only. Forge's rules RNG remains uncontrolled, so these rotations
+are not identical-shuffle experiments or reproducible engine replays.
+
+Typed match results separate completion, mechanical failures, missing mechanics,
+numeric proposal/receipt/outcome facts and payment provenance. An explicit own
+optional triggered/effect-cost decline is distinct from abandoning a spell or
+activation cost. Unknown provenance remains reviewable. Release-only stale
+probes resubmit a previously accepted closed payload with a fresh transport
+request after that seat has a different decision. Any acceptance or uncertain
+transport result fails the evaluation; the probe supplies no new strategic
+answer. All private decisions, scopes, probes and replays remain private test
+artifacts and must not be attached to public release downloads.
+
+The [AI guide](Mana-Table-AI.md#ai-quality-work-before-merge-or-release) explains
+the supported scope and research basis. The
+[release guide](Mana-Table-Releases.md#ai-candidate-evidence) distinguishes this
+candidate evaluation from the required packaging/publication checks.
+
 Private campaign evidence includes compressed decision records and standalone
 `AiDecisionReplayCase` JSON for suspicious/failing decisions. Run the native
 test driver with `--replay-ai-decision <case.json> --profile <fresh-directory>`

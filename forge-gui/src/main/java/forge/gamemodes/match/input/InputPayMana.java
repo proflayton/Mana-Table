@@ -136,6 +136,12 @@ public abstract class InputPayMana extends InputSyncronizedBase {
 
     public boolean isPaymentActive() { return !isFinished() && !locked; }
 
+    /** Current rules provenance; these facts do not grant another payment action. */
+    public SpellAbility getPaidForAbility() { return saPaidFor; }
+    public Player getPayer() { return player; }
+    public boolean isEffectPayment() { return effect; }
+    public boolean isPaymentMandatory() { return mandatory; }
+
     /** A defensive copy of the current bill, after reductions and prior payment. */
     public ManaCostBeingPaid getRemainingManaCost() {
         return manaCost == null ? null : new ManaCostBeingPaid(manaCost);

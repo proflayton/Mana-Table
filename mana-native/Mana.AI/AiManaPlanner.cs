@@ -22,7 +22,7 @@ public sealed record AiManaPlan(AiManaPlanStatus Status, ImmutableArray<AiManaSt
 public sealed record AiManaFundingAssessment(AiManaPlanStatus Status, int WorkSpent, string ReasonCode);
 
 /// <summary>
-/// Bounded assignment of one production alternative per physical source. The
+/// Bounded assignment over each physical source's tap/consumption state. The
 /// same solver serves sequencing and current payment; callers supply the exact
 /// bill when available. It does not invoke a provider or reconstruct card rules.
 /// </summary>
@@ -30,8 +30,18 @@ public static class AiManaPlanner
 {
     private static readonly string[] Colors = ["W", "U", "B", "R", "G", "C"];
     private sealed record Requirement(int Mask, int GenericAlternative = 0);
-    private sealed record Route(AiManaStep.Source? Step, int[] Output);
+    private enum ResourceUse { Limited, Tap, Consume, TapAndConsume }
+    private sealed record Route(AiManaStep.Source? Step, int[] Output, ResourceUse Use);
     private sealed record Source(string Id, ImmutableArray<Route> Routes);
+    private readonly record struct Capacity(long Tap, long Consume, long TapAndConsume)
+    {
+        internal long Maximum => Math.Max(Tap + Consume, TapAndConsume);
+        internal Capacity Include(ResourceUse use, long amount) => use switch {
+            ResourceUse.Tap => this with { Tap = Math.Max(Tap, amount) },
+            ResourceUse.Consume => this with { Consume = Math.Max(Consume, amount) },
+            ResourceUse.TapAndConsume => this with { TapAndConsume = Math.Max(TapAndConsume, amount) }, _ => this
+        };
+    }
 
     public static AiManaPlan ForAction(AiDecisionRequest request, ActionSemantics action,
         int extraGeneric = 0, CancellationToken cancellation = default)
@@ -40,7 +50,7 @@ public static class AiManaPlanner
         if (costs.Any(cost => cost.Amount == null)) return new(AiManaPlanStatus.Unknown, [], 0, "mana-unknown-cost-quantity");
         long generic = costs.Sum(cost => Math.Max(0L, cost.Amount ?? 0)) + extraGeneric;
         if (generic is < 0 or > 1024) return new(AiManaPlanStatus.Unknown, [], 0, "mana-bill-bound");
-        string? reserved = action.Costs.Any(cost => cost.Kind == ActionCostKind.Tap && cost.FromSource)
+        string? reserved = action.Costs.Any(ConsumesInitiatingSource)
             ? request.Frame.SourceActions.FirstOrDefault(set => set.Actions.Any(offer => offer.Id == action.ActionId))?.SourceCardId : null;
         return Plan(request.Frame, costs.SelectMany(cost => cost.ManaSymbols),
             (int)generic, request.Work, cancellation, reserved);
@@ -56,7 +66,7 @@ public static class AiManaPlanner
             return new(AiManaPlanStatus.Unknown, 0, "investment-cost-unsupported");
         if (!InvestmentBill(action.Costs, x, extraGeneric, out var symbols, out int generic, out string reason))
             return new(AiManaPlanStatus.Unknown, 0, reason);
-        string? reserved = action.Costs.Any(cost => cost.Kind == ActionCostKind.Tap && cost.FromSource && cost.Amount == 1)
+        string? reserved = action.Costs.Any(ConsumesInitiatingSource)
             ? request.Frame.SourceActions.FirstOrDefault(set => set.Actions.Any(offer => offer.Id == action.ActionId))?.SourceCardId : null;
         var plan = Plan(request.Frame, symbols, generic, request.Work, cancellation, reserved);
         return new(plan.Status, plan.WorkSpent, plan.ReasonCode);
@@ -98,6 +108,24 @@ public static class AiManaPlanner
         }
         if (amount > 1024) { reason = "mana-bill-bound"; return false; }
         symbols = remaining.ToImmutable(); generic = (int)amount; reason = ""; return true;
+    }
+
+    private static bool ConsumesInitiatingSource(ActionCost cost) => cost.FromSource && cost.Amount != 0
+        && cost.Kind is ActionCostKind.Tap or ActionCostKind.Sacrifice or ActionCostKind.Discard or ActionCostKind.Exile;
+
+    private static bool FiniteOneUse(ImmutableArray<ActionCost> costs) =>
+        costs.Count(cost => cost.Kind == ActionCostKind.Tap) <= 1
+        && costs.Count(cost => cost.Kind == ActionCostKind.Sacrifice) <= 1
+        && costs.Any(cost => cost.FromSource && cost.Amount == 1 && cost.Kind is ActionCostKind.Tap or ActionCostKind.Sacrifice)
+        && costs.All(cost => cost.Kind == ActionCostKind.Mana && cost.Amount == 0 && cost.ManaSymbols.IsEmpty
+            || cost.FromSource && cost.Amount == 1 && cost.Kind is ActionCostKind.Tap or ActionCostKind.Sacrifice);
+
+    private static ResourceUse PhysicalUse(ImmutableArray<ActionCost> costs)
+    {
+        bool tap = costs.Any(cost => cost.Kind == ActionCostKind.Tap && cost.FromSource && cost.Amount == 1);
+        bool consume = costs.Any(cost => cost.Kind == ActionCostKind.Sacrifice && cost.FromSource && cost.Amount == 1);
+        return consume ? tap ? ResourceUse.TapAndConsume : ResourceUse.Consume
+            : tap && !costs.Any(cost => cost.Kind == ActionCostKind.Untap) ? ResourceUse.Tap : ResourceUse.Limited;
     }
 
     public static AiManaFundingAssessment EvaluateFunding(ManaFundingContext funding, IEnumerable<string> symbols,
@@ -157,7 +185,7 @@ public static class AiManaPlanner
         var sources = new List<Source>();
         bool capacityKnown = true;
         long poolCapacity;
-        var physicalCapacity = new Dictionary<string, long>(StringComparer.Ordinal);
+        var physicalCapacity = new Dictionary<string, Capacity>(StringComparer.Ordinal);
         if (funding != null) {
             uncertain |= funding.Knowledge != SemanticKnowledge.Known;
             capacityKnown = funding.Knowledge == SemanticKnowledge.Known;
@@ -170,12 +198,9 @@ public static class AiManaPlanner
                 var routes = ImmutableArray.CreateBuilder<Route>();
                 foreach (var route in source.Routes) {
                     if (!budget.TrySpend()) return Result(AiManaPlanStatus.BudgetExceeded, [], "mana-resource-budget");
-                    bool pureTap = route.Costs.Count(cost => cost.Kind == ActionCostKind.Tap) == 1
-                        && route.Costs.Any(cost => cost.Kind == ActionCostKind.Tap && cost.FromSource && cost.Amount == 1)
-                        && route.Costs.All(cost => cost.Kind == ActionCostKind.Tap && cost.FromSource && cost.Amount == 1
-                            || cost.Kind == ActionCostKind.Mana && cost.Amount == 0 && cost.ManaSymbols.IsEmpty);
+                    bool oneUse = FiniteOneUse(route.Costs);
                     if (route.Eligibility != SemanticKnowledge.Known || route.Production.Knowledge != SemanticKnowledge.Known
-                        || route.Production.Alternatives.IsEmpty || !pureTap) {
+                        || route.Production.Alternatives.IsEmpty || !oneUse) {
                         uncertain = true; capacityKnown = false; continue;
                     }
                     foreach (var output in route.Production.Alternatives) {
@@ -184,12 +209,14 @@ public static class AiManaPlanner
                         if (total > 1024 || counts.Any(count => count < 0) || output.Colors.Keys.Any(color => !Colors.Contains(color))) {
                             uncertain = true; capacityKnown = false; continue;
                         }
-                        physicalCapacity[source.SourceCardId] = Math.Max(physicalCapacity.GetValueOrDefault(source.SourceCardId), total);
-                        if (total > 0) routes.Add(new(null, counts));
+                        var use = PhysicalUse(route.Costs);
+                        physicalCapacity[source.SourceCardId] = physicalCapacity.GetValueOrDefault(source.SourceCardId).Include(use, total);
+                        if (total > 0) routes.Add(new(null, counts, use));
                     }
                 }
                 if (routes.Count > 0) sources.Add(new(source.SourceCardId, routes
-                    .OrderBy(route => route.Output.Count(count => count > 0))
+                    .OrderBy(route => route.Use is ResourceUse.Consume or ResourceUse.TapAndConsume ? 1 : 0)
+                    .ThenBy(route => route.Output.Count(count => count > 0))
                     .ThenBy(route => string.Join(',', route.Output), StringComparer.Ordinal).ToImmutableArray()));
             }
         } else {
@@ -217,22 +244,23 @@ public static class AiManaPlanner
                 // still have a finite nominal output bound. Additional costs
                 // cannot increase that output. All alternatives consume the
                 // same physical tap, so count their maximum, never their sum.
-                bool consumesTap = action.Costs.Any(cost => cost.Kind == ActionCostKind.Tap && cost.FromSource && cost.Amount > 0)
-                    && !action.Costs.Any(cost => cost.Kind == ActionCostKind.Untap);
-                if (!consumesTap || action.Production.Knowledge != SemanticKnowledge.Known || action.Production.Alternatives.IsEmpty)
+                var physicalUse = PhysicalUse(action.Costs);
+                if (physicalUse == ResourceUse.Limited || action.Production.Knowledge != SemanticKnowledge.Known || action.Production.Alternatives.IsEmpty)
                     capacityKnown = false;
-                else physicalCapacity[set.SourceCardId] = Math.Max(physicalCapacity.GetValueOrDefault(set.SourceCardId),
+                else physicalCapacity[set.SourceCardId] = physicalCapacity.GetValueOrDefault(set.SourceCardId).Include(physicalUse,
                     action.Production.Alternatives.Max(output => output.Colors.Values.Sum(count => (long)count)));
+                bool oneUse = FiniteOneUse(action.Costs);
                 if (action.Production.Knowledge != SemanticKnowledge.Known || action.Production.Alternatives.IsEmpty
-                    || action.Costs.Any(cost => !(cost.Kind == ActionCostKind.Mana && cost.Amount == 0 && cost.ManaSymbols.IsEmpty)
-                        && (cost.Kind is not (ActionCostKind.Tap or ActionCostKind.Untap) || !cost.FromSource))) { uncertain = true; continue; }
+                    || !oneUse &&
+                    action.Costs.Any(cost => !(cost.Kind == ActionCostKind.Mana && cost.Amount == 0 && cost.ManaSymbols.IsEmpty)
+                        && (cost.Kind is not (ActionCostKind.Tap or ActionCostKind.Untap) || !cost.FromSource || cost.Amount != 1))) { uncertain = true; continue; }
                 bool taps = action.Costs.Any(cost => cost.Kind == ActionCostKind.Tap && cost.FromSource);
                 bool untaps = action.Costs.Any(cost => cost.Kind == ActionCostKind.Untap && cost.FromSource);
                 tap |= taps; untap |= untaps;
                 // One-use assignment is not a complete upper bound for free
                 // or reversible producers. Keep any found finite witness, but
                 // do not certify a shortfall when reuse is unmodeled.
-                if (!taps || untaps || tap && untap) unmodeledReuse = true;
+                if (!oneUse && (!taps || untaps || tap && untap)) unmodeledReuse = true;
                 foreach (var output in action.Production.Alternatives) {
                     var counts = Colors.Select(color => output.Colors.GetValueOrDefault(color)).ToArray();
                     if (counts.Any(count => count < 0) || counts.Sum(count => (long)count) > 1024
@@ -248,23 +276,26 @@ public static class AiManaPlanner
                         for (int color = 0; color < Colors.Length; color++) if (!usable.Contains(Colors[color])) counts[color] = 0;
                     }
                     if (counts.Sum() == 0) continue;
-                    routes.Add(new(new(set.SourceCardId, set.SourceCardKey, offered.Id, output.Colors), counts));
+                    routes.Add(new(new(set.SourceCardId, set.SourceCardKey, offered.Id, output.Colors), counts,
+                        oneUse ? physicalUse : ResourceUse.Limited));
                 }
             }
             if (routes.Count > 0) sources.Add(new(set.SourceCardId, routes
-                .OrderBy(route => route.Output.Count(count => count > 0))
+                .OrderBy(route => route.Use is ResourceUse.Consume or ResourceUse.TapAndConsume ? 1 : 0)
+                .ThenBy(route => route.Output.Count(count => count > 0))
                 .ThenBy(route => route.Step!.ActionId, StringComparer.Ordinal).ToImmutableArray()));
         }
         poolCapacity = Colors.Sum(color => Math.Max(0L, frame.State.Viewer!.Mana.GetValueOrDefault(color)));
         }
-        long nominalCapacity = poolCapacity + physicalCapacity.Values.Sum();
+        long nominalCapacity = poolCapacity + physicalCapacity.Values.Sum(capacity => capacity.Maximum);
         if (capacityKnown && billMinimumKnown && nominalCapacity < (long)generic + required.Count)
             return Result(AiManaPlanStatus.Shortfall, [], "mana-nominal-capacity-shortfall");
-        // A source may have multiple offers/catalog rows; it still produces once
-        // in this finite plan, regardless of the number of colors or routes.
+        // Each physical source owns a finite resource state, shared by all its
+        // routes. Tapping can precede consuming; consuming prevents later use.
         var groups = sources.GroupBy(source => source.Id, StringComparer.Ordinal)
             .Select(group => new Source(group.Key, group.SelectMany(source => source.Routes).ToImmutableArray()))
-            .OrderBy(source => source.Routes.SelectMany(route => route.Output.Select((count, color) => (count, color)))
+            .OrderBy(source => source.Routes.All(route => route.Use is ResourceUse.Consume or ResourceUse.TapAndConsume) ? 1 : 0)
+            .ThenBy(source => source.Routes.SelectMany(route => route.Output.Select((count, color) => (count, color)))
                 .Where(pair => pair.count > 0).Select(pair => pair.color).Distinct().Count())
             .ThenBy(source => source.Id, StringComparer.Ordinal).ToArray();
         int possibleColors = 0;
@@ -275,7 +306,7 @@ public static class AiManaPlanner
         if (!uncertain && required.Any(need => need.GenericAlternative == 0 && (need.Mask & possibleColors) == 0))
             return Result(AiManaPlanStatus.Shortfall, [], "mana-missing-color");
         bool exhausted = false;
-        var used = new bool[groups.Length];
+        var used = new int[groups.Length]; // 0 available, 1 tapped, 2 consumed, 3 unmodeled one-use
         var steps = new List<AiManaStep>();
         ImmutableArray<AiManaStep> witness = [];
         var failed = new HashSet<string>(StringComparer.Ordinal);
@@ -291,17 +322,17 @@ public static class AiManaPlanner
             cancellation.ThrowIfCancellationRequested();
             if (!budget.TrySpend()) { exhausted = true; return false; }
             if (needs.Count == 0 && remainingGeneric <= 0) { witness = steps.ToImmutableArray(); return true; }
-            long upper = inventory.Sum(value => (long)value) + groups.Where((_, index) => !used[index])
-                .Sum(source => (long)source.Routes.Max(route => route.Output.Sum()));
+            long upper = inventory.Sum(value => (long)value) + groups.Select((source, index) => Remaining(source, used[index])).Sum();
             if (upper < remainingGeneric + needs.Count) return false;
             string signature = string.Join(',', needs.Select(need => need.Mask + ":" + need.GenericAlternative)) + "|" + remainingGeneric
-                + "|" + string.Join(',', inventory) + "|" + string.Join(',', used.Select((value, index) => value ? index : -1).Where(index => index >= 0));
+                + "|" + string.Join(',', inventory) + "|" + string.Join(',', used);
             if (!failed.Add(signature)) return false;
             Requirement? need = needs.OrderBy(need => BitOperations.PopCount((uint)need.Mask))
                 .ThenBy(need => Enumerable.Range(0, Colors.Length).Where(color => (need.Mask & 1 << color) != 0)
-                    .Sum(color => inventory[color] + groups.Where((_, index) => !used[index])
-                        .Count(source => source.Routes.Any(route => route.Output[color] > 0)))).FirstOrDefault();
+                    .Sum(color => inventory[color] + groups.Where((source, index) => source.Routes.Any(route => Next(used[index], route.Use) >= 0 && route.Output[color] > 0))
+                        .Count())).FirstOrDefault();
             int mask = need?.Mask ?? 63;
+            int productive = remainingGeneric > 0 ? 63 : needs.Aggregate(0, (colors, remaining) => colors | remaining.Mask);
             for (int color = 0; color < Colors.Length; color++) {
                 if ((mask & 1 << color) == 0 || inventory[color] == 0) continue;
                 int take = need == null ? Math.Min(remainingGeneric, inventory[color]) : 1;
@@ -320,13 +351,14 @@ public static class AiManaPlanner
                 if (exhausted) return false;
             }
             for (int source = 0; source < groups.Length; source++) {
-                if (used[source]) continue;
                 foreach (var route in groups[source].Routes) {
-                    if (!Enumerable.Range(0, Colors.Length).Any(color => (mask & 1 << color) != 0 && route.Output[color] > 0)) continue;
+                    int next = Next(used[source], route.Use);
+                    if (next < 0) continue;
+                    if (!Enumerable.Range(0, Colors.Length).Any(color => (productive & 1 << color) != 0 && route.Output[color] > 0)) continue;
                     var nextInventory = inventory.Select((count, color) => count + route.Output[color]).ToArray();
-                    used[source] = true; if (route.Step != null) steps.Add(route.Step);
+                    int previous = used[source]; used[source] = next; if (route.Step != null) steps.Add(route.Step);
                     if (Search(needs, remainingGeneric, nextInventory, originalPool)) return true;
-                    if (route.Step != null) steps.RemoveAt(steps.Count - 1); used[source] = false;
+                    if (route.Step != null) steps.RemoveAt(steps.Count - 1); used[source] = previous;
                     if (exhausted) return false;
                 }
             }
@@ -335,5 +367,25 @@ public static class AiManaPlanner
 
         AiManaPlan Result(AiManaPlanStatus status, ImmutableArray<AiManaStep> plan, string reason)
             => new(status, plan, before - budget.Remaining, reason);
+
+        static int Next(int state, ResourceUse use) => use switch {
+            ResourceUse.Tap when state == 0 => 1,
+            ResourceUse.Consume when state is 0 or 1 => 2,
+            ResourceUse.TapAndConsume when state == 0 => 2,
+            ResourceUse.Limited when state == 0 => 3, _ => -1
+        };
+
+        static long Remaining(Source source, int state)
+        {
+            var capacity = new Capacity();
+            long limited = 0;
+            foreach (var route in source.Routes) {
+                if (Next(state, route.Use) < 0) continue;
+                long amount = route.Output.Sum(value => (long)value);
+                if (route.Use == ResourceUse.Limited) limited = Math.Max(limited, amount);
+                else capacity = capacity.Include(route.Use, amount);
+            }
+            return Math.Max(capacity.Maximum, limited);
+        }
     }
 }

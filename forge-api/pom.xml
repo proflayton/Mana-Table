@@ -12,6 +12,27 @@
         <plugins>
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-jar-plugin</artifactId>
+                <executions>
+                    <execution>
+                        <id>ai-release-fixture-launcher</id>
+                        <phase>package</phase>
+                        <goals><goal>test-jar</goal></goals>
+                        <configuration>
+                            <finalName>forge-engine</finalName>
+                            <classifier>fixtures</classifier>
+                            <includes><include>forge/api/AiReleaseFixtureEngine*.class</include></includes>
+                            <archive>
+                                <addMavenDescriptor>false</addMavenDescriptor>
+                                <manifest><mainClass>forge.api.AiReleaseFixtureEngine</mainClass></manifest>
+                                <manifestEntries><Class-Path>forge-engine.jar</Class-Path></manifestEntries>
+                            </archive>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-shade-plugin</artifactId>
                 <version>3.6.0</version>
                 <executions>

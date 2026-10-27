@@ -34,4 +34,5 @@ public sealed record DecisionSemantics(DecisionIntent Intent = DecisionIntent.Un
     public ActionOperationGraph OperationGraph { get; init; } = ActionOperationGraph.Unknown;
     public int? OperationId { get; init; }
     public NumericDecision? Numeric { get; init; }
+    public PaymentDecision? Payment { get; init; }
 }

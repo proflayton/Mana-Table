@@ -12,6 +12,7 @@ internal static class AiPolicyRegression
         await EveryTask(check);
         await ActionsAndCosts(check);
         await PaidProducerPrerequisites(check);
+        await PaymentProvenance(check);
         await TargetsAndSocialMemory(check);
         await CombatAndAllocation(check);
         await TacticalExchangesAndResourceCosts(check);
@@ -248,6 +249,56 @@ internal static class AiPolicyRegression
         check(host.LastFault == null && provider.Commands.Count == 6 && provider.Commands.All(command => command is CancelPayment)
                 && host.Histories.Single().AttemptedRoutes.IsEmpty,
             "Fresh outer payment input IDs and host episodes cannot reopen the unseeded dependent-producer loop: every observation cancels the unsupported outer bill directly");
+    }
+
+    private static async Task PaymentProvenance(Action<bool, string> check)
+    {
+        var state = State(new PaymentPayload(No, Yes));
+        var source = state.Viewer!.Zone("Battlefield").Cards[0];
+        state = state with { Decision = state.Decision! with { Context = new(Source: new(source.VisualId,
+            source with { Key = "", Selectable = false, Highlighted = false, ManaCost = "{99}{W}" }, 0, "Battlefield")) } };
+        var provenance = new PaymentDecision(PaymentPurpose.TriggeredAbilityCost, 0, source.VisualId, false);
+        var semantics = new DecisionSemantics { Payment = provenance, UnpaidMana = ["{1}"] };
+        async Task<AiDecisionReplayResult> Replay(AiDecisionFrame frame) => await AiDecisionReplay.EvaluateAsync(
+            new(1, "optional-payment", "fixture.v1", frame.State, frame.Domain, frame.Semantics, new([], []), 731), new CasualCommanderPolicy());
+        var declined = await Replay(Frame(state, Domain(state), semantics));
+        check(declined.Proposal is CancelPayment && declined.Evidence?.ReasonCode == "decline-unfunded-optional-effect-cost",
+            "An actual optional trigger payment with no current funding declines its exact one-mana bill without inventing a preceding confirmation");
+        var mana = Semantic("tap-for-current-cost", ActionEffectKind.Mana) with { ManaAbility = true, ManaAmount = 1,
+            Costs = [new(ActionCostKind.Tap, 1, true, "")], PaymentManaColors = ["C"],
+            Production = new(SemanticKnowledge.Known, [new(ImmutableDictionary<string, int>.Empty.Add("C", 1))]) };
+        var funded = Frame(state, Domain(state, ("own-land", new(mana.ActionId, "activate", "Produce mana"), mana)), semantics);
+        check((await Replay(funded)).Proposal is UseOfferedAction { ActionId: "tap-for-current-cost" },
+            "The same optional trigger can fund its actual one-mana bill without mistaking its source's printed cost for the payment");
+        var required = state with { Decision = state.Decision! with { Payload = new PaymentPayload(No, No) } };
+        var mandatory = Frame(required, Domain(required), semantics with { Payment = provenance with { Mandatory = true } });
+        check(!mandatory.Allows(new CancelPayment(state.Id, state.Decision!.Id)) && (await Replay(mandatory)).Proposal == null,
+            "Payment provenance cannot create a cancel command when the current payment input does not authorize one");
+        var spell = await Replay(Frame(state, Domain(state), semantics with { Payment = provenance with { Purpose = PaymentPurpose.SpellCost } }));
+        check(spell.Proposal is CancelPayment && spell.Evidence?.ReasonCode != "decline-unfunded-optional-effect-cost",
+            "A failed spell payment is not relabeled as a normal optional effect decline merely because cancellation is legal");
+        var foreignSource = state with { Decision = state.Decision! with { Context = state.Decision!.Context with {
+            Source = state.Decision.Context.Source! with { ControllerId = 1 } } } };
+        check((await Replay(Frame(foreignSource, Domain(foreignSource), semantics))).Proposal is CancelPayment,
+            "The actual payer remains the acting seat even when the currently disclosed cost source has another controller");
+        check((await Replay(new(funded.State, domain: funded.Domain, semantics: semantics with {
+            Payment = provenance with { PayerId = 1 } }))).Proposal is CancelPayment,
+            "A controlled-player payment retains its actual payer without consuming the observing seat's otherwise sufficient mana resources");
+        bool Rejected(GameSnapshot current, PaymentDecision malformed) {
+            try { _ = Frame(current, Domain(current), semantics with { Payment = malformed }); return false; }
+            catch (ArgumentException) { return true; }
+        }
+        check(Rejected(state, provenance with { PayerId = 99 }) && Rejected(state, provenance with { SourceCardId = "own-land" })
+                && Rejected(state, provenance with { SourceCardId = "" }) && Rejected(state, provenance with { Purpose = (PaymentPurpose)99 })
+                && Rejected(state, provenance with { Mandatory = true }),
+            "Payment metadata rejects absent payers, unrelated current sources, missing identities, unknown purposes and contradictory mandatory cancellation");
+        var otherTask = state with { Decision = state.Decision! with { Payload = new PriorityPayload(Yes) } };
+        check(Rejected(otherTask, provenance), "Payment provenance cannot be attached to an unrelated priority input");
+        var json = new System.Text.Json.JsonSerializerOptions { Converters = { new System.Text.Json.Serialization.JsonStringEnumConverter() } };
+        var restored = System.Text.Json.JsonSerializer.Deserialize<DecisionSemantics>(System.Text.Json.JsonSerializer.Serialize(semantics, json), json)!;
+        check((await Replay(Frame(state, Domain(state), restored))).Proposal is CancelPayment
+                && restored.Payment == provenance && restored.UnpaidMana.SequenceEqual(["{1}"]),
+            "Neutral payment provenance roundtrips separately from its exact current unpaid bill and executable permissions");
     }
 
     private sealed class PaymentProbeProvider : IAutomatedSeatProvider

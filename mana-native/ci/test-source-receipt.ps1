@@ -129,7 +129,7 @@ Reject { & $installer -InputPackageDirectory $package -Version $version -Portabl
 $saved = @{SHA=$env:GITHUB_SHA;Version=$env:MANA_RELEASE_VERSION;Environment=$env:GITHUB_ENV}
 try {
     $env:GITHUB_SHA=$revision; $env:MANA_RELEASE_VERSION=$version; $env:GITHUB_ENV=Join-Path $TestDirectory 'github-env.txt'
-    Json (Join-Path $TestDirectory 'ci-engine-manifest.json') @{schemaVersion=1;sourceRevision=$revision;engine=@{sha256=$build.engineSha256;bytes=(Get-Item -LiteralPath (Join-Path $package 'engine/forge-engine.jar')).Length}}
+    Json (Join-Path $TestDirectory 'ci-engine-manifest.json') @{schemaVersion=2;sourceRevision=$revision;engine=@{sha256=$build.engineSha256;bytes=(Get-Item -LiteralPath (Join-Path $package 'engine/forge-engine.jar')).Length};fixtureLauncher=@{sha256=('f' * 64);bytes=1}}
     & (Join-Path $PSScriptRoot 'restore-package.ps1') -Directory $TestDirectory
     if (-not ([IO.File]::ReadAllText($env:GITHUB_ENV)).Contains('MANA_NATIVE_SOURCE_RECEIPT=' + $receiptPath)) { throw 'Restore omitted the verified source receipt environment path.' }
     $checks++

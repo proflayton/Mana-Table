@@ -30,6 +30,8 @@ internal sealed class AiCampaignDiagnostics : IDisposable
     internal Dictionary<string, int> Commands { get; } = [];
     internal Dictionary<string, int> TargetRecipients { get; } = [];
     internal List<AiCampaignFinding> Findings { get; } = [];
+    internal List<AiCampaignStaleProbe> StaleAuthorityProbes { get; } = [];
+    internal List<AiCampaignPaymentCancellation> PaymentCancellations { get; } = [];
     internal HashSet<AiTask> Tasks { get; } = [];
     internal int Accepted { get; private set; }
     internal List<string> ReplayCases { get; } = [];
@@ -111,15 +113,22 @@ internal sealed class AiCampaignDiagnostics : IDisposable
                 && frame.Domain.Actions.Any(action => action.Effect == ActionEffectKind.Land && action.Affordability == ActionAffordability.Payable))
             Finding("land-offer-skipped", "Passed priority with an authoritative playable land offer; review intent before treating this as an error.");
         if (answer.Command is CancelPayment) {
-            Finding("payment-cancelled", "The policy abandoned a started payment; inspect its exact bill and production offers.");
+            var cancellation = AiCampaignPaymentCancellation.Capture(state, frame.Semantics);
+            PaymentCancellations.Add(cancellation);
             string source = state.Decision?.Context.Source?.Card?.Name ?? "unknown-source";
-            string occurrence = state.Decision?.Context.Source?.Card?.VisualId ?? "";
-            if (occurrence.Length > 0 && initiations.TryGetValue(state.ViewerId, out var initiation)
-                && initiation.SourceId == occurrence && initiation.Case.State.Turn == state.Turn)
-                ExportCase("earlier-same-source-action-before-cancel-" + source, initiation.Case);
-            if (occurrence.Length > 0 && confirmations.TryGetValue(state.ViewerId, out var confirmation) && confirmation.State.Turn == state.Turn
-                && confirmation.State.Decision?.Context.Source?.Card?.VisualId == occurrence)
-                ExportCase("earlier-same-source-confirmation-before-cancel-" + source, confirmation);
+            if (cancellation.OptionalEffectDecline) {
+                ExportCase("optional-effect-payment-declined-" + source, recorded);
+            } else {
+                Finding("payment-cancelled", "The policy proposed cancelling a payment with provenance "
+                    + (cancellation.Provenance?.Purpose.ToString() ?? "unclassified") + "; its receipt, exact bill and production offers are retained separately.");
+                string occurrence = state.Decision?.Context.Source?.Card?.VisualId ?? "";
+                if (occurrence.Length > 0 && initiations.TryGetValue(state.ViewerId, out var initiation)
+                    && initiation.SourceId == occurrence && initiation.Case.State.Turn == state.Turn)
+                    ExportCase("earlier-same-source-action-before-cancel-" + source, initiation.Case);
+                if (occurrence.Length > 0 && confirmations.TryGetValue(state.ViewerId, out var confirmation) && confirmation.State.Turn == state.Turn
+                    && confirmation.State.Decision?.Context.Source?.Card?.VisualId == occurrence)
+                    ExportCase("earlier-same-source-confirmation-before-cancel-" + source, confirmation);
+            }
         }
         if (!frame.Semantics.SelectionIsCost && frame.Semantics.Intent is DecisionIntent.Harm or DecisionIntent.Damage
                 or DecisionIntent.Destroy or DecisionIntent.Exile or DecisionIntent.Bounce or DecisionIntent.Tap) {
@@ -150,6 +159,15 @@ internal sealed class AiCampaignDiagnostics : IDisposable
         if (observation != null && command is ChooseNumber number
             && numericInvestments.TryGetValue((observation.SeatId, number.DecisionId), out var numeric))
             numeric.Receipt(accepted, error);
+        if (observation != null && command is CancelPayment cancel) {
+            int index = PaymentCancellations.FindLastIndex(item => item.GameId == cancel.GameId
+                && item.SeatId == observation.SeatId && item.DecisionId == cancel.DecisionId);
+            if (index >= 0) {
+                var item = PaymentCancellations[index] with { Accepted = accepted };
+                PaymentCancellations[index] = item;
+                if (accepted && item.OptionalEffectDecline) DecisionWitnesses.Add("optional-effect-payment-declined");
+            }
+        }
         if (!accepted || observation == null) return;
         Accepted++;
         if (latestCase is { } captured && captured.State.ViewerId == observation.SeatId
@@ -170,6 +188,18 @@ internal sealed class AiCampaignDiagnostics : IDisposable
             string purpose = command is ToggleAttackPlayer ? "attack" : observation.Semantics.SelectionIsCost ? "cost" : observation.Semantics.Intent.ToString();
             string key = observation.SeatId + ":" + purpose + "->" + recipient;
             TargetRecipients[key] = TargetRecipients.GetValueOrDefault(key) + 1;
+        }
+    }
+
+    internal void RecordStaleProbe(AiCampaignStaleProbe result, DecisionCommand command)
+    {
+        StaleAuthorityProbes.Add(result);
+        try {
+            decisions.WriteLine(JsonSerializer.Serialize(new { kind = "stale-authority-probe", result,
+                command = JsonSerializer.SerializeToElement(command, command.GetType()) }));
+        } catch (Exception error) {
+            diagnosticErrors.Add("stale-probe-capture: " + error);
+            throw;
         }
     }
 
@@ -236,6 +266,19 @@ internal sealed class AiCampaignDiagnostics : IDisposable
         }
     }
 
+    internal Exception? PreserveOutcome(AiCampaignOutcomeProof outcome, GameSnapshot? state)
+    {
+        try {
+            File.WriteAllText(Path.Combine(directory, outcome.PublicSnapshotFile), JsonSerializer.Serialize(new {
+                formatVersion = 1, stage = "before-simulation-cleanup", outcome, state
+            }));
+            return null;
+        } catch (Exception error) {
+            diagnosticErrors.Add("pre-cleanup-outcome-capture: " + error);
+            return error;
+        }
+    }
+
     internal void PreserveFailure(Exception error, string stage, int completedSteps,
         ImmutableArray<AutomatedSeatObservation> observations)
     {
@@ -270,19 +313,23 @@ internal sealed class AiCampaignDiagnostics : IDisposable
             secondaryDiagnosticErrors = secondaryErrors.ToArray()
         });
 
-    internal object Summary() => new { OfferedEffects, SelectedEffects, BoardWitnesses, DecisionWitnesses, ResolvedSources,
-        Tasks, Accepted, Commands, TargetRecipients, UnmodeledOperationSources, findings = Findings,
-        numericInvestments = numericInvestments.Values,
-        privateReplayCases = ReplayCases, diagnosticErrors,
-        missingBoardWitnesses = new[] { "creature-battlefield", "token-battlefield", "counter-change", "attachment-on-battlefield",
-            "declared-combat", "reported-damage", "multiple-stack-targets" }.Except(BoardWitnesses).ToArray(),
-        interpretation = "Offers, chosen commands, authoritative board/event witnesses and review findings are separate. Numeric evidence separates proposed/accepted values from subsequent exact-source payment inputs and owned-seat event reports; public stack and actual statistics are observed independently through the spectator. A source correlation does not prove X caused every later effect. Earlier-same-source replay links do not identify which cast, ability or optional payment was cancelled. A resolved source does not prove every intended effect occurred. TargetRecipients counts player choices and attacks only; their distribution does not establish social quality." };
+    internal AiCampaignEvidence Summary() => new(OfferedEffects.Order().ToImmutableArray(), SelectedEffects.Order().ToImmutableArray(),
+        BoardWitnesses.Order().ToImmutableArray(), DecisionWitnesses.Order().ToImmutableArray(), ResolvedSources.Order().ToImmutableArray(),
+        Tasks.Order().ToImmutableArray(), Accepted, Commands.ToImmutableDictionary(), TargetRecipients.ToImmutableDictionary(),
+        UnmodeledOperationSources.Order().ToImmutableArray(), Findings.ToImmutableArray(), numericInvestments.Values.Select(value => value.Snapshot()).ToImmutableArray(),
+        StaleAuthorityProbes.ToImmutableArray(), PaymentCancellations.ToImmutableArray(),
+        ReplayCases.ToImmutableArray(), diagnosticErrors.ToImmutableArray(),
+        new[] { "creature-battlefield", "token-battlefield", "counter-change", "attachment-on-battlefield",
+            "declared-combat", "reported-damage", "multiple-stack-targets" }.Except(BoardWitnesses).ToImmutableArray(),
+        "Offers, chosen commands, authoritative board/event witnesses and review findings are separate. Numeric evidence separates proposed/accepted values from subsequent exact-source payment inputs and owned-seat event reports; public stack and actual statistics are observed independently through the spectator. A source correlation does not prove X caused every later effect. Earlier-same-source replay links do not identify which cast, ability or optional payment was cancelled. A resolved source does not prove every intended effect occurred. TargetRecipients counts player choices and attacks only; their distribution does not establish social quality.");
 
     public void Dispose() => decisions.Dispose();
 }
 
-internal sealed class AiCampaignProvider(IAutomatedSeatProvider inner, AiCampaignDiagnostics diagnostics) : IAutomatedSeatProvider
+internal sealed class AiCampaignProvider(IAutomatedSeatProvider inner, AiCampaignDiagnostics diagnostics,
+    Func<int, GameSnapshot, GameSnapshot, DecisionCommand, string, Task>? staleReplay = null) : IAutomatedSeatProvider
 {
+    private readonly AiCampaignStaleAuthority? stale = staleReplay == null ? null : new();
     internal ImmutableArray<AutomatedSeatObservation> Last { get; private set; } = [];
     public Task EnableAutomatedSeatsAsync() => inner.EnableAutomatedSeatsAsync();
     public Task ReportAutomationFaultAsync(string gameId, int seatId, string reasonCode) => inner.ReportAutomationFaultAsync(gameId, seatId, reasonCode);
@@ -290,6 +337,7 @@ internal sealed class AiCampaignProvider(IAutomatedSeatProvider inner, AiCampaig
     {
         Last = await inner.ObserveAutomatedSeatsAsync();
         foreach (var observation in Last) diagnostics.Observe(observation);
+        if (stale != null) await stale.ObserveAsync(Last, staleReplay!, diagnostics.RecordStaleProbe);
         return Last;
     }
     public async Task ExecuteAutomatedAsync(int seatId, GameCommand command)
@@ -298,5 +346,6 @@ internal sealed class AiCampaignProvider(IAutomatedSeatProvider inner, AiCampaig
         try { await inner.ExecuteAutomatedAsync(seatId, command); }
         catch (Exception error) { diagnostics.Receipt(observation, command, false, error.GetType().Name); throw; }
         diagnostics.Receipt(observation, command, true, null);
+        if (observation != null) stale?.Remember(observation, command);
     }
 }

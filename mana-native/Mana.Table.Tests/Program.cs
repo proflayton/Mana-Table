@@ -27,6 +27,7 @@ internal static class Program
         testRun |= args.Contains("--smoke-whole-seat-ai");
         testRun |= args.Contains("--replay-ai-decision");
         testRun |= args.Contains("--smoke-ai-campaign");
+        testRun |= args.Contains("--evaluate-ai-release");
         testRun |= args.Contains("--smoke-cluttered-changes") || args.Contains("--smoke-headless-clutter");
         testRun |= args.Contains("--smoke-priority-flow") || args.Contains("--smoke-headless-priority-flow");
         testRun |= args.Contains("--capture-deck-workspace");
@@ -110,9 +111,13 @@ internal static class Program
             var paths = new ForgePaths(Path.Combine(bundle, "runtime", "bin", "java.exe"), Arg("--engine-jar") ?? Path.Combine(bundle, "forge-engine.jar"), Path.Combine(bundle, "forge-res"), profile);
             if (args.Contains("--smoke-deck-import")) { DeckImportSmoke.Run(paths, Arg("--import-file") ?? Path.Combine(AppContext.BaseDirectory, "Fixtures", "annotated-toph.txt"), size); return 0; }
             if (args.Contains("--smoke-engine-startup")) { EngineStartupRegression.RunAsync(paths).GetAwaiter().GetResult(); return 0; }
-            if (args.Contains("--smoke-headless-engine")) { HeadlessEngineSmoke.RunAsync(paths).GetAwaiter().GetResult(); return 0; }
+            if (args.Contains("--smoke-headless-engine")) { HeadlessEngineSmoke.RunAsync(paths, Arg("--production-engine-jar"), Arg("--source-revision"), Arg("--source-manifest")).GetAwaiter().GetResult(); return 0; }
             if (args.Contains("--smoke-whole-seat-ai")) { AiWholeSeatEngineCheck.RunStandaloneAsync(paths, args.Contains("--ai-complete")).GetAwaiter().GetResult(); return 0; }
             if (args.Contains("--smoke-ai-campaign")) { AiEngineCampaign.RunStandaloneAsync(paths).GetAwaiter().GetResult(); return 0; }
+            if (args.Contains("--evaluate-ai-release")) { AiReleaseEvaluation.RunAsync(paths,
+                Arg("--production-engine-jar") ?? throw new ArgumentException("Release evaluation requires --production-engine-jar for exact production provenance."),
+                Arg("--source-revision") ?? throw new ArgumentException("Release evaluation requires --source-revision for the exact tested source."),
+                Arg("--source-manifest")).GetAwaiter().GetResult(); return 0; }
             if (args.Contains("--smoke")) { NativeSmoke.RunAsync(paths).GetAwaiter().GetResult(); return 0; }
             if (args.Contains("--smoke-ai")) { AiSmoke.RunAsync(paths).GetAwaiter().GetResult(); return 0; }
             if (args.Contains("--smoke-cleanup")) { CleanupSmoke.RunAsync(paths).GetAwaiter().GetResult(); return 0; }

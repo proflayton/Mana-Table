@@ -291,6 +291,17 @@ develop and test the AI framework before merging or releasing it; UI clarity
 work follows that effort. Passing build checks or reaching a natural winner
 does not satisfy this quality gate.
 
+The [release gate matrix](Mana-Table-Testing.md#ai-release-evaluation) separates
+provider conformance, policy continuations, whole-game completion, state and
+authority integrity, and human gameplay review. The manual release evaluator
+runs six controlled journeys followed by four cyclic seat rotations of the
+varied decks in one initialized JVM. Every rotation must reach an engine outcome
+before cleanup, within the 160-turn/180-second ceilings. A cutoff remains
+inconclusive; the 45-second smoke profile is not a whole-game release test.
+The aggregate records actual engine, policy and driver hashes and keeps
+`automatedReady` separate from `releaseApproved`. It always leaves human review
+pending, with the exact candidate and private evidence identified.
+
 The source now separates a finite operation graph from a strategic estimate.
 Graph nodes retain their actor, source, recipient bindings, target domains,
 quantities, costs and sequence/mode/conditional links. A later effect can refer
@@ -409,8 +420,21 @@ This extends the partial-observation, offered-move and refreshed-observation
 pattern documented by the
 [Hearthstone AI Competition](https://hearthstoneai.github.io/tutorial.html).
 Its single-action simulator is a reference boundary, not Blizzard's production
-controller or a solution for Magic's nested priority/cost choices. Evaluation
-must also match the game: OpenSpiel's
+controller or a solution for Magic's nested priority/cost choices. Its
+[competition rules](https://hearthstoneai.github.io/rules.html) distinguish agent
+computation from move execution and evaluate varied deck matchups. Our bounded
+decision work, test runtime and player decision timers likewise need distinct
+accounting; competition win rate does not establish casual Commander quality.
+
+OpenSpiel's [developer guide](https://openspiel.readthedocs.io/en/latest/developer_guide.html)
+recommends simulation tests and stored playthrough regressions. Its
+[common test utilities](https://github.com/google-deepmind/open_spiel/blob/master/open_spiel/tests/basic_tests.h)
+allow assertions at every simulated state, including terminal states, while
+warning that exhaustive game-tree checks suit small games. We use that pattern
+for continuous public/private consistency checks and exact decision regressions,
+then inspect actual continuations. This is sampled evidence, not a claim to
+enumerate all Magic interactions. Evaluation must also match the game:
+OpenSpiel's
 [exploitability implementation](https://github.com/google-deepmind/open_spiel/blob/master/open_spiel/python/algorithms/exploitability.py)
 explicitly restricts that metric to two-player constant-sum sequential games.
 It cannot be copied as a complete quality measure for casual four-player Commander.
@@ -435,7 +459,12 @@ source occurrence, but lacks an explicit event-time source controller. The
 policy must not reconstruct that historical controller from current ownership;
 its social pressure/focus estimates remain incomplete until that fact is supplied.
 
-The next quality gates need concrete continuations, not larger action counters:
+Track the following boundaries through retained regressions and explicit gaps;
+a listed boundary is not itself an outstanding defect. They are not a demand
+to finish the entire research roadmap before every release: candidate acceptance
+uses the concrete [gate matrix](Mana-Table-Testing.md#ai-release-evaluation),
+retained regressions, observed failures and recorded review. Each coverage claim
+needs a concrete continuation rather than a larger action counter:
 
 | Boundary | Required regression before claiming coverage |
 | --- | --- |

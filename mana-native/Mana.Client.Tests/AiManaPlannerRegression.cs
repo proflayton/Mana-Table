@@ -85,6 +85,7 @@ internal static class AiManaPlannerRegression
         check(cancelled, "Cancellation interrupts planning before any hypothetical source can become a command");
         Matrix(check);
         EnumerationAndPresentation(check);
+        ConsumingResources(check);
 
         static DecisionCommand? Propose(AiDecisionFrame frame)
         {
@@ -92,6 +93,97 @@ internal static class AiManaPlannerRegression
                 frame.State, frame.Domain, frame.Semantics, new([], []), 731);
             return AiDecisionReplay.EvaluateAsync(recorded, new CasualCommanderPolicy()).GetAwaiter().GetResult().Proposal;
         }
+    }
+
+    private static void ConsumingResources(Action<bool, string> check)
+    {
+        var token = Producer("consumable", ("sacrifice", Output(("C", 1))));
+        token = token with { Actions = token.Actions.Select(action => action with {
+            Costs = [new(ActionCostKind.Sacrifice, 1, true, "")], Affordability = ActionAffordability.Unknown
+        }).ToImmutableArray() };
+        var land = Producer("persistent", ("tap", Output(("C", 1))));
+        var exact = AiManaPlanner.Evaluate(Frame(token, land), [], generic: 2);
+        check(exact.Status == AiManaPlanStatus.Funded && exact.Steps.OfType<AiManaStep.Source>().Select(step => step.SourceCardId).ToHashSet().SetEquals(["consumable", "persistent"]),
+            "A disclosed self-sacrifice producer and a distinct tap producer fund exactly two units without inventing repeatable production");
+        check(AiManaPlanner.Evaluate(Frame(token, land), [], generic: 4).Status == AiManaPlanStatus.Shortfall,
+            "Two known one-use resources cannot start a four-mana cast merely because one resource is consumed");
+        check(AiManaPlanner.Evaluate(Frame(token, land), [], generic: 1).Steps.OfType<AiManaStep.Source>().Single().SourceCardId == "persistent",
+            "A simple sufficient tap producer is preserved ahead of unnecessarily sacrificing a separate mana resource");
+        var alternatives = token with { Offers = token.Offers.Add(new("other-color", "activate", "Alternative production")),
+            Actions = token.Actions.Add(token.Actions[0] with { ActionId = "other-color", StableId = "other-color",
+                Production = new(SemanticKnowledge.Known, [Output(("G", 1))]) }) };
+        check(AiManaPlanner.Evaluate(Frame(alternatives), ["{C}", "{G}"]).Status == AiManaPlanStatus.Shortfall,
+            "Alternative outputs of a self-sacrifice source cannot consume the same occurrence twice");
+        var tapAndSacrifice = token with { Actions = token.Actions.Select(action => action with {
+            Costs = [new(ActionCostKind.Tap, 1, true, ""), new(ActionCostKind.Sacrifice, 1, true, "")]
+        }).ToImmutableArray() };
+        check(AiManaPlanner.Evaluate(Frame(tapAndSacrifice), [], generic: 1).Status == AiManaPlanStatus.Funded
+                && AiManaPlanner.Evaluate(Frame(tapAndSacrifice), [], generic: 2).Status == AiManaPlanStatus.Shortfall,
+            "One route that both taps and sacrifices its source still supplies its single disclosed bundle only once");
+        var mixed = token with { Offers = token.Offers.Add(new("tap-before-sacrifice", "activate", "Tap for mana")),
+            Actions = token.Actions.Add(token.Actions[0] with { ActionId = "tap-before-sacrifice", StableId = "tap-before-sacrifice",
+                Costs = [new(ActionCostKind.Tap, 1, true, "")] }) };
+        var sequence = AiManaPlanner.Evaluate(Frame(mixed), [], generic: 2);
+        check(sequence.Status == AiManaPlanStatus.Funded && sequence.Steps.OfType<AiManaStep.Source>().Select(step => step.ActionId)
+                .SequenceEqual(["tap-before-sacrifice", "sacrifice"])
+                && AiManaPlanner.Evaluate(Frame(mixed), [], generic: 3).Status == AiManaPlanStatus.Shortfall,
+            "A source can tap then sacrifice through distinct routes without being tapped or consumed twice");
+        var colored = mixed with { Actions = mixed.Actions.Select(action => action.ActionId == "sacrifice" ? action with {
+            Production = new(SemanticKnowledge.Known, [Output(("G", 1))])
+        } : action).ToImmutableArray() };
+        check(AiManaPlanner.Evaluate(Frame(colored), ["{G}", "{C}"]).Status == AiManaPlanStatus.Funded,
+            "Funding can preserve the tap output for a later shard before consuming that source for the currently scarce color");
+        var combined = mixed with { Offers = mixed.Offers.Add(new("tap-and-sacrifice", "activate", "Combined route")),
+            Actions = mixed.Actions.Add(mixed.Actions[0] with { ActionId = "tap-and-sacrifice", StableId = "tap-and-sacrifice",
+                Costs = [new(ActionCostKind.Tap, 1, true, ""), new(ActionCostKind.Sacrifice, 1, true, "")],
+                Production = new(SemanticKnowledge.Known, [Output(("C", 3))]) }) };
+        check(AiManaPlanner.Evaluate(Frame(combined), [], generic: 3).Status == AiManaPlanStatus.Funded
+                && AiManaPlanner.Evaluate(Frame(combined), [], generic: 4).Status == AiManaPlanStatus.Shortfall,
+            "Tap-plus-sacrifice is an alternative to tapping then sacrificing, so its three units cannot be added to that same source's earlier tap");
+        var paid = token with { Actions = token.Actions.Select(action => action with {
+            Costs = [new(ActionCostKind.Sacrifice, 1, true, ""), new(ActionCostKind.Mana, 1, false, "")]
+        }).ToImmutableArray() };
+        check(AiManaPlanner.Evaluate(Frame(paid), [], generic: 1).Status == AiManaPlanStatus.Unknown,
+            "A paid consuming producer cannot fund its own prerequisite from output that has not been created");
+        var foreign = token with { Actions = token.Actions.Select(action => action with {
+            Costs = [new(ActionCostKind.Sacrifice, 1, false, "")]
+        }).ToImmutableArray() };
+        check(AiManaPlanner.Evaluate(Frame(foreign), [], generic: 1).Status == AiManaPlanStatus.Unknown,
+            "A sacrifice of an unspecified donor is not silently treated as consuming only the producer");
+        var draw = new ActionSemantics("consume-for-draw", ActionEffectKind.Draw, [ActionEffectKind.Draw],
+            [new(ActionCostKind.Mana, 1, false, ""), new(ActionCostKind.Sacrifice, 1, true, "")], ActionAffordability.Unknown);
+        var donor = land with { Offers = land.Offers.Add(new(draw.ActionId, "activate", "Draw")), Actions = land.Actions.Add(draw) };
+        check(AiManaPlanner.EvaluateAction(Frame(donor), draw).Status == AiManaPlanStatus.Shortfall
+                && AiManaPlanner.EvaluateAction(Frame(donor, token), draw).Status == AiManaPlanStatus.Funded,
+            "An initiating sacrifice reserves that source while a separate consuming producer can fund its mana prerequisite");
+        int cases = 0, mismatches = 0;
+        string[] colors = ["U", "G", "C"];
+        foreach (string tapColor in colors) foreach (string sacrificeColor in colors) foreach (string combinedColor in colors) {
+            var resource = Producer("ledger", ("tap", Output((tapColor, 1))), ("sacrifice", Output((sacrificeColor, 1))),
+                ("combined", Output((combinedColor, 3))));
+            resource = resource with { Actions = resource.Actions.Select(action => action with { Costs = action.ActionId switch {
+                "sacrifice" => [new(ActionCostKind.Sacrifice, 1, true, "")],
+                "combined" => [new(ActionCostKind.Tap, 1, true, ""), new(ActionCostKind.Sacrifice, 1, true, "")],
+                _ => [new(ActionCostKind.Tap, 1, true, "")]
+            } }).ToImmutableArray() };
+            // Independent finite outcome set: either the combined activation,
+            // or an optional tap followed by an optional pure sacrifice.
+            var outcomes = new[] {
+                new[] { tapColor }, new[] { sacrificeColor }, new[] { tapColor, sacrificeColor },
+                new[] { combinedColor, combinedColor, combinedColor }
+            };
+            foreach (string first in colors) foreach (string second in colors) for (int generic = 0; generic <= 2; generic++) {
+                bool expected = outcomes.Any(units => {
+                    var remaining = units.ToList();
+                    return remaining.Remove(first) && remaining.Remove(second) && remaining.Count >= generic;
+                });
+                var assessed = AiManaPlanner.Evaluate(Frame(resource), ["{" + first + "}", "{" + second + "}"], generic);
+                if (assessed.Status != (expected ? AiManaPlanStatus.Funded : AiManaPlanStatus.Shortfall)) mismatches++;
+                cases++;
+            }
+        }
+        check(cases == 729 && mismatches == 0,
+            "The physical resource ledger agrees with 729 independently enumerated tap, sacrifice, combined-cost, exact-color and generic funding outcomes");
     }
 
     private static void Matrix(Action<bool, string> check)

@@ -292,7 +292,7 @@ test('native checks use the engine wait window without omitting or preempting pa
     'Each early mode must run with its own profile and fail the producer on error.');
   const engine = onlyStep(/--smoke-headless-engine\b/, 'Check the real Forge engine');
   assert.ok(engine.index > packaged.index, 'The real Forge walkthrough requires the completed production package.');
-  assert.match(engine.source, /dotnet \.\/dist\/harness\/Mana.Table.Tests.dll --smoke-headless-engine --engine-resources dist\/package\/engine --profile dist\/headless-engine-checks\n\s+if \(\$LASTEXITCODE -ne 0\) \{ throw /);
+  assert.match(engine.source, /dotnet \.\/dist\/harness\/Mana.Table.Tests.dll --smoke-headless-engine --engine-jar forge-api\/target\/forge-engine-fixtures.jar --production-engine-jar forge-api\/target\/forge-engine.jar --engine-resources dist\/package\/engine --source-revision \$env:GITHUB_SHA --source-manifest forge-api\/target\/ci-engine-manifest.json --profile dist\/headless-engine-checks\n\s+if \(\$LASTEXITCODE -ne 0\) \{ throw /);
   const manifest = onlyStep(/Set-Content dist\/ci-harness-manifest.json/, 'Bind the checked harness');
   const shared = onlyStep(/name: mana-native-ui-inputs-/, 'Share the checked harness');
   assert.ok(engine.index < manifest.index && manifest.index < shared.index,

@@ -176,11 +176,17 @@ jobs:
           ./mana-native/package.ps1 -Release -Version $env:MANA_RELEASE_VERSION -OutputDirectory dist/package
           if ($LASTEXITCODE -ne 0) { throw 'Native packaging failed.' }
           Copy-Item forge-api/target/ci-engine-manifest.json dist/ci-engine-manifest.json
+          # Exercise the actual packaged policy/boundary bytes. Separate build
+          # output paths can otherwise change portable-debug metadata hashes.
+          foreach ($name in @('Mana.AI','Mana.Contracts','Mana.Forge')) {
+            Copy-Item "dist/package/$name.dll" dist/harness
+            if (Test-Path "dist/package/$name.pdb") { Copy-Item "dist/package/$name.pdb" dist/harness }
+          }
       - name: Bind the verified source archive for installer smoke tests
         run: ./mana-native/ci/source-receipt.ps1 -InputPackageDirectory dist/package -Version $env:MANA_RELEASE_VERSION -PortableArchive dist/package-windows-x64.zip -SourceArchive dist/package-source.zip -OutputPath dist/ci-source-receipt.json
       - name: Verify the packaged engine through the native adapter
         run: |
-          dotnet ./dist/harness/Mana.Table.Tests.dll --smoke-headless-engine --engine-resources dist/package/engine --profile dist/headless-engine-checks
+          dotnet ./dist/harness/Mana.Table.Tests.dll --smoke-headless-engine --engine-jar forge-api/target/forge-engine-fixtures.jar --production-engine-jar forge-api/target/forge-engine.jar --engine-resources dist/package/engine --source-revision $env:GITHUB_SHA --source-manifest forge-api/target/ci-engine-manifest.json --profile dist/headless-engine-checks
           if ($LASTEXITCODE -ne 0) { throw 'Production native adapter and packaged Forge command checks failed.' }
       - name: Bind the verified native UI harness
         run: |

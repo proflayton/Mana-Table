@@ -594,6 +594,10 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
         if (current.announcedAbility != null)
             result.put("numeric", NumericDecisionProjection.describe(current.announcedAbility, current.announcedSymbol,
                     human.getPlayer(), card -> numericSourceId(card)));
+        if (current.input instanceof InputPayMana payment) {
+            var provenance = PaymentDecisionProjection.describe(payment, this::numericSourceId);
+            if (provenance != null) result.put("payment", provenance);
+        }
         if (current.input instanceof InputAttack || current.input instanceof InputBlock)
             result.put("episodeId", id + ":combat:" + game.getPhaseHandler().getTurn() + ":"
                     + game.getPhaseHandler().getNumCombat() + ":" + game.getPhaseHandler().getPhase().name() + ":" + viewer.getId());

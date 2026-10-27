@@ -8,6 +8,7 @@ import forge.game.ability.ApiType;
 import forge.game.ability.AbilityUtils;
 import forge.game.card.Card;
 import forge.game.card.CounterEnumType;
+import forge.game.cost.CostSacrifice;
 import forge.game.player.Player;
 import forge.game.spellability.SpellAbility;
 import forge.game.zone.ZoneType;
@@ -289,6 +290,43 @@ public class ActionOperationProjectionTest {
             String json = new Gson().toJson(graph);
             assertFalse(json.contains(hidden.getName()));
             assertFalse(json.contains(fixture.table.identities.id(hidden.getView())), "Even an opaque occurrence identity would disclose hidden target membership");
+        }
+    }
+
+    @Test(timeOut = 90000)
+    public void finiteConsumingManaRetainsItsExactSourceCostsWithoutBecomingReusableOrPayable() throws Exception {
+        try (var fixture = new Fixture()) {
+            var vein = fixture.add("Crystal Vein", ZoneType.Battlefield, 0);
+            var sacrifice = vein.getManaAbilities().stream().filter(ability -> ability.getPayCosts().getCostParts().stream()
+                    .anyMatch(CostSacrifice.class::isInstance)).findFirst().orElseThrow();
+            sacrifice.setActivatingPlayer(fixture.actor());
+            var facts = ActionSemantics.describeAbility(sacrifice);
+            assertEquals(list(castMap(facts.get("production")).get("alternatives")), List.of(Map.of("colors", Map.of("C", 2))));
+            var costs = list(facts.get("costs"));
+            assertTrue(costs.stream().anyMatch(cost -> cost.get("kind").equals("Tap") && cost.get("fromSource").equals(true)));
+            assertTrue(costs.stream().anyMatch(cost -> cost.get("kind").equals("Sacrifice")
+                    && cost.get("fromSource").equals(true) && cost.get("amount").equals(1)));
+            assertEquals(facts.get("affordability"), "Unknown", "A finite nominal output is not authoritative payment certification");
+            var tapOnly = vein.getManaAbilities().stream().filter(ability -> ability != sacrifice).findFirst().orElseThrow();
+            tapOnly.setActivatingPlayer(fixture.actor());
+            assertSame(tapOnly.getHostCard(), sacrifice.getHostCard(), "The two output routes consume the same physical land");
+            assertEquals(list(ManaProductionProjection.describe(tapOnly).get("alternatives")), List.of(Map.of("colors", Map.of("C", 1))));
+            var pet = fixture.add("Blood Pet", ZoneType.Battlefield, 0); pet.setSickness(true);
+            var petMana = pet.getManaAbilities().get(0); petMana.setActivatingPlayer(fixture.actor());
+            assertTrue(petMana.getPayCosts().canPay(petMana, fixture.actor(), false), "Summoning sickness does not prohibit a nontap source sacrifice");
+            var petFacts = ActionSemantics.describeAbility(petMana);
+            assertEquals(list(castMap(petFacts.get("production")).get("alternatives")), List.of(Map.of("colors", Map.of("B", 1))));
+            assertTrue(list(petFacts.get("costs")).stream().anyMatch(cost -> cost.get("kind").equals("Sacrifice")
+                    && cost.get("fromSource").equals(true) && cost.get("amount").equals(1)));
+            assertTrue(list(petFacts.get("costs")).stream().noneMatch(cost -> cost.get("kind").equals("Tap")));
+            var altar = fixture.add("Ashnod's Altar", ZoneType.Battlefield, 0);
+            var altarMana = altar.getManaAbilities().get(0); altarMana.setActivatingPlayer(fixture.actor());
+            var altarFacts = ActionSemantics.describeAbility(altarMana);
+            assertTrue(list(altarFacts.get("costs")).stream().anyMatch(cost -> cost.get("kind").equals("Sacrifice")
+                    && cost.get("fromSource").equals(false)), "Choosing another creature is a separate coupling, not a one-use self sacrifice");
+            assertEquals(pet.getZone().getZoneType(), ZoneType.Battlefield);
+            assertEquals(vein.getZone().getZoneType(), ZoneType.Battlefield);
+            assertFalse(vein.isTapped()); assertEquals(fixture.actor().getManaPool().totalMana(), 0);
         }
     }
 

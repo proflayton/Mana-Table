@@ -157,7 +157,13 @@ public sealed class CasualCommanderPolicy : IAiPolicy
     {
         var state = request.Frame.State;
         if (payment.Pay.Enabled) return Answer(request, new PayMana(state.Id, state.Decision!.Id), "payment-commit-funded-cost");
+        if (request.Frame.Semantics.Payment is { } provenance && provenance.PayerId != state.ViewerId)
+            return payment.Cancel.Enabled ? Answer(request, new CancelPayment(state.Id, state.Decision!.Id), "payment-payer-resource-scope")
+                : Missing("payment-payer-resource-scope");
         var funding = AiManaPlanner.ForPayment(request with { Work = request.Work.CreateSlice(256, reserve: 4) });
+        if (funding.Status == AiManaPlanStatus.Shortfall && payment.Cancel.Enabled
+            && request.Frame.Semantics.Payment is { Mandatory: false, Purpose: PaymentPurpose.TriggeredAbilityCost or PaymentPurpose.EffectCost })
+            return Answer(request, new CancelPayment(state.Id, state.Decision!.Id), "decline-unfunded-optional-effect-cost");
         // Optional assignment optimization has its own allowance. When it runs
         // out, the exact current offered-resource fallback can still make a
         // legal next step; it does not turn search incompleteness into a table

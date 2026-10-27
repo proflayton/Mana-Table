@@ -81,6 +81,27 @@ public sealed partial class ForgeEngine : IAutomatedSimulation
         await Request("automatedAction", args);
     }
 
+    // Friend-test seam: the ordinary public method correctly rejects this at
+    // its current client scope. Release checks also need the authoritative JVM
+    // to reject a previously accepted payload under a fresh transport request.
+    // Neither the renderer nor IAiPolicy receives this internal capability.
+    internal async Task ReplayPriorAutomatedCommandForCheckAsync(int seatId, GameSnapshot prior,
+        GameSnapshot currentState, DecisionCommand command, string probeId)
+    {
+        if (prior.ViewerId != seatId || currentState.ViewerId != seatId || prior.Id != currentState.Id
+            || currentState.Status != "playing" || currentState.Decision == null || prior.Decision == null
+            || prior.Decision.Id != command.DecisionId || currentState.Decision.Id == command.DecisionId
+            || string.IsNullOrWhiteSpace(probeId))
+            throw new ArgumentException("A stale-scope check requires the same seat's distinct current decision.");
+        var historical = new ForgeCommandScope(); historical.Observe(prior);
+        var args = historical.Encode(command);
+        args["seatId"] = seatId;
+        args["testProbeId"] = probeId;
+        // Request always assigns a new transport sequence id. No prior command
+        // receipt is replayed or treated as rejection evidence.
+        await Request("automatedAction", args);
+    }
+
     public async Task ReportAutomationFaultAsync(string gameId, int seatId, string reasonCode)
     {
         // Only stable diagnostics cross the host port, never policy exception

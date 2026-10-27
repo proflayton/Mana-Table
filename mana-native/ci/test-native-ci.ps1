@@ -26,7 +26,10 @@ function New-PackageFixture([string]$Name, [string]$Mutation) {
     if ($Mutation -eq 'unbound-game') { $hashes.Remove('Mana.Game.dll') }
     $source = if ($Mutation -eq 'source') { 'b' * 40 } else { $env:GITHUB_SHA }
     Write-Json (Join-Path $package 'build.json') @{sourceRevision=$source; engineBaseRevision=$env:GITHUB_SHA; version=$env:MANA_RELEASE_VERSION; release=$true; engineSha256=$jarHash; clientFilesSha256=$hashes}
-    Write-Json (Join-Path $directory 'ci-engine-manifest.json') @{schemaVersion=1; sourceRevision=$env:GITHUB_SHA; engine=@{sha256=$jarHash; bytes=(Get-Item -LiteralPath $jar).Length}}
+    $engineManifest = @{schemaVersion=2; sourceRevision=$env:GITHUB_SHA; engine=@{sha256=$jarHash; bytes=(Get-Item -LiteralPath $jar).Length}; fixtureLauncher=@{sha256=('f' * 64); bytes=1}}
+    if ($Mutation -eq 'legacy-engine-manifest') { $engineManifest.schemaVersion = 1 }
+    if ($Mutation -eq 'missing-fixture-binding') { $engineManifest.Remove('fixtureLauncher') }
+    Write-Json (Join-Path $directory 'ci-engine-manifest.json') $engineManifest
     $harness = Join-Path $directory 'harness/Mana.Table.Tests.exe'
     [IO.File]::WriteAllText($harness, 'verified native test harness', $utf8)
     Write-Json (Join-Path $directory 'ci-harness-manifest.json') @{sourceRevision=$env:GITHUB_SHA; files=@(@{path='Mana.Table.Tests.exe'; sha256=(Get-FileHash -LiteralPath $harness -Algorithm SHA256).Hash})}
@@ -58,7 +61,7 @@ try {
     $valid = New-PackageFixture 'valid' ''
     & (Join-Path $PSScriptRoot 'restore-package.ps1') -Directory $valid -RequireHarness
     $checks++
-    foreach ($mutation in @('source','engine','client','game','missing-game','unbound-game','renderer','scenarios','harness','archive')) {
+    foreach ($mutation in @('source','engine','client','game','missing-game','unbound-game','renderer','scenarios','harness','archive','legacy-engine-manifest','missing-fixture-binding')) {
         $fixture = New-PackageFixture $mutation $mutation
         $rejected = $false
         try { & (Join-Path $PSScriptRoot 'restore-package.ps1') -Directory $fixture -RequireHarness }

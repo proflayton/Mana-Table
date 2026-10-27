@@ -12,8 +12,10 @@ node --test scripts/mana-table/tests/*.test.cjs
 node scripts/mana-table/check-docs.cjs
 ```
 
-- `ci-engine-artifact.cjs create|verify [source-sha]` binds the Java JAR's bytes
-  to the exact clean checkout. CI supplies `GITHUB_SHA` when the argument is absent.
+- `ci-engine-artifact.cjs create|verify [source-sha]` binds the production Java
+  JAR and tiny test-only fixture launcher's bytes to the exact clean checkout.
+  CI supplies `GITHUB_SHA` when the argument is absent. The launcher delegates
+  the production protocol with controlled initial fixtures; it is not shipped.
 - `wait-ci-engine.cjs` discovers that exact producer artifact for native packaging.
   An early upload does not make pending Java checks successful.
 - `wait-release-ci.cjs` requires the current master source's completed Java and
