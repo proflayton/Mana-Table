@@ -83,11 +83,11 @@ internal static class SharedTableStudyChecks
             foreach (var card in Cards(tapped).Where(card => card.Id.StartsWith("tap-land-", StringComparison.Ordinal))) {
                 var untapped = ready.BattlefieldCard(card.Owner, card.Id)!;
                 check(card.Pose.Center == untapped.Pose.Center && card.Pose.Size == untapped.Pose.Size
-                    && card.Pose.Size.Y > card.Pose.Size.X * 1.5f
+                    && card.Pose.Size.X > card.Pose.Size.Y * 1.2f
                     && MathF.Abs(MathHelper.WrapAngle(card.Pose.Angle - untapped.Pose.Angle) - MathF.PI / 2) < .001f
                     && Math.Abs(card.Pose.Bounds.Width - untapped.Pose.Bounds.Height) <= 2
                     && Math.Abs(card.Pose.Bounds.Height - untapped.Pose.Bounds.Width) <= 2,
-                    "Tapping a resource turns the same portrait face sideways without swapping dimensions or moving its reserved slot: " + card.Id);
+                    "Tapping a land turns the same broad illustration face sideways without swapping dimensions or moving its reserved slot: " + card.Id);
             }
             foreach (var stage in stages) CheckFootprints(Build(stage.Snapshot with { ViewerId = viewer }), "resource turns viewer " + viewer, check);
         }
