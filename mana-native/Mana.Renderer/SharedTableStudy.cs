@@ -77,7 +77,7 @@ public static class SharedTableStudy
             Rectangle TurnBounds(Rectangle bounds) => bounds.IsEmpty ? bounds
                 : TurnPose(new(new(bounds.X + bounds.Width / 2f, bounds.Y + bounds.Height / 2f), bounds.Size.ToVector2())).Bounds;
             var desired = (kind == "Creatures" ? new Vector2(112, seatFacing ? 128 : 104)
-                : new Vector2(112, seatFacing ? 112 : 92)) * faceScale;
+                : kind == "Lands" ? new Vector2(112) : new Vector2(112, seatFacing ? 112 : 92)) * faceScale;
             var slots = Pack(selected, lane, desired, faceScale, seat, horizontalRows, centerRows);
             var nodes = new List<SceneCard>();
             foreach (var slot in slots) {
@@ -101,9 +101,12 @@ public static class SharedTableStudy
                         float advance = copies.Length > 1 ? 6 * detail * copy / (copies.Length - 1) : 0;
                         var center = position + cell / 2 + new Vector2(advance) + new Vector2(slot.Family.Attachments * AttachmentEdge * detail, 0);
                         // Noncreature resources reserve their complete turn footprint. A tap
-                        // rotates the same portrait face instead of exchanging
+                        // rotates the same face instead of exchanging
                         // its dimensions and cancelling the visible silhouette.
-                        var face = kind == "Lands" ? new Vector2(size.X * 62 / 112, size.Y)
+                        // Arena's battlefield lands keep a broad illustration
+                        // window. A square reservation fits this same landscape
+                        // face both upright and tapped without slicing its art.
+                        var face = kind == "Lands" ? new Vector2(size.X, size.Y * .75f)
                             : kind == "Support" ? new Vector2(size.Y * 488 / 680, size.Y) : size;
                         var pose = new Pose(center, face,
                             card.Tapped ? MathF.PI / 2 : 0);

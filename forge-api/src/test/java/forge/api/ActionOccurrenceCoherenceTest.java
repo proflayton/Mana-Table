@@ -126,6 +126,11 @@ public class ActionOccurrenceCoherenceTest {
                 if (currentId == null) currentId = text(haliya, "visualId");
                 assertEquals(text(haliya, "visualId"), currentId, "All audiences share one live public occurrence");
                 assertEquals(state.getAsJsonArray("stack").size(), 2);
+                for (var item : state.getAsJsonArray("stack")) {
+                    var portrait = item.getAsJsonObject().getAsJsonObject("card");
+                    assertNotNull(portrait.get("visualId")); assertFalse(portrait.get("visualId").isJsonNull());
+                    assertNotNull(portrait.get("combatId")); assertFalse(portrait.get("combatId").isJsonNull());
+                }
                 assertTrue(state.getAsJsonArray("stack").asList().stream().map(value -> value.getAsJsonObject().getAsJsonObject("card"))
                         .anyMatch(portrait -> text(portrait, "visualId").isEmpty()), "The Warp trigger's historical portrait grants no live identity");
             }

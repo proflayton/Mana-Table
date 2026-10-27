@@ -111,6 +111,17 @@ internal sealed class FullBattlefieldSmoke : ITableAutomation
             Check(view.Match!.Players.All(player => Mana.Magic.PublicResources.Lands(player) is { Total: 9, Untapped: 3, Tapped: 6 }),
                 "The mixed-land case retains exact total/untapped/tapped counts for every controller");
             Capture("09-counted-mixed-lands");
+            MoveHit("focus:3");
+        }); Click();
+        Step(.65, () => {
+            Check(view.StudyFocusOwner == 3 && scenario.Replies.Count == 0,
+                "Focusing a seat preserves the same mixed tapped/untapped land occurrences without spending mana");
+            Capture("09a-focused-mixed-lands"); keyboard = new(Keys.Home);
+        });
+        Step(.04, () => keyboard = new());
+        Step(.65, () => {
+            Check(view.BoardView.IsIdentity && view.StudyFocusOwner == null && scenario.Replies.Count == 0,
+                "Home returns from the focused mixed-land view to the same whole table without a rules command");
             Publish(TappedResourcesScenario.Create()[0].Snapshot);
         });
         Step(1.5, () => {

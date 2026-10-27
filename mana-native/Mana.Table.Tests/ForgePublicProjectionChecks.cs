@@ -11,6 +11,14 @@ internal static class ForgePublicProjectionChecks
 {
     internal static int ValidateBatch(ImmutableArray<AutomatedSeatObservation> observations, string profile)
     {
+        foreach (var item in observations)
+            foreach (var player in item.State.Players)
+                foreach (var card in player.Zone("Battlefield").Cards) {
+                    if (!string.IsNullOrEmpty(card.VisualId) || !string.IsNullOrEmpty(card.CombatId)) continue;
+                    if ((item.State.Status is "playing" or "resolving") && !player.Eliminated
+                        || !string.IsNullOrEmpty(card.Key) || card.Selectable || card.Highlighted)
+                        throw new InvalidDataException("Forge published a current or actionable battlefield face without an occurrence identity.");
+                }
         int comparisons = 0;
         foreach (var group in observations.GroupBy(item => (item.State.Id, item.State.BoardRevision))) {
             var first = group.First().State;
@@ -61,5 +69,31 @@ internal static class ForgePublicProjectionChecks
         }] } };
         check(ValidateBatch([first, historical], directory) == 1,
             "Historical stack portraits are not joined to current public permanents by matching printed names");
+        AutomatedSeatObservation MissingIdentity(AutomatedSeatObservation observation, string status, bool eliminated, bool selectable = false) {
+            var owner = observation.State.Players[0];
+            var face = owner.Zone("Battlefield").Cards[0] with { VisualId = null!, CombatId = null!, Selectable = selectable };
+            owner = owner with { Eliminated = eliminated, Zones = [new("Battlefield", 1, [face], null), owner.Zone("Hand")] };
+            return observation with { State = observation.State with { Status = status,
+                Players = [owner, observation.State.Players[1]] } };
+        }
+        bool MissingRejected(params AutomatedSeatObservation[] observations) {
+            try { ValidateBatch(observations.ToImmutableArray(), directory); return false; }
+            catch (InvalidDataException) { return true; }
+        }
+        foreach (string status in new[] { "playing", "resolving" })
+            check(MissingRejected(MissingIdentity(first, status, false), MissingIdentity(other, status, false)),
+                "Matching empty identities across all Forge audiences cannot certify a current live battlefield occurrence");
+        var anonymous = MissingIdentity(first, "playing", false);
+        var anonymousOwner = anonymous.State.Players[0];
+        anonymousOwner = anonymousOwner with { Zones = [new("Battlefield", 1,
+            [anonymousOwner.Zone("Battlefield").Cards[0] with { CombatId = "anonymous-public-occurrence", FaceDown = true }], null),
+            anonymousOwner.Zone("Hand")] };
+        check(ValidateBatch([anonymous with { State = anonymous.State with { Players = [anonymousOwner, anonymous.State.Players[1]] } }], directory) == 0,
+            "A live concealed battlefield face may retain its anonymous combat occurrence without a readable visual identity");
+        check(ValidateBatch([MissingIdentity(first, "finished", true), MissingIdentity(other, "finished", true)], directory) == 1
+                && ValidateBatch([MissingIdentity(first, "playing", true), MissingIdentity(other, "playing", true)], directory) == 1,
+            "Terminal or explicitly retired read-only faces compare without fabricating current identities or throwing on legacy null fields");
+        check(MissingRejected(MissingIdentity(first, "finished", true, selectable: true)),
+            "An identity-free retired face cannot regain target-selection authority through its display flags");
     }
 }

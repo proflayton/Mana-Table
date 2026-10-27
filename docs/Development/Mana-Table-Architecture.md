@@ -58,6 +58,10 @@ The visibility prepass may retain an existing display ID across an entitled
 public-zone replacement only after consulting the actual current card. This
 preserves hand-to-stack-to-battlefield tracking without making an old view
 actionable or accepting a historical graph entity.
+Finished tables may retain the last loser's actual registered-player rules zones.
+Those exact final views remain readable display state, with no pending input or
+action scope. They are distinct from a historical copy and from an active seat.
+Absent card identities use empty strings; decoding never invents identifiers.
 Operation entities canonicalize a rules card only when its game timestamp
 matches the current incarnation, and semantic references reject historical view
 objects. A retained portrait is not a current entity or a new opaque-ID allocation.

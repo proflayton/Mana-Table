@@ -554,7 +554,14 @@ combat keywords on anonymous permanents while masking printed identity, rules
 text, mana, artwork and alternate faces. Anonymous battlefield occurrences can
 retain an opaque `combatId`; that ID never authorizes an action or identifies a
 hidden card outside its current public occurrence.
-Scoped selection keys authorize input; presentation IDs do not. The original
+Scoped selection keys authorize input; presentation IDs do not.
+Card identity fields (`key`, `visualId`, `combatId`) use empty strings when
+absent, including readonly historical faces. Native card values canonicalize
+legacy null identities without creating authority; scoped decision portraits
+still reject explicitly malformed identity fields. A finished table may retain
+exact cards from registered players' final rules zones for reading, with no
+pending choice or action domain.
+The original
 `GameStateMapper` excludes stack
 entries, combat assignments, attachments, counters, mana pools, temporary reveal
 prompts, face-down controller previews, and spectator sessions. Never serialize

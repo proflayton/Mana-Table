@@ -176,6 +176,7 @@ AllocationRegression.Run(Check);
 await RecoveryRegression.RunAsync(Check);
 GameplayClarityChecks.Run(Check);
 ImmutableStateChecks.Run(Check);
+CardIdentityBoundaryRegression.Run(Check);
 PublicStateDescriptorChecks.Run(Check);
 DeckExperienceChecks.Run(Check);
 await PrintingArtRegression.RunAsync(Check);

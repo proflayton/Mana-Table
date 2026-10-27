@@ -705,7 +705,8 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
         if (card == null || card.getZone() == null || card.getZone() == ZoneType.None) return false;
         // Absence is normal for a historical portrait. Inspect current zone
         // membership quietly instead of invoking a diagnostic failed lookup.
-        return game.getCardsIncludePhasingIn(card.getZone()).stream().anyMatch(current -> current.getView() == card);
+        return game.getCardsIncludePhasingIn(card.getZone()).stream().anyMatch(current -> current.getView() == card)
+                || game.isGameOver() && registeredFinalCardView(card.getId()) == card;
     }
 
     private CardView currentCardOccurrence(CardView prior) {
@@ -713,7 +714,20 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
         Card current = game.findById(prior.getId());
         if (current == null) current = game.getCardsIncludePhasingIn(ZoneType.Sideboard).stream()
                 .filter(card -> card.getId() == prior.getId()).findFirst().orElse(null);
-        return current == null ? null : current.getView();
+        return current != null ? current.getView() : game.isGameOver() ? registeredFinalCardView(prior.getId()) : null;
+    }
+
+    private CardView registeredFinalCardView(int physicalId) {
+        // The last two-player loss retains real cards in registered-player
+        // zones. They are final-board display state, with no remaining input.
+        // Never recover a display occurrence from cached PlayerView lists/LKI.
+        for (Player player : game.getRegisteredPlayers()) for (ZoneType kind : ZoneType.values()) {
+            var zone = player.getZone(kind);
+            if (zone == null) continue;
+            for (Card current : zone.getCards(false))
+                if (current.getId() == physicalId && current.getZone() == zone) return current.getView();
+        }
+        return null;
     }
 
     private static boolean sourceInputActive(Input input) {
@@ -1494,7 +1508,7 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
         var defender = combat == null ? null : combat.getDefender(card);
         if (!CombatDefenders.isCurrent(defender)) defender = null;
         boolean publicFace = !hidden || card.getZone() == ZoneType.Battlefield;
-        var result = map("key", key, "visualId", activity.visualId(card), "combatId", combatIds.id(card), "name", hidden ? "Face-down card" : face.getName(),
+        var result = map("key", key, "visualId", Objects.toString(activity.visualId(card), ""), "combatId", Objects.toString(combatIds.id(card), ""), "name", hidden ? "Face-down card" : face.getName(),
                 "type", hidden ? publicFace ? face.getType().toString() : "" : visibleType(card), "gamePieceType", gamePieceType(card, hidden),
                 "manaCost", hidden ? "" : face.getManaCost().toString(), "commanderTax", commanderTax(card, hidden),
                 "power", publicFace ? face.getPower() : null, "toughness", publicFace ? face.getToughness() : null,
@@ -2118,8 +2132,8 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
     private Map<String, Object> allocationCard(CardView card) {
         var details = allocationCardDetails(card, viewer);
         if (isAllocationOccurrence(card, viewer)) {
-            details.put("visualId", activity.visualId(card));
-            details.put("combatId", combatIds.id(card));
+            details.put("visualId", Objects.toString(activity.visualId(card), ""));
+            details.put("combatId", Objects.toString(combatIds.id(card), ""));
         }
         return details;
     }

@@ -340,6 +340,10 @@ readonly, survive repeated publications and finish through actual mana payment.
 The original floating-mana lifecycle checks preserve the same card's visual
 identity from hand through payment and stack to battlefield; a missing original
 identity must fail rather than be hidden by advancing into a later turn.
+The final commander-damage loss regression checks retained final rules-zone
+views, shared public IDs and revoked input scopes. The native terminal journey
+renders the result and another terminal update with readonly legacy faces;
+active public battlefield faces missing their identity still fail the batch gate.
 The campaign's
 Forge-specific batch check compares same-board public occurrence projections
 before policy evaluation, rather than waiting for a policy frame to validate.

@@ -2145,3 +2145,11 @@ casts/activations through the paced host. The authored lab checkpoints establish
 presentation relationships; real Java tests supply independent rules evidence.
 Automated safety and agent visual review do not supply human approval. Human
 review of this new source iteration remains pending.
+
+The supplied Arena battlefield screenshots also show lands as broad illustration
+windows. The rejected narrow land strips discarded most of each illustration;
+the shared table now uses a landscape land face in a square turn reservation.
+Its exact card, pile count and hover stay attached to that face, and tapping
+rotates the same object sideways. Review real artwork in both table and focused
+views, with mixed tapped piles at the small window; extra labels do not repair
+an unrecognizable crop.

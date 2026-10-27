@@ -99,6 +99,13 @@ internal static class ForgeDecisionDecoder
         var value = Field(prompt, "manaPaymentContext"); Object(value);
         if (!Present(value, "unpaidManaParts")) throw Invalid();
         int payer = Integer(value, "payerId");
+        // The nested record uses case-insensitive JSON binding. Check every
+        // supplied spelling before Card normalizes legacy null identities.
+        foreach (var source in value.EnumerateObject().Where(property => property.Name.Equals("source", StringComparison.OrdinalIgnoreCase)
+                     && property.Value.ValueKind == JsonValueKind.Object))
+            foreach (var rawCard in source.Value.EnumerateObject().Where(property => property.Name.Equals("card", StringComparison.OrdinalIgnoreCase)
+                         && property.Value.ValueKind != JsonValueKind.Null))
+                ValidateCardIdentityTypes(rawCard.Value);
         var context = value.Deserialize<ManaColorPaymentContext>(FundingJson) ?? throw Invalid();
         ValidateCard(context.Source?.Card);
         if (players == null || !players.Contains(payer)
@@ -286,9 +293,19 @@ internal static class ForgeDecisionDecoder
     }
     private static Card? ReadCard(JsonElement node, string key)
     {
+        if (Present(node, key)) ValidateCardIdentityTypes(Field(node, key));
         var card = Optional<Card>(node, key);
         ValidateCard(card);
         return card;
+    }
+    private static void ValidateCardIdentityTypes(JsonElement card)
+    {
+        Object(card);
+        foreach (var property in card.EnumerateObject())
+            if ((property.Name.Equals("key", StringComparison.OrdinalIgnoreCase)
+                    || property.Name.Equals("visualId", StringComparison.OrdinalIgnoreCase)
+                    || property.Name.Equals("combatId", StringComparison.OrdinalIgnoreCase))
+                && property.Value.ValueKind != JsonValueKind.String) throw Invalid();
     }
     private static void ValidateCard(Card? card)
     {

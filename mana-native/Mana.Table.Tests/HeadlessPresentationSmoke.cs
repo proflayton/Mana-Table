@@ -30,6 +30,7 @@ internal static partial class HeadlessPresentationSmoke
             checks.Add(description);
         }
         try {
+            CheckFinishedTable(profile, Check, trace, performance);
             ProviderIsolationChecks.Run(Check);
             ManaFundingWireChecks.Run(Check);
             AutomatedWireFailureChecks.Run(profile, Check);

@@ -52,6 +52,20 @@ internal static class ManaColorPaymentWireChecks
             var invalid = wire.DeepClone(); mutate(invalid);
             check(Reject(invalid), "The color-payment wire rejects foreign payers, malformed bills, handles, untyped colors and unrelated choice authority");
         }
+        foreach (string identity in new[] { "KEY", "VISUALID", "COMBATID" })
+            foreach (JsonNode? malformed in new JsonNode?[] { null, JsonValue.Create(17), JsonValue.Create(false) }) {
+                var invalidPortrait = wire.DeepClone();
+                invalidPortrait["sourceCard"]![identity] = malformed?.DeepClone();
+                check(Reject(invalidPortrait), "Current decision portraits reject case-variant null, numeric and Boolean identity fields before legacy normalization");
+                var invalidPayment = wire.DeepClone();
+                var paymentSource = invalidPayment["manaPaymentContext"]!["source"]!.DeepClone();
+                var paymentCard = paymentSource["card"]!.DeepClone();
+                paymentCard[identity] = malformed?.DeepClone();
+                ((JsonObject)paymentSource).Remove("card"); paymentSource["CARD"] = paymentCard;
+                ((JsonObject)invalidPayment["manaPaymentContext"]!).Remove("source");
+                invalidPayment["manaPaymentContext"]!["SOURCE"] = paymentSource;
+                check(Reject(invalidPayment), "Nested payment portraits retain strict identity types under case-insensitive source and card binding");
+            }
         var ordinary = wire.DeepClone(); ((JsonObject)ordinary).Remove("manaPaymentContext");
         check(Decode(ordinary).Payload is OptionsPayload { ManaPaymentContext: null },
             "An ordinary color choice or older provider does not acquire remembered payment context");

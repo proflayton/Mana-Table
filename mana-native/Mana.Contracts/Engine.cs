@@ -133,9 +133,12 @@ public sealed record Lobby(string Mode, string Status, string? Error, bool CanSt
 }
 public sealed record Card
 {
-    public string Key { get; init; } = "";
-    public string VisualId { get; init; } = "";
-    public string CombatId { get; init; } = "";
+    private string key = "", visualId = "", combatId = "";
+    // Legacy and read-only faces may have no occurrence. Keep that absence an
+    // empty string; never mint an identity or command handle while decoding it.
+    public string Key { get => key; init => key = value ?? ""; }
+    public string VisualId { get => visualId; init => visualId = value ?? ""; }
+    public string CombatId { get => combatId; init => combatId = value ?? ""; }
     public CardAttachment? AttachedTo { get; init; }
     public ImmutableArray<CardAttachment> Attachments { get; init; } = [];
     public string Name { get; init; } = "";
