@@ -88,7 +88,15 @@ final class ActionSemantics {
         result.put("operationGraph", ActionOperationProjection.describe(ability, viewer, identity));
         result.put("production", ManaProductionProjection.describe(ability));
         result.put("manaCostKnowledge", "Unknown");
+        if (viewer != null && identity != null && hasManaCost(ability))
+            result.put("prospectiveFunding", NumericDecisionProjection.funding(ability, viewer, identity));
         return result;
+    }
+
+    static boolean hasManaCost(SpellAbility ability) {
+        if (ability.getPayCosts() == null) return false;
+        var mana = ability.getPayCosts().getTotalMana();
+        return !mana.isNoCost() && !mana.isZero();
     }
 
     private static Boolean targetsAvailable(SpellAbility ability) {

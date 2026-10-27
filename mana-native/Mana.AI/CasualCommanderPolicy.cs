@@ -131,13 +131,13 @@ public sealed class CasualCommanderPolicy : IAiPolicy
         var source = offer == null ? null : CardViews.FindActionSource(request.Frame.State, offer.Set.SourceCardKey);
         int tax = source?.Zone == "Command" && offer!.Action.Kind == "cast" ? source.Value.Card.CommanderTax : 0;
         var plan = AiManaPlanner.ForAction(request with { Work = request.Work.CreateSlice(256, reserve: 4) }, semantic, tax);
-        // Unknown production/dependencies can still justify exploration. A
-        // known nominal shortfall makes this optional strategy wait, even when
-        // the effective cost is uncertain. This is not a legality judgment: the
-        // route stays offered, and an authoritative payable route bypasses this
-        // heuristic. Effective discounts need better facts before we can plan
-        // them without repeatedly starting payments we cannot finish.
-        return plan.Status is AiManaPlanStatus.Funded or AiManaPlanStatus.Unknown;
+        // Starting an optional cost commits real resources. Require a finite
+        // nominal witness rather than exploring an unknown producer dependency
+        // by tapping permanents and cancelling afterward. Unknown stays unknown:
+        // the route remains offered, and authoritative payable knowledge bypasses
+        // this strategy. Discounts, convoke and dependent producers need richer
+        // funding facts before this baseline can plan those unsupported cases.
+        return plan.Status == AiManaPlanStatus.Funded;
     }
 
     private static AiProposal Opening(AiDecisionRequest request, OpeningHandPayload opening)

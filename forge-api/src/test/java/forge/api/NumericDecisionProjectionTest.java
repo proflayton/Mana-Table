@@ -97,6 +97,87 @@ public class NumericDecisionProjectionTest {
     }
 
     @Test(timeOut = 90000)
+    public void unrelatedFaceDownStatePreservesNominalAnnouncementFundingWithoutInspectingItsOriginal() throws Exception {
+        try (var fixture = new Fixture()) {
+            var spell = fixture.spell("Stonecoil Serpent");
+            var wastes = fixture.add("Wastes", ZoneType.Battlefield, 0);
+            var tower = fixture.add("Command Tower", ZoneType.Battlefield, 0);
+            var commander = fixture.add("Toothy, Imaginary Friend", ZoneType.Command, 0);
+            fixture.actor().addCommander(commander);
+            var baseline = fixture.describe(spell);
+            var funding = map(baseline.get("funding"));
+            assertEquals(routes(funding, fixture.id(wastes)).get(0).get("eligibility"), "Known");
+            assertEquals(routes(funding, fixture.id(tower)).get(0).get("eligibility"), "Known");
+            assertEquals(bundles(routes(funding, fixture.id(tower)).get(0)), List.of(Map.of("colors", Map.of("U", 1))));
+
+            var hidden = fixture.add("Mana Reflection", ZoneType.Battlefield, 1);
+            assertTrue(hidden.turnFaceDown(true));
+            assertEquals(fixture.describe(spell), baseline,
+                    "The ordinary face-down rules state cannot make priority-known resources unusable when announcing X");
+            var otherHidden = fixture.add("Gilded Lotus", ZoneType.Battlefield, 1);
+            assertTrue(otherHidden.turnFaceDown(true));
+            assertEquals(fixture.describe(spell), baseline, "Concealed original identities do not affect funding knowledge");
+            assertFalse(new com.google.gson.Gson().toJson(fixture.describe(spell)).contains("Gilded Lotus"));
+
+            var template = fixture.add("Mana Reflection", ZoneType.Hand, 0);
+            hidden.addReplacementEffect(template.getReplacementEffects().get(0).copy(hidden, false));
+            var coupled = map(fixture.describe(spell).get("funding"));
+            assertEquals(routes(coupled, fixture.id(wastes)).get(0).get("eligibility"), "Unknown");
+            assertEquals(routes(coupled, fixture.id(tower)).get(0).get("eligibility"), "Unknown");
+            assertEquals(map(routes(coupled, fixture.id(tower)).get(0).get("production")).get("knowledge"), "Unknown",
+                    "An actual currently granted modifier is not replaced with a nominal promise");
+            assertFalse(wastes.isTapped()); assertFalse(tower.isTapped());
+            assertEquals(fixture.actor().getManaPool().totalMana(), 0);
+            assertNull(spell.getXManaCostPaid());
+        }
+    }
+
+    @Test(timeOut = 90000)
+    public void prospectiveManaXFundingUsesTheExactAnnouncementProjectionBeforeOptionalCommitment() throws Exception {
+        try (var fixture = new Fixture()) {
+            var spell = fixture.spell("Stonecoil Serpent");
+            var wastes = fixture.add("Wastes", ZoneType.Battlefield, 0);
+            var manaAbility = wastes.getManaAbilities().get(0);
+            manaAbility.setActivatingPlayer(fixture.opponent());
+            var fixedCost = fixture.spell("Grizzly Bears");
+            assertEquals(fixture.action(fixedCost).get("prospectiveFunding"), fixture.describe(fixedCost).get("funding"),
+                    "Ordinary mana-bearing actions and X announcements share the same funding facts");
+            assertEquals(ManaCostPreviewProjection.describe(fixedCost, fixture.actor(), fixture.table.identities::id).get("funding"),
+                    fixture.action(fixedCost).get("prospectiveFunding"), "The closed human preview uses the same provider facts");
+            assertNull(ManaCostPreviewProjection.describe(fixture.spell("Memnite"), fixture.actor(), fixture.table.identities::id),
+                    "A zero-mana action does not acquire an invented payment requirement");
+            assertFalse(ActionSemantics.describeAbility(spell).containsKey("prospectiveFunding"),
+                    "An unscoped metadata call cannot allocate audience-specific resource identities");
+            var baseline = fixture.action(spell);
+            assertEquals(baseline.get("prospectiveFunding"), fixture.describe(spell).get("funding"));
+            assertEquals(routes(map(baseline.get("prospectiveFunding")), fixture.id(wastes)).get(0).get("eligibility"), "Known");
+
+            var reflection = fixture.add("Mana Reflection", ZoneType.Battlefield, 0);
+            var literal = ActionSemantics.describeAbility(manaAbility.copy(wastes, fixture.actor(), true));
+            assertEquals(map(literal.get("production")).get("knowledge"), "Known",
+                    "Literal production retains its nominal definition under an unresolved ambient replacement");
+            var prospective = map(fixture.action(spell).get("prospectiveFunding"));
+            assertEquals(prospective, fixture.describe(spell).get("funding"),
+                    "Optional initiation and actual X selection cannot disagree about known funding eligibility on the same current state");
+            assertEquals(routes(prospective, fixture.id(wastes)).get(0).get("eligibility"), "Unknown");
+            assertEquals(prospective.get("knowledge"), "Unknown", "A partial projection is never an exhaustive affordability certificate");
+            String json = new com.google.gson.Gson().toJson(prospective);
+            assertFalse(json.contains("actionId")); assertFalse(json.contains("\"key\""));
+            assertFalse(json.contains(reflection.getName()), "Funding contains route facts, not another copy of card faces");
+            assertEquals(fixture.action(spell).get("prospectiveFunding"), prospective);
+            assertSame(manaAbility.getActivatingPlayer(), fixture.opponent());
+            assertEquals(manaAbility.getManaPart().getExpressChoice(), "");
+            assertFalse(wastes.isTapped()); assertEquals(fixture.actor().getManaPool().totalMana(), 0);
+            assertNull(spell.getXManaCostPaid());
+            spell.setActivatingPlayer(fixture.opponent());
+            var foreignPayer = map(fixture.action(spell).get("prospectiveFunding"));
+            assertEquals(foreignPayer, fixture.describe(spell).get("funding"));
+            assertTrue(list(foreignPayer.get("sources")).isEmpty());
+            assertEquals(map(foreignPayer.get("pool")), Map.of());
+        }
+    }
+
+    @Test(timeOut = 90000)
     public void restrictedPoolUnitsAndSpellSourceRestrictionsNeverBecomeCertainGenericFunding() throws Exception {
         try (var fixture = new Fixture()) {
             var spell = fixture.spell("Hangarback Walker");
@@ -161,6 +242,9 @@ public class NumericDecisionProjectionTest {
         String id(Card card) { return table.identities.id(card.getView()); }
         Map<String, Object> describe(SpellAbility ability) {
             return table.game.getAction().readState(() -> NumericDecisionProjection.describe(ability, "X", actor(), table.identities::id));
+        }
+        Map<String, Object> action(SpellAbility ability) {
+            return table.game.getAction().readState(() -> ActionSemantics.describeAbility(ability, actor(), table.identities::id));
         }
         @Override public void close() { table.close(); }
     }

@@ -101,12 +101,14 @@ public sealed class SourceActionSession(ISourceActions? source, Action<Action> p
             : failure != null || result == null ? SourceActionStatus.Failed
             : result.GameId != context.GameId || result.DecisionId != context.DecisionId
                 || result.SourceCardKey != context.SourceCardKey
+                || result.Revision is { } revision && revision != context.Revision
                 || !string.IsNullOrEmpty(result.SourceCardId) && result.SourceCardId != context.SourceCardId
                 ? SourceActionStatus.Stale : SourceActionStatus.Ready;
         if (status == SourceActionStatus.Ready && (result!.Actions.IsDefault
             || result.Actions.Any(action => action == null || string.IsNullOrWhiteSpace(action.Id) || string.IsNullOrWhiteSpace(action.Text)
                 || action.Card is { } linked && (linked.FaceDown || linked.Key != "" || linked.Selectable || linked.Highlighted
-                    || string.IsNullOrWhiteSpace(linked.Name) || string.IsNullOrWhiteSpace(action.Zone)))
+                    || string.IsNullOrWhiteSpace(linked.Name) || string.IsNullOrWhiteSpace(action.Zone))
+                || action.CostPreview != null && result.Revision == null)
             || result.Actions.Select(action => action.Id).Distinct(StringComparer.Ordinal).Count() != result.Actions.Length))
             status = SourceActionStatus.Failed;
         var actions = status == SourceActionStatus.Ready ? Array.AsReadOnly(result!.Actions!.ToArray()) : (IReadOnlyList<SourceAction>)Array.Empty<SourceAction>();

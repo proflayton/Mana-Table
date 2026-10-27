@@ -96,6 +96,14 @@ public sealed record PaymentPayload(DecisionReply Pay, DecisionReply Cancel) : D
     private DecisionReply pay = DecisionValue.Required(Pay, nameof(Pay)), cancel = DecisionValue.Required(Cancel, nameof(Cancel));
     public DecisionReply Pay { get => pay; init => pay = DecisionValue.Required(value, nameof(Pay)); }
     public DecisionReply Cancel { get => cancel; init => cancel = DecisionValue.Required(value, nameof(Cancel)); }
+    // Exact remaining bill and read-only resource applicability for this input.
+    // Missing facts from an older provider do not mean the bill is zero.
+    // Legacy expanded wire support. Current providers publish counted parts.
+    public ImmutableArray<string> UnpaidMana { get; init; } = [];
+    public ImmutableArray<ManaBillPart> UnpaidManaParts { get; init; } = [];
+    public ManaFundingContext? FundingContext { get; init; }
+    public ImmutableArray<string>? UsablePoolManaColors { get; init; }
+    public int? PayerId { get; init; }
 }
 public sealed record AttackPayload(DecisionReply Complete) : DecisionPayload
 {

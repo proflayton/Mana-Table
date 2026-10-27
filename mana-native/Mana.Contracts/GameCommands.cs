@@ -121,7 +121,10 @@ public static class GameCommandPermissions
             PlayCard value => payload is PriorityPayload && Selectable(value.Card) && Located(value.Card, "Hand", "Command"),
             ActivateCard value => payload is PriorityPayload && Selectable(value.Card) && Located(value.Card, "Battlefield"),
             UseManaSource value => payload is PaymentPayload && CurrentSource(value.Card) is { Selectable: true },
-            SpendPoolMana value => payload is PaymentPayload && state.Viewer?.Mana.GetValueOrDefault(value.Color) > 0,
+            SpendPoolMana value => payload is PaymentPayload payment
+                && (payment.PayerId is { } payer ? state.Players.FirstOrDefault(player => player.Id == payer) : state.Viewer)
+                    ?.Mana.GetValueOrDefault(value.Color) > 0
+                && (payment.UsablePoolManaColors == null || payment.UsablePoolManaColors.Value.Contains(value.Color)),
             SelectPlayer value => payload switch { TargetSelectionPayload target => target.Players.Contains(value.Player),
                 EntitySelectionPayload entity => entity.Players.Contains(value.Player), _ => false },
             ToggleAttackPlayer value => payload is AttackPayload && Card(value.Attacker) is { CombatId: var attacker }

@@ -68,7 +68,7 @@ internal static class AiPolicySeeds
 }
 
 /// <summary>One shared work allowance for an input episode, including refreshed observations.</summary>
-public sealed class AiWorkBudget
+public sealed class AiWorkBudget : Mana.Planning.IManaPlanningWork
 {
     private int remaining;
     private int exceeded;

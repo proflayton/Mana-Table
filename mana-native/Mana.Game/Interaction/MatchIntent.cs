@@ -89,6 +89,7 @@ internal abstract record MatchIntent : UiIntent
     internal sealed record OpenPlayerState(int PlayerId, string StateId) : MatchIntent;
     internal sealed record OpenPlayerDetails(int PlayerId) : MatchIntent;
     internal sealed record OpenManaPool(int PlayerId) : MatchIntent;
+    internal sealed record SpendFloatingMana(string Color) : MatchIntent;
     internal sealed record OpenTableState(int Index) : MatchIntent;
     internal sealed record UseHandPlacement(Card Card, string AbilityId) : MatchIntent;
     internal sealed record CloseHandPlacement : MatchIntent;

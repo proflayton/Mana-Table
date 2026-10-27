@@ -13,6 +13,7 @@ internal sealed class ForgeCommandScope
 {
     private GameSnapshot? observed;
     internal string ObservedGameId => Volatile.Read(ref observed)?.Id ?? "";
+    internal GameSnapshot? ObservedState => Volatile.Read(ref observed);
     internal void Observe(GameSnapshot? state) => Volatile.Write(ref observed, state);
     internal GameSnapshot? ObserveRaw(JsonElement raw)
     {

@@ -1,5 +1,6 @@
 using System.Collections.Immutable;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using Mana.Contracts;
 
 namespace Mana.Forge;
@@ -8,6 +9,8 @@ namespace Mana.Forge;
 // payload directly; no mutable JSON or shared record deserializer classifies it.
 internal static class ForgeDecisionDecoder
 {
+    private static readonly JsonSerializerOptions FundingJson = new() { PropertyNameCaseInsensitive = true,
+        Converters = { new JsonStringEnumConverter() } };
     internal static Decision Decode(JsonElement prompt, IReadOnlySet<int>? players = null)
     {
         try {
@@ -30,6 +33,9 @@ internal static class ForgeDecisionDecoder
                 || Present(prompt, "counterPaymentChoice") && !(task == "choice" && purpose == "" && !ordered)) throw Invalid();
             if (Present(prompt, "disclosedCards") && (task != "choice" || purpose != "" || ordered
                 || Present(prompt, "counterPaymentChoice") || Present(prompt, "libraryCards"))) throw Invalid();
+            if (task != "mana" && (Present(prompt, "unpaidMana") || Present(prompt, "unpaidManaParts") || Present(prompt, "fundingContext")
+                || Present(prompt, "usablePoolManaColors") || Present(prompt, "payerId"))) throw Invalid();
+            if (Present(prompt, "unpaidMana") && Present(prompt, "unpaidManaParts")) throw Invalid();
             string alternative = Text(prompt, "priorityAlternative"), quiet = Text(prompt, "quietYieldToken");
             if (alternative is not ("" or "none" or "undo" or "passTurn")
                 || task != "priority" && (alternative is "undo" or "passTurn" || quiet.Length != 0 || Flag(prompt, "canAutoPass"))) throw Invalid();
@@ -43,7 +49,14 @@ internal static class ForgeDecisionDecoder
                     "passTurn" => new(PriorityAlternative.PassTurn, Cancel()), _ => null
                 }, Flag(prompt, "canAutoPass"), quiet, PriorityAbilities(prompt)),
                 "openingHand" => new OpeningHandPayload(Ok(), Cancel(), Opening(prompt)),
-                "mana" => new PaymentPayload(Ok(), Cancel()),
+                "mana" => new PaymentPayload(Ok(), Cancel()) {
+                    UnpaidMana = PaymentSymbols(prompt, "unpaidMana"),
+                    UnpaidManaParts = PaymentParts(prompt),
+                    FundingContext = Present(prompt, "fundingContext")
+                        ? Field(prompt, "fundingContext").Deserialize<ManaFundingContext>(FundingJson) ?? throw Invalid() : null,
+                    UsablePoolManaColors = Present(prompt, "usablePoolManaColors") ? PaymentColors(prompt) : null,
+                    PayerId = NullableInteger(prompt, "payerId")
+                },
                 "attack" => new AttackPayload(Ok()), "block" => new BlockPayload(Ok()),
                 "selection" when purpose == "targets" => new TargetSelectionPayload(Ok(), Cancel(), Range(prompt),
                     PlayerChoices(prompt, players), Optional<PendingEffect>(prompt, "effect"), SearchTarget(prompt)),
@@ -57,10 +70,38 @@ internal static class ForgeDecisionDecoder
                 "text" => new TextPayload(Text(prompt, "initial")),
                 "allocate" => Allocation(prompt), _ => throw Invalid()
             };
+            if (payload is PaymentPayload { PayerId: { } payer } && (players == null || !players.Contains(payer))) throw Invalid();
             return new(id, context, payload);
         } catch (Exception error) when (error is JsonException or InvalidOperationException or FormatException or OverflowException or ArgumentException) {
             throw new IOException("The rules provider published an invalid decision schema.", error);
         }
+    }
+
+    private static ImmutableArray<string> PaymentSymbols(JsonElement prompt, string key)
+    {
+        var values = Array(prompt, key).Select(value => value.ValueKind == JsonValueKind.String
+            ? value.GetString()! : throw Invalid()).ToImmutableArray();
+        if (values.Length > 128 || values.Any(value => string.IsNullOrWhiteSpace(value) || value.Length > 32)) throw Invalid();
+        return values;
+    }
+
+    private static ImmutableArray<ManaBillPart> PaymentParts(JsonElement prompt)
+    {
+        if (!Present(prompt, "unpaidManaParts")) return [];
+        var parts = Field(prompt, "unpaidManaParts").Deserialize<ImmutableArray<ManaBillPart>>(FundingJson);
+        if (parts.IsDefault || parts.Length > 128 || parts.Any(part => part == null || part.Count <= 0
+            || string.IsNullOrWhiteSpace(part.Symbol) || part.Symbol.Length > 32
+            || part.Symbol[0] != '{' || part.Symbol[^1] != '}' || part.Symbol.Length < 3)
+            || parts.Select(part => part.Symbol).Distinct(StringComparer.Ordinal).Count() != parts.Length) throw Invalid();
+        return parts;
+    }
+
+    private static ImmutableArray<string> PaymentColors(JsonElement prompt)
+    {
+        var values = PaymentSymbols(prompt, "usablePoolManaColors");
+        if (values.Length > 6 || values.Distinct(StringComparer.Ordinal).Count() != values.Length
+            || values.Any(value => value is not ("W" or "U" or "B" or "R" or "G" or "C"))) throw Invalid();
+        return values;
     }
 
     private static DecisionContext SourceContext(JsonElement prompt)

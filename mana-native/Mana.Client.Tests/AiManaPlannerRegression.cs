@@ -1,6 +1,7 @@
 using System.Collections.Immutable;
 using Mana.AI;
 using Mana.Contracts;
+using Mana.Planning;
 
 internal static class AiManaPlannerRegression
 {
@@ -86,6 +87,8 @@ internal static class AiManaPlannerRegression
         Matrix(check);
         EnumerationAndPresentation(check);
         ConsumingResources(check);
+        NeutralBoundary(check);
+        CountedBills(check);
 
         static DecisionCommand? Propose(AiDecisionFrame frame)
         {
@@ -177,14 +180,129 @@ internal static class AiManaPlannerRegression
                     var remaining = units.ToList();
                     return remaining.Remove(first) && remaining.Remove(second) && remaining.Count >= generic;
                 });
-                var assessed = AiManaPlanner.Evaluate(Frame(resource), ["{" + first + "}", "{" + second + "}"], generic);
-                if (assessed.Status != (expected ? AiManaPlanStatus.Funded : AiManaPlanStatus.Shortfall)) mismatches++;
+                string[] bill = ["{" + first + "}", "{" + second + "}"];
+                var assessed = AiManaPlanner.Evaluate(Frame(resource), bill, generic);
+                var neutral = ManaFundingPlanner.Evaluate(Funding(resource), bill, generic);
+                if (assessed.Status != (expected ? AiManaPlanStatus.Funded : AiManaPlanStatus.Shortfall)
+                    || neutral.Status != (expected ? ManaFundingStatus.Funded : ManaFundingStatus.Shortfall)) mismatches++;
                 cases++;
             }
         }
         check(cases == 729 && mismatches == 0,
-            "The physical resource ledger agrees with 729 independently enumerated tap, sacrifice, combined-cost, exact-color and generic funding outcomes");
+            "The neutral core and current-action AI wrapper both agree with the same 729 independently enumerated tap, sacrifice, combined-cost, exact-color and generic outcomes");
     }
+
+    private static void NeutralBoundary(Action<bool, string> check)
+    {
+        var source = Producer("neutral-source", ("neutral-route", Output(("U", 1))));
+        var funding = Funding(source);
+        var work = new CountingWork(32);
+        var plan = ManaFundingPlanner.Evaluate(funding, ["{U}"], 0, work);
+        check(plan.Status == ManaFundingStatus.Funded && plan.WorkSpent == 32 - work.Remaining
+                && plan.Steps is [ManaFundingStep.Source { SourceCardId: "neutral-source", RouteIndex: 0, AlternativeIndex: 0 }],
+            "The shared planner charges the caller's actual work and returns only read-only occurrence and route positions");
+        string encoded = System.Text.Json.JsonSerializer.Serialize(plan);
+        check(!encoded.Contains("ActionId", StringComparison.Ordinal) && !encoded.Contains("SourceCardKey", StringComparison.Ordinal)
+                && !encoded.Contains("neutral-route", StringComparison.Ordinal),
+            "A portable funding witness contains no executable current action handles or copied offer labels");
+        var tiny = new CountingWork(1);
+        var limited = ManaFundingPlanner.Evaluate(funding, ["{U}"], 0, tiny);
+        check(limited.Status == ManaFundingStatus.BudgetExceeded && limited.WorkSpent == 1 && tiny.Remaining == 0 && limited.Steps.IsEmpty,
+            "A shared finite allowance cannot be replaced by a nested fake budget or return partial resource selection as a funding witness");
+        var reserved = ManaFundingPlanner.Evaluate(funding, ["{U}"], reservedSource: "neutral-source");
+        check(reserved.Status == ManaFundingStatus.Shortfall,
+            "A reserved initiating source stays unavailable through the portable resource boundary");
+        bool rejected = false;
+        try { ManaFundingFacts.Validate(Frame(source).State, funding with { Sources = [funding.Sources[0] with { SourceCardId = "unknown-foreign-card" }] }); }
+        catch (ArgumentException) { rejected = true; }
+        check(rejected, "The shared human and AI funding validator rejects resources outside the current owned battlefield");
+        var foreign = Producer("payer-resource", ("payer-unit", Output(("C", 1))));
+        var actor = Frame(source).State;
+        var payerState = actor with { Players = actor.Players.Select(player => player.Id == 1 ? player with {
+            Mana = ImmutableDictionary<string, int>.Empty.Add("C", 1), Zones = [new("Battlefield", 1, [foreign.Card], null)]
+        } : player).ToImmutableArray() };
+        var payerFunding = Funding(foreign) with { Pool = ImmutableDictionary<string, int>.Empty.Add("C", 1) };
+        bool AcceptScope(int? owner) {
+            try { ManaFundingFacts.Validate(payerState, payerFunding, owner); return true; }
+            catch (ArgumentException) { return false; }
+        }
+        check(!AcceptScope(null) && AcceptScope(1) && !AcceptScope(0) && !AcceptScope(91),
+            "Foreign payer facts require an explicitly named existing resource owner; default viewer, wrong owner and unknown owner scopes reject them");
+        bool wrongPool = false;
+        try { ManaFundingFacts.Validate(payerState, payerFunding with { Pool = payerFunding.Pool.SetItem("C", 2) }, 1); }
+        catch (ArgumentException) { wrongPool = true; }
+        check(wrongPool, "Explicit payer scope bounds floating quantities to that player's actual pool instead of the viewer's resources");
+        var unknown = funding with { Knowledge = SemanticKnowledge.Unknown };
+        check(ManaFundingPlanner.Evaluate(unknown, ["{U}"]).Status == ManaFundingStatus.Funded
+                && ManaFundingPlanner.Evaluate(unknown, ["{G}"]).Status == ManaFundingStatus.Unknown,
+            "A partial shared funding projection can witness a usable subset without certifying an unmodeled missing color impossible");
+        var overflow = ManaFundingPlanner.Evaluate(Funding(Producer("overflow-source", ("two", Output(("C", 2))))),
+            ["{2147483647/U}"], generic: 1);
+        check(overflow.Status == ManaFundingStatus.Unknown && overflow.ReasonCode == "mana-bill-bound" && overflow.Steps.IsEmpty,
+            "An oversized typed hybrid alternative cannot overflow generic demand and falsely certify a two-unit funding witness");
+    }
+
+    private static void CountedBills(Action<bool, string> check)
+    {
+        var large = Funding(Producer("large-bundle", ("bundle", Output(("C", 129), ("U", 3)))));
+        var counted = ManaFundingPlanner.EvaluateBill(large, [new("{129}", 1), new("{U}", 3)]);
+        check(counted.Status == ManaFundingStatus.Funded && counted.Steps.OfType<ManaFundingStep.Source>().Count() == 1,
+            "A counted exact bill larger than 128 generic units reaches the same finite bundle solver without expanding generic mana into symbols");
+        var ring = Producer("a-ring", ("ring-output", Output(("C", 2))));
+        var plains = Producer("b-plains", ("white-output", Output(("W", 1))));
+        var flexible = Producer("c-dual", ("blue-output", Output(("U", 1))), ("green-output", Output(("G", 1))));
+        var efficient = ManaFundingPlanner.EvaluateBill(Funding(ring, plains, flexible), [new("{1}", 1), new("{U}", 1)]);
+        var efficientAi = AiManaPlanner.Evaluate(Frame(ring, plains, flexible), ["{1}", "{U}"]);
+        check(efficient.Status == ManaFundingStatus.Funded && efficient.Steps.OfType<ManaFundingStep.Source>().Count() == 2
+                && efficient.Steps.OfType<ManaFundingStep.Source>().Count(step => step.SourceCardId == "c-dual") == 1
+                && efficientAi.Status == AiManaPlanStatus.Funded && efficientAi.Steps.OfType<AiManaStep.Source>().Count() == 2,
+            "A one-generic one-blue witness chooses the blue dual and only one other producer instead of tapping both a rock and a white land before finding blue");
+        var staged = Producer("tap-then-consume", ("tap", Output(("C", 1))), ("consume", Output(("U", 1))));
+        staged = staged with { Actions = staged.Actions.Select(action => action.ActionId == "consume" ? action with {
+            Costs = [new(ActionCostKind.Sacrifice, 1, true, "")]
+        } : action).ToImmutableArray() };
+        var stagedPlan = ManaFundingPlanner.EvaluateBill(Funding(staged), [new("{1}", 1), new("{U}", 1)]);
+        check(stagedPlan.Status == ManaFundingStatus.Funded && stagedPlan.Steps.OfType<ManaFundingStep.Source>().Count() == 2
+                && stagedPlan.Steps.OfType<ManaFundingStep.Source>().Select(step => step.RouteIndex).SequenceEqual([0, 1]),
+            "Prioritizing the selected colored need still backtracks to tap for generic before consuming that same physical source for blue");
+        var dual = Funding(Producer("dual", ("blue", Output(("U", 1))), ("green", Output(("G", 1)))));
+        check(ManaFundingPlanner.EvaluateBill(dual, [new("{U}", 1), new("{G}", 1)]).Status == ManaFundingStatus.Shortfall
+                && ManaFundingPlanner.EvaluateBill(Funding(Producer("blue-bundle", ("two", Output(("U", 2))))), [new("{U}", 2)]).Status == ManaFundingStatus.Funded,
+            "Counted repeated colors keep their full demand and still share each physical flexible source only once");
+        var huge = ManaFundingPlanner.EvaluateBill(large, [new("{U}", int.MaxValue)]);
+        check(huge.Status == ManaFundingStatus.Unknown && huge.ReasonCode == "mana-bill-bound" && huge.WorkSpent == 1 && huge.Steps.IsEmpty
+                && ManaFundingPlanner.EvaluateBill(large, [new("{2147483647}", int.MaxValue)]).Status == ManaFundingStatus.Unknown,
+            "Unbounded counted color or generic demand stays exact outside the calculation while planning returns Unknown before allocation or multiplication can overflow");
+        var work = new CountingWork(2);
+        var bounded = ManaFundingPlanner.EvaluateBill(large, [new("{1}", 1), new("{U}", 1)], 0, work);
+        check(bounded.Status == ManaFundingStatus.BudgetExceeded && bounded.WorkSpent == 2 && work.Remaining == 0 && bounded.Steps.IsEmpty,
+            "Counted bill preparation and finite assignment consume one caller-owned allowance rather than resetting the budget between stages");
+        var nominal = new ManaCostPreview([new(ActionCostKind.Mana, 0, false, "") { ManaSymbols = ["{U}"] }], SemanticKnowledge.Unknown, dual);
+        check(Mana.Magic.ManaCostPresentation.CanPlanNominal(nominal)
+                && !Mana.Magic.ManaCostPresentation.CanPlanNominal(nominal with { ManaCostKnowledge = SemanticKnowledge.Unsupported })
+                && !Mana.Magic.ManaCostPresentation.CanPlanNominal(nominal with { Costs = [new(ActionCostKind.Mana, null, false, "") { ManaSymbols = ["{U}"] }] }),
+            "Human source suggestions retain a complete nominal bill while unsupported semantics or an unknown fixed mana quantity cannot certify a funded subset");
+        check(new[] { ActionCostKind.Tap, ActionCostKind.Sacrifice, ActionCostKind.Discard, ActionCostKind.Exile }.All(kind =>
+                Mana.Magic.ManaCostPresentation.ReservedSource([new(kind, 1, true, "")], "reserved") == "reserved")
+                && Mana.Magic.ManaCostPresentation.ReservedSource([new(ActionCostKind.Sacrifice, 1, false, "")], "reserved") == null,
+            "Human nominal planning reserves an initiating source consumed by its own cost without inventing the identity of an unspecified donor");
+    }
+
+    private sealed class CountingWork(int units) : IManaPlanningWork
+    {
+        public int Remaining { get; private set; } = units;
+        public bool TrySpend(int amount = 1)
+        {
+            if (amount <= 0) throw new ArgumentOutOfRangeException(nameof(amount));
+            if (Remaining < amount) return false;
+            Remaining -= amount; return true;
+        }
+    }
+
+    private static ManaFundingContext Funding(params FixtureSource[] sources) => new(SemanticKnowledge.Known,
+        ImmutableDictionary<string, int>.Empty, sources.Select(source => new ManaFundingSource(source.Card.VisualId,
+            source.Actions.Where(action => action.ManaAbility).Select(action => new ManaFundingRoute(action.Costs, action.Production,
+                SemanticKnowledge.Known)).ToImmutableArray())).ToImmutableArray());
 
     private static void Matrix(Action<bool, string> check)
     {

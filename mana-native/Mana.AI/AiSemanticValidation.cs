@@ -1,5 +1,6 @@
 using System.Collections.Immutable;
 using Mana.Contracts;
+using Mana.Planning;
 
 namespace Mana.AI;
 
@@ -18,7 +19,11 @@ internal static class AiSemanticValidation
             if (!Enum.IsDefined(action.ManaCostKnowledge)) throw Invalid();
             if (action.Costs.Any(cost => cost.CounterType == null || cost.ManaSymbols.Any(string.IsNullOrWhiteSpace))) throw Invalid();
             context.Graph(action.OperationGraph);
-            Production(action.Production);
+            ManaFundingFacts.ValidateProduction(action.Production);
+            if (action.ProspectiveFunding is { } funding) {
+                if (!action.Costs.Any(cost => cost.Kind == ActionCostKind.Mana && (cost.Amount > 0 || !cost.ManaSymbols.IsEmpty))) throw Invalid();
+                ManaFundingFacts.Validate(state, funding);
+            }
         }
     }
 
@@ -59,27 +64,8 @@ internal static class AiSemanticValidation
                 && (owner.Card == null || CardViews.Identity(owner.Card) != numeric.SourceCardId)) throw Invalid();
             if (owner.Card is { } portrait && (portrait.FaceDown || !string.IsNullOrEmpty(portrait.Key)
                 || portrait.Selectable || portrait.Highlighted)) throw Invalid();
-            Costs(numeric.Costs);
-            var funding = numeric.Funding;
-            if (funding == null || !Enum.IsDefined(funding.Knowledge) || funding.Pool == null
-                || funding.Pool.Count > 6 || funding.Pool.Any(entry => entry.Value < 0 || entry.Value > 1024
-                    || entry.Key is not ("W" or "U" or "B" or "R" or "G" or "C"))
-                || funding.Sources.IsDefault || funding.Sources.Length > 128
-                || funding.Sources.Any(source => source == null)
-                || funding.Sources.Select(source => source.SourceCardId).Distinct(StringComparer.Ordinal).Count() != funding.Sources.Length) throw Invalid();
-            // Pool entitlement is quantitative: an observation cannot invent
-            // floating mana, even though spend applicability remains nominal.
-            if (funding.Pool.Any(entry => entry.Value > state.Viewer!.Mana.GetValueOrDefault(entry.Key))) throw Invalid();
-            var ownBattlefield = CardViews.InZones(state).Where(occurrence => occurrence.PlayerId == state.ViewerId
-                && occurrence.Zone == "Battlefield").Select(occurrence => CardViews.Identity(occurrence.Card)).ToHashSet(StringComparer.Ordinal);
-            foreach (var source in funding.Sources) {
-                if (string.IsNullOrWhiteSpace(source.SourceCardId) || !ownBattlefield.Contains(source.SourceCardId)
-                    || source.Routes.IsDefault || source.Routes.Length > 32) throw Invalid();
-                foreach (var route in source.Routes) {
-                    if (route == null || !Enum.IsDefined(route.Eligibility)) throw Invalid();
-                    Costs(route.Costs); Production(route.Production);
-                }
-            }
+            ManaFundingFacts.ValidateCosts(numeric.Costs);
+            ManaFundingFacts.Validate(state, numeric.Funding);
         }
 
         internal void Payment(GameSnapshot state, PaymentDecision payment)
@@ -172,28 +158,6 @@ internal static class AiSemanticValidation
             else if (entity.ControllerId is { } actual && (entity.Kind == SemanticEntityKind.Spell
                 ? spellControllers.TryGetValue(entity.CardId, out int expectedSpell) && actual != expectedSpell
                 : controllers.TryGetValue(entity.CardId, out int expectedCard) && actual != expectedCard)) throw Invalid();
-        }
-    }
-
-    private static void Costs(ImmutableArray<ActionCost> costs)
-    {
-        if (costs.IsDefault || costs.Length > 128 || costs.Any(cost => cost == null || !Enum.IsDefined(cost.Kind)
-            || cost.Amount < 0 || cost.CounterType == null || cost.ManaSymbols.IsDefault || cost.ManaSymbols.Length > 128
-            || cost.ManaSymbols.Any(string.IsNullOrWhiteSpace))) throw Invalid();
-    }
-
-    private static void Production(ManaProduction? production)
-    {
-        if (production == null || !Enum.IsDefined(production.Knowledge) || production.Alternatives.IsDefault
-            || production.Alternatives.Length > 32 || production.Knowledge == SemanticKnowledge.Known && production.Alternatives.IsEmpty) throw Invalid();
-        var alternatives = new HashSet<string>(StringComparer.Ordinal);
-        foreach (var alternative in production.Alternatives) {
-            if (alternative?.Colors == null || alternative.Colors.Count > 6 || alternative.Colors.Any(entry => entry.Value < 0
-                || entry.Key is not ("W" or "U" or "B" or "R" or "G" or "C"))
-                || alternative.Colors.Values.Sum(value => (long)value) > int.MaxValue) throw Invalid();
-            string canonical = string.Join(";", alternative.Colors.Where(entry => entry.Value != 0).OrderBy(entry => entry.Key, StringComparer.Ordinal)
-                .Select(entry => entry.Key + ":" + entry.Value));
-            if (!alternatives.Add(canonical)) throw Invalid();
         }
     }
 

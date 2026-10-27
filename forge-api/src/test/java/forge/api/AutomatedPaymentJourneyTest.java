@@ -51,6 +51,12 @@ public class AutomatedPaymentJourneyTest {
             assertFalse(payment.prompt.get("okEnabled").getAsBoolean(), "A policy cannot invoke Forge's Auto payment");
             var observation = JSON.toJsonTree(table.automatedSeat(policyId).automatedObservation()).getAsJsonObject();
             assertPaymentOwner(observation, "SpellCost", policyId);
+            assertEquals(observation.getAsJsonObject("state").getAsJsonObject("prompt").get("payerId").getAsInt(), policyId);
+            assertEquals(observation.getAsJsonObject("state").getAsJsonObject("prompt").getAsJsonArray("unpaidManaParts"),
+                    JSON.toJsonTree(List.of(Map.of("symbol", "{1}", "count", 1))),
+                    "Human-readable payment facts retain the exact current bill without unit expansion");
+            assertEquals(observation.getAsJsonObject("semantics").getAsJsonArray("unpaidMana").toString(), "[\"{1}\"]");
+            assertEquals(observation.getAsJsonObject("state").getAsJsonObject("prompt").getAsJsonArray("usablePoolManaColors").toString(), "[\"C\"]");
             assertEquals(observation.getAsJsonObject("domain").getAsJsonArray("poolManaColors").toString(), "[\"C\"]");
             var before = table.automatedSeat(policyId).state();
             assertThrows(IllegalArgumentException.class, () -> table.automatedSeat(policyId).action(

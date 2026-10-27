@@ -147,6 +147,8 @@ internal sealed partial class TableApplication
             float progress = (float)(cue?.Progress(now) ?? 1);
             float opacity = cue is { After: 0 } ? 1 - progress : 1;
             string hitId = "mana-pool:" + player.Id + ":" + item.Part.Key;
+            bool spend = match is { Decision.Payload: PaymentPayload payment } && player.Id == (payment.PayerId ?? match.ViewerId)
+                && payment.UsablePoolManaColors?.Contains(item.Part.Key) == true && item.Part.Amount > 0;
             bool hover = IsControlHovered(hitId), down = hover && pressed?.Id == hitId && CurrentHit(pressed);
             var symbol = new Vector2(bounds.X + 11, bounds.Center.Y);
             float emphasis = hover ? down ? .34f : .24f : .11f;
@@ -169,9 +171,13 @@ internal sealed partial class TableApplication
                 canvas.Text(amount, x, y, (hover ? Color.White : Ink) * opacity, item.Size, available, 1, true);
             }
             if (hover && item.Part.Symbol.Length > 0) canvas.Ring(symbol, down ? 10 : 12, Blue * opacity, down ? 2 : 1);
+            if (spend) {
+                canvas.Ring(symbol, 14, new Color(135, 221, 194) * opacity, 1.5f);
+                if (hover) canvas.Text("Spend", bounds.X - 2, bounds.Bottom + 2, Ink, .42f, 68, 1, true);
+            }
             painted.Add(new(item.Part.Key, item.Part.Name, amount, bounds, canvas.TextWidth(amount, item.Size, true), available)
                 { Delta = cue?.Delta, AnimationStarted = cue?.Started, Opacity = opacity });
-            hits.Add(new(hitId, Scope, bounds, new MatchIntent.OpenManaPool(player.Id)));
+            hits.Add(new(hitId, Scope, bounds, spend ? new MatchIntent.SpendFloatingMana(item.Part.Key) : new MatchIntent.OpenManaPool(player.Id)));
         }
         manaPoolBadges[player.Id] = new("UNSPENT MANA", PublicResources.ManaTotal(player), halo.Bounds, painted.ToArray(), 0, 0);
     }

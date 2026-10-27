@@ -69,7 +69,7 @@ dotnet '<immutable-harness>/Mana.Table.Tests.dll' --evaluate-ai-release --engine
 
 `--engine-resources` must identify the `engine` directory of the exact candidate's
 release package. The runner checks its `build.json` source revision, release
-marker and engine hash, and compares the packaged `Mana.AI`, `Mana.Contracts`
+marker and engine hash, and compares the packaged `Mana.AI`, `Mana.Planning`, `Mana.Contracts`
 and `Mana.Forge` assemblies with the loaded harness dependencies. It records
 the actual rules-resource path and build-metadata hash. Retain the verified
 package/source receipt which binds the complete runtime archive. An older
@@ -113,6 +113,14 @@ remain diagnostics, not exact-candidate release proof. A policy seed controls
 policy choices only. Forge's rules RNG remains uncontrolled, so these rotations
 are not identical-shuffle experiments or reproducible engine replays.
 
+Policy review also holds an accepted zero-X announcement which resolved and
+whose same public source was later seen in the graveyard with nonpositive
+toughness. That observation requires an explanation of intent; it does not make
+all legal X=0 actions wrong or prove which effect caused the card's later state.
+Up to four original numeric requests are retained in `private-critical-replays`
+even when the ordinary sixteen-case replay budget is full. Mechanical state and
+authority results remain separate from these strategic review findings.
+
 Typed match results separate completion, mechanical failures, missing mechanics,
 numeric proposal/receipt/outcome facts and payment provenance. An explicit own
 optional triggered/effect-cost decline is distinct from abandoning a spell or
@@ -150,6 +158,20 @@ counters/power/toughness; source correlation alone does not prove invocation
 ownership or that a chosen value caused every later counter. A bounded campaign
 which never draws the relevant card reports missing coverage. Cancellation
 replays link earlier same-source context, not an inferred owning cast or trigger.
+
+The same finite-resource and color-assignment oracles exercise the neutral
+`Mana.Planning` core directly and through the AI adapter. Native
+`ManaFundingWireChecks` decode actual payment/source-preview shapes and reject
+foreign resources, invented pool units, injected action handles and malformed
+metadata. Explicit current pool applicability remains distinct from legacy
+missing knowledge and from a nominal funding witness. Client-session checks
+revoke source previews on revision changes and preserve exact command permissions.
+Real Java payment journeys exercise manual source use and floating-pool spending,
+checking that each publication shrinks the unpaid bill without mutating it during
+a source-catalog read. The authored `mana-payment.v1` presentation journey uses
+those contracts and ordinary pointer input; it is not a second rules simulator.
+Its geometry and interaction assertions support actual rendered review at both
+small and large windows, which remains necessary to assess readability.
 
 On failure, `private-failure-manifest.json` identifies the raw owned observation
 batch, exact seat scopes, stage and original exception before teardown. It labels
@@ -675,6 +697,8 @@ For a relevant graphical regression, use the same test driver, for example:
 
 ```powershell
 dotnet $driver --smoke-card-reading --size 1000x740 --profile '<fresh-profile>'
+dotnet $driver --smoke-mana-payment --size 1000x740 --profile '<fresh-profile>'
+dotnet $driver --smoke-mana-payment --headless --profile '<fresh-profile>'
 ```
 
 Other focused modes include `--smoke-priority-flow`,

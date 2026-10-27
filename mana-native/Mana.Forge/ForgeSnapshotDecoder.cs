@@ -1,6 +1,7 @@
 using System.Collections.Immutable;
 using System.Text.Json;
 using Mana.Contracts;
+using Mana.Planning;
 
 namespace Mana.Forge;
 
@@ -37,7 +38,7 @@ internal static class ForgeSnapshotDecoder
                     .Concat(wire.Stack.Select(item => item.Card).OfType<Card>())
                     .Any(card => card.Key.Length > 0 || card.Selectable || card.Highlighted))) throw Invalid();
             ValidateAccess(wire, decision);
-            return new(wire.Id, wire.Status, wire.Error, wire.Result, wire.ViewerId, wire.Turn,
+            var snapshot = new GameSnapshot(wire.Id, wire.Status, wire.Error, wire.Result, wire.ViewerId, wire.Turn,
                 wire.Phase ?? "Starting game", wire.PhaseKey ?? "PREGAME", wire.ActivePlayerId, wire.Players,
                 wire.Stack.Select(item => item.Native()).ToImmutableArray(), wire.Combat?.Native(), decision) {
                 Revision = wire.Revision, BoardRevision = wire.BoardRevision,
@@ -46,6 +47,12 @@ internal static class ForgeSnapshotDecoder
                 Notices = wire.Notices, IgnoredPriorityAbilities = wire.IgnoredPriorityAbilities,
                 PlayAccesses = wire.PlayAccesses, Tempo = wire.Tempo, ActionSources = wire.ActionSources
             };
+            if (snapshot.Decision?.Payload is PaymentPayload payment) {
+                if (payment.FundingContext is { } funding) ManaFundingFacts.Validate(snapshot, funding, payment.PayerId);
+                var payer = snapshot.Players.FirstOrDefault(player => player.Id == (payment.PayerId ?? snapshot.ViewerId));
+                if (payment.UsablePoolManaColors is { } colors && colors.Any(color => payer?.Mana.GetValueOrDefault(color) is not > 0)) throw Invalid();
+            }
+            return snapshot;
         } catch (Exception error) when (error is JsonException or InvalidOperationException or ArgumentException or FormatException or OverflowException) {
             throw new IOException("The rules provider published an invalid match snapshot.", error);
         }

@@ -476,6 +476,17 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
         return HeadlessPlatform.query(table, () -> {
             synchronized (gate) {
                 requireSession(request);
+                long observedRevision = revision;
+                if (request.has("expectedRevision")) {
+                    var expected = request.get("expectedRevision");
+                    try {
+                        if (!expected.isJsonPrimitive() || !expected.getAsJsonPrimitive().isNumber()
+                                || expected.getAsBigDecimal().longValueExact() != observedRevision)
+                            throw new IllegalArgumentException("The table changed. Read the current card again.");
+                    } catch (ArithmeticException | NumberFormatException invalid) {
+                        throw new IllegalArgumentException("The table changed. Read the current card again.");
+                    }
+                }
                 Pending current = pending;
                 if (current == null || !current.id.equals(string(request, "promptId")))
                     throw new IllegalArgumentException("That choice has changed. Use the current prompt.");
@@ -493,14 +504,24 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
                         throw new IllegalArgumentException("The source actions changed. Read the current card again.");
                     current.sourceActions.put(key, catalog);
                 }
-                return sourceCatalogState(current, catalog);
+                var result = sourceCatalogState(current, catalog);
+                if (revision != observedRevision) throw new IllegalArgumentException("The table changed. Read the current card again.");
+                return result;
             }
         });
     }
 
     private Map<String, Object> sourceCatalogState(Pending current, SourceActions.Catalog catalog) {
+        return sourceCatalogState(current, catalog, true);
+    }
+
+    private Map<String, Object> sourceCatalogState(Pending current, SourceActions.Catalog catalog, boolean readOnlyFacts) {
         var actions = catalog.actions().stream().filter(action -> actionHostVisible(action.host())).map(action -> {
             var description = map("id", action.id(), "kind", action.kind(), "text", action.text());
+            if (readOnlyFacts) {
+                var costPreview = ManaCostPreviewProjection.describe(action.ability(), human.getPlayer(), this::semanticCardId);
+                if (costPreview != null) description.put("costPreview", costPreview);
+            }
             if (action.host() != catalog.source()) {
                 var preview = cardState(action.host().getView(), null);
                 preview.put("selectable", false); preview.put("highlighted", false);
@@ -508,9 +529,11 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
             }
             return description;
         }).toList();
-        return Collections.unmodifiableMap(map("gameId", id, "decisionId", current.id, "sourceCardKey", catalog.key(),
+        var result = map("gameId", id, "decisionId", current.id, "sourceCardKey", catalog.key(),
                 "sourceCardId", catalog.source().isFaceDown() && human.isExternallyAutomated()
-                        ? combatIds.id(catalog.source().getView()) : activity.visualId(catalog.source().getView()), "actions", actions));
+                        ? combatIds.id(catalog.source().getView()) : activity.visualId(catalog.source().getView()), "actions", actions);
+        if (readOnlyFacts) result.put("revision", revision);
+        return Collections.unmodifiableMap(result);
     }
 
     // Only the process owner calls this. No network seat can enumerate bot
@@ -556,7 +579,7 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
                             catalog = SourceActions.describe(current.input, source, key, version, this::actionHostVisible);
                             current.sourceActions.put(key, catalog);
                         }
-                        sources.add(sourceCatalogState(current, catalog));
+                        sources.add(sourceCatalogState(current, catalog, false));
                         for (var action : catalog.actions()) semantics.add(ActionSemantics.describe(action, current.input,
                                 human.getPlayer(), this::semanticCardId));
                     }
@@ -612,11 +635,7 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
         }
         var payingInput = current.input instanceof InputPayMana ? current.input
                 : "colorChoice".equals(current.prompt.get("context")) ? human.getInputQueue().getInput() : null;
-        if (payingInput instanceof InputPayMana mana && mana.getRemainingManaCost() != null) {
-            var unpaid = new ArrayList<String>();
-            for (var shard : mana.getRemainingManaCost().getUnpaidShards()) unpaid.add(shard.toString());
-            result.put("unpaidMana", unpaid);
-        }
+        if (payingInput instanceof InputPayMana mana) result.put("unpaidMana", ManaPaymentFacts.unpaid(mana));
         return result;
     }
 
@@ -1184,6 +1203,14 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
             projectedPrompt.put("purpose", prompt.input instanceof InputConfirmMulligan ? "openingHand"
                     : prompt.input instanceof InputSelectTargets ? "targets"
                     : Objects.equals(prompt.prompt.get("context"), "playAbility") ? "abilities" : "");
+            projectedPrompt.remove("payerId"); projectedPrompt.remove("unpaidMana");
+            projectedPrompt.remove("unpaidManaParts");
+            projectedPrompt.remove("fundingContext"); projectedPrompt.remove("usablePoolManaColors");
+            prompt.poolManaColors.clear();
+            if (prompt.input instanceof InputPayMana payment && sourceInputCurrent(prompt)) {
+                projectedPrompt.putAll(ManaPaymentFacts.describe(payment, this::semanticCardId));
+                prompt.poolManaColors.addAll(payment.getUsablePoolManaColors().stream().map(MagicColor::toShortString).toList());
+            }
             if (prompt.input instanceof InputPassPriority) {
                 projectedPrompt.put("priorityAbilities", priorityAbilities(human.getPriorityAbilities(), prompt));
                 projectedPrompt.put("priorityAlternative", priorityAlternative(prompt.input));

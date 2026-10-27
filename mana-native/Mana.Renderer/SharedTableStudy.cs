@@ -85,25 +85,27 @@ public static class SharedTableStudy
                 var cohortPlans = new List<StudyBattlefieldCohort>();
                 float factor = slot.Scale, detail = faceScale * factor;
                 var size = FaceSize(slot.Family, desired) * factor;
+                var cell = CellSize(slot.Family, desired) * factor;
                 float fan = slot.Family.Fan * detail, gap = 6 * detail;
                 float header = slot.Header;
                 float bodyY = slot.Position.Y + header + (header > 0 ? 4 * detail : 0);
                 for (int cohort = 0; cohort < slot.Family.Cohorts.Length; cohort++) {
                     var copies = slot.Family.Cohorts[cohort];
-                    var position = new Vector2(slot.Position.X + cohort % slot.Columns * (size.X + fan + gap),
-                        bodyY + cohort / slot.Columns * (size.Y + fan + gap));
+                    var position = new Vector2(slot.Position.X + cohort % slot.Columns * (cell.X + fan + gap),
+                        bodyY + cohort / slot.Columns * (cell.Y + fan + gap));
                     var cohortNodes = new List<SceneCard>();
                     for (int copy = 0; copy < copies.Length; copy++) {
                         var card = copies[copy];
                         // Copy count never enlarges a cohort's footprint. All
                         // real occurrences remain, with one current front/count.
                         float advance = copies.Length > 1 ? 6 * detail * copy / (copies.Length - 1) : 0;
-                        var center = position + size / 2 + new Vector2(advance) + new Vector2(slot.Family.Attachments * AttachmentEdge * detail, 0);
-                        // Resources reserve their complete turn footprint. A tap
+                        var center = position + cell / 2 + new Vector2(advance) + new Vector2(slot.Family.Attachments * AttachmentEdge * detail, 0);
+                        // Noncreature resources reserve their complete turn footprint. A tap
                         // rotates the same portrait face instead of exchanging
                         // its dimensions and cancelling the visible silhouette.
-                        var face = kind == "Lands" ? new Vector2(size.X * 62 / 112, size.Y) : size;
-                        var pose = new Pose(center, kind == "Lands" ? face : card.Tapped ? new(size.Y, size.X) : size,
+                        var face = kind == "Lands" ? new Vector2(size.X * 62 / 112, size.Y)
+                            : kind == "Support" ? new Vector2(size.Y * 488 / 680, size.Y) : size;
+                        var pose = new Pose(center, face,
                             card.Tapped ? MathF.PI / 2 : 0);
                         int ordinal = CardViews.Identity(card).Length == 0
                             ? Enumerable.Range(0, cards.Count).First(index => ReferenceEquals(cards[index], card)) : 0;
@@ -116,7 +118,7 @@ public static class SharedTableStudy
                         for (int layer = under.Count - 1; layer >= 0; layer--) {
                             var member = under[layer];
                             var memberCenter = center + new Vector2(-AttachmentEdge * (layer + 1), AttachmentDrop * member.Depth) * detail;
-                            var memberPose = new Pose(memberCenter, member.Card.Tapped ? new(size.Y, size.X) : size, member.Card.Tapped ? MathF.PI / 2 : 0);
+                            var memberPose = new Pose(memberCenter, face, member.Card.Tapped ? MathF.PI / 2 : 0);
                             familyNodes.Add(SceneCard.Create(member.Card, memberPose, "Battlefield", member.Owner, 0, TableLayout.Hero(seat)) with {
                                 ScanFace = true, Compact = true,
                                 Attachment = new(node.Id, owner, member.HostId, layer + 1, member.Depth, AttachmentEdge * detail / size.X, facing)
@@ -158,11 +160,14 @@ public static class SharedTableStudy
         return new(x, y, (int)MathF.Ceiling(position.X + size.X) - x, (int)MathF.Ceiling(position.Y + size.Y) - y);
     }
     private static Vector2 FaceSize(Family family, Vector2 desired) => desired;
+    private static Vector2 CellSize(Family family, Vector2 desired) => family.Role == "Creatures"
+        && (family.Attachments > 0 || family.Cohorts.Any(cohort => cohort.Any(card => card.Tapped)))
+            ? new(Math.Max(desired.X, desired.Y)) : desired;
     private static float HeaderHeight(Family family, float detail, float headerFloor) => family.Header > 0
         ? Math.Max(family.Header * detail, headerFloor) : 0;
     private static Vector2 Shape(Family family, int columns, Vector2 desired, float faceScale, float scale, float headerFloor)
     {
-        desired = FaceSize(family, desired) * scale;
+        desired = CellSize(family, desired) * scale;
         int rows = (family.Cohorts.Length + columns - 1) / columns;
         float detail = faceScale * scale;
         float fan = family.Fan * detail, gap = 6 * detail;

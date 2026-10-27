@@ -27,7 +27,7 @@ final class NumericDecisionProjection {
                 "costs", costs, "manaCostKnowledge", "Unknown", "funding", funding(announced, actor, identity));
     }
 
-    private static Map<String, Object> funding(SpellAbility announced, Player actor, Function<CardView, String> identity) {
+    static Map<String, Object> funding(SpellAbility announced, Player actor, Function<CardView, String> identity) {
         // A controlling player may answer another player's announcement. Their
         // own mana is not that invocation's funding; retain an unknown subset.
         if (announced.getActivatingPlayer() != actor)

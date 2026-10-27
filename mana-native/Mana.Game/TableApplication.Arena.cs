@@ -20,6 +20,7 @@ internal sealed partial class TableApplication
         stackRows.Clear(); prioritySeats.Clear();
         changeCalloutBounds = null; highlightedChangeTargets.Clear(); highlightedChangeSource = null;
         var state = match!;
+        PrepareManaJourney();
         DrawTableSurface();
         // Queue the player's faces first; slow remote downloads must not bury the hand.
         foreach (var card in state.Viewer?.Zone("Hand").Cards ?? []) resources.Card(card);
@@ -59,6 +60,7 @@ internal sealed partial class TableApplication
         }
         hovered = !dragging ? HitAt(pointer)?.Card : null;
         if (!OverlayOpen && !CardCollectionOpen) DrawReaderControls();
+        DrawManaJourney();
         // Decision text and its controls have priority over card readers and
         // held cards. Their input regions are registered last for the same reason.
         if (!BattlefieldFocused && !OverlayOpen && !AbilityActionPending && (!CardCollectionOpen || EmptyPublicCollection)) { DrawDecisionDock(); }
@@ -292,7 +294,8 @@ internal sealed partial class TableApplication
             var card = decision is { } sourceDecision && (payingSource || state.Stack.Length == 0)
                 ? CardViews.Source(state, sourceDecision) ?? stackCards[i] : CardViews.Current(state, stackCards[i]);
             bool alsoInZone = state.Players.Any(p => p.Zones.Any(z => z.Cards.Any(c => CardIdentity(c) == CardIdentity(card))));
-            string identity = payingSource ? "payment:" + decision!.Id : alsoInZone ? "stack:" + (state.Stack.ElementAtOrDefault(i)?.Id ?? "source") : CardIdentity(card);
+            string identity = payingSource && !alsoInZone ? CardIdentity(card) : payingSource ? "payment:" + decision!.Id
+                : alsoInZone ? "stack:" + (state.Stack.ElementAtOrDefault(i)?.Id ?? "source") : CardIdentity(card);
             if (identity.Length == 0) identity = "stack:" + (state.Stack.ElementAtOrDefault(i)?.Id ?? card.Name);
             Vector2 entrance = new(800, 520);
             if (card.VisualId.Length > 0) {

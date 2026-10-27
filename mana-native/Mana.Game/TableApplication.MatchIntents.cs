@@ -122,6 +122,10 @@ internal sealed partial class TableApplication
             case MatchIntent.OpenPlayerState state: OpenPlayerState(state.PlayerId, state.StateId); break;
             case MatchIntent.OpenPlayerDetails player: zonePlayer = player.PlayerId; overlay = "player"; break;
             case MatchIntent.OpenManaPool player: OpenManaPool(player.PlayerId); break;
+            case MatchIntent.SpendFloatingMana mana when match is { Decision: { Payload: PaymentPayload payment } decision } state
+                && payment.UsablePoolManaColors?.Contains(mana.Color) == true
+                && state.Players.FirstOrDefault(player => player.Id == (payment.PayerId ?? state.ViewerId))?.Mana.GetValueOrDefault(mana.Color) > 0:
+                Send(new SpendPoolMana(state.Id, decision.Id, mana.Color)); break;
             case MatchIntent.OpenTableState state: tableStatePage = Math.Max(0, state.Index); overlay = "table-state"; break;
             case MatchIntent.UseHandPlacement use: UseHandPlacement(use.Card, use.AbilityId, Scope); break;
             case MatchIntent.CloseHandPlacement: overlay = ""; placementCard = null; break;

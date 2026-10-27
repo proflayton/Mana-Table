@@ -1,4 +1,5 @@
 using System.Collections.Immutable;
+using System.Text.Json.Serialization;
 
 namespace Mana.Contracts;
 
@@ -11,8 +12,11 @@ public sealed record NumericDecision(NumericDecisionPurpose Purpose, string Sour
 
 // Read-only planning facts. These routes contain no executable action handles,
 // and do not become current priority/payment permissions at a numeric input.
+[JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
 public sealed record ManaFundingContext(SemanticKnowledge Knowledge,
     ImmutableDictionary<string, int> Pool, ImmutableArray<ManaFundingSource> Sources);
+[JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
 public sealed record ManaFundingSource(string SourceCardId, ImmutableArray<ManaFundingRoute> Routes);
+[JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
 public sealed record ManaFundingRoute(ImmutableArray<ActionCost> Costs, ManaProduction Production,
     SemanticKnowledge Eligibility);

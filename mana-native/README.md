@@ -317,6 +317,8 @@ passes and earlier-head CI do not establish readiness.
 | --- | --- |
 | `Mana.Contracts` | Catalog/setup ports, deeply immutable match state, semantic commands and visibility contracts |
 | `Mana.Client` | Snapshot ordering, serial commands, Auto advancement, assets and updates |
+| `Mana.Planning` | Contracts-only bounded mana funding assignments and resource-scope validation shared by AI and player previews |
+| `Mana.AI` | Whole-seat policy, scoped knowledge, current action mapping and automated-seat lifecycle |
 | `Mana.Magic` | Card classification, projected legal actions, combat/assignment guides and Magic art |
 | `Mana.Forge` | Java process/protocol lifetime and mapping between Forge JSON and typed contracts |
 | `Mana.Renderer` | Canvas/text/pixel upload, poses, layouts, geometry, motion and effects |

@@ -21,7 +21,8 @@ reasoned decisions. The scope is replacing the entire seat's strategic behavior,
 including opening hands, sequencing, payment choices, combat and required effects.
 Build the framework first; replacing targeting alone is not that migration.
 
-`Mana.AI` is the initial framework library and references only `Mana.Contracts`.
+`Mana.AI` references the provider-neutral `Mana.Contracts` and `Mana.Planning`
+libraries, with no renderer or rules-engine dependency.
 It reuses all fifteen typed decision families and semantic commands, checks exact
 source-offer membership, owns per-input budgets and bounded seat-private history,
 and revokes late/foreign answers. A policy receives no connection. The host
@@ -71,8 +72,12 @@ The source AI semantics also retain finite operation graphs: sources, recipient
 and target-group bindings, exact/unknown quantities, costs and branch links stay
 distinct from strategic utility. `AiSemanticValidation` bounds the graph and
 checks current audience references before evaluation. Mana output alternatives
-preserve one-of colors versus simultaneous bundles. `AiManaPlanner` assigns
-nominal production once per physical source; `CasualActionAssessment` and the
+preserve one-of colors versus simultaneous bundles. `Mana.Planning` owns the
+bounded funding assignment and scoped resource validation shared by bots and
+human presentation. Its witness tracks physical resources, including consuming
+sources, instead of counting each alternative as independent mana.
+`AiManaPlanner` maps current offered actions into that core;
+`CasualActionAssessment` and the
 public combat exchange estimate price supported consequences with bounded work.
 Unknown adjusted costs, conditions and resource dependencies cannot become
 fabricated legality. These components remain heuristic policy inputs, separate
@@ -86,6 +91,32 @@ facts without constructing a pretend priority input or granting activation
 permission. The current Forge projection covers a partial own-battlefield and
 unrestricted-pool subset: a usable subset can witness nominal funding, but its
 absence cannot prove an overall shortfall. The actual payment remains authority.
+An optional cast or activation with unknown affordability requires a funded
+nominal witness before this baseline policy commits. Current rules-certified
+payability remains a separate fact. The prospective action and later numeric
+announcement use the same resource projection, avoiding a commitment which the
+numeric planner then cannot support. Unsupported costs remain unknown rather
+than being silently treated as free.
+
+Human source catalogs carry a smaller `ManaCostPreview`, not the bot's private
+action semantics. It contains nominal costs, cost knowledge and read-only funding
+facts bound to the observed source-query revision. Payment publications separately
+carry the current unpaid bill, actual payer, bounded funding facts and usable
+floating-pool colors. These are refreshed at the input-owner publication boundary,
+so a paid symbol disappears with the source's authoritative tap and pool change.
+The public unpaid bill counts distinct mana shards, allowing large generic or
+colored multiplicities to remain exact without allocating a symbol per unit.
+The display reads those counts directly; bounded planning can remain unknown for
+a very large bill while normal manual payment continues.
+The actual payer may differ from the viewing decision owner; resource scope does
+not grant another seat command authority. A missing field from an older provider
+remains unknown.
+
+`Mana.Game` uses the shared planner to suggest specific physical sources alongside
+the inspected card's mana symbols. Its witness cannot create an action handle,
+tap a source, prove adjusted affordability or disable manual play. The existing
+source, pool and Auto-pay commands retain their own current permissions. This
+keeps human previews, AI strategy and the rules provider behind distinct boundaries.
 
 `AiDecisionReplayCase` captures one seat's authorized knowledge and evaluation
 allowance. Offline `AiDecisionReplay` reuses the scoped session and exact policy
@@ -153,6 +184,7 @@ never cross-provider replay commands.
 | --- | --- |
 | Rules provider and adapter | Legal actions, decision constraints, costs, targets, resolution, effective state, event-time results and viewer filtering. `forge-api` and `Mana.Forge` translate Forge into the shared contracts. |
 | `Mana.Contracts` and `Mana.Client` | Provider-neutral state, scoped actions/decisions, command scheduling, observation ordering and stale-result rejection. Opaque handles grant only their declared current authority. |
+| `Mana.Planning` | Bounded read-only mana assignment and resource-scope validation shared by policy and presentation; no action execution or rules legality. |
 | `Mana.Magic`, `Mana.Game` and `Mana.Renderer` | Magic presentation language, local inspection/focus, gestures, grouping, layout and visual timing. These layers consume permissions; they do not establish rules legality. |
 | `Mana.Table` | Shipping composition, provider lifetime, installation health and update bootstrap. |
 
@@ -918,6 +950,8 @@ its consequence; an eliminated seat can watch or leave.
 | --- | --- |
 | `Mana.Contracts` | Catalog, deck, setup and match-connection interfaces; typed seat snapshots and commands; visibility enumeration and art-source contract |
 | `Mana.Client` | Generic versioned replica, command scheduling, stale-poll protection, main-thread completion delivery and local artist asset loading |
+| `Mana.Planning` | Contracts-only bounded funding solver and scoped resource validation shared by AI and human mana presentation |
+| `Mana.AI` | Whole-seat policy, bounded knowledge, current offer mapping, strategy and automated-seat lifecycle |
 | `Mana.Magic` | Phase language, legal-target interpretation, click/drag command construction, Auto priority, Magic card classification and Magic art provider |
 | `Mana.Forge` | Process lifetime, protocol negotiation and Forge-to-contract mapping |
 | `Mana.Renderer` | GPU replay, typed draw commands, CPU font metrics, immutable table layout, projection, motion and effects |
@@ -1233,6 +1267,9 @@ which intentionally excludes mana abilities. `useSourceAction` validates the
 exact input, source instance, game version and handle before calling the engine's
 existing priority or mana-payment ability path. Costs, targets and resolution
 continue through Forge. No native rules-text parser determines legal actions.
+An optional expected revision correlates the read to its observation without
+advancing the board. A cost preview requires the reply's exact revision; a stale
+reply cannot paint a funding witness or retain current execution authority.
 
 `Mana.Client.SourceActionSession` owns read-query coalescing, catalog freshness and
 scoped reply creation; `TableApplication.SourceActions` supplies the current
@@ -1553,12 +1590,15 @@ separate work from the existing test-only seat-view audit.
 ```mermaid
 flowchart LR
     Native[MonoGame table] --> Client[Mana.Client and Mana.Magic]
+    Native --> Planning[Mana.Planning]
     Client --> Adapter[Mana.Forge adapter]
     Adapter <-->|private IPC| Host[DesktopEngine]
     Host --> Connection[SeatConnection]
     Connection <-->|local or TCP synchronization| Table[MatchTable]
     Table --> Seats[MatchSession per acting seat]
     BotHost[Native AiTableHost] --> Policy[Mana.AI policy]
+    Policy --> Planning
+    Planning --> Contracts[Mana.Contracts]
     BotHost -->|private automated-seat port| Adapter
     Seats --> Rules[Forge rules]
 ```
@@ -1571,6 +1611,7 @@ flowchart LR
 | Application composition and interaction | `TableApplication` and its feature partials |
 | Snapshot ordering, commands, assets and updates | `mana-native/Mana.Client` |
 | Typed DTOs and capabilities | `mana-native/Mana.Contracts` |
+| Shared bounded mana assignment and resource validation | `mana-native/Mana.Planning` |
 | Forge process and protocol mapping | `mana-native/Mana.Forge` |
 | Magic presentation and projected action guides | `mana-native/Mana.Magic` |
 | Typed drawing, layout, geometry, motion and effects | `mana-native/Mana.Renderer` |

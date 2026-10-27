@@ -18,6 +18,7 @@ public sealed partial class ExperienceLabSession
         preparedAgain = false;
         counterPaymentDonor = CounterPaymentScenario.MareId;
         counterPaymentType = 12;
+        manaPaymentReplies.Clear();
     }
 
     public SourceActionSet SourceActions(string gameId, string decisionId, string sourceCardKey)
@@ -31,6 +32,7 @@ public sealed partial class ExperienceLabSession
             if (Scenario.Id == PreparedSpellScenario.Id) return PreparedSpellActions(source);
             if (Scenario.Id == PlayAccessScenario.Id) return PlayAccessActions(source);
             if (Scenario.Id == CounterPaymentScenario.Id) return CounterPaymentActions(source);
+            if (Scenario.Id == ManaPaymentScenario.Id) return ManaPaymentActions(source);
             SourceAction Action(string id, string text) => new(decisionId + ":" + sourceCardKey + ":" + id, "activate", text);
             SourceAction[] actions = [];
             if (Scenario.Id == DecisionFlowScenario.Id && StageIndex == 0

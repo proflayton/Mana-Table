@@ -9,6 +9,7 @@ internal static class AiNumericRegression
     internal static async Task RunAsync(Action<bool, string> check)
     {
         await Initiation(check);
+        await ProspectiveFunding(check);
         var five = Funding(Enumerable.Repeat("C", 5).ToArray());
         var repeated = Numeric(five, "{X}", "{X}");
         check(await Number(Frame(repeated)) == 2,
@@ -157,6 +158,78 @@ internal static class AiNumericRegression
             Sources = [new("resource-0", [new([new(ActionCostKind.Tap, 1, true, "")], ManaProduction.Unknown, SemanticKnowledge.Unknown)])] } };
         check((await Evaluate(InitiationFrame(unknown))).Command is PassPriority,
             "Unknown producer output is not a positive-X sequencing witness even though the route remains offered");
+    }
+
+    private static async Task ProspectiveFunding(Action<bool, string> check)
+    {
+        var numeric = Numeric(Funding("C"), "{X}");
+        var legacy = InitiationFrame(numeric);
+        AiDecisionFrame WithFunding(AiDecisionFrame frame, ManaFundingContext funding) => new(frame.State,
+            domain: frame.Domain with { Actions = frame.Domain.Actions.Select(action => action.ActionId == "invest"
+                ? action with { ProspectiveFunding = funding } : action).ToImmutableArray() });
+        var unknown = numeric.Funding with { Sources = numeric.Funding.Sources.Select(source => source with {
+            Routes = source.Routes.Select(route => route with { Eligibility = SemanticKnowledge.Unknown }).ToImmutableArray()
+        }).ToImmutableArray() };
+        var gated = WithFunding(legacy, unknown);
+        check(legacy.Domain.Actions.Single(action => action.ManaAbility).Production.Knowledge == SemanticKnowledge.Known
+                && (await Evaluate(legacy)).Command is UseOfferedAction { ActionId: "invest" }
+                && (await Evaluate(gated)).Command is PassPriority,
+            "A literal known producer cannot initiate X when prospective applicability is unknown under the same conditions that would prevent a positive numeric witness");
+        check((await Evaluate(WithFunding(legacy, numeric.Funding))).Command is UseOfferedAction { ActionId: "invest" }
+                && await Number(Frame(numeric)) == 1,
+            "Matching known prospective and numeric resource contexts retain the same positive X continuation");
+        check((await Evaluate(WithFunding(legacy, numeric.Funding with { Knowledge = SemanticKnowledge.Unknown }))).Command
+                is UseOfferedAction { ActionId: "invest" },
+            "A partial prospective resource enumeration can still witness a positive investment from its known usable subset");
+        check((await Evaluate(WithFunding(legacy, numeric.Funding with { Knowledge = SemanticKnowledge.Unsupported }))).Command is PassPriority,
+            "Explicitly unsupported prospective funding cannot be replaced by a more optimistic current producer catalog");
+        var tapped = Numeric(new(SemanticKnowledge.Known, ImmutableDictionary<string, int>.Empty,
+            [Resource("investment", Output(("C", 1)))]), "{X}") with { Costs = [new(ActionCostKind.Mana, 0, false, "") {
+                ManaSymbols = ["{X}"] }, new(ActionCostKind.Tap, 1, true, "")] };
+        check((await Evaluate(WithFunding(InitiationFrame(tapped, activation: true), tapped.Funding))).Command is PassPriority,
+            "Prospective funding reserves the initiating physical tap rather than paying X from the same already committed source");
+        var separate = tapped with { Funding = tapped.Funding with { Sources = tapped.Funding.Sources.Add(Resource("outside", Output(("C", 1)))) } };
+        check((await Evaluate(WithFunding(InitiationFrame(separate, activation: true), separate.Funding))).Command
+                is UseOfferedAction { ActionId: "invest" },
+            "A separately funded prospective X activation remains available after reserving its own physical tap");
+        var repeated = Numeric(Funding("C", "C", "C", "C"), "{X}", "{X}");
+        var enough = repeated with { Funding = Funding("C", "C", "C", "C", "C") };
+        check((await Evaluate(WithFunding(InitiationFrame(repeated, commanderTax: 3), repeated.Funding))).Command is PassPriority
+                && (await Evaluate(WithFunding(InitiationFrame(enough, commanderTax: 3), enough.Funding))).Command
+                    is UseOfferedAction { ActionId: "invest" },
+            "The prospective read-only plan charges repeated X and commander tax through the same bounded investment bill");
+        bool Reject(ManaFundingContext funding, ActionSemantics? action = null) {
+            try {
+                _ = new AiDecisionFrame(legacy.State, domain: legacy.Domain with { Actions = legacy.Domain.Actions.Select(item => item.ActionId == "invest"
+                    ? (action ?? item) with { ProspectiveFunding = funding } : item).ToImmutableArray() });
+                return false;
+            } catch (ArgumentException) { return true; }
+        }
+        check(Reject(numeric.Funding with { Sources = [Resource("investment", Output(("C", 1)))] })
+                && Reject(numeric.Funding with { Sources = [Resource("foreign-hidden-resource", Output(("C", 1)))] })
+                && Reject(numeric.Funding with { Sources = [numeric.Funding.Sources[0], numeric.Funding.Sources[0]] }),
+            "Prospective funding cannot refer to the offered hand spell, foreign hidden cards or duplicate physical resources as owned battlefield mana");
+        check(Reject(numeric.Funding with { Pool = ImmutableDictionary<string, int>.Empty.Add("C", 1) })
+                && Reject(numeric.Funding with { Sources = [Resource("resource-0", Output(("C", -1)))] })
+                && Reject(numeric.Funding, legacy.Domain.Actions[0] with { Costs = [] }),
+            "Invented pool quantities, negative production and prospective metadata on an action with no mana cost fail the shared funding boundary");
+        var json = new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+            Converters = { new JsonStringEnumConverter(allowIntegerValues: false) } };
+        string encoded = JsonSerializer.Serialize(gated.Domain, json);
+        var decoded = JsonSerializer.Deserialize<DecisionActionDomain>(encoded, json)!;
+        check((await Evaluate(new(legacy.State, domain: decoded))).Command is PassPriority
+                && !encoded.Contains("actionId\":\"invented", StringComparison.Ordinal)
+                && !gated.Allows(new UseOfferedAction(gated.State.Id, gated.State.Decision!.Id, "unoffered-key", "unoffered-action")),
+            "Prospective funding survives the neutral JSON roundtrip without creating additional resource action permissions");
+        bool RejectJson(string raw) {
+            try { _ = JsonSerializer.Deserialize<ManaFundingContext>(raw, json); return false; }
+            catch (JsonException) { return true; }
+        }
+        string fundingJson = JsonSerializer.Serialize(numeric.Funding, json);
+        check(RejectJson(fundingJson.Replace("\"sources\":", "\"actionId\":\"invented\",\"sources\":", StringComparison.Ordinal))
+                && RejectJson(fundingJson.Replace("\"sourceCardId\":", "\"sourceCardKey\":\"invented\",\"sourceCardId\":", StringComparison.Ordinal))
+                && RejectJson(fundingJson.Replace("\"eligibility\":", "\"actionId\":\"invented\",\"eligibility\":", StringComparison.Ordinal)),
+            "Read-only funding JSON rejects extra action handles at context, source and route levels instead of silently accepting an authority-shaped extension");
     }
 
     private static AiDecisionFrame InitiationFrame(NumericDecision investment,

@@ -161,8 +161,8 @@ not an existing Arena multiplayer bot algorithm.
 
 ## Functional seat and all-AI simulation
 
-Native composition owns `AiTableHost`; `Mana.AI` still depends only on
-`Mana.Contracts`. The host enables the rules provider's optional
+Native composition owns `AiTableHost`; `Mana.AI` depends on the neutral
+`Mana.Contracts` and shared `Mana.Planning` libraries. The host enables the rules provider's optional
 `automated-seats` capability before creating a table. Each bot uses the normal
 input/cost/target/stack machinery through an explicitly automated controller,
 with human auto-yield preferences and Forge strategic auto-payment disabled.
@@ -301,6 +301,10 @@ inconclusive; the 45-second smoke profile is not a whole-game release test.
 The aggregate records actual engine, policy and driver hashes and keeps
 `automatedReady` separate from `releaseApproved`. It always leaves human review
 pending, with the exact candidate and private evidence identified.
+Unexplained payment abandonment and an observed zero-X/nonpositive graveyard
+body hold policy review separately from state and authority conformance. These
+are bounded review criteria with retained requests, not universal rules that
+zero-valued actions are illegal or strategically wrong.
 
 The source now separates a finite operation graph from a strategic estimate.
 Graph nodes retain their actor, source, recipient bindings, target domains,

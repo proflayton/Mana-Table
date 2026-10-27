@@ -178,7 +178,7 @@ jobs:
           Copy-Item forge-api/target/ci-engine-manifest.json dist/ci-engine-manifest.json
           # Exercise the actual packaged policy/boundary bytes. Separate build
           # output paths can otherwise change portable-debug metadata hashes.
-          foreach ($name in @('Mana.AI','Mana.Contracts','Mana.Forge')) {
+          foreach ($name in @('Mana.AI','Mana.Planning','Mana.Contracts','Mana.Forge')) {
             Copy-Item "dist/package/$name.dll" dist/harness
             if (Test-Path "dist/package/$name.pdb") { Copy-Item "dist/package/$name.pdb" dist/harness }
           }

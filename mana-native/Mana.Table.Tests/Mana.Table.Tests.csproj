@@ -7,6 +7,7 @@
     <ProjectReference Include="../Mana.Game/Mana.Game.csproj" />
     <ProjectReference Include="../Mana.Forge/Mana.Forge.csproj" />
     <ProjectReference Include="../Mana.AI/Mana.AI.csproj" />
+    <ProjectReference Include="../Mana.Planning/Mana.Planning.csproj" />
   </ItemGroup>
   <ItemGroup>
     <Content Include="../../forge-api/src/test/resources/forge/api/annotated-toph.txt" Link="Fixtures/annotated-toph.txt" CopyToOutputDirectory="PreserveNewest" />

@@ -72,6 +72,10 @@ The exact `Combo ColorIdentity` operator can use the source controller's public
 commander identity, including partner unions; a colorless identity produces no
 colored mana and does not invent `{C}`. This bounded tap-only projection leaves
 spending restrictions, added effects and active mana/tap interactions unknown.
+The ambient check reads current public rules characteristics, including traits
+currently granted to face-down permanents; it never reads their concealed
+original faces. An unrelated ordinary face-down permanent does not erase known
+commander-color alternatives or an available nominal tap resource.
 Graphs are finite and audience-filtered; candidate references never grant action
 handles. Unmodeled conditions and resource coupling remain explicit.
 Private decision semantics can add `numeric` for an explicit rules announcement:
@@ -80,6 +84,23 @@ read-only `funding`. Funding groups production routes by physical source, with
 pool counts and explicit knowledge/eligibility. It contains no action IDs or
 card keys. The initial own-battlefield/unrestricted-pool projection is partial;
 it can witness nominal funding but cannot certify that no other resources exist.
+Current mana-bearing action semantics also carry `prospectiveFunding`, using that exact
+bounded funding projection before a payment starts. It contains no future
+decision or action handles. Policies can compare the same source restrictions
+and unresolved outcome interactions before committing to a variable-cost action;
+ordinary production alternatives remain nominal facts.
+Ordinary human `sourceActions` responses expose a closed `costPreview` on those
+same already offered actions: declared `costs`, `manaCostKnowledge` and `funding`.
+The preview has no operation graph, target domain or extra action handles. The
+response's `revision` identifies the published frame; an optional request
+`expectedRevision` rejects stale reads without advancing the game. Each owned
+mana-payment prompt freshly publishes actual `payerId`, `unpaidManaParts`, `fundingContext` and
+`usablePoolManaColors`, so manual payments shrink the displayed bill and consumed
+inputs cannot retain those facts. The final adjusted bill remains authoritative.
+Each unpaid part is `{symbol,count}`: generic mana uses one numeric symbol such
+as `{129}`, while colored and hybrid symbols retain their exact multiplicity.
+Projection visits distinct shard kinds without allocating one object per unpaid
+mana. Older public `unpaidMana` arrays remain a client compatibility input only.
 `AnnounceX` comes from the controller callback, never a localized prompt label.
 This additive private metadata needs no persisted-data migration; older
 observations without it retain unknown numeric purpose. Actual current payment

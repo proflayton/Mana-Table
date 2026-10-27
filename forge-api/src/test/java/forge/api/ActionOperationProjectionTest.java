@@ -278,6 +278,44 @@ public class ActionOperationProjectionTest {
     }
 
     @Test(timeOut = 90000)
+    public void unrelatedConcealedOriginalsDoNotErasePublicCommanderProductionButCurrentGrantedModifiersDo() throws Exception {
+        try (var fixture = new Fixture()) {
+            var tower = fixture.add("Command Tower", ZoneType.Battlefield, 0);
+            var ability = tower.getManaAbilities().get(0);
+            ability.setActivatingPlayer(fixture.actor());
+            var toothy = fixture.add("Toothy, Imaginary Friend", ZoneType.Command, 0);
+            var pir = fixture.add("Pir, Imaginative Rascal", ZoneType.Command, 0);
+            fixture.actor().addCommander(toothy); fixture.actor().addCommander(pir);
+            toothy = fixture.table.game.getAction().moveToPlay(toothy, fixture.actor(), null, forge.game.ability.AbilityKey.newMap());
+            assertTrue(toothy.isInZone(ZoneType.Battlefield));
+            var baseline = ManaProductionProjection.describe(ability);
+            assertEquals(baseline.get("knowledge"), "Known");
+            assertEquals(list(baseline.get("alternatives")), List.of(Map.of("colors", Map.of("G", 1)), Map.of("colors", Map.of("U", 1))),
+                    "Registered commander identity survives an actual move out of the command zone");
+
+            var concealedModifier = fixture.add("Mana Reflection", ZoneType.Battlefield, 1);
+            assertTrue(concealedModifier.turnFaceDown(true));
+            assertTrue(concealedModifier.getCurrentState().getReplacementEffects(false).isEmpty(),
+                    "The real face-down state has none of its concealed original's replacement effects");
+            assertEquals(ManaProductionProjection.describe(ability), baseline,
+                    "An unrelated face-down permanent cannot erase public nominal output");
+            var concealedProducer = fixture.add("Gilded Lotus", ZoneType.Battlefield, 1);
+            assertTrue(concealedProducer.turnFaceDown(true));
+            assertEquals(new Gson().toJson(ManaProductionProjection.describe(ability)), new Gson().toJson(baseline),
+                    "Different concealed originals yield identical metadata, with no identity-dependent side channel");
+
+            var publicModifier = fixture.add("Mana Reflection", ZoneType.Hand, 0);
+            var granted = publicModifier.getReplacementEffects().get(0).copy(concealedModifier, false);
+            concealedModifier.addReplacementEffect(granted);
+            assertEquals(ManaProductionProjection.describe(ability).get("knowledge"), "Unknown",
+                    "A currently granted mana replacement remains unresolved even on a face-down permanent");
+            assertFalse(tower.isTapped());
+            assertEquals(ability.getManaPart().getExpressChoice(), "");
+            assertEquals(fixture.actor().getManaPool().totalMana(), 0);
+        }
+    }
+
+    @Test(timeOut = 90000)
     public void undisclosedTargetOccurrencesNeverEnterTheSemanticGraph() throws Exception {
         try (var fixture = new Fixture()) {
             var source = fixture.add("Grizzly Bears", ZoneType.Battlefield, 0);

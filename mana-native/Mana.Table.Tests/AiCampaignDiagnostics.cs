@@ -21,6 +21,7 @@ internal sealed class AiCampaignDiagnostics : IDisposable
     private readonly HashSet<(int Seat, long Event)> observedEvents = [];
     private readonly HashSet<string> recordedFindings = [];
     private readonly Dictionary<(int Seat, string Decision), AiCampaignNumericInvestment> numericInvestments = [];
+    private readonly HashSet<string> criticalReplayCases = [];
     internal HashSet<string> OfferedEffects { get; } = [];
     internal HashSet<string> SelectedEffects { get; } = [];
     internal HashSet<string> BoardWitnesses { get; } = [];
@@ -206,6 +207,7 @@ internal sealed class AiCampaignDiagnostics : IDisposable
     internal void Observe(AutomatedSeatObservation observation)
     {
         foreach (var investment in numericInvestments.Values) investment.ObserveOwned(observation);
+        ReviewNumericInvestments(observation.State.Id);
         var state = observation.State;
         if (state.Decision != null) Tasks.Add(AiTasks.From(state.Decision.Payload));
         foreach (var action in observation.Domain.Actions) {
@@ -234,6 +236,7 @@ internal sealed class AiCampaignDiagnostics : IDisposable
     internal void ObservePublic(GameSnapshot state)
     {
         foreach (var investment in numericInvestments.Values) investment.ObservePublic(state);
+        ReviewNumericInvestments(state.Id);
         foreach (var card in state.Players.SelectMany(player => player.Zone("Battlefield").Cards)) {
             if (card.Type.Contains("Creature", StringComparison.Ordinal)) BoardWitnesses.Add("creature-battlefield");
             if (card.GamePieceType == "token") BoardWitnesses.Add("token-battlefield");
@@ -244,14 +247,60 @@ internal sealed class AiCampaignDiagnostics : IDisposable
         if (state.Stack.Any(item => item.Targets.Length > 1)) BoardWitnesses.Add("multiple-stack-targets");
     }
 
+    private void ReviewNumericInvestments(string gameId)
+    {
+        foreach (var investment in numericInvestments.Values) {
+            if (investment.GameId != gameId || !investment.ZeroXNonpositiveBodyReview
+                || !recordedFindings.Add("zero-x-nonpositive-body-review:" + investment.SeatId + ":" + investment.DecisionId)) continue;
+            Findings.Add(new("zero-x-nonpositive-body-review", investment.SeatId, investment.Request.State.Turn,
+                investment.DecisionId, "An accepted zero-X announcement resolved and the same public source was observed in the graveyard with nonpositive toughness. Review intent; this is not a universal legality or causal judgment."));
+            ExportCriticalNumericCase(investment);
+        }
+    }
+
+    private void ExportCriticalNumericCase(AiCampaignNumericInvestment investment)
+    {
+        if (criticalReplayCases.Count >= 4) return;
+        string safe = new(investment.DecisionId.Where(character => char.IsAsciiLetterOrDigit(character) || character == '-').Take(64).ToArray());
+        string relative = Path.Combine("private-critical-replays", "zero-x-body-" + investment.SeatId + "-" + safe + ".json");
+        if (!criticalReplayCases.Add(relative)) return;
+        try {
+            Directory.CreateDirectory(Path.Combine(directory, "private-critical-replays"));
+            File.WriteAllText(Path.Combine(directory, relative), JsonSerializer.Serialize(investment.Request));
+            ReplayCases.Add(relative);
+        } catch (Exception error) { diagnosticErrors.Add("critical-numeric-replay: " + error); }
+    }
+
     private void ExportCase(string label, AiDecisionReplayCase recorded)
     {
         string safe = new(label.Select(character => char.IsAsciiLetterOrDigit(character) ? character : '-').Take(96).ToArray());
         string relative = Path.Combine("private-replays", safe + ".json");
-        if (ReplayCases.Contains(relative) || ReplayCases.Count >= 16 && label != "last-before-mechanical-failure") return;
+        if (ReplayCases.Contains(relative) || ReplayCases.Count(path => path.StartsWith("private-replays" + Path.DirectorySeparatorChar, StringComparison.Ordinal)) >= 16
+            && label != "last-before-mechanical-failure") return;
         Directory.CreateDirectory(Path.Combine(directory, "private-replays"));
         File.WriteAllText(Path.Combine(directory, relative), JsonSerializer.Serialize(recorded));
         ReplayCases.Add(relative);
+    }
+
+    internal static void CheckCriticalReplayBudget(Action<bool, string> check, AiDecisionReplayCase request)
+    {
+        string temporary = Path.Combine(Path.GetTempPath(), "mana-ai-critical-replays-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(temporary);
+        try {
+            using var evidence = new AiCampaignDiagnostics(temporary);
+            for (int index = 0; index < 17; index++) evidence.ExportCase("ordinary-" + index, request);
+            for (int index = 0; index < 6; index++) {
+                var recorded = request with { Id = "critical-case-" + index,
+                    State = request.State with { Decision = request.State.Decision! with { Id = "critical-" + index } } };
+                evidence.ExportCriticalNumericCase(new(recorded, "AnnounceX", "numeric-source", 0));
+            }
+            var critical = evidence.ReplayCases.Where(path => path.StartsWith("private-critical-replays" + Path.DirectorySeparatorChar,
+                StringComparison.Ordinal)).ToArray();
+            check(evidence.ReplayCases.Count == 20 && critical.Length == 4
+                    && critical.Select((path, index) => JsonSerializer.Deserialize<AiDecisionReplayCase>(
+                        File.ReadAllText(Path.Combine(temporary, path)))?.Id == "critical-case-" + index).All(value => value),
+                "Four exact critical numeric requests survive an exhausted sixteen-case ordinary replay budget without unbounded export growth");
+        } finally { Directory.Delete(temporary, recursive: true); }
     }
 
     internal Exception? PreserveObservations(ImmutableArray<AutomatedSeatObservation> observations)

@@ -11,6 +11,7 @@ internal static class AiPolicyRegression
         check(policy.Descriptor.Tasks.SetEquals(AiTasks.All), "The casual policy declares the complete seat rather than a targeting-only replacement");
         await EveryTask(check);
         await ActionsAndCosts(check);
+        await FundingCommitmentBoundary(check);
         await PaidProducerPrerequisites(check);
         await PaymentProvenance(check);
         await TargetsAndSocialMemory(check);
@@ -181,6 +182,88 @@ internal static class AiPolicyRegression
             "Counter payment uses an actual offered counter type with surplus rather than an invented donor or text-derived choice");
         var partial = new AiDecisionFrame(State(new PriorityPayload(Yes)));
         check((await Evaluate(partial)).Status == AiSeatStatus.Unavailable, "A complete policy still refuses to treat partial action discovery as permission to pass");
+    }
+
+    private static async Task FundingCommitmentBoundary(Action<bool, string> check)
+    {
+        var state = Battlefield(State(new PriorityPayload(Yes)), 0,
+            [Card("own-land") with { Type = "Land", Power = null, Toughness = null },
+             Card("own-creature"), Card("third-source") with { Type = "Land", Power = null, Toughness = null }]);
+        ActionSemantics Producer(string id, params (string Color, int Amount)[] output) => Semantic(id, ActionEffectKind.Mana) with {
+            ManaAbility = true, ManaColors = output.Select(item => item.Color).ToImmutableArray(), ManaAmount = output.Sum(item => item.Amount),
+            Costs = [new(ActionCostKind.Tap, 1, true, "")],
+            Production = new(SemanticKnowledge.Known, [new(output.ToImmutableDictionary(item => item.Color, item => item.Amount))]) };
+        var green = Producer("green", ("G", 1));
+        var white = Producer("white", ("W", 1));
+        var unknown = Producer("unknown-palette", ("W", 1), ("G", 1)) with { ManaAmount = 1, Production = ManaProduction.Unknown };
+        var expensive = Semantic("costly", ActionEffectKind.Permanent) with { Affordability = ActionAffordability.Unknown,
+            ManaCostKnowledge = SemanticKnowledge.Unknown,
+            Costs = [new(ActionCostKind.Mana, 5, false, "") { ManaSymbols = ["{G}", "{G}", "{G}"] }] };
+        var uncertain = Domain(state, ("hand-spell", new("costly", "cast", "Uncertain costly spell"), expensive),
+            ("own-land", new("green", "activate", "Green"), green),
+            ("own-creature", new("white", "activate", "White"), white),
+            ("third-source", new("unknown-palette", "activate", "Undetermined"), unknown));
+        var uncertainFrame = Frame(state, uncertain);
+        check(AiManaPlanner.EvaluateAction(uncertainFrame, expensive).Status == AiManaPlanStatus.Unknown,
+            "An unmodeled producer keeps nominal funding unknown rather than inventing a complete resource-capacity shortfall");
+        check((await Evaluate(uncertainFrame)).Command is PassPriority
+                && uncertain.Actions.Single(action => action.ActionId == "costly").Affordability == ActionAffordability.Unknown,
+            "An optional eight-mana spell waits without spending resources when two known units plus an unknown producer do not provide a funding witness; its legal offer stays intact");
+        var activation = uncertain with { Sources = uncertain.Sources.Select(set => set.SourceCardId == "hand-spell"
+            ? set with { Actions = [new("costly", "activate", "Localized ability")] } : set).ToImmutableArray() };
+        check((await Evaluate(Frame(state, activation))).Command is PassPriority,
+            "The same commitment boundary covers optional activated costs instead of admitting unknown funding as a cast-only exception");
+
+        var filterState = Battlefield(state, 0, [Card("own-land") with { Type = "Artifact", Power = null, Toughness = null }]);
+        var redSpell = Semantic("red-spell", ActionEffectKind.Draw) with { Affordability = ActionAffordability.Unknown,
+            Costs = [new(ActionCostKind.Mana, 0, false, "") { ManaSymbols = ["{R}"] }] };
+        var free = Producer("filter-free", ("C", 1));
+        var paid = Producer("filter-paid", ("R", 1)) with { Affordability = ActionAffordability.Unknown,
+            Costs = [new(ActionCostKind.Tap, 1, true, ""), new(ActionCostKind.Mana, 1, false, "")] };
+        var filter = Frame(filterState, Domain(filterState, ("hand-spell", new("red-spell", "cast", "Red spell"), redSpell),
+            ("own-land", new("filter-free", "activate", "First alternative"), free),
+            ("own-land", new("filter-paid", "activate", "Second alternative"), paid)));
+        check(AiManaPlanner.EvaluateAction(filter, redSpell).Status == AiManaPlanStatus.Unknown
+                && (await Evaluate(filter)).Command is PassPriority,
+            "One physical source cannot tap for the first unit and tap again for its paid colored alternative; unmodeled filter funding does not initiate the red spell");
+
+        var complex = expensive with { Costs = [new(ActionCostKind.Mana, 2, false, "") { ManaSymbols = ["{W}", "{U}", "{G}"] }] };
+        var pair = Producer("paired", ("W", 1), ("G", 1));
+        var blue = Producer("blue-unit", ("U", 1));
+        var colorless = Producer("two-units", ("C", 2));
+        var funded = Frame(state, Domain(state, ("hand-spell", new("costly", "cast", "Multicolor spell"), complex),
+            ("own-land", new("paired", "activate", "Pair"), pair),
+            ("own-creature", new("blue-unit", "activate", "Blue"), blue),
+            ("third-source", new("two-units", "activate", "Two"), colorless)));
+        check(AiManaPlanner.EvaluateAction(funded, complex).Status == AiManaPlanStatus.Funded
+                && (await Evaluate(funded)).Command is UseOfferedAction { ActionId: "costly" },
+            "A genuine multi-source, multicolor, multi-unit nominal witness still initiates an optional spell with unknown effective affordability");
+
+        var enemy = Card("enemy", 8, 8);
+        var removalState = Battlefield(state, 1, [enemy]);
+        var removal = complex with { Effect = ActionEffectKind.Destroy, Effects = [ActionEffectKind.Destroy],
+            Costs = [new(ActionCostKind.Mana, 2, false, "") { ManaSymbols = ["{G}"] }],
+            OperationGraph = Graph(Known(0, ActionEffectKind.Destroy, new(SemanticKnowledge.Known, EffectRecipientBinding.Targets, 0, [])) with {
+                Targets = new(SemanticKnowledge.Known, 1, 1, [CardEntity("enemy", 1)]) }) };
+        var removalFrame = Frame(removalState, Domain(removalState,
+            ("hand-spell", new("costly", "cast", "Removal"), removal),
+            ("own-land", new("green", "activate", "Green"), green),
+            ("own-creature", new("two-units", "activate", "Two"), colorless),
+            ("third-source", new("unknown-palette", "activate", "Undetermined"), unknown)));
+        check(AiManaPlanner.EvaluateAction(removalFrame, removal).Status == AiManaPlanStatus.Funded
+                && (await Evaluate(removalFrame)).Command is UseOfferedAction { ActionId: "costly" },
+            "Known sufficient resources preserve profitable targeted removal even when another available producer remains unknown");
+        check((await Evaluate(Frame(state, uncertain with { Actions = uncertain.Actions.Select(action => action.ActionId == "costly"
+                ? action with { Affordability = ActionAffordability.Payable } : action).ToImmutableArray() }))).Command
+                is UseOfferedAction { ActionId: "costly" },
+            "Authoritative payable knowledge still admits a reduced or alternative-cost action without a nominal funding witness");
+        var renamedState = state with { Players = state.Players.Select(player => player with {
+            Zones = player.Zones.Select(zone => zone with { Cards = zone.Cards.Select(card => card with {
+                Name = "Unrelated translated face", Text = "No strategy facts here" }).ToImmutableArray() }).ToImmutableArray() }).ToImmutableArray() };
+        check((await Evaluate(Frame(renamedState, uncertain with { Sources = uncertain.Sources.Reverse().Select(set => set with {
+                Actions = set.Actions.Select(action => action with { Text = "Localized unrelated option" }).ToImmutableArray() }).ToImmutableArray(),
+                Actions = uncertain.Actions.Reverse().ToImmutableArray() }))).Command is PassPriority,
+            "Funding commitment is invariant under face prose, option labels and offer enumeration rather than recognizing the captured cards");
     }
 
     private static async Task PaidProducerPrerequisites(Action<bool, string> check)

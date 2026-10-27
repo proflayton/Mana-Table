@@ -15,6 +15,11 @@ internal sealed record AiCampaignNumericInvestmentEvidence(string GameId, string
 {
     public string EventAudience => "owned-seat filtered activity; stack and card observations come independently from the public spectator";
     public bool PositiveChoiceWithPublicResolution => Value > 0 && Accepted == true && SameSourceResolvedEventId != null;
+    // This is a review hold, not a claim that zero is universally illegal or
+    // that the numeric choice caused the later public state.
+    public bool ZeroXNonpositiveBodyReview => Purpose == nameof(NumericDecisionPurpose.AnnounceX)
+        && Value == 0 && Accepted == true && SameSourceResolvedEventId != null
+        && PublicCardObservations.Any(card => card.Zone == "Graveyard" && card.Toughness is <= 0);
 }
 
 // A choice, its receipt and subsequent source observations are separate facts.
@@ -43,9 +48,14 @@ internal sealed class AiCampaignNumericInvestment
     public List<AiCampaignNumericPaymentInput> SameSourcePaymentInputs { get; } = [];
     public List<AiCampaignNumericPublicCard> PublicCardObservations { get; } = [];
     public bool PositiveChoiceWithPublicResolution => Value > 0 && Accepted == true && SameSourceResolvedEventId != null;
+    internal bool ZeroXNonpositiveBodyReview => Purpose == nameof(NumericDecisionPurpose.AnnounceX)
+        && Value == 0 && Accepted == true && SameSourceResolvedEventId != null
+        && PublicCardObservations.Any(card => card.Zone == "Graveyard" && card.Toughness is <= 0);
+    internal AiDecisionReplayCase Request { get; }
 
     internal AiCampaignNumericInvestment(AiDecisionReplayCase request, string purpose, string sourceCardId, int value)
     {
+        Request = request;
         GameId = request.State.Id; ReplayCaseId = request.Id; SeatId = request.State.ViewerId;
         DecisionId = request.State.Decision!.Id; Revision = request.State.Revision; BoardRevision = request.State.BoardRevision;
         Purpose = purpose; SourceCardId = sourceCardId;
@@ -139,5 +149,27 @@ internal sealed class AiCampaignNumericInvestment
         check(snapshot.PositiveChoiceWithPublicResolution && snapshot.Value == 3
                 && snapshot.PublicCardObservations is [{ Power: 2, Toughness: 2 }] && snapshot.SameSourceResolvedEventId == 9,
             "Persisted numeric evidence retains immutable receipt/event/public-outcome facts for the release aggregate without inventing X-sized statistics");
+        var zeroBody = snapshot with { Value = 0,
+            PublicCardObservations = [new(5, 0, "Graveyard", 0, 0, ImmutableDictionary<string, int>.Empty)] };
+        check(zeroBody.ZeroXNonpositiveBodyReview
+                && !(zeroBody with { Value = 1 }).ZeroXNonpositiveBodyReview
+                && !(zeroBody with { Accepted = false }).ZeroXNonpositiveBodyReview
+                && !(zeroBody with { Accepted = null }).ZeroXNonpositiveBodyReview
+                && !(zeroBody with { SameSourceResolvedEventId = null }).ZeroXNonpositiveBodyReview
+                && !(zeroBody with { Purpose = "Unknown" }).ZeroXNonpositiveBodyReview,
+            "Only an accepted resolved zero-X choice with a nonpositive public graveyard body creates the bounded review hold");
+        check(!(zeroBody with { PublicCardObservations = [] }).ZeroXNonpositiveBodyReview
+                && !(zeroBody with { PublicCardObservations = [zeroBody.PublicCardObservations[0] with { Zone = "Battlefield" }] }).ZeroXNonpositiveBodyReview
+                && !(zeroBody with { PublicCardObservations = [zeroBody.PublicCardObservations[0] with { Toughness = 1 }] }).ZeroXNonpositiveBodyReview
+                && !(zeroBody with { PublicCardObservations = [zeroBody.PublicCardObservations[0] with { Toughness = null }] }).ZeroXNonpositiveBodyReview,
+            "Missing public outcome, a surviving battlefield body and unknown or positive graveyard toughness do not invent a zero-X failure");
+        var late = new AiCampaignNumericInvestment(request, "AnnounceX", card.VisualId, 0);
+        late.Receipt(true, null);
+        late.ObservePublic(current with { Players = [player with { Zones = [new("Graveyard", 1, [card], null)] }] });
+        bool beforeResolution = late.ZeroXNonpositiveBodyReview;
+        late.ObserveOwned(owned);
+        check(!beforeResolution && late.ZeroXNonpositiveBodyReview && late.Snapshot().ZeroXNonpositiveBodyReview && late.Request == request,
+            "A late exact-source resolution report can complete zero-body review while retaining the original numeric request for a critical replay");
+        AiCampaignDiagnostics.CheckCriticalReplayBudget(check, request);
     }
 }

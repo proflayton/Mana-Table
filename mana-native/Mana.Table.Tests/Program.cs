@@ -28,6 +28,7 @@ internal static class Program
         testRun |= args.Contains("--replay-ai-decision");
         testRun |= args.Contains("--smoke-ai-campaign");
         testRun |= args.Contains("--evaluate-ai-release");
+        testRun |= args.Contains("--smoke-mana-payment");
         testRun |= args.Contains("--smoke-cluttered-changes") || args.Contains("--smoke-headless-clutter");
         testRun |= args.Contains("--smoke-priority-flow") || args.Contains("--smoke-headless-priority-flow");
         testRun |= args.Contains("--capture-deck-workspace");
@@ -51,6 +52,13 @@ internal static class Program
             if (args.Contains("--smoke-state-clarity")) { StateClaritySmoke.Run(profile, size); return 0; }
             if (args.Contains("--smoke-hand-placement")) { HandPlacementSmoke.Run(profile, size); return 0; }
             if (args.Contains("--smoke-allocation")) { AllocationSmoke.Run(profile, size); return 0; }
+            if (args.Contains("--smoke-mana-payment")) {
+                if (args.Contains("--headless")) ManaPaymentSmoke.RunHeadless(profile, (passed, description) => {
+                    if (!passed) throw new InvalidOperationException(description);
+                });
+                else ManaPaymentSmoke.Run(profile, size);
+                return 0;
+            }
             if (args.Contains("--smoke-onboarding")) { OnboardingSmoke.Run(profile, size); return 0; }
             if (args.Contains("--smoke-loading")) { LoadingSmoke.Run(profile, size); return 0; }
             if (args.Contains("--smoke-full-battlefield")) { FullBattlefieldSmoke.Run(profile, size, args.Contains("--real-art"), args.Contains("--readable-crowd")); return 0; }

@@ -62,13 +62,18 @@ public interface ISourceActions
     bool SupportsSourceActions => true;
     Task<SourceActionSet> SourceActionsAsync(string gameId, string decisionId, string sourceCardKey);
 }
-public sealed record SourceActionSet(string GameId, string DecisionId, string SourceCardKey, string SourceCardId, ImmutableArray<SourceAction> Actions);
+public sealed record SourceActionSet(string GameId, string DecisionId, string SourceCardKey, string SourceCardId, ImmutableArray<SourceAction> Actions)
+{
+    // Older providers omit this field and provide no funding preview.
+    public long? Revision { get; init; }
+}
 public sealed record SourceAction(string Id, string Kind, string Text)
 {
     // A disclosed linked face is reading material, never another action handle.
     // Submission still names the source and this offer's opaque Id.
     public Card? Card { get; init; }
     public string Zone { get; init; } = "";
+    public ManaCostPreview? CostPreview { get; init; }
 }
 // Social commands have their own ordering and never advance a game decision.
 public interface ITableSocial

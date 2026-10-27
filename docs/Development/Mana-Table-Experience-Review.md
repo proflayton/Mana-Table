@@ -229,6 +229,44 @@ payment still uses the engine; this does not make Auto handle every possible
 mana-production chain. Plain floating colorless mana, generic costs, Ultima's
 mixed cost and an explicit colorless requirement are separate real-engine cases.
 
+## Mana · the card, its sources and the unpaid bill: 26 October 2026
+
+**Source candidate; human review pending.** The player could not tell how much
+they could pay. Floating mana, untapped source cards and a particular cost are
+different facts. The supplied Arena images keep floating pips beside the avatar
+and recognizable, counted land piles on the table. Wizards explicitly documents
+[hovering a spell or ability to preview its mana sources](https://mtgarena-support.wizards.com/hc/en-us/articles/43247211334292-Patch-Notes-2025-53-0).
+It also documents [pausing for meaningful mana-color choices](https://magic.wizards.com/en/news/mtg-arena/mtg-arena-state-game-the-brothers-war#auto-tap-flexibility).
+These are concrete interaction references; Arena's two-player space and its
+auto-tap coverage do not establish our four-seat layout or planner completeness.
+
+The journey begins with the actual hand card. Hover reads its cost and a bounded
+nominal source suggestion; clicking retains the full original card and its rules.
+Contribution pips illuminate the actual source cards or counted piles. One dual
+land remains one resource with alternatives. A rock producing two can show two;
+that output does not appear in the portrait's actual pool until the rules say so.
+Dragging or the current source action still commits the cast. During payment,
+the same source carries the exact unpaid symbols and its nearby Auto pay/Cancel
+controls. Manual source choices stay on their own cards. As accepted snapshots
+arrive, sources turn, real floating pips change and unpaid symbols disappear;
+the paid card then continues through the stack. A currently usable floating pip
+can pay its one exact color. Other pips retain read-only inspection.
+
+The neutral `Mana.Planning` core consumes scoped read-only funding facts, without
+policy history, action handles or automatic replies. Unknown restrictions,
+dependencies and effective costs remain uncertain; a legal manual offer stays
+reachable. A nominal preview is not a payable-mana total or casting certificate.
+Current payment is stronger: its bill, actual payer and usable pool colors come
+from the owned engine input. Counted requirements stay exact without drawing one
+object per mana unit. Bills exceeding four readable rows keep the engine's full
+instruction and established manual controls. Old providers retain that fallback.
+Support cards use a portrait face inside their reserved footprint; tapping turns
+that same face rather than swapping dimensions and hiding the silhouette change.
+The authored `mana-payment.v1` journey covers a dual source, Sol Ring, W/U/G/C,
+generic versus colorless, a shrinking bill and a leftover floating pip. Review
+the whole pointer sequence with actual art at 1000×740 and a larger window;
+automatic geometry/input checks do not approve its clarity.
+
 ## Paper table placement study: 25 October 2026
 
 The player's cropped left-side battlefield could not communicate which seat

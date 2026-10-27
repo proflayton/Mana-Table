@@ -49,15 +49,22 @@ public class SourceActionsTest {
                 assertTrue(afterPublication.get("revision").getAsLong() > before.get("revision").getAsLong(),
                         "An independent display publication can advance revision before a queued source query runs");
                 assertEquals(text(afterPublication.getAsJsonObject("prompt"), "id"), text(input.prompt(), "id"));
-                assertEquals(interleavedCatalog, originalCatalog, "The unchanged input keeps its exact source catalog and action handles");
+                assertEquals(interleavedCatalog.get("revision"), afterPublication.get("revision"), "Read-only preview facts name their actual published frame");
+                var originalFacts = originalCatalog.deepCopy(); originalFacts.remove("revision");
+                var currentFacts = interleavedCatalog.deepCopy(); currentFacts.remove("revision");
+                assertEquals(currentFacts, originalFacts, "The unchanged input keeps its exact source catalog, action handles and cost facts");
+                var stalePreview = request(input, Map.of("key", text(commander, "key"), "expectedRevision", before.get("revision").getAsLong()));
+                assertThrows(IllegalArgumentException.class, () -> game.table.seat(0).sourceActions(stalePreview));
+                var currentPreview = request(input, Map.of("key", text(commander, "key"), "expectedRevision", afterPublication.get("revision").getAsLong()));
+                assertEquals(JSON.toJsonTree(game.table.seat(0).sourceActions(currentPreview)), interleavedCatalog);
                 var beforeFacts = before.deepCopy(); beforeFacts.remove("revision"); beforeFacts.remove("boardRevision");
                 var afterFacts = afterPublication.deepCopy(); afterFacts.remove("revision"); afterFacts.remove("boardRevision");
                 assertEquals(afterFacts, beforeFacts, "Publishing without a game action preserves every board, mana, prompt and card-key fact");
 
                 HeadlessPlatform.query(game.table, () -> null);
                 var settled = game.state(0);
-                assertEquals(query(game, input, commander), originalCatalog);
-                assertEquals(query(game, input, commander), originalCatalog);
+                assertEquals(query(game, input, commander), interleavedCatalog);
+                assertEquals(query(game, input, commander), interleavedCatalog);
                 assertEquals(game.state(0), settled, "After the display queue is drained, repeated source reads preserve the exact snapshot too");
             } finally {
                 publish.countDown(); reader.shutdownNow();
@@ -247,6 +254,131 @@ public class SourceActionsTest {
     }
 
     @Test(groups = "canonical-interaction", timeOut = 90000)
+    public void humanManaPreviewsAreReadOnlyAndEachCurrentPaymentPublishesItsRemainingBill() throws Exception {
+        try (var game = new RulesScenario("source-actions-human-mana-facts", Map.of(0, List.of("Forest", "Forest", "Forest")),
+                "Manalith", "Rhys the Redeemed")) {
+            var input = main(game);
+            HeadlessPlatform.query(game.table, () -> null);
+            var spell = card(input.state(), "Hand", "Manalith");
+            var before = game.state(0);
+            var catalog = query(game, input, spell);
+            var cast = castAction(catalog);
+            var preview = cast.getAsJsonObject("costPreview");
+            assertNotNull(preview);
+            assertEquals(preview.keySet(), java.util.Set.of("costs", "manaCostKnowledge", "funding"),
+                    "A human cost preview exposes no operation graph, copied action handles or target domain");
+            assertEquals(text(preview, "manaCostKnowledge"), "Unknown", "The declared cost never certifies final adjustments");
+            assertEquals(preview.getAsJsonArray("costs").get(0).getAsJsonObject().get("amount").getAsInt(), 3);
+            assertEquals(preview.getAsJsonObject("funding").getAsJsonArray("sources").size(), 3);
+            assertEquals(query(game, input, spell), catalog);
+            assertEquals(game.state(0), before, "Cost inspection cannot tap, spend, cast or replace the current source handles");
+            var other = game.state(1);
+            var stolen = request(input, Map.of("key", text(spell, "key")));
+            stolen.addProperty("sessionId", text(other, "id"));
+            assertThrows(IllegalArgumentException.class, () -> game.table.seat(1).sourceActions(stolen));
+            assertTrue(zone(player(game.state(1), input.state().get("viewerId").getAsInt()), "Hand").getAsJsonArray("cards").isEmpty());
+
+            assertTrue(game.answer(input, invoke(catalog, cast)));
+            var payment = game.until(next -> next.seat() == 0 && text(next.prompt(), "inputType").startsWith("InputPayMana"));
+            var initialPrompt = payment.prompt().deepCopy();
+            assertEquals(initialPrompt.get("payerId"), payment.state().get("viewerId"));
+            assertGenericUnpaid(initialPrompt, 3);
+            assertEquals(initialPrompt.getAsJsonObject("fundingContext").getAsJsonArray("sources").size(), 3);
+            assertTrue(initialPrompt.getAsJsonArray("usablePoolManaColors").isEmpty());
+            for (int remaining = 3; remaining > 0; remaining--) {
+                assertGenericUnpaid(payment.prompt(), remaining);
+                assertEquals(payment.prompt().getAsJsonObject("fundingContext").getAsJsonArray("sources").size(), remaining,
+                        "The current payment does not retain tapped resources from its initial publication");
+                var forest = zone(viewer(payment.state()), "Battlefield").getAsJsonArray("cards").asList().stream()
+                        .map(value -> value.getAsJsonObject()).filter(value -> text(value, "name").equals("Forest")
+                                && !value.get("tapped").getAsBoolean()).findFirst().orElseThrow();
+                var resources = query(game, payment, forest);
+                var action = resources.getAsJsonArray("actions").get(0).getAsJsonObject();
+                var previous = payment;
+                assertTrue(game.answer(payment, invoke(resources, action)));
+                if (remaining > 1) {
+                    payment = game.until(next -> next.seat() == 0 && text(next.prompt(), "inputType").startsWith("InputPayMana"));
+                    assertThrows(IllegalArgumentException.class, () -> query(game, previous, forest));
+                    HeadlessPlatform.query(game.table, () -> { game.table.publish(); return null; });
+                    var refreshed = game.state(0).getAsJsonObject("prompt");
+                    assertEquals(refreshed.getAsJsonArray("unpaidManaParts"), payment.prompt().getAsJsonArray("unpaidManaParts"));
+                    assertEquals(refreshed.getAsJsonObject("fundingContext"), payment.prompt().getAsJsonObject("fundingContext"));
+                }
+            }
+            var committed = game.until(next -> next.seat() == 0 && priority(next) && !next.state().getAsJsonArray("stack").isEmpty());
+            assertFalse(committed.prompt().has("unpaidMana"));
+            assertFalse(committed.prompt().has("unpaidManaParts"));
+            assertFalse(committed.prompt().has("payerId"));
+            assertFalse(committed.prompt().has("fundingContext"));
+            assertFalse(committed.prompt().has("usablePoolManaColors"));
+            assertGenericUnpaid(initialPrompt, 3); // Historical copies cannot shrink with a later input.
+        }
+    }
+
+    @Test(groups = "canonical-interaction", timeOut = 90000)
+    public void aHumanCanSpendOnlyPublishedUsablePoolColorsAndTheCurrentBillShrinks() throws Exception {
+        try (var game = new RulesScenario("source-actions-human-pool-facts", Map.of(0, List.of("Sol Ring", "Forest")),
+                "Manalith", "Rhys the Redeemed")) {
+            var input = main(game);
+            var ring = query(game, input, card(input.state(), "Battlefield", "Sol Ring"));
+            assertTrue(game.answer(input, invoke(ring, ring.getAsJsonArray("actions").get(0).getAsJsonObject())));
+            input = game.until(next -> next.seat() == 0 && priority(next) && viewer(next.state()).getAsJsonObject("mana").get("C").getAsInt() == 2);
+            var spells = query(game, input, card(input.state(), "Hand", "Manalith"));
+            assertEquals(castAction(spells).getAsJsonObject("costPreview").getAsJsonObject("funding").getAsJsonObject("pool").get("C").getAsInt(), 2);
+            assertTrue(game.answer(input, invoke(spells, castAction(spells))));
+            var payment = game.until(next -> next.seat() == 0 && text(next.prompt(), "inputType").startsWith("InputPayMana"));
+            for (int pool = 2; pool > 0; pool--) {
+                assertEquals(payment.prompt().get("payerId"), payment.state().get("viewerId"));
+                assertEquals(payment.prompt().getAsJsonArray("usablePoolManaColors").toString(), "[\"C\"]");
+                assertGenericUnpaid(payment.prompt(), pool + 1);
+                var current = payment;
+                var before = game.state(0);
+                assertThrows(IllegalArgumentException.class, () -> game.table.seat(0).action(request(current,
+                        Map.of("action", "spendPoolMana", "manaColor", "G"))));
+                assertEquals(game.state(0), before);
+                assertTrue(game.answer(payment, Map.of("action", "spendPoolMana", "manaColor", "C")));
+                payment = game.until(next -> next.seat() == 0 && text(next.prompt(), "inputType").startsWith("InputPayMana"));
+            }
+            assertGenericUnpaid(payment.prompt(), 1);
+            assertTrue(payment.prompt().getAsJsonArray("usablePoolManaColors").isEmpty());
+            assertEquals(viewer(payment.state()).getAsJsonObject("mana").get("C").getAsInt(), 0);
+            var forest = query(game, payment, card(payment.state(), "Battlefield", "Forest"));
+            assertTrue(game.answer(payment, invoke(forest, forest.getAsJsonArray("actions").get(0).getAsJsonObject())));
+            game.until(next -> next.seat() == 0 && priority(next) && !next.state().getAsJsonArray("stack").isEmpty());
+        }
+    }
+
+    @Test(groups = "canonical-interaction", timeOut = 90000)
+    public void aRealLargeXAnnouncementPublishesOneExactCountedGenericBillAndCanStillBeCancelled() throws Exception {
+        try (var game = new RulesScenario("source-actions-human-large-x-bill", Map.of(), "Stonecoil Serpent", "Rhys the Redeemed")) {
+            var input = main(game);
+            var source = card(input.state(), "Hand", "Stonecoil Serpent");
+            var actions = query(game, input, source);
+            assertTrue(game.answer(input, invoke(actions, castAction(actions))));
+            var announcement = game.until(next -> next.seat() == 0 && text(next.prompt(), "kind").equals("number"));
+            assertTrue(game.answer(announcement, Map.of("action", "number", "value", 129)));
+            var payment = game.until(next -> next.seat() == 0 && text(next.prompt(), "inputType").startsWith("InputPayMana"));
+            assertGenericUnpaid(payment.prompt(), 129);
+            assertTrue(payment.prompt().getAsJsonObject("fundingContext").getAsJsonArray("sources").isEmpty());
+            assertTrue(payment.prompt().get("cancelEnabled").getAsBoolean());
+            HeadlessPlatform.query(game.table, () -> {
+                var player = game.table.game.getRegisteredPlayers().get(0);
+                var controller = (forge.player.PlayerControllerHuman)player.getController();
+                var actual = (forge.gamemodes.match.input.InputPayMana)controller.getInputQueue().getInput();
+                assertEquals(actual.getPaidForAbility().getXManaCostPaid(), Integer.valueOf(129));
+                assertEquals(ManaPaymentFacts.unpaid(actual), List.of("{129}"), "The private compatibility bill also avoids generic unit expansion");
+                return null;
+            });
+            Files.writeString(game.evidence.resolve("large-x-payment.json"), JSON.toJson(payment.state()));
+            assertTrue(game.answer(payment, Map.of("action", "cancel")));
+            var resumed = game.until(next -> next.seat() == 0 && priority(next)
+                    && card(next.state(), "Hand", "Stonecoil Serpent") != null);
+            assertFalse(resumed.prompt().has("unpaidManaParts"));
+            assertThrows(IllegalArgumentException.class, () -> game.table.seat(0).action(request(payment, Map.of("action", "cancel"))));
+        }
+    }
+
+    @Test(groups = "canonical-interaction", timeOut = 90000)
     public void paymentUsesThePaymentInputsActualManaActionsWithoutASecondAbilityChooser() throws Exception {
         try (var game = new RulesScenario("source-actions-payment", Map.of(0, List.of("Forest")))) {
             var input = main(game);
@@ -427,6 +559,13 @@ public class SourceActionsTest {
 
     private static Input main(RulesScenario game) throws Exception {
         return game.until(input -> input.seat() == 0 && priority(input) && text(input.state(), "phaseKey").equals("MAIN1"));
+    }
+    private static void assertGenericUnpaid(JsonObject prompt, int amount) {
+        assertFalse(prompt.has("unpaidMana"), "Current public bills use counted parts rather than unit expansion");
+        var parts = prompt.getAsJsonArray("unpaidManaParts");
+        assertEquals(parts.size(), 1);
+        assertEquals(text(parts.get(0).getAsJsonObject(), "symbol"), "{" + amount + "}");
+        assertEquals(parts.get(0).getAsJsonObject().get("count").getAsInt(), 1);
     }
     private static boolean priority(Input input) { return text(input.prompt(), "inputType").equals("InputPassPriority"); }
     private static JsonObject card(JsonObject state, String zone, String name) {

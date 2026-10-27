@@ -31,6 +31,7 @@ internal static partial class HeadlessPresentationSmoke
         }
         try {
             ProviderIsolationChecks.Run(Check);
+            ManaFundingWireChecks.Run(Check);
             PregameFlowChecks.Run(profile, Check);
             DeckLibraryPresentationChecks.Run(profile, Check);
             DecisionDockInteractionChecks.Run(profile, Check);
@@ -43,6 +44,7 @@ internal static partial class HeadlessPresentationSmoke
             CheckTurnPass(profile, Check, trace, performance);
             CheckChoiceEligibility(profile, Check, trace, performance);
             CheckPlayAccess(profile, Check, trace, performance);
+            ManaPaymentSmoke.RunHeadless(profile, Check);
             CommanderInteractionChecks.Run(profile, Check);
             DisclosedSourceInteractionChecks.Run(profile, Check);
             LinkedSourceInteractionChecks.Run(profile, Check);

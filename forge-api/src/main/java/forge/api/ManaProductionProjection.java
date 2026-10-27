@@ -122,6 +122,11 @@ final class ManaProductionProjection {
 
     /** A source-state projection guard, separate from timing and payment legality. */
     static boolean simpleTapSourceIsStable(SpellAbility ability) {
+        return simpleTapSourceHasStableInputs(ability) && ambientManaOutcomeIsStable(ability);
+    }
+
+    /** The route's own finite inputs; unrelated concealed originals are not inputs. */
+    private static boolean simpleTapSourceHasStableInputs(SpellAbility ability) {
         var source = ability.getHostCard();
         var actor = ability.getActivatingPlayer();
         var mana = ability.getManaPart();
@@ -135,15 +140,23 @@ final class ManaProductionProjection {
                 || ability.getPayCosts().getCostParts().stream().filter(CostTap.class::isInstance).count() != 1
                 || ability.getPayCosts().getCostParts().stream().anyMatch(cost -> !(cost instanceof CostTap)
                     && !(cost instanceof CostPartMana part && part.getMana().isZero()))) return false;
+        return true;
+    }
+
+    private static boolean ambientManaOutcomeIsStable(SpellAbility ability) {
+        var source = ability.getHostCard();
+        var actor = ability.getActivatingPlayer();
         // This is a current public source-state fact, not a hypothetical payment
-        // or replacement simulation. Unknown interactions stay unexpanded; never
-        // inspect the original face or abilities of a concealed occurrence.
+        // or replacement simulation. A face-down permanent's current rules state
+        // is public and can include granted traits. Its concealed original is not
+        // an input: neither its identity nor its intrinsic traits are inspected.
         for (ZoneType zone : List.of(ZoneType.Battlefield, ZoneType.Command))
             for (var card : source.getGame().getCardsIn(zone)) {
-                if (card.isFaceDown() || !card.getView().canBeShownTo(actor.getView())) return false;
-                if (card.getReplacementEffects().stream().anyMatch(replacement -> replacement.zonesCheck(card.getZone())
+                if (!card.getView().canBeShownTo(actor.getView())) return false;
+                var current = card.getCurrentState();
+                if (current.getReplacementEffects(false).stream().anyMatch(replacement -> replacement.zonesCheck(card.getZone())
                         && (replacement.getMode() == ReplacementType.ProduceMana || replacement.getMode() == ReplacementType.Tap))) return false;
-                if (card.getTriggers().stream().anyMatch(trigger -> trigger.zonesCheck(card.getZone())
+                if (current.getTriggers().stream().anyMatch(trigger -> trigger.zonesCheck(card.getZone())
                         && Set.of(TriggerType.Taps, TriggerType.TapAll, TriggerType.TapsForMana, TriggerType.ManaAdded).contains(trigger.getMode()))) return false;
             }
         return true;

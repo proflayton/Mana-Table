@@ -48,6 +48,10 @@ public sealed record ActionSemantics(string ActionId, ActionEffectKind Effect,
     // Base route costs are not the adjusted bill. Reductions, alternative costs
     // and payment choices require the engine's actual payment input.
     public SemanticKnowledge ManaCostKnowledge { get; init; }
+    // Prospective read-only applicability for a mana-bearing cost. X uses the
+    // same funding facts as the later numeric callback, without creating that
+    // callback or granting permission to execute any resource route.
+    public ManaFundingContext? ProspectiveFunding { get; init; }
 }
 public sealed record DecisionActionDomain(long Version, ActionDomainCoverage Coverage,
     ImmutableArray<SourceActionSet> Sources, ImmutableArray<ActionSemantics> Actions)

@@ -8,12 +8,13 @@ using System.Text.RegularExpressions;
 using Mana.AI;
 using Mana.Contracts;
 using Mana.Forge;
+using Mana.Planning;
 
 namespace Mana.Table;
 
 internal sealed record AiReleaseGate(string Id, bool Passed, string Detail);
 internal sealed record AiReleaseRuntime(string ProductionEngineSha256, string FixtureLauncherSha256,
-    string PolicyAssemblySha256, string HarnessAssemblySha256, string HarnessVersion, string FixtureScope,
+    string PolicyAssemblySha256, string PlanningAssemblySha256, string HarnessAssemblySha256, string HarnessVersion, string FixtureScope,
     string? SourceRevision, string Provenance, string? SourceManifestSha256,
     string Resources, string ResourceProvenance, string? CandidateBuildSha256);
 
@@ -53,7 +54,8 @@ internal static class AiReleaseEvaluation
                 || !productionHash.Equals(metadata.GetProperty("engineSha256").GetString(), StringComparison.OrdinalIgnoreCase)
                 || Hash(Path.Combine(engineDirectory, "forge-engine.jar")) != productionHash)
                 throw new InvalidDataException("Use the exact source candidate's release package and resources.");
-            foreach (var assembly in new[] { typeof(CasualCommanderPolicy).Assembly, typeof(GameSnapshot).Assembly, typeof(ForgeEngine).Assembly })
+            foreach (var assembly in new[] { typeof(CasualCommanderPolicy).Assembly, typeof(ManaFundingPlanner).Assembly,
+                typeof(GameSnapshot).Assembly, typeof(ForgeEngine).Assembly })
                 if (Hash(Path.Combine(package, Path.GetFileName(assembly.Location))) != Hash(assembly.Location))
                     throw new InvalidDataException("The candidate package and regression harness use different " + assembly.GetName().Name + " bytes.");
         }
@@ -73,7 +75,7 @@ internal static class AiReleaseEvaluation
                 throw new InvalidDataException("The source receipt does not bind these engine/launcher bytes to the requested revision.");
         }
         return new(productionHash, launcherHash, Hash(typeof(CasualCommanderPolicy).Assembly.Location),
-            Hash(typeof(AiReleaseEvaluation).Assembly.Location), version,
+            Hash(typeof(ManaFundingPlanner).Assembly.Location), Hash(typeof(AiReleaseEvaluation).Assembly.Location), version,
             "Test-only pregame battlefield setup; production IPC, rules, controllers, observations, whole-seat host and policy. Natural games use the default table setup.",
             sourceRevision, sourceManifest != null ? "source-receipt-verified" : sourceRevision != null ? "locally-asserted-source" : "unbound-source",
             sourceManifest == null ? null : Hash(sourceManifest), launch.Resources,
@@ -119,6 +121,8 @@ internal static class AiReleaseEvaluation
                 "Each seat rejected one previously accepted command payload sent again under a fresh transport request after its scope changed.");
             Check(games.All(game => game.Evidence.Findings.IsEmpty && game.Evidence.DiagnosticErrors.IsEmpty),
                 "No unexplained payment cancellations, skipped land offers, harmful self-target findings or evidence-write errors remain in these sampled games.");
+            Check(games.All(game => !game.Evidence.NumericInvestments.Any(investment => investment.ZeroXNonpositiveBodyReview)),
+                "No accepted zero-X announcement resolved into a publicly observed nonpositive graveyard body without documented review of its intent.");
         } catch (Exception error) {
             primaryError = error;
             failure = error.ToString();
@@ -126,11 +130,20 @@ internal static class AiReleaseEvaluation
         }
         bool automatedReady = runtime != null && failure == null && gates.Count > 0 && gates.All(gate => gate.Passed);
         bool allGames = games.Length == 4;
+        bool allGoldens = goldens.Length == 6 && goldens.All(result => result.Passed);
+        bool qualityFindings = games.Any(game => !game.Evidence.Findings.IsEmpty
+            || game.Evidence.NumericInvestments.Any(investment => investment.ZeroXNonpositiveBodyReview));
+        bool stateIntegrity = runtime != null && failure == null && allGames
+            && !gates.Any(gate => gate.Id == "progress-evidence-write")
+            && games.All(game => game.MechanicalFailure == null && game.PublicComparisons > 0
+                && game.Evidence.DiagnosticErrors.IsEmpty && game.Evidence.StaleAuthorityProbes.Length == 4
+                && game.Evidence.StaleAuthorityProbes.Select(probe => probe.SeatId).Distinct().Count() == 4
+                && game.Evidence.StaleAuthorityProbes.All(probe => probe.ExplicitlyRejected));
         var categories = new[] {
             new { id = "provider-conformance", status = runtime == null ? "failed" : goldens.IsEmpty ? "not-run" : goldens.Length == 6 && goldens.All(result => result.Passed) ? "passed" : "failed", evidence = "Runtime identities and real provider journeys; exact-source CI provider/rules reports remain a separate required check." },
-            new { id = "policy-continuations", status = goldens.IsEmpty ? "not-run" : goldens.Length == 6 && goldens.All(result => result.Passed) ? "passed" : "failed", evidence = "Six real whole-seat policy golden journeys." },
-            new { id = "whole-game-completion", status = games.IsEmpty ? "not-run" : allGames && games.All(game => game.Continuation.Conclusive && game.Outcome?.VerifiedNaturalOutcome == true) ? "passed" : "failed", evidence = "Four cyclic varied-deck rotations; outcomes captured before cleanup." },
-            new { id = "state-authority-lifecycle", status = games.IsEmpty ? "not-run" : allGames && gates.All(gate => gate.Passed) ? "passed" : "failed", evidence = "Per-observation privacy/public parity, current authority, fresh stale challenges, evidence and lifecycle failures." },
+            new { id = "policy-continuations", status = goldens.IsEmpty ? "not-run" : !allGoldens || qualityFindings ? "failed" : allGames ? "passed" : "not-run", evidence = "Six real whole-seat policy journeys and sampled payment/zero-body review findings; a finding requires review rather than a universal legality judgment." },
+            new { id = "whole-game-completion", status = games.IsEmpty ? "not-run" : allGames && games.All(game => game.MechanicalFailure == null && game.Continuation.Conclusive && game.Outcome is { CapturedBeforeCleanup: true, VerifiedNaturalOutcome: true } outcome && outcome.Seats.Length == 4 && outcome.Seats.All(seat => seat.Developed)) ? "passed" : "failed", evidence = "Four cyclic varied-deck rotations; every seat develops and outcomes are captured before cleanup." },
+            new { id = "state-authority-lifecycle", status = games.IsEmpty ? "not-run" : stateIntegrity ? "passed" : "failed", evidence = "Independent mechanical/privacy/public-parity, exact fresh stale challenges and diagnostic-write checks; strategic review findings are classified under policy." },
             new { id = "human-gameplay-review", status = "pending", evidence = "Review the exact candidate in actual play; automated correctness cannot supply approval." }
         };
         try { File.WriteAllText(Path.Combine(launch.Profile, "ai-release-evaluation.json"), JsonSerializer.Serialize(new {

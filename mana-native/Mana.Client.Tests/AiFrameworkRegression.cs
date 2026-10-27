@@ -10,8 +10,10 @@ internal static class AiFrameworkRegression
     internal static async Task RunAsync(Action<bool, string> check)
     {
         check(typeof(AiSeatSession).Assembly.GetReferencedAssemblies().Where(a => a.Name!.StartsWith("Mana."))
-                .Select(a => a.Name).SequenceEqual(["Mana.Contracts"]),
-            "The AI framework depends only on neutral contracts, with no Forge, renderer, client UI or updater dependency");
+                .All(a => a.Name is "Mana.Contracts" or "Mana.Planning")
+                && typeof(Mana.Planning.ManaFundingPlanner).Assembly.GetReferencedAssemblies().Where(a => a.Name!.StartsWith("Mana."))
+                    .All(a => a.Name == "Mana.Contracts"),
+            "The AI framework shares a contracts-only planning core, with no Forge, renderer, client UI or updater dependency");
         bool missing = false;
         try { _ = new AiPolicyDescriptor("targeting-only", AiTasks.All.Remove(AiTask.Payment)); }
         catch (ArgumentException) { missing = true; }
