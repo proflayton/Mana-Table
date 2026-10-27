@@ -180,7 +180,7 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
         this.table = table; this.id = table.id; this.gate = table.gate;
         this.game = table.game; this.format = table.format; this.human = human;
         viewer = human.getPlayer().getView();
-        activity = new MatchActivity(viewer, table.identities);
+        activity = new MatchActivity(viewer, table.identities, this::currentCardView);
         combatIds = new CombatCardIds(viewer, activity, table.identities);
         game.subscribeToEvents(activity);
         game.subscribeToEvents(combatIds);
@@ -690,6 +690,7 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
     private String semanticCardId(CardView card) {
         ZoneType zone = card.getZone();
         if (zone == null || !card.canBeShownTo(viewer)) return "";
+        if (!currentCardView(card)) return "";
         if (zone == ZoneType.Library && table.libraryInspectionActive()) return "";
         if (List.of(ZoneType.Battlefield, ZoneType.Hand, ZoneType.Library, ZoneType.Graveyard, ZoneType.Exile, ZoneType.Command).contains(zone))
             return combatIds.id(card);
@@ -697,6 +698,12 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
             return combatIds.id(card);
         if (zone == ZoneType.Sideboard && pending != null && pending.additionalCards.containsValue(card)) return combatIds.id(card);
         return "";
+    }
+
+    private boolean currentCardView(CardView card) {
+        if (card == null || card.getZone() == null) return false;
+        Card current = human.getCard(card);
+        return current != null && current.getView() == card;
     }
 
     private static boolean sourceInputActive(Input input) {

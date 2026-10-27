@@ -48,6 +48,9 @@ internal sealed class AiCampaignDiagnostics : IDisposable
 
     internal IAiPolicy Record(IAiPolicy inner) => new RecordingPolicy(inner, this);
 
+    internal void ValidatePublicBatch(ImmutableArray<AutomatedSeatObservation> observations) =>
+        ForgePublicProjectionChecks.ValidateBatch(observations, directory);
+
     private sealed class RecordingPolicy(IAiPolicy inner, AiCampaignDiagnostics evidence) : IAiPolicy
     {
         public AiPolicyDescriptor Descriptor => inner.Descriptor;
@@ -403,6 +406,7 @@ internal sealed class AiCampaignProvider(IAutomatedSeatProvider inner, AiCampaig
     public async Task<ImmutableArray<AutomatedSeatObservation>> ObserveAutomatedSeatsAsync()
     {
         Last = await inner.ObserveAutomatedSeatsAsync();
+        diagnostics.ValidatePublicBatch(Last);
         foreach (var observation in Last) diagnostics.Observe(observation);
         if (stale != null) await stale.ObserveAsync(Last, staleReplay!, diagnostics.RecordStaleProbe);
         return Last;

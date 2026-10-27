@@ -5,6 +5,7 @@ import com.google.gson.JsonObject;
 import forge.StaticData;
 import forge.deck.Deck;
 import forge.deck.DeckSection;
+import forge.game.zone.ZoneType;
 import org.testng.annotations.Test;
 import org.testng.annotations.DataProvider;
 
@@ -24,6 +25,98 @@ public class ActionOccurrenceCoherenceTest {
     private static final Gson JSON = new Gson();
 
     @DataProvider public Object[][] actors() { return new Object[][] {{0}, {1}, {2}, {3}}; }
+
+    @Test(timeOut = 120000)
+    public void aHistoricalWarpTriggerCannotRevokeTheCurrentPermanentOrItsTargetCandidates() throws Exception {
+        var resources = Path.of("../forge-gui/res");
+        if (StaticData.instance() == null) EngineResources.load(resources);
+        var actorDeck = new Deck("Warp occurrence");
+        actorDeck.getMain().add(StaticData.instance().getCommonCards().getCard("Haliya, Guided by Light"));
+        actorDeck.getMain().add(StaticData.instance().getCommonCards().getCard("Mishra's Bauble"), 2);
+        actorDeck.getMain().add(StaticData.instance().getCommonCards().getCard("Swords to Plowshares"), 96);
+        actorDeck.getOrCreate(DeckSection.Commander).add(StaticData.instance().getCommonCards().getCard("Rhys the Redeemed"));
+        var otherDeck = new Deck("Observer");
+        otherDeck.getMain().add(StaticData.instance().getCommonCards().getCard("Forest"), 99);
+        otherDeck.getOrCreate(DeckSection.Commander).add(StaticData.instance().getCommonCards().getCard("Rhys the Redeemed"));
+        var players = java.util.stream.IntStream.range(0, 4).mapToObj(index -> MatchTable.automated(
+                index == 0 ? actorDeck : otherDeck, "Commander", "Policy " + index)).toList();
+        // After the genuine first draw all 99 cards are present, independent
+        // of opening shuffle. The test stops before cleanup/discard or deckout.
+        players.get(0).setStartingHand(98);
+        players.get(0).addExtraCardsOnBattlefield(List.of(StaticData.instance().getCommonCards().getCard("Plains")));
+        Path evidence = Path.of("target/rules-regressions/warp-occurrence-coherence"); Files.createDirectories(evidence);
+        try (var table = new MatchTable("Commander", players, resources, evidence, true)) {
+            table.start(); var answered = new HashMap<Integer, String>();
+            var main = until(table, answered, 0, input -> input.seat() == 0 && priority(input)
+                    && text(input.state(), "phaseKey").equals("MAIN1"));
+            assertEquals(count(viewer(main.state()), "Hand"), 99);
+            use(table, answered, main, "Hand", "Haliya, Guided by Light", true);
+            var payment = until(table, answered, 0, input -> input.seat() == 0 && text(input.prompt(), "inputType").startsWith("InputPayMana"));
+            use(table, answered, payment, "Battlefield", "Plains", false);
+            for (int artifact = 0; artifact < 2; artifact++) {
+                var settled = until(table, answered, 0, input -> input.seat() == 0 && priority(input)
+                        && input.state().getAsJsonArray("stack").isEmpty());
+                use(table, answered, settled, "Hand", "Mishra's Bauble", false);
+            }
+            var gained = until(table, answered, 0, input -> input.seat() == 0 && priority(input)
+                    && input.state().getAsJsonArray("stack").isEmpty());
+            assertEquals(viewer(gained.state()).get("life").getAsInt(), 43);
+            var end = until(table, answered, 0, input -> input.seat() == 0 && priority(input)
+                    && text(input.state(), "phaseKey").equals("END_OF_TURN") && input.state().getAsJsonArray("stack").size() == 2);
+            HeadlessPlatform.query(table, () -> null);
+            var batch = table.automatedSeats().stream().map(MatchSession::automatedObservation).toList();
+            Files.writeString(evidence.resolve("private-observations.json"), JSON.toJson(batch));
+            String currentId = null;
+            for (var observation : batch) {
+                var row = JSON.toJsonTree(observation).getAsJsonObject();
+                assertCurrentOccurrences(row);
+                var state = row.getAsJsonObject("state");
+                var haliya = card(state, "Battlefield", "Haliya, Guided by Light");
+                if (currentId == null) currentId = text(haliya, "visualId");
+                assertEquals(text(haliya, "visualId"), currentId, "All audiences share one live public occurrence");
+                assertEquals(state.getAsJsonArray("stack").size(), 2);
+                assertTrue(state.getAsJsonArray("stack").asList().stream().map(value -> value.getAsJsonObject().getAsJsonObject("card"))
+                        .anyMatch(portrait -> text(portrait, "visualId").isEmpty()), "The Warp trigger's historical portrait grants no live identity");
+            }
+            var spectator = JSON.toJsonTree(table.spectatorState()).getAsJsonObject();
+            assertEquals(text(card(spectator, "Battlefield", "Haliya, Guided by Light"), "visualId"), currentId);
+            var stable = JSON.toJsonTree(batch);
+            assertEquals(JSON.toJsonTree(table.automatedSeats().stream().map(MatchSession::automatedObservation).toList()), stable,
+                    "A historical portrait cannot rotate identities during repeated current reads");
+            table.publish();
+            for (var seat : table.automatedSeats()) {
+                var row = JSON.toJsonTree(seat.automatedObservation()).getAsJsonObject(); assertCurrentOccurrences(row);
+                assertEquals(text(card(row.getAsJsonObject("state"), "Battlefield", "Haliya, Guided by Light"), "visualId"), currentId);
+            }
+            assertEquals(text(end.prompt(), "inputType"), "InputPassPriority");
+        }
+    }
+
+    private static boolean priority(Input input) { return text(input.prompt(), "inputType").equals("InputPassPriority"); }
+    private static JsonObject card(JsonObject state, String zone, String name) {
+        for (var player : state.getAsJsonArray("players"))
+            for (var value : zone(player.getAsJsonObject(), zone).getAsJsonArray("cards"))
+                if (text(value.getAsJsonObject(), "name").equals(name)) return value.getAsJsonObject();
+        throw new AssertionError("Missing fixture card " + name);
+    }
+    private static void use(MatchTable table, Map<Integer, String> answered, Input input, String zone, String name, boolean warp) {
+        var source = card(input.state(), zone, name);
+        var session = table.automatedSeat(input.seat());
+        var catalog = JSON.toJsonTree(session.sourceActions(request(input, Map.of("key", text(source, "key"))))).getAsJsonObject();
+        var actions = catalog.getAsJsonArray("actions");
+        int index = 0;
+        if (warp) {
+            var actor = table.game.getRegisteredPlayers().get(input.seat());
+            var controller = (forge.player.PlayerControllerHuman)actor.getController();
+            var actual = actor.getCardsIn(ZoneType.Hand).stream().filter(card -> card.getName().equals(name)).findFirst().orElseThrow();
+            var abilities = controller.getInputQueue().getInput().getSourceActions(actual);
+            while (index < abilities.size() && !abilities.get(index).isWarp()) index++;
+            assertTrue(index < abilities.size(), "The real source offers its Warp alternative");
+        }
+        session.action(request(input, Map.of("action", "useSourceAction", "key", text(source, "key"),
+                "actionId", text(actions.get(index).getAsJsonObject(), "id"))));
+        answered.put(input.seat(), text(input.prompt(), "id"));
+    }
 
     @Test(dataProvider = "actors", timeOut = 90000)
     public void cancellingARealCastKeepsSnapshotCatalogAndGraphOnTheSameCurrentOccurrence(int actor) throws Exception {
@@ -97,13 +190,20 @@ public class ActionOccurrenceCoherenceTest {
                     "The exact current keyed source and its offered action must share one current occurrence");
         }
         for (var action : domain.getAsJsonArray("actions"))
-            for (var operation : action.getAsJsonObject().getAsJsonObject("operationGraph").getAsJsonArray("operations"))
+            for (var operation : action.getAsJsonObject().getAsJsonObject("operationGraph").getAsJsonArray("operations")) {
                 for (String binding : List.of("sources", "recipients"))
                     for (var entity : operation.getAsJsonObject().getAsJsonObject(binding).getAsJsonArray("entities")) {
                         var value = entity.getAsJsonObject();
                         if (!text(value, "cardId").isEmpty()) assertTrue(currentIds.contains(text(value, "cardId")),
                                 "Graph entities cannot reference an occurrence absent from the same authorized snapshot: " + value);
                     }
+                var targets = operation.getAsJsonObject().get("targets");
+                if (targets != null && targets.isJsonObject()) for (var entity : targets.getAsJsonObject().getAsJsonArray("candidates")) {
+                    var value = entity.getAsJsonObject();
+                    if (!text(value, "cardId").isEmpty()) assertTrue(currentIds.contains(text(value, "cardId")),
+                            "Target candidates must use the same currently entitled occurrence: " + value);
+                }
+            }
     }
 
     private static Input until(MatchTable table, Map<Integer, String> answered, int actor, Predicate<Input> stop) throws Exception {
@@ -123,6 +223,9 @@ public class ActionOccurrenceCoherenceTest {
                 Map<String, ?> answer;
                 if (state.get("turn").getAsInt() == 0 && prompt.has("playerChoices") && !prompt.getAsJsonArray("playerChoices").isEmpty())
                     answer = Map.of("action", "player", "playerId", actor);
+                else if (prompt.has("ordered") && prompt.get("ordered").getAsBoolean())
+                    answer = Map.of("choices", prompt.getAsJsonArray("choices").asList().stream()
+                            .map(value -> value.getAsJsonObject().get("index").getAsInt()).toList());
                 else if ((text(prompt, "inputType").equals("InputPassPriority") || text(prompt, "inputType").contains("Mulligan"))
                         && prompt.get("okEnabled").getAsBoolean()) answer = Map.of("action", "ok");
                 else throw new AssertionError("Unexpected setup decision: " + prompt);

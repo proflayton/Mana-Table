@@ -45,6 +45,12 @@ only the identity generation it previously observed. This ordering also covers
 rules rollback which restores a card to a hidden zone without a movement event;
 later source catalogs and effect graphs must reference that same published
 occurrence. Historical activity keeps its copied event-time identities.
+Activity visibility retains the exact tracked `CardView` and its generation per
+physical key. A hidden historical portrait with an equal physical ID cannot
+revoke the currently published view; actual concealment and rollback still do.
+Operation entities canonicalize a rules card only when its game timestamp
+matches the current incarnation, and semantic references reject historical view
+objects. A retained portrait is not a current entity or a new opaque-ID allocation.
 Play-access projection uses the exact audience publication's disclosed-card map,
 including its existing visual identities. If a library search temporarily hides
 another seat's top card, the same publication also suppresses that card's access

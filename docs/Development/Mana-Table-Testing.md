@@ -328,6 +328,15 @@ execution. These are authority and rules checks, not proof of readability.
 divergent viewer-local event sequences and retention of original host failures.
 `AutomatedWireFailureChecks` verifies the shipping provider's private diagnostic
 quarantine separately from accepted replay frames and public exception text.
+`ActionOccurrenceCoherenceTest` also follows an actual warped Haliya into its
+simultaneous delayed/draw triggers while a Swords to Plowshares offer has current
+target candidates. Every candidate must bind to an entitled current occurrence;
+historical portraits cannot rotate its identity. `MatchActivityTest` separately
+protects equal-physical-ID historical views and real concealment. The campaign's
+Forge-specific batch check compares same-board public occurrence projections
+before policy evaluation, rather than waiting for a policy frame to validate.
+Different private hands, game/revision boundaries and historical stack portraits
+remain separate. This adds no second rules model or extra random campaign.
 The crowded-field window journey also joins the fast release set, sharing the
 three-player lobby shard. It uses the production battlefield faces at the former
 threshold, mixed states, duplicate tokens, distinct names and the canonical

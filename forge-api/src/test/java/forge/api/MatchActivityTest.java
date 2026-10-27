@@ -14,6 +14,32 @@ import org.testng.annotations.Test;
 import static org.testng.Assert.*;
 
 public class MatchActivityTest {
+    @Test public void aHistoricalEqualIdPortraitCannotRevokeTheCurrentVisibleOccurrence() {
+        var viewer = new PlayerView(1, null);
+        var current = publicCard(208, "Current permanent", viewer);
+        var historical = publicCard(208, "Historical trigger portrait", viewer);
+        assertEquals(historical, current, "Forge CardView equality deliberately identifies the physical card only");
+        var identities = new MatchIdentities();
+        var first = new MatchActivity(viewer, identities, view -> view == current);
+        var second = new MatchActivity(new PlayerView(2, null), identities, view -> view == current);
+        String currentId = first.visualId(current);
+        assertNull(first.visualId(historical), "Even a readable historical face grants no current occurrence ID");
+        assertEquals(historical.getCurrentState().getName(), "Historical trigger portrait", "The historical portrait remains readable");
+        historical.set(TrackableProperty.Zone, null);
+        assertNull(first.visualId(historical));
+        assertEquals(first.visualId(current), currentId);
+        assertEquals(second.visualId(current), currentId);
+        assertNull(second.visualId(historical));
+        first.refreshVisibility(); second.refreshVisibility();
+        assertEquals(first.visualId(current), currentId);
+        assertEquals(second.visualId(current), currentId);
+        current.set(TrackableProperty.Zone, ZoneType.Library);
+        first.refreshVisibility(); second.refreshVisibility();
+        assertNull(first.visualId(current));
+        current.set(TrackableProperty.Zone, ZoneType.Battlefield);
+        assertNotEquals(first.visualId(current), currentId, "Real concealment still revokes the current occurrence");
+    }
+
     @Test public void aLateAudienceRevocationCannotEraseANewerAuthorizedOccurrence() {
         var owner = new PlayerView(1, null); var observer = new PlayerView(2, null);
         var card = publicCard(207, "Private occurrence", owner);

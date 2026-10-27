@@ -43,9 +43,13 @@ public final class MatchActivity {
     public record Frame(long revision, int turn, String phaseKey, String phase, Integer activePlayerId, List<Entry> entries) { }
     private final PlayerView viewer;
     private final MatchIdentities identities;
+    private final java.util.function.Predicate<CardView> currentView;
     private boolean ownsIdentities;
     private final Deque<Entry> entries = new ArrayDeque<>();
-    private final Map<CardView, String> visibleIds = new HashMap<>();
+    // CardView equality is physical ID only. A delayed trigger may hold a
+    // different historical view with that same ID and no current zone.
+    private record VisibleOccurrence(CardView view, String id) { }
+    private final Map<CardView, VisibleOccurrence> visibleIds = new HashMap<>();
     private final Map<Integer, Map<String, PublicPlayerStates.State>> playerStates = new HashMap<>();
     private long sequence;
     private long quietSequence;
@@ -59,7 +63,11 @@ public final class MatchActivity {
     private int ownTurns, cardsDrawn, landsPlayed, spellsCast, mulligans, commanderCasts;
 
     MatchActivity(PlayerView viewer) { this(viewer, new MatchIdentities()); ownsIdentities = true; }
-    MatchActivity(PlayerView viewer, MatchIdentities identities) { this.viewer = Objects.requireNonNull(viewer); this.identities = identities; }
+    MatchActivity(PlayerView viewer, MatchIdentities identities) { this(viewer, identities, Objects::nonNull); }
+    MatchActivity(PlayerView viewer, MatchIdentities identities, java.util.function.Predicate<CardView> currentView) {
+        this.viewer = Objects.requireNonNull(viewer); this.identities = identities;
+        this.currentView = Objects.requireNonNull(currentView);
+    }
 
     public synchronized List<Entry> snapshot() { return List.copyOf(entries); }
     public synchronized Frame frame() { return new Frame(revision, turn, phase, phaseName, activePlayerId, snapshot()); }
@@ -77,22 +85,28 @@ public final class MatchActivity {
     }
 
     synchronized String visualId(CardView card) {
+        // A public historical portrait remains readable, but is neither the
+        // current occurrence nor evidence that the current one was concealed.
+        if (!currentView.test(card)) return null;
         if (!visible(card)) {
-            String priorId = card == null ? null : visibleIds.remove(card);
-            if (priorId != null) identities.forget(card, priorId);
+            var prior = card == null ? null : visibleIds.get(card);
+            if (prior != null && prior.view() == card) {
+                visibleIds.remove(card);
+                identities.forget(card, prior.id());
+            }
             return null;
         }
         String id = identities.id(card);
-        visibleIds.put(card, id);
+        visibleIds.put(card, new VisibleOccurrence(card, id));
         return id;
     }
 
     synchronized void refreshVisibility() {
         visibleIds.entrySet().removeIf(entry -> {
-            if (visible(entry.getKey())) return false;
+            if (currentView.test(entry.getValue().view()) && visible(entry.getValue().view())) return false;
             // A different audience may already have observed a newer private
             // occurrence. Revoking our old view cannot erase that generation.
-            identities.forget(entry.getKey(), entry.getValue());
+            identities.forget(entry.getValue().view(), entry.getValue().id());
             return true;
         });
     }
@@ -318,7 +332,8 @@ public final class MatchActivity {
                     new PublicCardChange("counters", e.type().getName(), e.oldValue(), e.newValue()), cause);
         } else if (event instanceof GameEventShuffle e) {
             // A shuffle breaks identity correlation even when the new top is visible.
-            visibleIds.keySet().removeIf(card -> card.getZone() == ZoneType.Library && e.player().equals(card.getController()));
+            visibleIds.values().removeIf(occurrence -> occurrence.view().getZone() == ZoneType.Library
+                    && e.player().equals(occurrence.view().getController()));
             if (turn > 0) add("shuffle", e.player(), playerName(e.player()) + " shuffled their library.", null, "", "", 1);
         } else if (event instanceof GameEventMulligan e) {
             if (viewer.equals(e.player())) mulligans++;

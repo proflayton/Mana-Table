@@ -255,6 +255,12 @@ final class ActionOperationProjection {
                     "controllerId", player.getId(), "ownerId", null);
         Card card = target instanceof Card actual ? actual : target instanceof SpellAbility spell ? spell.getHostCard() : null;
         if (card == null || viewer == null || identity == null || card.getZone() == null || !card.getView().canBeShownTo(viewer.getView())) return null;
+        // Equal physical IDs do not make an old LKI incarnation a current
+        // target/source. Canonicalize only the same engine timestamp, before
+        // asking the audience for a current occurrence identity.
+        Card current = card.getGame().getCardState(card, null);
+        if (current == null || !card.equalsWithGameTimestamp(current) || current.getZone() == null) return null;
+        card = current;
         String cardId = identity.apply(card.getView());
         if (cardId == null || cardId.isEmpty()) return null;
         String id = prefix + "card:" + cardId, kind = "Card";
