@@ -14,7 +14,7 @@ internal sealed record AiGoldenResult(string Id, bool Passed, string Detail, int
 // seat answer, cost, receipt and continuation uses the normal policy and ports.
 internal static class AiReleaseGoldens
 {
-    private sealed record Scenario(string Id, string Commander, string Basic, string[] Extras);
+    private sealed record Scenario(string Id, string Commander, string Basic, string[] Extras, string? Partner = null);
     private static readonly Scenario[] Scenarios = [
         new("x-funded", "Omarthis, Ghostfire Initiate", "Wastes", ["Wastes", "Wastes", "Wastes", "Wastes", "Wastes"]),
         new("x-unfunded", "Omarthis, Ghostfire Initiate", "Wastes", []),
@@ -24,7 +24,9 @@ internal static class AiReleaseGoldens
         new("optional-pay", "Rhys the Redeemed", "Forest", ["Mentor of the Meek", "Forest"]),
         new("flexible-output", "Balmor, Battlemage Captain", "Island", ["Temple of Epiphany", "Island", "Island", "Island"]),
         new("mana-reduction", "Kasla, the Broken Halo", "Island",
-            [.. Enumerable.Repeat("Mystic Monastery", 6), .. Enumerable.Repeat("Lightning Angel", 7)])
+            [.. Enumerable.Repeat("Mystic Monastery", 6), .. Enumerable.Repeat("Lightning Angel", 7)]),
+        new("partner-draw-counters", "Toothy, Imaginary Friend", "Island",
+            [.. Enumerable.Repeat("Island", 5), .. Enumerable.Repeat("Forest", 3)], "Pir, Imaginative Rascal")
     ];
     internal static int ExpectedCount => Scenarios.Length;
 
@@ -33,10 +35,14 @@ internal static class AiReleaseGoldens
         string directory = Path.Combine(profile, "ai-goldens"); Directory.CreateDirectory(directory);
         await engine.EnableAutomatedSeatsAsync();
         string opponent = await Save("AI golden opponents", "Rhys the Redeemed", "Forest");
+        // No opposing attack can remove an unmodified partner between the
+        // controlled zero-counter baseline and the actor's next natural draw.
+        string counterOpponent = await Save("AI counter golden opponents", "The Reality Chip", "Island");
         var results = ImmutableArray.CreateBuilder<AiGoldenResult>();
         foreach (var scenario in Scenarios) {
-            string deck = await Save("AI gate " + scenario.Id, scenario.Commander, scenario.Basic);
-            var result = await Run(engine, Path.Combine(directory, scenario.Id), scenario, [deck, opponent, opponent, opponent]);
+            string deck = await Save("AI gate " + scenario.Id, scenario.Commander, scenario.Basic, scenario.Partner);
+            string opposingDeck = scenario.Partner == null ? opponent : counterOpponent;
+            var result = await Run(engine, Path.Combine(directory, scenario.Id), scenario, [deck, opposingDeck, opposingDeck, opposingDeck]);
             results.Add(result);
             File.WriteAllText(Path.Combine(directory, "summary.json"), JsonSerializer.Serialize(results, new JsonSerializerOptions { WriteIndented = true }));
             if (!result.Passed) break; // Do not reuse a potentially faulted JVM.
@@ -46,9 +52,10 @@ internal static class AiReleaseGoldens
             "Real policy goldens: " + string.Join("; ", completed.Select(result => result.Id + ": " + result.Detail)));
         return completed;
 
-        async Task<string> Save(string name, string commander, string basic)
+        async Task<string> Save(string name, string commander, string basic, string? partner = null)
         {
-            var imported = await engine.ImportAsync(name, "Deck\n99 " + basic + "\nCommander\n1 " + commander);
+            var imported = await engine.ImportAsync(name, "Deck\n" + (partner == null ? 99 : 98) + " " + basic
+                + "\nCommander\n1 " + commander + (partner == null ? "" : "\n1 " + partner));
             var details = await engine.OpenDeckAsync(imported.Id);
             if (details.StructureValid == false || details.Problem.Length > 0 || !details.Issues.IsEmpty)
                 throw new InvalidDataException("The golden Commander deck is invalid: " + name);
@@ -69,12 +76,14 @@ internal static class AiReleaseGoldens
         await using var trace = new StreamWriter(Path.Combine(directory, "public.jsonl"));
         var timer = Stopwatch.StartNew();
         GameSnapshot? state = null;
-        string target = "", vein = "", mentor = "", flexible = "", lastFacts = "", stop = "not-started", detail = "";
+        string target = "", partnerTarget = "", vein = "", mentor = "", flexible = "", lastFacts = "", stop = "not-started", detail = "";
         ImmutableArray<string> blueSources = [];
         int comparisons = 0, steps = 0, firstTurn = 0;
         bool setup = false, offered = false, stack = false, resolved = false, landPlayed = false, passedOffer = false, passed = false;
         bool publicCaptured = false, actualRedPool = false, actualRedBillPaid = false;
         bool positiveReduction = false, zeroReductionWithUnusedCreature = false;
+        bool partnerStack = false, zeroCountersBeforeDraw = false, partnerDrawTrigger = false, partnerCardDrawn = false;
+        int? beforeDrawHandCount = null, beforeDrawCounters = null, afterDrawCounters = null;
         int maximumReductionContributors = 0;
         Exception? primaryFailure = null;
         var captureErrors = new List<string>();
@@ -93,8 +102,13 @@ internal static class AiReleaseGoldens
             var commander = actor.Zone("Command").Cards.SingleOrDefault(card => card.Name == scenario.Commander)
                 ?? throw new InvalidDataException("Golden setup did not contain the declared commander.");
             target = CardViews.Identity(commander);
+            if (scenario.Partner != null) {
+                if (actor.Zone("Command").Cards.Length != 2) throw new InvalidDataException("The counter golden requires both legal partner commanders.");
+                partnerTarget = CardViews.Identity(actor.Zone("Command").Cards.Single(card => card.Name == scenario.Partner));
+            }
             var extras = actor.Zone("Battlefield").Cards;
-            if (state.Players.Length != 4 || target.Length == 0 || extras.Length != scenario.Extras.Length
+            if (state.Players.Length != 4 || target.Length == 0 || scenario.Partner != null && partnerTarget.Length == 0
+                || extras.Length != scenario.Extras.Length
                 || !extras.Select(card => card.Name).Order(StringComparer.Ordinal).SequenceEqual(scenario.Extras.Order(StringComparer.Ordinal)))
                 throw new InvalidDataException("Golden pregame battlefield does not match the declared test-only setup.");
             vein = extras.Where(card => card.Name == "Crystal Vein").Select(CardViews.Identity).SingleOrDefault() ?? "";
@@ -150,6 +164,8 @@ internal static class AiReleaseGoldens
                 landPlayed |= receipts.Any(item => item.Land);
                 passedOffer |= receipts.Any(item => item.Kind == nameof(PassPriority) && item.TargetOffered);
                 stack |= state.Stack.Any(item => item.Kind == StackActionKind.Spell && item.Card is { } card && CardViews.Identity(card) == target);
+                partnerStack |= partnerTarget.Length > 0 && state.Stack.Any(item => item.Kind == StackActionKind.Spell
+                    && item.Card is { } card && CardViews.Identity(card) == partnerTarget);
                 var permanent = actor.Zone("Battlefield").Cards.FirstOrDefault(card => CardViews.Identity(card) == target);
                 resolved |= permanent != null;
                 bool cast = receipts.Any(item => item.Kind == nameof(UseOfferedAction) && item.SourceId == target && item.Cast);
@@ -159,8 +175,10 @@ internal static class AiReleaseGoldens
                     && item.Kind is nameof(UseOfferedAction) or nameof(PayMana) or nameof(SpendPoolMana));
                 var optional = receipts.LastOrDefault(item => item.CostOwner == mentor && item.PaymentPurpose == PaymentPurpose.TriggeredAbilityCost
                     && item.Payer == 0 && item.Kind == (scenario.Id == "optional-decline" ? nameof(CancelPayment) : nameof(UseOfferedAction)));
-                bool ended = firstTurn != 0 && (state.ActivePlayerId != 0 && state.Turn > firstTurn
+                bool nextOwnTurn = scenario.Partner != null && firstTurn != 0 && state.ActivePlayerId == 0 && state.Turn > firstTurn;
+                bool ended = firstTurn != 0 && (scenario.Partner == null && state.ActivePlayerId != 0 && state.Turn > firstTurn
                     || state.ActivePlayerId == 0 && state.Turn == firstTurn && state.PhaseKey is "END_OF_TURN" or "CLEANUP");
+                if (scenario.Partner != null) ended = nextOwnTurn && state.PhaseKey is "END_OF_TURN" or "CLEANUP";
                 bool positive;
                 switch (scenario.Id) {
                     case "x-funded":
@@ -217,10 +235,33 @@ internal static class AiReleaseGoldens
                             && permanent is { Power: 5, Toughness: 4 };
                         detail = "The normal policy reduced the exact six-mana cost with creatures, completed at zero while an unused creature correctly lost contribution eligibility, and the commander resolved as a public 5/4.";
                         break;
+                    case "partner-draw-counters":
+                        bool pirPresent = actor.Zone("Battlefield").Cards.Any(card => CardViews.Identity(card) == partnerTarget);
+                        int currentCounters = PlusOneCounters(permanent);
+                        if (pirPresent && permanent != null && state.ActivePlayerId == 0 && state.Turn == firstTurn
+                            && currentCounters == 0 && permanent is { Power: 1, Toughness: 1 }) {
+                            zeroCountersBeforeDraw = true;
+                            beforeDrawHandCount = actor.Zone("Hand").Count;
+                            beforeDrawCounters = currentCounters;
+                        }
+                        bool drawTrigger = nextOwnTurn && state.PhaseKey == "DRAW" && state.Stack.Any(item => item.Kind == StackActionKind.TriggeredAbility
+                            && item.Card is { } card && CardViews.Identity(card) == target);
+                        partnerDrawTrigger |= zeroCountersBeforeDraw && drawTrigger;
+                        partnerCardDrawn |= zeroCountersBeforeDraw && drawTrigger && actor.Zone("Hand").Count == beforeDrawHandCount + 1;
+                        if (nextOwnTurn && permanent != null) afterDrawCounters = currentCounters;
+                        bool partnerCast = receipts.Any(item => item.Kind == nameof(UseOfferedAction) && item.SourceId == partnerTarget && item.Cast);
+                        bool partnerPayment = receipts.Any(item => item.CostOwner == partnerTarget && item.Payer == 0
+                            && item.PaymentPurpose == PaymentPurpose.SpellCost
+                            && item.Kind is nameof(UseOfferedAction) or nameof(PayMana) or nameof(SpendPoolMana));
+                        positive = cast && stack && spellPayment && partnerCast && partnerStack && partnerPayment && pirPresent
+                            && zeroCountersBeforeDraw && partnerDrawTrigger && partnerCardDrawn
+                            && afterDrawCounters == 2 && permanent is { Power: 3, Toughness: 3 };
+                        detail = "Both partner commanders were cast and funded through the normal policy; the same zero-counter Toothy's next natural draw put its trigger on the stack and resolved to exactly two +1/+1 counters and 3/3 while Pir remained present.";
+                        break;
                     default: throw new InvalidDataException("Unknown golden scenario.");
                 }
                 if (positive && setup && comparisons > 0) { passed = true; stop = "proved-before-cleanup"; break; }
-                if (ended) { stop = "first-own-turn-ended-without-proof"; detail = "Required exact continuation was not established before the first own turn ended."; break; }
+                if (ended) { stop = "required-own-turn-ended-without-proof"; detail = "Required exact continuation was not established before its declared own turn ended."; break; }
                 if (timer.Elapsed >= TimeSpan.FromSeconds(30)) { stop = "inconclusive-time-cutoff"; detail = "The declared continuation did not complete within the observation budget."; break; }
                 provider.Target = target;
                 await host.StepAsync();
@@ -252,6 +293,7 @@ internal static class AiReleaseGoldens
         if (!summary.DiagnosticErrors.IsEmpty) CaptureFailure(new IOException(string.Join("\n", summary.DiagnosticErrors)), "diagnostic-evidence-failure");
         var evidence = JsonSerializer.SerializeToElement(new { setup, target, vein, mentor, flexible, blueSources, actualRedPool, actualRedBillPaid,
             positiveReduction, zeroReductionWithUnusedCreature, maximumReductionContributors, offered, passedOffer, landPlayed,
+            partnerTarget, partnerStack, zeroCountersBeforeDraw, beforeDrawHandCount, beforeDrawCounters, partnerDrawTrigger, partnerCardDrawn, afterDrawCounters,
             stack, resolved, firstTurn, capturedBeforeCleanup = publicCaptured, finalTurn = state?.Turn, finalPhase = state?.PhaseKey,
             commands = provider.Accepted, diagnostics = summary, captureErrors, primaryFailure = primaryFailure?.ToString(), engineRandomnessControlled = false });
         var result = new AiGoldenResult(scenario.Id, passed, detail, comparisons, provider.Accepted.Count, steps,
@@ -269,6 +311,9 @@ internal static class AiReleaseGoldens
             diagnostics.PreserveFailure(primaryFailure, classification, steps, provider.Last);
         }
     }
+
+    private static int PlusOneCounters(Card? card) => card?.Counters
+        .Where(pair => pair.Key is "P1P1" or "+1/+1").Sum(pair => pair.Value) ?? 0;
 
     private sealed record AcceptedCommand(int Seat, string Kind, int Turn, string Phase, string SourceId, string CostOwner,
         int? Number, NumericDecisionPurpose? NumericPurpose, PaymentPurpose? PaymentPurpose, int? Payer, int HandCount,
