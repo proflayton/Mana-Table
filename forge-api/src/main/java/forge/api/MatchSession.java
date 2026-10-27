@@ -203,7 +203,8 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
                 "playerCount", game.getPlayers().size(), "players", List.of(), "stack", List.of(),
                 "turn", 0, "phase", "Pregame", "phaseKey", "PREGAME", "activePlayerId", null,
                 "priorityPlayerId", null, "decisionOwnerId", null, "actionClass", "starting",
-                "prompt", null, "combat", null, "result", null, "error", null, "activity", List.of(), "notices", List.of()));
+                "prompt", null, "combat", null, "result", null, "error", null, "activity", List.of(), "notices", List.of(),
+                "stackInterruptionVersion", table.stackInterruption.version()));
     }
 
     void detach() { game.unsubscribeFromEvents(activity); game.unsubscribeFromEvents(combatIds); game.unsubscribeFromEvents(this); }
@@ -475,6 +476,13 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
         return canQuietYield(prompt.input) && quietYield.permits(token, activity.quietSequence());
     }
 
+    private boolean permitsStackPass(Pending prompt, long version) {
+        return prompt.input instanceof InputPassPriority priority && priority.isPriorityActive() && okEnabled
+                && !closed && error == null && !viewer.getHasLost() && !game.isGameOver()
+                && human.getInputQueue().getInput() == prompt.input && human.getInputProxy().getInput() == prompt.input
+                && !game.getStack().isEmpty() && table.stackInterruption.version() == version;
+    }
+
     @Override
     public Map<String, Object> sourceActions(JsonObject request) {
         // Never hold the table gate while waiting for its input owner.
@@ -558,51 +566,74 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
                     if (latest.get("prompt") != null && !finished()) markBusy(current);
                     current = null;
                 }
-                var domain = map("version", sourceActionVersion.get(), "coverage", "NotApplicable", "sources", List.of(), "actions", List.of());
+                Pending observedOwner = pending;
+                long version = sourceActionVersion.get();
+                boolean discovered = false;
+                Map<String, Object> domain = map("version", version, "coverage", "NotApplicable", "sources", List.of(), "actions", List.of());
                 if (current != null && sourceInputCurrent(current)) {
-                    long version = sourceActionVersion.get();
-                    if (current.cachedDomain != null && current.cachedDomainVersion == version)
-                        return map("seatId", viewer.getId(), "state", automatedState(current), "domain", current.cachedDomain,
-                                "semantics", automatedSemantics(current));
-                    var discovery = SourceActions.discover(current.input, human.getPlayer(), this::actionHostVisible);
-                    boolean complete = discovery.complete();
-                    var sources = new ArrayList<Object>();
-                    var semantics = new ArrayList<Object>();
-                    current.additionalCards.clear(); current.additionalSources.clear();
-                    for (Card source : discovery.sources()) {
-                        String key = current.cardKeys.get(source.getId());
-                        if (source.getZone().getZoneType() == ZoneType.Stack || source.getZone().getZoneType() == ZoneType.Sideboard) {
-                            var face = cardState(source.getView(), current);
-                            key = String.valueOf(face.get("key"));
-                            face.put("selectable", false); face.put("highlighted", false);
-                            current.additionalCards.put(key, source.getView());
-                            current.additionalSources.add(Collections.unmodifiableMap(map("decisionId", current.id,
-                                    "zone", source.getZone().getZoneType().name(), "playerId", source.getController().getId(),
-                                    "card", Collections.unmodifiableMap(face))));
-                        } else if (key == null || !current.cards.containsKey(key)) { complete = false; continue; }
-                        var catalog = current.sourceActions.get(key);
-                        if (catalog == null || !catalog.matches(source, version)) {
-                            catalog = SourceActions.describe(current.input, source, key, version, this::actionHostVisible);
-                            current.sourceActions.put(key, catalog);
+                    if (current.cachedDomain != null && current.cachedDomainVersion == version) domain = current.cachedDomain;
+                    else {
+                        var discovery = SourceActions.discover(current.input, human.getPlayer(), this::actionHostVisible);
+                        boolean complete = discovery.complete();
+                        var sources = new ArrayList<Object>();
+                        var semantics = new ArrayList<Object>();
+                        current.additionalCards.clear(); current.additionalSources.clear();
+                        for (Card source : discovery.sources()) {
+                            String key = current.cardKeys.get(source.getId());
+                            if (source.getZone().getZoneType() == ZoneType.Stack || source.getZone().getZoneType() == ZoneType.Sideboard) {
+                                var face = cardState(source.getView(), current);
+                                key = String.valueOf(face.get("key"));
+                                face.put("selectable", false); face.put("highlighted", false);
+                                current.additionalCards.put(key, source.getView());
+                                current.additionalSources.add(Collections.unmodifiableMap(map("decisionId", current.id,
+                                        "zone", source.getZone().getZoneType().name(), "playerId", source.getController().getId(),
+                                        "card", Collections.unmodifiableMap(face))));
+                            } else if (key == null || !current.cards.containsKey(key)) { complete = false; continue; }
+                            var catalog = current.sourceActions.get(key);
+                            if (catalog == null || !catalog.matches(source, version)) {
+                                catalog = SourceActions.describe(current.input, source, key, version, this::actionHostVisible);
+                                current.sourceActions.put(key, catalog);
+                            }
+                            sources.add(sourceCatalogState(current, catalog, false));
+                            for (var action : catalog.actions()) semantics.add(ActionSemantics.describe(action, current.input,
+                                    human.getPlayer(), this::semanticCardId));
                         }
-                        sources.add(sourceCatalogState(current, catalog, false));
-                        for (var action : catalog.actions()) semantics.add(ActionSemantics.describe(action, current.input,
-                                human.getPlayer(), this::semanticCardId));
+                        domain = map("version", version, "coverage", complete ? "Complete" : "Unsupported",
+                                "sources", complete ? sources : List.of(), "actions", complete ? semantics : List.of());
+                        current.poolManaColors.clear();
+                        if (current.input instanceof InputPayMana mana) {
+                            current.poolManaColors.addAll(mana.getUsablePoolManaColors().stream().map(MagicColor::toShortString).toList());
+                            domain.put("poolManaColors", List.copyOf(current.poolManaColors));
+                        }
+                        discovered = true;
                     }
-                    domain = map("version", version, "coverage", complete ? "Complete" : "Unsupported",
-                            "sources", complete ? sources : List.of(), "actions", complete ? semantics : List.of());
-                    current.poolManaColors.clear();
-                    if (current.input instanceof InputPayMana mana) {
-                        current.poolManaColors.addAll(mana.getUsablePoolManaColors().stream().map(MagicColor::toShortString).toList());
-                        domain.put("poolManaColors", List.copyOf(current.poolManaColors));
+                }
+                var snapshot = automatedState(current);
+                long observedRevision = revision;
+                var semantics = automatedSemantics(current);
+                // Also fence cached catalogs and the decision metadata read.
+                // A reentrant callback can replace ownership while a rules
+                // query temporarily yields the state boundary. No part of
+                // that mixed read, including newly allocated offers, is usable.
+                if (pending != observedOwner || sourceActionVersion.get() != version || revision != observedRevision
+                        || current != null && current.kind.equals("input")
+                            && (inputActionQueued || human.getInputQueue().getInput() != current.input
+                                || human.getInputProxy().getInput() != current.input
+                                || (current.input instanceof InputPassPriority || current.input instanceof InputPayMana)
+                                    && !sourceInputCurrent(current))) {
+                    if (current != null) {
+                        current.cachedDomain = null;
+                        current.cachedDomainVersion = -1;
+                        current.sourceActions.clear(); current.additionalCards.clear(); current.additionalSources.clear();
+                        current.poolManaColors.clear();
                     }
-                    if (!sourceInputCurrent(current) || sourceActionVersion.get() != version)
-                        throw new IllegalArgumentException("The automated input changed during discovery");
+                    throw new StaleObservationException();
+                }
+                if (discovered) {
                     current.cachedDomain = Collections.unmodifiableMap(domain);
                     current.cachedDomainVersion = version;
                 }
-                return map("seatId", viewer.getId(), "state", automatedState(current), "domain", domain,
-                        "semantics", automatedSemantics(current));
+                return map("seatId", viewer.getId(), "state", snapshot, "domain", domain, "semantics", semantics);
             }
         });
     }
@@ -715,6 +746,18 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
             if (next == null || !next.id.equals(string(request, "promptId"))) throw new IllegalArgumentException("That choice has changed. Use the current prompt.");
             if (request.has("expectedTask") && !semanticTask(next).equals(string(request, "expectedTask")))
                 throw new IllegalArgumentException("That command does not answer the current decision.");
+            Long stackVersion = null;
+            if (request.has("stackInterruptionVersion")) {
+                var supplied = request.get("stackInterruptionVersion");
+                try {
+                    if (!action.equals("passPriority") || supplied == null || !supplied.isJsonPrimitive()
+                            || !supplied.getAsJsonPrimitive().isNumber()) throw new ArithmeticException();
+                    stackVersion = supplied.getAsBigDecimal().longValueExact();
+                    if (stackVersion < 0 || !permitsStackPass(next, stackVersion)) throw new ArithmeticException();
+                } catch (ArithmeticException | NumberFormatException invalid) {
+                    throw new IllegalArgumentException("The stack changed. Review the current effects before continuing.");
+                }
+            }
             if (action.equals("passIfNoResponse") && (!Boolean.TRUE.equals(next.prompt.get("canAutoPass")) || !canAutoPass(next.input)))
                 throw new IllegalArgumentException("This response window needs your decision");
             String yieldToken = "";
@@ -834,6 +877,9 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
             String chosenYieldToken = yieldToken;
             SourceActions.Catalog chosenSourceCatalog = sourceCatalog;
             SourceActions.Action chosenSourceAction = sourceAction;
+            Long chosenStackVersion = stackVersion;
+            if (next.input instanceof InputPassPriority && Set.of("card", "useSourceAction", "useHandPlacement", "priorityUndo").contains(action))
+                table.stackInterruption.action();
             if (playerDriven) table.tempo.activity(viewer.getId());
             pending = null;
             inputActionQueued = true;
@@ -849,7 +895,13 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
                             else restorePriority = true;
                         }
                         case "ok" -> human.selectButtonOk();
-                        case "passPriority", "passIfNoResponse" -> ((InputPassPriority) next.input).passPriority();
+                        case "passPriority" -> {
+                            synchronized (gate) {
+                                restorePriority = chosenStackVersion != null && !permitsStackPass(next, chosenStackVersion);
+                                if (!restorePriority) ((InputPassPriority) next.input).passPriority();
+                            }
+                        }
+                        case "passIfNoResponse" -> ((InputPassPriority) next.input).passPriority();
                         case "priorityUndo" -> restorePriority = !((InputPassPriority) next.input).undoPriorityAction();
                         case "priorityPassTurn" -> restorePriority = !((InputPassPriority) next.input).passTurn();
                         case "passUntilPublicAction" -> {
@@ -902,6 +954,7 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
                             pending = next;
                             notices.add(action.equals("passUntilPublicAction")
                                     ? "The table changed. Passing for now stopped; review the current decision."
+                                    : chosenStackVersion != null ? "The stack changed. Resolve these stopped; review the current effects."
                                     : action.equals("useSourceAction") ? "That source action changed. Read the current card again."
                                     : action.startsWith("priority") ? "That priority action changed. Use the current decision."
                                     : "That hand-placement option is no longer available. Use the current prompt.");
@@ -1113,6 +1166,12 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
         return new PublicDecision(viewer.getId(), actionClass);
     }
 
+    Object requiredChoiceEpisode() {
+        Pending current = pending;
+        if (current == null || closed || error != null || viewer.getHasLost() || current.input instanceof InputPassPriority) return null;
+        return current.input == null ? current : current.input;
+    }
+
     void updatePublicDecision(Integer owner, String actionClass) {
         // Only ownership/class is public. Another seat choosing attackers is
         // observed until an attack actually exists; choosing none stays quiet.
@@ -1124,9 +1183,11 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
         if (status.equals("finished") || status.equals("error") || status.equals("starting")) { owner = null; actionClass = status; }
         boolean clearPriority = actionClass.equals("resolving") || actionClass.equals("finished") || actionClass.equals("error");
         if (Objects.equals(latest.get("decisionOwnerId"), owner) && Objects.equals(latest.get("actionClass"), actionClass)
+                && Objects.equals(latest.get("stackInterruptionVersion"), table.stackInterruption.version())
                 && (!clearPriority || latest.get("priorityPlayerId") == null)) return;
         var next = new LinkedHashMap<>(latest);
         next.put("revision", ++revision); next.put("decisionOwnerId", owner); next.put("actionClass", actionClass);
+        next.put("stackInterruptionVersion", table.stackInterruption.version());
         if (!actionClass.equals("priority") || !Objects.equals(owner, viewer.getId())) {
             var current = pending;
             if (current != null && current.prompt != null && !Objects.equals(current.prompt.get("quietYieldToken"), "")) {
@@ -1251,6 +1312,7 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
             prompt.prompt = projectedPrompt;
         }
         var snapshot = map("id", id, "revision", ++revision, "boardRevision", boardRevision, "format", format, "status", error != null ? "error" : game.isGameOver() ? "finished" : "playing",
+                "stackInterruptionVersion", table.stackInterruption.version(),
                 "error", error, "playerCount", allPlayers.size(), "viewerId", viewer.getId(), "turn", view.getTurn(), "phase", view.getPhase() == null ? "Pregame" : view.getPhase().nameForUi,
                 "phaseKey", view.getPhase() == null ? "PREGAME" : view.getPhase().name(),
                 "activePlayerId", view.getPlayerTurn() == null ? null : view.getPlayerTurn().getId(), "players", players,

@@ -11,7 +11,8 @@ public sealed record ForgePaths(string Java, string Jar, string Resources, strin
 public sealed partial class ForgeEngine(ForgePaths paths) : ICardEngine, ITableSocial, IDeckWorkshop, ITableSeatSetup, ICardPrintings, ISourceActions, ITableTempo, IAutomatedSeatProvider
 {
     private static readonly JsonSerializerOptions Json = new() { PropertyNameCaseInsensitive = true };
-    private readonly ConcurrentDictionary<long, TaskCompletionSource<JsonElement>> pending = new();
+    private sealed record PendingRequest(string Method, TaskCompletionSource<JsonElement> Completion);
+    private readonly ConcurrentDictionary<long, PendingRequest> pending = new();
     private readonly SemaphoreSlim write = new(1);
     // Readers retain their own process and ready signal across a failed startup.
     private sealed class EngineProcess(Process process)
@@ -70,8 +71,8 @@ public sealed partial class ForgeEngine(ForgePaths paths) : ICardEngine, ITableS
                         }
                         else if (ev.GetString() == "error") throw new IOException(Text(message, "message"));
                     } else if (message.TryGetProperty("id", out var id) && pending.TryRemove(id.GetInt64(), out var reply)) {
-                        if (message.TryGetProperty("error", out var error)) reply.TrySetException(new EngineCommandRejectedException(error.GetString() ?? "The rules engine rejected this request."));
-                        else reply.TrySetResult(message.GetProperty("result").Clone());
+                        if (message.TryGetProperty("error", out _)) reply.Completion.TrySetException(RequestFailure(reply.Method, message));
+                        else reply.Completion.TrySetResult(message.GetProperty("result").Clone());
                     }
                 }
                 if (!disposed) throw new IOException("The rules engine closed. See engine.log in your profile.");
@@ -92,7 +93,7 @@ public sealed partial class ForgeEngine(ForgePaths paths) : ICardEngine, ITableS
         owner.Failure = ex;
         owner.Ready.TrySetException(ex);
         if (current != owner) return;
-        foreach (var item in pending) if (pending.TryRemove(item.Key, out var reply)) reply.TrySetException(ex);
+        foreach (var item in pending) if (pending.TryRemove(item.Key, out var reply)) reply.Completion.TrySetException(ex);
     }
     private async Task<JsonElement> Request(string method, object? arguments = null)
     {
@@ -104,13 +105,23 @@ public sealed partial class ForgeEngine(ForgePaths paths) : ICardEngine, ITableS
         if (current != owner || owner.Failure != null || owner.Process.HasExited) throw new IOException("The engine is not running");
         long id = Interlocked.Increment(ref sequence);
         var reply = new TaskCompletionSource<JsonElement>(TaskCreationOptions.RunContinuationsAsynchronously);
-        pending[id] = reply;
+        pending[id] = new(method, reply);
         try {
             await write.WaitAsync();
             try { await owner.Process.StandardInput.WriteLineAsync(JsonSerializer.Serialize(new { id, method, @params = arguments ?? new { } })); await owner.Process.StandardInput.FlushAsync(); }
             finally { write.Release(); }
             return await reply.Task.WaitAsync(TimeSpan.FromSeconds(45));
         } finally { pending.TryRemove(id, out _); }
+    }
+    internal static Exception RequestFailure(string method, JsonElement message)
+    {
+        // A racing observation has no command receipt to retry. Only the
+        // provider's typed discovery result on this read-only method permits
+        // discarding a batch; identical prose on any other failure stays fatal.
+        if (method == "automatedState" && Text(message, "errorCode") == "observation-superseded")
+            return new EngineObservationSupersededException();
+        return new EngineCommandRejectedException(Text(message, "error") is { Length: > 0 } error
+            ? error : "The rules engine rejected this request.");
     }
     private static string Text(JsonElement value, string name) => value.TryGetProperty(name, out var v) && v.ValueKind != JsonValueKind.Null ? v.ToString() : "";
     private static T Read<T>(JsonElement value) => value.Deserialize<T>(Json) ?? throw new IOException("Missing engine response");

@@ -47,6 +47,7 @@ internal static partial class HeadlessPresentationSmoke
             CheckMatchFailure(profile, Check, trace, performance);
             CheckDepartedDefender(profile, Check, trace, performance);
             CheckStackArrival(profile, Check, trace, performance);
+            DrawTriggersSmoke.RunHeadless(profile, Check);
             CheckTurnPass(profile, Check, trace, performance);
             CheckChoiceEligibility(profile, Check, trace, performance);
             CheckPlayAccess(profile, Check, trace, performance);

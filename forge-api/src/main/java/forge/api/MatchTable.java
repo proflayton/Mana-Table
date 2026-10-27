@@ -22,6 +22,7 @@ final class MatchTable implements ManaTableSession, AutoCloseable {
     final Game game;
     final String format;
     final MatchIdentities identities = new MatchIdentities();
+    final StackInterruption stackInterruption = new StackInterruption();
     private final Match match;
     private final Map<Integer, MatchSession> seats = new LinkedHashMap<>();
     private final Map<Integer, MatchSession> automated = new LinkedHashMap<>();
@@ -65,6 +66,7 @@ final class MatchTable implements ManaTableSession, AutoCloseable {
         game = match.createGame();
         game.getAction().enableStateBoundary();
         game.subscribeToEvents(identities);
+        game.subscribeToEvents(stackInterruption);
         for (int i = 0; i < game.getPlayers().size(); i++) {
             var player = game.getPlayers().get(i);
             // Cosmetics are per registered deck; rules and live characteristics
@@ -151,6 +153,7 @@ final class MatchTable implements ManaTableSession, AutoCloseable {
                 stopTempo();
                 synchronized (gate) { for (var seat : seats.values()) seat.clearDecision(); publish(); }
                 game.unsubscribeFromEvents(identities);
+                game.unsubscribeFromEvents(stackInterruption);
                 for (var seat : seats.values()) seat.detach();
             }
         });
@@ -159,6 +162,7 @@ final class MatchTable implements ManaTableSession, AutoCloseable {
     // Only called at controller input boundaries, while the game is waiting.
     void publish() {
         game.getAction().withState(() -> { synchronized (gate) {
+            observeStackChoices();
             long revision = ++boardRevision;
             // Rules rollback can restore a card directly to a hidden zone
             // without a movement event. Revoke every audience's previous view
@@ -174,12 +178,18 @@ final class MatchTable implements ManaTableSession, AutoCloseable {
     /** Public decision ownership only; a seat's options and prompt remain private. */
     void refreshDecisionState() {
         synchronized (gate) {
+            observeStackChoices();
             var decisions = seats.values().stream().map(MatchSession::publicDecision).filter(Objects::nonNull).toList();
             Integer owner = decisions.size() == 1 ? decisions.get(0).ownerId() : null;
             String actionClass = decisions.isEmpty() ? "resolving" : decisions.size() == 1 ? decisions.get(0).actionClass() : "simultaneous";
             for (var seat : seats.values()) seat.updatePublicDecision(owner, actionClass);
             for (var seat : seats.values()) seat.observeTempo();
         }
+    }
+
+    private void observeStackChoices() {
+        stackInterruption.observeChoices(seats.values().stream().map(MatchSession::requiredChoiceEpisode)
+                .filter(Objects::nonNull).toList());
     }
 
     void tickTempo() {

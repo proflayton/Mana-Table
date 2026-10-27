@@ -26,7 +26,8 @@ public abstract record GameCommand
             PlaceFromHand value => Present(value.Card) && Present(value.AbilityId),
             IgnorePriorityAbility value => Present(value.AbilityId), RestorePriorityAbility value => Present(value.AbilityId),
             PassForNow value => Present(value.YieldToken),
-            PassPriority or AutoPassPriority or KeepOpeningHand or MulliganOpeningHand or PayMana or CancelPayment
+            PassPriority value => value.StackInterruptionVersion is null or >= 0,
+            AutoPassPriority or KeepOpeningHand or MulliganOpeningHand or PayMana or CancelPayment
                 or CompleteAttackers or CompleteBlockers or CompleteSelection or CancelSelection or AcceptConfirmation
                 or DeclineConfirmation or AcknowledgeDecision or AcknowledgeReveal or UndoLastAction or PassTurn or SelectPlayer
                 or ChooseNumber or SkipAllocation => true,
@@ -44,7 +45,12 @@ public abstract record DecisionCommand : GameCommand
     private protected DecisionCommand(string gameId, string decisionId) : base(gameId) => DecisionId = decisionId;
 }
 
-public sealed record PassPriority(string GameId, string DecisionId) : DecisionCommand(GameId, DecisionId);
+public sealed record PassPriority(string GameId, string DecisionId) : DecisionCommand(GameId, DecisionId)
+{
+    // A finite stack continuation additionally guards against an intervening
+    // action or required choice, including one absent from the latest snapshot.
+    public long? StackInterruptionVersion { get; init; }
+}
 public sealed record AutoPassPriority(string GameId, string DecisionId) : DecisionCommand(GameId, DecisionId);
 public sealed record KeepOpeningHand(string GameId, string DecisionId) : DecisionCommand(GameId, DecisionId);
 public sealed record MulliganOpeningHand(string GameId, string DecisionId) : DecisionCommand(GameId, DecisionId);
@@ -104,7 +110,9 @@ public static class GameCommandPermissions
         bool Selectable(string key) => Card(key) is { Selectable: true };
         bool Located(string key, params string[] zones) => CardViews.Located(state).Any(item => item.Card.Key == key && zones.Contains(item.Zone));
         return command switch {
-            PassPriority => payload is PriorityPayload { Pass.Enabled: true },
+            PassPriority value => payload is PriorityPayload { Pass.Enabled: true }
+                && (value.StackInterruptionVersion == null || state.Status == "playing" && state.Stack.Length > 0
+                    && value.StackInterruptionVersion == state.StackInterruptionVersion),
             AutoPassPriority => state.Status == "playing" && payload is PriorityPayload { Pass.Enabled: true, CanAutoPass: true },
             KeepOpeningHand => payload is OpeningHandPayload { Keep.Enabled: true },
             MulliganOpeningHand => payload is OpeningHandPayload { Mulligan.Enabled: true },

@@ -20,7 +20,8 @@ internal static class ForgeSnapshotDecoder
             if (string.IsNullOrWhiteSpace(wire.Id) || wire.Status is not ("starting" or "playing" or "resolving" or "finished" or "error")
                 || !raw.TryGetProperty("viewerId", out var viewer) || !viewer.TryGetInt32(out _)
                 || wire.Players.IsDefault || wire.Stack.IsDefault || wire.Players.Any(player => player == null) || wire.Stack.Any(item => item == null)
-                || wire.Players.Select(player => player.Id).Distinct().Count() != wire.Players.Length) throw Invalid();
+                || wire.Players.Select(player => player.Id).Distinct().Count() != wire.Players.Length
+                || wire.StackInterruptionVersion is < 0) throw Invalid();
             var players = wire.Players.Select(player => player.Id).ToImmutableHashSet();
             if (spectator ? wire.ViewerId != -1 || wire.Prompt.ValueKind is not (JsonValueKind.Null or JsonValueKind.Undefined)
                     : wire.Status != "starting" && !players.Contains(wire.ViewerId)) throw Invalid();
@@ -42,6 +43,7 @@ internal static class ForgeSnapshotDecoder
                 wire.Phase ?? "Starting game", wire.PhaseKey ?? "PREGAME", wire.ActivePlayerId, wire.Players,
                 wire.Stack.Select(item => item.Native()).ToImmutableArray(), wire.Combat?.Native(), decision) {
                 Revision = wire.Revision, BoardRevision = wire.BoardRevision,
+                StackInterruptionVersion = wire.StackInterruptionVersion,
                 PriorityPlayerId = wire.PriorityPlayerId, DecisionOwnerId = wire.DecisionOwnerId,
                 ActionClass = wire.ActionClass, States = wire.States, Activity = wire.Activity,
                 Notices = wire.Notices, IgnoredPriorityAbilities = wire.IgnoredPriorityAbilities,
@@ -130,6 +132,7 @@ internal static class ForgeSnapshotDecoder
         public JsonElement Prompt { get; init; }
         public long Revision { get; init; }
         public long BoardRevision { get; init; }
+        public long? StackInterruptionVersion { get; init; }
         public int? PriorityPlayerId { get; init; }
         public int? DecisionOwnerId { get; init; }
         public string ActionClass { get; init; } = "";

@@ -13,6 +13,7 @@ public sealed partial class ForgeEngine : IAutomatedSimulation
         Converters = { new JsonStringEnumConverter(allowIntegerValues: false) }
     };
     private readonly Dictionary<(string Game, int Seat), (ForgeCommandScope Scope, DecisionActionDomain Domain)> automatedScopes = [];
+    private JsonElement? lastDecodedAutomatedWire;
 
     public async Task EnableAutomatedSeatsAsync()
     {
@@ -42,22 +43,45 @@ public sealed partial class ForgeEngine : IAutomatedSimulation
     {
         var owner = current ?? throw new IOException("The engine is not running");
         if (!owner.AutomationAvailable) throw new NotSupportedException("This engine has no automated-seat port.");
-        var raw = await Request("automatedState");
+        JsonElement raw;
+        try { raw = await Request("automatedState"); }
+        catch (EngineObservationSupersededException) {
+            lock (automatedScopes) automatedScopes.Clear();
+            throw;
+        }
         if (current != owner || owner.Failure != null) throw new IOException("The engine changed during automated observation.");
         ImmutableArray<AutomatedSeatObservation> result;
         try { result = DecodeAutomatedObservations(raw); }
-        catch {
+        catch (Exception error) {
             lock (automatedScopes) automatedScopes.Clear();
+            PreserveRejectedAutomatedObservation(paths.Profile, raw, error);
             throw;
         }
         lock (automatedScopes) {
             automatedScopes.Clear();
+            // Request already returned an owned immutable JSON clone.
+            lastDecodedAutomatedWire = raw;
             foreach (var item in result) {
                 var scope = new ForgeCommandScope(); scope.Observe(item.State);
                 automatedScopes.Add((item.State.Id, item.SeatId), (scope, item.Domain));
             }
         }
         return result;
+    }
+
+    // Failure-only local quarantine, separate from engine.log and public errors.
+    // Replaces one file instead of accumulating every bot's private observations.
+    // The rejected wire is evidence, never an accepted frame or replay authority.
+    internal static void PreserveRejectedAutomatedObservation(string profile, JsonElement raw, Exception error)
+    {
+        try {
+            string directory = Path.Combine(profile, "diagnostics");
+            Directory.CreateDirectory(directory);
+            File.WriteAllText(Path.Combine(directory, "private-rejected-ai-observation.json"),
+                JsonSerializer.Serialize(new { capturedAt = DateTimeOffset.UtcNow, authority = "none",
+                    privacy = "Private bot observations; may contain hands and library faces. Review before sharing.",
+                    error = error.ToString(), raw }));
+        } catch (Exception) { /* Preserve the original failure even if diagnostic storage is unavailable. */ }
     }
 
     internal static ImmutableArray<AutomatedSeatObservation> DecodeAutomatedObservations(JsonElement raw)
@@ -130,6 +154,25 @@ public sealed partial class ForgeEngine : IAutomatedSimulation
         if (string.IsNullOrWhiteSpace(reasonCode) || reasonCode.Length > 96
             || reasonCode.Any(character => !(char.IsAsciiLetterOrDigit(character) || character == '-')))
             throw new ArgumentException("Use a bounded diagnostic reason code.", nameof(reasonCode));
+        // Provider decoding can succeed before frame/strategy validation fails.
+        // Keep that accepted observation distinct from a rejected wire batch.
+        JsonElement? last;
+        lock (automatedScopes) last = lastDecodedAutomatedWire;
+        PreserveLastAutomatedObservation(paths.Profile, last, gameId, seatId, reasonCode);
         await Request("automatedFault", new { sessionId = gameId, seatId, reasonCode });
+    }
+
+    internal static void PreserveLastAutomatedObservation(string profile, JsonElement? last, string gameId, int seatId, string reasonCode)
+    {
+        try {
+            bool matches = last is { ValueKind: JsonValueKind.Array } batch && batch.EnumerateArray().Any(item =>
+                item.GetProperty("seatId").GetInt32() == seatId && Text(item.GetProperty("state"), "id") == gameId);
+            string directory = Path.Combine(profile, "diagnostics");
+            Directory.CreateDirectory(directory);
+            File.WriteAllText(Path.Combine(directory, "private-last-ai-observation.json"),
+                JsonSerializer.Serialize(new { capturedAt = DateTimeOffset.UtcNow, gameId, seatId, reasonCode,
+                    authority = "none", phase = matches ? "last-decoded-observation" : "no-matching-decoded-observation",
+                    privacy = "Private bot observations; may contain hands and library faces. Review before sharing.", raw = matches ? last : null }));
+        } catch (Exception) { /* Diagnostics cannot replace the actual automation fault. */ }
     }
 }

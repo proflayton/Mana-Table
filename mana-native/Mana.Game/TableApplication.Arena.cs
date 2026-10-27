@@ -17,7 +17,7 @@ internal sealed partial class TableApplication
         attachmentBadges.Clear(); attachmentConnections.Clear();
         battlefieldLabels.Clear(); battlefieldStatsBounds.Clear(); counterAnchors.Clear();
         choiceOrderBadges.Clear(); manaColorPaint.Clear();
-        stackRows.Clear(); prioritySeats.Clear();
+        stackRows.Clear(); stackWorkloadPaint.Clear(); prioritySeats.Clear();
         changeCalloutBounds = null; highlightedChangeTargets.Clear(); highlightedChangeSource = null;
         var state = match!;
         PrepareManaJourney();
@@ -43,7 +43,7 @@ internal sealed partial class TableApplication
         // Your seat stays in front of the fan and readable during card travel.
         if (state.Viewer is { } local) DrawHero(local, SeatHero(local.Id), true, 3);
         DrawPriorityHandoff();
-        DrawGameHeader(); DrawCombatBar(); DrawActionCallout();
+        DrawGameHeader(); DrawCombatBar(); DrawActionCallout(); DrawPublicAnnouncement();
         DrawTurnCallout();
         if (dragging && dragSource?.Card is { } heldCard) {
             bool legal = LegalDrop(HitAt(pointer));

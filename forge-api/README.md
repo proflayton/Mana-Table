@@ -841,6 +841,36 @@ advance `revision`, turn/phase metadata, and activity while keeping the last sta
 board. `boardRevision` changes only when a fresh board snapshot is published.
 Clients can update status and history without rebuilding cards during AI work.
 
+Cast/ability and resolution entries may carry `stackId`, copied from the exact
+engine stack instance at the event boundary. This joins an announcement to its
+actual settlement; source names, source card IDs and activity cause IDs cannot
+establish that relationship. It is historical correlation, never action authority.
+Older providers omit it and clients must retain that uncertainty.
+
+Snapshots may also carry `stackInterruptionVersion`, a table-local monotonic
+generation for new actions, required choices and rollback/restart. Resolving
+already pending entries and their resulting counter/stat changes do not advance
+it. A finite current-stack continuation sends ordinary `passPriority` with the
+optional captured generation. The adapter validates both the current prompt
+and generation at acceptance and again on the owned input executor; a mismatch
+restores priority without passing. A guarded pass requires a nonempty stack.
+The client separately freezes exact current entry IDs, order, controller, kind
+and targets, stops for any new entry or required input, and retains no intent
+after that queue empties. This grants no permission to choose targets, pay costs,
+answer another seat or accept future triggers. Legacy providers without the
+generation retain ordinary passes but cannot arm this continuation. The additions
+are optional protocol-2 data; no deck or player-save migration is required.
+
+The private `automatedState` read can be superseded while source actions are
+being discovered. That exact consistency failure returns
+`errorCode: "observation-superseded"`, with no accepted observation or command
+receipt. The native adapter revokes its automated action scopes, and the host
+waits for its next ordinary complete observation before deciding again. It does
+not repeat an action, retain a partially discovered batch or parse exception
+prose. The same message without the typed code, or that code on an action
+request, remains an ordinary failure. Other protocol/decoding/strategy failures
+still stop automation and preserve diagnostics.
+
 Visible cards also have an opaque `visualId` for animation correlation. These
 handles are discarded on hidden-zone transitions and omitted for face-down or
 hidden cards. They cannot authorize actions: use the current prompt's `key`.

@@ -74,6 +74,12 @@ public sealed partial class ExperienceLabSession
             if (Scenario.Id == DecisionFlowScenario.Id) return ReplyDecisionFlow(reply);
             if (Scenario.Id == OptionalDecisionScenario.Id) return ReplyOptionalDecision(reply);
             if (Scenario.Id == ManaPaymentScenario.Id) return ReplyManaPayment(reply);
+            if (Scenario.Id == StackTriggersScenario.Id && reply is PassPriority && StageIndex is >= 1 and <= 4) {
+                StageIndex++; return State = Stamp(Stages[StageIndex].Snapshot);
+            }
+            if (Scenario.Id == StackTriggersScenario.Id && reply is AcknowledgeDecision && StageIndex == 5) {
+                StageIndex++; return State = Stamp(Stages[StageIndex].Snapshot);
+            }
             if (Scenario.Id == CounterPaymentScenario.Id) return ReplyCounterPayment(reply);
             if (Scenario.Id == PlayAccessScenario.Id && reply is PassPriority) return ReplyPlayAccess(reply);
             var decision = State.Decision!;

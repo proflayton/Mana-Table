@@ -5,13 +5,19 @@ namespace Mana.AI;
 
 public sealed record AiHostFault(string GameId, int SeatId, string ReasonCode);
 
+/// <summary>Host-only failure evidence. Never part of a policy's seat knowledge or public match state.</summary>
+public interface IAiHostDiagnostics
+{
+    void Report(AiHostFault fault, Exception? error);
+}
+
 /// <summary>
 /// Composition-owned driver. Only this host sees the private bot port; policies
 /// receive immutable individual-seat frames and submit through ordinary rules
 /// inputs. There is no legacy strategy or automatic concession fallback.
 /// </summary>
 public sealed class AiTableHost(IAutomatedSeatProvider provider, Func<int, IAiPolicy> policy,
-    long seed, AiSeatLimits? limits = null) : IAsyncDisposable
+    long seed, AiSeatLimits? limits = null, IAiHostDiagnostics? diagnostics = null, IAiHostPacing? pacing = null) : IAsyncDisposable
 {
     private readonly SemaphoreSlim step = new(1);
     private readonly SemaphoreSlim startup = new(1);
@@ -46,7 +52,15 @@ public sealed class AiTableHost(IAutomatedSeatProvider provider, Func<int, IAiPo
         ObjectDisposedException.ThrowIf(disposed, this);
         await step.WaitAsync(cancellation).ConfigureAwait(false);
         try {
-            var observed = await provider.ObserveAutomatedSeatsAsync().ConfigureAwait(false);
+            ImmutableArray<AutomatedSeatObservation> observed;
+            try { observed = await provider.ObserveAutomatedSeatsAsync().ConfigureAwait(false); }
+            catch (EngineObservationSupersededException) {
+                // Discovery produced no authority. The next ordinary host step
+                // must obtain a new complete batch before evaluating any seat.
+                // Other provider failures still reach the diagnostic/fault path.
+                return;
+            }
+            pacing?.Observe(observed.Select(item => AiTableProgress.From(item.State)).ToImmutableArray());
             var active = observed.Select(item => (item.State.Id, item.SeatId)).ToHashSet();
             faultedGames.RemoveWhere(game => !active.Any(key => key.Id == game));
             lock (seats) {
@@ -72,13 +86,16 @@ public sealed class AiTableHost(IAutomatedSeatProvider provider, Func<int, IAiPo
                             seats.Add(key, session);
                         }
                     }
-                } catch {
-                    await FaultAsync(state.Id, item.SeatId, "policy-configuration").ConfigureAwait(false);
+                } catch (Exception error) {
+                    await FaultAsync(state.Id, item.SeatId, "policy-configuration", error).ConfigureAwait(false);
                     continue;
                 }
                 if (state.Status != "playing" || state.Decision == null || state.Viewer?.Eliminated != false) {
                     session.Observe(null); continue;
                 }
+                // A presentation pause is never a stored decision or answer.
+                // Skip this iteration and re-observe current authority next time.
+                if (pacing != null && !pacing.Ready(state.Id, item.SeatId)) continue;
                 var frame = new AiDecisionFrame(state, domain: item.Domain, semantics: item.Semantics);
                 if (rejected.Remove(key, out var priorRejection) && priorRejection == frame.Stamp) {
                     await FaultAsync(state.Id, item.SeatId, "rejected-command").ConfigureAwait(false);
@@ -99,19 +116,26 @@ public sealed class AiTableHost(IAutomatedSeatProvider provider, Func<int, IAiPo
                     rejected[key] = ticket.Stamp;
                     // The engine may have advanced between observation and reply.
                     // The next iteration must observe a new scope, never replay.
-                } catch {
+                } catch (Exception error) {
                     session.Report(ticket, AiExecutionReceipt.Unknown);
-                    await FaultAsync(state.Id, item.SeatId, "execution-unknown").ConfigureAwait(false);
+                    await FaultAsync(state.Id, item.SeatId, "execution-unknown", error).ConfigureAwait(false);
                 }
             }
         } finally { step.Release(); }
     }
 
-    private async Task FaultAsync(string game, int seat, string reason)
+    private async Task FaultAsync(string game, int seat, string reason, Exception? error = null)
     {
         LastFault = new(game, seat, reason);
+        ReportDiagnostic(LastFault, error);
         faultedGames.Add(game);
         await provider.ReportAutomationFaultAsync(game, seat, reason).ConfigureAwait(false);
+    }
+
+    private void ReportDiagnostic(AiHostFault fault, Exception? error)
+    {
+        try { diagnostics?.Report(fault, error); }
+        catch { /* Failed evidence storage cannot change the fail-closed match outcome. */ }
     }
 
     private async Task RunAsync()
@@ -122,12 +146,15 @@ public sealed class AiTableHost(IAutomatedSeatProvider provider, Func<int, IAiPo
                 await Task.Delay(40, lifetime.Token).ConfigureAwait(false);
             }
         } catch (OperationCanceledException) when (lifetime.IsCancellationRequested) { }
-        catch {
+        catch (Exception error) {
             // A failed private connection is not a legal pass. Revoke all work;
             // the owning engine connection reports its failure to the table.
             LastFault ??= new("", -1, "provider-failed");
             (string Game, int Seat)[] owned;
             lock (seats) { owned = seats.Keys.ToArray(); foreach (var seat in seats.Values) seat.Dispose(); }
+            // The failing batch may belong to any seat. Do not misidentify the
+            // first previously owned seat as the source of a provider failure.
+            ReportDiagnostic(new("", -1, "provider-failed"), error);
             foreach (var game in owned.GroupBy(key => key.Game)) {
                 var seat = game.First();
                 try { await FaultAsync(seat.Game, seat.Seat, "provider-failed").ConfigureAwait(false); }

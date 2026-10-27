@@ -426,7 +426,7 @@ public class AutomatedPaymentJourneyTest {
         return deck;
     }
 
-    private record Input(int playerId, MatchSession session, JsonObject state, JsonObject prompt) { }
+    record Input(int playerId, MatchSession session, JsonObject state, JsonObject prompt) { }
     private static boolean isPriority(Input input) { return text(input.prompt, "inputType").equals("InputPassPriority"); }
     private static JsonObject card(JsonObject state, String zoneName, String name) {
         return zone(viewer(state), zoneName).getAsJsonArray("cards").asList().stream().map(value -> value.getAsJsonObject())
@@ -438,7 +438,7 @@ public class AutomatedPaymentJourneyTest {
         return request;
     }
 
-    private static final class Driver {
+    static final class Driver {
         private final MatchTable table;
         private final int policyId;
         private final List<MatchSession> seats;

@@ -24,6 +24,8 @@ internal sealed partial class TableApplication
             case MatchIntent.OpenZone open: OpenZone(open.PlayerId, open.Zone); break;
             case MatchIntent.OpenBattlefields when match != null: OpenZone(match.ViewerId, "Battlefield"); break;
             case MatchIntent.OpenStack open: OpenStack(open.Index); break;
+            case MatchIntent.OpenStackWorkload open: OpenStackWorkload(open.Key); break;
+            case MatchIntent.CloseStackWorkload: expandedStackWorkload = ""; break;
             case MatchIntent.InspectCard read: Inspect(read.Card); break;
             case MatchIntent.InspectOccurrence read:
                 if (matchPresentation.Cards.Cards.LastOrDefault(card => card.Id == read.Id) is { } occurrence)
@@ -147,6 +149,7 @@ internal sealed partial class TableApplication
                 else if (!preferences.Stops.Remove(stop.Key)) preferences.Stops.Add(stop.Key);
                 SavePreferences(); break;
             case MatchIntent.SetQuietPriority setting: if (setting.Armed) ArmQuietPriority(); else StopQuietPriority(); break;
+            case MatchIntent.SetStackResolution setting: if (setting.Armed) ArmStackResolution(); else StopStackResolution(); break;
             case MatchIntent.ToggleReducedMotion: preferences = preferences with { ReducedMotion = !preferences.ReducedMotion }; SavePreferences(); break;
             case MatchIntent.ToggleSounds: preferences = preferences with { Sounds = !preferences.Sounds }; SavePreferences(); break;
             case MatchIntent.CycleTextScale:

@@ -48,7 +48,10 @@ internal sealed class ForgeCommandScope
         void Action(string name) => args["action"] = name;
         void Card(string key) { Action("card"); args["key"] = key; }
         switch (command) {
-            case PassPriority: Action("passPriority"); break;
+            case PassPriority value:
+                Action("passPriority");
+                if (value.StackInterruptionVersion is { } version) args["stackInterruptionVersion"] = version;
+                break;
             case KeepOpeningHand or PayMana or CompleteAttackers or CompleteBlockers
                 or CompleteSelection or AcceptConfirmation or AcknowledgeDecision: Action("ok"); break;
             case MulliganOpeningHand or CancelPayment or CancelSelection or DeclineConfirmation:

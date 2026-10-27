@@ -11,6 +11,9 @@ internal sealed partial class TableApplication
     private void ResetTableView()
     {
         StopQuietPriority();
+        StopStackResolution(); expandedStackWorkload = "";
+        workloadSnapshot = stackEligibilitySnapshot = null; cachedWorkloads = []; cachedStackEligibility = false;
+        workloadOrder.Clear(); workloadOrderScope = null;
         hits.RevokePublished(); Frame = null; tableScene = null; hovered = null;
         cardPositions.Clear(); heroPositions.Clear();
         decisions.Clear(); zoneName = null; selectedCombat = null;

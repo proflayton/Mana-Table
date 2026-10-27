@@ -329,9 +329,13 @@ classifications fail at decoding. This is additive wire data, not a new action
 capability or persisted-deck migration. It does not yet join the independent
 execution identities described below.
 
-Accepted new stack occurrence IDs drive a bounded 2.4-second announcement and
-source emphasis. Joining, repeated polls and retained history cannot restart it;
-an entire batch does not create a sequence of one timer per trigger. Hovering
+Accepted new stack occurrence IDs and exact event-time `ActivityEntry.StackId`
+links drive an ordered, noninteractive announcement queue and source emphasis.
+The queue retains public identity/text only, never card faces, answer keys or
+actionable historical snapshots. Joining does not replay retained history;
+unchanged polling does not restart a beat. A bounded backlog or missing history
+is reported as incomplete rather than pretending every action was observed.
+Current required decisions remain live and take foreground immediately. Hovering
 the pending effect reads the chosen spell/ability with source artwork, complete text
 and current source statistics/counters. Hovering its source or targets retains
 their separate full-card inspection. Readers resolve current stack membership
@@ -339,6 +343,35 @@ each frame and disappear when that occurrence leaves. Emphasis gates local Auto
 and the existing bounded presentation acknowledgement; it cannot reset a host
 decision clock. Reading pauses local automatic interaction while the host's
 thinking/grace clock continues to run and enforce its configured expiry policy.
+
+Shipping composition also injects `IAiHostPacing` into `AiTableHost`. The host
+projects `AiTableProgress` (game/seat, turn, active seat, stack IDs and latest
+public action ID) for every observed bot before checking readiness. No private
+faces, offers or policy proposals cross that port. The timed implementation
+tracks each viewer's feed separately: activity sequences are audience-local and
+must not reset another seat's timer. Waiting withholds a command and re-observes
+on the next step; it never retains an answer across the beat. Headless campaigns
+use the fast default without this presentation cadence. A local client's Auto
+pause alone cannot govern AI progression or actions inside one rules execution.
+
+`IAiHostDiagnostics` is a separate host-only failure sink. Shipping composition
+retains original exception chains in `diagnostics/ai-host.log`; the provider
+quarantines the last decoded private bot batch and any rejected wire batch in
+distinct failure-only files. Those files have no replay/action authority and
+may contain private hands. Stable reason codes alone cross the public fault
+port. Storage failure cannot prevent fail-closed automation shutdown. The
+historical `provider-failed` report without its original exception cannot by
+itself establish a rules, strategy or wire-decoding cause.
+
+A real mixed-deck investigation reproduced a different boundary outcome:
+`automatedState` can lose its owned input during source discovery. The adapter
+maps only that method's typed `observation-superseded` result to
+`EngineObservationSupersededException`, clears cached source scopes, and returns
+no frame. `AiTableHost` discards that read and obtains a complete fresh batch on
+its next ordinary tick. It never retries a command or treats matching prose as
+recoverable. A stale signal during execution remains an unknown receipt and
+fails closed. This preserves the distinction between superseded observations,
+rejected commands, lost receipts and fatal provider defects.
 
 `PublicActivityCursor` consumes the accepted observation's event IDs once and
 publishes one immutable `PublicActivityBatch` to the feedback consumers. The batch
@@ -1483,6 +1516,27 @@ command variant and retain separate submitted-prompt histories. The unchanged
 authorize ordinary Auto. The application checks eligibility and presentation
 pauses without keeping another submitted-prompt cache or constructing a discarded
 pass command. The session owns submission and reconciliation.
+
+`StackResolutionIntent` adds a separate finite policy: capture the current exact
+stack occurrences, their order, controller, kind and targets, plus game/viewer,
+turn/phase and `StackInterruptionVersion`. It issues only currently offered,
+fenced `PassPriority`; it does not broaden Auto or reuse quiet-yield tokens.
+Surviving entries may form an order-preserving subsequence. A new entry,
+retarget, required choice, provider intervention, scope boundary or exhausted
+queue retires the intent. Mutable source characteristics do not. Each actual
+effect boundary returns to presentation; reading pauses a batch while Take
+control ends the intent. Cancellation reconciles one already-sent command.
+The Java adapter checks the fence at acceptance and again at execution to catch
+an action or required choice that appeared and disappeared between observations.
+Older providers without the fence cannot arm this feature.
+
+`StackWorkloads` is a source census over current entries, including interleaved
+triggers. Exact physical source, controller, effect and target identity bound a
+cohort. It never reorders or combines engine effects. The actual first entry
+alone determines NEXT, and expanded references retain real absolute positions.
+Pending counts are work counts, not forecasts of counters or damage: Pir's
+replacement is a concrete case where one trigger creates two counters. Actual
+settled characteristics and typed event receipts remain the result authority.
 
 `PresentationPacing` pauses for visible events, not empty phase changes. Board
 changes get 1.1 seconds, ordinary stack changes 1.25, targeted spells or retargets

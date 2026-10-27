@@ -33,7 +33,8 @@ internal static class Program
             if (backend != "forge") throw new NotSupportedException($"Engine '{backend}' is not installed. Available: forge.");
             var paths = new ForgePaths(Path.Combine(bundle, "runtime", "bin", "java.exe"), Path.Combine(bundle, "forge-engine.jar"), Path.Combine(bundle, "forge-res"), profile);
             var engine = new ForgeEngine(paths);
-            var automated = new AiTableHost(engine, _ => new CasualCommanderPolicy(), Random.Shared.NextInt64());
+            var automated = new AiTableHost(engine, _ => new CasualCommanderPolicy(), Random.Shared.NextInt64(),
+                diagnostics: new AiHostDiagnostics(profile), pacing: new TimedAiHostPacing(TimeSpan.FromSeconds(2.4)));
             try {
                 ICardArtSource? art = null;
                 if (Arg("--art-manifest") is { } manifestPath) {

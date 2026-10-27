@@ -44,6 +44,7 @@ internal sealed partial class TableApplication
                 ? new(area.X, area.Y, Math.Max(1, leftWidth), area.Height)
                 : new(reader.Right + 12, area.Y, Math.Max(1, rightWidth), area.Height);
         }
+        if (RepeatedStackWorkload) { DrawStackWorkloads(area); return; }
         string owner = entry.ControllerId is { } controller ? StateClarity.PlayerName(state, controller) : "Controller not reported";
         string status = StackHeading(entry);
         var header = new Rectangle(area.X, area.Y, area.Width, 23);

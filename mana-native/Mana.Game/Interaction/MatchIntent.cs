@@ -20,6 +20,8 @@ internal abstract record MatchIntent : UiIntent
     internal sealed record OpenZone(int PlayerId, string Zone) : MatchIntent;
     internal sealed record OpenBattlefields : MatchIntent { internal override InteractionScopeKind ScopeKind => InteractionScopeKind.Playback; }
     internal sealed record OpenStack(int Index = 0) : MatchIntent;
+    internal sealed record OpenStackWorkload(string Key) : MatchIntent;
+    internal sealed record CloseStackWorkload : MatchIntent;
     internal sealed record InspectCard(Card Card) : MatchIntent;
     internal sealed record InspectOccurrence(string Id) : MatchIntent;
     internal sealed record UseCard(Card Card, bool CloseOverlay = false, bool DismissZone = false) : MatchIntent;
@@ -104,6 +106,9 @@ internal abstract record MatchIntent : UiIntent
         internal override InteractionScopeKind ScopeKind => Resume ? InteractionScopeKind.PhaseStop : InteractionScopeKind.Playback;
     }
     internal sealed record SetQuietPriority(bool Armed) : MatchIntent {
+        internal override InteractionScopeKind ScopeKind => Armed ? InteractionScopeKind.Current : InteractionScopeKind.Playback;
+    }
+    internal sealed record SetStackResolution(bool Armed) : MatchIntent {
         internal override InteractionScopeKind ScopeKind => Armed ? InteractionScopeKind.Current : InteractionScopeKind.Playback;
     }
     internal sealed record ToggleReducedMotion : MatchIntent;

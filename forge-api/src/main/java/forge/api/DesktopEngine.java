@@ -80,14 +80,21 @@ public final class DesktopEngine implements AutoCloseable {
                 } catch (Exception error) {
                     // Validation errors are returned to the caller; unexpected
                     // request failures also need a stack trace in engine.log.
-                    if (!(error instanceof IllegalArgumentException)) error.printStackTrace(System.err);
-                    var reply = new JsonObject();
-                    if (request != null) { reply.add("id", request.get("id")); }
-                    reply.addProperty("error", error.getMessage() == null ? error.getClass().getSimpleName() : error.getMessage());
-                    protocol.println(JSON.toJson(reply));
+                    if (!(error instanceof IllegalArgumentException || error instanceof StaleObservationException)) error.printStackTrace(System.err);
+                    protocol.println(JSON.toJson(errorReply(request, error)));
                 }
             }
         }
+    }
+
+    static JsonObject errorReply(JsonObject request, Exception error) {
+        var reply = new JsonObject();
+        if (request != null) reply.add("id", request.get("id"));
+        reply.addProperty("error", error.getMessage() == null ? error.getClass().getSimpleName() : error.getMessage());
+        if (error instanceof StaleObservationException && request != null && request.has("method")
+                && request.get("method").isJsonPrimitive() && request.get("method").getAsString().equals("automatedState"))
+            reply.addProperty("errorCode", StaleObservationException.CODE);
+        return reply;
     }
 
     @Override

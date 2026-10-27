@@ -100,6 +100,10 @@ does not establish that a person can understand or use the screen.
    interruptible continuation. Keep every underlying trigger, target restriction,
    response window and effect in the engine. Grouping presentation does not make
    separate effects simultaneous or authorize choosing for another player.
+   Reducing repeated clicks is separate from speeding presentation. A cast,
+   activation or trigger needs a readable announcement and a connection to its
+   real result, even when no human response is available. Do not let the AI host
+   outrun a pause that only governs the local client's Auto mode.
 9. **Finish the everyday lifecycle.** Deck management includes creating, naming,
    editing, saving, importing, duplicating, exporting, deleting and recovering a
    deck. Review these ordinary journeys before describing the experience as complete.
@@ -2101,3 +2105,43 @@ scope, privacy and cancellation of movement. They cannot accept comfort, clarity
 or orientation. Agent inspection can surface concerns; acceptance still requires
 people playing through the comparison. The whole-table crowded layout remains
 an open design problem regardless of the camera experiment's outcome.
+
+## Draw-trigger workload and action announcements
+
+The reported game had 71 pending entries from drawing, with Skulker and Toothy
+receiving counters while Pir changed their actual increments. The player intent
+is to let the currently known work proceed without repeatedly passing, while
+still seeing what each source does and keeping the ability to intervene.
+
+[Magic Online's gameplay guide](https://www.mtgo.com/getting-started/getting-started-tips-tricks)
+documents yielding from an ability on the stack and removing yields with a
+single control. We adapt the ability-attached context and explicit interruption,
+with consent limited to the current exact queue. Its persistent yields and
+automatic optional answers do not describe this feature. The supplied MTGA
+gameplay establishes source-art ability faces, readable hover and on-card
+results; it does not establish a four-player source-pile arrangement.
+[Arena's December 2020 developer article](https://magic.wizards.com/en/news/mtg-arena/mtg-arena-state-game-december-2020-12-07)
+also distinguishes tabletop shortcuts from the digital engine's execution of
+every trigger. That historical account is not evidence of current Arena timing
+or a reason to import its token limit.
+
+Our adaptation groups pending work by exact physical source and effect/target
+identity, including interleaved entries, while NEXT follows the real stack.
+Hover reads the exact member; opening a pile exposes separate references with
+their actual positions. Resolve these captures the current queue. Each real
+settlement remains separately presented, and Take control, a new action or a
+required choice ends the continuation. Pending counts never predict counters.
+
+PR #35's separate pacing feedback exposed an ownership gap: local Auto waited
+for visual beats while the bot host could keep advancing. Source announcements
+must survive another observation, and a new response must take attention ahead
+of older repeated-trigger notices. Announcement history has no command authority;
+current choices and current card visibility always govern interaction.
+
+Review the entire 71-entry journey at 1000×740 and 1540×980 with artwork, including
+source inspection, a deep member, a settled Pir-modified counter change, Take
+control, an opposing response and a required choice. Also review ordinary
+casts/activations through the paced host. The authored lab checkpoints establish
+presentation relationships; real Java tests supply independent rules evidence.
+Automated safety and agent visual review do not supply human approval. Human
+review of this new source iteration remains pending.

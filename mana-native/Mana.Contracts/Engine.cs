@@ -288,6 +288,9 @@ public sealed record GameSnapshot(string Id, string Status, string? Error, strin
     public ImmutableArray<PublicState> States { get; init; } = [];
     public long Revision { get; init; }
     public long BoardRevision { get; init; }
+    // Monotonic provider fence for explicit, finite current-stack yielding.
+    // Omitted by older providers: clients must not arm that continuation.
+    public long? StackInterruptionVersion { get; init; }
     public int? PriorityPlayerId { get; init; }
     // Public acting seat only. Another seat's private prompt/options are never copied here.
     public int? DecisionOwnerId { get; init; }
@@ -303,6 +306,9 @@ public sealed record GameSnapshot(string Id, string Status, string? Error, strin
 }
 public sealed record ActivityEntry(long Id, int Turn, string PhaseKey, string Kind, int? PlayerId, string Message, string? CardId, string? CardName)
 {
+    // Exact public stack occurrence, when supplied by its cast/resolution event.
+    // Historical correlation only; never a current action handle.
+    public string? StackId { get; init; }
     // Older engines omit this field and remain conservatively interrupting.
     public bool InterruptsQuietYield { get; init; } = true;
     public string Detail { get; init; } = "";

@@ -470,6 +470,13 @@ own answers. Moving these controls grants no permission to make those choices.
 Pass for now keeps its label and Take control position through routine handoffs
 and pauses while reading. Another player's required choice does not hide that
 cancellation control.
+In the next source build, Resolve these passes priority for the entries already
+on the stack. Take control stops it. A new action or required choice stops it
+automatically; it never chooses targets or pays costs. Hovering to read pauses
+your continuation while the table's configured decision clock keeps running.
+Repeated trigger sources appear as card piles with pending counts. NEXT marks
+the actual next entry; the piles do not change resolution order or predict how
+many counters will be added. Read the ability or its source for complete details.
 Results and exact counter increments appear beside their recipients. Public
 departures move toward the actual pile; Recent changes retains further details.
 Resolution feedback distinguishes resolved and did not resolve. Draw and shuffle
@@ -484,6 +491,12 @@ INTERRUPTED CONNECTIONS AND LEAVING
 If updates stop or a connection fails, the table remains visible for inspection
 and shows how old its last update is. Actions and Auto wait for a fresh state.
 Reconnect checks the current table; it does not replay an uncertain last action.
+The next source build retains original AI-host failures in diagnostics/ai-host.log.
+A rejected bot observation also writes diagnostics/private-rejected-ai-observation.json
+in your data directory. The last decoded bot batch is retained separately in
+diagnostics/private-last-ai-observation.json. These failure-only files may
+contain private bot hands; review before sharing. They are diagnostic evidence,
+not saved playable games.
 After elimination, you can watch the remaining players or leave. Leaving while
 still playing concedes your seat. The host's leave confirmation explains that
 closing the hosted table disconnects everyone and ends that game. Local Exit

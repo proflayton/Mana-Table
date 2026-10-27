@@ -12,7 +12,12 @@ import java.util.*;
 public final class MatchActivity {
     public record Entry(long id, int turn, String phaseKey, String kind, Integer playerId,
                         String message, String cardId, String cardName, String detail, String outcome, int count,
-                        PublicCardChange change, PublicEffectCause cause, boolean interruptsQuietYield, PublicImpact impact) {
+                        PublicCardChange change, PublicEffectCause cause, boolean interruptsQuietYield, PublicImpact impact, String stackId) {
+        public Entry(long id, int turn, String phaseKey, String kind, Integer playerId, String message,
+                     String cardId, String cardName, String detail, String outcome, int count,
+                     PublicCardChange change, PublicEffectCause cause, boolean interruptsQuietYield, PublicImpact impact) {
+            this(id, turn, phaseKey, kind, playerId, message, cardId, cardName, detail, outcome, count, change, cause, interruptsQuietYield, impact, null);
+        }
         public Entry(long id, int turn, String phaseKey, String kind, Integer playerId, String message,
                      String cardId, String cardName, String detail, String outcome, int count,
                      PublicCardChange change, PublicEffectCause cause, boolean interruptsQuietYield) {
@@ -180,13 +185,18 @@ public final class MatchActivity {
     }
     private void add(String kind, PlayerView player, String message, CardView card, String detail, String outcome, int count,
                      PublicCardChange change, PublicEffectCause cause, boolean interruptsQuietYield, PublicImpact impact) {
+        add(kind, player, message, card, detail, outcome, count, change, cause, interruptsQuietYield, impact, null);
+    }
+
+    private void add(String kind, PlayerView player, String message, CardView card, String detail, String outcome, int count,
+                     PublicCardChange change, PublicEffectCause cause, boolean interruptsQuietYield, PublicImpact impact, String stackId) {
         revision++;
         if (interruptsQuietYield) quietSequence++;
         boolean anonymousTarget = change != null && publicFaceDown(card);
         entries.addLast(new Entry(++sequence, turn, phase, kind, player == null ? null : player.getId(),
                 message, anonymousTarget ? identities.concealed(card) : visualId(card),
                 anonymousTarget ? "Face-down card" : visible(card) ? card.getCurrentState().getName() : null,
-                detail, outcome, count, change, cause, interruptsQuietYield, impact));
+                detail, outcome, count, change, cause, interruptsQuietYield, impact, stackId));
         if (cause != null && change != null && change.kind().equals("counters")) {
             latestCounterCause = cause.id();
             entriesAfterLatestCounterCause = 0;
@@ -233,14 +243,16 @@ public final class MatchActivity {
                 if (card != null && card.isCommander()) commanderCasts++;
             }
             String action = e.sa().isSpell() ? " cast " : e.si().isTrigger() ? " triggered an ability of " : " activated an ability of ";
-            add(e.sa().isSpell() ? "cast" : "ability", player, playerName(player) + action + cardName(card) + ".", card);
+            add(e.sa().isSpell() ? "cast" : "ability", player, playerName(player) + action + cardName(card) + ".", card,
+                    "", "", 0, null, null, true, null, String.valueOf(e.si().getId()));
         } else if (event instanceof GameEventSpellResolved e) {
             var card = e.spell().getHostCard();
             String detail = visible(card) ? Objects.requireNonNullElse(e.stackDescription(), "") : "";
             if (visible(card) && e.spell().isSpell()) detail += "\n" + card.getCurrentState().getOracleText();
             add("resolved", card == null ? null : card.getController(), cardName(card) + (e.spell().isSpell() ? "" : "'s ability")
                     + (e.hasFizzled() ? " did not resolve." : " resolved."), card,
-                    detail, e.hasFizzled() ? "notResolved" : "resolved", 0);
+                    detail, e.hasFizzled() ? "notResolved" : "resolved", 0, null, null, true, null,
+                    e.stackInstanceId() == null ? null : String.valueOf(e.stackInstanceId()));
         } else if (event instanceof GameEventCardChangeZone e) {
             ZoneType from = e.from() == null ? null : e.from().zoneType();
             ZoneType to = e.to() == null ? null : e.to().zoneType();

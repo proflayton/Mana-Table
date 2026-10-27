@@ -86,6 +86,7 @@ final class SpectatorObservation {
             result = outcome.isDraw() ? "Draw" : outcome.getWinningLobbyPlayer() == null ? "Game over" : outcome.getWinningLobbyPlayer().getName() + " wins";
         }
         return Collections.unmodifiableMap(map("id", table.id, "revision", revision, "boardRevision", revision,
+                "stackInterruptionVersion", table.stackInterruption.version(),
                 "format", table.format, "status", error != null ? "error" : revision == 0 ? "starting" : game.isGameOver() ? "finished" : "playing",
                 "error", error, "result", result, "viewerId", -1, "spectator", true, "playerCount", players.size(),
                 "turn", view.getTurn(), "phase", view.getPhase() == null ? "Pregame" : view.getPhase().nameForUi,

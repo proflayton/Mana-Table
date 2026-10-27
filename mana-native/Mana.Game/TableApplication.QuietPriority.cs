@@ -19,6 +19,7 @@ internal sealed partial class TableApplication
         // Observation does not change this local intent. The worker waits for
         // its result and rechecks this exact token before submitting any pass.
         if (!CanOfferQuietPriority || busy || match is not { } state) return;
+        StopStackResolution();
         session.CancelAdvance();
         quietYieldGame = state.Id; quietYieldTurn = state.Turn; quietYieldActivePlayer = state.ActivePlayerId;
         quietYieldToken = ((PriorityPayload)state.Decision!.Payload).QuietYieldToken;

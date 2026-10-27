@@ -573,7 +573,8 @@ public class MagicStack /* extends MyObservable */ implements Iterable<SpellAbil
 
         // The SpellAbility isn't removed from the Stack until it finishes resolving
         // temporarily reverted removing SAs after resolution
-        final SpellAbility sa = peekAbility();
+        final SpellAbilityStackInstance resolvingInstance = peek();
+        final SpellAbility sa = resolvingInstance.getSpellAbility();
 
         // abilities already on stack won't get changed text from host
         if (sa.isSpell()) {
@@ -633,7 +634,7 @@ public class MagicStack /* extends MyObservable */ implements Iterable<SpellAbil
             sa.setManaCostBeingPaid(null);
         }
 
-        game.fireEvent(new GameEventSpellResolved(sa, thisHasFizzled));
+        game.fireEvent(new GameEventSpellResolved(sa, thisHasFizzled, resolvingInstance.getId()));
 
         game.getAction().checkStaticAbilities();
 

@@ -126,6 +126,8 @@ internal sealed partial class TableApplication
             MatchIntent.PreviewPendingCard read => new PendingCardReference(read.StackId, read.CardId, read.DecisionId),
             MatchIntent.InspectPendingEffect read when match.Stack.FirstOrDefault(item => item.Id == read.Id)?.Card is { FaceDown: false } source
                 => new PendingCardReference(read.Id, CardViews.Identity(source), ReadEffect: true),
+            MatchIntent.OpenStackWorkload open when CurrentStackWorkloads.FirstOrDefault(group => group.Key == open.Key)?.First.Item is { Card: { FaceDown: false } source } item
+                => new PendingCardReference(item.Id, CardViews.Identity(source), ReadEffect: true),
             _ => null
         };
         if (explicitReference != null && hit != null && CurrentHit(hit) && ResolvePendingReference(explicitReference) != null) {

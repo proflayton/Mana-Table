@@ -91,11 +91,12 @@ internal sealed partial class TableApplication
         if (area.IsEmpty) return;
         if (DrawTurnPassConfirmation(area)) return;
         bool stopped = view.PauseReason == DecisionDockPauseReason.PhaseStop;
-        var accent = stopped || held ? Gold : QuietPriorityArmed ? Blue : PriorityAccent;
+        var accent = stopped || held ? Gold : QuietPriorityArmed || ResolvingCapturedStack ? Blue : PriorityAccent;
         var statusPoint = new Vector2(area.X + 8, area.Y + 10);
-        if (QuietPriorityArmed) PaintTurnAdvance(statusPoint, accent);
+        if (QuietPriorityArmed || ResolvingCapturedStack) PaintTurnAdvance(statusPoint, accent);
         else DrawDecisionRole(view, statusPoint, accent);
-        string heading = QuietPriorityArmed ? "Pass for now" : stopped ? view.Caption : view.Headline;
+        string heading = ResolvingCapturedStack ? "Resolving · " + stackResolutionIntent!.Remaining + " remaining"
+            : QuietPriorityArmed ? "Pass for now" : stopped ? view.Caption : view.Headline;
         canvas.Text(heading, area.X + 28, area.Y - 2, accent, .62f, stopped ? area.Width - 62 : area.Width - 28, 2, true);
         if (Vector2.DistanceSquared(pointer.ToVector2(), statusPoint) <= 16 * 16)
             DrawTurnHint(QuietPriorityArmed ? "Pass for now · Take control to stop"
@@ -109,7 +110,9 @@ internal sealed partial class TableApplication
         }
         bool following = busy || d == null || view.Status == DecisionDockStatus.AutoPassing;
         var action = new Rectangle(area.X, area.Bottom - 40, area.Width, 40);
-        if (QuietPriorityArmed || !following && CanOfferQuietPriority) {
+        if (ResolvingCapturedStack) {
+            Button("stack-resolution-stop", "Take control", action, new MatchIntent.SetStackResolution(false), true, true);
+        } else if (QuietPriorityArmed || !following && CanOfferQuietPriority) {
             Button(QuietPriorityArmed ? "quiet-priority-stop" : "quiet-priority-arm", QuietPriorityArmed ? "Take control" : "Pass for now",
                 action.X, action.Y, action.Width - 48, new MatchIntent.SetQuietPriority(!QuietPriorityArmed), !busy || QuietPriorityArmed, true, action.Height);
             if (!QuietPriorityArmed && !busy && d is { Payload: PriorityPayload { Pass.Enabled: true } }) {
@@ -118,7 +121,12 @@ internal sealed partial class TableApplication
                 if (IsControlHovered("confirm")) DrawTurnHint("Pass priority once", center);
             }
         } else if (!following && d?.Payload is PriorityPayload { Pass.Enabled: true }) {
-            Button("confirm", view.ActionLabel, action.X, action.Y, action.Width,
+            if (CanOfferStackResolution) {
+                Button("confirm", view.ActionLabel, action.X, action.Y - 43, action.Width,
+                    new MatchIntent.ConfirmDecision(), CombatGuide.CanConfirm(state), true, action.Height);
+                Button("stack-resolution-arm", "Resolve these", action, new MatchIntent.SetStackResolution(true), true);
+                decisionPanelBounds = Rectangle.Union(area, new(action.X, action.Y - 43, action.Width, 83));
+            } else Button("confirm", view.ActionLabel, action.X, action.Y, action.Width,
                 new MatchIntent.ConfirmDecision(), CombatGuide.CanConfirm(state), true, action.Height);
         }
         if (!following && d?.Payload is PriorityPayload { Alternative: { Reply.Enabled: true } alternative }) {

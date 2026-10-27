@@ -314,6 +314,20 @@ set, sharing the AI-seat shard. It waits for the actual automatic pass after a
 visible stack announcement, rather than assuming the earlier shorter animation
 duration. The existing headless arrival check separately verifies that unchanged
 observations do not restart that announcement.
+
+`StackResolutionRegression` in the existing client suite exercises a frozen
+71-entry intent through individual presentation boundaries, ordinary guarded
+passes, Take control, inspection pause/resume, required choices, retargeting,
+new entries, stale scopes and connection failure. `StackResolutionTest` is the
+real Java counterpart: Blue Sun's Zenith draws 35 with Skulker, Toothy and Pir,
+creating 70 independent triggers; another real response brings the stack to 71.
+It verifies every actual resolution and Pir's resulting counters, response and
+immediate-mana interruption, and a required choice between pass acceptance and
+execution. These are authority and rules checks, not proof of readability.
+`AiHostRegression` also checks fresh authority after a public pacing beat,
+divergent viewer-local event sequences and retention of original host failures.
+`AutomatedWireFailureChecks` verifies the shipping provider's private diagnostic
+quarantine separately from accepted replay frames and public exception text.
 The crowded-field window journey also joins the fast release set, sharing the
 three-player lobby shard. It uses the production battlefield faces at the former
 threshold, mixed states, duplicate tokens, distinct names and the canonical

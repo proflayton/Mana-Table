@@ -402,10 +402,15 @@ public class SourceActionsTest {
                 assertEquals(payment.prompt().getAsJsonArray("usablePoolManaColors").toString(), "[\"C\"]");
                 assertGenericUnpaid(payment.prompt(), pool + 1);
                 var current = payment;
-                var before = game.state(0);
-                assertThrows(IllegalArgumentException.class, () -> game.table.seat(0).action(request(current,
-                        Map.of("action", "spendPoolMana", "manaColor", "G"))));
-                assertEquals(game.state(0), before);
+                game.table.game.getAction().withState(() -> {
+                    // An unrelated queued display publication is not a side
+                    // effect of this rejected command. Keep this assertion at
+                    // one state boundary while retaining full frame equality.
+                    var before = game.state(0);
+                    assertThrows(IllegalArgumentException.class, () -> game.table.seat(0).action(request(current,
+                            Map.of("action", "spendPoolMana", "manaColor", "G"))));
+                    assertEquals(game.state(0), before);
+                });
                 assertTrue(game.answer(payment, Map.of("action", "spendPoolMana", "manaColor", "C")));
                 payment = game.until(next -> next.seat() == 0 && text(next.prompt(), "inputType").startsWith("InputPayMana"));
             }

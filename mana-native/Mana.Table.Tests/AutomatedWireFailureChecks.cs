@@ -2,6 +2,7 @@ using System.Reflection;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using Mana.Forge;
+using Mana.Contracts;
 
 namespace Mana.Table;
 
@@ -9,6 +10,15 @@ internal static class AutomatedWireFailureChecks
 {
     internal static void Run(string profile, Action<bool, string> check)
     {
+        const string staleMessage = "The automated input changed during discovery";
+        using (var typed = JsonDocument.Parse(JsonSerializer.Serialize(new { error = staleMessage, errorCode = "observation-superseded" }))) {
+            check(ForgeEngine.RequestFailure("automatedState", typed.RootElement) is EngineObservationSupersededException
+                && ForgeEngine.RequestFailure("automatedAction", typed.RootElement) is EngineCommandRejectedException,
+                "Only the exact typed read-only observation result permits discarding a stale AI discovery batch; action receipts remain failures");
+        }
+        using (var untyped = JsonDocument.Parse(JsonSerializer.Serialize(new { error = staleMessage })))
+            check(ForgeEngine.RequestFailure("automatedState", untyped.RootElement) is EngineCommandRejectedException,
+                "An identical untyped exception message is never interpreted as permission to hide a provider failure");
         const string privateMarker = "PRIVATE_WIRE_FACE";
         const string valid = """
             [{"seatId":0,"state":{"id":"wire-failure-fixture","status":"playing","viewerId":0,
@@ -37,6 +47,26 @@ internal static class AutomatedWireFailureChecks
         check(!rejected!.ToString().Contains(privateMarker, StringComparison.Ordinal)
             && rejected.GetType().GetProperties(BindingFlags.Public | BindingFlags.Instance).All(property => property.Name != "RejectedWire"),
             "Rejected private faces do not enter public exception text or publicly accessible properties");
+        string productionEvidence = Path.Combine(profile, "adapter-production-failure");
+        ForgeEngine.PreserveRejectedAutomatedObservation(productionEvidence, rejected.RejectedWire, rejected);
+        string privateFailurePath = Path.Combine(productionEvidence, "diagnostics", "private-rejected-ai-observation.json");
+        using (var production = JsonDocument.Parse(File.ReadAllText(privateFailurePath))) {
+            check(production.RootElement.GetProperty("authority").GetString() == "none"
+                && production.RootElement.GetProperty("privacy").GetString()!.Contains("Private bot observations")
+                && JsonNode.DeepEquals(JsonNode.Parse(production.RootElement.GetProperty("raw").GetRawText()), bad),
+                "The shipping adapter quarantines the exact failed private batch locally so a provider-failed report is diagnosable");
+        }
+        ForgeEngine.PreserveLastAutomatedObservation(productionEvidence, accepted.RootElement, "wire-failure-fixture", 0, "provider-failed");
+        string lastFailurePath = Path.Combine(productionEvidence, "diagnostics", "private-last-ai-observation.json");
+        using (var production = JsonDocument.Parse(File.ReadAllText(lastFailurePath)))
+            check(production.RootElement.GetProperty("phase").GetString() == "last-decoded-observation"
+                && JsonNode.DeepEquals(JsonNode.Parse(production.RootElement.GetProperty("raw").GetRawText()), JsonNode.Parse(valid)),
+                "A host failure after successful decoding retains that original private frame as evidence with no action authority");
+        ForgeEngine.PreserveLastAutomatedObservation(productionEvidence, accepted.RootElement, "another-game", 0, "provider-failed");
+        using (var production = JsonDocument.Parse(File.ReadAllText(lastFailurePath)))
+            check(production.RootElement.GetProperty("phase").GetString() == "no-matching-decoded-observation"
+                && production.RootElement.GetProperty("raw").ValueKind == JsonValueKind.Null,
+                "A new game's fault cannot relabel an earlier game's private frame or leave it looking like current incident evidence");
         string directory = Path.Combine(profile, "adapter-rejected-wire");
         Directory.CreateDirectory(directory);
         using (var evidence = new AiCampaignDiagnostics(directory)) {
