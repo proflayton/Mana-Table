@@ -27,6 +27,11 @@ does not establish that a person can understand or use the screen.
    for routine gestures. A live card face can integrate changed characteristics;
    replacing it with a cropped illustration, generic prose panel and rules pages
    loses its identity.
+   Land faces must also remain recognizable cards. An upright card keeps a
+   portrait silhouette and its printing's frame; a wider illustration crop is
+   not a substitute for the card. Landscape art boxes can imply tapping even
+   before they rotate. Recover illustration context by showing the full face,
+   then preserve that same face through a real quarter turn when tapped.
    Card names are identity, not disposable summaries: never replace their endings
    with ellipses or shrink the font to squeeze them in. Reserve room for complete,
    wrapped names. A genuinely compact overview face needs a complete name on
@@ -2146,10 +2151,43 @@ presentation relationships; real Java tests supply independent rules evidence.
 Automated safety and agent visual review do not supply human approval. Human
 review of this new source iteration remains pending.
 
-The supplied Arena battlefield screenshots also show lands as broad illustration
-windows. The rejected narrow land strips discarded most of each illustration;
-the shared table now uses a landscape land face in a square turn reservation.
-Its exact card, pile count and hover stay attached to that face, and tapping
-rotates the same object sideways. Review real artwork in both table and focused
-views, with mixed tapped piles at the small window; extra labels do not repair
-an unrecognizable crop.
+## Land identity after the artwork crop: 27 October 2026
+
+**Candidate `0a0ec269955bf89a0dea26dc9906b4f79818bd15`: human review found
+issues.** The previous narrow land strips discarded most of the illustration.
+Changing those strips into 4:3 landscape illustration boxes did not solve the
+player's intent: the player said the new faces already looked tapped and wanted
+them to feel like cards. The wider crop is rejected. Its geometry checks and
+passing release scenarios establish no human acceptance of that presentation.
+
+The supplied MTGA screenshots show recognizable framed card objects, upright
+untapped faces, physical quarter turns for tapped cards, matching lands in
+offset piles, and a full original printing when inspected. Those observations
+support identity, orientation and grouping. They do not establish that copying
+Arena's cropped battlefield illustration shape alone will work at four-player
+scale. Our adaptation restores the complete land printing in its portrait card
+proportion, including its own frame, rather than substituting another art crop.
+The existing square turning reservation accommodates the same face upright and
+sideways without moving its neighbors. The original card face remains the
+source for inspection and later movement.
+
+The journey is to recognize and read a particular land, distinguish it from its
+tapped neighbors, and use only its currently offered mana action. The source is
+the exact land occurrence or matching-state pile on that player's field; the
+reading target is that card, and a mana action's target is the current payment.
+Hover reveals the full identity and clicking opens the existing full-card
+reader without committing. A current source action uses the existing scoped
+command; only the engine's accepted tap changes the card's orientation. Counts,
+state badges, action lighting and mana-source outlines stay attached to that
+same occurrence. No separate art tile, tap-shaped default face or extra control
+is introduced.
+
+**Replacement source candidate: human review pending.** Review actual artwork
+at 1000x740 and 1540x980 in the whole table and focused battlefield: one untapped
+land, the exact same card tapped, all three lands tapped, and matching mixed-state
+piles. Check that the printing's frame remains visible, upright and tapped faces
+are distinguishable relative to their seat, exact pile counts survive, and hover
+reading and current mana actions still reach the intended occurrence. Also check
+the source outlines and symbols during payment; they must not replace the card
+or cover its visible frame. Agent captures and geometry checks do not settle
+whether the result feels like a card to the player.

@@ -78,16 +78,25 @@ internal static class SharedTableStudyChecks
     {
         var stages = TappedResourcesScenario.Create();
         foreach (int viewer in stages[0].Snapshot.Players.Select(player => player.Id)) {
-            var tapped = Build(stages[0].Snapshot with { ViewerId = viewer });
-            var ready = Build(stages[2].Snapshot with { ViewerId = viewer });
-            foreach (var card in Cards(tapped).Where(card => card.Id.StartsWith("tap-land-", StringComparison.Ordinal))) {
-                var untapped = ready.BattlefieldCard(card.Owner, card.Id)!;
-                check(card.Pose.Center == untapped.Pose.Center && card.Pose.Size == untapped.Pose.Size
-                    && card.Pose.Size.X > card.Pose.Size.Y * 1.2f
-                    && MathF.Abs(MathHelper.WrapAngle(card.Pose.Angle - untapped.Pose.Angle) - MathF.PI / 2) < .001f
-                    && Math.Abs(card.Pose.Bounds.Width - untapped.Pose.Bounds.Height) <= 2
-                    && Math.Abs(card.Pose.Bounds.Height - untapped.Pose.Bounds.Width) <= 2,
-                    "Tapping a land turns the same broad illustration face sideways without swapping dimensions or moving its reserved slot: " + card.Id);
+            foreach (bool duel in new[] { false, true }) {
+                GameSnapshot View(GameSnapshot state) => state with { ViewerId = viewer,
+                    Players = duel ? state.Players.Where(player => player.Id == viewer || player.Id == (viewer + 2) % 4).ToImmutableArray() : state.Players };
+                var tapped = Build(View(stages[0].Snapshot));
+                var ready = Build(View(stages[2].Snapshot));
+                foreach (var card in Cards(tapped).Where(card => card.Id.StartsWith("tap-land-", StringComparison.Ordinal))) {
+                    var untapped = ready.BattlefieldCard(card.Owner, card.Id)!;
+                    float aspect = card.Pose.Size.X / card.Pose.Size.Y;
+                    var uprightEnd = untapped.Pose.Point(.5f, .92f).ToPoint();
+                    var sidewaysEnd = card.Pose.Point(.5f, .92f).ToPoint();
+                    check(card.Pose.Center == untapped.Pose.Center && card.Pose.Size == untapped.Pose.Size
+                        && aspect is >= .68f and <= .76f
+                        && MathF.Abs(MathHelper.WrapAngle(card.Pose.Angle - untapped.Pose.Angle) - MathF.PI / 2) < .001f
+                        && Math.Abs(card.Pose.Bounds.Width - untapped.Pose.Bounds.Height) <= 2
+                        && Math.Abs(card.Pose.Bounds.Height - untapped.Pose.Bounds.Width) <= 2
+                        && untapped.Contains(uprightEnd) && !card.Contains(uprightEnd)
+                        && card.Contains(sidewaysEnd) && !untapped.Contains(sidewaysEnd),
+                        $"{(duel ? "Two-player" : "Four-player")} viewer {viewer}: tapping turns the same physical card in its reserved slot; long-edge pointer targets turn with its visibly different silhouette: " + card.Id);
+                }
             }
             foreach (var stage in stages) CheckFootprints(Build(stage.Snapshot with { ViewerId = viewer }), "resource turns viewer " + viewer, check);
         }

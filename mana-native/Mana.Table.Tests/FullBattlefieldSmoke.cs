@@ -41,7 +41,7 @@ internal sealed class FullBattlefieldSmoke : ITableAutomation
         ICardArtSource images = new CardReadingArtFixture();
         if (realArt) {
             var source = new MagicArtSource(profile);
-            foreach (string name in DistinctNames.Concat(new[] { "Forest", "Plains", "Island", "Toothy, Imaginary Friend", "Sol Ring", "Rhystic Study" }).Distinct())
+            foreach (string name in DistinctNames.Concat(new[] { "Forest", "Mountain", "Plains", "Island", "Toothy, Imaginary Friend", "Sol Ring", "Rhystic Study" }).Distinct())
                 source.LoadAsync(new(name, "front"), CancellationToken.None).GetAwaiter().GetResult();
             images.Dispose(); images = source;
         }
@@ -110,12 +110,35 @@ internal sealed class FullBattlefieldSmoke : ITableAutomation
         Step(1.5, () => {
             Check(view.Match!.Players.All(player => Mana.Magic.PublicResources.Lands(player) is { Total: 9, Untapped: 3, Tapped: 6 }),
                 "The mixed-land case retains exact total/untapped/tapped counts for every controller");
+            CheckLandFaces("Mixed-land overview");
             Capture("09-counted-mixed-lands");
+            selected = view.Frame!.Scene!.Battlefield(view.Match.ViewerId).SelectMany(cluster => cluster.Cards)
+                .First(card => card.GroupFront && card.Card.Type.StartsWith("Basic Land", StringComparison.Ordinal) && !card.Card.Tapped).Id;
+            MoveCard(selected);
+        });
+        Step(.45, () => {
+            Check(view.Hovered is { } card && CardViews.Identity(card) == selected && scenario.Replies.Count == 0,
+                "Hovering the actual untapped land highlights its exact occurrence without producing mana or opening a different object");
+            Capture("09b-hover-physical-land"); MoveCard(selected);
+        }); Click();
+        Step(.65, () => {
+            Check(view.Frame!.Cards.Single(card => card.Id == selected) is { Focused: true, Display.Size.X: >= 300 }
+                    && view.HoverPreview != null && scenario.Replies.Count == 0,
+                "Clicking that same land reads its complete printed card without tapping it or submitting a mana action");
+            CheckLandFaces("Explicit land reader");
+            Capture("09c-read-physical-land"); keyboard = new(Keys.Escape);
+        });
+        Step(.04, () => keyboard = new());
+        Step(.65, () => {
+            Check(view.HoverPreview == null && view.Match!.Viewer!.Zone("Battlefield").Cards.Single(card => card.VisualId == selected).Tapped == false
+                    && scenario.Replies.Count == 0,
+                "Closing the land reader returns the same untapped card to its counted pile without a rules command");
             MoveHit("focus:3");
         }); Click();
         Step(.65, () => {
             Check(view.StudyFocusOwner == 3 && scenario.Replies.Count == 0,
                 "Focusing a seat preserves the same mixed tapped/untapped land occurrences without spending mana");
+            CheckLandFaces("Focused mixed-land battlefield");
             Capture("09a-focused-mixed-lands"); keyboard = new(Keys.Home);
         });
         Step(.04, () => keyboard = new());
@@ -127,6 +150,7 @@ internal sealed class FullBattlefieldSmoke : ITableAutomation
         Step(1.5, () => {
             Check(view.Match!.Players.All(player => Mana.Magic.PublicResources.Lands(player) is { Total: 3, Untapped: 0, Tapped: 3 }),
                 "All tapped lands remain counted while reporting zero untapped lands");
+            CheckLandFaces("All tapped lands");
             Check(scenario.Replies.Count == 0, "Inspecting tap-state counts never spends or produces mana");
             Capture("10-all-lands-tapped");
             File.WriteAllText(Path.Combine(view.Profile, "full-battlefield-results.json"), JsonSerializer.Serialize(checks));
@@ -140,6 +164,19 @@ internal sealed class FullBattlefieldSmoke : ITableAutomation
         Check(cards.All(card => card.ScanFace) && cards.Length == view.Match!.Players.Sum(player => player.Zone("Battlefield").Cards.Length),
             name + ": all authorized occurrences use the normal battlefield face and retain their controller");
         Check(scenario.Replies.Count == 0, name + ": presentation sends no game command");
+    }
+    private void CheckLandFaces(string name)
+    {
+        var frame = view.Frame!;
+        var lands = frame.Scene!.Seats.SelectMany(seat => seat.Battlefield).SelectMany(cluster => cluster.Cards)
+            .Where(card => card.GroupFront && card.Card.Type.StartsWith("Basic Land", StringComparison.Ordinal)).ToArray();
+        Check(lands.Length > 0 && lands.All(node => {
+            var card = frame.Cards.Single(card => card.Id == node.Id);
+            float aspect = card.Display.Size.X / card.Display.Size.Y;
+            return aspect is >= .68f and <= .76f
+                && frame.Drawing.Commands.OfType<DrawCommand.Surface>().Any(surface => surface.Texture != null && surface.Pose == card.Display)
+                && !frame.Drawing.Commands.OfType<DrawCommand.Sprite>().Any(sprite => sprite.Crop != null && sprite.Center == card.Display.Center);
+        }), name + ": actual GPU drawing retains each current land's complete printed portrait face instead of a cropped illustration box");
     }
     private void Publish(GameSnapshot state) { scenario.Present(state); view.Accept(scenario.State); }
     private void Step(double delay, Action action) => steps.Enqueue((delay, action));

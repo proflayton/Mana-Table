@@ -14,34 +14,44 @@ internal sealed partial class TableApplication
     private void PaintBattlefieldScanFace(Card card, Pose pose, int owner, bool selected, bool legal, bool focus, bool stateVisible, int copies)
     {
         float opacity = card.PhasedOut ? .42f : 1;
-        if (selected) canvas.Glow(pose.Center, pose.Size * 1.12f, Gold * .15f);
-        canvas.Surface(null, pose with { Center = pose.Center + new Vector2(3, 5 + pose.Elevation), Size = pose.Size + new Vector2(4) }, Color.Black * (.35f * opacity));
-        canvas.Surface(null, pose, new Color(29, 44, 48) * opacity);
-        if (card.FaceDown) PaintBack(pose, opacity);
-        else if (resources.Card(card) is { } image) {
-            var crop = new Rectangle((int)(image.Width * .12f), (int)(image.Height * .14f),
-                Math.Max(1, (int)(image.Width * .76f)), Math.Max(1, (int)(image.Height * .38f)));
-            // Cover the scan face without stretching the original illustration.
-            float aspect = pose.Size.X / Math.Max(1, pose.Size.Y);
-            if (crop.Width / (float)crop.Height > aspect) {
-                int width = Math.Max(1, (int)(crop.Height * aspect));
-                crop.X += (crop.Width - width) / 2; crop.Width = width;
-            } else {
-                int height = Math.Max(1, (int)(crop.Width / aspect));
-                crop.Y += (crop.Height - height) / 2; crop.Height = height;
+        bool printedResource = CardPresentation.IsResource(card);
+        if (printedResource) {
+            // The resource is a physical card, including its actual frame and
+            // printed face. Cropping just its art into a portrait still makes
+            // a skinny tile; a landscape crop also reads as already tapped.
+            PaintCard(card, pose, selected, legal, focus, opacity * (card.Tapped ? .72f : 1));
+        } else {
+            if (selected) canvas.Glow(pose.Center, pose.Size * 1.12f, Gold * .15f);
+            canvas.Surface(null, pose with { Center = pose.Center + new Vector2(3, 5 + pose.Elevation), Size = pose.Size + new Vector2(4) }, Color.Black * (.35f * opacity));
+            canvas.Surface(null, pose, new Color(29, 44, 48) * opacity);
+            if (card.FaceDown) PaintBack(pose, opacity);
+            else if (resources.Card(card) is { } image) {
+                var crop = new Rectangle((int)(image.Width * .12f), (int)(image.Height * .14f),
+                    Math.Max(1, (int)(image.Width * .76f)), Math.Max(1, (int)(image.Height * .38f)));
+                // Cover the scan face without stretching the original illustration.
+                float aspect = pose.Size.X / Math.Max(1, pose.Size.Y);
+                if (crop.Width / (float)crop.Height > aspect) {
+                    int width = Math.Max(1, (int)(crop.Height * aspect));
+                    crop.X += (crop.Width - width) / 2; crop.Width = width;
+                } else {
+                    int height = Math.Max(1, (int)(crop.Width / aspect));
+                    crop.Y += (crop.Height - height) / 2; crop.Height = height;
+                }
+                canvas.Sprite(image, pose.Center, pose.Size, pose.Angle, Color.White * (opacity * (card.Tapped ? .72f : 1)), crop);
             }
-            canvas.Sprite(image, pose.Center, pose.Size, pose.Angle, Color.White * (opacity * (card.Tapped ? .72f : 1)), crop);
+            canvas.CardFrame(pose, new Color(98, 122, 126) * opacity, 1);
         }
-        canvas.CardFrame(pose, new Color(98, 122, 126) * opacity, 1);
 
         var fullFace = BattlefieldScanLabelArea(pose);
-        bool tappedCue = stateVisible && card.Tapped && PaintBattlefieldTapCue(card, owner, fullFace, copies, opacity);
-        var face = BattlefieldScanContentArea(card, fullFace, copies);
+        // The complete printed land turns sideways. Its silhouette carries
+        // tapped state without covering the printing with another large arrow.
+        bool tappedCue = printedResource || stateVisible && card.Tapped && PaintBattlefieldTapCue(card, owner, fullFace, copies, opacity);
+        var face = printedResource ? fullFace : BattlefieldScanContentArea(card, fullFace, copies);
         if (stateVisible) {
             // Upright labels remain inside the rotating face, including during
             // the tap animation, rather than enlarging its rectangular hit area.
             if (face.Width >= 36 && face.Height >= 32) {
-                int nameHeight = PaintBattlefieldScanName(card, owner, face, copies);
+                int nameHeight = printedResource ? 0 : PaintBattlefieldScanName(card, owner, face, copies);
                 PaintBattlefieldScanState(card, owner, face, nameHeight, copies, tappedCue);
                 int statsHeight = CardPresentation.HasCombatStats(card) || card.Damage > 0 ? Math.Min(22, face.Height / 3) : 0;
                 if (!CardPresentation.IsResource(card) && copies > 1 && face.Top + nameHeight + 21 <= face.Bottom - statsHeight) {
@@ -66,13 +76,13 @@ internal sealed partial class TableApplication
                 RecordBattlefieldLabel(card, owner, "copies", count, countBounds, measured, width - 8);
             }
         }
-        if (legal || selected) {
+        if (!printedResource && (legal || selected)) {
             if (selected) canvas.CardFrame(pose with { Size = pose.Size + new Vector2(4) }, Gold, 3);
             else canvas.CardAction(pose, ActionAccent, 1);
         }
-        if (card.Attacking || card.Blocking)
+        if (!printedResource && (card.Attacking || card.Blocking))
             canvas.CardFrame(pose with { Size = pose.Size + new Vector2(3) }, card.Attacking ? Red : Blue, 2);
-        if (focus) canvas.CardFrame(pose with { Size = pose.Size + new Vector2(3) }, Ink * .5f, 2);
+        if (!printedResource && focus) canvas.CardFrame(pose with { Size = pose.Size + new Vector2(3) }, Ink * .5f, 2);
         if (stateVisible) PaintPreparedMarker(card, pose, owner);
     }
 
@@ -174,7 +184,7 @@ internal sealed partial class TableApplication
         var displayed = boardView.Apply(node.Pose);
         var face = BattlefieldScanContentArea(card, BattlefieldScanLabelArea(displayed), node.GroupCount);
         if (node.Attachment == null && (node.StudyFamily is { CohortCount: > 1 } family ? StudyFamilyNameVisible(family)
-            : BattlefieldScanNameHeight(card, face, node.GroupCount) > 0)) return;
+            : !CardPresentation.IsResource(card) && BattlefieldScanNameHeight(card, face, node.GroupCount) > 0)) return;
         string name = card.FaceDown ? "Face-down permanent" : card.Name;
         if (node.Attachment is { } attached && attached.RootOwner != owner)
             name += " · " + match!.Players.First(player => player.Id == owner).Name;

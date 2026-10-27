@@ -103,11 +103,10 @@ public static class SharedTableStudy
                         // Noncreature resources reserve their complete turn footprint. A tap
                         // rotates the same face instead of exchanging
                         // its dimensions and cancelling the visible silhouette.
-                        // Arena's battlefield lands keep a broad illustration
-                        // window. A square reservation fits this same landscape
-                        // face both upright and tapped without slicing its art.
-                        var face = kind == "Lands" ? new Vector2(size.X, size.Y * .75f)
-                            : kind == "Support" ? new Vector2(size.Y * 488 / 680, size.Y) : size;
+                        // Resources keep the printed card's portrait silhouette.
+                        // The square reservation fits the same card upright or
+                        // turned sideways; its art is not a separate landscape tile.
+                        var face = kind is "Lands" or "Support" ? new Vector2(size.Y * 488 / 680, size.Y) : size;
                         var pose = new Pose(center, face,
                             card.Tapped ? MathF.PI / 2 : 0);
                         int ordinal = CardViews.Identity(card).Length == 0
