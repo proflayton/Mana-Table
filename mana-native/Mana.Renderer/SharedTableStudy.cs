@@ -117,11 +117,16 @@ public static class SharedTableStudy
                         // bodies while every attachment keeps an exposed edge.
                         for (int layer = under.Count - 1; layer >= 0; layer--) {
                             var member = under[layer];
-                            var memberCenter = center + new Vector2(-AttachmentEdge * (layer + 1), AttachmentDrop * member.Depth) * detail;
+                            float hostWidth = card.Tapped ? face.Y : face.X;
+                            float memberWidth = member.Card.Tapped ? face.Y : face.X;
+                            // Align the exposed edge to the host's actual turn,
+                            // while the attachment keeps its own tap state.
+                            var memberCenter = center + new Vector2((memberWidth - hostWidth) / 2
+                                - AttachmentEdge * (layer + 1) * detail, AttachmentDrop * member.Depth * detail);
                             var memberPose = new Pose(memberCenter, face, member.Card.Tapped ? MathF.PI / 2 : 0);
                             familyNodes.Add(SceneCard.Create(member.Card, memberPose, "Battlefield", member.Owner, 0, TableLayout.Hero(seat)) with {
                                 ScanFace = true, Compact = true,
-                                Attachment = new(node.Id, owner, member.HostId, layer + 1, member.Depth, AttachmentEdge * detail / size.X, facing)
+                                Attachment = new(node.Id, owner, member.HostId, layer + 1, member.Depth, AttachmentEdge * detail / memberWidth, facing)
                             });
                         }
                         cohortNodes.Add(node); familyNodes.Add(node);
