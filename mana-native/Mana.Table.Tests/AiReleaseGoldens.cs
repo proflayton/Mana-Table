@@ -132,6 +132,8 @@ internal static class AiReleaseGoldens
                     await trace.WriteLineAsync(JsonSerializer.Serialize(new { formatVersion = 1, elapsedMilliseconds = timer.Elapsed.TotalMilliseconds, steps, state }));
                 }
                 actor = state.Players.Single(player => player.Id == 0);
+                blueSources = blueSources.Union(actor.Zone("Battlefield").Cards.Where(card => card.Name == "Island")
+                    .Select(CardViews.Identity), StringComparer.Ordinal).ToImmutableArray();
                 var receipts = provider.Accepted.Where(item => item.Seat == 0).ToArray();
                 landPlayed |= receipts.Any(item => item.Land);
                 passedOffer |= receipts.Any(item => item.Kind == nameof(PassPriority) && item.TargetOffered);
@@ -185,9 +187,11 @@ internal static class AiReleaseGoldens
                     case "flexible-output":
                         if (receipts.Any(item => item.Kind == nameof(CancelPayment) && item.CostOwner == target))
                             throw new InvalidDataException("The flexible-output commander payment was cancelled after initiating its funded cast.");
-                        bool requestedRed = receipts.Any(item => item.SourceId == flexible && item.ManaOutput?.Colors is { Count: 1 } colors
+                        bool requestedRed = receipts.Any(item => item.SourceId == flexible && item.CostOwner == target && item.Payer == 0
+                            && item.PaymentPurpose == PaymentPurpose.SpellCost && item.ManaOutput?.Colors is { Count: 1 } colors
                             && colors.GetValueOrDefault("R") == 1);
-                        bool requestedBlue = receipts.Any(item => blueSources.Contains(item.SourceId) && item.ManaOutput?.Colors is { Count: 1 } colors
+                        bool requestedBlue = receipts.Any(item => blueSources.Contains(item.SourceId) && item.CostOwner == target && item.Payer == 0
+                            && item.PaymentPurpose == PaymentPurpose.SpellCost && item.ManaOutput?.Colors is { Count: 1 } colors
                             && colors.GetValueOrDefault("U") == 1);
                         positive = cast && stack && spellPayment && requestedRed && requestedBlue && actualRedBillPaid
                             && permanent is { Power: 1, Toughness: 3 };
