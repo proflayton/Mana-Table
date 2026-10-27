@@ -54,6 +54,10 @@ but cannot allocate or borrow an identity from another incarnation.
 Activity visibility retains the exact tracked `CardView` and its generation per
 physical key. A hidden historical portrait with an equal physical ID cannot
 revoke the currently published view; actual concealment and rollback still do.
+The visibility prepass may retain an existing display ID across an entitled
+public-zone replacement only after consulting the actual current card. This
+preserves hand-to-stack-to-battlefield tracking without making an old view
+actionable or accepting a historical graph entity.
 Operation entities canonicalize a rules card only when its game timestamp
 matches the current incarnation, and semantic references reject historical view
 objects. A retained portrait is not a current entity or a new opaque-ID allocation.

@@ -14,6 +14,35 @@ import org.testng.annotations.Test;
 import static org.testng.Assert.*;
 
 public class MatchActivityTest {
+    @Test public void aCurrentVisibleReplacementKeepsItsDisplayAnchorWithoutGrantingHistoricalAuthority() {
+        var owner = new PlayerView(1, null); var observer = new PlayerView(2, null);
+        var hand = publicCard(211, "Known card", owner); hand.set(TrackableProperty.Zone, ZoneType.Hand);
+        var actual = new java.util.concurrent.atomic.AtomicReference<>(hand);
+        var identities = new MatchIdentities();
+        var own = new MatchActivity(owner, identities, view -> view == actual.get(), ignored -> actual.get());
+        var other = new MatchActivity(observer, identities, view -> view == actual.get(), ignored -> actual.get());
+        String anchor = own.visualId(hand); assertNull(other.visualId(hand));
+        var stack = publicCard(211, "Known card", owner); stack.set(TrackableProperty.Zone, ZoneType.Stack);
+        actual.set(stack); own.refreshVisibility(); other.refreshVisibility();
+        assertEquals(own.visualId(stack), anchor); assertEquals(other.visualId(stack), anchor);
+        assertNull(own.visualId(hand), "An earlier view does not acquire current source authority");
+        var battlefield = publicCard(211, "Known card", owner);
+        actual.set(battlefield); own.refreshVisibility(); other.refreshVisibility();
+        assertEquals(own.visualId(battlefield), anchor); assertEquals(other.visualId(battlefield), anchor);
+        stack.set(TrackableProperty.Zone, null);
+        own.refreshVisibility(); other.refreshVisibility();
+        assertEquals(own.visualId(battlefield), anchor, "Historical metadata cannot revoke the current public replacement");
+        var rollback = publicCard(211, "Known card", owner); rollback.set(TrackableProperty.Zone, ZoneType.Hand);
+        actual.set(rollback);
+        // All audiences reconcile before any one of them projects. A readable
+        // owner hand does not prevent the observer from revoking public identity.
+        own.refreshVisibility(); other.refreshVisibility();
+        String concealed = own.visualId(rollback);
+        assertNotEquals(concealed, anchor); assertNull(other.visualId(rollback));
+        assertNull(own.visualId(battlefield));
+        assertEquals(own.visualId(rollback), concealed);
+    }
+
     @Test public void aDepartingPublicViewKeepsOnlyItsPreviouslyObservedHistoryAnchor() {
         var viewer = new PlayerView(1, null);
         var departing = publicCard(209, "Departing permanent", viewer);

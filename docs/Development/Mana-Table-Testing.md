@@ -337,6 +337,9 @@ and real concealment. The occurrence fixture also rotates a real command-zone
 Rhys cast through every seat: its transient pre-stack payment portrait must
 share its payment-owner identity after all audience visibility updates, remain
 readonly, survive repeated publications and finish through actual mana payment.
+The original floating-mana lifecycle checks preserve the same card's visual
+identity from hand through payment and stack to battlefield; a missing original
+identity must fail rather than be hidden by advancing into a later turn.
 The campaign's
 Forge-specific batch check compares same-board public occurrence projections
 before policy evaluation, rather than waiting for a policy frame to validate.

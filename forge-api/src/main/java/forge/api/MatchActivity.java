@@ -44,6 +44,7 @@ public final class MatchActivity {
     private final PlayerView viewer;
     private final MatchIdentities identities;
     private final java.util.function.Predicate<CardView> currentView;
+    private final java.util.function.Function<CardView, CardView> currentOccurrence;
     private boolean ownsIdentities;
     private final Deque<Entry> entries = new ArrayDeque<>();
     // CardView equality is physical ID only. A delayed trigger may hold a
@@ -65,8 +66,13 @@ public final class MatchActivity {
     MatchActivity(PlayerView viewer) { this(viewer, new MatchIdentities()); ownsIdentities = true; }
     MatchActivity(PlayerView viewer, MatchIdentities identities) { this(viewer, identities, Objects::nonNull); }
     MatchActivity(PlayerView viewer, MatchIdentities identities, java.util.function.Predicate<CardView> currentView) {
+        this(viewer, identities, currentView, card -> currentView.test(card) ? card : null);
+    }
+    MatchActivity(PlayerView viewer, MatchIdentities identities, java.util.function.Predicate<CardView> currentView,
+            java.util.function.Function<CardView, CardView> currentOccurrence) {
         this.viewer = Objects.requireNonNull(viewer); this.identities = identities;
         this.currentView = Objects.requireNonNull(currentView);
+        this.currentOccurrence = Objects.requireNonNull(currentOccurrence);
     }
 
     public synchronized List<Entry> snapshot() { return List.copyOf(entries); }
@@ -113,10 +119,18 @@ public final class MatchActivity {
 
     synchronized void refreshVisibility() {
         visibleIds.entrySet().removeIf(entry -> {
-            if (currentView.test(entry.getValue().view()) && visible(entry.getValue().view())) return false;
+            var known = entry.getValue();
+            var current = currentOccurrence.apply(known.view());
+            if (current != null && visible(current)) {
+                // A public zone move replaces the engine view, not the known
+                // physical card. Only the authoritative replacement can keep
+                // that display anchor; a historical portrait cannot do so.
+                entry.setValue(new VisibleOccurrence(current, known.id()));
+                return false;
+            }
             // A different audience may already have observed a newer private
             // occurrence. Revoking our old view cannot erase that generation.
-            identities.forget(entry.getValue().view(), entry.getValue().id());
+            identities.forget(known.view(), known.id());
             return true;
         });
     }

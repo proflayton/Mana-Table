@@ -181,7 +181,7 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
         this.table = table; this.id = table.id; this.gate = table.gate;
         this.game = table.game; this.format = table.format; this.human = human;
         viewer = human.getPlayer().getView();
-        activity = new MatchActivity(viewer, table.identities, this::currentCardView);
+        activity = new MatchActivity(viewer, table.identities, this::currentCardView, this::currentCardOccurrence);
         combatIds = new CombatCardIds(viewer, activity, table.identities);
         game.subscribeToEvents(activity);
         game.subscribeToEvents(combatIds);
@@ -706,6 +706,14 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
         // Absence is normal for a historical portrait. Inspect current zone
         // membership quietly instead of invoking a diagnostic failed lookup.
         return game.getCardsIncludePhasingIn(card.getZone()).stream().anyMatch(current -> current.getView() == card);
+    }
+
+    private CardView currentCardOccurrence(CardView prior) {
+        if (prior == null) return null;
+        Card current = game.findById(prior.getId());
+        if (current == null) current = game.getCardsIncludePhasingIn(ZoneType.Sideboard).stream()
+                .filter(card -> card.getId() == prior.getId()).findFirst().orElse(null);
+        return current == null ? null : current.getView();
     }
 
     private static boolean sourceInputActive(Input input) {
