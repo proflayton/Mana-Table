@@ -211,6 +211,72 @@ public class ActionOperationProjectionTest {
     }
 
     @Test(timeOut = 90000)
+    public void publicCommanderColorIdentityProducesFiniteAlternativesWithoutInventingColorlessOrFollowingCoupledEffects() throws Exception {
+        try (var fixture = new Fixture()) {
+            var tower = fixture.add("Command Tower", ZoneType.Battlefield, 0);
+            var ability = tower.getSpellAbilities().stream().filter(part -> part.getApi() == ApiType.Mana).findFirst().orElseThrow();
+            ability.setActivatingPlayer(fixture.actor());
+            assertEquals(ability.getManaPart().getComboColors(ability), "");
+            assertEquals(list(ManaProductionProjection.describe(ability).get("alternatives")), List.of(Map.of("colors", Map.of())),
+                    "Without a commander the real operator produces no mana");
+
+            var toothy = fixture.add("Toothy, Imaginary Friend", ZoneType.Command, 0);
+            fixture.actor().addCommander(toothy);
+            assertEquals(ability.getManaPart().getComboColors(ability), "U");
+            assertEquals(list(ManaProductionProjection.describe(ability).get("alternatives")), List.of(Map.of("colors", Map.of("U", 1))));
+            var pir = fixture.add("Pir, Imaginative Rascal", ZoneType.Command, 0);
+            fixture.actor().addCommander(pir);
+            assertEquals(ability.getManaPart().getComboColors(ability), "U G", "The real engine unions both registered partner identities");
+            var partnerColors = List.of(Map.of("colors", Map.of("G", 1)), Map.of("colors", Map.of("U", 1)));
+            var produced = ManaProductionProjection.describe(ability);
+            assertEquals(produced.get("knowledge"), "Known");
+            assertTrue(ManaProductionProjection.simpleTapSourceIsStable(ability));
+            assertEquals(list(produced.get("alternatives")), partnerColors,
+                    "One mana of a chosen commander color is not one mana of every color simultaneously");
+            for (String name : List.of("Arcane Signet", "Commander's Sphere")) {
+                var source = fixture.add(name, ZoneType.Battlefield, 0);
+                var route = source.getSpellAbilities().stream().filter(part -> part.getApi() == ApiType.Mana).findFirst().orElseThrow();
+                route.setActivatingPlayer(fixture.actor());
+                assertEquals(ManaProductionProjection.describe(route), produced, "The structural operator applies to independent real card definitions");
+            }
+            var multi = AbilityFactory.getAbility("AB$ Mana | Cost$ T | Produced$ Combo ColorIdentity | Amount$ 2", tower);
+            multi.setActivatingPlayer(fixture.actor());
+            assertEquals(list(ManaProductionProjection.describe(multi).get("alternatives")), List.of(
+                    Map.of("colors", Map.of("G", 2)), Map.of("colors", Map.of("G", 1, "U", 1)), Map.of("colors", Map.of("U", 2))));
+            var oversized = AbilityFactory.getAbility("AB$ Mana | Cost$ T | Produced$ Combo ColorIdentity | Amount$ 32", tower);
+            oversized.setActivatingPlayer(fixture.actor());
+            assertEquals(ManaProductionProjection.describe(oversized).get("knowledge"), "Unknown", "Finite expansion keeps its existing cap");
+            var restricted = AbilityFactory.getAbility("AB$ Mana | Cost$ T | Produced$ Combo ColorIdentity | RestrictValid$ Creature", tower);
+            restricted.setActivatingPlayer(fixture.actor());
+            assertEquals(ManaProductionProjection.describe(restricted).get("knowledge"), "Unknown");
+            assertFalse(ManaProductionProjection.simpleTapSourceIsStable(restricted), "The shared source guard itself rejects restricted spending");
+            var path = fixture.add("Path of Ancestry", ZoneType.Battlefield, 0);
+            var withTrigger = path.getSpellAbilities().stream().filter(part -> part.getApi() == ApiType.Mana).findFirst().orElseThrow();
+            withTrigger.setActivatingPlayer(fixture.actor());
+            assertEquals(ManaProductionProjection.describe(withTrigger).get("knowledge"), "Unknown", "A spending-trigger dependency is not expanded");
+            var palace = fixture.add("Opal Palace", ZoneType.Battlefield, 0);
+            var withCounters = palace.getSpellAbilities().stream().filter(part -> part.getApi() == ApiType.Mana
+                    && part.getManaPart().getOrigProduced().equals("Combo ColorIdentity")).findFirst().orElseThrow();
+            withCounters.setActivatingPlayer(fixture.actor());
+            assertEquals(ManaProductionProjection.describe(withCounters).get("knowledge"), "Unknown", "A paid filter with additional counter effects stays unresolved");
+            var reflection = fixture.add("Mana Reflection", ZoneType.Battlefield, 0);
+            assertEquals(ManaProductionProjection.describe(ability).get("knowledge"), "Unknown", "Ambient mana replacement is not simulated");
+            reflection.getOwner().getZone(ZoneType.Battlefield).remove(reflection);
+            assertEquals(ManaProductionProjection.describe(ability), produced);
+            assertFalse(tower.isTapped());
+            assertEquals(ability.getManaPart().getExpressChoice(), "", "Projection cannot make a color choice on behalf of the controller");
+            assertEquals(fixture.actor().getManaPool().totalMana(), 0, "Projection never produces mana");
+
+            fixture.actor().removeCommander(toothy); fixture.actor().removeCommander(pir);
+            var traxos = fixture.add("Traxos, Scourge of Kroog", ZoneType.Command, 0);
+            fixture.actor().addCommander(traxos);
+            assertEquals(ability.getManaPart().getComboColors(ability), "");
+            assertEquals(list(ManaProductionProjection.describe(ability).get("alternatives")), List.of(Map.of("colors", Map.of())),
+                    "Colorless commander identity never becomes invented colorless mana from a colors-only operator");
+        }
+    }
+
+    @Test(timeOut = 90000)
     public void undisclosedTargetOccurrencesNeverEnterTheSemanticGraph() throws Exception {
         try (var fixture = new Fixture()) {
             var source = fixture.add("Grizzly Bears", ZoneType.Battlefield, 0);

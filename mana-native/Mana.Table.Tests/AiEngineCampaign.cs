@@ -39,6 +39,7 @@ internal static class AiEngineCampaign
             throw new ArgumentOutOfRangeException(nameof(limits));
         string directory = Path.Combine(profile, "ai-campaign"); Directory.CreateDirectory(directory);
         AiCampaignContinuation.CheckRegression(check);
+        AiCampaignNumericInvestment.CheckRegression(check);
         CheckDisclosureBounds(check);
         foreach (var manifest in AiCampaignDecks.All) manifest.Validate();
         await engine.EnableAutomatedSeatsAsync();

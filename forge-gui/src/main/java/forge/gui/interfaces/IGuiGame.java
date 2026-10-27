@@ -188,6 +188,20 @@ public interface IGuiGame {
     Integer getInteger(String message, int min, int max, boolean sortDesc);
     Integer getInteger(String message, int min, int max, int cutoff);
 
+    /** Preserve the exact announcement owner without changing legacy presentation. */
+    default Integer getIntegerForAnnouncement(String message, SpellAbilityView ability, String symbol,
+                                               int min, int max, int cutoff, boolean mandatory) {
+        if (!mandatory) return getInteger(message, min, max, cutoff);
+        if (min >= max) return min;
+        if (max == Integer.MAX_VALUE) {
+            Integer answer = getInteger(message, min, max, 9);
+            return answer == null ? 0 : answer;
+        }
+        var choices = new java.util.ArrayList<Integer>();
+        for (int value = min; value <= max; value++) choices.add(value);
+        return one(message, choices);
+    }
+
     /**
      * Convenience for getChoices(message, 0, 1, choices).
      *

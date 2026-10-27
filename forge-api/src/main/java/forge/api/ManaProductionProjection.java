@@ -41,8 +41,17 @@ final class ManaProductionProjection {
                 for (String color : List.of("W", "U", "B", "R", "G")) choices.add(bundle(color, amount));
             } else if (raw.startsWith("Combo ") && !raw.contains("Different")) {
                 String colors = raw.substring(6);
+                boolean commanderIdentity = colors.equals("ColorIdentity");
+                if (commanderIdentity) {
+                    if (!simpleTapSourceIsStable(part)) return unknown();
+                    // This exact operator reads only the controller's registered
+                    // public commander identity. Do not invoke the broader
+                    // resolver for chosen, marked or draft-dependent colors.
+                    colors = mana.getComboColors(part);
+                }
                 List<String> palette = colors.equals("Any") ? List.of("W", "U", "B", "R", "G") : Arrays.asList(colors.split(" "));
-                if (palette.isEmpty() || !palette.stream().allMatch(COLORS::contains)
+                if (commanderIdentity && colors.isEmpty()) choices.add(Map.of()); // No commander colors means no mana, including no invented {C}.
+                else if (!palette.stream().allMatch(COLORS::contains)
                         || !combinations(palette, 0, amount, each, new TreeMap<>(), choices)) return unknown();
             } else {
                 var bundle = new TreeMap<String, Integer>();
@@ -101,7 +110,7 @@ final class ManaProductionProjection {
         String prefix = "Count$CardCounters.";
         if (!expression.startsWith(prefix)) return null;
         String counter = expression.substring(prefix.length());
-        if (!counter.matches("[A-Z][A-Z0-9_]*") || !currentCounterStateIsStable(ability)) return null;
+        if (!counter.matches("[A-Z][A-Z0-9_]*") || !simpleTapSourceIsStable(ability)) return null;
         long count;
         if (counter.equals("ALL")) count = ability.getHostCard().getCounters().entrySet().stream().mapToLong(entry -> entry.getCount()).sum();
         else {
@@ -111,16 +120,21 @@ final class ManaProductionProjection {
         return count >= 0 && count <= 1024 ? (int) count : null;
     }
 
-    private static boolean currentCounterStateIsStable(SpellAbility ability) {
+    /** A source-state projection guard, separate from timing and payment legality. */
+    static boolean simpleTapSourceIsStable(SpellAbility ability) {
         var source = ability.getHostCard();
         var actor = ability.getActivatingPlayer();
+        var mana = ability.getManaPart();
         if (actor == null || source == null || source.isFaceDown() || !source.isInZone(ZoneType.Battlefield)
                 || source.getController() != actor || ability.getRootAbility() != ability || ability.getSubAbility() != null
                 || !ability.getAdditionalAbilities().isEmpty() || !ability.getAdditionalAbilityLists().isEmpty()
+                || mana == null || mana.getSourceCard() != source || mana.addsCounters(ability) || mana.addKeywords(ability)
+                || !mana.getManaRestrictions().isEmpty() || !mana.getExtraManaRestriction().isEmpty()
+                || mana.getTriggersWhenSpent() || mana.isCannotCounterPaidWith() || mana.isCombatMana() || mana.isPersistentMana()
                 || ability.hasParam("Defined") && !ability.getParam("Defined").equals("You") || ability.getPayCosts() == null
                 || ability.getPayCosts().getCostParts().stream().filter(CostTap.class::isInstance).count() != 1
                 || ability.getPayCosts().getCostParts().stream().anyMatch(cost -> !(cost instanceof CostTap)
-                    && !(cost instanceof CostPartMana mana && mana.getMana().isZero()))) return false;
+                    && !(cost instanceof CostPartMana part && part.getMana().isZero()))) return false;
         // This is a current public source-state fact, not a hypothetical payment
         // or replacement simulation. Unknown interactions stay unexpanded; never
         // inspect the original face or abilities of a concealed occurrence.

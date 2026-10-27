@@ -18,6 +18,9 @@ public abstract record AiManaStep
 public sealed record AiManaPlan(AiManaPlanStatus Status, ImmutableArray<AiManaStep> Steps,
     int WorkSpent, string ReasonCode);
 
+// An assessment of read-only resources deliberately exposes no action steps.
+public sealed record AiManaFundingAssessment(AiManaPlanStatus Status, int WorkSpent, string ReasonCode);
+
 /// <summary>
 /// Bounded assignment of one production alternative per physical source. The
 /// same solver serves sequencing and current payment; callers supply the exact
@@ -27,7 +30,7 @@ public static class AiManaPlanner
 {
     private static readonly string[] Colors = ["W", "U", "B", "R", "G", "C"];
     private sealed record Requirement(int Mask, int GenericAlternative = 0);
-    private sealed record Route(AiManaStep.Source Step, int[] Output);
+    private sealed record Route(AiManaStep.Source? Step, int[] Output);
     private sealed record Source(string Id, ImmutableArray<Route> Routes);
 
     public static AiManaPlan ForAction(AiDecisionRequest request, ActionSemantics action,
@@ -46,6 +49,44 @@ public static class AiManaPlanner
     public static AiManaPlan ForPayment(AiDecisionRequest request, CancellationToken cancellation = default)
         => Plan(request.Frame, request.Frame.Semantics.UnpaidMana, 0, request.Work, cancellation);
 
+    public static AiManaFundingAssessment ForNumericInvestment(AiDecisionRequest request, int x,
+        int reserveGeneric = 0, CancellationToken cancellation = default)
+    {
+        if (x < 0 || reserveGeneric < 0) throw new ArgumentOutOfRangeException(nameof(x));
+        if (request.Frame.Semantics.Numeric is not { Purpose: NumericDecisionPurpose.AnnounceX } numeric)
+            return new(AiManaPlanStatus.Unknown, 0, "numeric-cost-purpose-unknown");
+        if (numeric.ManaCostKnowledge == SemanticKnowledge.Unsupported || numeric.Funding.Knowledge == SemanticKnowledge.Unsupported)
+            return new(AiManaPlanStatus.Unknown, 0, "numeric-cost-or-funding-unsupported");
+        if (numeric.Costs.Count(cost => cost.Kind == ActionCostKind.Tap && cost.Amount > 0) > 1
+            || numeric.Costs.Any(cost => cost.Kind != ActionCostKind.Mana
+                && !(cost.Kind == ActionCostKind.Tap && cost.FromSource && cost.Amount == 1)
+                && !(cost.Kind != ActionCostKind.Other && cost.Amount == 0 && cost.ManaSymbols.IsEmpty)))
+            return new(AiManaPlanStatus.Unknown, 0, "numeric-nonmana-cost-coupling");
+        var costs = numeric.Costs.Where(cost => cost.Kind == ActionCostKind.Mana).ToArray();
+        if (costs.Any(cost => cost.Amount == null)) return new(AiManaPlanStatus.Unknown, 0, "numeric-cost-quantity-unknown");
+        long generic = reserveGeneric + costs.Sum(cost => (long)cost.Amount!.Value);
+        var symbols = ImmutableArray.CreateBuilder<string>();
+        foreach (string symbol in costs.SelectMany(cost => cost.ManaSymbols)) {
+            if (symbol.Trim('{', '}') == "X") generic += x;
+            else symbols.Add(symbol);
+        }
+        if (generic > 1024) return new(AiManaPlanStatus.Unknown, 0, "mana-bill-bound");
+        string? reserved = numeric.Costs.Any(cost => cost.Kind == ActionCostKind.Tap && cost.FromSource && cost.Amount == 1)
+            ? numeric.SourceCardId : null;
+        var plan = Plan(null, symbols, (int)generic, request.Work, cancellation, reserved, numeric.Funding);
+        return new(plan.Status, plan.WorkSpent, plan.ReasonCode);
+    }
+
+    public static AiManaFundingAssessment EvaluateFunding(ManaFundingContext funding, IEnumerable<string> symbols,
+        int generic = 0, int workLimit = 2048, CancellationToken cancellation = default)
+    {
+        ArgumentNullException.ThrowIfNull(funding); ArgumentNullException.ThrowIfNull(symbols);
+        if (workLimit <= 0) throw new ArgumentOutOfRangeException(nameof(workLimit));
+        if (funding.Knowledge == SemanticKnowledge.Unsupported) return new(AiManaPlanStatus.Unknown, 0, "numeric-funding-unsupported");
+        var plan = Plan(null, symbols, generic, new(workLimit), cancellation, funding: funding);
+        return new(plan.Status, plan.WorkSpent, plan.ReasonCode);
+    }
+
     // Offline evaluation uses the same bounded search, with no live connection.
     public static AiManaPlan Evaluate(AiDecisionFrame frame, IEnumerable<string> symbols,
         int generic = 0, int workLimit = 2048, CancellationToken cancellation = default)
@@ -62,8 +103,8 @@ public static class AiManaPlanner
         return ForAction(new(frame, new([], []), 0, TimeSpan.FromSeconds(3), new(workLimit)), action, extraGeneric, cancellation);
     }
 
-    private static AiManaPlan Plan(AiDecisionFrame frame, IEnumerable<string> symbols, int generic,
-        AiWorkBudget budget, CancellationToken cancellation, string? reservedSource = null)
+    private static AiManaPlan Plan(AiDecisionFrame? frame, IEnumerable<string> symbols, int generic,
+        AiWorkBudget budget, CancellationToken cancellation, string? reservedSource = null, ManaFundingContext? funding = null)
     {
         int before = budget.Remaining;
         var required = new List<Requirement>();
@@ -90,6 +131,46 @@ public static class AiManaPlanner
             return Result(AiManaPlanStatus.Unknown, [], "mana-bill-bound");
 
         var pool = new int[Colors.Length];
+        var sources = new List<Source>();
+        bool capacityKnown = true;
+        long poolCapacity;
+        var physicalCapacity = new Dictionary<string, long>(StringComparer.Ordinal);
+        if (funding != null) {
+            uncertain |= funding.Knowledge != SemanticKnowledge.Known;
+            capacityKnown = funding.Knowledge == SemanticKnowledge.Known;
+            for (int color = 0; color < Colors.Length; color++)
+                pool[color] = Math.Clamp(funding.Pool.GetValueOrDefault(Colors[color]), 0, 1024);
+            poolCapacity = pool.Sum(value => (long)value);
+            foreach (var source in funding.Sources.OrderBy(source => source.SourceCardId, StringComparer.Ordinal)) {
+                if (!budget.TrySpend()) return Result(AiManaPlanStatus.BudgetExceeded, [], "mana-resource-budget");
+                if (source.SourceCardId == reservedSource) continue;
+                var routes = ImmutableArray.CreateBuilder<Route>();
+                foreach (var route in source.Routes) {
+                    if (!budget.TrySpend()) return Result(AiManaPlanStatus.BudgetExceeded, [], "mana-resource-budget");
+                    bool pureTap = route.Costs.Count(cost => cost.Kind == ActionCostKind.Tap) == 1
+                        && route.Costs.Any(cost => cost.Kind == ActionCostKind.Tap && cost.FromSource && cost.Amount == 1)
+                        && route.Costs.All(cost => cost.Kind == ActionCostKind.Tap && cost.FromSource && cost.Amount == 1
+                            || cost.Kind == ActionCostKind.Mana && cost.Amount == 0 && cost.ManaSymbols.IsEmpty);
+                    if (route.Eligibility != SemanticKnowledge.Known || route.Production.Knowledge != SemanticKnowledge.Known
+                        || route.Production.Alternatives.IsEmpty || !pureTap) {
+                        uncertain = true; capacityKnown = false; continue;
+                    }
+                    foreach (var output in route.Production.Alternatives) {
+                        var counts = Colors.Select(color => output.Colors.GetValueOrDefault(color)).ToArray();
+                        long total = counts.Sum(count => (long)count);
+                        if (total > 1024 || counts.Any(count => count < 0) || output.Colors.Keys.Any(color => !Colors.Contains(color))) {
+                            uncertain = true; capacityKnown = false; continue;
+                        }
+                        physicalCapacity[source.SourceCardId] = Math.Max(physicalCapacity.GetValueOrDefault(source.SourceCardId), total);
+                        if (total > 0) routes.Add(new(null, counts));
+                    }
+                }
+                if (routes.Count > 0) sources.Add(new(source.SourceCardId, routes
+                    .OrderBy(route => route.Output.Count(count => count > 0))
+                    .ThenBy(route => string.Join(',', route.Output), StringComparer.Ordinal).ToImmutableArray()));
+            }
+        } else {
+        ArgumentNullException.ThrowIfNull(frame);
         for (int color = 0; color < Colors.Length; color++) {
             int available = Math.Clamp(frame.State.Viewer!.Mana.GetValueOrDefault(Colors[color]), 0, 1024);
             // The provider certifies the next eligible unit of each color, not
@@ -99,9 +180,6 @@ public static class AiManaPlanner
             if (frame.Task == AiTask.Payment && available > pool[color]) uncertain = true;
         }
         var metadata = frame.Domain.Actions.ToDictionary(action => action.ActionId, StringComparer.Ordinal);
-        var sources = new List<Source>();
-        bool capacityKnown = true;
-        var physicalCapacity = new Dictionary<string, long>(StringComparer.Ordinal);
         foreach (var set in frame.SourceActions) {
             if (set.SourceCardId == reservedSource) continue;
             var card = CardViews.FindActionSource(frame.State, set.SourceCardKey)?.Card;
@@ -152,10 +230,11 @@ public static class AiManaPlanner
             }
             if (routes.Count > 0) sources.Add(new(set.SourceCardId, routes
                 .OrderBy(route => route.Output.Count(count => count > 0))
-                .ThenBy(route => route.Step.ActionId, StringComparer.Ordinal).ToImmutableArray()));
+                .ThenBy(route => route.Step!.ActionId, StringComparer.Ordinal).ToImmutableArray()));
         }
-        long nominalCapacity = Colors.Sum(color => Math.Max(0L, frame.State.Viewer!.Mana.GetValueOrDefault(color)))
-            + physicalCapacity.Values.Sum();
+        poolCapacity = Colors.Sum(color => Math.Max(0L, frame.State.Viewer!.Mana.GetValueOrDefault(color)));
+        }
+        long nominalCapacity = poolCapacity + physicalCapacity.Values.Sum();
         if (capacityKnown && billMinimumKnown && nominalCapacity < (long)generic + required.Count)
             return Result(AiManaPlanStatus.Shortfall, [], "mana-nominal-capacity-shortfall");
         // A source may have multiple offers/catalog rows; it still produces once
@@ -222,9 +301,9 @@ public static class AiManaPlanner
                 foreach (var route in groups[source].Routes) {
                     if (!Enumerable.Range(0, Colors.Length).Any(color => (mask & 1 << color) != 0 && route.Output[color] > 0)) continue;
                     var nextInventory = inventory.Select((count, color) => count + route.Output[color]).ToArray();
-                    used[source] = true; steps.Add(route.Step);
+                    used[source] = true; if (route.Step != null) steps.Add(route.Step);
                     if (Search(needs, remainingGeneric, nextInventory, originalPool)) return true;
-                    steps.RemoveAt(steps.Count - 1); used[source] = false;
+                    if (route.Step != null) steps.RemoveAt(steps.Count - 1); used[source] = false;
                     if (exhausted) return false;
                 }
             }

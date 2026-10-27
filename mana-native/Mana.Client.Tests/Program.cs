@@ -163,6 +163,7 @@ AiSemanticRegression.Run(Check);
 await AiHostRegression.RunAsync(Check);
 await AiPolicyRegression.RunAsync(Check);
 AiManaPlannerRegression.Run(Check);
+await AiNumericRegression.RunAsync(Check);
 await AiDecisionReplayRegression.RunAsync(Check);
 await LatestReadRegression.RunAsync(Check);
 await AppUpdateSessionRegression.RunAsync(Check);

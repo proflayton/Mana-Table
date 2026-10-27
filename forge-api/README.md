@@ -68,8 +68,22 @@ adjustment knowledge, while the current payment exposes its actual unpaid bill.
 A known alternative with an empty color map is exact zero production; it is
 distinct from unknown production. Supported source-counter quantities use
 current visible state only when costs and other effects cannot change that count.
+The exact `Combo ColorIdentity` operator can use the source controller's public
+commander identity, including partner unions; a colorless identity produces no
+colored mana and does not invent `{C}`. This bounded tap-only projection leaves
+spending restrictions, added effects and active mana/tap interactions unknown.
 Graphs are finite and audience-filtered; candidate references never grant action
 handles. Unmodeled conditions and resource coupling remain explicit.
+Private decision semantics can add `numeric` for an explicit rules announcement:
+`purpose`, entitled `sourceCardId`, declared `costs`, `manaCostKnowledge`, and
+read-only `funding`. Funding groups production routes by physical source, with
+pool counts and explicit knowledge/eligibility. It contains no action IDs or
+card keys. The initial own-battlefield/unrestricted-pool projection is partial;
+it can witness nominal funding but cannot certify that no other resources exist.
+`AnnounceX` comes from the controller callback, never a localized prompt label.
+This additive private metadata needs no persisted-data migration; older
+observations without it retain unknown numeric purpose. Actual current payment
+inputs still own spending and activation authority.
 Accepting a decision revokes its temporary hidden-card window and card keys in
 the resolving receipt, independently of queued rules cleanup. Persistent look
 permissions remain readable. Past authorized knowledge is not a current offer

@@ -10,6 +10,7 @@ internal static class AiSemanticValidation
     internal static void Validate(GameSnapshot state, DecisionActionDomain domain, DecisionSemantics semantics)
     {
         var context = new Context(state);
+        if (semantics.Numeric is { } numeric) context.Numeric(state, numeric);
         context.Graph(semantics.OperationGraph, semantics.OperationId);
         foreach (var option in semantics.Options) context.Graph(option.OperationGraph);
         foreach (var action in domain.Actions) {
@@ -46,6 +47,38 @@ internal static class AiSemanticValidation
             foreach (var item in state.Stack.Where(item => item.Card != null && item.ControllerId != null))
                 foreach (string id in new[] { item.Card!.VisualId, item.Card!.CombatId }.Where(id => !string.IsNullOrEmpty(id)))
                     spellControllers[id] = item.ControllerId!.Value;
+        }
+
+        internal void Numeric(GameSnapshot state, NumericDecision numeric)
+        {
+            if (state.Decision?.Payload is not NumberPayload || !Enum.IsDefined(numeric.Purpose)
+                || string.IsNullOrWhiteSpace(numeric.SourceCardId) || !occurrences.Contains(numeric.SourceCardId)
+                || !Enum.IsDefined(numeric.ManaCostKnowledge)) throw Invalid();
+            if (state.Decision.Context.Source is not { } owner || owner.CardId != numeric.SourceCardId
+                && (owner.Card == null || CardViews.Identity(owner.Card) != numeric.SourceCardId)) throw Invalid();
+            if (owner.Card is { } portrait && (portrait.FaceDown || !string.IsNullOrEmpty(portrait.Key)
+                || portrait.Selectable || portrait.Highlighted)) throw Invalid();
+            Costs(numeric.Costs);
+            var funding = numeric.Funding;
+            if (funding == null || !Enum.IsDefined(funding.Knowledge) || funding.Pool == null
+                || funding.Pool.Count > 6 || funding.Pool.Any(entry => entry.Value < 0 || entry.Value > 1024
+                    || entry.Key is not ("W" or "U" or "B" or "R" or "G" or "C"))
+                || funding.Sources.IsDefault || funding.Sources.Length > 128
+                || funding.Sources.Any(source => source == null)
+                || funding.Sources.Select(source => source.SourceCardId).Distinct(StringComparer.Ordinal).Count() != funding.Sources.Length) throw Invalid();
+            // Pool entitlement is quantitative: an observation cannot invent
+            // floating mana, even though spend applicability remains nominal.
+            if (funding.Pool.Any(entry => entry.Value > state.Viewer!.Mana.GetValueOrDefault(entry.Key))) throw Invalid();
+            var ownBattlefield = CardViews.InZones(state).Where(occurrence => occurrence.PlayerId == state.ViewerId
+                && occurrence.Zone == "Battlefield").Select(occurrence => CardViews.Identity(occurrence.Card)).ToHashSet(StringComparer.Ordinal);
+            foreach (var source in funding.Sources) {
+                if (string.IsNullOrWhiteSpace(source.SourceCardId) || !ownBattlefield.Contains(source.SourceCardId)
+                    || source.Routes.IsDefault || source.Routes.Length > 32) throw Invalid();
+                foreach (var route in source.Routes) {
+                    if (route == null || !Enum.IsDefined(route.Eligibility)) throw Invalid();
+                    Costs(route.Costs); Production(route.Production);
+                }
+            }
         }
 
         internal void Graph(ActionOperationGraph? graph, int? active = null)
@@ -127,6 +160,13 @@ internal static class AiSemanticValidation
                 ? spellControllers.TryGetValue(entity.CardId, out int expectedSpell) && actual != expectedSpell
                 : controllers.TryGetValue(entity.CardId, out int expectedCard) && actual != expectedCard)) throw Invalid();
         }
+    }
+
+    private static void Costs(ImmutableArray<ActionCost> costs)
+    {
+        if (costs.IsDefault || costs.Length > 128 || costs.Any(cost => cost == null || !Enum.IsDefined(cost.Kind)
+            || cost.Amount < 0 || cost.CounterType == null || cost.ManaSymbols.IsDefault || cost.ManaSymbols.Length > 128
+            || cost.ManaSymbols.Any(string.IsNullOrWhiteSpace))) throw Invalid();
     }
 
     private static void Production(ManaProduction? production)

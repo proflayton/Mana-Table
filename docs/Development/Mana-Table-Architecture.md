@@ -78,6 +78,15 @@ Unknown adjusted costs, conditions and resource dependencies cannot become
 fabricated legality. These components remain heuristic policy inputs, separate
 from the authoritative rules provider and any future forward-model port.
 
+Numeric announcements retain the exact callback's source and declared cost.
+`NumericDecision` distinguishes announcing X from an unrelated number. Its
+`ManaFundingContext` contains read-only physical resources and production
+alternatives, without action keys. The same assignment core evaluates those
+facts without constructing a pretend priority input or granting activation
+permission. The current Forge projection covers a partial own-battlefield and
+unrestricted-pool subset: a usable subset can witness nominal funding, but its
+absence cannot prove an overall shortfall. The actual payment remains authority.
+
 `AiDecisionReplayCase` captures one seat's authorized knowledge and evaluation
 allowance. Offline `AiDecisionReplay` reuses the scoped session and exact policy
 seed without receiving an engine connection. Campaign traces and replay cases

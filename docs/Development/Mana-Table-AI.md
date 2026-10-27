@@ -340,6 +340,31 @@ not unknown production. Counter-changing costs, arithmetic, concealed sources
 and active mana/tap replacements or triggers keep this projection unknown.
 It describes nominal current output rather than simulating resolution.
 
+The exact `Combo ColorIdentity` production operator also expands the current
+public commander identity, including partner unions, through that bounded
+tap-only guard. Each alternative consumes the same physical source. A colorless
+identity supplies no colored choice and does not invent colorless output;
+restrictions, added effects and mana/tap interactions remain unknown.
+
+Numeric announcements now preserve the actual callback's source, announced
+symbol and nominal costs. `AnnounceX` is distinct from an unknown numeric
+purpose; prompt wording and earlier same-source actions never classify it.
+Read-only funding resources describe current entitled own-battlefield producers
+and unrestricted floating mana, without executable action handles. This subset
+can establish a nominal witness, not an exhaustive shortfall. Tapped or sick
+sources cannot supply a tap, even when full-control preferences permit starting
+an unpaid action. Source restrictions, coupled costs and unknown outputs cannot
+become free funding. Fixed colored costs, repeated X symbols and a source's own
+reserved tap use the same physical-source assignment core as other payments.
+
+The initial investment policy bounds variable spending at six mana, prefers
+retaining one generic unit when a positive investment remains possible, and
+keeps the best completed witness when its local work allowance ends. This is a
+generic tempo heuristic after the policy has initiated an action, not a model
+of the benefit of every X effect. Unknown numeric purposes preserve their
+ordinary initial value or minimum. Broader numeric purposes, effective costs,
+non-mana X costs and effect-sensitive investment still require richer planning.
+
 Controlled tactical cases establish specific expectations independently of
 self-play: preserve a necessary early land when discarding, account for an
 animated land's creature body, avoid a losing first-strike/deathtouch exchange,
@@ -388,7 +413,7 @@ and distinguish remaining planning limitations from engine faults. Important
 open work includes mana-ability dependency chains, uncertain effective costs,
 joint attack/block plans and rules-provided block-repair witnesses,
 retaliation/commander-damage planning, own-deck plans,
-typed numeric purposes and X investment, conditional effects and belief/forward
+broader numeric purposes and effect-sensitive X investment, conditional effects and belief/forward
 search. Human assessment of enjoyable
 opponents remains necessary; win rate or equal targeting cannot substitute.
 Production causal grouping currently covers combat. Other cost, target, mode

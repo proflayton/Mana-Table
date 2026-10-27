@@ -33,7 +33,7 @@ public sealed class CasualCommanderPolicy : IAiPolicy
             OptionsPayload options => options.CounterPayment is { } counter ? CounterChoice(request, counter) : Choices(request, options.Selection, false),
             OrderingPayload ordering => Choices(request, ordering.Selection, true),
             RevealPayload => Answer(request, new AcknowledgeReveal(state.Id, decision.Id), "acknowledge-reveal"),
-            NumberPayload number => Number(request, number),
+            NumberPayload number => Number(request, number, cancellation),
             TextPayload => Text(request),
             AllocationPayload allocation => Allocate(request, allocation),
             _ => Missing("decision-family")
@@ -342,10 +342,32 @@ public sealed class CasualCommanderPolicy : IAiPolicy
         return Answer(request, new ChooseOptions(request.Frame.State.Id, request.Frame.State.Decision!.Id, [option.Index]), "payment-use-offered-counter-surplus");
     }
 
-    private static AiProposal Number(AiDecisionRequest request, NumberPayload number)
+    private static AiProposal Number(AiDecisionRequest request, NumberPayload number, CancellationToken cancellation)
     {
         int initial = int.TryParse(number.Initial, NumberStyles.Integer, CultureInfo.InvariantCulture, out int parsed) ? parsed : number.Range?.Min ?? 0;
         int value = number.Range is { } range ? Math.Clamp(initial, range.Min, range.Max) : initial;
+        if (number.Range is { } bounds && request.Frame.Semantics.Numeric is { Purpose: NumericDecisionPurpose.AnnounceX } numeric) {
+            int copies = numeric.Costs.Where(cost => cost.Kind == ActionCostKind.Mana)
+                .SelectMany(cost => cost.ManaSymbols).Count(symbol => symbol.Trim('{', '}') == "X");
+            if (copies > 0) {
+                // A modest nominal investment, preserving one mana where a
+                // positive investment remains possible. This is a baseline
+                // heuristic, not a valuation of arbitrary X-dependent effects.
+                int maximum = Math.Min(bounds.Max, 6 / copies), minimum = Math.Max(1, bounds.Min);
+                var work = request.Work.CreateSlice(512, reserve: 4);
+                var bounded = request with { Work = work };
+                int? completed = null;
+                for (int reserve = 1; reserve >= 0 && completed == null && !work.WasExceeded; reserve--)
+                    for (int x = minimum; x <= maximum; x++) {
+                        var assessment = AiManaPlanner.ForNumericInvestment(bounded, x, reserve, cancellation);
+                        if (assessment.Status == AiManaPlanStatus.Funded) completed = x;
+                        if (assessment.Status is AiManaPlanStatus.BudgetExceeded or AiManaPlanStatus.Shortfall) break;
+                    }
+                if (completed is { } investment)
+                    return Answer(request, new ChooseNumber(request.Frame.State.Id, request.Frame.State.Decision!.Id, investment),
+                        "announce-x-nominal-investment");
+            }
+        }
         return Answer(request, new ChooseNumber(request.Frame.State.Id, request.Frame.State.Decision!.Id, value), "choose-published-number-bound");
     }
     private static AiProposal Text(AiDecisionRequest request)

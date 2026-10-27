@@ -124,6 +124,8 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
         final Map<String, SourceActions.Catalog> sourceActions = new HashMap<>();
         final Set<String> poolManaColors = new HashSet<>();
         List<Map<String, Object>> optionSemantics = List.of();
+        SpellAbility announcedAbility;
+        String announcedSymbol = "";
         Map<String, Object> cachedDomain;
         long cachedDomainVersion = -1;
         int nextCardKey;
@@ -183,6 +185,8 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
         gui = (IGuiGame) Proxy.newProxyInstance(IGuiGame.class.getClassLoader(), new Class<?>[]{IGuiGame.class}, (proxy, method, args) -> {
             table.enter(this);
             if (method.getName().equals("chooseColor")) return chooseColor((String) args[0], (CardView) args[1], (List<MagicColor.Color>) args[2]);
+            if (method.getName().equals("getIntegerForAnnouncement")) return announcedNumber((String) args[0],
+                    (SpellAbilityView) args[1], (String) args[2], (int) args[3], (int) args[4]);
             if (method.getName().equals("chooseCounterTypeForPayment")) return chooseCounterTypeForPayment((String) args[0],
                     (CardView) args[1], (int) args[2], (List<CounterType>) args[3],
                     (Map<CounterType, Integer>) args[4]);
@@ -587,6 +591,9 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
         if (current == null) return result;
         result.putAll(DecisionSemantics.describe(current.input, game, human.getPlayer(), this::semanticCardId));
         result.put("options", current.optionSemantics);
+        if (current.announcedAbility != null)
+            result.put("numeric", NumericDecisionProjection.describe(current.announcedAbility, current.announcedSymbol,
+                    human.getPlayer(), card -> numericSourceId(card)));
         if (current.input instanceof InputAttack || current.input instanceof InputBlock)
             result.put("episodeId", id + ":combat:" + game.getPhaseHandler().getTurn() + ":"
                     + game.getPhaseHandler().getNumCombat() + ":" + game.getPhaseHandler().getPhase().name() + ":" + viewer.getId());
@@ -1753,6 +1760,30 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
         next.min = min; next.max = max;
         next.prompt = map("id", next.id, "kind", "number", "message", title, "min", min, "max", max);
         return await(next).get("value").getAsInt();
+    }
+
+    private int announcedNumber(String title, SpellAbilityView view, String symbol, int min, int max) {
+        SpellAbility ability = human.getDecisionAbility(view);
+        Pending next = new Pending("number", null);
+        next.min = min; next.max = max;
+        next.announcedAbility = ability; next.announcedSymbol = symbol;
+        next.prompt = map("id", next.id, "kind", "number", "message", title, "min", min, "max", max);
+        if (ability != null && ability.getHostCard() != null) {
+            CardView source = ability.getHostCard().getView();
+            String sourceId = numericSourceId(source);
+            if (!sourceId.isEmpty()) {
+                next.prompt.put("sourceCardId", sourceId);
+                next.prompt.put("sourceCard", counterPaymentCard(source));
+                next.prompt.put("sourceZone", source.getZone().name());
+                next.prompt.put("sourceControllerId", source.getController().getId());
+            }
+        }
+        return await(next).get("value").getAsInt();
+    }
+
+    private String numericSourceId(CardView source) {
+        return source != null && source.getZone() != null && !source.isFaceDown() && source.canBeShownTo(viewer)
+                ? combatIds.id(source) : "";
     }
 
     private String inputText(Object[] args) {

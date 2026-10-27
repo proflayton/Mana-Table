@@ -409,16 +409,13 @@ public class PlayerControllerHuman extends PlayerController implements IGameCont
 
         String announceTitle = "X".equals(announce) ? ability.getParamOrDefault("XAnnounceTitle", announce) :
                 ability.getParamOrDefault("AnnounceTitle", announce);
-        if (cost != null && cost.isMandatory()) {
-            return chooseNumber(ability, localizer.getMessage("lblChooseAnnounceForCard", announceTitle,
-                    host.getTranslatedName()), min, max);
-        }
-        if ("NumTimes".equals(announce)) {
-            return getGui().getInteger(localizer.getMessage("lblHowManyTimesToPay", ability.getPayCosts().getTotalMana(),
-                    host.getTranslatedName()), min, max, min + 9);
-        }
-        return getGui().getInteger(localizer.getMessage("lblChooseAnnounceForCard", announceTitle,
-                host.getTranslatedName()), min, max, min + 9);
+        String message = "NumTimes".equals(announce)
+                ? localizer.getMessage("lblHowManyTimesToPay", ability.getPayCosts().getTotalMana(), host.getTranslatedName())
+                : localizer.getMessage("lblChooseAnnounceForCard", announceTitle, host.getTranslatedName());
+        final int maximum = max;
+        return withDecisionAbilities(Map.of(ability.getView(), ability),
+                () -> getGui().getIntegerForAnnouncement(message, ability.getView(), announce, min, maximum,
+                        min + 9, cost != null && cost.isMandatory()));
     }
 
     @Override

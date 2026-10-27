@@ -20,6 +20,7 @@ internal sealed class AiCampaignDiagnostics : IDisposable
     private readonly Dictionary<int, AiDecisionReplayCase> confirmations = [];
     private readonly HashSet<(int Seat, long Event)> observedEvents = [];
     private readonly HashSet<string> recordedFindings = [];
+    private readonly Dictionary<(int Seat, string Decision), AiCampaignNumericInvestment> numericInvestments = [];
     internal HashSet<string> OfferedEffects { get; } = [];
     internal HashSet<string> SelectedEffects { get; } = [];
     internal HashSet<string> BoardWitnesses { get; } = [];
@@ -100,6 +101,12 @@ internal sealed class AiCampaignDiagnostics : IDisposable
         }));
         if (answer == null) return;
         var state = frame.State;
+        if (answer.Command is ChooseNumber numericChoice && frame.Semantics.Numeric is { } numeric && numericInvestments.Count < 128) {
+            numericInvestments.TryAdd((state.ViewerId, state.Decision!.Id),
+                new(recorded, numeric.Purpose.ToString(), numeric.SourceCardId, numericChoice.Value));
+            ExportCase("numeric-choice-" + numeric.Purpose + "-" + numericChoice.Value + "-"
+                + (state.Decision.Context.Source?.Card?.Name ?? "unknown-source") + "-" + state.Decision.Id, recorded);
+        }
         if (answer.Command is PassPriority && state.ActivePlayerId == state.ViewerId && state.PhaseKey is "MAIN1" or "MAIN2"
                 && frame.Domain.Actions.Any(action => action.Effect == ActionEffectKind.Land && action.Affordability == ActionAffordability.Payable))
             Finding("land-offer-skipped", "Passed priority with an authoritative playable land offer; review intent before treating this as an error.");
@@ -109,10 +116,10 @@ internal sealed class AiCampaignDiagnostics : IDisposable
             string occurrence = state.Decision?.Context.Source?.Card?.VisualId ?? "";
             if (occurrence.Length > 0 && initiations.TryGetValue(state.ViewerId, out var initiation)
                 && initiation.SourceId == occurrence && initiation.Case.State.Turn == state.Turn)
-                ExportCase("initiation-before-cancel-" + source, initiation.Case);
+                ExportCase("earlier-same-source-action-before-cancel-" + source, initiation.Case);
             if (occurrence.Length > 0 && confirmations.TryGetValue(state.ViewerId, out var confirmation) && confirmation.State.Turn == state.Turn
                 && confirmation.State.Decision?.Context.Source?.Card?.VisualId == occurrence)
-                ExportCase("previous-confirmation-same-source-" + source, confirmation);
+                ExportCase("earlier-same-source-confirmation-before-cancel-" + source, confirmation);
         }
         if (!frame.Semantics.SelectionIsCost && frame.Semantics.Intent is DecisionIntent.Harm or DecisionIntent.Damage
                 or DecisionIntent.Destroy or DecisionIntent.Exile or DecisionIntent.Bounce or DecisionIntent.Tap) {
@@ -140,6 +147,9 @@ internal sealed class AiCampaignDiagnostics : IDisposable
         decisions.WriteLine(JsonSerializer.Serialize(new { kind = "receipt", seat = observation?.SeatId,
             command.GameId, decision = (command as DecisionCommand)?.DecisionId, accepted, error,
             commandType = command.GetType().Name, command = JsonSerializer.SerializeToElement(command, command.GetType()) }));
+        if (observation != null && command is ChooseNumber number
+            && numericInvestments.TryGetValue((observation.SeatId, number.DecisionId), out var numeric))
+            numeric.Receipt(accepted, error);
         if (!accepted || observation == null) return;
         Accepted++;
         if (latestCase is { } captured && captured.State.ViewerId == observation.SeatId
@@ -165,10 +175,14 @@ internal sealed class AiCampaignDiagnostics : IDisposable
 
     internal void Observe(AutomatedSeatObservation observation)
     {
+        foreach (var investment in numericInvestments.Values) investment.ObserveOwned(observation);
         var state = observation.State;
         if (state.Decision != null) Tasks.Add(AiTasks.From(state.Decision.Payload));
         foreach (var action in observation.Domain.Actions) {
             foreach (var effect in action.Effects) OfferedEffects.Add(effect.ToString());
+            if (action.ManaAbility && action.Production.Knowledge == SemanticKnowledge.Known
+                && action.Production.Alternatives.SelectMany(option => option.Colors.Keys).Distinct(StringComparer.Ordinal).Count() > 1)
+                DecisionWitnesses.Add("finite-multicolor-production-offered");
             if (action.OperationGraph.Knowledge != SemanticKnowledge.Known
                 || action.OperationGraph.Operations.Any(operation => operation.Knowledge != SemanticKnowledge.Known)) {
                 var source = observation.Domain.Sources.FirstOrDefault(source => source.Actions.Any(offer => offer.Id == action.ActionId));
@@ -189,6 +203,7 @@ internal sealed class AiCampaignDiagnostics : IDisposable
 
     internal void ObservePublic(GameSnapshot state)
     {
+        foreach (var investment in numericInvestments.Values) investment.ObservePublic(state);
         foreach (var card in state.Players.SelectMany(player => player.Zone("Battlefield").Cards)) {
             if (card.Type.Contains("Creature", StringComparison.Ordinal)) BoardWitnesses.Add("creature-battlefield");
             if (card.GamePieceType == "token") BoardWitnesses.Add("token-battlefield");
@@ -257,10 +272,11 @@ internal sealed class AiCampaignDiagnostics : IDisposable
 
     internal object Summary() => new { OfferedEffects, SelectedEffects, BoardWitnesses, DecisionWitnesses, ResolvedSources,
         Tasks, Accepted, Commands, TargetRecipients, UnmodeledOperationSources, findings = Findings,
+        numericInvestments = numericInvestments.Values,
         privateReplayCases = ReplayCases, diagnosticErrors,
         missingBoardWitnesses = new[] { "creature-battlefield", "token-battlefield", "counter-change", "attachment-on-battlefield",
             "declared-combat", "reported-damage", "multiple-stack-targets" }.Except(BoardWitnesses).ToArray(),
-        interpretation = "Offers, chosen commands, authoritative board/event witnesses and review findings are separate. A resolved source does not prove every intended effect occurred. TargetRecipients counts player choices and attacks only; their distribution does not establish social quality." };
+        interpretation = "Offers, chosen commands, authoritative board/event witnesses and review findings are separate. Numeric evidence separates proposed/accepted values from subsequent exact-source payment, public stack, resolution and actual statistics; a source correlation does not prove X caused every later effect. Earlier-same-source replay links do not identify which cast, ability or optional payment was cancelled. A resolved source does not prove every intended effect occurred. TargetRecipients counts player choices and attacks only; their distribution does not establish social quality." };
 
     public void Dispose() => decisions.Dispose();
 }

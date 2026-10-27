@@ -57,6 +57,19 @@ an offered proposal does not imply acceptance or resolution. The graphics-free
 client suite tests replay roundtrips, scope and knowledge isolation, exhaustive
 small mana assignments, and controlled tactical/effect-graph expectations.
 
+Numeric investment checks use typed announcement ownership and read-only
+funding facts. They cover fixed and repeated-X costs, physical-source reuse,
+partial/unsupported funding, bounded work and current source identity. Java's
+`NumericDecisionProjectionTest` exercises real scripts and projection purity;
+`AutomatedPaymentJourneyTest` follows an actual variable-cost cast through
+manual payment, the stack and its resolved counters. These checks share the
+existing runners and engine process paths. Campaign numeric records separately
+retain accepted choices, same-source payment/public events and observed
+counters/power/toughness; source correlation alone does not prove invocation
+ownership or that a chosen value caused every later counter. A bounded campaign
+which never draws the relevant card reports missing coverage. Cancellation
+replays link earlier same-source context, not an inferred owning cast or trigger.
+
 On failure, `private-failure-manifest.json` identifies the raw owned observation
 batch, exact seat scopes, stage and original exception before teardown. It labels
 `last-before-mechanical-failure.json` as the last policy-evaluated request, which
