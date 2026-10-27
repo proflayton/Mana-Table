@@ -11,10 +11,21 @@ namespace Mana.Forge;
 // leak into a replacement process or survive leaving its match.
 internal sealed class ForgeCommandScope
 {
+    private readonly object observationGate = new();
     private GameSnapshot? observed;
     internal string ObservedGameId => Volatile.Read(ref observed)?.Id ?? "";
     internal GameSnapshot? ObservedState => Volatile.Read(ref observed);
-    internal void Observe(GameSnapshot? state) => Volatile.Write(ref observed, state);
+    internal void Observe(GameSnapshot? state)
+    {
+        lock (observationGate) {
+            // Response continuations can finish out of order. The client's
+            // replica rejects older revisions; command authority must not move
+            // backward either and revive a prompt it has already replaced.
+            if (state != null && observed is { } previous && state.Id == previous.Id
+                && state.Revision < previous.Revision) return;
+            Volatile.Write(ref observed, state);
+        }
+    }
     internal GameSnapshot? ObserveRaw(JsonElement raw)
     {
         try {
@@ -26,7 +37,7 @@ internal sealed class ForgeCommandScope
             throw;
         }
     }
-    internal void Clear() => Volatile.Write(ref observed, null);
+    internal void Clear() => Observe(null);
     internal bool CanReadSource(string gameId, string decisionId, string key)
     {
         var state = Volatile.Read(ref observed);

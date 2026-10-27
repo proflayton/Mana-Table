@@ -414,6 +414,13 @@ dotnet $driver --smoke-presentation --profile '<fresh-profile>'
 The test flags belong to `Mana.Table.Tests`, not the shipped `ManaTable.exe`.
 Choose an explicit fresh `--profile` for every independent journey.
 
+`ForgeCommandBoundaryChecks` in `--smoke-presentation` controls two observation
+completions without sleeps or a Java process: the displayed replica and provider
+command context must retain the newer revision when the older read finishes.
+The current command remains valid, the retired prompt remains rejected, and
+same-revision refresh, replacement-match revisions and foreign scopes retain
+their separate semantics.
+
 The existing `--smoke-headless-presentation` lane includes `TokenArtworkChecks`:
 enter Tokens through the production builder, save/reset exact printing choices,
 retain the save acknowledgement and card count, reject an old revision's hit,

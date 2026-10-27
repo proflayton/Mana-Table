@@ -1044,6 +1044,13 @@ Local action failures remain acknowledged until dismissed or a new action starts
 a successful background poll does not erase them. Host/guest departure confirms
 its consequence; an eliminated seat can watch or leave.
 
+The Forge connection's observed command context also rejects a lower revision
+within the same game. RPC read continuations may finish out of order; an older
+response must not retire the displayed current scope or restore an answered
+prompt. Equal revisions may refresh facts, a new match starts its own sequence,
+and explicit lifecycle clearing still revokes all local command authority.
+This ordering does not retry commands or relax current-offer validation.
+
 | Project | Responsibility |
 | --- | --- |
 | `Mana.Contracts` | Catalog, deck, setup and match-connection interfaces; typed seat snapshots and commands; visibility enumeration and art-source contract |

@@ -1,4 +1,5 @@
 using System.Collections.Immutable;
+using Mana.Client;
 using Mana.Contracts;
 using Mana.Forge;
 using System.Text.Json;
@@ -25,6 +26,7 @@ internal static class ForgeCommandBoundaryChecks
         var currentReady = JsonSerializer.SerializeToElement(new { protocolVersion = 2,
             capabilities = ForgeProtocol.RequiredCapabilities.Add("source-actions") });
         check(ForgeProtocol.ReadyCapabilities(currentReady).Contains("source-actions"), "Ready retains optional provider capabilities");
+        ObservationCompletionOrder(check).GetAwaiter().GetResult();
 
         var selectionWire = Prompt("""
             "kind":"input","task":"selection","purpose":"targets","min":1,"max":1,
@@ -356,6 +358,65 @@ internal static class ForgeCommandBoundaryChecks
         bool replacementRejected = false;
         try { new ForgeCommandScope().Encode(new PassPriority(game, prompt)); } catch (EngineCommandRejectedException) { replacementRejected = true; }
         check(replacementRejected, "A replacement provider process cannot inherit command authority");
+    }
+
+    private static async Task ObservationCompletionOrder(Action<bool, string> check)
+    {
+        const string game = "ordered-observation-game";
+        var scope = new ForgeCommandScope();
+        var replica = new SessionReplica<GameSnapshot>(state => state.Id, state => state.Revision);
+        JsonElement Wire(long revision, string prompt, string gameId = game, string? notice = null) => JsonSerializer.SerializeToElement(new {
+            id = gameId, status = "playing", viewerId = 0, revision, turn = 1,
+            phase = "Main phase", phaseKey = "MAIN1", activePlayerId = 0,
+            decisionOwnerId = 0, priorityPlayerId = 0,
+            players = new[] { new Player(0, "You", 40, true, false,
+                ImmutableDictionary<string, int>.Empty, []) },
+            stack = Array.Empty<object>(),
+            notices = notice == null ? Array.Empty<string>() : new[] { notice },
+            prompt = new { id = prompt, kind = "input", task = "priority", okEnabled = true }
+        });
+        var transitions = new ForgeCommandScope();
+        transitions.ObserveRaw(Wire(36, "refreshed-prompt"));
+        transitions.ObserveRaw(Wire(36, "refreshed-prompt", notice: "Current source facts refreshed"));
+        check(transitions.ObservedState is { Revision: 36, Notices: ["Current source facts refreshed"] }
+                && (string)transitions.Encode(new PassPriority(game, "refreshed-prompt"))["promptId"]! == "refreshed-prompt",
+            "A same-revision observation may refresh current facts without losing its exact command scope");
+        transitions.ObserveRaw(Wire(1, "replacement-prompt", gameId: "replacement-game"));
+        check(transitions.ObservedState is { Id: "replacement-game", Revision: 1 }
+                && (string)transitions.Encode(new PassPriority("replacement-game", "replacement-prompt"))["sessionId"]! == "replacement-game",
+            "A new match starts its own revision sequence instead of inheriting the preceding match's high-water mark");
+        bool previousGameRejected = false, foreignGameRejected = false;
+        try { transitions.Encode(new PassPriority(game, "refreshed-prompt")); } catch (EngineCommandRejectedException) { previousGameRejected = true; }
+        try { transitions.Encode(new PassPriority("foreign-game", "replacement-prompt")); } catch (EngineCommandRejectedException) { foreignGameRejected = true; }
+        check(previousGameRejected && foreignGameRejected,
+            "Changing matches still rejects commands from the preceding or an unrelated game");
+        // ForgeEngine.ObserveAsync awaits a RunContinuationsAsynchronously RPC
+        // completion, then calls this same ObserveRaw. The write semaphore only
+        // serializes request writes; two read continuations can finish in either
+        // order. Gates force the order without sleeps, threads or a Java process.
+        var earlier = new TaskCompletionSource<JsonElement>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var later = new TaskCompletionSource<JsonElement>(TaskCreationOptions.RunContinuationsAsynchronously);
+        async Task<GameSnapshot?> Read(Task<JsonElement> response) => scope.ObserveRaw(await response);
+        var earlierRead = Read(earlier.Task);
+        var laterRead = Read(later.Task);
+        later.SetResult(Wire(36, "current-prompt"));
+        var current = await laterRead ?? throw new InvalidOperationException("The controlled current observation disappeared.");
+        check(replica.Accept(current, replica.Epoch) && replica.Current?.Revision == 36,
+            "A controlled newer observation becomes the displayed replica before the delayed older read completes");
+        var currentCommand = new PassPriority(game, "current-prompt");
+        check((string)scope.Encode(currentCommand)["promptId"]! == currentCommand.DecisionId,
+            "The exact current displayed command is valid before completing the older read");
+
+        earlier.SetResult(Wire(35, "retired-prompt"));
+        var delayed = await earlierRead ?? throw new InvalidOperationException("The controlled delayed observation disappeared.");
+        check(!replica.Accept(delayed, replica.Epoch) && ReferenceEquals(replica.Current, current),
+            "The actual replica rejects the delayed lower revision and keeps its current displayed decision");
+        bool currentRejected = false, retiredRejected = false;
+        try { scope.Encode(currentCommand); } catch (EngineCommandRejectedException) { currentRejected = true; }
+        try { scope.Encode(new PassPriority(game, "retired-prompt")); } catch (EngineCommandRejectedException) { retiredRejected = true; }
+        check(!currentRejected && retiredRejected,
+            "Completing an older observation cannot reject the current displayed command or restore its retired prompt"
+                + $" (displayed={replica.Current!.Revision}/{replica.Current.Decision!.Id}, provider={scope.ObservedState?.Revision}/{scope.ObservedState?.Decision?.Id}, currentRejected={currentRejected}, retiredRejected={retiredRejected})");
     }
 
     private static void CurrentChoiceDisclosures(Action<bool, string> check)
