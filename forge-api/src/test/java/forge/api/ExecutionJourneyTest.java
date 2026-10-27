@@ -29,16 +29,29 @@ public class ExecutionJourneyTest {
             String owner = execution(payment);
             String initialScope = text(payment.prompt(), "id");
             start(game, payment, permanent(payment.state(), "Wastes"), "Add {C}");
-            payment = game.until(i -> i.seat() == 0 && mana(i)
+            payment = awaitOwnedPayment(game, owner, i -> unpaid(i, "{3}")
                     && zone(viewer(i.state()), "Battlefield").getAsJsonArray("cards").asList().stream()
                     .anyMatch(value -> text(value.getAsJsonObject(), "name").equals("Wastes")
                             && value.getAsJsonObject().get("tapped").getAsBoolean()));
             assertEquals(execution(payment), owner);
             assertEquals(text(payment.prompt(), "executionStep"), "cost");
-            start(game, payment, permanent(payment.state(), "Crystal Vein"), "Add {C}{C}");
-            var resumed = game.until(i -> i.seat() == 0 && mana(i)
+            var sacrificedSource = permanent(payment.state(), "Crystal Vein");
+            start(game, payment, sacrificedSource, "Add {C}{C}");
+            var resumed = awaitOwnedPayment(game, owner, i -> unpaid(i, "{1}")
                     && zone(viewer(i.state()), "Graveyard").getAsJsonArray("cards").asList().stream()
-                    .anyMatch(value -> text(value.getAsJsonObject(), "name").equals("Crystal Vein")));
+                    .anyMatch(value -> text(value.getAsJsonObject(), "name").equals("Crystal Vein"))
+                    && occurrences(i.state()).stream().anyMatch(value -> text(value, "sourceName").equals("Crystal Vein")
+                            && text(value, "parentId").equals(owner) && text(value, "step").equals("complete")), choice -> {
+                assertEquals(text(choice.prompt(), "inputType"), "InputConfirm");
+                assertEquals(text(choice.prompt().getAsJsonObject("sourceCard"), "visualId"), text(sacrificedSource, "visualId"));
+                var mana = occurrence(choice.state(), execution(choice));
+                assertEquals(text(mana, "kind"), "mana");
+                assertEquals(text(mana, "parentId"), owner);
+                assertEquals(text(mana, "budgetRootId"), owner);
+                assertEquals(text(mana, "step"), "cost");
+                assertTrue(choice.prompt().get("okEnabled").getAsBoolean());
+                game.answer(choice, Map.of("action", "ok"));
+            });
             assertNotEquals(text(resumed.prompt(), "id"), initialScope, "A source's sacrifice refreshes the current action scope");
             var consumed = occurrences(resumed.state()).stream().filter(value -> text(value, "sourceName").equals("Crystal Vein"))
                     .findFirst().orElseThrow();
@@ -360,6 +373,44 @@ public class ExecutionJourneyTest {
     }
     private static Input payment(RulesScenario game) throws Exception {
         return game.until(i -> i.seat() == 0 && mana(i) && i.prompt().get("okEnabled").getAsBoolean());
+    }
+    /** Source callbacks can publish intermediate payment progress. Observe it
+     * without answering a still-running source or consuming another choice. */
+    private static Input awaitOwnedPayment(RulesScenario game, String owner,
+                                           java.util.function.Predicate<Input> settled) throws Exception {
+        return awaitOwnedPayment(game, owner, settled, null);
+    }
+    private static Input awaitOwnedPayment(RulesScenario game, String owner,
+                                           java.util.function.Predicate<Input> settled,
+                                           java.util.function.Consumer<Input> expectedSourceChoice) throws Exception {
+        long deadline = System.nanoTime() + java.util.concurrent.TimeUnit.SECONDS.toNanos(20);
+        while (System.nanoTime() < deadline) {
+            for (int seat = 0; seat < 4; seat++) {
+                var state = game.state(seat);
+                if (state.get("prompt").isJsonNull()) continue;
+                var input = new Input(seat, state, state.getAsJsonObject("prompt"));
+                if (seat != 0) {
+                    assertTrue(priority(input), "A new required choice must be handled explicitly: " + input.prompt());
+                    continue;
+                }
+                if (!mana(input)) {
+                    assertNotNull(expectedSourceChoice, "A new required choice must be handled explicitly: " + input.prompt());
+                    expectedSourceChoice.accept(input);
+                    continue;
+                }
+                assertEquals(execution(input), owner, "Every intermediate payment retains its actual owner");
+                assertEquals(text(input.prompt(), "executionStep"), "cost");
+                assertEquals(text(occurrence(state, owner), "step"), "cost");
+                if (settled.test(input)) return input;
+            }
+            Thread.sleep(5);
+        }
+        throw new AssertionError("Timed out observing the actual payment progress: " + game.table.testViews());
+    }
+    private static boolean unpaid(Input input, String symbol) {
+        var parts = input.prompt().getAsJsonArray("unpaidManaParts");
+        return parts != null && parts.size() == 1 && text(parts.get(0).getAsJsonObject(), "symbol").equals(symbol)
+                && parts.get(0).getAsJsonObject().get("count").getAsInt() == 1;
     }
     private static boolean priority(Input input) { return text(input.prompt(), "inputType").equals("InputPassPriority"); }
     private static boolean mana(Input input) { return text(input.prompt(), "inputType").startsWith("InputPayMana"); }
