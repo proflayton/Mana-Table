@@ -6,6 +6,7 @@ namespace Mana.Table;
 
 internal sealed partial class TableApplication
 {
+    private const float BattlefieldNameSize = .5f;
     private bool StudyFamilyNameVisible(StudyBattlefieldFamily family)
     {
         var area = boardView.Apply(family.NameBounds);

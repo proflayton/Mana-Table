@@ -1,5 +1,8 @@
 using System.Collections.Immutable;
+using System.Security.Cryptography;
+using System.Text;
 using System.Text.Json;
+using Mana.Client;
 using Mana.Contracts;
 using Mana.Magic;
 using Mana.Renderer;
@@ -21,6 +24,7 @@ internal sealed class FullBattlefieldSmoke : ITableAutomation
     private readonly InteractionScenarioEngine scenario;
     private readonly Queue<(double Delay, Action Action)> steps = [];
     private readonly List<string> checks = [];
+    private readonly HashSet<string> unavailableArt;
     private MouseState mouse;
     private KeyboardState keyboard;
     private double lastStep;
@@ -32,28 +36,59 @@ internal sealed class FullBattlefieldSmoke : ITableAutomation
     public MouseState ReadMouse() => mouse;
     public KeyboardState? ReadKeyboard() => keyboard;
 
-    internal static void Run(string profile, Point? size, bool realArt = false, bool readableCrowd = false)
+    internal static void Run(string profile, Point? size, bool realArt = false, bool readableCrowd = false, string? artCache = null)
     {
         Directory.CreateDirectory(profile);
         new PlayPreferences { Automatic = false, Sounds = false, ReducedMotion = false, TextScale = 1.3f }.Save(profile);
         var scenario = new InteractionScenarioEngine();
         scenario.Present(readableCrowd ? ReadableCrowd() : Example("seven"));
         ICardArtSource images = new CardReadingArtFixture();
+        var unavailableArt = new HashSet<string>(StringComparer.Ordinal);
         if (realArt) {
-            var source = new MagicArtSource(profile);
-            foreach (string name in DistinctNames.Concat(new[] { "Forest", "Mountain", "Plains", "Island", "Toothy, Imaginary Friend", "Sol Ring", "Rhystic Study" }).Distinct())
-                source.LoadAsync(new(name, "front"), CancellationToken.None).GetAwaiter().GetResult();
+            var lab = new ExperienceLabSession(CounterPaymentScenario.Id); lab.Replay(13);
+            var snapshots = new[] { scenario.State, Example("mixed"), Example("fifty"), Example("distinct"), lab.State }
+                .Concat(TappedResourcesScenario.Create().Select(stage => stage.Snapshot));
+            var requests = snapshots.SelectMany(state => state.Players).SelectMany(player => player.Zones)
+                .SelectMany(zone => zone.Cards).Select(CardPresentation.Artwork).OfType<ArtRequest>().DistinctBy(art => art.Key).ToArray();
+            var requiredArt = new HashSet<string>(["Forest", "Mountain", "Plains", "Sol Ring"], StringComparer.Ordinal);
+            ICardArtSource source;
+            if (artCache != null) {
+                string cache = Path.GetFullPath(artCache);
+                var manifest = new Dictionary<string, string>(StringComparer.Ordinal);
+                foreach (var art in requests) {
+                    string file = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(art.Key))) + ".jpg";
+                    if (File.Exists(Path.Combine(cache, file))) manifest.Add(art.Key, file);
+                    else if (requiredArt.Contains(art.Name)) throw new InvalidOperationException("The cache-only full-card check requires actual artwork for " + art.Name);
+                    else unavailableArt.Add(art.Key);
+                }
+                File.WriteAllText(Path.Combine(profile, "artwork-source.json"), JsonSerializer.Serialize(new { Mode = "local-cache-only", Directory = cache, Manifest = manifest }));
+                source = new LocalArtSource(cache, manifest);
+            } else {
+                source = new MagicArtSource(profile);
+                foreach (var art in requests) {
+                    try {
+                        if (source.LoadAsync(art, CancellationToken.None).GetAwaiter().GetResult() is not { Length: > 0 })
+                            throw new InvalidOperationException("The full-card art check did not receive image bytes for " + art.Name);
+                    } catch (HttpRequestException error) when (error.StatusCode == System.Net.HttpStatusCode.NotFound && !requiredArt.Contains(art.Name)) {
+                        unavailableArt.Add(art.Key);
+                    } catch (Exception error) {
+                        throw new InvalidOperationException("Full-card artwork preload failed for " + art.Name + " (" + art.Key + ")", error);
+                    }
+                }
+                File.WriteAllText(Path.Combine(profile, "artwork-source.json"), "{\"Mode\":\"public-network-and-cache\"}");
+            }
+            File.WriteAllText(Path.Combine(profile, "unavailable-art.json"), JsonSerializer.Serialize(unavailableArt.Order().ToArray()));
             images.Dispose(); images = source;
         }
         using var game = new TableWindow(TestTableServices.For(scenario), profile, null, null, size,
             initialState: scenario.State, artSource: images, enableLiveTableStudy: true);
-        game.Automation = new FullBattlefieldSmoke(game.TestPort, scenario, readableCrowd);
+        game.Automation = new FullBattlefieldSmoke(game.TestPort, scenario, readableCrowd, unavailableArt);
         game.Run();
     }
 
-    private FullBattlefieldSmoke(TableWindow.Probe view, InteractionScenarioEngine scenario, bool readableCrowd)
+    private FullBattlefieldSmoke(TableWindow.Probe view, InteractionScenarioEngine scenario, bool readableCrowd, HashSet<string> unavailableArt)
     {
-        this.view = view; this.scenario = scenario;
+        this.view = view; this.scenario = scenario; this.unavailableArt = unavailableArt;
         Step(1.5, () => { CheckFaces("Initial field"); Capture("01-normal-field"); });
         if (!readableCrowd) {
             Step(0, () => Publish(Example("eight")));
@@ -65,13 +100,28 @@ internal sealed class FullBattlefieldSmoke : ITableAutomation
             });
             foreach (string mode in new[] { "mixed", "fifty", "distinct" }) {
                 Step(0, () => Publish(Example(mode)));
-                Step(1.4, () => { CheckFaces(mode); Capture("03-" + mode); });
+                Step(1.4, () => {
+                    CheckFaces(mode);
+                    Capture("03-" + mode);
+                    if (mode == "mixed") Check(view.BattlefieldLabels("mixed-0-4").Any(label => label.Kind == "pt" && label.Text == "3/3"
+                                && label.MeasuredWidth <= label.AvailableWidth)
+                            && view.BattlefieldLabels("mixed-0-4").Any(label => label.Kind == "counter" && label.Text == "1"
+                                && label.MeasuredWidth <= label.AvailableWidth),
+                        "The full printed creature keeps its actual 3/3 characteristics and one-counter marker instead of reverting to its printing; actual labels: "
+                            + JsonSerializer.Serialize(view.BattlefieldLabels("mixed-0-4")));
+                    if (mode == "fifty") {
+                        var front = view.Frame!.Scene!.Battlefield(0).SelectMany(cluster => cluster.Cards).Single(card => card.GroupFront);
+                        Check(front.GroupCount == 50 && view.BattlefieldLabels(front.Id).Any(label => label.Kind == "copies" && label.Text == "×50"),
+                            "The full printed token face still reports all fifty distinct current copies in its counted pile");
+                    }
+                });
             }
         }
         Step(0, () => MoveHit("focus:3")); Click();
         Step(.65, () => {
             Check(view.StudyFocusOwner == 3 && scenario.Replies.Count == 0,
                 "An actual opponent nameplate frames the same battlefield without changing game state");
+            CheckPrintedFaces("Focused battlefield");
             Capture("04-player-camera");
             selected = view.Frame!.Scene!.Battlefield(3).SelectMany(cluster => cluster.Cards)
                 .Last(card => card.GroupFront && !card.Card.FaceDown).Id;
@@ -110,7 +160,7 @@ internal sealed class FullBattlefieldSmoke : ITableAutomation
         Step(1.5, () => {
             Check(view.Match!.Players.All(player => Mana.Magic.PublicResources.Lands(player) is { Total: 9, Untapped: 3, Tapped: 6 }),
                 "The mixed-land case retains exact total/untapped/tapped counts for every controller");
-            CheckLandFaces("Mixed-land overview");
+            CheckPrintedFaces("Mixed-land overview");
             Capture("09-counted-mixed-lands");
             selected = view.Frame!.Scene!.Battlefield(view.Match.ViewerId).SelectMany(cluster => cluster.Cards)
                 .First(card => card.GroupFront && card.Card.Type.StartsWith("Basic Land", StringComparison.Ordinal) && !card.Card.Tapped).Id;
@@ -125,7 +175,7 @@ internal sealed class FullBattlefieldSmoke : ITableAutomation
             Check(view.Frame!.Cards.Single(card => card.Id == selected) is { Focused: true, Display.Size.X: >= 300 }
                     && view.HoverPreview != null && scenario.Replies.Count == 0,
                 "Clicking that same land reads its complete printed card without tapping it or submitting a mana action");
-            CheckLandFaces("Explicit land reader");
+            CheckPrintedFaces("Explicit land reader");
             Capture("09c-read-physical-land"); keyboard = new(Keys.Escape);
         });
         Step(.04, () => keyboard = new());
@@ -138,7 +188,7 @@ internal sealed class FullBattlefieldSmoke : ITableAutomation
         Step(.65, () => {
             Check(view.StudyFocusOwner == 3 && scenario.Replies.Count == 0,
                 "Focusing a seat preserves the same mixed tapped/untapped land occurrences without spending mana");
-            CheckLandFaces("Focused mixed-land battlefield");
+            CheckPrintedFaces("Focused mixed-land battlefield");
             Capture("09a-focused-mixed-lands"); keyboard = new(Keys.Home);
         });
         Step(.04, () => keyboard = new());
@@ -150,7 +200,7 @@ internal sealed class FullBattlefieldSmoke : ITableAutomation
         Step(1.5, () => {
             Check(view.Match!.Players.All(player => Mana.Magic.PublicResources.Lands(player) is { Total: 3, Untapped: 0, Tapped: 3 }),
                 "All tapped lands remain counted while reporting zero untapped lands");
-            CheckLandFaces("All tapped lands");
+            CheckPrintedFaces("All tapped lands");
             Check(scenario.Replies.Count == 0, "Inspecting tap-state counts never spends or produces mana");
             Capture("10-all-lands-tapped");
             File.WriteAllText(Path.Combine(view.Profile, "full-battlefield-results.json"), JsonSerializer.Serialize(checks));
@@ -164,19 +214,23 @@ internal sealed class FullBattlefieldSmoke : ITableAutomation
         Check(cards.All(card => card.ScanFace) && cards.Length == view.Match!.Players.Sum(player => player.Zone("Battlefield").Cards.Length),
             name + ": all authorized occurrences use the normal battlefield face and retain their controller");
         Check(scenario.Replies.Count == 0, name + ": presentation sends no game command");
+        CheckPrintedFaces(name);
     }
-    private void CheckLandFaces(string name)
+    private void CheckPrintedFaces(string name)
     {
         var frame = view.Frame!;
-        var lands = frame.Scene!.Seats.SelectMany(seat => seat.Battlefield).SelectMany(cluster => cluster.Cards)
-            .Where(card => card.GroupFront && card.Card.Type.StartsWith("Basic Land", StringComparison.Ordinal)).ToArray();
-        Check(lands.Length > 0 && lands.All(node => {
+        var fronts = frame.Scene!.BattlefieldDrawOrder.Where(card => card.GroupFront || card.Attachment != null).ToArray();
+        var fullFaces = frame.Drawing.Commands.OfType<DrawCommand.Surface>().Where(surface => surface.Texture != null)
+            .Select(surface => surface.Pose).ToHashSet();
+        var crops = frame.Drawing.Commands.OfType<DrawCommand.Sprite>().Where(sprite => sprite.Crop != null)
+            .Select(sprite => sprite.Center).ToHashSet();
+        Check(fronts.Length > 0 && fronts.All(node => {
             var card = frame.Cards.Single(card => card.Id == node.Id);
             float aspect = card.Display.Size.X / card.Display.Size.Y;
             return aspect is >= .68f and <= .76f
-                && frame.Drawing.Commands.OfType<DrawCommand.Surface>().Any(surface => surface.Texture != null && surface.Pose == card.Display)
-                && !frame.Drawing.Commands.OfType<DrawCommand.Sprite>().Any(sprite => sprite.Crop != null && sprite.Center == card.Display.Center);
-        }), name + ": actual GPU drawing retains each current land's complete printed portrait face instead of a cropped illustration box");
+                && (CardPresentation.Artwork(node.Card) is not { } art || unavailableArt.Contains(art.Key) || fullFaces.Contains(card.Display))
+                && !crops.Contains(card.Display.Center);
+        }), name + ": actual GPU drawing retains complete portrait cards for creatures, artifacts, enchantments, lands and attachments without cropping their authorized faces");
     }
     private void Publish(GameSnapshot state) { scenario.Present(state); view.Accept(scenario.State); }
     private void Step(double delay, Action action) => steps.Enqueue((delay, action));
@@ -272,7 +326,7 @@ internal sealed class FullBattlefieldSmoke : ITableAutomation
             7 => card with { PhasedOut = true },
             8 => card with { Sick = true },
             9 => card with { VisualId = "", Name = "Face-down card", Type = "", Power = null, Toughness = null, Text = "", FaceDown = true },
-            10 => card with { Name = "Sol Ring", Type = "Artifact", Power = null, Toughness = null },
+            10 => card with { Name = "Sol Ring", Type = "Artifact", Power = null, Toughness = null, Tapped = seat == 1 },
             11 => card with { Name = "Rhystic Study", Type = "Enchantment", Power = null, Toughness = null },
             12 or 13 => card with { Name = "Plains", Type = "Basic Land — Plains", Power = null, Toughness = null, Tapped = index == 13 },
             14 => card with { Name = "Island", Type = "Basic Land — Island", Power = null, Toughness = null },

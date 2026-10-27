@@ -27,11 +27,15 @@ does not establish that a person can understand or use the screen.
    for routine gestures. A live card face can integrate changed characteristics;
    replacing it with a cropped illustration, generic prose panel and rules pages
    loses its identity.
-   Land faces must also remain recognizable cards. An upright card keeps a
+   Every permanent must remain a recognizable card, including mana rocks,
+   creatures, enchantments and attached cards. An upright card keeps a
    portrait silhouette and its printing's frame; a wider illustration crop is
    not a substitute for the card. Landscape art boxes can imply tapping even
    before they rotate. Recover illustration context by showing the full face,
    then preserve that same face through a real quarter turn when tapped.
+   Apply this grammar across the battlefield rather than making one card type
+   an exception. Current P/T, counters and action cues supplement the printed
+   face; a repeated name box must not replace or cover its printed identity.
    Card names are identity, not disposable summaries: never replace their endings
    with ellipses or shrink the font to squeeze them in. Reserve room for complete,
    wrapped names. A genuinely compact overview face needs a complete name on
@@ -2191,3 +2195,45 @@ reading and current mana actions still reach the intended occurrence. Also check
 the source outlines and symbols during payment; they must not replace the card
 or cover its visible frame. Agent captures and geometry checks do not settle
 whether the result feels like a card to the player.
+
+## One physical card grammar across the battlefield: 27 October 2026
+
+**Candidate `3fcf853`: human review found issues.** The preceding land fix was
+limited to resources. The player then supplied Sol Ring as a cropped art tile
+with a separate black name box and another tiny sideways card, asking whether
+only lands had changed. Restoring a land's printing did not resolve the same
+identity problem across other permanents. That candidate is not an accepted
+battlefield presentation.
+
+The player's supplied MTGA sequences show card frames, printed name lines and
+recognizable illustrations retained together, matching-state copies offset in
+piles, tapped objects physically turned, and a complete original printing when
+read. The inspection of Ajani's Pridemate also places live counters and gained
+abilities beside that same card. We adapt that continuity across every
+battlefield role. Arena's cropped combat faces are not evidence that an isolated
+art crop with a replacement label will work on our shared four-player table.
+This change does not establish that dense fields are readable merely because
+all their objects retain the correct proportions.
+
+The player intent is to recognize an actual permanent, distinguish its current
+state, read it and then deliberately use a currently offered action. The source
+is the exact disclosed battlefield occurrence or matching-state pile; reading
+targets that card, while playing an ability targets only the engine's current
+cost or recipient choices. The settled face, seat-facing turn, tap animation,
+hover and full reader keep the same printed card. Hover exposes a complete name;
+clicking reads without committing. An accepted engine transition supplies the
+tap, counters, damage or current P/T. These live values remain visible without
+another black name strip over the printing. Choice highlights, matching-copy
+counts, mana outlines and exposed attachment edges remain attached to the same
+occurrences, with existing scoped commands and hidden-information rules intact.
+
+**Replacement source candidate: human review pending.** Review Sol Ring,
+creatures, enchantments, lands and an attached Aura or Equipment with actual art
+at 1000x740 and 1540x980, across the whole table and focused field. Compare an
+untapped card and that exact occurrence tapped, a creature with changed P/T and
+counters, an actionable source, repeated matching-state copies and an attached
+card with its own tap state. Read and close each without committing; return
+between views without replacing the object. Inspect frame, printed identity,
+state overlays, exposed attachment access and the current action/result together.
+Automation and agent captures supply geometry and interaction evidence; they do
+not approve the player's ability to recognize or understand these cards.

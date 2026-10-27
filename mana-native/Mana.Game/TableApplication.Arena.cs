@@ -207,7 +207,14 @@ internal sealed partial class TableApplication
                 canvas.Line(new(r.X + 20, r.Y + typeTop + 55), new(r.Right - 20, r.Y + typeTop + 55), Muted * (.4f * opacity));
                 canvas.Text(card.Text, r.X + 20, r.Y + typeTop + 74, Ink * opacity, .78f, r.Width - 40, Math.Max(1, (r.Height - typeTop - 99) / 27));
             } else {
-                canvas.Text(card.Name, r.X + 5, r.Y + 5, Ink * opacity, pose.Size.X > 100 ? .67f : .47f, r.Width - 10, pose.Size.X > 100 ? 3 : 2, true);
+                float nameSize = pose.Size.X > 100 ? .67f : .47f;
+                int nameWidth = r.Width - 10, nameHeight = Math.Max(0, r.Height - 37);
+                // Missing artwork must not turn identity into an ellipsis.
+                // Small battlefield cards keep the complete source hover name.
+                if (nameWidth > 0 && card.Name.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries)
+                        .All(word => canvas.TextWidth(word, nameSize, true) <= nameWidth)
+                    && canvas.TextSize(card.Name, nameSize, nameWidth, 80, true).Y <= nameHeight)
+                    canvas.Text(card.Name, r.X + 5, r.Y + 5, Ink * opacity, nameSize, nameWidth, 80, true);
                 canvas.Text(card.ManaCost == "no cost" ? "" : card.ManaCost, r.X + 5, r.Bottom - 27, Gold * opacity, .54f, r.Width - 10, 1);
                 if (pose.Size.X > 130) canvas.Text(card.Type, r.X + 6, r.Y + (int)(r.Height * .62f), Muted * opacity, .5f, r.Width - 12, 2);
             }
