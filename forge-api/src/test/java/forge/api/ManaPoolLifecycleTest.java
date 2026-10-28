@@ -87,10 +87,18 @@ public class ManaPoolLifecycleTest {
         }
     }
 
-    private static void observe(RulesScenario game, Map<String, Object> stages, String stage, int owner, int expectedColorless) {
-        var views = new ArrayList<JsonObject>();
+    private static void observe(RulesScenario game, Map<String, Object> stages, String stage, int owner, int expectedColorless) throws Exception {
+        // Compare audiences from one publication, not four IPC reads between
+        // which a legitimate subsequent controller publication can occur.
+        var views = game.table.testViews().stream()
+                .map(snapshot -> JSON.toJsonTree(snapshot).getAsJsonObject()).toList();
+        stages.put(stage, views);
+        Files.writeString(game.evidence.resolve("mana-pool-observations.json"), JSON.toJson(stages));
+        assertEquals(views.size(), 4, "The atomic publication capture includes every human seat");
         for (int seat = 0; seat < 4; seat++) {
-            var state = game.state(seat);
+            var state = views.get(seat);
+            assertNotEquals(text(state, "status"), "error", state.toString());
+            assertNotEquals(text(state, "status"), "finished", "Scenario ended early: " + state);
             int viewer = state.get("viewerId").getAsInt();
             for (var entry : state.getAsJsonArray("players")) {
                 var player = entry.getAsJsonObject();
@@ -107,11 +115,9 @@ public class ManaPoolLifecycleTest {
                 assertTrue(library.getAsJsonArray("cards").isEmpty(), "Mana observations do not reveal library faces");
                 assertTrue(library.get("topCard").isJsonNull());
             }
-            views.add(state);
         }
         assertEquals(views.stream().map(state -> state.get("boardRevision").getAsLong()).distinct().count(), 1L,
                 "All four seats share the same controller-boundary publication");
-        stages.put(stage, views);
     }
 
     private static boolean priority(RulesScenario.Input input) { return text(input.prompt(), "inputType").equals("InputPassPriority"); }
