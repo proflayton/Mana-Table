@@ -116,6 +116,13 @@ provider omits. It records the public state and outcome before its only
 `StopSimulation` cleanup call. Forced cleanup, aborts and automation faults cannot
 manufacture a finish.
 
+The initial real-provider conformance driver discards explicitly expired source
+reads and requires a strictly newer observation of the same game before querying
+again. It retains its 25-second deadline and a 16-refresh cap. An offer must match
+the observed revision; no accepted command is replayed and engine revision
+fences remain enforced. `SourceActionsTest` covers the queued display-publication
+interleaving which can expire an otherwise unanswered priority input.
+
 The controlled journeys cover funded/unfunded X, funded/short consuming sources,
 optional effect-cost decline/payment, flexible-output payment, and mana
 contribution completion. The flexible-output journey
