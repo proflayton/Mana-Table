@@ -134,7 +134,7 @@ internal static class AiReleaseGoldens
                 if (state.ViewerId != -1 || state.Decision != null || state.Players.Any(player => !player.Zone("Hand").Cards.IsEmpty || !player.Zone("Library").Cards.IsEmpty)
                     || CardViews.InZones(state).Any(item => !string.IsNullOrEmpty(item.Card.Key)))
                     throw new InvalidDataException("Golden public spectator exposed private faces or action authority.");
-                if (scenario.Id == "tap-cost-funding" && !tapCostHasteReady && state.ActivePlayerId == 0 && state.PhaseKey == "UPKEEP") {
+                if (scenario.Id == "tap-cost-funding" && !tapCostHasteReady && state.PhaseKey == "UPKEEP") {
                     // Initial variant permanents retain sickness through the
                     // first turn. Observe the real passive haste layer after
                     // normal game setup, before interpreting policy behavior.
@@ -143,7 +143,7 @@ internal static class AiReleaseGoldens
                     bool grantPresent = battlefield.Any(card => card.Name == "Concordant Crossroads");
                     tapCostHasteReady = grantPresent && sources.Length == 2 && sources.All(card => !card.Sick && !card.FaceDown
                         && card.States is { } abilities && abilities.Any(ability => ability.Kind == "ability" && ability.Key == "haste"));
-                    tapCostHasteSetup = JsonSerializer.SerializeToElement(new { state.Turn, state.BoardRevision, grantPresent,
+                    tapCostHasteSetup = JsonSerializer.SerializeToElement(new { state.Turn, state.ActivePlayerId, state.BoardRevision, grantPresent,
                         ready = tapCostHasteReady, sources = sources.Select(card => new { id = CardViews.Identity(card), card.Name, card.Sick,
                             card.States, card.CombatKeywords }) });
                     if (!tapCostHasteReady) throw new InvalidDataException("The tap-cost fixture did not publish effective haste for Evangel and Birds in its first upkeep.");
