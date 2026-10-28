@@ -16,7 +16,12 @@ arena.png        Flat, top-down play surface, ideally 3328 x 1944, opaque RGB.
 card-back.png    Anonymous card back, 672 x 936 or another portrait 5:7 ratio.
                  Do not include any card identity. Used for hidden hands/decks.
 
-Optional PCM WAV cues (short, normalized conservatively; missing files are silent):
+your-priority.wav is an original synthesized, quiet two-note notification shipped
+with the client. Its editable source is scripts/mana-table/generate-priority-cue.cjs.
+It plays for held local priority, after a brief grace period. The portrait bell
+mutes only these notifications for five minutes; Settings still mutes all sounds.
+
+Additional/replacement PCM WAV cues (short, normalized conservatively; missing files are silent):
 card-play.wav, your-priority.wav, combat.wav, life-loss.wav, game-end.wav.
 Players can mute cues and disable movement in Settings.
 

@@ -620,6 +620,21 @@ canonical occurrences in `StudyFocusChecks`. `DrawingFrameChecks` rejects leakin
 clip scopes; `EffectTransitionChecks` protects the camera-mapped family captions
 from counter receipts. No additional CI process is introduced. Review actual
 motion in `four-player-table.v1` and `crowded-counters.v1`; checks cannot approve it.
+The existing `--smoke-headless-presentation` run includes `KeyboardCameraChecks`:
+held WASD/arrows, equal diagonal speed, Shift, frame-rate independence, release,
+Home, automatic-pass pauses and text/modal/inspection/window-focus guards use the
+production application. It also checks the unfolded collection's actual displayed
+poses, keeping navigation separate from commands and canonical card placement.
+`BackgroundInputChecks` in that same run checks inactive clicks, all mouse
+buttons, wheel/shortcut/text isolation, immediate deactivation, preserved drafts,
+cancelled captures, held-input quarantine and fresh foreground target commands.
+It also checks that authoritative snapshot updates still render while inactive.
+`PriorityNotificationChecks` records the production sound callback without an
+audio device. It checks the attention grace, cohort deduplication, cooldown,
+global and temporary mute, silent expiry, foreground mute gestures and permitted
+background reminders. The actual portrait bell must remain separately reachable
+from phase/Auto/Hold controls at both supported review sizes. These checks do not
+establish that a listener finds the bundled cue quiet or pleasant.
 The same run also includes the
 scoped authored `DecisionFlowLabChecks`. The production headless run includes
 `DecisionDockInteractionChecks`: an actual stop-removal gesture clears only that

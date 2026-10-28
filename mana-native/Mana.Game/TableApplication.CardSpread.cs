@@ -1,6 +1,7 @@
 using Mana.Contracts;
 using Mana.Magic;
 using Mana.Renderer;
+using Mana.Table.Presentation;
 using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Input;
 using Color = Microsoft.Xna.Framework.Color;
@@ -20,7 +21,7 @@ internal sealed partial class TableApplication
     private BoardView? spreadTarget;
     private readonly BoardViewMotion spreadCamera = new();
     private BoardView spreadView = BoardView.Identity;
-    private bool spreadCameraUsed, spreadPanning;
+    private bool spreadCameraUsed, spreadPanning, spreadKeyboardPanning;
     private readonly Dictionary<string, Pose> spreadWorldTargets = [];
     private Point spreadPanStart;
     private BoardView spreadPanView;
@@ -100,7 +101,8 @@ internal sealed partial class TableApplication
         bool initial = spreadTarget == null;
         spreadTarget = plan.View;
         spreadView = spreadCamera.Navigate(match!.Id, match.ViewerId, plan.View, now,
-            preferences.ReducedMotion || initial, dragging || pressed != null || readingId != null);
+            preferences.ReducedMotion || initial, dragging || pressed != null || readingId != null,
+            direct: spreadPanning || spreadKeyboardPanning);
     }
 
     private bool SpreadContains(string id) => CardCollectionOpen && tableScene?.Spread?.Contains(id) == true;
@@ -164,7 +166,8 @@ internal sealed partial class TableApplication
                 "card:" + world.Card.Key + ":" + world.Card.VisualId, new MatchIntent.UseCard(world.Card),
                 (displayed, focused) => PaintSceneCard(world.Card, displayed, world.Zone, world.Owner, focused),
                 entrance: world.Entrance, clip: plan.CameraArea,
-                directPlacement: spreadCameraUsed && spreadView != plan.View && readingId != world.Id);
+                directPlacement: spreadCameraUsed && (spreadPanning || spreadKeyboardPanning || spreadView != plan.View)
+                    && readingId != world.Id);
         }
         DrawLiftedCards();
         DrawReaderControls();
@@ -233,11 +236,11 @@ internal sealed partial class TableApplication
         return true;
     }
 
-    private void UpdateCardCollectionPointer(MouseState mouse, KeyboardState keys)
+    private void UpdateCardCollectionPointer(MouseState mouse, KeyboardState keys, TimeSpan elapsed, bool keyboardAvailable)
     {
         if (!CardCollectionOpen && !OverlayOpen && !textFocus && !chatFocus && !dragging && pressed == null) {
             bool middle = mouse.MiddleButton == ButtonState.Pressed && previousMouse.MiddleButton == ButtonState.Released;
-            bool handKey = keys.IsKeyDown(Keys.H) && previousKeys.IsKeyUp(Keys.H);
+            bool handKey = keyboardAvailable && keys.IsKeyDown(Keys.H) && previousKeys.IsKeyUp(Keys.H);
             if (handKey && HandCollectionAllowed) { ExpandCardCollection(CardCollectionTarget.Hand); return; }
             if (middle && HitAt(pointer)?.Card is { } card) {
                 if (match?.Viewer?.Zone("Hand").Cards.Any(current => CardViews.Same(current, card)) == true && HandCollectionAllowed)
@@ -248,9 +251,19 @@ internal sealed partial class TableApplication
             }
         }
         if (!CardCollectionOpen || tableScene?.Spread is not { WorldCards.Count: > 0 } plan) return;
-        if (keys.IsKeyDown(Keys.Home) && previousKeys.IsKeyUp(Keys.Home) && !textFocus && !chatFocus) ResetCardCollectionView();
-        if (keys.IsKeyDown(Keys.Z) && previousKeys.IsKeyUp(Keys.Z) && !textFocus && !chatFocus
+        if (textFocus || chatFocus) { spreadPanning = false; return; }
+        if (keyboardAvailable && keys.IsKeyDown(Keys.Home) && previousKeys.IsKeyUp(Keys.Home)) { ResetCardCollectionView(); return; }
+        if (keyboardAvailable && keys.IsKeyDown(Keys.Z) && previousKeys.IsKeyUp(Keys.Z)
             && HitAt(pointer)?.Card is { } pointed && plan.Contains(CardViews.Identity(pointed))) FocusCardCollection(CardViews.Identity(pointed));
+        if (dragging || pressed != null || readingId != null || mouse.LeftButton == ButtonState.Pressed) { spreadPanning = false; return; }
+        if (keyboardAvailable && !spreadPanning
+            && mouse.LeftButton == ButtonState.Released && mouse.MiddleButton == ButtonState.Released) {
+            var delta = CameraKeyboardPan.Offset(keys, elapsed);
+            if (delta != Vector2.Zero) {
+                spreadTarget = plan.Pan(delta, spreadView); spreadCameraUsed = true; spreadKeyboardPanning = true;
+                session.CancelAdvance();
+            }
+        }
         if (mouse.MiddleButton == ButtonState.Pressed && previousMouse.MiddleButton == ButtonState.Released
             && plan.CameraArea.Contains(pointer) && readingId == null && !dragging && pressed == null) {
             spreadPanning = true; spreadPanStart = pointer; spreadPanView = spreadView;

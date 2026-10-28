@@ -161,6 +161,87 @@ does not establish that a person can understand or use the screen.
     [architecture migration](Mana-Table-Architecture.md#action-execution-the-next-boundary-migration)
     records the current gaps and the first real-engine journey to migrate.
 
+## Quiet priority notification: 27 October 2026
+
+**Source candidate; human review pending.** The player can miss a priority
+handoff and asked for a quiet sound with an easy temporary mute. The concrete
+game reference is [Magic Online's priority prompt highlight](https://www.mtgo.com/news/mtgo-blog-11142023):
+its team observed players missing their opportunity to act and added attention
+at the priority prompt. Our adaptation adds the requested audio to the existing
+portrait priority cue; that reference does not prescribe our sound or timing.
+
+After two seconds of actionable human-held local priority, play one quiet,
+original two-note cue. The existing turn-change sound hook is replaced because
+turn ownership and priority are different. Automatic passing, payment/choice
+steps, recovery, eliminated seats and nonlocal decisions do not qualify. Revision
+changes and new answer handles do not rearm it. A bounded game/viewer/turn/phase/
+stack-interruption cohort suppresses repeated reminders while an existing stack
+drains; legacy states without that version conservatively share the phase.
+There are at least ten seconds between cues. Suppressed reminders are consumed,
+so expiry or preference changes cannot produce a delayed notification burst.
+
+A small bell on the portrait's upper right sits beside the existing turn controls
+and outside their individual hit regions. Click it to mute only priority alerts
+for five minutes; the crossed bell and hover countdown show that temporary state.
+Click again to unmute sooner. Match/viewer changes clear this local mute; it is
+not a saved sound preference or an engine command. The global Sounds preference
+still silences it. Alerts can sound while inactive, while physical mute gestures
+continue to require foreground ownership. The cue ships as PCM WAV with its
+original deterministic synthesizer source. Review actual loudness/comfort and
+bell discoverability at both window sizes separately from timing/callback checks.
+
+## Background input isolation: 27 October 2026
+
+**Source candidate; human review pending.** The player reported clicks acting on
+Mana Table while it was minimized or underneath another application. The pinned
+[MonoGame DesktopGL mouse implementation](https://github.com/MonoGame/MonoGame/blob/5e9fe9b100ffa67026dff97cc8adffae1414534e/MonoGame.Framework/Platform/Input/Mouse.SDL.cs#L21)
+polls global mouse buttons and translates desktop coordinates into the game
+window; it does not filter the sample by foreground ownership. The earlier
+camera-only focus guard left ordinary card/button clicks, shortcuts and scrolling
+active. This is an input-admission defect, not a new game gesture.
+
+The window's deactivation event now cancels unfinished pointer/camera captures
+and unsent released-card intents immediately. All physical input passes through
+one foreground gate. Inactive samples rebase keys, mouse buttons and wheel
+without dispatch. Returning consumes a neutral release sample, so clicking to
+activate the window or retaining a key from another app cannot become a stale
+card play, target selection, shortcut or zoom. Text and cursor/fullscreen changes
+obey the same ownership. Chat/choice drafts and already-submitted commands remain
+intact; authoritative state observation and the player's existing Auto mode keep
+their separate behavior. Review actual Alt-Tab, minimize/restore, overlap and
+held-button return journeys on Windows; synthetic input checks do not substitute
+for that operating-system interaction.
+
+## Keyboard camera navigation: 27 October 2026
+
+**Source candidate; human review pending.** The player found middle-mouse dragging
+rough and asked for WASD camera controls. The intent is to move through the same
+battlefield or unfolded collection without manipulating cards or answering a
+choice. Hold WASD or arrows to move the viewpoint in screen directions, hold
+Shift for double speed, use the existing wheel zoom, and press Home to return.
+The hand, portraits and decision controls stay anchored; no rules transition or
+persisted camera setting is introduced.
+
+The concrete reference is
+[Tabletop Simulator's movement controls](https://kb.tabletopsimulator.com/player-guides/basic-controls/):
+WASD pans, middle-drag pans, the wheel zooms, and Z focuses an object. Our adaptation
+uses screen directions over the existing two-dimensional camera, not TTS's full
+three-dimensional rotation. Home remains our reset key because Space already
+confirms a current decision. The reference does not establish that our crowded
+four-player table is readable.
+
+Keyboard movement uses elapsed time, equal diagonal speed and a bounded step
+after a stalled frame. Direct keyboard and middle-drag movement synchronize the
+displayed camera with input; they do not restart the focus animation every frame
+or coast after release. Discrete focus and return journeys retain their existing
+transitions. Typing, an inactive window, inspection, dialogs and captured card
+gestures block keyboard pan. Held movement pauses automatic passing and sends no
+game command. The existing F1 guide includes the camera scheme.
+
+Review the full held/released gesture at ordinary and enlarged scales in
+`four-player-table.v1`, `crowded-counters.v1`, a large unfolded hand and a public
+zone. Automated input/geometry checks are separate from human comfort and clarity.
+
 ## No density rendering mode: 26 October 2026
 
 **Source candidate; human review pending.** The player rejected the crowded-field

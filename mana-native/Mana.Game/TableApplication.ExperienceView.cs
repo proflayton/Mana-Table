@@ -18,6 +18,8 @@ internal sealed partial class TableApplication
         canvas.Text(cue?.Title ?? (match?.Status == "finished" ? "Your game has finished" : "Follow the next action"), 376, top + 99, Ink, 1.2f, 835, 2, true);
         canvas.Text(cue?.Text ?? (match?.Status == "finished" ? "Inspect the final battlefield, or return to setup for another game."
             : "Choose a play path from the main menu, or return to your current table."), 377, top + 158, Ink, .91f, 830, 3);
+        if (match != null) canvas.Text("Camera: WASD / arrows to pan, Shift for speed. Wheel to zoom. Home to reset.",
+            377, top + 258, Muted, .68f, 830, 2);
         Button("experience-guide-done", "Back to it", 940, top + 314, 282, new ShellIntent.CloseGuide(), accent: true, height: 43);
     }
 }

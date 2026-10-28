@@ -102,6 +102,7 @@ internal abstract record MatchIntent : UiIntent
     internal sealed record UseSourcePlacement(string Id) : MatchIntent { internal override InteractionScopeKind ScopeKind => InteractionScopeKind.Source; }
     internal sealed record SetAutomatic(bool Enabled) : MatchIntent { internal override InteractionScopeKind ScopeKind => InteractionScopeKind.Playback; }
     internal sealed record ToggleHold : MatchIntent { internal override InteractionScopeKind ScopeKind => InteractionScopeKind.Playback; }
+    internal sealed record TogglePriorityAlerts : MatchIntent { internal override InteractionScopeKind ScopeKind => InteractionScopeKind.Playback; }
     internal sealed record TogglePhaseStop(string Key, bool Resume = false) : MatchIntent {
         internal override InteractionScopeKind ScopeKind => Resume ? InteractionScopeKind.PhaseStop : InteractionScopeKind.Playback;
     }

@@ -194,6 +194,20 @@ checks inspect emitted assemblies. `TableServices` supplies separate catalog,
 table-setup and match ports plus explicitly named optional services. Gameplay
 never receives `ICardEngine` or discovers capabilities through provider casts.
 
+The window supplies foreground ownership alongside raw device samples.
+`TableApplication` admits all physical input through one local gate before
+dispatching clicks, shortcuts, text or an unfinished released-card intent. Losing
+focus cancels captures; returning consumes a neutral device sample before fresh
+gestures can act. Cursor updates and the window's fullscreen shortcut obey that
+same admission. Network observation, committed commands and explicitly enabled
+automatic progression retain their separate lifecycle while the window is inactive.
+
+Priority notification is separate presentation state: current authorized human
+priority, local control policy and a bounded attention cohort determine a quiet
+cue. It never dispatches an action. Its temporary match-local mute, grace and
+cooldown do not alter global sound preferences, Auto or rules timing; background
+audio does not bypass physical-input admission.
+
 `IMatchConnection` publishes deeply immutable `GameSnapshot` values and accepts a
 closed family of semantic `GameCommand` variants. Arrays and dictionaries in the
 entire match graph, including nested decision previews and event causes, use

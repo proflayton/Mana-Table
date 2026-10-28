@@ -59,6 +59,20 @@ turn inward, far-seat cards face that player, and your cards stay upright. Curre
 stats and full card readers remain upright. Tapping is relative to the seat's
 direction. Camera focus keeps the same world positions and orientations.
 Two-player faces retain their existing upright framing.
+Source-only until the next release: WASD and arrow keys pan the battlefield or
+an unfolded card collection; Shift doubles the speed, the wheel zooms and Home
+returns to the overview. Held keyboard movement and middle-drag directly track
+the camera; portrait focus and returning retain their normal transitions.
+Typing, reading, captured card gestures, dialogs and an inactive game window
+suspend keyboard navigation. Holding a camera direction pauses automatic passing.
+The same source candidate gates all physical input by window focus. Background
+clicks/keys/wheel/text are ignored; deactivation cancels unfinished captures, and
+regaining focus requires released buttons and keys before a new gesture acts.
+Network updates, accepted commands and the existing Auto mode remain independent.
+This candidate also ships a quiet priority chime after two seconds of human-held
+priority, with a five-minute temporary mute on the portrait bell. It respects
+global Sounds, deduplicates repeated stack-drain notices and works in the
+background without accepting background input. Clicking the bell again unmutes.
 Resource faces keep portrait dimensions and turn sideways when tapped; packing
 reserves their turning footprint. Tapped art dims, and compact faces reserve a
 corner for the tap cue before fitting names. Hover reveals a complete name when

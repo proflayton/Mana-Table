@@ -13,8 +13,10 @@ public sealed record TurnControlLayout(ImmutableArray<Vector2> Markers, Vector2 
     public Rectangle ArcBounds => Markers.Select(center => Bounds(center, MarkerRadius + 4)).Aggregate(Rectangle.Union);
     public Rectangle AutoBounds => Bounds(AutoCenter, ToggleRadius + 2);
     public Rectangle HoldBounds => Bounds(HoldCenter, ToggleRadius + 2);
+    public Vector2 AlertCenter => HoldCenter + new Vector2(-21, -42);
+    public Rectangle AlertBounds => Bounds(AlertCenter, 14);
     public Rectangle PriorityAction => new(PriorityArea.X, PriorityArea.Bottom - 40, PriorityArea.Width, 40);
-    public ImmutableArray<Rectangle> Reservations => [ArcBounds, AutoBounds, HoldBounds, PriorityArea];
+    public ImmutableArray<Rectangle> Reservations => [ArcBounds, AutoBounds, HoldBounds, AlertBounds, PriorityArea];
 
     public static TurnControlLayout For(Vector2 hero)
     {

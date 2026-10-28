@@ -58,6 +58,7 @@ internal sealed partial class TableApplication
         if (!SelectingActionTarget) {
             TurnControlIcon("auto", layout.AutoCenter, automatic, new MatchIntent.SetAutomatic(!automatic));
             TurnControlIcon("hold", layout.HoldCenter, held, new MatchIntent.ToggleHold(), pause: true);
+            DrawPriorityAlertControl(layout);
         }
         for (int i = 0; i < markers.Length; i++)
             if (IsControlHovered("phase-stop:" + markers[i].Key)) DrawTurnHint(markers[i].Hint, layout.Markers[i]);
