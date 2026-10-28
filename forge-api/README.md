@@ -329,6 +329,23 @@ unchanged. Negotiated matches use the host's external policies through normal
 rules inputs; non-negotiating callers retain Forge AI controllers.
 Returning after a game preserves AI decks/readiness while humans ready again.
 
+Source candidate: lobby snapshots include a table-local monotonic `revision` and
+each selected slot's immutable `deckPreview` (`selectionId`, `name`, public
+`commanders`, and a generic `problem` for an incomplete draft). Human and AI slots
+use the same captured assignment. The legacy `deck` name is derived from it.
+Commander faces contain printing/art metadata, not game occurrence or action
+handles; no private main-deck list or detailed legality diagnostics are disclosed.
+
+The native setup port accepts `LobbyDeckSelection(tableId, deckId, libraryToken)`
+and returns the authoritative `Lobby` receipt. On the wire,
+`multiplayerSelectDeck {tableId, deckId, libraryToken}` checks the current table
+and exact saved-file token before replacing the assignment and withdrawing Ready.
+An empty deck ID explicitly clears the assignment. Saved incomplete drafts may
+be shared, but Ready and Start still reject them. Failed persistence cannot be
+assigned. Legacy raw callers may omit the added scope fields; the shipping client
+always supplies them. This is a C# setup-interface change requiring providers to
+rebuild, with additive wire fields and no saved-data migration.
+
 ### Optional decision tempo (source candidate)
 
 The additive `decision-tempo` ready capability enables `multiplayerTempo

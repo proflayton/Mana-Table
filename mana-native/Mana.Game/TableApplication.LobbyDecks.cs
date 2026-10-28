@@ -57,7 +57,7 @@ internal sealed partial class TableApplication
             var prepared = await PrepareSoloDeck(deck.Id, previous);
             updates.Enqueue(() => {
                 if (generation != deckSelectionGeneration) return;
-                ApplySoloPreparation(prepared); confirmedDeckId = deck.Id;
+                ApplySoloPreparation(prepared); preparedSoloDeckId = deck.Id;
                 pickerSeat = seat; pickerDeleted = false; pickerSearch = ""; deckPage = 0; setupModal = "decks"; textFocus = false;
             });
         }, "Choosing opponents", "Finding your current saved decks and compatible precons.");

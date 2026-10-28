@@ -159,7 +159,7 @@ internal sealed class RecoverySmoke : ITableAutomation
         public Task StartSoloAsync(string id, ImmutableArray<string> opponents) => throw new NotSupportedException();
         public Task<Lobby> HostAsync(int players, bool forward) => throw new NotSupportedException();
         public Task<Lobby> JoinAsync(string address) => throw new NotSupportedException();
-        public Task SelectDeckAsync(string id) => throw new NotSupportedException();
+        public Task<Lobby> SelectDeckAsync(LobbyDeckSelection selection) => throw new NotSupportedException();
         public Task SetReadyAsync(bool ready) => throw new NotSupportedException();
         public Task StartAsync() => throw new NotSupportedException();
         public Task ReturnToLobbyAsync() => throw new NotSupportedException();

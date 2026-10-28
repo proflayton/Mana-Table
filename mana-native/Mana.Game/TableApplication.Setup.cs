@@ -33,7 +33,7 @@ internal sealed partial class TableApplication
     {
         if (IsWorkshopMatch) { ReturnToWorkshop(); return; }
         if (localMatch) { localMatch = false; session.Reset(); ResetTableView(); message = "Choose your next Commander game."; }
-        else Work(async () => { await tables.ReturnToLobbyAsync(); var state = await tables.LobbyAsync(); updates.Enqueue(() => { lobby = state; session.Reset(); ResetTableView(); }); }, "Returning to your group", "Keeping the table together for the next game.", true);
+        else Work(async () => { await tables.ReturnToLobbyAsync(); var state = await tables.LobbyAsync(); updates.Enqueue(() => { session.AcceptLobby(state); session.Reset(); ResetTableView(); }); }, "Returning to your group", "Keeping the table together for the next game.", true);
     }
     private void ImportFile()
     {

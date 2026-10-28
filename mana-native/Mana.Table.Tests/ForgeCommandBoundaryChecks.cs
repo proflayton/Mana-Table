@@ -18,6 +18,7 @@ internal static class ForgeCommandBoundaryChecks
 
     internal static void Run(Action<bool, string> check)
     {
+        LobbyPublicDeckIdentity(check);
         var legacyReady = JsonSerializer.SerializeToElement(new { protocolVersion = 2,
             capabilities = ForgeProtocol.RequiredCapabilities.Where(capability => capability != "explicit-deck-setup") });
         bool legacyRejected = false;
@@ -422,6 +423,36 @@ internal static class ForgeCommandBoundaryChecks
         check(!currentRejected && retiredRejected,
             "Completing an older observation cannot reject the current displayed command or restore its retired prompt"
                 + $" (displayed={replica.Current!.Revision}/{replica.Current.Decision!.Id}, provider={scope.ObservedState?.Revision}/{scope.ObservedState?.Decision?.Id}, currentRejected={currentRejected}, retiredRejected={retiredRejected})");
+    }
+
+    private static void LobbyPublicDeckIdentity(Action<bool, string> check)
+    {
+        using var wire = JsonDocument.Parse("""
+            {"mode":"hosting","status":"Connected","canStart":false,"matchActive":false,"addresses":[],"tableId":"public-table","revision":12,
+             "slots":[{"index":0,"name":"You","type":"LOCAL","deck":"Stale legacy name","ready":false,"local":true,
+               "deckPreview":{"selectionId":"public-assignment","name":"Current saved name","problem":null,"commanders":[
+                 {"id":"printing-only","name":"Toothy, Imaginary Friend","artName":"Toothy, Imaginary Friend","artFace":"front","edition":"BBD",
+                  "artSet":"BBD","collectorNumber":"12","artIndex":2,"foil":false,"manaCost":"3 U","type":"Legendary Creature — Illusion",
+                  "oracleText":"Partner with Pir, Imaginative Rascal","power":"1","toughness":"1",
+                  "key":"untrusted-action","visualId":"untrusted-occurrence","selectable":true}]}}]}
+            """);
+        string original = wire.RootElement.GetRawText();
+        var lobby = ForgeEngine.MapLobby(wire.RootElement);
+        var seat = lobby.Seats.Single();
+        check(lobby.TableId == "public-table" && lobby.Revision == 12 && seat.Deck == "Current saved name"
+                && seat.DeckPreview is { SelectionId: "public-assignment", Name: "Current saved name", Problem: null },
+            "A public seat assignment supplies one name truth and retains its authoritative table and revision");
+        check(seat.DeckPreview!.Commanders is [{ Name: "Toothy, Imaginary Friend", Edition: "BBD", ArtSet: "BBD", ArtIndex: 2,
+                    Power: 1, Toughness: 1, Key: "", VisualId: "", Selectable: false }]
+                && wire.RootElement.GetRawText() == original,
+            "Catalog commander faces keep printing art and readable numeric characteristics without acquiring game identities or mutating the wire");
+        using var legacyWire = JsonDocument.Parse("""
+            {"mode":"joined","status":"Connected","canStart":false,"matchActive":false,"addresses":[],
+             "slots":[{"index":1,"name":"Friend","type":"REMOTE","deck":"Legacy public name","ready":true,"local":false}]}
+            """);
+        var legacy = ForgeEngine.MapLobby(legacyWire.RootElement);
+        check(legacy.Revision == 0 && legacy.Seats is [{ Deck: "Legacy public name", DeckPreview: null }],
+            "An older provider's public deck name remains readable without inventing commander art or an assignment receipt");
     }
 
     private static void CurrentChoiceDisclosures(Action<bool, string> check)

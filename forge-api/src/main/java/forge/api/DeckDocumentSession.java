@@ -416,7 +416,7 @@ final class DeckDocumentSession {
             throw new IllegalStateException("Save this deck before assigning it to a seat: " + active.saveError);
         byte[] bytes = removedDecks.readSaved(id);
         if (expectedToken != null && !expectedToken.equals(DeckLibraryTrash.token(bytes)))
-            throw new IllegalArgumentException("That saved AI deck changed. Choose it again.");
+            throw new IllegalArgumentException("That saved deck changed. Choose it again.");
         var loaded = loadStoredDeck(bytes);
         return new SavedDeck(loaded.editor().toDeck(), checkedFormat(loaded.format()));
     }

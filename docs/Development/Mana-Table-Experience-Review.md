@@ -145,6 +145,16 @@ does not establish that a person can understand or use the screen.
     Pairing guidance comes from the engine. Saving, saved, failed persistence
     and deck legality are separate facts; returning to Play must not require a
     second confirmation of edits already acknowledged by storage.
+    The local lobby portrait and deck name must preview that same acknowledged
+    selection after switching or renaming a deck. The reported 27 October
+    screenshot showed a new portrait with the previous submitted deck name.
+    Acknowledged saved changes publish the new selection while keeping the player
+    unready. Every seat renders its name and commander artwork from the same
+    shared public preview; the local renderer cannot substitute a different deck.
+    Ready remains separate consent to begin with the shared selection.
+    Keep the supplied Arena examples' seat-centered circular portraits. Splitting
+    that existing portrait between two Commander partners is our adaptation;
+    the references do not establish Arena support for partner commanders.
 
 13. **Present alternatives as game choices.** Declining an optional effect and
     taking a mulligan are meaningful alternatives, not tiny cancellation chrome.

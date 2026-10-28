@@ -507,6 +507,17 @@ application and typed-frame composition used by the real window. Preserve their
 result/trace JSON when diagnosing a failure; submitted drawing data does not
 prove that a physical window is clear or correctly clipped.
 
+`LobbyStateRegression` in the client checks covers ordered lobby ownership,
+same-table reconnect fences, saved-file identity, scoped acknowledgements and
+explicit retry. `PregameFlowChecks` in the existing headless presentation lane
+switches and renames saved decks before Ready, rejects both thrown and returned
+save failures, shares incomplete drafts without readiness, and refreshes public
+remote/AI artwork when only another seat changes. Java `LobbyDeckProjectionTest`
+covers actual host/guest assignments, private-data filtering, saved-token/table
+guards and readiness legality; the native mixed-seat journey captures the same
+shared commander previews. These checks do not supply human portrait-legibility
+or gameplay acceptance.
+
 The headless lane also reads a modal spell/land card, checks both offered-action
 orders and rejects a land offer replaced between press and release. It also
 checks that the reader's printed-cost caption persists after the pointer leaves

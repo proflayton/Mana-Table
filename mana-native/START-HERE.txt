@@ -128,9 +128,11 @@ PLAY WITH FRIENDS
    the compatible bundled opponents/precons. Three people plus one AI can play
    a four-seat game. AI seats show their deck and are ready automatically.
    Remove AI opens its seat before the game so another person can join.
-4. Everyone selects Ready with a valid saved deck. This uses your current list
-   for the table. Choosing a deck or joining alone never makes you Ready.
-   Seat portraits show who has joined, chosen a deck, and become Ready.
+4. Your saved deck selection, name and commander portraits update for everyone
+   at the table when you change decks or save edits. Partner commanders share
+   their seat portrait. AI seats show the same public commander artwork.
+   Everyone selects Ready with a valid saved deck; selecting or saving alone
+   never makes you Ready. An incomplete draft can be shown but cannot be readied.
 5. Play becomes available to the host when every selected seat is ready.
    Not ready withdraws your readiness. After the game everyone readies again.
 

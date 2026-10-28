@@ -188,7 +188,7 @@ internal sealed partial class TableApplication
             updates.Enqueue(() => {
                 ApplyWorkshopPreparation(prepared, deck.Revision);
                 workshopMatchDeckId = deck.Id; workshopMatchTestId = test.Id; workshopSelectedTest = test.Id;
-                setupModal = workshopDialog = ""; ResetTableView(); lobby = null; localMatch = true; Accept(state);
+                setupModal = workshopDialog = ""; ResetTableView(); session.BindLobby(null); localMatch = true; Accept(state);
                 message = "Testing your saved deck version.";
             });
             if (state?.Status == "error") throw new InvalidOperationException(state.Error ?? "The test game could not start.");

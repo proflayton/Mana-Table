@@ -227,7 +227,7 @@ internal static class DeckLibraryPresentationChecks
         public Task<Lobby> HostAsync(int players, bool forwarding) => Unsupported<Lobby>();
         public Task<Lobby> JoinAsync(string address) => Unsupported<Lobby>();
         public Task<Lobby> LobbyAsync() => Unsupported<Lobby>();
-        public Task SelectDeckAsync(string id) => Unsupported();
+        public Task<Lobby> SelectDeckAsync(LobbyDeckSelection selection) => Unsupported<Lobby>();
         public Task SetReadyAsync(bool ready) => Unsupported();
         public Task StartAsync() => Unsupported();
         public Task ReturnToLobbyAsync() => Unsupported();

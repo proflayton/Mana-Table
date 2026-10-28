@@ -50,7 +50,7 @@ internal sealed partial class TableApplication
         Work(async () => {
             await tables.LeaveAsync();
             updates.Enqueue(() => {
-                lobby = null; session.Reset(); ResetTableView(); InvalidateDeckConfirmation();
+                session.BindLobby(null); session.Reset(); ResetTableView(); InvalidateDeckConfirmation();
                 setupModal = ""; message = "You left the table. Choose your next game.";
             });
         }, "Leaving the table", "Closing your connection and returning to setup.", true);
