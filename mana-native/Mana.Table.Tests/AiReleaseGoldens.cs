@@ -218,6 +218,8 @@ internal static class AiReleaseGoldens
                         detail = "The first own turn completed after a real cast offer and land play, without starting an unfunded X cast.";
                         break;
                     case "consuming-funded":
+                        if (receipts.Any(item => item.Kind == nameof(CancelPayment) && item.CostOwner == target))
+                            throw new InvalidDataException("The funded consuming-source commander payment was cancelled after initiating its cast.");
                         positive = cast && stack && spellPayment && permanent is { Power: 7, Toughness: 7 }
                             && receipts.Count(item => item.SourceId == vein && item.Consumed) == 1
                             && !actor.Zone("Battlefield").Cards.Any(card => CardViews.Identity(card) == vein)

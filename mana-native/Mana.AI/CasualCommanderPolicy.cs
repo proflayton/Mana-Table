@@ -375,6 +375,11 @@ public sealed class CasualCommanderPolicy : IAiPolicy
     private static AiProposal Choices(AiDecisionRequest request, ChoiceSelection selection, bool ordering)
     {
         var state = request.Frame.State;
+        if (ordering && request.Frame.Semantics.OrderingPurpose == DecisionOrderingPurpose.CostPayment) {
+            var defaults = request.Frame.Semantics.DefaultOrder;
+            if (!request.Work.TrySpend(defaults.Length)) return Missing("work-budget");
+            return Answer(request, new OrderOptions(state.Id, state.Decision!.Id, defaults), "order-engine-cost-payment-sequence");
+        }
         bool lose = request.Frame.Semantics.SelectionIsCost || request.Frame.Semantics.Intent is DecisionIntent.Discard or DecisionIntent.Sacrifice;
         var scored = new List<(Choice Choice, double Score, bool Modeled)>();
         foreach (var choice in selection.Choices.OrderBy(choice => choice.Index)) {

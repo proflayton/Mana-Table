@@ -34,6 +34,7 @@ internal static partial class HeadlessPresentationSmoke
             ProviderIsolationChecks.Run(Check);
             ManaFundingWireChecks.Run(Check);
             AutomatedWireFailureChecks.Run(profile, Check);
+            CostOrderingWireChecks.Run(Check);
             ExecutionWireChecks.Run(Check);
             PendingOperationsWireChecks.Run(Check);
             BlockingCapacityWireChecks.Run(Check);

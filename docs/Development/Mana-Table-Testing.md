@@ -158,6 +158,11 @@ through real provider inputs and proves three distinct taps and one token.
 preflight, adjusted and nested payments, pending untaps, explicit original hosts,
 shared creature types and total power. Native checks distinguish the selected
 cost index from separate unpaid source commitments and retain unknown fallback.
+The consuming-source journey fails immediately if its initiated cast is canceled,
+while still requiring the actual stack, resolved commander and exactly one
+consumed Crystal Vein. Cost-order regressions cover typed default permutations
+separately from ordinary card ordering and exercise legal tap-before-sacrifice
+payment plus rejection of the reversed order through the real engine.
 
 The fixed 16-turn/35-second CI prefix and the two-rotation 32-turn/45-second smoke
 remain unchanged. Do not rerun a failed sample until one happens to pass, lower

@@ -128,6 +128,7 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
         final Set<String> poolManaColors = new HashSet<>();
         final List<java.util.function.Consumer<Map<String, Object>>> contextProjections = new ArrayList<>();
         List<Map<String, Object>> optionSemantics = List.of();
+        Map<String, Object> orderingSemantics = Map.of();
         SpellAbility announcedAbility;
         String executionId;
         Input colorPaymentOwner;
@@ -661,6 +662,7 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
         if (current == null) return result;
         result.putAll(DecisionSemantics.describe(current.input, game, human.getPlayer(), this::semanticCardId));
         result.put("options", current.optionSemantics);
+        result.putAll(current.orderingSemantics);
         if (current.announcedAbility != null)
             result.put("numeric", NumericDecisionProjection.describe(current.announcedAbility, current.announcedSymbol,
                     human.getPlayer(), card -> numericSourceId(card)));
@@ -1988,6 +1990,7 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
 
     private Pending choicePrompt(String kind, String title, List<?> choices, int min, int max, boolean ordered, FSerializableFunction<Object, String> display) {
         Pending next = new Pending(kind, null);
+        next.orderingSemantics = DecisionSemantics.ordering(choices, ordered, min, max);
         next.contextProjections.add(projected -> next.optionSemantics = DecisionSemantics.options(choices,
                 human::getDecisionAbility, human.getPlayer(), this::semanticCardId));
         next.size = choices.size(); next.min = min; next.max = max;

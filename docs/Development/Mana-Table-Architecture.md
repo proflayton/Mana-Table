@@ -162,6 +162,10 @@ mutation and rechecks a source tap after earlier costs. The active remaining
 payment owns source reservations; paid parts release them and a pending untap
 leaves ordering open. A replacement of a legal cost action can still count as
 payment under [Comprehensive Rules 118.11](https://media.wizards.com/2026/downloads/MagicCompRules%2020260925.txt).
+Cost-part ordering carries an explicit purpose and the current engine default
+permutation. The policy preserves that order rather than applying card-value
+ranking, which could sacrifice a source before its own tap cost. These indices
+only answer the current ordered prompt; they grant no action or payment rights.
 
 `Mana.Game` uses the shared planner to suggest specific physical sources alongside
 the inspected card's mana symbols. Its witness cannot create an action handle,

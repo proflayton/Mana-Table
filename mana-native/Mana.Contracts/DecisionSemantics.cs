@@ -10,6 +10,7 @@ public enum DecisionIntent
     AddCounters, RemoveCounters, Damage, Destroy, Exile, Bounce, Counter,
     Tap, Untap, CombatDamage, NameCard
 }
+public enum DecisionOrderingPurpose { Unknown, CostPayment }
 public sealed record DecisionOptionSemantics(int Index, ActionEffectKind Effect, int? Amount = null)
 {
     public ActionOperationGraph OperationGraph { get; init; } = ActionOperationGraph.Unknown;
@@ -34,6 +35,10 @@ public sealed record DecisionSemantics(DecisionIntent Intent = DecisionIntent.Un
     public ImmutableArray<int> SelectedPlayers { get; init; } = [];
     public string CounterType { get; init; } = "";
     public bool SelectionIsCost { get; init; }
+    // The provider's actual CostPart list has a preferred payment sequence.
+    // Its indices identify this exact ordering prompt, not reusable cost rules.
+    public DecisionOrderingPurpose OrderingPurpose { get; init; }
+    public ImmutableArray<int> DefaultOrder { get; init; } = [];
     public ActionOperationGraph OperationGraph { get; init; } = ActionOperationGraph.Unknown;
     public int? OperationId { get; init; }
     public NumericDecision? Numeric { get; init; }

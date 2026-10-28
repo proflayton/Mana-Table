@@ -161,6 +161,11 @@ cost or grant permission to spend. Canceling an optional triggered payment is
 a valid decline, distinct from abandoning a spell that the policy initiated.
 The payer can differ from a source's controller or the observing controller.
 Provenance ends with the current input; hidden source identities are not added.
+Ordered cost-part prompts additionally publish semantic `orderingPurpose:
+CostPayment` and `defaultOrder`, the engine's complete ordered list of current
+choice indices. This is distinct from ordering cards by value. The native
+boundary rejects a partial, duplicate or foreign default permutation and metadata
+on another task. Missing metadata remains unknown for older providers.
 Current nonmana cost selections can additionally carry `costPayment`: the
 actual payer/source, remaining adjusted cost parts, mana-cost knowledge and a
 read-only `ManaFundingContext`. `currentCostIndex` identifies the selected part

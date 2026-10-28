@@ -80,6 +80,15 @@ final class DecisionSemantics {
         return options(choices, resolve, null, null);
     }
 
+    /** Cost ordering retains the provider's actual default part order. This is
+     * context for this full ordering callback, never a classification of labels. */
+    static Map<String, Object> ordering(List<?> choices, boolean ordered, int min, int max) {
+        if (!ordered || choices.isEmpty() || min != choices.size() || max != choices.size()
+                || !choices.stream().allMatch(CostPart.class::isInstance)) return Map.of();
+        return Map.of("orderingPurpose", "CostPayment", "selectionIsCost", true,
+                "defaultOrder", java.util.stream.IntStream.range(0, choices.size()).boxed().toList());
+    }
+
     static List<Map<String, Object>> options(List<?> choices, Function<SpellAbilityView, SpellAbility> resolve,
                                            Player viewer, Function<CardView, String> identity) {
         var options = new ArrayList<Map<String, Object>>();

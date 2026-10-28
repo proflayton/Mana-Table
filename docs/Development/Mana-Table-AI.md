@@ -681,6 +681,10 @@ assignment core checks the remaining bill after excluding a proposed consumed
 resource, selected resources and pending source costs. A funded alternative is
 preferred to tapping the only mana creature; absent or unsupported context does
 not manufacture a witness or grant a producer action.
+For a typed cost-order prompt, the policy retains the engine's published default
+permutation before any card/effect valuation. This keeps a source tap ahead of
+its sacrifice. Unknown or ordinary card-order prompts retain their existing
+strategy; the policy does not infer payment dependencies from labels or names.
 
 Attack preferences compare public incoming damage with and without a proposed
 blocker, considering evasion, trample, visible strike characteristics and vigilance.
