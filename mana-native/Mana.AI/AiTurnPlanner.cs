@@ -53,16 +53,23 @@ internal static class AiTurnPlanner
         if (costs.Any(cost => cost.Amount == null) || costs.SelectMany(cost => cost.ManaSymbols).Any(symbol => symbol.Trim('{', '}') == "X")) return null;
         int tax = source.Value.Zone == "Command" && route.Kind == "cast" ? source.Value.Card.CommanderTax : 0;
         long generic = costs.Sum(cost => Math.Max(0L, cost.Amount ?? 0)) + tax;
-        if (generic > 1024 || request.Work.Remaining <= 12) return null;
+        if (generic > 1024 || request.Work.Remaining <= 12 || request.PlanVersion == long.MaxValue) return null;
         var funding = AiManaPlanner.ForAction(request with { Work = request.Work.CreateSlice(192, 8) }, action, tax);
         if (funding.Status != AiManaPlanStatus.Funded) return null;
-        return new AiResourceReservation(set.SourceCardId, action.StableId,
+        var reservation = new AiResourceReservation(set.SourceCardId, action.StableId,
             costs.SelectMany(cost => cost.ManaSymbols).ToImmutableArray(), (int)generic) {
             Purpose = purpose, SourceZone = source.Value.Zone,
             ManaSourceIds = funding.Steps.OfType<AiManaStep.Source>().Select(step => step.SourceCardId).Distinct().ToImmutableArray(),
             PoolMana = funding.Steps.OfType<AiManaStep.Pool>().GroupBy(step => step.Color)
                 .ToImmutableDictionary(group => group.Key, group => group.Sum(step => step.Amount))
         };
+        // Play permission can include foreign or transient sources which the
+        // first memory model cannot retain. Do not turn a legal current play
+        // into an invalid answer merely by proposing unsupported memory for it.
+        var state = request.Frame.State;
+        var proposed = new AiTurnPlan(state.Id, state.ViewerId, state.Turn, request.PlanVersion + 1,
+            AiPlanPurpose.Develop, [reservation], []) { CreatedFrom = request.Frame.Stamp };
+        return AiPlanValidation.IsTransitionValid(new(request.PlanVersion, proposed), request.PlanVersion, request.Frame, null) ? reservation : null;
     }
 
     internal static bool Matches(AiResourceReservation reservation, string sourceId, ActionSemantics action)

@@ -6,6 +6,7 @@ internal static class AiIntentFollowupRegression
 {
     internal static async Task RunAsync(Action<bool, string> check)
     {
+        await ForeignMemoryScope(check);
         // The actual golden's 3U then 2G bills can lose all three Forests to
         // generic payment. Ordered IDs force that allocation without a plan;
         // six blue sources include the first land play beside the five set up.
@@ -54,6 +55,67 @@ internal static class AiIntentFollowupRegression
                 && next.Allows(selected) && session.Report(companion, AiExecutionReceipt.Accepted)
                 && session.Plan is { Purpose: AiPlanPurpose.Develop, Reservations.IsEmpty: true },
             "After the first payment and authoritative resolution, the same session selects the companion's fresh cast offer and consumes its follow-up intention without calling it an instant response");
+    }
+
+    private static async Task ForeignMemoryScope(Action<bool, string> check)
+    {
+        foreach (bool counter in new[] { false, true }) {
+            var frame = ForeignFrame(counter);
+            using var session = new AiSeatSession(frame.State.Id, 0, new CasualCommanderPolicy(), 17,
+                new(TimeSpan.FromSeconds(5), 4096));
+            session.Observe(frame); var evaluated = await session.EvaluateAsync(); var answer = session.TakeCommand();
+            string expected = counter ? "companion-offer-1" : "primary-offer-1";
+            check(evaluated.Status == AiSeatStatus.Ready && answer?.Command is UseOfferedAction action
+                    && action.ActionId == expected && frame.Allows(action) && session.Report(answer, AiExecutionReceipt.Accepted)
+                    && session.Plan?.Reservations.All(reservation => reservation.SourceCardId != "companion") == true,
+                counter
+                    ? "A currently authorized foreign-exile instant can counter known lethal damage without proposing unsupported owned-source memory or rejecting its legal cast"
+                    : "An owned primary cast stays ready when a beneficial foreign-exile follow-up is offered but cannot be retained by the owned-source memory model");
+        }
+    }
+
+    private static AiDecisionFrame ForeignFrame(bool counter)
+    {
+        var original = Frame(1);
+        var foreign = original.State.Viewer!.Zone("Command").Cards.Single(card => card.VisualId == "companion") with {
+            Type = "Instant", Power = null, Toughness = null };
+        var pending = Card("pending-source", 1, "Instant") with { Key = "" };
+        EffectRecipients Source(string id, int controller) => new(SemanticKnowledge.Known, EffectRecipientBinding.Source, null,
+            [new("source:" + id, SemanticEntityKind.Card, id, ControllerId: controller, OwnerId: controller)]);
+        var actor = new SemanticEntity("actor", SemanticEntityKind.Player, PlayerId: 0, ControllerId: 0);
+        var target = new SemanticEntity("pending-target", SemanticEntityKind.Spell, pending.VisualId, ControllerId: 1) {
+            StackItemId = "pending-hazard" };
+        var action = new ActionOperation(0, counter ? ActionEffectKind.CounterSpell : ActionEffectKind.Draw) {
+            Knowledge = SemanticKnowledge.Known, ActorPlayerId = 0, Sources = Source(foreign.VisualId, 1),
+            Recipients = counter ? new(SemanticKnowledge.Known, EffectRecipientBinding.Targets, 0, [])
+                : new(SemanticKnowledge.Known, EffectRecipientBinding.Actor, null, [actor]),
+            Targets = counter ? new(SemanticKnowledge.Known, 1, 1, [target]) : null,
+            Amount = counter ? null : 1, AmountKnowledge = counter ? SemanticKnowledge.Unknown : SemanticKnowledge.Known };
+        var hazard = new StackItem("Pending hazard", "Public pending damage", StackActionKind.Spell, pending) {
+            Id = "pending-hazard", ControllerId = 1,
+            OperationGraph = new(SemanticKnowledge.Known, 0, [new(0, ActionEffectKind.Damage) {
+                Knowledge = SemanticKnowledge.Known, ActorPlayerId = 1, Sources = Source(pending.VisualId, 1),
+                Recipients = new(SemanticKnowledge.Known, EffectRecipientBinding.Explicit, null, [actor]),
+                Amount = 5, AmountKnowledge = SemanticKnowledge.Known }]) };
+        var state = original.State with {
+            Players = original.State.Players.Select(player => player.Id == 0 ? player with {
+                Life = counter ? 5 : player.Life,
+                Zones = player.Zones.Select(zone => zone.Name == "Command" ? zone with {
+                    Count = 1, Cards = zone.Cards.Where(card => card.VisualId != "companion").ToImmutableArray() } : zone).ToImmutableArray()
+            } : player with { Zones = [new("Exile", 1, [foreign], null)] }).ToImmutableArray(),
+            Stack = counter ? [hazard] : [],
+            PlayAccesses = [new(1, "Exile", foreign.VisualId, [new("foreign-cast-permission", PlayAccessKind.Cast, "", "", "Current cast access", true)])]
+        };
+        var domain = original.Domain with {
+            Sources = original.SourceActions.Where(source => !counter || source.SourceCardId != "primary").ToImmutableArray(),
+            Actions = original.Domain.Actions.Where(facts => !counter || facts.ActionId != "primary-offer-1")
+                .Select(facts => facts.ActionId == "companion-offer-1" ? facts with {
+                    Effect = counter ? ActionEffectKind.CounterSpell : ActionEffectKind.Draw,
+                    Effects = [counter ? ActionEffectKind.CounterSpell : ActionEffectKind.Draw],
+                    Targeted = counter, TargetsAvailable = true,
+                    OperationGraph = new(SemanticKnowledge.Known, 0, [action]) } : facts).ToImmutableArray()
+        };
+        return new(state, domain: domain);
     }
 
     private static AiDecisionFrame Frame(long revision, bool primaryStarted = false, bool primaryResolved = false,
