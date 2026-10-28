@@ -118,6 +118,10 @@ public class LobbyDeckProjectionTest {
     @Test(timeOut = 45000) public void savedSelectionReceiptRejectsChangedVersionsAndForeignTablesBeforeReplacingTheSeat() throws Exception {
         try (var engine = new DesktopEngine(CardCatalog.fromDatabases(StaticData.instance().getAvailableDatabases().values()),
                 Files.createTempDirectory("mana-lobby-selection-scope-"))) {
+            // The production pipe entry point supplies this after resource load;
+            // direct-dispatch fixtures must establish the same ready lifecycle.
+            var resourceField = DesktopEngine.class.getDeclaredField("resources"); resourceField.setAccessible(true);
+            resourceField.set(engine, RESOURCES);
             var saved = object(engine.dispatch("import", object(Map.of("name", "First saved name", "text",
                     "Deck\n98 Island\nCommander\n1 Pir, Imaginative Rascal\n1 Toothy, Imaginary Friend", "format", "Commander"))));
             var hosted = object(engine.dispatch("multiplayerHost", object(Map.of("format", "Commander", "playerCount", 2, "transport", "local"))));
