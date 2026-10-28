@@ -1,5 +1,6 @@
 using Mana.Contracts;
 using Mana.Renderer;
+using Mana.Table.Presentation;
 using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Input;
 using Rectangle = Microsoft.Xna.Framework.Rectangle;
@@ -17,17 +18,27 @@ internal sealed partial class TableApplication
     private bool followTurnEnabled, boardPointerActivity, boardViewportChanged;
     private Point boardViewport;
     private BoardView? manualBoardView;
-    private bool boardPanning;
+    private bool boardPanning, boardKeyboardPanning;
     private Point boardPanOrigin;
     private BoardView boardPanView;
 
-    private void UpdateBoardCamera(MouseState mouse, KeyboardState keys)
+    private void UpdateBoardCamera(MouseState mouse, KeyboardState keys, TimeSpan elapsed, bool keyboardAvailable)
     {
-        if (!TableStudyEnabled || CardCollectionOpen || OverlayOpen || textFocus || chatFocus || dragging || readingId != null) {
+        if (!TableStudyEnabled || CardCollectionOpen || OverlayOpen || turnPassRequest != null
+            || textFocus || chatFocus || dragging || readingId != null || mouse.LeftButton == ButtonState.Pressed) {
             boardPanning = false; return;
         }
-        if (keys.IsKeyDown(Keys.Home) && previousKeys.IsKeyUp(Keys.Home)) {
+        if (keyboardAvailable && keys.IsKeyDown(Keys.Home) && previousKeys.IsKeyUp(Keys.Home)) {
             manualBoardView = null; boardPanning = false; SetStudyFocus(null); return;
+        }
+        if (keyboardAvailable && !boardPanning && pressed == null
+            && mouse.LeftButton == ButtonState.Released && mouse.MiddleButton == ButtonState.Released) {
+            var delta = CameraKeyboardPan.Offset(keys, elapsed);
+            if (delta != Vector2.Zero) {
+                manualBoardView = boardView with { Offset = boardView.Offset + delta };
+                boardKeyboardPanning = true;
+                session.CancelAdvance();
+            }
         }
         // Retain pointer capture until release, including outside the board.
         if (!BoardViewport.Contains(pointer) && !boardPanning) return;
@@ -38,8 +49,8 @@ internal sealed partial class TableApplication
             manualBoardView = new(pointer.ToVector2() - start.Inverse(pointer.ToVector2()) * scale, scale);
             session.CancelAdvance();
         }
-        if (mouse.MiddleButton == ButtonState.Pressed && previousMouse.MiddleButton == ButtonState.Released) {
-            boardPanning = true; boardPanOrigin = pointer; boardPanView = manualBoardView ?? boardView;
+        if (mouse.MiddleButton == ButtonState.Pressed && previousMouse.MiddleButton == ButtonState.Released && pressed == null) {
+            boardPanning = true; boardPanOrigin = pointer; boardPanView = boardView;
             session.CancelAdvance();
         }
         if (boardPanning && mouse.MiddleButton == ButtonState.Pressed)
@@ -64,7 +75,8 @@ internal sealed partial class TableApplication
                 ? BoardView.Frame(SharedTableStudy.Territory(tableScene.Seat(studyFocusOwner!.Value).Index), new(195, 170, 995, 530))
                 : BoardView.Identity);
             boardView = boardViewMotion.Navigate(state.Id, state.ViewerId, targetView, now, preferences.ReducedMotion,
-                dragging || pressed?.Card != null || readingId != null || OverlayOpen);
+                dragging || pressed?.Card != null || readingId != null || OverlayOpen,
+                direct: boardPanning || boardKeyboardPanning);
             return;
         }
         bool enabled = followTurnEnabled && !TableStudyEnabled && state.Players.Length is 3 or 4;

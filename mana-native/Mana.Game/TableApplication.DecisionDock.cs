@@ -22,7 +22,7 @@ internal sealed partial class TableApplication
         if (readingId != null || CardCollectionOpen || expandedStackWorkload.Length > 0 || HoveredPendingReference() != null) return DecisionDockPauseReason.Inspection;
         if (OverlayOpen) return DecisionDockPauseReason.Overlay;
         if (chatFocus) return DecisionDockPauseReason.Chat;
-        if (AbilityActionPending || dragging || boardPanning || pressed != null || selectedCombat != null || AwaitingReleasedPlay) return DecisionDockPauseReason.Interaction;
+        if (AbilityActionPending || dragging || boardPanning || boardKeyboardPanning || pressed != null || selectedCombat != null || AwaitingReleasedPlay) return DecisionDockPauseReason.Interaction;
         return DecisionDockPauseReason.None;
     }
 

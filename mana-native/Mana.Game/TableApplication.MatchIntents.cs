@@ -144,6 +144,7 @@ internal sealed partial class TableApplication
                 && HandPlacements.Options(match, sourceCard).FirstOrDefault(ability => ability.Id == use.Id) is { } placement: UseReaderPlacement(placement); break;
             case MatchIntent.SetAutomatic automatic: UseAutomaticControl(automatic.Enabled); break;
             case MatchIntent.ToggleHold: ToggleHoldControl(); break;
+            case MatchIntent.TogglePriorityAlerts: priorityNotification.ToggleMute(now); break;
             case MatchIntent.TogglePhaseStop stop:
                 if (stop.Resume) preferences.Stops.Remove(stop.Key);
                 else if (!preferences.Stops.Remove(stop.Key)) preferences.Stops.Add(stop.Key);

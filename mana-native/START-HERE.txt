@@ -284,9 +284,23 @@ single click and stay compact. Right-click uses the same full-card reader.
 Required selections, auxiliary views and alternate faces retain a read-only
 inspector when the table reader is unavailable. Actions stay beside the live
 card; inspecting never activates an ability or casts from a public zone.
-Battlefield cards keep the same visual form as the table grows. Use the wheel
-over the battlefield to zoom where you point, middle-drag to pan, and Home to
-return to the whole table. Your hand, portraits and decision controls stay put.
+Battlefield cards keep the same visual form as the table grows.
+Source-only until the next release: hold WASD or the
+arrow keys to pan the camera; hold Shift to move faster. Use the wheel over the
+battlefield to zoom where you point, or middle-drag to pan. Home returns to the
+whole table. Your hand, portraits and decision controls stay put. Navigation
+pauses while typing, reading a card, dragging or using a dialog, and when the
+game window is inactive. Holding a camera key pauses automatic passing.
+Source-only until the next release: clicks, typing, wheel and shortcuts are
+ignored while another window is active or Mana Table is minimized. Returning
+clears unfinished drags; release held buttons and keys before making a new
+gesture. Your chat draft and staged choices are retained.
+Source-only until the next release: a quiet chime sounds after priority has
+waited on you for two seconds, including while the window is in the background.
+Click the small bell on your portrait to mute priority alerts for five minutes;
+click again to unmute sooner. Hover shows the remaining mute time. Global Sounds
+off also silences the cue. Routine Auto windows and repeated stack-drain alerts
+stay quiet; notices never repeat continuously while you read or decide.
 Click an opponent's portrait/name to focus that player's field when you are not
 choosing a player target. Camera movement does not select or play a card.
 Zone piles open browsers containing only the cards your player can see. Your own
@@ -295,7 +309,7 @@ including Flashback when available. Hidden hands show anonymous backs.
 Source-only until a release containing it is published: graveyard and exile
 piles unfold into the table's card space instead of a paged browser. The heading
 identifies whose zone you are reading. Click a card to read; an offered action
-is a separate deliberate choice. Middle-click or Z focuses, middle-drag pans,
+is a separate deliberate choice. Middle-click or Z focuses; WASD, arrows or middle-drag pan,
 and the wheel zooms. Escape folds back to the pile or the current play-access
 fan. A required decision keeps its draft while you inspect; a new task returns
 you to that decision. Concealed cards remain concealed.
@@ -307,7 +321,7 @@ you can start that play, not that its mana cost is paid. Click to read, then use
 the card's offered action, or drag it onto the table. Middle-click an actual
 hand/access card to unfold its collection. H opens your hand;
 the access-zone caption opens the additional cards. Click a face to read it;
-middle-click or Z focuses the camera there, middle-drag moves through the spread,
+middle-click or Z focuses the camera there; WASD, arrows or middle-drag move through the spread,
 and the wheel zooms. Home returns to the overview. Escape or the return gesture
 folds the same cards to their original places. A large hand has no page controls.
 Large collections open at play distance; the overview is a deliberate choice.

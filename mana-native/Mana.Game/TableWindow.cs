@@ -69,7 +69,8 @@ public sealed class TableWindow : Game
             try { graphics.PreferredBackBufferWidth = Window.ClientBounds.Width; graphics.PreferredBackBufferHeight = Window.ClientBounds.Height; graphics.ApplyChanges(); }
             finally { resizing = false; }
         };
-        Window.TextInput += (_, e) => application.ReceiveText(e.Character);
+        Deactivated += (_, _) => { application.DeactivateInput(); handCursor = null; };
+        Window.TextInput += (_, e) => { if (IsActive) application.ReceiveText(e.Character); };
     }
     protected override void LoadContent()
     {
@@ -84,16 +85,18 @@ public sealed class TableWindow : Game
         var mouse = Automation?.ReadMouse() ?? Mouse.GetState();
         var keys = Automation?.ReadKeyboard() ?? Keyboard.GetState();
         var backbuffer = GraphicsDevice.PresentationParameters;
-        application.Update(time, mouse, keys, new(backbuffer.BackBufferWidth, backbuffer.BackBufferHeight));
+        application.Update(time, mouse, keys, new(backbuffer.BackBufferWidth, backbuffer.BackBufferHeight),
+            inputActive: IsActive || Automation != null);
         var preload = application.ArtPreloadCards();
         art.Preload(preload.Visible, preload.Anticipated);
         bool cardPointer = application.InteractivePointer;
-        if (handCursor != cardPointer) {
+        if (!application.InputReady) handCursor = null;
+        else if (handCursor != cardPointer) {
             Mouse.SetCursor(cardPointer ? MouseCursor.Hand : MouseCursor.Arrow);
             handCursor = cardPointer;
         }
         if (Automation is { } driver && (application.AcceptedDrag || application.AcceptedHit is { } id && id == driver.ExpectedClick)) driver.ClickAccepted = true;
-        if (keys.IsKeyDown(Keys.F11) && previousKeys.IsKeyUp(Keys.F11)) graphics.ToggleFullScreen();
+        if (application.InputReady && keys.IsKeyDown(Keys.F11) && previousKeys.IsKeyUp(Keys.F11)) graphics.ToggleFullScreen();
         previousKeys = keys;
         base.Update(time);
     }

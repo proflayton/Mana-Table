@@ -31,10 +31,13 @@ public sealed class BoardViewMotion
     public bool LimitedByLayout { get; private set; }
 
     /// <summary>Explicit inspection moves one camera, independent of turn and prompt publications.</summary>
-    public BoardView Navigate(string game, int viewer, BoardView target, double totalSeconds, bool reducedMotion, bool blocked)
+    public BoardView Navigate(string game, int viewer, BoardView target, double totalSeconds, bool reducedMotion, bool blocked,
+        bool direct = false)
     {
         if (gameId != game || viewerId != viewer) { Reset(); gameId = game; viewerId = viewer; }
-        if (!double.IsFinite(totalSeconds) || totalSeconds < lastTime || reducedMotion) {
+        // Continuous direct manipulation tracks input without restarting an
+        // eased focus transition on each frame or drifting after release.
+        if (!double.IsFinite(totalSeconds) || totalSeconds < lastTime || reducedMotion || direct && !blocked) {
             Current = origin = destination = target; moving = false;
             lastTime = double.IsFinite(totalSeconds) ? totalSeconds : 0;
             return Current;
