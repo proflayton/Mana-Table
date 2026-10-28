@@ -57,18 +57,37 @@ public class CostTapType extends CostPartWithList {
 
     @Override
     public Integer getMaxAmountX(SpellAbility ability, Player payer, final boolean effect) {
+        return getEligibleCards(ability, payer).size();
+    }
+
+    /** Current physical resources shared by feasibility, input offers and payment.
+     * The active adjusted payment owns any additional source {T} reservation. */
+    public final CardCollection getEligibleCards(SpellAbility ability, Player payer) {
         final Card source = ability.getHostCard();
-
-        // extend if cards use X with different conditions
-
-        CardCollection typeList = CardLists.getValidCards(payer.getCardsIn(ZoneType.Battlefield), getType().split(";"), payer, source, ability);
-
-        if (!canTapSource) {
-            typeList.remove(source);
+        boolean sourceReserved = !canTapSource;
+        for (var entry : payer.getGame().costPaymentStack) {
+            if (entry.payment().getAbility() != ability) continue;
+            var unpaid = entry.payment().getUnpaidCostParts();
+            // A paid {T} no longer reserves an untapped source. An untap cost
+            // can also permit two distinct taps; leave that ordering available
+            // and revalidate each action against its actual current resource.
+            sourceReserved = unpaid.stream().anyMatch(part -> part instanceof CostTap)
+                    && unpaid.stream().noneMatch(part -> part instanceof CostUntap || part instanceof CostUntapType);
         }
-        typeList = CardLists.filter(typeList, ability.isCrew() ? CardPredicates.CAN_CREW : CardPredicates.CAN_TAP);
-
-        return typeList.size();
+        String type = getType();
+        final CardCollection candidates;
+        if (type.equals("OriginalHost")) {
+            candidates = new CardCollection();
+            Card original = ability.getOriginalHost();
+            if (original.isInZone(ZoneType.Battlefield)
+                    && payer.getGame().getCardState(original, null) == original) candidates.add(original);
+        } else {
+            type = TextUtil.fastReplace(type, ".sharesCreatureTypeWith", "");
+            if (type.contains("+withTotalPowerGE")) type = type.split("\\+withTotalPowerGE")[0];
+            candidates = CardLists.getValidCards(payer.getCardsIn(ZoneType.Battlefield), type.split(";"), payer, source, ability);
+        }
+        if (sourceReserved) candidates.remove(source);
+        return CardLists.filter(candidates, ability.isCrew() ? CardPredicates.CAN_CREW : CardPredicates.CAN_TAP);
     }
 
     @Override
@@ -142,13 +161,11 @@ public class CostTapType extends CostPartWithList {
      */
     @Override
     public final boolean canPay(final SpellAbility ability, final Player payer, final boolean effect) {
-        final Card source = ability.getHostCard();
-
         String type = this.getType();
         boolean sameType = false;
 
         if (type.equals("OriginalHost")) {
-            return ability.getOriginalHost().canTap();
+            return !getEligibleCards(ability, payer).isEmpty();
         }
 
         if (type.contains(".sharesCreatureTypeWith")) {
@@ -163,12 +180,7 @@ public class CostTapType extends CostPartWithList {
             type = TextUtil.fastReplace(type, TextUtil.concatNoSpace("+withTotalPowerGE", totalP), "");
         }
 
-        CardCollection typeList = CardLists.getValidCards(payer.getCardsIn(ZoneType.Battlefield), type.split(";"), payer, source, ability);
-
-        if (!canTapSource) {
-            typeList.remove(source);
-        }
-        typeList = CardLists.filter(typeList, ability.isCrew() ? CardPredicates.CAN_CREW : CardPredicates.CAN_TAP);
+        CardCollection typeList = getEligibleCards(ability, payer);
 
         if (sameType) {
             for (final Card card : typeList) {
@@ -186,6 +198,30 @@ public class CostTapType extends CostPartWithList {
 
         final int amount = this.getAbilityAmount(ability);
         return typeList.size() >= amount;
+    }
+
+    @Override
+    public boolean payAsDecided(Player payer, PaymentDecision decision, SpellAbility ability, final boolean effect) {
+        if (decision == null) return false;
+        var eligible = getEligibleCards(ability, payer);
+        // Check the entire selection before tapping any card. Equality by card
+        // ID alone must not turn an old zone occurrence into a current resource.
+        for (Card chosen : decision.cards) {
+            if (eligible.stream().noneMatch(current -> current == chosen)) return false;
+        }
+        String type = getType();
+        if (type.contains("+withTotalPowerGE")) {
+            int requiredPower = Integer.parseInt(type.split("withTotalPowerGE")[1]);
+            if (CardLists.getTotalPower(decision.cards, ability) < requiredPower) return false;
+        } else if (!getAmount().equals("Any") && decision.cards.size() != getAbilityAmount(ability)) {
+            return false;
+        }
+        if (type.contains(".sharesCreatureTypeWith")) {
+            for (Card chosen : decision.cards) {
+                if (decision.cards.stream().anyMatch(other -> other != chosen && !chosen.sharesCreatureTypeWith(other))) return false;
+            }
+        }
+        return super.payAsDecided(payer, decision, ability, effect);
     }
 
     /* (non-Javadoc)

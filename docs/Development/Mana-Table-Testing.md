@@ -152,6 +152,12 @@ stack occurrence and resolved Saproling without a cancellation. Engine cost
 ordering remains authoritative; focused native checks separately require an
 intervening nonmana selection to preserve the sole remaining mana source,
 including sacrifice, exile, discard, alternative witnesses and unknown context.
+`TapCostPaymentExperienceTest` exercises creature-first and source-first ordering
+through real provider inputs and proves three distinct taps and one token.
+`TapCostExecutionTest` covers current occurrence/readiness, whole-selection
+preflight, adjusted and nested payments, pending untaps, explicit original hosts,
+shared creature types and total power. Native checks distinguish the selected
+cost index from separate unpaid source commitments and retain unknown fallback.
 
 The fixed 16-turn/35-second CI prefix and the two-rotation 32-turn/45-second smoke
 remain unchanged. Do not rerun a failed sample until one happens to pass, lower

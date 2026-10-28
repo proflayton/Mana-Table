@@ -17,10 +17,15 @@ final class CostPaymentProjection {
                 || ability == null || ability.getHostCard() == null || ability.getHostCard().isFaceDown()) return null;
         String sourceId = identity.apply(ability.getHostCard().getView());
         if (sourceId == null || sourceId.isEmpty()) return null;
+        var remaining = payment.getUnpaidCostParts();
+        int currentIndex = -1;
+        for (int index = 0; index < remaining.size(); index++)
+            if (remaining.get(index) == current.cost()) { currentIndex = index; break; }
+        if (currentIndex < 0) return null;
         var funding = payment.getPayer() == viewer ? NumericDecisionProjection.funding(ability, viewer, identity)
                 : Map.of("knowledge", "Unknown", "pool", Map.of(), "sources", java.util.List.of());
         return Map.of("sourceCardId", sourceId, "payerId", payment.getPayer().getId(),
-                "remainingCosts", payment.getUnpaidCostParts().stream().map(ActionSemantics::cost).toList(),
+                "remainingCosts", remaining.stream().map(ActionSemantics::cost).toList(), "currentCostIndex", currentIndex,
                 "manaCostKnowledge", "Unknown", "funding", funding);
     }
 

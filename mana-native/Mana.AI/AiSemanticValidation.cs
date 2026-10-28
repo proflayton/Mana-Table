@@ -94,6 +94,7 @@ internal static class AiSemanticValidation
             if (owner.Card is { } portrait && (portrait.FaceDown || !string.IsNullOrEmpty(portrait.Key)
                 || portrait.Selectable || portrait.Highlighted)) throw Invalid();
             ManaFundingFacts.ValidateCosts(payment.RemainingCosts);
+            if (payment.CurrentCostIndex is { } index && (index < 0 || index >= payment.RemainingCosts.Length)) throw Invalid();
             ManaFundingFacts.Validate(state, payment.Funding, payment.PayerId);
         }
 

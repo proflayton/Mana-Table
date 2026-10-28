@@ -17,4 +17,7 @@ public sealed record CostPaymentFunding(string SourceCardId, int PayerId,
     ImmutableArray<ActionCost> RemainingCosts, ManaFundingContext Funding)
 {
     public SemanticKnowledge ManaCostKnowledge { get; init; } = SemanticKnowledge.Unknown;
+    // Exact currently selected part within RemainingCosts. Omission from an
+    // older provider cannot establish a distinct outstanding source commitment.
+    public int? CurrentCostIndex { get; init; }
 }

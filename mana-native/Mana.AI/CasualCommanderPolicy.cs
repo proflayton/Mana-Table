@@ -287,7 +287,8 @@ public sealed class CasualCommanderPolicy : IAiPolicy
         var intent = EffectiveIntent(request.Frame.Semantics);
         bool cost = request.Frame.Semantics.SelectionIsCost || intent is DecisionIntent.Discard or DecisionIntent.Sacrifice;
         var cards = CardViews.InZones(state).Where(item => item.Card.Selectable && item.Card.Key.Length > 0 && !item.Card.Highlighted)
-            .GroupBy(item => item.Card.Key).Select(group => group.First()).ToArray();
+            .GroupBy(item => item.Card.Key).Select(group => group.First())
+            .Where(item => !cost || !AiTurnPlanner.ConflictsWithPendingSourceCosts(request, CardViews.Identity(item.Card))).ToArray();
         int selectedCards = CardViews.InZones(state).Where(item => item.Card.Selectable && item.Card.Highlighted)
             .Select(item => item.Card.Key).Distinct(StringComparer.Ordinal).Count();
         int retained = (int)Math.Min(int.MaxValue, Math.Max(64L,

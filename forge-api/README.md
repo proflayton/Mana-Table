@@ -163,7 +163,9 @@ The payer can differ from a source's controller or the observing controller.
 Provenance ends with the current input; hidden source identities are not added.
 Current nonmana cost selections can additionally carry `costPayment`: the
 actual payer/source, remaining adjusted cost parts, mana-cost knowledge and a
-read-only `ManaFundingContext`. Already-paid parts are excluded. This lets a
+read-only `ManaFundingContext`. `currentCostIndex` identifies the selected part
+within that current list; an older provider may omit it, leaving distinct source
+commitments unknown. Already-paid parts are excluded. This lets a
 policy preserve a funding witness while choosing a creature to tap or a
 permanent to sacrifice. It does not authorize producing mana, reuse the
 initiating action's handles or promise that unsupported costs are affordable.

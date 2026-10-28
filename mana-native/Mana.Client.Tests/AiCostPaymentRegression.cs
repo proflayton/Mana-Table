@@ -28,6 +28,44 @@ internal static class AiCostPaymentRegression
         var paid = Frame(paid: true);
         check((await Evaluate(paid)).Proposal is SelectCard { Card: "producer-key" },
             "An already paid empty mana bill does not reserve a producer against the current nonmana cost");
+
+        ImmutableArray<ActionCost> pendingTapCosts = [new(ActionCostKind.Mana, 1, false, ""),
+            new(ActionCostKind.Tap, 1, true, ""), new(ActionCostKind.Tap, 1, false, "")];
+        var pendingTap = Frame(selectableParent: true, remainingCosts: pendingTapCosts, currentCostIndex: 2);
+        check((await Evaluate(pendingTap)).Proposal is SelectCard { Card: "token-key" },
+            "A current typed tap preserves both the distinct pending source tap and the sole remaining mana producer");
+        var reorderedTap = Frame(selectableParent: true,
+            remainingCosts: [pendingTapCosts[2], pendingTapCosts[0], pendingTapCosts[1]], currentCostIndex: 0);
+        check((await Evaluate(reorderedTap)).Proposal is SelectCard { Card: "token-key" },
+            "The current cost part is identified by its actual index rather than an assumed mana or source payment order");
+        var paidSourceTap = Frame(selectableParent: true,
+            remainingCosts: [pendingTapCosts[0], pendingTapCosts[2]], currentCostIndex: 1);
+        check((await Evaluate(paidSourceTap)).Proposal is SelectCard { Card: "origin-key" },
+            "A fresh legal source candidate is no longer reserved after its separate source tap has left the remaining costs");
+        var unknownCurrentPart = Frame(selectableParent: true, remainingCosts: pendingTapCosts);
+        check((await Evaluate(unknownCurrentPart)).Proposal is SelectCard { Card: "origin-key" },
+            "Legacy cost metadata without the actual current part index does not invent a pending source collision");
+        var currentSourceTap = Frame(selectableParent: true,
+            remainingCosts: [pendingTapCosts[0], pendingTapCosts[1]], currentCostIndex: 1);
+        check((await Evaluate(currentSourceTap)).Proposal is SelectCard { Card: "origin-key" },
+            "The genuine current source tap does not conflict with itself as though it were a second unpaid source tap");
+        var tapThenSacrifice = Frame(selectableParent: true,
+            remainingCosts: [pendingTapCosts[0], pendingTapCosts[2], new(ActionCostKind.Sacrifice, 1, true, "")], currentCostIndex: 1);
+        check((await Evaluate(tapThenSacrifice)).Proposal is SelectCard { Card: "origin-key" },
+            "A legal current tap followed by a pending source sacrifice can use the same physical resource");
+        var sacrificeBeforeTap = Frame(DecisionIntent.Sacrifice, selectableParent: true,
+            remainingCosts: [pendingTapCosts[0], pendingTapCosts[1], new(ActionCostKind.Sacrifice, 1, false, "")], currentCostIndex: 2);
+        check((await Evaluate(sacrificeBeforeTap)).Proposal is SelectCard { Card: "token-key" },
+            "A source cannot be removed by the current sacrifice before its distinct unpaid source tap");
+        foreach (var uncertain in new[] {
+            pendingTapCosts.Add(new(ActionCostKind.Untap, 1, true, "")),
+            pendingTapCosts.Add(new(ActionCostKind.Other, null, false, "")),
+            pendingTapCosts.Add(new(ActionCostKind.Other, 0, false, ""))
+        }) {
+            var unknownCoupling = Frame(selectableParent: true, remainingCosts: uncertain, currentCostIndex: 2);
+            check((await Evaluate(unknownCoupling)).Proposal is SelectCard { Card: "origin-key" },
+                "An intervening source untap or unknown cost coupling retains the legal fallback instead of claiming a proven source collision");
+        }
         var current = Frame();
         var payment = current.Semantics.CostPayment!;
         foreach (var facts in new CostPaymentFunding?[] {
@@ -55,6 +93,9 @@ internal static class AiCostPaymentRegression
                 && Rejected(current.Semantics with { SelectionIsCost = false })
                 && Rejected(current.Semantics with { CostPayment = payment with { SourceCardId = "invented-source" } }),
             "Cost funding rejects invented payers, another payer's borrowed resources, noncost decisions and a mismatched parent source");
+        check(Rejected(current.Semantics with { CostPayment = payment with { CurrentCostIndex = -1 } })
+                && Rejected(current.Semantics with { CostPayment = payment with { CurrentCostIndex = payment.RemainingCosts.Length } }),
+            "A declared current cost part must index the current remaining cost list and cannot address a paid or invented part");
         var departedPortrait = Card("departed-parent", 1, 1, selectable: false) with { Key = "" };
         var departed = current.State with { Decision = current.State.Decision! with {
             Context = new(Source: new("", departedPortrait, 0, "Command")) } };
@@ -79,9 +120,10 @@ internal static class AiCostPaymentRegression
             frame.Domain, frame.Semantics, new([], []), 17), new CasualCommanderPolicy());
 
     private static AiDecisionFrame Frame(DecisionIntent intent = DecisionIntent.Tap, bool backup = false,
-        bool stagedBackup = false, bool parentFunding = false, bool paid = false)
+        bool stagedBackup = false, bool parentFunding = false, bool paid = false, bool selectableParent = false,
+        ImmutableArray<ActionCost>? remainingCosts = null, int? currentCostIndex = null)
     {
-        var parent = Card("origin", 2, 2, selectable: false);
+        var parent = Card("origin", selectableParent ? 1 : 2, 2, selectable: selectableParent);
         var producer = Card("producer", 0, 1, selectable: intent != DecisionIntent.Discard);
         var token = Card("token", 3, 3, selectable: intent != DecisionIntent.Discard) with { GamePieceType = "token" };
         var battlefield = ImmutableArray.Create(parent, producer, token);
@@ -103,11 +145,11 @@ internal static class AiCostPaymentRegression
                 parent with { Key = "", Selectable = false, Highlighted = false }, 0, "Battlefield")),
                 new EntitySelectionPayload(No, No, [], new(stagedBackup ? 2 : 1, stagedBackup ? 2 : 1)))) {
             Revision = 1, BoardRevision = 1, DecisionOwnerId = 0 };
-        var costs = paid ? ImmutableArray<ActionCost>.Empty : [new(ActionCostKind.Mana, 1, false, "")];
+        var costs = remainingCosts ?? (paid ? ImmutableArray<ActionCost>.Empty : [new(ActionCostKind.Mana, 1, false, "")]);
         if (parentFunding) costs = costs.Add(new(ActionCostKind.Tap, 1, true, ""));
         return new(state, semantics: new(intent) { SelectionIsCost = true,
             CostPayment = new(parent.VisualId, 0, costs, new(SemanticKnowledge.Known, Mana(), resources)) {
-                ManaCostKnowledge = SemanticKnowledge.Known } });
+                ManaCostKnowledge = SemanticKnowledge.Known, CurrentCostIndex = currentCostIndex } });
     }
 
     private static Card Card(string id, int power, int toughness, bool selectable = true)

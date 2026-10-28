@@ -148,11 +148,20 @@ remains unknown.
 
 Intermediate nonmana selections can carry `CostPaymentFunding` from their
 still-owned parent payment. It retains only the current payer/source, remaining
-adjusted costs and bounded read-only funding facts. The policy uses the shared
+adjusted costs, the exact current part index and bounded read-only funding facts.
+The index distinguishes the selected part from another unpaid source tap;
+absence retains unknown semantics. The policy uses the shared
 assignment planner after excluding a proposed consumed resource and already
 selected resources, preferring a candidate which preserves funding. An old
 action offer or remembered portrait cannot establish this context; absent or
 unsupported facts retain the ordinary unknown fallback.
+
+Tap cost feasibility, offered selections and execution share current physical
+eligibility in the rules engine. Execution validates the entire selection before
+mutation and rechecks a source tap after earlier costs. The active remaining
+payment owns source reservations; paid parts release them and a pending untap
+leaves ordering open. A replacement of a legal cost action can still count as
+payment under [Comprehensive Rules 118.11](https://media.wizards.com/2026/downloads/MagicCompRules%2020260925.txt).
 
 `Mana.Game` uses the shared planner to suggest specific physical sources alongside
 the inspected card's mana symbols. Its witness cannot create an action handle,

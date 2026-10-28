@@ -7,6 +7,22 @@ namespace Mana.AI;
 // lifetime; this planner cannot submit commands, retain handles or undo costs.
 internal static class AiTurnPlanner
 {
+    // The selected part is distinct from the other unpaid commitments. A
+    // resource may pay a tap and then a sacrifice, but cannot pay two taps
+    // without an intervening untap. Unknown sequences remain engine-owned.
+    internal static bool ConflictsWithPendingSourceCosts(AiDecisionRequest request, string candidateId)
+    {
+        if (!request.Frame.Semantics.SelectionIsCost || request.Frame.Semantics.CostPayment is not { } payment
+            || payment.CurrentCostIndex is not { } current || candidateId != payment.SourceCardId) return false;
+        var selecting = payment.RemainingCosts[current];
+        if (selecting.Kind is not (ActionCostKind.Tap or ActionCostKind.Sacrifice or ActionCostKind.Exile or ActionCostKind.Discard)
+            || selecting.Amount == 0) return false;
+        var others = payment.RemainingCosts.Where((_, index) => index != current).ToArray();
+        if (others.Any(cost => cost.Kind == ActionCostKind.Other
+                || cost.Kind == ActionCostKind.Untap && cost.FromSource && cost.Amount != 0)) return false;
+        return others.Any(cost => cost.Kind == ActionCostKind.Tap && cost.FromSource && cost.Amount > 0);
+    }
+
     // A required cost is part of the initiating action's resource use. Compare
     // the current parent's remaining nominal bill after each candidate removal;
     // never reuse a remembered offer or assume an unknown resource is absent.

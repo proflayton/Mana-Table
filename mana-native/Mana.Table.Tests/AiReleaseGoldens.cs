@@ -363,7 +363,11 @@ internal static class AiReleaseGoldens
         public CostSelectionEvidence? CostSelection { get; init; }
     }
 
-    private sealed record CostSelectionEvidence(string SelectedId, int Payer, bool RemainingNominalMana);
+    private sealed record CostSelectionEvidence(string SelectedId, int Payer, bool RemainingNominalMana)
+    {
+        public ImmutableArray<ActionCost> RemainingCosts { get; init; } = [];
+        public int? CurrentCostIndex { get; init; }
+    }
 
     private sealed record ReductionEvidence(ImmutableArray<ManaBillPart> RemainingManaParts, bool CompleteEnabled,
         int SelectedContributors, bool UnusedFixtureCreature);
@@ -478,7 +482,9 @@ internal static class AiReleaseGoldens
             var costSelection = command is SelectCard selected && observation.Semantics.CostPayment is { } cost
                 ? new CostSelectionEvidence(CardViews.InZones(observation.State).Where(item => item.Card.Key == selected.Card)
                     .Select(item => CardViews.Identity(item.Card)).Single(), cost.PayerId,
-                    cost.RemainingCosts.Any(part => part.Kind == ActionCostKind.Mana && (part.Amount > 0 || !part.ManaSymbols.IsEmpty))) : null;
+                    cost.RemainingCosts.Any(part => part.Kind == ActionCostKind.Mana && (part.Amount > 0 || !part.ManaSymbols.IsEmpty))) {
+                    RemainingCosts = cost.RemainingCosts, CurrentCostIndex = cost.CurrentCostIndex
+                } : null;
             await inner.ExecuteAutomatedAsync(seat, command);
             Accepted.Add(new(seat, command.GetType().Name, observation.State.Turn, observation.State.PhaseKey, source?.SourceCardId ?? "", owner,
                 command is ChooseNumber number ? number.Value : null, observation.Semantics.Numeric?.Purpose,

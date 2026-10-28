@@ -1402,9 +1402,9 @@ public class HumanCostDecision extends CostDecisionMakerBase {
         final String amount = cost.getAmount();
 
         if (type.equals("OriginalHost")) {
-            Card host = ability.getOriginalHost();
-            if (host.canTap()) {
-                return PaymentDecision.card(host);
+            var eligible = cost.getEligibleCards(ability, player);
+            if (!eligible.isEmpty()) {
+                return PaymentDecision.card(eligible.getFirst());
             }
             return null;
         }
@@ -1423,8 +1423,7 @@ public class HumanCostDecision extends CostDecisionMakerBase {
             type = TextUtil.fastReplace(type, TextUtil.concatNoSpace("+withTotalPowerGE", totalP), "");
         }
 
-        CardCollection typeList = CardLists.getValidCards(player.getCardsIn(ZoneType.Battlefield), type.split(";"), player, source, ability);
-        typeList = CardLists.filter(typeList, ability.isCrew() ? CardPredicates.CAN_CREW : CardPredicates.CAN_TAP);
+        CardCollection typeList = cost.getEligibleCards(ability, player);
 
         Integer c = null;
         if (!amount.equals("Any")) {

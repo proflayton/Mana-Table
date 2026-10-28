@@ -673,7 +673,10 @@ future work behind this same boundary.
 
 Nonmana cost selections also preserve the current initiating action's funding.
 The rules provider supplies `CostPaymentFunding` from the actual parent payment,
-including its remaining adjusted parts and read-only resources. The shared
+including its remaining adjusted parts, exact selected part index and read-only
+resources. A distinct unpaid source tap excludes consuming that source first;
+tap then sacrifice remains possible. Missing indices, unknown coupling and a
+pending source untap do not establish a conflict. The shared
 assignment core checks the remaining bill after excluding a proposed consumed
 resource, selected resources and pending source costs. A funded alternative is
 preferred to tapping the only mana creature; absent or unsupported context does
