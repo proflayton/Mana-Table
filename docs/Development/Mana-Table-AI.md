@@ -649,7 +649,10 @@ include both the input plan and proposed transition.
 The first planner reserves one known offered instant interaction route. A joint
 mana assignment checks the development bill plus response bill, followed by a
 check that development can preserve the pinned witness. Payment follows the
-current engine bill without using those sources or pool units. If the actual
+current engine bill without using those sources or pool units. Pool permissions
+authorize one current spend at a time; when a whole-bill witness is unknown, it
+can spend an applicable unreserved unit and re-observe rather than consuming the
+held response to manufacture a complete assignment. If the actual
 bill changes and cannot preserve them, it explicitly abandons the reservation
 before spending normally. Strong development may also intentionally relinquish
 the reserve; this is a soft opportunity cost, not a prohibition. Bundled producers

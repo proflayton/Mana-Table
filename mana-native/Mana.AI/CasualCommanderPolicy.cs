@@ -177,6 +177,18 @@ public sealed class CasualCommanderPolicy : IAiPolicy
                 : Missing("payment-payer-resource-scope");
         var reservation = request.Plan?.Reservations.FirstOrDefault();
         var funding = AiManaPlanner.ForPayment(request with { Work = request.Work.CreateSlice(256, reserve: 4) }, preserve: reservation);
+        if (reservation != null && funding.Status is AiManaPlanStatus.Unknown or AiManaPlanStatus.BudgetExceeded) {
+            // Pool permissions authorize the next unit only. A color with two
+            // units can cover a generic bill even when the conservative planner
+            // cannot certify both spends. Follow a fresh unreserved permission,
+            // then observe again; do not discard the answer to manufacture a
+            // full assignment from protected mana.
+            string? safeColor = request.Frame.Domain.PoolManaColors
+                .Where(color => state.Viewer!.Mana.GetValueOrDefault(color) > reservation.PoolMana.GetValueOrDefault(color))
+                .OrderByDescending(color => ManaFit(request.Frame.Semantics.UnpaidMana, [color]))
+                .ThenBy(color => color, StringComparer.Ordinal).FirstOrDefault();
+            if (safeColor != null) return Answer(request, new SpendPoolMana(state.Id, state.Decision!.Id, safeColor), "payment-preserve-reserve-current-pool");
+        }
         bool abandon = reservation != null && funding.Status != AiManaPlanStatus.Funded;
         if (abandon) funding = AiManaPlanner.ForPayment(request with { Work = request.Work.CreateSlice(256, reserve: 4) });
         if (funding.Status == AiManaPlanStatus.Shortfall && payment.Cancel.Enabled
@@ -372,6 +384,15 @@ public sealed class CasualCommanderPolicy : IAiPolicy
         if (!request.Work.TrySpend()) return double.NegativeInfinity;
         var option = request.Frame.Semantics.Options.FirstOrDefault(option => option.Index == choice.Index);
         if (option?.Target is { Kind: SemanticEntityKind.Spell } target) {
+            var semantics = request.Frame.Semantics;
+            bool counter = semantics.Intent == DecisionIntent.Counter
+                || semantics.OperationId is { } active && semantics.OperationGraph.Operations.Any(node =>
+                    node.Id == active && node.Knowledge == SemanticKnowledge.Known && node.Effect == ActionEffectKind.CounterSpell);
+            // A stack occurrence identifies the recipient, not why it is being
+            // chosen. Copying or redirecting it does not prevent its effect.
+            // Unknown optional purposes stay unvalued; required choices still
+            // use the ordinary legal minimum rather than inventing avoidance.
+            if (!counter) return double.NegativeInfinity;
             var avoided = CasualActionAssessment.CounterTarget(request.Frame.State, target, request.Work);
             modeled = avoided.Status == CasualAssessmentStatus.Estimated;
             return modeled ? avoided.Value : double.NegativeInfinity;

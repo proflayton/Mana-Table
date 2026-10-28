@@ -11,7 +11,42 @@ internal static class AiIntentPolicyRegression
         await PreserveAnAnswer(check);
         await PendingConsequences(check);
         await ExactPendingOccurrence(check);
+        await StackRecipientPurpose(check);
         await PreserveDefense(check);
+    }
+
+    private static async Task StackRecipientPurpose(Action<bool, string> check)
+    {
+        var pending = Damage("purpose-hazard", "purpose-source", 1, 0, 5);
+        var state = Priority(1, pending: [pending], ownLife: 5).State;
+        var target = Spell(pending);
+        var metadata = ImmutableArray.Create(new DecisionOptionSemantics(17, ActionEffectKind.Unknown) { Target = target });
+        AiDecisionFrame Choices(DecisionSemantics semantics, int minimum = 0)
+            => new(state with { Decision = new("stack-recipient-choice", new(), new OptionsPayload(
+                new([new(17, "An offered stack recipient", null)], new(minimum, 1)))) },
+                domain: DecisionActionDomain.None, semantics: semantics with { Options = metadata });
+
+        check((await Evaluate(Choices(new(DecisionIntent.Counter)))).Proposal is ChooseOptions counter
+                && counter.Choices.SequenceEqual([17]),
+            "An optional stack recipient chosen explicitly for countering is valued by preventing its known harmful pending effect");
+        check((await Evaluate(Choices(new()))).Proposal is ChooseOptions unknown && unknown.Choices.IsEmpty
+                && (await Evaluate(Choices(new(DecisionIntent.Benefit)))).Proposal is ChooseOptions other && other.Choices.IsEmpty,
+            "The same optional stack recipient with an unknown or different purpose does not inherit counterspell avoidance value");
+
+        var graph = CounterGraph([target]);
+        check((await Evaluate(Choices(new() { OperationGraph = graph, OperationId = 0 }))).Proposal is ChooseOptions active
+                && active.Choices.SequenceEqual([17]),
+            "An exact active known counter operation supplies recipient purpose even when the legacy decision intent is absent");
+        var draw = Known(1, ActionEffectKind.Draw, 0,
+            new(SemanticKnowledge.Known, EffectRecipientBinding.Actor, null, [PlayerEntity(0)]), 1);
+        var sequence = graph with { Operations = [graph.Operations[0] with { Links = [new(1, OperationLinkKind.Sequence)] }, draw] };
+        check((await Evaluate(Choices(new() { OperationGraph = sequence, OperationId = 1 }))).Proposal is ChooseOptions downstream
+                && downstream.Choices.IsEmpty,
+            "A counter elsewhere in a sequence cannot establish the purpose of a different active operation's stack-recipient choice");
+        var required = Choices(new(), minimum: 1);
+        var fallback = await Evaluate(required);
+        check(fallback.Proposal is ChooseOptions legal && legal.Choices.SequenceEqual([17]) && required.Allows(legal),
+            "An unknown required stack-recipient purpose still supplies a legal minimum answer without pretending its effect was understood");
     }
 
     private static async Task PreserveAnAnswer(Action<bool, string> check)
