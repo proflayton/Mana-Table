@@ -114,6 +114,15 @@ test('permanently missing artifacts have a bounded wait and no old-source fallba
 test('API failures fail closed', async () => {
   await assert.rejects(inspect({ ...fixture(), api: async () => { throw new Error('HTTP 403'); } }), /HTTP 403/);
 });
+
+test('every engine lookup shares the original deadline and invalid provenance is never polled again', async () => {
+  const f = fixture({ artifact: { workflow_run: { id: 99 } } });
+  const deadlines = [];
+  await assert.rejects(waitForEngine({ ...f, now: () => 100, timeoutMs: 400,
+    api: (resource, options) => { deadlines.push(options.deadline); return f.api(resource); },
+    sleep: async () => assert.fail('Invalid provenance must fail immediately.') }), /artifact belongs/);
+  assert.deepEqual(deadlines, [500, 500]);
+});
 test('only a proven numeric run ID may reach GitHub outputs', () => {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'mana-engine-output-'));
   const output = path.join(directory, 'output');

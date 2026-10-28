@@ -1067,6 +1067,21 @@ Repository tests execute that actual aggregate script for both contexts and
 exercise release staging/promotion failures through injected API fixtures.
 Private drafts do not establish a successful release or bypass final source CI.
 
+The existing repository lane also exercises the shared read-only GitHub transport
+with fake clocks and responses: timeout recovery, bounded transient HTTP/socket
+retries, rate-limit pauses, original-deadline exhaustion, and immediate rejection
+of malformed, oversized or unauthorized responses. Discovery/publication fixtures
+retain the exact source, repository, producer-attempt and artifact checks; failed
+provenance is never a retry condition. No external API, rerun or release mutation
+is used by these tests.
+
+`source-export.test.cjs` calls the same PowerShell source-export helper used by
+production packaging against a tiny real Git commit. Opposite host EOL settings
+must produce identical members, LF defaults, explicit committed CRLF exceptions
+and unchanged binary bytes. A dirty checkout, different HEAD or local attribute
+override must fail before output. Existing archive hash/size and receipt checks
+remain required; this fixture does not build an application or approve a release.
+
 The [manual transport benchmark](Mana-Table-Releases.md#measuring-artifact-transfers)
 is outside the required aggregate and never runs on ordinary PRs or releases.
 Its exact-byte checks and action timings compare wrapped versus raw transport;

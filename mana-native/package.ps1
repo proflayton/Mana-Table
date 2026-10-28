@@ -8,6 +8,7 @@ param(
 )
 $ErrorActionPreference = 'Stop'
 $repository = Split-Path -Parent $PSScriptRoot
+. (Join-Path $PSScriptRoot 'package-source.ps1')
 foreach ($part in $Version.Split('.')) { if ([long]$part -gt 65535) { throw 'Version components must be between 0 and 65535.' } }
 $revisionOutput = & git -c core.excludesfile= -C $repository rev-parse HEAD
 if ($LASTEXITCODE -ne 0 -or -not $revisionOutput) { throw 'Could not determine the source revision.' }
@@ -15,9 +16,7 @@ $revision = $revisionOutput.Trim()
 if ($revision -notmatch '^[a-f0-9]{40}$') { throw 'Could not determine the source revision.' }
 if ($Release) {
     if ($SkipBuild -or $EngineResources) { throw 'Release packages build fresh application and engine resources; omit -SkipBuild and -EngineResources.' }
-    $changes = & git -c core.excludesfile= -C $repository status --porcelain --untracked-files=all
-    if ($LASTEXITCODE -ne 0) { throw 'Could not verify that the release checkout is clean.' }
-    if ($changes) { throw 'Commit or remove working-tree changes before building a release from its exact source revision.' }
+    Assert-ManaReleaseSource -Repository $repository -Revision $revision
     if (-not $env:JAVA_HOME -or -not (Test-Path -LiteralPath (Join-Path $env:JAVA_HOME 'bin/jlink.exe'))) { throw 'Set JAVA_HOME to a Windows JDK 17+ containing bin/jlink.exe.' }
 } elseif (-not $EngineResources) { throw 'Specify -EngineResources for a preview, or use -Release to build from the checkout and JAVA_HOME.' }
 if (-not $OutputDirectory) { $OutputDirectory = Join-Path $repository ('dist/ManaTable-Native-' + (Get-Date -Format 'yyyyMMdd-HHmmss')) }
@@ -110,9 +109,7 @@ $sourceArchive = $null
 $sourceChecksum = $null
 if ($Release) {
     $sourceArchive = $OutputDirectory + '-source.zip'
-    if (Test-Path -LiteralPath $sourceArchive) { throw 'Use a new source archive path for each release.' }
-    & git -c core.excludesfile= -C $repository archive --format=zip "--output=$sourceArchive" $revision
-    if ($LASTEXITCODE -ne 0) { throw 'Could not archive the complete committed source.' }
+    New-ManaSourceArchive -Repository $repository -Revision $revision -OutputPath $sourceArchive
     $sourceHash = (Get-FileHash -LiteralPath $sourceArchive -Algorithm SHA256).Hash
     $sourceChecksum = $sourceArchive + '.sha256'
     $sourceHash | Set-Content -LiteralPath $sourceChecksum -Encoding ASCII

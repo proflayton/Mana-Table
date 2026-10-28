@@ -35,6 +35,19 @@ test('requires exact repository and full source before any request', async () =>
   for (const sha of ['', 'abc', SHA.toUpperCase()]) assert.throws(() => validateSource(REPO, sha), /SHA/);
   const f = fixture(); await assert.rejects(inspect({ ...f, repo: 'else/repo' }), /restricted/); assert.equal(f.calls.length, 0);
 });
+
+test('every CI lookup including the final master check shares one deadline', async () => {
+  const f = fixture(), deadlines = [];
+  const result = await waitForCI({ ...f, now: () => 100, timeoutMs: 400,
+    api: (resource, options) => { deadlines.push(options.deadline); return f.api(resource); } });
+  assert.equal(result.ready, true);
+  assert.ok(deadlines.length > 5 && deadlines.every(deadline => deadline === 500));
+  assert.ok(f.calls.at(-1).endsWith('/git/ref/heads/master'));
+  const wrong = fixture({ master: OTHER });
+  await assert.rejects(waitForCI({ ...wrong, now: () => 100, timeoutMs: 400,
+    sleep: async () => assert.fail('Wrong source must fail immediately.') }), /Master advanced/);
+  assert.equal(wrong.calls.length, 1);
+});
 test('accepts both full Java jobs and the shared-tooling context, never waits on native publication', async () => {
   const f = fixture(); const result = await inspect(f); assert.equal(result.ready, true);
   assert.deepEqual(result.evidence.map(x => x.state), ['passed', 'passed', 'optional']);
