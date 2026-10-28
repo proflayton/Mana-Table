@@ -35,6 +35,7 @@ internal static partial class HeadlessPresentationSmoke
             ManaFundingWireChecks.Run(Check);
             AutomatedWireFailureChecks.Run(profile, Check);
             ExecutionWireChecks.Run(Check);
+            PendingOperationsWireChecks.Run(Check);
             ManaColorPaymentWireChecks.Run(Check);
             ManaReductionWireChecks.Run(Check);
             AiReleaseGoldens.CheckReceiptEvidence(Check);

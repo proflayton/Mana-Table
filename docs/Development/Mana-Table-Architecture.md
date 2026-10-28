@@ -176,7 +176,25 @@ paying exact `{C}`. Nested color choices retain the same owning bill and spell.
 The AI's episode token follows the actual input through refreshed scopes and its
 nested choice, so reissued decision IDs cannot reset the causal work allowance.
 
-`AiDecisionReplayCase` captures one seat's authorized knowledge and evaluation
+Pending stack operations use the same neutral operation grammar as prospective
+actions, but contain committed targets/modes rather than candidate alternatives.
+An opaque stack occurrence ID distinguishes copies independently of their source
+card. `Mana.Contracts.ActionOperationValidation` validates both adapter and policy
+inputs; unknown effects remain unknown. The engine describes mechanics, the policy
+estimates consequences, and neither estimate grants a command.
+
+`AiSeatSession` also owns immutable versioned `AiTurnPlan` memory. Policies propose
+transitions alongside current answers; only accepted, still-valid submissions can
+retain them. Observed resource loss or turn changes invalidate memory and prevent
+late receipts from reviving it. Reservation identities and nominal bills are
+preferences, never historical action handles. New reservations must originate in
+the current offered semantic catalog; unchanged valid reservations can cross a
+payment or combat input where that route is not currently offered. The bounded
+planner and payment policy share `AiManaPlanner`, so a preservation claim has both
+a joint bill assignment and an intact witness rather than two independent
+affordability guesses. See [AI intent and limits](Mana-Table-AI.md#pending-effects-and-session-owned-intent).
+
+`AiDecisionReplayCase` captures one seat's authorized knowledge, plan/version and evaluation
 allowance. Offline `AiDecisionReplay` reuses the scoped session and exact policy
 seed without receiving an engine connection. Campaign traces and replay cases
 remain private; repeating an individual proposal is not an execution receipt or
@@ -1581,6 +1599,23 @@ in flight. A new turn establishes a new quiet opportunity. Normal engine-authori
 Auto may continue when no response is available, with existing readable pacing.
 Reading pauses continuation without answering anything. Take control also holds
 Auto for the current turn; deliberate Wait or enabling Auto can resume it.
+An accepted single `PassPriority` can retain one exact top-stack response receipt:
+the observed game/viewer/revision/decision must match the submitted command and
+its current published permission. This receipt records the stack occurrence,
+execution, targets and interruption fence; it is never an action handle. Only
+correlated resolution/complete changes and a retained terminal resolved execution
+can carry it into an empty stack's fresh quiet permission. Completion can arrive
+before the local priority offer, so that proof survives the intermediate resolving
+publication. The eventual automatic pass still requires the new current decision
+and provider-issued quiet token.
+
+A newer cast or child trigger, required choice, older remaining stack item,
+changed fence, history gap, missing execution data or uncorrelated public change
+retires this receipt and preserves attention. An execution's parent relationship
+does not extend the acknowledgment to its descendants. Playback mode changes
+clear local attention separately; they do not pretend that a stack response was
+submitted. A current empty-window pass after resolution can acknowledge that
+window, but a stale command cannot retroactively acknowledge the earlier action.
 The UI never arms Forge's engine-owned end-turn latch: that legacy protocol route
 has no native cancellation/status contract. Compatibility retains its semantic
 command, while the current player journey uses individually authorized passes.
@@ -1597,6 +1632,11 @@ control ends the intent. Cancellation reconciles one already-sent command.
 The Java adapter checks the fence at acceptance and again at execution to catch
 an action or required choice that appeared and disappeared between observations.
 Older providers without the fence cannot arm this feature.
+The single-response receipt above does not cover this batch executor's terminal
+handoff. If a response remains available after a captured batch finishes, an
+additional attention stop can remain. Extending that handoff requires an explicit
+captured-queue completion receipt, rather than treating the mode toggle as consent
+for later work.
 
 `StackWorkloads` is a source census over current entries, including interleaved
 triggers. Exact physical source, controller, effect and target identity bound a

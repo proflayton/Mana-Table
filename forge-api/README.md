@@ -78,6 +78,33 @@ original faces. An unrelated ordinary face-down permanent does not erase known
 commander-color alternatives or an available nominal tap resource.
 Graphs are finite and audience-filtered; candidate references never grant action
 handles. Unmodeled conditions and resource coupling remain explicit.
+Source additions also put `operationGraph` on each pending stack entry, using
+the same grammar rather than reconstructing outcomes from its displayed text.
+These are committed operations: chosen Charm modes follow the actual sequence,
+unchosen option recipes are omitted, and each known target domain has
+`min == max == candidates.length` for the set already selected. Costs are empty
+because the stack entry has already paid them. Dynamic quantities, hidden
+recipients, optional effects, intervening conditions and unsupported mechanics
+remain unknown; this is neither a guarantee of resolution nor a replacement or
+prevention forecast. A concealed source supplies an empty unknown graph. The
+non-acting public spectator currently supplies unknown graphs as well.
+
+Semantic spell entities can add `stackItemId`, matching the exact current
+stack entry independently of their source card. Copies and multiple abilities
+from one permanent remain different occurrences. `cardId` may be empty for a
+spell entity whose source permanent has departed; an available source portrait
+does not invent a current card occurrence. Private decision option semantics
+can add `target` with that same entity for an actual offered stack target. This
+is separate from an option's prospective ability `operationGraph`. Neither
+reference authorizes selecting or countering it: the current choice index and
+decision scope remain mandatory.
+
+These protocol fields are additive. Older providers omit the pending graph and
+native clients retain `Unknown`; missing `stackItemId` can correlate by source
+only when exactly one current stack occurrence has that identity. The shared
+native `ActionOperationValidation` checks both prospective and committed graphs,
+visibility, exact stack references and finite links before policy evaluation;
+the provider decoder also applies it before publishing pending graphs.
 Private decision semantics can add `numeric` for an explicit rules announcement:
 `purpose`, entitled `sourceCardId`, declared `costs`, `manaCostKnowledge`, and
 read-only `funding`. Funding groups production routes by physical source, with
@@ -1066,7 +1093,8 @@ clients without the context continue using the original labels and constraints.
 
 Stack entries include an `id` for the stack instance, an `ability` flag, and a
 viewer-filtered source `card` (or null when unavailable), alongside the existing
-name, text, and controller. The stack instance ID is for presentation only.
+name, text, and controller. The stack instance ID correlates presentation and
+read-only semantic references; it is never a decision or action handle.
 Card-valued `choices` include `card` details using the same visibility filter as
 library choices. In particular, ordinary `kind: reveal` prompts can display card
 portraits without a catalog query. Discard these details after acknowledgement;

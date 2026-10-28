@@ -10,9 +10,12 @@ public sealed record AiDecisionReplayCase(int FormatVersion, string Id, string P
 {
     public TimeSpan RemainingTime { get; init; } = TimeSpan.FromSeconds(3);
     public int RemainingWork { get; init; } = 4096;
+    public AiTurnPlan? Plan { get; init; }
+    public long PlanVersion { get; init; }
     public static AiDecisionReplayCase Capture(string id, string policyId, AiDecisionRequest request)
         => new(1, id, policyId, request.Frame.State, request.Frame.Domain, request.Frame.Semantics, request.History, request.Seed) {
-            RemainingTime = request.RemainingTime, RemainingWork = request.Work.Remaining };
+            RemainingTime = request.RemainingTime, RemainingWork = request.Work.Remaining,
+            Plan = request.Plan, PlanVersion = request.PlanVersion };
 }
 
 public sealed record AiDecisionReplayResult(string CaseId, string PolicyId, AiSeatStatus Status,
@@ -33,12 +36,16 @@ public static class AiDecisionReplay
             || string.IsNullOrWhiteSpace(recorded.PolicyId) || recorded.History is not { } history
             || history.Decisions.IsDefault || history.Events.IsDefault || history.AttemptedRoutes == null
             || history.Decisions.Length > 4096 || history.Events.Length > 4096 || history.AttemptedRoutes.Count > 4096
-            || recorded.RemainingTime <= TimeSpan.Zero || recorded.RemainingWork <= 0)
+            || recorded.RemainingTime <= TimeSpan.Zero || recorded.RemainingWork <= 0
+            || recorded.PlanVersion < 0 || recorded.PlanVersion == long.MaxValue)
             throw new ArgumentException("A replay requires versioned private decision evidence.", nameof(recorded));
         var frame = new AiDecisionFrame(recorded.State, domain: recorded.Domain, semantics: recorded.Semantics);
         if (history.Decisions.Any(entry => entry == null || entry.Stamp.GameId != frame.State.Id || entry.Stamp.SeatId != frame.State.ViewerId
                 || entry.Stamp.Revision < 0 || entry.Stamp.Revision > frame.State.Revision
-                || entry.Stamp.BoardRevision < 0 || entry.Stamp.BoardRevision > frame.State.BoardRevision || entry.Stamp.OfferVersion < 0)
+                || entry.Stamp.BoardRevision < 0 || entry.Stamp.BoardRevision > frame.State.BoardRevision || entry.Stamp.OfferVersion < 0
+                || entry.PlanVersion < 0 || entry.RetainedPlan is { } retained && (retained.GameId != frame.State.Id
+                    || retained.SeatId != frame.State.ViewerId || retained.Version != entry.PlanVersion)
+                || entry.ProposedPlanTransition?.Next is { } proposed && (proposed.GameId != frame.State.Id || proposed.SeatId != frame.State.ViewerId))
             || history.Events.Any(entry => entry == null || entry.Turn > frame.State.Turn)
             || history.AttemptedRoutes.Any(route => route == null || route.Turn != frame.State.Turn))
             throw new ArgumentException("A replay cannot mix another seat, future event or turn's private history.", nameof(recorded));
@@ -50,6 +57,7 @@ public static class AiDecisionReplay
         using var session = new AiSeatSession(frame.State.Id, frame.State.ViewerId,
             new ReplayPolicy(policy, history), baseSeed, limits ?? new(recorded.RemainingTime, recorded.RemainingWork));
         session.Observe(frame);
+        session.RestorePlanForReplay(recorded.Plan, recorded.PlanVersion);
         await session.EvaluateAsync(cancellation).ConfigureAwait(false);
         var proposed = session.TakeCommand();
         return new(recorded.Id, policy.Descriptor.Id, proposed != null ? AiSeatStatus.Ready : session.View.Status, proposed?.Command,

@@ -51,12 +51,19 @@ public interface IAiPolicy
 public abstract record AiProposal
 {
     private protected AiProposal() { }
-    public sealed record Answer(DecisionCommand Command, string ReasonCode) : AiProposal;
+    public sealed record Answer(DecisionCommand Command, string ReasonCode) : AiProposal
+    {
+        public AiPlanTransition? PlanTransition { get; init; }
+    }
     public sealed record Unavailable(string Capability, string Detail) : AiProposal;
 }
 
 public sealed record AiDecisionRequest(AiDecisionFrame Frame, AiSeatHistory History,
-    long Seed, TimeSpan RemainingTime, AiWorkBudget Work);
+    long Seed, TimeSpan RemainingTime, AiWorkBudget Work)
+{
+    public AiTurnPlan? Plan { get; init; }
+    public long PlanVersion { get; init; }
+}
 
 internal static class AiPolicySeeds
 {

@@ -70,6 +70,43 @@ internal static class AiSemanticRegression
         try { _ = new AiDecisionFrame(state, domain: Domain(metadata), semantics: new() { OperationGraph = graph, OperationId = 99 }); }
         catch (ArgumentException) { activeRejected = true; }
         check(activeRejected, "A continuation cannot invent an active operation outside its current causal graph");
+        var pending = new StackItem("Public source", "A pending action", StackActionKind.ActivatedAbility, own) {
+            Id = "pending-1", ControllerId = 0, OperationGraph = graph
+        };
+        var pendingState = state with { Stack = [pending] };
+        check(new AiDecisionFrame(pendingState).State.Stack[0].OperationGraph.Operations[0].Targets!.Candidates.Single().CardId == enemy.VisualId,
+            "An AI observation validates the actual chosen pending recipient through the same graph boundary as prospective actions");
+        foreach (var invalid in new[] {
+            pending with { OperationGraph = graph with { RootId = 77 } },
+            pending with { OperationGraph = graph with { Operations = [node with { Targets = node.Targets! with { Min = 0 } }] } },
+            pending with { OperationGraph = graph with { Operations = [node with { Costs = [new(ActionCostKind.Life, 1, false, "")] }] } },
+            pending with { Card = own with { FaceDown = true } }
+        }) {
+            bool rejected = false;
+            try { _ = new AiDecisionFrame(pendingState with { Stack = [invalid] }); } catch (ArgumentException) { rejected = true; }
+            check(rejected, "A malformed, hypothetical, unpaid or concealed pending operation is rejected before AI evaluation");
+        }
+        var targetState = pendingState with { Decision = decision with { Payload = new OptionsPayload(
+            new ChoiceSelection([new(7, "A current pending action", null)], new(0, 1))) } };
+        var stackTarget = new SemanticEntity("offered-target", SemanticEntityKind.Spell, ControllerId: 0) { StackItemId = "pending-1" };
+        var targetedOptions = new DecisionSemantics { Options = [new(7, ActionEffectKind.Unknown) { Target = stackTarget }] };
+        var targetFrame = new AiDecisionFrame(targetState, semantics: targetedOptions);
+        check(targetFrame.Allows(new ChooseOptions(targetState.Id, decision.Id, [7]))
+                && !targetFrame.Allows(new SelectCard(targetState.Id, decision.Id, stackTarget.StackItemId)),
+            "An exact semantic stack target informs the offered option while only its current choice index grants selection authority");
+        var departed = targetState with { Stack = [pending with { Card = own with { VisualId = "", CombatId = "" }, OperationGraph = ActionOperationGraph.Unknown }],
+            Players = [state.Players[0] with { Zones = [new("Battlefield", 0, [], null)] }, state.Players[1]] };
+        check(new AiDecisionFrame(departed, semantics: targetedOptions).Semantics.Options[0].Target!.StackItemId == "pending-1",
+            "An actual pending ability stays targetable by stack identity after its source card departs, without inventing a live source occurrence");
+        foreach (var invalid in new[] {
+            targetedOptions with { Options = [new(7, ActionEffectKind.Unknown) { Target = stackTarget with { StackItemId = "missing" } }] },
+            targetedOptions with { Options = [new(7, ActionEffectKind.Unknown) { Target = stackTarget with { CardId = enemy.VisualId } }] },
+            targetedOptions with { Options = [new(99, ActionEffectKind.Unknown) { Target = stackTarget }] }
+        }) {
+            bool rejected = false;
+            try { _ = new AiDecisionFrame(targetState, semantics: invalid); } catch (ArgumentException) { rejected = true; }
+            check(rejected, "Private target semantics cannot invent a stack occurrence, borrow a different source or attach to an unoffered index");
+        }
         foreach (var cost in new[] {
             new ActionCost(ActionCostKind.Mana, 1, false, "") { ManaSymbols = [null!] },
             new ActionCost(ActionCostKind.Mana, 1, false, "") { ManaSymbols = [" "] },

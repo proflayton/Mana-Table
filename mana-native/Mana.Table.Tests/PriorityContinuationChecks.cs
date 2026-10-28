@@ -19,6 +19,7 @@ internal static class PriorityContinuationChecks
 {
     internal static void Run(string profile, Action<bool, string> check)
     {
+        PriorityAcknowledgmentChecks.Run(check);
         foreach (var viewport in new[] { new Point(1000, 740), new Point(1540, 980) })
             foreach (bool ownTurn in new[] { false, true }) {
                 CheckContinuation(profile, viewport, ownTurn, check);
@@ -27,11 +28,40 @@ internal static class PriorityContinuationChecks
         foreach (var viewport in new[] { new Point(1000, 740), new Point(1540, 980) }) {
             CheckAutomatic(profile, viewport, false, check);
             CheckAutomatic(profile, viewport, true, check);
+            CheckAcknowledgedResolution(profile, viewport, check);
         }
         CheckNextTurn(profile, null, check);
         CheckNextTurn(profile, StackActionKind.Spell, check);
         CheckNextTurn(profile, StackActionKind.TriggeredAbility, check);
         CheckNoUndo(profile, check);
+    }
+
+    private static void CheckAcknowledgedResolution(string profile, Point viewport, Action<bool, string> check)
+    {
+        using var run = new Journey(profile, "acknowledged-resolution", viewport, false, holdInitially: false);
+        run.Until(() => run.Replies.Count == 1, "Auto initially waits through routine opponent priority");
+        run.Engine.Present(PriorityAcknowledgmentChecks.Stack(run.Engine.State));
+        string response = run.Engine.State.Decision!.Id; run.Release(0);
+        run.Until(() => !run.View.Busy && run.View.Match?.Decision?.Id == response, "The real response interrupts waiting");
+        run.Settle();
+        check(run.Replies.Count == 1 && run.Has("confirm") && CanPlayInstant(run.View.Match),
+            "A cast pauses Auto before the player passes its actual nonempty-stack response");
+        run.Click("confirm");
+        run.Until(() => run.Replies.Count == 2, "The physical Pass once gesture answers the observed stack response");
+        check(run.Replies.Last() is PassPriority { DecisionId: var id } && id == response,
+            "The acknowledgment is the accepted current PassPriority command while that exact effect is still pending");
+        run.Engine.Present(PriorityAcknowledgmentChecks.Resolve(run.Engine.State)); run.Release(1);
+        run.Until(() => run.Replies.Count == 3, "Ordinary correlated resolution resumes quiet waiting without another click");
+        check(run.Replies.Last() is PassForNow { YieldToken: "after-accepted-resolution" }
+                && run.View.Match?.Stack.IsEmpty == true && run.Has("quiet-priority-stop") && CanPlayInstant(run.View.Match),
+            "After one accepted stack response, Auto uses only the fresh empty-window permission while the instant remains available");
+        run.Engine.Present(PriorityAcknowledgmentChecks.Stack(run.Engine.State, "new-trigger", ExecutionKind.Trigger, "accepted-action"));
+        string trigger = run.Engine.State.Decision!.Id; run.Release(2);
+        run.Until(() => !run.View.Busy && run.View.Match?.Decision?.Id == trigger, "The next triggered action interrupts the resumed wait");
+        run.Settle();
+        check(run.Replies.Count == 3 && run.Has("confirm") && !run.Has("quiet-priority-stop") && CanPlayInstant(run.View.Match),
+            "A later child trigger gets its own response and cannot inherit the player's earlier acknowledgment");
+        CheckNoTurnYield(run, check);
     }
 
     private static void CheckContinuation(string profile, Point viewport, bool ownTurn, Action<bool, string> check)
@@ -267,6 +297,7 @@ internal static class PriorityContinuationChecks
             Engine.Present(state with { Id = "bounded-priority-" + name, ActivePlayerId = ownTurn ? state.ViewerId : 1,
                 Phase = "Main phase", PhaseKey = "MAIN1", PriorityPlayerId = state.ViewerId, DecisionOwnerId = state.ViewerId,
                 ActionClass = "priority", StackInterruptionVersion = 0,
+                Activity = [], Executions = new(1, 0, [], []),
                 Players = state.Players.Select(player => player.Id != state.ViewerId ? player : player with {
                     LandPlaysUsed = 1,
                     Zones = player.Zones.Select(zone => zone.Name == "Hand" ? zone with { Count = 1, Cards = [instant] }

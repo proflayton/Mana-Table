@@ -8,6 +8,8 @@ import forge.game.card.CardCollectionView;
 import forge.game.card.CardView;
 import forge.game.player.Player;
 import forge.game.spellability.SpellAbility;
+import forge.game.spellability.StackItemView;
+import forge.game.trigger.WrappedAbility;
 import forge.game.zone.ZoneType;
 
 import java.util.*;
@@ -20,26 +22,50 @@ final class ActionOperationProjection {
     private static final Set<String> UNMODELED_RECIPIENTS = Set.of("Radiance", "CardChoices", "PlayerChoices", "RelativeTarget", "ExcessDamage");
     private final Player viewer;
     private final Function<CardView, String> identity;
+    private final boolean committed;
     private final List<SpellAbility> abilities = new ArrayList<>();
     private final IdentityHashMap<SpellAbility, Integer> ids = new IdentityHashMap<>();
     private final List<List<Map<String, Object>>> links = new ArrayList<>();
     private boolean truncated;
 
     static Map<String, Object> describe(SpellAbility ability, Player viewer, Function<CardView, String> identity) {
-        if (ability == null) return map("knowledge", "Unknown", "rootId", 0, "operations", List.of());
-        return new ActionOperationProjection(viewer, identity).graph(ability);
+        if (ability == null) return unknown();
+        return new ActionOperationProjection(viewer, identity, false).graph(ability);
+    }
+
+    /** Same grammar as a prospective action, but only the operations and target
+     * occurrences actually committed on this stack instance. No legal-target
+     * query or unchosen modal recipe may expand this observation. */
+    static Map<String, Object> describeCommitted(SpellAbility ability, Player viewer, Function<CardView, String> identity) {
+        if (ability == null || viewer == null || ability.getHostCard() == null
+                || ability.getHostCard().isFaceDown()
+                || !ability.getHostCard().getView().canBeShownTo(viewer.getView())) return unknown();
+        return new ActionOperationProjection(viewer, identity, true).graph(ability);
+    }
+
+    static Map<String, Object> unknown() {
+        return map("knowledge", "Unknown", "rootId", 0, "operations", List.of());
+    }
+
+    static Map<String, Object> stackTarget(StackItemView view, Player viewer, Function<CardView, String> identity) {
+        if (viewer == null || view == null) return null;
+        for (var instance : viewer.getGame().getStack())
+            if (instance.getView() == view)
+                return new ActionOperationProjection(viewer, identity, true).entity(0, instance.getSpellAbility());
+        return null;
     }
 
     static Map<String, Object> describeDecision(SpellAbility active, Player viewer, Function<CardView, String> identity) {
         if (active == null) return Map.of();
-        var projection = new ActionOperationProjection(viewer, identity);
+        var projection = new ActionOperationProjection(viewer, identity, false);
         var graph = projection.graph(active.getRootAbility());
-        return map("operationGraph", graph, "operationId", projection.ids.get(active));
+        return map("operationGraph", graph, "operationId", ((List<?>)graph.get("operations")).isEmpty() ? null : projection.ids.get(active));
     }
 
-    private ActionOperationProjection(Player viewer, Function<CardView, String> identity) {
+    private ActionOperationProjection(Player viewer, Function<CardView, String> identity, boolean committed) {
         this.viewer = viewer;
         this.identity = identity;
+        this.committed = committed;
     }
 
     private Map<String, Object> graph(SpellAbility root) {
@@ -54,14 +80,28 @@ final class ActionOperationProjection {
                     case "RepeatSubAbility" -> "Repeat";
                     default -> "Additional";
                 });
-            for (var entry : new TreeMap<>(ability.getAdditionalAbilityLists()).entrySet())
+            for (var entry : new TreeMap<>(ability.getAdditionalAbilityLists()).entrySet()) {
+                // CharmEffect has already copied chosen modes into the linear
+                // subability chain. Choices still contains every unused recipe.
+                if (committed && entry.getKey().equals("Choices")) continue;
                 for (SpellAbility child : entry.getValue()) link(index, child, entry.getKey().equals("Choices") ? "Choice" : "Additional");
+            }
         }
+        if (truncated || !acyclic(0, new HashSet<>(), new HashSet<>()))
+            return map("knowledge", "Unsupported", "rootId", 0, "operations", List.of());
         var nodes = new ArrayList<Map<String, Object>>();
         for (int index = 0; index < abilities.size(); index++) nodes.add(operation(index, abilities.get(index)));
         boolean known = !truncated && nodes.stream().allMatch(node -> node.get("knowledge").equals("Known"))
                 && links.stream().flatMap(Collection::stream).noneMatch(edge -> edge.get("kind").equals("Additional"));
         return map("knowledge", known ? "Known" : "Unknown", "rootId", 0, "operations", List.copyOf(nodes));
+    }
+
+    private boolean acyclic(int operation, Set<Integer> complete, Set<Integer> active) {
+        if (complete.contains(operation)) return true;
+        if (!active.add(operation)) return false;
+        for (var edge : links.get(operation))
+            if (!acyclic((Integer)edge.get("operationId"), complete, active)) return false;
+        active.remove(operation); complete.add(operation); return true;
     }
 
     private Integer add(SpellAbility ability) {
@@ -80,11 +120,16 @@ final class ActionOperationProjection {
         String effect = ActionSemantics.effect(ability);
         // The scalar field represents a recipient quantity, not an undistributed
         // total. Distribution choices need their own future structural model.
-        Integer amount = ability.getMapParams().keySet().stream().anyMatch(DISTRIBUTED_AMOUNTS::contains)
+        Integer amount = parameters(ability).keySet().stream().anyMatch(DISTRIBUTED_AMOUNTS::contains)
                 ? null : ActionSemantics.effectAmount(ability);
         boolean quantified = Set.of("Draw", "Damage", "AddCounters", "RemoveCounters", "LifeGain", "LifeLoss", "Token", "Mill", "Scry", "Proliferate", "MultiplyCounters", "Amass").contains(effect);
-        boolean conditional = ability.getMapParams().keySet().stream().anyMatch(key -> key.startsWith("Condition")
+        boolean conditional = parameters(ability).keySet().stream().anyMatch(key -> key.startsWith("Condition")
                 || key.startsWith("Unless") || Set.of("Optional", "OptionalDecider", "UpTo", "Upto", "DividedAsYouChoose", "DividedRandomly").contains(key));
+        if (committed && ability.getTrigger() != null)
+            conditional |= ability instanceof WrappedAbility wrapped && wrapped.getDecider() != null
+                    || ability.getTrigger().getMapParams().keySet().stream().anyMatch(key -> key.startsWith("Condition")
+                        || key.startsWith("CheckSVar") || key.startsWith("IsPresent")
+                        || Set.of("InterveningIf", "ResolvingCheck", "ResolvedLimit", "ResolvedLimitPerTurn").contains(key));
         var recipients = recipients(index, ability, effect);
         var sources = sources(index, ability);
         String origin = canonicalZone(ability, "Origin"), destination = canonicalZone(ability, "Destination");
@@ -96,7 +141,7 @@ final class ActionOperationProjection {
                 && !Set.of("Proliferate", "Conditional", "Repeat", "Token", "Amass").contains(effect)
                 && !ability.hasParam("DamageMap") // Damage is staged for a separate DamageResolve operation.
                 && (!(ability.getApi() == ApiType.ChangeZone || ability.getApi() == ApiType.ChangeZoneAll) || !origin.isEmpty() && !destination.isEmpty())
-                && !ability.getMapParams().keySet().stream().anyMatch(key -> Set.of("CounterType2", "CounterNum2", "CounterTypes",
+                && !parameters(ability).keySet().stream().anyMatch(key -> Set.of("CounterType2", "CounterNum2", "CounterTypes",
                     "Placer", "DividedAsYouChoose", "DividedRandomly", "Monstrosity", "Adapt", "Bolster", "Tribute").contains(key));
         var node = map("id", index, "effect", effect, "knowledge", known ? "Known" : "Unknown",
                 "actorPlayerId", ability.getActivatingPlayer() == null ? null : ability.getActivatingPlayer().getId(),
@@ -104,9 +149,9 @@ final class ActionOperationProjection {
                 "counterType", ability.getParamOrDefault("CounterType", ""), "conditional", conditional,
                 "originZone", origin, "destinationZone", destination,
                 "sources", sources, "recipients", recipients, "targets", targets,
-                "costs", ability.getPayCosts() == null ? List.of() : ability.getPayCosts().getCostParts().stream().map(ActionSemantics::cost).toList(),
+                "costs", committed || ability.getPayCosts() == null ? List.of() : ability.getPayCosts().getCostParts().stream().map(ActionSemantics::cost).toList(),
                 "links", List.copyOf(links.get(index)));
-        if (ability.getApi() == ApiType.Charm) {
+        if (ability.getApi() == ApiType.Charm && !committed) {
             Integer maximum = integer(ability.getParamOrDefault("CharmNum", "1"));
             Integer minimum = integer(ability.getParamOrDefault("MinCharmNum", ability.getParamOrDefault("CharmNum", "1")));
             node.put("minChoices", minimum); node.put("maxChoices", maximum);
@@ -117,7 +162,7 @@ final class ActionOperationProjection {
                     && links.get(index).stream().filter(edge -> edge.get("kind").equals("Choice"))
                         .anyMatch(edge -> containsTarget((Integer)edge.get("operationId"), new HashSet<>())))
                 node.put("knowledge", "Unknown"); // Each chosen instance needs independent target-group bindings.
-        } else if (effect.equals("Choose")) node.put("knowledge", "Unknown");
+        } else if (effect.equals("Choose") && ability.getApi() != ApiType.Charm) node.put("knowledge", "Unknown");
         return node;
     }
 
@@ -132,7 +177,7 @@ final class ActionOperationProjection {
             String defined = ability.getParam("DamageSource");
             Integer target = targetBinding(ability, defined);
             if (Set.of("Targeted", "ThisTargeted").contains(defined))
-                return target == null ? unknownRecipients() : binding(index, "Targets", target, selected(index, abilities.get(target)));
+                return target == null ? unknownRecipients() : selectedBinding(index, target, abilities.get(target));
             if (!defined.equals("Self")) return unknownRecipients();
         }
         var source = entity(index, ability.getHostCard());
@@ -140,6 +185,14 @@ final class ActionOperationProjection {
     }
 
     private Map<String, Object> targets(int index, SpellAbility ability) {
+        if (committed) {
+            var selected = selected(index, ability);
+            boolean disclosed = selected.size() == ability.getTargets().size();
+            // In a committed graph this finite domain is exactly the chosen
+            // set; min == max excludes choosing another hypothetical target.
+            return map("knowledge", disclosed ? "Known" : "Unknown", "min", disclosed ? selected.size() : null,
+                    "max", disclosed ? selected.size() : null, "candidates", selected);
+        }
         var restrictions = ability.getTargetRestrictions();
         if (viewer == null || ability.getActivatingPlayer() == null)
             return map("knowledge", "Unknown", "min", null, "max", null, "candidates", List.of());
@@ -172,7 +225,7 @@ final class ActionOperationProjection {
     }
 
     private Map<String, Object> recipients(int index, SpellAbility ability, String effect) {
-        if (ability.getMapParams().keySet().stream().anyMatch(UNMODELED_RECIPIENTS::contains)) return unknownRecipients();
+        if (parameters(ability).keySet().stream().anyMatch(UNMODELED_RECIPIENTS::contains)) return unknownRecipients();
         if (ability.getApi() != null && Set.of(ApiType.DestroyAll, ApiType.PutCounterAll, ApiType.RemoveCounterAll).contains(ability.getApi()))
             return globalCards(index, ability);
         if (ability.getApi() != null && Set.of(ApiType.ChangeZoneAll, ApiType.DamageAll, ApiType.TapAll, ApiType.UntapAll,
@@ -180,13 +233,13 @@ final class ActionOperationProjection {
         String parameter = ability.getApi() == ApiType.Token ? "TokenOwner" : "Defined";
         boolean definedFirst = ability.getApi() == ApiType.Token || ability.getApi() == ApiType.Mana;
         if (ability.usesTargeting() && (!definedFirst || !ability.hasParam(parameter)))
-            return binding(index, "Targets", index, selected(index, ability));
+            return selectedBinding(index, index, ability);
         boolean playerOperation = Set.of("Draw", "LifeGain", "LifeLoss", "Token", "Mill", "Scry", "Mana").contains(effect);
         String defined = ability.getParamOrDefault(parameter, playerOperation ? "You" : "Self");
         if (effect.equals("Search") && !ability.hasParam(parameter)) return unknownRecipients();
         Integer target = targetBinding(ability, defined);
         if (Set.of("Targeted", "ThisTargeted", "ParentTarget").contains(defined))
-            return target == null ? unknownRecipients() : binding(index, "Targets", target, selected(index, abilities.get(target)));
+            return target == null ? unknownRecipients() : selectedBinding(index, target, abilities.get(target));
         if (Set.of("TargetedController", "ThisTargetedController", "TargetedOwner", "ThisTargetedOwner").contains(defined))
             return target == null ? unknownRecipients() : binding(index, defined.endsWith("Owner") ? "TargetOwners" : "TargetControllers", target, List.of());
         if (defined.equals("You") && ability.getActivatingPlayer() != null)
@@ -248,12 +301,33 @@ final class ActionOperationProjection {
         }
         return List.copyOf(result);
     }
+    private Map<String, Object> selectedBinding(int index, int target, SpellAbility ability) {
+        var selected = selected(index, ability);
+        return committed && selected.size() != ability.getTargets().size() ? unknownRecipients()
+                : binding(index, "Targets", target, selected);
+    }
     private Map<String, Object> entity(int operation, GameObject target) {
         String prefix = "op" + operation + ":";
         if (target instanceof Player player)
             return map("id", prefix + "player:" + player.getId(), "kind", "Player", "cardId", "", "playerId", player.getId(),
                     "controllerId", player.getId(), "ownerId", null);
-        Card card = target instanceof Card actual ? actual : target instanceof SpellAbility spell ? spell.getHostCard() : null;
+        if (target instanceof SpellAbility spell) {
+            // A stack occurrence outlives its source permanent. Keep its exact
+            // public stack identity even when no current card identity exists.
+            var stack = spell.getHostCard().getGame().getStack().getInstanceMatchingSpellAbilityID(spell);
+            if (stack == null || viewer == null) return null;
+            var actual = stack.getSpellAbility();
+            Card host = actual.getHostCard();
+            boolean disclosed = host != null && host.getView().canBeShownTo(viewer.getView());
+            Card current = host == null ? null : host.getGame().getCardState(host, null);
+            String cardId = disclosed && current != null && host.equalsWithGameTimestamp(current) && current.getZone() != null && identity != null
+                    ? Objects.toString(identity.apply(current.getView()), "") : "";
+            String stackId = String.valueOf(stack.getId());
+            return map("id", prefix + "spell:" + stackId, "kind", "Spell", "cardId", cardId, "stackItemId", stackId,
+                    "playerId", null, "controllerId", actual.getActivatingPlayer() == null ? null : actual.getActivatingPlayer().getId(),
+                    "ownerId", !disclosed || host.getOwner() == null ? null : host.getOwner().getId());
+        }
+        Card card = target instanceof Card actual ? actual : null;
         if (card == null || viewer == null || identity == null || card.getZone() == null || !card.getView().canBeShownTo(viewer.getView())) return null;
         // Equal physical IDs do not make an old LKI incarnation a current
         // target/source. Canonicalize only the same engine timestamp, before
@@ -263,15 +337,8 @@ final class ActionOperationProjection {
         card = current;
         String cardId = identity.apply(card.getView());
         if (cardId == null || cardId.isEmpty()) return null;
-        String id = prefix + "card:" + cardId, kind = "Card";
-        if (target instanceof SpellAbility spell) {
-            var stack = card.getGame().getStack().getInstanceMatchingSpellAbilityID(spell);
-            if (stack == null) return null;
-            id = prefix + "spell:" + stack.getId(); kind = "Spell";
-        }
-        return map("id", id, "kind", kind, "cardId", cardId, "playerId", null,
-                "controllerId", target instanceof SpellAbility spell && spell.getActivatingPlayer() != null
-                        ? spell.getActivatingPlayer().getId() : card.getController() == null ? null : card.getController().getId(),
+        return map("id", prefix + "card:" + cardId, "kind", "Card", "cardId", cardId, "stackItemId", "", "playerId", null,
+                "controllerId", card.getController() == null ? null : card.getController().getId(),
                 "ownerId", card.getOwner() == null ? null : card.getOwner().getId());
     }
     private static Map<String, Object> binding(int index, String kind, Integer target, List<Map<String, Object>> entities) {
@@ -282,6 +349,10 @@ final class ActionOperationProjection {
     }
     private static Integer integer(String text) {
         try { return Integer.valueOf(text); } catch (NumberFormatException ignored) { return null; }
+    }
+    private static Map<String, String> parameters(SpellAbility ability) {
+        while (ability instanceof WrappedAbility wrapped) ability = wrapped.getWrappedAbility();
+        return ability.getMapParams();
     }
     private static String canonicalZone(SpellAbility ability, String parameter) {
         if (!ability.hasParam(parameter) || parameter.equals("Origin") && ability.hasParam("OriginAlternative")) return "";
@@ -299,5 +370,5 @@ final class ActionOperationProjection {
         for (int index = 0; index < fields.length; index += 2) result.put((String)fields[index], fields[index + 1]);
         return result;
     }
-    private ActionOperationProjection() { this(null, null); }
+    private ActionOperationProjection() { this(null, null, false); }
 }

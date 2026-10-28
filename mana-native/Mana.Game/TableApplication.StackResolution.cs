@@ -25,7 +25,7 @@ internal sealed partial class TableApplication
     {
         if (!CanOfferStackResolution || busy || match == null) return;
         StopQuietPriority(); session.CancelAdvance();
-        held = false; priorityAttention.Acknowledge();
+        held = false; priorityAttention.Resume();
         stackResolutionIntent = StackResolutionIntent.TryArm(match);
         error = ""; commandFailure = false;
     }

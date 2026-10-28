@@ -78,7 +78,7 @@ final class SpectatorObservation {
                     "text", disclosed ? CardRulesText.of(source) : "", "card", publicCard(source) ? card(table, source) : null,
                     "ability", !ability.isSpell(), "kind", ability.isTrigger() ? "triggered" : ability.isSpell() ? "spell" : ability.isActivatedAbility() ? "activated" : "ability",
                     "controllerId", ability.getActivatingPlayer() == null ? null : ability.getActivatingPlayer().getId(),
-                    "targets", List.copyOf(targets), "effect", null));
+                    "targets", List.copyOf(targets), "effect", null, "operationGraph", ActionOperationProjection.unknown()));
         }
         String result = null;
         if (error == null && game.isGameOver() && game.getOutcome() != null) {

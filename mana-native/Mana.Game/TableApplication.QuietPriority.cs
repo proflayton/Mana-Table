@@ -28,7 +28,7 @@ internal sealed partial class TableApplication
         }
         StopStackResolution();
         session.CancelAdvance();
-        held = false; priorityAttention.Acknowledge();
+        held = false; priorityAttention.Resume();
         CaptureQuietPriority(state);
         error = ""; commandFailure = false;
     }

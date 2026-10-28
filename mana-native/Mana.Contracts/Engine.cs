@@ -281,6 +281,9 @@ public sealed record StackItem(string Name, string Text, StackActionKind Kind, C
     public int? ControllerId { get; init; }
     public ImmutableArray<StackTarget> Targets { get; init; } = [];
     public PendingEffect? Effect { get; init; }
+    // Committed modes and recipients only. This describes pending operations,
+    // not a prospective action's legal target domain or a resolution forecast.
+    public ActionOperationGraph OperationGraph { get; init; } = ActionOperationGraph.Unknown;
     private string executionId = "";
     public string ExecutionId { get => executionId; init => executionId = value ?? ""; }
 }

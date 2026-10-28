@@ -6,6 +6,7 @@ import forge.game.cost.*;
 import forge.game.player.Player;
 import forge.game.spellability.SpellAbility;
 import forge.game.spellability.SpellAbilityView;
+import forge.game.spellability.StackItemView;
 import forge.gamemodes.match.input.*;
 
 import java.util.*;
@@ -80,6 +81,12 @@ final class DecisionSemantics {
         var options = new ArrayList<Map<String, Object>>();
         for (int index = 0; index < choices.size(); index++) {
             Object choice = choices.get(index);
+            if (choice instanceof StackItemView stack) {
+                var target = ActionOperationProjection.stackTarget(stack, viewer, identity);
+                if (target != null) options.add(Map.of("index", index, "effect", "Unknown", "target", target,
+                        "operationGraph", ActionOperationProjection.unknown()));
+                continue;
+            }
             SpellAbility ability = choice instanceof SpellAbility actual ? actual
                     : choice instanceof SpellAbilityView view ? resolve.apply(view) : null;
             if (ability == null) continue;

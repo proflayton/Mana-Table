@@ -13,6 +13,9 @@ public enum DecisionIntent
 public sealed record DecisionOptionSemantics(int Index, ActionEffectKind Effect, int? Amount = null)
 {
     public ActionOperationGraph OperationGraph { get; init; } = ActionOperationGraph.Unknown;
+    // Identity of an actual offered recipient, distinct from choosing an
+    // ability recipe. In particular, a counter targets a stack occurrence.
+    public SemanticEntity? Target { get; init; }
 }
 public sealed record DecisionSemantics(DecisionIntent Intent = DecisionIntent.Unknown, int? Amount = null)
 {

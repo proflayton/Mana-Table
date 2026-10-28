@@ -18,6 +18,10 @@ public sealed record AiDecisionRecord
     public TimeSpan Elapsed { get; init; }
     public AiTurnRoute? Route { get; init; }
     public string EpisodeId { get; init; } = "";
+    public AiTurnPlan? RetainedPlan { get; init; }
+    public long PlanVersion { get; init; }
+    public AiPlanTransition? ProposedPlanTransition { get; init; }
+    public bool PlanTransitionApplied { get; init; }
     // Historical commands are immutable evidence, never executable authority.
     // Persist these same facts for live policy requests and offline comparisons.
     public string Command { get; init; }
@@ -63,9 +67,13 @@ internal sealed class AiHistoryBuffer(int capacity)
         AttemptedRoutes = routes.ToImmutableHashSet(), RouteLimitReached = RouteLimitReached };
     internal void ObserveTurn(int current)
     {
-        if (current < turn) throw new ArgumentException("An AI turn cannot move backward.", nameof(current));
+        ValidateTurn(current);
         if (current == turn) return;
         turn = current; routes.Clear(); RouteLimitReached = false;
+    }
+    internal void ValidateTurn(int current)
+    {
+        if (current < turn) throw new ArgumentException("An AI turn cannot move backward.", nameof(current));
     }
     internal void Record(AiDecisionRecord record)
     {

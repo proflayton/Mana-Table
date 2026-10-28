@@ -1342,6 +1342,7 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
         }
         var stack = new ArrayList<Object>();
         var pendingEffects = new HashMap<Integer, Map<String, Object>>();
+        var pendingOperations = new HashMap<Integer, Map<String, Object>>();
         var stackExecutions = new HashMap<Integer, String>();
         var stackKinds = new HashMap<Integer, String>();
         for (var instance : game.getStack()) {
@@ -1352,6 +1353,7 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
                     : ability.isActivatedAbility() ? "activated" : "ability");
             var effect = pendingEffect(ability);
             if (effect != null) pendingEffects.put(instance.getId(), effect);
+            pendingOperations.put(instance.getId(), ActionOperationProjection.describeCommitted(ability, human.getPlayer(), this::semanticCardId));
         }
         for (var item : view.getStack()) {
             CardView source = item.getSourceCard();
@@ -1362,6 +1364,7 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
                     "kind", visible ? stackKinds.getOrDefault(item.getId(), item.isAbility() ? "ability" : "spell")
                             : item.isAbility() ? "ability" : "spell",
                     "effect", visible ? pendingEffects.get(item.getId()) : null,
+                    "operationGraph", visible ? pendingOperations.getOrDefault(item.getId(), ActionOperationProjection.unknown()) : ActionOperationProjection.unknown(),
                     "executionId", stackExecutions.get(item.getId()),
                     "targets", visible ? stackTargets(item) : List.of(),
                     "controller", item.getActivatingPlayer() == null ? "" : item.getActivatingPlayer().getName(),

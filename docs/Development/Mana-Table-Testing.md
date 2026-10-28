@@ -353,6 +353,14 @@ Actual pointer journeys at 1000x740 and 1540x980 with 130% text cover default
 opponent Auto with an available instant, explicit own/opponent waiting, fresh
 decisions retaining one original permission, cast/trigger interruption, no silent
 rearming, an action arriving during acknowledgment and Take control during send.
+The accepted-response journey clicks Pass once while the actual authored stack
+item is still pending, then verifies that its correlated resolution returns to
+fresh-token waiting without another click and that a later child trigger stops
+it again. `PriorityAcknowledgmentChecks` exercises the production attention owner
+with retained execution fixtures: intermediate completion before the local
+priority offer, older remaining stack items, new executions/required choices,
+stale commands, local mode toggles, missing metadata, gaps and unattributed changes.
+These fixtures do not simulate Magic or prove provider causality.
 Turn-history cases distinguish a routine new turn from a simultaneous cast or
 trigger. First-land checks retain Keep/Escape/stale-input protection around the
 new bounded Wait action. The draw-trigger journey also checks deliberate finite
@@ -361,6 +369,13 @@ stack rearming after Take control; Hold must not make that consent inaccessible.
 combat and queued required-choice invalidation; `QuietPriorityRegression` checks
 the corresponding immutable native permissions. These cases extend existing lanes
 without a new engine startup or a duplicate broad interaction campaign.
+`ExecutionEngineJourney` adds that independent causal check in the existing
+packaged-engine smoke: it records the successfully submitted real Loch Mare
+stack response and feeds its subsequent authorized native snapshots into the
+same production attention owner through the fresh quiet permission. The
+ordinary draw/result, unchanged interruption fence and terminal execution must
+all agree. This reuses the already initialized JVM. It does not validate the
+separate captured-stack batch's terminal handoff or replace human pacing review.
 `SourceActionsTest` also checks that named and generic priority Undo aliases
 are rejected without untapping a real Sol Ring or changing its produced mana.
 Legacy native Undo offers expose no rollback gesture or executable permission.

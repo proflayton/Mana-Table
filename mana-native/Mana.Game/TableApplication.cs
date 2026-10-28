@@ -256,7 +256,7 @@ internal sealed partial class TableApplication : IDisposable
         CancelReleasedPlayIntent();
         error = ""; commandFailure = false;
         if (!session.Submit(command)) return false;
-        priorityAttention.Acknowledge();
+        priorityAttention.Submitted(match, command);
         if (CardCollectionOpen) FoldCardCollection();
         pendingActionLabel = StateClarity.PendingActionLabel(match, command);
         return true;

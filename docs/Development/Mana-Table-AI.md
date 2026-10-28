@@ -457,7 +457,7 @@ Policy seeds are recorded; rules randomness remains uncontrolled, so rotated
 runs are not identical-shuffle paired experiments.
 
 `AiDecisionReplayCase` retains one seat's exact state, domain, semantics,
-history, evaluation seed and remaining allowance. `AiDecisionReplay` runs a
+history, retained plan/version, evaluation seed and remaining allowance. `AiDecisionReplay` runs a
 candidate policy through the production scoped session without an engine
 connection. The native test driver accepts `--replay-ai-decision <case.json>`
 and writes a private `ai-decision-replay.json` in its disposable profile. The
@@ -609,9 +609,76 @@ partial action discovery authorizes AI passing. No new CI shard or JVM startup
 is added. This verifies framework mechanics, not casual play quality.
 
 The initial baseline and bot-seat host now exercise this boundary. A strategic
-deck planner, belief model and forward search are still future work. Those systems
+deck planner, belief model and forward search are still future work. The bounded
+turn-intent planner described below is a resource preference, not those systems. They
 must consume the same contracts and execution lifecycle as the full replacement,
 with no fallback to Forge strategic handlers presented as our own implementation.
+
+## Pending effects and session-owned intent
+
+The engine projects each pending stack occurrence's committed operation graph:
+actual chosen targets and modes, disclosed quantities, and explicit Unknown for
+conditional, concealed or unsupported effects. This uses the existing operation
+grammar, with shared validation in `Mana.Contracts`; neither provider decoding
+nor the bot can invent rules from names or prose. `SemanticEntity.StackItemId`
+identifies an exact occurrence even when spell copies share one physical source.
+Stack-selection options carry that same typed target identity. Legacy unique
+source matches remain conservative; ambiguous matches are incomplete.
+
+The casual v3 policy estimates a counter by negating the pending effect's public
+utility, rather than pricing the source card's body. An opposing removal aimed
+at another opponent differs from the same removal aimed at our own permanent.
+Countering a counter recursively evaluates the affected occurrence with a shared
+work allowance and an eight-level depth limit. Unknown effects stay incomplete;
+the policy declines optional blind counters rather than assigning every enemy
+spell a flat positive score. This does not predict replacements or guarantee a
+spell resolves.
+
+`AiTurnPlan` is immutable, private memory owned by one `AiSeatSession`, scoped to
+one game, seat and global turn. It holds a purpose, response source/semantic route,
+nominal bill, a funding witness and retained blocker occurrences. It holds no
+connections, executable action handles or old permissions. A policy proposes an
+optimistic versioned transition with its answer; only a current valid answer's
+Accepted receipt may commit that memory. Submitted, rejected, cancelled, stale or
+unknown execution cannot advance it. Accepted means submission progress, not a
+resolved effect. New observations invalidate unavailable resources, changed zones,
+control, tapped witnesses, depleted pool or a new turn. An invalidated in-flight
+proposal cannot return through a late receipt. Replay and private decision evidence
+include both the input plan and proposed transition.
+
+The first planner reserves one known offered instant interaction route. A joint
+mana assignment checks the development bill plus response bill, followed by a
+check that development can preserve the pinned witness. Payment follows the
+current engine bill without using those sources or pool units. If the actual
+bill changes and cannot preserve them, it explicitly abandons the reservation
+before spending normally. Strong development may also intentionally relinquish
+the reserve; this is a soft opportunity cost, not a prohibition. Bundled producers
+are conservatively reserved as whole occurrences, so partial residual output is
+not yet planned. Routes absent from the current authorized catalog are unknown;
+the bot does not infer a hidden future route from card text. Deck-wide plans,
+multiple simultaneous reserves, longer horizons and contingent production remain
+future work behind this same boundary.
+
+Attack preferences compare public incoming damage with and without a proposed
+blocker, considering evasion, trample, visible strike characteristics and vigilance.
+Tapped enemy creatures are included because they may untap before their next
+combat. A creature unable to help is not retained as a phantom defense. Eliminating
+one of several opponents does not waive self-preservation; winning against the
+last opponent can. Estimates are cached per attacker, bounded independently of
+required declarations, and incomplete comparisons do not manufacture lethal
+certainty. Engine-required assignments and repair witnesses remain authoritative.
+Hidden pumps, future removal, multi-block optimization, commander damage and
+political promises are outside this estimate.
+Plain menace requires two available blockers; a mixed menace/trample forecast
+stays incomplete instead of pretending a single-block exchange applies.
+
+Graphics-free checks exercise last-blue versus spare-blue spending, lethal
+responses, third-party removal, exact copied-spell identity, unknown effects,
+retaliation/evasion/vigilance, receipt races and plan lifetime. Real-engine
+continuations assert committed damage/draw/removal targets and counter choices,
+then observe the actual prevented effects. These cases establish specific
+behaviors, not a win rate or proof of humanlike Commander play. Human gameplay
+review remains pending.
 
 ## Proposed AI boundary
 

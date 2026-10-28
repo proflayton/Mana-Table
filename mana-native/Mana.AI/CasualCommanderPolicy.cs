@@ -11,7 +11,7 @@ namespace Mana.AI;
 /// </summary>
 public sealed class CasualCommanderPolicy : IAiPolicy
 {
-    public AiPolicyDescriptor Descriptor { get; } = new("casual-commander.v2", AiTasks.All);
+    public AiPolicyDescriptor Descriptor { get; } = new("casual-commander.v3", AiTasks.All);
 
     public Task<AiProposal> EvaluateAsync(AiDecisionRequest request, CancellationToken cancellation)
     {
@@ -46,7 +46,8 @@ public sealed class CasualCommanderPolicy : IAiPolicy
     {
         var state = request.Frame.State;
         var offers = Offers(request).ToArray();
-        var candidates = new List<(Offered Offer, double Score)>();
+        var reservation = AiTurnPlanner.Interaction(request);
+        var candidates = new List<(Offered Offer, double Score, bool Preserve)>();
         bool limited = false;
         foreach (var offer in offers.Where(offer => !offer.Semantics.ManaAbility && offer.Semantics.Affordability != ActionAffordability.Unavailable
                 && offer.Semantics.TargetsAvailable != false
@@ -56,8 +57,12 @@ public sealed class CasualCommanderPolicy : IAiPolicy
             if (request.Work.Remaining <= 4) { limited = true; break; }
             var local = request with { Work = request.Work.CreateSlice(512, 4) };
             double score = ActionScore(local, offer, offers);
+            bool response = reservation != null && AiTurnPlanner.IsResponse(reservation, offer.Set.SourceCardId, offer.Semantics);
+            int tax = CardViews.FindActionSource(state, offer.Set.SourceCardKey)?.Zone == "Command" && offer.Action.Kind == "cast" ? offer.Source.CommanderTax : 0;
+            bool preserve = reservation == null || !response && AiTurnPlanner.Preserves(local, offer.Semantics, reservation, tax);
+            if (score > 0 && reservation != null && !response && !preserve) score -= AiTurnPlanner.Opportunity(local, reservation);
             if (local.Work.WasExceeded) { limited = true; continue; }
-            if (score > 0) candidates.Add((offer, score));
+            if (score > 0) candidates.Add((offer, score, preserve));
         }
         if (request.Work.WasExceeded) return Missing("work-budget");
         foreach (var candidate in candidates.OrderByDescending(candidate => candidate.Score)
@@ -69,9 +74,15 @@ public sealed class CasualCommanderPolicy : IAiPolicy
             // forever. Activated routes receive the same conservative guard;
             // repetitive combo planning needs an explicit bounded plan later.
             if (request.History.AttemptedRoutes.Contains(new(state.Turn, offer.Set.SourceCardId, offer.Semantics.StableId))) continue;
-            return Answer(request, new UseOfferedAction(state.Id, state.Decision!.Id, offer.Set.SourceCardKey, offer.Action.Id), reason);
+            bool response = reservation != null && AiTurnPlanner.IsResponse(reservation, offer.Set.SourceCardId, offer.Semantics);
+            return AiTurnPlanner.Remember(request,
+                Answer(request, new UseOfferedAction(state.Id, state.Decision!.Id, offer.Set.SourceCardKey, offer.Action.Id), reason),
+                response ? AiPlanPurpose.Respond : candidate.Preserve && reservation != null ? AiPlanPurpose.HoldInteraction : AiPlanPurpose.Develop,
+                candidate.Preserve ? reservation : null);
         }
-        return priority.Pass.Enabled ? Answer(request, new PassPriority(state.Id, state.Decision!.Id), limited ? "priority-bounded-search" : "priority-no-profitable-route")
+        return priority.Pass.Enabled ? AiTurnPlanner.Remember(request,
+            Answer(request, new PassPriority(state.Id, state.Decision!.Id), limited ? "priority-bounded-search" : "priority-no-profitable-route"),
+            reservation != null ? AiPlanPurpose.HoldInteraction : AiPlanPurpose.Develop, reservation)
             : Missing("required-priority-route");
     }
 
@@ -103,13 +114,17 @@ public sealed class CasualCommanderPolicy : IAiPolicy
             ActionEffectKind.Token => 9 + Math.Min(5, semantic.EffectAmount ?? 1),
             ActionEffectKind.AddCounters or ActionEffectKind.Untap or ActionEffectKind.Search => 8,
             ActionEffectKind.Damage or ActionEffectKind.Destroy or ActionEffectKind.Exile or ActionEffectKind.Bounce => 6,
-            ActionEffectKind.CounterSpell => state.Stack.Any(item => item.ControllerId != state.ViewerId) ? 10 : -10,
+            ActionEffectKind.CounterSpell => -1,
             ActionEffectKind.LifeGain => state.Viewer!.Life < 15 ? 7 : 2,
             ActionEffectKind.LifeLoss or ActionEffectKind.Discard or ActionEffectKind.Mill or ActionEffectKind.Tap => 3,
             ActionEffectKind.RemoveCounters => 2,
             ActionEffectKind.ChangeControl => 9,
             _ => offer.Action.Kind == "cast" ? 2 : -1
         };
+        // An unknown counter consequence must not become a profitable cast via
+        // the generic exploration fallback above.
+        if (!modeled && (semantic.Effect == ActionEffectKind.CounterSpell
+                || semantic.OperationGraph.Operations.Any(node => node.Effect == ActionEffectKind.CounterSpell))) return -1;
         if (!modeled && offer.Action.Kind == "cast" && offer.Source.Power is not null) value += CasualTableAssessment.CardValue(offer.Source);
         foreach (var cost in semantic.Costs) value -= cost.Kind switch {
             ActionCostKind.Life => (cost.Amount ?? 4) * (state.Viewer!.Life < 12 ? 3 : .35),
@@ -160,7 +175,10 @@ public sealed class CasualCommanderPolicy : IAiPolicy
         if (request.Frame.Semantics.Payment is { } provenance && provenance.PayerId != state.ViewerId)
             return payment.Cancel.Enabled ? Answer(request, new CancelPayment(state.Id, state.Decision!.Id), "payment-payer-resource-scope")
                 : Missing("payment-payer-resource-scope");
-        var funding = AiManaPlanner.ForPayment(request with { Work = request.Work.CreateSlice(256, reserve: 4) });
+        var reservation = request.Plan?.Reservations.FirstOrDefault();
+        var funding = AiManaPlanner.ForPayment(request with { Work = request.Work.CreateSlice(256, reserve: 4) }, preserve: reservation);
+        bool abandon = reservation != null && funding.Status != AiManaPlanStatus.Funded;
+        if (abandon) funding = AiManaPlanner.ForPayment(request with { Work = request.Work.CreateSlice(256, reserve: 4) });
         if (funding.Status == AiManaPlanStatus.Shortfall && payment.Cancel.Enabled
             && request.Frame.Semantics.Payment is { Mandatory: false, Purpose: PaymentPurpose.TriggeredAbilityCost or PaymentPurpose.EffectCost })
             return Answer(request, new CancelPayment(state.Id, state.Decision!.Id), "decline-unfunded-optional-effect-cost");
@@ -171,9 +189,9 @@ public sealed class CasualCommanderPolicy : IAiPolicy
         if (request.Work.WasExceeded) return Missing("work-budget");
         if (funding.Status == AiManaPlanStatus.Funded && funding.Steps.FirstOrDefault() is { } step) {
             if (step is AiManaStep.Pool pool)
-                return Answer(request, new SpendPoolMana(state.Id, state.Decision!.Id, pool.Color), "payment-follow-assignment-pool");
+                return PaymentAnswer(new SpendPoolMana(state.Id, state.Decision!.Id, pool.Color), "payment-follow-assignment-pool");
             if (step is AiManaStep.Source producer)
-                return Answer(request, new UseOfferedAction(state.Id, state.Decision!.Id, producer.SourceCardKey, producer.ActionId) {
+                return PaymentAnswer(new UseOfferedAction(state.Id, state.Decision!.Id, producer.SourceCardKey, producer.ActionId) {
                     ManaOutput = new(producer.Output.Where(pair => pair.Value > 0).ToImmutableDictionary())
                 }, "payment-follow-assignment-source");
         }
@@ -190,17 +208,20 @@ public sealed class CasualCommanderPolicy : IAiPolicy
             if (source.Semantics.Affordability != ActionAffordability.Payable
                 && AiManaPlanner.ForAction(request with { Work = request.Work.CreateSlice(128, reserve: 4) }, source.Semantics).Status != AiManaPlanStatus.Funded)
                 continue;
-            return Answer(request, new UseOfferedAction(state.Id, state.Decision!.Id, source.Set.SourceCardKey, source.Action.Id), "payment-fund-dependent-producer");
+            return PaymentAnswer(new UseOfferedAction(state.Id, state.Decision!.Id, source.Set.SourceCardKey, source.Action.Id), "payment-fund-dependent-producer");
         }
         if (!request.Frame.Domain.PoolManaColors.IsDefaultOrEmpty) {
             string color = request.Frame.Domain.PoolManaColors
                 .OrderByDescending(color => ManaFit(request.Frame.Semantics.UnpaidMana, [color]))
                 .ThenBy(color => CasualTableAssessment.Tie(request.Seed, color)).First();
-            return Answer(request, new SpendPoolMana(state.Id, state.Decision!.Id, color), "payment-spend-current-pool");
+            return PaymentAnswer(new SpendPoolMana(state.Id, state.Decision!.Id, color), "payment-spend-current-pool");
         }
         var free = sources.FirstOrDefault(offer => !HasManaPrerequisite(offer.Semantics));
-        if (free != null) return Answer(request, new UseOfferedAction(state.Id, state.Decision!.Id, free.Set.SourceCardKey, free.Action.Id), "payment-use-offered-resource");
+        if (free != null) return PaymentAnswer(new UseOfferedAction(state.Id, state.Decision!.Id, free.Set.SourceCardKey, free.Action.Id), "payment-use-offered-resource");
         return payment.Cancel.Enabled ? Answer(request, new CancelPayment(state.Id, state.Decision!.Id), "payment-no-funding-plan") : Missing("payment-source");
+
+        AiProposal PaymentAnswer(DecisionCommand command, string reason)
+            => abandon ? AiTurnPlanner.AbandonReservation(request, Answer(request, command, reason)) : Answer(request, command, reason);
     }
     private static bool HasManaPrerequisite(ActionSemantics semantic) => semantic.Costs.Any(cost => cost.Kind == ActionCostKind.Mana
         && (cost.Amount != 0 || cost.ManaSymbols.Any(symbol => !int.TryParse(symbol.Trim('{', '}'), NumberStyles.None, CultureInfo.InvariantCulture, out int amount) || amount != 0)));
@@ -350,6 +371,11 @@ public sealed class CasualCommanderPolicy : IAiPolicy
         modeled = false;
         if (!request.Work.TrySpend()) return double.NegativeInfinity;
         var option = request.Frame.Semantics.Options.FirstOrDefault(option => option.Index == choice.Index);
+        if (option?.Target is { Kind: SemanticEntityKind.Spell } target) {
+            var avoided = CasualActionAssessment.CounterTarget(request.Frame.State, target, request.Work);
+            modeled = avoided.Status == CasualAssessmentStatus.Estimated;
+            return modeled ? avoided.Value : double.NegativeInfinity;
+        }
         var assessment = CasualActionAssessment.Evaluate(request.Frame.State, option?.OperationGraph ?? ActionOperationGraph.Unknown,
             request.Work, CardViews.Source(request.Frame.State, request.Frame.State.Decision!));
         if (assessment.Status is CasualAssessmentStatus.BudgetExceeded or CasualAssessmentStatus.SearchLimited) return double.NegativeInfinity;
@@ -450,6 +476,7 @@ public sealed class CasualCommanderPolicy : IAiPolicy
                 && record.Outcome == AiDecisionOutcome.Accepted && record.ReasonCode is "combat-repair-remove" or "combat-repair-add"))
             return payload.Complete.Enabled ? Answer(request, new CompleteAttackers(state.Id, state.Decision!.Id), "combat-complete-repaired-plan") : Missing("combat-repair-completion");
         var assigned = combat.Attackers.Select(attack => attack.CardId).ToHashSet();
+        var defense = new Dictionary<string, bool>(StringComparer.Ordinal);
         var options = new List<(DecisionCommand Command, double Score, double Tie)>();
         // Comparisons are optional optimization. Preserve enough shared work
         // for the remaining staged declarations and the engine's joint repair
@@ -457,6 +484,16 @@ public sealed class CasualCommanderPolicy : IAiPolicy
         int retained = (int)Math.Min(int.MaxValue, Math.Max(64L,
             2L * combat.AttackOptions.Length + combat.Attackers.Length + combat.AttackRepair.Length + 1));
         var work = request.Work.CreateSlice(256, retained);
+        var defensiveRequest = request with { Work = work };
+        bool Retain(Card card)
+        {
+            string id = CardViews.Identity(card);
+            // Defensive comparisons share this combat's optional allowance.
+            // Neither the candidate loop nor the final held-blocker scan may
+            // spend the mechanical reserve needed by later joint repairs.
+            if (!defense.TryGetValue(id, out bool needed)) defense[id] = needed = AiTurnPlanner.NeededBlocker(defensiveRequest, card);
+            return needed;
+        }
         DecisionCommand? fallback = null;
         bool limited = false;
         foreach (var attack in combat.AttackOptions.Where(attack => !assigned.Contains(attack.CardId)).OrderBy(attack => attack.CardId, StringComparer.Ordinal)) {
@@ -491,7 +528,10 @@ public sealed class CasualCommanderPolicy : IAiPolicy
                 // A partially inspected defender must not look artificially
                 // safe merely because its dangerous blocker was beyond the cap.
                 if (limited) break;
-                if (enemy.Life <= damage && damage > 0) score += 10;
+                bool lethal = enemy.Life <= damage && damage > 0;
+                if (lethal) score += 10;
+                bool wins = lethal && state.Players.Count(player => player.Id != state.ViewerId && !player.Eliminated) == 1;
+                if (!wins && Retain(attacker)) score = Math.Min(score, -100);
                 score += Math.Clamp(CasualTableAssessment.OpponentScore(request, defender.PlayerId) * .025, 0, .3);
                 double tie = CasualTableAssessment.Tie(request.Seed, attacker.VisualId + ":" + defender.Kind + ":" + defender.Id);
                 options.Add((command, score, tie));
@@ -499,9 +539,21 @@ public sealed class CasualCommanderPolicy : IAiPolicy
             if (limited) break;
         }
         var best = options.OrderByDescending(item => item.Score).ThenBy(item => item.Tie).FirstOrDefault();
-        if (best.Command != null && (best.Score > 0 || !payload.Complete.Enabled)) return Answer(request, best.Command, "combat-public-attack-opportunity");
+        if (best.Command != null && (best.Score > 0 || !payload.Complete.Enabled)) {
+            var heldAtChoice = defense.Where(pair => pair.Value).Select(pair => pair.Key).Take(64).ToImmutableArray();
+            return AiTurnPlanner.Remember(request, Answer(request, best.Command, "combat-public-attack-opportunity"),
+                heldAtChoice.IsEmpty ? request.Plan?.Purpose ?? AiPlanPurpose.Develop : AiPlanPurpose.Defend,
+                request.Plan?.Reservations.FirstOrDefault(), heldAtChoice);
+        }
         if (!payload.Complete.Enabled && fallback != null) return Answer(request, fallback, "combat-required-offered-attack");
-        return payload.Complete.Enabled ? Answer(request, new CompleteAttackers(state.Id, state.Decision!.Id), "combat-complete-attackers") : Missing("required-attacker");
+        if (!payload.Complete.Enabled) return Missing("required-attacker");
+        var held = combat.AttackOptions.Where(option => !assigned.Contains(option.CardId))
+            .Select(option => CardViews.FindZoneOccurrence(state, option.CardId)?.Card).Where(card => card != null)
+            .Where(card => Retain(card!)).Select(card => CardViews.Identity(card!)).Take(64).ToImmutableArray();
+        return AiTurnPlanner.Remember(request,
+            Answer(request, new CompleteAttackers(state.Id, state.Decision!.Id), "combat-complete-attackers"),
+            held.IsEmpty ? request.Plan?.Purpose ?? AiPlanPurpose.Develop : AiPlanPurpose.Defend,
+            request.Plan?.Reservations.FirstOrDefault(), held);
     }
 
     private static AiProposal Blockers(AiDecisionRequest request, BlockPayload payload)

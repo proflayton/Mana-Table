@@ -194,6 +194,16 @@ The source journey is now:
   Wait for action deliberately continues empty windows on either player's
   current turn, stopping for new work, attacker/blocker selection or a turn change.
   The first-land warning still protects an own-turn wait before the first land.
+- After the player clicks Pass once for an actual top stack item, ordinary
+  resolution of that same execution resumes empty opponent-window waiting when
+  the engine offers fresh permission. It does not request a second acknowledgment
+  merely because the accepted effect resolved. The source is that exact pending
+  item, the gesture answers its current priority decision, and the visible result
+  is the existing Auto waiting state after its readable resolution beat. This
+  adapts MTGO's stop-at-a-response continuation above; relating the accepted
+  response to its ordinary completion is our inference, not a claim that MTGO
+  publishes our execution model. A newer spell, child trigger or required choice
+  returns control; an older item still on the stack has its own response.
 - Take control remains at the same portrait position and holds Auto this turn,
   even during an in-flight pass. Deliberate waiting, releasing Hold or enabling
   Auto can resume it. Reading pauses without committing; replacement prompts
@@ -202,8 +212,11 @@ The source journey is now:
   separate consent for the already captured stack and stops when new work arrives.
 
 The quiet token remains provider-owned, checked at acceptance and execution.
-The local attention latch retains public interruption/version facts, not action
-keys or another submitted-prompt cache. A new opponent turn starts a new quiet
+The local attention owner retains public interruption/version facts and a bounded
+receipt for an accepted top-stack response. Historical execution/occurrence IDs
+do not grant action authority or become another submitted-prompt cache. Missing
+causal metadata, lost history or an unattributed change keeps attention stopped.
+Local Auto/Hold changes cannot fabricate the submitted response. A new opponent turn starts a new quiet
 opportunity; its routine history marker must not hide a cast in the same poll.
 Older providers without a quiet token retain ordinary scoped passes.
 
@@ -213,6 +226,16 @@ triggers, delayed completion, Take control and first-land confirmation. Java
 regressions cover actual own main phases, new opponent spells, combat and required
 choices with the same authority rechecks. These are correctness checks; actual
 motion, control discoverability and human gameplay acceptance remain pending.
+The added single-response checks exercise the physical nonempty-stack Pass once,
+its correlated completion, delayed return of the local priority offer, fresh
+quiet permission and a subsequent child trigger. The existing packaged-engine
+Loch Mare journey independently supplies actual adapter observations through a
+successfully submitted stack response, draw and terminal execution. Authored
+attention/input fixtures establish their own control and causal boundaries;
+neither they nor that provider journey establish enjoyable pacing. The separate
+Resolve these batch's final handoff is unchanged and can still leave an
+additional attention stop when an instant remains available. Human review of
+this source candidate remains pending.
 
 The player also reported Undo untapping an artifact while retaining its effect.
 In-game action Undo is removed from the source candidate. The adapter rejects

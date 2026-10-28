@@ -30,7 +30,7 @@ public static class AiManaPlanner
 {
     private static readonly string[] Colors = ["W", "U", "B", "R", "G", "C"];
     public static AiManaPlan ForAction(AiDecisionRequest request, ActionSemantics action,
-        int extraGeneric = 0, CancellationToken cancellation = default)
+        int extraGeneric = 0, CancellationToken cancellation = default, AiResourceReservation? preserve = null)
     {
         var costs = action.Costs.Where(cost => cost.Kind == ActionCostKind.Mana).ToArray();
         if (costs.Any(cost => cost.Amount == null)) return new(AiManaPlanStatus.Unknown, [], 0, "mana-unknown-cost-quantity");
@@ -39,11 +39,28 @@ public static class AiManaPlanner
         string? reserved = action.Costs.Any(ConsumesInitiatingSource)
             ? request.Frame.SourceActions.FirstOrDefault(set => set.Actions.Any(offer => offer.Id == action.ActionId))?.SourceCardId : null;
         return Plan(request.Frame, costs.SelectMany(cost => cost.ManaSymbols),
-            (int)generic, request.Work, cancellation, reserved);
+            (int)generic, request.Work, cancellation, reserved, preserve: preserve);
     }
 
-    public static AiManaPlan ForPayment(AiDecisionRequest request, CancellationToken cancellation = default)
-        => Plan(request.Frame, request.Frame.Semantics.UnpaidMana, 0, request.Work, cancellation);
+    public static AiManaPlan ForPayment(AiDecisionRequest request, CancellationToken cancellation = default,
+        AiResourceReservation? preserve = null)
+        => Plan(request.Frame, request.Frame.Semantics.UnpaidMana, 0, request.Work, cancellation, preserve: preserve);
+
+    // One joint assignment, rather than two independently affordable bills.
+    // This remains nominal: actual engine payment can change the bill later.
+    public static AiManaPlan WithReservation(AiDecisionRequest request, ActionSemantics action,
+        AiResourceReservation reservation, int extraGeneric = 0)
+    {
+        var costs = action.Costs.Where(cost => cost.Kind == ActionCostKind.Mana).ToArray();
+        if (costs.Any(cost => cost.Amount == null)) return new(AiManaPlanStatus.Unknown, [], 0, "reservation-cost-unknown");
+        long generic = costs.Sum(cost => Math.Max(0L, cost.Amount ?? 0)) + extraGeneric + reservation.GenericMana;
+        if (generic is < 0 or > 1024) return new(AiManaPlanStatus.Unknown, [], 0, "reservation-bill-bound");
+        string? consumed = action.Costs.Any(ConsumesInitiatingSource)
+            ? request.Frame.SourceActions.FirstOrDefault(set => set.Actions.Any(offer => offer.Id == action.ActionId))?.SourceCardId : null;
+        if (consumed == reservation.SourceCardId) return new(AiManaPlanStatus.Shortfall, [], 0, "reservation-source-consumed");
+        return Plan(request.Frame, costs.SelectMany(cost => cost.ManaSymbols).Concat(reservation.ManaSymbols),
+            (int)generic, request.Work, default, consumed);
+    }
 
     public static AiManaFundingAssessment ForActionInvestment(AiDecisionRequest request, ActionSemantics action, int x,
         int extraGeneric = 0, CancellationToken cancellation = default)
@@ -128,21 +145,25 @@ public static class AiManaPlanner
     }
 
     private static AiManaPlan Plan(AiDecisionFrame? frame, IEnumerable<string> symbols, int generic,
-        AiWorkBudget budget, CancellationToken cancellation, string? reservedSource = null, ManaFundingContext? funding = null)
+        AiWorkBudget budget, CancellationToken cancellation, string? reservedSource = null, ManaFundingContext? funding = null,
+        AiResourceReservation? preserve = null)
     {
         var authority = new Dictionary<(string Source, int Route), (SourceActionSet Set, SourceAction Action, ActionSemantics Metadata)>();
         long? poolCapacity = null;
         if (funding == null) {
             ArgumentNullException.ThrowIfNull(frame);
             var pool = Colors.ToImmutableDictionary(color => color, color => {
-                int count = Math.Clamp(frame.State.Viewer!.Mana.GetValueOrDefault(color), 0, 1024);
+                int count = (int)Math.Clamp((long)frame.State.Viewer!.Mana.GetValueOrDefault(color)
+                    - (preserve?.PoolMana.GetValueOrDefault(color) ?? 0), 0, 1024);
                 return frame.Task == AiTask.Payment ? frame.Domain.PoolManaColors.Contains(color) ? Math.Min(1, count) : 0 : count;
             });
             if (frame.Task == AiTask.Payment)
-                poolCapacity = Colors.Sum(color => Math.Max(0L, frame.State.Viewer!.Mana.GetValueOrDefault(color)));
+                poolCapacity = Colors.Sum(color => Math.Max(0L, (long)frame.State.Viewer!.Mana.GetValueOrDefault(color)
+                    - (preserve?.PoolMana.GetValueOrDefault(color) ?? 0)));
             var sources = ImmutableArray.CreateBuilder<ManaFundingSource>();
             var metadata = frame.Domain.Actions.ToDictionary(action => action.ActionId, StringComparer.Ordinal);
             foreach (var set in frame.SourceActions) {
+                if (preserve?.ManaSourceIds.Contains(set.SourceCardId) == true) continue;
                 if (CardViews.FindActionSource(frame.State, set.SourceCardKey) == null) continue;
                 var routes = ImmutableArray.CreateBuilder<ManaFundingRoute>();
                 foreach (var action in set.Actions.OrderBy(action => action.Id, StringComparer.Ordinal)) {

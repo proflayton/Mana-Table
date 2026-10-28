@@ -8,11 +8,13 @@ namespace Mana.Table.Presentation;
 // a cast or trigger which arrives while that response is in flight.
 internal sealed class PriorityAttention
 {
-    private string? game, token, required;
+    private string? game, token, required, observedDecision;
     private int viewer, turn;
     private int? active;
     private long activity;
     private long? interruption;
+    private long revision;
+    private AcknowledgedResponse? acknowledged;
     internal bool NeedsResponse { get; private set; }
 
     internal void Observe(GameSnapshot? state)
@@ -21,31 +23,113 @@ internal sealed class PriorityAttention
             game = state?.Id; viewer = state?.ViewerId ?? 0;
             turn = state?.Turn ?? 0; active = state?.ActivePlayerId;
             activity = LatestActivity(state); interruption = state?.StackInterruptionVersion;
-            token = null; required = null;
+            token = null; required = null; acknowledged = null;
             NeedsResponse = state?.Stack.Length > 0;
         }
         if (state == null) return;
         if (turn != state.Turn || active != state.ActivePlayerId) {
             turn = state.Turn; active = state.ActivePlayerId;
-            token = null; required = null; NeedsResponse = false;
+            token = null; required = null; acknowledged = null; NeedsResponse = false;
         }
+        var progress = acknowledged?.Observe(state, activity);
+        if (progress == ResponseProgress.Interrupted) Interrupt();
+        bool expectedResolution = progress is ResponseProgress.Waiting or ResponseProgress.Resolved;
         // The provider classifies routine history; a turn boundary independently
         // retires the old wait. Preserve real actions arriving in that same poll.
-        if (QuietPriorityPolicy.HasInterruption(state, activity)
+        if (!expectedResolution && QuietPriorityPolicy.HasInterruption(state, activity)
             || interruption is { } previous && state.StackInterruptionVersion is { } current && previous != current)
-            NeedsResponse = true;
+            Interrupt();
         var choice = state.Decision is { Payload: not PriorityPayload } decision ? decision.Id : null;
-        if (choice != null && choice != required) NeedsResponse = true;
+        if (choice != null && choice != required) Interrupt();
         required = choice;
         if (state.Decision?.Payload is PriorityPayload { QuietYieldToken.Length: > 0 } priority) {
-            if (token != null && token != priority.QuietYieldToken) NeedsResponse = true;
+            if (token != null && token != priority.QuietYieldToken && progress != ResponseProgress.Resolved) Interrupt();
             token = priority.QuietYieldToken;
         }
+        if (progress == ResponseProgress.Resolved) acknowledged = null;
         activity = Math.Max(activity, LatestActivity(state));
         interruption = state.StackInterruptionVersion;
+        revision = state.Revision; observedDecision = state.Decision?.Id;
     }
 
-    internal void Acknowledge() => NeedsResponse = false;
-    internal void Interrupt() => NeedsResponse = true;
+    // Called only after the session accepts the exact current command. A plain
+    // mode change cannot manufacture evidence that a stack response was passed.
+    internal void Submitted(GameSnapshot state, DecisionCommand command)
+    {
+        if (game != state.Id || viewer != state.ViewerId || revision != state.Revision
+            || observedDecision != state.Decision?.Id || !GameCommandPermissions.Allows(state, command)) return;
+        Resume();
+        if (command is PassPriority) acknowledged = AcknowledgedResponse.Capture(state);
+    }
+
+    internal void Resume() { acknowledged = null; NeedsResponse = false; }
+    internal void Interrupt() { acknowledged = null; NeedsResponse = true; }
     private static long LatestActivity(GameSnapshot? state) => state?.Activity.Select(entry => entry.Id).DefaultIfEmpty().Max() ?? 0;
+
+    private enum ResponseProgress { Waiting, Resolved, Interrupted }
+
+    // Historical causality bounds local attention. It never grants a pass: a
+    // resumed quiet continuation still needs the provider's fresh permission.
+    private sealed record AcknowledgedResponse(string Game, int Viewer, int Turn, int? Active, string Phase,
+        long Fence, long Sequence, StackItem Top, ExecutionOccurrence Execution)
+    {
+        internal static AcknowledgedResponse? Capture(GameSnapshot state)
+        {
+            if (state.Stack.IsDefaultOrEmpty || state.StackInterruptionVersion is not >= 0
+                || state.Executions is not { } frame || state.Stack[0] is not { Id.Length: > 0, ExecutionId.Length: > 0 } top
+                || ExecutionFrames.Find(state, top.ExecutionId) is not { Step: ExecutionStep.Stack } occurrence
+                || occurrence.Kind is not (ExecutionKind.Spell or ExecutionKind.Activation or ExecutionKind.Trigger)) return null;
+            return new(state.Id, state.ViewerId, state.Turn, state.ActivePlayerId, state.PhaseKey,
+                state.StackInterruptionVersion.Value, frame.LastSequence, top, occurrence);
+        }
+
+        internal ResponseProgress Observe(GameSnapshot state, long afterActivity)
+        {
+            if (state.Id != Game || state.ViewerId != Viewer || state.Turn != Turn || state.ActivePlayerId != Active
+                || state.PhaseKey != Phase || state.StackInterruptionVersion != Fence || state.Viewer?.Eliminated != false
+                || state.Status is not ("playing" or "resolving") || state.Executions is not { } frame
+                || frame.LastSequence < Sequence || frame.FirstSequence > Sequence + 1
+                || state.Decision is { Payload: not PriorityPayload }
+                || state.ActionClass is not ("" or "priority" or "resolving")) return ResponseProgress.Interrupted;
+            var occurrence = ExecutionFrames.Find(state, Top.ExecutionId);
+            if (occurrence == null || occurrence.Kind != Execution.Kind || occurrence.ActorPlayerId != Execution.ActorPlayerId
+                || occurrence.BudgetRootId != Execution.BudgetRootId || occurrence.ParentId != Execution.ParentId
+                || !RetainsActivity(state, afterActivity)
+                || frame.Transitions.Any(item => item.Sequence > Sequence && item.ExecutionId != Top.ExecutionId)
+                || state.Activity.Any(entry => entry.Id > afterActivity && entry.InterruptsQuietYield
+                    && entry.Kind is not ("priority" or "phase") && (entry.ExecutionId != Top.ExecutionId
+                        || entry.ExecutionStep is not (ExecutionStep.Resolution or ExecutionStep.Complete)
+                        || entry.Kind is "cast" or "ability" or "land"))) return ResponseProgress.Interrupted;
+            if (state.Stack.Any(item => item.Id == Top.Id)) {
+                var current = state.Stack[0];
+                return current.Id == Top.Id && current.ExecutionId == Top.ExecutionId && current.Kind == Top.Kind
+                    && current.ControllerId == Top.ControllerId && current.Targets.Select(Target).SequenceEqual(Top.Targets.Select(Target))
+                    ? ResponseProgress.Waiting : ResponseProgress.Interrupted;
+            }
+            // Passing one response does not acknowledge the next older item.
+            if (!state.Stack.IsEmpty || occurrence is not { Step: ExecutionStep.Complete, Outcome: ExecutionOutcome.Resolved }
+                || !frame.Transitions.Any(item => item.Sequence > Sequence && item.ExecutionId == Top.ExecutionId
+                    && item.Step == ExecutionStep.Complete && item.Outcome == ExecutionOutcome.Resolved)) return ResponseProgress.Interrupted;
+            // Resolving publications can expose completion before returning a
+            // local priority offer. Retain the proof until that fresh offer,
+            // rather than treating its later token as an unrelated change.
+            return state.Decision?.Payload is PriorityPayload { QuietYieldToken.Length: > 0 }
+                ? ResponseProgress.Resolved : ResponseProgress.Waiting;
+        }
+
+        private static (string Kind, string Id, int? Player) Target(StackTarget target) => (target.Kind, target.Id, target.PlayerId);
+
+        private static bool RetainsActivity(GameSnapshot state, long after)
+        {
+            // Unlike the audience-filtered execution stream, the provider's
+            // public activity IDs are contiguous. Atomic group eviction can
+            // leave a gap inside the retained tail as well as at its start.
+            long last = after;
+            foreach (var entry in state.Activity.Where(entry => entry.Id > after)) {
+                if (entry.Id != last + 1) return false;
+                last = entry.Id;
+            }
+            return LatestActivity(state) >= after;
+        }
+    }
 }
