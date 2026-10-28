@@ -159,6 +159,7 @@ Check(!client.Submit(command), "An old decision cannot be submitted after a new 
 checks += await AppUpdateRegression.RunAsync();
 await IncrementalUpdateRegression.RunAsync(Check);
 HandPlacementRegression.Run(Check);
+AudioMixerRegression.Run(Check);
 await QuietPriorityRegression.RunAsync(Check);
 await StackResolutionRegression.RunAsync(Check);
 await SourceActionSessionRegression.RunAsync(Check);

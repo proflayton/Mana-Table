@@ -498,6 +498,12 @@ cues report actual public events, without revealing hidden card identities.
 Inspecting a card, opening a panel or dragging suspends Auto. Use Full control to
 inspect every priority window. Settings persist between sessions.
 Settings > Text size offers 100%, 115% and 130% for larger labels and decisions.
+Source candidate: Settings > Audio has a master volume track and percentage.
+Drag the track or use minus/plus to change it; focused Left/Right changes by 5%,
+and Home/End sets 0%/100%. Mute keeps your chosen level, including across restarts.
+Changing volume while muted does not unmute. Audio settings do not answer a game
+decision or change your passing mode. The portrait bell still temporarily mutes
+only priority alerts for five minutes.
 The result screen lets you inspect the final battlefield, review history, or
 return to setup. Stack inspection stays on the same spell when new items appear.
 

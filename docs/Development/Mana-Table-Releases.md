@@ -232,6 +232,12 @@ installer/update validation and migration health evidence. A launcher-only
 hash cannot establish which game UI was installed. The entry point remains
 `ManaTable.exe`, and existing profiles require no migration for this split.
 
+The source candidate also packages the device-independent mixer in
+`Mana.Audio.dll`. Its bytes are declared in `build.json` and checked when a CI
+consumer restores the exact-source package. Fixtures reject a missing, changed
+or undeclared audio assembly; the source receipt also binds its entry through
+the complete runtime archive hash.
+
 Managed portable layouts can use the SDK update path from their writable root.
 Older flat portable ZIPs keep the manual download/extract route; extract a newer
 complete ZIP into a separate directory or install the app. Development builds

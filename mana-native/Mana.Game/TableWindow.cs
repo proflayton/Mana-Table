@@ -76,7 +76,7 @@ public sealed class TableWindow : Game
     {
         painter = new(GraphicsDevice); screen = new(GraphicsDevice);
         assets = new(GraphicsDevice, Path.Combine(AppContext.BaseDirectory, "Assets"));
-        resources.Arena = assets.Arena; resources.CardBack = assets.CardBack; resources.ManaSymbols = assets.ManaSymbols; resources.Play = assets.Play;
+        resources.Arena = assets.Arena; resources.CardBack = assets.CardBack; resources.ManaSymbols = assets.ManaSymbols; resources.AudioOutput = assets.AudioOutput;
         application.Initialize();
     }
     protected override void Update(GameTime time)

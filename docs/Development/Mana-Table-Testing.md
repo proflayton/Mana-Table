@@ -629,12 +629,30 @@ poses, keeping navigation separate from commands and canonical card placement.
 buttons, wheel/shortcut/text isolation, immediate deactivation, preserved drafts,
 cancelled captures, held-input quarantine and fresh foreground target commands.
 It also checks that authoritative snapshot updates still render while inactive.
-`PriorityNotificationChecks` records the production sound callback without an
+`PriorityNotificationChecks` records production mixer voices without an
 audio device. It checks the attention grace, cohort deduplication, cooldown,
 global and temporary mute, silent expiry, foreground mute gestures and permitted
 background reminders. The actual portrait bell must remain separately reachable
 from phase/Auto/Hold controls at both supported review sizes. These checks do not
 establish that a listener finds the bundled cue quiet or pleasant.
+**Source candidate:** the same headless lane includes `AudioSettingsChecks`:
+legacy mute migration, normalized full-mix roundtrip, live master gain through
+the real settings pointer path, release-only persistence, decision replacement,
+mute-retained levels, keyboard steps, outside release and foreground loss. It
+also checks 0%-suppressed reminders are not replayed after volume is restored,
+and control reachability at both review sizes with 130% text. The always-run
+`Mana.Client.Tests` includes `AudioMixerRegression`, which uses fake voices to
+check gain multiplication, independent bus mutes, live updates, rejection,
+completion cleanup and teardown without an audio device. Packaging fixtures
+reject missing, changed or unbound `Mana.Audio.dll` and a changed archive entry
+even if its external checksum is updated. Device playback and human loudness
+review remain separate.
+The `--smoke-audio-settings` CI window journey runs at 1000x740 and 1540x980
+with 130% text in the fast native UI partitions. It uses controlled snapshots
+and real pointer input to capture default volume, a drag to 40%, and muted audio
+retaining 40%. Each state saves the fitted surface, physical window and matching
+frame observation; the journey checks stable controls and no game commands.
+These captures support visual inspection and do not establish audible quality.
 The same run also includes the
 scoped authored `DecisionFlowLabChecks`. The production headless run includes
 `DecisionDockInteractionChecks`: an actual stop-removal gesture clears only that

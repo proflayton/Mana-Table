@@ -23,7 +23,7 @@ foreach ($directory in @('licenses', 'engine/runtime/bin', 'engine/forge-res')) 
     New-Item -ItemType Directory -Path (Join-Path $package $directory) -Force | Out-Null
 }
 $clientHashes = @{}
-foreach ($name in @('ManaTable.exe','ManaTable.dll','Mana.Game.dll','Mana.Client.dll','Mana.Contracts.dll','Mana.Magic.dll','Mana.Forge.dll','Mana.Renderer.dll','Mana.Scenarios.dll',
+foreach ($name in @('ManaTable.exe','ManaTable.dll','Mana.Game.dll','Mana.Audio.dll','Mana.Client.dll','Mana.Contracts.dll','Mana.Magic.dll','Mana.Forge.dll','Mana.Renderer.dll','Mana.Scenarios.dll',
     'coreclr.dll','hostfxr.dll','System.Private.CoreLib.dll','SOURCE.txt','FORGE-LICENSE.txt','THIRD-PARTY.txt','engine/forge-engine.jar','engine/runtime/bin/java.exe')) {
     $file = Join-Path $package $name
     [IO.File]::WriteAllText($file, ('fixture bytes ' + $name), $utf8)
@@ -86,6 +86,28 @@ $runtimeOriginal = [IO.File]::ReadAllBytes($archive)
 [IO.File]::AppendAllText($archive, 'tampered runtime ZIP', $utf8)
 Reject { & $script @options -ReceiptPath $receiptPath } 'Runtime archive changed'
 [IO.File]::WriteAllBytes($archive, $runtimeOriginal)
+
+# Bind the new audio framework's actual archive entry, even if a caller updates
+# the archive checksum sidecar after replacing just that assembly's bytes.
+$audioArchive = [IO.Compression.ZipFile]::Open($archive, [IO.Compression.ZipArchiveMode]::Update)
+try {
+    $entries = @($audioArchive.Entries | Where-Object { $_.FullName.Replace('\', '/') -ceq 'package/Mana.Audio.dll' })
+    if ($entries.Count -ne 1 -or $build.clientFilesSha256['Mana.Audio.dll'] -ine (Hash (Join-Path $package 'Mana.Audio.dll'))) {
+        throw 'The source receipt fixture must carry the declared audio framework assembly.'
+    }
+    $entryName = $entries[0].FullName
+    $entries[0].Delete()
+    $replacement = $audioArchive.CreateEntry($entryName)
+    $stream = $replacement.Open()
+    try {
+        $bytes = $utf8.GetBytes('changed audio framework bytes')
+        $stream.Write($bytes, 0, $bytes.Length)
+    } finally { $stream.Dispose() }
+} finally { $audioArchive.Dispose() }
+[IO.File]::WriteAllText(($archive + '.sha256'), (Hash $archive), $utf8)
+Reject { & $script @options -ReceiptPath $receiptPath } 'Audio assembly archive entry changed' 'Source-validation receipt does not match'
+[IO.File]::WriteAllBytes($archive, $runtimeOriginal)
+[IO.File]::WriteAllText(($archive + '.sha256'), (Hash $archive), $utf8)
 
 $installer = Join-Path (Split-Path -Parent $PSScriptRoot) 'build-installer.ps1'
 $smoke = @{InputPackageDirectory=$package;Version=$version;PortableArchive=$archive;SourceReceipt=$receiptPath;

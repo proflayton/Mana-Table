@@ -21,7 +21,7 @@ on:
   workflow_dispatch:
     inputs:
       extended:
-        description: 'Run all 46 native UI cases instead of the 12 critical release cases'
+        description: 'Run all 48 native UI cases instead of the 14 critical release cases'
         type: boolean
         default: false
       benchmark_transport:

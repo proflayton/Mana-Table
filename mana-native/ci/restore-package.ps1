@@ -18,7 +18,7 @@ $jar = Join-Path $package 'engine/forge-engine.jar'
 $jarHash = (Get-FileHash -LiteralPath $jar -Algorithm SHA256).Hash
 $launcher = $engine.PSObject.Properties['fixtureLauncher']
 if ($engine.schemaVersion -ne 2 -or $engine.sourceRevision -cne $env:GITHUB_SHA -or $engine.engine.sha256 -ine $jarHash -or $build.engineSha256 -ine $jarHash -or $engine.engine.bytes -ne (Get-Item -LiteralPath $jar).Length -or $null -eq $launcher -or $launcher.Value.sha256 -notmatch '^[a-fA-F0-9]{64}$' -or $launcher.Value.bytes -le 0) { throw 'Native package differs from the exact-source shared Forge engine or its verification manifest is incomplete.' }
-foreach ($name in @('ManaTable.dll','Mana.Game.dll','Mana.Client.dll','Mana.Contracts.dll','Mana.Magic.dll','Mana.Forge.dll','Mana.Renderer.dll','Mana.Scenarios.dll')) {
+foreach ($name in @('ManaTable.dll','Mana.Game.dll','Mana.Audio.dll','Mana.Client.dll','Mana.Contracts.dll','Mana.Magic.dll','Mana.Forge.dll','Mana.Renderer.dll','Mana.Scenarios.dll')) {
     $declared = $build.clientFilesSha256.PSObject.Properties[$name]
     if ($null -eq $declared -or [string]$declared.Value -notmatch '^[a-fA-F0-9]{64}$' -or (Get-FileHash -LiteralPath (Join-Path $package $name) -Algorithm SHA256).Hash -ine $declared.Value) { throw "Native client hash mismatch: $name" }
 }

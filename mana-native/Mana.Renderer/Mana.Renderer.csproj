@@ -6,6 +6,7 @@
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="MonoGame.Framework.DesktopGL" Version="3.8.5.1" />
+    <ProjectReference Include="../Mana.Audio/Mana.Audio.csproj" />
     <ProjectReference Include="../Mana.Contracts/Mana.Contracts.csproj" />
   </ItemGroup>
 </Project>

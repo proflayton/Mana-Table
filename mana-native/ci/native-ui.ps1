@@ -12,6 +12,8 @@ $suites = @(
   @{ Name='clutter-1540'; Mode='--smoke-cluttered-changes'; Result='cluttered-changes-results.json'; Size='1540x980' },
   @{ Name='onboarding'; Mode='--smoke-onboarding'; Result='onboarding-results.json' },
   @{ Name='loading'; Mode='--smoke-loading'; Result='loading-results.json' },
+  @{ Name='audio-settings-1000'; Mode='--smoke-audio-settings'; Result='audio-settings-results.json'; Size='1000x740' },
+  @{ Name='audio-settings-1540'; Mode='--smoke-audio-settings'; Result='audio-settings-results.json'; Size='1540x980' },
   @{ Name='recovery-1000'; Mode='--smoke-recovery'; Result='recovery-results.json'; Size='1000x740' },
   @{ Name='recovery-1540'; Mode='--smoke-recovery'; Result='recovery-results.json'; Size='1540x980' },
   @{ Name='state-clarity-1000'; Mode='--smoke-state-clarity'; Result='state-clarity-results.json'; Size='1000x740' },
@@ -53,8 +55,8 @@ $suites = @(
 )
 # GPU/integration suites only; package already runs the pure presentation checks.
 $partitions = @(
-    @('lobby-ai-1000','card-states-1000','equipment-1000','clutter-1000'),
-    @('lobby-ai-1540','onboarding','card-states-1540','equipment-1540','clutter-1540'),
+    @('lobby-ai-1000','card-states-1000','equipment-1000','clutter-1000','audio-settings-1000'),
+    @('lobby-ai-1540','onboarding','card-states-1540','equipment-1540','clutter-1540','audio-settings-1540'),
     @('lobby-three-1000','loading','card-reading-1000','compact-selection-1000'),
     @('lobby-three-1540','startup','card-reading-1540','compact-selection-1540'),
     @('adapter','priority-1280','recovery-1000','commander-tax-1000'),
@@ -68,12 +70,12 @@ $partitions = @(
 )
 $allNames = @($suites | ForEach-Object { $_.Name })
 $assigned = @($partitions | ForEach-Object { $_ })
-if ($suites.Count -ne 46 -or @($allNames | Sort-Object -Unique).Count -ne 46 -or $assigned.Count -ne 46 -or @($assigned | Sort-Object -Unique).Count -ne 46 -or @(Compare-Object $allNames $assigned).Count -ne 0) { throw 'Native UI partitions must cover all 46 suite/size cases exactly once.' }
+if ($suites.Count -ne 48 -or @($allNames | Sort-Object -Unique).Count -ne 48 -or $assigned.Count -ne 48 -or @($assigned | Sort-Object -Unique).Count -ne 48 -or @(Compare-Object $allNames $assigned).Count -ne 0) { throw 'Native UI partitions must cover all 48 suite/size cases exactly once.' }
 if (-not $Extended) {
     # Fast release gate; the complete inventory remains available on demand.
     $partitions = @(
-        @('startup','loading','analysis-1000','clutter-1000'),
-        @('deck-experience-1000','equipment-1000','card-states-1000','printings-1000'),
+        @('startup','loading','analysis-1000','clutter-1000','audio-settings-1000'),
+        @('deck-experience-1000','equipment-1000','card-states-1000','printings-1000','audio-settings-1540'),
         @('lobby-ai-1000','card-reading-1000'),
         @('lobby-three-1000','full-battlefield-1000')
     )
