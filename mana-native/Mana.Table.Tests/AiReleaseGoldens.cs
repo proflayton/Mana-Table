@@ -27,7 +27,8 @@ internal static class AiReleaseGoldens
             [.. Enumerable.Repeat("Mystic Monastery", 6), .. Enumerable.Repeat("Lightning Angel", 7)]),
         new("partner-draw-counters", "Toothy, Imaginary Friend", "Island",
             [.. Enumerable.Repeat("Island", 5), .. Enumerable.Repeat("Forest", 3)], "Pir, Imaginative Rascal"),
-        new("tap-cost-funding", "Rhys the Redeemed", "Forest", ["Selesnya Evangel", "Birds of Paradise", "Grizzly Bears"])
+        new("tap-cost-funding", "Rhys the Redeemed", "Forest",
+            ["Selesnya Evangel", "Birds of Paradise", "Grizzly Bears", "Concordant Crossroads"])
     ];
     internal static int ExpectedCount => Scenarios.Length;
 
@@ -85,7 +86,8 @@ internal static class AiReleaseGoldens
         bool publicCaptured = false, actualRedPool = false, actualRedBillPaid = false;
         bool positiveReduction = false, zeroReductionWithUnusedCreature = false;
         bool partnerStack = false, zeroCountersBeforeDraw = false, partnerDrawTrigger = false, partnerCardDrawn = false;
-        bool tapCostStack = false;
+        bool tapCostStack = false, tapCostHasteReady = false;
+        JsonElement? tapCostHasteSetup = null;
         int? beforeDrawHandCount = null, beforeDrawCounters = null, afterDrawCounters = null;
         int maximumReductionContributors = 0;
         Exception? primaryFailure = null;
@@ -132,6 +134,20 @@ internal static class AiReleaseGoldens
                 if (state.ViewerId != -1 || state.Decision != null || state.Players.Any(player => !player.Zone("Hand").Cards.IsEmpty || !player.Zone("Library").Cards.IsEmpty)
                     || CardViews.InZones(state).Any(item => !string.IsNullOrEmpty(item.Card.Key)))
                     throw new InvalidDataException("Golden public spectator exposed private faces or action authority.");
+                if (scenario.Id == "tap-cost-funding" && !tapCostHasteReady && state.ActivePlayerId == 0 && state.PhaseKey == "UPKEEP") {
+                    // Initial variant permanents retain sickness through the
+                    // first turn. Observe the real passive haste layer after
+                    // normal game setup, before interpreting policy behavior.
+                    var battlefield = state.Players.Single(player => player.Id == 0).Zone("Battlefield").Cards;
+                    var sources = battlefield.Where(card => CardViews.Identity(card) == evangel || CardViews.Identity(card) == bird).ToArray();
+                    bool grantPresent = battlefield.Any(card => card.Name == "Concordant Crossroads");
+                    tapCostHasteReady = grantPresent && sources.Length == 2 && sources.All(card => !card.Sick && !card.FaceDown
+                        && card.States is { } abilities && abilities.Any(ability => ability.Kind == "ability" && ability.Key == "haste"));
+                    tapCostHasteSetup = JsonSerializer.SerializeToElement(new { state.Turn, state.BoardRevision, grantPresent,
+                        ready = tapCostHasteReady, sources = sources.Select(card => new { id = CardViews.Identity(card), card.Name, card.Sick,
+                            card.States, card.CombatKeywords }) });
+                    if (!tapCostHasteReady) throw new InvalidDataException("The tap-cost fixture did not publish effective haste for Evangel and Birds in its first upkeep.");
+                }
                 foreach (var bot in bots) {
                     if (bot.State.ViewerId != bot.SeatId || !AiCampaignVisibility.PrivateWindowsAreDisclosed(bot.State, bot.Semantics, bot.Domain))
                         throw new InvalidDataException("Golden private observation exceeded the current seat's disclosure.");
@@ -273,7 +289,7 @@ internal static class AiReleaseGoldens
                             && item.Phase == "UPKEEP" && item.CostSelection is { Payer: 0 } selection && selection.SelectedId == tapCreature);
                         bool paidWithBird = receipts.Any(item => item.Kind == nameof(UseOfferedAction) && item.CostOwner == evangel
                             && item.SourceId == bird && item.Payer == 0 && item.PaymentPurpose == PaymentPurpose.ActivatedAbilityCost);
-                        positive = selectedOtherCreature && paidWithBird && tapCostStack && !landPlayed
+                        positive = tapCostHasteReady && selectedOtherCreature && paidWithBird && tapCostStack && !landPlayed
                             && actor.Zone("Battlefield").Cards.Any(card => card.GamePieceType == "token"
                                 && card.Type.Contains("Saproling", StringComparison.Ordinal) && card is { Power: 1, Toughness: 1 })
                             && new[] { evangel, bird, tapCreature }.All(id => actor.Zone("Battlefield").Cards
@@ -316,7 +332,7 @@ internal static class AiReleaseGoldens
         var evidence = JsonSerializer.SerializeToElement(new { setup, target, vein, mentor, flexible, blueSources, actualRedPool, actualRedBillPaid,
             positiveReduction, zeroReductionWithUnusedCreature, maximumReductionContributors, offered, passedOffer, landPlayed,
             partnerTarget, partnerStack, zeroCountersBeforeDraw, beforeDrawHandCount, beforeDrawCounters, partnerDrawTrigger, partnerCardDrawn, afterDrawCounters,
-            evangel, bird, tapCreature, tapCostStack,
+            evangel, bird, tapCreature, tapCostStack, tapCostHasteReady, tapCostHasteSetup,
             stack, resolved, firstTurn, capturedBeforeCleanup = publicCaptured, finalTurn = state?.Turn, finalPhase = state?.PhaseKey,
             commands = provider.Accepted, diagnostics = summary, captureErrors, primaryFailure = primaryFailure?.ToString(), engineRandomnessControlled = false });
         var result = new AiGoldenResult(scenario.Id, passed, detail, comparisons, provider.Accepted.Count, steps,

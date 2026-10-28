@@ -144,7 +144,10 @@ same Toothy at zero counters, then cross the next natural draw and its trigger
 to observe exactly two +1/+1 counters and 3/3 with Pir present. No scripted seat
 answer or pre-seeded counter stands in for that continuation.
 The tap-cost funding journey activates Selesnya Evangel before any land play
-using Birds of Paradise and another creature. It observes the actual payment,
+using Birds of Paradise and another creature. Concordant Crossroads supplies a
+real passive haste grant because variant pregame creatures otherwise stay sick
+through their first turn; the first upkeep must publish that effective readiness.
+It observes the actual payment,
 stack occurrence and resolved Saproling without a cancellation. Engine cost
 ordering remains authoritative; focused native checks separately require an
 intervening nonmana selection to preserve the sole remaining mana source,

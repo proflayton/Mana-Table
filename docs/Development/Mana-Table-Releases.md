@@ -37,7 +37,8 @@ policies, then checks the next actual draw, Toothy's trigger and Pir's replaceme
 against the same creature's exact two counters and 3/3 result. Harmless opposing
 commanders keep that controlled continuation independent of combat targeting.
 The tap-cost funding journey uses Selesnya Evangel, Birds of Paradise and a
-second creature before any land play. The normal policy must pay the activation,
+second creature before any land play, with an explicitly declared passive haste
+grant and observed first-upkeep readiness. The normal policy must pay the activation,
 reach its stack occurrence and resolve a Saproling without cancelling payment.
 Focused policy checks also exercise a nonmana selection before mana payment,
 requiring it to preserve the only available mana creature when an alternative
