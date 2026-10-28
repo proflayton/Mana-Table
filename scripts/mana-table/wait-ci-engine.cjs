@@ -1,5 +1,6 @@
 // Read-only artifact discovery. Full Java checks remain separate required gates.
 const fs = require('node:fs');
+const { githubRead } = require('./github-read.cjs');
 const WORKFLOW = '.github/workflows/test-build.yaml';
 function assert(value, message) { if (!value) throw new Error(message); }
 function validateContext({ repo, checkoutSha, headSha, event }) {
@@ -67,8 +68,9 @@ async function waitForEngine({ api, timeoutMs = 480000, pollMs = 5000, now = Dat
   assert(Number.isFinite(timeoutMs) && timeoutMs > 0 && timeoutMs <= 480000, 'Engine wait must be bounded to eight minutes.');
   assert(Number.isFinite(pollMs) && pollMs > 0 && pollMs <= 5000, 'Engine polling must be bounded to five seconds.');
   const deadline = now() + timeoutMs;
+  const boundedApi = resource => api(resource, { deadline });
   while (now() < deadline) {
-    const result = await inspect({ api, ...context });
+    const result = await inspect({ api: boundedApi, ...context });
     report(result);
     if (result.ready) return result;
     await sleep(Math.min(pollMs, Math.max(0, deadline - now())));
@@ -77,21 +79,7 @@ async function waitForEngine({ api, timeoutMs = 480000, pollMs = 5000, now = Dat
 }
 function githubApi(token, repo) {
   assert(token, 'GH_TOKEN with actions:read is required for shared engine discovery.');
-  return async resource => {
-    assert(resource.startsWith('/repos/' + repo + '/'), 'Unexpected engine API repository.');
-    const response = await fetch('https://api.github.com' + resource, {
-      headers: { Authorization: 'Bearer ' + token, Accept: 'application/vnd.github+json', 'X-GitHub-Api-Version': '2022-11-28', 'User-Agent': 'ManaTable-engine-artifact' },
-      redirect: 'error', signal: AbortSignal.timeout(20000),
-    });
-    assert(response.ok, 'Engine discovery request failed (HTTP ' + response.status + ').');
-    const chunks = []; let bytes = 0;
-    for await (const chunk of response.body) {
-      bytes += chunk.length;
-      assert(bytes <= 4 * 1024 * 1024, 'Engine discovery response exceeds its bound.');
-      chunks.push(Buffer.from(chunk));
-    }
-    return JSON.parse(Buffer.concat(chunks).toString('utf8'));
-  };
+  return githubRead({ token, repo, userAgent: 'ManaTable-engine-artifact' });
 }
 function writeOutput(file, result) {
   assert(file && result.ready === true && Number.isSafeInteger(result.runId) && result.runId > 0, 'Only a proven engine run may be exported.');
