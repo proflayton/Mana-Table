@@ -664,6 +664,9 @@ public class Player extends GameEntity implements Comparable<Player> {
             return 0;
         }
 
+        final Integer damageSourceControllerId = source.getController() == null ? null : source.getController().getId();
+        final GameEventCause damageCause = GameEventCause.from(cause);
+
         boolean infect = source.isInfectDamage(this);
 
         int poisonCounters = 0;
@@ -707,7 +710,8 @@ public class Player extends GameEntity implements Comparable<Player> {
         runParams.put(AbilityKey.DefendingPlayer, game.getCombat() != null ? game.getCombat().getDefendingPlayerRelatedTo(source) : null);
         game.getTriggerHandler().runTrigger(TriggerType.DamageDone, runParams, isCombat);
 
-        game.fireEvent(new GameEventPlayerDamaged(PlayerView.get(this), CardView.get(source), amount, isCombat, infect));
+        game.fireEvent(new GameEventPlayerDamaged(PlayerView.get(this), CardView.get(source), amount, isCombat, infect,
+                damageSourceControllerId, damageCause));
 
         return amount;
     }

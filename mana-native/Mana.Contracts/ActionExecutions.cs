@@ -10,12 +10,19 @@ public enum ExecutionKind { Spell, Activation, Trigger, Mana, Rules }
 public enum ExecutionStep { Preparation, Choice, Cost, Stack, Resolution, Complete }
 [JsonConverter(typeof(ExecutionEnumConverter))]
 public enum ExecutionOutcome { Resolved, Declined, Cancelled, Countered, Failed }
+[JsonConverter(typeof(ExecutionEnumConverter))]
+public enum ExecutionRuleKind { Replacement, StateBased }
+[JsonConverter(typeof(ExecutionEnumConverter))]
+public enum ExecutionRuleResult { NotReplaced, Replaced, Prevented, Updated, Skipped }
 public sealed class ExecutionEnumConverter : JsonConverterFactory
 {
-    public override bool CanConvert(Type type) => type == typeof(ExecutionKind) || type == typeof(ExecutionStep) || type == typeof(ExecutionOutcome);
+    public override bool CanConvert(Type type) => type == typeof(ExecutionKind) || type == typeof(ExecutionStep) || type == typeof(ExecutionOutcome)
+        || type == typeof(ExecutionRuleKind) || type == typeof(ExecutionRuleResult);
     public override JsonConverter CreateConverter(Type type, JsonSerializerOptions options) => type == typeof(ExecutionKind)
         ? new NamedValue<ExecutionKind>() : type == typeof(ExecutionStep) ? new NamedValue<ExecutionStep>()
-        : type == typeof(ExecutionOutcome) ? new NamedValue<ExecutionOutcome>() : throw new NotSupportedException();
+        : type == typeof(ExecutionOutcome) ? new NamedValue<ExecutionOutcome>()
+        : type == typeof(ExecutionRuleKind) ? new NamedValue<ExecutionRuleKind>()
+        : type == typeof(ExecutionRuleResult) ? new NamedValue<ExecutionRuleResult>() : throw new NotSupportedException();
     private sealed class NamedValue<T> : JsonConverter<T> where T : struct, Enum
     {
         private static readonly Dictionary<string, T> Values = Enum.GetValues<T>().ToDictionary(
@@ -41,11 +48,14 @@ public sealed record ExecutionOccurrence([property: JsonRequired] string Id, [pr
     public string? SourceCardId { get; init; }
     public string? SourceName { get; init; }
     public ExecutionOutcome? Outcome { get; init; }
+    public ExecutionRuleKind? RuleKind { get; init; }
+    public ExecutionRuleResult? RuleResult { get; init; }
 }
 public sealed record ExecutionTransition([property: JsonRequired] long Sequence, [property: JsonRequired] string ExecutionId,
     [property: JsonRequired] ExecutionStep Step)
 {
     public ExecutionOutcome? Outcome { get; init; }
+    public ExecutionRuleResult? RuleResult { get; init; }
 }
 // Bounds belong to the provider's retained stream. A viewer can receive a sparse
 // subset: omitted private transitions are not missing transport observations.
@@ -80,6 +90,8 @@ public static class ExecutionFrames
             || frame.Occurrences.Any(item => item == null || !Id(item.Id) || !Id(item.BudgetRootId)
                 || item.ParentId != null && !Id(item.ParentId) || item.ParentId == item.Id
                 || !Enum.IsDefined(item.Kind) || !Step(item.Step, item.Outcome)
+                || item.RuleKind is { } rule && (item.Kind != ExecutionKind.Rules || !Enum.IsDefined(rule))
+                || !RuleResult(item.RuleKind, item.Step, item.RuleResult)
                 || item.ActorPlayerId is { } actor && !state.Players.Any(player => player.Id == actor)
                 || item.SourceCardId != null && !Id(item.SourceCardId) || item.SourceName != null && string.IsNullOrWhiteSpace(item.SourceName))
             || frame.Occurrences.Select(item => item.Id).Distinct(StringComparer.Ordinal).Count() != frame.Occurrences.Length)
@@ -102,13 +114,15 @@ public static class ExecutionFrames
             if (transition == null || transition.Sequence <= previous || transition.Sequence > frame.LastSequence
                 || !occurrences.ContainsKey(transition.ExecutionId) || !Step(transition.Step, transition.Outcome)
                 || completed.Contains(transition.ExecutionId)) throw Invalid();
+            if (!RuleResult(occurrences[transition.ExecutionId].RuleKind, transition.Step, transition.RuleResult)) throw Invalid();
             if (transition.Step == ExecutionStep.Complete) completed.Add(transition.ExecutionId);
             latest[transition.ExecutionId] = transition;
             previous = transition.Sequence;
         }
         foreach (var (id, transition) in latest) {
             var occurrence = occurrences[id];
-            if (occurrence.Step != transition.Step || occurrence.Outcome != transition.Outcome) throw Invalid();
+            if (occurrence.Step != transition.Step || occurrence.Outcome != transition.Outcome
+                || occurrence.RuleResult != transition.RuleResult) throw Invalid();
         }
         if (state.Decision is { } decision) Reference(decision.ExecutionId, decision.ExecutionStep, current: true);
         foreach (var item in state.Stack) {
@@ -127,5 +141,7 @@ public static class ExecutionFrames
     private static bool Id(string? id) => !string.IsNullOrWhiteSpace(id) && id.Length <= 256 && !id.Any(char.IsControl);
     private static bool Step(ExecutionStep step, ExecutionOutcome? outcome) => Enum.IsDefined(step)
         && (step == ExecutionStep.Complete ? outcome != null && Enum.IsDefined(outcome.Value) : outcome == null);
+    private static bool RuleResult(ExecutionRuleKind? kind, ExecutionStep step, ExecutionRuleResult? result)
+        => result == null || kind == ExecutionRuleKind.Replacement && step == ExecutionStep.Complete && Enum.IsDefined(result.Value);
     private static ArgumentException Invalid() => new("Execution history must contain exact ordered, disclosed rules occurrences and references.");
 }

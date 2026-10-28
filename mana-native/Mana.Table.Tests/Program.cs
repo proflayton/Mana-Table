@@ -26,6 +26,8 @@ internal static class Program
         testRun |= args.Contains("--smoke-headless-engine");
         testRun |= args.Contains("--smoke-whole-seat-ai");
         testRun |= args.Contains("--replay-ai-decision");
+        testRun |= args.Contains("--replay-projection");
+        testRun |= args.Contains("--smoke-execution-journey");
         testRun |= args.Contains("--smoke-ai-campaign");
         testRun |= args.Contains("--evaluate-ai-release");
         testRun |= args.Contains("--smoke-mana-payment");
@@ -122,11 +124,19 @@ internal static class Program
             if (Arg("--replay-ai-decision") is { } decisionReplay) {
                 AiDecisionReplayCommand.RunAsync(decisionReplay, profile).GetAwaiter().GetResult(); return 0;
             }
+            if (Arg("--replay-projection") is { } projectionReplay) {
+                ProjectionReplaySession.RunFile(projectionReplay, profile); return 0;
+            }
             var bundle = Arg("--engine-resources") ?? Path.Combine(AppContext.BaseDirectory, "engine");
             if (!Directory.Exists(bundle)) throw new IOException("Missing bundled engine. Run the native packaging script first, or pass --engine-resources pointing to the package's resources directory.");
             var backend = Arg("--engine") ?? "forge";
             if (backend != "forge") throw new NotSupportedException($"Engine '{backend}' is not installed. Available: forge.");
             var paths = new ForgePaths(Path.Combine(bundle, "runtime", "bin", "java.exe"), Arg("--engine-jar") ?? Path.Combine(bundle, "forge-engine.jar"), Path.Combine(bundle, "forge-res"), profile);
+            if (args.Contains("--smoke-execution-journey")) {
+                ExecutionEngineJourney.RunStandaloneAsync(paths, Arg("--production-engine-jar")
+                    ?? throw new ArgumentException("The execution journey requires its real production engine dependency.")).GetAwaiter().GetResult();
+                return 0;
+            }
             if (args.Contains("--smoke-deck-import")) { DeckImportSmoke.Run(paths, Arg("--import-file") ?? Path.Combine(AppContext.BaseDirectory, "Fixtures", "annotated-toph.txt"), size); return 0; }
             if (args.Contains("--smoke-engine-startup")) { EngineStartupRegression.RunAsync(paths).GetAwaiter().GetResult(); return 0; }
             if (args.Contains("--smoke-headless-engine")) { HeadlessEngineSmoke.RunAsync(paths, Arg("--production-engine-jar"), Arg("--source-revision"), Arg("--source-manifest")).GetAwaiter().GetResult(); return 0; }

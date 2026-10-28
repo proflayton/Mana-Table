@@ -732,22 +732,41 @@ without replaying past changes, and unchanged publications produce no event.
 These summaries do not infer a cause or claim to record intermediate values
 within one uninterrupted resolution.
 
-Damage and life activity may additionally contain an `impact` with typed actual
+Damage, life and published battlefield movements may contain an `impact` with typed actual
 event-time results. `kind: damage` carries the engine's actual `amount`, separate
 from a pending effect's base amount. Its recipient is either `playerId` or a
 public `cardId`/`cardName`; the activity entry's older top-level `cardId` may refer
 to the source and must not be used as the damage recipient. Optional
 `sourceCardId`/`sourceName` identify only a disclosed public source. Card damage
-reports `damageType` as `normal`, `m1m1Counters`, `deathtouch` or `loyaltyLoss`.
-Player damage instead reports the event's `combat` and `infect` booleans.
+reports `damageType` as `normal`, `m1m1Counters`, `deathtouch`, `loyaltyLoss` or
+`defenseLoss`. Current damage events report `combat`; player damage also reports
+`infect`. Missing older metadata remains unknown.
 Damage is not necessarily life loss or marked damage; clients must not subtract
 it from a life total or reconstruct counters from these descriptors.
 
 `kind: life` contains the signed 64-bit `amount` (`after - before`), exact integer
 `before`/`after` totals and recipient `playerId`. It has no inferred source or
 damage metadata. A life change and a damage event remain separate facts even
-when observed together. Neither impact kind supplies an ability/resolution ID;
-clients must not join it to pending effects by proximity, card name or amount.
+when observed together. Clients must not join impacts to pending effects by
+proximity, card name or amount.
+
+Optional `sourceControllerId` is the physical damage source's event-time/LKI
+controller; `recipientControllerId` is the affected card's event-time controller
+or the damaged player's ID. The separate activity `cause`, when disclosed,
+identifies the actual producing ability and its `controllerId`. That controller
+can differ from the physical source's controller after a control change.
+Neither field is reconstructed from the source's later board position or owner.
+Undisclosed sources retain no source identity/controller; an unknown producing
+ability stays unknown rather than borrowing the nearest stack entry.
+
+`kind: zone` reports one actual movement (`amount: 1`) with `fromZone`/`toZone`
+among `Battlefield`, `Stack`, `Graveyard`, `Exile`, `Command`, `Hand` and `Library`;
+one endpoint is the battlefield. `recipientControllerId` retains the departing
+controller, independently of the destination zone's owner. Its producing ability
+is the optional activity `cause`; the physical source controller remains unknown
+unless separately reported. Concealment can leave an anonymous movement with no
+card ID/name. A state-based departure has no invented producing player. Distinct
+affected occurrences remain separate facts, even within the same execution.
 
 Impact card references copy only public opaque occurrence IDs and authorized
 names, never card faces or action keys. A public face-down battlefield recipient
@@ -950,9 +969,24 @@ projection of actual rules execution, separate from command/decision authority:
   terminal `outcome`. Steps are `preparation`, `choice`, `cost`, `stack`,
   `resolution`, `complete`; kinds are `spell`, `activation`, `trigger`, `mana`,
   `rules`. Outcomes are `resolved`, `declined`, `cancelled`, `countered`, `failed`.
+- Rules occurrences may add `ruleKind: replacement | stateBased`. A replacement's
+  terminal occurrence/transition may add `ruleResult: notReplaced | replaced |
+  prevented | updated | skipped`, separately from the ordinary `outcome`.
+  Successful replacement processing can therefore be `resolved` with a
+  `prevented` result while its calling spell still resolves. A buffered aggregate
+  follow-up has its own replacement occurrence and may leave `ruleResult` unknown;
+  it is not assigned an arbitrary individual application result.
 - Current prompts and historical activity may carry `executionId` and
   `executionStep`; stack entries may carry `executionId`. These references join
   only included, audience-authorized occurrences. Hidden ancestry is redacted.
+
+A source-less state-based check becomes readable only when it commits an
+allowlisted public mutation or owns that audience's actual required input.
+An empty/private-only check does not reveal an execution to other audiences.
+Owned input admission happens after the session's existing input validation;
+an earlier priority prompt grants no such admission. Source/actor remain absent,
+and a missing active parent is not replaced with the last stack action. Earlier
+filtered transitions stay omitted rather than receiving invented sequence IDs.
 
 The client admits transitions once. Reconnection and an expired retention window
 establish a baseline rather than replaying old casts or inventing missing steps.
@@ -961,8 +995,10 @@ to read a currently hidden face. Old providers can omit the entire frame and
 references; unmigrated engine paths omit references too. Clients must not join
 legacy changes by shared polling time, card names or nearby stack entries.
 No persisted data or command protocol version changes. Provider assemblies must
-rebuild for the additive immutable native projection. Complete replacement and
-state-based-action coverage remains outside this first migration slice.
+rebuild for the additive immutable native projection. Older frames can omit rule
+metadata and event-time attribution; clients preserve unknown values. The current
+source covers shared replacement processing and state-based checks with focused
+rules journeys, without claiming every indirect path is instrumented.
 
 Snapshots may also carry `stackInterruptionVersion`, a table-local monotonic
 generation for new actions, required choices and rollback/restart. Resolving

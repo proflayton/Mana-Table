@@ -92,12 +92,14 @@ internal sealed class PriorityAttention
                 || state.Decision is { Payload: not PriorityPayload }
                 || state.ActionClass is not ("" or "priority" or "resolving")) return ResponseProgress.Interrupted;
             var occurrence = ExecutionFrames.Find(state, Top.ExecutionId);
+            var permitted = PermittedExecutions(state);
             if (occurrence == null || occurrence.Kind != Execution.Kind || occurrence.ActorPlayerId != Execution.ActorPlayerId
                 || occurrence.BudgetRootId != Execution.BudgetRootId || occurrence.ParentId != Execution.ParentId
                 || !RetainsActivity(state, afterActivity)
-                || frame.Transitions.Any(item => item.Sequence > Sequence && item.ExecutionId != Top.ExecutionId)
+                || frame.Transitions.Any(item => item.Sequence > Sequence && (!permitted.Contains(item.ExecutionId)
+                    || item.ExecutionId != Top.ExecutionId && item.Step is not (ExecutionStep.Preparation or ExecutionStep.Cost or ExecutionStep.Resolution or ExecutionStep.Complete)))
                 || state.Activity.Any(entry => entry.Id > afterActivity && entry.InterruptsQuietYield
-                    && entry.Kind is not ("priority" or "phase") && (entry.ExecutionId != Top.ExecutionId
+                    && entry.Kind is not ("priority" or "phase") && (!permitted.Contains(entry.ExecutionId)
                         || entry.ExecutionStep is not (ExecutionStep.Resolution or ExecutionStep.Complete)
                         || entry.Kind is "cast" or "ability" or "land"))) return ResponseProgress.Interrupted;
             if (state.Stack.Any(item => item.Id == Top.Id)) {
@@ -115,6 +117,37 @@ internal sealed class PriorityAttention
             // rather than treating its later token as an unrelated change.
             return state.Decision?.Payload is PriorityPayload { QuietYieldToken.Length: > 0 }
                 ? ResponseProgress.Resolved : ResponseProgress.Waiting;
+        }
+
+        private HashSet<string> PermittedExecutions(GameSnapshot state)
+        {
+            var permitted = new HashSet<string>(StringComparer.Ordinal) { Top.ExecutionId };
+            var rejected = new HashSet<string>(StringComparer.Ordinal);
+            var occurrences = state.Executions!.Occurrences.ToDictionary(item => item.Id, StringComparer.Ordinal);
+            var stacked = state.Stack.Select(item => item.ExecutionId).ToHashSet(StringComparer.Ordinal);
+            foreach (var candidate in occurrences.Values) {
+                string id = candidate.Id;
+                var path = new HashSet<string>(StringComparer.Ordinal);
+                while (!permitted.Contains(id)) {
+                    if (rejected.Contains(id) || !path.Add(id) || !occurrences.TryGetValue(id, out var item)
+                        || item.Kind != ExecutionKind.Rules || item.RuleKind is not (ExecutionRuleKind.Replacement or ExecutionRuleKind.StateBased)
+                        || item.BudgetRootId != Execution.BudgetRootId || string.IsNullOrWhiteSpace(item.SourceCardId)
+                        || string.IsNullOrWhiteSpace(item.ParentId) || stacked.Contains(id)
+                        || item.Step is not (ExecutionStep.Preparation or ExecutionStep.Resolution or ExecutionStep.Complete)
+                        || item.Step == ExecutionStep.Complete && item.Outcome != ExecutionOutcome.Resolved) {
+                        rejected.UnionWith(path); break;
+                    }
+                    id = item.ParentId;
+                }
+                // A historical Cost phase alone does not prove a paid cost or
+                // player choice (mandatory replacement templates can cost zero).
+                // Current Cost/Choice and committed Cost changes still stop us.
+                // Matching a budget root alone is not ancestry. Every link must
+                // be a disclosed, typed non-stack rules action leading back to
+                // the exact response the player passed. New triggers stay new.
+                if (permitted.Contains(id)) permitted.UnionWith(path);
+            }
+            return permitted;
         }
 
         private static (string Kind, string Id, int? Player) Target(StackTarget target) => (target.Kind, target.Id, target.PlayerId);

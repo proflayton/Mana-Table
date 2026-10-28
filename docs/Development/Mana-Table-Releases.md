@@ -110,6 +110,17 @@ Publication waits for the **same master source SHA** to pass Java 17/21,
 checks. The [read-only prerequisite helper](../../scripts/mana-table/wait-release-ci.cjs)
 checks those completed runs. It never merges, reruns or cancels CI.
 
+Engine-artifact discovery and this prerequisite gate share a GET-only GitHub
+transport. A lookup gets at most three attempts for request timeouts, identified
+temporary network failures, or HTTP 408/429/500/502/503/504. Backoff is one then
+two seconds; rate limits honor `Retry-After` and reset headers, or wait at least
+one minute without guidance. Every request (at most twenty seconds), retry and
+pause consumes the original eight-minute engine or seventy-minute publication
+deadline. Authentication errors, malformed/oversized responses and mismatched
+repository, source, run, attempt or artifact evidence still fail immediately.
+Release mutations never use this transport. The rate-limit handling follows
+[GitHub's REST guidance](https://docs.github.com/en/rest/using-the-rest-api/best-practices-for-using-the-rest-api#handle-rate-limit-errors-appropriately).
+
 The [production installer workflow](../../.github/workflows/mana-table-native-installer.yml)
 has separate callers: PRs and non-master builds have read-only permissions;
 trusted master builds can upload verified downloads into a private release draft
@@ -181,6 +192,20 @@ Each release contains setup, portable and complete-source downloads with SHA256
 checksums. `SOURCE.txt` and `build.json` identify the exact source and engine hash.
 The source ZIP is exported directly from the committed Git tree. Fresh releases
 never copy a prior installation, personal decks, image caches, or test profiles.
+
+The production [source exporter](../../mana-native/package-source.ps1) pins
+`core.autocrlf=false` and `core.eol=lf`. Committed `.gitattributes` still applies,
+including explicit per-file EOL exceptions; binary files retain their bytes.
+Global/system attributes are disabled and active repository-local
+`info/attributes` overrides block export. The helper checks that the checkout is
+still clean and at the recorded commit immediately before archiving. This follows
+[Git archive's committed-tree attribute behavior](https://git-scm.com/docs/git-archive#ATTRIBUTES).
+Source text now defaults to LF independently of the packager's Windows or local
+Git settings; earlier release archives may contain CRLF. This deliberately changes
+archive bytes, not source identity or installer/update schemas. Existing archive
+SHA256/size metadata and source receipts continue to bind the actual exported ZIP.
+When independently comparing source members, use the same canonical export
+settings instead of normalizing downloaded files or weakening hash validation.
 
 Share this permanent link with friends:
 

@@ -400,10 +400,11 @@ public class StateEffectsConcessionTest {
         }
     }
 
-    /** Observes either the direct per-player Graveyard reads in checkStateEffects,
+    /** Observes either the direct per-player Graveyard reads in checkStateEffectsOwned,
      * or the real devotion query inside afterStaticAbilityLayer. The first direct
      * read belongs to non-battlefield checks; the second to Commander checks.
-     * Unrelated queries and nested concession cleanup are not counted. */
+     * The private traversal body must be called by the public execution-owning
+     * wrapper. Unrelated queries and nested concession cleanup are not counted. */
     private static final class ParticipantReads implements AutoCloseable {
         private final List<Slot> slots = new ArrayList<>();
         private final List<Integer> visited = new CopyOnWriteArrayList<>();
@@ -469,13 +470,17 @@ public class StateEffectsConcessionTest {
                     frame.getClassName().equals(Player.class.getName())
                             && frame.getMethodName().equals("afterStaticAbilityLayer")));
         }
-        return StackWalker.getInstance().walk(frames -> frames
-                .dropWhile(frame -> !frame.getClassName().equals(Player.class.getName())
-                        || !frame.getMethodName().equals("getCardsIn"))
-                .dropWhile(frame -> frame.getClassName().equals(Player.class.getName())
-                        && frame.getMethodName().equals("getCardsIn"))
-                .findFirst().map(frame -> frame.getClassName().equals(GameAction.class.getName())
-                        && frame.getMethodName().equals("checkStateEffects")).orElse(false));
+        return StackWalker.getInstance().walk(frames -> {
+            var callers = frames.dropWhile(frame -> !frame.getClassName().equals(Player.class.getName())
+                            || !frame.getMethodName().equals("getCardsIn"))
+                    .dropWhile(frame -> frame.getClassName().equals(Player.class.getName())
+                            && frame.getMethodName().equals("getCardsIn"))
+                    .limit(2).toList();
+            return callers.size() == 2 && callers.get(0).getClassName().equals(GameAction.class.getName())
+                    && callers.get(0).getMethodName().equals("checkStateEffectsOwned")
+                    && callers.get(1).getClassName().equals(GameAction.class.getName())
+                    && callers.get(1).getMethodName().equals("checkStateEffects");
+        });
     }
 
     private static void concede(RulesScenario scenario, int seat, String sessionId) {

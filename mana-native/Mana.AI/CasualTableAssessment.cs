@@ -27,11 +27,34 @@ public static class CasualTableAssessment
             double pressure = 0, focus = 0;
             foreach (var entry in history.Events) {
                 int age = state.Turn - entry.Turn;
-                if (age < 0 || age > round * 2 || entry.Impact is not { Kind: "damage", Amount: > 0 } impact) continue;
-                int? actor = entry.CauseControllerId ?? entry.ActorId;
-                double recent = Math.Min(8, impact.Amount) / (1d + age / (double)round);
-                if (actor == player.Id && impact.PlayerId == state.ViewerId) pressure += recent;
-                if (actor == state.ViewerId && impact.PlayerId == player.Id) focus += recent;
+                if (age < 0 || age > round * 2 || entry.Impact is not { } impact) continue;
+                // PlayerId on ordinary activity is often the affected seat. It
+                // cannot stand in for the source controller. Historical source
+                // cards need not exist on this board or still have that owner.
+                int? recipient;
+                int? actor;
+                double harm;
+                if (impact is { Kind: "damage", Amount: > 0 }) {
+                    // A resolving ability keeps its producing controller even
+                    // if the physical source was stolen after it was stacked.
+                    // Physical control alone establishes combat attribution;
+                    // an unknown noncombat ability remains unknown.
+                    actor = entry.CauseControllerId ?? (impact.Combat == true ? impact.SourceControllerId : null);
+                    recipient = impact.PlayerId ?? impact.RecipientControllerId;
+                    harm = Math.Min(8, impact.Amount) * (impact.PlayerId == null ? .5 : 1);
+                }
+                else if (impact is { Kind: "zone", Amount: 1, FromZone: "Battlefield",
+                    ToZone: "Graveyard" or "Exile" or "Hand" or "Library" }
+                    && entry.ExecutionStep == ExecutionStep.Resolution) {
+                    // A committed departure is one lost public resource. Do not
+                    // price it by looking up a later card incarnation, and do
+                    // not blame another player for a cost or an unknown step.
+                    actor = entry.CauseControllerId; recipient = impact.RecipientControllerId; harm = 2;
+                }
+                else continue;
+                double recent = harm / (1d + age / (double)round);
+                if (actor == player.Id && recipient == state.ViewerId) pressure += recent;
+                if (actor == state.ViewerId && recipient == player.Id) focus += recent;
             }
             if (state.Combat != null)
                 foreach (var attack in state.Combat.Attackers.Where(attack => attack.HasDefender && attack.DefendingPlayerId == state.ViewerId)) {

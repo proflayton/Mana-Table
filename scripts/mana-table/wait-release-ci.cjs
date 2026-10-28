@@ -1,5 +1,6 @@
 // Read-only publication prerequisite; never merge, rerun, cancel, or publish.
 const fs = require('node:fs');
+const { githubRead } = require('./github-read.cjs');
 const REPO = 'proflayton/Mana-Table';
 const WORKFLOWS = [
   { file: 'test-build.yaml', jobs: ['Test with Java 17', 'Test with Java 21'], required: true },
@@ -111,11 +112,12 @@ async function waitForCI({ api, repo, sha, iosRequired, timeoutMs = 4200000, pol
   assert(Number.isFinite(timeoutMs) && timeoutMs > 0 && timeoutMs <= 4200000, 'CI wait must be bounded to at most 70 minutes.');
   assert(Number.isFinite(pollMs) && pollMs >= 1 && pollMs <= 30000, 'CI polling must be between 1 and 30000 milliseconds.');
   const deadline = now() + timeoutMs;
+  const boundedApi = resource => api(resource, { deadline });
   while (now() < deadline) {
-    const result = await inspect({ api, repo, sha, iosRequired });
+    const result = await inspect({ api: boundedApi, repo, sha, iosRequired });
     report(result);
     if (result.ready) {
-      const finalMaster = await api('/repos/' + REPO + '/git/ref/heads/master');
+      const finalMaster = await boundedApi('/repos/' + REPO + '/git/ref/heads/master');
       assert(finalMaster.object?.sha === sha, 'Master advanced during verification; publication is blocked.');
       return result;
     }
@@ -125,33 +127,20 @@ async function waitForCI({ api, repo, sha, iosRequired, timeoutMs = 4200000, pol
 }
 function githubApi(token) {
   assert(token, 'GH_TOKEN is required for read-only Actions verification.');
-  return async function api(resource) {
-    assert(resource.startsWith('/repos/' + REPO + '/'), 'Unexpected API repository.');
-    const response = await fetch('https://api.github.com' + resource, {
-      headers: { Authorization: 'Bearer ' + token, Accept: 'application/vnd.github+json', 'X-GitHub-Api-Version': '2022-11-28', 'User-Agent': 'ManaTable-release-ci-gate' },
-      redirect: 'error', signal: AbortSignal.timeout(20000),
-    });
-    assert(response.ok, 'GitHub CI verification request failed (HTTP ' + response.status + ').');
-    const chunks = []; let bytes = 0;
-    for await (const chunk of response.body) {
-      bytes += chunk.length;
-      assert(bytes <= 4 * 1024 * 1024, 'GitHub CI verification response exceeds its bound.');
-      chunks.push(Buffer.from(chunk));
-    }
-    return JSON.parse(Buffer.concat(chunks).toString('utf8'));
-  };
+  return githubRead({ token, repo: REPO, userAgent: 'ManaTable-release-ci-gate' });
 }
 async function main(env = process.env) {
   const repo = env.GITHUB_REPOSITORY, sha = env.GITHUB_SHA;
   validateSource(repo, sha);
   assert(env.GITHUB_REF === 'refs/heads/master', 'Publication is restricted to master.');
   const api = githubApi(env.GH_TOKEN);
+  const deadline = Date.now() + 4200000;
   let iosRequired = false;
   if (env.GITHUB_EVENT_NAME === 'push') {
     const event = JSON.parse(fs.readFileSync(env.GITHUB_EVENT_PATH, 'utf8'));
     assert(event.repository?.full_name === REPO && event.ref === 'refs/heads/master' && event.after === sha
       && /^[a-f0-9]{40}$/.test(event.before || '') && !/^0{40}$/.test(event.before), 'Cannot establish the exact master push change range.');
-    const comparison = await api('/repos/' + REPO + '/compare/' + event.before + '...' + sha);
+    const comparison = await api('/repos/' + REPO + '/compare/' + event.before + '...' + sha, { deadline });
     validateComparison(comparison, event.before, sha);
     iosRequired = iosApplicability(comparison);
   } else {
@@ -160,7 +149,8 @@ async function main(env = process.env) {
     // excuse it using an incomplete guess about the last commit's changed paths.
     iosRequired = true;
   }
-  const result = await waitForCI({ api, repo, sha, iosRequired, report: snapshot => console.log(JSON.stringify({ source: sha, iosRequired, ...snapshot })) });
+  const result = await waitForCI({ api, repo, sha, iosRequired, timeoutMs: deadline - Date.now(),
+    report: snapshot => console.log(JSON.stringify({ source: sha, iosRequired, ...snapshot })) });
   console.log('All required exact-source CI passed; existing publication guards may proceed.');
   return result;
 }

@@ -192,7 +192,7 @@ public class MatchActivityTest {
         assertEquals(activity.snapshot().get(3).impact().amount(), 4294967295L, "Life deltas must not overflow or become damage");
         var target = publicCard(206, "Public target", opponent);
         var types = GameEventCardDamaged.DamageType.values();
-        var names = new String[] { "normal", "m1m1Counters", "deathtouch", "loyaltyLoss" };
+        var names = new String[] { "normal", "m1m1Counters", "deathtouch", "loyaltyLoss", "defenseLoss" };
         for (int i = 0; i < types.length; i++) {
             activity.onGameEvent(new GameEventCardDamaged(target, source, 1, types[i]));
             var impact = activity.snapshot().get(activity.snapshot().size() - 1).impact();
@@ -207,6 +207,37 @@ public class MatchActivityTest {
         var card = new CardView(id, null, name);
         card.set(TrackableProperty.Controller, controller); card.set(TrackableProperty.Zone, ZoneType.Battlefield);
         return card;
+    }
+
+    @Test public void committedAttributionSurvivesControllerChangesAndPublicDepartures() {
+        var viewer = new PlayerView(1, null); var victim = new PlayerView(2, null); var later = new PlayerView(3, null);
+        var source = publicCard(207, "Actual source", viewer);
+        var target = publicCard(208, "Actual target", victim);
+        var damage = new GameEventCardDamaged(target, source, 3, GameEventCardDamaged.DamageType.Normal, 1, 2);
+        // These mutable portraits deliberately disagree by the time subscribers
+        // copy them. Only the immutable event fields establish attribution.
+        source.set(TrackableProperty.Controller, later); target.set(TrackableProperty.Controller, viewer);
+        var activity = new MatchActivity(viewer);
+        activity.onGameEvent(new GameEventTurnBegan(viewer, 1));
+        activity.onGameEvent(damage);
+        var copied = activity.snapshot().get(1).impact();
+        assertEquals(copied.sourceControllerId(), Integer.valueOf(1));
+        assertEquals(copied.recipientControllerId(), Integer.valueOf(2));
+        var cause = new GameEventCause(source, "Return the target.", viewer, "spell", "actual-execution");
+        activity.onGameEvent(new GameEventCardChangeZone(target, new ZoneView(victim, ZoneType.Battlefield),
+                new ZoneView(later, ZoneType.Hand), GameEventCardChangeZone.Origin.OTHER, cause, 2));
+        var departure = activity.snapshot().get(2).impact();
+        assertEquals(departure.kind(), "zone"); assertEquals(departure.amount(), 1L);
+        assertEquals(departure.fromZone(), "Battlefield"); assertEquals(departure.toZone(), "Hand");
+        assertNull(departure.sourceControllerId(), "A producing ability controller is not the physical source's controller snapshot");
+        assertEquals(activity.snapshot().get(2).cause().controllerId(), Integer.valueOf(1));
+        assertEquals(departure.recipientControllerId(), Integer.valueOf(2));
+        assertNull(departure.cardId()); assertNull(departure.cardName(), "A hidden destination retains no departed face");
+        source.set(TrackableProperty.Zone, ZoneType.Hand);
+        assertEquals(copied.sourceControllerId(), Integer.valueOf(1), "Retained results cannot acquire the source's later owner");
+        assertEquals(departure.recipientControllerId(), Integer.valueOf(2), "A movement's destination owner is not its departing controller");
+        activity.onGameEvent(new GameEventCardDamaged(target, source, 2, GameEventCardDamaged.DamageType.Normal));
+        assertNull(activity.snapshot().get(3).impact().sourceControllerId(), "Legacy events preserve unknown controller rather than reading a mutable portrait");
     }
 
     @Test public void authorizedTopCardKeepsItsIdentityThroughDrawingAndCasting() {

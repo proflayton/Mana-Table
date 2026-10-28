@@ -1081,7 +1081,7 @@ public class Game {
      */
     public void fireEvent(final Event event) {
         if (event instanceof forge.game.event.GameEvent committed)
-            events.post(new ExecutionTracker.Committed(committed, executions.current()));
+            events.post(new ExecutionTracker.Committed(committed, executions.committed(committed)));
         events.post(event);
     }
     public void subscribeToEvents(final Object subscriber) {

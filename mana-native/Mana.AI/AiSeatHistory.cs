@@ -43,9 +43,13 @@ public sealed record AiDecisionRecord
 // Retained event facts contain no card faces, prose, names or action handles.
 // A proposal/accepted command is never promoted to damage or a resolved effect.
 public sealed record AiObservedEvent(long Id, int Turn, string Kind, int? ActorId, string? CardId,
-    PublicCardChange? Change, AiObservedImpact? Impact, int? CauseControllerId, string? CauseId);
+    PublicCardChange? Change, AiObservedImpact? Impact, int? CauseControllerId, string? CauseId)
+{
+    public ExecutionStep? ExecutionStep { get; init; }
+}
 public sealed record AiObservedImpact(string Kind, long Amount, int? PlayerId, string? CardId,
-    string? SourceCardId, int? Before, int? After, bool? Combat);
+    string? SourceCardId, int? Before, int? After, bool? Combat,
+    int? SourceControllerId = null, int? RecipientControllerId = null, string? FromZone = null, string? ToZone = null);
 public sealed record AiTurnRoute(int Turn, string SourceCardId, string StableRouteId);
 public sealed record AiSeatHistory(ImmutableArray<AiDecisionRecord> Decisions, ImmutableArray<AiObservedEvent> Events)
 {
@@ -94,7 +98,9 @@ internal sealed class AiHistoryBuffer(int capacity)
             var impact = entry.Impact;
             events.Enqueue(new(entry.Id, entry.Turn, entry.Kind, entry.PlayerId, entry.CardId, entry.Change,
                 impact == null ? null : new(impact.Kind, impact.Amount, impact.PlayerId, impact.CardId,
-                    impact.SourceCardId, impact.Before, impact.After, impact.Combat), entry.Cause?.ControllerId, entry.Cause?.Id));
+                    impact.SourceCardId, impact.Before, impact.After, impact.Combat, impact.SourceControllerId,
+                    impact.RecipientControllerId, impact.FromZone, impact.ToZone), entry.Cause?.ControllerId, entry.Cause?.Id) {
+                ExecutionStep = entry.ExecutionStep });
             while (events.Count > capacity) events.Dequeue();
         }
     }

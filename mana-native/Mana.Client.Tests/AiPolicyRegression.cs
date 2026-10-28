@@ -20,6 +20,7 @@ internal static class AiPolicyRegression
         await AiCostPaymentRegression.RunAsync(check);
         await AiCostOrderingRegression.RunAsync(check);
         await TargetsAndSocialMemory(check);
+        AiCausalHistoryRegression.Run(check);
         await CombatAndAllocation(check);
         await TacticalExchangesAndResourceCosts(check);
         await OperationGraphs(check);
@@ -608,7 +609,7 @@ internal static class AiPolicyRegression
         }
         check(!targets.Contains(0) && targets.Count > 1, "Equivalent opponents use independent seeded ties rather than a permanent turn-order victim");
         var pressure = peers with { Activity = [new(1, peers.Turn, "MAIN1", "damage", 3, "Private display detail", null, null) {
-            Cause = new(null, "", "", 3), Impact = new("damage", 7, PlayerId: 0) }] };
+            Cause = new(null, "", "", 3), Impact = new("damage", 7, PlayerId: 0, SourceControllerId: 3, RecipientControllerId: 0) }] };
         check((await Evaluate(Frame(pressure, semantics: new(DecisionIntent.Damage)))).Command is SelectPlayer { Player: 3 },
             "Observed recent damage informs defensive pressure without inventing outcomes from proposals");
         var assessed = CasualTableAssessment.Assess(pressure, new([], []));

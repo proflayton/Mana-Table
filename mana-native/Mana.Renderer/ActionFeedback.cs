@@ -7,7 +7,8 @@ public sealed record ResolutionCue(string Title, string Detail, string[] Changes
     public string ExecutionId { get; init; } = "";
     public bool HistoryIncomplete { get; init; }
     public string Outcome { get; init; } = "";
-    public string Heading => Outcome switch { "resolved" => "JUST RESOLVED", "notResolved" => "DID NOT RESOLVE", _ => "REPORTED OUTCOME" };
+    public string Heading => Outcome switch { "resolved" => "JUST RESOLVED", "notResolved" => "DID NOT RESOLVE",
+        "rulesApplied" => "JUST CHANGED", _ => "REPORTED OUTCOME" };
 }
 public sealed record PublicOutcomeCue(string[] Messages, double Started);
 
@@ -61,10 +62,28 @@ public sealed class ActionFeedback
             var effects = (changes ?? []).Where(entry => entry.ExecutionStep != ExecutionStep.Cost).ToArray();
             var results = ChangeMessages(costs).Concat(CountedMessages(costs, after)).Select(message => "Cost: " + message)
                 .Concat(CountedMessages(effects, after)).Concat(ChangeMessages(effects)).ToArray();
+            bool partial = incomplete.Remove(occurrence.Id);
+            if (occurrence.RuleKind is { } rule) {
+                // Replacements and state checks are not spells on the stack.
+                // Only their own committed changes (or explicit prevention)
+                // become feedback; a declined/no-op check is not an ability.
+                string? title = rule switch {
+                    ExecutionRuleKind.StateBased when results.Length > 0 => "The table changed.",
+                    ExecutionRuleKind.Replacement when occurrence.RuleResult == ExecutionRuleResult.Prevented
+                        => (occurrence.SourceName ?? "A replacement effect") + " prevented a change.",
+                    ExecutionRuleKind.Replacement when results.Length > 0
+                        || occurrence.RuleResult is ExecutionRuleResult.Replaced or ExecutionRuleResult.Updated
+                        => (occurrence.SourceName ?? "A replacement effect") + " changed an effect.",
+                    _ => null
+                };
+                if (title != null) Add(new(title, "", results, now) { ExecutionId = occurrence.Id,
+                    Outcome = "rulesApplied", HistoryIncomplete = partial });
+                continue;
+            }
             Add(new((transition.Outcome == ExecutionOutcome.Resolved ? resolved?.Message : null)
                 ?? (occurrence.SourceName ?? "Ability") + " " + (transition.Outcome?.ToString().ToLowerInvariant() ?? "completed") + ".",
                 resolved?.Detail ?? "", results, now) { ExecutionId = occurrence.Id, Outcome = outcome,
-                    HistoryIncomplete = incomplete.Remove(occurrence.Id) });
+                    HistoryIncomplete = partial });
         }
         // Legacy resolutions remain independent facts. Sharing a network poll
         // never assigns its other changes to that spell or ability.

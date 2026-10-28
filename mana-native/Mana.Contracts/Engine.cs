@@ -343,8 +343,14 @@ public sealed record ActivityEntry(long Id, int Turn, string PhaseKey, string Ki
 }
 // Event-time results. Damage is the reported amount dealt, not a pending estimate
 // or a life-total difference; life is a separate signed old-to-new transition.
+// Controllers are copied at mutation time, not resolved through a later card.
+// SourceControllerId is physical source/LKI control; Cause.ControllerId is the
+// producing ability's controller and can differ after a control change.
+// Missing attribution stays unknown. Zone results are one committed occurrence
+// and can be anonymous when the destination conceals its face and identity.
 public sealed record PublicImpact(string Kind, long Amount, string? CardId = null, string? CardName = null,
     int? PlayerId = null, string? SourceCardId = null, string? SourceName = null,
-    int? Before = null, int? After = null, string? DamageType = null, bool? Combat = null, bool? Infect = null);
+    int? Before = null, int? After = null, string? DamageType = null, bool? Combat = null, bool? Infect = null,
+    int? SourceControllerId = null, int? RecipientControllerId = null, string? FromZone = null, string? ToZone = null);
 public sealed record PublicCardChange(string Kind, string Property, int Before, int After);
 public sealed record PublicEffectCause(string? CardId, string Name, string Ability, int? ControllerId, string Kind = "effect", string Id = "");

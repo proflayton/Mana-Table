@@ -29,6 +29,7 @@ import com.google.common.collect.Multiset;
 import com.google.common.collect.Sets;
 
 import forge.game.CardTraitBase;
+import forge.game.ExecutionTracker;
 import forge.game.Game;
 import forge.game.GameEntity;
 import forge.game.GameEntityCounterTable;
@@ -286,6 +287,24 @@ public class ReplacementHandler {
      */
     private ReplacementResult executeReplacement(final Map<AbilityKey, Object> runParams,
         final ReplacementEffect replacementEffect, final Player decider) {
+        SpellAbility effectSA = replacementEffect.ensureAbility();
+        try (var execution = game.getExecutions().enterReplacement(replacementEffect.getHostCard(), effectSA)) {
+            if (replacementEffect.hasParam("Optional")) execution.step(ExecutionTracker.Step.CHOICE);
+            ReplacementResult result = executeReplacementOwned(runParams, replacementEffect, decider, effectSA, execution);
+            execution.complete(ExecutionTracker.Outcome.RESOLVED, switch (result) {
+                case NotReplaced -> ExecutionTracker.RuleResult.NOT_REPLACED;
+                case Replaced -> ExecutionTracker.RuleResult.REPLACED;
+                case Prevented -> ExecutionTracker.RuleResult.PREVENTED;
+                case Updated -> ExecutionTracker.RuleResult.UPDATED;
+                case Skipped -> ExecutionTracker.RuleResult.SKIPPED;
+            });
+            return result;
+        }
+    }
+
+    private ReplacementResult executeReplacementOwned(final Map<AbilityKey, Object> runParams,
+        final ReplacementEffect replacementEffect, final Player decider, final SpellAbility effectSA,
+        final ExecutionTracker.RulesScope execution) {
         Card host = replacementEffect.getHostCard();
         // AlternateState for OriginsPlaneswalker
         // FaceDown for cards like Necropotence
@@ -294,7 +313,6 @@ public class ReplacementHandler {
         }
 
         // TODO: the source of replacement effect should be the source of the original effect
-        SpellAbility effectSA = replacementEffect.ensureAbility();
         if (effectSA != null) {
             SpellAbility tailend = effectSA;
             do {
@@ -329,9 +347,11 @@ public class ReplacementHandler {
             GameEntity affected = (GameEntity) runParams.get(AbilityKey.Affected);
             boolean confirmed = optDecider.getController().confirmReplacementEffect(replacementEffect, effectSA, affected, question);
             if (!confirmed) {
+                execution.complete(ExecutionTracker.Outcome.DECLINED, ExecutionTracker.RuleResult.NOT_REPLACED);
                 return ReplacementResult.NotReplaced;
             }
         }
+        execution.step(ExecutionTracker.Step.RESOLUTION);
 
         boolean isPrevent = "True".equals(replacementEffect.getParam("Prevent"));
         if (isPrevent || replacementEffect.hasParam("PreventionEffect")) {
@@ -617,7 +637,14 @@ public class ReplacementHandler {
 
                     re.setReplacingObjects(runParams, re.getOverridingAbility());
                     bufferedSA.setActivatingPlayer(re.getHostCard().getController());
-                    AbilityUtils.resolve(bufferedSA);
+                    // This grouped follow-up is a distinct actual execution.
+                    // It can combine several per-source/target applications;
+                    // none of those applications is an invented sole parent.
+                    try (var execution = game.getExecutions().enterReplacement(re.getHostCard(), bufferedSA)) {
+                        execution.step(ExecutionTracker.Step.RESOLUTION);
+                        AbilityUtils.resolve(bufferedSA);
+                        execution.complete(ExecutionTracker.Outcome.RESOLVED, null);
+                    }
                 }
             }
         }

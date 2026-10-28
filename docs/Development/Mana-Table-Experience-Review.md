@@ -6,6 +6,43 @@ command safety, state projection, privacy and geometry invariants. They do not
 approve the UX. A count of passing checks, represented cards or captured frames
 does not establish that a person can understand or use the screen.
 
+## Replacement and committed-result continuity: 28 October 2026
+
+The player's supplied MTG Arena sequences show a played source, an inspectable
+stack occurrence and live counters/P/T on the affected card while the battlefield
+stays visible. Blizzard's [Hearthstone VFX developer account](https://news.blizzard.com/en-us/article/22552047/developer-insights-the-art-behind-the-science)
+describes effects communicating results supplied by the server. Wizards'
+[Arena engineering account](https://magic.wizards.com/en/news/mtg-arena/on-whiteboards-naps-and-living-breakthrough)
+describes why an event's historical value cannot be recovered from an object's
+later state. These are primary references for result continuity and historical
+facts, not evidence about either game's complete private architecture.
+
+Our adaptation is to keep the existing source/stack/recipient journey and feed
+it committed outcomes from the same execution model used by AI history. The
+player reads the existing stack source by hover; only a current legal answer can
+commit. A replacement can prevent a change while the original spell still
+resolves. Pir can change a one-counter instruction into an actual two-counter
+result. A lethal damage receipt and a later creature's departure are separate
+facts unless the engine supplies their relationship. Quiet no-op checks and
+declined replacements must not become generic "Ability resolved" announcements.
+There are no new player controls or explanatory panels in this slice.
+
+The native recorded journey follows Loch Mare's payment/draw, the new Chasm
+Skulker trigger and Pir's replacement through production presentation. Historical
+observations cannot execute commands. Headless review checks identity, source
+reading, exact counters, ordering and read-only authority; it does not assess
+whether the timing or emphasis feels right. Captures contain no original dwell
+or pointer/camera timing, so fixed-tick playback cannot establish actual pacing.
+Arena's two-player reference alone
+also does not establish readability at four-player scale.
+
+**Human review: pending for this source candidate.** Review the real draw and
+replacement at both small and large table sizes, full prevention, and lethal
+damage followed by departure. Check that the actual source remains inspectable,
+the final recipient state is legible, and a fresh trigger requires its own
+response without repeating already acknowledged work. No human acceptance is
+inferred from passing checks.
+
 ## Design rules learned from player feedback
 
 1. **Design the journey before its controls.** Identify the player's intent,
