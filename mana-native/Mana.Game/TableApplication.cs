@@ -2,6 +2,7 @@ using System.Collections.Immutable;
 using Mana.Client;
 using Mana.Audio;
 using Mana.Magic;
+using Mana.Scenarios;
 using System.Collections.Concurrent;
 using System.Text.Json;
 using Mana.Contracts;
@@ -41,6 +42,11 @@ internal sealed partial class TableApplication : IDisposable
     private readonly GameSnapshot? initialState;
     private readonly ClientSession session;
     private readonly TimeProvider clock;
+    private TimeSpan updateTime;
+    private Point updateViewport;
+    private bool pumpingObservations;
+    private ProjectionCapture? projectionCapture;
+    internal event Action<GameSnapshot, TimeSpan, ProjectionPresentationSettings>? ProjectionAccepted;
     private sealed class CompletionQueue(ClientSession session) { public void Enqueue(Action action) => session.Post(action); }
     private readonly CompletionQueue updates;
     private bool busy => session.Busy;
@@ -104,7 +110,8 @@ internal sealed partial class TableApplication : IDisposable
 
     public TableApplication(TableServices services, string profile, string? fixture = null, GameSnapshot? initialState = null,
         PresentationResources? resources = null, IAppUpdates? appUpdates = null, Action<PreparedUpdate>? installUpdate = null,
-        bool allowAutomaticChecks = false, TimeProvider? clock = null, bool restartedAfterUpdate = false)
+        bool allowAutomaticChecks = false, TimeProvider? clock = null, bool restartedAfterUpdate = false,
+        ObservationDeliveryMode observationDelivery = ObservationDeliveryMode.Polled)
     {
         ArgumentNullException.ThrowIfNull(services);
         ArgumentNullException.ThrowIfNull(services.Catalog);
@@ -115,7 +122,7 @@ internal sealed partial class TableApplication : IDisposable
         catalog = services.Catalog; tables = services.Tables; matchConnection = services.Match;
         this.clock = clock ?? TimeProvider.System;
         this.restartedAfterUpdate = restartedAfterUpdate;
-        session = new(matchConnection, tables, this.clock, services.SourceActions); updates = new(session);
+        session = new(matchConnection, tables, this.clock, services.SourceActions, observationDelivery); updates = new(session);
         catalogRead = new(updates.Enqueue); printingRead = new(updates.Enqueue);
         deckTokensRead = new(updates.Enqueue); tokenPrintingsRead = new(updates.Enqueue);
         deckWorkspace = new(services.Workshop, services.Analysis, updates.Enqueue);
@@ -148,7 +155,11 @@ internal sealed partial class TableApplication : IDisposable
         audioMixer = new(resources.AudioOutput);
         audioMixer.SetMix(preferences.Audio);
         if (Automated) automatic = false;
-        if (initialState != null) { localMatch = true; loaded = true; Accept(initialState); return; }
+        if (initialState != null) {
+            localMatch = true; loaded = true;
+            if (session.ObservationDelivery == ObservationDeliveryMode.Polled) Accept(initialState);
+            return;
+        }
         if (fixture != null) {
             Accept(JsonSerializer.Deserialize<GameSnapshot>(File.ReadAllText(fixture), new JsonSerializerOptions { PropertyNameCaseInsensitive = true }));
             loaded = true; message = "Visual review"; automatic = false; return;
@@ -156,6 +167,16 @@ internal sealed partial class TableApplication : IDisposable
         RetryStartup();
     }
     private void Accept(GameSnapshot? state) => session.Accept(state);
+    internal ClientSession.ObservationIngress OpenObservationIngress(string gameId, int viewerId)
+        => session.OpenObservationIngress(gameId, viewerId);
+    private ProjectionPresentationSettings? ProjectionSettings(Point viewport)
+    {
+        try { return new(preferences.ReducedMotion, preferences.TextScale, tableStudy, viewport.X, viewport.Y); }
+        catch (ArgumentException) { return null; } // Unsupported diagnostics must not interrupt play.
+    }
+    internal void CaptureProjection(ProjectionCapture? capture) => projectionCapture = capture;
+    private void ObserveProjectionEnvironment()
+        => projectionCapture?.ObserveEnvironment(updateTime, ProjectionSettings(updateViewport), match);
     private void AcceptPresentation(GameSnapshot? previous, GameSnapshot? state)
     {
         var transition = matchPresentation.Observe(previous, state, now, boardView, session.ExecutionChanges);
@@ -170,6 +191,16 @@ internal sealed partial class TableApplication : IDisposable
         if (transition.Finished) audioMixer?.Play(new("game-end", AudioBus.Effects, .5f));
         if (transition.CombatStarted) audioMixer?.Play(new("combat", AudioBus.Effects, .35f));
         if (transition.CardPlayed) audioMixer?.Play(new("card-play", AudioBus.Effects, .35f));
+        // Capture accepted publications on the same clock as their presentation.
+        // This optional private diagnostic does not receive raw poll responses.
+        if (pumpingObservations && (projectionCapture != null || ProjectionAccepted != null)) {
+            var settings = ProjectionSettings(updateViewport);
+            projectionCapture?.ObserveEnvironment(updateTime, settings, state);
+            if (settings != null && state != null) {
+                projectionCapture?.TryAppend(state, updateTime, settings);
+                ProjectionAccepted?.Invoke(state, updateTime, settings);
+            }
+        }
     }
     private void PrepareDecisionSession()
     {
@@ -193,9 +224,13 @@ internal sealed partial class TableApplication : IDisposable
     internal void Update(GameTime time, MouseState mouse, KeyboardState keys, Point viewport, bool inputActive = true)
     {
         AcceptedHit = null; AcceptedDrag = false;
+        updateTime = time.TotalGameTime; updateViewport = viewport;
         now = time.TotalGameTime.TotalSeconds;
         audioMixer?.Update();
-        session.Pump();
+        ObserveProjectionEnvironment();
+        pumpingObservations = true;
+        try { session.Pump(); }
+        finally { pumpingObservations = false; }
         UpdateLobbyDeck();
         UpdateActivity();
         UpdateTempo();
@@ -235,6 +270,7 @@ internal sealed partial class TableApplication : IDisposable
             session.Poll(!localMatch, _ => { });
         }
         PreparePresentation(time);
+        ObserveProjectionEnvironment();
     }
     private void SetAutomatic(bool value) { automatic = value; preferences = preferences with { Automatic = value }; SavePreferences(); }
     private void SavePreferences() { StopQuietPriority(); StopStackResolution(); session.CancelAdvance(); try { preferences.Save(profile); } catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { error = "Could not save settings: " + ex.Message; } }
@@ -325,6 +361,7 @@ internal sealed partial class TableApplication : IDisposable
     {
         if (closing) return;
         closing = true; CloseUpdateRequests(); deckWorkspace.Close(); deckPersistence.Close(); catalogRead.Close(); printingRead.Close(); deckTokensRead.Close(); tokenPrintingsRead.Close(); session.Close(); matchPresentation.Reset();
+        projectionCapture = null;
         FinishAudioAdjustment();
         audioMixer?.Dispose();
         canvas.Dispose();

@@ -16,10 +16,11 @@ public sealed record ProjectionRecording
     public string ProviderId { get; }
     public string? SourceRevision { get; }
     public ImmutableArray<GameSnapshot> Observations { get; }
+    public ProjectionTimeline? Timeline { get; }
 
     [JsonConstructor]
     public ProjectionRecording(int formatVersion, string providerId, string? sourceRevision,
-        ImmutableArray<GameSnapshot> observations)
+        ImmutableArray<GameSnapshot> observations, ProjectionTimeline? timeline = null)
     {
         if (formatVersion != CurrentFormat || string.IsNullOrWhiteSpace(providerId) || providerId.Length > 128
             || providerId.Any(char.IsControl) || sourceRevision != null && (sourceRevision.Length != 40
@@ -38,7 +39,9 @@ public sealed record ProjectionRecording
             PublicActivityFacts.Validate(state);
             previous = state;
         }
+        if (timeline != null && timeline.AcceptedAtTicks.Length != observations.Length) throw Invalid();
         FormatVersion = formatVersion; ProviderId = providerId; SourceRevision = sourceRevision; Observations = observations;
+        Timeline = timeline;
     }
 
     public void WriteNew(string path)
@@ -87,10 +90,11 @@ public sealed class ProjectionPlayback(ProjectionRecording recording) : IMatchCo
 {
     private readonly object gate = new();
     private readonly ProjectionRecording recording = recording ?? throw new ArgumentNullException(nameof(recording));
-    private int position, rejectedCommands;
+    private int position, rejectedCommands, observationRequests;
     public GameSnapshot Current { get { lock (gate) return recording.Observations[position]; } }
     public int Position { get { lock (gate) return position; } }
     public int RejectedCommands { get { lock (gate) return rejectedCommands; } }
+    public int ObservationRequests { get { lock (gate) return observationRequests; } }
     public bool Advance()
     {
         lock (gate) {
@@ -98,7 +102,10 @@ public sealed class ProjectionPlayback(ProjectionRecording recording) : IMatchCo
             position++; return true;
         }
     }
-    public Task<GameSnapshot?> ObserveAsync() => Task.FromResult<GameSnapshot?>(Current);
+    public Task<GameSnapshot?> ObserveAsync()
+    {
+        lock (gate) { observationRequests++; return Task.FromResult<GameSnapshot?>(recording.Observations[position]); }
+    }
     public Task ExecuteAsync(GameCommand command) => Reject();
     public Task ConcedeAsync(string gameId) => Reject();
     private Task Reject()

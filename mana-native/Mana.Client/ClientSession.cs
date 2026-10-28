@@ -3,6 +3,8 @@ using Mana.Contracts;
 
 namespace Mana.Client;
 
+public enum ObservationDeliveryMode { Polled, External }
+
 /// <summary>Serial commands and ordered snapshots for every connection, without a graphics dependency.</summary>
 public sealed class ClientSession
 {
@@ -14,20 +16,26 @@ public sealed class ClientSession
     private readonly ExecutionCursor executions = new();
     private readonly DecisionAdvance advance;
     private readonly TimeProvider time;
+    private readonly object observationGate = new();
+    private ObservationIngress? observationIngress;
+    private int queuedExternalObservations;
     private bool recoveryRequired;
     private CancellationTokenSource? advancing;
     private StackResolutionIntent? stackIntent;
     private readonly Queue<RestorePriorityAbility> pendingSettings = [];
     private RestorePriorityAbility? activeSetting;
     public ClientSession(IMatchConnection connection, ITableSetup? setup = null, TimeProvider? clock = null,
-        ISourceActions? sourceActions = null)
+        ISourceActions? sourceActions = null, ObservationDeliveryMode observationDelivery = ObservationDeliveryMode.Polled)
     {
+        if (!Enum.IsDefined(observationDelivery)) throw new ArgumentOutOfRangeException(nameof(observationDelivery));
         this.connection = connection;
         this.setup = setup;
         time = clock ?? TimeProvider.System;
         advance = new(connection);
         SourceActions = new(sourceActions, Post);
+        ObservationDelivery = observationDelivery;
     }
+    public ObservationDeliveryMode ObservationDelivery { get; }
     public SourceActionSession SourceActions { get; }
     public GameSnapshot? State => replica.Current;
     public Lobby? Lobby => lobbyReplica.Current;
@@ -50,9 +58,92 @@ public sealed class ClientSession
     public void Post(Action action) => completions.Enqueue(action);
     public void Pump()
     {
-        while (completions.TryDequeue(out var action)) if (!Closed) action();
+        // External producers can append while handling Changed. Freeze one
+        // bounded prefix so their follow-up observations belong to the next
+        // update, preserving FIFO order with ordinary posted completions.
+        int remaining = ObservationDelivery == ObservationDeliveryMode.External
+            ? completions.Count : int.MaxValue;
+        while (remaining-- > 0 && completions.TryDequeue(out var action)) if (!Closed) action();
         while (!Busy && !NeedsRecovery && pendingSettings.TryDequeue(out var setting)) Submit(setting);
     }
+    public ObservationIngress OpenObservationIngress(string gameId, int viewerId)
+    {
+        if (string.IsNullOrWhiteSpace(gameId) || viewerId < -1) throw new ArgumentException("An observation ingress requires an exact game and viewer.");
+        lock (observationGate) {
+            if (ObservationDelivery != ObservationDeliveryMode.External || Closed)
+                throw new InvalidOperationException("Only an open externally driven session can admit an observation ingress.");
+            if (State is { } current && (current.Id != gameId || current.ViewerId != viewerId))
+                throw new ArgumentException("An observation ingress cannot replace another game or viewer.");
+            RevokeObservationIngress();
+            return observationIngress = new(this, gameId, viewerId);
+        }
+    }
+
+    // A scoped producer capability, not a second replica or rules connection.
+    // Posting is thread-safe; acceptance still happens only in the session pump.
+    // Opening/resetting/pumping the session remain owner-thread operations.
+    public sealed class ObservationIngress : IDisposable
+    {
+        public const int MaximumPendingObservations = 512;
+        private readonly ClientSession owner;
+        private readonly string gameId;
+        private readonly int viewerId;
+        private readonly HashSet<PendingObservation> pending = [];
+        private bool revoked;
+        internal ObservationIngress(ClientSession owner, string gameId, int viewerId)
+            => (this.owner, this.gameId, this.viewerId) = (owner, gameId, viewerId);
+        public bool TryPost(GameSnapshot state)
+        {
+            ArgumentNullException.ThrowIfNull(state);
+            lock (owner.observationGate) {
+                if (revoked || owner.Closed || !ReferenceEquals(owner.observationIngress, this)
+                    || state.Id != gameId || state.ViewerId != viewerId
+                    || owner.queuedExternalObservations >= MaximumPendingObservations) return false;
+                var entry = new PendingObservation(state, owner.replica.Epoch);
+                pending.Add(entry); owner.queuedExternalObservations++;
+                owner.completions.Enqueue(() => Deliver(entry));
+                return true;
+            }
+        }
+        private void Deliver(PendingObservation entry)
+        {
+            GameSnapshot? state;
+            lock (owner.observationGate) {
+                owner.queuedExternalObservations--; pending.Remove(entry);
+                state = Active ? entry.State : null;
+                entry.State = null;
+            }
+            if (state != null) owner.Accept(state, entry.Epoch, this);
+        }
+        public void Dispose()
+        {
+            lock (owner.observationGate) {
+                Revoke();
+                if (ReferenceEquals(owner.observationIngress, this)) owner.observationIngress = null;
+            }
+        }
+        internal void Revoke()
+        {
+            revoked = true;
+            foreach (var entry in pending) entry.State = null;
+            pending.Clear();
+        }
+        internal bool Matches(GameSnapshot? state) => state?.Id == gameId && state.ViewerId == viewerId;
+        internal bool Active => !revoked && ReferenceEquals(owner.observationIngress, this);
+        private sealed class PendingObservation(GameSnapshot state, long epoch)
+        {
+            internal GameSnapshot? State = state;
+            internal long Epoch { get; } = epoch;
+        }
+    }
+
+    private void RevokeObservationIngress()
+    {
+        lock (observationGate) {
+            observationIngress?.Revoke(); observationIngress = null;
+        }
+    }
+    private long BeginCommand() { lock (observationGate) return replica.BeginCommand(); }
     public bool Accept(GameSnapshot? state) => Accept(state, replica.Epoch);
     // Connect/disconnect establishes ownership. Ordinary command receipts and
     // observations can update only that bound table and cannot roll it back.
@@ -64,20 +155,29 @@ public sealed class ClientSession
     }
     public bool AcceptLobby(Lobby state) => !Closed && Lobby != null && state.TableId == Lobby.TableId
         && lobbyReplica.Accept(state, lobbyReplica.Epoch);
-    public void Reset() { StopStackResolution(); CancelAdvance(); SourceActions.Clear(); pendingSettings.Clear(); LastFailureWasCommand = false; replica.BeginCommand(); Accept(null); }
-    private bool Accept(GameSnapshot? state, long epoch)
+    public void Reset() { RevokeObservationIngress(); StopStackResolution(); CancelAdvance(); SourceActions.Clear(); pendingSettings.Clear(); LastFailureWasCommand = false; BeginCommand(); Accept(null); }
+    private bool Accept(GameSnapshot? state, long epoch, ObservationIngress? ingress = null)
     {
-        var previous = State;
-        if (Closed || epoch != replica.Epoch || state != null && previous != null && state.Id == previous.Id && state.Revision < previous.Revision) return false;
-        executions.Validate(state);
-        if (!replica.Accept(state, epoch)) return false;
-        if (stackIntent != null && (state == null || !stackIntent.CanContinue(state))) StopStackResolution();
-        if (SourceActions.View.Context is { } context && CurrentSourceContext(state, context.SourceCardKey) != context)
-            SourceActions.Clear();
-        bool recovered = NeedsRecovery;
-        ExecutionChanges = executions.Observe(state, baseline: recovered);
-        LastSynchronizedAt = time.GetUtcNow();
-        recoveryRequired = UncertainCommand = false; LastConnectionError = "";
+        GameSnapshot? previous;
+        bool recovered;
+        lock (observationGate) {
+            previous = State;
+            if (Closed || ingress != null && !ingress.Active || epoch != replica.Epoch
+                || state != null && previous != null && state.Id == previous.Id && state.Revision < previous.Revision) return false;
+            executions.Validate(state);
+            if (!replica.Accept(state, epoch)) return false;
+            if (observationIngress != null && !observationIngress.Matches(state))
+                RevokeObservationIngress();
+            if (stackIntent != null && (state == null || !stackIntent.CanContinue(state))) StopStackResolution();
+            if (SourceActions.View.Context is { } context && CurrentSourceContext(state, context.SourceCardKey) != context)
+                SourceActions.Clear();
+            recovered = NeedsRecovery;
+            ExecutionChanges = executions.Observe(state, baseline: recovered);
+            LastSynchronizedAt = time.GetUtcNow();
+            recoveryRequired = UncertainCommand = false; LastConnectionError = "";
+        }
+        // Revocation and state commit share one boundary. Notification runs
+        // outside it, so callbacks cannot block a background source on the gate.
         Changed?.Invoke(previous, state);
         if (recovered) Recovered?.Invoke();
         return true;
@@ -90,7 +190,7 @@ public sealed class ClientSession
     private void Run(Func<long, Task> operation)
     {
         if (Busy || Closed) return;
-        long epoch = replica.BeginCommand(); Busy = true;
+        long epoch = BeginCommand(); Busy = true;
         _ = Task.Run(async () => {
             try { await operation(epoch); }
             catch (Exception error) { Post(() => { if (epoch == replica.Epoch) ReportFailure(error, true); }); }
@@ -99,7 +199,7 @@ public sealed class ClientSession
     }
     public void Poll(bool withLobby, Action<Lobby?> lobbyChanged)
     {
-        if (Busy || Polling || Closed) return;
+        if (ObservationDelivery == ObservationDeliveryMode.External || Busy || Polling || Closed) return;
         Polling = true; long epoch = replica.Epoch;
         var lobbyOwner = lobbyReplica;
         _ = Task.Run(async () => {
@@ -191,5 +291,9 @@ public sealed class ClientSession
         return card is not { FaceDown: false } ? null : new(state.Id, decision.Id, state.Revision, state.ViewerId, card.Key, CardViews.Identity(card));
     }
     private void StopStackResolution() { stackIntent?.Stop(); stackIntent = null; }
-    public void Close() { StopStackResolution(); CancelAdvance(); SourceActions.Close(); pendingSettings.Clear(); Closed = true; replica.BeginCommand(); }
+    public void Close()
+    {
+        StopStackResolution(); CancelAdvance(); SourceActions.Close(); pendingSettings.Clear();
+        lock (observationGate) { Closed = true; RevokeObservationIngress(); BeginCommand(); }
+    }
 }
