@@ -7,6 +7,8 @@ internal static class AiSwarmCombatRegression
     internal static async Task RunAsync(Action<bool, string> check)
     {
         await Stage(check, Enumerable.Repeat(2, 8).ToArray(), 2, 9, expected: 7);
+        await Stage(check, [2, 2, .. Enumerable.Repeat(1, 32)], 7, 23, expected: 30,
+            ownBodies: 42, enemyBodies: 11, ownOther: 7, enemyOther: 16);
         // Public turn-69 counts/printed-independent current powers retained by
         // the timed-out campaign. Capacity facts below are authored, not patched
         // into the old trace which did not publish this new field.
@@ -53,7 +55,7 @@ internal static class AiSwarmCombatRegression
         using var seat = new AiSeatSession("swarm-regression", 0, new CasualCommanderPolicy(), 17,
             new(TimeSpan.FromSeconds(10), 4096));
         var assigned = new List<string>(); bool completed = false;
-        for (int step = 0; step <= 24; step++) {
+        for (int step = 0; step <= 32; step++) {
             var frame = Frame(powers, blockers, enemyLife, assigned: assigned, revision: step + 1,
                 ownBodies: ownBodies, enemyBodies: enemyBodies, ownOther: ownOther, enemyOther: enemyOther);
             seat.Observe(frame); await seat.EvaluateAsync(); var proposal = seat.TakeCommand();

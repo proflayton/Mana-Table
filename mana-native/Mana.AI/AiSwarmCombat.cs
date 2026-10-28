@@ -7,7 +7,7 @@ namespace Mana.AI;
 // Each actual assignment still uses a current engine-offered attack command.
 internal static class AiSwarmCombat
 {
-    private const int MaxCandidates = 128, MaxCohort = 24, MaxPermanents = 256;
+    private const int MaxCandidates = 128, MaxCohort = 32, MaxPermanents = 256;
     private static readonly HashSet<string> OrdinaryKeywords = new([
         "vigilance", "trample", "haste", "flying", "reach", "deathtouch", "indestructible", "first strike", "double strike",
         "first-strike", "double-strike", "hexproof", "ward", "shroud", "protection", "defender", "flash", "menace", "partner", "partner with",
