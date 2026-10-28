@@ -114,12 +114,15 @@ internal sealed class DrawTriggersSmoke : ITableAutomation
             Capture("06-one-trigger-settled"); MoveHit("stack-resolution-stop");
         }); Click();
         Wait(() => !view.ResolvingCapturedStack && !view.Busy && view.Hits.Any(hit => hit.Id == "stack-resolution-arm"), () => {
-            Check(lab.StageIndex == 2, "Take control stops the captured continuation before a second trigger is passed");
+            Check(lab.StageIndex == 2 && view.Held,
+                "Take control holds this turn and stops the captured continuation before a second trigger is passed");
             Capture("07-take-control"); MoveHit("stack-resolution-arm");
         }); Click();
         Wait(() => lab.StageIndex == 3 && !view.Busy, () => {
             Check(lab.State.Stack.Length == 69 && lab.State.Viewer!.Zone("Battlefield").Cards.Single(card => card.VisualId == StackTriggersScenario.Toothy).Counters["+1/+1"] == 26,
                 "The next real trigger gets its own visible settled result on the other source rather than a guessed aggregate counter total");
+            Check(!view.Held,
+                "Deliberately resolving the newly captured stack overrides Hold without asking the player to discover a second timing control");
             Capture("08-other-source-settled"); Move(new(12, 65));
         });
         Wait(() => lab.StageIndex == 4 && !view.Busy && !view.ResolvingCapturedStack

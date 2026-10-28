@@ -86,7 +86,7 @@ PLAY SOLO AGAINST AI
    Otherwise Play prepares compatible opponents for you.
 3. Select Play with a valid saved deck. Forge controls the other three Commander
    seats; no separate Confirm or opponent-preparation step is required.
-   You make all decisions for your own cards. Auto can pass when you have no play.
+   You make all decisions for your own cards. Auto handles routine priority.
 4. After the game, select Return to setup to play again or switch to friends.
 No network setup, account, API key or paid AI service is needed for solo play.
 
@@ -435,8 +435,13 @@ when it is not a target. Poison and other public counters stay beside the seat;
 an extra-types indicator leads to the complete paged totals in that inspection.
 Space confirms an enabled input decision. Escape closes a panel or cancels a drag.
 F switches Auto/full control, Ctrl holds priority for this turn, F11 is fullscreen.
-Auto starts enabled and passes priority when there is no playable response to
-stop for. Settings include saved own-turn phase stops and reduced motion.
+Auto starts enabled. In this source candidate it also waits through quiet
+opponent windows while you hold an instant. A new spell, ability, public action
+or combat declaration stops when you have a response available. Pass once or
+make your play before Auto resumes routine waiting. It keeps your own main-phase
+plays and required decisions explicit. F switches to full control if you want
+every priority window, including starting a play before anyone else acts.
+Settings include saved own-turn phase stops and reduced motion.
 Empty priority windows pass quietly until your next action or a visible game event.
 The next source iteration moves timing controls beside your portrait. Its human
 visual review is pending. Six compact phase markers set stops for your own turns.
@@ -462,7 +467,7 @@ Deselect removes an existing choice when available. Complete any remaining
 confirmation in the decision controls. Reading alone never chooses the card.
 An available activation can be set to "Pass until my next turn" beside Pass.
 This keeps Auto moving when that ability is your only play. The ability remains
-usable; other available plays still pause the game. The indicator offers Undo,
+usable; other available responses still pause the game. The indicator offers Restore,
 and the preference clears when your next turn starts. Hold overrides it immediately.
 Triggered abilities happen automatically; answer any choices the game presents.
 For a player choice, a named recipient panel keeps the source, controller and
@@ -474,16 +479,18 @@ choices, real responses and errors still appear when they need attention.
 Spells keep their source, pending effect and recipients together. Match history
 retains the public events.
 The source version names the acting player and shows why Auto is paused.
-In the portrait-controls iteration, Pass for now and Take control sit beside
-your portrait, along with the explicit priority-pass action. Pass for now applies
-only to quiet, empty-stack windows on the current opponent's turn; a meaningful
-public action or turn change returns control. Take control cancels that ongoing
-intent. A single priority pass answers only the current window. Targets, library
-searches and mana payment stay at their source/decision surfaces and need their
-own answers. Moving these controls grants no permission to make those choices.
-Pass for now keeps its label and Take control position through routine handoffs
-and pauses while reading. Another player's required choice does not hide that
-cancellation control.
+In this source candidate, Wait for action and Pass once replace the ambiguous
+Pass for now / Pass turn combination. Wait for action skips only unchanged,
+empty-stack windows on the current turn, including your own. New spells,
+abilities, public actions, declared combat, required choices and a new turn end
+that continuation. It still stops for you to choose attackers or blockers.
+It never selects cards, pays costs or enables an uninterruptible end-turn yield.
+Take control stays in the same position and holds Auto for this turn, even when
+a pass is already in flight. Deliberately choosing Wait for action starts waiting
+again. Pass once answers only the current window. Go to combat and other named
+phase gestures still give the table its ordinary response windows first.
+The controls stay steady while observing other players and pause while reading.
+Targets, library searches and mana payment still need their own answers.
 In the next source build, Resolve these passes priority for the entries already
 on the stack. Take control stops it. A new action or required choice stops it
 automatically; it never chooses targets or pays costs. Hovering to read pauses
@@ -495,6 +502,8 @@ Results and exact counter increments appear beside their recipients. Public
 departures move toward the actual pile; Recent changes retains further details.
 Resolution feedback distinguishes resolved and did not resolve. Draw and shuffle
 cues report actual public events, without revealing hidden card identities.
+In-game action Undo is unavailable. A completed mana activation or other game
+action stays committed; choose and pay for your plays deliberately.
 Inspecting a card, opening a panel or dragging suspends Auto. Use Full control to
 inspect every priority window. Settings persist between sessions.
 Settings > Text size offers 100%, 115% and 130% for larger labels and decisions.

@@ -60,6 +60,7 @@ internal static partial class HeadlessPresentationSmoke
             DisclosedSourceInteractionChecks.Run(profile, Check);
             LinkedSourceInteractionChecks.Run(profile, Check);
             QuietPriorityPresentationChecks.Run(profile, Check);
+            PriorityContinuationChecks.Run(profile, Check);
             MatchHeaderInteractionChecks.Run(profile, Check);
             KeyboardCameraChecks.Run(profile, Check);
             BackgroundInputChecks.Run(profile, Check);
@@ -225,8 +226,8 @@ internal static partial class HeadlessPresentationSmoke
                 else if (condition == "right-click") run.Input(release, left: ButtonState.Pressed, right: ButtonState.Pressed, label: "cancel-held-card-with-right-click");
                 else if (condition == "outside-board") release = new(20, 60);
                 else if (condition == "over-control") {
-                    var control = run.Hit("resume-phase-stop");
-                    release = new(control.Bounds.Left + 8, control.Bounds.Top + 5);
+                    var control = run.Hit("confirm");
+                    release = control.Bounds.Center;
                     Check(TableWorld.CanPlayAt(release) && run.View.HitAt(release)?.Id == control.Id,
                         "The invalid control destination lies inside the generic play area and has actual UI hit precedence");
                 } else if (condition == "hand-anchor") {

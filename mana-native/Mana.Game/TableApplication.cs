@@ -199,6 +199,7 @@ internal sealed partial class TableApplication : IDisposable
         UpdateAppUpdates();
         UpdateReaderActions();
         PrepareDecisionSession();
+        priorityAttention.Observe(match);
         string turn = match == null ? "" : match.Id + ":" + match.Turn + ":" + match.ActivePlayerId;
         if (previousTurn != turn) { previousTurn = turn; held = false; turnBannerUntil = now + 1.5; }
         if (inspected != null) {
@@ -210,6 +211,7 @@ internal sealed partial class TableApplication : IDisposable
         // Give a ready pass precedence over starting another observation. Use this
         // update's pointer position so entering a card pauses Auto before Draw.
         bool autoBlocked = AutomaticInteractionPause() != DecisionDockPauseReason.None;
+        ArmAutomaticQuietPriority(autoBlocked);
         bool stackReserved = UpdateStackResolution(autoBlocked);
         bool quietReserved = stackReserved || UpdateQuietPriority(autoBlocked);
         if (!quietReserved && (!automatic || held || autoBlocked)) session.CancelAdvance();
@@ -233,6 +235,10 @@ internal sealed partial class TableApplication : IDisposable
     private bool Send(DecisionCommand? command, bool confirmedTurnPass = false)
     {
         if (command == null || fixture != null || session.NeedsRecovery || match?.Id != command.GameId || match.Decision?.Id != command.DecisionId) return false;
+        if (command is UndoLastAction) return false;
+        // Legacy providers may still offer Forge's uninterruptible end-turn
+        // latch. The native player always uses current, bounded passes instead.
+        if (command is PassTurn) { ArmQuietPriority(confirmedTurnPass); return false; }
         if (AbilityActionPending) {
             var ability = (AbilityChoicePayload)match.Decision!.Payload;
             if (command is not ChooseOptions { Choices: var choices }
@@ -250,6 +256,7 @@ internal sealed partial class TableApplication : IDisposable
         CancelReleasedPlayIntent();
         error = ""; commandFailure = false;
         if (!session.Submit(command)) return false;
+        priorityAttention.Acknowledge();
         if (CardCollectionOpen) FoldCardCollection();
         pendingActionLabel = StateClarity.PendingActionLabel(match, command);
         return true;

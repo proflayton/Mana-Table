@@ -17,7 +17,7 @@ internal sealed partial class TableApplication
                 stackEligibilitySnapshot = match;
                 cachedStackEligibility = match is { Stack.Length: > 1 } state && StackResolutionIntent.TryArm(state) != null;
             }
-            return !held && fixture == null && !session.NeedsRecovery && cachedStackEligibility;
+            return fixture == null && !session.NeedsRecovery && cachedStackEligibility;
         }
     }
 
@@ -25,6 +25,7 @@ internal sealed partial class TableApplication
     {
         if (!CanOfferStackResolution || busy || match == null) return;
         StopQuietPriority(); session.CancelAdvance();
+        held = false; priorityAttention.Acknowledge();
         stackResolutionIntent = StackResolutionIntent.TryArm(match);
         error = ""; commandFailure = false;
     }

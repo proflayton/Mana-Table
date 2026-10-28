@@ -63,7 +63,7 @@ internal sealed partial class TableApplication
         for (int i = 0; i < markers.Length; i++)
             if (IsControlHovered("phase-stop:" + markers[i].Key)) DrawTurnHint(markers[i].Hint, layout.Markers[i]);
         if (IsControlHovered("auto")) {
-            string detail = automatic ? "Use full control (F)" : "Use automatic passing (F)";
+            string detail = automatic ? "Auto: skip quiet windows, stop for actions · Full control (F)" : "Enable Auto: wait for actions (F)";
             if (decisionDock?.PauseReason is DecisionDockPauseReason.Inspection or DecisionDockPauseReason.Presentation)
                 detail = decisionDock.Caption + " · " + detail;
             DrawTurnHint(detail, layout.AutoCenter);
@@ -76,6 +76,11 @@ internal sealed partial class TableApplication
         var state = match!; var d = state.Decision;
         var layout = TurnControlLayout.For(SeatHero(state.ViewerId));
         var area = layout.PriorityArea;
+        int waitWidth = Math.Max(150, Math.Max(canvas.TextWidth("Wait for action", .76f),
+            canvas.TextWidth("Take control", .76f, true)) + 24);
+        int passWidth = new[] { "Continue damage", "Go to end step", "Go to combat", "Pass once" }
+            .Max(label => canvas.TextWidth(label, .76f, true)) + 24;
+        area.Width = Math.Max(area.Width, passWidth + waitWidth + 8);
         if (turnPassRequest != null) {
             int labelWidth = Math.Max(canvas.TextWidth("Keep playing", .76f, true), canvas.TextWidth("Pass anyway", .76f));
             area.Width = Math.Max(area.Width, (labelWidth + 24) * 2 + 8);
@@ -97,10 +102,13 @@ internal sealed partial class TableApplication
         if (QuietPriorityArmed || ResolvingCapturedStack) PaintTurnAdvance(statusPoint, accent);
         else DrawDecisionRole(view, statusPoint, accent);
         string heading = ResolvingCapturedStack ? "Resolving · " + stackResolutionIntent!.Remaining + " remaining"
-            : QuietPriorityArmed ? "Pass for now" : stopped ? view.Caption : view.Headline;
-        canvas.Text(heading, area.X + 28, area.Y - 2, accent, .62f, stopped ? area.Width - 62 : area.Width - 28, 2, true);
+            : QuietPriorityArmed ? automatic ? "Auto · Waiting for action" : "Waiting for action"
+            : stopped ? view.Caption : held ? "Your control · This turn"
+            : view.Status == DecisionDockStatus.Priority && automatic && priorityAttention.NeedsResponse && state.Stack.Length > 0
+                ? "Your response · Auto paused" : view.Headline;
+        canvas.Text(heading, area.X + 28, area.Y - 2, accent, .62f, stopped ? area.Width - 62 : area.Width - 28, 1, true);
         if (Vector2.DistanceSquared(pointer.ToVector2(), statusPoint) <= 16 * 16)
-            DrawTurnHint(QuietPriorityArmed ? "Pass for now · Take control to stop"
+            DrawTurnHint(QuietPriorityArmed ? "Waiting this turn · Stops for new actions · Take control to stop now"
                 : view.Headline + (view.Caption.Length > 0 ? " · " + view.Caption : ""), statusPoint);
         if (stopped) {
             string id = "resume-phase-stop", key = state.PhaseKey;
@@ -114,12 +122,13 @@ internal sealed partial class TableApplication
         if (ResolvingCapturedStack) {
             Button("stack-resolution-stop", "Take control", action, new MatchIntent.SetStackResolution(false), true, true);
         } else if (QuietPriorityArmed || !following && CanOfferQuietPriority) {
-            Button(QuietPriorityArmed ? "quiet-priority-stop" : "quiet-priority-arm", QuietPriorityArmed ? "Take control" : "Pass for now",
-                action.X, action.Y, action.Width - 48, new MatchIntent.SetQuietPriority(!QuietPriorityArmed), !busy || QuietPriorityArmed, true, action.Height);
+            var wait = new Rectangle(action.Right - waitWidth, action.Y, waitWidth, action.Height);
+            Button(QuietPriorityArmed ? "quiet-priority-stop" : "quiet-priority-arm", QuietPriorityArmed ? "Take control" : "Wait for action",
+                wait, new MatchIntent.SetQuietPriority(!QuietPriorityArmed), !busy || QuietPriorityArmed, QuietPriorityArmed);
+            if (IsControlHovered("quiet-priority-arm")) DrawTurnHint("Wait this turn · Stop for spells, abilities, combat and choices", wait.Center.ToVector2());
             if (!QuietPriorityArmed && !busy && d is { Payload: PriorityPayload { Pass.Enabled: true } }) {
-                var center = new Vector2(action.Right - 19, action.Center.Y);
-                TurnControlIcon("confirm", center, false, new MatchIntent.SubmitCommand(new PassPriority(state.Id, d.Id)));
-                if (IsControlHovered("confirm")) DrawTurnHint("Pass priority once", center);
+                Button("confirm", view.ActionLabel, new(action.X, action.Y, action.Width - waitWidth - 8, action.Height),
+                    new MatchIntent.ConfirmDecision(), CombatGuide.CanConfirm(state), true);
             }
         } else if (!following && d?.Payload is PriorityPayload { Pass.Enabled: true }) {
             if (CanOfferStackResolution) {
@@ -129,13 +138,6 @@ internal sealed partial class TableApplication
                 decisionPanelBounds = Rectangle.Union(area, new(action.X, action.Y - 43, action.Width, 83));
             } else Button("confirm", view.ActionLabel, action.X, action.Y, action.Width,
                 new MatchIntent.ConfirmDecision(), CombatGuide.CanConfirm(state), true, action.Height);
-        }
-        if (!following && d?.Payload is PriorityPayload { Alternative: { Reply.Enabled: true } alternative }) {
-            bool below = tableScene?.PlayAccess.Groups.Count > 0;
-            Button("cancel", alternative.Kind == PriorityAlternative.PassTurn ? "Pass turn" : alternative.Reply.Label,
-                below ? area.X : area.Right + 12, below ? action.Bottom + 8 : action.Y,
-                below ? area.Width : Math.Min(130, 1580 - area.Right - 12),
-                new MatchIntent.CancelDecision(), height: action.Height);
         }
     }
 

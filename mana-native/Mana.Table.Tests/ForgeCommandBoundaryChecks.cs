@@ -222,6 +222,11 @@ internal static class ForgeCommandBoundaryChecks
         check((string)passTurn["action"]! == "priorityPassTurn" && (string)passTurn["expectedTask"]! == "priority",
             "Pass turn has its own wire command and does not fall through generic cancel");
         Reject(new UndoLastAction(game, prompt), "Pass turn cannot impersonate Undo");
+        scope.Observe(State(new PriorityPayload(yes, new(PriorityAlternative.UndoLastAction, yes))));
+        Reject(new UndoLastAction(game, prompt), "A legacy provider's enabled Undo advertisement cannot grant a removed gameplay operation");
+        check(DecisionCommands.Cancel(scope.ObservedState!) == null,
+            "A legacy priority Undo cannot become a generic Cancel command");
+        scope.Observe(priority);
         Reject(new SelectCard(game, prompt, source.Key), "Priority activation cannot impersonate target selection");
         Reject(new PlayCard(game, prompt, source.Key), "A battlefield source cannot impersonate hand play");
         check((string)scope.Encode(new ActivateCard(game, prompt, source.Key))["key"]! == source.Key,

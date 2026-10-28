@@ -781,11 +781,14 @@ Legacy protocol-2 callers may omit this discriminator; the new native client
 requires the `semantic-priority-actions` capability and validates its immutable
 last observation before encoding any command.
 
-Priority prompts project `priorityAlternative: "undo" / "passTurn" / "none"`.
-Native priority operations use `passPriority`, `priorityUndo` and
-`priorityPassTurn`. Undo and pass-turn recheck their exact meaning on the owned
-input thread; they never fall through to one another. `passPriority` invokes
-the pass operation directly, independently of a pending Forge yield suggestion.
+Priority prompts project `priorityAlternative: "passTurn" / "none"`; in-game
+action Undo is not offered. Legacy `priorityUndo` and generic priority `cancel`
+requests are rejected before queuing or changing any rules state. Native
+permission checks also reject the retained legacy Undo command, even when an
+older provider advertises it. This does not change deck editing Undo, payment
+cancellation or internal cost rollback. `passPriority` invokes the pass operation
+directly, independently of a pending Forge yield suggestion; the legacy
+`priorityPassTurn` operation retains its distinct owned-input recheck.
 These changes do not alter saved decks, profiles or the seat-sync protocol.
 
 An input prompt's `inputType` uses its nearest named input class, including for
@@ -946,17 +949,25 @@ eligible pass but never authorize one the engine has rejected.
 This is an additive protocol change: existing manual actions remain valid, and
 clients must treat a missing `canAutoPass` field as false.
 
-An eligible empty-stack priority prompt on an opponent's turn also exposes an
-opaque `quietYieldToken`. Explicit
+An eligible empty-stack priority prompt on either the viewer's or an opponent's
+turn also exposes an opaque `quietYieldToken`. Explicit
 `matchAction {action: "passUntilPublicAction", sessionId, promptId, yieldToken}`
 requires that original token at both acceptance and execution. This permission
 is independent of available instants and never broadens ordinary Auto. Quiet
 phase changes, the opponent's exact turn-based draw and empty attacker selection
 retain it; actual attacks, public actions/state changes, other required choices
-and turn changes revoke it. Clients never adopt a replacement token or answer
-another seat's input. Revocation after enqueue restores the unanswered prompt.
+and turn changes revoke it. The viewer's own attack selection is a required
+choice and returns control; their own draw also revokes the permission because
+it changes the visible hand. Clients never adopt a replacement token or answer
+another seat's input. Every continuation passes only one current priority input;
+it never arms the engine's end-of-turn yield. Revocation after enqueue restores
+the unanswered prompt. The existing `priorityPassTurn` operation remains a
+distinct legacy operation with its broader end-of-turn semantics.
 Activity entries retain their normal content and add `interruptsQuietYield`:
-only explicitly tagged routine opponent draw entries use false. A missing flag
+the routine turn marker and explicitly tagged routine opponent draw entries use
+false. A turn marker is history rather than a player action; the changed turn
+and active-player scope independently ends the old token's permission. Other
+actions reported in that same observation remain interrupting. A missing flag
 means true; clients must not infer an exemption from `kind`, phase or message.
 
 Priority prompts also expose `priorityAbilities`, with opaque ability `id`,

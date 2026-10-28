@@ -26,6 +26,21 @@ internal static class QuietPriorityRegression
             throw new InvalidOperationException("An empty quiet-yield token was accepted.");
         } catch (ArgumentException) { check(true, "Explicit quiet passing requires a nonempty engine token and current decision scope"); }
         new PassForNow(initial.Id, initial.Decision!.Id, YieldToken: "armed-token").Validate();
+        foreach (int active in new[] { initial.ViewerId, initial.ActivePlayerId!.Value }) {
+            var frame = initial with { ActivePlayerId = active };
+            var command = new PassForNow(frame.Id, frame.Decision!.Id, "armed-token");
+            var withoutPermission = frame with { Decision = frame.Decision with {
+                Payload = ((PriorityPayload)frame.Decision.Payload) with { QuietYieldToken = "" }
+            } };
+            check(GameCommandPermissions.Allows(frame, command) && QuietPriorityPolicy.CanPass(frame, "armed-token")
+                && !GameCommandPermissions.Allows(frame, command with { DecisionId = "foreign-prompt" })
+                && !GameCommandPermissions.Allows(frame, command with { GameId = "foreign-game" })
+                && !GameCommandPermissions.Allows(frame, command with { YieldToken = "replacement-token" })
+                && !GameCommandPermissions.Allows(withoutPermission, command)
+                && !QuietPriorityPolicy.CanPass(withoutPermission, "armed-token")
+                && !GameCommandPermissions.Allows(frame with { PriorityPlayerId = 1, DecisionOwnerId = 1 }, command),
+                $"Bounded continuation on {(active == frame.ViewerId ? "our" : "another player's")} turn needs its exact issued token and current local input; no-token and foreign scopes remain rejected");
+        }
         var ordinary = new SequenceConnection(initial);
         await new DecisionAdvance(ordinary).RunAsync(initial, _ => true, (_, _) => false);
         check(ordinary.Replies.Count == 0 && !((PriorityPayload)initial.Decision!.Payload).CanAutoPass && QuietPriorityPolicy.CanPass(initial, "armed-token"),
@@ -62,6 +77,21 @@ internal static class QuietPriorityRegression
             && windows.Replies.All(reply => reply is PassForNow { YieldToken: "armed-token" })
             && windows.Replies.OfType<PassForNow>().Select(reply => reply.DecisionId).SequenceEqual(["first", "second"]),
             "Quiet phase and prompt refreshes reuse the explicitly armed token, then stop before the new opponent-stack response");
+
+        var own = initial with { ActivePlayerId = initial.ViewerId };
+        var ownRefreshed = refreshed with { ActivePlayerId = initial.ViewerId };
+        var ownCast = cast with { ActivePlayerId = initial.ViewerId };
+        var ownWindows = new SequenceConnection(ownRefreshed, ownCast);
+        var ownObserved = await new DecisionAdvance(ownWindows).RunQuietlyAsync(own, "armed-token", _ => true, (_, _) => false);
+        check(ownObserved == ownCast && ownWindows.Replies is [PassForNow { DecisionId: "first" }, PassForNow { DecisionId: "second" }],
+            "Own-turn continuation uses the same scoped pass executor and leaves an opponent's new spell unanswered");
+        var ownAttack = ownRefreshed with { PhaseKey = "COMBAT_DECLARE_ATTACKERS", ActionClass = "attack",
+            Decision = new Decision("choose-attackers", new DecisionContext(), new AttackPayload(new("Attack", true))) };
+        var attackConnection = new SequenceConnection(ownAttack);
+        ownObserved = await new DecisionAdvance(attackConnection).RunQuietlyAsync(own, "armed-token", _ => true, (_, _) => false);
+        check(ownObserved == ownAttack && attackConnection.Replies is [PassForNow]
+            && !QuietPriorityPolicy.CanWait(ownAttack, own.Id, own.Turn, own.ActivePlayerId, "armed-token"),
+            "Continuing our empty priority windows cannot choose no attackers or carry its intent through our required attack declaration");
 
         var busy = initial with { Revision = 2, Status = "resolving", Decision = null, DecisionOwnerId = null,
             PriorityPlayerId = null, ActionClass = "resolving" };

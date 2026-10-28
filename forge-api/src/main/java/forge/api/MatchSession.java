@@ -401,7 +401,7 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
                     "message", message, "ok", ok, "cancel", cancel, "okEnabled", okEnabled, "cancelEnabled", cancelEnabled,
                     "canAttackAll", current instanceof InputAttack, "playerChoices", playerChoices,
                     "canAutoPass", canAutoPass(current));
-            next.prompt.put("priorityAlternative", priorityAlternative(current));
+            projectPriorityAlternative(next.prompt, current);
             if (current instanceof InputSelectTargets targeting) {
                 next.prompt.put("min", targeting.getMinTargets());
                 next.prompt.put("max", targeting.getMaxTargets());
@@ -478,7 +478,7 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
         return input instanceof InputPassPriority priority && priority.isPriorityActive() && okEnabled
                 && !closed && error == null && !viewer.getHasLost() && !game.isGameOver()
                 && human.getInputQueue().getInput() == input && human.getInputProxy().getInput() == input
-                && view.getTurn() > 0 && view.getPlayerTurn() != null && !viewer.equals(view.getPlayerTurn())
+                && view.getTurn() > 0 && view.getPlayerTurn() != null
                 && view.getStack().isEmpty() && game.getStack().isEmpty();
     }
 
@@ -782,6 +782,8 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
         synchronized (gate) {
             requireSession(request);
             String action = string(request, "action");
+            if (action.equals("priorityUndo") || action.equals("cancel") && pending != null && pending.input instanceof InputPassPriority)
+                throw new IllegalArgumentException("In-game action Undo is not supported. Use the current priority controls.");
             if (action.equals("setAbilityAutoPass")) return setAbilityAutoPass(request);
             Pending next = pending;
             if (next == null || !next.id.equals(string(request, "promptId"))) throw new IllegalArgumentException("That choice has changed. Use the current prompt.");
@@ -843,8 +845,8 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
                     if (!(next.input instanceof InputPassPriority priority) || !priority.isPriorityActive() || !okEnabled)
                         throw new IllegalArgumentException("Passing priority is not available");
                 }
-                case "priorityUndo", "priorityPassTurn" -> {
-                    String alternative = action.equals("priorityUndo") ? "undo" : "passTurn";
+                case "priorityPassTurn" -> {
+                    String alternative = "passTurn";
                     if (!cancelEnabled || !Objects.equals(next.prompt.get("priorityAlternative"), alternative)
                             || !priorityAlternative(next.input).equals(alternative))
                         throw new IllegalArgumentException("That priority action changed. Use the current decision.");
@@ -924,7 +926,7 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
             SourceActions.Catalog chosenSourceCatalog = sourceCatalog;
             SourceActions.Action chosenSourceAction = sourceAction;
             Long chosenStackVersion = stackVersion;
-            if (next.input instanceof InputPassPriority && Set.of("card", "useSourceAction", "useHandPlacement", "priorityUndo").contains(action))
+            if (next.input instanceof InputPassPriority && Set.of("card", "useSourceAction", "useHandPlacement").contains(action))
                 table.stackInterruption.action();
             if (playerDriven) table.tempo.activity(viewer.getId());
             pending = null;
@@ -949,7 +951,6 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
                             }
                         }
                         case "passIfNoResponse" -> ((InputPassPriority) next.input).passPriority();
-                        case "priorityUndo" -> restorePriority = !((InputPassPriority) next.input).undoPriorityAction();
                         case "priorityPassTurn" -> restorePriority = !((InputPassPriority) next.input).passTurn();
                         case "passUntilPublicAction" -> {
                             synchronized (gate) {
@@ -1029,7 +1030,16 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
 
     private static String priorityAlternative(Input input) {
         if (!(input instanceof InputPassPriority priority)) return "none";
-        return priority.canUndoPriorityAction() ? "undo" : priority.canPassTurn() ? "passTurn" : "none";
+        return priority.canPassTurn() ? "passTurn" : "none";
+    }
+
+    private static void projectPriorityAlternative(Map<String, Object> prompt, Input input) {
+        String alternative = priorityAlternative(input);
+        prompt.put("priorityAlternative", alternative);
+        if (input instanceof InputPassPriority && alternative.equals("none")) {
+            prompt.put("cancel", "");
+            prompt.put("cancelEnabled", false);
+        }
     }
 
     private static String semanticTask(Pending prompt) {
@@ -1390,7 +1400,7 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
                 projectedPrompt.put("manaPaymentContext", colorPaymentContext(prompt.colorPaymentOwner));
             if (prompt.input instanceof InputPassPriority) {
                 projectedPrompt.put("priorityAbilities", priorityAbilities(human.getPriorityAbilities(), prompt));
-                projectedPrompt.put("priorityAlternative", priorityAlternative(prompt.input));
+                projectPriorityAlternative(projectedPrompt, prompt.input);
             }
             prompt.prompt = projectedPrompt;
         }

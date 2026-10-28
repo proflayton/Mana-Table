@@ -348,6 +348,23 @@ visible stack announcement, rather than assuming the earlier shorter animation
 duration. The existing headless arrival check separately verifies that unchanged
 observations do not restart that announcement.
 
+`PriorityContinuationChecks` runs in the existing headless presentation lane.
+Actual pointer journeys at 1000x740 and 1540x980 with 130% text cover default
+opponent Auto with an available instant, explicit own/opponent waiting, fresh
+decisions retaining one original permission, cast/trigger interruption, no silent
+rearming, an action arriving during acknowledgment and Take control during send.
+Turn-history cases distinguish a routine new turn from a simultaneous cast or
+trigger. First-land checks retain Keep/Escape/stale-input protection around the
+new bounded Wait action. The draw-trigger journey also checks deliberate finite
+stack rearming after Take control; Hold must not make that consent inaccessible.
+`QuietYieldTest` adds real own-main priority, an opponent's actual spell, required
+combat and queued required-choice invalidation; `QuietPriorityRegression` checks
+the corresponding immutable native permissions. These cases extend existing lanes
+without a new engine startup or a duplicate broad interaction campaign.
+`SourceActionsTest` also checks that named and generic priority Undo aliases
+are rejected without untapping a real Sol Ring or changing its produced mana.
+Legacy native Undo offers expose no rollback gesture or executable permission.
+
 `StackResolutionRegression` in the existing client suite exercises a frozen
 71-entry intent through individual presentation boundaries, ordinary guarded
 passes, Take control, inspection pause/resume, required choices, retargeting,

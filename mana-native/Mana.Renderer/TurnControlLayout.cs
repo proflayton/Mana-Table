@@ -25,7 +25,7 @@ public sealed record TurnControlLayout(ImmutableArray<Vector2> Markers, Vector2 
             return hero + new Vector2(MathF.Cos(angle), MathF.Sin(angle)) * 74;
         }).ToImmutableArray();
         return new(markers, hero + new Vector2(-53, 18), hero + new Vector2(53, 18),
-            new((int)hero.X + 146, (int)hero.Y - 36, 286, 70));
+            new((int)hero.X + 146, (int)hero.Y - 36, 360, 70));
     }
 
     private static Rectangle Bounds(Vector2 center, int radius)

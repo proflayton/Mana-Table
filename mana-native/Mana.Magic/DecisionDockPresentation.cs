@@ -20,6 +20,7 @@ public sealed record DecisionDockControlFacts
     public DecisionDockPauseReason PauseReason { get; init; }
     public bool QuietArmed { get; init; }
     public bool QuietCanPass { get; init; }
+    public bool ResponsePending { get; init; }
 }
 
 public sealed record DecisionDockView(DecisionDockStatus Status, DecisionDockPauseReason PauseReason,
@@ -52,7 +53,7 @@ public static class DecisionDockPresentation
         var pause = Pause(state, controls);
         bool normalPass = controls.Automatic && decision is { Payload: PriorityPayload { CanAutoPass: true } };
         bool quietPass = controls.QuietArmed && controls.QuietCanPass && decision is { Payload: PriorityPayload { QuietYieldToken.Length: > 0 } }
-            && state.Stack.Length == 0 && state.ActivePlayerId != state.ViewerId;
+            && state.Stack.Length == 0;
         bool routinePriority = state.Status == "playing" && state.Turn > 0 && priority.CanPass && (normalPass || quietPass);
         bool ambientPause = pause is DecisionDockPauseReason.None or DecisionDockPauseReason.Inspection
             or DecisionDockPauseReason.Interaction or DecisionDockPauseReason.Overlay or DecisionDockPauseReason.Chat
@@ -122,9 +123,10 @@ public static class DecisionDockPresentation
 
             bool autoPassing = routinePriority && pause == DecisionDockPauseReason.None;
             string caption = pause != DecisionDockPauseReason.None ? PauseCaption(state, controls, pause)
-                : controls.QuietArmed && !autoPassing ? "Quiet pass armed" : "";
+                : controls.ResponsePending && !autoPassing ? state.Stack.Length > 0 ? "Auto paused for your response" : "Your chance to act"
+                : controls.QuietArmed && !autoPassing ? "Waiting for action" : "";
             return View(autoPassing ? DecisionDockStatus.AutoPassing : DecisionDockStatus.Priority,
-                autoPassing ? quietPass ? "Passing for now" : "Auto passing" : "Your priority", caption,
+                autoPassing ? quietPass ? "Waiting for action" : "Auto passing" : state.Stack.Length > 0 ? "Your response" : "Your priority", caption,
                 role: DecisionDockActorRole.Priority, actor: state.ViewerId,
                 action: decision == null ? "" : TurnGuide.Confirm(state));
         }
@@ -179,10 +181,10 @@ public static class DecisionDockPresentation
     }
 
     private static string ArmedCaption(DecisionDockControlFacts controls, DecisionDockPauseReason pause) => !controls.QuietArmed ? ""
-        : pause == DecisionDockPauseReason.None ? "Quiet pass armed" : pause switch {
-            DecisionDockPauseReason.Inspection => "Quiet pass paused while reading",
-            DecisionDockPauseReason.CommandFailure => "Quiet pass paused after an error",
-            _ => "Quiet pass paused"
+        : pause == DecisionDockPauseReason.None ? "Waiting for action" : pause switch {
+            DecisionDockPauseReason.Inspection => "Waiting paused while reading",
+            DecisionDockPauseReason.CommandFailure => "Waiting paused after an error",
+            _ => "Waiting paused"
         };
 
     private static string PauseCaption(GameSnapshot state, DecisionDockControlFacts controls, DecisionDockPauseReason reason) => reason switch {

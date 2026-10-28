@@ -97,7 +97,7 @@ internal sealed partial class TableApplication
     {
         var drawer = SystemDrawer("Play controls", "settings-", new MatchIntent.CloseView(), 760, "close-overlay");
         int x = drawer.X + 28, y = drawer.Y;
-        canvas.Text("Priority", x, y + 108, Gold, .8f, 500, 1, true);
+        canvas.Text("Auto waits for actions", x, y + 108, Gold, .8f, 500, 1, true);
         MenuAction("settings-auto", "Auto", new(x, y + 148, 236, 42), new MatchIntent.SetAutomatic(true), selected: automatic);
         MenuAction("settings-manual", "Full control", new(x + 264, y + 148, 236, 42), new MatchIntent.SetAutomatic(false), selected: !automatic);
         MenuAction("settings-hold", held ? "Held for this turn" : "Hold priority this turn", new(x, y + 210, 500, 42), new MatchIntent.ToggleHold(), selected: held, size: .78f);

@@ -70,19 +70,19 @@ internal static class QuietPriorityPresentationChecks
         var idle = Surface(frame, original.Bounds);
         var firstPoll = StartPoll();
         check(Hit(original.Id).Bounds == original.Bounds && Surface(frame, original.Bounds) == idle,
-            "Pass for now retains its enabled appearance and exact input bounds during an unchanged observation");
+            "Wait for action retains its enabled appearance and exact input bounds during an unchanged observation");
         Tick(original.Bounds.Center);
         var hover = Surface(frame, original.Bounds);
         Tick(original.Bounds.Center);
         check(Surface(frame, original.Bounds) == hover && hover.FillColor != idle.FillColor,
-            "Pass for now keeps its hover response throughout an in-flight observation");
+            "Wait for action keeps its hover response throughout an in-flight observation");
         Tick(original.Bounds.Center, ButtonState.Pressed);
         var pressed = Surface(frame, original.Bounds);
         check(pressed.FillColor != hover.FillColor && Hit(original.Id).Bounds == original.Bounds,
-            "Pass for now keeps its pressed response and input target while polling");
+            "Wait for action keeps its pressed response and input target while polling");
         Tick(original.Bounds.Center);
         check(frame.Hits.Any(hit => hit.Id == "quiet-priority-stop") && engine.Replies.Count == 0 && view.Polling,
-            "Clicking Pass for now during polling records local intent without interleaving an engine command");
+            "Clicking Wait for action during polling records local intent without interleaving an engine command");
         check(view.DecisionDock?.Surface == DecisionDockSurface.Portrait && DecisionDockInteractionChecks.NoTransportLabels(frame)
                 && frame.Hits.Single(hit => hit.Id == "quiet-priority-stop").Bounds == original.Bounds,
             "Arming during a delayed observation keeps one portrait surface and the same cancelable input target");
@@ -180,17 +180,17 @@ internal static class QuietPriorityPresentationChecks
         try {
             var arm = frame.Hits.Single(hit => hit.Id == "quiet-priority-arm").Bounds.Center;
             Tick(arm, ButtonState.Pressed); Tick(arm);
-            Until(() => firstStarted.Task.IsCompleted, "Clicking Pass for now submits a real quiet pass despite an available instant");
+            Until(() => firstStarted.Task.IsCompleted, "Clicking Wait for action submits a real quiet pass despite an available instant");
             var takeControl = frame.Hits.Single(hit => hit.Id == "quiet-priority-stop");
             var autoBounds = frame.Hits.Single(hit => hit.Id == "auto").Bounds;
             var holdBounds = frame.Hits.Single(hit => hit.Id == "hold").Bounds;
             void CheckQuietSurface(string description) => check(view.DecisionDock?.Surface == DecisionDockSurface.Portrait
-                    && HasText("Pass for now") && HasText("Take control") && DecisionDockInteractionChecks.NoTransportLabels(frame)
+                    && HasText("Waiting for action") && HasText("Take control") && DecisionDockInteractionChecks.NoTransportLabels(frame)
                     && frame.Hits.Single(hit => hit.Id == "quiet-priority-stop").Bounds == takeControl.Bounds
                     && frame.Hits.Single(hit => hit.Id == "auto").Bounds == autoBounds
                     && frame.Hits.Single(hit => hit.Id == "hold").Bounds == holdBounds, description);
             for (int index = 0; index < 4; index++) {
-                Tick(); CheckQuietSurface("A delayed quiet reply retains the same Pass for now surface and cancel control");
+                Tick(); CheckQuietSurface("A delayed quiet reply retains the same Wait for action surface and cancel control");
             }
             check(view.Busy && !view.Polling && replies.Count == 1 && engine.Observations == observationsAtReply
                 && replies.Single() is PassForNow { DecisionId: var submittedDecision } && submittedDecision == initial.Decision!.Id
@@ -209,7 +209,7 @@ internal static class QuietPriorityPresentationChecks
             check(replies.Count == 1 && frame.Hits.Any(hit => hit.Id == "quiet-priority-stop")
                 && view.Match!.Activity.Select(entry => entry.Kind).SequenceEqual(["moved", "draw"]),
                 "Other-seat priority and engine-marked routine draw history retain quiet intent without submitting that seat's decision");
-            CheckQuietSurface("An opponent priority handoff preserves the local Pass for now surface while reporting the actual responder");
+            CheckQuietSurface("An opponent priority handoff preserves the local Wait for action surface while reporting the actual responder");
 
             var freshPoll = new TaskCompletionSource<GameSnapshot?>(TaskCreationOptions.RunContinuationsAsynchronously);
             engine.ObserveOverride = () => freshPoll.Task;

@@ -67,7 +67,6 @@ internal sealed class ForgeCommandScope
                 or CompleteSelection or AcceptConfirmation or AcknowledgeDecision: Action("ok"); break;
             case MulliganOpeningHand or CancelPayment or CancelSelection or DeclineConfirmation:
                 Action("cancel"); break;
-            case UndoLastAction: Action("priorityUndo"); break;
             case PassTurn: Action("priorityPassTurn"); break;
             case AutoPassPriority: Action("passIfNoResponse"); break;
             case SelectCard value: Card(value.Card); break;

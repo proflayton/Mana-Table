@@ -34,6 +34,7 @@ internal sealed partial class TableApplication
         if (pause == DecisionDockPauseReason.None && !matchPresentation.Ready(now)) pause = DecisionDockPauseReason.Presentation;
         return new() {
             Automatic = automatic, Held = held, PauseReason = pause,
+            ResponsePending = automatic && priorityAttention.NeedsResponse,
             PhaseStopKey = state.ActivePlayerId == state.ViewerId && preferences.Stops.Contains(state.PhaseKey) ? state.PhaseKey : "",
             QuietArmed = QuietPriorityArmed, QuietCanPass = QuietPriorityArmed && QuietPriorityPolicy.CanPass(state, quietYieldToken)
         };

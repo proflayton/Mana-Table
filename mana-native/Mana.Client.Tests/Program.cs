@@ -88,7 +88,7 @@ var noStops = new HashSet<string>();
 Check(pacing.Update(passState, true, false, noStops, false, false) is AutoPassPriority, "Eligible Auto priority dispatches on the first update without an artificial wait");
 Check(pacing.Update(passState, true, false, noStops, false, false) == null, "Auto dispatches a decision only once");
 var nextPass = passState with { ActivePlayerId = 1, Decision = passState.Decision! with { Id = "next-pass" } };
-Check(TurnGuide.Confirm(nextPass) == "Pass priority", "An opponent's main phase asks to pass priority rather than advance their phase");
+Check(TurnGuide.Confirm(nextPass) == "Pass once", "An opponent's main phase offers one pass without promising to advance their phase");
 Check(pacing.Update(nextPass, true, false, noStops, false, true) == null, "An outstanding operation defers Auto without consuming the decision");
 Check(pacing.Update(nextPass, true, false, noStops, false, false)?.DecisionId == "next-pass", "The next player's eligible window advances as soon as the connection is available");
 Check(pacing.Update(nextPass with { Id = "other-game" }, true, false, noStops, false, false)?.GameId == "other-game", "Automatic passes remain scoped to their game");

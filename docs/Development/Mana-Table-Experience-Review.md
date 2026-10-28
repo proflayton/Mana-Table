@@ -135,6 +135,10 @@ does not establish that a person can understand or use the screen.
     player's actual phase directs attention to their seat. Auto, Hold, a bounded
     yield and a required decision have different authority and lifetimes; visual
     consolidation must preserve those distinctions.
+    Routine Auto should not demand a click merely because an instant is held.
+    A new action must preserve an available response, and Take control must stop
+    every continuation path. Never hide a turn-long engine yield behind an
+    ordinary pass control that the client cannot revoke.
 
 12. **Keep deck identity and persistence visible through editing.** Both chosen
     commanders belong beside the deck, including while browsing library cards.
@@ -160,6 +164,62 @@ does not establish that a person can understand or use the screen.
     capabilities, historical facts and local animation state distinct. The
     [architecture migration](Mana-Table-Architecture.md#action-execution-the-next-boundary-migration)
     records the current gaps and the first real-engine journey to migrate.
+
+## Safe automatic priority: 27 October 2026
+
+**Status: source candidate; human gameplay review pending.** Players described
+repeated empty priority with an instant as frustrating, then chose Pass turn and
+could not intervene when another player acted. The audit found two owners:
+ordinary native continuation and Forge's engine-side end-turn yield. The latter
+suppressed future native prompts and had no native cancellation/status contract.
+Forge's desktop spell/attack interruption hooks live in its GUI event handler,
+which the headless adapter does not install. A new label alone cannot fix that.
+
+The observed reference is [MTGO's gameplay guide](https://www.mtgo.com/getting-started/getting-started-tips-tricks):
+its key 2 continues until a response or combat choice, while key 6 yields through
+the turn and prevents ordinary reactions. Its ability-specific yields are a
+separate stack gesture. [Arena's Smart Priority guide](https://magic.wizards.com/en/news/mtg-arena/announcements-october-27-2025#a-quick-guide-to-smart-priority-for-powered-cube)
+acknowledges confusing skips and documents card exceptions and full control.
+Our adaptation uses explicit engine permissions rather than new card exceptions.
+
+The source journey is now:
+
+- Auto waits through unchanged empty opponent windows, even with an instant.
+  A new cast, activation, trigger, public action or combat declaration preserves
+  an available response and blocks silent quiet rearming. Explicitly passing or
+  acting acknowledges only that displayed opportunity. No-response windows may
+  still use normal engine-authorized Auto after their readable presentation beat.
+- Your own playable main phase and required choices stay explicit. Pass once
+  answers one window; own-turn phase buttons keep their concrete destinations.
+  Wait for action deliberately continues empty windows on either player's
+  current turn, stopping for new work, attacker/blocker selection or a turn change.
+  The first-land warning still protects an own-turn wait before the first land.
+- Take control remains at the same portrait position and holds Auto this turn,
+  even during an in-flight pass. Deliberate waiting, releasing Hold or enabling
+  Auto can resume it. Reading pauses without committing; replacement prompts
+  and tokens do not silently acknowledge new events.
+- Normal controls never enable Forge's end-turn latch. Resolve these retains
+  separate consent for the already captured stack and stops when new work arrives.
+
+The quiet token remains provider-owned, checked at acceptance and execution.
+The local attention latch retains public interruption/version facts, not action
+keys or another submitted-prompt cache. A new opponent turn starts a new quiet
+opportunity; its routine history marker must not hide a cast in the same poll.
+Older providers without a quiet token retain ordinary scoped passes.
+
+Production pointer checks cover 1000x740 and 1540x980 at 130% text, including
+an available instant, explicit own/opponent waiting, default Auto, new casts and
+triggers, delayed completion, Take control and first-land confirmation. Java
+regressions cover actual own main phases, new opponent spells, combat and required
+choices with the same authority rechecks. These are correctness checks; actual
+motion, control discoverability and human gameplay acceptance remain pending.
+
+The player also reported Undo untapping an artifact while retaining its effect.
+In-game action Undo is removed from the source candidate. The adapter rejects
+both its named command and the generic priority Cancel alias before rules work
+is queued. Legacy projected Undo offers produce no native rollback control or
+command. The regression checks retain the actual Sol Ring tap and produced mana
+across rejected requests. Deck editing/deletion recovery remains its own lifecycle.
 
 ## Quiet priority notification: 27 October 2026
 

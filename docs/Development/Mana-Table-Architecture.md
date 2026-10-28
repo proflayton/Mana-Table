@@ -1565,13 +1565,25 @@ Hold, Full control, changed stops, typing, inspection and pointer gestures cance
 further passes; an already submitted command is reconciled. Required decisions,
 including blocks, payment and cleanup, are never consumed by Auto.
 
-Auto and explicit quiet yield use one bounded executor and one `ClientSession`
-cancellation/acceptance lifecycle. Their entry points construct only their own
-command variant and retain separate submitted-prompt histories. The unchanged
-`QuietPriorityPolicy` owns quiet token, turn and interruption gates; it cannot
-authorize ordinary Auto. The application checks eligibility and presentation
-pauses without keeping another submitted-prompt cache or constructing a discarded
-pass command. The session owns submission and reconciliation.
+Auto and explicit waiting use one bounded executor and one `ClientSession`
+cancellation/acceptance lifecycle. Auto has two distinct authority paths:
+`CanAutoPass` permits `AutoPassPriority`; an original quiet token permits
+`PassForNow` over unchanged empty opponent windows even with a playable instant.
+Explicit Wait for action can use that token on either player's turn. Tokens never
+broaden ordinary `CanAutoPass`, and each path retains its own submitted-prompt
+history. The session still owns submission and reconciliation.
+
+Presentation-owned `PriorityAttention` observes public interruption history,
+the stack-interruption fence and replacement quiet tokens before physical input.
+New work blocks silent quiet rearming until the player explicitly acts or passes;
+acknowledging one displayed response does not acknowledge a new action arriving
+in flight. A new turn establishes a new quiet opportunity. Normal engine-authorized
+Auto may continue when no response is available, with existing readable pacing.
+Reading pauses continuation without answering anything. Take control also holds
+Auto for the current turn; deliberate Wait or enabling Auto can resume it.
+The UI never arms Forge's engine-owned end-turn latch: that legacy protocol route
+has no native cancellation/status contract. Compatibility retains its semantic
+command, while the current player journey uses individually authorized passes.
 
 `StackResolutionIntent` adds a separate finite policy: capture the current exact
 stack occurrences, their order, controller, kind and targets, plus game/viewer,

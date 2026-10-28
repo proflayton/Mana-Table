@@ -44,6 +44,7 @@ internal sealed partial class TableApplication
 
     private void DrawPriorityAbilityControl(PriorityAbility[] abilities)
     {
+        if (QuietPriorityArmed) return;
         if (decisionDock?.Surface == DecisionDockSurface.Portrait && decisionPanelBounds.IsEmpty) return;
         var bounds = new Rectangle(1266, DecisionY(852), 296, 23);
         if (tableScene?.PlayAccess.Groups.Count > 0 && (decisionDock?.Surface == DecisionDockSurface.Portrait || QuietPriorityArmed))
@@ -51,7 +52,7 @@ internal sealed partial class TableApplication
         if (abilities.Length == 1) {
             var ability = abilities[0];
             PriorityAbilityButton(ability.IgnoredUntilNextTurn ? "ability-undo:" + ability.Id : "ability-pass:" + ability.Id,
-                ability.IgnoredUntilNextTurn ? "Until my next turn  ·  Undo" : automatic ? "Pass ability until my next turn" : "Let Auto pass until my next turn", bounds,
+                ability.IgnoredUntilNextTurn ? "Until my next turn  ·  Restore" : automatic ? "Pass ability until my next turn" : "Let Auto pass until my next turn", bounds,
                 new MatchIntent.SetPriorityAbility(ability.Id, !ability.IgnoredUntilNextTurn), ability.IgnoredUntilNextTurn || !busy, ability.IgnoredUntilNextTurn);
         } else {
             int ignored = abilities.Count(a => a.IgnoredUntilNextTurn);
@@ -67,7 +68,7 @@ internal sealed partial class TableApplication
         int index = Math.Max(0, Array.FindIndex(abilities, a => a.Id == priorityAbilityId));
         var ability = abilities[index];
         ModalFrame("Pass for an ability", new MatchIntent.CloseView());
-        canvas.Text("Auto can pass this ability until your next turn. Other available plays still stop it.", 204, 188, Muted, .8f, 1165, 2);
+        canvas.Text("During a response, Auto can ignore this activation until your next turn. Other available responses still stop it.", 204, 188, Muted, .8f, 1165, 2);
         canvas.Text(ability.SourceName, 204, 253, Gold, 1.1f, 1165, 2, true);
         var text = matchReadingPages;
         int page = Math.Clamp(priorityAbilityTextPage, 0, text.Length - 1);
@@ -85,7 +86,7 @@ internal sealed partial class TableApplication
             canvas.Text($"{index + 1} / {abilities.Length}", 637, 751, Muted, .7f);
         }
         PriorityAbilityButton(ability.IgnoredUntilNextTurn ? "ability-undo:" + ability.Id : "ability-pass:" + ability.Id,
-            ability.IgnoredUntilNextTurn ? "Undo · stop for this ability" : "Pass this ability until my next turn", new(939, 733, 436, 48),
+            ability.IgnoredUntilNextTurn ? "Stop for this ability" : "Pass this ability until my next turn", new(939, 733, 436, 48),
             new MatchIntent.SetPriorityAbility(ability.Id, !ability.IgnoredUntilNextTurn), ability.IgnoredUntilNextTurn || !busy, ability.IgnoredUntilNextTurn);
     }
 }

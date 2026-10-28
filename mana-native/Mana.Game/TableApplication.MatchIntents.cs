@@ -149,8 +149,8 @@ internal sealed partial class TableApplication
                 if (stop.Resume) preferences.Stops.Remove(stop.Key);
                 else if (!preferences.Stops.Remove(stop.Key)) preferences.Stops.Add(stop.Key);
                 SavePreferences(); break;
-            case MatchIntent.SetQuietPriority setting: if (setting.Armed) ArmQuietPriority(); else StopQuietPriority(); break;
-            case MatchIntent.SetStackResolution setting: if (setting.Armed) ArmStackResolution(); else StopStackResolution(); break;
+            case MatchIntent.SetQuietPriority setting: if (setting.Armed) ArmQuietPriority(); else TakePriorityControl(); break;
+            case MatchIntent.SetStackResolution setting: if (setting.Armed) ArmStackResolution(); else TakePriorityControl(); break;
             case MatchIntent.ToggleReducedMotion: preferences = preferences with { ReducedMotion = !preferences.ReducedMotion }; SavePreferences(); break;
             case MatchIntent.ToggleSounds: preferences = preferences with { Sounds = !preferences.Sounds }; SavePreferences(); break;
             case MatchIntent.CycleTextScale:
