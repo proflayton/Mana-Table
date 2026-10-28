@@ -149,10 +149,13 @@ internal sealed partial class TableApplication
                 if (stop.Resume) preferences.Stops.Remove(stop.Key);
                 else if (!preferences.Stops.Remove(stop.Key)) preferences.Stops.Add(stop.Key);
                 SavePreferences(); break;
-            case MatchIntent.SetQuietPriority setting: if (setting.Armed) ArmQuietPriority(); else StopQuietPriority(); break;
-            case MatchIntent.SetStackResolution setting: if (setting.Armed) ArmStackResolution(); else StopStackResolution(); break;
+            case MatchIntent.SetQuietPriority setting: if (setting.Armed) ArmQuietPriority(); else TakePriorityControl(); break;
+            case MatchIntent.SetStackResolution setting: if (setting.Armed) ArmStackResolution(); else TakePriorityControl(); break;
             case MatchIntent.ToggleReducedMotion: preferences = preferences with { ReducedMotion = !preferences.ReducedMotion }; SavePreferences(); break;
-            case MatchIntent.ToggleSounds: preferences = preferences with { Sounds = !preferences.Sounds }; SavePreferences(); break;
+            case MatchIntent.ToggleSounds when overlay == "settings":
+                preferences = preferences with { Sounds = !preferences.Sounds }; ApplyAudioMix(); SaveAudioPreferences(); break;
+            case MatchIntent.SetMasterVolume setting when overlay == "settings": SetMasterVolume(setting.Volume); FinishAudioAdjustment(); break;
+            case MatchIntent.AdjustMasterVolume setting when overlay == "settings": SetMasterVolume(preferences.Audio.Master.Volume + setting.PercentagePoints / 100f); FinishAudioAdjustment(); break;
             case MatchIntent.CycleTextScale:
                 preferences = preferences with { TextScale = preferences.TextScale < 1.1f ? 1.15f : preferences.TextScale < 1.25f ? 1.3f : 1 }; SavePreferences(); break;
             case MatchIntent.OpenPriorityPassing when PriorityAbilityOptions().FirstOrDefault() is { } ability:

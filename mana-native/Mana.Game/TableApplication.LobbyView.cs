@@ -34,7 +34,8 @@ internal sealed partial class TableApplication
     private void DrawHomeSurface()
     {
         canvas.Gradient(new(0, 0, 1600, 1000), new(20, 29, 31), new(7, 13, 17));
-        var leader = selectedDeckDetails?.Entries.FirstOrDefault(entry => entry.Section == "Commander")?.Card;
+        var leader = Connected ? LocalSeat?.DeckPreview?.Commanders.FirstOrDefault()
+            : selectedDeckDetails?.Entries.FirstOrDefault(entry => entry.Section == "Commander")?.Card;
         if (leader != null && resources.Card(leader) is { } image) {
             var crop = new Rectangle((int)(image.Width * .08f), (int)(image.Height * .13f), (int)(image.Width * .84f), (int)(image.Height * .43f));
             canvas.Sprite(image, new(800, 430), new(1600, 1187), tint: Color.White * .25f, crop: crop);
@@ -166,13 +167,15 @@ internal sealed partial class TableApplication
             Color color = seat.Ready ? ReadyColor : open ? Muted * .45f : seat.Local ? Gold : Blue;
             canvas.Glow(new(x, y), new(250, 250), color * .10f);
             canvas.Circle(new(x, y), 70, new(14, 25, 31));
-            if (seat.Local && selectedDeckDetails?.Entries.FirstOrDefault(entry => entry.Section == "Commander")?.Card is { } leader && resources.Card(leader) is { } portrait)
-                canvas.Portrait(portrait, new(x, y), 66, Color.White);
-            else canvas.CenterText(open ? "+" : ai ? "AI" : seat.Name.Length > 0 ? seat.Name[..1] : "?", new(x - 63, y - 62, 126, 124), color, open ? 2.7f : 1.7f, true);
+            DrawLobbySeatPortrait(seat, x, y, color);
             canvas.Ring(new(x, y), 71, color, seat.Ready ? 4 : 2);
             if (seat.Ready) { canvas.Circle(new(x + 52, y + 47), 18, ReadyColor); canvas.CenterText("✓", new(x + 34, y + 27, 36, 40), new(9, 26, 25), .95f, true); }
             canvas.CenterText(seat.Local ? "You" : open ? "Open seat" : seat.Name, new(x - 154, 489, 308, 43), open ? Muted : Ink, 1.03f, true);
-            canvas.Text(seat.Deck ?? (open ? "Invite a friend" : "Choosing a deck"), x - 148, 546, Muted, .82f, 296, 3);
+            // Names and artwork share the provider's captured assignment for
+            // every seat. A local editor document is never a lobby projection.
+            string? deckName = seat.DeckPreview?.Name ?? seat.Deck;
+            canvas.Text(deckName ?? (open ? "Invite a friend" : "Choosing a deck"), x - 148, 546, Muted, .82f, 296, 3);
+            if (seat.DeckPreview?.Problem is { Length: > 0 }) canvas.Text("Needs changes", x - 148, 615, Gold, .62f, 296, 1);
             if (seat.Local) MenuAction("edit-deck", "Edit deck", new(x - 130, 637, 260, 36), new ShellIntent.EditDeck(), !busy && selectedDeck != null, size: .75f);
             if (CanManageLobbySeats && seat.Index > 0 && (open || ai)) DrawLobbySeatControls(i, seat);
         }
@@ -184,8 +187,31 @@ internal sealed partial class TableApplication
         else canvas.Text("Waiting for the host", 1170, 815, Muted, .9f, 340, 2);
         string? problem = !DeckReady ? selectedDeckDetails is not { } deck ? "Choose your deck."
             : deck.SaveError.Length > 0 ? "Save your deck before becoming Ready."
-            : deck.Problem.Length > 0 ? deck.Problem : "Choose a commander in your deck." : state.StartProblem;
+            : deck.Problem.Length > 0 ? deck.Problem : "Choose a commander in your deck."
+            : lobbyDeck.View.Status == Mana.Client.LobbyDeckStatus.Failed ? "Could not share your deck. Choose Ready to try again." : state.StartProblem;
         if (!string.IsNullOrWhiteSpace(problem)) canvas.Text(problem, 464, 808, Gold, .78f, 650, 3);
+    }
+    private void DrawLobbySeatPortrait(Seat seat, int x, int y, Color color)
+    {
+        bool open = seat.Type == "OPEN";
+        var commanders = seat.DeckPreview?.Commanders ?? [];
+        string fallback = open ? "+" : seat.Type == "AI" ? "AI" : seat.Name.Length > 0 ? seat.Name[..1] : "?";
+        canvas.CenterText(fallback, new(x - 63, y - 62, 126, 124), color, open ? 2.7f : 1.7f, true);
+        if (open || commanders.Length == 0) return;
+        if (commanders.Length == 1) {
+            if (!commanders[0].FaceDown && resources.Card(commanders[0]) is { } portrait)
+                canvas.Portrait(portrait, new(x, y), 66, Color.White);
+            return;
+        }
+        // Partners share one seat medallion; each public face occupies a half
+        // of the existing circular crop, without changing seat geometry.
+        for (int i = 0; i < 2; i++) {
+            if (commanders[i].FaceDown || resources.Card(commanders[i]) is not { } portrait) continue;
+            canvas.BeginClip(new(x - 66 + i * 66, y - 66, 66, 132));
+            canvas.Portrait(portrait, new(x, y), 66, Color.White);
+            canvas.EndClip();
+        }
+        canvas.Line(new(x, y - 65), new(x, y + 65), color * .65f, 2);
     }
     private void DrawSetupModal()
     {

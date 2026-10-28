@@ -21,8 +21,8 @@ public static class TurnGuide
             RevealPayload => "Continue", NumberPayload or TextPayload => "Confirm", AllocationPayload => "Confirm assignment",
             _ => throw new InvalidOperationException("The decision payload has no confirmation label.")
         };
-        if (state.Stack.Length > 0) return "Pass priority";
-        if (state.ActivePlayerId != state.ViewerId) return "Pass priority";
+        if (state.Stack.Length > 0) return "Pass once";
+        if (state.ActivePlayerId != state.ViewerId) return "Pass once";
         return state.PhaseKey switch { "MAIN1" => "Go to combat", "COMBAT_BEGIN" => "To attackers", "COMBAT_DECLARE_ATTACKERS" => "To blockers", "COMBAT_DECLARE_BLOCKERS" => "To damage", "COMBAT_FIRST_STRIKE_DAMAGE" => "Continue damage", "COMBAT_DAMAGE" => "Finish damage", "COMBAT_END" => "Second main", "MAIN2" => "Go to end step", "END_OF_TURN" => "End turn", _ => "Continue" };
     }
     public static string Instruction(GameSnapshot state) => state.Decision?.Payload switch {

@@ -78,6 +78,38 @@ original faces. An unrelated ordinary face-down permanent does not erase known
 commander-color alternatives or an available nominal tap resource.
 Graphs are finite and audience-filtered; candidate references never grant action
 handles. Unmodeled conditions and resource coupling remain explicit.
+Source additions also put `operationGraph` on each pending stack entry, using
+the same grammar rather than reconstructing outcomes from its displayed text.
+These are committed operations: chosen Charm modes follow the actual sequence,
+unchosen option recipes are omitted, and each known target domain has
+`min == max == candidates.length` for the set already selected. Costs are empty
+because the stack entry has already paid them. Dynamic quantities, hidden
+recipients, optional effects, intervening conditions and unsupported mechanics
+remain unknown; this is neither a guarantee of resolution nor a replacement or
+prevention forecast. A concealed source supplies an empty unknown graph. The
+non-acting public spectator currently supplies unknown graphs as well.
+
+Semantic spell entities can add `stackItemId`, matching the exact current
+stack entry independently of their source card. Copies and multiple abilities
+from one permanent remain different occurrences. `cardId` may be empty for a
+spell entity whose source permanent has departed; an available source portrait
+does not invent a current card occurrence. Private decision option semantics
+can add `target` with that same entity for an actual offered stack target. This
+is separate from an option's prospective ability `operationGraph`. Neither
+reference authorizes selecting or countering it: the current choice index and
+decision scope remain mandatory.
+
+These protocol fields are additive. Older providers omit the pending graph and
+native clients retain `Unknown`; missing `stackItemId` can correlate by source
+only when exactly one current stack occurrence has that identity. The shared
+native `ActionOperationValidation` checks both prospective and committed graphs,
+visibility, exact stack references and finite links before policy evaluation;
+the provider decoder also applies it before publishing pending graphs.
+Card entities require an exact occurrence in the viewer's published zones or an
+explicit stack/transient source. An internal rule object can supply a readable
+decision portrait without being a published card: commander replacement effects,
+for example, keep Unknown graph sources rather than borrowing a card identity.
+Portrait inspection does not grant selection, activation or retained disclosure.
 Private decision semantics can add `numeric` for an explicit rules announcement:
 `purpose`, entitled `sourceCardId`, declared `costs`, `manaCostKnowledge`, and
 read-only `funding`. Funding groups production routes by physical source, with
@@ -129,6 +161,21 @@ cost or grant permission to spend. Canceling an optional triggered payment is
 a valid decline, distinct from abandoning a spell that the policy initiated.
 The payer can differ from a source's controller or the observing controller.
 Provenance ends with the current input; hidden source identities are not added.
+Ordered cost-part prompts additionally publish semantic `orderingPurpose:
+CostPayment` and `defaultOrder`, the engine's complete ordered list of current
+choice indices. This is distinct from ordering cards by value. The native
+boundary rejects a partial, duplicate or foreign default permutation and metadata
+on another task. Missing metadata remains unknown for older providers.
+Current nonmana cost selections can additionally carry `costPayment`: the
+actual payer/source, remaining adjusted cost parts, mana-cost knowledge and a
+read-only `ManaFundingContext`. `currentCostIndex` identifies the selected part
+within that current list; an older provider may omit it, leaving distinct source
+commitments unknown. Already-paid parts are excluded. This lets a
+policy preserve a funding witness while choosing a creature to tap or a
+permanent to sacrifice. It does not authorize producing mana, reuse the
+initiating action's handles or promise that unsupported costs are affordable.
+Older providers omit this context; absence remains unknown. The metadata ends
+with the owning selection and requires no persisted-data migration.
 Ordinary non-library effect choices may also carry current `disclosedCards`
 rows `{label, card}` for delayed-reveal faces absent from the eligible options.
 These anonymous portraits have no index, physical identity, card key or action
@@ -301,6 +348,23 @@ joining takes an open human seat. Changing AI choices leaves human readiness
 unchanged. Negotiated matches use the host's external policies through normal
 rules inputs; non-negotiating callers retain Forge AI controllers.
 Returning after a game preserves AI decks/readiness while humans ready again.
+
+Source candidate: lobby snapshots include a table-local monotonic `revision` and
+each selected slot's immutable `deckPreview` (`selectionId`, `name`, public
+`commanders`, and a generic `problem` for an incomplete draft). Human and AI slots
+use the same captured assignment. The legacy `deck` name is derived from it.
+Commander faces contain printing/art metadata, not game occurrence or action
+handles; no private main-deck list or detailed legality diagnostics are disclosed.
+
+The native setup port accepts `LobbyDeckSelection(tableId, deckId, libraryToken)`
+and returns the authoritative `Lobby` receipt. On the wire,
+`multiplayerSelectDeck {tableId, deckId, libraryToken}` checks the current table
+and exact saved-file token before replacing the assignment and withdrawing Ready.
+An empty deck ID explicitly clears the assignment. Saved incomplete drafts may
+be shared, but Ready and Start still reject them. Failed persistence cannot be
+assigned. Legacy raw callers may omit the added scope fields; the shipping client
+always supplies them. This is a C# setup-interface change requiring providers to
+rebuild, with additive wire fields and no saved-data migration.
 
 ### Optional decision tempo (source candidate)
 
@@ -555,6 +619,12 @@ text, mana, artwork and alternate faces. Anonymous battlefield occurrences can
 retain an opaque `combatId`; that ID never authorizes an action or identifies a
 hidden card outside its current public occurrence.
 Scoped selection keys authorize input; presentation IDs do not.
+Readable battlefield occurrences can carry `blockingCapacity`: either a finite
+nonnegative `maximum` or explicit `unlimited: true`. It is an effective public
+upper bound, not individual block permission. Missing metadata is unknown;
+hidden, face-down and nonbattlefield cards omit it. Forecasts must not assume
+that every creature can block only once. Current combat offers and the rules
+engine still own legal declarations.
 Card identity fields (`key`, `visualId`, `combatId`) use empty strings when
 absent, including readonly historical faces. Native card values canonicalize
 legacy null identities without creating authority; scoped decision portraits
@@ -781,11 +851,14 @@ Legacy protocol-2 callers may omit this discriminator; the new native client
 requires the `semantic-priority-actions` capability and validates its immutable
 last observation before encoding any command.
 
-Priority prompts project `priorityAlternative: "undo" / "passTurn" / "none"`.
-Native priority operations use `passPriority`, `priorityUndo` and
-`priorityPassTurn`. Undo and pass-turn recheck their exact meaning on the owned
-input thread; they never fall through to one another. `passPriority` invokes
-the pass operation directly, independently of a pending Forge yield suggestion.
+Priority prompts project `priorityAlternative: "passTurn" / "none"`; in-game
+action Undo is not offered. Legacy `priorityUndo` and generic priority `cancel`
+requests are rejected before queuing or changing any rules state. Native
+permission checks also reject the retained legacy Undo command, even when an
+older provider advertises it. This does not change deck editing Undo, payment
+cancellation or internal cost rollback. `passPriority` invokes the pass operation
+directly, independently of a pending Forge yield suggestion; the legacy
+`priorityPassTurn` operation retains its distinct owned-input recheck.
 These changes do not alter saved decks, profiles or the seat-sync protocol.
 
 An input prompt's `inputType` uses its nearest named input class, including for
@@ -946,17 +1019,25 @@ eligible pass but never authorize one the engine has rejected.
 This is an additive protocol change: existing manual actions remain valid, and
 clients must treat a missing `canAutoPass` field as false.
 
-An eligible empty-stack priority prompt on an opponent's turn also exposes an
-opaque `quietYieldToken`. Explicit
+An eligible empty-stack priority prompt on either the viewer's or an opponent's
+turn also exposes an opaque `quietYieldToken`. Explicit
 `matchAction {action: "passUntilPublicAction", sessionId, promptId, yieldToken}`
 requires that original token at both acceptance and execution. This permission
 is independent of available instants and never broadens ordinary Auto. Quiet
 phase changes, the opponent's exact turn-based draw and empty attacker selection
 retain it; actual attacks, public actions/state changes, other required choices
-and turn changes revoke it. Clients never adopt a replacement token or answer
-another seat's input. Revocation after enqueue restores the unanswered prompt.
+and turn changes revoke it. The viewer's own attack selection is a required
+choice and returns control; their own draw also revokes the permission because
+it changes the visible hand. Clients never adopt a replacement token or answer
+another seat's input. Every continuation passes only one current priority input;
+it never arms the engine's end-of-turn yield. Revocation after enqueue restores
+the unanswered prompt. The existing `priorityPassTurn` operation remains a
+distinct legacy operation with its broader end-of-turn semantics.
 Activity entries retain their normal content and add `interruptsQuietYield`:
-only explicitly tagged routine opponent draw entries use false. A missing flag
+the routine turn marker and explicitly tagged routine opponent draw entries use
+false. A turn marker is history rather than a player action; the changed turn
+and active-player scope independently ends the old token's permission. Other
+actions reported in that same observation remain interrupting. A missing flag
 means true; clients must not infer an exemption from `kind`, phase or message.
 
 Priority prompts also expose `priorityAbilities`, with opaque ability `id`,
@@ -1055,7 +1136,8 @@ clients without the context continue using the original labels and constraints.
 
 Stack entries include an `id` for the stack instance, an `ability` flag, and a
 viewer-filtered source `card` (or null when unavailable), alongside the existing
-name, text, and controller. The stack instance ID is for presentation only.
+name, text, and controller. The stack instance ID correlates presentation and
+read-only semantic references; it is never a decision or action handle.
 Card-valued `choices` include `card` details using the same visibility filter as
 library choices. In particular, ordinary `kind: reveal` prompts can display card
 portraits without a catalog query. Discard these details after acknowledgement;

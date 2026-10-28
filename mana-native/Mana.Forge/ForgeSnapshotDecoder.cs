@@ -1,5 +1,6 @@
 using System.Collections.Immutable;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using Mana.Contracts;
 using Mana.Planning;
 
@@ -10,6 +11,8 @@ namespace Mana.Forge;
 internal static class ForgeSnapshotDecoder
 {
     internal static readonly JsonSerializerOptions Json = new() { PropertyNameCaseInsensitive = true };
+    private static readonly JsonSerializerOptions OperationJson = new() { PropertyNameCaseInsensitive = true,
+        Converters = { new JsonStringEnumConverter(allowIntegerValues: false) } };
 
     internal static GameSnapshot? Decode(JsonElement raw, bool spectator = false)
     {
@@ -51,6 +54,9 @@ internal static class ForgeSnapshotDecoder
                 Executions = wire.Executions
             };
             ExecutionFrames.Validate(snapshot);
+            BlockingCapacityFacts.Validate(snapshot);
+            var operations = new ActionOperationValidation(snapshot);
+            foreach (var item in snapshot.Stack) operations.ValidateCommitted(item);
             if (snapshot.Decision?.Payload is PaymentPayload payment) {
                 if (payment.FundingContext is { } funding) ManaFundingFacts.Validate(snapshot, funding, payment.PayerId);
                 var payer = snapshot.Players.FirstOrDefault(player => player.Id == (payment.PayerId ?? snapshot.ViewerId));
@@ -155,6 +161,7 @@ internal static class ForgeSnapshotDecoder
         public int? ControllerId { get; init; }
         public ImmutableArray<StackTarget> Targets { get; init; } = [];
         public PendingEffect? Effect { get; init; }
+        public JsonElement OperationGraph { get; init; }
         public string ExecutionId { get; init; } = "";
         private StackActionKind ActionKind() => (Kind, Ability) switch {
             ("spell" or "", false) => StackActionKind.Spell,
@@ -165,7 +172,9 @@ internal static class ForgeSnapshotDecoder
         };
         public StackItem Native() => new(Name, Text, ActionKind(), Card) {
             Id = Identifier(Id), ControllerId = ControllerId,
-            Targets = Targets.IsDefault ? throw Invalid() : Targets, Effect = Effect, ExecutionId = ExecutionId ?? ""
+            Targets = Targets.IsDefault ? throw Invalid() : Targets, Effect = Effect, ExecutionId = ExecutionId ?? "",
+            OperationGraph = OperationGraph.ValueKind == JsonValueKind.Undefined ? ActionOperationGraph.Unknown
+                : OperationGraph.Deserialize<ActionOperationGraph>(OperationJson) ?? throw Invalid()
         };
     }
 

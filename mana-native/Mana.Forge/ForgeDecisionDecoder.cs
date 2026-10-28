@@ -314,6 +314,7 @@ internal static class ForgeDecisionDecoder
     private static void ValidateCard(Card? card)
     {
         if (card != null && (card.Key == null || card.VisualId == null || card.CombatId == null || card.Name == null)) throw Invalid();
+        BlockingCapacityFacts.Validate(card);
     }
     private static T? Optional<T>(JsonElement node, string key) where T : class => !Present(node, key) ? null
         : Field(node, key).Deserialize<T>(ForgeSnapshotDecoder.Json) ?? throw Invalid();

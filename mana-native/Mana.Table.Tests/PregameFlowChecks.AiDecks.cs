@@ -64,7 +64,10 @@ internal static partial class PregameFlowChecks
             var opponent = AdditionalAiDecks.Single(choice => choice.Id == opponentId);
             Calls.Enqueue("ai-seat:" + index + ":" + opponentId);
             lobby = lobby with { Seats = lobby.Seats.Select(seat => seat.Index == index
-                ? seat with { Type = "AI", Deck = opponent.Name, Ready = true, OpponentId = opponent.Id } : seat).ToImmutableArray() };
+                ? seat with { Type = "AI", Deck = opponent.Name, Ready = true, OpponentId = opponent.Id,
+                    DeckPreview = new("ai-assignment-" + index, opponent.Name,
+                        [new() { Name = "Pir, Imaginative Rascal", Type = "Legendary Creature" }, new() { Name = "Toothy, Imaginary Friend", Type = "Legendary Creature" }], null) }
+                : seat).ToImmutableArray(), Revision = lobby.Revision + 1 };
             return Task.FromResult(lobby);
         }
     }

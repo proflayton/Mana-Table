@@ -6,6 +6,7 @@ import forge.deck.Deck;
 import forge.game.ability.AbilityFactory;
 import forge.game.ability.ApiType;
 import forge.game.ability.AbilityUtils;
+import forge.game.ability.effects.CharmEffect;
 import forge.game.card.Card;
 import forge.game.card.CounterEnumType;
 import forge.game.cost.CostSacrifice;
@@ -18,11 +19,74 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
+import java.util.ArrayList;
+import java.util.Collections;
 
 import static org.testng.Assert.*;
 
 /** Real script graphs and rules target queries, without playing a scripted AI game. */
 public class ActionOperationProjectionTest {
+    @Test(timeOut = 90000)
+    public void committedModesExcludeUnusedRecipesAndUnresolvedOrConcealedBindingsStayUnknown() throws Exception {
+        try (var fixture = new Fixture()) {
+            var confluence = fixture.ability("Mystic Confluence", ApiType.Charm);
+            var draw = confluence.getAdditionalAbilityList("Choices").stream()
+                    .filter(mode -> mode.getApi() == ApiType.Draw).findFirst().orElseThrow();
+            CharmEffect.chainAbilities(confluence, new ArrayList<>(Collections.nCopies(3, draw)));
+            var chosen = fixture.committed(confluence);
+            assertEquals(chosen.get("knowledge"), "Known");
+            assertEquals(nodes(chosen).size(), 4, "The committed chain has exactly its three copied draw modes");
+            assertEquals(nodes(chosen).stream().filter(node -> node.get("effect").equals("Draw")).count(), 3L);
+            assertTrue(nodes(chosen).stream().noneMatch(node -> node.get("effect").equals("CounterSpell") || node.get("effect").equals("Bounce")),
+                    "Unchosen modal recipes are not pending effects");
+            assertTrue(nodes(chosen).stream().allMatch(node -> list(node.get("costs")).isEmpty()));
+            assertTrue(nodes(chosen).stream().flatMap(node -> list(node.get("links")).stream())
+                    .allMatch(link -> link.get("kind").equals("Sequence")));
+
+            var dynamic = fixture.ability("Blue Sun's Zenith", ApiType.Draw);
+            dynamic.getTargets().add(fixture.actor());
+            var unresolved = nodes(fixture.committed(dynamic)).get(0);
+            assertNull(unresolved.get("amount")); assertEquals(unresolved.get("amountKnowledge"), "Unknown");
+            assertEquals(unresolved.get("knowledge"), "Unknown", "A pending variable is not evaluated against future or hidden rules state");
+
+            var source = fixture.add("Grizzly Bears", ZoneType.Battlefield, 0);
+            var hidden = fixture.add("Black Lotus", ZoneType.Library, 1);
+            var targeted = AbilityFactory.getAbility("DB$ Destroy | ValidTgts$ Card | TgtZone$ Library", source);
+            targeted.setActivatingPlayer(fixture.actor()); targeted.getTargets().add(hidden);
+            var concealedTarget = fixture.committed(targeted);
+            assertEquals(concealedTarget.get("knowledge"), "Unknown");
+            assertEquals(castMap(nodes(concealedTarget).get(0).get("targets")).get("knowledge"), "Unknown");
+            assertEquals(recipients(nodes(concealedTarget).get(0)).get("knowledge"), "Unknown",
+                    "An undisclosed selected target cannot become a known empty recipient set");
+            String privateGraph = new Gson().toJson(concealedTarget);
+            assertFalse(privateGraph.contains(hidden.getName())); assertFalse(privateGraph.contains(fixture.table.identities.id(hidden.getView())));
+
+            assertTrue(source.turnFaceDown(true));
+            var concealedSource = fixture.committed(targeted);
+            assertEquals(concealedSource.get("knowledge"), "Unknown");
+            assertTrue(nodes(concealedSource).isEmpty(), "A concealed source never leaks its printed operation structure");
+        }
+    }
+
+    @Test(timeOut = 90000)
+    public void cyclicAndOversizedProviderRecipesDegradeToUnsupportedInsteadOfInvalidatingTheMatch() throws Exception {
+        try (var fixture = new Fixture()) {
+            var draw = fixture.ability("Divination", ApiType.Draw);
+            // Deliberately unsupported graph structure, distinct from executing
+            // a rules loop. Projection must not recursively execute any recipe.
+            draw.getAdditionalAbilities().put("UnmodeledCycle", draw);
+            var cyclic = fixture.committed(draw);
+            assertEquals(cyclic.get("knowledge"), "Unsupported"); assertTrue(nodes(cyclic).isEmpty());
+            var decision = ActionOperationProjection.describeDecision(draw, fixture.actor(), fixture.table.identities::id);
+            assertNull(decision.get("operationId"), "An unsupported graph cannot retain an active node reference outside its empty body");
+            draw.getAdditionalAbilities().clear();
+            for (int index = 0; index < 130; index++)
+                draw.getAdditionalAbilities().put("UnmodeledPart" + index, AbilityFactory.getAbility("DB$ Draw | NumCards$ 1", draw.getHostCard()));
+            var oversized = fixture.committed(draw);
+            assertEquals(oversized.get("knowledge"), "Unsupported"); assertTrue(nodes(oversized).isEmpty());
+        }
+    }
+
     @Test(timeOut = 90000)
     public void chainedEffectsShareTheActualTargetAndKeepTheirRecipientControllerBinding() throws Exception {
         try (var fixture = new Fixture()) {
@@ -450,6 +514,9 @@ public class ActionOperationProjectionTest {
         }
         Map<String, Object> graph(SpellAbility ability) {
             return table.game.getAction().readState(() -> ActionOperationProjection.describe(ability, actor(), table.identities::id));
+        }
+        Map<String, Object> committed(SpellAbility ability) {
+            return table.game.getAction().readState(() -> ActionOperationProjection.describeCommitted(ability, actor(), table.identities::id));
         }
         @Override public void close() { table.close(); }
     }

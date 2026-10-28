@@ -14,7 +14,7 @@ internal sealed partial class TableApplication
     private static bool NeedsFirstLandConfirmation(GameSnapshot state, DecisionCommand command) =>
         state.Status == "playing" && state.Turn > 0 && state.ActivePlayerId == state.ViewerId
         && state.Viewer is { LandPlaysUsed: 0, Eliminated: false }
-        && (command is PassTurn || command is PassPriority && state.PhaseKey == "MAIN2" && state.Stack.IsEmpty)
+        && (command is PassTurn or PassForNow || command is PassPriority && state.PhaseKey == "MAIN2" && state.Stack.IsEmpty)
         && GameCommandPermissions.Allows(state, command);
 
     private void ReconcileTurnPass()
@@ -30,7 +30,8 @@ internal sealed partial class TableApplication
         ReconcileTurnPass();
         if (turnPassRequest is not { } request) return;
         turnPassRequest = null;
-        Send(request.Command, confirmedTurnPass: true);
+        if (request.Command is PassForNow) ArmQuietPriority(confirmedTurnPass: true);
+        else Send(request.Command, confirmedTurnPass: true);
     }
 
     private bool DrawTurnPassConfirmation(Rectangle area)

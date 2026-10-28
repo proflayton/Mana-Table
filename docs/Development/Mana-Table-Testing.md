@@ -104,7 +104,7 @@ uses these same provenance checks.
 
 The wrapper is a test-only launcher for controlled positions using the exact
 production engine. It is checked against the shipping JAR and never supplies a
-shipping scenario API. The existing process initializes one JVM for the nine
+shipping scenario API. The existing process initializes one JVM for the ten
 controlled native goldens and subsequent games. The release campaign uses four
 cyclic seat rotations, each bounded by 160 global turns and 180 seconds. This is
 at most twelve minutes of nominal game budget, separate from fast CI. Limits are
@@ -115,6 +115,13 @@ draw can pass; the driver does not invent individual loss reasons which the
 provider omits. It records the public state and outcome before its only
 `StopSimulation` cleanup call. Forced cleanup, aborts and automation faults cannot
 manufacture a finish.
+
+The initial real-provider conformance driver discards explicitly expired source
+reads and requires a strictly newer observation of the same game before querying
+again. It retains its 25-second deadline and a 16-refresh cap. An offer must match
+the observed revision; no accepted command is replayed and engine revision
+fences remain enforced. `SourceActionsTest` covers the queued display-publication
+interleaving which can expire an otherwise unanswered priority input.
 
 The controlled journeys cover funded/unfunded X, funded/short consuming sources,
 optional effect-cost decline/payment, flexible-output payment, and mana
@@ -136,6 +143,26 @@ commanders. The normal policy must pay for both real commanders, establish the
 same Toothy at zero counters, then cross the next natural draw and its trigger
 to observe exactly two +1/+1 counters and 3/3 with Pir present. No scripted seat
 answer or pre-seeded counter stands in for that continuation.
+The tap-cost funding journey activates Selesnya Evangel before any land play
+using Birds of Paradise and another creature. Concordant Crossroads supplies a
+real passive haste grant because variant pregame creatures otherwise stay sick
+through their first turn; the first upkeep must publish that effective readiness.
+It observes the actual payment,
+stack occurrence and resolved Saproling without a cancellation. Engine cost
+ordering remains authoritative; focused native checks separately require an
+intervening nonmana selection to preserve the sole remaining mana source,
+including sacrifice, exile, discard, alternative witnesses and unknown context.
+`TapCostPaymentExperienceTest` exercises creature-first and source-first ordering
+through real provider inputs and proves three distinct taps and one token.
+`TapCostExecutionTest` covers current occurrence/readiness, whole-selection
+preflight, adjusted and nested payments, pending untaps, explicit original hosts,
+shared creature types and total power. Native checks distinguish the selected
+cost index from separate unpaid source commitments and retain unknown fallback.
+The consuming-source journey fails immediately if its initiated cast is canceled,
+while still requiring the actual stack, resolved commander and exactly one
+consumed Crystal Vein. Cost-order regressions cover typed default permutations
+separately from ordinary card ordering and exercise legal tap-before-sacrifice
+payment plus rejection of the reversed order through the real engine.
 
 The fixed 16-turn/35-second CI prefix and the two-rotation 32-turn/45-second smoke
 remain unchanged. Do not rerun a failed sample until one happens to pass, lower
@@ -348,6 +375,38 @@ visible stack announcement, rather than assuming the earlier shorter animation
 duration. The existing headless arrival check separately verifies that unchanged
 observations do not restart that announcement.
 
+`PriorityContinuationChecks` runs in the existing headless presentation lane.
+Actual pointer journeys at 1000x740 and 1540x980 with 130% text cover default
+opponent Auto with an available instant, explicit own/opponent waiting, fresh
+decisions retaining one original permission, cast/trigger interruption, no silent
+rearming, an action arriving during acknowledgment and Take control during send.
+The accepted-response journey clicks Pass once while the actual authored stack
+item is still pending, then verifies that its correlated resolution returns to
+fresh-token waiting without another click and that a later child trigger stops
+it again. `PriorityAcknowledgmentChecks` exercises the production attention owner
+with retained execution fixtures: intermediate completion before the local
+priority offer, older remaining stack items, new executions/required choices,
+stale commands, local mode toggles, missing metadata, gaps and unattributed changes.
+These fixtures do not simulate Magic or prove provider causality.
+Turn-history cases distinguish a routine new turn from a simultaneous cast or
+trigger. First-land checks retain Keep/Escape/stale-input protection around the
+new bounded Wait action. The draw-trigger journey also checks deliberate finite
+stack rearming after Take control; Hold must not make that consent inaccessible.
+`QuietYieldTest` adds real own-main priority, an opponent's actual spell, required
+combat and queued required-choice invalidation; `QuietPriorityRegression` checks
+the corresponding immutable native permissions. These cases extend existing lanes
+without a new engine startup or a duplicate broad interaction campaign.
+`ExecutionEngineJourney` adds that independent causal check in the existing
+packaged-engine smoke: it records the successfully submitted real Loch Mare
+stack response and feeds its subsequent authorized native snapshots into the
+same production attention owner through the fresh quiet permission. The
+ordinary draw/result, unchanged interruption fence and terminal execution must
+all agree. This reuses the already initialized JVM. It does not validate the
+separate captured-stack batch's terminal handoff or replace human pacing review.
+`SourceActionsTest` also checks that named and generic priority Undo aliases
+are rejected without untapping a real Sol Ring or changing its produced mana.
+Legacy native Undo offers expose no rollback gesture or executable permission.
+
 `StackResolutionRegression` in the existing client suite exercises a frozen
 71-entry intent through individual presentation boundaries, ordinary guarded
 passes, Take control, inspection pause/resume, required choices, retargeting,
@@ -474,6 +533,17 @@ These modes create no game window or graphics device. They exercise the same
 application and typed-frame composition used by the real window. Preserve their
 result/trace JSON when diagnosing a failure; submitted drawing data does not
 prove that a physical window is clear or correctly clipped.
+
+`LobbyStateRegression` in the client checks covers ordered lobby ownership,
+same-table reconnect fences, saved-file identity, scoped acknowledgements and
+explicit retry. `PregameFlowChecks` in the existing headless presentation lane
+switches and renames saved decks before Ready, rejects both thrown and returned
+save failures, shares incomplete drafts without readiness, and refreshes public
+remote/AI artwork when only another seat changes. Java `LobbyDeckProjectionTest`
+covers actual host/guest assignments, private-data filtering, saved-token/table
+guards and readiness legality; the native mixed-seat journey captures the same
+shared commander previews. These checks do not supply human portrait-legibility
+or gameplay acceptance.
 
 The headless lane also reads a modal spell/land card, checks both offered-action
 orders and rejects a land offer replaced between press and release. It also
@@ -629,12 +699,30 @@ poses, keeping navigation separate from commands and canonical card placement.
 buttons, wheel/shortcut/text isolation, immediate deactivation, preserved drafts,
 cancelled captures, held-input quarantine and fresh foreground target commands.
 It also checks that authoritative snapshot updates still render while inactive.
-`PriorityNotificationChecks` records the production sound callback without an
+`PriorityNotificationChecks` records production mixer voices without an
 audio device. It checks the attention grace, cohort deduplication, cooldown,
 global and temporary mute, silent expiry, foreground mute gestures and permitted
 background reminders. The actual portrait bell must remain separately reachable
 from phase/Auto/Hold controls at both supported review sizes. These checks do not
 establish that a listener finds the bundled cue quiet or pleasant.
+**Source candidate:** the same headless lane includes `AudioSettingsChecks`:
+legacy mute migration, normalized full-mix roundtrip, live master gain through
+the real settings pointer path, release-only persistence, decision replacement,
+mute-retained levels, keyboard steps, outside release and foreground loss. It
+also checks 0%-suppressed reminders are not replayed after volume is restored,
+and control reachability at both review sizes with 130% text. The always-run
+`Mana.Client.Tests` includes `AudioMixerRegression`, which uses fake voices to
+check gain multiplication, independent bus mutes, live updates, rejection,
+completion cleanup and teardown without an audio device. Packaging fixtures
+reject missing, changed or unbound `Mana.Audio.dll` and a changed archive entry
+even if its external checksum is updated. Device playback and human loudness
+review remain separate.
+The `--smoke-audio-settings` CI window journey runs at 1000x740 and 1540x980
+with 130% text in the fast native UI partitions. It uses controlled snapshots
+and real pointer input to capture default volume, a drag to 40%, and muted audio
+retaining 40%. Each state saves the fitted surface, physical window and matching
+frame observation; the journey checks stable controls and no game commands.
+These captures support visual inspection and do not establish audible quality.
 The same run also includes the
 scoped authored `DecisionFlowLabChecks`. The production headless run includes
 `DecisionDockInteractionChecks`: an actual stop-removal gesture clears only that

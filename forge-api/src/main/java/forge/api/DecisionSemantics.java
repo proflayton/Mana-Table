@@ -6,6 +6,7 @@ import forge.game.cost.*;
 import forge.game.player.Player;
 import forge.game.spellability.SpellAbility;
 import forge.game.spellability.SpellAbilityView;
+import forge.game.spellability.StackItemView;
 import forge.gamemodes.match.input.*;
 
 import java.util.*;
@@ -29,6 +30,10 @@ final class DecisionSemantics {
             result.put("amount", amount);
             result.put("counterType", paying.cost() instanceof CostRemoveCounter remove && remove.counter != null ? remove.counter.toString()
                     : paying.cost() instanceof CostPutCounter put && put.getCounter() != null ? put.getCounter().toString() : "");
+            if (input instanceof InputSelectManyBase<?>) {
+                var funding = CostPaymentProjection.describe(paying, viewer, identity);
+                if (funding != null) result.put("costPayment", funding);
+            }
             return result;
         }
         SpellAbility ability = input instanceof InputSelectTargets targets ? targets.getSpellAbility()
@@ -75,11 +80,26 @@ final class DecisionSemantics {
         return options(choices, resolve, null, null);
     }
 
+    /** Cost ordering retains the provider's actual default part order. This is
+     * context for this full ordering callback, never a classification of labels. */
+    static Map<String, Object> ordering(List<?> choices, boolean ordered, int min, int max) {
+        if (!ordered || choices.isEmpty() || min != choices.size() || max != choices.size()
+                || !choices.stream().allMatch(CostPart.class::isInstance)) return Map.of();
+        return Map.of("orderingPurpose", "CostPayment", "selectionIsCost", true,
+                "defaultOrder", java.util.stream.IntStream.range(0, choices.size()).boxed().toList());
+    }
+
     static List<Map<String, Object>> options(List<?> choices, Function<SpellAbilityView, SpellAbility> resolve,
                                            Player viewer, Function<CardView, String> identity) {
         var options = new ArrayList<Map<String, Object>>();
         for (int index = 0; index < choices.size(); index++) {
             Object choice = choices.get(index);
+            if (choice instanceof StackItemView stack) {
+                var target = ActionOperationProjection.stackTarget(stack, viewer, identity);
+                if (target != null) options.add(Map.of("index", index, "effect", "Unknown", "target", target,
+                        "operationGraph", ActionOperationProjection.unknown()));
+                continue;
+            }
             SpellAbility ability = choice instanceof SpellAbility actual ? actual
                     : choice instanceof SpellAbilityView view ? resolve.apply(view) : null;
             if (ability == null) continue;

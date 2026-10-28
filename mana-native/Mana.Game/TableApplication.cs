@@ -1,5 +1,6 @@
 using System.Collections.Immutable;
 using Mana.Client;
+using Mana.Audio;
 using Mana.Magic;
 using System.Collections.Concurrent;
 using System.Text.Json;
@@ -30,6 +31,7 @@ internal sealed partial class TableApplication : IDisposable
     private readonly bool restartedAfterUpdate;
     internal bool CaptureMode { get; set; }
     private readonly PresentationResources resources;
+    private AudioMixer? audioMixer;
     internal bool Automated { get; set; }
     internal string? AcceptedHit { get; private set; }
     internal bool AcceptedDrag { get; private set; }
@@ -55,7 +57,7 @@ internal sealed partial class TableApplication : IDisposable
     private ImmutableArray<DeckSummary> decks = [];
     private ImmutableArray<DeckPreset> presets = [];
     private DeckSummary? selectedDeck;
-    private Lobby? lobby;
+    private Lobby? lobby => session.Lobby;
     private GameSnapshot? match => session.State;
     private SoloSetup? soloSetup;
     private readonly int[] soloChoices = [0, 1, 2];
@@ -91,6 +93,7 @@ internal sealed partial class TableApplication : IDisposable
         InteractionScopeKind.Activity => ActivityScope,
         InteractionScopeKind.Experience => ExperienceScope,
         InteractionScopeKind.Chat => ChatScope,
+        InteractionScopeKind.Settings => "settings:" + profile,
         InteractionScopeKind.Playback when match != null => match.Id + ":viewer:" + match.ViewerId + ":playback",
         InteractionScopeKind.PhaseStop when match != null => match.Id + ":viewer:" + match.ViewerId + ":playback:phase-stop:" + match.PhaseKey,
         InteractionScopeKind.Source when SourceActionsSupported => Scope + ":source:" + sourceActions.View.Generation + ":" + sourceActions.View.Context,
@@ -142,6 +145,8 @@ internal sealed partial class TableApplication : IDisposable
     }
     internal void Initialize()
     {
+        audioMixer = new(resources.AudioOutput);
+        audioMixer.SetMix(preferences.Audio);
         if (Automated) automatic = false;
         if (initialState != null) { localMatch = true; loaded = true; Accept(initialState); return; }
         if (fixture != null) {
@@ -161,11 +166,10 @@ internal sealed partial class TableApplication : IDisposable
         if (state?.Status == "finished" && previous?.Status != "finished") tableGuideOpen = false;
         if (transition.Notice is { } latest) { notice = latest; noticeUntil = now + 8; }
         if (transition.Finished) { overlay = "result"; zoneName = null; }
-        if (!preferences.Sounds) return;
-        for (int i = 0; i < transition.LifeLosses; i++) resources.Play("life-loss", .45f);
-        if (transition.Finished) resources.Play("game-end", .5f);
-        if (transition.CombatStarted) resources.Play("combat", .35f);
-        if (transition.CardPlayed) resources.Play("card-play", .35f);
+        for (int i = 0; i < transition.LifeLosses; i++) audioMixer?.Play(new("life-loss", AudioBus.Effects, .45f));
+        if (transition.Finished) audioMixer?.Play(new("game-end", AudioBus.Effects, .5f));
+        if (transition.CombatStarted) audioMixer?.Play(new("combat", AudioBus.Effects, .35f));
+        if (transition.CardPlayed) audioMixer?.Play(new("card-play", AudioBus.Effects, .35f));
     }
     private void PrepareDecisionSession()
     {
@@ -190,7 +194,9 @@ internal sealed partial class TableApplication : IDisposable
     {
         AcceptedHit = null; AcceptedDrag = false;
         now = time.TotalGameTime.TotalSeconds;
+        audioMixer?.Update();
         session.Pump();
+        UpdateLobbyDeck();
         UpdateActivity();
         UpdateTempo();
         UpdateSocial();
@@ -199,6 +205,7 @@ internal sealed partial class TableApplication : IDisposable
         UpdateAppUpdates();
         UpdateReaderActions();
         PrepareDecisionSession();
+        priorityAttention.Observe(match);
         string turn = match == null ? "" : match.Id + ":" + match.Turn + ":" + match.ActivePlayerId;
         if (previousTurn != turn) { previousTurn = turn; held = false; turnBannerUntil = now + 1.5; }
         if (inspected != null) {
@@ -210,6 +217,7 @@ internal sealed partial class TableApplication : IDisposable
         // Give a ready pass precedence over starting another observation. Use this
         // update's pointer position so entering a card pauses Auto before Draw.
         bool autoBlocked = AutomaticInteractionPause() != DecisionDockPauseReason.None;
+        ArmAutomaticQuietPriority(autoBlocked);
         bool stackReserved = UpdateStackResolution(autoBlocked);
         bool quietReserved = stackReserved || UpdateQuietPriority(autoBlocked);
         if (!quietReserved && (!automatic || held || autoBlocked)) session.CancelAdvance();
@@ -224,7 +232,7 @@ internal sealed partial class TableApplication : IDisposable
         UpdatePriorityNotification();
         if (!ExperienceLabOpen && loaded && fixture == null && !busy && !polling && now >= nextPoll && (localMatch || lobby != null)) {
             nextPoll = now + (session.NeedsRecovery ? 2 : match == null ? .6 : match.Decision == null ? .05 : .12);
-            session.Poll(!localMatch, nextLobby => lobby = nextLobby);
+            session.Poll(!localMatch, _ => { });
         }
         PreparePresentation(time);
     }
@@ -233,6 +241,10 @@ internal sealed partial class TableApplication : IDisposable
     private bool Send(DecisionCommand? command, bool confirmedTurnPass = false)
     {
         if (command == null || fixture != null || session.NeedsRecovery || match?.Id != command.GameId || match.Decision?.Id != command.DecisionId) return false;
+        if (command is UndoLastAction) return false;
+        // Legacy providers may still offer Forge's uninterruptible end-turn
+        // latch. The native player always uses current, bounded passes instead.
+        if (command is PassTurn) { ArmQuietPriority(confirmedTurnPass); return false; }
         if (AbilityActionPending) {
             var ability = (AbilityChoicePayload)match.Decision!.Payload;
             if (command is not ChooseOptions { Choices: var choices }
@@ -250,6 +262,7 @@ internal sealed partial class TableApplication : IDisposable
         CancelReleasedPlayIntent();
         error = ""; commandFailure = false;
         if (!session.Submit(command)) return false;
+        priorityAttention.Submitted(match, command);
         if (CardCollectionOpen) FoldCardCollection();
         pendingActionLabel = StateClarity.PendingActionLabel(match, command);
         return true;
@@ -312,6 +325,8 @@ internal sealed partial class TableApplication : IDisposable
     {
         if (closing) return;
         closing = true; CloseUpdateRequests(); deckWorkspace.Close(); deckPersistence.Close(); catalogRead.Close(); printingRead.Close(); deckTokensRead.Close(); tokenPrintingsRead.Close(); session.Close(); matchPresentation.Reset();
+        FinishAudioAdjustment();
+        audioMixer?.Dispose();
         canvas.Dispose();
     }
 }

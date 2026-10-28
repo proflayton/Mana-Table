@@ -135,12 +135,26 @@ does not establish that a person can understand or use the screen.
     player's actual phase directs attention to their seat. Auto, Hold, a bounded
     yield and a required decision have different authority and lifetimes; visual
     consolidation must preserve those distinctions.
+    Routine Auto should not demand a click merely because an instant is held.
+    A new action must preserve an available response, and Take control must stop
+    every continuation path. Never hide a turn-long engine yield behind an
+    ordinary pass control that the client cannot revoke.
 
 12. **Keep deck identity and persistence visible through editing.** Both chosen
     commanders belong beside the deck, including while browsing library cards.
     Pairing guidance comes from the engine. Saving, saved, failed persistence
     and deck legality are separate facts; returning to Play must not require a
     second confirmation of edits already acknowledged by storage.
+    The local lobby portrait and deck name must preview that same acknowledged
+    selection after switching or renaming a deck. The reported 27 October
+    screenshot showed a new portrait with the previous submitted deck name.
+    Acknowledged saved changes publish the new selection while keeping the player
+    unready. Every seat renders its name and commander artwork from the same
+    shared public preview; the local renderer cannot substitute a different deck.
+    Ready remains separate consent to begin with the shared selection.
+    Keep the supplied Arena examples' seat-centered circular portraits. Splitting
+    that existing portrait between two Commander partners is our adaptation;
+    the references do not establish Arena support for partner commanders.
 
 13. **Present alternatives as game choices.** Declining an optional effect and
     taking a mulligan are meaningful alternatives, not tiny cancellation chrome.
@@ -160,6 +174,112 @@ does not establish that a person can understand or use the screen.
     capabilities, historical facts and local animation state distinct. The
     [architecture migration](Mana-Table-Architecture.md#action-execution-the-next-boundary-migration)
     records the current gaps and the first real-engine journey to migrate.
+
+## Safe automatic priority: 27 October 2026
+
+**Status: source candidate; human gameplay review pending.** Players described
+repeated empty priority with an instant as frustrating, then chose Pass turn and
+could not intervene when another player acted. The audit found two owners:
+ordinary native continuation and Forge's engine-side end-turn yield. The latter
+suppressed future native prompts and had no native cancellation/status contract.
+Forge's desktop spell/attack interruption hooks live in its GUI event handler,
+which the headless adapter does not install. A new label alone cannot fix that.
+
+The observed reference is [MTGO's gameplay guide](https://www.mtgo.com/getting-started/getting-started-tips-tricks):
+its key 2 continues until a response or combat choice, while key 6 yields through
+the turn and prevents ordinary reactions. Its ability-specific yields are a
+separate stack gesture. [Arena's Smart Priority guide](https://magic.wizards.com/en/news/mtg-arena/announcements-october-27-2025#a-quick-guide-to-smart-priority-for-powered-cube)
+acknowledges confusing skips and documents card exceptions and full control.
+Our adaptation uses explicit engine permissions rather than new card exceptions.
+
+The source journey is now:
+
+- Auto waits through unchanged empty opponent windows, even with an instant.
+  A new cast, activation, trigger, public action or combat declaration preserves
+  an available response and blocks silent quiet rearming. Explicitly passing or
+  acting acknowledges only that displayed opportunity. No-response windows may
+  still use normal engine-authorized Auto after their readable presentation beat.
+- Your own playable main phase and required choices stay explicit. Pass once
+  answers one window; own-turn phase buttons keep their concrete destinations.
+  Wait for action deliberately continues empty windows on either player's
+  current turn, stopping for new work, attacker/blocker selection or a turn change.
+  The first-land warning still protects an own-turn wait before the first land.
+- After the player clicks Pass once for an actual top stack item, ordinary
+  resolution of that same execution resumes empty opponent-window waiting when
+  the engine offers fresh permission. It does not request a second acknowledgment
+  merely because the accepted effect resolved. The source is that exact pending
+  item, the gesture answers its current priority decision, and the visible result
+  is the existing Auto waiting state after its readable resolution beat. This
+  adapts MTGO's stop-at-a-response continuation above; relating the accepted
+  response to its ordinary completion is our inference, not a claim that MTGO
+  publishes our execution model. A newer spell, child trigger or required choice
+  returns control; an older item still on the stack has its own response.
+- Take control remains at the same portrait position and holds Auto this turn,
+  even during an in-flight pass. Deliberate waiting, releasing Hold or enabling
+  Auto can resume it. Reading pauses without committing; replacement prompts
+  and tokens do not silently acknowledge new events.
+- Normal controls never enable Forge's end-turn latch. Resolve these retains
+  separate consent for the already captured stack and stops when new work arrives.
+
+The quiet token remains provider-owned, checked at acceptance and execution.
+The local attention owner retains public interruption/version facts and a bounded
+receipt for an accepted top-stack response. Historical execution/occurrence IDs
+do not grant action authority or become another submitted-prompt cache. Missing
+causal metadata, lost history or an unattributed change keeps attention stopped.
+Local Auto/Hold changes cannot fabricate the submitted response. A new opponent turn starts a new quiet
+opportunity; its routine history marker must not hide a cast in the same poll.
+Older providers without a quiet token retain ordinary scoped passes.
+
+Production pointer checks cover 1000x740 and 1540x980 at 130% text, including
+an available instant, explicit own/opponent waiting, default Auto, new casts and
+triggers, delayed completion, Take control and first-land confirmation. Java
+regressions cover actual own main phases, new opponent spells, combat and required
+choices with the same authority rechecks. These are correctness checks; actual
+motion, control discoverability and human gameplay acceptance remain pending.
+The added single-response checks exercise the physical nonempty-stack Pass once,
+its correlated completion, delayed return of the local priority offer, fresh
+quiet permission and a subsequent child trigger. The existing packaged-engine
+Loch Mare journey independently supplies actual adapter observations through a
+successfully submitted stack response, draw and terminal execution. Authored
+attention/input fixtures establish their own control and causal boundaries;
+neither they nor that provider journey establish enjoyable pacing. The separate
+Resolve these batch's final handoff is unchanged and can still leave an
+additional attention stop when an instant remains available. Human review of
+this source candidate remains pending.
+
+The player also reported Undo untapping an artifact while retaining its effect.
+In-game action Undo is removed from the source candidate. The adapter rejects
+both its named command and the generic priority Cancel alias before rules work
+is queued. Legacy projected Undo offers produce no native rollback control or
+command. The regression checks retain the actual Sol Ring tap and produced mana
+across rejected requests. Deck editing/deletion recovery remains its own lifecycle.
+## Master volume and mixer boundary: 27 October 2026
+
+**Source candidate; human review pending.** The player wants to turn down game
+audio now and eventually mix different types of sound independently. Arena puts
+its in-game volume controls in Settings, as documented by
+[Wizards' sound support](https://mtgarena-support.wizards.com/hc/en-us/articles/360059670812-Sound-issues-on-mobile).
+That source establishes the location, not Arena's precise channel arrangement or
+slider behavior. Our adaptation keeps volume in the existing in-match drawer,
+with a horizontal master track and a retained percentage. It does not introduce
+a scrollable settings page or claim Arena proves the correct scale for this app.
+
+Journey: open Settings from the table, press or drag the master track, hear
+currently playing and subsequent sounds at the new level, then release to save.
+Minus/plus and focused arrow keys change it by five percentage points; Home/End
+set 0%/100%. Mute silences sound while preserving the selected volume. Adjusting
+the track while muted changes that retained level without unmuting. A new game
+decision does not steal a drag; closing or losing foreground ownership ends it
+at the last preview. These are local audio changes with no engine transition,
+target selection or priority reply. Master, effects, notifications and music
+have separate levels in the framework, with only master exposed today.
+
+Review default, adjusted and muted states at 1000×740 and 1540×980, including 130%
+text. Check pointer travel, keyboard access, foreground loss and a live sound
+changing volume without restarting. Headless fake-device checks verify gain,
+persistence and input safety; CI window captures verify composition. Neither
+establishes actual loudness, sound quality or human acceptance. Human review of
+this candidate remains pending; the prior priority cue review is separate.
 
 ## Quiet priority notification: 27 October 2026
 

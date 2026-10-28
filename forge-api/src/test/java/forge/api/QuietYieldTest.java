@@ -1,6 +1,7 @@
 package forge.api;
 
 import com.google.gson.JsonObject;
+import forge.player.PlayerControllerHuman;
 import org.testng.annotations.DataProvider;
 import org.testng.annotations.Test;
 
@@ -127,7 +128,7 @@ public class QuietYieldTest {
     public void explicitPermissionPassesAnAvailableMesaAcrossQuietWindowsWithoutChangingAuto() throws Exception {
         try (var game = scenario("quiet-yield-available-mesa")) {
             var own = game.until(i -> i.seat() == 0 && priority(i) && ownTurn(i));
-            assertEquals(token(own), "");
+            assertFalse(token(own).isEmpty(), "Own-turn priority offers the same bounded permission, never an engine end-turn yield");
             game.rejected(own, Map.of("action", "passUntilPublicAction", "yieldToken", "unissued"), REVOKED);
             var input = game.until(i -> eligible(i) && text(i.state(), "phaseKey").equals("MAIN2"));
             String token = token(input);
@@ -149,8 +150,98 @@ public class QuietYieldTest {
             assertTrue(game.answer(next, Map.of("action", "passUntilPublicAction", "yieldToken", token)));
             var nextTurn = game.until(i -> i.seat() == 0 && priority(i)
                     && i.state().get("turn").getAsInt() > input.state().get("turn").getAsInt());
+            var turnMarker = nextTurn.state().getAsJsonArray("activity").asList().stream()
+                    .map(entry -> entry.getAsJsonObject()).filter(entry -> text(entry, "kind").equals("turn")
+                            && entry.get("turn").equals(nextTurn.state().get("turn"))).findFirst().orElseThrow();
+            assertFalse(turnMarker.get("interruptsQuietYield").getAsBoolean(),
+                    "The routine turn history marker is quiet without authorizing the prior turn's continuation");
             assertNotEquals(token(nextTurn), token, "The same policy must never silently cross a turn");
             game.rejected(nextTurn, Map.of("action", "passUntilPublicAction", "yieldToken", token), REVOKED);
+        }
+    }
+
+    @Test(timeOut = 90000)
+    public void ownMainPhaseContinuationKeepsTheAvailableInstantAndEveryRealPriorityWindow() throws Exception {
+        try (var game = new RulesScenario("quiet-yield-own-main-phase",
+                Map.of(0, List.of("Mountain", "Spellbook"), 1, List.of("Spellbook"),
+                        2, List.of("Spellbook"), 3, List.of("Spellbook")), "Lightning Bolt", "Progenitus")) {
+            var input = game.until(i -> eligibleOn(i, true) && text(i.state(), "phaseKey").equals("MAIN1"));
+            String original = token(input);
+            int turn = input.state().get("turn").getAsInt();
+            for (int windows = 0; windows < 5; windows++) {
+                assertEquals(input.state().get("turn").getAsInt(), turn);
+                assertTrue(ownTurn(input));
+                assertTrue(input.state().getAsJsonArray("stack").isEmpty());
+                assertEquals(token(input), original, "Empty phase changes retain only the original explicit permission");
+                assertFalse(input.prompt().get("canAutoPass").getAsBoolean(),
+                        "A funded Lightning Bolt remains a response even during an explicitly continued own turn");
+                assertFalse(((PlayerControllerHuman) game.table.game.getPlayers().get(0).getController())
+                                .getYieldController().autoPassUntilEndOfTurn(),
+                        "Every priority input remains observable; continuing must not arm Forge's engine-side EOT latch");
+                if (text(input.state(), "phaseKey").equals("MAIN2")) return;
+                assertTrue(game.answer(input, Map.of("action", "passUntilPublicAction", "yieldToken", original)));
+                input = game.until(i -> i.seat() == 0 && priority(i));
+            }
+            fail("The own-turn continuation did not cross empty combat to the second main phase");
+        }
+    }
+
+    @Test(timeOut = 90000)
+    public void opponentSpellDuringOwnTurnReturnsTheFundedResponseBeforeResolving() throws Exception {
+        try (var game = new RulesScenario("quiet-yield-own-turn-opponent-spell",
+                Map.of(0, List.of("Mountain", "Spellbook"), 1, List.of("Spellbook"),
+                        2, List.of("Spellbook"), 3, List.of("Spellbook")), "Lightning Bolt", "Progenitus",
+                Map.of(1, java.util.Collections.nCopies(99, "Pact of the Titan")))) {
+            var input = game.until(i -> eligibleOn(i, true) && text(i.state(), "phaseKey").equals("MAIN1"));
+            String original = token(input);
+            assertTrue(game.answer(input, Map.of("action", "passUntilPublicAction", "yieldToken", original)));
+            var opponent = game.until(i -> i.seat() == 1 && priority(i));
+            var spell = zone(viewer(opponent.state()), "Hand").getAsJsonArray("cards").asList().stream()
+                    .map(value -> value.getAsJsonObject()).filter(card -> text(card, "name").equals("Pact of the Titan"))
+                    .findFirst().orElseThrow();
+            assertTrue(game.answer(opponent, Map.of("action", "card", "key", text(spell, "key"))));
+            var response = game.until(i -> i.seat() == 0 && priority(i) && !i.state().getAsJsonArray("stack").isEmpty());
+            assertEquals(response.state().get("turn"), input.state().get("turn"));
+            assertTrue(ownTurn(response));
+            assertEquals(token(response), "", "A new opposing spell ends the empty-stack continuation on the viewer's own turn");
+            game.rejected(response, Map.of("action", "passUntilPublicAction", "yieldToken", original), REVOKED);
+            assertFalse(response.prompt().get("canAutoPass").getAsBoolean(), "The original funded instant still requires a response decision");
+            var bolt = zone(viewer(response.state()), "Hand").getAsJsonArray("cards").asList().stream()
+                    .map(value -> value.getAsJsonObject()).filter(card -> text(card, "name").equals("Lightning Bolt"))
+                    .findFirst().orElseThrow();
+            var offers = new com.google.gson.Gson().toJsonTree(game.table.seat(0).sourceActions(
+                    request(response, Map.of("key", text(bolt, "key"))))).getAsJsonObject();
+            assertTrue(offers.getAsJsonArray("actions").asList().stream().map(value -> value.getAsJsonObject())
+                    .anyMatch(action -> text(action, "kind").equals("cast")),
+                    "The fresh response retains an actual current engine-authorized Lightning Bolt cast offer");
+            assertTrue(response.state().getAsJsonArray("stack").asList().stream().map(value -> value.getAsJsonObject())
+                    .anyMatch(item -> text(item, "name").equals("Pact of the Titan")),
+                    "The opposing spell remains pending while the viewer decides whether to intervene");
+        }
+    }
+
+    @Test(timeOut = 90000)
+    public void ownAttackDeclarationRemainsARequiredChoiceAfterContinuingTheMainPhase() throws Exception {
+        try (var game = new RulesScenario("quiet-yield-own-attack-choice",
+                Map.of(0, List.of("Mountain", "Raging Goblin", "Spellbook"), 1, List.of("Spellbook"),
+                        2, List.of("Spellbook"), 3, List.of("Spellbook")), "Lightning Bolt", "Progenitus")) {
+            var input = game.until(i -> eligibleOn(i, true) && text(i.state(), "phaseKey").equals("MAIN1"));
+            String original = token(input);
+            for (int windows = 0; windows < 5; windows++) {
+                if (text(input.prompt(), "inputType").equals("InputAttack")) {
+                    assertEquals(token(input), "", "Choosing attackers is a human decision even before an attack is declared");
+                    game.rejected(input, Map.of("action", "passUntilPublicAction", "yieldToken", original), REVOKED);
+                    assertTrue(game.answer(input, Map.of("action", "ok")), "Only the explicit attack decision chooses no attackers");
+                    var after = game.until(i -> i.seat() == 0 && priority(i));
+                    assertTrue(ownTurn(after));
+                    assertNotEquals(token(after), original, "Completing the attack choice cannot silently resume the retired intent");
+                    return;
+                }
+                assertEquals(token(input), original);
+                assertTrue(game.answer(input, Map.of("action", "passUntilPublicAction", "yieldToken", original)));
+                input = game.until(i -> i.seat() == 0 && (priority(i) || text(i.prompt(), "inputType").equals("InputAttack")));
+            }
+            fail("The actual attack declaration was hidden instead of returning control");
         }
     }
 
@@ -271,13 +362,16 @@ public class QuietYieldTest {
         }
     }
 
-    @Test(timeOut = 90000)
-    public void realManaActivationStackAndRequiredSearchReturnControlInsteadOfConsumingAChoice() throws Exception {
-        try (var game = scenario("quiet-yield-public-action", true)) {
-            var input = game.until(i -> eligible(i) && text(i.state(), "phaseKey").equals("MAIN2"));
+    @DataProvider public Object[][] turnOwners() { return new Object[][] {{false}, {true}}; }
+
+    @Test(dataProvider = "turnOwners", timeOut = 90000)
+    public void realManaActivationStackAndRequiredSearchReturnControlInsteadOfConsumingAChoice(boolean duringOwnTurn) throws Exception {
+        try (var game = scenario("quiet-yield-public-action-" + duringOwnTurn, true)) {
+            var input = game.until(i -> eligibleOn(i, duringOwnTurn)
+                    && text(i.state(), "phaseKey").equals(duringOwnTurn ? "MAIN1" : "MAIN2"));
             String original = token(input);
             assertTrue(game.answer(input, Map.of("action", "card", "key", text(card(input, "Forest"), "key"))));
-            var floating = game.until(i -> eligible(i) && viewer(i.state()).getAsJsonObject("mana").get("G").getAsInt() == 1);
+            var floating = game.until(i -> eligibleOn(i, duringOwnTurn) && viewer(i.state()).getAsJsonObject("mana").get("G").getAsInt() == 1);
             assertNotEquals(token(floating), original, "A real mana ability interrupts despite never entering the stack");
             game.rejected(floating, Map.of("action", "passUntilPublicAction", "yieldToken", original), REVOKED);
             String beforeMesa = token(floating);
@@ -296,10 +390,10 @@ public class QuietYieldTest {
         }
     }
 
-    @Test(timeOut = 90000)
-    public void requiredChoiceRevocationAfterEnqueueRestoresTheExactUnansweredPriority() throws Exception {
-        try (var game = scenario("quiet-yield-owned-recheck")) {
-            var input = game.until(i -> eligible(i) && text(i.state(), "phaseKey").equals("MAIN1"));
+    @Test(dataProvider = "turnOwners", timeOut = 90000)
+    public void requiredChoiceRevocationAfterEnqueueRestoresTheExactUnansweredPriority(boolean duringOwnTurn) throws Exception {
+        try (var game = scenario("quiet-yield-owned-recheck-" + duringOwnTurn)) {
+            var input = game.until(i -> eligibleOn(i, duringOwnTurn) && text(i.state(), "phaseKey").equals("MAIN1"));
             String token = token(input), promptId = text(input.prompt(), "id");
             var entered = new CountDownLatch(1);
             var release = new CountDownLatch(1);
@@ -348,6 +442,9 @@ public class QuietYieldTest {
     private static boolean priority(RulesScenario.Input input) { return text(input.prompt(), "inputType").equals("InputPassPriority"); }
     private static boolean ownTurn(RulesScenario.Input input) { return input.state().get("activePlayerId").equals(input.state().get("viewerId")); }
     private static boolean eligible(RulesScenario.Input input) { return input.seat() == 0 && priority(input) && !ownTurn(input) && !token(input).isEmpty(); }
+    private static boolean eligibleOn(RulesScenario.Input input, boolean own) {
+        return input.seat() == 0 && priority(input) && ownTurn(input) == own && !token(input).isEmpty();
+    }
     private static String token(RulesScenario.Input input) { return text(input.prompt(), "quietYieldToken"); }
     private static JsonObject card(RulesScenario.Input input, String name) {
         return zone(viewer(input.state()), "Battlefield").getAsJsonArray("cards").asList().stream()

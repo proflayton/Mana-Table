@@ -81,12 +81,12 @@ internal sealed class PriorityFlowSmoke : ITableAutomation
                 "Priority pointer input uses the actual requested physical viewport");
             Check(view.PrioritySeats.Keys.SequenceEqual([0]) && view.Match!.ActivePlayerId == 2,
                 "Only the reported local responder has the teal portrait token, separate from another player's turn");
-            Check(Text().Contains("Your priority"), "The local pending-effect heading states current priority without framing your own action as an interruption");
-            Check(Text().Contains("Pass priority") && view.Hits.Any(hit => hit.Id == "confirm")
+            Check(Text().Contains("Your response"), "The local pending-effect heading identifies the player's current response window");
+            Check(Text().Contains("Pass once") && view.Hits.Any(hit => hit.Id == "confirm")
                 && !Text().Any(value => value.Contains("Let it resolve", StringComparison.OrdinalIgnoreCase)),
-                "The enabled primary action says Pass priority without promising that an effect will resolve");
+                "The enabled primary action says Pass once without promising that an effect will resolve");
             Check(view.DecisionDock is { Status: DecisionDockStatus.Priority, ActorRole: DecisionDockActorRole.Priority,
-                    ActorId: 0, ActionLabel: "Pass priority" } && view.DecisionText.Length == 0
+                    ActorId: 0, ActionLabel: "Pass once" } && view.DecisionText.Length == 0
                 && !view.Hits.Any(hit => hit.Id == "instructions")
                 && view.Hits.Any(hit => hit.Id == "ability-pass:optional-mesa"),
                 "The current role and real pass action explain priority without repeated prose, while an optional activation retains its own pass control");
@@ -130,7 +130,7 @@ internal sealed class PriorityFlowSmoke : ITableAutomation
         Step(() => {
             Check(view.Match?.Decision is { Payload: EntitySelectionPayload } && view.PrioritySeats.Count == 0
                 && view.Hits.Any(hit => hit.Id == "recipient:0") && Text().Any(value => value.Contains("Search trigger (scripted)"))
-                && !Text().Contains("Pass priority"),
+                && !Text().Contains("Pass once"),
                 "The required recipient choice names its source, removes the priority token and exposes a direct You control");
             Check(engine.Replies.Count == 1, "The authored other-seat handoff sends no action on behalf of that player");
             recipientDecision = view.Match!.Decision!.Id;
@@ -279,7 +279,7 @@ internal sealed class PriorityFlowSmoke : ITableAutomation
         public Task<Lobby> HostAsync(int players, bool forwarding) => Unavailable<Lobby>();
         public Task<Lobby> JoinAsync(string address) => Unavailable<Lobby>();
         public Task<Lobby> LobbyAsync() => Unavailable<Lobby>();
-        public Task SelectDeckAsync(string id) => Unavailable();
+        public Task<Lobby> SelectDeckAsync(LobbyDeckSelection selection) => Unavailable<Lobby>();
         public Task SetReadyAsync(bool ready) => Unavailable();
         public Task StartAsync() => Unavailable();
         public Task ReturnToLobbyAsync() => Unavailable();

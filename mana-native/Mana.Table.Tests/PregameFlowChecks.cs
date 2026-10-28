@@ -20,6 +20,7 @@ internal static partial class PregameFlowChecks
         CheckDeckEditing(profile, check);
         CheckMissingPartner(profile, check);
         CheckSavedAiDecks(profile, check);
+        CheckLobbyDeckNames(profile, check);
         var solo = new PregameEngine();
         solo.Preparing = new(TaskCreationOptions.RunContinuationsAsynchronously);
         using (var run = new Runner(profile, "quick-solo", solo, check)) {
@@ -45,9 +46,10 @@ internal static partial class PregameFlowChecks
                 "An invalid " + failure + " deck has no committed Play path and does not prepare or start a game");
             run.Click("friends-tab"); run.Click("host");
             run.Until(() => run.View.Lobby?.Mode == "hosting" && !run.View.Busy, "An incomplete list can join a pregame table without being submitted");
-            check(invalid.Calls.ToArray().SequenceEqual(["open:a", "host:4"])
+            var local = run.View.Lobby!.Seats.Single(seat => seat.Local);
+            check((failure == "draft" ? local.DeckPreview?.Problem != null && local.Deck == "Deck a" : local.DeckPreview == null)
                     && !run.Frame.Hits.Any(hit => hit.Id == "ready") && invalid.ReadyCalls == 0,
-                "An invalid " + failure + " list is neither assigned nor readied when opening a friends table");
+                "An invalid saved draft is shared with its problem while a failed save remains unassigned, and neither can become Ready");
         }
         var friends = new PregameEngine();
         using (var run = new Runner(profile, "quick-friends", friends, check)) {
@@ -59,17 +61,17 @@ internal static partial class PregameFlowChecks
                 "Hosting brings the valid selected deck directly, remains unready, and performs no solo preparation");
             run.Click("change-deck"); run.Click("deck:b");
             run.Until(() => run.View.SelectedDeck?.Id == "b" && !run.View.Busy, "Choosing another saved deck returns to the same pregame context");
-            check(run.View.SetupModal.Length == 0 && !run.View.DeckConfirmed
-                    && run.View.Lobby!.Seats.Single(seat => seat.Local).Ready == false
+            check(run.View.SetupModal.Length == 0 && run.View.DeckConfirmed
+                    && run.View.Lobby!.Seats.Single(seat => seat.Local) is { Ready: false, Deck: "Deck b" }
                     && friends.Calls.ToArray().All(call => call != "ready:True"),
-                "Choosing a different saved list opens no forced review and never readies the player");
+                "Choosing a different saved list synchronizes its shared seat without a forced review or implicit Ready");
             run.Click("ready");
             run.Until(() => run.View.Lobby!.Seats.Single(seat => seat.Local).Ready && !run.View.Busy,
-                "The explicit Ready intent submits the newly selected deck and readies its local seat");
+                "The explicit Ready intent readies the synchronized selected deck");
             var calls = friends.Calls.ToArray();
-            check(calls.TakeLast(2).SequenceEqual(["select:b", "ready:True"]) && run.View.DeckConfirmed
+            check(calls.Last() == "ready:True" && calls.Count(call => call == "select:b") == 1 && run.View.DeckConfirmed
                     && friends.FriendStartCalls == 0 && !run.Frame.Hits.Any(hit => hit.Id == "start"),
-                "Ready selects the exact current list before readiness and cannot start while other seats are still open");
+                "Ready acknowledges the already synchronized list without resubmitting it and cannot start while other seats are open");
             int before = friends.Calls.Count;
             run.Click("change-deck"); run.Click("deck:b");
             check(friends.Calls.Count == before && run.View.Lobby!.Seats.Single(seat => seat.Local).Ready && run.View.SetupModal.Length == 0,
@@ -203,10 +205,11 @@ internal static partial class PregameFlowChecks
         private double now;
         internal TableApplication.Probe View => app.TestPort;
         internal PresentationFrame Frame { get; private set; } = null!;
-        internal Runner(string profile, string name, PregameEngine engine, Action<bool, string> check, IEngineCatalog? catalog = null) {
+        internal (Card[] Visible, Card[] Anticipated) Artwork => app.ArtPreloadCards();
+        internal Runner(string profile, string name, PregameEngine engine, Action<bool, string> check, IEngineCatalog? catalog = null, PresentationResources? resources = null) {
             string directory = Path.Combine(profile, name); Directory.CreateDirectory(directory);
             new PlayPreferences { Automatic = false, ReducedMotion = true, Sounds = false, TextScale = 1.3f }.Save(directory);
-            this.check = check; app = new(TestTableServices.For(engine) with { Catalog = catalog ?? engine }, directory) { Automated = true };
+            this.check = check; app = new(TestTableServices.For(engine) with { Catalog = catalog ?? engine }, directory, resources: resources) { Automated = true };
             app.Initialize();
             Until(() => View.Loaded && !View.Busy && !View.ActivityOpen, "The controlled pregame opens its selected saved deck");
         }
@@ -302,7 +305,7 @@ internal static partial class PregameFlowChecks
         public Task<Lobby> ConfigureTempoAsync(string tableId, TempoPreset preset, TempoExpiry expiry) {
             if (lobby?.TableId != tableId) throw new InvalidOperationException("Stale table");
             lobby = lobby with { Tempo = new(preset, expiry, preset == TempoPreset.Fast ? 30 : 60, 60, Guid.NewGuid().ToString()),
-                Seats = lobby.Seats.Select(seat => seat with { Ready = false }).ToImmutableArray() };
+                Seats = lobby.Seats.Select(seat => seat with { Ready = false }).ToImmutableArray(), Revision = lobby.Revision + 1 };
             return Task.FromResult(lobby);
         }
         public Task SetReadyAsync(string tableId, bool ready, string tempoRevision) {
@@ -324,15 +327,17 @@ internal static partial class PregameFlowChecks
         public string Name => "Controlled pregame";
         public Task InitializeAsync() => Task.CompletedTask;
         public ValueTask DisposeAsync() => ValueTask.CompletedTask;
-        public Task<ImmutableArray<DeckSummary>> DecksAsync() => Task.FromResult<ImmutableArray<DeckSummary>>([new("a", "Deck a"), new("b", "Deck b")]);
+        public Task<ImmutableArray<DeckSummary>> DecksAsync() => Task.FromResult<ImmutableArray<DeckSummary>>(EmptyDeckLibrary ? [] : [Summary("a"), Summary("b")]);
+        private DeckSummary Summary(string id) => new(id, SavedDeck(id).Name) { LibraryToken = SavedDeck(id).LibraryToken };
         public Task<ImmutableArray<DeckPreset>> PresetsAsync() => Task.FromResult<ImmutableArray<DeckPreset>>([]);
         public Task<DeckDetails> OpenDeckAsync(string id) {
             Calls.Enqueue("open:" + id);
-            return Task.FromResult(new DeckDetails(id, "Deck " + id, 1,
-                [new("Commander", "commander", new() { Name = "Rhys the Redeemed", Type = "Legendary Creature" }, 1),
-                    new("Main", "forest", new() { Name = "Forest", Type = "Basic Land" }, 99)], [],
-                Invalid == "draft" ? "The saved draft is incomplete." : "", Invalid == "save" ? "The last save failed." : ""));
+            return Task.FromResult(SavedDeck(id));
         }
+        private DeckDetails SavedDeck(string id) => renamedDeck is { } saved && saved.Id == id ? saved : new DeckDetails(id, "Deck " + id, 1,
+                [new("Commander", "commander", new() { Name = id == "b" ? "Omnath, Locus of Mana" : "Rhys the Redeemed", Type = "Legendary Creature" }, 1),
+                    new("Main", "forest", new() { Name = "Forest", Type = "Basic Land" }, 99)], [],
+                Invalid == "draft" ? "The saved draft is incomplete." : "", Invalid == "save" ? "The last save failed." : "") { LibraryToken = "saved:" + id + ":1" };
         internal SoloSetup Setup(string id) => new(id, "Deck " + id,
             [new("ai-self", "Deck " + id, ""), new("ai-1", "Other deck one", ""), new("ai-2", "Other deck two", ""), .. AdditionalAiDecks]) { MaxPlayers = 4 };
         public Task<SoloSetup> PrepareSoloAsync(string id) { Calls.Enqueue("prepare:" + id); Interlocked.Increment(ref prepares); return Preparing?.Task ?? Task.FromResult(Setup(id)); }
@@ -346,20 +351,27 @@ internal static partial class PregameFlowChecks
         public Task<Lobby> HostAsync(int players, bool forwarding) {
             Calls.Enqueue("host:" + players);
             lobby = new("hosting", "Open", null, false, "Open seats", false, "disabled", null, [],
-                Enumerable.Range(0, players).Select(index => new Seat(index, index == 0 ? "You" : "Open", index == 0 ? "HUMAN" : "OPEN", null, false, index == 0)).ToImmutableArray(), "pregame-table") {
-                    Tempo = new(TempoPreset.Off, TempoExpiry.Pass, 0, 60, "initial-policy"), AiOpponents = AdditionalAiDecks
+                Enumerable.Range(0, players).Select(index => PeerSeats.FirstOrDefault(peer => peer.Index == index)
+                    ?? new Seat(index, index == 0 ? "You" : "Open", index == 0 ? "HUMAN" : "OPEN", null, false, index == 0)).ToImmutableArray(), "pregame-table") {
+                    Tempo = new(TempoPreset.Off, TempoExpiry.Pass, 0, 60, "initial-policy"), AiOpponents = AdditionalAiDecks, Revision = 1
                 };
             return Task.FromResult(lobby);
         }
         public Task<Lobby> LobbyAsync() => Task.FromResult(lobby ?? throw new InvalidOperationException("No connected table."));
-        public Task SelectDeckAsync(string id) {
-            if (lobby == null || id is not ("a" or "b")) throw new InvalidOperationException("Illegal lobby deck selection.");
-            Calls.Enqueue("select:" + id); lobby = lobby with { Seats = lobby.Seats.Select(seat => seat.Local ? seat with { Deck = "Deck " + id, Ready = false } : seat).ToImmutableArray() }; return Task.CompletedTask;
+        public Task<Lobby> SelectDeckAsync(LobbyDeckSelection selection) {
+            if (lobby?.TableId != selection.TableId || selection.DeckId is not ("" or "a" or "b")) throw new InvalidOperationException("Illegal lobby deck selection.");
+            var deck = selection.DeckId.Length == 0 ? null : SavedDeck(selection.DeckId);
+            if (deck != null && (selection.LibraryToken != deck.LibraryToken || deck.SaveError.Length > 0)) throw new InvalidOperationException("Stale or unsaved lobby deck selection.");
+            var preview = deck == null ? null : new LobbyDeckPreview("assignment-" + ++assignments, deck.Name,
+                deck.Entries.Where(entry => entry.Section == "Commander").Select(entry => entry.Card).ToImmutableArray(), deck.Problem.Length > 0 ? "This deck needs changes." : null);
+            Calls.Enqueue("select:" + selection.DeckId);
+            lobby = lobby with { Seats = lobby.Seats.Select(seat => seat.Local ? seat with { Deck = deck?.Name, DeckPreview = preview, Ready = false } : seat).ToImmutableArray(), Revision = lobby.Revision + 1 };
+            return Task.FromResult(lobby);
         }
         public Task SetReadyAsync(bool ready) {
-            if (lobby == null || ready && lobby.Seats.Single(seat => seat.Local).Deck == null) throw new InvalidOperationException("Ready requires an assigned deck.");
+            if (lobby == null || ready && lobby.Seats.Single(seat => seat.Local) is not { DeckPreview.Problem: null, Deck: not null }) throw new InvalidOperationException("Ready requires a legal assigned deck.");
             Calls.Enqueue("ready:" + ready); Interlocked.Increment(ref readies);
-            lobby = lobby with { Seats = lobby.Seats.Select(seat => seat.Local ? seat with { Ready = ready } : seat).ToImmutableArray() }; return Task.CompletedTask;
+            lobby = lobby with { Seats = lobby.Seats.Select(seat => seat.Local ? seat with { Ready = ready } : seat).ToImmutableArray(), Revision = lobby.Revision + 1 }; return Task.CompletedTask;
         }
         public Task StartAsync() { Interlocked.Increment(ref friendStarts); throw new InvalidOperationException("A table with open seats cannot start."); }
         private static Task<T> Unsupported<T>() => throw new NotSupportedException();
@@ -368,7 +380,6 @@ internal static partial class PregameFlowChecks
         public Task<DeckSummary> ImportPresetAsync(string id) => Unsupported<DeckSummary>();
         public Task<DeckDetails> CreateDeckAsync(string name) => Unsupported<DeckDetails>();
         public Task<DeckDetails> EditDeckAsync(string id, long revision, ImmutableArray<DeckEdit> edits) => Unsupported<DeckDetails>();
-        public Task<DeckDetails> RenameDeckAsync(string id, long revision, string name) => Unsupported<DeckDetails>();
         public Task<DeckDetails> DuplicateDeckAsync(string id, long revision, string name) => Unsupported<DeckDetails>();
         public Task<DeckDetails> UndoDeckAsync(string id, long revision) => Unsupported<DeckDetails>();
         public Task<DeckDetails> RedoDeckAsync(string id, long revision) => Unsupported<DeckDetails>();

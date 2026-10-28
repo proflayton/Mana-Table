@@ -1,6 +1,7 @@
 using System.Text.Json;
 using Mana.Contracts;
 using Mana.Forge;
+using Mana.Renderer;
 using Microsoft.Xna.Framework.Graphics;
 using Microsoft.Xna.Framework.Input;
 using ButtonState = Microsoft.Xna.Framework.Input.ButtonState;
@@ -23,7 +24,7 @@ internal sealed class LobbyAiSeatSmoke : ITableAutomation, IDisposable
     private double lastStep;
     private int step;
     private string firstAi = "", secondAi = "", deckId = "";
-    private Lobby? guestView, hostView;
+    private Lobby? guestView, hostView, hostAfterCapture;
     private bool guestRejected;
     private readonly DateTime deadline = DateTime.UtcNow.AddMinutes(4);
     public string? ExpectedClick => null;
@@ -92,25 +93,33 @@ internal sealed class LobbyAiSeatSmoke : ITableAutomation, IDisposable
             Check(view.Lobby!.Seats.Count(s => s.Type == "AI") == 1 && view.Lobby.Seats.Count(s => s.Type != "OPEN" && s.Type != "AI") == 3
                 && view.Lobby.Seats.All(s => s.Ready), "Three human players and one AI form a complete ready four-player table");
             Check(view.Hits.Any(h => h.Id == "start") && HostReady(), "The host can start once the human and AI seats are ready");
+            Check(PairedGuestPreview(view.Lobby) && view.Lobby.Seats.Single(seat => seat.Type == "AI").DeckPreview is { Commanders.Length: > 0 },
+                "The host receives both partner commander faces and the AI's public commander preview");
+        });
+        Step(.25, () => {
+            Check(PartnerPortraits(view.Frame!), "The native host frame draws both public partners inside their shared seat medallion");
             Capture("05-three-friends-one-ai");
             background = ReadGuestAndCheckAuthority();
         });
         Wait(() => !view.Polling, 10, () => {
             Check(guestRejected && guestView?.Mode == "joined" && guestView.Seats.Any(s => s.Type == "AI" && s.Ready),
                 "The guest receives the public AI deck/readiness and the engine rejects its attempt to change a seat");
+            Check(PairedGuestPreview(guestView!) && guestView!.Seats.Single(seat => seat.Type == "AI").DeckPreview is { Commanders.Length: > 0 },
+                "The guest receives the same public partner faces and AI commander preview");
             Check(!view.Polling, "The host's in-flight observation finishes before presenting the guest projection");
-            // Inspect the actual joined-client projection using the same renderer.
-            // Pause host polling so it cannot overwrite the guest view mid-frame.
-            view.PresentLobby(guestView!, true);
-        });
-        Step(.15, () => {
-            Check(!view.LobbyAiSeatControlsAvailable && view.Hits.All(h => !h.Id.StartsWith("lobby-ai", StringComparison.Ordinal))
-                && view.Hits.All(h => h.Id != "start"), "A joined guest sees AI state but no Add, Change, Remove or Start controls");
-            Capture("06-guest-read-only");
-            view.PresentLobby(hostView!, false);
+            var frame = view.CaptureLobbySnapshot(guestView!, Path.Combine(view.Profile, "06-guest-read-only.png"));
+            Check(frame.Hits.All(hit => !hit.Id.StartsWith("lobby-ai", StringComparison.Ordinal)) && frame.Hits.All(hit => hit.Id != "start"),
+                "Rendering the actual guest snapshot exposes no Add, Change, Remove or Start controls");
+            Check(PartnerPortraits(frame), "The native guest frame draws both public partner portraits");
+            Check(view.Lobby?.Mode == "hosting" && view.DeckConfirmed && HostReady(),
+                "Finite guest snapshot composition restores the actual host owner and its Ready acknowledgment immediately");
+            background = Task.Run(async () => hostAfterCapture = await view.Services.Tables.LobbyAsync());
         });
         Wait(() => view.Lobby?.Mode == "hosting" && view.Hits.Any(h => h.Id == "lobby-ai-remove:1"), 10, () => {
             Check(view.DeckConfirmed && HostReady() && view.Lobby!.CanStart, "Reviewing the guest projection leaves the real host table and readiness intact");
+            Check(hostAfterCapture is { CanStart: true } && hostAfterCapture.Seats.Select(seat => (seat.Index, seat.Ready, seat.DeckPreview?.SelectionId))
+                    .SequenceEqual(hostView!.Seats.Select(seat => (seat.Index, seat.Ready, seat.DeckPreview?.SelectionId))),
+                "The authoritative provider confirms snapshot inspection changed no seat assignment or Ready consent");
             File.WriteAllText(Path.Combine(view.Profile, "lobby-ai-seat-results.json"), JsonSerializer.Serialize(checks, new JsonSerializerOptions { WriteIndented = true }));
         });
         Step(.05, () => view.Exit());
@@ -121,10 +130,12 @@ internal sealed class LobbyAiSeatSmoke : ITableAutomation, IDisposable
         for (int i = 0; i < 2; i++) {
             var guest = new ForgeEngine(paths with { Profile = Path.Combine(paths.Profile, "friend-" + i) }); guests.Add(guest);
             await guest.InitializeAsync();
-            var deck = await guest.ImportAsync("Friend " + (i + 1), "Commander\n1 Rograkh, Son of Rohgahh\nDeck\n99 Mountain");
+            var deck = await guest.ImportAsync("Friend " + (i + 1), i == 0
+                ? "Commander\n1 Pir, Imaginative Rascal\n1 Toothy, Imaginary Friend\nDeck\n49 Forest\n49 Island"
+                : "Commander\n1 Rograkh, Son of Rohgahh\nDeck\n99 Mountain");
             var joined = await guest.JoinAsync(address);
             joinedSeats.Add(joined.Seats.Single(s => s.Local).Index);
-            await guest.SelectDeckAsync(deck.Id); await guest.SetReadyAsync(true);
+            await guest.SelectDeckAsync(new(joined.TableId, deck.Id, deck.LibraryToken)); await guest.SetReadyAsync(true);
         }
     }
     private async Task ReadGuestAndCheckAuthority()
@@ -136,6 +147,15 @@ internal sealed class LobbyAiSeatSmoke : ITableAutomation, IDisposable
         hostView = await view.Services.Tables.LobbyAsync();
     }
     private bool HostReady() => view.Lobby?.Seats.FirstOrDefault(s => s.Index == 0) is { Ready: true, Deck: "Mixed table host" };
+    private static bool PairedGuestPreview(Lobby state) => state.Seats.Single(seat => seat.Index == 2).DeckPreview?.Commanders
+        .Select(card => card.Name).Order().SequenceEqual(new[] { "Pir, Imaginative Rascal", "Toothy, Imaginary Friend" }.Order()) == true;
+    private static bool PartnerPortraits(Mana.Table.Presentation.PresentationFrame frame)
+    {
+        var center = new Microsoft.Xna.Framework.Vector2(280 + 2 * 347, 390);
+        return frame.Drawing.Commands.OfType<DrawCommand.Portrait>().Count(command => command.Center == center && command.Radius == 66) == 2
+            && frame.Drawing.Commands.OfType<DrawCommand.BeginClip>().Count(command => command.Bounds.Y == 324 && command.Bounds.Height == 132
+                && command.Bounds.Width == 66 && command.Bounds.X is 908 or 974) == 2;
+    }
     private Seat? Seat(int index) => view.Lobby?.Seats.FirstOrDefault(s => s.Index == index);
     private void ClickAi(Func<string> id) { Step(.1, () => MoveHit(view.Hits.Single(h => h.Id == "lobby-ai-deck:" + id()))); MouseClick(); }
     private void Click(string id) { Step(.1, () => MoveHit(view.Hits.Single(h => h.Id == id))); MouseClick(); }

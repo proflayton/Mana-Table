@@ -17,6 +17,8 @@ internal static class AiPolicyRegression
         await ManaOutputContinuation(check);
         await ManaReductionContinuation(check);
         await PaymentProvenance(check);
+        await AiCostPaymentRegression.RunAsync(check);
+        await AiCostOrderingRegression.RunAsync(check);
         await TargetsAndSocialMemory(check);
         await CombatAndAllocation(check);
         await TacticalExchangesAndResourceCosts(check);

@@ -69,8 +69,9 @@ public static class CasualActionAssessment
     }
 
     private static CasualActionEstimate Evaluate(GameSnapshot state, ActionOperationGraph graph, AiWorkBudget work,
-        Card? source, int? fixedOperation, ImmutableArray<SemanticEntity> fixedTargets, bool localOptimization)
+        Card? source, int? fixedOperation, ImmutableArray<SemanticEntity> fixedTargets, bool localOptimization, int depth = 0)
     {
+        if (depth > 8) return Incomplete("pending-effect-depth");
         if (graph.Knowledge == SemanticKnowledge.Unsupported) return Unsupported("operation-knowledge");
         if (graph.Knowledge != SemanticKnowledge.Known || graph.Operations.IsDefaultOrEmpty)
             return Incomplete("operation-knowledge");
@@ -134,7 +135,7 @@ public static class CasualActionAssessment
             if (index == active.Length) {
                 var effects = new List<(ActionOperation Node, ImmutableArray<SemanticEntity> Entities)>();
                 if (Collect(graph.RootId, new(), effects)) {
-                    var value = Value(state, source, effects, work);
+                    var value = Value(state, source, effects, work, depth);
                     if (value.Status != CasualAssessmentStatus.Estimated) failure = value;
                     else best = Math.Max(best, value.Value);
                 }
@@ -231,7 +232,7 @@ public static class CasualActionAssessment
     }
 
     private static CasualActionEstimate Value(GameSnapshot state, Card? source,
-        List<(ActionOperation Node, ImmutableArray<SemanticEntity> Entities)> effects, AiWorkBudget work)
+        List<(ActionOperation Node, ImmutableArray<SemanticEntity> Entities)> effects, AiWorkBudget work, int depth)
     {
         double value = 0;
         var lifeLoss = new Dictionary<int, long>();
@@ -261,8 +262,11 @@ public static class CasualActionAssessment
                     case ActionEffectKind.Destroy when card != null:
                         if (!CasualTableAssessment.HasKeyword(card, "indestructible")) value -= sign * Worth(card); break;
                     case ActionEffectKind.Exile when card != null:
-                    case ActionEffectKind.CounterSpell when card != null:
                         value -= sign * Worth(card); break;
+                    case ActionEffectKind.CounterSpell:
+                        var prevented = CounterTarget(state, entity, work, depth);
+                        if (prevented.Status != CasualAssessmentStatus.Estimated) return prevented;
+                        value += prevented.Value; break;
                     case ActionEffectKind.Bounce when card != null: value -= sign * Worth(card) * .6; break;
                     case ActionEffectKind.Permanent when card != null: value += sign * CasualTableAssessment.CardValue(card); break;
                     case ActionEffectKind.Land: value += sign * .5; break;
@@ -313,7 +317,23 @@ public static class CasualActionAssessment
         => CardViews.FindZoneOccurrence(state, entity.CardId)?.Card
             ?? state.Stack.FirstOrDefault(item => item.Id == entity.Id || item.Card?.VisualId == entity.CardId)?.Card
             ?? (source != null && CardViews.Identity(source) == entity.CardId ? source : null);
+    // A stack occurrence is not a physical card: copies can share CardId while
+    // having different chosen targets. Never recover identity from display IDs.
+    public static CasualActionEstimate CounterTarget(GameSnapshot state, SemanticEntity entity, AiWorkBudget work)
+        => CounterTarget(state, entity, work.CreateSlice(256, 4), 0);
+
+    private static CasualActionEstimate CounterTarget(GameSnapshot state, SemanticEntity entity, AiWorkBudget work, int depth)
+    {
+        var matches = state.Stack.Where(item => entity.StackItemId.Length > 0 ? item.Id == entity.StackItemId
+            : item.Id == entity.Id || entity.CardId.Length > 0 && item.Card?.VisualId == entity.CardId).Take(2).ToArray();
+        if (entity.Kind != SemanticEntityKind.Spell || matches.Length != 1) return Incomplete("pending-occurrence");
+        var pending = matches[0];
+        var estimate = Evaluate(state, pending.OperationGraph, work, pending.Card, null, [], false, depth + 1);
+        return estimate.Status == CasualAssessmentStatus.Estimated ? estimate with { Value = -estimate.Value, Reason = "avoided-pending-effects" } : estimate;
+    }
+
     private static string Identity(SemanticEntity entity) => entity.Kind == SemanticEntityKind.Player ? "player:" + entity.PlayerId
+        : entity.Kind == SemanticEntityKind.Spell && entity.StackItemId.Length > 0 ? "stack:" + entity.StackItemId
         : entity.Kind + ":" + (entity.CardId.Length > 0 ? entity.CardId : entity.Id);
     private static CasualActionEstimate Incomplete(string reason) => new(CasualAssessmentStatus.Incomplete, 0, reason);
     private static CasualActionEstimate Unsupported(string reason) => new(CasualAssessmentStatus.Unsupported, 0, reason);

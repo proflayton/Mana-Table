@@ -95,9 +95,9 @@ internal sealed partial class TableApplication
     }
     private void DrawSettings()
     {
-        var drawer = SystemDrawer("Play controls", "settings-", new MatchIntent.CloseView(), 760, "close-overlay");
+        var drawer = SystemDrawer("Play controls", "settings-", new MatchIntent.CloseView(), 810, "close-overlay");
         int x = drawer.X + 28, y = drawer.Y;
-        canvas.Text("Priority", x, y + 108, Gold, .8f, 500, 1, true);
+        canvas.Text("Auto waits for actions", x, y + 108, Gold, .8f, 500, 1, true);
         MenuAction("settings-auto", "Auto", new(x, y + 148, 236, 42), new MatchIntent.SetAutomatic(true), selected: automatic);
         MenuAction("settings-manual", "Full control", new(x + 264, y + 148, 236, 42), new MatchIntent.SetAutomatic(false), selected: !automatic);
         MenuAction("settings-hold", held ? "Held for this turn" : "Hold priority this turn", new(x, y + 210, 500, 42), new MatchIntent.ToggleHold(), selected: held, size: .78f);
@@ -107,11 +107,11 @@ internal sealed partial class TableApplication
             MenuAction("stop:" + stop.Key, stop.Label, new(x + i % 2 * 264, y + 329 + i / 2 * 46, 236, 40), new MatchIntent.TogglePhaseStop(stop.Key), selected: selected, size: .75f);
         }
         canvas.Line(new(x, y + 485), new(x + 500, y + 485), LobbyTrim);
-        MenuAction("motion", "Reduced motion  " + (preferences.ReducedMotion ? "On" : "Off"), new(x, y + 505, 500, 40), new MatchIntent.ToggleReducedMotion(), selected: preferences.ReducedMotion, size: .78f);
-        MenuAction("sound", "Sound  " + (preferences.Sounds ? "On" : "Off"), new(x, y + 555, 500, 40), new MatchIntent.ToggleSounds(), selected: preferences.Sounds, size: .78f);
-        MenuAction("text-size", $"Text size  {preferences.TextScale:P0}", new(x, y + 605, 500, 40), new MatchIntent.CycleTextScale(), size: .78f);
-        MenuAction("updates-settings", "Updates", new(x, y + 687, 240, 40), new ShellIntent.OpenUpdates(), size: .75f);
-        canvas.Text("F11  Fullscreen", x + 293, y + 700, Muted, .65f, 207, 1);
+        MenuAction("motion", "Reduced motion  " + (preferences.ReducedMotion ? "On" : "Off"), new(x, y + 499, 500, 40), new MatchIntent.ToggleReducedMotion(), selected: preferences.ReducedMotion, size: .78f);
+        DrawAudioSettings(x, y + 551);
+        MenuAction("text-size", $"Text size  {preferences.TextScale:P0}", new(x, y + 681, 500, 40), new MatchIntent.CycleTextScale(), size: .78f);
+        MenuAction("updates-settings", "Updates", new(x, y + 751, 240, 40), new ShellIntent.OpenUpdates(), size: .75f);
+        canvas.Text("F11  Fullscreen", x + 293, y + 764, Muted, .65f, 207, 1);
     }
     private void DrawHistory()
     {

@@ -255,8 +255,8 @@ public class SourceActionsTest {
                     Map.of("action", "ok", "expectedTask", "openingHand"))));
             assertEquals(game.state(0), before, "A typed opening-hand answer cannot become a priority pass");
             assertEquals(text(input.prompt(), "priorityAlternative"), "passTurn");
-            assertThrows(IllegalArgumentException.class, () -> game.table.seat(0).action(request(input,
-                    Map.of("action", "priorityUndo"))));
+            game.rejected(input, Map.of("action", "priorityUndo"),
+                    "In-game action Undo is not supported. Use the current priority controls.");
             assertEquals(game.state(0), before, "An unavailable undo must not fall through to passing the turn");
             var elves = zone(viewer(before), "Battlefield").getAsJsonArray("cards").asList().stream()
                     .map(value -> value.getAsJsonObject()).filter(card -> text(card, "name").equals("Llanowar Elves")).toList();
@@ -285,21 +285,53 @@ public class SourceActionsTest {
                     .findFirst().orElseThrow().get("tapped").getAsBoolean());
             assertTrue(after.state().getAsJsonArray("stack").isEmpty(), "A real mana ability does not create a fabricated ability chooser or stack item");
             assertThrows(IllegalArgumentException.class, () -> game.table.seat(0).action(request(input, invoke(first, action))));
-            assertEquals(text(after.prompt(), "priorityAlternative"), "undo");
+            assertEquals(text(after.prompt(), "priorityAlternative"), "none");
+            assertFalse(after.prompt().get("cancelEnabled").getAsBoolean(), "A paid mana action cannot offer in-game Undo");
+            assertEquals(text(after.prompt(), "cancel"), "", "The priority prompt does not retain an Undo label");
             assertThrows(IllegalArgumentException.class, () -> game.table.seat(0).action(request(after,
                     Map.of("action", "priorityPassTurn"))));
-            assertTrue(game.answer(after, Map.of("action", "priorityUndo")));
-            var undone = game.until(next -> next.seat() == 0 && priority(next)
-                    && viewer(next.state()).getAsJsonObject("mana").get("G").getAsInt() == 0
-                    && !text(next.prompt(), "id").equals(text(after.prompt(), "id")));
-            assertFalse(card(undone.state(), "Battlefield", "Llanowar Elves").get("tapped").getAsBoolean(),
-                    "Explicit undo reverses the mana action through the engine");
-            assertEquals(text(undone.prompt(), "priorityAlternative"), "passTurn");
-            assertThrows(IllegalArgumentException.class, () -> game.table.seat(0).action(request(after,
-                    Map.of("action", "priorityUndo"))));
-            assertTrue(game.answer(undone, Map.of("action", "priorityPassTurn", "expectedTask", "priority")));
-            var yielded = game.until(next -> next.seat() != 0 && priority(next));
-            assertNotEquals(yielded.seat(), 0, "Explicit pass-turn advances without substituting an undo");
+            HeadlessPlatform.query(() -> null);
+            var unchanged = game.state(0);
+            for (String alias : List.of("priorityUndo", "cancel")) {
+                game.rejected(after, Map.of("action", alias),
+                        "In-game action Undo is not supported. Use the current priority controls.");
+                assertEquals(game.state(0), unchanged, "Rejected " + alias + " preserves the exact answerable input and public state");
+            }
+            assertTrue(zone(viewer(unchanged), "Battlefield").getAsJsonArray("cards").asList().stream()
+                    .map(value -> value.getAsJsonObject()).filter(source -> text(source, "visualId").equals(text(first, "sourceCardId")))
+                    .findFirst().orElseThrow().get("tapped").getAsBoolean(), "Rejected Undo cannot untap the actual mana source");
+            assertEquals(viewer(unchanged).getAsJsonObject("mana").get("G").getAsInt(), 1,
+                    "Rejected Undo cannot remove or duplicate the produced mana");
+            assertTrue(game.answer(after, Map.of("action", "passPriority", "expectedTask", "priority")),
+                    "The same priority input remains usable through its explicit pass operation");
+        }
+    }
+
+    @Test(timeOut = 90000)
+    public void rejectedUndoCannotUntapAnArtifactOrLeaveItsProducedManaBehind() throws Exception {
+        try (var game = new RulesScenario("source-actions-no-artifact-undo", Map.of(0, List.of("Sol Ring")))) {
+            var input = main(game);
+            var source = card(input.state(), "Battlefield", "Sol Ring");
+            var offers = query(game, input, source);
+            var action = offers.getAsJsonArray("actions").get(0).getAsJsonObject();
+            var command = new java.util.LinkedHashMap<String, Object>(invoke(offers, action));
+            command.put("manaOutput", Map.of("colors", Map.of("C", 2)));
+            assertTrue(game.answer(input, command));
+            var paid = game.until(next -> next.seat() == 0 && priority(next)
+                    && viewer(next.state()).getAsJsonObject("mana").get("C").getAsInt() == 2);
+            HeadlessPlatform.query(() -> null);
+            var unchanged = game.state(0);
+            assertEquals(text(paid.prompt(), "priorityAlternative"), "none");
+            assertFalse(paid.prompt().get("cancelEnabled").getAsBoolean());
+            for (String alias : List.of("priorityUndo", "cancel")) {
+                game.rejected(paid, Map.of("action", alias),
+                        "In-game action Undo is not supported. Use the current priority controls.");
+                assertEquals(game.state(0), unchanged, "A rejected legacy priority alias cannot mutate the artifact, pool or input");
+            }
+            assertTrue(card(unchanged, "Battlefield", "Sol Ring").get("tapped").getAsBoolean());
+            assertEquals(viewer(unchanged).getAsJsonObject("mana").get("C").getAsInt(), 2);
+            assertTrue(query(game, paid, card(unchanged, "Battlefield", "Sol Ring")).getAsJsonArray("actions").isEmpty(),
+                    "The artifact cannot be tapped again while its original mana remains in the pool");
         }
     }
 

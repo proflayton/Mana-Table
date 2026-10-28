@@ -395,7 +395,7 @@ internal static class LoadingSmoke
         public Task<Lobby> HostAsync(int players, bool automaticPortForwarding) => Reject<Lobby>("host");
         public Task<Lobby> JoinAsync(string address) => Reject<Lobby>("join");
         public Task<Lobby> LobbyAsync() => throw new InvalidOperationException("No connected lobby exists in this scenario");
-        public Task SelectDeckAsync(string id) => Reject("select-deck");
+        public Task<Lobby> SelectDeckAsync(LobbyDeckSelection selection) => Reject<Lobby>("select-deck");
         public Task SetReadyAsync(bool ready) => Reject("ready");
         public Task StartAsync() => Reject("start");
         public Task ReturnToLobbyAsync() => Reject("return");

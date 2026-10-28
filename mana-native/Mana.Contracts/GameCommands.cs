@@ -126,7 +126,7 @@ public static class GameCommandPermissions
             DeclineConfirmation => payload is ConfirmationPayload { Decline.Enabled: true },
             AcknowledgeDecision => payload is ConfirmationPayload { Accept.Enabled: true, Decline: null },
             AcknowledgeReveal => payload is RevealPayload,
-            UndoLastAction => payload is PriorityPayload { Alternative: { Kind: PriorityAlternative.UndoLastAction, Reply.Enabled: true } },
+            UndoLastAction => false,
             PassTurn => payload is PriorityPayload { Alternative: { Kind: PriorityAlternative.PassTurn, Reply.Enabled: true } },
             SelectCard value => payload is TargetSelectionPayload or EntitySelectionPayload && Selectable(value.Card),
             PlayCard value => payload is PriorityPayload && Selectable(value.Card) && Located(value.Card, "Hand", "Command"),
@@ -168,7 +168,7 @@ public static class GameCommandPermissions
                     && viewer.Zone("Battlefield").Cards.Any(source => source.Key == ability.SourceCardKey && !source.FaceDown && !source.PhasedOut)),
             IgnorePriorityAbility value => payload is PriorityPayload priority && priority.Abilities.Any(ability => ability.Id == value.AbilityId),
             PassForNow value => state.Status == "playing" && payload is PriorityPayload { Pass.Enabled: true } priority && state.Turn > 0 && state.Stack.Length == 0
-                && state.ActivePlayerId is { } active && active != state.ViewerId && state.Viewer?.Eliminated != true
+                && state.ActivePlayerId != null && state.Viewer?.Eliminated != true
                 && state.ActionClass is "" or "priority" && (state.PriorityPlayerId == null || state.PriorityPlayerId == state.ViewerId)
                 && (state.DecisionOwnerId == null || state.DecisionOwnerId == state.ViewerId)
                 && value.YieldToken.Length > 0 && priority.QuietYieldToken == value.YieldToken,
@@ -204,7 +204,6 @@ public static class DecisionCommands
         if (state.Decision is not { } decision) return null;
         DecisionCommand? command = decision.Payload switch {
             OpeningHandPayload => new MulliganOpeningHand(state.Id, decision.Id),
-            PriorityPayload { Alternative.Kind: PriorityAlternative.UndoLastAction } => new UndoLastAction(state.Id, decision.Id),
             PriorityPayload { Alternative.Kind: PriorityAlternative.PassTurn } => new PassTurn(state.Id, decision.Id),
             PaymentPayload => new CancelPayment(state.Id, decision.Id),
             TargetSelectionPayload or EntitySelectionPayload => new CancelSelection(state.Id, decision.Id),

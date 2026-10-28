@@ -78,7 +78,7 @@ final class SpectatorObservation {
                     "text", disclosed ? CardRulesText.of(source) : "", "card", publicCard(source) ? card(table, source) : null,
                     "ability", !ability.isSpell(), "kind", ability.isTrigger() ? "triggered" : ability.isSpell() ? "spell" : ability.isActivatedAbility() ? "activated" : "ability",
                     "controllerId", ability.getActivatingPlayer() == null ? null : ability.getActivatingPlayer().getId(),
-                    "targets", List.copyOf(targets), "effect", null));
+                    "targets", List.copyOf(targets), "effect", null, "operationGraph", ActionOperationProjection.unknown()));
         }
         String result = null;
         if (error == null && game.isGameOver() && game.getOutcome() != null) {
@@ -122,6 +122,7 @@ final class SpectatorObservation {
                 "attacking", card.isAttacking(), "blocking", card.isBlocking(), "faceDown", hidden, "selectable", false, "highlighted", false,
                 "counters", Collections.unmodifiableMap(counters), "states", publicStats ? PublicStates.of(card.getPublicStates(AUDIENCE)) : List.of(),
                 "combatKeywords", publicStats ? face.getPublicStates().stream().map(forge.game.PublicState::key).distinct().toList() : List.of(),
+                "blockingCapacity", card.getPublicBlockingCapacity(AUDIENCE),
                 "attachedTo", attachment(table, card.getAttachedTo()), "attachments", card.getAllAttachedCards().stream().filter(SpectatorObservation::publicCard).map(attached -> attachment(table, attached)).toList());
         MatchSession.addCardFaces(result, card, !hidden);
         MatchSession.addCardPrinting(result, card, !hidden);

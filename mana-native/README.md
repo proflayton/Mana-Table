@@ -90,12 +90,19 @@ counters, re-equipping, detachment, a tapped host and a crowded mixed battlefiel
 Visible faces preload, and the selected local deck warms the artwork cache before
 and during play. Reading takes precedence over background downloads; hidden
 opponent cards are never requested. A first uncached image can still need network.
-Pass for now remains steady during background observations; arming it waits for
-the current observation before validating and submitting a quiet pass.
-It continues through an opponent's normal draw and empty combat, including
-their choosing no attackers. A spell, ability, land play, actual attack, other
-required choice or turn change returns control. Available instants still stop
-ordinary Auto; this explicit policy applies only to the current opponent turn.
+Source-only priority redesign: Auto waits through quiet opponent priority windows
+even with an instant available. A new spell, ability, public action or combat
+declaration returns an available response to the player. A refreshed prompt or
+replacement quiet token cannot acknowledge that action; explicitly acting or
+choosing Pass once allows routine Auto to resume. Your own main-phase plays and
+required choices remain explicit. F enables full control; Ctrl holds this turn.
+
+Wait for action offers the same bounded continuation explicitly on either
+player's empty-stack turn. It stops at a required attacker/blocker decision or
+turn boundary; it does not promise to finish the turn. Take control stays in the
+same position and holds Auto for the current turn, including while an already
+sent pass reconciles. The first-land warning also protects deliberate waiting
+on your own turn. These controls never enable Forge's separate end-turn yield.
 
 The next source iteration places turn and passing controls beside your portrait.
 Six compact phase markers show recurring stops on your own turn; the current
@@ -105,8 +112,8 @@ The active opponent has a read-only actual-phase cue at their portrait. Your
 controls stay in place as the turn moves; there are not four competing sets.
 
 Auto/Full control and Hold use portrait-side icons with hover explanations;
-F toggles Auto and Ctrl holds priority for the current turn. Pass for now,
-Take control and an explicit priority pass live beside that same portrait.
+F toggles Auto and Ctrl holds priority for the current turn. Wait for action,
+Take control and the readable Pass once action live beside that same portrait.
 Required targets, searches and payment remain at their source/decision surfaces.
 These views consume the existing decision model and automation gate; the layout
 does not grant new autoplay permissions or a guaranteed engine phase waypoint.
@@ -335,6 +342,7 @@ passes and earlier-head CI do not establish readiness.
 | `Mana.AI` | Whole-seat policy, scoped knowledge, current action mapping and automated-seat lifecycle |
 | `Mana.Magic` | Card classification, projected legal actions, combat/assignment guides and Magic art |
 | `Mana.Forge` | Java process/protocol lifetime and mapping between Forge JSON and typed contracts |
+| `Mana.Audio` | Device-independent master/bus mix, typed cue routing and active voice lifetime |
 | `Mana.Renderer` | Canvas/text/pixel upload, poses, layouts, geometry, motion and effects |
 | `Mana.Game` | Native controls, setup, builder, overlays and table input/rendering; no provider dependency |
 | `Mana.Table` | Shipping composition, provider lifetime, installation and update bootstrap |

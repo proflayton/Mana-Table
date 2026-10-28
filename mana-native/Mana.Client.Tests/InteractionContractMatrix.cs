@@ -27,7 +27,6 @@ internal static class InteractionContractMatrix
         new("decline-confirmation", typeof(DeclineConfirmation), typeof(ConfirmationPayload)),
         new("acknowledge-decision", typeof(AcknowledgeDecision), typeof(ConfirmationPayload)),
         new("acknowledge-reveal", typeof(AcknowledgeReveal), typeof(RevealPayload)),
-        new("undo-last-action", typeof(UndoLastAction), typeof(PriorityPayload)),
         new("pass-turn", typeof(PassTurn), typeof(PriorityPayload)),
         new("select-current-card", typeof(SelectCard), typeof(TargetSelectionPayload)),
         new("play-hand-card", typeof(PlayCard), typeof(PriorityPayload)),
@@ -51,22 +50,43 @@ internal static class InteractionContractMatrix
         new("yield-public-window", typeof(PassForNow), typeof(PriorityPayload)),
         new("source-action-during-payment", typeof(UseOfferedAction), typeof(PaymentPayload))
     ];
+    private static readonly Type[] RejectedLegacyCommands = [typeof(UndoLastAction)];
 
     internal static async Task RunAsync(Action<bool, string> check)
     {
         var timer = Stopwatch.StartNew();
         var commandTypes = typeof(GameCommand).Assembly.GetTypes().Where(type => !type.IsAbstract && typeof(GameCommand).IsAssignableFrom(type)).OrderBy(type => type.FullName);
-        check(Cases.Select(row => row.CommandType).Distinct().OrderBy(type => type.FullName).SequenceEqual(commandTypes)
+        check(Cases.Select(row => row.CommandType).Concat(RejectedLegacyCommands).Distinct().OrderBy(type => type.FullName).SequenceEqual(commandTypes)
                 && Cases.Select(row => row.PayloadType).Distinct().OrderBy(type => type.FullName).SequenceEqual(
                     typeof(DecisionPayload).Assembly.GetTypes().Where(type => type.IsSealed && typeof(DecisionPayload).IsAssignableFrom(type)).OrderBy(type => type.FullName)),
             "The finite interaction-contract matrix names every closed command variant and supported decision task; it is not exhaustive rules coverage");
         foreach (var row in Cases) await RunCase(row, check);
+        RejectLegacyGameplayUndo(check);
         SeededPermissions(check);
         DecisionOwnership(check);
         CurrentZoneAuthority(check);
         await SourceAuthorityLifetime(check);
         await SemanticAliases(check);
         Console.WriteLine($"Interaction-contract matrix: {Cases.Length} named cases, 48 seeded transitions; {timer.Elapsed.TotalMilliseconds:F1} ms (no JVM/GPU; not exhaustive Magic rules coverage).");
+    }
+
+    private static void RejectLegacyGameplayUndo(Action<bool, string> check)
+    {
+        var fixture = Fixture.Create(Cases.First(row => row.CommandType == typeof(PassPriority)), "removed-gameplay-undo");
+        var paid = ChangeCard(fixture.Before, fixture.Focus.VisualId, card => card with { Tapped = true });
+        var state = paid with {
+            Decision = fixture.Before.Decision! with { Payload = ((PriorityPayload)fixture.Before.Decision!.Payload) with {
+                Alternative = new(PriorityAlternative.UndoLastAction, new("Undo", true))
+            } },
+            Players = paid.Players.Select(player => player.Id == paid.ViewerId
+                ? player with { Mana = player.Mana.SetItem("C", 2) } : player).ToImmutableArray()
+        };
+        var command = new UndoLastAction(state.Id, state.Decision!.Id);
+        var client = new ClientSession(fixture.Provider); client.Accept(state);
+        check(!GameCommandPermissions.Allows(state, command) && DecisionCommands.Cancel(state) == null
+            && !client.Submit(command) && fixture.Provider.Calls == 0 && Same(client.State, state),
+            "The retained legacy Undo command is always rejected before dispatch, even when an older provider advertises it; the paid source and mana remain unchanged");
+        client.Close();
     }
 
     private static void DecisionOwnership(Action<bool, string> check)
@@ -342,8 +362,7 @@ internal static class InteractionContractMatrix
             var options = new ChoiceSelection([new(7, "First ability", null), new(9, "Second ability", null)], new(1, 1));
             DecisionPayload payload = row.PayloadType.Name switch {
                 nameof(PriorityPayload) => new PriorityPayload(complete,
-                    Is<UndoLastAction>() ? new(PriorityAlternative.UndoLastAction, alternative)
-                        : Is<PassTurn>() ? new(PriorityAlternative.PassTurn, alternative) : null,
+                    Is<PassTurn>() ? new(PriorityAlternative.PassTurn, alternative) : null,
                     CanAutoPass: Is<AutoPassPriority>(), QuietYieldToken: prefix + ":yield", Abilities: [ability]),
                 nameof(OpeningHandPayload) => new OpeningHandPayload(complete, alternative),
                 nameof(PaymentPayload) => new PaymentPayload(complete, alternative),
@@ -391,7 +410,6 @@ players.ToImmutableArray(), [], combat, decision) { Revision = 8, BoardRevision 
                 nameof(DeclineConfirmation) => new DeclineConfirmation(before.Id, decision.Id),
                 nameof(AcknowledgeDecision) => new AcknowledgeDecision(before.Id, decision.Id),
                 nameof(AcknowledgeReveal) => new AcknowledgeReveal(before.Id, decision.Id),
-                nameof(UndoLastAction) => new UndoLastAction(before.Id, decision.Id),
                 nameof(PassTurn) => new PassTurn(before.Id, decision.Id),
                 nameof(SelectCard) => new SelectCard(before.Id, decision.Id, focus.Key),
                 nameof(PlayCard) => new PlayCard(before.Id, decision.Id, hand.Key),
@@ -435,7 +453,7 @@ players.ToImmutableArray(), [], combat, decision) { Revision = 8, BoardRevision 
                 UseOfferedAction value => value with { ActionId = prefix + ":unoffered" },
                 PlaceFromHand value => value with { Card = enemy.Key },
                 PassForNow value => value with { YieldToken = prefix + ":expired-yield" },
-                PassPriority or AutoPassPriority or UndoLastAction or PassTurn => new KeepOpeningHand(before.Id, decision.Id),
+                PassPriority or AutoPassPriority or PassTurn => new KeepOpeningHand(before.Id, decision.Id),
                 _ => new PassPriority(before.Id, decision.Id)
             };
             var after = before with { Revision = 9, BoardRevision = 5, Decision = null, ActionClass = row.Name };

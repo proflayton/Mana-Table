@@ -83,7 +83,7 @@ internal static class DecisionDockPresentationChecks
         check(DecisionDockPresentation.From(other with { ActionClass = "attack" }, auto).ActorRole == DecisionDockActorRole.Attacking
             && DecisionDockPresentation.From(other with { ActionClass = "block" }, auto).ActorRole == DecisionDockActorRole.Blocking
             && DecisionDockPresentation.From(other with { ActionClass = "priority", PriorityPlayerId = 3, DecisionOwnerId = 3 }, quiet) is {
-                Status: DecisionDockStatus.Waiting, ActorId: 3, ActorRole: DecisionDockActorRole.Priority, Caption: "Quiet pass armed", Surface: DecisionDockSurface.Portrait }
+                Status: DecisionDockStatus.Waiting, ActorId: 3, ActorRole: DecisionDockActorRole.Priority, Caption: "Waiting for action", Surface: DecisionDockSurface.Portrait }
             && DecisionDockPresentation.From(other with { ActionClass = "priority", PriorityPlayerId = 3, DecisionOwnerId = 3 }, auto).Surface == DecisionDockSurface.None,
             "Public combat choices and the reported responder keep their own roles while an armed quiet pass waits for another player");
 

@@ -27,11 +27,17 @@ final class RulesScenario implements AutoCloseable {
     final MatchTable table;
     final Path evidence;
     private final int seatCount;
+    private final boolean automated;
     private final List<Object> trace = new ArrayList<>();
     private final Map<Integer, String> answered = new HashMap<>();
 
     RulesScenario(String name, Map<Integer, List<String>> battlefield) throws Exception {
         this(name, battlefield, "Forest", "Rhys the Redeemed");
+    }
+
+    static RulesScenario automated(String name, Map<Integer, List<String>> battlefield, String mainCard, String commander) throws Exception {
+        return new RulesScenario(name, battlefield, mainCard, List.of(commander), false, 4, DecisionTempo.Settings.off(),
+                () -> System.nanoTime() / 1_000_000, Map.of(), true);
     }
 
     RulesScenario(String name, int seatCount) throws Exception {
@@ -80,7 +86,14 @@ final class RulesScenario implements AutoCloseable {
     private RulesScenario(String name, Map<Integer, List<String>> battlefield, String mainCard, List<String> commanders,
                           boolean enableEtbCounters, int seatCount, DecisionTempo.Settings settings, LongSupplier time,
                           Map<Integer, List<String>> mainDeckOverrides) throws Exception {
+        this(name, battlefield, mainCard, commanders, enableEtbCounters, seatCount, settings, time, mainDeckOverrides, false);
+    }
+
+    private RulesScenario(String name, Map<Integer, List<String>> battlefield, String mainCard, List<String> commanders,
+                          boolean enableEtbCounters, int seatCount, DecisionTempo.Settings settings, LongSupplier time,
+                          Map<Integer, List<String>> mainDeckOverrides, boolean automated) throws Exception {
         this.seatCount = seatCount;
+        this.automated = automated;
         if (StaticData.instance() == null) EngineResources.load(RESOURCES);
         evidence = Path.of("target/rules-regressions", name);
         Files.createDirectories(evidence);
@@ -92,7 +105,7 @@ final class RulesScenario implements AutoCloseable {
             else deck.getMain().add(StaticData.instance().getCommonCards().getCard(mainCard), 100 - commanders.size());
             for (String commander : commanders)
                 deck.getOrCreate(DeckSection.Commander).add(StaticData.instance().getCommonCards().getCard(commander));
-            var player = MatchTable.human(deck, "Commander", "Seat " + seat);
+            var player = automated ? MatchTable.automated(deck, "Commander", "Seat " + seat) : MatchTable.human(deck, "Commander", "Seat " + seat);
             player.setEnableETBCountersEffect(enableEtbCounters);
             List<IPaperCard> extras = new ArrayList<>();
             for (String card : battlefield.getOrDefault(seat, List.of())) {
@@ -103,15 +116,22 @@ final class RulesScenario implements AutoCloseable {
             player.addExtraCardsOnBattlefield(extras);
             players.add(player);
         }
-        table = new MatchTable("Commander", players, RESOURCES, evidence, settings, time);
+        table = new MatchTable("Commander", players, RESOURCES, evidence, settings, time, automated);
         table.start();
     }
 
     JsonObject state(int seat) {
-        var state = JSON.toJsonTree(table.seat(seat).state()).getAsJsonObject();
+        var state = JSON.toJsonTree(session(seat).state()).getAsJsonObject();
         assertNotEquals(text(state, "status"), "error", state.toString());
         assertNotEquals(text(state, "status"), "finished", "Scenario ended early: " + state);
         return state;
+    }
+
+    MatchSession session(int seat) {
+        return automated ? table.automatedSeat(table.game.getRegisteredPlayers().get(seat).getId()) : table.seat(seat);
+    }
+    private List<Map<String, Object>> views() {
+        return automated ? table.automatedSeats().stream().map(MatchSession::state).toList() : table.testViews();
     }
 
     record Input(int seat, JsonObject state, JsonObject prompt) { }
@@ -140,13 +160,13 @@ final class RulesScenario implements AutoCloseable {
             }
             Thread.sleep(5);
         }
-        throw new AssertionError("Scenario timed out: " + table.testViews());
+        throw new AssertionError("Scenario timed out: " + views());
     }
 
     boolean answer(Input input, Map<String, ?> answer) {
         JsonObject request = request(input, answer);
         try {
-            table.seat(input.seat()).action(request);
+            session(input.seat()).action(request);
             answered.put(input.seat(), text(input.prompt(), "id"));
             trace.add(Map.of("seat", input.seat(), "state", input.state(), "answer", answer));
             return true;
@@ -164,7 +184,7 @@ final class RulesScenario implements AutoCloseable {
 
     void rejected(Input input, Map<String, ?> answer, String message) {
         var error = expectThrows(IllegalArgumentException.class,
-                () -> table.seat(input.seat()).action(request(input, answer)));
+                () -> session(input.seat()).action(request(input, answer)));
         assertEquals(error.getMessage(), message);
         assertEquals(text(state(input.seat()).getAsJsonObject("prompt"), "id"), text(input.prompt(), "id"));
     }
@@ -190,7 +210,7 @@ final class RulesScenario implements AutoCloseable {
 
     @Override public void close() throws Exception {
         try {
-            Files.writeString(evidence.resolve("trace.json"), JSON.toJson(Map.of("actions", trace, "lastViews", table.testViews())));
+            Files.writeString(evidence.resolve("trace.json"), JSON.toJson(Map.of("actions", trace, "lastViews", views())));
         } finally { table.close(); }
     }
 }

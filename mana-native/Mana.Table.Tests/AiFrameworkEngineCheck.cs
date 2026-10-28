@@ -15,12 +15,21 @@ internal static class AiFrameworkEngineCheck
         var elapsed = Stopwatch.StartNew();
         AiSeatSession? session = null;
         GameSnapshot? state = null;
+        GameSnapshot? expiredSourceObservation = null;
         bool kept = false, landPlayed = false;
+        int expiredSourceReads = 0;
         var fixturePasses = new HashSet<string>();
         try {
             while (!landPlayed) {
                 if (elapsed.Elapsed > TimeSpan.FromSeconds(25)) throw new TimeoutException("AI framework engine conformance did not reach its offered land route.");
                 state = await engine.ObserveAsync();
+                if (expiredSourceObservation is { } expired) {
+                    if (state == null || state.Id != expired.Id || state.Revision <= expired.Revision)
+                        throw new InvalidOperationException("An expired source read did not produce a newer observation of the same game.");
+                    check(true, "A rejected conformance source read moved from revision " + expired.Revision
+                        + " to " + state.Revision + " before any offer was reused");
+                    expiredSourceObservation = null;
+                }
                 if (state?.Status is "error" or "finished") throw new InvalidOperationException(state.Error ?? "Framework fixture ended unexpectedly.");
                 if (state?.Decision is not { } decision) { session?.Observe(null); await Task.Delay(5); continue; }
                 session ??= new(state.Id, state.ViewerId, new ScriptedPolicy(), 261026, new(TimeSpan.FromSeconds(10)));
@@ -29,7 +38,27 @@ internal static class AiFrameworkEngineCheck
                 if (decision.Payload is PriorityPayload) {
                     if (state.ActivePlayerId == state.ViewerId && state.PhaseKey == "MAIN1" && state.Stack.IsEmpty) {
                         var land = state.Viewer!.Zone("Hand").Cards.First();
-                        var offers = await engine.SourceActionsAsync(state.Id, decision.Id, land.Key);
+                        SourceActionSet offers;
+                        try { offers = await engine.SourceActionsAsync(state.Id, decision.Id, land.Key); }
+                        catch (EngineCommandRejectedException error) when (error.Message is
+                            "The table changed. Read the current card again."
+                            or "The source actions changed. Read the current card again."
+                            or "The source action context changed. Select the current card again.") {
+                            // A queued display publication can refresh the same
+                            // unanswered priority between observation and query.
+                            // Discard the read and observe again within the same
+                            // deadline; no accepted command is replayed.
+                            if (++expiredSourceReads > 16) throw new InvalidOperationException("Too many expired conformance source reads.", error);
+                            expiredSourceObservation = state;
+                            session.Observe(null);
+                            await Task.Delay(5); continue;
+                        }
+                        if (offers.Revision != state.Revision) {
+                            if (++expiredSourceReads > 16) throw new InvalidOperationException("Too many expired conformance source reads.");
+                            expiredSourceObservation = state;
+                            session.Observe(null);
+                            await Task.Delay(5); continue;
+                        }
                         check(offers.Actions.Any(action => action.Kind == "play"), "Real Forge offers the fixture's land route independently of AI strategy");
                         current = new(state, offerVersion: 1, sourceActions: [offers]);
                     } else {
@@ -54,6 +83,8 @@ internal static class AiFrameworkEngineCheck
             check(kept && landPlayed && session!.History.Decisions.Any(record => record.Outcome == AiDecisionOutcome.Accepted
                     && record.Command == nameof(UseOfferedAction)) && state!.Viewer!.Zone("Battlefield").Count == 1,
                 "The policy framework keeps a real hand and follows a current offered land route; the subsequent authoritative board establishes the result");
+            if (expiredSourceReads > 0) check(true,
+                "The conformance driver discarded " + expiredSourceReads + " expired source reads before accepting a freshly scoped route, within its original deadline");
         } finally {
             session?.Dispose();
         }

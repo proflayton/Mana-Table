@@ -96,6 +96,7 @@ public sealed partial class ForgeEngine : IAutomatedSimulation
                 if (seat < 0 || seat != state.ViewerId || domain.Version < 0 || domain.Sources.IsDefault || domain.Actions.IsDefault
                     || semantics.Options.IsDefault || semantics.LegalTextValues.IsDefault || semantics.UnpaidMana.IsDefault)
                     throw new IOException("Invalid automated seat observation.");
+                DecisionOrderingFacts.Validate(state, semantics);
                 result.Add(new(seat, state, domain, semantics));
             }
             if (result.Select(item => (item.State.Id, item.SeatId)).Distinct().Count() != result.Count)

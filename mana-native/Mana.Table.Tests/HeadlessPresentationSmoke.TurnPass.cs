@@ -16,7 +16,8 @@ internal static partial class HeadlessPresentationSmoke
             Players = initial.Players.Select(player => player.Id != initial.ViewerId ? player
                 : player with { LandPlaysUsed = 0, LandPlayLimit = 1 }).ToImmutableArray(),
             Decision = new("turn-pass", new DecisionContext(), new PriorityPayload(new("Pass", true),
-                new(PriorityAlternative.PassTurn, new("Pass turn", true)), CanAutoPass: false)) };
+                new(PriorityAlternative.PassTurn, new("Pass turn", true)), CanAutoPass: false,
+                QuietYieldToken: "first-land-wait-permission")) };
         void RecordCommands(Runner run) => run.Engine.ReplyOverride = command => {
             if (!GameCommandPermissions.Allows(run.Engine.State, command)) throw new InvalidOperationException("Unpermitted turn-pass command.");
             run.Engine.ObserveOverride = null;
@@ -27,19 +28,19 @@ internal static partial class HeadlessPresentationSmoke
         using (var run = new Runner(profile, "first-land-turn-pass", state, trace, performance)) {
             RecordCommands(run); run.Tick("ready");
             string prompt = run.View.Match!.Decision!.Id;
-            run.ClickHit("cancel");
+            run.ClickHit("quiet-priority-arm");
             check(run.Engine.Replies.Count == 0 && run.Frame.Hits.Any(hit => hit.Id == "turn-pass-keep")
                     && run.Frame.Hits.Any(hit => hit.Id == "turn-pass-confirm") && Text(run.Frame).Contains("No land played this turn"),
-                "Pass turn before the first land opens a local choice beside the portrait without yielding priority");
+                "Waiting for action before the first land opens a local choice beside the portrait without yielding priority");
             run.Input(new(20, 60), keys: new(Keys.Space)); run.Tick("space-released");
             check(run.Engine.Replies.Count == 0, "Space cannot accidentally accept the first-land warning");
             run.ClickHit("turn-pass-keep");
-            check(run.Engine.Replies.Count == 0 && run.Frame.Hits.Any(hit => hit.Id == "cancel"),
+            check(run.Engine.Replies.Count == 0 && run.Frame.Hits.Any(hit => hit.Id == "quiet-priority-arm"),
                 "Keep playing returns to the same priority decision without sending a command");
-            run.ClickHit("cancel"); run.Input(new(20, 60), keys: new(Keys.Escape)); run.Tick("escape-released");
-            check(run.Engine.Replies.Count == 0 && run.Frame.Hits.Any(hit => hit.Id == "cancel"),
+            run.ClickHit("quiet-priority-arm"); run.Input(new(20, 60), keys: new(Keys.Escape)); run.Tick("escape-released");
+            check(run.Engine.Replies.Count == 0 && run.Frame.Hits.Any(hit => hit.Id == "quiet-priority-arm"),
                 "Escape dismisses the first-land warning without ending the turn");
-            run.ClickHit("cancel");
+            run.ClickHit("quiet-priority-arm");
             var autoState = run.View.Match! with { Decision = run.View.Match!.Decision! with {
                 Payload = ((PriorityPayload)run.View.Match.Decision.Payload) with { CanAutoPass = true } } };
             run.Engine.ObserveOverride = () => Task.FromResult<GameSnapshot?>(autoState);
@@ -50,12 +51,13 @@ internal static partial class HeadlessPresentationSmoke
                 "Enabling Auto cannot bypass an outstanding first-land confirmation");
             run.ClickHit("turn-pass-confirm");
             run.Until(() => run.Engine.Replies.Count == 1 && !run.View.Busy, "confirmed-turn-pass");
-            check(run.Engine.Replies.Single() is PassTurn { DecisionId: var decision } && decision == prompt,
-                "Pass anyway submits exactly the captured current PassTurn command once");
+            check(run.Engine.Replies.Single() is PassForNow { DecisionId: var decision, YieldToken: "first-land-wait-permission" }
+                    && decision == prompt,
+                "Pass anyway submits exactly the captured current bounded wait permission once");
         }
         using (var run = new Runner(profile, "first-land-stale-confirmation", state, trace, performance)) {
             RecordCommands(run); run.Tick("ready");
-            run.ClickHit("cancel");
+            run.ClickHit("quiet-priority-arm");
             var old = run.Hit("turn-pass-confirm");
             var point = run.PointFor(old);
             run.Input(point, left: ButtonState.Pressed);
@@ -72,7 +74,7 @@ internal static partial class HeadlessPresentationSmoke
                 state with { ViewerId = 1 },
                 state with { Id = "different-game" }
             }) {
-                run.Present(state); run.Tick("ready-again"); run.ClickHit("cancel");
+                run.Present(state); run.Tick("ready-again"); run.ClickHit("quiet-priority-arm");
                 // Preserve the prompt ID to verify these facts independently of scope replacement.
                 run.View.Accept(changed with { Revision = run.View.Match!.Revision, Decision = run.View.Match.Decision }); run.Tick("changed-turn-facts");
                 check(run.Engine.Replies.Count == 0 && run.Frame.Hits.All(hit => hit.Id != "turn-pass-confirm"),
@@ -90,21 +92,30 @@ internal static partial class HeadlessPresentationSmoke
         }
         foreach (var example in new[] {
             (Name: "land-already-played", State: state with { Players = state.Players.Select(player => player.Id != state.ViewerId ? player
-                : player with { LandPlaysUsed = 1 }).ToImmutableArray() }, Control: "cancel", Kind: typeof(PassTurn)),
+                : player with { LandPlaysUsed = 1 }).ToImmutableArray() }, Control: "quiet-priority-arm", Kind: typeof(PassForNow)),
             (Name: "land-count-unavailable", State: state with { Players = state.Players.Select(player => player.Id != state.ViewerId ? player
-                : player with { LandPlaysUsed = null }).ToImmutableArray() }, Control: "cancel", Kind: typeof(PassTurn)),
+                : player with { LandPlaysUsed = null }).ToImmutableArray() }, Control: "quiet-priority-arm", Kind: typeof(PassForNow)),
             (Name: "continue-to-combat", State: state, Control: "confirm", Kind: typeof(PassPriority)),
             (Name: "ordinary-response", State: state with { PhaseKey = "MAIN2", Stack = [new("An effect", "Draw a card.", true, null)] },
                 Control: "confirm", Kind: typeof(PassPriority)),
-            (Name: "opponents-turn", State: state with { ActivePlayerId = 1 }, Control: "confirm", Kind: typeof(PassPriority)),
-            (Name: "undo", State: state with { Decision = state.Decision! with { Payload = ((PriorityPayload)state.Decision.Payload) with {
-                Alternative = new(PriorityAlternative.UndoLastAction, new("Undo", true)) } } }, Control: "cancel", Kind: typeof(UndoLastAction))
+            (Name: "opponents-turn", State: state with { ActivePlayerId = 1 }, Control: "confirm", Kind: typeof(PassPriority))
         }) {
             using var run = new Runner(profile, "first-land-" + example.Name, example.State, trace, performance);
             RecordCommands(run); run.Tick("ready"); run.ClickHit(example.Control);
             run.Until(() => run.Engine.Replies.Count == 1 && !run.View.Busy, "unchanged-gesture");
             check(run.Engine.Replies.Single().GetType() == example.Kind && run.Frame.Hits.All(hit => hit.Id != "turn-pass-confirm"),
                 example.Name + " retains its existing command without a first-land warning");
+        }
+        var legacyUndo = state with { Decision = state.Decision! with { Payload = ((PriorityPayload)state.Decision.Payload) with {
+            Alternative = new(PriorityAlternative.UndoLastAction, new("Undo", true)) } } };
+        using (var run = new Runner(profile, "first-land-legacy-undo-unavailable", legacyUndo, trace, performance)) {
+            RecordCommands(run); run.Tick("legacy-undo-offer");
+            string prompt = run.View.Match!.Decision!.Id;
+            run.Input(new(20, 60), keys: new(Keys.Escape)); run.Tick("escape-released");
+            check(run.Engine.Replies.Count == 0 && run.View.Match?.Decision?.Id == prompt
+                    && run.Frame.Hits.All(hit => hit.Id != "cancel") && !Text(run.Frame).Contains("Undo")
+                    && run.Frame.Hits.Any(hit => hit.Id == "confirm") && run.Frame.Hits.Any(hit => hit.Id == "quiet-priority-arm"),
+                "A legacy game-action Undo offer exposes no Undo or Cancel gesture and leaves current phase and wait actions intact");
         }
     }
 }

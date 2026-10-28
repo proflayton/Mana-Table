@@ -19,7 +19,7 @@ additional evidence for the exact candidate, alongside required source CI,
 native packaging, UI, installer and update checks. A passing short smoke game
 does not prove a whole game can finish or that an opponent is enjoyable.
 
-The manual `--evaluate-ai-release` profile runs nine controlled native policy
+The manual `--evaluate-ai-release` profile runs ten controlled native policy
 journeys and four natural games using the varied deck manifests in cyclic seat
 rotations. It reuses one JVM. Each game has a 160-turn/180-second ceiling; a
 ceiling is inconclusive, never a replacement for the engine's pre-cleanup
@@ -36,6 +36,13 @@ The partner-counter journey pays for both Pir and Toothy through the normal
 policies, then checks the next actual draw, Toothy's trigger and Pir's replacement
 against the same creature's exact two counters and 3/3 result. Harmless opposing
 commanders keep that controlled continuation independent of combat targeting.
+The tap-cost funding journey uses Selesnya Evangel, Birds of Paradise and a
+second creature before any land play, with an explicitly declared passive haste
+grant and observed first-upkeep readiness. The normal policy must pay the activation,
+reach its stack occurrence and resolve a Saproling without cancelling payment.
+Focused policy checks also exercise a nonmana selection before mana payment,
+requiring it to preserve the only available mana creature when an alternative
+tap-cost candidate exists.
 
 Retain `ai-release-evaluation.json`, the full source revision, engine artifact
 manifest, exact runtime hashes and private trace/replay locations. Record the
@@ -231,6 +238,12 @@ window are in `Mana.Game.dll`. Both participate in package content hashes,
 installer/update validation and migration health evidence. A launcher-only
 hash cannot establish which game UI was installed. The entry point remains
 `ManaTable.exe`, and existing profiles require no migration for this split.
+
+The source candidate also packages the device-independent mixer in
+`Mana.Audio.dll`. Its bytes are declared in `build.json` and checked when a CI
+consumer restores the exact-source package. Fixtures reject a missing, changed
+or undeclared audio assembly; the source receipt also binds its entry through
+the complete runtime archive hash.
 
 Managed portable layouts can use the SDK update path from their writable root.
 Older flat portable ZIPs keep the manual download/extract route; extract a newer

@@ -111,6 +111,16 @@ public class AiDeckSelectionTest {
 
     private static void assertGuestSelection(JsonObject guest, JsonObject selected, JsonObject unselected) {
         assertEquals(seat(guest, 2).get("deck").getAsString(), "Custom Pir and Toothy");
+        var preview = seat(guest, 2).getAsJsonObject("deckPreview");
+        assertEquals(preview.get("name").getAsString(), "Custom Pir and Toothy");
+        assertFalse(preview.get("selectionId").getAsString().isBlank());
+        assertEquals(preview.getAsJsonArray("commanders").asList().stream()
+                        .map(card -> card.getAsJsonObject().get("name").getAsString()).sorted().toList(),
+                List.of("Pir, Imaginative Rascal", "Toothy, Imaginary Friend"));
+        for (var card : preview.getAsJsonArray("commanders")) {
+            assertFalse(card.getAsJsonObject().get("artName").getAsString().isBlank());
+            assertFalse(card.getAsJsonObject().get("edition").getAsString().isBlank());
+        }
         assertTrue(seat(guest, 2).get("ready").getAsBoolean());
         assertTrue(guest.getAsJsonArray("aiOpponents").isEmpty(), "Only the host receives its private saved-deck catalog");
         assertTrue(!seat(guest, 2).has("opponentId") || seat(guest, 2).get("opponentId").isJsonNull(),

@@ -1,5 +1,6 @@
 using Mana.Client;
 using Mana.Contracts;
+using Mana.Table.Presentation;
 
 namespace Mana.Table;
 
@@ -9,22 +10,50 @@ internal sealed partial class TableApplication
     private int quietYieldTurn;
     private int? quietYieldActivePlayer;
     private long quietYieldActivity;
+    private readonly PriorityAttention priorityAttention = new();
     private bool QuietPriorityArmed => quietYieldToken.Length > 0;
-    private bool CanOfferQuietPriority => !ExperienceLabOpen && fixture == null && !session.NeedsRecovery && !held
+    private bool CanOfferQuietPriority => !ExperienceLabOpen && fixture == null && !session.NeedsRecovery
         && match is { } state && !(state.ActivePlayerId == state.ViewerId && preferences.Stops.Contains(state.PhaseKey))
         && state.Decision?.Payload is PriorityPayload priority && QuietPriorityPolicy.CanPass(state, priority.QuietYieldToken);
 
-    private void ArmQuietPriority()
+    private void ArmQuietPriority(bool confirmedTurnPass = false)
     {
         // Observation does not change this local intent. The worker waits for
         // its result and rechecks this exact token before submitting any pass.
         if (!CanOfferQuietPriority || busy || match is not { } state) return;
+        var command = new PassForNow(state.Id, state.Decision!.Id, ((PriorityPayload)state.Decision.Payload).QuietYieldToken);
+        if (!confirmedTurnPass && NeedsFirstLandConfirmation(state, command)) {
+            turnPassRequest = new(command, state.ViewerId, state.Turn, state.PhaseKey);
+            session.CancelAdvance(); return;
+        }
         StopStackResolution();
         session.CancelAdvance();
+        held = false; priorityAttention.Resume();
+        CaptureQuietPriority(state);
+        error = ""; commandFailure = false;
+    }
+
+    private void CaptureQuietPriority(GameSnapshot state)
+    {
         quietYieldGame = state.Id; quietYieldTurn = state.Turn; quietYieldActivePlayer = state.ActivePlayerId;
         quietYieldToken = ((PriorityPayload)state.Decision!.Payload).QuietYieldToken;
         quietYieldActivity = state.Activity.Select(entry => entry.Id).DefaultIfEmpty().Max();
-        error = ""; commandFailure = false;
+    }
+
+    private void ArmAutomaticQuietPriority(bool interactionBlocked)
+    {
+        if (QuietPriorityArmed || ResolvingCapturedStack || !automatic || held || interactionBlocked
+            || priorityAttention.NeedsResponse || busy || polling || commandFailure || !matchPresentation.Ready(now)
+            || !CanOfferQuietPriority || match is not { } state || state.ActivePlayerId == state.ViewerId) return;
+        // Ordinary Auto still uses CanAutoPass. This separate scoped token is
+        // consent only for unchanged empty opponent windows, even with an instant.
+        CaptureQuietPriority(state);
+    }
+
+    private void TakePriorityControl()
+    {
+        StopQuietPriority(); StopStackResolution(); session.CancelAdvance();
+        held = true; priorityAttention.Interrupt();
     }
 
     private void StopQuietPriority()
@@ -43,6 +72,9 @@ internal sealed partial class TableApplication
             || match is not { } state || state.ActivePlayerId == state.ViewerId && preferences.Stops.Contains(state.PhaseKey)
             || !QuietPriorityPolicy.CanWait(state, quietYieldGame, quietYieldTurn, quietYieldActivePlayer, quietYieldToken)
             || QuietPriorityPolicy.HasInterruption(state, quietYieldActivity)) {
+            // A replacement token must not silently start a new Auto batch.
+            if (match is { } current && current.Id == quietYieldGame && current.Turn == quietYieldTurn
+                && current.ActivePlayerId == quietYieldActivePlayer) priorityAttention.Interrupt();
             StopQuietPriority(); return false;
         }
         if (interactionBlocked) { session.CancelAdvance(); return true; }

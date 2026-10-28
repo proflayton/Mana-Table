@@ -28,6 +28,7 @@ internal static class ExecutionEngineJourney
         int beforeHand = -1;
         bool started = false, stacked = false;
         GameSnapshot? result = null;
+        GameSnapshot? acceptedStackPass = null;
         GameSnapshot? pending = null;
         var timer = Stopwatch.StartNew();
         var answered = new HashSet<(int Seat, long Revision, string Decision, long Offers)>();
@@ -67,7 +68,8 @@ internal static class ExecutionEngineJourney
                             "The actual committed three-to-two counter change names the activation's cost step rather than a later prompt or adjacent effect");
                     }
                     if (stacked && actor.Stack.IsEmpty && actor.Viewer!.Zone("Hand").Count == beforeHand + 1
-                        && ExecutionFrames.Find(actor, activation)?.Outcome == ExecutionOutcome.Resolved) {
+                        && ExecutionFrames.Find(actor, activation)?.Outcome == ExecutionOutcome.Resolved
+                        && actor.Decision?.Payload is PriorityPayload { QuietYieldToken.Length: > 0 }) {
                         result = actor; break;
                     }
                 }
@@ -99,6 +101,8 @@ internal static class ExecutionEngineJourney
                     } else command = Answer(state);
                     if (!GameCommandPermissions.Allows(state, command)) throw new InvalidDataException("The focused driver proposed an answer outside its exact current capability.");
                     await engine.ExecuteAutomatedAsync(observation.SeatId, command);
+                    if (observation.SeatId == 0 && command is PassPriority && acceptedStackPass == null
+                        && state.Stack.FirstOrDefault()?.ExecutionId == activation) acceptedStackPass = state;
                     commands.Add(new { observation.SeatId, state.Revision, decision.Id, decision.ExecutionId, command = command.GetType().Name });
                     submitted = true; break;
                 }
@@ -109,6 +113,7 @@ internal static class ExecutionEngineJourney
                     && Mare(result).Counters.Values.Sum() == 2,
                 "Resolution draws exactly one actual card, keeps the paid counter removed and retains both tapped mana sources under the same execution");
             Replay(observations, engine, directory, activation, sourceId, check);
+            CheckAcceptedResponse(observations, acceptedStackPass, result, check);
         } catch (Exception error) {
             primaryFailure = error; throw;
         } finally {
@@ -132,6 +137,23 @@ internal static class ExecutionEngineJourney
             if (saved.SaveError.Length > 0) throw new InvalidDataException(saved.SaveError);
             return "deck:" + saved.Id;
         }
+    }
+
+    private static void CheckAcceptedResponse(IReadOnlyList<GameSnapshot> trace, GameSnapshot? accepted,
+        GameSnapshot result, Action<bool, string> check)
+    {
+        check(accepted?.Decision?.Payload is PriorityPayload && !accepted.Stack.IsEmpty,
+            "The provider journey retained the real authorized nonempty-stack priority which its driver successfully passed");
+        if (accepted == null) throw new InvalidDataException("No actual accepted stack response was recorded.");
+        int start = Enumerable.Range(0, trace.Count).First(index => trace[index].Revision == accepted.Revision
+            && trace[index].Decision?.Id == accepted.Decision?.Id && trace[index].Executions?.LastSequence == accepted.Executions?.LastSequence);
+        var attention = new PriorityAttention(); attention.Observe(accepted);
+        attention.Submitted(accepted, new PassPriority(accepted.Id, accepted.Decision!.Id));
+        foreach (var state in trace.Skip(start + 1)) attention.Observe(state);
+        check(result.StackInterruptionVersion == accepted.StackInterruptionVersion
+                && result.Decision?.Payload is PriorityPayload { QuietYieldToken.Length: > 0 }
+                && !attention.NeedsResponse,
+            "The actual Forge-adapter Loch Mare pass, correlated draw and completed resolution admit fresh quiet permission without an additional response acknowledgment");
     }
 
     private static Card Mare(GameSnapshot state) => state.Viewer!.Zone("Battlefield").Cards.Single(card => card.Name == "Loch Mare");

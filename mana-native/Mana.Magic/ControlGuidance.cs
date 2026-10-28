@@ -82,7 +82,7 @@ public static class ControlGuidance
         if (hand != null) return Card(state, hand, "Hand");
         var commander = state.Viewer.Zone("Command").Cards.FirstOrDefault(c => !c.FaceDown && c.Selectable && c.Key.Length > 0);
         if (commander != null) return Card(state, commander, "Command");
-        return decision.Payload is PriorityPayload { CanAutoPass: true } ? new("priority-controls", "Set your pace", "Auto follows your pass settings. Hold or Ctrl keeps priority this turn.") : null;
+        return decision.Payload is PriorityPayload { CanAutoPass: true } ? new("priority-controls", "Set your pace", "Auto skips quiet opponent windows and stops for available responses to new actions. Hold or Ctrl keeps priority this turn.") : null;
     }
 
     private static bool CanDecide(GameSnapshot state) => state.Status == "playing" && state.Viewer is { Eliminated: false } && state.Decision != null;

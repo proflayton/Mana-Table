@@ -146,6 +146,27 @@ The actual payer may differ from the viewing decision owner; resource scope does
 not grant another seat command authority. A missing field from an older provider
 remains unknown.
 
+Intermediate nonmana selections can carry `CostPaymentFunding` from their
+still-owned parent payment. It retains only the current payer/source, remaining
+adjusted costs, the exact current part index and bounded read-only funding facts.
+The index distinguishes the selected part from another unpaid source tap;
+absence retains unknown semantics. The policy uses the shared
+assignment planner after excluding a proposed consumed resource and already
+selected resources, preferring a candidate which preserves funding. An old
+action offer or remembered portrait cannot establish this context; absent or
+unsupported facts retain the ordinary unknown fallback.
+
+Tap cost feasibility, offered selections and execution share current physical
+eligibility in the rules engine. Execution validates the entire selection before
+mutation and rechecks a source tap after earlier costs. The active remaining
+payment owns source reservations; paid parts release them and a pending untap
+leaves ordering open. A replacement of a legal cost action can still count as
+payment under [Comprehensive Rules 118.11](https://media.wizards.com/2026/downloads/MagicCompRules%2020260925.txt).
+Cost-part ordering carries an explicit purpose and the current engine default
+permutation. The policy preserves that order rather than applying card-value
+ranking, which could sacrifice a source before its own tap cost. These indices
+only answer the current ordered prompt; they grant no action or payment rights.
+
 `Mana.Game` uses the shared planner to suggest specific physical sources alongside
 the inspected card's mana symbols. Its witness cannot create an action handle,
 tap a source, prove adjusted affordability or disable manual play. The existing
@@ -176,7 +197,25 @@ paying exact `{C}`. Nested color choices retain the same owning bill and spell.
 The AI's episode token follows the actual input through refreshed scopes and its
 nested choice, so reissued decision IDs cannot reset the causal work allowance.
 
-`AiDecisionReplayCase` captures one seat's authorized knowledge and evaluation
+Pending stack operations use the same neutral operation grammar as prospective
+actions, but contain committed targets/modes rather than candidate alternatives.
+An opaque stack occurrence ID distinguishes copies independently of their source
+card. `Mana.Contracts.ActionOperationValidation` validates both adapter and policy
+inputs; unknown effects remain unknown. The engine describes mechanics, the policy
+estimates consequences, and neither estimate grants a command.
+
+`AiSeatSession` also owns immutable versioned `AiTurnPlan` memory. Policies propose
+transitions alongside current answers; only accepted, still-valid submissions can
+retain them. Observed resource loss or turn changes invalidate memory and prevent
+late receipts from reviving it. Reservation identities and nominal bills are
+preferences, never historical action handles. New reservations must originate in
+the current offered semantic catalog; unchanged valid reservations can cross a
+payment or combat input where that route is not currently offered. The bounded
+planner and payment policy share `AiManaPlanner`, so a preservation claim has both
+a joint bill assignment and an intact witness rather than two independent
+affordability guesses. See [AI intent and limits](Mana-Table-AI.md#pending-effects-and-session-owned-intent).
+
+`AiDecisionReplayCase` captures one seat's authorized knowledge, plan/version and evaluation
 allowance. Offline `AiDecisionReplay` reuses the scoped session and exact policy
 seed without receiving an engine connection. Campaign traces and replay cases
 remain private; repeating an individual proposal is not an execution receipt or
@@ -207,6 +246,31 @@ priority, local control policy and a bounded attention cohort determine a quiet
 cue. It never dispatches an action. Its temporary match-local mute, grace and
 cooldown do not alter global sound preferences, Auto or rules timing; background
 audio does not bypass physical-input admission.
+
+**Source candidate:** `Mana.Audio` owns the device-independent audio boundary.
+One immutable `AudioMix` contains master and Effects, Notifications and Music
+levels, each with an independent retained volume and mute. `AudioMixer` applies
+master × bus × authored cue gain once, including to voices already playing.
+Gameplay cues route to Effects; the quiet priority cue routes to Notifications.
+Music is a reserved route, not a music transport or playlist implementation.
+The mixer owns voice lifetime and reaps completed one-shots. `IAudioOutput`
+creates an `IAudioVoice`; the renderer's MonoGame adapter owns decoded assets and
+reports unavailable hardware or voice capacity without affecting the match.
+`TableApplication` creates the mixer after the window attaches its output and
+disposes voices before `TableAssets` disposes the device resources. There is no
+parallel fire-and-forget callback or process-global volume setting.
+
+`PlayPreferences.Audio` persists this mix in `play-preferences.json`. Loading a
+legacy file without `Audio` migrates `Sounds=false` to master mute; new saves
+write only the mix. Missing channels default to full volume; levels normalize
+to 0–1. Mute preserves all volumes. The current Settings surface exposes master
+volume only; future channel controls can edit the same model. A captured slider
+previews live and saves on release, close, focus loss or shutdown. Its local
+settings scope survives a new engine decision but cannot submit one. Audio
+preferences do not change passing policy or cancel a bounded continuation.
+Priority reminder admission uses effective Notifications gain, so 0% consumes a
+suppressed reminder and raising volume cannot replay it later. Temporary bell
+mute remains separate, match-local notification policy.
 
 `IMatchConnection` publishes deeply immutable `GameSnapshot` values and accepts a
 closed family of semantic `GameCommand` variants. Arrays and dictionaries in the
@@ -1215,16 +1279,35 @@ does not authenticate, continuously synchronize or write back to Archidekt.
 The deck chooser and builder return to the shared deck stage. Optional Deck list
 reading is noncommitting; there is no Review/Confirm preparation gate. One solo
 Play prepares the captured valid deck if needed, then starts it. In multiplayer,
-Host/Join can bring that list but only explicit Ready submits any needed
-`SelectDeckAsync` before setting readiness. Selection and builder entry await
+the saved list is shared as soon as it is selected or changes. Selection and builder entry await
 ordinary `SetReadyAsync(false)` before opening or changing a document. Browsing
-the chooser or reselecting the current document preserves readiness. The internal
-confirmed ID is only a setup/assignment cache; rules and the synchronized roster
-remain authoritative.
+the chooser or reselecting the current document preserves readiness. Ready is
+separate consent, never an implicit result of saving or publishing a list.
+
+`Mana.Client.ClientSession` owns the ordered `Lobby` replica. Only explicit
+connect/disconnect binds a table; ordinary receipts and observations must match
+that table and cannot lower its provider revision. Existing command epochs and
+the captured lobby binding revoke older polls, including a same-table reconnect.
+The UI does not retain an independent mutable roster.
+
+`LobbyDeckSession` tracks which acknowledged saved document is shared, without
+owning transport. Its identity includes the bound table, saved deck ID and exact
+file token; an editor revision can restart on reopen. One generation-stamped
+attempt reaches `ITableSetup.SelectDeckAsync(LobbyDeckSelection)` through the
+existing command queue. The request guards the table and saved bytes; its receipt
+identifies the public assignment. Failed persistence withdraws the old assignment;
+a saved incomplete draft remains visible but cannot Ready or start. Failed
+publication waits for an explicit retry instead of resubmitting every frame.
+
+`SyncLobby` owns captured deck assignments and derives immutable public
+`LobbyDeckPreview` values from them. Each seat's name, commander faces and readiness
+come from that same provider roster, whether local, remote or AI. Assignment IDs
+are opaque and unrelated to saved document IDs or game action handles. Main-deck
+contents and detailed private legality diagnostics are not public previews.
 
 `TableApplication.LobbyView` renders the four-seat roster, commander preview, saved/precon
 chooser, optional Deck list, native invite entry, and connection details. Its hit
-scopes include the active reader, selected deck, setup cache, mode, readiness and
+scopes include the active reader, selected deck, lobby revision, mode, readiness and
 start permission. Scoped input cannot reach controls behind it. Friends Start
 requires the local host's readiness and the engine's CanStart state. Builder edits
 retain compatible selected AI opponent IDs when the updated deck is prepared.
@@ -1565,13 +1648,42 @@ Hold, Full control, changed stops, typing, inspection and pointer gestures cance
 further passes; an already submitted command is reconciled. Required decisions,
 including blocks, payment and cleanup, are never consumed by Auto.
 
-Auto and explicit quiet yield use one bounded executor and one `ClientSession`
-cancellation/acceptance lifecycle. Their entry points construct only their own
-command variant and retain separate submitted-prompt histories. The unchanged
-`QuietPriorityPolicy` owns quiet token, turn and interruption gates; it cannot
-authorize ordinary Auto. The application checks eligibility and presentation
-pauses without keeping another submitted-prompt cache or constructing a discarded
-pass command. The session owns submission and reconciliation.
+Auto and explicit waiting use one bounded executor and one `ClientSession`
+cancellation/acceptance lifecycle. Auto has two distinct authority paths:
+`CanAutoPass` permits `AutoPassPriority`; an original quiet token permits
+`PassForNow` over unchanged empty opponent windows even with a playable instant.
+Explicit Wait for action can use that token on either player's turn. Tokens never
+broaden ordinary `CanAutoPass`, and each path retains its own submitted-prompt
+history. The session still owns submission and reconciliation.
+
+Presentation-owned `PriorityAttention` observes public interruption history,
+the stack-interruption fence and replacement quiet tokens before physical input.
+New work blocks silent quiet rearming until the player explicitly acts or passes;
+acknowledging one displayed response does not acknowledge a new action arriving
+in flight. A new turn establishes a new quiet opportunity. Normal engine-authorized
+Auto may continue when no response is available, with existing readable pacing.
+Reading pauses continuation without answering anything. Take control also holds
+Auto for the current turn; deliberate Wait or enabling Auto can resume it.
+An accepted single `PassPriority` can retain one exact top-stack response receipt:
+the observed game/viewer/revision/decision must match the submitted command and
+its current published permission. This receipt records the stack occurrence,
+execution, targets and interruption fence; it is never an action handle. Only
+correlated resolution/complete changes and a retained terminal resolved execution
+can carry it into an empty stack's fresh quiet permission. Completion can arrive
+before the local priority offer, so that proof survives the intermediate resolving
+publication. The eventual automatic pass still requires the new current decision
+and provider-issued quiet token.
+
+A newer cast or child trigger, required choice, older remaining stack item,
+changed fence, history gap, missing execution data or uncorrelated public change
+retires this receipt and preserves attention. An execution's parent relationship
+does not extend the acknowledgment to its descendants. Playback mode changes
+clear local attention separately; they do not pretend that a stack response was
+submitted. A current empty-window pass after resolution can acknowledge that
+window, but a stale command cannot retroactively acknowledge the earlier action.
+The UI never arms Forge's engine-owned end-turn latch: that legacy protocol route
+has no native cancellation/status contract. Compatibility retains its semantic
+command, while the current player journey uses individually authorized passes.
 
 `StackResolutionIntent` adds a separate finite policy: capture the current exact
 stack occurrences, their order, controller, kind and targets, plus game/viewer,
@@ -1585,6 +1697,11 @@ control ends the intent. Cancellation reconciles one already-sent command.
 The Java adapter checks the fence at acceptance and again at execution to catch
 an action or required choice that appeared and disappeared between observations.
 Older providers without the fence cannot arm this feature.
+The single-response receipt above does not cover this batch executor's terminal
+handoff. If a response remains available after a captured batch finishes, an
+additional attention stop can remain. Extending that handoff requires an explicit
+captured-queue completion receipt, rather than treating the mode toggle as consent
+for later work.
 
 `StackWorkloads` is a source census over current entries, including interleaved
 triggers. Exact physical source, controller, effect and target identity bound a

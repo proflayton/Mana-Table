@@ -18,9 +18,11 @@ public sealed class AiSubmission
     internal TimeSpan Elapsed { get; }
     internal AiTurnRoute? Route { get; }
     internal string EpisodeId { get; }
+    internal AiPlanTransition? PlanTransition { get; }
     internal AiSubmission(AiDecisionStamp stamp, AiTask task, DecisionCommand command, string reason,
-        long seed, int remainingWork, TimeSpan elapsed, AiTurnRoute? route, string episodeId)
-        => (Stamp, Task, Command, ReasonCode, Seed, RemainingWork, Elapsed, Route, EpisodeId) = (stamp, task, command, reason, seed, remainingWork, elapsed, route, episodeId);
+        long seed, int remainingWork, TimeSpan elapsed, AiTurnRoute? route, string episodeId, AiPlanTransition? planTransition)
+        => (Stamp, Task, Command, ReasonCode, Seed, RemainingWork, Elapsed, Route, EpisodeId, PlanTransition)
+            = (stamp, task, command, reason, seed, remainingWork, elapsed, route, episodeId, planTransition);
 }
 
 /// <summary>
@@ -47,6 +49,9 @@ public sealed class AiSeatSession : IDisposable
     private AiDecisionStamp? evaluatingStamp, completedStamp;
     private AiProposal.Answer? ready;
     private AiSubmission? submitted;
+    private AiTurnPlan? plan;
+    private long planVersion;
+    private bool submittedPlanRevoked;
     private string episode = "";
     private long episodeSequence, episodeSeed;
     private AiWorkBudget work = null!;
@@ -75,6 +80,8 @@ public sealed class AiSeatSession : IDisposable
 
     public AiSeatView View { get { lock (gate) return view; } }
     public AiSeatHistory History { get { lock (gate) return history.Snapshot; } }
+    public AiTurnPlan? Plan { get { lock (gate) return plan; } }
+    public long PlanVersion { get { lock (gate) return planVersion; } }
 
     public bool Observe(AiDecisionFrame? next)
     {
@@ -91,11 +98,22 @@ public sealed class AiSeatSession : IDisposable
                         throw new ArgumentException("A changed decision needs a new observation revision.", nameof(next));
                     if (next.Stamp == prior) return false;
                 }
+                // Validate chronology before revoking work, changing memory or
+                // advancing the observation watermark. Invalid input is atomic.
+                history.ValidateTurn(next.State.Turn);
             }
             if (frame != null && view.Status is AiSeatStatus.Thinking or AiSeatStatus.Ready)
                 Record(frame, AiDecisionOutcome.Cancelled, ready?.Command, "observation-revoked");
             FinishActiveTime();
             if (next != null) {
+                // A memory proposal cannot survive losing the resources it was
+                // based on while its command acknowledgement is in flight.
+                if (submitted?.PlanTransition?.Next is { } pendingPlan
+                    && !AiPlanValidation.CanRetain(pendingPlan, pendingPlan.Version, next)) submittedPlanRevoked = true;
+                if (plan != null && !AiPlanValidation.CanRetain(plan, planVersion, next)) {
+                    plan = null;
+                    if (planVersion < long.MaxValue) planVersion++;
+                }
                 watermark = next.Stamp;
                 history.ObserveTurn(next.State.Turn);
                 history.Observe(next.State.Activity);
@@ -140,7 +158,8 @@ public sealed class AiSeatSession : IDisposable
             }
             var cancel = CancellationTokenSource.CreateLinkedTokenSource(cancellation);
             evaluationCancellation = cancel; evaluatingStamp = current.Stamp;
-            var request = new AiDecisionRequest(current, history.Snapshot, episodeSeed, remaining, work);
+            var request = new AiDecisionRequest(current, history.Snapshot, episodeSeed, remaining, work) {
+                Plan = plan, PlanVersion = planVersion };
             view = new(current.Stamp, AiSeatStatus.Thinking);
             long scheduledAt = time.GetTimestamp();
             evaluatingAllowance = allowance; evaluationStarted = scheduledAt;
@@ -193,8 +212,12 @@ public sealed class AiSeatSession : IDisposable
                     Record(frame, AiDecisionOutcome.Invalid, null, "unoffered-answer");
                     return view = new(frame.Stamp, AiSeatStatus.Invalid, "The answer is outside the current offers or constraints.");
                 }
+                if (!AiPlanValidation.IsTransitionValid(answer.PlanTransition, planVersion, frame, plan)) {
+                    Record(frame, AiDecisionOutcome.Invalid, null, "invalid-plan-transition");
+                    return view = new(frame.Stamp, AiSeatStatus.Invalid, "The proposed plan is stale or references unavailable resources.");
+                }
                 ready = answer;
-                Record(frame, AiDecisionOutcome.Offered, answer.Command, answer.ReasonCode);
+                Record(frame, AiDecisionOutcome.Offered, answer.Command, answer.ReasonCode, answer.PlanTransition);
                 return view = new(frame.Stamp, AiSeatStatus.Ready);
             }
             Record(frame, failure switch { AiSeatStatus.BudgetExceeded => AiDecisionOutcome.BudgetExceeded,
@@ -218,8 +241,9 @@ public sealed class AiSeatSession : IDisposable
                 if (semantic is { StableId.Length: > 0 }) route = new(frame.State.Turn, source.SourceCardId, semantic.StableId);
             }
             submitted = new(frame.Stamp, frame.Task, ready.Command, ready.ReasonCode,
-                episodeSeed, work.Remaining, Elapsed, route, frame.EpisodeId); ready = null;
-            Record(frame, AiDecisionOutcome.Submitted, submitted.Command, submitted.ReasonCode);
+                episodeSeed, work.Remaining, Elapsed, route, frame.EpisodeId, ready.PlanTransition); ready = null;
+            submittedPlanRevoked = false;
+            Record(frame, AiDecisionOutcome.Submitted, submitted.Command, submitted.ReasonCode, submitted.PlanTransition);
             view = new(frame.Stamp, AiSeatStatus.Submitted);
             return submitted;
         }
@@ -233,20 +257,43 @@ public sealed class AiSeatSession : IDisposable
             if (closed || !ReferenceEquals(submitted, submission)) return false;
             var outcome = receipt switch { AiExecutionReceipt.Accepted => AiDecisionOutcome.Accepted,
                 AiExecutionReceipt.Rejected => AiDecisionOutcome.Rejected, _ => AiDecisionOutcome.ExecutionUnknown };
+            bool applied = false;
+            if (receipt == AiExecutionReceipt.Accepted && !submittedPlanRevoked && frame != null
+                && planVersion < long.MaxValue && submission.PlanTransition is { } change && change.ExpectedVersion == planVersion
+                && (change.Next == null || AiPlanValidation.CanRetain(change.Next, planVersion + 1, frame))) {
+                plan = change.Next; planVersion++; applied = true;
+            }
             // Use the submitted stamp even if the engine has already published
             // the next choice. A receipt is not that next choice's outcome.
             history.Record(new(submission.Stamp, submission.Task, policyId, outcome,
                 submission.Command, submission.ReasonCode, submission.Seed, submission.RemainingWork, submission.Elapsed) {
-                    Route = submission.Route, EpisodeId = submission.EpisodeId });
+                    Route = submission.Route, EpisodeId = submission.EpisodeId,
+                    RetainedPlan = plan, PlanVersion = planVersion, ProposedPlanTransition = submission.PlanTransition,
+                    PlanTransitionApplied = applied });
             submitted = null;
+            submittedPlanRevoked = false;
             view = receipt == AiExecutionReceipt.Unknown ? new(frame?.Stamp, AiSeatStatus.NeedsRecovery, "Execution acknowledgement is uncertain.")
                 : new(frame?.Stamp, frame?.Stamp == submission.Stamp ? AiSeatStatus.WaitingForObservation : AiSeatStatus.Idle);
             return true;
         }
     }
 
-    private void Record(AiDecisionFrame current, AiDecisionOutcome outcome, DecisionCommand? command, string reason) => history.Record(
-        new(current.Stamp, current.Task, policyId, outcome, command, reason, episodeSeed, work.Remaining, Elapsed) { EpisodeId = current.EpisodeId });
+    private void Record(AiDecisionFrame current, AiDecisionOutcome outcome, DecisionCommand? command, string reason,
+        AiPlanTransition? transition = null) => history.Record(
+        new(current.Stamp, current.Task, policyId, outcome, command, reason, episodeSeed, work.Remaining, Elapsed) {
+            EpisodeId = current.EpisodeId, RetainedPlan = plan, PlanVersion = planVersion, ProposedPlanTransition = transition });
+
+    // Offline replay restores already-retained memory before the first policy
+    // evaluation; it receives the same validation as live observed resources.
+    internal void RestorePlanForReplay(AiTurnPlan? retained, long version)
+    {
+        lock (gate) {
+            if (closed || frame == null || evaluation != null || submitted != null || planVersion != 0
+                || version < 0 || version == long.MaxValue || retained != null && !AiPlanValidation.CanRetain(retained, version, frame))
+                throw new ArgumentException("A replay requires valid retained memory for its current seat observation.");
+            plan = retained; planVersion = version;
+        }
+    }
 
     private Allowance NewAllowance() => new(AiPolicySeeds.Episode(baseSeed, seatId, ++episodeSequence), limits.WorkUnits);
     private TimeSpan Elapsed => (allowance?.Elapsed ?? TimeSpan.Zero)
@@ -269,8 +316,10 @@ public sealed class AiSeatSession : IDisposable
                 Record(frame, AiDecisionOutcome.Cancelled, ready?.Command, "seat-closed");
             if (submitted is { } handoff)
                 history.Record(new(handoff.Stamp, handoff.Task, policyId, AiDecisionOutcome.ExecutionUnknown,
-                    handoff.Command, handoff.ReasonCode, handoff.Seed, handoff.RemainingWork, handoff.Elapsed) { EpisodeId = handoff.EpisodeId });
+                    handoff.Command, handoff.ReasonCode, handoff.Seed, handoff.RemainingWork, handoff.Elapsed) {
+                        EpisodeId = handoff.EpisodeId, RetainedPlan = plan, PlanVersion = planVersion, ProposedPlanTransition = handoff.PlanTransition });
             ready = null; frame = null; submitted = null;
+            plan = null;
             executionAllowances.Clear();
             view = new(null, AiSeatStatus.Closed);
         }

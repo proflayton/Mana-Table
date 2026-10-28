@@ -48,6 +48,14 @@ public class CostPayment extends ManaConversionMatrix {
     private Cost adjustedCost;
     private final SpellAbility ability;
     private final List<CostPart> paidCostParts = Lists.newArrayList();
+    private Player payer;
+
+    /** Current payment owner and remaining adjusted parts, for read-only
+     * decision projection. No caller can mutate payment order or paid state. */
+    public final Player getPayer() { return payer; }
+    public final List<CostPart> getUnpaidCostParts() {
+        return adjustedCost.getCostParts().stream().filter(part -> !paidCostParts.contains(part)).toList();
+    }
 
     /**
      * <p>
@@ -134,6 +142,7 @@ public class CostPayment extends ManaConversionMatrix {
     }
 
     public boolean payCost(final CostDecisionMakerBase decisionMaker) {
+        payer = decisionMaker.getPlayer();
         ability.getHostCard().getGame().getExecutions().step(ability, forge.game.ExecutionTracker.Step.COST);
         adjustedCost = CostAdjustment.adjust(cost, ability, decisionMaker.isEffect());
         List<CostPart> costParts = adjustedCost.getCostPartsWithZeroMana();

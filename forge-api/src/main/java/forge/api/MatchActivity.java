@@ -323,7 +323,10 @@ public final class MatchActivity {
             phase = "UNTAP";
             phaseName = "Untap";
             activePlayerId = e.turnOwner().getId();
-            add("turn", e.turnOwner(), possessive(e.turnOwner()) + " turn began.", null);
+            // The turn scope itself revokes the old token. Its history marker
+            // is not a player action which should pause a fresh continuation.
+            add("turn", e.turnOwner(), possessive(e.turnOwner()) + " turn began.", null,
+                    "", "", 0, null, null, false);
         } else if (event instanceof GameEventTurnPhase e) {
             phase = e.phase().name();
             phaseName = e.phase().nameForUi;

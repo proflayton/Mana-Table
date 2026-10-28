@@ -1,6 +1,6 @@
 namespace Mana.Table.Interaction;
 
-internal enum InteractionScopeKind { Current, Home, Updates, Activity, Experience, Chat, Playback, PhaseStop, Source }
+internal enum InteractionScopeKind { Current, Home, Updates, Activity, Experience, Chat, Playback, PhaseStop, Source, Settings }
 
 /// <summary>
 /// A published interaction is data. It cannot retain executable application

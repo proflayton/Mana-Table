@@ -355,4 +355,19 @@ public class MatchActivityTest {
         assertEquals(after.entries(), before.entries());
         assertEquals(before.phaseKey(), "UNTAP", "Earlier frames must remain detached");
     }
+
+    @Test public void routineTurnMarkersAreExplicitlyQuietWithoutHidingTheNextActualEvent() {
+        var viewer = new PlayerView(1, null);
+        var opponent = new PlayerView(2, null);
+        var activity = new MatchActivity(viewer);
+        activity.onGameEvent(new GameEventTurnBegan(opponent, 2));
+        var turn = activity.snapshot().get(0);
+        assertEquals(turn.kind(), "turn");
+        assertFalse(turn.interruptsQuietYield(), "The engine labels the routine marker; clients need no kind inference");
+        assertEquals(activity.quietSequence(), 0L);
+        activity.onGameEvent(new GameEventPlayerLivesChanged(opponent, 40, 39));
+        assertTrue(activity.snapshot().get(1).interruptsQuietYield(), "An actual change in the same turn remains independently interrupting");
+        assertEquals(activity.quietSequence(), 1L);
+        assertFalse(turn.interruptsQuietYield(), "Later events do not rewrite the earlier marker");
+    }
 }

@@ -14,6 +14,7 @@ internal sealed partial class TableApplication
     private Card? artPreloadSelection, artPreloadReview;
     private CatalogPage? artPreloadCatalog, artPreloadPrintings;
     private HandPractice? artPreloadPractice;
+    private Lobby? artPreloadLobby;
     private Card[]? artPreloadUpcoming;
     private (Card[] Visible, Card[] Anticipated) setupArtPreload = ([], []);
 
@@ -40,9 +41,12 @@ internal sealed partial class TableApplication
         var printings = tokens ? tokenPrintingsRead.View.Value : deckEditor && workshopDialog == "printings" ? printingRead.View.Value : null;
         var practice = deckEditor ? deckWorkspace.View.Hand : null;
         var review = deckEditor ? null : reviewCard?.Card;
+        var publicLobby = Connected ? lobby : null;
+        bool sameLobbyArtwork = SameLobbyArtwork(artPreloadLobby, publicLobby);
+        artPreloadLobby = publicLobby;
         if (ReferenceEquals(artPreloadSelection, selection) && ReferenceEquals(artPreloadCatalog, catalog)
             && ReferenceEquals(artPreloadPrintings, printings) && ReferenceEquals(artPreloadPractice, practice)
-            && ReferenceEquals(artPreloadReview, review) && ReferenceEquals(artPreloadUpcoming, upcoming)) return setupArtPreload;
+            && ReferenceEquals(artPreloadReview, review) && ReferenceEquals(artPreloadUpcoming, upcoming) && sameLobbyArtwork) return setupArtPreload;
         artPreloadSelection = selection; artPreloadCatalog = catalog; artPreloadPrintings = printings;
         artPreloadPractice = practice; artPreloadReview = review; artPreloadUpcoming = upcoming;
         var visible = new List<Card>();
@@ -51,10 +55,24 @@ internal sealed partial class TableApplication
         if (printings != null) visible.AddRange(printings.Cards.Select(card => card.Card));
         if (practice != null) visible.AddRange(practice.Hand.Select(card => card.Card));
         if (review != null) visible.Add(review);
+        if (publicLobby != null) visible.AddRange(publicLobby.Seats.Where(seat => seat.Type != "OPEN")
+            .SelectMany(seat => seat.DeckPreview?.Commanders ?? []));
 
         // A selected deck belongs to this player and is known before starting
         // the table. Warm its unique images without retaining a GPU deck copy.
         return setupArtPreload = (PrintableFaces(visible).ToArray(), upcoming);
+    }
+
+    private static bool SameLobbyArtwork(Lobby? previous, Lobby? current)
+    {
+        if (ReferenceEquals(previous, current)) return true;
+        if (previous == null || current == null || previous.TableId != current.TableId || previous.Seats.Length != current.Seats.Length) return false;
+        for (int i = 0; i < previous.Seats.Length; i++) {
+            var before = previous.Seats[i]; var after = current.Seats[i];
+            if (before.Index != after.Index || before.Type != after.Type
+                || before.DeckPreview?.SelectionId != after.DeckPreview?.SelectionId) return false;
+        }
+        return true;
     }
 
     private Card[] SelectedDeckArtwork()

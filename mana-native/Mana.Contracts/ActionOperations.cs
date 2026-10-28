@@ -8,10 +8,16 @@ public enum SemanticEntityKind { Player, Card, Spell }
 public enum EffectRecipientBinding { Unknown, Actor, Source, Explicit, Targets, TargetControllers, TargetOwners }
 public enum OperationLinkKind { Sequence, Choice, IfTrue, IfFalse, Repeat, Additional }
 
-// Id belongs to this semantic graph. CardId refers only to a currently entitled
-// occurrence. Neither field can be used in place of a decision's action handles.
+// Id belongs to this semantic graph. CardId refers only to an entitled source
+// occurrence; a Spell may omit it when its permanent source has departed.
+// Neither identity can be used in place of a decision's action handles.
 public sealed record SemanticEntity(string Id, SemanticEntityKind Kind, string CardId = "",
-    int? PlayerId = null, int? ControllerId = null, int? OwnerId = null);
+    int? PlayerId = null, int? ControllerId = null, int? OwnerId = null)
+{
+    // An actual stack occurrence, independent of the source card. Copies and
+    // abilities from the same permanent must remain distinct pending actions.
+    public string StackItemId { get; init; } = "";
+}
 public sealed record EffectRecipients(SemanticKnowledge Knowledge, EffectRecipientBinding Binding,
     int? TargetOperationId, ImmutableArray<SemanticEntity> Entities)
 {

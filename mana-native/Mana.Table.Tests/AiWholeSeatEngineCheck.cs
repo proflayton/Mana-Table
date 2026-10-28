@@ -183,7 +183,7 @@ internal static class AiWholeSeatEngineCheck
             zones = player.Zones.OrderBy(zone => zone.Name).Select(zone => new { zone.Name, zone.Count }),
             battlefield = player.Zone("Battlefield").Cards.OrderBy(card => card.CombatId.Length > 0 ? card.CombatId : card.VisualId)
                 .Select(card => new { id = card.CombatId.Length > 0 ? card.CombatId : card.VisualId, card.Power, card.Toughness,
-                    card.Damage, card.Tapped, card.PhasedOut, counters = card.Counters.OrderBy(entry => entry.Key).Select(entry => new { entry.Key, entry.Value }) })
+                    card.Damage, card.Tapped, card.PhasedOut, card.BlockingCapacity, counters = card.Counters.OrderBy(entry => entry.Key).Select(entry => new { entry.Key, entry.Value }) })
         }));
         string expected = PublicFacts(spectator), actual = PublicFacts(seat);
         if (expected != actual) {

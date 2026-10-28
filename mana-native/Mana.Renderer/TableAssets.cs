@@ -1,4 +1,4 @@
-using Microsoft.Xna.Framework.Audio;
+using Mana.Audio;
 using Microsoft.Xna.Framework.Graphics;
 
 namespace Mana.Renderer;
@@ -10,7 +10,8 @@ public sealed class TableAssets : IDisposable
     public Texture2D? Arena { get; }
     public Texture2D? CardBack { get; }
     public Texture2D? ManaSymbols { get; }
-    private readonly Dictionary<string, SoundEffect> sounds = [];
+    public IAudioOutput AudioOutput => audioOutput;
+    private readonly MonoGameAudioOutput audioOutput;
     public TableAssets(GraphicsDevice device, string directory)
     {
         Texture2D? Load(string filename) {
@@ -20,13 +21,7 @@ public sealed class TableAssets : IDisposable
             catch (Exception ex) when (ex is IOException or InvalidOperationException) { return null; }
         }
         Arena = Load("arena.png"); CardBack = Load("card-back.png"); ManaSymbols = Load("mana-symbols.png");
-        foreach (string name in new[] { "card-play", "your-priority", "combat", "life-loss", "game-end" }) {
-            string path = Path.Combine(directory, name + ".wav");
-            if (!File.Exists(path)) continue;
-            try { using var file = File.OpenRead(path); sounds[name] = SoundEffect.FromStream(file); }
-            catch (Exception ex) when (ex is IOException or InvalidOperationException or NoAudioHardwareException) { }
-        }
+        audioOutput = new MonoGameAudioOutput(directory);
     }
-    public void Play(string name, float volume) { if (sounds.TryGetValue(name, out var sound)) try { sound.Play(Math.Clamp(volume, 0, 1), 0, 0); } catch (NoAudioHardwareException) { } }
-    public void Dispose() { Arena?.Dispose(); CardBack?.Dispose(); ManaSymbols?.Dispose(); foreach (var sound in sounds.Values) sound.Dispose(); }
+    public void Dispose() { audioOutput.Dispose(); Arena?.Dispose(); CardBack?.Dispose(); ManaSymbols?.Dispose(); }
 }

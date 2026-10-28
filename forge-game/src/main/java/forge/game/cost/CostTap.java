@@ -23,6 +23,7 @@ import forge.game.card.CardCollection;
 import forge.game.player.Player;
 import forge.game.spellability.SpellAbility;
 import forge.game.trigger.TriggerType;
+import forge.game.zone.ZoneType;
 
 import java.util.Map;
 
@@ -66,17 +67,24 @@ public class CostTap extends CostPart {
     @Override
     public final boolean canPay(final SpellAbility ability, final Player payer, final boolean effect) {
         final Card source = ability.getHostCard();
-        return source.canTap() && !source.isAbilitySick();
+        return source.isInZone(ZoneType.Battlefield)
+                && payer.getGame().getCardState(source, null) == source
+                && source.canTap() && !source.isAbilitySick();
     }
 
     @Override
     public boolean payAsDecided(Player payer, PaymentDecision decision, SpellAbility ability, final boolean effect) {
+        // Another cost or mana ability may have consumed this resource since
+        // the activation was offered. A failed precondition cannot pay {T}.
+        if (!canPay(ability, payer, effect)) return false;
         Card hostCard = ability.getHostCard();
         if (hostCard.tap(true, ability, payer)) {
             final Map<AbilityKey, Object> runParams = AbilityKey.newMap();
             runParams.put(AbilityKey.Cards, new CardCollection(hostCard));
             payer.getGame().getTriggerHandler().runTrigger(TriggerType.TapAll, runParams, false);
         }
+        // A legal tap can itself be replaced. Preserve that payment semantics;
+        // the current untapped resource was checked before attempting the action.
         return true;
     }
 

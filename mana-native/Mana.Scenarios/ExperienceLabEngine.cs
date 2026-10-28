@@ -37,7 +37,7 @@ public sealed class ExperienceLabEngine(ExperienceLabSession session) : ICardEng
     public Task<Lobby> HostAsync(int players, bool automaticPortForwarding) => No<Lobby>();
     public Task<Lobby> JoinAsync(string address) => No<Lobby>();
     public Task<Lobby> LobbyAsync() => No<Lobby>();
-    public Task SelectDeckAsync(string id) => No();
+    public Task<Lobby> SelectDeckAsync(LobbyDeckSelection selection) => No<Lobby>();
     public Task SetReadyAsync(bool ready) => No();
     public Task StartAsync() => No();
     public Task ReturnToLobbyAsync() => No();
