@@ -1571,6 +1571,7 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
                         || prompt != null && prompt.input instanceof InputLondonMulligan && card.getController().equals(viewer) && card.getZone() == ZoneType.Hand,
                 "highlighted", highlighted.contains(card), "faceDown", hidden,
                 "combatKeywords", publicFace ? publicKeywords(face) : List.of(),
+                "blockingCapacity", card.getPublicBlockingCapacity(viewer),
                 "states", publicFace ? PublicStates.of(card.getPublicStates(viewer)) : List.of());
         AttachmentProjection.add(result, card, viewer, combatIds);
         addCardFaces(result, card, !hidden && card.canBeShownTo(viewer));
@@ -1840,6 +1841,7 @@ public final class MatchSession implements ManaTableSession, MatchEndpoint {
                 "commanderTax", commanderTax(card, hidden),
                 "text", hidden ? "" : CardRulesText.of(card), "power", hidden ? null : face.getPower(), "toughness", hidden ? null : face.getToughness(),
                 "combatKeywords", hidden ? List.of() : publicKeywords(face),
+                "blockingCapacity", hidden ? null : card.getPublicBlockingCapacity(viewer),
                 "states", hidden ? List.of() : PublicStates.of(card.getPublicStates(viewer)));
         addCardFaces(result, card, !hidden);
         return result;

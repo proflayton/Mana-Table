@@ -161,6 +161,14 @@ cost or grant permission to spend. Canceling an optional triggered payment is
 a valid decline, distinct from abandoning a spell that the policy initiated.
 The payer can differ from a source's controller or the observing controller.
 Provenance ends with the current input; hidden source identities are not added.
+Current nonmana cost selections can additionally carry `costPayment`: the
+actual payer/source, remaining adjusted cost parts, mana-cost knowledge and a
+read-only `ManaFundingContext`. Already-paid parts are excluded. This lets a
+policy preserve a funding witness while choosing a creature to tap or a
+permanent to sacrifice. It does not authorize producing mana, reuse the
+initiating action's handles or promise that unsupported costs are affordable.
+Older providers omit this context; absence remains unknown. The metadata ends
+with the owning selection and requires no persisted-data migration.
 Ordinary non-library effect choices may also carry current `disclosedCards`
 rows `{label, card}` for delayed-reveal faces absent from the eligible options.
 These anonymous portraits have no index, physical identity, card key or action
@@ -604,6 +612,12 @@ text, mana, artwork and alternate faces. Anonymous battlefield occurrences can
 retain an opaque `combatId`; that ID never authorizes an action or identifies a
 hidden card outside its current public occurrence.
 Scoped selection keys authorize input; presentation IDs do not.
+Readable battlefield occurrences can carry `blockingCapacity`: either a finite
+nonnegative `maximum` or explicit `unlimited: true`. It is an effective public
+upper bound, not individual block permission. Missing metadata is unknown;
+hidden, face-down and nonbattlefield cards omit it. Forecasts must not assume
+that every creature can block only once. Current combat offers and the rules
+engine still own legal declarations.
 Card identity fields (`key`, `visualId`, `combatId`) use empty strings when
 absent, including readonly historical faces. Native card values canonicalize
 legacy null identities without creating authority; scoped decision portraits

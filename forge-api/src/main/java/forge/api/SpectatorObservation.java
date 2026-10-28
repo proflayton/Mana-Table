@@ -122,6 +122,7 @@ final class SpectatorObservation {
                 "attacking", card.isAttacking(), "blocking", card.isBlocking(), "faceDown", hidden, "selectable", false, "highlighted", false,
                 "counters", Collections.unmodifiableMap(counters), "states", publicStats ? PublicStates.of(card.getPublicStates(AUDIENCE)) : List.of(),
                 "combatKeywords", publicStats ? face.getPublicStates().stream().map(forge.game.PublicState::key).distinct().toList() : List.of(),
+                "blockingCapacity", card.getPublicBlockingCapacity(AUDIENCE),
                 "attachedTo", attachment(table, card.getAttachedTo()), "attachments", card.getAllAttachedCards().stream().filter(SpectatorObservation::publicCard).map(attached -> attachment(table, attached)).toList());
         MatchSession.addCardFaces(result, card, !hidden);
         MatchSession.addCardPrinting(result, card, !hidden);

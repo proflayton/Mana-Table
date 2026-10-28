@@ -38,4 +38,5 @@ public sealed record DecisionSemantics(DecisionIntent Intent = DecisionIntent.Un
     public int? OperationId { get; init; }
     public NumericDecision? Numeric { get; init; }
     public PaymentDecision? Payment { get; init; }
+    public CostPaymentFunding? CostPayment { get; init; }
 }

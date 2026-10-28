@@ -26,7 +26,8 @@ internal static class AiReleaseGoldens
         new("mana-reduction", "Kasla, the Broken Halo", "Island",
             [.. Enumerable.Repeat("Mystic Monastery", 6), .. Enumerable.Repeat("Lightning Angel", 7)]),
         new("partner-draw-counters", "Toothy, Imaginary Friend", "Island",
-            [.. Enumerable.Repeat("Island", 5), .. Enumerable.Repeat("Forest", 3)], "Pir, Imaginative Rascal")
+            [.. Enumerable.Repeat("Island", 5), .. Enumerable.Repeat("Forest", 3)], "Pir, Imaginative Rascal"),
+        new("tap-cost-funding", "Rhys the Redeemed", "Forest", ["Selesnya Evangel", "Birds of Paradise", "Grizzly Bears"])
     ];
     internal static int ExpectedCount => Scenarios.Length;
 
@@ -77,12 +78,14 @@ internal static class AiReleaseGoldens
         var timer = Stopwatch.StartNew();
         GameSnapshot? state = null;
         string target = "", partnerTarget = "", vein = "", mentor = "", flexible = "", lastFacts = "", stop = "not-started", detail = "";
+        string evangel = "", bird = "", tapCreature = "";
         ImmutableArray<string> blueSources = [];
         int comparisons = 0, steps = 0, firstTurn = 0;
         bool setup = false, offered = false, stack = false, resolved = false, landPlayed = false, passedOffer = false, passed = false;
         bool publicCaptured = false, actualRedPool = false, actualRedBillPaid = false;
         bool positiveReduction = false, zeroReductionWithUnusedCreature = false;
         bool partnerStack = false, zeroCountersBeforeDraw = false, partnerDrawTrigger = false, partnerCardDrawn = false;
+        bool tapCostStack = false;
         int? beforeDrawHandCount = null, beforeDrawCounters = null, afterDrawCounters = null;
         int maximumReductionContributors = 0;
         Exception? primaryFailure = null;
@@ -114,6 +117,9 @@ internal static class AiReleaseGoldens
             vein = extras.Where(card => card.Name == "Crystal Vein").Select(CardViews.Identity).SingleOrDefault() ?? "";
             mentor = extras.Where(card => card.Name == "Mentor of the Meek").Select(CardViews.Identity).SingleOrDefault() ?? "";
             flexible = extras.Where(card => card.Name == "Temple of Epiphany").Select(CardViews.Identity).SingleOrDefault() ?? "";
+            evangel = extras.Where(card => card.Name == "Selesnya Evangel").Select(CardViews.Identity).SingleOrDefault() ?? "";
+            bird = extras.Where(card => card.Name == "Birds of Paradise").Select(CardViews.Identity).SingleOrDefault() ?? "";
+            tapCreature = extras.Where(card => card.Name == "Grizzly Bears").Select(CardViews.Identity).SingleOrDefault() ?? "";
             blueSources = extras.Where(card => card.Name == "Island").Select(CardViews.Identity).ToImmutableArray();
             provider.ReductionCreatures = extras.Where(card => card.Name == "Lightning Angel")
                 .Select(CardViews.Identity).ToImmutableHashSet(StringComparer.Ordinal);
@@ -166,6 +172,8 @@ internal static class AiReleaseGoldens
                 stack |= state.Stack.Any(item => item.Kind == StackActionKind.Spell && item.Card is { } card && CardViews.Identity(card) == target);
                 partnerStack |= partnerTarget.Length > 0 && state.Stack.Any(item => item.Kind == StackActionKind.Spell
                     && item.Card is { } card && CardViews.Identity(card) == partnerTarget);
+                tapCostStack |= evangel.Length > 0 && state.Stack.Any(item => item.Kind == StackActionKind.ActivatedAbility
+                    && item.Card is { } card && CardViews.Identity(card) == evangel);
                 var permanent = actor.Zone("Battlefield").Cards.FirstOrDefault(card => CardViews.Identity(card) == target);
                 resolved |= permanent != null;
                 bool cast = receipts.Any(item => item.Kind == nameof(UseOfferedAction) && item.SourceId == target && item.Cast);
@@ -258,6 +266,20 @@ internal static class AiReleaseGoldens
                             && afterDrawCounters == 2 && permanent is { Power: 3, Toughness: 3 };
                         detail = "Both partner commanders were cast and funded through the normal policy; the same zero-counter Toothy's next natural draw put its trigger on the stack and resolved to exactly two +1/+1 counters and 3/3 while Pir remained present.";
                         break;
+                    case "tap-cost-funding":
+                        if (receipts.Any(item => item.Kind == nameof(CancelPayment) && item.CostOwner == evangel))
+                            throw new InvalidDataException("The activation consumed its mana funding creature as a separate tap cost and cancelled payment.");
+                        bool selectedOtherCreature = receipts.Any(item => item.Kind == nameof(SelectCard) && item.CostOwner == evangel
+                            && item.Phase == "UPKEEP" && item.CostSelection is { Payer: 0 } selection && selection.SelectedId == tapCreature);
+                        bool paidWithBird = receipts.Any(item => item.Kind == nameof(UseOfferedAction) && item.CostOwner == evangel
+                            && item.SourceId == bird && item.Payer == 0 && item.PaymentPurpose == PaymentPurpose.ActivatedAbilityCost);
+                        positive = selectedOtherCreature && paidWithBird && tapCostStack && !landPlayed
+                            && actor.Zone("Battlefield").Cards.Any(card => card.GamePieceType == "token"
+                                && card.Type.Contains("Saproling", StringComparison.Ordinal) && card is { Power: 1, Toughness: 1 })
+                            && new[] { evangel, bird, tapCreature }.All(id => actor.Zone("Battlefield").Cards
+                                .Any(card => CardViews.Identity(card) == id && card.Tapped));
+                        detail = "Before any land play, a real Evangel activation tapped another creature, retained Birds for its one-mana payment, reached the public stack and resolved a 1/1 Saproling without cancelling.";
+                        break;
                     default: throw new InvalidDataException("Unknown golden scenario.");
                 }
                 if (positive && setup && comparisons > 0) { passed = true; stop = "proved-before-cleanup"; break; }
@@ -294,6 +316,7 @@ internal static class AiReleaseGoldens
         var evidence = JsonSerializer.SerializeToElement(new { setup, target, vein, mentor, flexible, blueSources, actualRedPool, actualRedBillPaid,
             positiveReduction, zeroReductionWithUnusedCreature, maximumReductionContributors, offered, passedOffer, landPlayed,
             partnerTarget, partnerStack, zeroCountersBeforeDraw, beforeDrawHandCount, beforeDrawCounters, partnerDrawTrigger, partnerCardDrawn, afterDrawCounters,
+            evangel, bird, tapCreature, tapCostStack,
             stack, resolved, firstTurn, capturedBeforeCleanup = publicCaptured, finalTurn = state?.Turn, finalPhase = state?.PhaseKey,
             commands = provider.Accepted, diagnostics = summary, captureErrors, primaryFailure = primaryFailure?.ToString(), engineRandomnessControlled = false });
         var result = new AiGoldenResult(scenario.Id, passed, detail, comparisons, provider.Accepted.Count, steps,
@@ -321,7 +344,10 @@ internal static class AiReleaseGoldens
     {
         public ImmutableArray<ManaBillPart>? PaymentBill { get; init; }
         public ReductionEvidence? ManaReduction { get; init; }
+        public CostSelectionEvidence? CostSelection { get; init; }
     }
+
+    private sealed record CostSelectionEvidence(string SelectedId, int Payer, bool RemainingNominalMana);
 
     private sealed record ReductionEvidence(ImmutableArray<ManaBillPart> RemainingManaParts, bool CompleteEnabled,
         int SelectedContributors, bool UnusedFixtureCreature);
@@ -428,20 +454,25 @@ internal static class AiReleaseGoldens
             var action = command is UseOfferedAction use ? observation.Domain.Actions.Single(item => item.ActionId == use.ActionId) : null;
             var route = command is UseOfferedAction chosen ? source!.Actions.Single(item => item.Id == chosen.ActionId) : null;
             string owner = observation.Semantics.Numeric?.SourceCardId ?? observation.Semantics.Payment?.SourceCardId
+                ?? observation.Semantics.CostPayment?.SourceCardId
                 ?? observation.State.Decision?.Context.Source?.CardId ?? "";
             if (owner.Length == 0 && observation.State.Decision?.Context.Source?.Card is { } portrait) owner = CardViews.Identity(portrait);
             var paymentBill = CapturePaymentBill(observation.State);
             var reduction = CaptureReduction(observation.State, ReductionCreatures);
+            var costSelection = command is SelectCard selected && observation.Semantics.CostPayment is { } cost
+                ? new CostSelectionEvidence(CardViews.InZones(observation.State).Where(item => item.Card.Key == selected.Card)
+                    .Select(item => CardViews.Identity(item.Card)).Single(), cost.PayerId,
+                    cost.RemainingCosts.Any(part => part.Kind == ActionCostKind.Mana && (part.Amount > 0 || !part.ManaSymbols.IsEmpty))) : null;
             await inner.ExecuteAutomatedAsync(seat, command);
             Accepted.Add(new(seat, command.GetType().Name, observation.State.Turn, observation.State.PhaseKey, source?.SourceCardId ?? "", owner,
                 command is ChooseNumber number ? number.Value : null, observation.Semantics.Numeric?.Purpose,
-                observation.Semantics.Payment?.Purpose, observation.Semantics.Payment?.PayerId,
+                observation.Semantics.Payment?.Purpose, observation.Semantics.Payment?.PayerId ?? observation.Semantics.CostPayment?.PayerId,
                 observation.State.Viewer!.Zone("Hand").Count, action?.Costs.Any(cost => cost.Kind == ActionCostKind.Sacrifice && cost.FromSource && cost.Amount == 1) == true,
                 action?.Effect == ActionEffectKind.Land, route?.Kind == "cast",
                 observation.Domain.Sources.Any(set => set.SourceCardId == Target && set.Actions.Any(item => item.Kind == "cast")),
                 (command as UseOfferedAction)?.ManaOutput,
                 command is CompleteSelection && reduction is { CompleteEnabled: true, RemainingManaParts.IsEmpty: true }) {
-                PaymentBill = paymentBill, ManaReduction = reduction
+                PaymentBill = paymentBill, ManaReduction = reduction, CostSelection = costSelection
             });
         }
     }

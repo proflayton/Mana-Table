@@ -176,6 +176,7 @@ await AiDecisionReplayRegression.RunAsync(Check);
 await AiStrategicPlanRegression.RunAsync(Check);
 await AiIntentPolicyRegression.RunAsync(Check);
 await AiIntentPaymentRegression.RunAsync(Check);
+await AiSwarmCombatRegression.RunAsync(Check);
 await LatestReadRegression.RunAsync(Check);
 await AppUpdateSessionRegression.RunAsync(Check);
 await DeckWorkspaceRegression.RunAsync(Check);

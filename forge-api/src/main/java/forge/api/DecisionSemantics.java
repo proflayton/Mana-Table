@@ -30,6 +30,10 @@ final class DecisionSemantics {
             result.put("amount", amount);
             result.put("counterType", paying.cost() instanceof CostRemoveCounter remove && remove.counter != null ? remove.counter.toString()
                     : paying.cost() instanceof CostPutCounter put && put.getCounter() != null ? put.getCounter().toString() : "");
+            if (input instanceof InputSelectManyBase<?>) {
+                var funding = CostPaymentProjection.describe(paying, viewer, identity);
+                if (funding != null) result.put("costPayment", funding);
+            }
             return result;
         }
         SpellAbility ability = input instanceof InputSelectTargets targets ? targets.getSpellAbility()

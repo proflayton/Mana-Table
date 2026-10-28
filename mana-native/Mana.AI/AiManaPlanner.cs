@@ -46,6 +46,24 @@ public static class AiManaPlanner
         AiResourceReservation? preserve = null)
         => Plan(request.Frame, request.Frame.Semantics.UnpaidMana, 0, request.Work, cancellation, preserve: preserve);
 
+    internal static AiManaFundingAssessment ForCostSelection(AiDecisionRequest request,
+        CostPaymentFunding payment, IReadOnlySet<string> unavailable)
+    {
+        if (payment.PayerId != request.Frame.State.ViewerId || payment.ManaCostKnowledge == SemanticKnowledge.Unsupported)
+            return new(AiManaPlanStatus.Unknown, 0, "cost-payment-scope-or-bill-unsupported");
+        var mana = payment.RemainingCosts.Where(cost => cost.Kind == ActionCostKind.Mana).ToArray();
+        if (mana.Any(cost => cost.Amount == null || cost.ManaSymbols.Any(symbol => symbol.Trim('{', '}') == "X")))
+            return new(AiManaPlanStatus.Unknown, 0, "cost-payment-remaining-bill-unknown");
+        long generic = mana.Sum(cost => Math.Max(0L, cost.Amount ?? 0));
+        if (generic > 1024) return new(AiManaPlanStatus.Unknown, 0, "mana-bill-bound");
+        var funding = payment.Funding with {
+            Sources = payment.Funding.Sources.Where(source => !unavailable.Contains(source.SourceCardId)).ToImmutableArray()
+        };
+        var plan = Plan(null, mana.SelectMany(cost => cost.ManaSymbols), (int)generic,
+            request.Work, default, funding: funding);
+        return new(plan.Status, plan.WorkSpent, plan.ReasonCode);
+    }
+
     // One joint assignment, rather than two independently affordable bills.
     // This remains nominal: actual engine payment can change the bill later.
     public static AiManaPlan WithReservation(AiDecisionRequest request, ActionSemantics action,

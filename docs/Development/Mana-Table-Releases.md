@@ -19,7 +19,7 @@ additional evidence for the exact candidate, alongside required source CI,
 native packaging, UI, installer and update checks. A passing short smoke game
 does not prove a whole game can finish or that an opponent is enjoyable.
 
-The manual `--evaluate-ai-release` profile runs nine controlled native policy
+The manual `--evaluate-ai-release` profile runs ten controlled native policy
 journeys and four natural games using the varied deck manifests in cyclic seat
 rotations. It reuses one JVM. Each game has a 160-turn/180-second ceiling; a
 ceiling is inconclusive, never a replacement for the engine's pre-cleanup
@@ -36,6 +36,12 @@ The partner-counter journey pays for both Pir and Toothy through the normal
 policies, then checks the next actual draw, Toothy's trigger and Pir's replacement
 against the same creature's exact two counters and 3/3 result. Harmless opposing
 commanders keep that controlled continuation independent of combat targeting.
+The tap-cost funding journey uses Selesnya Evangel, Birds of Paradise and a
+second creature before any land play. The normal policy must pay the activation,
+reach its stack occurrence and resolve a Saproling without cancelling payment.
+Focused policy checks also exercise a nonmana selection before mana payment,
+requiring it to preserve the only available mana creature when an alternative
+tap-cost candidate exists.
 
 Retain `ai-release-evaluation.json`, the full source revision, engine artifact
 manifest, exact runtime hashes and private trace/replay locations. Record the

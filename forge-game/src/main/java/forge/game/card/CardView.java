@@ -1160,6 +1160,18 @@ public class CardView extends GameEntityView {
         return get(TrackableProperty.BlockAdditional);
     }
 
+    public record PublicBlockingCapacity(Integer maximum, boolean unlimited) { }
+
+    /** Effective public upper bound, not permission to make an individual block.
+     * Hidden/face-down characteristics never become a forecast capability. */
+    public PublicBlockingCapacity getPublicBlockingCapacity(PlayerView viewer) {
+        if (getZone() != ZoneType.Battlefield || isFaceDown() || !canBeShownTo(viewer)) return null;
+        if (getCanBlockAny()) return new PublicBlockingCapacity(null, true);
+        int additional = getBlockAdditional();
+        return additional < 0 || additional == Integer.MAX_VALUE ? null
+                : new PublicBlockingCapacity(additional + 1, false);
+    }
+
     boolean getCanBlockAny() {
         return get(TrackableProperty.BlockAny);
     }

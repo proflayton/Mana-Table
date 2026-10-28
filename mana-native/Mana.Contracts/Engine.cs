@@ -161,6 +161,9 @@ public sealed record Card
     public bool Foil { get; init; }
     public CardFace? OtherFace { get; init; }
     public ImmutableArray<string> CombatKeywords { get; init; } = [];
+    // Public effective upper bound on simultaneous blocks. Omission is unknown,
+    // never an assumed one-block limit. Individual block legality stays engine-owned.
+    public BlockingCapacity? BlockingCapacity { get; init; }
     // Null means a legacy engine. A present empty list authoritatively clears
     // effective abilities rather than falling back to older keyword hints.
     public ImmutableArray<PublicState>? States { get; init; }

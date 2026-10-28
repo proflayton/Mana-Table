@@ -325,7 +325,7 @@ reaching a natural winner does not establish enjoyable opponents.
 The [release gate matrix](Mana-Table-Testing.md#ai-release-evaluation) separates
 provider conformance, policy continuations, whole-game completion, state and
 authority integrity, and human gameplay review. The manual release evaluator
-runs nine controlled journeys followed by four cyclic seat rotations of the
+runs ten controlled journeys followed by four cyclic seat rotations of the
 varied decks in one initialized JVM. Every rotation must reach an engine outcome
 before cleanup, within the 160-turn/180-second ceilings. A cutoff remains
 inconclusive; the 45-second smoke profile is not a whole-game release test.
@@ -671,6 +671,14 @@ the bot does not infer a hidden future route from card text. Deck-wide plans,
 multiple simultaneous reserves, longer horizons and contingent production remain
 future work behind this same boundary.
 
+Nonmana cost selections also preserve the current initiating action's funding.
+The rules provider supplies `CostPaymentFunding` from the actual parent payment,
+including its remaining adjusted parts and read-only resources. The shared
+assignment core checks the remaining bill after excluding a proposed consumed
+resource, selected resources and pending source costs. A funded alternative is
+preferred to tapping the only mana creature; absent or unsupported context does
+not manufacture a witness or grant a producer action.
+
 Attack preferences compare public incoming damage with and without a proposed
 blocker, considering evasion, trample, visible strike characteristics and vigilance.
 Tapped enemy creatures are included because they may untap before their next
@@ -683,6 +691,13 @@ Hidden pumps, future removal, multi-block optimization, commander damage and
 political promises are outside this estimate.
 Plain menace requires two available blockers; a mixed menace/trample forecast
 stays incomplete instead of pretending a single-block exchange applies.
+Final duels also have a bounded group forecast. It uses currently offered
+attacker/defender assignments and an engine-projected `BlockingCapacity` upper
+bound, assigning the available block slots to the cohort's largest hits and
+crediting blocked attackers with zero damage. This avoids letting one blocker
+veto every creature in a large army. Missing, unlimited or unsupported facts
+retain the ordinary policy; each staged attacker still needs current command
+authority. The forecast does not predict hidden responses or resolved damage.
 
 Graphics-free checks exercise last-blue versus spare-blue spending, lethal
 responses, third-party removal, exact copied-spell identity, unknown effects,

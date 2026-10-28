@@ -146,6 +146,14 @@ The actual payer may differ from the viewing decision owner; resource scope does
 not grant another seat command authority. A missing field from an older provider
 remains unknown.
 
+Intermediate nonmana selections can carry `CostPaymentFunding` from their
+still-owned parent payment. It retains only the current payer/source, remaining
+adjusted costs and bounded read-only funding facts. The policy uses the shared
+assignment planner after excluding a proposed consumed resource and already
+selected resources, preferring a candidate which preserves funding. An old
+action offer or remembered portrait cannot establish this context; absent or
+unsupported facts retain the ordinary unknown fallback.
+
 `Mana.Game` uses the shared planner to suggest specific physical sources alongside
 the inspected card's mana symbols. Its witness cannot create an action handle,
 tap a source, prove adjusted affordability or disable manual play. The existing

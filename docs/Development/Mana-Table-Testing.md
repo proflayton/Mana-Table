@@ -104,7 +104,7 @@ uses these same provenance checks.
 
 The wrapper is a test-only launcher for controlled positions using the exact
 production engine. It is checked against the shipping JAR and never supplies a
-shipping scenario API. The existing process initializes one JVM for the nine
+shipping scenario API. The existing process initializes one JVM for the ten
 controlled native goldens and subsequent games. The release campaign uses four
 cyclic seat rotations, each bounded by 160 global turns and 180 seconds. This is
 at most twelve minutes of nominal game budget, separate from fast CI. Limits are
@@ -136,6 +136,12 @@ commanders. The normal policy must pay for both real commanders, establish the
 same Toothy at zero counters, then cross the next natural draw and its trigger
 to observe exactly two +1/+1 counters and 3/3 with Pir present. No scripted seat
 answer or pre-seeded counter stands in for that continuation.
+The tap-cost funding journey activates Selesnya Evangel before any land play
+using Birds of Paradise and another creature. It observes the actual payment,
+stack occurrence and resolved Saproling without a cancellation. Engine cost
+ordering remains authoritative; focused native checks separately require an
+intervening nonmana selection to preserve the sole remaining mana source,
+including sacrifice, exile, discard, alternative witnesses and unknown context.
 
 The fixed 16-turn/35-second CI prefix and the two-rotation 32-turn/45-second smoke
 remain unchanged. Do not rerun a failed sample until one happens to pass, lower

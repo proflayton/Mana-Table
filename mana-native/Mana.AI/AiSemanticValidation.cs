@@ -16,6 +16,7 @@ internal static class AiSemanticValidation
                 || !reduction.Players.IsEmpty)) throw Invalid();
         if (semantics.Numeric is { } numeric) context.Numeric(state, numeric);
         if (semantics.Payment is { } payment) context.Payment(state, payment);
+        if (semantics.CostPayment is { } cost) context.CostPayment(state, semantics, cost);
         context.Graph(semantics.OperationGraph, semantics.OperationId);
         foreach (var option in semantics.Options) {
             context.Graph(option.OperationGraph);
@@ -80,6 +81,20 @@ internal static class AiSemanticValidation
                 && (owner.Card == null || CardViews.Identity(owner.Card) != payment.SourceCardId)) throw Invalid();
             if (owner.Card is { } portrait && (portrait.FaceDown || !string.IsNullOrEmpty(portrait.Key)
                 || portrait.Selectable || portrait.Highlighted)) throw Invalid();
+        }
+
+        internal void CostPayment(GameSnapshot state, DecisionSemantics semantics, CostPaymentFunding payment)
+        {
+            if (!semantics.SelectionIsCost || state.Decision?.Payload is not EntitySelectionPayload
+                || !players.Contains(payment.PayerId) || !Enum.IsDefined(payment.ManaCostKnowledge)
+                || string.IsNullOrWhiteSpace(payment.SourceCardId)) throw Invalid();
+            operations.ValidateEntity(new("cost-payment-source", SemanticEntityKind.Card, payment.SourceCardId));
+            if (state.Decision.Context.Source is not { } owner || owner.CardId != payment.SourceCardId
+                && (owner.Card == null || CardViews.Identity(owner.Card) != payment.SourceCardId)) throw Invalid();
+            if (owner.Card is { } portrait && (portrait.FaceDown || !string.IsNullOrEmpty(portrait.Key)
+                || portrait.Selectable || portrait.Highlighted)) throw Invalid();
+            ManaFundingFacts.ValidateCosts(payment.RemainingCosts);
+            ManaFundingFacts.Validate(state, payment.Funding, payment.PayerId);
         }
 
         internal void Graph(ActionOperationGraph? graph, int? active = null) => operations.Validate(graph, active);

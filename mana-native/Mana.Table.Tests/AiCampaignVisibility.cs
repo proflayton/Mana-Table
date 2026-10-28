@@ -77,6 +77,7 @@ internal static class AiCampaignVisibility
     private static bool SameReadableFace(Card face, Card occurrence) => face.Name == occurrence.Name
         && face.Type == occurrence.Type && face.ManaCost == occurrence.ManaCost && face.Text == occurrence.Text
         && face.OtherFace == occurrence.OtherFace && face.Power == occurrence.Power && face.Toughness == occurrence.Toughness
+        && face.BlockingCapacity == occurrence.BlockingCapacity
         && face.GamePieceType == occurrence.GamePieceType && face.FaceDown == occurrence.FaceDown
         && face.ArtName == occurrence.ArtName && face.ArtFace == occurrence.ArtFace
         && Keywords(face).Order(StringComparer.Ordinal).SequenceEqual(Keywords(occurrence).Order(StringComparer.Ordinal))

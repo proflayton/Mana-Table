@@ -7,6 +7,23 @@ namespace Mana.AI;
 // lifetime; this planner cannot submit commands, retain handles or undo costs.
 internal static class AiTurnPlanner
 {
+    // A required cost is part of the initiating action's resource use. Compare
+    // the current parent's remaining nominal bill after each candidate removal;
+    // never reuse a remembered offer or assume an unknown resource is absent.
+    internal static bool PreservesCurrentCostFunding(AiDecisionRequest request, string candidateId)
+    {
+        if (!request.Frame.Semantics.SelectionIsCost || request.Frame.Semantics.CostPayment is not { } payment
+            || request.Frame.Semantics.Intent is not (DecisionIntent.Tap or DecisionIntent.Sacrifice
+                or DecisionIntent.Exile or DecisionIntent.Discard)) return false;
+        var unavailable = CardViews.InZones(request.Frame.State).Where(item => item.Card.Selectable && item.Card.Highlighted)
+            .Select(item => CardViews.Identity(item.Card)).ToHashSet(StringComparer.Ordinal);
+        unavailable.Add(candidateId);
+        if (payment.RemainingCosts.Any(cost => cost.FromSource && cost.Amount != 0
+                && cost.Kind is ActionCostKind.Tap or ActionCostKind.Sacrifice or ActionCostKind.Exile or ActionCostKind.Discard))
+            unavailable.Add(payment.SourceCardId);
+        return AiManaPlanner.ForCostSelection(request, payment, unavailable).Status == AiManaPlanStatus.Funded;
+    }
+
     internal static AiResourceReservation? Interaction(AiDecisionRequest request)
     {
         if (request.Plan?.Reservations.FirstOrDefault() is { } retained) return retained;

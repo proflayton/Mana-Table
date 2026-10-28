@@ -5,6 +5,7 @@ import com.google.gson.JsonObject;
 import forge.StaticData;
 import forge.deck.Deck;
 import forge.game.card.Card;
+import forge.game.card.CardView;
 import forge.game.ability.AbilityFactory;
 import forge.game.keyword.Keyword;
 import forge.game.player.RegisteredPlayer;
@@ -129,6 +130,59 @@ public class PublicCardTableStatesTest {
             source.turnFaceDown(true);
             assertTrue(source.getView().getPublicStates(observer).stream().noneMatch(state -> state.key().equals("prepared")),
                     "A face-down source does not expose its original card's designation");
+        }
+    }
+
+    @Test public void blockingCapacityTracksEffectiveFiniteAndUnlimitedFactsWithoutExposingHiddenCards() throws Exception {
+        try (var table = table("public-blocking-capacity")) {
+            var owner = table.game.getPlayers().get(0);
+            var card = Card.fromPaperCard(StaticData.instance().getCommonCards().getCard("Grizzly Bears"), owner);
+            owner.getZone(ZoneType.Battlefield).add(card, null, null);
+            java.util.function.Consumer<CardView.PublicBlockingCapacity> published = expected -> {
+                var views = new ArrayList<>(table.testViews());
+                views.add(SpectatorObservation.project(table, 1, null));
+                for (var view : views) {
+                    var projected = firstBattlefield(JSON.toJsonTree(view).getAsJsonObject(), owner.getId());
+                    assertEquals(projected.get("blockingCapacity"), JSON.toJsonTree(expected),
+                            "Every seat and the independent public audience see the same effective blocking bound");
+                }
+            };
+            table.publish(); published.accept(new CardView.PublicBlockingCapacity(1, false));
+            long first = table.game.getNextTimestamp(), second = table.game.getNextTimestamp(), any = table.game.getNextTimestamp();
+            card.addCanBlockAdditional(1, first); card.addCanBlockAdditional(2, second);
+            table.publish(); published.accept(new CardView.PublicBlockingCapacity(4, false));
+            var saved = table.seat(1).state();
+            card.addCanBlockAny(any); table.publish();
+            published.accept(new CardView.PublicBlockingCapacity(null, true));
+            card.removeCanBlockAny(any); table.publish();
+            published.accept(new CardView.PublicBlockingCapacity(4, false));
+            card.removeCanBlockAdditional(first); card.removeCanBlockAdditional(second); table.publish();
+            published.accept(new CardView.PublicBlockingCapacity(1, false));
+            assertEquals(firstBattlefield(JSON.toJsonTree(saved).getAsJsonObject(), owner.getId())
+                    .getAsJsonObject("blockingCapacity").get("maximum").getAsInt(), 4,
+                    "The earlier publication retains its immutable effective bound after capabilities disappear");
+
+            card.addCanBlockAny(any); assertTrue(card.turnFaceDown(true)); table.publish();
+            published.accept(null);
+            assertNull(card.getView().getPublicBlockingCapacity(owner.getView()));
+            assertNull(MatchSession.choiceCard(card.getView(), owner.getView()).get("blockingCapacity"),
+                    "Even its owner's readable concealed original cannot become a public blocking capability");
+
+            var held = Card.fromPaperCard(StaticData.instance().getCommonCards().getCard("Grizzly Bears"), owner);
+            owner.getZone(ZoneType.Hand).add(held, null, null); held.addCanBlockAdditional(7, first);
+            table.publish();
+            var other = table.game.getPlayers().get(1).getView();
+            assertNull(held.getView().getPublicBlockingCapacity(owner.getView()));
+            assertNull(held.getView().getPublicBlockingCapacity(other));
+            assertNull(MatchSession.choiceCard(held.getView(), owner.getView()).get("blockingCapacity"),
+                    "A disclosed hand face is not a current battlefield blocker");
+            var hiddenChoice = MatchSession.choiceCard(held.getView(), other);
+            assertNull(hiddenChoice.get("blockingCapacity"));
+            assertEquals(hiddenChoice.get("name"), "Face-down or hidden card");
+            assertFalse(JSON.toJson(hiddenChoice).contains("Grizzly Bears"));
+            for (int seat = 1; seat < 4; seat++)
+                assertTrue(zone(player(JSON.toJsonTree(table.seat(seat).state()).getAsJsonObject(), owner.getId()), "Hand")
+                        .getAsJsonArray("cards").isEmpty());
         }
     }
 

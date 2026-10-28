@@ -296,7 +296,7 @@ public sealed class CasualCommanderPolicy : IAiPolicy
         // avoids toggling the same targets or paying an optional cost repeatedly.
         if (complete.Enabled && (range?.Min > 0 || cards.Length == 0 && players.IsEmpty))
             return Answer(request, new CompleteSelection(state.Id, state.Decision!.Id), "selection-complete");
-        var options = new List<(DecisionCommand Command, double Score, double Tie)>();
+        var options = new List<(DecisionCommand Command, double Score, double Tie, bool PreservesFunding)>();
         bool limited = false;
         foreach (var occurrence in cards.OrderBy(item => CardViews.Identity(item.Card), StringComparer.Ordinal)) {
             if (request.Work.Remaining <= retained) { limited = true; break; }
@@ -322,8 +322,9 @@ public sealed class CasualCommanderPolicy : IAiPolicy
                 if (assessment.Status == CasualAssessmentStatus.Estimated) score = assessment.Value
                     + (assessment.Value > 0 && !own ? Math.Clamp(CasualTableAssessment.OpponentScore(request, occurrence.PlayerId) * .01, 0, .25) : 0);
             }
+            bool preservesFunding = cost && AiTurnPlanner.PreservesCurrentCostFunding(request with { Work = localWork }, identity);
             options.Add((new SelectCard(state.Id, state.Decision!.Id, card.Key), score,
-                CasualTableAssessment.Tie(request.Seed, identity)));
+                CasualTableAssessment.Tie(request.Seed, identity), preservesFunding));
         }
         foreach (int player in players.Where(player => !request.Frame.Semantics.SelectedPlayers.Contains(player)).Order()) {
             if (request.Work.Remaining <= retained) { limited = true; break; }
@@ -343,7 +344,7 @@ public sealed class CasualCommanderPolicy : IAiPolicy
                     + (assessment.Value > 0 && player != state.ViewerId ? Math.Clamp(CasualTableAssessment.OpponentScore(request, player) * .01, 0, .25) : 0);
             }
             options.Add((new SelectPlayer(state.Id, state.Decision!.Id, player), score,
-                CasualTableAssessment.Tie(request.Seed, player.ToString(CultureInfo.InvariantCulture))));
+                CasualTableAssessment.Tie(request.Seed, player.ToString(CultureInfo.InvariantCulture)), false));
         }
         if (options.Count == 0 && !complete.Enabled) {
             if (cards.OrderBy(item => CardViews.Identity(item.Card), StringComparer.Ordinal).FirstOrDefault().Card is { } fallbackCard)
@@ -351,9 +352,11 @@ public sealed class CasualCommanderPolicy : IAiPolicy
             if (players.Where(player => !request.Frame.Semantics.SelectedPlayers.Contains(player)).Order().Select(player => (int?)player).FirstOrDefault() is { } fallbackPlayer)
                 return Answer(request, new SelectPlayer(state.Id, state.Decision!.Id, fallbackPlayer), "selection-required-bounded-candidate");
         }
-        var best = options.OrderByDescending(option => option.Score).ThenBy(option => option.Tie).FirstOrDefault();
+        var best = options.OrderByDescending(option => option.PreservesFunding).ThenByDescending(option => option.Score)
+            .ThenBy(option => option.Tie).FirstOrDefault();
         if (best.Command != null && (best.Score >= 0 || !complete.Enabled)) return Answer(request, best.Command,
-            limited ? "selection-bounded-known-candidate" : cost ? "selection-pay-lowest-opportunity-cost" : "selection-public-effect-recipient");
+            best.PreservesFunding ? "selection-preserve-current-cost-funding"
+                : limited ? "selection-bounded-known-candidate" : cost ? "selection-pay-lowest-opportunity-cost" : "selection-public-effect-recipient");
         if (complete.Enabled) return Answer(request, new CompleteSelection(state.Id, state.Decision!.Id), "selection-decline-optional-target");
         return cancel.Enabled ? Answer(request, new CancelSelection(state.Id, state.Decision!.Id), "selection-no-current-candidate") : Missing("required-selection");
     }
@@ -515,6 +518,8 @@ public sealed class CasualCommanderPolicy : IAiPolicy
         // witness instead of faulting an otherwise answerable large combat.
         int retained = (int)Math.Min(int.MaxValue, Math.Max(64L,
             2L * combat.AttackOptions.Length + combat.Attackers.Length + combat.AttackRepair.Length + 1));
+        if (AiSwarmCombat.TryFinish(request, payload, retained) is { } finishing)
+            return Answer(request, finishing, finishing is CompleteAttackers ? "combat-complete-swarm-finish" : "combat-stage-swarm-finish");
         var work = request.Work.CreateSlice(256, retained);
         var defensiveRequest = request with { Work = work };
         bool Retain(Card card)
